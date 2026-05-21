@@ -19,9 +19,10 @@ Each environment carries two layers of metadata.
 - Minimum and maximum number of agent slots.
 - Which slots accept a human player.
 - Recommended episode length.
-- Default scoring weights for the automated leaderboard, plus the keys that can be overridden in workflow configuration. See [leaderboard.md](leaderboard.md).
-- Default per-step and per-episode time limits.
+- Default per-step and per-episode time limits. These are defaults only. Each iteration can override them (see [leaderboard.md](leaderboard.md)).
 - A reference to the renderer that knows how to draw this environment. See [interaction.md](interaction.md).
+
+Scoring weights for the automated leaderboard are not stored here. Each iteration is one competition with its own weighted score formula, so weights live on the iteration. See [leaderboard.md](leaderboard.md).
 
 The intrinsic layer is what the environment code already gives us. The public-facing layer is what we add so the same environment can be presented on a website, plugged into the leaderboard workflow, and discovered by participants. Both layers travel together.
 
