@@ -4,31 +4,33 @@ There are two leaderboards per environment per iteration: an automated board and
 
 ## Iteration: one competition
 
-An iteration is one competition. For a single environment, the operator declares an iteration, accepts submissions for that iteration (see [submission.md](submission.md)), runs the automated workflow, and collects human feedback through the website. When the next competition starts, a new iteration begins, both boards reset, and the previous iteration remains viewable as a historical board.
-
-The iteration concept is independent of GitHub Classroom. A class might run several iterations over a term, each tied to a class assignment. A workshop might run a single iteration. An open competition might run a series. In every case the unit is the same: one iteration is one competition with one pair of boards.
+An iteration is one competition. For a single environment, the operator declares an iteration, accepts submissions for that iteration (see [submission.md](submission.md)), runs the automated workflow, and collects human feedback through the website. When the next competition starts, a new iteration begins, both boards reset, and the previous iteration remains viewable as a historical board. An iteration can map to a class assignment, a workshop, or a round of an open competition; the unit is always the same (see [overview.md](overview.md)).
 
 ## Per-iteration configuration
 
 Each iteration carries its own configuration, set by the operator when the iteration is declared:
 
 - The set of match configurations the automated workflow will run (environment, opponents, seeds, repetitions).
-- The weighted score formula for the automated board. Each iteration has its own weights, so two iterations on the same environment can value performance and efficiency differently.
 - Optional overrides of the environment's default per-step and per-episode time limits. If the iteration does not override, the environment's defaults (see [environment.md](environment.md)) are used.
+
+Iterations are declared, configured, and their workflow triggered through a configuration file and CLI on the deployment. There is no admin UI.
 
 ## Automated board
 
-The automated board is produced by a workflow that the operator can trigger manually for the current iteration. The workflow:
+The automated board ranks agents by mean episode score across the iteration's runs, and shows mean wall-clock time per decision as a separate column. Performance orders the board; efficiency stands next to it for everyone to see. The two are never folded into one number.
+
+The board is produced by a workflow that the operator triggers manually for the current iteration. The workflow:
 
 - Runs the iteration's configured match configurations.
-- Supports controlled repetitions per configuration so a single lucky run does not dominate.
+- Supports controlled repetitions per configuration, with seeds passed to both the environment and the agents (see [environment.md](environment.md) and [submission.md](submission.md)), so a single lucky run does not dominate.
 - Records every run so it can be replayed afterwards. See [recording.md](recording.md).
-- Measures wall-clock time per decision and per episode as a proxy for computational intensity.
+- Measures wall-clock time per decision and per episode as a proxy for computational intensity. Time an agent spends in its optional `learn` hook counts too.
 - Enforces per-step and per-episode timeouts so a slow or stuck agent cannot block the queue. The timeouts come from the environment defaults unless the iteration overrides them.
-- Produces a weighted score that combines task performance with efficiency, using the iteration's weight formula.
+
+Matches for an iteration run sequentially on the same host, so timing measurements are comparable between agents. At class scale this costs little and removes the noise that concurrent runs would add.
 
 Automated runs always execute on Docker for reproducibility and sandboxing. See [execution.md](execution.md).
 
 ## Human-feedback board
 
-The human-feedback board aggregates the ratings collected through the play and watch flows for that environment in that iteration. See [frontend.md](frontend.md) for where ratings are collected.
+The human-feedback board aggregates the ratings collected through the play and watch flows for that environment in that iteration. It shows each agent's mean rating along with the number of ratings, and an agent needs at least three ratings to be ranked. See [frontend.md](frontend.md) for how ratings are collected and the rules they follow.

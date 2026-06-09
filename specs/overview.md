@@ -30,6 +30,8 @@ To stay focused, a few things are explicitly out of scope at this stage:
 - Running as a general-purpose code execution service. The sandbox runs game agents inside known environments, nothing else.
 - Replacing Gym or PettingZoo. We sit on top of PettingZoo and extend it where the website needs more information.
 
-## Future work: Unity ML-Agents
+## Future work
 
 The long-term plan is to support Unity environments through ML-Agents alongside PettingZoo. The pieces that touch environments (the agent interface, the metadata layer, the rendering contract, the leaderboard workflow) are designed so a Unity environment can slot in without changing the frontend or the leaderboard machinery. The specific bridge between Unity ML-Agents and the rest of the system is deferred until it is needed.
+
+A second deferred idea is running pure-Python agents directly in the viewer's browser to make casual play cheaper. It is parked until untrusted participant code can be properly isolated there; see [execution.md](execution.md).

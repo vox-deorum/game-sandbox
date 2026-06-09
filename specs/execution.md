@@ -1,28 +1,28 @@
 # Execution Architecture
 
-Execution is layered. The system is not a single fixed choice between "everything in the browser" and "everything on the server". Different parts run in different places by design.
+Execution is split between two places. Rendering and human input always live in the browser (see [interaction.md](interaction.md)). Everything else, the environment stepping and the agents themselves, runs on the server.
 
 ## Always the same
 
 - Rendering and human input always live in the browser. See [interaction.md](interaction.md).
 - The environment and its step transitions always come from PettingZoo, with Shimmy wrapping any single-agent game. See [environment.md](environment.md).
-- Leaderboard runs (see [leaderboard.md](leaderboard.md)) always execute on Docker, for reproducibility and for sandboxing participant code.
+- Agents always run in Docker containers, both for live sessions and for leaderboard runs (see [leaderboard.md](leaderboard.md)). One runtime keeps the session orchestrator simple and keeps participant code off other people's machines.
 
-## Deployment modes
+## Live sessions
 
-- **Local deployment.** The web frontend runs on a developer or participant machine, renders an environment, and accepts human input. This is meant for debugging an environment or trying a partially built agent without any remote infrastructure. Agents in this mode run locally, either in the same Python process as the environment or in Pyodide for pure-Python agents.
-- **Hosted website, Docker-backed agents.** The deployed frontend connects to a Docker backend. Each non-human slot in a session is fulfilled by an agent container. WebSocket carries state to the browser and input back. This is the default path for live play and the only path used for leaderboard runs.
-- **Hosted website, Pyodide-backed agents.** Same frontend, but if an agent's declared dependencies are all available in Pyodide, the agent loads and runs directly in the user's browser. No backend container is allocated for that slot. This path is cheaper and lower latency, and it works well for traditional algorithm submissions that do not need heavy native dependencies. It is opt-in per submission and is never used to compute an official leaderboard score.
+A live session connects the browser to the backend over WebSocket. The backend steps the environment, sends each per-step state object to the renderer, and feeds human input back into the human slot (see [interaction.md](interaction.md) for the session loop). Each non-human slot is fulfilled by an agent container allocated for the duration of the session.
 
-## Mixed sessions
+## Sandboxing
 
-A single session can mix execution locations across slots. For example, a session might have a human in the browser at slot 0, a Pyodide agent in the same browser at slot 1, and a Docker-backed agent on the server at slot 2.
+Agent containers are locked down. They run with no network access, fixed CPU and memory quotas, and a read-only filesystem except for a scratch directory. No network also closes a cheating vector: an agent cannot phone an external API or model to choose its actions.
 
-## Routing rule for where an agent runs
+## Local development
 
-1. If the session is a leaderboard run, the agent runs on Docker.
-2. Otherwise, if the agent declares Pyodide-compatible dependencies, the frontend may run it in Pyodide.
-3. Otherwise, the agent runs in a Docker container.
+Developers of the sandbox itself run the same stack locally, Docker backend included. Participants do not need the stack at all; they develop and test their agents against vanilla PettingZoo using the template repos (see [submission.md](submission.md)).
+
+## Future work: in-browser agents
+
+Running a pure-Python agent directly in the viewer's browser through Pyodide would make casual play cheaper and lower latency, since no container is allocated for that slot. The idea is deferred. It adds a second runtime target and a per-submission dependency-compatibility check, and above all it is a sandboxing problem: untrusted participant code would execute inside other users' browser sessions. If it comes back, it comes back behind real isolation, and it is never used to compute an official leaderboard score.
 
 ## Open questions
 
