@@ -1,6 +1,6 @@
 # Game Sandbox
 
-Game Sandbox is a classwise playground for Game AI. Participants submit agents through GitHub, and everyone can watch those agents, play with or against them, rate them, and see them ranked on per-environment leaderboards. The system is built on PettingZoo, with Shimmy wrapping single-agent games so the rest of the codebase only sees a PettingZoo interface.
+Game Sandbox is a classwise playground for Game AI. Participants submit agents through GitHub, and everyone can watch those agents, play with or against them, rate them, and see them ranked on per-environment leaderboards. The system is built on PettingZoo, with a thin compatibility wrapper bringing single-agent games into the same interface so the rest of the codebase only sees PettingZoo.
 
 This site has three sections, one per tab:
 

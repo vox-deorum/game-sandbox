@@ -5,7 +5,7 @@ Execution is split between two places. Rendering and human input always live in 
 ## Always the same
 
 - Rendering and human input always live in the browser. See [interaction.md](interaction.md).
-- The environment and its step transitions always come from PettingZoo, with Shimmy wrapping any single-agent game. See [environment.md](environment.md).
+- The environment and its step transitions always come from PettingZoo, with the compatibility wrapper bringing any single-agent game into the same interface. See [environment.md](environment.md).
 - Every live session and every leaderboard match runs inside a single Docker container that holds the session harness, the environment, and all agent slots (see [leaderboard.md](leaderboard.md)). One container per session keeps orchestration simple, keeps participant code off other people's machines, and means no per-tick communication ever crosses a container boundary. Since agents step sequentially, they never legitimately compete for the container's CPU.
 
 ## Live sessions

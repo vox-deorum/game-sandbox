@@ -1,6 +1,6 @@
 # Environments
 
-Every environment exposes a PettingZoo interface. Games that are natively single-agent come in through a Shimmy wrapper so they fit the same shape as multi-agent games. There is one environment framework in the system, not two.
+Every environment exposes a PettingZoo interface. Games that are natively single-agent come in through an in-house, general-purpose compatibility wrapper that lifts a Gymnasium environment into the PettingZoo shape, so they fit the same shape as multi-agent games. There is one environment framework in the system, not two.
 
 Beyond the interface, every environment must accept a seed on reset. The leaderboard workflow relies on this to make repeated runs controlled (see [leaderboard.md](leaderboard.md)).
 
@@ -32,4 +32,4 @@ The intrinsic layer is what the environment code already gives us. The public-fa
 
 ## First environment
 
-The first environment is a Flappy Bird style single-agent game brought in through Shimmy. Multi-agent environments follow once the pipeline is proven on a simple case.
+The first environment is a Flappy Bird style single-agent game brought in through the compatibility wrapper. Multi-agent environments follow once the pipeline is proven on a simple case.

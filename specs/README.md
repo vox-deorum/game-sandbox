@@ -3,7 +3,7 @@
 The specification is split across several files so each topic can be read on its own. Start with the overview, then jump to whatever section you need.
 
 - [overview.md](overview.md). What the project is, who it's for, goals and non-goals, future work.
-- [environment.md](environment.md). The environment framework (PettingZoo with Shimmy for single-agent games) and the metadata layers.
+- [environment.md](environment.md). The environment framework (PettingZoo, with a compatibility wrapper for single-agent games) and the metadata layers.
 - [interaction.md](interaction.md). How a game is rendered in the browser and how human input flows back to the game.
 - [submission.md](submission.md). The agent interface, the template repos, and how participants submit.
 - [communication.md](communication.md). Optional messaging between agents and human-controlled slots: the chat hook, message limits, visibility, and recording.

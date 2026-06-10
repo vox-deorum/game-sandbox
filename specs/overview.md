@@ -2,7 +2,7 @@
 
 Game Sandbox is a classwise playground for Game AI. Participants write agents that play games, submit them through GitHub, and everyone else can watch those agents play, play against them, and rate them on a shared website. The course it is designed for covers a broad range of techniques, so an agent can be a traditional search algorithm (greedy, A*, minimax, MCTS), a rule-based system, a reinforcement learning policy, or any mix of those.
 
-PettingZoo is the only environment framework we use. Single-agent games (Flappy Bird style, classic Atari, and similar) are wrapped into PettingZoo through Shimmy so the rest of the system only ever sees a PettingZoo interface. See [environment.md](environment.md) for details.
+PettingZoo is the only environment framework we use. Single-agent games (Flappy Bird style, classic Atari, and similar) are wrapped into PettingZoo through an in-house, general-purpose compatibility wrapper so the rest of the system only ever sees a PettingZoo interface. See [environment.md](environment.md) for details.
 
 Although the system is built with a class in mind, nothing in it depends on GitHub Classroom. The same deployment works for a class that uses Classroom, for a class that just collects repo links, or for a workshop, club, or open competition. See [submission.md](submission.md).
 

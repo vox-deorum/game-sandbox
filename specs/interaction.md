@@ -27,7 +27,7 @@ The renderer never reaches behind the state object. If something needs to be dra
 
 ## Session loop
 
-There is one session loop, not two. Every environment is a sequence of steps over its slots (this is just the PettingZoo agent-environment-cycle; single-agent games wrapped through Shimmy present the same shape). On each step the harness asks the acting slot for an action under a deadline, and if the deadline passes it applies an environment-provided default action for that slot. The server is authoritative, one state object goes out per step over the session's WebSocket, and the browser never simulates ahead. Renderers send human inputs as they happen, tagged with the slot they control.
+There is one session loop, not two. Every environment is a sequence of steps over its slots (this is just the PettingZoo agent-environment-cycle; wrapped single-agent games present the same shape). On each step the harness asks the acting slot for an action under a deadline, and if the deadline passes it applies an environment-provided default action for that slot. The server is authoritative, one state object goes out per step over the session's WebSocket, and the browser never simulates ahead. Renderers send human inputs as they happen, tagged with the slot they control.
 
 What separates a realtime game from a turn-based one is a single piece of [metadata](environment.md), the **pace interval**, not a second code path:
 
