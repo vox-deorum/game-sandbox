@@ -4,31 +4,36 @@ Status: not started
 
 ## Goal
 
-Establish the shapes everything else is built against: the repository layout, the versioned per-step state schema shared by Python and TypeScript, the recording file format, and the versioning rules later sidecars use. At the end of this stage there is no game yet, but both sides of the container boundary can produce and consume the same payloads.
+Establish the shapes everything else is built against, and the delivery machinery every later stage inherits. The shapes are the repository layout, the versioned per-step state schema shared by Python and TypeScript, the recording file format, and the versioning rules later sidecars use. The machinery is workspace tooling for both languages, the documentation site, example composition over the template, and the pipeline that publishes the template to the student-facing repository. At the end of this stage there is no game yet, but both sides of the container boundary produce and consume the same payloads, and every later stage lands on working CI, docs, and release mechanics.
+
+## Plan documents
+
+The detailed design lives under [stage-01/](stage-01/):
+
+- [repo-and-tooling.md](stage-01/repo-and-tooling.md): monorepo layout, uv and npm workspaces, tool choices, dev scripts.
+- [state-schema.md](stage-01/state-schema.md): the two schema files, integer version semantics, the sidecar rule.
+- [codegen-and-recording.md](stage-01/codegen-and-recording.md): TypeScript codegen and Ajv guards, Python jsonschema validation, staleness checks, the recording store.
+- [docs-site.md](stage-01/docs-site.md): docs topics for students and contributors, MkDocs Material, Pages publishing.
+- [examples-and-template-publishing.md](stage-01/examples-and-template-publishing.md): overlay composition, template tags, the publish workflow to the student repo.
+- [testing-and-ci.md](stage-01/testing-and-ci.md): per-package tests, the cross-language round trip, the workflow set, reproducing CI locally under WSL.
 
 ## Scope
 
-Set up the monorepo. Proposed layout, to be confirmed when the stage starts:
+Set up the monorepo with uv workspaces for Python and npm workspaces for TypeScript: `schema/`, `harness/`, and placeholder directories for `environments/`, `backend/`, `frontend/`, `templates/`, and `gateway/`, plus `docs/`, `examples/`, and `scripts/`. Tooling is ruff, pytest, and pyright on the Python side and Biome, Vitest, and strict tsc on the TypeScript side. Details in [repo-and-tooling.md](stage-01/repo-and-tooling.md).
 
-- `schema/` holds the versioned JSON Schema for the per-step state object and the recording header.
-- `harness/` is the Python package: session harness, agent interface, environment registry (filled in from Stage 2).
-- `environments/` holds environment wrappers and their public-facing metadata (filled in from Stage 2).
-- `backend/` is the Node/TypeScript server (filled in from Stage 3).
-- `frontend/` is the web app, including the per-environment renderers (filled in from Stage 4).
-- `templates/` is the source of the participant template repo (filled in from Stage 2).
-- `gateway/` holds LLM gateway deployment configuration (filled in from Stage 7).
+Define the per-step state object as a JSON Schema (draft 2020-12) with an explicit integer `schema_version`, covering the fields named in [interaction.md](../specs/interaction.md): tick number, per-agent display observations, actions, rewards, cumulative scores, environment-specific overlay fields, messages, and timing. Messages and overlay fields are present from day one even though messaging arrives in Stage 9, so the schema needs no breaking revision later. The version bumps only on breaking changes; additive growth happens in documented open regions. Details in [state-schema.md](stage-01/state-schema.md).
 
-Define the per-step state object as a JSON Schema (draft 2020-12) with an explicit schema version field, covering the fields named in [interaction.md](../specs/interaction.md): tick number, per-agent display observations, actions, rewards, cumulative scores, environment-specific overlay fields, messages, and timing. Messages and overlay fields are present in the schema from day one even though messaging arrives in Stage 9, so the schema does not need a breaking revision later.
+Wire up code generation and validation: TypeScript types generated from the schema with Ajv runtime guards so reads need no hand-written casts, and Python runtime validation with jsonschema applied to every payload the harness emits, per [execution.md](../specs/execution.md). A CI check fails when anything generated (types, packaged schema copies, fixtures) is stale relative to the schema. Details in [codegen-and-recording.md](stage-01/codegen-and-recording.md).
 
-Wire up code generation and validation: TypeScript types derived from the schema (json-schema-to-typescript or equivalent) as a build step in `backend/` and `frontend/`, and runtime validation in Python (jsonschema or Pydantic models generated from the same source) that the harness applies to every payload it emits, per [execution.md](../specs/execution.md).
+Define the recording format from [recording.md](../specs/recording.md) as JSONL: a header line naming the environment and the schema version, then one per-step state per line. This is the same line-delimited JSON the harness streams over its transport in Stage 3, so the wire form and the stored form are a single format; inbound control commands are a separate Stage 3 envelope, not recording lines. The header defines how optional sidecars attach without defining any sidecar payloads yet; the Stage 7 telemetry sidecar will use the same versioning rule, so adding it is additive. Implement a minimal Python save and load interface against a folder on disk, shaped so an S3-compatible backend can be added behind it later. Details in [codegen-and-recording.md](stage-01/codegen-and-recording.md).
 
-Define the recording format from [recording.md](../specs/recording.md) as JSONL: a header line naming the environment and the schema version, followed by one per-step state per line. This is the same line-delimited JSON the harness streams outward over its transport in Stage 3, so the state wire form and the stored form are a single format. Inbound control commands are a separate Stage 3 envelope, not recording lines. The header also defines how optional sidecars attach to a recording, without defining any sidecar payloads yet. The LLM telemetry sidecar arrives in Stage 7 and uses the same schema versioning rule, so adding it is an additive contract change rather than a second storage format. Implement a minimal Python save and load interface against a folder on disk, designed so an S3-compatible backend can be added behind it later.
+Stand up the documentation site: topic-based Markdown in `docs/` with separate student and contributor sections, plus the specification rendered as a third section directly from `specs/` so it is never duplicated, all rendered with MkDocs Material, built strictly on PRs, and published to GitHub Pages on merge to main. Details in [docs-site.md](stage-01/docs-site.md).
 
-Add baseline tooling: linting, formatting, and test runners for both languages, and a CI check that fails when generated TypeScript types are stale relative to the schema.
+Build the example and template machinery with a placeholder template, ahead of the real template content in Stage 2. Examples live in the monorepo as overlays holding only their diff against `templates/`; a compose script builds each into a runnable example, CI tests every composed example on every PR so template changes propagate automatically, and a tag-triggered workflow publishes the template and the composed examples to the student-facing repository using the same compose script. Details in [examples-and-template-publishing.md](stage-01/examples-and-template-publishing.md).
 
 ## Spec references
 
-[execution.md](../specs/execution.md) (the schema as the cross-boundary contract, implementation languages), [interaction.md](../specs/interaction.md) (per-step state object), [recording.md](../specs/recording.md) (header, format, and sidecar placement).
+[execution.md](../specs/execution.md) (the schema as the cross-boundary contract, implementation languages), [interaction.md](../specs/interaction.md) (per-step state object), [recording.md](../specs/recording.md) (header, format, and sidecar placement), [submission.md](../specs/submission.md) (template repos and dependency-set versioning).
 
 ## Depends on
 
@@ -37,3 +42,23 @@ Nothing. This is the first stage.
 ## Done when
 
 A round-trip test passes in CI: Python constructs a per-step state object and a two-step recording, validates them against the schema, writes them to disk, and TypeScript reads them back through the generated types with no hand-written casts. Bumping the schema version in a test fixture is detected by both sides, and a fixture with an unknown optional sidecar is ignored according to the documented rule rather than corrupting the recording.
+
+Additionally for the machinery: the docs site builds strictly in CI and publishes to GitHub Pages on merge to main; pushing the `template-v0` tag publishes the placeholder template to the student repository and the composed `hello` example to its `examples/hello` branch end to end; and the `hello` example composes and passes its tests in regular CI, including the test that a conflicting dependency pin fails composition loudly.
+
+## Build order
+
+1. Repo skeleton: directories, placeholder READMEs, root workspace configs, tool configs. No code.
+2. Author the two schema files and the `schema/README.md` pointer.
+3. The `harness/` package: validators, state builders, the recording store protocol and folder implementation, with tests.
+4. `scripts/generate.py`: TypeScript types, packaged schema copies, golden fixtures through the real store.
+5. The `schema/ts` package: Ajv guards, `readRecording`, vitest over the committed fixtures. The round trip now exists locally.
+6. `ci.yml` with its four jobs; the round trip and staleness checks are now enforced.
+7. The docs skeleton, the five real contributor pages, `mkdocs.yml`, `docs.yml`, and Pages setup. Can run in parallel with 3 through 6.
+8. The placeholder template, `examples/hello/`, the compose script with its tests, and the examples CI job. Can run in parallel with 5.
+9. Create the student repository, mark it as a template repository, mint the token secret, and add `template-publish.yml` with its publish script.
+10. Push `template-v0`, verify the full pipeline end to end, fix what breaks.
+11. Keep this file and the stage-01 documents in sync with whatever the implementation confirms or changes, per the [plan rules](README.md).
+
+## Open questions
+
+Confirm the student repository name (`vox-deorum/game-agent-template` is the working assumption) and that GitHub Pages can be enabled on this repository. A fine-grained personal access token is proposed for the cross-repo push; revisit a GitHub App if rotation becomes a burden. Slot id string conventions are deferred to Stage 2, when real PettingZoo agent ids exist.
