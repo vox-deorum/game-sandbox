@@ -29,7 +29,7 @@ The board is produced by a workflow that the operator triggers manually for the 
 
 Matches for an iteration run sequentially on the same host, so timing measurements are comparable between agents. At class scale this costs little and removes the noise that concurrent runs would add.
 
-Automated runs always execute on Docker for reproducibility and sandboxing. See [execution.md](execution.md).
+Each match runs in its own Docker container holding the harness, the environment, and the agents, for reproducibility and sandboxing. See [execution.md](execution.md).
 
 ## Human-feedback board
 

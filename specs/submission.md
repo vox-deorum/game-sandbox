@@ -8,7 +8,7 @@ Agents are written in Python. A participant implements a small documented interf
 - `act(observation)` returns an action in the environment's action space.
 - `learn(observation, action, reward, terminated)` is optional. The harness calls it after each step with that step's transition, so reinforcement learning agents can keep updating during play.
 
-The same interface works whether the agent is a hand-written tree search, a trained neural network, or a hybrid of both, and agents always run server-side in Docker regardless of style (see [execution.md](execution.md)).
+The same interface works whether the agent is a hand-written tree search, a trained neural network, or a hybrid of both, and agents always run server-side inside the session's Docker container regardless of style (see [execution.md](execution.md)).
 
 Learned state may persist across episodes within one leaderboard run, but never across submissions or iterations. Time spent in `learn` counts against the same per-step and per-episode time limits as acting, so an agent that learns heavily pays for it in the efficiency column rather than stalling the run.
 

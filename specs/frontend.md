@@ -23,7 +23,7 @@ The environment page carries a "Submit agent" form for the currently open iterat
 
 ## On-demand live play
 
-Signed-in users on the deployment's allowlist can start a new live session whenever they want, one concurrent session per user. The allowlist is configured by the operator and is typically a class roster or a GitHub org. The session orchestrator allocates an agent container for each non-human slot for the duration of the session (see [execution.md](execution.md)). Sessions are bounded by the environment's time limits and by a session-level idle timeout, so a forgotten browser tab does not hold resources forever.
+Signed-in users on the deployment's allowlist can start a new live session whenever they want, one concurrent session per user. The allowlist is configured by the operator and is typically a class roster or a GitHub org. The session orchestrator launches one session container for the duration of the session (see [execution.md](execution.md)). Sessions are bounded by the environment's time limits and by a session-level idle timeout, so a forgotten browser tab does not hold resources forever.
 
 ## Feedback
 

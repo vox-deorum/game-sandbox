@@ -8,5 +8,5 @@ The specification is split across several files so each topic can be read on its
 - [submission.md](submission.md). The agent interface, the template repos, and how participants submit.
 - [frontend.md](frontend.md). Pages, the submission form, play and watch flows, on-demand live play, feedback, and GitHub OAuth identity.
 - [leaderboard.md](leaderboard.md). What an iteration is, the automated board, and the human-feedback board.
-- [execution.md](execution.md). Where the renderer, the environment, and each agent run, and how agent containers are sandboxed.
+- [execution.md](execution.md). Where the renderer, the environment, and the agents run, and how the session container is sandboxed.
 - [recording.md](recording.md). State-only recordings, replays, and storage.
