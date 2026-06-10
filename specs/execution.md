@@ -10,7 +10,7 @@ Execution is split between two places. Rendering and human input always live in 
 
 ## Live sessions
 
-A live session connects the browser to the backend over WebSocket. The backend launches one session container, relays each per-step state object from it to the renderer, and feeds human input back into the human slot (see [interaction.md](interaction.md) for the session loop). Inside the container, the harness steps the environment and queries each non-human slot's agent in turn. The harness also relays chat messages between slots and over the WebSocket to the human player and spectators (see [communication.md](communication.md)). The container lives for the duration of the session.
+A live session connects browsers to the backend over WebSocket. The backend launches one session container, relays each per-step state object from it to renderers, and feeds human input back into the human-controlled slots (see [interaction.md](interaction.md) for the session loop). Inside the container, the harness steps the environment and queries each non-human slot's agent in turn. The harness also relays chat messages between slots and over the WebSocket to human-controlled slots and spectators (see [communication.md](communication.md)). The container lives for the duration of the session.
 
 ## Execution drivers
 
@@ -39,4 +39,3 @@ The per-step state object is the contract across that boundary. It is defined on
 ## Future work: in-browser agents
 
 Running a pure-Python agent directly in the viewer's browser through Pyodide would make casual play cheaper and lower latency, since no session container is launched on the server. The idea is deferred. It adds a second runtime target and a per-submission dependency-compatibility check, and above all it is a sandboxing problem: untrusted participant code would execute inside other users' browser sessions. If it comes back, it comes back behind real isolation, and it is never used to compute an official leaderboard score.
-

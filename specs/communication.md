@@ -1,6 +1,6 @@
 # Agent Communication
 
-Agents can exchange short text messages with each other and with the human player during a session. The human occupies an agent slot like any other, so it sends and receives messages the same way (see [interaction.md](interaction.md)). The capability is optional at every level: an agent that does not implement the hook stays silent and pays no cost, and an environment can leave messaging disabled entirely (see [environment.md](environment.md)).
+Agents can exchange short text messages with each other and with human-controlled slots during a session. A human player occupies an environment slot like any other, so that slot sends and receives messages the same way as agent-controlled slots (see [interaction.md](interaction.md)). The capability is optional at every level: an agent that does not implement the hook stays silent and pays no cost, and an environment can leave messaging disabled entirely (see [environment.md](environment.md)).
 
 ## Interface
 
@@ -12,11 +12,11 @@ This follows the precedent of `learn`, an optional hook the harness calls only w
 
 ## Messages
 
-A message carries the sender slot, the recipient, the text, and the tick it was sent on. The recipient is either a specific slot (the human slot included) or a broadcast to everyone. Per turn, an agent may send at most one message per recipient plus one broadcast. Message text is plain UTF-8 of variable length, capped by a limit each environment sets in its metadata (see [environment.md](environment.md)); an iteration can override the limit or disable messaging (see [leaderboard.md](leaderboard.md)). There are no binary payloads and no structured side channels.
+A message carries the sender slot, the recipient, the text, and the tick it was sent on. The recipient is either a specific slot, human-controlled slots included, or a broadcast to everyone. Per turn, an agent may send at most one message per recipient plus one broadcast. Message text is plain UTF-8 of variable length, capped by a limit each environment sets in its metadata (see [environment.md](environment.md)); an iteration can override the limit or disable messaging (see [leaderboard.md](leaderboard.md)). There are no binary payloads and no structured side channels.
 
 ## Delivery
 
-Messages always flow through the harness, never directly between agents. A message sent on tick T appears in the recipient's inbox on its next turn. The human's outgoing messages travel over the session WebSocket like any other input and are queued for the next tick (see [interaction.md](interaction.md)).
+Messages always flow through the harness, never directly between agents. A message sent on tick T appears in the recipient's inbox on its next turn. Messages from human-controlled slots travel over the session WebSocket like any other input and are queued for the next tick (see [interaction.md](interaction.md)).
 
 ## Visibility
 

@@ -19,7 +19,9 @@ The environment page carries a "Submit agent" form for the currently open iterat
 
 - **Watch self-play.** Pick an agent, run it against the environment or itself, stream the state to the renderer.
 - **Watch multi-agent.** Pick agents for each slot in environments whose metadata allows more than one slot. This flow arrives together with the first multi-agent environment (see [environment.md](environment.md)).
-- **Play with or against agents.** Available when the environment metadata exposes a human slot. The human controls one slot and agents fill the others. Feedback is collected at the end of the session.
+- **Play with or against agents.** Available when the environment metadata exposes human-capable slots. The initial flow can assign one connected human to one slot and fill the others with agents, but the session model should be slot-based so a later flow can assign multiple connected humans in the same session. Feedback is collected at the end of the session.
+
+Live-session controls include slot assignment for human-capable environments and any session-level overrides, including the human-slot timeout described in [interaction.md](interaction.md). A renderer that has an active human timeout should show it as part of the play UI.
 
 ## On-demand live play
 

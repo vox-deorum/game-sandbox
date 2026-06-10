@@ -16,6 +16,8 @@ Build the pages that make sense before submissions exist: Home with environment 
 
 Write the Flappy Bird renderer: the game world from the state object's overlay fields plus the game UI (score, tick, lives or attempts, status messages) so it reads as a game rather than a debugger view. Wire raw device input (key, click, touch) through the WebSocket as actions. The same renderer module must run from a stored recording without code changes, since live play and replay share renderers by design.
 
+Add the live-session control for the human-slot timeout from [interaction.md](../specs/interaction.md). Default it from the environment metadata, send the resolved value when starting a session, and show the active timeout in the play UI when it can affect the session. Flappy Bird uses this as the realtime noop window; turn-based move clocks use the same control later.
+
 Build the replay viewer per [recording.md](../specs/recording.md): load a recording by URL, play, pause, step, and scrub. Implement the retention policy from the same spec in the backend: a deployment-configured window (30 days default), a per-user quota, oldest-unpinned-first eviction, and pinning at the end of a session. The post-session feedback prompt appears here but ratings storage lands in Stage 6; until then it can be a stub that only offers pinning.
 
 ## Spec references
@@ -28,7 +30,7 @@ Stage 3 (backend API, WebSocket protocol, recordings on disk).
 
 ## Done when
 
-An allowlisted user signs in with GitHub, starts a Flappy Bird session from the environment page, plays it with the keyboard, and after the session ends opens the replay from a shareable URL and scrubs through it. A non-allowlisted user can watch and replay but cannot start a session. Eviction removes the oldest unpinned recording when a test user exceeds the quota, and a pinned recording survives.
+An allowlisted user signs in with GitHub, starts a Flappy Bird session from the environment page, plays it with the keyboard, sees the active human-slot timeout in the play UI, and after the session ends opens the replay from a shareable URL and scrubs through it. Starting a session with an overridden timeout sends that value to the backend. A non-allowlisted user can watch and replay but cannot start a session. Eviction removes the oldest unpinned recording when a test user exceeds the quota, and a pinned recording survives.
 
 ## Deviations
 

@@ -19,7 +19,8 @@ Each environment carries two layers of metadata.
 
 - Display name and a short description.
 - Minimum and maximum number of agent slots.
-- Which slots accept a human player.
+- Which slots accept human players.
+- The default timeout for human-controlled slots, used by live sessions unless the session overrides it.
 - Recommended episode length.
 - A fixed tick rate for realtime environments, which drives the session loop (see [interaction.md](interaction.md)).
 - Default per-step and per-episode time limits. These are defaults only. Each iteration can override them (see [leaderboard.md](leaderboard.md)).
