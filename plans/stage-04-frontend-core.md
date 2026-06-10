@@ -31,7 +31,3 @@ Stage 3 (backend API, WebSocket protocol, recordings on disk).
 ## Done when
 
 An allowlisted user signs in with GitHub, starts a Flappy Bird session from the environment page, plays it with the keyboard, sees the active human-slot timeout in the play UI, and after the session ends opens the replay from a shareable URL and scrubs through it. Starting a session with an overridden timeout sends that value to the backend. A non-allowlisted user can watch and replay but cannot start a session. Eviction removes the oldest unpinned recording when a test user exceeds the quota, and a pinned recording survives.
-
-## Deviations
-
-None yet.

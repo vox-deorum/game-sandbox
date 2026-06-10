@@ -31,7 +31,3 @@ Stage 1 (schema, validation, recording format).
 ## Done when
 
 A scripted agent loaded from a manifest plays a full seeded Flappy Bird episode through the harness CLI; the same seed twice produces identical recordings; a deliberately slow agent trips the per-step timeout; a human/noop action source can drive the same single slot through the programmatic API; the human-slot timeout path falls back to noop without using the agent timeout machinery; and the template repo's local play script runs an episode on a clean machine with no sandbox backend present.
-
-## Deviations
-
-None yet.

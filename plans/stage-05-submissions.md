@@ -29,7 +29,3 @@ Stage 3 (orchestrator, base image), Stage 4 (identity, environment page, flows).
 ## Done when
 
 A signed-in participant submits the template repo pinned to a commit, sees it verified and accepted, and a second submission replaces the first for the current iteration. The backend builds the image, and a viewer runs the submitted agent in a Flappy Bird watch session. Human-controlled Flappy Bird sessions still work through the Stage 3 path. An unreachable commit is rejected at the form, and a repo whose manifest names a class that does not exist shows a build failure on the owner's profile instead of a session.
-
-## Deviations
-
-None yet.

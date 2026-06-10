@@ -27,7 +27,3 @@ Stage 3 (relay), Stage 4 (renderer UI), Stage 6 (iteration overrides), Stage 8 (
 ## Done when
 
 In a Hearts session, an agent broadcast reaches all slots and spectators on the next turn, a targeted message to a human-controlled slot reaches only the client controlling that slot live, the reply arrives in the agent's inbox the following turn, an over-cap message is rejected by the harness, and the full exchange, targeted messages included, is visible in the replay. Disabling messaging at the iteration level silences the same agents without code changes.
-
-## Deviations
-
-None yet.

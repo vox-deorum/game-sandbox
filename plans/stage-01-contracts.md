@@ -37,7 +37,3 @@ Nothing. This is the first stage.
 ## Done when
 
 A round-trip test passes in CI: Python constructs a per-step state object and a two-step recording, validates them against the schema, writes them to disk, and TypeScript reads them back through the generated types with no hand-written casts. Bumping the schema version in a test fixture is detected by both sides, and a fixture with an unknown optional sidecar is ignored according to the documented rule rather than corrupting the recording.
-
-## Deviations
-
-None yet.

@@ -7,8 +7,8 @@ This folder is the implementation-level plan for Game Sandbox. The specification
 The plan is a living document, not a launch checklist. Every piece of implementation work must stay connected to its stage file:
 
 - Before starting work on a stage, read its file and confirm it still matches reality. Update the status line when work begins and when it ends.
-- When the implementation deviates from what the stage file says (a different library, a changed interface, a re-scoped deliverable, work moved between stages), revise the stage file in the same change set as the code. The plan must never describe a system that was not built.
-- If a deviation contradicts the specification itself, the spec is the higher authority on intent: either bring the implementation back in line, or revise the spec deliberately and update the plan to follow. Never let code, plan, and spec say three different things.
+- When the implementation changes what a stage file says (a different library, a changed interface, a re-scoped deliverable, work moved between stages), revise the stage file itself in the same change set as the code. Do not keep a separate change log for plan mismatches. The plan is the current intended build path, and it must never describe a system that was not built.
+- If a plan change would contradict the specification itself, the spec is the higher authority on intent: either bring the implementation back in line, or revise the spec deliberately and update the plan to follow. Never let code, plan, and spec say three different things.
 
 A pull request that changes behavior planned here and does not touch the corresponding stage file is incomplete.
 
@@ -28,6 +28,6 @@ The stages are ordered by dependency. Each stage produces something that runs an
 
 ## Conventions for stage files
 
-Each stage file carries a status line (not started, in progress, done), the goal, the scope of what gets built, the spec files it implements, explicit dependencies on earlier stages, exit criteria that say when the stage is done, and a Deviations section that starts empty and accumulates the differences between plan and implementation as described above.
+Each stage file carries a status line (not started, in progress, done), the goal, the scope of what gets built, the spec files it implements, explicit dependencies on earlier stages, and exit criteria that say when the stage is done. Keep those sections current by editing the plan text directly as implementation choices are confirmed.
 
 Decisions that the spec leaves open (frameworks, storage engines, exact module layout) are proposed in the stage files as defaults. Confirm or replace them when the stage starts, and record the choice in the stage file either way.

@@ -29,7 +29,3 @@ Stage 3 (orchestrator, networks), Stage 5 (agent profile), Stage 6 (iteration ov
 ## Done when
 
 The template repo's LLM example runs unmodified both locally with the class key in `.env` and inside a session against the gateway. From inside a container, the gateway answers and the open internet does not. A replayed session shows per-tick call metadata to everyone, prompts only to the owner, and the board shows token usage per model. A test agent that exceeds its session budget receives a catchable API error and finishes its episode, and a revoked session key stops authorizing after the container exits.
-
-## Deviations
-
-None yet.

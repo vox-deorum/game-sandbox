@@ -31,7 +31,3 @@ Stage 1 (types from schema), Stage 2 (harness, base image contents).
 ## Done when
 
 A scripted WebSocket test client starts a session, receives schema-valid states at the environment's pace cadence, sends flap inputs that visibly affect the game, and the recording appears on the shared volume when the session ends. A second test starts a human-controlled session with a short human-slot timeout and verifies that missing input resolves to noop while the session keeps moving. A container that exceeds its memory quota or runs past the idle timeout is killed and reported cleanly. The container demonstrably has no network access. No module outside the local Docker driver references Docker APIs, verified by a lint rule or dependency check, so the Kubernetes driver remains a pure addition.
-
-## Deviations
-
-None yet.

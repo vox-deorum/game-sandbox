@@ -29,7 +29,3 @@ Stage 5 (submissions, images, iteration records), Stage 4 (pages, identity).
 ## Done when
 
 The operator runs the CLI to declare an iteration with two seeded repetitions of a Flappy Bird match configuration, two test submissions land, the workflow produces a board where every run has a replay, and re-running with the same configuration reproduces the scores of deterministic agents. Ratings from three test users rank an agent on the human board only after the third rating arrives, and declaring the next iteration resets both boards while the old ones stay reachable.
-
-## Deviations
-
-None yet.

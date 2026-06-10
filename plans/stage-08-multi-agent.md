@@ -38,7 +38,3 @@ Stages 5 and 6 (submissions, workflow). Messaging is not required here; it arriv
 ## Done when
 
 Two different submissions play a full game of Hearts against each other through the watch multi-agent flow, one connected human takes a slot against three submissions using the on-screen card UI with illegal cards greyed out, the human-slot timeout auto-plays a legal move when that slot stalls past the configured window, a leaderboard iteration over Hearts produces both boards, and the replay of a multi-agent match renders trick-by-trick turns and per-slot penalty scores correctly.
-
-## Deviations
-
-None yet.
