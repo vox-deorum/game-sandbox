@@ -20,7 +20,7 @@ Iterations are declared, configured, and their workflow triggered through a conf
 
 ## Automated board
 
-The automated board ranks agents by mean episode score across the iteration's runs, and shows mean wall-clock time per decision as a separate column. Performance orders the board; efficiency stands next to it for everyone to see. The two are never folded into one number.
+The automated board ranks agents by mean episode score across the iteration's runs, and shows mean wall-clock time per decision as a separate column. Episode score is the environment's leaderboard score, normalized so higher is better. If an environment has a native lower-is-better display score, such as penalty points, it reports a transformed leaderboard score while still exposing the native display score in the per-step state. Performance orders the board; efficiency stands next to it for everyone to see. The two are never folded into one number.
 
 The board is produced by a workflow that the operator triggers manually for the current iteration. The workflow:
 
