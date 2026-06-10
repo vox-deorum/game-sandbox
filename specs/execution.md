@@ -12,6 +12,10 @@ Execution is split between two places. Rendering and human input always live in 
 
 A live session connects the browser to the backend over WebSocket. The backend launches one session container, relays each per-step state object from it to the renderer, and feeds human input back into the human slot (see [interaction.md](interaction.md) for the session loop). Inside the container, the harness steps the environment and queries each non-human slot's agent in turn. The harness also relays chat messages between slots and over the WebSocket to the human player and spectators (see [communication.md](communication.md)). The container lives for the duration of the session.
 
+## From submission to image
+
+The backend turns submissions into the image a session container runs. It starts from a common base image that already holds the harness, PettingZoo, and the environments, clones each participating submission's repo at its pinned commit, and installs the dependencies named in each manifest (see [submission.md](submission.md)) on top. A single-agent session layers one submission; a multi-agent session layers every participant's requirements into the same image, since all slots share the container. Leaderboard matches run the same way (see [leaderboard.md](leaderboard.md)). A submission whose build fails is reported to its owner rather than run.
+
 ## Sandboxing
 
 Session containers are locked down. They run with fixed CPU and memory quotas and a read-only filesystem except for a scratch directory. The only network a container can reach is an internal one whose single endpoint is the LLM gateway (see [llm.md](llm.md)); there is no general internet access. The original concern behind blocking the network was cheating, an agent secretly phoning an outside service to choose its actions. That concern survives in an updated form: arbitrary network access stays blocked, and the model calls an agent can make go through the gateway, where they are sanctioned, equal for every participant, metered, and fully logged.
@@ -35,3 +39,4 @@ Running a pure-Python agent directly in the viewer's browser through Pyodide wou
 ## Open questions
 
 - How aggressively to cache built per-submission images between sessions to reduce session cold-start latency.
+- What to do when two submissions in the same multi-agent session pin conflicting dependency versions. At class scale a failed build with a clear error message may be acceptable; per-slot processes with isolated environments would solve it properly but would reshape the in-process harness.

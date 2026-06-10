@@ -31,6 +31,8 @@ The server is authoritative. It steps the environment at the environment's fixed
 
 This puts a plain constraint on the table: a human action only shows its effect after a network round trip. That is fine at modest tick rates and on nearby networks, and it is not a recipe for twitch games over the open internet. Realtime environments choose their tick rate with this in mind, and the Flappy Bird clone's tick rate is set low enough to stay playable.
 
+Turn-based environments have no tick rate. The server steps them as actions arrive instead: an agent slot is stepped as soon as its agent returns an action, and the human slot waits until the human submits a move. Everything else about the loop is unchanged. The server stays authoritative, one state object goes out per step, and the browser never simulates ahead.
+
 ## Human input
 
 For environments whose [metadata](environment.md) exposes a human slot, the renderer page also takes human input. Input can come from two complementary places, and each environment's renderer decides which to expose:

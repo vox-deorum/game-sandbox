@@ -6,7 +6,7 @@ This file is for AI coding agents working on the Game Sandbox repository. It cap
 
 Game Sandbox is a classwise playground for Game AI. Participants submit agents through GitHub, and everyone can watch those agents, play with or against them, rate them, and see them ranked on per-environment leaderboards. The system is built on PettingZoo, with Shimmy wrapping single-agent games so the rest of the codebase only sees a PettingZoo interface. Web users authenticate with GitHub OAuth, submissions are repo links pinned to a commit and tagged with an iteration, and there are two leaderboards per environment per iteration (automated and human feedback). Unity ML-Agents support is planned for later but not in scope today.
 
-The full specification lives under [specs/](specs/README.md). Read it before changing anything substantive.
+The full specification lives under [specs/](specs/README.md). Read it before changing anything substantive. The implementation plan lives under [plans/](plans/README.md); implementation work must stay connected to it, so when code diverges from a stage file, revise the stage file in the same change set (see the plan README for the rules).
 
 ## Writing style
 
