@@ -1,0 +1,95 @@
+# Testing End to End
+
+This page is the checklist for proving a change is sound before it leaves your machine. There are two levels. The first reproduces what every CI job *does* and is the one you run constantly; the second reproduces the workflow YAML *itself* and is the one you run before touching release machinery. Neither replaces GitHub Actions, which stays the suite of record, but together they catch everything reproducible off a Linux runner.
+
+## One command: the full suite
+
+Every GitHub Actions job is a single `scripts/ci.py <job>` call after dependency setup, so the workflow YAML carries triggers and caching but no logic. That means one command runs the local equivalent of all three workflows:
+
+```
+uv run python scripts/ci.py all
+```
+
+`all` runs, in order: the four `ci.yml` jobs (`python`, `typescript`, `generated-code-fresh`, `examples`), the strict docs build from `docs.yml`, and the `template-publish.yml` dry-run. A green `all` is the bar for opening a pull request. Run the pieces individually while iterating:
+
+| Job | Mirrors | What it does |
+| --- | --- | --- |
+| `python` | `ci.yml` | ruff check, ruff format --check, pyright, pytest |
+| `typescript` | `ci.yml` | biome check, tsc --noEmit, vitest run |
+| `generated-code-fresh` | `ci.yml` | regenerate, then fail if anything generated changed |
+| `examples` | `ci.yml` / publish `verify` | compose every example, install into a fresh venv, run its pytest |
+| `docs` | `docs.yml` | `mkdocs build --strict` so broken links or refs fail |
+| `publish-dry-run` | `template-publish.yml` | compose and assemble the publish snapshots without pushing |
+
+```
+uv run python scripts/ci.py python      # one job
+uv run python scripts/ci.py docs        # just the strict docs build
+```
+
+Because the command is identical to what the runner executes, running it inside a WSL distro with uv and Node installed reproduces `ubuntu-latest` on the same OS family — see the Windows and WSL notes in [Development setup](development-setup.md). Clone into the WSL filesystem rather than working through `/mnt/`, which is slow for the many small file operations composing examples and `node_modules` involve.
+
+## Level two: the workflows themselves with `act`
+
+`scripts/ci.py all` proves the job *contents* pass. It does not exercise the workflow YAML: the triggers, the `needs:` ordering, the pinned action versions, the matrix. [`act`](https://github.com/nektos/act) runs the actual workflow files in Docker containers, so it is the tool for verifying that wiring — and, with the publish dry-run, for rehearsing the whole tag-to-publish path locally without touching the student repository. `act` is a development convenience, not a gate.
+
+### Prerequisites
+
+- Docker Desktop running (on Windows, with the WSL 2 backend).
+- `act` on your `PATH`. After installing it, open a fresh shell so the updated `PATH` takes effect.
+
+The repository ships an [`.actrc`](https://github.com/vox-deorum/game-sandbox/blob/main/.actrc) that maps the `ubuntu-latest` runner to a catthehacker image bundling node, python, and the rest, so `setup-*` actions work. The first run pulls that image (~1 GB) once; subsequent runs reuse it and finish in a few minutes. Running the full suite this way is what confirms the generated artifacts are byte-identical on Linux, not just on a Windows checkout.
+
+### Listing and running
+
+```
+act -l                       # list every job across all three workflows
+act -j python                # run one CI job
+act pull_request             # run everything triggered by a pull request
+act push                     # run everything triggered by a push
+```
+
+`act pull_request` is the everyday whole-suite run: it executes the four `ci.yml` jobs and `docs.yml`'s `build`, while the Pages `deploy` job self-skips because its `if` requires a push to `main`. It is safe to run as-is — nothing touches the network beyond pulling dependencies.
+
+One caveat to know before relying on the trigger commands: `act` does not evaluate the `on.push` path or tag filters that GitHub does. `act push` runs *every* push-triggered job — both `ci.yml` jobs and `docs.yml`'s `build` fire even on a tag event — so scope to the workflow you mean to test with `-W <file>` or to a single job with `-j <id>`.
+
+`act -l` is the quickest confirmation that the YAML parses and the jobs and triggers are wired as intended:
+
+```
+Stage  Job ID                Workflow name     Workflow file         Events
+0      python                CI                ci.yml                pull_request,push
+0      typescript            CI                ci.yml                pull_request,push
+0      generated-code-fresh  CI                ci.yml                pull_request,push
+0      examples              CI                ci.yml                pull_request,push
+0      build                 Docs              docs.yml              pull_request,push
+0      deploy                Docs              docs.yml              pull_request,push
+0      verify                Publish Template  template-publish.yml  push
+1      publish               Publish Template  template-publish.yml  push
+```
+
+### Rehearsing the publish pipeline
+
+`template-publish.yml` runs on `template-v*` tags: `verify` composes and tests every example, then `publish` runs `scripts/publish_template.py` with no `--dry-run` — it is meant to actually push. That split decides how you rehearse it.
+
+The `verify` job is safe to run under `act`. Scope to the workflow file with `-W` and feed a tag event so any version resolution sees the right `GITHUB_REF` (`act` reads `--eventpath`/`-e` from a path, not stdin):
+
+```
+echo '{ "ref": "refs/tags/template-v0" }' > /tmp/tag-event.json
+act push -W .github/workflows/template-publish.yml -j verify -e /tmp/tag-event.json
+```
+
+Do not run the `publish` job under `act`. With `TEMPLATE_REPO_TOKEN` unset the script raises before pushing; with a real token it pushes for real to `vox-deorum/game-agent-template`. There is no dry-run branch through the workflow, by design — a real publish should only ever come from a tag pushed to GitHub.
+
+To rehearse what `publish` *composes and assembles* without Docker or the network, run the script's own dry-run, which is exactly what `scripts/ci.py all` already includes:
+
+```
+uv run python scripts/publish_template.py --tag template-v0 --dry-run
+```
+
+## What can only be tested on GitHub
+
+Two things have no local equivalent because they are GitHub-side by nature:
+
+- **The Pages deploy** (`docs.yml`'s `deploy` job) uploads an artifact and calls `actions/deploy-pages`, which needs the `github-pages` environment and Pages enabled on the repository — neither reproducible under `act`. It is also temporarily disabled (commented out) until the site is public, so today only the strict build runs. Verify the build locally; trust GitHub for the publish once re-enabled.
+- **The real template publish** (`template-publish.yml`'s `publish` job actually pushing) writes to `vox-deorum/game-agent-template`. Rehearse it with the dry-run; do the real thing only by pushing a `template-v<N>` tag, with `TEMPLATE_REPO_TOKEN` set as a secret on the `template-publish` environment that the publish job declares.
+
+Everything else — the cross-language round trip, the staleness check, the composed-example tests, the strict docs build, and the publish composition — is fully reproducible with the two levels above.

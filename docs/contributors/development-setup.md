@@ -27,6 +27,7 @@ Every dev script is Python under `scripts/`, run through uv, so nothing depends 
 | Run all tests | `npm run test` |
 | Compose one example | `uv run python scripts/compose_example.py <name>` |
 | Run one CI job exactly as CI does | `uv run python scripts/ci.py <job>` |
+| Run the full local suite (all three workflows) | `uv run python scripts/ci.py all` |
 | Publish the template and examples (dry-run available) | `uv run python scripts/publish_template.py --dry-run` |
 
 Anything generated from the schema (the TypeScript types, the packaged schema copies, and the golden fixtures) is produced by `scripts/generate.py`. Do not edit those by hand; edit the schema and regenerate. CI fails if a generated artifact is stale.
@@ -38,3 +39,5 @@ Development happens on Windows; CI is Linux-only on purpose, because session con
 The first level reproduces a job's contents. Because every CI job is a single `scripts/ci.py <job>` call, running that same command inside a WSL distro with uv and Node installed executes exactly what `ubuntu-latest` executes, on the same OS family. Clone the repository into the WSL filesystem rather than working through `/mnt/`, which is slow for the many small file operations that composing examples and `node_modules` involve; a Windows checkout and a WSL checkout can coexist.
 
 The second level reproduces the workflows themselves with [act](https://github.com/nektos/act), which runs the actual workflow YAML in Docker containers. Combined with the publish script's dry-run flag, the whole tag-to-publish path can be rehearsed locally without touching the student repository. `act` is a development convenience, not a gate; the suite of record stays GitHub Actions.
+
+Both levels, the exact commands, and the parts only GitHub can test are laid out in [Testing end to end](test.md).

@@ -2,15 +2,26 @@
 
 Every GitHub Actions job is a single call to this script after dependency setup, so the
 workflow YAML carries triggers and caching but no logic, and a developer can reproduce
-any job with the same command (under WSL for Linux parity). The jobs:
+any job with the same command (under WSL for Linux parity). The jobs map one-to-one to the
+three workflows under ``.github/workflows/``:
 
+ci.yml:
 - ``python``: ruff check, ruff format --check, pyright, pytest.
 - ``typescript``: biome check, tsc --noEmit, vitest run.
 - ``generated-code-fresh``: regenerate, then fail if anything generated changed.
 - ``examples``: compose every example, install it into a fresh venv, run its pytest.
 
-``check`` and ``test`` are local convenience aggregates wired to ``npm run check`` / ``npm
-run test``.
+docs.yml:
+- ``docs``: the strict ``mkdocs build`` that gates docs pull requests.
+
+template-publish.yml:
+- ``publish-dry-run``: compose and assemble the publish snapshots without pushing, the
+  ``verify`` job being the same ``examples`` job above.
+
+``all`` runs every job above in order: the full local equivalent of all three workflows,
+which is what a contributor runs before pushing a branch or cutting a ``template-v<N>``
+tag. ``check`` and ``test`` are narrower convenience aggregates wired to ``npm run check``
+/ ``npm run test``.
 """
 
 from __future__ import annotations
@@ -88,6 +99,39 @@ def job_examples() -> None:
         _run([str(python), "-m", "pytest", "-q"], cwd=out_dir)
 
 
+def job_docs() -> None:
+    # docs.yml builds the site with --strict so broken links or bad refs fail the build.
+    _run(["uv", "run", "--group", "docs", "mkdocs", "build", "--strict"])
+
+
+def job_publish_dry_run() -> None:
+    # template-publish.yml's publish job runs this script on a real tag; --dry-run composes
+    # and assembles the snapshots under build/publish/ without any network push. The tag is
+    # the Stage 1 placeholder; resolve_version only needs the integer N from it.
+    _run(
+        [
+            "uv",
+            "run",
+            "python",
+            "scripts/publish_template.py",
+            "--tag",
+            "template-v0",
+            "--dry-run",
+        ]
+    )
+
+
+def job_all() -> None:
+    """The full end-to-end suite: every ci.yml job, the docs strict build, and the publish
+    dry-run, in order. Run this before pushing a branch or cutting a template tag."""
+    job_python()
+    job_typescript()
+    job_generated_code_fresh()
+    job_examples()
+    job_docs()
+    job_publish_dry_run()
+
+
 def job_check() -> None:
     """Local aggregate: lint and typecheck both languages."""
     _run(["uv", "run", "ruff", "check", "."])
@@ -107,6 +151,9 @@ _JOBS = {
     "typescript": job_typescript,
     "generated-code-fresh": job_generated_code_fresh,
     "examples": job_examples,
+    "docs": job_docs,
+    "publish-dry-run": job_publish_dry_run,
+    "all": job_all,
     "check": job_check,
     "test": job_test,
 }

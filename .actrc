@@ -1,0 +1,8 @@
+# Runner image mapping for `act` (https://github.com/nektos/act).
+# catthehacker's "act" images bundle node/python/etc. so setup-* actions work.
+-P ubuntu-latest=catthehacker/ubuntu:act-latest
+-P ubuntu-24.04=catthehacker/ubuntu:act-24.04
+-P ubuntu-22.04=catthehacker/ubuntu:act-22.04
+
+# Quieter, deterministic local runs.
+--container-architecture linux/amd64

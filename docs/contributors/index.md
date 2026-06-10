@@ -22,6 +22,7 @@ The language split follows the container boundary (see the [execution spec](../s
 ## Where to read next
 
 - [Development setup](development-setup.md): tools, scripts, running checks and tests, Windows and WSL notes.
+- [Testing end to end](test.md): the full local suite, reproducing the workflows with `act`, and what only GitHub can test.
 - [State schema](state-schema.md): the contract, the version rule, and the sidecar rule.
 - [Recordings](recordings.md): the JSONL format, the header, the store interface.
 - [Examples and the template](examples-and-template.md): overlays, tags, and publishing.

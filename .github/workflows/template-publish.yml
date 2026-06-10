@@ -30,6 +30,10 @@ jobs:
   publish:
     needs: verify
     runs-on: ubuntu-latest
+    # The cross-repo push token lives as a secret on this environment, so publishing can
+    # be gated behind environment protection rules (approvals, allowed tags) and the token
+    # is never exposed to any other job.
+    environment: template-publish
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5

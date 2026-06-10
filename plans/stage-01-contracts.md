@@ -1,15 +1,6 @@
 # Stage 1: Contracts and Repo Skeleton
 
-Status: in progress. Everything that can be built and verified locally is done: the repo
-skeleton and tooling, the two schema files, the `harness` package, `scripts/generate.py`,
-the `schema/ts` package, all three CI workflows, the docs site, and the template,
-`examples/hello`, compose script, and publish script. The cross-language round trip,
-the staleness/determinism check, the strict docs build, the composed-example tests, and
-the publish dry-run all pass. What remains is the external GitHub setup that cannot be
-done from the repository: creating the `vox-deorum/game-agent-template` repository,
-marking it a template repository, enabling Pages with the GitHub Actions source, minting
-the `TEMPLATE_REPO_TOKEN` secret, and pushing the real `template-v0` tag to exercise the
-publish pipeline end to end (build order steps 9 and 10).
+Status: in progress. Everything that can be built and verified locally is done: the repo skeleton and tooling, the two schema files, the `harness` package, `scripts/generate.py`, the `schema/ts` package, all three CI workflows, the docs site, and the template, `examples/hello`, compose script, and publish script. The cross-language round trip, the staleness/determinism check, the strict docs build, the composed-example tests, and the publish dry-run all pass, runnable as one command (`scripts/ci.py all`); all six workflow jobs have additionally been run green in containers with `act`. The `vox-deorum/game-agent-template` repository has been created and the `TEMPLATE_REPO_TOKEN` secret minted as a secret on the `template-publish` environment, which the `publish` job declares so the token stays gated behind environment protection rules and out of every other job. What remains is the last of the external GitHub setup: marking that repository as a template repository and pushing the real `template-v0` tag to exercise the publish pipeline end to end (build order step 10). GitHub Pages is intentionally deferred — the docs site is not public yet, so the `deploy` job in `docs.yml` is temporarily disabled while the strict `build` job keeps running on every push and PR; enabling Pages with the GitHub Actions source and re-enabling `deploy` happens when the site goes public.
 
 ## Goal
 
@@ -70,4 +61,4 @@ Additionally for the machinery: the docs site builds strictly in CI and publishe
 
 ## Open questions
 
-Confirm the student repository name (`vox-deorum/game-agent-template` is the working assumption) and that GitHub Pages can be enabled on this repository. A fine-grained personal access token is proposed for the cross-repo push; revisit a GitHub App if rotation becomes a burden. Slot id string conventions are deferred to Stage 2, when real PettingZoo agent ids exist.
+The student repository name is settled: `vox-deorum/game-agent-template` exists. GitHub Pages is no longer a Stage 1 question — deployment is deferred until the site is public, so enabling it moves with that. A fine-grained personal access token (Contents: read/write, scoped to the single target repository) is used for the cross-repo push, stored as the `TEMPLATE_REPO_TOKEN` secret on the `template-publish` environment that the `publish` job opts into; revisit a GitHub App if rotation becomes a burden. Slot id string conventions are deferred to Stage 2, when real PettingZoo agent ids exist.

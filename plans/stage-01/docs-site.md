@@ -34,3 +34,5 @@ Division of labor between the tabs: spec pages describe what the system is, docs
 ## Publishing
 
 `.github/workflows/docs.yml` has two triggers. On pull requests touching `docs/**` or `mkdocs.yml`, it runs `uv run --group docs mkdocs build --strict`, so broken links and bad references fail the PR. On pushes to main, it builds and publishes through the official Pages actions (`actions/upload-pages-artifact` then `actions/deploy-pages`). There is no `gh-pages` branch and no `mkdocs gh-deploy`; the repo stays single-branch and Pages environment protection applies. One-time setup: enable Pages on the repository with "GitHub Actions" as the source.
+
+Deployment is temporarily disabled while the documentation site is not yet public: the `deploy` job in `docs.yml` is commented out, so pushes to main still build strictly (proving the site is publishable) but nothing is pushed to Pages. Re-enabling is a two-line operation captured in the workflow's own comment — uncomment the job and enable Pages — done when the site goes public.
