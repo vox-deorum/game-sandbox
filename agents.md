@@ -16,6 +16,7 @@ When you write documentation, specs, or any prose in this repo, follow these rul
 - Do not use em-dashes. Use commas, periods, parentheses, or rewording instead.
 - Specs describe what the system is. They do not include implementation details, build plans, or code scaffolding unless the task explicitly asks for those.
 - Organize clearly with sections and short paragraphs. Avoid bullet soup, which is a wall of single-sentence bullets that could have been a paragraph.
+- Do not hard-wrap prose to a fixed column. Write one line per paragraph and let the editor soft-wrap it. This applies to every Markdown file in the repo, docs and READMEs included, not just specs and plans. Markdown reflows when rendered, so a column limit only adds noisy diffs and tempts link workarounds. The exceptions that may exceed any width are things that cannot be wrapped: URLs, link reference definitions, and table rows.
 - No emoji.
 
 ## Working on this repo

@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vox-deorum.github.io/game-sandbox/schema/step-state.schema.json",
+  "title": "StepState",
+  "description": "One per-step state object: the canonical wire format between the environment and the renderer, and the per-line payload stored in a recording.",
+  "type": "object",
+  "required": ["schema_version", "tick", "agents", "timing"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "description": "Integer schema version. Bumps only on breaking changes; equal to the recording header's schema_version."
+    },
+    "tick": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Monotonic step counter for the episode, starting at 0."
+    },
+    "agents": {
+      "type": "object",
+      "description": "Per-agent step data keyed by slot id (the PettingZoo agent id).",
+      "additionalProperties": { "$ref": "#/$defs/agent_step" }
+    },
+    "overlay": {
+      "type": "object",
+      "description": "Open extension region for environment-specific payloads (for example Flappy Bird pipe positions). The only object with additionalProperties allowed."
+    },
+    "messages": {
+      "type": "array",
+      "description": "Messages sent on this tick. Absent when empty to keep lines small. Lit up in Stage 9.",
+      "items": { "$ref": "#/$defs/message" }
+    },
+    "timing": { "$ref": "#/$defs/step_timing" }
+  },
+  "$defs": {
+    "agent_step": {
+      "type": "object",
+      "required": ["reward", "score"],
+      "additionalProperties": false,
+      "properties": {
+        "observation": {
+          "description": "Display observation for this agent. Shape is environment-specific; the renderer is its only consumer."
+        },
+        "action": {
+          "description": "Action this agent took on this tick. Shape is environment-specific."
+        },
+        "reward": {
+          "type": "number",
+          "description": "Reward for this agent on this tick."
+        },
+        "score": {
+          "type": "number",
+          "description": "Cumulative score for this agent through this tick."
+        },
+        "timing": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "decision_ms": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Wall-clock time the agent spent deciding this tick. The leaderboard timing column reads this. learn_ms and chat_ms may be added later without a version bump."
+            }
+          }
+        }
+      }
+    },
+    "message": {
+      "type": "object",
+      "required": ["from", "to", "text"],
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "type": "string",
+          "description": "Slot id of the sender."
+        },
+        "to": {
+          "type": ["string", "null"],
+          "description": "Slot id of the recipient, or null for a broadcast."
+        },
+        "text": {
+          "type": "string"
+        }
+      }
+    },
+    "step_timing": {
+      "type": "object",
+      "required": ["started_at", "duration_ms"],
+      "additionalProperties": false,
+      "properties": {
+        "started_at": {
+          "type": "integer",
+          "description": "epoch milliseconds UTC"
+        },
+        "duration_ms": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Wall-clock duration of the whole step."
+        }
+      }
+    }
+  }
+}

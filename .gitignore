@@ -1,0 +1,29 @@
+# Build output (composed examples, built docs)
+/build/
+/site/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.pyright/
+
+# Node
+node_modules/
+*.tsbuildinfo
+
+# Editors and OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Local environment
+.env
+.env.*
+!.env.example

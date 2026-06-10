@@ -1,0 +1,37 @@
+site_name: Game Sandbox
+site_description: A classwise playground for Game AI.
+repo_url: https://github.com/vox-deorum/game-sandbox
+repo_name: vox-deorum/game-sandbox
+docs_dir: docs
+
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+  palette:
+    - scheme: default
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - scheme: slate
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+# The specification under specs/ is injected as its own section by this hook rather than
+# duplicated into docs/. See docs/hooks/inject_specs.py.
+hooks:
+  - docs/hooks/inject_specs.py
+
+markdown_extensions:
+  - admonition
+  - toc:
+      permalink: true
+  - pymdownx.superfences
+  - pymdownx.details
+
+# No explicit nav: the tree under docs/ plus the injected specs/ section drive the tabs,
+# so adding a doc or a spec file needs no nav edit and nothing falls out of the nav.

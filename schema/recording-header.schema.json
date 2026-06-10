@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vox-deorum.github.io/game-sandbox/schema/recording-header.schema.json",
+  "title": "RecordingHeader",
+  "description": "Line 1 of every recording and the first frame of the Stage 3 live stream. Position, not a type field, distinguishes it from state lines.",
+  "type": "object",
+  "required": ["schema_version", "environment"],
+  "additionalProperties": true,
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "description": "Integer schema version. Authoritative for the recording or stream; every state line must match it."
+    },
+    "environment": {
+      "type": "string",
+      "description": "Name of the environment that produced this recording."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the recording was created."
+    },
+    "seed": {
+      "type": "integer",
+      "description": "Episode seed. Optional now; filled in by Stage 2."
+    },
+    "sidecars": {
+      "type": "array",
+      "description": "Auxiliary files stored alongside the recording. A reader that does not recognize a name must skip that entry and load the recording normally.",
+      "items": {
+        "type": "object",
+        "required": ["name", "path"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Identifies the sidecar's kind against the registry of known names (empty in Stage 1)."
+          },
+          "path": {
+            "type": "string",
+            "description": "Path relative to the recording's own directory."
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,2 @@
+{"environment":"flappy","schema_version":1,"seed":7,"sidecars":[{"name":"future-telemetry","path":"telemetry.jsonl"}]}
+{"agents":{"player_0":{"action":0,"observation":{"y":0},"reward":0.0,"score":0.0,"timing":{"decision_ms":0.5}}},"overlay":{"pipes":[{"gap_y":50,"x":100}]},"schema_version":1,"tick":0,"timing":{"duration_ms":1.0,"started_at":1700000000000}}

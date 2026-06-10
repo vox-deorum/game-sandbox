@@ -1,0 +1,18 @@
+[project]
+name = "game-sandbox-harness"
+version = "0.1.0"
+description = "Game Sandbox session harness: schema validation, state builders, and the recording store."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "jsonschema>=4.21",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/game_sandbox_harness"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/game_sandbox_harness/schema_data" = "game_sandbox_harness/schema_data"

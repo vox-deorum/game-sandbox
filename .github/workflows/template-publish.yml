@@ -1,0 +1,46 @@
+name: Publish Template
+
+on:
+  push:
+    tags:
+      - template-v*
+
+concurrency:
+  group: template-publish-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # First: a broken state cannot publish. Compose and test every example at the tag.
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync
+      - run: uv run python scripts/ci.py examples
+
+  # Then: publish the template to main (with the mirrored v<N> tag) and force-push each
+  # composed example to its examples/<name> branch. One script, the same compose path CI
+  # uses, so the published artifact is byte-identical to what verify tested.
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync
+      - name: Configure git identity for the published commits
+        run: |
+          git config --global user.name "game-sandbox publisher"
+          git config --global user.email "noreply@vox-deorum.github.io"
+      - name: Publish template and examples
+        env:
+          TEMPLATE_REPO_TOKEN: ${{ secrets.TEMPLATE_REPO_TOKEN }}
+        run: uv run python scripts/publish_template.py

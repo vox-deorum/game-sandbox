@@ -1,6 +1,15 @@
 # Stage 1: Contracts and Repo Skeleton
 
-Status: not started
+Status: in progress. Everything that can be built and verified locally is done: the repo
+skeleton and tooling, the two schema files, the `harness` package, `scripts/generate.py`,
+the `schema/ts` package, all three CI workflows, the docs site, and the template,
+`examples/hello`, compose script, and publish script. The cross-language round trip,
+the staleness/determinism check, the strict docs build, the composed-example tests, and
+the publish dry-run all pass. What remains is the external GitHub setup that cannot be
+done from the repository: creating the `vox-deorum/game-agent-template` repository,
+marking it a template repository, enabling Pages with the GitHub Actions source, minting
+the `TEMPLATE_REPO_TOKEN` secret, and pushing the real `template-v0` tag to exercise the
+publish pipeline end to end (build order steps 9 and 10).
 
 ## Goal
 

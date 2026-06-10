@@ -1,0 +1,27 @@
+{
+  "name": "@game-sandbox/schema",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Generated TypeScript types and Ajv-backed guards for the Game Sandbox state schema.",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "check": "biome check . && tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "json-schema-to-typescript": "15.0.4",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}

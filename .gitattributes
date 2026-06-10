@@ -1,0 +1,8 @@
+# Normalize all text to LF in the repository and on checkout, on every platform. The
+# dev scripts and the generate step write LF, so this keeps the generated-code staleness
+# check stable whether a developer is on Windows or Linux.
+* text=auto eol=lf
+
+# Lockfiles are managed by their tools; leave their line endings to them.
+package-lock.json text eol=lf
+uv.lock text eol=lf
