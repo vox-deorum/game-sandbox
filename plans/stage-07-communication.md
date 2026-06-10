@@ -1,0 +1,33 @@
+# Stage 7: Agent Communication
+
+Status: not started
+
+## Goal
+
+Agents and the human player can exchange messages during a session, the chat panel shows them live, and they appear in recordings and replays. Everything is optional: agents without the hook and environments without the flag behave exactly as before.
+
+## Scope
+
+Implement chat routing in the harness per [communication.md](../specs/communication.md): after `act`, call `chat(inbox)` on agents that define it, passing the messages addressed to that slot since its last turn. Enforce the rules in the harness: at most one message per recipient plus one broadcast per turn, plain UTF-8 text, length capped by the environment metadata or the iteration override, and messaging skipped entirely when the environment or iteration disables it. A message sent on tick T reaches its recipient's inbox on the recipient's next turn. Time spent in `chat` counts against the same per-step and per-episode limits as `act` and `learn`; the Stage 2 timing machinery extends to cover it.
+
+Messages flow into the per-step state object (sender slot, recipient, text, tick), whose schema fields exist since Stage 1, so recording and replay need no format change. Apply the visibility rules at the relay: the backend forwards broadcasts to every connected client, forwards targeted messages addressed to the human to the human's client, and withholds other targeted messages from spectators during live play. Recordings keep every message, so replays show them all.
+
+Wire the human side per [interaction.md](../specs/interaction.md): outgoing human messages travel the session WebSocket like input and are queued for the next tick. Build the chat panel as part of the on-screen renderer UI, showing broadcasts and messages addressed to the human, with an input box when the human occupies a slot. Show recorded messages in the replay viewer at their ticks.
+
+Verify the template repo's `chat` stub against the real harness, and leave Flappy Bird messaging disabled unless there is a concrete human-facing use for it. This stage can be exercised through harness and relay tests with a minimal multi-slot test environment; Stage 9 supplies the first product environment where agent-to-agent chat matters.
+
+## Spec references
+
+[communication.md](../specs/communication.md), [interaction.md](../specs/interaction.md) (chat panel, WebSocket path), [environment.md](../specs/environment.md) (metadata flag and cap), [leaderboard.md](../specs/leaderboard.md) (iteration overrides), [recording.md](../specs/recording.md).
+
+## Depends on
+
+Stage 3 (relay), Stage 4 (renderer UI), Stage 6 (iteration overrides). Independent of Stage 8.
+
+## Done when
+
+In a test session, an agent broadcast reaches all slots and spectators on the next turn, a targeted agent-to-human message reaches only the human live, the human's reply arrives in the agent's inbox the following tick, an over-cap message is rejected by the harness, and the full exchange, targeted messages included, is visible in the replay. Disabling messaging at the iteration level silences the same agents without code changes.
+
+## Deviations
+
+None yet.
