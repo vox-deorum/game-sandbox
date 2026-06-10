@@ -18,13 +18,13 @@ The stages are ordered by dependency. Each stage produces something that runs an
 
 1. [Stage 1: Contracts and repo skeleton](stage-01-contracts.md). The monorepo layout, the versioned per-step state JSON Schema, type generation for TypeScript, validation for Python, and the recording file format. The wire format is the contract everything else builds against, so it comes first.
 2. [Stage 2: Harness and the first environment](stage-02-harness-and-first-environment.md). The Python session harness, the Flappy Bird environment through Shimmy, the agent interface, the public-facing metadata layer, a local runner, recordings written to disk, and the participant template repo.
-3. [Stage 3: Backend and live sessions](stage-03-backend-and-live-sessions.md). The Node/TypeScript backend, Docker orchestration of one sandboxed container per session, the WebSocket bridge between container and browser, and session lifecycle limits.
+3. [Stage 3: Backend and live sessions](stage-03-backend-and-live-sessions.md). The Node/TypeScript backend, the execution driver interface with local Docker as its first implementation, one sandboxed container per session, the WebSocket bridge between container and browser, and session lifecycle limits.
 4. [Stage 4: Frontend core](stage-04-frontend-core.md). GitHub OAuth, the home and environment pages, the Flappy Bird renderer with human input, live play for allowlisted users, the replay viewer, and recording retention.
-5. [Stage 5: Submissions](stage-05-submissions.md). The submission form and rules, repo and commit verification, the manifest-driven image build pipeline, and agent profile pages.
+5. [Stage 5: Submissions](stage-05-submissions.md). The submission form and rules, repo and commit verification, the code-overlay build onto versioned base images, and agent profile pages.
 6. [Stage 6: Iterations and leaderboards](stage-06-leaderboards.md). Iteration configuration and CLI, the sequential automated workflow with seeded repetitions and timing, the automated board, ratings collection, and the human-feedback board.
 7. [Stage 7: Agent communication](stage-07-communication.md). The chat hook in the harness, message routing and limits, the chat panel in the renderer, and messages in recordings and replays.
 8. [Stage 8: LLM gateway](stage-08-llm-gateway.md). The gateway service, the internal-only network, one-off session keys, telemetry sidecars, budgets, the owner debug view, and token columns on the automated board.
-9. [Stage 9: Multi-agent](stage-09-multi-agent.md). The first multi-agent environment, the turn-based session loop in practice, the watch multi-agent flow, and multi-submission session images.
+9. [Stage 9: Multi-agent](stage-09-multi-agent.md). The first multi-agent environment, the turn-based session loop in practice, the watch multi-agent flow, and multi-submission sessions.
 
 ## Conventions for stage files
 

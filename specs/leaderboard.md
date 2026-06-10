@@ -11,6 +11,7 @@ An iteration is one competition. For a single environment, the operator declares
 Each iteration carries its own configuration, set by the operator when the iteration is declared:
 
 - The set of match configurations the automated workflow will run (environment, opponents, seeds, repetitions).
+- The template dependency-set version every submission in the iteration is built and run against. It defaults to the latest template release when the iteration is declared (see [submission.md](submission.md)).
 - Optional overrides of the environment's default per-step and per-episode time limits. If the iteration does not override, the environment's defaults (see [environment.md](environment.md)) are used.
 - Optional overrides of the environment's messaging settings: the message length cap, or disabling messaging for the iteration (see [communication.md](communication.md)).
 - Optional overrides of the LLM model allowlist and the token, call, and rate budgets (see [llm.md](llm.md)).

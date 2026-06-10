@@ -15,11 +15,13 @@ Learned state may persist across episodes within one leaderboard run, but never 
 
 ## Packaging
 
-So the workflow can build and run any submitted repo, each repo carries a small manifest at its root. The manifest names the entry-point module and agent class and points to a requirements file for dependencies. The template repos include a filled-in example.
+So the workflow can build and run any submitted repo, each repo carries a small manifest at its root. The manifest names the entry-point module, the agent class, and the version of the template dependency set the repo targets. The template repos include a filled-in example.
+
+Dependencies are not chosen per repo. The template carries the authoritative dependency set, and the set is versioned: each template release pins exact versions of everything an agent may import, and old set versions stay available, so a submission from years ago can be rebuilt exactly as it ran. A participant who needs a library the set lacks asks the operator for a new template release rather than pinning it in their own repo. Because every agent in an iteration runs on the same set version (see [leaderboard.md](leaderboard.md)), agents sharing a session container can never have conflicting dependencies (see [execution.md](execution.md)).
 
 ## Template repos and local development
 
-Before submitting, a participant can develop and test their agent against vanilla PettingZoo on their own machine. We ship template repositories that include the agent interface stubs (the optional `chat` hook included), the manifest, the Shimmy wrappers needed for single-agent games, a local play script, a simple evaluation harness, and a minimal LLM API example. For LLM use during local development, the template instructs participants to put the class-provided key in a `.env` file; server-side, the harness swaps it for a one-off session-scoped key (see [llm.md](llm.md)). The goal is that an agent can be written, run end to end, and iterated on without touching our backend at all.
+Before submitting, a participant can develop and test their agent against vanilla PettingZoo on their own machine. We ship template repositories that include the agent interface stubs (the optional `chat` hook included), the manifest, the pinned dependency set for the current template release, the Shimmy wrappers needed for single-agent games, a local play script, a simple evaluation harness, and a minimal LLM API example. For LLM use during local development, the template instructs participants to put the class-provided key in a `.env` file; server-side, the harness swaps it for a one-off session-scoped key (see [llm.md](llm.md)). The goal is that an agent can be written, run end to end, and iterated on without touching our backend at all.
 
 ## Submission flow
 
