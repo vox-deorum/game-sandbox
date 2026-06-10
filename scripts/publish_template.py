@@ -1,9 +1,13 @@
 """Publish the template and composed examples to the student-facing repository.
 
-Triggered by a pushed ``template-v<N>`` tag (see .github/workflows/template-publish.yml),
-but runnable locally. The workflow is a thin wrapper around this one script and
-``scripts/compose_example.py``, so local development, CI verification, and publishing all
-exercise one code path and a student's clone is byte-identical to what CI tested.
+Invoked by the manually dispatched ``template-publish.yml`` workflow (``workflow_dispatch``
+with a ``version`` input N), which calls this script with ``--tag template-v<N>``; it is
+equally runnable locally with the same flag. The ``template-v<N>`` tag is *not* the trigger
+— the workflow stamps it as its last step, after the student repo is fully updated, so a
+run that fails partway leaves no dangling release tag to clean up before retrying. The
+workflow is a thin wrapper around this one script and ``scripts/compose_example.py``, so
+local development, CI verification, and publishing all exercise one code path and a
+student's clone is byte-identical to what CI tested.
 
 What it does for tag ``template-v<N>``:
 

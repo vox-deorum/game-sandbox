@@ -49,6 +49,7 @@ The schema to author, near verbatim:
         "score": { "type": "number" },
         "timing": {
           "type": "object",
+          "additionalProperties": false,
           "properties": { "decision_ms": { "type": "number", "minimum": 0 } }
         }
       }
