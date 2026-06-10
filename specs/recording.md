@@ -18,4 +18,4 @@ Every session is recorded automatically, leaderboard runs and live sessions alik
 
 ## Storage
 
-Recordings are written to a folder on disk behind a minimal save and load interface. Since the workflow runs in Docker, a shared volume mounted into the workflow container is enough. An S3-compatible object store can be added behind the same interface when a real deployment needs one; no other backends are planned.
+Recordings are written to a folder on disk behind a minimal save and load interface, as JSONL: the header on the first line, then one per-step state per line. This is the same line-delimited JSON the harness streams over its transport during a live session (see [execution.md](execution.md)), so the wire form and the stored form are one format. Since the workflow runs in Docker, a shared volume mounted into the workflow container is enough. An S3-compatible object store can be added behind the same interface when a real deployment needs one; no other backends are planned.

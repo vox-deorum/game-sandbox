@@ -22,7 +22,7 @@ Each environment carries two layers of metadata.
 - Which slots accept human players.
 - The default timeout for human-controlled slots, used by live sessions unless the session overrides it.
 - Recommended episode length.
-- A fixed tick rate for realtime environments, which drives the session loop (see [interaction.md](interaction.md)).
+- A pace interval, which makes the environment realtime when set and turn-based when null. When set, it is the fixed wall-clock cadence the session loop advances on; when null, the loop advances as each slot acts. The single session loop reads this one field rather than branching on an environment type (see [interaction.md](interaction.md)).
 - Default per-step and per-episode time limits. These are defaults only. Each iteration can override them (see [leaderboard.md](leaderboard.md)).
 - Whether agent messaging is enabled, and if so the message length cap. See [communication.md](communication.md).
 - Whether the LLM API is available to agents in this environment. See [llm.md](llm.md).
