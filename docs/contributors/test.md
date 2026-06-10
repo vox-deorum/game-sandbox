@@ -68,16 +68,15 @@ Stage  Job ID                Workflow name     Workflow file         Events
 
 ### Rehearsing the publish pipeline
 
-`template-publish.yml` runs on `template-v*` tags: `verify` composes and tests every example, then `publish` runs `scripts/publish_template.py` with no `--dry-run` — it is meant to actually push. That split decides how you rehearse it.
+`template-publish.yml` is run manually (`workflow_dispatch`) with a `version` input N, not off a tag. It has three jobs: `verify` composes and tests every example (and rejects a version whose tag already exists), `publish` runs `scripts/publish_template.py` with no `--dry-run` — it actually pushes to the student repo — and `tag` stamps `template-v<N>` on this commit only after publish succeeds. That ordering is the recovery story: a failed run leaves no tag, so you fix the cause and re-run rather than deleting a dangling tag. The split also decides how you rehearse it.
 
-The `verify` job is safe to run under `act`. Scope to the workflow file with `-W` and feed a tag event so any version resolution sees the right `GITHUB_REF` (`act` reads `--eventpath`/`-e` from a path, not stdin):
+The `verify` job is safe to run under `act`. Scope to the workflow file with `-W` and pass the dispatch input:
 
 ```
-echo '{ "ref": "refs/tags/template-v0" }' > /tmp/tag-event.json
-act push -W .github/workflows/template-publish.yml -j verify -e /tmp/tag-event.json
+act workflow_dispatch -W .github/workflows/template-publish.yml -j verify --input version=0
 ```
 
-Do not run the `publish` job under `act`. With `TEMPLATE_REPO_TOKEN` unset the script raises before pushing; with a real token it pushes for real to `vox-deorum/game-agent-template`. There is no dry-run branch through the workflow, by design — a real publish should only ever come from a tag pushed to GitHub.
+Do not run the `publish` or `tag` jobs under `act`. With `TEMPLATE_REPO_TOKEN` unset `publish` raises before pushing; with a real token it pushes for real to `vox-deorum/game-agent-template`, and `tag` would push a release tag. There is no dry-run branch through the workflow, by design — a real publish should only ever come from the manual run on GitHub.
 
 To rehearse what `publish` *composes and assembles* without Docker or the network, run the script's own dry-run, which is exactly what `scripts/ci.py all` already includes:
 
@@ -90,6 +89,6 @@ uv run python scripts/publish_template.py --tag template-v0 --dry-run
 Two things have no local equivalent because they are GitHub-side by nature:
 
 - **The Pages deploy** (`docs.yml`'s `deploy` job) uploads an artifact and calls `actions/deploy-pages`, which needs the `github-pages` environment and Pages enabled on the repository — neither reproducible under `act`. It is also temporarily disabled (commented out) until the site is public, so today only the strict build runs. Verify the build locally; trust GitHub for the publish once re-enabled.
-- **The real template publish** (`template-publish.yml`'s `publish` job actually pushing) writes to `vox-deorum/game-agent-template`. Rehearse it with the dry-run; do the real thing only by pushing a `template-v<N>` tag, with `TEMPLATE_REPO_TOKEN` set as a secret on the `template-publish` environment that the publish job declares.
+- **The real template publish** (`template-publish.yml`'s `publish` and `tag` jobs) writes to `vox-deorum/game-agent-template` and then tags this repo. Rehearse it with the dry-run; do the real thing only by running the workflow manually from the Actions tab (or `gh workflow run template-publish.yml -f version=<N>`), with `TEMPLATE_REPO_TOKEN` set as a secret on the `template-publish` environment that the publish job declares. The workflow tags `template-v<N>` itself on success — you do not push the tag by hand.
 
 Everything else — the cross-language round trip, the staleness check, the composed-example tests, the strict docs build, and the publish composition — is fully reproducible with the two levels above.

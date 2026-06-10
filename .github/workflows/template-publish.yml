@@ -1,32 +1,57 @@
 name: Publish Template
 
+# Run manually from the Actions tab (or `gh workflow run`), not off a tag. The tag is the
+# LAST thing this workflow does, not the trigger: a tag push as the trigger means a failed
+# run leaves a dangling template-v<N> tag that has to be deleted before you can retry. Here
+# the order is verify -> publish to the student repo -> tag this commit, so a failure at any
+# point leaves no release tag behind. Recovery is simply to fix the cause and re-run; the
+# publish step force-pushes, so a partial previous attempt is overwritten cleanly.
 on:
-  push:
-    tags:
-      - template-v*
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Dependency-set version N to publish as template-v<N> (e.g. 0)."
+        required: true
+        type: string
 
 concurrency:
-  group: template-publish-${{ github.ref }}
+  group: template-publish-${{ inputs.version }}
   cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
-  # First: a broken state cannot publish. Compose and test every example at the tag.
+  # First: a broken or already-released state cannot publish. Reject a non-integer version
+  # or one whose tag already exists (bump N instead of re-releasing), then compose and test
+  # every example at this commit so the artifact is proven before anything is pushed.
   verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Validate the version and fail fast if it is already released
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          if ! [[ "$VERSION" =~ ^[0-9]+$ ]]; then
+            echo "::error::version must be a non-negative integer, got '${VERSION}'."
+            exit 1
+          fi
+          tag="template-v${VERSION}"
+          if git ls-remote --tags --exit-code origin "refs/tags/${tag}" >/dev/null 2>&1; then
+            echo "::error::${tag} already exists; bump the version input instead of re-publishing."
+            exit 1
+          fi
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
       - run: uv sync
       - run: uv run python scripts/ci.py examples
 
-  # Then: publish the template to main (with the mirrored v<N> tag) and force-push each
-  # composed example to its examples/<name> branch. One script, the same compose path CI
-  # uses, so the published artifact is byte-identical to what verify tested.
+  # Then: publish the template to the student repo's main (with the mirrored v<N> tag) and
+  # force-push each composed example to its examples/<name> branch. One script, the same
+  # compose path CI uses, so the published artifact is byte-identical to what verify tested.
+  # Nothing here touches the monorepo's own tags.
   publish:
     needs: verify
     runs-on: ubuntu-latest
@@ -47,4 +72,28 @@ jobs:
       - name: Publish template and examples
         env:
           TEMPLATE_REPO_TOKEN: ${{ secrets.TEMPLATE_REPO_TOKEN }}
-        run: uv run python scripts/publish_template.py
+        run: uv run python scripts/publish_template.py --tag "template-v${{ inputs.version }}"
+
+  # Finally: only after the student repo is fully updated, stamp this monorepo commit with
+  # the template-v<N> release tag. Because this is the last step, a failed verify or publish
+  # never creates a tag, so there is nothing to clean up before retrying.
+  tag:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag this commit as the published release
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          tag="template-v${VERSION}"
+          if git ls-remote --tags --exit-code origin "refs/tags/${tag}" >/dev/null 2>&1; then
+            echo "::error::${tag} appeared on origin during the run; not overwriting it."
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "${tag}"
+          git push origin "${tag}"
