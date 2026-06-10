@@ -7,10 +7,11 @@ Agents are written in Python. A participant implements a small documented interf
 - `reset(seed)` prepares the agent for a new episode. The seed comes from the harness, so repeated runs are controlled (see [leaderboard.md](leaderboard.md)).
 - `act(observation)` returns an action in the environment's action space.
 - `learn(observation, action, reward, terminated)` is optional. The harness calls it after each step with that step's transition, so reinforcement learning agents can keep updating during play.
+- `chat(inbox)` is optional too. The harness calls it on the agent's turn with the messages addressed to that slot, and the agent returns messages to send or nothing to stay silent. See [communication.md](communication.md).
 
-The same interface works whether the agent is a hand-written tree search, a trained neural network, or a hybrid of both, and agents always run server-side inside the session's Docker container regardless of style (see [execution.md](execution.md)).
+The same interface works whether the agent is a hand-written tree search, a trained neural network, or a hybrid of both, and agents always run server-side inside the session's Docker container regardless of style (see [execution.md](execution.md)). Agents may also call a provided OpenAI-compatible LLM API; see [llm.md](llm.md).
 
-Learned state may persist across episodes within one leaderboard run, but never across submissions or iterations. Time spent in `learn` counts against the same per-step and per-episode time limits as acting, so an agent that learns heavily pays for it in the efficiency column rather than stalling the run.
+Learned state may persist across episodes within one leaderboard run, but never across submissions or iterations. Time spent in `learn` and `chat` counts against the same per-step and per-episode time limits as acting, so an agent that learns or talks heavily pays for it in the efficiency column rather than stalling the run.
 
 ## Packaging
 
@@ -18,7 +19,7 @@ So the workflow can build and run any submitted repo, each repo carries a small 
 
 ## Template repos and local development
 
-Before submitting, a participant can develop and test their agent against vanilla PettingZoo on their own machine. We ship template repositories that include the agent interface stubs, the manifest, the Shimmy wrappers needed for single-agent games, a local play script, and a simple evaluation harness. The goal is that an agent can be written, run end to end, and iterated on without touching our backend at all.
+Before submitting, a participant can develop and test their agent against vanilla PettingZoo on their own machine. We ship template repositories that include the agent interface stubs (the optional `chat` hook included), the manifest, the Shimmy wrappers needed for single-agent games, a local play script, a simple evaluation harness, and a minimal LLM API example. For LLM use during local development, the template instructs participants to put the class-provided key in a `.env` file; server-side, the harness swaps it for a one-off session-scoped key (see [llm.md](llm.md)). The goal is that an agent can be written, run end to end, and iterated on without touching our backend at all.
 
 ## Submission flow
 

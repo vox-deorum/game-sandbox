@@ -12,6 +12,8 @@ Each iteration carries its own configuration, set by the operator when the itera
 
 - The set of match configurations the automated workflow will run (environment, opponents, seeds, repetitions).
 - Optional overrides of the environment's default per-step and per-episode time limits. If the iteration does not override, the environment's defaults (see [environment.md](environment.md)) are used.
+- Optional overrides of the environment's messaging settings: the message length cap, or disabling messaging for the iteration (see [communication.md](communication.md)).
+- Optional overrides of the LLM model allowlist and the token, call, and rate budgets (see [llm.md](llm.md)).
 
 Iterations are declared, configured, and their workflow triggered through a configuration file and CLI on the deployment. There is no admin UI.
 
@@ -24,7 +26,8 @@ The board is produced by a workflow that the operator triggers manually for the 
 - Runs the iteration's configured match configurations.
 - Supports controlled repetitions per configuration, with seeds passed to both the environment and the agents (see [environment.md](environment.md) and [submission.md](submission.md)), so a single lucky run does not dominate.
 - Records every run so it can be replayed afterwards. See [recording.md](recording.md).
-- Measures wall-clock time per decision and per episode as a proxy for computational intensity. Time an agent spends in its optional `learn` hook counts too.
+- Measures wall-clock time per decision and per episode as a proxy for computational intensity. Time an agent spends in its optional `learn` and `chat` hooks counts too, as does time spent waiting on LLM calls.
+- Aggregates LLM telemetry per agent, so the board shows input, reasoning, and output token usage broken down by model next to the timing column (see [llm.md](llm.md)). LLM-backed agents are stochastic even under fixed seeds; the same controlled repetitions absorb that.
 - Enforces per-step and per-episode timeouts so a slow or stuck agent cannot block the queue. The timeouts come from the environment defaults unless the iteration overrides them.
 
 Matches for an iteration run sequentially on the same host, so timing measurements are comparable between agents. At class scale this costs little and removes the noise that concurrent runs would add.

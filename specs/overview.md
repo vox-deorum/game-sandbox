@@ -17,6 +17,7 @@ The sandbox needs to welcome several styles of work at once:
 On top of supporting all three styles, the sandbox needs to:
 
 - Host multiple environments behind one consistent interface, with metadata that drives the website. See [environment.md](environment.md).
+- Offer agents two optional capabilities during play: a messaging channel to other agents and the human player (see [communication.md](communication.md)), and an OpenAI-compatible LLM API with built-in telemetry (see [llm.md](llm.md)).
 - Provide a web frontend for watching agents, playing with or against them, and leaving feedback. See [frontend.md](frontend.md).
 - Tie every submission and every piece of feedback back to a real GitHub identity.
 - Maintain two leaderboards per environment per iteration: an automated performance and efficiency board, and a separate human-feedback board. See [leaderboard.md](leaderboard.md).

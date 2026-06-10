@@ -20,6 +20,7 @@ A per-step payload includes:
 - Per-agent reward for that tick.
 - Per-agent cumulative score.
 - Environment-specific overlay fields (for example, a Flappy Bird payload might include pipe positions).
+- Messages sent on that tick, each with its sender and recipient (see [communication.md](communication.md) for visibility rules).
 - Timing.
 
 The renderer never reaches behind the state object. If something needs to be drawn, it shows up in the payload.
@@ -39,3 +40,7 @@ For environments whose [metadata](environment.md) exposes a human slot, the rend
 A renderer can use both at once. For example, a turn-based game might accept either a keyboard shortcut or a click on the corresponding on-screen button.
 
 Whatever the source, input is mapped into an action in the environment's action space and sent to the server, which feeds it into the human slot on the next tick (see the session loop above and [execution.md](execution.md)).
+
+## Chat
+
+For environments with messaging enabled (see [communication.md](communication.md)), the renderer also draws a chat panel as part of the on-screen UI. Broadcasts and messages addressed to the human appear there, and the human's outgoing messages travel the same WebSocket path as input, reaching the other slots on the next tick.

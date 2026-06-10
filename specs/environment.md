@@ -23,6 +23,8 @@ Each environment carries two layers of metadata.
 - Recommended episode length.
 - A fixed tick rate for realtime environments, which drives the session loop (see [interaction.md](interaction.md)).
 - Default per-step and per-episode time limits. These are defaults only. Each iteration can override them (see [leaderboard.md](leaderboard.md)).
+- Whether agent messaging is enabled, and if so the message length cap. See [communication.md](communication.md).
+- Whether the LLM API is available to agents in this environment. See [llm.md](llm.md).
 - A reference to the renderer that knows how to draw this environment. See [interaction.md](interaction.md).
 
 The intrinsic layer is what the environment code already gives us. The public-facing layer is what we add so the same environment can be presented on a website, plugged into the leaderboard workflow, and discovered by participants. Both layers travel together.

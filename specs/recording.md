@@ -10,9 +10,11 @@ Three things follow from this:
 
 Replays are linkable by URL.
 
+Chat messages are part of the per-step state object, so they are recorded and replayed like everything else (see [communication.md](communication.md)). LLM telemetry is stored as a sidecar next to the recording, keyed by tick and slot and covered by the same schema version (see [llm.md](llm.md)).
+
 ## What gets recorded
 
-Leaderboard runs are always recorded (see [leaderboard.md](leaderboard.md)). Live sessions are recorded only when the user chooses to save the replay at the end of the session, next to the feedback prompt (see [frontend.md](frontend.md)). Idle play therefore does not grow storage without bound.
+Every session is recorded automatically, leaderboard runs and live sessions alike (see [leaderboard.md](leaderboard.md) and [frontend.md](frontend.md)). Storage stays bounded through retention rather than opt-in. Leaderboard recordings are kept for as long as their iteration remains viewable. Live session recordings are kept for a deployment-configured window (30 days by default) under a per-user quota, evicting the oldest unpinned recordings first. A user can pin a replay to exempt it from eviction; pinned replays still count against the quota. Recordings are small by design, so the policy is generous at class scale.
 
 ## Storage
 

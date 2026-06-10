@@ -10,17 +10,23 @@ Execution is split between two places. Rendering and human input always live in 
 
 ## Live sessions
 
-A live session connects the browser to the backend over WebSocket. The backend launches one session container, relays each per-step state object from it to the renderer, and feeds human input back into the human slot (see [interaction.md](interaction.md) for the session loop). Inside the container, the harness steps the environment and queries each non-human slot's agent in turn. The container lives for the duration of the session.
+A live session connects the browser to the backend over WebSocket. The backend launches one session container, relays each per-step state object from it to the renderer, and feeds human input back into the human slot (see [interaction.md](interaction.md) for the session loop). Inside the container, the harness steps the environment and queries each non-human slot's agent in turn. The harness also relays chat messages between slots and over the WebSocket to the human player and spectators (see [communication.md](communication.md)). The container lives for the duration of the session.
 
 ## Sandboxing
 
-Session containers are locked down. They run with no network access, fixed CPU and memory quotas, and a read-only filesystem except for a scratch directory. No network also closes a cheating vector: an agent cannot phone an external API or model to choose its actions.
+Session containers are locked down. They run with fixed CPU and memory quotas and a read-only filesystem except for a scratch directory. The only network a container can reach is an internal one whose single endpoint is the LLM gateway (see [llm.md](llm.md)); there is no general internet access. The original concern behind blocking the network was cheating, an agent secretly phoning an outside service to choose its actions. That concern survives in an updated form: arbitrary network access stays blocked, and the model calls an agent can make go through the gateway, where they are sanctioned, equal for every participant, metered, and fully logged.
 
 Agents in a multi-agent session share the container, so a malicious agent could in principle read or interfere with its opponent. We accept that trade at class scale: submissions are pinned commits, so the operator can review the code before it runs, and every leaderboard run is recorded for inspection afterwards (see [recording.md](recording.md)).
 
 ## Local development
 
 Developers of the sandbox itself run the same stack locally, Docker backend included. Participants do not need the stack at all; they develop and test their agents against vanilla PettingZoo using the template repos (see [submission.md](submission.md)).
+
+## Implementation languages
+
+The language split follows the container boundary. Everything inside the session container is Python: the harness loads participant agents in-process alongside PettingZoo, so there is no real alternative. Everything outside is TypeScript on Node: GitHub OAuth, submissions, leaderboard storage, replay serving, the browser-facing WebSocket endpoint, and the Docker orchestration that launches and supervises session containers, all sharing native types and tooling with the browser renderer. The one allowed exception is the LLM gateway, which may be an off-the-shelf proxy such as LiteLLM running as its own service rather than being reimplemented in TypeScript (see [llm.md](llm.md)).
+
+The per-step state object is the contract across that boundary. It is defined once as a versioned JSON Schema; the TypeScript backend and renderer derive their types from it, and the Python harness validates the payloads it emits against it. This is the same schema version that recordings carry in their header (see [recording.md](recording.md)), so there is a single source of truth for the wire format and the stored format alike.
 
 ## Future work: in-browser agents
 
