@@ -1,6 +1,6 @@
 # Stage 3: Backend and Live Sessions
 
-Status: not started. The stage-start stack decisions are confirmed and recorded below, and the detailed design lives under [stage-03/](stage-03/).
+Status: in progress. The stage-start stack decisions are confirmed and recorded below, and the detailed design lives under [stage-03/](stage-03/). Build-order step 1 (the backend package skeleton, the storage layer, and the generated `environments.json`) is implemented and its design doc is in sync; the remaining steps are still to come.
 
 ## Goal
 
