@@ -8,7 +8,7 @@ directory is the S3 seam: it maps one to one onto an object-key prefix.
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from types import TracebackType
 from typing import IO, TYPE_CHECKING
@@ -29,19 +29,35 @@ def _dump_line(payload: object) -> str:
 
 
 class _FolderRecordingWriter:
-    """Writes a header line then one validated state per line, flushing on every write."""
+    """Writes a header line then one validated state per line, flushing on every write.
 
-    def __init__(self, path: Path, header: RecordingHeader) -> None:
+    When ``on_line`` is given, each serialized line (header and every state) is also handed to
+    it — serialized exactly once, so a mirror destination (Stage 3's live protocol stream)
+    cannot drift from the bytes on disk. The callback runs after the file write and flush, so a
+    streaming consumer never sees a line the recording has not yet durably captured.
+    """
+
+    def __init__(
+        self,
+        path: Path,
+        header: RecordingHeader,
+        on_line: Callable[[str], None] | None = None,
+    ) -> None:
         check_header(header)
         self._header = header
+        self._on_line = on_line
         self._handle: IO[str] = path.open("w", encoding="utf-8", newline="\n")
-        self._handle.write(_dump_line(header))
-        self._handle.flush()
+        self._emit(_dump_line(header))
 
     def write_step(self, state: StepState) -> None:
         check_step(state, self._header["schema_version"])
-        self._handle.write(_dump_line(state))
+        self._emit(_dump_line(state))
+
+    def _emit(self, line: str) -> None:
+        self._handle.write(line)
         self._handle.flush()
+        if self._on_line is not None:
+            self._on_line(line)
 
     def __enter__(self) -> _FolderRecordingWriter:
         return self
@@ -91,10 +107,16 @@ class _FolderRecording:
 
 
 class FolderRecordingStore:
-    """A :class:`RecordingStore` over a root directory on disk."""
+    """A :class:`RecordingStore` over a root directory on disk.
 
-    def __init__(self, root: Path | str) -> None:
+    ``on_line``, when supplied, mirrors every serialized header and state line emitted by the
+    writers this store creates. It is the seam Stage 3's tee uses to stream the same bytes it
+    persists; left ``None`` (the default), the store behaves exactly as a plain on-disk store.
+    """
+
+    def __init__(self, root: Path | str, *, on_line: Callable[[str], None] | None = None) -> None:
         self._root = Path(root)
+        self._on_line = on_line
         self._root.mkdir(parents=True, exist_ok=True)
 
     def _dir(self, recording_id: str) -> Path:
@@ -103,7 +125,7 @@ class FolderRecordingStore:
     def create(self, recording_id: str, header: RecordingHeader) -> _FolderRecordingWriter:
         directory = self._dir(recording_id)
         directory.mkdir(parents=True, exist_ok=True)
-        return _FolderRecordingWriter(directory / _RECORDING_FILENAME, header)
+        return _FolderRecordingWriter(directory / _RECORDING_FILENAME, header, self._on_line)
 
     def open(self, recording_id: str) -> _FolderRecording:
         path = self._dir(recording_id) / _RECORDING_FILENAME

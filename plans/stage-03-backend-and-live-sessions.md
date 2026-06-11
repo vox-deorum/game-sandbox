@@ -1,6 +1,6 @@
 # Stage 3: Backend and Live Sessions
 
-Status: in progress. The stage-start stack decisions are confirmed and recorded below, and the detailed design lives under [stage-03/](stage-03/). Build-order steps 1 (the backend package skeleton, the storage layer, and the generated `environments.json`) and 2 (the driver-neutral execution-driver interface, the `FakeDriver` test double, and the import-isolation lint config) are implemented and their design docs are in sync; the remaining steps are still to come.
+Status: in progress. The stage-start stack decisions are confirmed and recorded below, and the detailed design lives under [stage-03/](stage-03/). Build-order steps 1 (the backend package skeleton, the storage layer, and the generated `environments.json`), 2 (the driver-neutral execution-driver interface, the `FakeDriver` test double, and the import-isolation lint config), and 3 (the `Episode` extraction in `session.py` behind the Stage 2 regression gate, the `live`/`live_io` modules, and their pytest suites) are implemented and their design docs are in sync; the remaining steps (the Docker driver and base image, the orchestrator and HTTP API, the end-to-end integration job, and the docs) are still to come.
 
 ## Goal
 

@@ -3,8 +3,10 @@
 Stage 1 shipped the cross-boundary contract pieces: schema validation, typed state builders,
 and the recording store. Stage 2 adds the session loop and its surrounding machinery — the
 agent interface, the manifest loader, the environment metadata and registry, the injectable
-clock, and ``run_episode`` with its slot bindings and action sources. Environments live in a
-separate package discovered through entry points; the harness never imports them.
+clock, and ``run_episode`` with its slot bindings and action sources. Stage 3 factors the loop
+into an ``Episode`` whose ``step_once`` both ``run_episode`` and the live container runner drive.
+Environments live in a separate package discovered through entry points; the harness never
+imports them.
 """
 
 from game_sandbox_harness.agent import (
@@ -37,6 +39,7 @@ from game_sandbox_harness.schema import (
 from game_sandbox_harness.session import (
     ActionSource,
     AgentSlot,
+    Episode,
     EpisodeResult,
     ExternalSlot,
     NoopSource,
@@ -98,6 +101,7 @@ __all__ = [
     "Slot",
     "NoopSource",
     "ScriptedSource",
+    "Episode",
     "EpisodeResult",
     "run_episode",
 ]
