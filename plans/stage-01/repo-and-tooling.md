@@ -14,8 +14,8 @@ harness/                 uv workspace member, Python package game_sandbox_harnes
 environments/            placeholder README (filled in Stage 2)
 backend/                 placeholder README (filled in Stage 3)
 frontend/                placeholder README (filled in Stage 4)
-templates/               placeholder template content (real content in Stage 2)
-examples/                example overlays, starting with examples/hello/
+templates/               base/ layer + one <env>/ layer per environment (real content in Stage 2)
+examples/                example overlays under <env>/<name>/, starting with flappy_bird/hello/
 gateway/                 placeholder README (filled in Stage 7)
 docs/                    MkDocs source (see docs-site.md)
 scripts/                 cross-platform Python dev scripts
@@ -49,7 +49,7 @@ Every dev script is Python under `scripts/`, run as `uv run python scripts/<name
 | Regenerate types, packaged schema, fixtures | `uv run python scripts/generate.py` |
 | Lint and typecheck both languages | `npm run check` (fans out to ruff, pyright, biome, tsc) |
 | Run all tests | `npm run test` (pytest plus vitest) |
-| Compose one example | `uv run python scripts/compose_example.py <name>` |
+| Compose a template or example | `uv run python scripts/compose.py <env> [name]` |
 | Run one CI job exactly as CI does | `uv run python scripts/ci.py <job>` |
 | Publish template and examples (used by CI, runnable locally) | `uv run python scripts/publish_template.py` |
 

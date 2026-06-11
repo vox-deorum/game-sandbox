@@ -25,7 +25,7 @@ Every dev script is Python under `scripts/`, run through uv, so nothing depends 
 | Regenerate types, packaged schema, and fixtures | `uv run python scripts/generate.py` |
 | Lint and typecheck both languages | `npm run check` |
 | Run all tests | `npm run test` |
-| Compose one example | `uv run python scripts/compose_example.py <name>` |
+| Compose a template or example | `uv run python scripts/compose.py <env> [name]` |
 | Run one CI job exactly as CI does | `uv run python scripts/ci.py <job>` |
 | Run the full local suite (all three workflows) | `uv run python scripts/ci.py all` |
 | Publish the template and examples (dry-run available) | `uv run python scripts/publish_template.py --dry-run` |

@@ -1,4 +1,4 @@
-"""Play one episode of Flappy Bird with your agent, locally, against vanilla PettingZoo.
+"""Play one episode of your environment with your agent, locally, against vanilla PettingZoo.
 
     python play.py                 # render in a window
     python play.py --headless      # no window, just the score
@@ -7,7 +7,9 @@
 This script touches nothing of the sandbox backend: it loads your agent through
 ``manifest.json``, builds the environment from the synced ``sandbox_env`` package, and runs
 the same agent-environment cycle the server runs. The loop here is the contract — the server
-wraps this exact stepping with timeouts, recording, and (for live play) pacing.
+wraps this exact stepping with timeouts, recording, and (for live play) pacing. It is
+environment-agnostic: ``sandbox_env`` exports ``make_env`` and ``PLAYER_SLOT`` for whichever
+environment this template targets.
 """
 
 from __future__ import annotations
@@ -19,9 +21,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from sandbox_env.flappy_bird.env import make_env
-
-SLOT_ID = "player_0"
+from sandbox_env import PLAYER_SLOT, make_env
 
 
 def load_agent(repo_root: Path) -> Any:
@@ -51,7 +51,7 @@ def play_episode(agent: Any, env: Any, *, seed: int, max_steps: int | None = Non
             continue
         action = agent.act(observation)
         env.step(action)
-        score += float(env.rewards[SLOT_ID])
+        score += float(env.rewards[PLAYER_SLOT])
         tick += 1
         if max_steps is not None and tick >= max_steps:
             break
@@ -59,7 +59,7 @@ def play_episode(agent: Any, env: Any, *, seed: int, max_steps: int | None = Non
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Play one episode of Flappy Bird locally.")
+    parser = argparse.ArgumentParser(description="Play one episode locally.")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--headless", action="store_true", help="run without a render window")
     parser.add_argument("--steps", type=int, help="cap the episode at this many steps")

@@ -48,10 +48,11 @@ jobs:
       - run: uv sync
       - run: uv run python scripts/ci.py examples
 
-  # Then: publish the template to the student repo's main (with the mirrored v<N> tag) and
-  # force-push each composed example to its examples/<name> branch. One script, the same
-  # compose path CI uses, so the published artifact is byte-identical to what verify tested.
-  # Nothing here touches the monorepo's own tags.
+  # Then: publish the default environment's composed template to the student repo's main
+  # (with the mirrored v<N> tag), and force-push each environment's composed template to its
+  # templates/<env> branch and each composed example to its examples/<env>/<name> branch. One
+  # script, the same compose path CI uses, so the published artifact is byte-identical to what
+  # verify tested. Nothing here touches the monorepo's own tags.
   publish:
     needs: verify
     runs-on: ubuntu-latest

@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 from play import load_agent, play_episode
-from sandbox_env.flappy_bird.env import make_env
+from sandbox_env import make_env
 
 
 def main(argv: list[str] | None = None) -> int:

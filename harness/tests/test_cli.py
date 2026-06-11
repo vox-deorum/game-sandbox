@@ -17,11 +17,11 @@ from game_sandbox_harness.recording.local import FolderRecordingStore
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-from compose_example import compose  # noqa: E402
+from compose import compose_example  # noqa: E402
 
 
 def test_cli_plays_composed_hello_and_records(tmp_path: Path):
-    repo = compose("hello")  # full runnable repo under build/examples/hello
+    repo = compose_example("flappy_bird", "hello")  # full runnable repo under build/examples/
 
     rc = main(
         [

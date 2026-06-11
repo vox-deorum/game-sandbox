@@ -5,16 +5,19 @@ with a ``version`` input N), which calls this script with ``--tag template-v<N>`
 equally runnable locally with the same flag. The ``template-v<N>`` tag is *not* the trigger
 — the workflow stamps it as its last step, after the student repo is fully updated, so a
 run that fails partway leaves no dangling release tag to clean up before retrying. The
-workflow is a thin wrapper around this one script and ``scripts/compose_example.py``, so
-local development, CI verification, and publishing all exercise one code path and a
-student's clone is byte-identical to what CI tested.
+workflow is a thin wrapper around this one script and ``scripts/compose.py``, so local
+development, CI verification, and publishing all exercise one code path and a student's
+clone is byte-identical to what CI tested.
 
-What it does for tag ``template-v<N>``:
+The student repo (``vox-deorum/game-agent-template``) is a single repository whose branches
+carry the per-environment templates and examples. For tag ``template-v<N>``:
 
-1. Composes every example from the current ``templates/``.
-2. Publishes ``templates/**`` to the student repo's ``main`` branch, committed as
-   ``Template v<N> from game-sandbox@<sha>`` with a mirrored ``v<N>`` tag.
-3. Force-pushes each composed example to an orphan branch ``examples/<name>``.
+1. Composes the default-environment template and every example from the current ``templates/``.
+2. Publishes the *default* environment's composed template to ``main`` (so "Use this
+   template" instantiates it), committed as ``Template v<N> from game-sandbox@<sha>`` with a
+   mirrored ``v<N>`` tag.
+3. Force-pushes each environment's composed template to an orphan branch ``templates/<env>``.
+4. Force-pushes each composed example to an orphan branch ``examples/<env>/<name>``.
 
 ``--dry-run`` does everything except the network pushes (it still composes and assembles
 the snapshots under ``build/publish/``), which is how the tag-to-publish path is rehearsed
@@ -31,8 +34,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-from _paths import BUILD_DIR, REPO_ROOT, TEMPLATES_DIR
-from compose_example import compose, list_examples
+from _paths import BUILD_DIR, DEFAULT_TEMPLATE_ENV, REPO_ROOT
+from compose import compose_example, compose_template, list_envs, list_examples
 
 DEFAULT_TARGET_REPO = "vox-deorum/game-agent-template"
 _TAG_PATTERN = re.compile(r"^(?:refs/tags/)?template-v(\d+)$")
@@ -87,6 +90,27 @@ def _assemble_snapshot(src: Path, dest: Path) -> None:
     shutil.copytree(src, dest, dirs_exist_ok=True)
 
 
+def _drop_venv(snapshot_dir: Path) -> None:
+    """Remove a per-compose .venv if a local compose left one behind in the snapshot."""
+    venv = snapshot_dir / ".venv"
+    if venv.exists():
+        shutil.rmtree(venv)
+
+
+def _publish_orphan_snapshot(
+    src: Path, dest: Path, *, branch: str, message: str, remote: str
+) -> None:
+    """Assemble ``src`` under ``dest`` and force-push it as a fresh orphan ``branch``."""
+    dest.mkdir(parents=True)
+    _assemble_snapshot(src, dest)
+    _drop_venv(dest)
+    _git(["init", "-q"], cwd=dest)
+    _git(["checkout", "-q", "--orphan", branch], cwd=dest)
+    _git(["add", "-A"], cwd=dest)
+    _git(["commit", "-q", "-m", message], cwd=dest)
+    _git(["push", "-f", remote, f"HEAD:{branch}"], cwd=dest)
+
+
 def publish(
     *,
     version: int,
@@ -95,9 +119,20 @@ def publish(
     token: str | None,
     dry_run: bool,
 ) -> None:
+    envs = list_envs()
+    if DEFAULT_TEMPLATE_ENV not in envs:
+        raise PublishError(
+            f"default environment {DEFAULT_TEMPLATE_ENV!r} has no template layer; "
+            f"found {envs or '(none)'}."
+        )
+    templates = {env: compose_template(env) for env in envs}
     examples = list_examples()
-    composed = {name: compose(name) for name in examples}
-    print(f"composed {len(composed)} example(s): {', '.join(composed) or '(none)'}")
+    composed = {(env, name): compose_example(env, name) for env, name in examples}
+    print(f"composed {len(templates)} template(s): {', '.join(templates) or '(none)'}")
+    print(
+        f"composed {len(composed)} example(s): "
+        f"{', '.join(f'{e}/{n}' for e, n in composed) or '(none)'}"
+    )
 
     publish_root = BUILD_DIR / "publish"
     if publish_root.exists():
@@ -107,21 +142,27 @@ def publish(
     remote = _remote_url(target_repo, token)
     commit_message = f"Template v{version} from game-sandbox@{sha}"
 
-    # 1. The template -> main branch, with a mirrored v<N> tag.
+    # 1. The default environment's composed template -> main branch, with a mirrored v<N> tag.
+    #    "Use this template" instantiates main, so main must be a runnable composed kit, not
+    #    the raw templates/ tree (which no longer runs on its own).
     main_dir = publish_root / "main"
     main_dir.mkdir()
-    _assemble_snapshot(TEMPLATES_DIR, main_dir)
-    print(f"prepared template snapshot for main: {commit_message!r}, tag v{version}")
+    _assemble_snapshot(templates[DEFAULT_TEMPLATE_ENV], main_dir)
+    _drop_venv(main_dir)
+    print(
+        f"prepared {DEFAULT_TEMPLATE_ENV} template snapshot for main: "
+        f"{commit_message!r}, tag v{version}"
+    )
 
     if dry_run:
         print(
-            f"[dry-run] would commit the template to main and push tag v{version} to {target_repo}"
+            f"[dry-run] would commit the {DEFAULT_TEMPLATE_ENV} template to main and push tag "
+            f"v{version} to {target_repo}"
         )
-        for name in composed:
-            print(
-                f"[dry-run] would force-push example {name!r} to branch examples/{name} "
-                f"on {target_repo}"
-            )
+        for env in templates:
+            print(f"[dry-run] would force-push template {env!r} to branch templates/{env}")
+        for env, name in composed:
+            print(f"[dry-run] would force-push example to branch examples/{env}/{name}")
         print("[dry-run] no network operations performed")
         return
 
@@ -136,23 +177,30 @@ def publish(
     _git(["push", "-f", remote, "main"], cwd=main_dir)
     _git(["push", "-f", remote, f"v{version}"], cwd=main_dir)
 
-    # 2. Each composed example -> its own orphan snapshot branch.
-    for name, out_dir in composed.items():
-        branch = f"examples/{name}"
-        ex_dir = publish_root / "examples" / name
-        ex_dir.mkdir(parents=True)
-        _assemble_snapshot(out_dir, ex_dir)
-        # Drop the per-example venv if a local compose left one behind.
-        venv = ex_dir / ".venv"
-        if venv.exists():
-            shutil.rmtree(venv)
-        _git(["init", "-q"], cwd=ex_dir)
-        _git(["checkout", "-q", "--orphan", branch], cwd=ex_dir)
-        _git(["add", "-A"], cwd=ex_dir)
-        _git(["commit", "-q", "-m", f"{commit_message} (example: {name})"], cwd=ex_dir)
-        _git(["push", "-f", remote, f"HEAD:{branch}"], cwd=ex_dir)
+    # 2. Each environment's composed template -> its own orphan snapshot branch.
+    for env, out_dir in templates.items():
+        _publish_orphan_snapshot(
+            out_dir,
+            publish_root / "templates" / env,
+            branch=f"templates/{env}",
+            message=f"{commit_message} (template: {env})",
+            remote=remote,
+        )
 
-    print(f"published template v{version} and {len(composed)} example(s) to {target_repo}")
+    # 3. Each composed example -> its own orphan snapshot branch.
+    for (env, name), out_dir in composed.items():
+        _publish_orphan_snapshot(
+            out_dir,
+            publish_root / "examples" / env / name,
+            branch=f"examples/{env}/{name}",
+            message=f"{commit_message} (example: {env}/{name})",
+            remote=remote,
+        )
+
+    print(
+        f"published template v{version}: {len(templates)} template branch(es) and "
+        f"{len(composed)} example branch(es) to {target_repo}"
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

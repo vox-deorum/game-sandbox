@@ -11,7 +11,11 @@ import pytest
 from game_sandbox_harness.agent import AgentBase, has_chat, has_learn, is_agent
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-TEMPLATE_AGENT = REPO_ROOT / "templates" / "agent.py"
+# One agent.py stub per environment template layer (templates/<env>/agent.py); the
+# env-agnostic templates/base/ carries no agent stub. Every env stub gets the parity check.
+TEMPLATE_AGENTS = sorted(
+    p for p in (REPO_ROOT / "templates").glob("*/agent.py") if p.parent.name != "base"
+)
 
 
 def test_agentbase_is_abstract():
@@ -54,18 +58,20 @@ def test_missing_required_method_fails_detection():
     assert not is_agent(NoAct())
 
 
-def _load_template_agent_class() -> type:
-    # Load templates/agent.py under a unique module name so it never collides with a repo's
+def _load_template_agent_class(path: Path) -> type:
+    # Load a template agent.py under a unique module name so it never collides with a repo's
     # own 'agent' module in sys.modules.
-    spec = importlib.util.spec_from_file_location("template_agent_stub", TEMPLATE_AGENT)
+    module_name = f"template_agent_stub_{path.parent.name}"
+    spec = importlib.util.spec_from_file_location(module_name, path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module.Agent
 
 
-def test_template_stub_and_agentbase_agree_method_for_method():
-    template_cls = _load_template_agent_class()
+@pytest.mark.parametrize("agent_path", TEMPLATE_AGENTS, ids=lambda p: p.parent.name)
+def test_template_stub_and_agentbase_agree_method_for_method(agent_path: Path):
+    template_cls = _load_template_agent_class(agent_path)
     for name in ("reset", "act"):
         base_sig = inspect.signature(getattr(AgentBase, name))
         stub_sig = inspect.signature(getattr(template_cls, name))

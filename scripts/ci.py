@@ -9,7 +9,8 @@ ci.yml:
 - ``python``: ruff check, ruff format --check, pyright, pytest.
 - ``typescript``: biome check, tsc --noEmit, vitest run.
 - ``generated-code-fresh``: regenerate, then fail if anything generated changed.
-- ``examples``: compose every example, install it into a fresh venv, run its pytest.
+- ``examples``: compose every example, install it into a fresh venv, run its pytest; also
+  fail if any environment template layer ships no example.
 
 docs.yml:
 - ``docs``: the strict ``mkdocs build`` that gates docs pull requests.
@@ -36,8 +37,9 @@ from _paths import (
     FIXTURES_DIR,
     HARNESS_SCHEMA_DATA,
     REPO_ROOT,
-    TEMPLATE_SANDBOX_ENV,
+    TEMPLATE_ENVS,
     TS_GENERATED_DIR,
+    template_sandbox_env,
 )
 
 _NPM = "npm.cmd" if sys.platform == "win32" else "npm"
@@ -67,26 +69,39 @@ def job_typescript() -> None:
 
 def job_generated_code_fresh() -> None:
     _run(["uv", "run", "python", "scripts/generate.py"])
-    # Fail if regeneration changed anything tracked under the four generated locations.
+    # Fail if regeneration changed anything tracked under the generated locations: the schema
+    # mirrors, plus every per-environment template sandbox_env/.
     targets = [
         str(TS_GENERATED_DIR.relative_to(REPO_ROOT)),
         str(HARNESS_SCHEMA_DATA.relative_to(REPO_ROOT)),
         str(FIXTURES_DIR.relative_to(REPO_ROOT)),
-        str(TEMPLATE_SANDBOX_ENV.relative_to(REPO_ROOT)),
+        *(str(template_sandbox_env(env).relative_to(REPO_ROOT)) for env in TEMPLATE_ENVS),
     ]
     _run(["git", "diff", "--exit-code", "--", *targets])
 
 
 def job_examples() -> None:
-    from compose_example import compose, list_examples
+    from compose import compose_example, list_envs, list_examples
 
-    names = list_examples()
-    if not names:
+    pairs = list_examples()
+    if not pairs:
         print("no examples to compose")
         return
-    for name in names:
-        print(f"=== example: {name} ===", flush=True)
-        out_dir = compose(name)
+
+    # Every environment layer must ship at least one example: the bare template's pytest is
+    # red by design (agent.py raises NotImplementedError), so a composed example is the only
+    # green proof that an env layer works end to end.
+    envs_with_examples = {env for env, _ in pairs}
+    missing = [env for env in list_envs() if env not in envs_with_examples]
+    if missing:
+        raise SystemExit(
+            f"environment template layer(s) {missing} ship no example; every env layer must "
+            f"have at least one example under examples/<env>/<name>/ to prove it composes."
+        )
+
+    for env, name in pairs:
+        print(f"=== example: {env}/{name} ===", flush=True)
+        out_dir = compose_example(env, name)
         venv_dir = out_dir / ".venv"
         _run(["uv", "venv", str(venv_dir)])
         python = (

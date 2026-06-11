@@ -19,14 +19,30 @@ TEMPLATES_DIR = REPO_ROOT / "templates"
 EXAMPLES_DIR = REPO_ROOT / "examples"
 BUILD_DIR = REPO_ROOT / "build"
 
-# The environments package source, and the template's synced copy of the environment modules.
+# A template is composed from the env-agnostic base layer plus one per-environment layer.
+# templates/base/ never ships alone; templates/<env>/ overlays it whole-file. The default
+# environment is what the student repo's main branch (and "Use this template") instantiates.
+TEMPLATE_BASE_DIR = TEMPLATES_DIR / "base"
+DEFAULT_TEMPLATE_ENV = "flappy_bird"
+
+# The environments package source, and the per-env synced copies of the environment modules.
 ENVIRONMENTS_SRC = REPO_ROOT / "environments" / "src" / "game_sandbox_environments"
-TEMPLATE_SANDBOX_ENV = TEMPLATES_DIR / "sandbox_env"
-# Environment modules that are import-self-contained (relative + third-party only) and so are
-# copied verbatim into the template. The harness-dependent flappy_bird/__init__.py is not
-# synced; the generate script writes a minimal __init__ in its place.
-SYNCED_ENV_MODULES = (
-    "single_agent.py",
-    "flappy_bird/env.py",
-    "flappy_bird/overlay.py",
-)
+
+# The registration point for environment templates: env id -> the import-self-contained
+# modules (relative + third-party imports only) copied verbatim into templates/<env>/sandbox_env/.
+# The harness-dependent flappy_bird/__init__.py is never synced; generate.py writes a minimal
+# __init__ exposing a uniform surface (make_env, ENV_ID, PLAYER_SLOT) in its place. Adding an
+# environment template means adding an entry here (plus its init text in generate.py) and a
+# templates/<env>/ layer.
+TEMPLATE_ENVS = {
+    "flappy_bird": (
+        "single_agent.py",
+        "flappy_bird/env.py",
+        "flappy_bird/overlay.py",
+    ),
+}
+
+
+def template_sandbox_env(env: str) -> Path:
+    """The generated sandbox_env/ sync target inside the ``env`` template layer."""
+    return TEMPLATES_DIR / env / "sandbox_env"

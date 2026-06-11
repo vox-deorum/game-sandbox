@@ -54,7 +54,7 @@ Additionally for the machinery: the docs site builds strictly in CI and (once th
 5. The `schema/ts` package: Ajv guards, `readRecording`, vitest over the committed fixtures. The round trip now exists locally.
 6. `ci.yml` with its four jobs; the round trip and staleness checks are now enforced.
 7. The docs skeleton, the five real contributor pages, `mkdocs.yml`, `docs.yml`, and Pages setup. Can run in parallel with 3 through 6.
-8. The placeholder template, `examples/hello/`, the compose script with its tests, and the examples CI job. Can run in parallel with 5.
+8. The placeholder template, the `flappy_bird/hello` example, the compose script with its tests, and the examples CI job. Can run in parallel with 5.
 9. Create the student repository, mark it as a template repository, mint the token secret, and add `template-publish.yml` with its publish script.
 10. Run the publish workflow manually for v0, verify the full pipeline end to end (it tags `template-v0` on success), fix what breaks.
 11. Keep this file and the stage-01 documents in sync with whatever the implementation confirms or changes, per the [plan rules](README.md).

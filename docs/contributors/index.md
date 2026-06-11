@@ -14,8 +14,8 @@ The language split follows the container boundary (see the [execution spec](../s
 | `backend/` | The Node/TypeScript backend. Placeholder until Stage 3. |
 | `frontend/` | The browser frontend and renderers. Placeholder until Stage 4. |
 | `gateway/` | The LLM gateway. Placeholder until Stage 7. |
-| `templates/` | The student starter kit. |
-| `examples/` | Example overlays holding only their diff against `templates/`. |
+| `templates/` | The student starter kit: an env-agnostic `base/` layer plus one `<env>/` layer per environment. |
+| `examples/` | Example overlays under `<env>/<name>/`, holding only their diff against the composed template. |
 | `docs/` | This site. |
 | `scripts/` | Cross-platform Python dev scripts. |
 
