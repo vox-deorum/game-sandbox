@@ -10,7 +10,7 @@ The server side of a live session works end to end without a real frontend: the 
 
 The detailed design lives under [stage-03/](stage-03/):
 
-- [backend-skeleton-and-storage.md](stage-03/backend-skeleton-and-storage.md): the backend package and tooling, configuration, the identity stub, the Kysely-free domain types and the storage interface over Kysely/SQLite, the generated environment metadata.
+- [backend-skeleton-and-storage.md](stage-03/backend-skeleton-and-storage.md): the backend package and tooling, configuration, the identity stub, the single Kysely schema with derived domain types and the storage interface over SQLite, the generated environment metadata.
 - [execution-driver-and-image.md](stage-03/execution-driver-and-image.md): the driver interface and sandbox profile, the dockerode driver, the session base image with the built-in agent, the import-isolation lint rule.
 - [transport-and-live-runner.md](stage-03/transport-and-live-runner.md): the container and WebSocket protocol layers, the line-classification rule, the `Episode` refactor, the paced and pausable live runner in the harness.
 - [orchestrator-and-http-api.md](stage-03/orchestrator-and-http-api.md): the session lifecycle and teardown paths, the relay, the HTTP API and the WebSocket endpoint.
@@ -18,7 +18,7 @@ The detailed design lives under [stage-03/](stage-03/):
 
 ## Scope
 
-Stand up the Node/TypeScript backend in `backend/`. Confirmed at stage start: Fastify with `@fastify/websocket` for HTTP and WebSocket, dockerode for container control (confined to the local Docker driver, see below), and SQLite through better-sqlite3 with Kysely behind a thin storage layer for the relational data that later stages add (sessions now; submissions, iterations, and ratings later). The storage layer is an interface speaking plain domain types defined independently of the query layer, so the stored data types are reusable across the backend and SQLite can be swapped without touching callers. The environment metadata the backend serves is a generated, committed JSON artifact under the existing staleness check, so the backend never runs Python.
+Stand up the Node/TypeScript backend in `backend/`. Confirmed at stage start: Fastify with `@fastify/websocket` for HTTP and WebSocket, dockerode for container control (confined to the local Docker driver, see below), and SQLite through better-sqlite3 with Kysely behind a thin storage layer for the relational data that later stages add (sessions now; submissions, iterations, and ratings later). The storage layer is an interface speaking domain types derived from a single Kysely table schema — the one declaration of the stored data, with no parallel hand-maintained type set — and swapping SQLite for another engine means wiring a different Kysely dialect, not writing a second schema or implementation. The environment metadata the backend serves is a generated, committed JSON artifact under the existing staleness check, so the backend never runs Python.
 
 Build the session base image: Python, the harness package, PettingZoo, the environments, and the template dependency set. Base images are keyed by dependency-set version per [execution.md](../specs/execution.md), though this stage only needs the current version. Stage 5 overlays submission code on top; in this stage, the base image includes a built-in scripted agent so watch-style runs can be exercised before submissions exist, while human-controlled Flappy Bird sessions use the same harness slot with WebSocket input.
 
@@ -44,7 +44,7 @@ A scripted WebSocket test client starts a session, receives schema-valid states 
 
 ## Build order
 
-1. The backend package skeleton: workspace membership, tooling, config, the identity stub, the storage layer (domain types, interface, Kysely/SQLite implementation, the sessions migration), and the generated `environments.json` through `scripts/generate.py` and the staleness check.
+1. The backend package skeleton: workspace membership, tooling, config, the identity stub, the storage layer (the Kysely schema and derived domain types, interface, SQLite wiring, the sessions migration), and the generated `environments.json` through `scripts/generate.py` and the staleness check.
 2. The driver interface types, the `FakeDriver` test double, and the import-isolation lint configuration. Can run in parallel with 1.
 3. The protocols and the live runner: the `Episode` extraction in `session.py` with the Stage 2 suites as the regression gate, then the live modules with their pytest suites. Python-only; can run in parallel with 1 and 2.
 4. The Docker driver and the session base image, with the driver-level integration tests (memory quota, no network, orphan reaping). Needs 2.
