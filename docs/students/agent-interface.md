@@ -34,7 +34,7 @@ The optional hooks are detected **by presence**: if you do not define `learn` or
 
 Two limits, both defaulted by the environment and overridable per run:
 
-- A **per-step limit**: if a single `act` (plus `learn`, if present) exceeds it, the harness discards your action, applies the environment's default action for that step, and records the overage. You pay for slowness in the outcome _and_ in your timing column.
+- A **per-step limit**: if a single `act` exceeds it, the harness discards your action, applies the environment's default action for that step, and records the overage. If `learn` is present, its time is added to the same step's overage accounting, but it runs after the step, so it cannot change the action that already happened.
 - A **per-episode budget**: the cumulative measured compute across the episode. Exhaust it and the episode ends early with reason `episode_limit`.
 
 Time spent in `learn` and `chat` counts against both limits, so an agent that learns or talks heavily pays for it in the efficiency column rather than stalling the run. The recorded `decision_ms` is pure `act` time; `learn_ms`, when present, is reported separately.

@@ -141,29 +141,32 @@ def run_episode(
         episode_limit_ms if episode_limit_ms is not None else entry.meta.episode_limit_ms
     )
 
-    env = entry.make()
-    env.reset(seed=seed)
-    for binding in slots.values():
-        if isinstance(binding, AgentSlot):
-            binding.agent.reset(seed)
-
     state = {slot_id: _SlotState() for slot_id in slots}
 
-    created_at_ms = clock.now_ms()
+    env = None
     writer = None
     writer_cm = None
-    if store is not None:
-        if recording_id is None:
-            recording_id = f"{entry.meta.env_id}-seed{seed}-{created_at_ms}"
-        header = build_header(
-            environment=entry.meta.env_id, seed=seed, created_at=_iso_utc(created_at_ms)
-        )
-        writer_cm = store.create(recording_id, header)
-        writer = writer_cm.__enter__()
-
     reason = REASON_TERMINATED
     tick = 0
     try:
+        # Created inside the try so a failure in env.reset or an agent's reset still runs the
+        # finally block and closes whatever env.make() built.
+        env = entry.make()
+        env.reset(seed=seed)
+        for binding in slots.values():
+            if isinstance(binding, AgentSlot):
+                binding.agent.reset(seed)
+
+        created_at_ms = clock.now_ms()
+        if store is not None:
+            if recording_id is None:
+                recording_id = f"{entry.meta.env_id}-seed{seed}-{created_at_ms}"
+            header = build_header(
+                environment=entry.meta.env_id, seed=seed, created_at=_iso_utc(created_at_ms)
+            )
+            writer_cm = store.create(recording_id, header)
+            writer = writer_cm.__enter__()
+
         while env.agents:
             slot_id = env.agent_selection
             observation, _reward, termination, truncation, _info = env.last()
@@ -177,13 +180,14 @@ def run_episode(
             slot = state[slot_id]
             step_start = clock.now_ms()
             decision_ms: float | None = None
+            agent_compute_ms = 0.0
 
             if isinstance(binding, AgentSlot):
                 action = binding.agent.act(observation)
                 decision_ms = clock.now_ms() - step_start
+                agent_compute_ms += decision_ms
                 slot.budget_used_ms += decision_ms
                 if decision_ms > step_limit:
-                    slot.step_timeouts += 1
                     action = entry.default_action(slot_id)
             else:
                 deadline_ms = _external_deadline(entry, binding, clock)
@@ -201,7 +205,11 @@ def run_episode(
                 learn_start = clock.now_ms()
                 binding.agent.learn(observation, action, reward, terminated_now)
                 learn_ms = clock.now_ms() - learn_start
+                agent_compute_ms += learn_ms
                 slot.budget_used_ms += learn_ms
+
+            if isinstance(binding, AgentSlot) and agent_compute_ms > step_limit:
+                slot.step_timeouts += 1
 
             if writer is not None:
                 overlay = entry.overlay(env) if entry.overlay is not None else None
@@ -241,6 +249,10 @@ def run_episode(
     finally:
         if writer_cm is not None:
             writer_cm.__exit__(None, None, None)
+        if env is not None:
+            close = getattr(env, "close", None)
+            if callable(close):
+                close()
 
     return EpisodeResult(
         ticks=tick,

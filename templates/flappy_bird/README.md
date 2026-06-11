@@ -39,7 +39,7 @@ Edit `agent.py`. The interface is four methods, two required:
 - `learn(observation, action, reward, terminated)` — _optional_; called after each step.
 - `chat(inbox)` — _optional_; only used in environments with messaging.
 
-The optional hooks are detected by presence: leave them out (or commented) and the harness never calls them. Time spent in any of these counts against your per-step and per-episode limits, so an agent that learns or talks heavily pays for it in the efficiency column.
+The optional hooks are detected by presence: leave them out (or commented) and the harness never calls them. Time spent in any of these counts against your timing and episode budget. A late `act` can be replaced with the default action; a late `learn` is recorded as overage after the step.
 
 ## Run it
 

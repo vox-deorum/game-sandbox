@@ -32,7 +32,7 @@ class Agent:
         raise NotImplementedError("implement Agent.act")
 
     # Optional: a reinforcement-learning hook called after every step with that step's
-    # transition. Its time counts against your per-step and per-episode limits.
+    # transition. Its time counts against your timing and episode budget.
     #
     # def learn(self, observation: Any, action: int, reward: float, terminated: bool) -> None:
     #     ...

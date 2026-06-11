@@ -150,6 +150,25 @@ def test_agent_per_step_timeout_discards_action_and_counts_overage():
     assert result.reason == REASON_TERMINATED
 
 
+def test_learn_hook_time_counts_toward_per_step_overage():
+    clock = ManualClock()
+    entry = make_entry(n_steps=3, step_limit_ms=300, episode_limit_ms=120_000)
+
+    class LearningAgent:
+        def reset(self, seed: int) -> None: ...
+
+        def act(self, observation: Any) -> int:
+            clock.advance(100)
+            return 0
+
+        def learn(self, observation, action, reward, terminated) -> None:
+            clock.advance(250)
+
+    result = run_episode(entry, {"player_0": AgentSlot(LearningAgent())}, seed=1, clock=clock)
+    assert result.step_timeouts["player_0"] == 3
+    assert result.reason == REASON_TERMINATED
+
+
 def test_per_episode_budget_truncates():
     clock = ManualClock()
     # Each act costs 800ms (under the 1000ms step limit) but the cumulative budget is 2000ms.

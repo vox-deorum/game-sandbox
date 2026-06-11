@@ -26,6 +26,10 @@ from game_sandbox_harness.agent import has_chat, has_learn
 
 _MANIFEST_FILENAME = "manifest.json"
 _REQUIRED_FIELDS = ("entry_point", "class_name", "template_version")
+# Submission roots loaded so far this process, so the next load can evict a prior repo's
+# modules. Pruned to live directories on each load (see load_agent) so it stays bounded to
+# the submissions still on disk rather than growing for the life of the process.
+_LOADED_REPO_ROOTS: set[Path] = set()
 
 
 class ManifestError(Exception):
@@ -98,15 +102,22 @@ def load_agent(repo_root: Path | str) -> Any:
     manifest = load_manifest(root)
 
     root_str = str(root)
-    if root_str not in sys.path:
-        sys.path.insert(0, root_str)
+    sys.path[:] = [path for path in sys.path if path != root_str]
+    sys.path.insert(0, root_str)
 
+    # Drop roots whose directory is gone (e.g. a finished submission's temp dir) before using
+    # the set, so it never grows without bound across a long-lived loader process.
+    _LOADED_REPO_ROOTS.difference_update({r for r in _LOADED_REPO_ROOTS if not r.exists()})
+    _evict_modules_from_roots((*_LOADED_REPO_ROOTS, root))
+    _evict_entry_modules(manifest.entry_point)
+    importlib.invalidate_caches()
     try:
         module = importlib.import_module(manifest.entry_point)
     except ImportError as error:
         raise ManifestError(
             f"repo {root}: could not import entry-point module {manifest.entry_point!r}: {error}"
         ) from error
+    _ensure_module_loaded_from_repo(root, manifest.entry_point, module)
 
     try:
         agent_cls = getattr(module, manifest.class_name)
@@ -127,7 +138,52 @@ def load_agent(repo_root: Path | str) -> Any:
     if not callable(getattr(agent, "act", None)):
         raise ManifestError(f"repo {root}: {manifest.class_name!r} has no callable 'act' method")
 
+    _LOADED_REPO_ROOTS.add(root)
     return agent
+
+
+def _evict_modules_from_roots(roots: tuple[Path, ...]) -> None:
+    """Remove cached modules loaded from submission roots.
+
+    This avoids reusing a previous repo's local helper module when the next repo imports a
+    same-named helper during agent module import.
+    """
+    resolved_roots = tuple(root.resolve() for root in roots)
+    for name, module in list(sys.modules.items()):
+        raw_path = getattr(module, "__file__", None)
+        if raw_path is None:
+            continue
+        module_path = Path(raw_path).resolve()
+        if any(module_path.is_relative_to(root) for root in resolved_roots):
+            del sys.modules[name]
+
+
+def _evict_entry_modules(entry_point: str) -> None:
+    """Remove a previous load of this entry point from Python's module cache.
+
+    Student repos usually use the template's default ``entry_point`` of ``agent``. Without
+    evicting the cached module, loading two different repo roots in one harness process can
+    silently return the first repo's ``agent`` module for the second repo.
+    """
+    prefix = f"{entry_point}."
+    for name in [name for name in sys.modules if name == entry_point or name.startswith(prefix)]:
+        del sys.modules[name]
+
+
+def _ensure_module_loaded_from_repo(root: Path, entry_point: str, module: Any) -> None:
+    """Reject a manifest entry point that resolved outside the submitted repo root."""
+    raw_path = getattr(module, "__file__", None)
+    if raw_path is None:
+        raise ManifestError(
+            f"repo {root}: entry-point module {entry_point!r} has no file on disk; "
+            "the entry point must resolve inside the repo root"
+        )
+    module_path = Path(raw_path).resolve()
+    if not module_path.is_relative_to(root):
+        raise ManifestError(
+            f"repo {root}: entry-point module {entry_point!r} resolved to {module_path}, "
+            "which is outside the repo root"
+        )
 
 
 def describe_agent_hooks(agent: object) -> dict[str, bool]:

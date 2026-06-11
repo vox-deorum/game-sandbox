@@ -34,7 +34,7 @@ Because the bare template's pytest is red by design — `agent.py` raises `NotIm
 
 Students never clone the monorepo. They use a separate student-facing repository, `vox-deorum/game-agent-template`, whose branches carry the per-environment templates and examples. Template releases are tags `template-v<N>` on the monorepo, where N is a monotonic integer equal to the dependency-set version that agent manifests reference. `template-v0` is the Stage 1 placeholder; the first real set is `template-v1`, cut in Stage 2.
 
-When a maintainer pushes a `template-v<N>` tag, the publish workflow updates the student repository:
+When a maintainer runs the `template-publish` workflow with version `N`, the workflow verifies the composed examples, updates the student repository, then creates the monorepo `template-v<N>` tag as its last step:
 
 - The **default environment's** composed template becomes the repository's `main` branch content, committed as `Template v<N> from game-sandbox@<sha>` with a mirrored tag `v<N>`, so "Use this template" instantiates a runnable kit for the default game.
 - Each environment's composed template is force-pushed to an orphan branch `templates/<env>` (a fresh snapshot per release with no shared history).

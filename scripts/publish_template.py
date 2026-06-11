@@ -52,7 +52,7 @@ def resolve_version(explicit: str | None) -> int:
     if not match:
         raise PublishError(
             f"expected a template-v<N> tag, got {candidate!r}. Pass --tag template-v<N> "
-            f"or run from a tag push."
+            f"or set GITHUB_REF to one."
         )
     return int(match.group(1))
 
@@ -205,7 +205,7 @@ def publish(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Publish the template and examples.")
-    parser.add_argument("--tag", help="template-v<N> tag; defaults to $GITHUB_REF")
+    parser.add_argument("--tag", help="template-v<N> tag string; defaults to $GITHUB_REF")
     parser.add_argument("--target-repo", default=DEFAULT_TARGET_REPO)
     parser.add_argument(
         "--dry-run", action="store_true", help="do everything except the network pushes"

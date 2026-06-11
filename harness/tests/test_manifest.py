@@ -64,6 +64,76 @@ def test_good_repo_loads_and_exposes_hooks(tmp_path: Path):
         _cleanup(tmp_path)
 
 
+def test_same_entry_point_in_two_repo_roots_loads_each_repo(tmp_path: Path):
+    repo_a = tmp_path / "a"
+    repo_b = tmp_path / "b"
+    repo_a.mkdir()
+    repo_b.mkdir()
+    manifest = {"entry_point": "agent", "class_name": "Agent", "template_version": 1}
+    _write_repo(
+        repo_a,
+        "agent",
+        manifest=manifest,
+        source="""
+class Agent:
+    def reset(self, seed):
+        pass
+    def act(self, observation):
+        return "a"
+""",
+    )
+    _write_repo(
+        repo_b,
+        "agent",
+        manifest=manifest,
+        source="""
+class Agent:
+    def reset(self, seed):
+        pass
+    def act(self, observation):
+        return "b"
+""",
+    )
+
+    try:
+        assert load_agent(repo_a).act(None) == "a"
+        assert load_agent(repo_b).act(None) == "b"
+    finally:
+        _cleanup(repo_a)
+        _cleanup(repo_b)
+        sys.modules.pop("agent", None)
+
+
+def test_same_helper_module_name_in_two_repo_roots_loads_each_repo_helper(tmp_path: Path):
+    repo_a = tmp_path / "a"
+    repo_b = tmp_path / "b"
+    repo_a.mkdir()
+    repo_b.mkdir()
+    manifest = {"entry_point": "agent", "class_name": "Agent", "template_version": 1}
+    agent_source = """
+import helper
+
+class Agent:
+    def reset(self, seed):
+        pass
+    def act(self, observation):
+        return helper.VALUE
+"""
+    _write_repo(repo_a, "agent", manifest=manifest, source=agent_source)
+    _write_repo(repo_b, "agent", manifest=manifest, source=agent_source)
+    (repo_a / "helper.py").write_text('VALUE = "a"\n', encoding="utf-8")
+    (repo_b / "helper.py").write_text('VALUE = "b"\n', encoding="utf-8")
+
+    try:
+        assert load_agent(repo_a).act(None) == "a"
+        assert load_agent(repo_b).act(None) == "b"
+    finally:
+        _cleanup(repo_a)
+        _cleanup(repo_b)
+        sys.modules.pop("agent", None)
+        sys.modules.pop("helper", None)
+
+
 def test_missing_manifest_raises(tmp_path: Path):
     with pytest.raises(ManifestError, match="no manifest.json"):
         load_manifest(tmp_path)
