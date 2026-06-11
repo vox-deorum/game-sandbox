@@ -105,10 +105,16 @@ def load_agent(repo_root: Path | str) -> Any:
     sys.path[:] = [path for path in sys.path if path != root_str]
     sys.path.insert(0, root_str)
 
+    # Record the root for eviction now, before importing, not only on full success. Importing
+    # the entry point runs its body, which may cache helper modules under this root; if a
+    # later step (missing class, bad constructor) then fails, those helpers must still be
+    # evicted on the next load, so the root has to be remembered regardless of the outcome.
+    _LOADED_REPO_ROOTS.add(root)
+
     # Drop roots whose directory is gone (e.g. a finished submission's temp dir) before using
     # the set, so it never grows without bound across a long-lived loader process.
     _LOADED_REPO_ROOTS.difference_update({r for r in _LOADED_REPO_ROOTS if not r.exists()})
-    _evict_modules_from_roots((*_LOADED_REPO_ROOTS, root))
+    _evict_modules_from_roots(tuple(_LOADED_REPO_ROOTS))
     _evict_entry_modules(manifest.entry_point)
     importlib.invalidate_caches()
     try:
@@ -138,7 +144,6 @@ def load_agent(repo_root: Path | str) -> Any:
     if not callable(getattr(agent, "act", None)):
         raise ManifestError(f"repo {root}: {manifest.class_name!r} has no callable 'act' method")
 
-    _LOADED_REPO_ROOTS.add(root)
     return agent
 
 

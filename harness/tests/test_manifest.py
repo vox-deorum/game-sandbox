@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 from game_sandbox_harness.manifest import (
+    _LOADED_REPO_ROOTS,
     Manifest,
     ManifestError,
     describe_agent_hooks,
@@ -130,6 +131,51 @@ class Agent:
     finally:
         _cleanup(repo_a)
         _cleanup(repo_b)
+        sys.modules.pop("agent", None)
+        sys.modules.pop("helper", None)
+
+
+def test_helper_from_a_failed_load_does_not_leak_into_the_next_repo(tmp_path: Path):
+    # repo_a's agent imports its helper at module load (caching it), then load fails because the
+    # manifest names a class the module doesn't define. The next repo with a same-named helper
+    # must still get its own helper, not the one the failed load left in sys.modules.
+    repo_a = tmp_path / "a"
+    repo_b = tmp_path / "b"
+    repo_a.mkdir()
+    repo_b.mkdir()
+    agent_source = """
+import helper
+
+class Agent:
+    def reset(self, seed):
+        pass
+    def act(self, observation):
+        return helper.VALUE
+"""
+    _write_repo(
+        repo_a,
+        "agent",
+        manifest={"entry_point": "agent", "class_name": "Missing", "template_version": 1},
+        source=agent_source,
+    )
+    _write_repo(
+        repo_b,
+        "agent",
+        manifest={"entry_point": "agent", "class_name": "Agent", "template_version": 1},
+        source=agent_source,
+    )
+    (repo_a / "helper.py").write_text('VALUE = "a"\n', encoding="utf-8")
+    (repo_b / "helper.py").write_text('VALUE = "b"\n', encoding="utf-8")
+
+    try:
+        with pytest.raises(ManifestError, match="has no class"):
+            load_agent(repo_a)
+        assert load_agent(repo_b).act(None) == "b"
+    finally:
+        _cleanup(repo_a)
+        _cleanup(repo_b)
+        _LOADED_REPO_ROOTS.discard(repo_a.resolve())
+        _LOADED_REPO_ROOTS.discard(repo_b.resolve())
         sys.modules.pop("agent", None)
         sys.modules.pop("helper", None)
 
