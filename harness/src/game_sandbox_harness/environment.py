@@ -104,6 +104,15 @@ def discover_environments() -> dict[str, EnvironmentEntry]:
                 f"entry point {ep.name!r} in group {ENTRY_POINT_GROUP!r} loaded a "
                 f"{type(entry).__name__}, expected EnvironmentEntry"
             )
+        # Lookups key on the entry-point name while recordings stamp meta.env_id; a mismatch
+        # would silently disagree between the registry and the recorded environment id, so it
+        # is rejected at the source instead.
+        if ep.name != entry.meta.env_id:
+            raise ValueError(
+                f"entry point {ep.name!r} in group {ENTRY_POINT_GROUP!r} registers an "
+                f"environment whose meta.env_id is {entry.meta.env_id!r}; the entry-point "
+                f"name and env_id must match"
+            )
         found[ep.name] = entry
     return found
 

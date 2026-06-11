@@ -7,6 +7,7 @@ import json
 import pytest
 
 from game_sandbox_harness.environment import (
+    EnvironmentEntry,
     EnvironmentLookupError,
     EnvironmentMeta,
     discover_environments,
@@ -57,3 +58,19 @@ def test_flappy_bird_is_discoverable():
 def test_load_environment_unknown_id_raises():
     with pytest.raises(EnvironmentLookupError, match="no environment registered as 'nope'"):
         load_environment("nope")
+
+
+def test_discovery_rejects_name_envid_mismatch(monkeypatch):
+    from game_sandbox_harness import environment as env_mod
+
+    entry = EnvironmentEntry(meta=_meta(), make=lambda: None, default_action=lambda s: 0)
+
+    class _FakeEP:
+        name = "mismatch"  # != meta.env_id ("demo")
+
+        def load(self):
+            return entry
+
+    monkeypatch.setattr(env_mod, "entry_points", lambda group: [_FakeEP()])
+    with pytest.raises(ValueError, match="meta.env_id"):
+        discover_environments()

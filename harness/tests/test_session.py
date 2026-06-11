@@ -16,6 +16,7 @@ from game_sandbox_harness.recording.local import FolderRecordingStore
 from game_sandbox_harness.session import (
     REASON_EPISODE_LIMIT,
     REASON_TERMINATED,
+    REASON_TRUNCATED,
     AgentSlot,
     ExternalSlot,
     NoopSource,
@@ -197,6 +198,22 @@ def test_max_steps_caps_episode():
     )
     assert result.ticks == 5
     assert result.scores["player_0"] == 5.0
+    assert result.reason == REASON_TRUNCATED
+
+
+def test_max_steps_coinciding_with_termination_reports_terminated():
+    # The env terminates on its 3rd step; capping at exactly 3 must not mask that natural
+    # termination as a cap truncation.
+    entry = make_entry(n_steps=3)
+    result = run_episode(
+        entry,
+        {"player_0": AgentSlot(ScriptedAgent([0]))},
+        seed=1,
+        clock=ManualClock(),
+        max_steps=3,
+    )
+    assert result.ticks == 3
+    assert result.reason == REASON_TERMINATED
 
 
 def test_learn_hook_time_counts_against_budget():

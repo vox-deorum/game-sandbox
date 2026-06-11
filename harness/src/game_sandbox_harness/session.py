@@ -205,6 +205,12 @@ def run_episode(
 
             if writer is not None:
                 overlay = entry.overlay(env) if entry.overlay is not None else None
+                # The display `observation` is intentionally not recorded: Flappy Bird's
+                # renderer reconstructs frames from the overlay, so the (large, per-step)
+                # observation array would only bloat recordings. build_agent_step and the
+                # schema both already support an `observation` field — if a future
+                # environment needs the renderer to see the raw observation, supply it here
+                # (likely via a new EnvironmentEntry hook) rather than re-deriving it.
                 agent_step = build_agent_step(
                     reward=reward,
                     score=slot.score,
@@ -227,7 +233,10 @@ def run_episode(
                 reason = REASON_EPISODE_LIMIT
                 break
             if max_steps is not None and tick >= max_steps:
-                reason = REASON_TRUNCATED
+                # A natural termination/truncation can land on the very tick the cap is hit;
+                # the next loop turn would have labeled it, but we are cutting the loop short.
+                # Preserve that outcome rather than masking it as a cap truncation.
+                reason = REASON_TERMINATED if env.terminations[slot_id] else REASON_TRUNCATED
                 break
     finally:
         if writer_cm is not None:
