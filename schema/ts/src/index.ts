@@ -8,8 +8,8 @@
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import addFormats from 'ajv-formats'
 import Ajv2020, { type ValidateFunction } from 'ajv/dist/2020.js'
+import addFormats from 'ajv-formats'
 
 import type { RecordingHeader, StepState } from './generated/types.js'
 

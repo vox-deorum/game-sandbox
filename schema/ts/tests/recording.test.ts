@@ -9,7 +9,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
-import { SchemaValidationError, parseStepState, readRecording } from '../src/index.js'
+import { parseStepState, readRecording, SchemaValidationError } from '../src/index.js'
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'fixtures')
 

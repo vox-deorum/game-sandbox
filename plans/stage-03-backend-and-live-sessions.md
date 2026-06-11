@@ -1,6 +1,6 @@
 # Stage 3: Backend and Live Sessions
 
-Status: in progress. The stage-start stack decisions are confirmed and recorded below, and the detailed design lives under [stage-03/](stage-03/). Build-order step 1 (the backend package skeleton, the storage layer, and the generated `environments.json`) is implemented and its design doc is in sync; the remaining steps are still to come.
+Status: in progress. The stage-start stack decisions are confirmed and recorded below, and the detailed design lives under [stage-03/](stage-03/). Build-order steps 1 (the backend package skeleton, the storage layer, and the generated `environments.json`) and 2 (the driver-neutral execution-driver interface, the `FakeDriver` test double, and the import-isolation lint config) are implemented and their design docs are in sync; the remaining steps are still to come.
 
 ## Goal
 
@@ -55,4 +55,6 @@ A scripted WebSocket test client starts a session, receives schema-valid states 
 
 ## Open questions
 
-The idle-timeout definition (no socket attached, or additionally no inbound command for human sessions) and its default window are proposed in [stage-03/orchestrator-and-http-api.md](stage-03/orchestrator-and-http-api.md) and may be tuned during Stage 4 playtesting. Biome's `noRestrictedImports` is a nursery rule at the pinned 1.9.4; if it proves unreliable, the documented fallback is an import-scan check in `scripts/ci.py`. The pace-cadence assertion tolerance in the integration tests can only be set honestly against real CI-runner jitter.
+The idle-timeout definition (no socket attached, or additionally no inbound command for human sessions) and its default window are proposed in [stage-03/orchestrator-and-http-api.md](stage-03/orchestrator-and-http-api.md) and may be tuned during Stage 4 playtesting. The pace-cadence assertion tolerance in the integration tests can only be set honestly against real CI-runner jitter.
+
+The import-isolation rule was an open question at stage start (`noRestrictedImports` was nursery-only at the then-pinned Biome 1.9.4, with an `scripts/ci.py` import-scan as the documented fallback). Step 2 resolved it by moving the repo to Biome 2.4.16, where the rule is stable in the `style` group; the fallback is no longer needed. See [stage-03/execution-driver-and-image.md](stage-03/execution-driver-and-image.md) for the implemented configuration.

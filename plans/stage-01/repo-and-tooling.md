@@ -24,7 +24,7 @@ build/                   gitignored output (composed examples, built docs)
 mkdocs.yml
 pyproject.toml           uv workspace root
 package.json             npm workspace root
-biome.json               Biome lint and format config
+biome.jsonc              Biome lint and format config
 uv.lock, package-lock.json, .python-version, .nvmrc, .gitignore, .editorconfig
 ```
 
