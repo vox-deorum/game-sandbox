@@ -18,3 +18,15 @@ FIXTURES_DIR = SCHEMA_DIR / "fixtures"
 TEMPLATES_DIR = REPO_ROOT / "templates"
 EXAMPLES_DIR = REPO_ROOT / "examples"
 BUILD_DIR = REPO_ROOT / "build"
+
+# The environments package source, and the template's synced copy of the environment modules.
+ENVIRONMENTS_SRC = REPO_ROOT / "environments" / "src" / "game_sandbox_environments"
+TEMPLATE_SANDBOX_ENV = TEMPLATES_DIR / "sandbox_env"
+# Environment modules that are import-self-contained (relative + third-party only) and so are
+# copied verbatim into the template. The harness-dependent flappy_bird/__init__.py is not
+# synced; the generate script writes a minimal __init__ in its place.
+SYNCED_ENV_MODULES = (
+    "single_agent.py",
+    "flappy_bird/env.py",
+    "flappy_bird/overlay.py",
+)

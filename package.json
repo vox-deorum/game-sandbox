@@ -17,9 +17,12 @@
     "check:py": "uv run ruff check . && uv run ruff format --check . && uv run pyright",
     "check:ts": "npm run --workspace @game-sandbox/schema check",
     "test:py": "uv run pytest",
-    "test:ts": "npm run --workspace @game-sandbox/schema test"
+    "test:ts": "npm run --workspace @game-sandbox/schema test",
+    "docs:unwrap": "prettier --write \"**/*.md\"",
+    "docs:check": "prettier --check \"**/*.md\""
   },
   "devDependencies": {
-    "@biomejs/biome": "1.9.4"
+    "@biomejs/biome": "1.9.4",
+    "prettier": "3.8.4"
   }
 }

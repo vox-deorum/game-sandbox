@@ -38,7 +38,7 @@ The per-episode limit is a cumulative budget of measured agent compute (`act` pl
 
 ## The loop and state assembly
 
-`run_episode(entry, slots, *, seed, store=None, recording_id=None, clock=SystemClock(), step_limit_ms=None, episode_limit_ms=None) -> EpisodeResult`.
+`run_episode(entry, slots, *, seed, store=None, recording_id=None, clock=SystemClock(), step_limit_ms=None, episode_limit_ms=None, max_steps=None) -> EpisodeResult`. (`max_steps` backs the CLI's `--steps` cap and truncates the episode with reason `truncated`; the default clock is constructed lazily as `SystemClock()` when `clock` is `None`.)
 
 Reset seeds everything: `env.reset(seed=seed)`, then each agent's `reset(seed)`. The loop is PettingZoo's agent-environment cycle: for each acting slot, take the clock, obtain an action (agent path or external path above), step the environment, call `learn` if present, assemble one per-step state, validate-and-write it through the Stage 1 `RecordingWriter`, and advance `tick`. One state line per environment step; the `agents` object carries the acting slot's entry (display observation if the entry provides one, action, reward, cumulative score, `decision_ms`), and `overlay` comes from `entry.overlay(env)` when the hook exists. There is no pacing anywhere in this function: the pace interval is metadata that Stage 3's live loop reads to schedule calls into the same step machinery, and the local CLI steps as fast as the agent acts. The header records the environment id, the seed, and `created_at` from the injected clock.
 

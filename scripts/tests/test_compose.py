@@ -23,8 +23,8 @@ def test_overlay_file_wins_over_template():
 def test_extra_requirements_are_appended():
     out = compose("hello")
     composed = (out / "requirements.txt").read_text(encoding="utf-8")
-    # The template pin and the example's extra pin both end up in the composed file.
-    assert "attrs==24.2.0" in composed
+    # A template pin and the example's extra pin both end up in the composed file.
+    assert "flappy-bird-gymnasium==0.4.0" in composed
     assert "wcwidth==0.2.13" in composed
 
 

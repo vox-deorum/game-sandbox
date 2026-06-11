@@ -1,0 +1,9 @@
+# Prettier is used only to enforce one-line-per-paragraph Markdown (proseWrap:
+# never). Everything else in the repo is formatted by Biome (TS/JS) and Ruff
+# (Python), so keep Prettier's scope to Markdown and skip generated/vendored dirs.
+node_modules/
+build/
+dist/
+**/__pycache__/
+**/.venv/
+schema/ts/src/generated/

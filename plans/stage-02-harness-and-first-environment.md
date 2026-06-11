@@ -1,6 +1,6 @@
 # Stage 2: Harness and the First Environment
 
-Status: not started; detailed plans written under [stage-02/](stage-02/).
+Status: in progress. The Python vertical slice is built and green locally — the environments package, the session harness, the agent interface and manifest loader, the CLI, the real template content, the hello heuristic agent, and the docs all land in this change set, with `scripts/ci.py` passing `python`, `typescript`, `examples`, `docs`, and `publish-dry-run` (`generated-code-fresh` passes once the regenerated files are committed). What remains is the outward-facing release: running the `template-publish` workflow for version 1 and stamping `template-v1` on the monorepo (build-order step 8), which is a deliberate, separately triggered action.
 
 ## Goal
 
@@ -58,4 +58,8 @@ Additionally for the release: the `template-publish` workflow runs for version 1
 
 ## Open questions
 
-Flappy Bird's pace interval is proposed at 50 ms but can only be tuned honestly with a renderer under real input, so the value is confirmed during Stage 4 playtesting; the metadata field is trivial to change. The overlay extractor depends on `flappy-bird-gymnasium` internals at the pinned 0.4.0; if those internals prove unusable at implementation time, the documented escalation is vendoring a minimal Flappy Bird implementation into the environments package. Exact dependency-set pins for `template-v1` are resolved with `uv pip compile` against Python 3.12 when the stage starts, not guessed now. Per-episode budget semantics across multiple slots are deliberately left to Stage 8, when a second, multi-slot environment makes the question concrete.
+Flappy Bird's pace interval is proposed at 50 ms but can only be tuned honestly with a renderer under real input, so the value is confirmed during Stage 4 playtesting; the metadata field is trivial to change. The overlay extractor depends on `flappy-bird-gymnasium` internals at the pinned 0.4.0; if those internals prove unusable at implementation time, the documented escalation is vendoring a minimal Flappy Bird implementation into the environments package. Per-episode budget semantics across multiple slots are deliberately left to Stage 8, when a second, multi-slot environment makes the question concrete.
+
+## Resolved at implementation time
+
+The `flappy-bird-gymnasium==0.4.0` internals proved usable directly (no vendoring needed): the overlay reads `gym_env.unwrapped`'s `_player_*`, `_upper_pipes`/`_lower_pipes`, `_score`, and the screen dimensions, all covered by the finite-field test. The dependency set v1 was compiled with `uv pip compile templates/requirements.in -o templates/requirements.txt --python-version 3.12`; it resolves `pettingzoo==1.26.1`, `gymnasium==1.3.0`, `numpy==2.4.6`, `pygame==2.6.1`, plus `openai`, `python-dotenv`, and their transitive closure. The environments package pins are kept in step with that set (`pettingzoo>=1.26,<1.27`). All proposed Flappy Bird metadata values were adopted as-is. The overlay carries the screen `width`/`height` on every step rather than only the first, so each frame is self-describing for the renderer (a few bytes; harmless). `run_episode` gained a `max_steps` parameter backing the CLI's `--steps` cap, and the synced environment modules use relative/third-party imports so the generate step copies them verbatim and writes only the two `sandbox_env` `__init__` files.

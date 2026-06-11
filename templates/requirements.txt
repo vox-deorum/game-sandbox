@@ -1,3 +1,93 @@
-# Pinned runtime dependency set for template-v0 (placeholder).
-# Stage 2 replaces this with the real set: PettingZoo, the environment wrappers, and so on.
-attrs==24.2.0
+annotated-types==0.7.0
+    # via pydantic
+anyio==4.13.0
+    # via
+    #   httpx
+    #   openai
+certifi==2026.5.20
+    # via
+    #   httpcore
+    #   httpx
+cloudpickle==3.1.2
+    # via gymnasium
+colorama==0.4.6
+    # via tqdm
+contourpy==1.3.3
+    # via matplotlib
+cycler==0.12.1
+    # via matplotlib
+distro==1.9.0
+    # via openai
+farama-notifications==0.0.6
+    # via gymnasium
+flappy-bird-gymnasium==0.4.0
+    # via -r templates/requirements.in
+fonttools==4.63.0
+    # via matplotlib
+gymnasium==1.3.0
+    # via
+    #   -r templates/requirements.in
+    #   flappy-bird-gymnasium
+    #   pettingzoo
+h11==0.16.0
+    # via httpcore
+httpcore==1.0.9
+    # via httpx
+httpx==0.28.1
+    # via openai
+idna==3.18
+    # via
+    #   anyio
+    #   httpx
+jiter==0.15.0
+    # via openai
+kiwisolver==1.5.0
+    # via matplotlib
+matplotlib==3.10.9
+    # via flappy-bird-gymnasium
+numpy==2.4.6
+    # via
+    #   -r templates/requirements.in
+    #   contourpy
+    #   flappy-bird-gymnasium
+    #   gymnasium
+    #   matplotlib
+    #   pettingzoo
+openai==2.41.1
+    # via -r templates/requirements.in
+packaging==26.2
+    # via matplotlib
+pettingzoo==1.26.1
+    # via -r templates/requirements.in
+pillow==12.2.0
+    # via matplotlib
+pydantic==2.13.4
+    # via openai
+pydantic-core==2.46.4
+    # via pydantic
+pygame==2.6.1
+    # via
+    #   -r templates/requirements.in
+    #   flappy-bird-gymnasium
+pyparsing==3.3.2
+    # via matplotlib
+python-dateutil==2.9.0.post0
+    # via matplotlib
+python-dotenv==1.2.2
+    # via -r templates/requirements.in
+six==1.17.0
+    # via python-dateutil
+sniffio==1.3.1
+    # via openai
+tqdm==4.68.2
+    # via openai
+typing-extensions==4.15.0
+    # via
+    #   anyio
+    #   gymnasium
+    #   openai
+    #   pydantic
+    #   pydantic-core
+    #   typing-inspection
+typing-inspection==0.4.2
+    # via pydantic

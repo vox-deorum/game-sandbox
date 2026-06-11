@@ -1,0 +1,26 @@
+[project]
+name = "game-sandbox-environments"
+version = "0.1.0"
+description = "Game Sandbox environments: the single-agent compatibility wrapper and the Flappy Bird environment."
+requires-python = ">=3.12,<3.13"
+# Kept in step with the template's compiled dependency set (template-v1), so the workspace
+# and a student's clone run the environment code on identical library versions.
+dependencies = [
+    "game-sandbox-harness",
+    "pettingzoo>=1.26,<1.27",
+    "gymnasium>=1.3,<2.0",
+    "flappy-bird-gymnasium==0.4.0",
+    "numpy>=2,<3",
+]
+
+# Environments register themselves under this group, name = env id. The harness discovers
+# them through importlib.metadata without ever importing this package.
+[project.entry-points."game_sandbox.environments"]
+flappy_bird = "game_sandbox_environments.flappy_bird:ENTRY"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/game_sandbox_environments"]

@@ -36,6 +36,7 @@ from _paths import (
     FIXTURES_DIR,
     HARNESS_SCHEMA_DATA,
     REPO_ROOT,
+    TEMPLATE_SANDBOX_ENV,
     TS_GENERATED_DIR,
 )
 
@@ -66,11 +67,12 @@ def job_typescript() -> None:
 
 def job_generated_code_fresh() -> None:
     _run(["uv", "run", "python", "scripts/generate.py"])
-    # Fail if regeneration changed anything tracked under the three generated locations.
+    # Fail if regeneration changed anything tracked under the four generated locations.
     targets = [
         str(TS_GENERATED_DIR.relative_to(REPO_ROOT)),
         str(HARNESS_SCHEMA_DATA.relative_to(REPO_ROOT)),
         str(FIXTURES_DIR.relative_to(REPO_ROOT)),
+        str(TEMPLATE_SANDBOX_ENV.relative_to(REPO_ROOT)),
     ]
     _run(["git", "diff", "--exit-code", "--", *targets])
 

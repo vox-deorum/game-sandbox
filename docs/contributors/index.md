@@ -9,12 +9,12 @@ The language split follows the container boundary (see the [execution spec](../s
 | Directory | What it is |
 | --- | --- |
 | `schema/` | The canonical JSON Schema contract and the `@game-sandbox/schema` TS package. |
-| `harness/` | The Python harness: schema validation, state builders, the recording store. |
-| `environments/` | Environment packages. Placeholder until Stage 2. |
+| `harness/` | The Python harness: schema validation, state builders, the recording store, the session loop. |
+| `environments/` | Environment packages: the single-agent adapter and the Flappy Bird clone. |
 | `backend/` | The Node/TypeScript backend. Placeholder until Stage 3. |
 | `frontend/` | The browser frontend and renderers. Placeholder until Stage 4. |
 | `gateway/` | The LLM gateway. Placeholder until Stage 7. |
-| `templates/` | The student starter kit (placeholder content until Stage 2). |
+| `templates/` | The student starter kit. |
 | `examples/` | Example overlays holding only their diff against `templates/`. |
 | `docs/` | This site. |
 | `scripts/` | Cross-platform Python dev scripts. |
@@ -25,6 +25,7 @@ The language split follows the container boundary (see the [execution spec](../s
 - [Testing end to end](test.md): the full local suite, reproducing the workflows with `act`, and what only GitHub can test.
 - [State schema](state-schema.md): the contract, the version rule, and the sidecar rule.
 - [Recordings](recordings.md): the JSONL format, the header, the store interface.
+- [Adding an environment](environments.md): the adapter, the registry entry, metadata, and the overlay contract.
 - [Examples and the template](examples-and-template.md): overlays, tags, and publishing.
 
 The full build plan lives in the [implementation plan](https://github.com/vox-deorum/game-sandbox/blob/main/plans/README.md), and the authoritative design lives in the [Specification](../specs/overview.md).

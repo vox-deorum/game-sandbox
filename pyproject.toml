@@ -5,17 +5,22 @@ description = "Game Sandbox monorepo workspace root."
 requires-python = ">=3.12,<3.13"
 
 [tool.uv.workspace]
-members = ["harness"]
+members = ["harness", "environments"]
 
 [tool.uv.sources]
 game-sandbox-harness = { workspace = true }
+game-sandbox-environments = { workspace = true }
 
 [dependency-groups]
 dev = [
     "game-sandbox-harness",
+    "game-sandbox-environments",
     "ruff>=0.6",
     "pytest>=8",
     "pyright>=1.1.380",
+    # The cross-package CLI smoke test loads the composed hello agent, which imports the
+    # example's extra pinned dependency.
+    "wcwidth==0.2.13",
 ]
 docs = [
     "mkdocs-material>=9.5",
@@ -24,7 +29,7 @@ docs = [
 [tool.ruff]
 target-version = "py312"
 line-length = 100
-src = ["harness/src", "scripts"]
+src = ["harness/src", "environments/src", "scripts"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
@@ -32,11 +37,12 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 [tool.pyright]
 pythonVersion = "3.12"
 typeCheckingMode = "basic"
-include = ["harness/src", "scripts"]
-# The contracts package is where types pay for themselves, so it is basic repo-wide
-# and strict on harness/src.
+include = ["harness/src", "environments/src", "scripts"]
+# The harness is where types pay for themselves, so it is the only strict package: it is
+# basic repo-wide and strict on harness/src. The environment wrappers talk to untyped game
+# internals, where strictness buys suppressions, not safety.
 strict = ["harness/src"]
 reportMissingTypeStubs = false
 
 [tool.pytest.ini_options]
-testpaths = ["harness/tests", "scripts/tests"]
+testpaths = ["harness/tests", "environments/tests", "scripts/tests"]

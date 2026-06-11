@@ -1,0 +1,16 @@
+# Top-level dependency intents for template-v1 — the source of truth for the dependency set.
+#
+# Rule: edit this file, then recompile requirements.txt with
+#   uv pip compile templates/requirements.in -o templates/requirements.txt --python-version 3.12
+# Never hand-edit requirements.txt. The compiled file is the fully pinned transitive closure
+# that manifests reference (template_version 1) and the Stage 3 base image installs.
+
+pettingzoo
+gymnasium
+# Pinned exactly: the Flappy Bird overlay extractor reads this package's internals, which
+# only a pinned version makes safe.
+flappy-bird-gymnasium==0.4.0
+numpy
+pygame
+python-dotenv
+openai

@@ -1,14 +1,35 @@
-"""Example-specific test, added on top of the inherited template tests."""
+"""Example-specific tests, added on top of the inherited template tests."""
 
 from __future__ import annotations
 
 import agent
+from play import play_episode
+from sandbox_env.flappy_bird.env import make_env
 
-
-def test_agent_name_is_hello():
-    assert agent.agent_name() == "hello"
+_SEEDS = [0, 1, 2, 3, 4]
 
 
 def test_extra_dependency_is_usable():
     # wcwidth comes from requirements.extra.txt; a positive width proves it composed in.
-    assert agent.greeting_width("hello") == 5
+    assert agent.display_width("hello") == 5
+
+
+def _mean_score(policy) -> float:
+    scores: list[float] = []
+    for seed in _SEEDS:
+        env = make_env(render_mode=None)
+        try:
+            scores.append(play_episode(policy, env, seed=seed))
+        finally:
+            env.close()
+    return sum(scores) / len(scores)
+
+
+def test_heuristic_clearly_outperforms_noop():
+    class Noop:
+        def reset(self, seed: int) -> None: ...
+
+        def act(self, observation) -> int:
+            return 0
+
+    assert _mean_score(agent.Agent()) > _mean_score(Noop()) + 1.0

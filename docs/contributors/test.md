@@ -1,6 +1,6 @@
 # Testing End to End
 
-This page is the checklist for proving a change is sound before it leaves your machine. There are two levels. The first reproduces what every CI job *does* and is the one you run constantly; the second reproduces the workflow YAML *itself* and is the one you run before touching release machinery. Neither replaces GitHub Actions, which stays the suite of record, but together they catch everything reproducible off a Linux runner.
+This page is the checklist for proving a change is sound before it leaves your machine. There are two levels. The first reproduces what every CI job _does_ and is the one you run constantly; the second reproduces the workflow YAML _itself_ and is the one you run before touching release machinery. Neither replaces GitHub Actions, which stays the suite of record, but together they catch everything reproducible off a Linux runner.
 
 ## One command: the full suite
 
@@ -30,7 +30,7 @@ Because the command is identical to what the runner executes, running it inside 
 
 ## Level two: the workflows themselves with `act`
 
-`scripts/ci.py all` proves the job *contents* pass. It does not exercise the workflow YAML: the triggers, the `needs:` ordering, the pinned action versions, the matrix. [`act`](https://github.com/nektos/act) runs the actual workflow files in Docker containers, so it is the tool for verifying that wiring — and, with the publish dry-run, for rehearsing the whole tag-to-publish path locally without touching the student repository. `act` is a development convenience, not a gate.
+`scripts/ci.py all` proves the job _contents_ pass. It does not exercise the workflow YAML: the triggers, the `needs:` ordering, the pinned action versions, the matrix. [`act`](https://github.com/nektos/act) runs the actual workflow files in Docker containers, so it is the tool for verifying that wiring — and, with the publish dry-run, for rehearsing the whole tag-to-publish path locally without touching the student repository. `act` is a development convenience, not a gate.
 
 ### Prerequisites
 
@@ -50,7 +50,7 @@ act push                     # run everything triggered by a push
 
 `act pull_request` is the everyday whole-suite run: it executes the four `ci.yml` jobs and `docs.yml`'s `build`, while the Pages `deploy` job self-skips because its `if` requires a push to `main`. It is safe to run as-is — nothing touches the network beyond pulling dependencies.
 
-One caveat to know before relying on the trigger commands: `act` does not evaluate the `on.push` path or tag filters that GitHub does. `act push` runs *every* push-triggered job — both `ci.yml` jobs and `docs.yml`'s `build` fire even on a tag event — so scope to the workflow you mean to test with `-W <file>` or to a single job with `-j <id>`.
+One caveat to know before relying on the trigger commands: `act` does not evaluate the `on.push` path or tag filters that GitHub does. `act push` runs _every_ push-triggered job — both `ci.yml` jobs and `docs.yml`'s `build` fire even on a tag event — so scope to the workflow you mean to test with `-W <file>` or to a single job with `-j <id>`.
 
 `act -l` is the quickest confirmation that the YAML parses and the jobs and triggers are wired as intended:
 
@@ -78,7 +78,7 @@ act workflow_dispatch -W .github/workflows/template-publish.yml -j verify --inpu
 
 Do not run the `publish` or `tag` jobs under `act`. With `TEMPLATE_REPO_TOKEN` unset `publish` raises before pushing; with a real token it pushes for real to `vox-deorum/game-agent-template`, and `tag` would push a release tag. There is no dry-run branch through the workflow, by design — a real publish should only ever come from the manual run on GitHub.
 
-To rehearse what `publish` *composes and assembles* without Docker or the network, run the script's own dry-run, which is exactly what `scripts/ci.py all` already includes:
+To rehearse what `publish` _composes and assembles_ without Docker or the network, run the script's own dry-run, which is exactly what `scripts/ci.py all` already includes:
 
 ```
 uv run python scripts/publish_template.py --tag template-v0 --dry-run
