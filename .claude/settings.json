@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npm run --silent docs:unwrap > /dev/null 2>&1 || true",
+            "statusMessage": "Unwrapping Markdown...",
+            "timeout": 60
+          }
+        ]
+      }
+    ]
+  }
+}
