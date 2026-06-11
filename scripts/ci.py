@@ -33,6 +33,7 @@ import sys
 from pathlib import Path
 
 from _paths import (
+    BACKEND_GENERATED_DIR,
     BUILD_DIR,
     FIXTURES_DIR,
     HARNESS_SCHEMA_DATA,
@@ -75,6 +76,7 @@ def job_generated_code_fresh() -> None:
         str(TS_GENERATED_DIR.relative_to(REPO_ROOT)),
         str(HARNESS_SCHEMA_DATA.relative_to(REPO_ROOT)),
         str(FIXTURES_DIR.relative_to(REPO_ROOT)),
+        str(BACKEND_GENERATED_DIR.relative_to(REPO_ROOT)),
         *(str(template_sandbox_env(env).relative_to(REPO_ROOT)) for env in TEMPLATE_ENVS),
     ]
     _run(["git", "diff", "--exit-code", "--", *targets])

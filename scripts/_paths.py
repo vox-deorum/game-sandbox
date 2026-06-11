@@ -15,6 +15,12 @@ TS_GENERATED_TYPES = TS_GENERATED_DIR / "types.ts"
 HARNESS_SCHEMA_DATA = REPO_ROOT / "harness" / "src" / "game_sandbox_harness" / "schema_data"
 FIXTURES_DIR = SCHEMA_DIR / "fixtures"
 
+# The backend serves environment metadata without ever running Python: generate.py writes the
+# registry's public-facing fields here as a committed, byte-stable JSON artifact, kept fresh by
+# the generated-code-fresh CI job like every other generated output.
+BACKEND_GENERATED_DIR = REPO_ROOT / "backend" / "src" / "generated"
+BACKEND_ENVIRONMENTS_JSON = BACKEND_GENERATED_DIR / "environments.json"
+
 TEMPLATES_DIR = REPO_ROOT / "templates"
 EXAMPLES_DIR = REPO_ROOT / "examples"
 BUILD_DIR = REPO_ROOT / "build"

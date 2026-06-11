@@ -2,6 +2,9 @@
 /build/
 /site/
 
+# Backend runtime data (SQLite database and the recordings volume)
+/backend/data/
+
 # Python
 __pycache__/
 *.py[cod]

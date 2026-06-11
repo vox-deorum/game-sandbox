@@ -1,0 +1,33 @@
+{
+  "name": "@game-sandbox/backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Game Sandbox backend: sessions, the execution driver, and the WebSocket bridge between container and browser.",
+  "type": "module",
+  "engines": {
+    "node": ">=22 <23"
+  },
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "start": "tsx src/main.ts",
+    "check": "biome check . && tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@fastify/websocket": "^11.2.0",
+    "@game-sandbox/schema": "*",
+    "better-sqlite3": "^12.10.0",
+    "dockerode": "^4.0.12",
+    "fastify": "^5.8.0",
+    "kysely": "^0.29.2"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/dockerode": "^4.0.1",
+    "@types/node": "^22.10.0",
+    "tsx": "^4.22.4",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}

@@ -19,6 +19,8 @@ import subprocess
 import sys
 
 from _paths import (
+    BACKEND_ENVIRONMENTS_JSON,
+    BACKEND_GENERATED_DIR,
     ENVIRONMENTS_SRC,
     FIXTURES_DIR,
     HARNESS_SCHEMA_DATA,
@@ -227,12 +229,37 @@ def generate_fixtures() -> None:
     print(f"  fixtures -> {FIXTURES_DIR}")
 
 
+def generate_environments_json() -> None:
+    """Write the backend's environment metadata artifact from the Python registry.
+
+    The backend never runs Python, so it reads this committed JSON file instead of importing
+    the registry. Each entry is its ``EnvironmentMeta.to_json()`` (which already carries
+    ``env_id``); the array is sorted by id and the keys are sorted so the bytes are stable
+    across machines, like every other generated artifact. The generated-code-fresh CI job
+    diffs this path, so it cannot drift from ``discover_environments()``.
+    """
+    # Imported here so the harness/environments are only required when this step runs.
+    from game_sandbox_harness.environment import discover_environments
+
+    entries = discover_environments()
+    metas = [entries[env_id].meta.to_json() for env_id in sorted(entries)]
+
+    BACKEND_GENERATED_DIR.mkdir(parents=True, exist_ok=True)
+    BACKEND_ENVIRONMENTS_JSON.write_text(
+        json.dumps(metas, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"  environments metadata -> {BACKEND_ENVIRONMENTS_JSON}")
+
+
 def main() -> int:
     print("Regenerating schema-derived artifacts:")
     copy_packaged_schema()
     sync_template_env()
     generate_typescript()
     generate_fixtures()
+    generate_environments_json()
     print("Done.")
     return 0
 

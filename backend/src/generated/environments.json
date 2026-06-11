@@ -1,0 +1,21 @@
+[
+  {
+    "description": "A Flappy Bird style single-agent game: tap to flap and steer the bird through the gaps between pipes. Brought in through the single-agent compatibility wrapper.",
+    "display_name": "Flappy Bird",
+    "env_id": "flappy_bird",
+    "episode_limit_ms": 120000,
+    "human_slots": [
+      "player_0"
+    ],
+    "human_timeout_ms": null,
+    "llm": false,
+    "max_slots": 1,
+    "message_cap": null,
+    "messaging": false,
+    "min_slots": 1,
+    "pace_interval_ms": 50,
+    "recommended_episode_ticks": 1000,
+    "renderer": "flappy-bird",
+    "step_limit_ms": 1000
+  }
+]
