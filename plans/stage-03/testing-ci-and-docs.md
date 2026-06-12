@@ -2,6 +2,8 @@
 
 Part of [Stage 3](../stage-03-backend-and-live-sessions.md). The exit criteria made executable, split by what they need: backend unit tests on a fake driver, Python live-runner tests on `ManualClock`, and Docker-gated integration tests for the criteria that only mean something against a real container.
 
+Status: implemented. The unit suites live under `backend/test/` and run with the default `vitest.config.ts`; the Docker-gated suite is a second project (`backend/vitest.integration.config.ts`) whose global setup pings the daemon and builds the base image once, run with `npm run test:integration` and the `backend-integration` CI job. Confirmed during the build: the integration suite's idle-timeout test uses a sub-second idle window so it trips before a never-attached Flappy Bird session's bird falls and the episode ends on its own.
+
 ## Backend unit tests (Vitest, no Docker)
 
 `backend/test/` carries a `FakeDriver`: an in-memory `ExecutionDriver` whose `SessionProcess` is scripted — tests feed it outbound lines and capture what `send` receives. Suites:
@@ -40,4 +42,4 @@ The root `check:ts` and `test:ts` scripts go workspace-wide so the backend joins
 
 ## Docs
 
-Two contributor pages: `contributors/backend.md` (package layout, config, storage, the identity stub, how to run the backend locally) and `contributors/execution.md` (the driver interface and sandbox profile, the transport envelope and line-classification rule, the WebSocket protocol, and how to add a driver — the Kubernetes driver's future landing page). The harness docs page gains a live-runner section (pacing, pause, the transport source). Student pages are untouched: nothing participant-facing changes until submissions arrive in Stage 5.
+Two contributor pages: `contributors/backend.md` (package layout, config, storage, the identity stub, how to run the backend locally) and `contributors/execution.md` (the driver interface and sandbox profile, the transport envelope and line-classification rule, the WebSocket protocol, and how to add a driver — the Kubernetes driver's future landing page). The live-runner section (pacing, pause, the transport source) landed inside `contributors/execution.md` rather than a separate harness page: the live runner is the container side of the same execution boundary, so the two halves read together there. `contributors/test.md` gained the `backend-integration` job and the now-workspace-wide `typescript` job. Student pages are untouched: nothing participant-facing changes until submissions arrive in Stage 5.

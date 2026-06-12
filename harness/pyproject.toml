@@ -13,6 +13,11 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/game_sandbox_harness"]
+# schema_data is a generated artifact synced into the package by scripts/generate.py. The
+# force-include below is its single, explicit source in the wheel; excluding it from the package
+# walk keeps hatchling from also picking it up there and adding every schema file twice (which
+# fails a real wheel build, e.g. the Stage 3 session image).
+exclude = ["src/game_sandbox_harness/schema_data"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "src/game_sandbox_harness/schema_data" = "game_sandbox_harness/schema_data"

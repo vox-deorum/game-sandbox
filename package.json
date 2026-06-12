@@ -16,9 +16,9 @@
     "check": "uv run python scripts/ci.py check",
     "test": "uv run python scripts/ci.py test",
     "check:py": "uv run ruff check . && uv run ruff format --check . && uv run pyright",
-    "check:ts": "npm run --workspace @game-sandbox/schema check",
+    "check:ts": "npm run check --workspaces --if-present",
     "test:py": "uv run pytest",
-    "test:ts": "npm run --workspace @game-sandbox/schema test",
+    "test:ts": "npm run test --workspaces --if-present",
     "docs:unwrap": "prettier --write \"**/*.md\"",
     "docs:check": "prettier --check \"**/*.md\""
   },

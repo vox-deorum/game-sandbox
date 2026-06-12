@@ -11,7 +11,7 @@ The language split follows the container boundary (see the [execution spec](../s
 | `schema/` | The canonical JSON Schema contract and the `@game-sandbox/schema` TS package. |
 | `harness/` | The Python harness: schema validation, state builders, the recording store, the session loop. |
 | `environments/` | Environment packages: the single-agent adapter and the Flappy Bird clone. |
-| `backend/` | The Node/TypeScript backend. Placeholder until Stage 3. |
+| `backend/` | The Node/TypeScript backend: sessions, the execution driver, and the WebSocket bridge. |
 | `frontend/` | The browser frontend and renderers. Placeholder until Stage 4. |
 | `gateway/` | The LLM gateway. Placeholder until Stage 7. |
 | `templates/` | The student starter kit: an env-agnostic `base/` layer plus one `<env>/` layer per environment. |
@@ -27,5 +27,7 @@ The language split follows the container boundary (see the [execution spec](../s
 - [Recordings](recordings.md): the JSONL format, the header, the store interface.
 - [Adding an environment](environments.md): the adapter, the registry entry, metadata, and the overlay contract.
 - [Examples and the template](examples-and-template.md): overlays, tags, and publishing.
+- [The backend](backend.md): the package layout, configuration, storage, the identity stub, and the HTTP API.
+- [The execution boundary](execution.md): the driver interface, the sandbox profile, the transport, the WebSocket protocol, and the live runner.
 
 The full build plan lives in the [implementation plan](https://github.com/vox-deorum/game-sandbox/blob/main/plans/README.md), and the authoritative design lives in the [Specification](../specs/overview.md).

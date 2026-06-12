@@ -1,0 +1,43 @@
+/**
+ * The in-memory registry of live sessions, and the index that enforces one active session per user.
+ *
+ * A {@link LiveSession} lives here from launch until its teardown converges; the orchestrator
+ * checks {@link SessionRegistry.hasActiveUser} for the one-per-user rule and looks sessions up by id
+ * for attach and stop. The persistent `sessions` table is the historical record; this registry is
+ * the authority for what is running right now.
+ */
+import type { LiveSession } from './live-session.js'
+
+export class SessionRegistry {
+  private readonly byId = new Map<string, LiveSession>()
+  private readonly userToId = new Map<string, string>()
+
+  add(session: LiveSession): void {
+    this.byId.set(session.id, session)
+    this.userToId.set(session.userId, session.id)
+  }
+
+  get(id: string): LiveSession | undefined {
+    return this.byId.get(id)
+  }
+
+  hasActiveUser(userId: string): boolean {
+    return this.userToId.has(userId)
+  }
+
+  /** Drop a session once its teardown is complete. Idempotent. */
+  remove(id: string): void {
+    const session = this.byId.get(id)
+    if (session === undefined) {
+      return
+    }
+    this.byId.delete(id)
+    if (this.userToId.get(session.userId) === id) {
+      this.userToId.delete(session.userId)
+    }
+  }
+
+  all(): LiveSession[] {
+    return [...this.byId.values()]
+  }
+}

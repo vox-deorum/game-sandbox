@@ -7,7 +7,11 @@ three workflows under ``.github/workflows/``:
 
 ci.yml:
 - ``python``: ruff check, ruff format --check, pyright, pytest.
-- ``typescript``: biome check, tsc --noEmit, vitest run.
+- ``typescript``: biome check, tsc --noEmit, vitest run — workspace-wide, so the backend joins
+  it; the backend's biome check enforces the import-isolation rule.
+- ``backend-integration``: the Docker-gated backend Vitest project (real containers: the
+  WebSocket client, sandbox guarantees, idle/orphan reaping). Needs a Docker daemon, so it is a
+  job of its own and is *not* part of ``all`` (which must run without Docker).
 - ``generated-code-fresh``: regenerate, then fail if anything generated changed.
 - ``examples``: compose every example, install it into a fresh venv, run its pytest; also
   fail if any environment template layer ships no example.
@@ -64,8 +68,19 @@ def job_python() -> None:
 
 
 def job_typescript() -> None:
-    _run([_NPM, "run", "--workspace", "@game-sandbox/schema", "check"])
-    _run([_NPM, "run", "--workspace", "@game-sandbox/schema", "test"])
+    # Workspace-wide: check:ts and test:ts run `check`/`test` in every workspace that defines them
+    # (schema/ts and backend), so the backend joins this job with no YAML change. The backend's
+    # `biome check .` enforces the Stage 3 import-isolation rule on every PR.
+    _run([_NPM, "run", "check:ts"])
+    _run([_NPM, "run", "test:ts"])
+
+
+def job_backend_integration() -> None:
+    # The Docker-gated backend suite: a separate Vitest project that builds the session base image
+    # and launches real containers (the WebSocket client, the sandbox guarantees, idle/orphan
+    # reaping). Runs on ubuntu-latest in CI where the daemon is available, and locally against
+    # Docker Desktop. An `act` run may skip it; it is also runnable directly with this command.
+    _run([_NPM, "run", "--workspace", "@game-sandbox/backend", "test:integration"])
 
 
 def job_generated_code_fresh() -> None:
@@ -156,18 +171,19 @@ def job_check() -> None:
     _run(["uv", "run", "ruff", "check", "."])
     _run(["uv", "run", "ruff", "format", "--check", "."])
     _run(["uv", "run", "pyright"])
-    _run([_NPM, "run", "--workspace", "@game-sandbox/schema", "check"])
+    _run([_NPM, "run", "check:ts"])
 
 
 def job_test() -> None:
-    """Local aggregate: run all tests."""
+    """Local aggregate: run all tests (the Docker-gated backend integration job is separate)."""
     _run(["uv", "run", "pytest"])
-    _run([_NPM, "run", "--workspace", "@game-sandbox/schema", "test"])
+    _run([_NPM, "run", "test:ts"])
 
 
 _JOBS = {
     "python": job_python,
     "typescript": job_typescript,
+    "backend-integration": job_backend_integration,
     "generated-code-fresh": job_generated_code_fresh,
     "examples": job_examples,
     "docs": job_docs,

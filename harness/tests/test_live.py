@@ -234,9 +234,7 @@ def test_build_slots_builtin_agent_loads_through_manifest(tmp_path: Path):
         encoding="utf-8",
     )
     (tmp_path / "agent.py").write_text(
-        "class A:\n"
-        "    def reset(self, seed): pass\n"
-        "    def act(self, observation): return 0\n",
+        "class A:\n    def reset(self, seed): pass\n    def act(self, observation): return 0\n",
         encoding="utf-8",
     )
     control = SessionControl()
@@ -411,9 +409,7 @@ def test_turn_based_blocks_for_input_then_steps(tmp_path: Path):
         recording_id="r",
         clock=clock,
     ) as episode:
-        run_live_loop(
-            episode, pace_interval_ms=None, control=control, clock=clock, sleeper=sleeper
-        )
+        run_live_loop(episode, pace_interval_ms=None, control=control, clock=clock, sleeper=sleeper)
 
     assert episode.result().ticks == 1
     assert _recorded_actions(tmp_path / "r" / "recording.jsonl") == [5]

@@ -10,16 +10,25 @@ Every GitHub Actions job is a single `scripts/ci.py <job>` call after dependency
 uv run python scripts/ci.py all
 ```
 
-`all` runs, in order: the four `ci.yml` jobs (`python`, `typescript`, `generated-code-fresh`, `examples`), the strict docs build from `docs.yml`, and the `template-publish.yml` dry-run. A green `all` is the bar for opening a pull request. Run the pieces individually while iterating:
+`all` runs, in order: four of the five `ci.yml` jobs (`python`, `typescript`, `generated-code-fresh`, `examples`), the strict docs build from `docs.yml`, and the `template-publish.yml` dry-run. It omits `backend-integration`, which launches real containers and so needs a Docker daemon; run that one on its own (see below). A green `all` plus a green `backend-integration` is the bar for opening a pull request. Run the pieces individually while iterating:
 
 | Job | Mirrors | What it does |
 | --- | --- | --- |
 | `python` | `ci.yml` | ruff check, ruff format --check, pyright, pytest |
-| `typescript` | `ci.yml` | biome check, tsc --noEmit, vitest run |
+| `typescript` | `ci.yml` | biome check, tsc --noEmit, vitest run — workspace-wide, so the backend rides this job too |
+| `backend-integration` | `ci.yml` | the Docker-gated backend suite: build the session image, launch real containers (needs Docker) |
 | `generated-code-fresh` | `ci.yml` | regenerate, then fail if anything generated changed |
 | `examples` | `ci.yml` / publish `verify` | compose every example, install into a fresh venv, run its pytest |
 | `docs` | `docs.yml` | `mkdocs build --strict` so broken links or refs fail |
 | `publish-dry-run` | `template-publish.yml` | compose and assemble the publish snapshots without pushing |
+
+The backend's Docker-gated suite is its own job because it needs a running daemon. With Docker Desktop up, run it directly:
+
+```
+uv run python scripts/ci.py backend-integration
+```
+
+It builds the session base image once (entirely inside Docker, from the repo sources) and then exercises the exit criteria that only mean something against a real container: a scripted WebSocket client playing Flappy Bird, the memory-quota and no-network sandbox guarantees, and the idle and orphan-reaping teardown paths. An `act` run may skip it; it is a separate `ubuntu-latest` job in `ci.yml`, where the daemon is available.
 
 ```
 uv run python scripts/ci.py python      # one job
@@ -58,6 +67,7 @@ One caveat to know before relying on the trigger commands: `act` does not evalua
 Stage  Job ID                Workflow name     Workflow file         Events
 0      python                CI                ci.yml                pull_request,push
 0      typescript            CI                ci.yml                pull_request,push
+0      backend-integration   CI                ci.yml                pull_request,push
 0      generated-code-fresh  CI                ci.yml                pull_request,push
 0      examples              CI                ci.yml                pull_request,push
 0      build                 Docs              docs.yml              pull_request,push

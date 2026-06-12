@@ -78,6 +78,15 @@ export interface LaunchSpec {
   image: ImageRef
   /** Argv appended to the image entrypoint — the session config, see transport-and-live-runner. */
   argv: string[]
+  /**
+   * Replace the image's entrypoint instead of appending {@link argv} to it. The orchestrator
+   * never sets this — a session always runs the image's live-runner entrypoint with the config
+   * as `argv`. It exists for the driver-level sandbox tests (memory quota, no network), which
+   * run an arbitrary command in the base image to exercise the profile mapping rather than a
+   * real session; keeping it on the launch spec, not in the image, leaves the production image
+   * free of test hooks. A Kubernetes driver maps it onto a container `command` the same way.
+   */
+  entrypoint?: string[]
   sandbox: SandboxProfile
   /** The session id, used by the driver to label the container for supervision and orphan reaping. */
   sessionId: string
