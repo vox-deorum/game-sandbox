@@ -1,6 +1,8 @@
 # Stage 4: The Flappy Bird Renderer
 
-Part of [Stage 4](../stage-04-frontend-core.md). This file designs the first real renderer module: the Flappy Bird game frame drawn from the per-step state's overlay, the in-game UI that makes it read as a game, and raw device input wired through the WebSocket as actions, per [interaction.md](../../specs/interaction.md). It implements the contract from [frontend-infrastructure.md](frontend-infrastructure.md) and registers under the metadata key `"flappy-bird"`; the same module must run unchanged from a stored recording, which [replay-and-retention.md](replay-and-retention.md) relies on.
+Status: complete.
+
+Part of [Stage 4](../stage-04-frontend-core.md). This file records the first real renderer module: the Flappy Bird game frame drawn from the per-step state's overlay, the in-game UI that makes it read as a game, and raw device input wired through the WebSocket as actions, per [interaction.md](../../specs/interaction.md). It implements the contract from [frontend-infrastructure.md](frontend-infrastructure.md) and registers under the metadata key `"flappy-bird"`; the same module runs unchanged from a stored recording, which [replay-and-retention.md](replay-and-retention.md) relies on.
 
 ## Drawing the world from the overlay
 
@@ -14,7 +16,7 @@ Rendering is split into two layers, and the split is a testing decision as much 
 
 Per the parent file, the frame must read as a game rather than a debugger view. The HUD drawn into the canvas: the cumulative score from `agents.player_0.score` rendered large (the game's one number that matters), `pipes_passed` from the overlay as the pipe counter, and the tick — which, with the environment's `recommended_episode_ticks` and `episode_limit_ms` from metadata, doubles as the "attempts/time" indicator for a single-episode session. Session-level status (starting, paused, ended with reason and final score) is host chrome per the contract's chrome split — the hosting page overlays it, so a "PAUSED" or end-of-run banner appears identically over every environment's renderer.
 
-The metadata's `pace_interval_ms` (50 ms, 20 steps/second) was flagged in Stage 2 for tuning during this stage's playtesting with the real renderer. If playtesting changes it, the change lands in the environments package metadata and the regenerated `environments.json`, and the Stage 2 plan note is updated per the [plan rules](../README.md).
+The metadata's `pace_interval_ms` (50 ms, 20 steps/second) was flagged in Stage 2 for tuning during this stage's playtesting with the real renderer. Playtesting confirmed that value reads well as a game, so the environments package metadata and regenerated `environments.json` stayed unchanged.
 
 ## Input
 

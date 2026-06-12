@@ -1,6 +1,8 @@
 # Stage 4: Replay and Retention
 
-Part of [Stage 4](../stage-04-frontend-core.md). This file designs the replay viewer per [recording.md](../../specs/recording.md) — load by URL, play, pause, step, scrub, through the same renderer as live play — and the backend retention policy from the same spec: the deployment-configured window, the per-user quota, oldest-unpinned-first eviction, and pinning. The post-session feedback prompt appears here as a stub that only offers pinning; ratings storage lands in Stage 6.
+Status: complete.
+
+Part of [Stage 4](../stage-04-frontend-core.md). This file records the replay viewer per [recording.md](../../specs/recording.md), load by URL, play, pause, step, scrub, through the same renderer as live play, and the backend retention policy from the same spec: the deployment-configured window, the per-user quota, oldest-unpinned-first eviction, and pinning. The post-session feedback prompt appears here as a stub that only offers pinning; ratings storage lands in Stage 6.
 
 ## The replay viewer
 

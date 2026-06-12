@@ -1,10 +1,12 @@
 # Stage 4: Live Session Control
 
-Part of [Stage 4](../stage-04-frontend-core.md). This file designs the live half of the frontend: starting play and watch sessions from the environment page, the session page that hosts a renderer over the live socket, and the two session-level controls from [interaction.md](../../specs/interaction.md) — the human-slot timeout and pause. It builds on the clients, identity, and renderer contract from [frontend-infrastructure.md](frontend-infrastructure.md) and drives the Stage 3 API and WebSocket protocol unchanged except where noted.
+Status: complete.
+
+Part of [Stage 4](../stage-04-frontend-core.md). This file records the live half of the frontend: starting play and watch sessions from the environment page, the session page that hosts a renderer over the live socket, and the two session-level controls from [interaction.md](../../specs/interaction.md), the human-slot timeout and pause. It builds on the clients, identity, and renderer contract from [frontend-infrastructure.md](frontend-infrastructure.md) and drives the Stage 3 API and WebSocket protocol unchanged except where noted.
 
 ## Starting a session
 
-The environment page's two entry points map to the Stage 3 modes: **Play** starts a `human` session (the connected user takes the environment's human slot — Flappy Bird's `player_0`; the slot-based session model already generalizes per [frontend.md](../../specs/frontend.md)), and **Watch** starts a `scripted` session where the built-in agent plays and the user only observes. Both go through a small start form — seed (optional, for reproducible runs) and the human-slot timeout control below — then `POST /api/sessions` and navigate to `/sessions/:id`. A 403 means not allowlisted (the entry points are already hidden, but the backend is the enforcement); a 409 carries the active session's id, and the UI offers to rejoin it — one user, one concurrent session, and the frontend makes that rule navigable instead of an error.
+The environment page's two entry points map to the Stage 3 modes: **Play** starts a `human` session (the connected user takes the environment's human slot, Flappy Bird's `player_0`; the slot-based session model already generalizes per [frontend.md](../../specs/frontend.md)), and **Watch** starts a `scripted` session where the built-in agent plays and the user only observes. Both go through a small start form with an optional seed for reproducible runs; the human-slot timeout control appears for human play only. The form calls `POST /api/sessions` and navigates to `/sessions/:id`. A 403 means not allowlisted (the entry points are already hidden, but the backend is the enforcement); a 409 carries the active session's id, and the UI offers to rejoin it, so the one-user, one-concurrent-session rule is navigable instead of a dead end.
 
 ## The session page
 
@@ -19,7 +21,7 @@ Host chrome, per the contract's chrome split, working identically for every futu
 One control, no second mechanism, per the parent file and [interaction.md](../../specs/interaction.md). The deadline's meaning splits on the pace interval, and the control follows:
 
 - **Paced environment (Flappy Bird).** The per-step deadline _is_ the pace interval — a step with no input gets the noop. The start form states this, and the play UI shows the resolved deadline as the per-step input window (50 ms / 20 steps per second) whenever the user controls a slot, which is the "show the active timeout when it can affect the session" requirement.
-- **Unpaced environment (a later turn-based game).** The same control is the move clock: the form prefills the metadata's `human_timeout_ms`, the user may override it, and the play UI shows it counting against the acting slot.
+- **Unpaced environment (a later turn-based game).** The same control is the move clock: the form prefills the metadata's `human_timeout_ms`, the user may override it, and the play UI shows the resolved move time limit for the acting slot.
 
 In both cases the form sends any entered override as `human_slot_timeout_ms` on session start — the Stage 3 API already accepts, resolves, and forwards it into the harness config, which satisfies the stage's override exit criterion today even though Flappy Bird's paced loop never consults the value. Nothing here is Flappy Bird-specific: when the first turn-based environment arrives, the control and display work from its metadata with no new mechanism.
 

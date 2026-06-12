@@ -1,6 +1,8 @@
 # Stage 4: Testing, CI Wiring, and Docs
 
-Part of [Stage 4](../stage-04-frontend-core.md). The exit criteria made executable, split by what they need: frontend unit tests in jsdom with no canvas and no network, backend unit tests for the allowlist and retention on the existing in-memory setup, and a browser end-to-end suite for the criteria that only mean something with a real renderer over a real session.
+Status: complete.
+
+Part of [Stage 4](../stage-04-frontend-core.md). The exit criteria are executable, split by what they need: frontend unit tests in jsdom with no canvas and no network, backend unit tests for the allowlist and retention on the existing in-memory setup, and a browser end-to-end suite for the criteria that only mean something with a real renderer over a real session.
 
 ## Frontend unit tests (Vitest, jsdom, no backend)
 
@@ -23,7 +25,7 @@ Extending the Stage 3 suites on the same fixtures — no Docker:
 
 ## End-to-end tests (Playwright, Docker required)
 
-Proposed default, to be confirmed at stage start: Playwright driving Chromium against the real backend (Docker daemon required, same gate as `backend:integration`) with the frontend served by Vite preview and the proxy pointed at a test-port backend. This is the executable form of the stage's experiential criteria, one scripted journey plus the variations:
+Confirmed implementation: Playwright drives Chromium against the real backend (Docker daemon required, same gate as `backend-integration`) with the backend serving the built frontend from one origin. The Playwright config starts two backend instances, one allowlisting `dev-user` and one allowlisting no one, so the allowlist variation has a non-allowlisted context. This is the executable form of the stage's experiential criteria, one scripted journey plus the variations:
 
 - **The main journey**: the auto-logged mock user lands on home, opens the Flappy Bird environment page, starts a play session, sees the canvas drawing states and the per-step input window in the play UI, flaps with the keyboard and sees the score change, pauses and resumes (the paused overlay appears and clears), stops the session, and from the end card opens the replay URL, scrubs it, and pins it.
 - **Watch**: a scripted session streams the built-in agent's run into the same renderer with no input controls.
@@ -34,8 +36,8 @@ Pixel-level rendering assertions stay out: the e2e suite asserts the canvas is p
 
 ## CI wiring
 
-The frontend rides the existing workspace-wide jobs with no YAML change: `check:ts` (tsc plus Biome through the root config) and `test:ts` pick up the new package, and the schema-package moves from [frontend-infrastructure.md](frontend-infrastructure.md) keep their existing tests green as the refactor gate. `scripts/ci.py` gains a `frontend-e2e` job — install Playwright's Chromium, build the frontend, run the gated suite — wired in `ci.yml` as a new `ubuntu-latest` job alongside `backend-integration`, with the same local story (needs Docker Desktop; runnable directly, skippable under `act`). The `generated-code-fresh` job is untouched unless playtesting retunes `pace_interval_ms`, in which case the regenerated `environments.json` rides the existing staleness check.
+The frontend rides the existing workspace-wide jobs with no YAML change: `check:ts` (tsc plus Biome through the root config) and `test:ts` pick up the new package, and the schema-package moves from [frontend-infrastructure.md](frontend-infrastructure.md) keep their existing tests green as the refactor gate. `scripts/ci.py` has a `frontend-e2e` job that builds the frontend, builds the session base image, installs Playwright's Chromium, and runs the gated suite. It is wired in `ci.yml` as a new `ubuntu-latest` job alongside `backend-integration`, with the same local story: it needs Docker Desktop and is runnable directly. The `generated-code-fresh` job stayed untouched because playtesting kept `pace_interval_ms` unchanged.
 
 ## Docs
 
-One new contributor page, `contributors/frontend.md`: package layout, how to run the dev server against a local backend, the mock identity and how to act as another user, the renderer contract and registry, how to add a renderer for a new environment (the page future environments land on), and the replay viewer's transport. `contributors/backend.md` gains the new configuration (`SESSION_ALLOWLIST`, the retention variables), `GET /api/me`, the recordings table, and the retention sweep; `contributors/execution.md` gains the WS `user` query parameter note on the protocol section. `contributors/test.md` gains the `frontend-e2e` job. Student pages stay untouched: nothing participant-facing changes until submissions arrive in Stage 5.
+Contributor docs live under `docs/contributors/`. `docs/contributors/frontend.md` covers package layout, how to run the dev server against a local backend, the mock identity and how to act as another user, the renderer contract and registry, how to add a renderer for a new environment, and the replay viewer's transport. `docs/contributors/backend.md` covers the new configuration (`SESSION_ALLOWLIST`, the retention variables, `FRONTEND_DIST`), `GET /api/me`, the recordings table, and the retention sweep. `docs/contributors/execution.md` covers the WS `user` query parameter in the protocol section. `docs/contributors/test.md` covers the `frontend-e2e` job. Student pages stayed untouched: nothing participant-facing changes until submissions arrive in Stage 5.
