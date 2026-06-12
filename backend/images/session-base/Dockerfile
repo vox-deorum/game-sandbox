@@ -51,12 +51,21 @@ RUN pip install --no-cache-dir ./harness \
 #    loaded through the very manifest loader a Stage 5 submission will use. compose.py runs with the
 #    repo root as REPO_ROOT, writing under build/; we copy the result to its runtime home and then
 #    install the example's extra pins (wcwidth) on top of the set — extras extend, never override.
+#
+#    `chmod a+rX` normalizes the tree's permissions: a session container runs as root but with
+#    CapDrop ALL, so it loses CAP_DAC_READ_SEARCH and is subject to the real mode bits. A build
+#    context coming from a host that does not carry Unix execute bits (a Windows checkout) can leave
+#    the composed directories without their search bit, which makes even root unable to stat the
+#    manifest inside — a session-time PermissionError that a Linux-built image never shows. `a+rX`
+#    adds read for all and execute only where it already applies (directories), so the agent loads
+#    regardless of the build host without marking data files executable.
 COPY scripts ./scripts
 COPY templates ./templates
 COPY examples ./examples
 RUN python scripts/compose.py flappy_bird hello \
     && mkdir -p /opt/agents \
     && cp -r build/examples/flappy_bird/hello /opt/agents/builtin \
+    && chmod -R a+rX /opt/agents/builtin \
     && pip install --no-cache-dir -r /opt/agents/builtin/requirements.txt \
     && rm -rf build
 
