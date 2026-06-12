@@ -1,0 +1,44 @@
+/*
+ * The reset and element defaults: box sizing, body colors and font roles, the one global
+ * focus-visible style, and the reduced-motion block. Component styling lives in scoped component
+ * CSS on the tokens; nothing component-specific belongs here.
+ */
+* {
+  box-sizing: border-box;
+  line-height: 150%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-heading);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* One visible focus style everywhere; no component removes an outline without replacing it. */
+:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+/* Calm motion: zeroing the motion tokens stills every component that animates with them. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 0ms;
+    --motion-base: 0ms;
+  }
+}

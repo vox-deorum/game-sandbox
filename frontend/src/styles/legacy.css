@@ -1,0 +1,322 @@
+/*
+ * Transitional stylesheet (Stage 4.5): the Stage 4 global component classes, re-expressed over the
+ * semantic tokens so the unmigrated pages keep working while pages move to components/ui/
+ * primitives and scoped styles. Each page migration removes its classes from this file; the file
+ * is deleted when empty. Do not add new classes here.
+ */
+.status {
+  color: var(--color-text-muted);
+}
+
+.error {
+  color: var(--color-danger);
+}
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-4);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  transition: border-color var(--motion-fast) var(--ease-out);
+}
+
+.card:hover {
+  border-color: var(--color-accent);
+}
+
+.card-thumb {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  background: var(--color-surface-raised);
+}
+
+.card-body {
+  padding: var(--space-3) var(--space-4) var(--space-4);
+}
+
+.card-title {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-lg);
+}
+
+.card-description {
+  margin: 0 0 var(--space-3);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.card-meta {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.badge {
+  font-size: var(--text-xs);
+  padding: 0.15rem var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+}
+
+.badge-human {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+.entry-points {
+  display: flex;
+  gap: var(--space-3);
+  margin: var(--space-4) 0;
+}
+
+.env-description {
+  color: var(--color-text-muted);
+}
+
+.replay-list {
+  list-style: none;
+  padding: 0;
+}
+
+.replay-list li {
+  padding: var(--space-1) 0;
+  border-bottom: 1px solid var(--color-border);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+
+.replay-list a:hover {
+  color: var(--color-accent);
+}
+
+/* Buttons shared by the start form, session controls, and end card. */
+button {
+  font: inherit;
+  cursor: pointer;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) 1.1rem;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+button:hover {
+  filter: brightness(1.08);
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+button.secondary {
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+}
+
+.button-link {
+  display: inline-block;
+  padding: var(--space-2) 1.1rem;
+  border-radius: var(--radius-sm);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+/* The entry-point buttons inherit the shared button style above; only the size differs. */
+.entry-points button {
+  padding: var(--space-2) 1.25rem;
+  font-size: var(--text-md);
+}
+
+/* Start form */
+.start-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 28rem;
+  margin: var(--space-4) 0;
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.start-form h3 {
+  margin: 0;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.field span {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.field input {
+  font: inherit;
+  padding: 0.4rem 0.6rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.hint {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+
+.start-form-actions {
+  display: flex;
+  gap: 0.6rem;
+}
+
+/* Session page */
+.session-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-3);
+}
+
+.session-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.status-dot {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  background: var(--color-text-muted);
+}
+
+.status-dot.running {
+  background: var(--color-accent);
+}
+
+.status-dot.ended {
+  background: var(--color-danger);
+}
+
+.reconnecting {
+  font-size: var(--text-sm);
+}
+
+.session-controls {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.active-timeout {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  margin: 0 0 var(--space-3);
+}
+
+.renderer-host {
+  position: relative;
+  max-width: 480px;
+  margin: 0 auto;
+  background: #000;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.overlay-banner {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: #fff;
+  background: var(--color-scrim);
+}
+
+/* Run metadata shared by ended sessions and replays. */
+.run-metadata {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.3rem var(--space-4);
+  margin: 0 0 var(--space-4);
+  color: var(--color-text);
+}
+
+.run-metadata dt {
+  color: var(--color-text-muted);
+}
+
+.run-metadata dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* End-of-session card */
+.end-card {
+  max-width: 480px;
+  margin: var(--space-4) auto 0;
+  padding: var(--space-4) 1.25rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.end-card h2 {
+  margin-top: 0;
+}
+
+.end-actions {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+/* Replay viewer */
+.replay-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  max-width: 480px;
+  margin: var(--space-3) auto;
+}
+
+.scrubber {
+  flex: 1;
+}
+
+.replay-position {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+.replay-pin {
+  max-width: 480px;
+  margin: var(--space-3) auto 0;
+}
+
+.replay-list .pin-badge {
+  margin-left: var(--space-2);
+  color: var(--color-accent);
+}

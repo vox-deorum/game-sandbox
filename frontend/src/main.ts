@@ -16,7 +16,12 @@ import HomePage from './pages/home.vue'
 import ReplayPage from './pages/replay.vue'
 import SessionPage from './pages/session.vue'
 import './renderers/index.js'
-import './styles.css'
+// Style layers in order: tokens, reset, app shell layout, then the transitional Stage 4 classes
+// that shrink as pages migrate to scoped styles (see plans/stage-04.5/design-foundation.md).
+import './styles/tokens.css'
+import './styles/base.css'
+import './styles/app.css'
+import './styles/legacy.css'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -27,6 +32,13 @@ const router = createRouter({
     { path: '/replays/:id', component: ReplayPage },
   ],
 })
+
+// The styleguide (every primitive in every variant, see design.md) exists only in dev: the DEV
+// guard is compile-time false in production, so the route and the dynamically imported page are
+// dead code there and the bundle carries neither.
+if (import.meta.env.DEV) {
+  router.addRoute({ path: '/styleguide', component: () => import('./pages/StyleguidePage.vue') })
+}
 
 const root = document.getElementById('app')
 if (root === null) {

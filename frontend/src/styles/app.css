@@ -1,0 +1,28 @@
+/*
+ * App shell layout only: the top bar and the main content column. The shell's markup is
+ * components/AppShell.vue; the bar's contents change with the Stage 4.5 navigation rebuild but the
+ * layout classes live here because they frame every page.
+ */
+.app-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.site-name {
+  font-size: var(--text-lg);
+  font-weight: 700;
+}
+
+.signed-in {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.app-main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: var(--space-5);
+}

@@ -1,0 +1,80 @@
+/*
+ * Design tokens, the single source of design values (see docs/contributors/design.md and
+ * plans/stage-04.5/design-foundation.md). Two tiers: the raw palette (--palette-*) is private to
+ * this file and never referenced by components; the semantic tier below it is the public
+ * vocabulary all component CSS consumes. A future light theme remaps the semantic tier only.
+ */
+:root {
+  color-scheme: dark;
+
+  /* Raw palette (private): the blue-charcoal ink ramp plus the playful accent family. */
+  --palette-ink-950: #0f1420;
+  --palette-ink-900: #18202e;
+  --palette-ink-800: #222d40;
+  --palette-ink-700: #2e3c54;
+  --palette-ink-600: #43546f;
+  --palette-slate-300: #9aa7bd;
+  --palette-slate-100: #e6eaf2;
+  --palette-mint-400: #3fd699;
+  --palette-mint-950: #06281b;
+  --palette-coral-400: #ff7a76;
+  --palette-amber-300: #ffc966;
+  --palette-sky-400: #6ab8ff;
+  --palette-scrim: rgba(5, 9, 18, 0.55);
+
+  /* Color, semantic. */
+  --color-bg: var(--palette-ink-950);
+  --color-surface: var(--palette-ink-900);
+  --color-surface-raised: var(--palette-ink-800);
+  --color-border: var(--palette-ink-700);
+  --color-border-strong: var(--palette-ink-600);
+  --color-text: var(--palette-slate-100);
+  --color-text-muted: var(--palette-slate-300);
+  --color-accent: var(--palette-mint-400);
+  --color-on-accent: var(--palette-mint-950);
+  --color-danger: var(--palette-coral-400);
+  --color-success: var(--palette-mint-400);
+  --color-warning: var(--palette-amber-300);
+  --color-focus-ring: var(--palette-sky-400);
+  --color-scrim: var(--palette-scrim);
+
+  /* Spacing, a 4px base scale (4, 8, 12, 16, 24, 32, 48, 64). */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --space-8: 4rem;
+
+  /* Type: the size scale and the font roles. The families are unchanged from Stage 4 by decision. */
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.375rem;
+  --text-2xl: 1.75rem;
+  --font-body:
+    Lato, "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, Roboto, Oxygen, Ubuntu,
+    Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+  --font-heading: "EB Garamond", Georgia, "Times New Roman", Times, serif;
+  --font-mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+
+  /* Radii. */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-full: 999px;
+
+  /* Motion. Components animate with these only, so the reduced-motion block in base.css calms
+   * every component at once. */
+  --motion-fast: 120ms;
+  --motion-base: 200ms;
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/*
+ * Breakpoints are documented constants, not tokens, because custom properties cannot parameterize
+ * media queries. Use these values literally in scoped media queries: 480px, 768px, 1024px.
+ */
