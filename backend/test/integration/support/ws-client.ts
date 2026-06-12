@@ -16,6 +16,7 @@ export interface TimedFrame {
 export class WsClient {
   readonly frames: TimedFrame[] = []
   private readonly wakeups: Array<() => void> = []
+  private closedReason: string | null = null
 
   private constructor(private readonly socket: WebSocket) {
     socket.on('message', (data: Buffer) => {
@@ -30,6 +31,14 @@ export class WsClient {
       for (const wake of this.wakeups.splice(0)) {
         wake()
       }
+    })
+    socket.once('close', (code, reason) => {
+      this.closedReason = `WebSocket closed (${code}${reason.length > 0 ? ` ${reason.toString()}` : ''})`
+      this.wake()
+    })
+    socket.once('error', (error) => {
+      this.closedReason = `WebSocket error: ${String(error)}`
+      this.wake()
     })
   }
 
@@ -68,11 +77,17 @@ export class WsClient {
       return Promise.resolve()
     }
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('waitFor timed out')), timeoutMs)
+      const timer = setTimeout(
+        () => reject(new Error(this.failureMessage('waitFor timed out'))),
+        timeoutMs,
+      )
       const check = (): void => {
         if (predicate()) {
           clearTimeout(timer)
           resolve()
+        } else if (this.closedReason !== null) {
+          clearTimeout(timer)
+          reject(new Error(this.failureMessage(this.closedReason)))
         } else {
           this.wakeups.push(check)
         }
@@ -83,5 +98,19 @@ export class WsClient {
 
   close(): void {
     this.socket.close()
+  }
+
+  private wake(): void {
+    for (const wake of this.wakeups.splice(0)) {
+      wake()
+    }
+  }
+
+  private failureMessage(prefix: string): string {
+    const frames = this.frames
+      .slice(-5)
+      .map((frame) => frame.raw)
+      .join('\n')
+    return frames === '' ? `${prefix}; received no frames` : `${prefix}; recent frames:\n${frames}`
   }
 }

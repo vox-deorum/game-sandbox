@@ -34,7 +34,7 @@ export async function startStack(overrides: Partial<Config> = {}): Promise<Stack
     recordingsDir,
     sessionIdleTimeoutMs: 60_000,
     sessionMaxDurationMs: 600_000,
-    sessionAllowlist: ['dev-user', 'alice', 'bob'],
+    sessionAllowlist: ['dev-user', 'alice', 'bob', 'carol'],
     sandbox: { cpus: 1, memoryMb: 512, scratchMb: 256 },
     executionDriver: 'docker',
     docker: { imageTagPrefix: 'game-sandbox', imagePolicy: 'reuse' },
