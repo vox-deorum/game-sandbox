@@ -12,7 +12,8 @@ The target layout under `frontend/src/`:
 styles/          tokens.css, base.css, app.css (design foundation; legacy file until the end of the stage)
 components/ui/   the primitives, Ui prefix (UiButton.vue, UiCard.vue, ...)
 components/      feature components: AppShell.vue, AppNav.vue (new), StartForm.vue,
-                 RunMetadata.vue, RecentReplays.vue (moved from pages/, it is not a route)
+                 RunMetadata.vue, DecisionLog.vue (new), RecentReplays.vue (moved from
+                 pages/, it is not a route)
 composables/     useSessionSocket.ts, useRendererMount.ts, usePinning.ts,
                  useEnvironmentMeta.ts, useReplayTransport.ts
 lib/             format.ts (formatDate and friends, deduplicated from the pages)
@@ -48,7 +49,7 @@ Pages gain the context line from the IA (the `Environments / Flappy Bird / ...` 
 Home migrates first, with the shell, as the checkpoint-two reference page. After approval the rest follow, one PR-sized step each, tests updated in the same change:
 
 1. Environment hub: the section-column layout, the start form moved into `UiDialog`, `RecentReplays` moved to `components/` and restyled, the trailing coming-soon sentence.
-2. Session page: the composables extracted (`useSessionSocket`, `useRendererMount`, `usePinning`), the status strip on `UiStatusBadge` and `UiButton`, the end card on `UiCard`.
-3. Replay page: `useReplayTransport` with keyboard support, the scrubber on `UiSlider`, metadata and pinning sharing the session page's pieces.
+2. Session page: the composables extracted (`useSessionSocket`, `useRendererMount`, `usePinning`), the status strip on `UiStatusBadge` and `UiButton`, the end card on `UiCard`, and the decision log (`DecisionLog.vue` in `components/`) fed the per-tick agent actions from the state stream (`StepState.agents[slot].action`, with `timing.decision_ms` available for the timing column later). The renderer mount gains a targeted-canvas-size field on `RendererModule` (`renderers/types.ts`), populated by the Flappy Bird module, so `useRendererMount` lays the canvas at or under that target and the page places the log beside the canvas when a column is free and below it, collapsed, when the canvas claims the width.
+3. Replay page: `useReplayTransport` with keyboard support, the scrubber on `UiSlider`, and metadata, pinning, and `DecisionLog` all sharing the session page's pieces; the log replays from the recorded states the transport already walks, so it stays in sync with the scrubber.
 
 Each page that migrates takes its legacy classes out of the transitional stylesheet. The stage-end cleanup deletes the file once it is empty.

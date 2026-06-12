@@ -1,6 +1,6 @@
 # Stage 4.5: Information Architecture
 
-Status: proposed, awaiting owner approval. This document is checkpoint one of [Stage 4.5](../stage-04.5-ui-restructure.md): no page is rebuilt until the owner approves it. Record the approval date here when it happens.
+Status: approved. This document is checkpoint one of [Stage 4.5](../stage-04.5-ui-restructure.md).
 
 This is the rethought information architecture for the frontend. It covers what exists today (four pages plus the dev styleguide) and reserves visible room for what stages 5 through 9 add (agent profiles, submissions, leaderboards, telemetry), per [specs/frontend.md](../../specs/frontend.md). The guiding idea: the site is a small number of strong pages, and the navigation should make the eventual shape of the product legible now, so a student landing on the site understands what it will become.
 
@@ -117,7 +117,7 @@ Purpose: host one active session with the renderer as the star. The chrome is on
 
 The status indicator pairs the colored dot with a text label always (running, ended, reconnecting), never color alone. Pause, stop, and the timeout display keep their Stage 4 behavior.
 
-A running decision log streams the agent's per-tick choices as the session plays. It is a two-column table, `Tick | Decision`, scrolling independently and pinned to the latest tick unless the reader scrolls up. Today the cells are terse (a tick number and an action name); the column is sized to grow, because the LLM-based agents of later stages will emit richer reasoning per tick (Stage 7's per-tick call metadata is the natural feed for it).
+A running decision log shows the agent's per-tick actions as the session plays. The data is already in the stream the renderer consumes, so the log needs no new transport: each `StepState` carries `agents[slot].action` (the action that agent took on the tick) and `agents[slot].timing.decision_ms` (how long it spent deciding). It is a two-column table, `Tick | Decision`, scrolling independently and pinned to the latest tick unless the reader scrolls up. The cells are terse by nature — a tick number and an action value — because an action is all an agent emits per tick. The column is sized to grow so a future environment with a richer (structured or multi-field) action space reads cleanly, not because anything streams in later: Stage 7's LLM call metadata is queried by request (see "What later stages slot in"), a detail view you open, not a live feed piped into this log.
 
 The log's placement is responsive and driven by the canvas, not the viewport alone. It sits **alongside** the canvas when there is horizontal room left over after the canvas takes the size it wants — the common case for tall, narrow (vertical) canvases, which leave a column free. When the canvas is wide enough to claim the full width, the log **moves below** it and collapses by default, so it never forces the stage to shrink. The renderer is the star in both layouts; the log only takes space the canvas does not want.
 
@@ -152,7 +152,7 @@ Purpose: render every primitive in every variant and state, plus the token swatc
 
 - Stage 5 (submissions): the `Agents` nav entry becomes a real section (agent profiles), and the environment hub gains the submission form section. The hub's section-column layout is the insertion point.
 - Stage 6 (leaderboards): the `Leaderboards` nav entry becomes real, pointing at the per-environment boards on the hub; the hub gains the two boards and iteration history. The replay stage gains the rating prompt next to pinning.
-- Stage 7 (LLM gateway): the replay stage gains per-tick call metadata, which also feeds the live stage's decision log with the agent's reasoning per tick; agent profiles gain the owner-only debug view. No new top-level sections.
+- Stage 7 (LLM gateway): the replay stage and agent profiles gain an owner-only view of an agent's LLM call metadata for a run — prompt, model, token and latency detail — queried by request for a tick or a run rather than streamed, because telemetry is detail you open, not a live feed. This is a separate surface from the decision log: the log shows agent actions from the state stream and is unchanged by Stage 7; the call-metadata view answers "why did it act that way" on demand. No new top-level sections.
 - Stages 8 and 9 (multi-agent, chat): the live and replay stages gain slot assignment and the chat panel inside the existing stage layout; the start dialog grows slot pickers.
 
 Each stage retires or fills its placeholder as it lands; the parent stage files get a one-line note about this when Stage 4.5 closes.
