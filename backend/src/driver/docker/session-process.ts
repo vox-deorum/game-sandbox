@@ -118,7 +118,10 @@ export class DockerSessionProcess implements SessionProcess {
     let code = statusCode
     try {
       const info = await this.container.inspect()
-      oomKilled = info.State?.OOMKilled ?? false
+      // Some Docker/cgroup combinations surface a hard memory kill only as SIGKILL's conventional
+      // exit code. Treat that as OOM when Docker does not set the explicit flag, so callers keep a
+      // stable driver-neutral signal across runtimes.
+      oomKilled = (info.State?.OOMKilled ?? false) || statusCode === 137
       if (typeof info.State?.ExitCode === 'number') {
         code = info.State.ExitCode
       }

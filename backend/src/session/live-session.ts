@@ -12,7 +12,7 @@
  * container's own `result` all route through {@link finalize}, which records the reason, tells the
  * clients, and clears the registry exactly once.
  */
-import { mkdir } from 'node:fs/promises'
+import { chmod, mkdir } from 'node:fs/promises'
 import {
   classifyOutbound,
   parseCommand,
@@ -392,4 +392,8 @@ export class LiveSession {
 /** Ensure the recordings root exists before a container binds it (the bind mount needs the dir). */
 export async function ensureRecordingsDir(path: string): Promise<void> {
   await mkdir(path, { recursive: true })
+  // Session containers run with all capabilities dropped. On Linux a host temp directory created
+  // as 0700 is not writable by capless root inside the bind mount, so make the shared recording
+  // volume intentionally world-writable before Docker attaches it.
+  await chmod(path, 0o777)
 }

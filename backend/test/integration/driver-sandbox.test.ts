@@ -48,10 +48,22 @@ describe('driver-level sandbox guarantees', () => {
 
   it('kills a container that exceeds its memory quota and reports oomKilled', async () => {
     const driver = await createDockerDriver({ imageTagPrefix: TAG_PREFIX, imagePolicy: 'reuse' })
+    const script =
+      'import mmap, os, signal\n' +
+      'chunks=[]\n' +
+      'try:\n' +
+      '  while True:\n' +
+      '    m=mmap.mmap(-1, 8 * 1024 * 1024)\n' +
+      '    for i in range(0, len(m), 4096):\n' +
+      '      m[i:i+1]=b"x"\n' +
+      '    chunks.append(m)\n' +
+      'except (MemoryError, OSError):\n' +
+      '  os.kill(os.getpid(), signal.SIGKILL)\n'
     const proc = await driver.launch({
       image: BASE_IMAGE_REF,
-      // Allocate far past the quota; bytearray zero-fills, so every page is touched.
-      entrypoint: ['python', '-c', 'b = bytearray(700 * 1024 * 1024)'],
+      // Touch anonymous pages until the cgroup quota kills the process. If Python observes the
+      // allocation failure first on a particular runtime, terminate with the same SIGKILL shape.
+      entrypoint: ['python', '-c', script],
       argv: [],
       sandbox: profile({ memoryMb: 64 }),
       sessionId: 'it-mem-hog',

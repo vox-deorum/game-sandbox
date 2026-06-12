@@ -1,8 +1,9 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { ensureRecordingsDir } from '../src/session/live-session.js'
 import { Orchestrator, OrchestratorError } from '../src/session/orchestrator.js'
 import type { Storage } from '../src/storage/index.js'
 import type { SessionMode } from '../src/storage/schema.js'
@@ -109,6 +110,14 @@ describe('orchestrator', () => {
     it('binds the built-in agent for a scripted (watch) session', async () => {
       const { config } = await start(makeOrchestrator(), { mode: 'scripted' })
       expect(config.slots).toEqual({ player_0: { kind: 'builtin-agent' } })
+    })
+
+    it('prepares the recording volume for the cap-dropped session container', async () => {
+      const nested = join(recordingsDir, 'nested')
+      await ensureRecordingsDir(nested)
+      if (process.platform !== 'win32') {
+        expect(statSync(nested).mode & 0o777).toBe(0o777)
+      }
     })
 
     it('resolves the human-slot timeout: override wins, else metadata, else null', async () => {
