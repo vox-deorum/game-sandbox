@@ -10,7 +10,7 @@ import websocket from '@fastify/websocket'
 import Fastify, { type FastifyInstance } from 'fastify'
 
 import type { EnvironmentRegistry } from './environments.js'
-import { resolveUserId } from './identity.js'
+import { isAllowlisted, resolveUserId } from './identity.js'
 import type { RecordingsStore } from './recordings.js'
 import type { ClientSocket } from './session/live-session.js'
 import { type Orchestrator, OrchestratorError } from './session/orchestrator.js'
@@ -19,6 +19,8 @@ export interface AppDeps {
   orchestrator: Orchestrator
   environments: EnvironmentRegistry
   recordings: RecordingsStore
+  /** The operator-configured session allowlist, so `/api/me` can report what the user may do. */
+  allowlist: readonly string[]
 }
 
 /** JSON-schema body for POST /api/sessions; Fastify 400s on a violation before the handler runs. */
@@ -48,6 +50,14 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(websocket)
 
   app.get('/api/environments', () => deps.environments.list())
+
+  // The frontend's single source for who-am-I and what-may-I-do. One mock user is auto-logged-on
+  // by the browser; this reports the resolved id and allowlist membership so the OAuth replacement
+  // has one obvious place to land.
+  app.get('/api/me', (request) => {
+    const userId = resolveUserId(request.headers)
+    return { user_id: userId, allowlisted: isAllowlisted(userId, deps.allowlist) }
+  })
 
   app.post<{ Body: StartBody }>(
     '/api/sessions',
@@ -98,7 +108,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     '/api/sessions/:id/ws',
     { websocket: true },
     (socket, request) => {
-      const userId = resolveUserId(request.headers)
+      // A browser cannot set a header on a WebSocket upgrade, so the socket client carries the
+      // identity as the `user` query parameter; resolveUserId reads it when the header is absent.
+      const userId = resolveUserId(request.headers, request.query as Record<string, string>)
       const client: ClientSocket = {
         send: (data) => socket.send(data),
         close: () => socket.close(),
@@ -121,7 +133,11 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
 function replyError(reply: import('fastify').FastifyReply, error: unknown): unknown {
   if (error instanceof OrchestratorError) {
-    return reply.code(error.status).send({ error: error.message })
+    // The body carries a stable `code` the frontend branches on, plus any details (the active
+    // session id) merged in so the 409 rejoin path has somewhere to read it.
+    return reply
+      .code(error.status)
+      .send({ error: error.message, code: error.code, ...error.details })
   }
   throw error
 }

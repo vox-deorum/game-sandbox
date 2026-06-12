@@ -2,7 +2,7 @@
 
 Part of [Stage 3](../stage-03-backend-and-live-sessions.md). This file defines the two protocol layers — container to backend, and backend to browser — and the Python live runner that implements the container side over the Stage 2 harness, per [interaction.md](../../specs/interaction.md) and [recording.md](../../specs/recording.md).
 
-Status: implemented, both sides. The container side — the `Episode` extraction in `session.py`, the `live` and `live_io` modules, and their pytest suites — passes with the Stage 2 determinism fixtures unchanged as the regression gate. The backend-to-browser WebSocket half landed with the orchestrator (`backend/src/protocol/` for the line classification and command envelopes, `backend/src/session/live-session.ts` for the relay); see [orchestrator-and-http-api.md](orchestrator-and-http-api.md). Implementation specifics confirmed during the build are recorded inline below.
+Status: implemented, both sides. The container side — the `Episode` extraction in `session.py`, the `live` and `live_io` modules, and their pytest suites — passes with the Stage 2 determinism fixtures unchanged as the regression gate. The backend-to-browser WebSocket half landed with the orchestrator (the line classification and command envelopes, and `backend/src/session/live-session.ts` for the relay); see [orchestrator-and-http-api.md](orchestrator-and-http-api.md). Stage 4 hoisted the classification rule and the command envelopes into `@game-sandbox/schema` so the browser speaks the same contract from one declaration; the relay imports them from there. Implementation specifics confirmed during the build are recorded inline below.
 
 ## Line classification: recording lines and envelopes
 

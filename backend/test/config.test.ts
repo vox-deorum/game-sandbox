@@ -13,6 +13,18 @@ describe('loadConfig', () => {
     // The db and recordings paths are derived from the data dir.
     expect(config.dbPath.endsWith('sandbox.db')).toBe(true)
     expect(config.recordingsDir.endsWith('recordings')).toBe(true)
+    // A fresh checkout plays out of the box: the dev user is allowlisted by default.
+    expect(config.sessionAllowlist).toEqual(['dev-user'])
+  })
+
+  it('parses SESSION_ALLOWLIST as a trimmed comma-separated list', () => {
+    expect(loadConfig({ SESSION_ALLOWLIST: 'alice, bob ,carol' }).sessionAllowlist).toEqual([
+      'alice',
+      'bob',
+      'carol',
+    ])
+    // An explicitly empty value is an empty allowlist (no one may start a session).
+    expect(loadConfig({ SESSION_ALLOWLIST: '' }).sessionAllowlist).toEqual([])
   })
 
   it('parses overrides and derives paths from DATA_DIR', () => {

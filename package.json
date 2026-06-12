@@ -9,7 +9,8 @@
   },
   "workspaces": [
     "schema/ts",
-    "backend"
+    "backend",
+    "frontend"
   ],
   "scripts": {
     "generate": "uv run python scripts/generate.py",

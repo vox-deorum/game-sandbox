@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import {
-  classifyOutbound,
-  parseCommand,
-  serializeCommand,
-  sessionEnvelope,
-} from '../src/protocol/index.js'
+import { classifyOutbound, parseCommand, serializeCommand, sessionEnvelope } from '../src/index.js'
 
 describe('outbound line classification', () => {
   it('classifies a header line (no top-level kind) as a recording line', () => {

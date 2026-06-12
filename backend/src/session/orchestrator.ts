@@ -14,6 +14,7 @@ import { resolve } from 'node:path'
 import type { Config } from '../config.js'
 import type { ExecutionDriver, SandboxProfile } from '../driver/index.js'
 import type { EnvironmentMeta, EnvironmentRegistry } from '../environments.js'
+import { isAllowlisted } from '../identity.js'
 import type { Storage } from '../storage/index.js'
 import type { Session, SessionMode } from '../storage/schema.js'
 import {
@@ -48,11 +49,17 @@ export interface StartResult {
   wsPath: string
 }
 
-/** A start/stop failure carrying the HTTP status the route should map it to. */
+/**
+ * A start/stop failure carrying the HTTP status the route should map it to, an optional stable
+ * machine code the frontend branches on (`not_allowlisted`, `already_active`), and optional details
+ * merged into the error body (the active session id for the rejoin path).
+ */
 export class OrchestratorError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    readonly code?: string,
+    readonly details?: Record<string, unknown>,
   ) {
     super(message)
   }
@@ -74,9 +81,8 @@ export class Orchestrator {
    * human-slot timeout, ensure the image, insert the `starting` row, and launch the container.
    */
   async start(request: StartRequest): Promise<StartResult> {
-    if (this.registry.hasActiveUser(request.userId)) {
-      throw new OrchestratorError(409, 'user already has an active session')
-    }
+    // Validate the request first (a malformed start is a 400 regardless of identity), then the
+    // allowlist (403), then the one-per-user rule (409).
     const meta = this.environments.get(request.envId)
     if (meta === undefined) {
       throw new OrchestratorError(400, `unknown environment ${request.envId}`)
@@ -89,6 +95,17 @@ export class Orchestrator {
         400,
         `environment ${request.envId} has no human-controllable slot`,
       )
+    }
+    // The allowlist gates starting a session in either mode, since a watch run also consumes a
+    // container. Everything read-only (listing, fetching recordings, spectating) stays open.
+    if (!isAllowlisted(request.userId, this.config.sessionAllowlist)) {
+      throw new OrchestratorError(403, 'user is not on the session allowlist', 'not_allowlisted')
+    }
+    const activeId = this.registry.activeIdForUser(request.userId)
+    if (activeId !== undefined) {
+      throw new OrchestratorError(409, 'user already has an active session', 'already_active', {
+        active_session_id: activeId,
+      })
     }
 
     const humanTimeoutMs =

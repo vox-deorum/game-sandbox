@@ -13,6 +13,8 @@ import { openSqliteStorage } from '../src/storage/sqlite.js'
 import { FakeDriver } from './support/fake-driver.js'
 import { makeConfig, makeEnvironments } from './support/harness.js'
 
+const ALLOWLIST = ['dev-user', 'alice', 'bob']
+
 describe('HTTP API', () => {
   let app: FastifyInstance
   let storage: Storage
@@ -26,12 +28,13 @@ describe('HTTP API', () => {
       new FakeDriver(),
       storage,
       makeEnvironments(),
-      makeConfig({ recordingsDir: dir }),
+      makeConfig({ recordingsDir: dir, sessionAllowlist: ALLOWLIST }),
     )
     app = await buildApp({
       orchestrator,
       environments: makeEnvironments(),
       recordings: new RecordingsStore(dir),
+      allowlist: ALLOWLIST,
     })
   })
 
@@ -80,19 +83,58 @@ describe('HTTP API', () => {
     expect(badMode.statusCode).toBe(400)
   })
 
-  it('enforces one active session per user with 409', async () => {
+  it('enforces one active session per user with 409 and returns the active session id', async () => {
     const first = await app.inject({
       method: 'POST',
       url: '/api/sessions',
       payload: { env_id: 'flappy_bird', mode: 'scripted' },
     })
     expect(first.statusCode).toBe(201)
+    const { id } = first.json() as { id: string }
     const second = await app.inject({
       method: 'POST',
       url: '/api/sessions',
       payload: { env_id: 'flappy_bird', mode: 'scripted' },
     })
     expect(second.statusCode).toBe(409)
+    // The rejoin path reads the active session's id from the body, keyed by the stable code.
+    expect(second.json()).toMatchObject({ code: 'already_active', active_session_id: id })
+  })
+
+  it('reports identity and allowlist membership at GET /api/me', async () => {
+    const mine = await app.inject({ method: 'GET', url: '/api/me' })
+    expect(mine.statusCode).toBe(200)
+    expect(mine.json()).toEqual({ user_id: 'dev-user', allowlisted: true })
+
+    const stranger = await app.inject({
+      method: 'GET',
+      url: '/api/me',
+      headers: { 'x-sandbox-user': 'carol' },
+    })
+    expect(stranger.json()).toEqual({ user_id: 'carol', allowlisted: false })
+  })
+
+  it('rejects a non-allowlisted user starting a session in either mode with 403', async () => {
+    for (const mode of ['human', 'scripted'] as const) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/sessions',
+        headers: { 'x-sandbox-user': 'carol' },
+        payload: { env_id: 'flappy_bird', mode },
+      })
+      expect(res.statusCode).toBe(403)
+      expect(res.json()).toMatchObject({ code: 'not_allowlisted' })
+    }
+  })
+
+  it('keeps read-only routes open to a non-allowlisted user', async () => {
+    const headers = { 'x-sandbox-user': 'carol' }
+    expect(
+      (await app.inject({ method: 'GET', url: '/api/environments', headers })).statusCode,
+    ).toBe(200)
+    expect((await app.inject({ method: 'GET', url: '/api/recordings', headers })).statusCode).toBe(
+      200,
+    )
   })
 
   it('404s an unknown session and an unknown recording', async () => {

@@ -15,9 +15,10 @@ The backend is the Node/TypeScript service outside the container boundary: it li
 | `environments.ts` | Typed access to the generated environment metadata. |
 | `storage/` | The Kysely schema, the `Storage` interface, the SQLite wiring, and migrations. |
 | `driver/` | The execution-driver interface and the local Docker implementation. |
-| `protocol/` | The line-classification rule and the command envelopes. |
 | `session/` | The orchestrator, the per-session relay, and the in-memory registry. |
 | `recordings.ts` | Read access to the recordings volume for the HTTP API. |
+
+The wire protocol the browser shares with the backend (the line-classification rule, the command envelopes, and the environment-metadata shape with its guard) lives in `@game-sandbox/schema` so there is one declaration, not a backend copy and a frontend copy that drift. Those modules are dependency-free and exposed as subpath exports (`@game-sandbox/schema/protocol`, `@game-sandbox/schema/environment`) so the browser bundle imports them without pulling in the package's Ajv-backed recording readers; the `session/` relay and `environments.ts` import them through the barrel.
 
 ## Running it locally
 
@@ -33,6 +34,7 @@ The backend is the Node/TypeScript service outside the container boundary: it li
 | `DATA_DIR` | `./data` | Holds `sandbox.db` and the `recordings/` root that doubles as the volume mounted into containers. |
 | `SESSION_IDLE_TIMEOUT_MS` | `60000` | How long a session with no attached socket (or, in human mode, no inbound command) lives before it is killed. |
 | `SESSION_MAX_DURATION_MS` | `600000` | The wall-clock backstop against a hung container. |
+| `SESSION_ALLOWLIST` | `dev-user` | Comma-separated user ids allowed to start live sessions, in either mode. Defaults to the dev user so a fresh checkout plays out of the box; an empty value allows no one. |
 | `SANDBOX_CPUS` / `SANDBOX_MEMORY_MB` / `SANDBOX_SCRATCH_MB` | `1` / `512` / `256` | The sandbox quotas applied to every session. |
 | `EXECUTION_DRIVER` | `docker` | The only driver in this stage. |
 | `DOCKER_IMAGE_TAG_PREFIX` / `DOCKER_IMAGE_POLICY` | `game-sandbox` / `reuse` | The image tag prefix and whether an existing tag is reused or always rebuilt. |
@@ -47,18 +49,21 @@ Engine portability comes from Kysely itself, not a second type layer: queries go
 
 ## The identity stub
 
-`identity.ts` resolves a user id per request — the `x-sandbox-user` header when present, otherwise `dev-user` — and is the one place the backend decides who a request belongs to. The one-concurrent-session-per-user rule and every route that attributes anything to a user key on its output. Stage 4 replaces the resolution with the GitHub OAuth session without touching callers; nothing else in the backend may invent its own notion of identity.
+`identity.ts` resolves a user id per request and is the one place the backend decides who a request belongs to: the `x-sandbox-user` header when present, otherwise the `user` query parameter, otherwise `dev-user`. The query-parameter source exists because a browser cannot set a header on a WebSocket upgrade, so the socket client carries the identity there; it is the same identity, decided in the same function. The one-concurrent-session-per-user rule, the allowlist gate, and every route that attributes anything to a user key on its output. GitHub OAuth (deferred Stage 4 work) replaces the resolution with the session cookie, which the browser sends on both fetch and upgrade automatically, without touching callers; nothing else in the backend may invent its own notion of identity.
+
+`isAllowlisted(userId, allowlist)` lives alongside it: the operator-configured `SESSION_ALLOWLIST` gates starting a live session in either mode, since a watch run also consumes a container. Everything read-only (listing environments and sessions, fetching recordings, spectating an existing session's socket) stays open. The frontend learns membership from `GET /api/me` and hides the start entry points, but the backend check is the enforcement.
 
 ## Environment metadata
 
-The environment registry lives in Python, and the backend serves it without running Python by reading a generated, committed artifact: `scripts/generate.py` writes `src/generated/environments.json` from `discover_environments()`, the `generated-code-fresh` CI job keeps it in step with the registry, and `environments.ts` parses it once at startup behind a small shape guard. The HTTP layer serves the list verbatim, and the orchestrator reads pace interval, human-capable slots, and default timeouts from it.
+The environment registry lives in Python, and the backend serves it without running Python by reading a generated, committed artifact: `scripts/generate.py` writes `src/generated/environments.json` from `discover_environments()`, the `generated-code-fresh` CI job keeps it in step with the registry, and `environments.ts` parses it once at startup behind a small shape guard. The `EnvironmentMeta` shape and that guard now live in `@game-sandbox/schema` so the browser validates the same `GET /api/environments` response from the same declaration; the `EnvironmentRegistry` and the JSON loading stay in `environments.ts`. The HTTP layer serves the list verbatim, and the orchestrator reads pace interval, human-capable slots, and default timeouts from it.
 
 ## The HTTP API
 
 Fastify routes under `/api`, with request bodies validated by Fastify's JSON-schema support:
 
 - `GET /api/environments` — the generated metadata list, verbatim.
-- `POST /api/sessions` — `{env_id, mode, seed?, human_slot_timeout_ms?}` → `201` with the session id and its WebSocket path; `409` when the user already has an active session; `400` for an unknown environment or an invalid mode.
+- `GET /api/me` — `{user_id, allowlisted}` for the resolved user: the frontend's single source for who-am-I and what-may-I-do, and the obvious place the OAuth replacement lands.
+- `POST /api/sessions` — `{env_id, mode, seed?, human_slot_timeout_ms?}` → `201` with the session id and its WebSocket path; `400` for an unknown environment or an invalid mode; `403` with `code: "not_allowlisted"` for a user not on the allowlist; `409` with `code: "already_active"` and `active_session_id` when the user already has an active session (the body the rejoin path reads). The error body always carries the stable `code`; the start route checks request shape (400), then the allowlist (403), then the one-per-user rule (409).
 - `GET /api/sessions/:id` — the session row: status, reason, recording id.
 - `DELETE /api/sessions/:id` — owner-only graceful stop.
 - `GET /api/sessions/:id/ws` — the WebSocket attach point for a live session (see [the WebSocket protocol](execution.md#the-websocket-protocol)).

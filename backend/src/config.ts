@@ -8,6 +8,8 @@
  */
 import { join } from 'node:path'
 
+import { DEV_USER_ID } from './identity.js'
+
 /** The only execution driver that exists in this stage. */
 export type ExecutionDriverKind = 'docker'
 
@@ -40,6 +42,11 @@ export interface Config {
   sessionIdleTimeoutMs: number
   /** Wall-clock backstop catching a hung container that in-container budgets cannot. */
   sessionMaxDurationMs: number
+  /**
+   * The operator-configured allowlist of user ids that may start live sessions. Keyed on the
+   * Stage 3 identity stub until OAuth brings real handles; everything read-only stays open.
+   */
+  sessionAllowlist: string[]
   sandbox: SandboxDefaults
   executionDriver: ExecutionDriverKind
   docker: DockerDriverOptions
@@ -57,6 +64,18 @@ function intVar(env: NodeJS.ProcessEnv, name: string, fallback: number): number 
     throw new ConfigError(`${name} must be a non-negative integer, got ${raw}`)
   }
   return value
+}
+
+function listVar(env: NodeJS.ProcessEnv, name: string, fallback: string[]): string[] {
+  const raw = env[name]
+  if (raw === undefined) {
+    return fallback
+  }
+  const items = raw
+    .split(',')
+    .map((item) => item.trim())
+    .filter((item) => item !== '')
+  return items
 }
 
 function numberVar(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
@@ -100,6 +119,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     recordingsDir: join(dataDir, 'recordings'),
     sessionIdleTimeoutMs: intVar(env, 'SESSION_IDLE_TIMEOUT_MS', 60_000),
     sessionMaxDurationMs: intVar(env, 'SESSION_MAX_DURATION_MS', 600_000),
+    sessionAllowlist: listVar(env, 'SESSION_ALLOWLIST', [DEV_USER_ID]),
     sandbox: {
       cpus: numberVar(env, 'SANDBOX_CPUS', 1),
       memoryMb: intVar(env, 'SANDBOX_MEMORY_MB', 512),

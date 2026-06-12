@@ -25,6 +25,11 @@ export class SessionRegistry {
     return this.userToId.has(userId)
   }
 
+  /** The id of the user's currently active session, or `undefined` if they have none. */
+  activeIdForUser(userId: string): string | undefined {
+    return this.userToId.get(userId)
+  }
+
   /** Drop a session once its teardown is complete. Idempotent. */
   remove(id: string): void {
     const session = this.byId.get(id)

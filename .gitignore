@@ -18,6 +18,8 @@ venv/
 # Node
 node_modules/
 *.tsbuildinfo
+# Frontend production build and Vite preview output
+/frontend/dist/
 
 # Editors and OS
 .DS_Store

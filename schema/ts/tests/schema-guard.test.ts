@@ -8,13 +8,12 @@ import { describe, expect, it } from 'vitest'
  * The line-classification rule (a recording line never carries a top-level `kind`; an event
  * envelope always does) depends on the state schema declaring no `kind`. Assert that against the
  * canonical schema so the rule cannot rot silently — if someone ever adds a top-level `kind` to a
- * state, this fails and the classifier must be reconsidered.
+ * state, this fails and the classifier in protocol.ts must be reconsidered.
  */
 const SCHEMA_PATH = join(
   dirname(fileURLToPath(import.meta.url)),
   '..',
   '..',
-  'schema',
   'step-state.schema.json',
 )
 

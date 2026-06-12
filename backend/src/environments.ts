@@ -13,61 +13,17 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-/** The public-facing metadata for one environment, field-for-field the Python `to_json()`. */
-export interface EnvironmentMeta {
-  env_id: string
-  display_name: string
-  description: string
-  min_slots: number
-  max_slots: number
-  human_slots: string[]
-  human_timeout_ms: number | null
-  recommended_episode_ticks: number
-  pace_interval_ms: number | null
-  step_limit_ms: number
-  episode_limit_ms: number
-  messaging: boolean
-  message_cap: number | null
-  llm: boolean
-  renderer: string
-}
+import { type EnvironmentMeta, isEnvironmentMeta } from '@game-sandbox/schema'
+
+// The metadata shape and its guard now live in @game-sandbox/schema so the browser shares one
+// declaration; this module keeps the backend-only registry and the generated-JSON loader. Re-export
+// the type so existing backend imports of `EnvironmentMeta` from this module keep working.
+export type { EnvironmentMeta } from '@game-sandbox/schema'
 
 /** Thrown when the generated metadata file is missing or does not match the expected shape. */
 export class EnvironmentMetadataError extends Error {}
 
 const DEFAULT_PATH = join(dirname(fileURLToPath(import.meta.url)), 'generated', 'environments.json')
-
-function isStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((item) => typeof item === 'string')
-}
-
-function isIntOrNull(value: unknown): value is number | null {
-  return value === null || (typeof value === 'number' && Number.isFinite(value))
-}
-
-function isEnvironmentMeta(value: unknown): value is EnvironmentMeta {
-  if (typeof value !== 'object' || value === null) {
-    return false
-  }
-  const m = value as Record<string, unknown>
-  return (
-    typeof m.env_id === 'string' &&
-    typeof m.display_name === 'string' &&
-    typeof m.description === 'string' &&
-    typeof m.min_slots === 'number' &&
-    typeof m.max_slots === 'number' &&
-    isStringArray(m.human_slots) &&
-    isIntOrNull(m.human_timeout_ms) &&
-    typeof m.recommended_episode_ticks === 'number' &&
-    isIntOrNull(m.pace_interval_ms) &&
-    typeof m.step_limit_ms === 'number' &&
-    typeof m.episode_limit_ms === 'number' &&
-    typeof m.messaging === 'boolean' &&
-    isIntOrNull(m.message_cap) &&
-    typeof m.llm === 'boolean' &&
-    typeof m.renderer === 'string'
-  )
-}
 
 /** Read-only registry of the environments the backend can launch and serve. */
 export class EnvironmentRegistry {

@@ -13,7 +13,22 @@ import addFormats from 'ajv-formats'
 
 import type { RecordingHeader, StepState } from './generated/types.js'
 
+// The shared wire shapes the browser also speaks. These modules are dependency-free (no Node
+// built-ins, no Ajv) so the frontend can import them directly through the subpath exports; the
+// barrel re-exports them for the Node backend, which already pulls in the Ajv-backed readers below.
+export { type EnvironmentMeta, isEnvironmentMeta } from './environment.js'
 export type { AgentStep, Message, RecordingHeader, StepState } from './generated/types.js'
+export {
+  type Command,
+  type CommandParse,
+  classifyOutbound,
+  type OutboundLine,
+  parseCommand,
+  RESULT_KIND,
+  SESSION_KIND,
+  serializeCommand,
+  sessionEnvelope,
+} from './protocol.js'
 
 /** The single integer schema version this reader accepts. */
 export const SCHEMA_VERSION = 1

@@ -1,10 +1,10 @@
 /**
- * The wire protocol shared by the container channel and the browser WebSocket.
+ * The wire protocol shared by the container channel, the backend relay, and the browser WebSocket.
  *
  * One classification rule spans both directions: a line is an **event envelope** when its top-level
  * JSON object carries a `kind`, and a **recording line** (the header or a per-step state) otherwise.
- * The rule holds because the state schema defines no top-level `kind` — a backend test asserts that
- * against the packaged schema so it cannot rot. Recording lines are relayed verbatim in both
+ * The rule holds because the state schema defines no top-level `kind` — the schema-guard test asserts
+ * that against the packaged schema so it cannot rot. Recording lines are relayed verbatim in both
  * directions; envelopes are interpreted.
  *
  * Outbound (container → backend → browser) this stage defines one envelope kind, `result`, plus the
@@ -13,6 +13,9 @@
  * `pause`, `resume`, and `stop`; Stage 9 adds `chat` on the same shape. The backend validates a
  * command's shape and the sender's authority, then forwards it — it never interprets an action,
  * because the container is authoritative.
+ *
+ * This module is dependency-free on purpose: the browser imports it directly (no Node built-ins, no
+ * Ajv) so the line-classification rule lives in exactly one place for both sides of the socket.
  */
 
 /** The single outbound event-envelope kind the container emits, once, at session end. */

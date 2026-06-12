@@ -16,6 +16,8 @@ export function makeConfig(overrides: Partial<Config> = {}): Config {
     recordingsDir: './data/recordings',
     sessionIdleTimeoutMs: 60_000,
     sessionMaxDurationMs: 600_000,
+    // The identities the start-succeeding suites use; allowlist tests override this explicitly.
+    sessionAllowlist: ['dev-user', 'alice', 'bob'],
     sandbox: { cpus: 1, memoryMb: 512, scratchMb: 256 },
     executionDriver: 'docker',
     docker: { imageTagPrefix: 'game-sandbox', imagePolicy: 'reuse' },

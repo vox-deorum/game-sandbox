@@ -13,15 +13,14 @@
  * clients, and clears the registry exactly once.
  */
 import { mkdir } from 'node:fs/promises'
-
-import type { SessionProcess } from '../driver/index.js'
 import {
   classifyOutbound,
   parseCommand,
   RESULT_KIND,
   serializeCommand,
   sessionEnvelope,
-} from '../protocol/index.js'
+} from '@game-sandbox/schema'
+import type { SessionProcess } from '../driver/index.js'
 import type { Storage } from '../storage/index.js'
 import type { SessionMode, TerminationReason } from '../storage/schema.js'
 

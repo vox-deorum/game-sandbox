@@ -34,6 +34,7 @@ export async function startStack(overrides: Partial<Config> = {}): Promise<Stack
     recordingsDir,
     sessionIdleTimeoutMs: 60_000,
     sessionMaxDurationMs: 600_000,
+    sessionAllowlist: ['dev-user', 'alice', 'bob'],
     sandbox: { cpus: 1, memoryMb: 512, scratchMb: 256 },
     executionDriver: 'docker',
     docker: { imageTagPrefix: 'game-sandbox', imagePolicy: 'reuse' },
@@ -45,7 +46,12 @@ export async function startStack(overrides: Partial<Config> = {}): Promise<Stack
   const driver = await createDockerDriver(config.docker)
   const orchestrator = new Orchestrator(driver, storage, environments, config)
   const recordings = new RecordingsStore(resolve(recordingsDir))
-  const app = await buildApp({ orchestrator, environments, recordings })
+  const app = await buildApp({
+    orchestrator,
+    environments,
+    recordings,
+    allowlist: config.sessionAllowlist,
+  })
 
   const httpBase = await app.listen({ port: 0, host: '127.0.0.1' })
 

@@ -1,6 +1,6 @@
 # Stage 4: Frontend Core
 
-Status: not started
+Status: in progress. The frontend infrastructure (build order step 1) is built: the `frontend/` package, the shared wire types hoisted into the schema package, the API and socket clients, the mock identity with `GET /api/me` and the allowlist gate, the renderer contract and registry, and the Home and Environment pages. The Flappy Bird renderer, live-session control, replay and retention, and the testing/CI/docs step remain.
 
 ## Goal
 

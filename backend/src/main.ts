@@ -28,7 +28,12 @@ async function main(): Promise<void> {
   const orchestrator = new Orchestrator(driver, storage, environments, config, log)
   const recordings = new RecordingsStore(resolve(config.recordingsDir))
 
-  const app = await buildApp({ orchestrator, environments, recordings })
+  const app = await buildApp({
+    orchestrator,
+    environments,
+    recordings,
+    allowlist: config.sessionAllowlist,
+  })
   await app.listen({ port: config.port, host: '0.0.0.0' })
   log(`backend listening on :${config.port}`)
 

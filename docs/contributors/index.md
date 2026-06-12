@@ -12,7 +12,7 @@ The language split follows the container boundary (see the [execution spec](../s
 | `harness/` | The Python harness: schema validation, state builders, the recording store, the session loop. |
 | `environments/` | Environment packages: the single-agent adapter and the Flappy Bird clone. |
 | `backend/` | The Node/TypeScript backend: sessions, the execution driver, and the WebSocket bridge. |
-| `frontend/` | The browser frontend and renderers. Placeholder until Stage 4. |
+| `frontend/` | The browser frontend: React with Vite, the renderers, and the mock-identity layer. |
 | `gateway/` | The LLM gateway. Placeholder until Stage 7. |
 | `templates/` | The student starter kit: an env-agnostic `base/` layer plus one `<env>/` layer per environment. |
 | `examples/` | Example overlays under `<env>/<name>/`, holding only their diff against the composed template. |
@@ -29,5 +29,6 @@ The language split follows the container boundary (see the [execution spec](../s
 - [Examples and the template](examples-and-template.md): overlays, tags, and publishing.
 - [The backend](backend.md): the package layout, configuration, storage, the identity stub, and the HTTP API.
 - [The execution boundary](execution.md): the driver interface, the sandbox profile, the transport, the WebSocket protocol, and the live runner.
+- [The frontend](frontend.md): the package layout, the dev server, the mock identity, and the renderer contract and registry.
 
 The full build plan lives in the [implementation plan](https://github.com/vox-deorum/game-sandbox/blob/main/plans/README.md), and the authoritative design lives in the [Specification](../specs/overview.md).
