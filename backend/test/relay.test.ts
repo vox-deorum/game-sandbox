@@ -37,6 +37,7 @@ describe('relay (LiveSession)', () => {
       envId: 'flappy_bird',
       mode,
       recordingId: 'flappy_bird-sess-1',
+      createdAt: '2026-06-11T00:00:00.000Z',
       process,
       humanSlots: ['player_0'],
       deps: {
@@ -132,6 +133,7 @@ describe('relay (LiveSession)', () => {
       envId: 'flappy_bird',
       mode: 'human',
       recordingId: 'flappy_bird-sess-1',
+      createdAt: '2026-06-11T00:00:00.000Z',
       process,
       humanSlots: ['player_0'],
       deps: {

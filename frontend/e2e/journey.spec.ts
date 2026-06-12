@@ -1,0 +1,54 @@
+import { expect, test } from '@playwright/test'
+
+/**
+ * The main journey, the executable form of the stage's experiential criteria: the auto-logged mock
+ * user lands on home, opens Flappy Bird, plays a live session, sees the canvas and the per-step input
+ * window, pauses and resumes, stops, and from the end card opens the replay, scrubs it, and pins it.
+ *
+ * Pixel-level assertions stay out — the suite asserts the canvas is painted and the DOM facts around
+ * it (controls, banners, the per-step window), not screenshots, so it does not flake on font or GPU
+ * differences across runners. This suite needs a Docker daemon (it launches a real session).
+ */
+test('play Flappy Bird live, pause/resume, stop, then replay and pin', async ({ page }) => {
+  // Home → the Flappy Bird card → the environment page.
+  await page.goto('/')
+  await page.getByRole('link', { name: /Flappy Bird/ }).click()
+  await expect(page.getByRole('heading', { name: 'Flappy Bird' })).toBeVisible()
+
+  // The Play entry point opens the start form; submit it to start a human session.
+  await page.getByRole('button', { name: 'Play' }).click()
+  await page.getByRole('button', { name: 'Start playing' }).click()
+
+  // The session page mounts the renderer and shows the per-step input window while we control a slot.
+  await expect(page).toHaveURL(/\/sessions\//)
+  await expect(page.locator('canvas.flappy-canvas')).toBeVisible()
+  await expect(page.getByText(/Per-step input window/)).toBeVisible()
+
+  // Flap with the keyboard so the bird stays alive long enough to pause.
+  await page.locator('body').focus()
+  for (let i = 0; i < 3; i++) {
+    await page.keyboard.press('Space')
+  }
+
+  // Pause freezes the run; the overlay reflects the echo. Resume clears it.
+  await page.getByRole('button', { name: 'Pause' }).click()
+  await expect(page.locator('.overlay-banner')).toHaveText('Paused')
+  await page.getByRole('button', { name: 'Resume' }).click()
+  await expect(page.locator('.overlay-banner')).toHaveCount(0)
+
+  // Stop ends the session into the end card.
+  await page.getByRole('button', { name: 'Stop' }).click()
+  await expect(page.locator('.end-card')).toBeVisible()
+
+  // Open the replay from the end card and scrub it.
+  await page.getByRole('link', { name: 'Open replay' }).click()
+  await expect(page).toHaveURL(/\/replays\//)
+  await expect(page.getByRole('button', { name: 'Play' })).toBeVisible()
+  const slider = page.getByRole('slider')
+  await expect(slider).toBeVisible()
+  await slider.fill('1')
+
+  // Pin the recording (the viewer owns it).
+  await page.getByRole('button', { name: 'Pin this recording' }).click()
+  await expect(page.getByRole('button', { name: 'Pinned ✓' })).toBeVisible()
+})

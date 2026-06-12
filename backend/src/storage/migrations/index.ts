@@ -7,9 +7,11 @@
 import type { Migration, MigrationProvider } from 'kysely/migration'
 
 import { migration as createSessions } from './001_create_sessions.js'
+import { migration as createRecordings } from './002_create_recordings.js'
 
 const migrations: Record<string, Migration> = {
   '001_create_sessions': createSessions,
+  '002_create_recordings': createRecordings,
 }
 
 export const migrationProvider: MigrationProvider = {

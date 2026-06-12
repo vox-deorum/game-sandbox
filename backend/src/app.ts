@@ -15,6 +15,7 @@ import Fastify, { type FastifyInstance } from 'fastify'
 import type { EnvironmentRegistry } from './environments.js'
 import { isAllowlisted, resolveUserId } from './identity.js'
 import type { RecordingsStore } from './recordings.js'
+import type { Retention } from './retention.js'
 import type { ClientSocket } from './session/live-session.js'
 import { type Orchestrator, OrchestratorError } from './session/orchestrator.js'
 
@@ -22,6 +23,8 @@ export interface AppDeps {
   orchestrator: Orchestrator
   environments: EnvironmentRegistry
   recordings: RecordingsStore
+  /** The retention service: the merged recordings listing, pinning, and the eviction sweep. */
+  retention: Retention
   /** The operator-configured session allowlist, so `/api/me` can report what the user may do. */
   allowlist: readonly string[]
   /**
@@ -104,7 +107,11 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     }
   })
 
-  app.get('/api/recordings', () => deps.recordings.list())
+  // The merged listing: each readable recording's header plus its retention metadata (owner, age,
+  // pin state), optionally narrowed to one environment with `?env=`. Open to everyone (read-only).
+  app.get<{ Querystring: { env?: string } }>('/api/recordings', (request) =>
+    deps.retention.list({ env: request.query.env }),
+  )
 
   app.get<{ Params: { id: string } }>('/api/recordings/:id', async (request, reply) => {
     if (!(await deps.recordings.exists(request.params.id))) {
@@ -112,6 +119,16 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     }
     return reply.type('application/x-ndjson').send(deps.recordings.stream(request.params.id))
   })
+
+  // Pin and unpin are owner-only and gate on the recording's retention row. Pinning is refused
+  // with `pinned_quota` once the user is at their pinned cap, so the per-user quota stays a hard
+  // bound on storage even though pinned recordings are exempt from eviction.
+  app.post<{ Params: { id: string } }>('/api/recordings/:id/pin', (request, reply) =>
+    replyPin(reply, deps.retention.pin(request.params.id, resolveUserId(request.headers))),
+  )
+  app.delete<{ Params: { id: string } }>('/api/recordings/:id/pin', (request, reply) =>
+    replyPin(reply, deps.retention.unpin(request.params.id, resolveUserId(request.headers))),
+  )
 
   app.get<{ Params: { id: string } }>(
     '/api/sessions/:id/ws',
@@ -153,6 +170,25 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   }
 
   return app
+}
+
+/** Map a {@link import('./retention.js').PinResult} onto its HTTP status, mirroring the typed codes. */
+async function replyPin(
+  reply: import('fastify').FastifyReply,
+  result: Promise<import('./retention.js').PinResult>,
+): Promise<unknown> {
+  const outcome = await result
+  if (outcome.ok) {
+    return reply.code(204).send()
+  }
+  switch (outcome.reason) {
+    case 'not_found':
+      return reply.code(404).send({ error: 'no such recording' })
+    case 'forbidden':
+      return reply.code(403).send({ error: 'not your recording' })
+    case 'pinned_quota':
+      return reply.code(409).send({ error: 'pinned recording quota reached', code: 'pinned_quota' })
+  }
 }
 
 function replyError(reply: import('fastify').FastifyReply, error: unknown): unknown {

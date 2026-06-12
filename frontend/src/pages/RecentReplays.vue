@@ -8,21 +8,29 @@ import { onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 
 import { listRecordings, type RecordingSummary } from '../api/client.js'
+import { useMe } from '../me.js'
 
 const props = defineProps<{ envId: string }>()
+const me = useMe()
 
 const replays = ref<RecordingSummary[] | null>(null)
 
 onMounted(() => {
+  // The backend filters to this environment, newest first; the page just renders the list.
   listRecordings({ env: props.envId }).then(
     (all) => {
-      replays.value = all.filter((r) => r.header.environment === props.envId)
+      replays.value = all
     },
     () => {
       replays.value = []
     },
   )
 })
+
+/** Show a pin badge only on the viewer's own pinned recordings. */
+function showsPin(replay: RecordingSummary): boolean {
+  return replay.pinned && me.me?.user_id !== undefined && replay.user_id === me.me.user_id
+}
 </script>
 
 <template>
@@ -31,6 +39,7 @@ onMounted(() => {
   <ul v-else class="replay-list">
     <li v-for="replay in replays" :key="replay.id">
       <RouterLink :to="`/replays/${replay.id}`">{{ replay.id }}</RouterLink>
+      <span v-if="showsPin(replay)" class="pin-badge" title="Pinned">📌</span>
     </li>
   </ul>
 </template>

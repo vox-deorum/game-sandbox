@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { buildApp } from '../src/app.js'
 import { RecordingsStore } from '../src/recordings.js'
+import { Retention } from '../src/retention.js'
 import { Orchestrator } from '../src/session/orchestrator.js'
 import type { Storage } from '../src/storage/index.js'
 import { openSqliteStorage } from '../src/storage/sqlite.js'
@@ -34,16 +35,14 @@ describe('serving the built frontend', () => {
     writeFileSync(join(frontendDir, 'assets', 'app.js'), ASSET_JS)
 
     storage = await openSqliteStorage(':memory:')
-    orchestrator = new Orchestrator(
-      new FakeDriver(),
-      storage,
-      makeEnvironments(),
-      makeConfig({ recordingsDir: dataDir }),
-    )
+    const config = makeConfig({ recordingsDir: dataDir })
+    orchestrator = new Orchestrator(new FakeDriver(), storage, makeEnvironments(), config)
+    const recordings = new RecordingsStore(dataDir)
     app = await buildApp({
       orchestrator,
       environments: makeEnvironments(),
-      recordings: new RecordingsStore(dataDir),
+      recordings,
+      retention: new Retention(storage, recordings, config),
       allowlist: ['dev-user'],
       frontendDir,
     })

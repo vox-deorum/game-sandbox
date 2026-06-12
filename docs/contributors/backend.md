@@ -16,7 +16,8 @@ The backend is the Node/TypeScript service outside the container boundary: it li
 | `storage/` | The Kysely schema, the `Storage` interface, the SQLite wiring, and migrations. |
 | `driver/` | The execution-driver interface and the local Docker implementation. |
 | `session/` | The orchestrator, the per-session relay, and the in-memory registry. |
-| `recordings.ts` | Read access to the recordings volume for the HTTP API. |
+| `recordings.ts` | Read (and delete) access to the recordings volume for the HTTP API. |
+| `retention.ts` | The recording retention service: the eviction sweep, the merged listing, and pinning. |
 
 The wire protocol the browser shares with the backend (the line-classification rule, the command envelopes, and the environment-metadata shape with its guard) lives in `@game-sandbox/schema` so there is one declaration, not a backend copy and a frontend copy that drift. Those modules are dependency-free and exposed as subpath exports (`@game-sandbox/schema/protocol`, `@game-sandbox/schema/environment`) so the browser bundle imports them without pulling in the package's Ajv-backed recording readers; the `session/` relay and `environments.ts` import them through the barrel.
 
@@ -35,12 +36,15 @@ The wire protocol the browser shares with the backend (the line-classification r
 | `SESSION_IDLE_TIMEOUT_MS` | `60000` | How long a session with no attached socket (or, in human mode, no inbound command) lives before it is killed. |
 | `SESSION_MAX_DURATION_MS` | `600000` | The wall-clock backstop against a hung container. |
 | `SESSION_ALLOWLIST` | `dev-user` | Comma-separated user ids allowed to start live sessions, in either mode. Defaults to the dev user so a fresh checkout plays out of the box; an empty value allows no one. |
+| `RECORDING_RETENTION_DAYS` | `30` | An unpinned recording older than this window is swept (see [recording retention](#recording-retention)). |
+| `RECORDING_USER_QUOTA` | `100` | Per-user recording cap; oldest-unpinned-first eviction brings a user back within it. Pinned recordings count toward it but are never evicted. |
+| `RECORDING_SWEEP_INTERVAL_MS` | `3600000` | How often the eviction sweep runs on its own timer (it also runs at startup and after each session finalize). |
 | `SANDBOX_CPUS` / `SANDBOX_MEMORY_MB` / `SANDBOX_SCRATCH_MB` | `1` / `512` / `256` | The sandbox quotas applied to every session. |
 | `EXECUTION_DRIVER` | `docker` | The only driver in this stage. |
 | `DOCKER_IMAGE_TAG_PREFIX` / `DOCKER_IMAGE_POLICY` | `game-sandbox` / `reuse` | The image tag prefix and whether an existing tag is reused or always rebuilt. |
 | `FRONTEND_DIST` | `frontend/dist` | The built frontend bundle the backend serves at the root (see below). Defaults to the repo's `frontend/dist`; serving is wired only when the directory exists. |
 
-There are no config files and no secrets manager; OAuth secrets arrive in Stage 4 when they exist.
+There are no config files and no secrets manager; OAuth secrets arrive only when OAuth lands (deferred future work), so there are none yet.
 
 ## Serving the frontend
 
@@ -50,7 +54,13 @@ In production the backend serves the built frontend from the same origin through
 
 The relational data sits behind a narrow, domain-shaped `Storage` interface over SQLite (better-sqlite3 + Kysely). There is exactly one schema declaration, `storage/schema.ts`: the Kysely table interfaces are the schema, and every stored-data type — `Session`, the `SessionStatus` / `SessionMode` / `TerminationReason` unions — derives from them with Kysely's type-level helpers, so there is no hand-maintained parallel type set to drift. Callers see the derived domain types and the interface methods (`createSession`, `markRunning`, `markEnded`, `findActiveSessionByUser`, `getSession`, `listSessions`), never SQL.
 
-Engine portability comes from Kysely itself, not a second type layer: queries go through its dialect-agnostic API, and swapping SQLite for another engine is one new wiring file constructing a different dialect against the same schema, queries, and interface. The same Biome import-isolation rule that confines Docker to the driver confines `kysely` and `better-sqlite3` to `storage/`, so the rest of the backend imports the domain types and the interface, not the database engine. Migrations are ordered TypeScript modules run on startup through Kysely's `Migrator` — there is no migration CLI; deployment is "start the process". This stage has one table, `sessions`; later stages add submissions, iterations, and ratings to the same file.
+Engine portability comes from Kysely itself, not a second type layer: queries go through its dialect-agnostic API, and swapping SQLite for another engine is one new wiring file constructing a different dialect against the same schema, queries, and interface. The same Biome import-isolation rule that confines Docker to the driver confines `kysely` and `better-sqlite3` to `storage/`, so the rest of the backend imports the domain types and the interface, not the database engine. Migrations are ordered TypeScript modules run on startup through Kysely's `Migrator` — there is no migration CLI; deployment is "start the process". There are two tables now: `sessions`, and the `recordings` retention table (migration 2), whose `Recording` row carries `user_id`, `env_id`, `created_at`, and `pinned`; the storage interface grows `createRecording`, `listRecordings`, `getRecording`, `setRecordingPinned`, `countPinnedByUser`, and `deleteRecording` alongside the session methods. Migration 2 backfills a recordings row from every pre-Stage-4 session that produced a recording, so existing recordings join the policy instead of becoming rowless debris. Later stages add submissions, iterations, and ratings to the same file.
+
+## Recording retention
+
+`retention.ts` owns the recording lifecycle the [recording spec](../specs/recording.md) describes. The directory on the volume is the recording itself; the `recordings` row is its retention metadata. A row is written by the session finalize routine — every end path converges there, so each produced recording gets exactly one row (the insert is idempotent on the id). A directory with no row after the migration backfill is foreign debris: listed header-only, never evicted.
+
+The eviction sweep runs at startup, on `RECORDING_SWEEP_INTERVAL_MS`, and after each session finalize (the only moment the data grows). It applies the policy in two passes over the rows: delete unpinned recordings older than `RECORDING_RETENTION_DAYS`, then for each user over `RECORDING_USER_QUOTA` delete oldest-unpinned-first until back within it. Pinned recordings are exempt from both passes but count against the quota; deletion removes the directory and then the row, and either half missing is tolerated, so a crash mid-deletion leaves only ignorable debris the next pass cleans. Because pinned recordings count against the quota but never evict, a pin is refused (`409`, `code: "pinned_quota"`) once the user is at their pinned cap, keeping the quota a hard storage bound.
 
 ## The identity stub
 
@@ -72,4 +82,5 @@ Fastify routes under `/api`, with request bodies validated by Fastify's JSON-sch
 - `GET /api/sessions/:id` — the session row: status, reason, recording id.
 - `DELETE /api/sessions/:id` — owner-only graceful stop.
 - `GET /api/sessions/:id/ws` — the WebSocket attach point for a live session (see [the WebSocket protocol](execution.md#the-websocket-protocol)).
-- `GET /api/recordings` and `GET /api/recordings/:id` — list recording ids with their headers, and stream a recording's JSONL.
+- `GET /api/recordings` — the merged listing: each readable recording's header plus its retention metadata (`user_id`, `created_at`, `pinned`), newest first, optionally narrowed to one environment with `?env=`. `GET /api/recordings/:id` streams a recording's JSONL unchanged.
+- `POST /api/recordings/:id/pin` and `DELETE /api/recordings/:id/pin` — owner-only set/clear of the pin flag (`204`); `403` for a non-owner, `404` for an unknown recording, `409` with `code: "pinned_quota"` when the user is at their pinned cap.

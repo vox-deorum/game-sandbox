@@ -52,6 +52,12 @@ export interface Config {
    * Stage 3 identity stub until OAuth brings real handles; everything read-only stays open.
    */
   sessionAllowlist: string[]
+  /** Retention window in days: an unpinned recording older than this is swept. */
+  recordingRetentionDays: number
+  /** Per-user recording quota; oldest-unpinned-first eviction brings a user back within it. */
+  recordingUserQuota: number
+  /** How often the eviction sweep runs on its own timer (it also runs at startup and on finalize). */
+  recordingSweepIntervalMs: number
   /**
    * The built frontend bundle the backend serves at the root in production, so one process and one
    * command launch the whole stack. Vite serves the app in development (and proxies `/api` here), and
@@ -132,6 +138,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     sessionIdleTimeoutMs: intVar(env, 'SESSION_IDLE_TIMEOUT_MS', 60_000),
     sessionMaxDurationMs: intVar(env, 'SESSION_MAX_DURATION_MS', 600_000),
     sessionAllowlist: listVar(env, 'SESSION_ALLOWLIST', [DEV_USER_ID]),
+    recordingRetentionDays: intVar(env, 'RECORDING_RETENTION_DAYS', 30),
+    recordingUserQuota: intVar(env, 'RECORDING_USER_QUOTA', 100),
+    recordingSweepIntervalMs: intVar(env, 'RECORDING_SWEEP_INTERVAL_MS', 3_600_000),
     frontendDir:
       env.FRONTEND_DIST && env.FRONTEND_DIST !== ''
         ? env.FRONTEND_DIST

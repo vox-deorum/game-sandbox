@@ -43,6 +43,11 @@ export interface LiveSessionDeps {
   storage: Storage
   /** Called once teardown completes, so the registry can drop this session. */
   onEnd: (id: string) => void
+  /**
+   * Called after finalize has written the session and recording rows, so retention can sweep the
+   * just-grown data. Fire-and-forget; the orchestrator wires it to the retention sweep.
+   */
+  onFinalized?: (id: string) => void
   /** Backend logger, tagged by the caller with the session id. */
   log: (message: string) => void
   idleTimeoutMs: number
@@ -56,6 +61,8 @@ export interface LiveSessionInit {
   envId: string
   mode: SessionMode
   recordingId: string
+  /** The session's start timestamp, reused as the recording's retention `created_at`. */
+  createdAt: string
   process: SessionProcess
   humanSlots: readonly string[]
   deps: LiveSessionDeps
@@ -79,6 +86,7 @@ export class LiveSession {
   readonly envId: string
   readonly mode: SessionMode
   readonly recordingId: string
+  private readonly createdAt: string
 
   private readonly process: SessionProcess
   private readonly humanSlots: ReadonlySet<string>
@@ -103,6 +111,7 @@ export class LiveSession {
     this.envId = init.envId
     this.mode = init.mode
     this.recordingId = init.recordingId
+    this.createdAt = init.createdAt
     this.process = init.process
     this.humanSlots = new Set(init.humanSlots)
     this.deps = init.deps
@@ -329,12 +338,27 @@ export class LiveSession {
       this.deps.log(`session ${this.id}: markEnded failed: ${String(error)}`)
     }
 
+    // Register the produced recording's retention row. Every end path converges here, so each
+    // session-produced recording gets exactly one row (the insert is idempotent on the id).
+    try {
+      await this.deps.storage.createRecording({
+        id: this.recordingId,
+        user_id: this.userId,
+        env_id: this.envId,
+        created_at: this.createdAt,
+      })
+    } catch (error) {
+      this.deps.log(`session ${this.id}: createRecording failed: ${String(error)}`)
+    }
+
     this.broadcast(sessionEnvelope('ended', reason))
     for (const socket of this.sockets) {
       this.safeClose(socket)
     }
     this.sockets.clear()
     this.deps.onEnd(this.id)
+    // Retention sweeps the just-grown data (the only moment a recording row is added).
+    this.deps.onFinalized?.(this.id)
   }
 
   /** Map an exit with no orchestrator-chosen reason onto a termination reason. */

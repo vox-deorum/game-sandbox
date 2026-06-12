@@ -73,6 +73,12 @@ export class Orchestrator {
     private readonly environments: EnvironmentRegistry,
     private readonly config: Config,
     private readonly log: (message: string) => void = () => {},
+    /**
+     * Called after a session finalizes and its recording row is written, so retention can sweep the
+     * just-grown data. Defaults to a no-op for tests that do not exercise retention; main wires it
+     * to the retention sweep.
+     */
+    private readonly onSessionFinalized: (id: string) => void = () => {},
   ) {}
 
   /**
@@ -115,13 +121,14 @@ export class Orchestrator {
 
     const id = randomUUID()
     const recordingId = `${meta.env_id}-${id}`
+    const createdAt = new Date().toISOString()
     await this.storage.createSession({
       id,
       user_id: request.userId,
       env_id: meta.env_id,
       mode: request.mode,
       recording_id: recordingId,
-      created_at: new Date().toISOString(),
+      created_at: createdAt,
     })
 
     const sandbox = this.sandboxProfile()
@@ -148,11 +155,13 @@ export class Orchestrator {
       envId: meta.env_id,
       mode: request.mode,
       recordingId,
+      createdAt,
       process,
       humanSlots: meta.human_slots,
       deps: {
         storage: this.storage,
         onEnd: (endedId) => this.registry.remove(endedId),
+        onFinalized: (endedId) => this.onSessionFinalized(endedId),
         log: this.log,
         idleTimeoutMs: this.config.sessionIdleTimeoutMs,
         maxDurationMs: this.config.sessionMaxDurationMs,

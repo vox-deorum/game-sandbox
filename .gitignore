@@ -20,6 +20,11 @@ node_modules/
 *.tsbuildinfo
 # Frontend production build and Vite preview output
 /frontend/dist/
+# Frontend end-to-end (Playwright) artifacts and per-run backend data
+/frontend/e2e/.data/
+/frontend/test-results/
+/frontend/playwright-report/
+/frontend/blob-report/
 
 # Editors and OS
 .DS_Store

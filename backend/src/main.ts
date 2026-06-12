@@ -13,6 +13,7 @@ import { loadConfig } from './config.js'
 import { createDockerDriver } from './driver/docker/index.js'
 import { EnvironmentRegistry } from './environments.js'
 import { RecordingsStore } from './recordings.js'
+import { Retention } from './retention.js'
 import { Orchestrator } from './session/orchestrator.js'
 import { openSqliteStorage } from './storage/sqlite.js'
 
@@ -25,16 +26,23 @@ async function main(): Promise<void> {
   const storage = await openSqliteStorage(config.dbPath)
   const environments = EnvironmentRegistry.load()
   const driver = await createDockerDriver(config.docker)
-  const orchestrator = new Orchestrator(driver, storage, environments, config, log)
   const recordings = new RecordingsStore(resolve(config.recordingsDir))
+  const retention = new Retention(storage, recordings, config, log)
+  // The sweep runs at startup, on the interval, and after each session finalize (the only moment
+  // the data grows); the orchestrator triggers the finalize sweep through this callback.
+  const orchestrator = new Orchestrator(driver, storage, environments, config, log, () => {
+    void retention.sweep()
+  })
 
   const app = await buildApp({
     orchestrator,
     environments,
     recordings,
+    retention,
     allowlist: config.sessionAllowlist,
     frontendDir: config.frontendDir,
   })
+  retention.start()
   await app.listen({ port: config.port, host: '0.0.0.0' })
   log(`backend listening on :${config.port}`)
 
@@ -46,6 +54,7 @@ async function main(): Promise<void> {
     stopping = true
     log(`received ${signal}, shutting down`)
     void (async () => {
+      retention.stop()
       await orchestrator.shutdown()
       await app.close()
       await storage.close()

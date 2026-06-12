@@ -49,9 +49,28 @@ export interface SessionsTable {
   ended_at: string | null
 }
 
+/**
+ * The `recordings` table: one row per produced recording, its retention metadata. The directory
+ * on the volume is the recording itself; this row carries who owns it, when it was made, and
+ * whether it is pinned (exempt from eviction). Written by the session finalize routine and
+ * backfilled from {@link SessionsTable} for pre-Stage-4 recordings; a volume directory with no
+ * row after backfill is foreign debris — listed header-only, never evicted.
+ */
+export interface RecordingsTable {
+  /** The recording id, matching the directory name on the volume. */
+  id: string
+  user_id: string
+  env_id: string
+  /** ISO-8601 UTC timestamp, the moment the recording was produced. */
+  created_at: string
+  /** SQLite has no boolean: 0 or 1, defaulting to 0 (unpinned). */
+  pinned: number
+}
+
 /** The database schema: table names mapped to their row interfaces. */
 export interface Database {
   sessions: SessionsTable
+  recordings: RecordingsTable
 }
 
 /** A session row as read back from the database. */
@@ -62,3 +81,9 @@ export type NewSession = Insertable<SessionsTable>
 
 /** A partial session update. */
 export type SessionUpdate = Updateable<SessionsTable>
+
+/** A recording row as read back from the database. */
+export type Recording = Selectable<RecordingsTable>
+
+/** A recording row as inserted. */
+export type NewRecording = Insertable<RecordingsTable>

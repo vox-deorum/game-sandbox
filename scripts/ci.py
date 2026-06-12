@@ -12,6 +12,9 @@ ci.yml:
 - ``backend-integration``: the Docker-gated backend Vitest project (real containers: the
   WebSocket client, sandbox guarantees, idle/orphan reaping). Needs a Docker daemon, so it is a
   job of its own and is *not* part of ``all`` (which must run without Docker).
+- ``frontend-e2e``: the Docker-gated browser suite — Playwright drives Chromium against the real
+  backend serving the built frontend (a real session launches a container). Like
+  ``backend-integration`` it needs a Docker daemon and is *not* part of ``all``.
 - ``generated-code-fresh``: regenerate, then fail if anything generated changed.
 - ``examples``: compose every example, install it into a fresh venv, run its pytest; also
   fail if any environment template layer ships no example.
@@ -81,6 +84,29 @@ def job_backend_integration() -> None:
     # reaping). Runs on ubuntu-latest in CI where the daemon is available, and locally against
     # Docker Desktop. An `act` run may skip it; it is also runnable directly with this command.
     _run([_NPM, "run", "--workspace", "@game-sandbox/backend", "test:integration"])
+
+
+def job_frontend_e2e() -> None:
+    # The browser end-to-end suite: Playwright drives Chromium against the real backend serving the
+    # built frontend from the same origin. Starting a session launches a real container, so this job
+    # needs a Docker daemon — the same gate as backend-integration — and like it builds the session
+    # base image entirely inside Docker, so the host needs only Node and Docker (no Python).
+    # Build the frontend, build the image, install Chromium, then run the gated suite.
+    _run([_NPM, "run", "build:frontend"])
+    _run([_NPM, "run", "build:image"])
+    install_chromium = [
+        _NPM,
+        "exec",
+        "--workspace",
+        "@game-sandbox/frontend",
+        "--",
+        "playwright",
+        "install",
+        "--with-deps",
+        "chromium",
+    ]
+    _run(install_chromium)
+    _run([_NPM, "run", "e2e", "--workspace", "@game-sandbox/frontend"])
 
 
 def job_generated_code_fresh() -> None:
@@ -184,6 +210,7 @@ _JOBS = {
     "python": job_python,
     "typescript": job_typescript,
     "backend-integration": job_backend_integration,
+    "frontend-e2e": job_frontend_e2e,
     "generated-code-fresh": job_generated_code_fresh,
     "examples": job_examples,
     "docs": job_docs,

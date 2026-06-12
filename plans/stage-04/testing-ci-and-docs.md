@@ -4,7 +4,7 @@ Part of [Stage 4](../stage-04-frontend-core.md). The exit criteria made executab
 
 ## Frontend unit tests (Vitest, jsdom, no backend)
 
-jsdom implements no canvas rasterization, and pulling in a native canvas package just for tests is a Windows-CI tax not worth paying. The renderer's scene/paint split in [flappy-bird-renderer.md](flappy-bird-renderer.md) exists partly for this: everything with logic in it is testable as plain functions, and actual pixels are the end-to-end suite's job. Suites, with `@testing-library/react` for the component-shaped ones:
+jsdom implements no canvas rasterization, and pulling in a native canvas package just for tests is a Windows-CI tax not worth paying. The renderer's scene/paint split in [flappy-bird-renderer.md](flappy-bird-renderer.md) exists partly for this: everything with logic in it is testable as plain functions, and actual pixels are the end-to-end suite's job. (Implementation note: the project moved to Vue, so the component-shaped suites use `@testing-library/vue`, not React.) Suites:
 
 - **Scene computation**: states from a checked-in Stage 2 determinism fixture produce scenes with the bird, every pipe, and the HUD values in the right places; the purity property — states fed in shuffled order yield scenes identical to in-order, which is what the scrubber relies on.
 - **Input mapping**: keydown (and not key repeat), pointerdown, and touchstart each send exactly one `input` envelope with slot and flap action through a stubbed `sendAction`; no listeners attach when `controlledSlots` is empty or `sendAction` is absent.

@@ -18,6 +18,9 @@ export function makeConfig(overrides: Partial<Config> = {}): Config {
     sessionMaxDurationMs: 600_000,
     // The identities the start-succeeding suites use; allowlist tests override this explicitly.
     sessionAllowlist: ['dev-user', 'alice', 'bob'],
+    recordingRetentionDays: 30,
+    recordingUserQuota: 100,
+    recordingSweepIntervalMs: 3_600_000,
     sandbox: { cpus: 1, memoryMb: 512, scratchMb: 256 },
     executionDriver: 'docker',
     docker: { imageTagPrefix: 'game-sandbox', imagePolicy: 'reuse' },

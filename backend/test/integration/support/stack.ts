@@ -11,6 +11,7 @@ import type { Config } from '../../../src/config.js'
 import { createDockerDriver } from '../../../src/driver/docker/index.js'
 import { EnvironmentRegistry } from '../../../src/environments.js'
 import { RecordingsStore } from '../../../src/recordings.js'
+import { Retention } from '../../../src/retention.js'
 import { Orchestrator } from '../../../src/session/orchestrator.js'
 import type { Storage } from '../../../src/storage/index.js'
 import { openSqliteStorage } from '../../../src/storage/sqlite.js'
@@ -35,6 +36,9 @@ export async function startStack(overrides: Partial<Config> = {}): Promise<Stack
     sessionIdleTimeoutMs: 60_000,
     sessionMaxDurationMs: 600_000,
     sessionAllowlist: ['dev-user', 'alice', 'bob', 'carol'],
+    recordingRetentionDays: 30,
+    recordingUserQuota: 100,
+    recordingSweepIntervalMs: 3_600_000,
     sandbox: { cpus: 1, memoryMb: 512, scratchMb: 256 },
     executionDriver: 'docker',
     docker: { imageTagPrefix: 'game-sandbox', imagePolicy: 'reuse' },
@@ -44,12 +48,23 @@ export async function startStack(overrides: Partial<Config> = {}): Promise<Stack
   const storage = await openSqliteStorage(':memory:')
   const environments = EnvironmentRegistry.load()
   const driver = await createDockerDriver(config.docker)
-  const orchestrator = new Orchestrator(driver, storage, environments, config)
   const recordings = new RecordingsStore(resolve(recordingsDir))
+  const retention = new Retention(storage, recordings, config)
+  const orchestrator = new Orchestrator(
+    driver,
+    storage,
+    environments,
+    config,
+    () => {},
+    () => {
+      void retention.sweep()
+    },
+  )
   const app = await buildApp({
     orchestrator,
     environments,
     recordings,
+    retention,
     allowlist: config.sessionAllowlist,
   })
 

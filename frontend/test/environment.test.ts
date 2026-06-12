@@ -32,16 +32,19 @@ vi.mock('../src/api/client.js', () => ({
 import { getEnvironments, getMe, listRecordings, startSession } from '../src/api/client.js'
 import { MeProvider } from '../src/me.js'
 import EnvironmentPage from '../src/pages/environment.vue'
-import SessionPage from '../src/pages/session.vue'
+
+// A stub for the session route: this suite tests the environment page's navigation seam, not the
+// session host, so the route only needs to surface the id it landed on.
+const SessionStub = { template: '<div>{{ $route.params.id }}</div>' }
 
 // Render the environment page inside the me provider (so the allowlist gate has its one /api/me fetch)
-// and a real router carrying the session route, so navigation on start lands on the session page.
+// and a real router carrying the session route, so navigation on start lands on the stub.
 async function renderPage() {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
       { path: '/environments/:envId', component: EnvironmentPage },
-      { path: '/sessions/:id', component: SessionPage },
+      { path: '/sessions/:id', component: SessionStub },
     ],
   })
   router.push('/environments/flappy_bird')
@@ -67,16 +70,42 @@ describe('EnvironmentPage', () => {
     expect(screen.queryByRole('button', { name: 'Watch' })).toBeNull()
   })
 
-  it('starts a session and navigates to it for an allowlisted user', async () => {
+  it('starts a session through the start form and navigates to it', async () => {
     vi.mocked(getMe).mockResolvedValue({ user_id: 'dev-user', allowlisted: true })
     vi.mocked(startSession).mockResolvedValue({
       ok: true,
       session: { id: 's1', wsPath: '/api/sessions/s1/ws' },
     })
     await renderPage()
+    // The entry point opens the start form; submitting it starts the session.
     await fireEvent.click(await screen.findByRole('button', { name: 'Watch' }))
+    await fireEvent.click(await screen.findByRole('button', { name: 'Start watching' }))
     expect(await screen.findByText('s1')).toBeInTheDocument()
-    expect(vi.mocked(startSession)).toHaveBeenCalledWith({ envId: 'flappy_bird', mode: 'scripted' })
+    expect(vi.mocked(startSession)).toHaveBeenCalledWith({
+      envId: 'flappy_bird',
+      mode: 'scripted',
+      seed: undefined,
+      humanSlotTimeoutMs: undefined,
+    })
+  })
+
+  it('sends the human-slot timeout override entered in the start form', async () => {
+    vi.mocked(getMe).mockResolvedValue({ user_id: 'dev-user', allowlisted: true })
+    vi.mocked(startSession).mockResolvedValue({
+      ok: true,
+      session: { id: 's1', wsPath: '/api/sessions/s1/ws' },
+    })
+    await renderPage()
+    await fireEvent.click(await screen.findByRole('button', { name: 'Play' }))
+    // The paced game's start form exposes the per-step input window as an override field.
+    await fireEvent.update(screen.getByPlaceholderText('50'), '250')
+    await fireEvent.click(await screen.findByRole('button', { name: 'Start playing' }))
+    expect(vi.mocked(startSession)).toHaveBeenCalledWith({
+      envId: 'flappy_bird',
+      mode: 'human',
+      seed: undefined,
+      humanSlotTimeoutMs: 250,
+    })
   })
 
   it('navigates to the active session on an already-active start (rejoin)', async () => {
@@ -88,6 +117,7 @@ describe('EnvironmentPage', () => {
     })
     await renderPage()
     await fireEvent.click(await screen.findByRole('button', { name: 'Play' }))
+    await fireEvent.click(await screen.findByRole('button', { name: 'Start playing' }))
     expect(await screen.findByText('active-9')).toBeInTheDocument()
   })
 })

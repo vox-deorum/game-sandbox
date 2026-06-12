@@ -1,7 +1,15 @@
 import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { ApiError, getEnvironments, getMe, startSession } from '../src/api/client.js'
+import {
+  ApiError,
+  getEnvironments,
+  getMe,
+  getRecording,
+  pinRecording,
+  startSession,
+  unpinRecording,
+} from '../src/api/client.js'
 
 const META: EnvironmentMeta = {
   env_id: 'flappy_bird',
@@ -96,5 +104,28 @@ describe('api client', () => {
       mode: 'human',
       human_slot_timeout_ms: 2000,
     })
+  })
+
+  it('fetches a recording as raw text', async () => {
+    stubFetch(async () => new Response('header\nstate\n', { status: 200 }))
+    expect(await getRecording('rec-1')).toBe('header\nstate\n')
+  })
+
+  it('maps a 204 pin to success and a 409 pinned_quota to its typed reason', async () => {
+    const ok = stubFetch(async () => new Response(null, { status: 204 }))
+    expect(await pinRecording('rec-1')).toEqual({ ok: true })
+    const [url, init] = ok.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe('/api/recordings/rec-1/pin')
+    expect(init.method).toBe('POST')
+
+    vi.unstubAllGlobals()
+    stubFetch(async () => jsonResponse({ error: 'full', code: 'pinned_quota' }, 409))
+    expect(await pinRecording('rec-1')).toEqual({ ok: false, reason: 'pinned_quota' })
+  })
+
+  it('unpins with a DELETE', async () => {
+    const mock = stubFetch(async () => new Response(null, { status: 204 }))
+    expect(await unpinRecording('rec-1')).toEqual({ ok: true })
+    expect((mock.mock.calls[0]?.[1] as RequestInit).method).toBe('DELETE')
   })
 })

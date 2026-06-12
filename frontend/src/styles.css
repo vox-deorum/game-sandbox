@@ -6,15 +6,34 @@
   --text: #e4e7eb;
   --muted: #9aa5b1;
   --accent: #3ebd93;
-  font-family: Lato, Segoe UI, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  font-family:
+    Lato,
+    Segoe UI,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    Oxygen,
+    Ubuntu,
+    Cantarell,
+    "Open Sans",
+    "Helvetica Neue",
+    sans-serif;
 }
 
-h1, h2, h3, h4, h5, h6 {
-  font-family: 'EB Garamond', Georgia, 'Times New Roman', Times, serif;
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: "EB Garamond", Georgia, "Times New Roman", Times, serif;
 }
 
 * {
   box-sizing: border-box;
+  line-height: 150%;
 }
 
 body {
@@ -127,20 +146,6 @@ a {
   margin: 1rem 0;
 }
 
-.entry-points button {
-  padding: 0.5rem 1.25rem;
-  font-size: 1rem;
-  border: none;
-  border-radius: 6px;
-  background: var(--accent);
-  color: #04231a;
-  cursor: pointer;
-}
-
-.entry-points button:hover {
-  filter: brightness(1.08);
-}
-
 .env-description {
   color: var(--muted);
 }
@@ -158,5 +163,223 @@ a {
 }
 
 .replay-list a:hover {
+  color: var(--accent);
+}
+
+/* Buttons shared by the start form, session controls, and end card. */
+button {
+  font: inherit;
+  cursor: pointer;
+  border: none;
+  border-radius: 6px;
+  padding: 0.5rem 1.1rem;
+  background: var(--accent);
+  color: #04231a;
+}
+
+button:hover {
+  filter: brightness(1.08);
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+button.secondary {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.button-link {
+  display: inline-block;
+  padding: 0.5rem 1.1rem;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #04231a;
+}
+
+/* The entry-point buttons inherit the shared button style above; only the size differs. */
+.entry-points button {
+  padding: 0.5rem 1.25rem;
+  font-size: 1rem;
+}
+
+/* Start form */
+.start-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-width: 28rem;
+  margin: 1rem 0;
+  padding: 1rem;
+  background: var(--surface);
+  border: 1px solid var(--surface-2);
+  border-radius: 8px;
+}
+
+.start-form h3 {
+  margin: 0;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.field span {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.field input {
+  font: inherit;
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid var(--surface-2);
+  background: var(--bg);
+  color: var(--text);
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.start-form-actions {
+  display: flex;
+  gap: 0.6rem;
+}
+
+/* Session page */
+.session-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.session-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.status-dot {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.status-dot.running {
+  background: var(--accent);
+}
+
+.status-dot.ended {
+  background: #e66a6a;
+}
+
+.reconnecting {
+  font-size: 0.85rem;
+}
+
+.session-controls {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.active-timeout {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 0 0 0.75rem;
+}
+
+.renderer-host {
+  position: relative;
+  max-width: 480px;
+  margin: 0 auto;
+  background: #000;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.overlay-banner {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+/* End-of-session card */
+.end-card {
+  max-width: 480px;
+  margin: 1rem auto 0;
+  padding: 1rem 1.25rem;
+  background: var(--surface);
+  border: 1px solid var(--surface-2);
+  border-radius: 8px;
+}
+
+.end-card h2 {
+  margin-top: 0;
+}
+
+.end-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.25rem 1rem;
+  margin: 0 0 1rem;
+}
+
+.end-facts dt {
+  color: var(--muted);
+}
+
+.end-facts dd {
+  margin: 0;
+}
+
+.end-actions {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+/* Replay viewer */
+.replay-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  max-width: 480px;
+  margin: 0.75rem auto 0;
+}
+
+.scrubber {
+  flex: 1;
+}
+
+.replay-position {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-family: ui-monospace, monospace;
+  white-space: nowrap;
+}
+
+.replay-pin {
+  max-width: 480px;
+  margin: 0.75rem auto 0;
+}
+
+.replay-list .pin-badge {
+  margin-left: 0.5rem;
   color: var(--accent);
 }

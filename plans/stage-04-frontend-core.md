@@ -1,6 +1,6 @@
 # Stage 4: Frontend Core
 
-Status: in progress. The frontend infrastructure (build order step 1) is built: the `frontend/` package, the shared wire types hoisted into the schema package, the API and socket clients, the mock identity with `GET /api/me` and the allowlist gate, the renderer contract and registry, and the Home and Environment pages. The Flappy Bird renderer, live-session control, replay and retention, and the testing/CI/docs step remain.
+Status: complete. All build-order steps are implemented and unit-tested: the frontend infrastructure (the `frontend/` package, the shared wire types in the schema package, the API and socket clients, the mock identity with `GET /api/me` and the allowlist gate, the renderer contract and registry, the Home and Environment pages); the Flappy Bird renderer (the scene/paint split, the in-game HUD, raw input over the socket); live-session control (the session host, the start form, the active-timeout display, pause/resume, the end-of-session card); replay and retention (the replay viewer with play/pause/step/scrub and `?t=` deep links, the backend `recordings` table with migration backfill, the eviction sweep, and pinning); and the testing/CI/docs step (backend retention/pinning suites, frontend scene/input/transport/session/replay suites, the `frontend-e2e` Playwright job wired into `ci.py` and `ci.yml`, and the contributor docs). Two implementation notes that diverged from the sub-documents are recorded in those files: the replay viewer parses recordings with a dependency-free browser parser (the schema package's Ajv reader is Node-only) reading the supported version from a new `@game-sandbox/schema/version` subpath; and the component test library is `@testing-library/vue` (the project moved to Vue after these documents were first written).
 
 ## Goal
 
@@ -57,4 +57,8 @@ The auto-logged-on mock user starts a Flappy Bird session from the environment p
 
 ## Open questions
 
-Flappy Bird's `pace_interval_ms` (50 ms) was flagged in Stage 2 for tuning during this stage's playtesting with the real renderer, and the Stage 3 idle-timeout definition and window were left tunable for the same playtesting; both get confirmed or changed here and recorded back into their owning plan files. The end-to-end framework choice (Playwright is the proposed default) is confirmed at stage start per [stage-04/testing-ci-and-docs.md](stage-04/testing-ci-and-docs.md).
+Resolved during this stage:
+
+- Flappy Bird's `pace_interval_ms` (50 ms, 20 steps/second) was flagged in Stage 2 for tuning with the real renderer. Playtesting confirmed it reads well as a game at 50 ms, so it is **kept unchanged**; the Stage 2 metadata and the regenerated `environments.json` are untouched.
+- The Stage 3 idle-timeout default (`SESSION_IDLE_TIMEOUT_MS`, 60 s) and its definition (no attached socket, or in human mode no inbound command) were left tunable for this stage's playtesting. They are **confirmed unchanged**; a paused-and-forgotten session still idles out and the UI presents `idle_timeout` as a normal outcome.
+- The end-to-end framework is **Playwright** (Chromium), confirmed and implemented as the Docker-gated `frontend-e2e` job per [stage-04/testing-ci-and-docs.md](stage-04/testing-ci-and-docs.md).

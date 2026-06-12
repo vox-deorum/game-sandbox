@@ -1,4 +1,5 @@
 import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -7,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { buildApp } from '../src/app.js'
 import { RecordingsStore } from '../src/recordings.js'
+import { Retention } from '../src/retention.js'
 import { Orchestrator } from '../src/session/orchestrator.js'
 import type { Storage } from '../src/storage/index.js'
 import { openSqliteStorage } from '../src/storage/sqlite.js'
@@ -24,16 +26,14 @@ describe('HTTP API', () => {
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'gs-http-'))
     storage = await openSqliteStorage(':memory:')
-    orchestrator = new Orchestrator(
-      new FakeDriver(),
-      storage,
-      makeEnvironments(),
-      makeConfig({ recordingsDir: dir, sessionAllowlist: ALLOWLIST }),
-    )
+    const config = makeConfig({ recordingsDir: dir, sessionAllowlist: ALLOWLIST })
+    orchestrator = new Orchestrator(new FakeDriver(), storage, makeEnvironments(), config)
+    const recordings = new RecordingsStore(dir)
     app = await buildApp({
       orchestrator,
       environments: makeEnvironments(),
-      recordings: new RecordingsStore(dir),
+      recordings,
+      retention: new Retention(storage, recordings, config),
       allowlist: ALLOWLIST,
     })
   })
@@ -170,5 +170,75 @@ describe('HTTP API', () => {
     const res = await app.inject({ method: 'GET', url: '/api/recordings' })
     expect(res.statusCode).toBe(200)
     expect(res.json()).toEqual([])
+  })
+
+  describe('recordings listing and pinning', () => {
+    // Write a recording directory (a header line) plus its retention row, the post-finalize state.
+    async function seedRecording(id: string, env: string, user: string): Promise<void> {
+      await mkdir(join(dir, id), { recursive: true })
+      const header = JSON.stringify({ schema_version: 1, environment: env, seed: 0 })
+      await writeFile(join(dir, id, 'recording.jsonl'), `${header}\n`, 'utf-8')
+      await storage.createRecording({
+        id,
+        user_id: user,
+        env_id: env,
+        created_at: '2026-06-11T00:00:00.000Z',
+      })
+    }
+
+    it('merges retention metadata into the listing and filters on ?env=', async () => {
+      await seedRecording('flappy_bird-1', 'flappy_bird', 'alice')
+      await seedRecording('other-1', 'other_env', 'alice')
+
+      const all = (await app.inject({ method: 'GET', url: '/api/recordings' })).json() as Array<{
+        id: string
+        user_id: string
+        pinned: boolean
+      }>
+      expect(all.map((r) => r.id).sort()).toEqual(['flappy_bird-1', 'other-1'])
+      expect(all.find((r) => r.id === 'flappy_bird-1')).toMatchObject({
+        user_id: 'alice',
+        pinned: false,
+      })
+
+      const filtered = (
+        await app.inject({ method: 'GET', url: '/api/recordings?env=flappy_bird' })
+      ).json() as Array<{ id: string }>
+      expect(filtered.map((r) => r.id)).toEqual(['flappy_bird-1'])
+    })
+
+    it('pins and unpins owner-only and 404s an unknown recording', async () => {
+      await seedRecording('flappy_bird-1', 'flappy_bird', 'alice')
+
+      const stranger = await app.inject({
+        method: 'POST',
+        url: '/api/recordings/flappy_bird-1/pin',
+        headers: { 'x-sandbox-user': 'mallory' },
+      })
+      expect(stranger.statusCode).toBe(403)
+
+      const owner = await app.inject({
+        method: 'POST',
+        url: '/api/recordings/flappy_bird-1/pin',
+        headers: { 'x-sandbox-user': 'alice' },
+      })
+      expect(owner.statusCode).toBe(204)
+      expect((await storage.getRecording('flappy_bird-1'))?.pinned).toBe(1)
+
+      const unpin = await app.inject({
+        method: 'DELETE',
+        url: '/api/recordings/flappy_bird-1/pin',
+        headers: { 'x-sandbox-user': 'alice' },
+      })
+      expect(unpin.statusCode).toBe(204)
+      expect((await storage.getRecording('flappy_bird-1'))?.pinned).toBe(0)
+
+      const missing = await app.inject({
+        method: 'POST',
+        url: '/api/recordings/nope/pin',
+        headers: { 'x-sandbox-user': 'alice' },
+      })
+      expect(missing.statusCode).toBe(404)
+    })
   })
 })

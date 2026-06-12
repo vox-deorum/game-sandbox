@@ -15,6 +15,21 @@ describe('loadConfig', () => {
     expect(config.recordingsDir.endsWith('recordings')).toBe(true)
     // A fresh checkout plays out of the box: the dev user is allowlisted by default.
     expect(config.sessionAllowlist).toEqual(['dev-user'])
+    // The retention spec's defaults: 30-day window, 100 per user, hourly sweep.
+    expect(config.recordingRetentionDays).toBe(30)
+    expect(config.recordingUserQuota).toBe(100)
+    expect(config.recordingSweepIntervalMs).toBe(3_600_000)
+  })
+
+  it('parses the retention overrides', () => {
+    const config = loadConfig({
+      RECORDING_RETENTION_DAYS: '7',
+      RECORDING_USER_QUOTA: '5',
+      RECORDING_SWEEP_INTERVAL_MS: '60000',
+    })
+    expect(config.recordingRetentionDays).toBe(7)
+    expect(config.recordingUserQuota).toBe(5)
+    expect(config.recordingSweepIntervalMs).toBe(60000)
   })
 
   it('parses SESSION_ALLOWLIST as a trimmed comma-separated list', () => {

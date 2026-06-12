@@ -10,13 +10,14 @@ Every GitHub Actions job is a single `scripts/ci.py <job>` call after dependency
 uv run python scripts/ci.py all
 ```
 
-`all` runs, in order: four of the five `ci.yml` jobs (`python`, `typescript`, `generated-code-fresh`, `examples`), the strict docs build from `docs.yml`, and the `template-publish.yml` dry-run. It omits `backend-integration`, which launches real containers and so needs a Docker daemon; run that one on its own (see below). A green `all` plus a green `backend-integration` is the bar for opening a pull request. Run the pieces individually while iterating:
+`all` runs, in order: the non-Docker `ci.yml` jobs (`python`, `typescript`, `generated-code-fresh`, `examples`), the strict docs build from `docs.yml`, and the `template-publish.yml` dry-run. It omits the two Docker-gated jobs, `backend-integration` and `frontend-e2e`, which launch real containers and so need a Docker daemon; run those on their own (see below). A green `all` plus green `backend-integration` and `frontend-e2e` is the bar for opening a pull request. Run the pieces individually while iterating:
 
 | Job | Mirrors | What it does |
 | --- | --- | --- |
 | `python` | `ci.yml` | ruff check, ruff format --check, pyright, pytest |
 | `typescript` | `ci.yml` | biome check, tsc --noEmit, vitest run — workspace-wide, so the backend rides this job too |
 | `backend-integration` | `ci.yml` | the Docker-gated backend suite: build the session image, launch real containers (needs Docker) |
+| `frontend-e2e` | `ci.yml` | the Docker-gated browser suite: Playwright drives Chromium against the real backend serving the built frontend (needs Docker) |
 | `generated-code-fresh` | `ci.yml` | regenerate, then fail if anything generated changed |
 | `examples` | `ci.yml` / publish `verify` | compose every example, install into a fresh venv, run its pytest |
 | `docs` | `docs.yml` | `mkdocs build --strict` so broken links or refs fail |
@@ -29,6 +30,14 @@ uv run python scripts/ci.py backend-integration
 ```
 
 It builds the session base image once (entirely inside Docker, from the repo sources) and then exercises the exit criteria that only mean something against a real container: a scripted WebSocket client playing Flappy Bird, the memory-quota and no-network sandbox guarantees, and the idle and orphan-reaping teardown paths. An `act` run may skip it; it is a separate `ubuntu-latest` job in `ci.yml`, where the daemon is available.
+
+The browser end-to-end suite is the same shape — Docker-gated, its own job — for the frontend's experiential criteria. With Docker Desktop up:
+
+```
+uv run python scripts/ci.py frontend-e2e
+```
+
+It builds the frontend, builds the session base image, installs Playwright's Chromium, then runs the suite: Chromium drives the real backend serving the built bundle from one origin, so a scripted journey plays a live Flappy Bird session, pauses and resumes, stops, and opens the replay to scrub and pin it, with watch, spectator, and allowlist variations. Assertions stay on the DOM (controls, banners, the per-step window) and that the canvas is painted, not on pixels, so the suite does not flake on font or GPU differences across runners. The suite lives in `frontend/e2e/` with `frontend/playwright.config.ts`, which starts two backend instances (one allowlisting the dev user, one allowlisting no one) so the allowlist variation has a non-allowlisted context.
 
 ```
 uv run python scripts/ci.py python      # one job
@@ -68,6 +77,7 @@ Stage  Job ID                Workflow name     Workflow file         Events
 0      python                CI                ci.yml                pull_request,push
 0      typescript            CI                ci.yml                pull_request,push
 0      backend-integration   CI                ci.yml                pull_request,push
+0      frontend-e2e          CI                ci.yml                pull_request,push
 0      generated-code-fresh  CI                ci.yml                pull_request,push
 0      examples              CI                ci.yml                pull_request,push
 0      build                 Docs              docs.yml              pull_request,push

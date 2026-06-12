@@ -7,9 +7,9 @@
  * its one wiring today. Swapping engines is a new wiring file against the same schema, queries,
  * and interface.
  */
-import type { Session, SessionMode, TerminationReason } from './schema.js'
+import type { Recording, Session, SessionMode, TerminationReason } from './schema.js'
 
-export type { Session, SessionMode, SessionStatus, TerminationReason } from './schema.js'
+export type { Recording, Session, SessionMode, SessionStatus, TerminationReason } from './schema.js'
 
 /** The fields the orchestrator provides when starting a session. */
 export interface NewSessionInput {
@@ -18,6 +18,14 @@ export interface NewSessionInput {
   env_id: string
   mode: SessionMode
   recording_id: string | null
+  created_at: string
+}
+
+/** The fields the finalize routine provides when registering a produced recording. */
+export interface NewRecordingInput {
+  id: string
+  user_id: string
+  env_id: string
   created_at: string
 }
 
@@ -35,6 +43,23 @@ export interface Storage {
   getSession(id: string): Promise<Session | undefined>
   /** All sessions, most recent first. */
   listSessions(): Promise<Session[]>
+
+  /**
+   * Register a produced recording's retention row. Idempotent: a recording id already present is
+   * left untouched, so the finalize routine can call it freely and a re-finalize never duplicates.
+   */
+  createRecording(input: NewRecordingInput): Promise<void>
+  /** Every recording row, newest first; backs the merged listing and the eviction sweep. */
+  listRecordings(): Promise<Recording[]>
+  /** One recording row by id, or `undefined` (a directory with no row — foreign debris). */
+  getRecording(id: string): Promise<Recording | undefined>
+  /** Set or clear a recording's pinned flag. */
+  setRecordingPinned(id: string, pinned: boolean): Promise<void>
+  /** How many recordings a user has pinned; backs the pin-quota guard. */
+  countPinnedByUser(userId: string): Promise<number>
+  /** Delete a recording's row (the directory is removed separately by the retention sweep). */
+  deleteRecording(id: string): Promise<void>
+
   /** Release the underlying database handle. */
   close(): Promise<void>
 }

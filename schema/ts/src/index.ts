@@ -29,9 +29,8 @@ export {
   serializeCommand,
   sessionEnvelope,
 } from './protocol.js'
-
-/** The single integer schema version this reader accepts. */
-export const SCHEMA_VERSION = 1
+// The schema version lives in a dependency-free module so the browser can import it without Ajv.
+export { SCHEMA_VERSION } from './version.js'
 
 /** Thrown when a payload does not match the schema, or a recording is incoherent. */
 export class SchemaValidationError extends Error {}

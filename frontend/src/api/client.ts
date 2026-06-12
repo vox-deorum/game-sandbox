@@ -58,10 +58,17 @@ export interface SessionRow {
   ended_at: string | null
 }
 
-/** One recording's id paired with its parsed header, as listed by `GET /api/recordings`. */
+/**
+ * One entry of the merged `GET /api/recordings` listing: the parsed header plus the retention
+ * metadata. `user_id`/`created_at` are null for a rowless directory (foreign debris listed
+ * header-only); `pinned` reflects the retention row.
+ */
 export interface RecordingSummary {
   id: string
   header: RecordingHeader
+  user_id: string | null
+  created_at: string | null
+  pinned: boolean
 }
 
 /** The fields a start request resolves; the host page fills them from the environment metadata. */
@@ -150,8 +157,45 @@ export async function stopSession(id: string): Promise<void> {
   }
 }
 
-/** Every readable recording, optionally narrowed to one environment (the filter lands in retention). */
+/** Every readable recording, optionally narrowed to one environment, newest first. */
 export async function listRecordings(filter?: { env?: string }): Promise<RecordingSummary[]> {
   const query = filter?.env ? `?env=${encodeURIComponent(filter.env)}` : ''
   return (await json(await request(`/recordings${query}`), 'GET /recordings')) as RecordingSummary[]
+}
+
+/** One recording's raw JSONL text, for the replay viewer to parse with the schema reader. */
+export async function getRecording(id: string): Promise<string> {
+  const res = await request(`/recordings/${encodeURIComponent(id)}`)
+  if (!res.ok) {
+    throw new ApiError(res.status, `GET /recordings/:id failed with ${res.status}`)
+  }
+  return res.text()
+}
+
+/** The typed outcome of a pin request; the UI distinguishes the pinned-quota refusal. */
+export type PinResult =
+  | { ok: true }
+  | { ok: false; reason: 'pinned_quota' }
+  | { ok: false; reason: 'failed'; status: number }
+
+/** Pin a recording (owner-only). Maps the backend's 409 `pinned_quota` onto a typed result. */
+export async function pinRecording(id: string): Promise<PinResult> {
+  const res = await request(`/recordings/${encodeURIComponent(id)}/pin`, { method: 'POST' })
+  if (res.status === 204) {
+    return { ok: true }
+  }
+  const body = (await res.json().catch(() => ({}))) as { code?: string }
+  if (res.status === 409 && body.code === 'pinned_quota') {
+    return { ok: false, reason: 'pinned_quota' }
+  }
+  return { ok: false, reason: 'failed', status: res.status }
+}
+
+/** Unpin a recording (owner-only). A 204 resolves; other failures come back as a typed result. */
+export async function unpinRecording(id: string): Promise<PinResult> {
+  const res = await request(`/recordings/${encodeURIComponent(id)}/pin`, { method: 'DELETE' })
+  if (res.status === 204) {
+    return { ok: true }
+  }
+  return { ok: false, reason: 'failed', status: res.status }
 }

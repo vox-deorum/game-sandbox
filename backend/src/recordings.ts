@@ -7,7 +7,7 @@
  * quotas, and pinning are Stage 4 concerns; this lists and fetches only.
  */
 import { createReadStream } from 'node:fs'
-import { open, readdir, stat } from 'node:fs/promises'
+import { open, readdir, rm, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Readable } from 'node:stream'
 
@@ -74,6 +74,15 @@ export class RecordingsStore {
   /** A readable stream of a recording's JSONL, for the fetch endpoint. */
   stream(id: string): Readable {
     return createReadStream(this.filePath(id), { encoding: 'utf-8' })
+  }
+
+  /**
+   * Remove a recording's directory from the volume. Tolerant of a missing directory, so a sweep
+   * that crashed after deleting the directory but before deleting the row cleans up on the retry
+   * rather than throwing. The retention sweep removes the directory here, then the row.
+   */
+  async delete(id: string): Promise<void> {
+    await rm(join(this.root, id), { recursive: true, force: true })
   }
 
   private filePath(id: string): string {

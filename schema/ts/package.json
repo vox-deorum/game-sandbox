@@ -9,7 +9,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./protocol": "./src/protocol.ts",
-    "./environment": "./src/environment.ts"
+    "./environment": "./src/environment.ts",
+    "./version": "./src/version.ts"
   },
   "scripts": {
     "check": "biome check . && tsc --noEmit",

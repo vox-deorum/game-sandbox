@@ -18,6 +18,7 @@ import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { getEnvironments, startSession } from '../api/client.js'
+import StartForm from '../components/StartForm.vue'
 import { useMe } from '../me.js'
 import RecentReplays from './RecentReplays.vue'
 
@@ -29,6 +30,8 @@ const envId = String(route.params.envId)
 const meta = ref<EnvironmentMeta | null>(null)
 const notFound = ref(false)
 const startError = ref<string | null>(null)
+// Which start form is open (the Play/Watch entry points open it); null when neither is.
+const formMode = ref<'human' | 'scripted' | null>(null)
 
 onMounted(() => {
   getEnvironments().then(
@@ -46,12 +49,17 @@ onMounted(() => {
   )
 })
 
-async function start(mode: 'human' | 'scripted'): Promise<void> {
-  if (meta.value === null) {
+async function start(input: { seed?: number; humanSlotTimeoutMs?: number }): Promise<void> {
+  if (meta.value === null || formMode.value === null) {
     return
   }
   startError.value = null
-  const result = await startSession({ envId: meta.value.env_id, mode })
+  const result = await startSession({
+    envId: meta.value.env_id,
+    mode: formMode.value,
+    seed: input.seed,
+    humanSlotTimeoutMs: input.humanSlotTimeoutMs,
+  })
   if (result.ok) {
     await router.push(`/sessions/${result.session.id}`)
   } else if (result.reason === 'already_active') {
@@ -72,10 +80,21 @@ async function start(mode: 'human' | 'scripted'): Promise<void> {
     <h1>{{ meta.display_name }}</h1>
     <p class="env-description">{{ meta.description }}</p>
 
-    <div v-if="me.me?.allowlisted" class="entry-points">
-      <button v-if="meta.human_slots.length > 0" type="button" @click="start('human')">Play</button>
-      <button type="button" @click="start('scripted')">Watch</button>
-    </div>
+    <template v-if="me.me?.allowlisted">
+      <div v-if="formMode === null" class="entry-points">
+        <button v-if="meta.human_slots.length > 0" type="button" @click="formMode = 'human'">
+          Play
+        </button>
+        <button type="button" @click="formMode = 'scripted'">Watch</button>
+      </div>
+      <StartForm
+        v-else
+        :meta="meta"
+        :mode="formMode"
+        @submit="start"
+        @cancel="formMode = null"
+      />
+    </template>
     <p v-else class="status">Live play is limited to allowlisted users.</p>
     <p v-if="startError !== null" class="error">{{ startError }}</p>
 
