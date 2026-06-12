@@ -1,7 +1,8 @@
 import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
-import { fireEvent, render, screen } from '@testing-library/react'
-import { MemoryRouter, Route, Routes } from 'react-router'
+import { fireEvent, render, screen } from '@testing-library/vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { h } from 'vue'
+import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 
 const META: EnvironmentMeta = {
   env_id: 'flappy_bird',
@@ -30,20 +31,25 @@ vi.mock('../src/api/client.js', () => ({
 
 import { getEnvironments, getMe, listRecordings, startSession } from '../src/api/client.js'
 import { MeProvider } from '../src/me.js'
-import { EnvironmentPage } from '../src/pages/environment.js'
-import { SessionPage } from '../src/pages/session.js'
+import EnvironmentPage from '../src/pages/environment.vue'
+import SessionPage from '../src/pages/session.vue'
 
-function renderPage() {
-  return render(
-    <MemoryRouter initialEntries={['/environments/flappy_bird']}>
-      <MeProvider>
-        <Routes>
-          <Route path="/environments/:envId" element={<EnvironmentPage />} />
-          <Route path="/sessions/:id" element={<SessionPage />} />
-        </Routes>
-      </MeProvider>
-    </MemoryRouter>,
-  )
+// Render the environment page inside the me provider (so the allowlist gate has its one /api/me fetch)
+// and a real router carrying the session route, so navigation on start lands on the session page.
+async function renderPage() {
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/environments/:envId', component: EnvironmentPage },
+      { path: '/sessions/:id', component: SessionPage },
+    ],
+  })
+  router.push('/environments/flappy_bird')
+  await router.isReady()
+  return render(MeProvider, {
+    slots: { default: () => h(RouterView) },
+    global: { plugins: [router] },
+  })
 }
 
 describe('EnvironmentPage', () => {
@@ -55,7 +61,7 @@ describe('EnvironmentPage', () => {
 
   it('hides the play and watch entry points for a non-allowlisted user', async () => {
     vi.mocked(getMe).mockResolvedValue({ user_id: 'carol', allowlisted: false })
-    renderPage()
+    await renderPage()
     expect(await screen.findByText(/limited to allowlisted users/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Play' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Watch' })).toBeNull()
@@ -67,8 +73,8 @@ describe('EnvironmentPage', () => {
       ok: true,
       session: { id: 's1', wsPath: '/api/sessions/s1/ws' },
     })
-    renderPage()
-    fireEvent.click(await screen.findByRole('button', { name: 'Watch' }))
+    await renderPage()
+    await fireEvent.click(await screen.findByRole('button', { name: 'Watch' }))
     expect(await screen.findByText('s1')).toBeInTheDocument()
     expect(vi.mocked(startSession)).toHaveBeenCalledWith({ envId: 'flappy_bird', mode: 'scripted' })
   })
@@ -80,8 +86,8 @@ describe('EnvironmentPage', () => {
       reason: 'already_active',
       activeSessionId: 'active-9',
     })
-    renderPage()
-    fireEvent.click(await screen.findByRole('button', { name: 'Play' }))
+    await renderPage()
+    await fireEvent.click(await screen.findByRole('button', { name: 'Play' }))
     expect(await screen.findByText('active-9')).toBeInTheDocument()
   })
 })

@@ -6,6 +6,9 @@
  * the recordings store, and map an {@link OrchestratorError} onto its HTTP status. The orchestrator
  * is the only thing that knows about sessions; this layer never touches the driver or the container.
  */
+import { existsSync } from 'node:fs'
+
+import fastifyStatic from '@fastify/static'
 import websocket from '@fastify/websocket'
 import Fastify, { type FastifyInstance } from 'fastify'
 
@@ -21,6 +24,12 @@ export interface AppDeps {
   recordings: RecordingsStore
   /** The operator-configured session allowlist, so `/api/me` can report what the user may do. */
   allowlist: readonly string[]
+  /**
+   * The built frontend bundle to serve at the root. When present (a production launch), the backend
+   * serves the SPA so the whole stack is one origin and one process. Omitted in dev (Vite serves it
+   * and proxies `/api` here) and in tests; serving is wired only when the directory actually exists.
+   */
+  frontendDir?: string
 }
 
 /** JSON-schema body for POST /api/sessions; Fastify 400s on a violation before the handler runs. */
@@ -127,6 +136,21 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       socket.on('close', () => attachment.detach())
     },
   )
+
+  // Serve the built frontend from the same origin in production so the whole stack is one process.
+  // `wildcard: false` registers a route per built file and lets unmatched paths fall to the
+  // not-found handler, which returns index.html for any non-API GET — the SPA fallback that makes a
+  // hard refresh on a client route (/environments/:id, /sessions/:id, /replays/:id) load. Everything
+  // under /api keeps its JSON 404. Wired only when the bundle exists, so dev and tests are untouched.
+  if (deps.frontendDir !== undefined && existsSync(deps.frontendDir)) {
+    await app.register(fastifyStatic, { root: deps.frontendDir, wildcard: false })
+    app.setNotFoundHandler((request, reply) => {
+      if (request.method === 'GET' && !request.url.startsWith('/api/')) {
+        return reply.sendFile('index.html')
+      }
+      return reply.code(404).send({ error: 'not found' })
+    })
+  }
 
   return app
 }

@@ -4,19 +4,21 @@ Part of [Stage 4](../stage-04-frontend-core.md). This file stands up the `fronte
 
 ## Package and tooling
 
-`frontend/` joins the npm workspace (added to the root `package.json` `workspaces` array) as `@game-sandbox/frontend`, private, `type: module`, on the root's Node 22 engines pin. Confirming the parent file's proposed defaults at stage start: Vite with the React plugin (`@vitejs/plugin-react`), React 19, TypeScript throughout, and `react-router` 7 in plain library mode for client routing. Vite is pinned to the 5.x already present in the workspace (Vitest's own dependency) rather than pulling a second major; the React plugin's 4.x line supports it. No state-management library: React hooks plus small explicit stores (the live socket and the replay transport in the other documents are plain classes with subscribe hooks); adding a library later is a contained change. Tooling mirrors `backend/`: Biome through the root config, strict `tsc --noEmit` as the check (these two are the `check` script), Vitest in jsdom for tests (suite design in [testing-ci-and-docs.md](testing-ci-and-docs.md)). The production build (`frontend/dist/`) is git-ignored.
+`frontend/` joins the npm workspace (added to the root `package.json` `workspaces` array) as `@game-sandbox/frontend`, private, `type: module`, on the root's Node 22 engines pin. Confirmed at stage start: Vite with the Vue plugin (`@vitejs/plugin-vue`), Vue 3 (the `<script setup>` SFC style), TypeScript throughout, and `vue-router` 4 in plain library mode for client routing. Vite is pinned to the 5.x already present in the workspace (Vitest's own dependency) rather than pulling a second major; the Vue plugin's 5.x line supports it. No state-management library: Vue's reactivity (`ref`/`reactive`/`provide`–`inject`) plus small explicit stores (the live socket and the replay transport in the other documents are plain classes with subscribe hooks); adding Pinia later is a contained change. Tooling mirrors `backend/`: Biome through the root config — which excludes `.vue` files, since Biome lints only the SFC `<script>` block and would false-flag bindings used only in the `<template>`, so the type check owns the templates instead — and `vue-tsc --noEmit` as the strict type check (Biome plus `vue-tsc` are the `check` script), Vitest in jsdom for tests (suite design in [testing-ci-and-docs.md](testing-ci-and-docs.md)). The production build (`frontend/dist/`) is git-ignored.
 
-`npm run dev` is the Vite dev server with `/api` proxied — HTTP and WebSocket (`ws: true`) — to the backend on port 8080, so the browser sees one origin and no CORS configuration exists anywhere. Serving the built bundle from the backend is a deployment concern deferred exactly like the backend's own `dist/` build; nothing in the layout prevents adding `@fastify/static` later.
+`npm run dev` is the Vite dev server with `/api` proxied — HTTP and WebSocket (`ws: true`) — to the backend on port 8080, so the browser sees one origin and no CORS configuration exists anywhere. In production the backend serves the built bundle from the same origin through `@fastify/static`, with an `index.html` fallback for client-side routes so a hard refresh on `/environments/:id` loads; `npm start` at the repo root builds the frontend and launches the backend serving it, so the whole stack is one process and one command. The backend wires this only when a built bundle is present, so dev (Vite serves it) and the tests (no bundle) are untouched; the directory is configurable through `FRONTEND_DIST`.
 
 Module layout (the other stage-04 documents fill in `renderers/flappy-bird/`, `pages/session/`, and `pages/replay/`):
 
 ```
 frontend/src/
-  main.tsx         entrypoint: router, app shell (header with site name and the signed-in user)
+  main.ts          entrypoint: the Vue app and the vue-router routes
+  App.vue          the me-provider wrapper around components/AppShell.vue (header chrome + <RouterView>)
   identity.ts      the mock auto-logon: /api/me fetch, the identity header, the WS user param
+  me.ts            the provide/inject identity store: one GET /api/me shared with every page
   api/             typed fetch wrappers per backend route; the session WebSocket client
   renderers/       the renderer contract, the registry, and one module per environment
-  pages/           home, environment, session (live play/watch), replay
+  pages/           home, environment, session (live play/watch), replay (.vue SFCs)
 ```
 
 ## Shared wire types
@@ -74,7 +76,7 @@ Two rules give the architecture its properties. First, **purity**: `render(state
 
 ## Pages
 
-Routing: `/` (home), `/environments/:envId`, `/sessions/:id` (live, in [live-session-control.md](live-session-control.md)), `/replays/:id` (in [replay-and-retention.md](replay-and-retention.md)). The app shell renders the header chrome (site name, signed-in user) around every page, and fetches `GET /api/me` once into a small context (`me.tsx`) that the header and the pages both read, so the allowlist answer is fetched in one place. The `/sessions/:id` and `/replays/:id` routes exist now as thin placeholders that those two later documents replace with the renderer host and the replay viewer; `renderers/index.ts` is the registration barrel `main.tsx` imports, where each environment's renderer module gets pulled in (empty until the Flappy Bird renderer step).
+Routing: `/` (home), `/environments/:envId`, `/sessions/:id` (live, in [live-session-control.md](live-session-control.md)), `/replays/:id` (in [replay-and-retention.md](replay-and-retention.md)). The app shell (`components/AppShell.vue`) renders the header chrome (site name, signed-in user) around every page, and `App.vue` wraps it in the `me.ts` provider that fetches `GET /api/me` once and `provide`s it, so the header and the pages both `inject` the one allowlist answer. The `/sessions/:id` and `/replays/:id` routes exist now as thin placeholder SFCs that those two later documents replace with the renderer host and the replay viewer; `renderers/index.ts` is the registration barrel `main.ts` imports, where each environment's renderer module gets pulled in (empty until the Flappy Bird renderer step).
 
 The Environment page's play and watch entry points are wired through the typed `startSession` client and navigate to the resulting `/sessions/:id`; an already-active result navigates to the existing session instead of dead-ending (the rejoin path). The richer start UX (the human-slot timeout override field, mode nuances, the in-session pause and active-timeout display) belongs to [live-session-control.md](live-session-control.md); this page provides the gated entry points and the navigation seam.
 

@@ -6,9 +6,14 @@
  * settings. There are no config files and no secrets manager in this stage; OAuth secrets
  * arrive in Stage 4 when they exist.
  */
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import { DEV_USER_ID } from './identity.js'
+
+// The repo root sits two levels above backend/src, so the default frontend bundle path resolves the
+// same regardless of the process's working directory (started from the repo root or from backend/).
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
 /** The only execution driver that exists in this stage. */
 export type ExecutionDriverKind = 'docker'
@@ -47,6 +52,13 @@ export interface Config {
    * Stage 3 identity stub until OAuth brings real handles; everything read-only stays open.
    */
   sessionAllowlist: string[]
+  /**
+   * The built frontend bundle the backend serves at the root in production, so one process and one
+   * command launch the whole stack. Vite serves the app in development (and proxies `/api` here), and
+   * the tests never build a bundle, so this is omitted in both — serving is wired only when the
+   * directory is present. Defaults to `frontend/dist`; override with `FRONTEND_DIST`.
+   */
+  frontendDir?: string
   sandbox: SandboxDefaults
   executionDriver: ExecutionDriverKind
   docker: DockerDriverOptions
@@ -120,6 +132,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     sessionIdleTimeoutMs: intVar(env, 'SESSION_IDLE_TIMEOUT_MS', 60_000),
     sessionMaxDurationMs: intVar(env, 'SESSION_MAX_DURATION_MS', 600_000),
     sessionAllowlist: listVar(env, 'SESSION_ALLOWLIST', [DEV_USER_ID]),
+    frontendDir:
+      env.FRONTEND_DIST && env.FRONTEND_DIST !== ''
+        ? env.FRONTEND_DIST
+        : join(REPO_ROOT, 'frontend', 'dist'),
     sandbox: {
       cpus: numberVar(env, 'SANDBOX_CPUS', 1),
       memoryMb: intVar(env, 'SANDBOX_MEMORY_MB', 512),

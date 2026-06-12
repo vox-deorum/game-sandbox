@@ -6,7 +6,10 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!**/generated", "!**/dist", "!**/node_modules"]
+    // Vue single-file components are excluded: Biome lints the script block but not the template, so
+    // it false-flags bindings used only in the template. vue-tsc type-checks the .vue files instead;
+    // Biome still owns every .ts/.tsx file in the frontend.
+    "includes": ["**", "!**/generated", "!**/dist", "!**/node_modules", "!**/*.vue"]
   },
   "formatter": {
     "enabled": true,

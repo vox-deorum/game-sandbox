@@ -1,7 +1,7 @@
 import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
-import { render, screen } from '@testing-library/react'
-import { MemoryRouter } from 'react-router'
+import { render, screen } from '@testing-library/vue'
 import { describe, expect, it, vi } from 'vitest'
+import { createMemoryHistory, createRouter } from 'vue-router'
 
 const META: EnvironmentMeta = {
   env_id: 'flappy_bird',
@@ -25,15 +25,21 @@ vi.mock('../src/api/client.js', () => ({
   getEnvironments: vi.fn(async () => [META]),
 }))
 
-import { HomePage } from '../src/pages/home.js'
+import HomePage from '../src/pages/home.vue'
+
+function makeRouter() {
+  return createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/', component: HomePage },
+      { path: '/environments/:envId', component: { template: '<div />' } },
+    ],
+  })
+}
 
 describe('HomePage', () => {
   it('renders a card per environment with the spec card fields', async () => {
-    render(
-      <MemoryRouter>
-        <HomePage />
-      </MemoryRouter>,
-    )
+    render(HomePage, { global: { plugins: [makeRouter()] } })
     expect(await screen.findByText('Flappy Bird')).toBeInTheDocument()
     expect(screen.getByText('A paced single-human clone.')).toBeInTheDocument()
     expect(screen.getByText('1 slot')).toBeInTheDocument()

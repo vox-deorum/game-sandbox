@@ -13,6 +13,8 @@
     "frontend"
   ],
   "scripts": {
+    "start": "npm run build --workspace @game-sandbox/frontend && npm run start --workspace @game-sandbox/backend",
+    "build:frontend": "npm run build --workspace @game-sandbox/frontend",
     "generate": "uv run python scripts/generate.py",
     "check": "uv run python scripts/ci.py check",
     "test": "uv run python scripts/ci.py test",

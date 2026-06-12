@@ -38,8 +38,13 @@ The wire protocol the browser shares with the backend (the line-classification r
 | `SANDBOX_CPUS` / `SANDBOX_MEMORY_MB` / `SANDBOX_SCRATCH_MB` | `1` / `512` / `256` | The sandbox quotas applied to every session. |
 | `EXECUTION_DRIVER` | `docker` | The only driver in this stage. |
 | `DOCKER_IMAGE_TAG_PREFIX` / `DOCKER_IMAGE_POLICY` | `game-sandbox` / `reuse` | The image tag prefix and whether an existing tag is reused or always rebuilt. |
+| `FRONTEND_DIST` | `frontend/dist` | The built frontend bundle the backend serves at the root (see below). Defaults to the repo's `frontend/dist`; serving is wired only when the directory exists. |
 
 There are no config files and no secrets manager; OAuth secrets arrive in Stage 4 when they exist.
+
+## Serving the frontend
+
+In production the backend serves the built frontend from the same origin through `@fastify/static`, so the whole stack is one process and one command: `npm start` at the repo root builds `frontend/dist/` and launches the backend serving it. Files are served at the root, and a not-found handler returns `index.html` for any non-`/api` GET, which is the SPA fallback that lets a hard refresh on a client-side route (`/environments/:id`, `/sessions/:id`, `/replays/:id`) load; everything under `/api` keeps its JSON `404`. The wiring is conditional on the bundle existing (`config.frontendDir`), so the dev server (where Vite serves the app and proxies `/api` here) and the test suites (no bundle) are untouched.
 
 ## Storage
 

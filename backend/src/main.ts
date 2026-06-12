@@ -33,6 +33,7 @@ async function main(): Promise<void> {
     environments,
     recordings,
     allowlist: config.sessionAllowlist,
+    frontendDir: config.frontendDir,
   })
   await app.listen({ port: config.port, host: '0.0.0.0' })
   log(`backend listening on :${config.port}`)
