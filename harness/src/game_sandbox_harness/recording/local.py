@@ -47,6 +47,7 @@ class _FolderRecordingWriter:
         self._header = header
         self._on_line = on_line
         self._handle: IO[str] = path.open("w", encoding="utf-8", newline="\n")
+        path.chmod(0o666)
         self._emit(_dump_line(header))
 
     def write_step(self, state: StepState) -> None:
@@ -125,6 +126,9 @@ class FolderRecordingStore:
     def create(self, recording_id: str, header: RecordingHeader) -> _FolderRecordingWriter:
         directory = self._dir(recording_id)
         directory.mkdir(parents=True, exist_ok=True)
+        # Live sessions write through a root-owned, cap-dropped container onto a host bind mount.
+        # Make each recording directory removable by the backend user after the container exits.
+        directory.chmod(0o777)
         return _FolderRecordingWriter(directory / _RECORDING_FILENAME, header, self._on_line)
 
     def open(self, recording_id: str) -> _FolderRecording:

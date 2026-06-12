@@ -89,25 +89,39 @@ Purpose: host one active session with the renderer as the star. The chrome is on
 
 ```
 |  top bar                                                                             |
-|-------------------------------------------------------------------------------------|
-|  Environments / Flappy Bird / live session      (context line, links back)           |
+|--------------------------------------------------------------------------------------|
+|  Environments / Flappy Bird / Live Session      (context line, links back)           |
 |                                                                                      |
 |  ● running    reconnecting…        [ Pause ] [ Stop ]      (one status strip)        |
-|  input window: 5s per step                                  (only when it matters)   |
+|  metadata (environment, seed, score, ticks, ...)                                     |
 |                                                                                      |
+|  +-------------------------------------+   Decision log                              |
+|  |                                     |   Tick | Decision                           |
+|  |          renderer canvas            |   -----+---------                           |
+|  |                                     |    118 | flap                               |
+|  |                                     |    119 | hold                               |
+|  +-------------------------------------+    120 | flap                               |
+|                                                                                      |
+|  (wide canvas, no room beside it — log moves below, same table:)                     |
 |  +-------------------------------------------+                                       |
-|  |                                           |                                       |
 |  |              renderer canvas              |                                       |
-|  |                                           |                                       |
 |  +-------------------------------------------+                                       |
+|  ▸ Decision log    Tick | Decision               (collapsed when stacked)            |
 |                                                                                      |
 |  (after the session ends, in place of the strip:)                                    |
-|  Session ended: completed                                                            |
+|  ● completed                                                                         |
 |  metadata (environment, seed, score, ticks, ...)                                     |
+|  (canvas stays at the last moment)                                                   |
 |  [ Watch replay ]  [ Pin replay ]                                                    |
 ```
 
 The status indicator pairs the colored dot with a text label always (running, ended, reconnecting), never color alone. Pause, stop, and the timeout display keep their Stage 4 behavior.
+
+A running decision log streams the agent's per-tick choices as the session plays. It is a two-column table, `Tick | Decision`, scrolling independently and pinned to the latest tick unless the reader scrolls up. Today the cells are terse (a tick number and an action name); the column is sized to grow, because the LLM-based agents of later stages will emit richer reasoning per tick (Stage 7's per-tick call metadata is the natural feed for it).
+
+The log's placement is responsive and driven by the canvas, not the viewport alone. It sits **alongside** the canvas when there is horizontal room left over after the canvas takes the size it wants — the common case for tall, narrow (vertical) canvases, which leave a column free. When the canvas is wide enough to claim the full width, the log **moves below** it and collapses by default, so it never forces the stage to shrink. The renderer is the star in both layouts; the log only takes space the canvas does not want.
+
+To decide this without guessing, each renderer declares its **targeted canvas size** as metadata on its `RendererModule` (alongside `thumbnail`) — an intrinsic size and/or aspect ratio the renderer is designed for. The host lays the canvas out at or under that target, then places the log beside or below based on the room that remains. This keeps responsive layout a property the renderer owns (it knows its own shape) rather than something the host reverse-engineers from rendered pixels, and the same metadata lets the home-card thumbnails and the replay stage reason about canvas shape consistently.
 
 ### Replay stage (`/replays/:id`)
 
@@ -115,20 +129,20 @@ Purpose: play back one recording, shareable by URL. Same stage layout as the liv
 
 ```
 |  top bar                                                                             |
-|-------------------------------------------------------------------------------------|
-|  Environments / Flappy Bird / replay            (context line, links back)           |
+|--------------------------------------------------------------------------------------|
+|  Environments / Flappy Bird / Replay            (context line, links back)     [pin] |
+|  metadata (environment, session, seed, score, owner, dates)                          |
+|  [⏮] [⏪] [ ▶ play ] [⏩] [⏭]  ───────●─────────  tick 120 / 300                  |
 |                                                                                      |
-|  +-------------------------------------------+                                       |
-|  |              renderer canvas              |                                       |
-|  +-------------------------------------------+                                       |
-|                                                                                      |
-|  [⏮] [⏪] [ ▶ play ] [⏩] [⏭]  ───────●─────────  tick 120 / 300                       |
-|                                                                                      |
-|  metadata (environment, session, seed, score, owner, dates, pinned)                  |
-|  [ Pin ]                                     (owner only)                            |
+|  +-------------------------------------+   Decision log                              |
+|  |                                     |   Tick | Decision                           |
+|  |          renderer canvas            |   -----+---------                           |
+|  |                                     |    118 | flap                               |
+|  |                                     |    119 | hold                               |
+|  +-------------------------------------+    120 | flap                               |
 ```
 
-The transport gains full keyboard operation (space toggles play, arrows step, Home and End jump) and the scrubber announces its position to assistive tech. The metadata block reuses the same component as the end-of-session card.
+The transport gains full keyboard operation (space toggles play, arrows step, Home and End jump) and the scrubber announces its position to assistive tech. The metadata block reuses the same component as the end-of-session card. Similarly, the decision log should reuse the same component.
 
 ### Styleguide (`/styleguide`, dev only)
 
@@ -138,7 +152,7 @@ Purpose: render every primitive in every variant and state, plus the token swatc
 
 - Stage 5 (submissions): the `Agents` nav entry becomes a real section (agent profiles), and the environment hub gains the submission form section. The hub's section-column layout is the insertion point.
 - Stage 6 (leaderboards): the `Leaderboards` nav entry becomes real, pointing at the per-environment boards on the hub; the hub gains the two boards and iteration history. The replay stage gains the rating prompt next to pinning.
-- Stage 7 (LLM gateway): the replay stage gains per-tick call metadata, and agent profiles gain the owner-only debug view. No new top-level sections.
+- Stage 7 (LLM gateway): the replay stage gains per-tick call metadata, which also feeds the live stage's decision log with the agent's reasoning per tick; agent profiles gain the owner-only debug view. No new top-level sections.
 - Stages 8 and 9 (multi-agent, chat): the live and replay stages gain slot assignment and the chat panel inside the existing stage layout; the start dialog grows slot pickers.
 
 Each stage retires or fills its placeholder as it lands; the parent stage files get a one-line note about this when Stage 4.5 closes.

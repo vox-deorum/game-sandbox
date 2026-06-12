@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -33,6 +34,16 @@ def test_write_then_read_round_trip(tmp_path: Path):
     steps = list(recording.steps())
     assert [s["tick"] for s in steps] == [0, 1]
     assert store.list_ids() == ["run1"]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX mode bits only")
+def test_created_recording_permissions_allow_host_cleanup(tmp_path: Path):
+    store = FolderRecordingStore(tmp_path)
+    with store.create("run1", build_header(environment="flappy")):
+        pass
+
+    assert ((tmp_path / "run1").stat().st_mode & 0o777) == 0o777
+    assert ((tmp_path / "run1" / "recording.jsonl").stat().st_mode & 0o777) == 0o666
 
 
 def test_truncated_file_yields_readable_prefix(tmp_path: Path):
