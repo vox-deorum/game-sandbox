@@ -36,7 +36,8 @@ export class WsClient {
   static connect(url: string, user = 'dev-user'): Promise<WsClient> {
     return new Promise((resolve, reject) => {
       const socket = new WebSocket(url, { headers: { 'x-sandbox-user': user } })
-      socket.once('open', () => resolve(new WsClient(socket)))
+      const client = new WsClient(socket)
+      socket.once('open', () => resolve(client))
       socket.once('error', reject)
     })
   }
