@@ -9,14 +9,15 @@
  * exactly what a session launch would, and it always rebuilds regardless of the configured policy.
  */
 import { loadConfig } from './config.js'
+import { currentSessionBaseImageSpec } from './deps-version.js'
 import { buildImage } from './driver/docker/index.js'
-import type { ImageSpec } from './driver/index.js'
 
 async function main(): Promise<void> {
   const config = loadConfig()
-  // This stage builds only the dependency-set v1 session base image.
-  const spec: ImageSpec = { kind: 'session-base', depsVersion: 1 }
-  const ref = await buildImage({ ...config.docker, imagePolicy: 'rebuild' }, spec)
+  const ref = await buildImage(
+    { ...config.docker, imagePolicy: 'rebuild' },
+    currentSessionBaseImageSpec(),
+  )
   console.error(`built ${ref.ref}`)
 }
 

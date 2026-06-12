@@ -12,6 +12,7 @@ import { randomInt, randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
 
 import type { Config } from '../config.js'
+import { currentSessionBaseImageSpec } from '../deps-version.js'
 import type { ExecutionDriver, SandboxProfile } from '../driver/index.js'
 import type { EnvironmentMeta, EnvironmentRegistry } from '../environments.js'
 import { isAllowlisted } from '../identity.js'
@@ -25,8 +26,6 @@ import {
 } from './live-session.js'
 import { SessionRegistry } from './registry.js'
 
-/** The dependency-set version this stage builds; Stage 5 resolves it per submission. */
-const DEPS_VERSION = 1
 /** Where the recordings volume is mounted inside every session container. */
 const CONTAINER_RECORDINGS_DIR = '/recordings'
 /** The writable scratch tmpfs mount point; matplotlib's cache and any temp files land here. */
@@ -112,7 +111,7 @@ export class Orchestrator {
       request.humanSlotTimeoutMs !== undefined ? request.humanSlotTimeoutMs : meta.human_timeout_ms
     const seed = request.seed ?? randomInt(0, 2 ** 31)
 
-    const image = await this.driver.ensureImage({ kind: 'session-base', depsVersion: DEPS_VERSION })
+    const image = await this.driver.ensureImage(currentSessionBaseImageSpec())
 
     const id = randomUUID()
     const recordingId = `${meta.env_id}-${id}`
