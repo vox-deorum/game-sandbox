@@ -46,6 +46,10 @@ describe('inbound command parsing', () => {
     expect(parseCommand('{"kind":"input","action":1}').ok).toBe(false)
   })
 
+  it('rejects input without an action field', () => {
+    expect(parseCommand('{"kind":"input","slot":"player_0"}').ok).toBe(false)
+  })
+
   it('rejects an unknown kind and malformed JSON', () => {
     expect(parseCommand('{"kind":"explode"}').ok).toBe(false)
     expect(parseCommand('{"no":"kind"}').ok).toBe(false)

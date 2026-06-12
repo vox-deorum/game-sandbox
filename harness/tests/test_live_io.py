@@ -157,6 +157,32 @@ def test_turn_based_source_blocks_until_input_arrives():
     assert sleeper.calls == 2
 
 
+def test_turn_based_source_holds_latched_input_until_resume():
+    base = ManualClock(start_ms=0)
+    clock = PausableClock(base)
+    control = SessionControl(clock)
+
+    class PausingSleeper:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def sleep_ms(self, ms: int) -> None:
+            self.calls += 1
+            base.advance(ms)
+            if self.calls == 1:
+                control.handle_line('{"kind": "pause"}')
+            elif self.calls == 2:
+                control.handle_line('{"kind": "input", "slot": "p", "action": 42}')
+            elif self.calls == 4:
+                control.handle_line('{"kind": "resume"}')
+
+    sleeper = PausingSleeper()
+    source = TransportSource(control, clock=clock, paced=False, sleeper=sleeper, slice_ms=5)
+    action = source.get_action("p", observation=None, deadline_ms=1000)
+    assert action == 42
+    assert sleeper.calls == 4
+
+
 def test_turn_based_source_times_out_to_none_at_deadline():
     base = ManualClock(start_ms=0)
     clock = PausableClock(base)

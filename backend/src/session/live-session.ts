@@ -86,6 +86,7 @@ export class LiveSession {
   private readonly deps: LiveSessionDeps
 
   private readonly sockets = new Set<ClientSocket>()
+  private readonly outputDone: Promise<void>
   private status: 'starting' | 'running' | 'ended' = 'starting'
   private headerLine: string | null = null
   private latestState: string | null = null
@@ -112,10 +113,13 @@ export class LiveSession {
     }, this.deps.maxDurationMs)
     this.armIdle()
 
-    void this.consumeOutput()
+    this.outputDone = this.consumeOutput()
     void this.consumeDiagnostics()
     this.process.exited.then(
-      (info) => this.finalize(this.deriveReason(info.oomKilled, info.code)),
+      async (info) => {
+        await this.outputDone
+        return this.finalize(this.deriveReason(info.oomKilled, info.code))
+      },
       (error) => {
         this.deps.log(`session ${this.id}: exit wait failed: ${String(error)}`)
         void this.finalize('error')

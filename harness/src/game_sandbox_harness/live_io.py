@@ -204,11 +204,14 @@ class TransportSource:
         if self._paced:
             return self._control.take(slot_id)
         while True:
+            if self._control.stopping:
+                return None
+            if self._control.paused:
+                self._sleeper.sleep_ms(self._slice_ms)
+                continue
             value = self._control.take(slot_id)
             if value is not None:
                 return value
-            if self._control.stopping:
-                return None
             if deadline_ms is not None and self._clock.now_ms() >= deadline_ms:
                 return None
             self._sleeper.sleep_ms(self._slice_ms)

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
+import type { SessionProcess } from '../src/driver/index.js'
 import { LiveSession } from '../src/session/live-session.js'
 import type { Storage } from '../src/storage/index.js'
 import type { SessionMode } from '../src/storage/schema.js'
@@ -12,6 +13,14 @@ const STATE_0 =
   '{"schema_version":1,"tick":0,"agents":{},"timing":{"started_at":1,"duration_ms":1}}'
 const STATE_1 =
   '{"schema_version":1,"tick":1,"agents":{},"timing":{"started_at":2,"duration_ms":1}}'
+const RESULT_TERMINATED =
+  '{"kind":"result","ticks":2,"reason":"terminated","scores":{},"step_timeouts":{}}'
+
+async function settle(): Promise<void> {
+  for (let i = 0; i < 8; i++) {
+    await flush()
+  }
+}
 
 describe('relay (LiveSession)', () => {
   let storage: Storage
@@ -94,13 +103,55 @@ describe('relay (LiveSession)', () => {
 
     process.emit(HEADER)
     process.emit('not-json-garbage')
-    const result =
-      '{"kind":"result","ticks":2,"reason":"terminated","scores":{},"step_timeouts":{}}'
-    process.emit(result)
+    process.emit(RESULT_TERMINATED)
     await flush()
 
-    expect(socket.received).toContain(result)
+    expect(socket.received).toContain(RESULT_TERMINATED)
     expect(socket.received).not.toContain('not-json-garbage')
+  })
+
+  it('drains output before deriving the reason from a clean process exit', async () => {
+    let releaseOutput!: () => void
+    const outputGate = new Promise<void>((resolve) => {
+      releaseOutput = resolve
+    })
+    const process: SessionProcess = {
+      output: (async function* () {
+        await outputGate
+        yield HEADER
+        yield RESULT_TERMINATED
+      })(),
+      diagnostics: (async function* () {})(),
+      exited: Promise.resolve({ code: 0, oomKilled: false }),
+      send: () => {},
+      kill: async () => {},
+    }
+    const session = new LiveSession({
+      id: 'sess-1',
+      userId: 'alice',
+      envId: 'flappy_bird',
+      mode: 'human',
+      recordingId: 'flappy_bird-sess-1',
+      process,
+      humanSlots: ['player_0'],
+      deps: {
+        storage,
+        onEnd: () => {},
+        log: () => {},
+        idleTimeoutMs: 1_000_000,
+        maxDurationMs: 1_000_000,
+        killGraceMs: 10,
+      },
+    })
+    live.push(session)
+
+    releaseOutput()
+    await settle()
+
+    expect(await storage.getSession('sess-1')).toMatchObject({
+      status: 'ended',
+      termination_reason: 'terminated',
+    })
   })
 
   describe('inbound command authority', () => {

@@ -39,6 +39,10 @@ function asObject(value: unknown): Record<string, unknown> | null {
     : null
 }
 
+function hasOwn(object: Record<string, unknown>, key: string): boolean {
+  return Object.hasOwn(object, key)
+}
+
 /**
  * Classify one outbound line: a recording line (no top-level `kind`), an event envelope (a string
  * `kind`), or malformed (not a JSON object). Malformed lines are logged and dropped by the relay —
@@ -84,6 +88,9 @@ export function parseCommand(raw: string): CommandParse {
     case 'input': {
       if (typeof object.slot !== 'string') {
         return { ok: false, reason: 'input command needs a string slot' }
+      }
+      if (!hasOwn(object, 'action')) {
+        return { ok: false, reason: 'input command needs an action' }
       }
       return { ok: true, command: { kind: 'input', slot: object.slot, action: object.action } }
     }
