@@ -60,12 +60,14 @@ vi.mock('../src/renderers/registry.js', () => ({
 vi.mock('../src/api/client.js', () => ({
   getSession: vi.fn(),
   getEnvironments: vi.fn(async () => [META]),
+  getRecording: vi.fn(),
+  listRecordings: vi.fn(async () => []),
   getMe: vi.fn(),
   pinRecording: vi.fn(async () => ({ ok: true })),
   unpinRecording: vi.fn(async () => ({ ok: true })),
 }))
 
-import { getMe, getSession } from '../src/api/client.js'
+import { getMe, getRecording, getSession, listRecordings } from '../src/api/client.js'
 import { MeProvider } from '../src/me.js'
 import SessionPage from '../src/pages/session.vue'
 
@@ -81,6 +83,28 @@ function ownerRow() {
     created_at: '2026-06-11T00:00:00.000Z',
     ended_at: null,
   }
+}
+
+function endedOwnerRow() {
+  return {
+    ...ownerRow(),
+    status: 'ended' as const,
+    termination_reason: 'terminated' as const,
+    ended_at: '2026-06-11T00:00:02.000Z',
+  }
+}
+
+function recordingText(): string {
+  const header = JSON.stringify(HEADER)
+  const states = [0, 1, 2].map((tick) =>
+    JSON.stringify({
+      schema_version: 1,
+      tick,
+      agents: { player_0: { reward: 0, score: 20 + tick } },
+      timing: { started_at: tick, duration_ms: 1 },
+    }),
+  )
+  return `${header}\n${states.join('\n')}\n`
 }
 
 async function renderSession() {
@@ -108,6 +132,8 @@ describe('SessionPage', () => {
     sent = []
     mountCtx = null
     drawn = []
+    vi.mocked(getRecording).mockResolvedValue(recordingText())
+    vi.mocked(listRecordings).mockResolvedValue([])
   })
 
   it('mounts the renderer for the owner of a human session and wires input + active timeout', async () => {
@@ -162,12 +188,36 @@ describe('SessionPage', () => {
     handlers.onResult?.({ ticks: 42, reason: 'terminated', scores: { player_0: 7 } })
     handlers.onSessionStatus?.('ended', 'terminated')
 
-    expect(await screen.findByText('Game over')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Game over' })).toBeInTheDocument()
     expect(screen.getByText('7')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Open replay' })).toHaveAttribute(
       'href',
       '/replays/flappy_bird-s1',
     )
+  })
+
+  it('returns to an ended session without opening a socket and shows recording metadata', async () => {
+    vi.mocked(getMe).mockResolvedValue({ user_id: 'dev-user', allowlisted: true })
+    vi.mocked(getSession).mockResolvedValue(endedOwnerRow())
+    vi.mocked(listRecordings).mockResolvedValue([
+      {
+        id: 'flappy_bird-s1',
+        header: HEADER,
+        user_id: 'dev-user',
+        created_at: '2026-06-11T00:00:00.000Z',
+        pinned: true,
+      },
+    ])
+    await renderSession()
+
+    expect(await screen.findByRole('heading', { name: 'Game over' })).toBeInTheDocument()
+    expect(handlers).toBeUndefined()
+    expect(screen.getByText('Mode')).toBeInTheDocument()
+    expect(screen.getByText('Human')).toBeInTheDocument()
+    expect(await screen.findByText('Final score')).toBeInTheDocument()
+    expect(screen.getByText('22')).toBeInTheDocument()
+    expect(screen.getByText('Pinned')).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Pinned ✓' })).toBeInTheDocument()
   })
 
   it('gives a spectator no controls and no input', async () => {

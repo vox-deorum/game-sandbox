@@ -26,7 +26,12 @@ const META: EnvironmentMeta = {
 }
 
 function state(tick: number): StepState {
-  return { schema_version: 1, tick, agents: {}, timing: { started_at: tick, duration_ms: 1 } }
+  return {
+    schema_version: 1,
+    tick,
+    agents: { player_0: { reward: 0, score: 10 + tick } },
+    timing: { started_at: tick, duration_ms: 1 },
+  }
 }
 
 function recordingText(version = 1): string {
@@ -60,14 +65,17 @@ import { getMe, getRecording, listRecordings, pinRecording } from '../src/api/cl
 import { MeProvider } from '../src/me.js'
 import ReplayPage from '../src/pages/replay.vue'
 
-async function renderReplay(path = '/replays/rec-1'): Promise<void> {
+async function renderReplay(path = '/replays/rec-1'): Promise<ReturnType<typeof render>> {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [{ path: '/replays/:id', component: ReplayPage }],
   })
   router.push(path)
   await router.isReady()
-  render(MeProvider, { slots: { default: () => h(RouterView) }, global: { plugins: [router] } })
+  return render(MeProvider, {
+    slots: { default: () => h(RouterView) },
+    global: { plugins: [router] },
+  })
 }
 
 describe('ReplayPage', () => {
@@ -80,7 +88,7 @@ describe('ReplayPage', () => {
 
   it('loads, mounts a draw-only renderer, and renders transport controls', async () => {
     vi.mocked(getRecording).mockResolvedValue(recordingText())
-    await renderReplay()
+    const view = await renderReplay()
 
     expect(await screen.findByRole('button', { name: 'Play' })).toBeInTheDocument()
     // Draw-only: no controlled slots and no input.
@@ -88,6 +96,17 @@ describe('ReplayPage', () => {
     expect(mountCtx?.sendAction).toBeUndefined()
     // The first frame draws on load.
     expect(drawn.at(-1)?.tick).toBe(0)
+    expect(screen.getByText('Final score')).toBeInTheDocument()
+    expect(screen.getByText('13')).toBeInTheDocument()
+    expect(screen.getByText('Ticks')).toBeInTheDocument()
+    expect(screen.getByText('4')).toBeInTheDocument()
+    const controls = view.container.querySelector('.replay-controls')
+    const renderer = view.container.querySelector('.renderer-host')
+    expect(
+      controls !== null &&
+        renderer !== null &&
+        Boolean(controls.compareDocumentPosition(renderer) & Node.DOCUMENT_POSITION_FOLLOWING),
+    ).toBe(true)
   })
 
   it('scrubs to the state under the slider index', async () => {

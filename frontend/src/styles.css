@@ -319,6 +319,25 @@ button.secondary {
   background: rgba(0, 0, 0, 0.45);
 }
 
+/* Run metadata shared by ended sessions and replays. */
+.run-metadata {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.3rem 1rem;
+  margin: 0 0 1rem;
+  color: var(--text);
+}
+
+.run-metadata dt {
+  color: var(--muted);
+}
+
+.run-metadata dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 /* End-of-session card */
 .end-card {
   max-width: 480px;
@@ -333,21 +352,6 @@ button.secondary {
   margin-top: 0;
 }
 
-.end-facts {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 0.25rem 1rem;
-  margin: 0 0 1rem;
-}
-
-.end-facts dt {
-  color: var(--muted);
-}
-
-.end-facts dd {
-  margin: 0;
-}
-
 .end-actions {
   display: flex;
   gap: 0.6rem;
@@ -360,7 +364,7 @@ button.secondary {
   align-items: center;
   gap: 0.6rem;
   max-width: 480px;
-  margin: 0.75rem auto 0;
+  margin: 0.75rem auto;
 }
 
 .scrubber {

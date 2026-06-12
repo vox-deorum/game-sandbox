@@ -12,7 +12,7 @@
 <script setup lang="ts">
 import type { RecordingHeader } from '@game-sandbox/schema'
 import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
-import { onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
 import { useRoute } from 'vue-router'
 
 import {
@@ -21,11 +21,14 @@ import {
   listRecordings,
   pinRecording,
   unpinRecording,
+  type RecordingSummary,
 } from '../api/client.js'
+import RunMetadata from '../components/RunMetadata.vue'
 import { useMe } from '../me.js'
 import { getRenderer } from '../renderers/registry.js'
 import type { RendererInstance } from '../renderers/types.js'
 import { parseRecording, UnsupportedVersionError } from '../replay/parse.js'
+import { summarizeStates, type RunSummary } from '../replay/summary.js'
 import { ReplayTransport, type ReplayState } from '../replay/transport.js'
 
 const route = useRoute()
@@ -37,6 +40,9 @@ const loadError = ref(false)
 const versionMessage = ref<string | null>(null)
 const noRenderer = ref(false)
 const header = ref<RecordingHeader | null>(null)
+const meta = ref<EnvironmentMeta | null>(null)
+const finalSummary = ref<RunSummary>({ score: null, ticks: null })
+const listingEntry = ref<RecordingSummary | null>(null)
 
 const replayState = ref<ReplayState>({ index: 0, total: 0, playing: false, tick: null })
 
@@ -48,6 +54,19 @@ const pinError = ref<string | null>(null)
 const hostEl = ref<HTMLElement | null>(null)
 const rendererInstance = shallowRef<RendererInstance | null>(null)
 const transport = shallowRef<ReplayTransport | null>(null)
+
+// Keep replay facts in the same shape as the ended-session card.
+const metadataItems = computed(() => [
+  { label: 'Environment', value: meta.value?.display_name ?? header.value?.environment },
+  { label: 'Environment ID', value: header.value?.environment, code: true },
+  { label: 'Recording', value: id, code: true },
+  { label: 'Seed', value: header.value?.seed },
+  { label: 'Final score', value: finalSummary.value.score },
+  { label: 'Ticks', value: finalSummary.value.ticks },
+  { label: 'Owner', value: listingEntry.value?.user_id },
+  { label: 'Created', value: formatDate(listingEntry.value?.created_at) },
+  { label: 'Pinned', value: listingEntry.value === null ? null : pinned.value ? 'Yes' : 'No' },
+])
 
 onMounted(async () => {
   let text: string
@@ -72,26 +91,28 @@ onMounted(async () => {
     return
   }
   header.value = parsed.header
+  // The live result envelope is not part of the JSONL recording, so summarize the final state.
+  finalSummary.value = summarizeStates(parsed.states)
   loading.value = false
 
-  const meta: EnvironmentMeta | undefined = (await getEnvironments().catch(() => [])).find(
+  meta.value = (await getEnvironments().catch(() => [])).find(
     (e) => e.env_id === parsed.header.environment,
-  )
-  const module = meta === undefined ? undefined : getRenderer(meta.renderer)
-  if (meta === undefined || module === undefined || hostEl.value === null) {
+  ) ?? null
+  const module = meta.value === null ? undefined : getRenderer(meta.value.renderer)
+  if (meta.value === null || module === undefined || hostEl.value === null) {
     noRenderer.value = true
     return
   }
 
   rendererInstance.value = module.mount({
     container: hostEl.value,
-    meta,
+    meta: meta.value,
     header: parsed.header,
     controlledSlots: [],
   })
 
   transport.value = new ReplayTransport(parsed.states, {
-    paceIntervalMs: meta.pace_interval_ms,
+    paceIntervalMs: meta.value.pace_interval_ms,
     onFrame: (state) => rendererInstance.value?.render(state),
     onChange: (state) => {
       replayState.value = state
@@ -109,6 +130,7 @@ onMounted(async () => {
   // Determine ownership and the current pin state from the merged listing.
   const listing = await listRecordings({ env: parsed.header.environment }).catch(() => [])
   const entry = listing.find((r) => r.id === id)
+  listingEntry.value = entry ?? null
   if (entry !== undefined && me.me?.user_id !== undefined && entry.user_id === me.me.user_id) {
     owned.value = true
     pinned.value = entry.pinned
@@ -140,6 +162,16 @@ async function togglePin(): Promise<void> {
   }
   pinBusy.value = false
 }
+
+function formatDate(value: string | null | undefined): string | null {
+  if (value === null || value === undefined) {
+    return null
+  }
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(value))
+}
 </script>
 
 <template>
@@ -150,12 +182,7 @@ async function togglePin(): Promise<void> {
   </p>
   <section v-else class="replay">
     <h1>Replay</h1>
-    <p class="status">
-      <code>{{ id }}</code><span v-if="header"> · {{ header.environment }}</span>
-    </p>
-
-    <div class="renderer-host" ref="hostEl" />
-    <p v-if="noRenderer" class="status">No renderer is registered for this environment.</p>
+    <RunMetadata :items="metadataItems" />
 
     <div v-if="transport !== null" class="replay-controls">
       <button type="button" @click="transport?.stepBack()" :disabled="replayState.index === 0">
@@ -183,6 +210,9 @@ async function togglePin(): Promise<void> {
         tick {{ replayState.tick ?? 0 }} · {{ replayState.index + 1 }}/{{ replayState.total }}
       </span>
     </div>
+
+    <div class="renderer-host" ref="hostEl" />
+    <p v-if="noRenderer" class="status">No renderer is registered for this environment.</p>
 
     <div v-if="owned" class="replay-pin">
       <button type="button" @click="togglePin" :disabled="pinBusy">

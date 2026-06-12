@@ -18,6 +18,7 @@ When you write documentation, specs, or any prose in this repo, follow these rul
 - Organize clearly with sections and short paragraphs. Avoid bullet soup, which is a wall of single-sentence bullets that could have been a paragraph.
 - Do not hard-wrap prose to a fixed column. Write one line per paragraph and let the editor soft-wrap it. This applies to every Markdown file in the repo, docs and READMEs included, not just specs and plans. Markdown reflows when rendered, so a column limit only adds noisy diffs and tempts link workarounds. The exceptions that may exceed any width are things that cannot be wrapped: URLs, link reference definitions, and table rows.
 - No emoji.
+- Code comments should exist by default, either written with the code or added during review. They should explain intent, invariants, or non-obvious behavior. Keep them succinct, and do not add comments that only restate what the next line of code already says.
 
 ## Working on this repo
 

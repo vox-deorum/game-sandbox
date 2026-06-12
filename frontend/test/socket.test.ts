@@ -121,6 +121,32 @@ describe('SessionSocket', () => {
     expect(instances).toHaveLength(1)
     vi.useRealTimers()
   })
+
+  it('does not reconnect after a terminal session frame', () => {
+    vi.useFakeTimers()
+    const statuses: Array<[string, string | undefined]> = []
+    const socket = new SessionSocket(
+      '/api/sessions/s1/ws',
+      {
+        onHeader: () => {},
+        onState: () => {},
+        onSessionStatus: (status, reason) => statuses.push([status, reason]),
+      },
+      deps,
+    )
+    socket.connect()
+    const ws = instances.at(-1)
+    if (ws === undefined) {
+      throw new Error('no socket opened')
+    }
+    ws.open()
+    ws.message('{"kind":"session","status":"ended","reason":"terminated"}')
+    ws.drop()
+    vi.advanceTimersByTime(5000)
+    expect(statuses).toEqual([['ended', 'terminated']])
+    expect(instances).toHaveLength(1)
+    vi.useRealTimers()
+  })
 })
 
 afterEach(() => {

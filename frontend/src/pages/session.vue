@@ -9,17 +9,32 @@
   input; anyone else is a spectator (same renderer, no controls), which mirrors the protocol's
   owner-only authority rule. Pause state is never tracked locally — the UI reflects the pause/resume
   echoes the backend broadcasts, so it cannot disagree with the container.
+
+  An already-ended session is a historical view, not a live transport. It hydrates the final facts
+  from the stored recording and never opens a socket, which avoids reconnecting to a session the
+  backend has already removed from the live registry.
 -->
 <script setup lang="ts">
 import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
-import { getEnvironments, getSession, pinRecording, type SessionRow, unpinRecording } from '../api/client.js'
+import {
+  getEnvironments,
+  getRecording,
+  getSession,
+  listRecordings,
+  pinRecording,
+  type SessionRow,
+  unpinRecording,
+} from '../api/client.js'
 import { type ConnectionState, SessionSocket } from '../api/socket.js'
+import RunMetadata from '../components/RunMetadata.vue'
 import { useMe } from '../me.js'
 import { getRenderer } from '../renderers/registry.js'
 import type { RendererInstance } from '../renderers/types.js'
+import { parseRecording } from '../replay/parse.js'
+import { formatScoreMap, summarizeStates } from '../replay/summary.js'
 
 const route = useRoute()
 const me = useMe()
@@ -34,7 +49,7 @@ const connection = ref<ConnectionState>('connecting')
 const status = ref<'starting' | 'running' | 'ended'>('starting')
 const paused = ref(false)
 const endReason = ref<string | null>(null)
-const finalResult = ref<{ score: number | null; ticks: number | null } | null>(null)
+const finalResult = ref<{ score: string | null; ticks: number | null } | null>(null)
 
 const pinned = ref(false)
 const pinBusy = ref(false)
@@ -54,6 +69,21 @@ const controlledSlots = computed<string[]>(() =>
 const showActiveTimeout = computed(() => controlledSlots.value.length > 0 && status.value !== 'ended')
 
 const recordingId = computed(() => row.value?.recording_id ?? null)
+// One facts list feeds the terminal card, so live results and returned ended sessions stay aligned.
+const metadataItems = computed(() => [
+  { label: 'Environment', value: meta.value?.display_name ?? row.value?.env_id },
+  { label: 'Environment ID', value: row.value?.env_id, code: true },
+  { label: 'Session', value: row.value?.id, code: true },
+  { label: 'Recording', value: recordingId.value, code: true },
+  { label: 'Mode', value: row.value === null ? null : formatMode(row.value.mode) },
+  { label: 'Reason', value: status.value === 'ended' ? reasonText(endReason.value) : null },
+  { label: 'Final score', value: finalResult.value?.score },
+  { label: 'Ticks', value: finalResult.value?.ticks },
+  { label: 'Owner', value: row.value?.user_id },
+  { label: 'Started', value: formatDate(row.value?.created_at) },
+  { label: 'Ended', value: formatDate(row.value?.ended_at) },
+  { label: 'Pinned', value: recordingId.value === null ? null : pinned.value ? 'Yes' : 'No' },
+])
 
 const statusLabel = computed(() => {
   if (status.value === 'ended') {
@@ -145,6 +175,13 @@ onMounted(async () => {
     await new Promise((resolve) => setTimeout(resolve, 10))
   }
 
+  if (fetched.status === 'ended') {
+    // Historical sessions have no live socket to attach to; the recording is the source of truth.
+    await hydrateRecordingMetadata(fetched)
+    connection.value = 'closed'
+    return
+  }
+
   const client = new SessionSocket(`/api/sessions/${id}/ws`, {
     onHeader: (header) => mountRenderer(header),
     onState: (state) => rendererInstance.value?.render(state),
@@ -163,7 +200,7 @@ onMounted(async () => {
     onResult: (value) => {
       const scores = (value.scores ?? {}) as Record<string, number>
       finalResult.value = {
-        score: typeof scores.player_0 === 'number' ? scores.player_0 : null,
+        score: formatScoreMap(scores),
         ticks: typeof value.ticks === 'number' ? value.ticks : null,
       }
       if (typeof value.reason === 'string') {
@@ -212,6 +249,43 @@ async function togglePin(): Promise<void> {
   }
   pinBusy.value = false
 }
+
+async function hydrateRecordingMetadata(session: SessionRow): Promise<void> {
+  if (session.recording_id === null) {
+    return
+  }
+  // Listing supplies retention facts such as pin state; the recording supplies final score/ticks.
+  const [text, listing] = await Promise.all([
+    getRecording(session.recording_id).catch(() => null),
+    listRecordings({ env: session.env_id }).catch(() => []),
+  ])
+  const entry = listing.find((recording) => recording.id === session.recording_id)
+  if (entry !== undefined) {
+    pinned.value = entry.pinned
+  }
+  if (text === null || finalResult.value !== null) {
+    return
+  }
+  try {
+    finalResult.value = summarizeStates(parseRecording(text).states)
+  } catch {
+    finalResult.value = { score: null, ticks: null }
+  }
+}
+
+function formatMode(mode: SessionRow['mode']): string {
+  return mode === 'human' ? 'Human' : 'Scripted agent'
+}
+
+function formatDate(value: string | null | undefined): string | null {
+  if (value === null || value === undefined) {
+    return null
+  }
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(value))
+}
 </script>
 
 <template>
@@ -238,16 +312,7 @@ async function togglePin(): Promise<void> {
 
     <div v-if="status === 'ended'" class="end-card">
       <h2>{{ reasonText(endReason) }}</h2>
-      <dl class="end-facts">
-        <template v-if="finalResult?.score !== null && finalResult !== null">
-          <dt>Score</dt>
-          <dd>{{ finalResult.score }}</dd>
-        </template>
-        <template v-if="finalResult?.ticks !== null && finalResult !== null">
-          <dt>Ticks</dt>
-          <dd>{{ finalResult.ticks }}</dd>
-        </template>
-      </dl>
+      <RunMetadata :items="metadataItems" />
       <div class="end-actions">
         <RouterLink v-if="recordingId !== null" class="button-link" :to="`/replays/${recordingId}`">
           Open replay

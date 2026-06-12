@@ -109,6 +109,10 @@ export class SessionSocket {
         if (status === 'running' || status === 'ended') {
           const reason = typeof line.value.reason === 'string' ? line.value.reason : undefined
           this.handlers.onSessionStatus?.(status, reason)
+          if (status === 'ended') {
+            // The server closes terminal sessions after this frame; mark it intentional first.
+            this.close()
+          }
         }
         break
       }
