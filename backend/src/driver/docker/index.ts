@@ -100,3 +100,15 @@ export async function createDockerDriver(options: DockerDriverOptions): Promise<
   await driver.reapOrphans()
   return driver
 }
+
+/**
+ * Resolve an image tag directly, without constructing a full driver. The `build:image` CLI shortcut
+ * (see `build-image.ts`) uses this to refresh the session base image ahead of a session, so it
+ * neither reaps the containers a running backend supervises nor needs the rest of the driver. It is
+ * the one seam that hands {@link ensureImage} a daemon connection from outside this folder, keeping
+ * the `new Docker()` inside the import-isolation boundary; the build path itself — the repo-root
+ * context, the ignore list, and the deps-version tag — is exactly the one a session launch uses.
+ */
+export function buildImage(options: DockerDriverOptions, spec: ImageSpec): Promise<ImageRef> {
+  return ensureImage(new Docker(), options.imageTagPrefix, options.imagePolicy, spec)
+}

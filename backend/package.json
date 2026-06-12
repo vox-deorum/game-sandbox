@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "tsx watch src/main.ts",
     "start": "tsx src/main.ts",
+    "build:image": "tsx src/build-image.ts",
     "check": "biome check . && tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",

@@ -22,7 +22,7 @@ The wire protocol the browser shares with the backend (the line-classification r
 
 ## Running it locally
 
-`npm run dev` runs `tsx watch src/main.ts`; `npm run start` runs it once. Both need a reachable Docker daemon, because starting a session launches a container — the backend builds the session base image on first use (see [the execution boundary](execution.md#the-session-base-image)). A compiled `dist/` build is deferred until a real deployment exists. The unit suite (`npm test`) runs everywhere with no Docker, against a fake driver and in-memory SQLite; the Docker-gated suite (`npm run test:integration`) launches real containers and is described under [testing](test.md).
+`npm run dev` runs `tsx watch src/main.ts`; `npm run start` runs it once. Both need a reachable Docker daemon, because starting a session launches a container — the backend builds the session base image on first use (see [the execution boundary](execution.md#the-session-base-image)). Because the default `reuse` policy then keeps that first build forever, rebuild the image explicitly after changing the Dockerfile or anything it bundles (the harness, an environment, the built-in agent) with `npm run build:image` (`build-image.ts`); it drives the driver's own build path and always rebuilds the `…:deps-v1` tag, where setting `DOCKER_IMAGE_POLICY=rebuild` instead rebuilds on the next session start. A compiled `dist/` build is deferred until a real deployment exists. The unit suite (`npm test`) runs everywhere with no Docker, against a fake driver and in-memory SQLite; the Docker-gated suite (`npm run test:integration`) launches real containers and is described under [testing](test.md).
 
 ## Configuration
 
