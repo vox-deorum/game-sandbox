@@ -9,7 +9,7 @@ Part of [Stage 5](../stage-05-submissions.md). This is build-order step 2: the s
 A `SubmissionSource` interface in `backend/src/submission/source/` exposing what every later step needs without knowing where the code came from:
 
 - `resolve(input)` returns `ResolvedSource`: the pinning facts the [submission.md](../../docs/specs/submission.md) tuple requires, including `kind` (`git` or `local`), `commitSha` (the exact resolved SHA for git, null for local), `repoUrl` without credentials, the requested `ref`, and the resolved ref label when git can name one. For git this is where the ref resolves to a commit and the default is the default-branch head.
-- `fetchTree(resolved)` returns a handle to a read-only local checkout of the tree (a temp directory), which the static validator reads and the build pipeline overlays. The handle is disposable; callers clean it up.
+- `fetchTree(resolved)` returns a handle to a read-only local checkout of the tree (a temp directory), which the static validator reads and the build pipeline overlays. The handle is disposable and **the worker (step 5) is the single owner of its lifetime**: the validation job acquires the tree once, passes it through the static check and the overlay build, and disposes it in a `finally` so a build that throws mid-pipeline cannot leak the temp worktree. The handle exposes an explicit `dispose()` (idempotent) rather than relying on process-exit cleanup, since the worker is long-lived and processes many submissions.
 - `verifyReachable(input)` returns a cheap typed reachability result the form calls _before_ accepting (see [frontend.md](../../docs/specs/frontend.md): "verifies the repo and ref are reachable before accepting"), separated from the full resolve so the UI can fail fast without a checkout.
 
 Two implementations behind the seam, selected by `source_kind` and gated by config.
@@ -30,7 +30,7 @@ Run `git` through a small process wrapper with an explicit timeout and no creden
 
 The development-only path from [submission.md](../../docs/specs/submission.md): the participant (really, a sandbox developer) names a folder on the server. `resolve` records `kind: local`, no commit, the folder path; `fetchTree` returns the folder directly (or a copy if the build step needs an isolated tree). It exists so the whole validate-and-build pipeline can run against the worked example, the extra Flappy Bird examples, and intentionally malformed repos without GitHub.
 
-It is **gated off in normal deployments**: the `ALLOW_LOCAL_SUBMISSIONS` config flag defaults off and controls whether the local source is constructed and whether the API (step 5) and the dev-build form even offer it. With the flag off, a local-source request is refused before any filesystem access, and the form shows no local-path field.
+It is **gated off in normal deployments**: the `ALLOW_LOCAL_SUBMISSIONS` config flag defaults off and controls whether the local source is constructed and whether the API (step 5) and the dev-build form even offer it. With the flag off, a local-source request is refused before any filesystem access, and the form shows no local-path field. With the flag on, the supplied path is treated as **trusted developer input**: the gate, not path-sanitization, is the security boundary, so this stage does not constrain the path to a sandbox root. That trade-off is acceptable only because the flag is dev-only and off by default; note it explicitly so no deployment turns the flag on under the assumption the path is sandboxed.
 
 ## Config
 
