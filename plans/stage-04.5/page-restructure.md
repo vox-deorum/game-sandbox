@@ -1,6 +1,6 @@
 # Stage 4.5: Page Restructure
 
-Status: not started, waiting on the IA approval (checkpoint one) and the design foundation.
+Status: implemented. The folder and naming conventions are in place (PascalCase `*Page.vue` route components, `components/ui/` primitives, `components/` feature components, `composables/`, `lib/`), the composables are extracted, the app shell and navigation are rebuilt to the approved IA, and all four pages plus the start form and recent-replays list run on the design foundation with the decision log on the session and replay stages.
 
 Part of [Stage 4.5](../stage-04.5-ui-restructure.md). This document covers the code-structure half of the stage: folder and naming conventions, the composables extracted from the large pages, the app shell and navigation rebuild per the approved [information architecture](information-architecture.md), and the page by page migration onto the [design foundation](design-foundation.md).
 

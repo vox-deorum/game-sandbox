@@ -1,24 +1,35 @@
 /*
- * App shell layout only: the top bar and the main content column. The shell's markup is
- * components/AppShell.vue; the bar's contents change with the Stage 4.5 navigation rebuild but the
- * layout classes live here because they frame every page.
+ * App shell layout only: the three-zone top bar and the main content column. The shell's markup is
+ * components/AppShell.vue and the section list is components/AppNav.vue (with its own scoped styles);
+ * the layout classes live here because they frame every page.
  */
 .app-header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
+  gap: var(--space-4);
   padding: var(--space-4) var(--space-5);
   border-bottom: 1px solid var(--color-border);
 }
 
+.app-header-start {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
 .site-name {
+  font-family: var(--font-heading);
   font-size: var(--text-lg);
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .signed-in {
   color: var(--color-text-muted);
   font-size: var(--text-sm);
+  white-space: nowrap;
 }
 
 .app-main {

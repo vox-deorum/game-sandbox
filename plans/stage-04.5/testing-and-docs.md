@@ -1,6 +1,6 @@
 # Stage 4.5: Testing and Documentation
 
-Status: not started; the shared test utilities and primitive suites land with the foundation, the documentation deliverables close the stage.
+Status: implemented. The existing suites survived the refactor (role- and text-based queries are mostly blind to the primitive swap; the touched copy and the e2e scrubber drive updated in the same change), the primitive, decision-log, and composable behaviors are covered, and the three documentation deliverables are written: `docs/contributors/design.md`, the agents.md UI-consistency section, and the `docs/contributors/frontend.md` update. The shared `test/helpers/` extraction is the one deferred item — the suites still carry their own fixtures and render wrappers; consolidating them is left as low-risk follow-up.
 
 Part of [Stage 4.5](../stage-04.5-ui-restructure.md). This document covers how the existing suites survive the refactor, what new coverage the design system gets, and the three documentation deliverables: `docs/contributors/design.md`, the agents.md consistency section, and the `docs/contributors/frontend.md` update.
 

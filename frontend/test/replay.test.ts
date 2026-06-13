@@ -63,12 +63,17 @@ vi.mock('../src/api/client.js', () => ({
 
 import { getMe, getRecording, listRecordings, pinRecording } from '../src/api/client.js'
 import { MeProvider } from '../src/me.js'
-import ReplayPage from '../src/pages/replay.vue'
+import ReplayPage from '../src/pages/ReplayPage.vue'
 
 async function renderReplay(path = '/replays/rec-1'): Promise<ReturnType<typeof render>> {
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/replays/:id', component: ReplayPage }],
+    routes: [
+      // Stubs so the replay stage's "Environments / … / Replay" context-line links resolve.
+      { path: '/', component: { template: '<div />' } },
+      { path: '/environments/:envId', component: { template: '<div />' } },
+      { path: '/replays/:id', component: ReplayPage },
+    ],
   })
   router.push(path)
   await router.isReady()
@@ -109,12 +114,28 @@ describe('ReplayPage', () => {
     ).toBe(true)
   })
 
-  it('scrubs to the state under the slider index', async () => {
+  it('scrubs with the slider keyboard to the state under the index', async () => {
     vi.mocked(getRecording).mockResolvedValue(recordingText())
     await renderReplay()
-    const slider = (await screen.findByRole('slider')) as HTMLInputElement
-    await fireEvent.update(slider, '2')
+    const slider = await screen.findByRole('slider')
+    // The scrubber is the Reka UiSlider: the arrow keys move it, and each move seeks the transport.
+    await fireEvent.keyDown(slider, { key: 'ArrowRight' })
+    await fireEvent.keyDown(slider, { key: 'ArrowRight' })
     expect(drawn.at(-1)?.tick).toBe(2)
+  })
+
+  it('operates the transport from the keyboard on the stage region', async () => {
+    vi.mocked(getRecording).mockResolvedValue(recordingText())
+    const view = await renderReplay()
+    await screen.findByRole('button', { name: 'Play' })
+    const stage = view.container.querySelector('.stage') as HTMLElement
+    // Arrows step, End jumps to the last frame, Home back to the first.
+    await fireEvent.keyDown(stage, { key: 'ArrowRight' })
+    expect(drawn.at(-1)?.tick).toBe(1)
+    await fireEvent.keyDown(stage, { key: 'End' })
+    expect(drawn.at(-1)?.tick).toBe(3)
+    await fireEvent.keyDown(stage, { key: 'Home' })
+    expect(drawn.at(-1)?.tick).toBe(0)
   })
 
   it('seeks on load from a ?t= deep link', async () => {

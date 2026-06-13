@@ -3,7 +3,9 @@
   it. Non-prop attributes (type, min, max, placeholder, aria-*) fall through to the input element.
 -->
 <script setup lang="ts">
-const model = defineModel<string>({ required: true })
+// string | number, not just string: Vue casts a `type="number"` input's v-model to a number, so a
+// numeric field (the start form's seed and timeout) round-trips a number through this model.
+const model = defineModel<string | number>({ required: true })
 
 withDefaults(defineProps<{ invalid?: boolean }>(), { invalid: false })
 </script>

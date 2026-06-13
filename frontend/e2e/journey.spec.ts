@@ -46,7 +46,10 @@ test('play Flappy Bird live, pause/resume, stop, then replay and pin', async ({ 
   await expect(page.getByRole('button', { name: 'Play' })).toBeVisible()
   const slider = page.getByRole('slider')
   await expect(slider).toBeVisible()
-  await slider.fill('1')
+  // The scrubber is the Reka UiSlider (a span with role=slider, not an <input>), so drive it by
+  // keyboard rather than fill(): focus the thumb and step it forward.
+  await slider.focus()
+  await slider.press('ArrowRight')
 
   // Pin the recording (the viewer owns it).
   await page.getByRole('button', { name: 'Pin this recording' }).click()

@@ -9,7 +9,7 @@ import UiInput from '../../src/components/ui/UiInput.vue'
 // functions instead of a template string because the test build has no runtime template compiler.
 function makeHarness(fieldProps: { label: string; hint?: string; error?: string }) {
   return defineComponent(() => {
-    const value = ref('')
+    const value = ref<string | number>('')
     return () =>
       h(UiField, fieldProps, {
         default: ({
@@ -26,7 +26,7 @@ function makeHarness(fieldProps: { label: string; hint?: string; error?: string 
             'aria-describedby': describedby,
             invalid,
             modelValue: value.value,
-            'onUpdate:modelValue': (v: string) => {
+            'onUpdate:modelValue': (v: string | number) => {
               value.value = v
             },
           }),

@@ -14,25 +14,42 @@ export interface MeState {
   me: Me | null
   loading: boolean
   error: boolean
+  /**
+   * Resolves once the single `/api/me` fetch has settled (success or failure). Pages that must know
+   * the identity before acting await this instead of polling `loading`, which removes a latent race
+   * rather than relocating it (see plans/stage-04.5/page-restructure.md).
+   */
+  whenSettled(): Promise<void>
 }
 
 const ME_KEY: InjectionKey<MeState> = Symbol('me')
 
 /** Build the reactive me-state and kick off the single `/api/me` fetch that fills it in. */
 export function createMeState(): MeState {
-  const state = reactive<MeState>({ me: null, loading: true, error: false })
-  getMe().then(
-    (me) => {
-      state.me = me
-      state.loading = false
-      state.error = false
-    },
-    () => {
-      state.me = null
-      state.loading = false
-      state.error = true
-    },
-  )
+  let settle: () => void = () => {}
+  const settled = new Promise<void>((resolve) => {
+    settle = resolve
+  })
+  const state = reactive<MeState>({
+    me: null,
+    loading: true,
+    error: false,
+    whenSettled: () => settled,
+  })
+  getMe()
+    .then(
+      (me) => {
+        state.me = me
+        state.loading = false
+        state.error = false
+      },
+      () => {
+        state.me = null
+        state.loading = false
+        state.error = true
+      },
+    )
+    .finally(() => settle())
   return state
 }
 
@@ -51,5 +68,13 @@ export const MeProvider = defineComponent({
 
 /** The resolved identity and allowlist membership, plus its load state, for the nearest provider. */
 export function useMe(): MeState {
-  return inject(ME_KEY) ?? reactive<MeState>({ me: null, loading: false, error: true })
+  return (
+    inject(ME_KEY) ??
+    reactive<MeState>({
+      me: null,
+      loading: false,
+      error: true,
+      whenSettled: () => Promise.resolve(),
+    })
+  )
 }

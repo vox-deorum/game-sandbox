@@ -31,7 +31,7 @@ vi.mock('../src/api/client.js', () => ({
 
 import { getEnvironments, getMe, listRecordings, startSession } from '../src/api/client.js'
 import { MeProvider } from '../src/me.js'
-import EnvironmentPage from '../src/pages/environment.vue'
+import EnvironmentPage from '../src/pages/EnvironmentPage.vue'
 
 // A stub for the session route: this suite tests the environment page's navigation seam, not the
 // session host, so the route only needs to surface the id it landed on.
@@ -43,6 +43,8 @@ async function renderPage() {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
+      // A home stub so the hub's "Environments / …" context-line link resolves in the test router.
+      { path: '/', component: { template: '<div />' } },
       { path: '/environments/:envId', component: EnvironmentPage },
       { path: '/sessions/:id', component: SessionStub },
     ],

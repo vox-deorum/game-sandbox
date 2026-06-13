@@ -11,17 +11,17 @@ import { createApp } from 'vue'
 import { createRouter, createWebHistory } from 'vue-router'
 
 import App from './App.vue'
-import EnvironmentPage from './pages/environment.vue'
-import HomePage from './pages/home.vue'
-import ReplayPage from './pages/replay.vue'
-import SessionPage from './pages/session.vue'
+import EnvironmentPage from './pages/EnvironmentPage.vue'
+import HomePage from './pages/HomePage.vue'
+import ReplayPage from './pages/ReplayPage.vue'
+import SessionPage from './pages/SessionPage.vue'
 import './renderers/index.js'
-// Style layers in order: tokens, reset, app shell layout, then the transitional Stage 4 classes
-// that shrink as pages migrate to scoped styles (see plans/stage-04.5/design-foundation.md).
+// Style layers in order: tokens, reset, then the app shell layout. Component styling lives in scoped
+// component CSS on the tokens (see plans/stage-04.5/design-foundation.md); the global sheet carries
+// only these three layers now that every page has migrated off the transitional stylesheet.
 import './styles/tokens.css'
 import './styles/base.css'
 import './styles/app.css'
-import './styles/legacy.css'
 
 const router = createRouter({
   history: createWebHistory(),

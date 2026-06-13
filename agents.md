@@ -28,3 +28,12 @@ A few defaults that will save back-and-forth:
 - Ask before expanding scope. If a request implies new features beyond what is in the spec, raise it rather than quietly adding them.
 - Prefer editing existing files over creating new ones.
 - Keep specification documents under [specs/](specs/README.md). Each file should have a single clear topic and cross-link to the others rather than duplicating content.
+
+### UI consistency
+
+The frontend has a design system; new UI joins it rather than reinventing CSS. Before any visual work, read [docs/contributors/design.md](docs/contributors/design.md), then:
+
+- Use the semantic tokens. No raw color or spacing literals live outside `frontend/src/styles/tokens.css` (renderer modules are the only exemption, since a renderer owns its game's visual identity).
+- Build UI from the `frontend/src/components/ui/` primitives (`UiButton`, `UiCard`, `UiField`, `UiDialog`, …) instead of new ad hoc markup and CSS. Reach for a third-party UI library only where focus and ARIA are genuinely hard (the project uses Reka UI for the dialog and slider, nothing more).
+- Put every new primitive variant on the dev-only `/styleguide` route; a variant that is not shown there does not exist.
+- Confirm with the owner before inventing a new visual pattern or settling an open design question. Design decisions are the owner's to make.

@@ -41,4 +41,12 @@ export interface RendererModule {
   mount(ctx: RendererContext): RendererInstance
   /** Static asset URL for the home cards. */
   thumbnail: string
+  /**
+   * The intrinsic canvas size the renderer is designed for, in logical pixels. The host lays the
+   * canvas out at or under this and reads its shape to place the decision log: a portrait (taller
+   * than wide) canvas leaves a column free, so the log sits beside it; a landscape one claims the
+   * width, so the log moves below. Keeping this on the module makes responsive layout a property the
+   * renderer owns rather than something the host reverse-engineers from rendered pixels.
+   */
+  targetCanvasSize: { width: number; height: number }
 }

@@ -25,7 +25,7 @@ vi.mock('../src/api/client.js', () => ({
   getEnvironments: vi.fn(async () => [META]),
 }))
 
-import HomePage from '../src/pages/home.vue'
+import HomePage from '../src/pages/HomePage.vue'
 
 function makeRouter() {
   return createRouter({

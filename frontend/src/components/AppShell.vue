@@ -1,6 +1,7 @@
 <!--
-  The app shell: the header chrome (site name and the signed-in user) around the routed page. It reads
-  the injected identity through useMe, so it must render inside the me.ts provider (see App.vue). While
+  The app shell: the three-zone top bar (site name + primary nav on the left, the signed-in readout
+  on the right) around the routed page, per the approved information architecture. It reads the
+  injected identity through useMe, so it must render inside the me.ts provider (see App.vue). While
   /api/me is in flight it falls back to the locally resolved id so the header never flickers.
 -->
 <script setup lang="ts">
@@ -9,6 +10,7 @@ import { RouterLink, RouterView } from 'vue-router'
 
 import { currentUserId } from '../identity.js'
 import { useMe } from '../me.js'
+import AppNav from './AppNav.vue'
 
 const me = useMe()
 const signedInLabel = computed(() =>
@@ -19,7 +21,10 @@ const signedInLabel = computed(() =>
 <template>
   <div class="app">
     <header class="app-header">
-      <RouterLink class="site-name" to="/">Game Sandbox</RouterLink>
+      <div class="app-header-start">
+        <RouterLink class="site-name" to="/">Game Sandbox</RouterLink>
+        <AppNav />
+      </div>
       <span class="signed-in">{{ signedInLabel }}</span>
     </header>
     <main class="app-main">

@@ -69,7 +69,7 @@ vi.mock('../src/api/client.js', () => ({
 
 import { getMe, getRecording, getSession, listRecordings } from '../src/api/client.js'
 import { MeProvider } from '../src/me.js'
-import SessionPage from '../src/pages/session.vue'
+import SessionPage from '../src/pages/SessionPage.vue'
 
 function ownerRow() {
   return {
@@ -111,6 +111,9 @@ async function renderSession() {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
+      // Stubs so the stage's "Environments / … / Live session" context-line links resolve.
+      { path: '/', component: { template: '<div />' } },
+      { path: '/environments/:envId', component: { template: '<div />' } },
       { path: '/sessions/:id', component: SessionPage },
       { path: '/replays/:id', component: { template: '<div>replay</div>' } },
     ],

@@ -10,6 +10,7 @@
 import type { StepState } from '@game-sandbox/schema'
 
 import type { RendererContext, RendererInstance, RendererModule } from '../types.js'
+import './flappy.css'
 import { paint } from './paint.js'
 import { computeScene } from './scene.js'
 
@@ -21,10 +22,9 @@ const FLAP_KEYS = new Set(['Space', 'ArrowUp', 'KeyW'])
 
 function mount(ctx: RendererContext): RendererInstance {
   const canvas = document.createElement('canvas')
+  // Presentation (size, display) is in flappy.css under this class; the class also anchors the e2e
+  // locator. The drawing-buffer width/height attributes are still set per state below.
   canvas.className = 'flappy-canvas'
-  canvas.style.width = '100%'
-  canvas.style.height = 'auto'
-  canvas.style.display = 'block'
   // jsdom returns null here (no rasterizer); painting is then skipped and only the e2e suite draws.
   const context2d = canvas.getContext('2d')
   ctx.container.appendChild(canvas)
@@ -115,4 +115,10 @@ const THUMBNAIL =
       '</svg>',
   )
 
-export const flappyBirdRenderer: RendererModule = { mount, thumbnail: THUMBNAIL }
+// 288×512 is the pinned game's logical surface (see scene.ts): a tall, narrow canvas, so the host
+// seats the decision log in the column it leaves free rather than below it.
+export const flappyBirdRenderer: RendererModule = {
+  mount,
+  thumbnail: THUMBNAIL,
+  targetCanvasSize: { width: 288, height: 512 },
+}

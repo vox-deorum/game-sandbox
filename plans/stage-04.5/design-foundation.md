@@ -1,6 +1,6 @@
 # Stage 4.5: Design Foundation
 
-Status: in progress.
+Status: implemented. The tokens, the three-file global stylesheet, the Reka UI adoption, the `components/ui/` primitives with their suites, and the dev-only styleguide route are all built; the production build confirms the styleguide chunk's absence and that Reka contributes only the imported Dialog and Slider. The token values below are as implemented; they may still move during checkpoint-two iteration.
 
 Part of [Stage 4.5](../stage-04.5-ui-restructure.md). This document covers the layer everything else builds on: the design tokens, the reorganized global stylesheets, the Reka UI adoption, the `components/ui/` primitives, and the dev-only styleguide route. None of this depends on the IA approval; it proceeds in parallel and is reviewed at checkpoint two (styleguide plus redesigned Home).
 
@@ -38,7 +38,7 @@ During the transition the legacy component classes from `styles.css` survive in 
 
 The frontend adopts `reka-ui` (the headless Vue component library, formerly Radix Vue), pinned to the 2.x line. It is the frontend's first third-party UI dependency beyond Vue and the router, and the adoption rule keeps it narrow: Reka UI is used only where focus management and ARIA are genuinely hard to get right by hand. Everything else is hand-rolled on the tokens.
 
-Used now: Dialog (the start form modal: focus trap, escape handling, aria-modal, the overlay) and Slider (the replay scrubber: keyboard operation and value announcement). VisuallyHidden is available for icon-only affordances. Tooltip joins only if the redesign actually needs one; if no use appears by the end of the stage it is dropped from this list. The slider decision has an escape hatch recorded as an open question in the parent file: if a styled native range input proves sufficient during the styleguide iteration, Reka Slider is dropped.
+Used now: Dialog (the start form modal: focus trap, escape handling, aria-modal, the overlay) and Slider (the replay scrubber: keyboard operation and value announcement). VisuallyHidden is available for icon-only affordances. Tooltip found no use and is not adopted. The slider escape hatch (a styled native range input) is resolved in favor of keeping Reka Slider: `UiSlider` wraps it, the `slider` role survives for the unit and end-to-end locators (the e2e drives it by keyboard rather than `fill()`), and its keyboard operation and value announcement come for free.
 
 At adoption, verify the tree-shaken production bundle grows only by the components imported, the same kind of check Stage 4 ran to keep Ajv out of the bundle.
 

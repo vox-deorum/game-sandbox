@@ -1,6 +1,6 @@
 # Stage 4.5: Accessibility and Responsive Baseline
 
-Status: not started; most of the work lands inline with the foundation and page migrations, and this document's checklist is the audit that closes it.
+Status: implemented. The baseline landed inline with the foundation and page migrations and the sweep is done: focus is visible globally, status never relies on color alone, the replay transport is fully keyboard operable, motion respects `prefers-reduced-motion`, the transport touch targets clear 44px, the pages stack at the documented breakpoints, and the Flappy Bird canvas's inline styles moved into `flappy.css` (keeping the `flappy-canvas` class).
 
 Part of [Stage 4.5](../stage-04.5-ui-restructure.md). Accessibility is a rule in this codebase, not an aspiration: the items here are requirements that hold for every page and every primitive, and the design principles document states them as such.
 
