@@ -80,6 +80,15 @@ When the element's size changes — a window resize, the decision log moving fro
 
 This keeps the responsive policy in one place. A renderer cannot get DPI sharpness wrong, cannot fight the layout for size, and cannot drift out of aspect — those are the base class's invariants, the same for every environment.
 
+### Crisp text under the root scale
+
+The single root scale is what keeps a renderer in internal coordinates, but it is also a trap for one kind of display object. The scale magnifies the whole scene graph, and the two node families react to that differently:
+
+- **`Graphics` are vector.** Their geometry is GPU-tessellated and the scale is applied in the vertex shader, so they re-rasterize sharply at the framebuffer resolution at any scale. The base's `resolution: devicePixelRatio` + `autoDensity` is all they need.
+- **`Text` bakes a bitmap.** A `Text` node rasterizes its glyphs once into a texture at the app's `resolution` (i.e. `devicePixelRatio`), and the root scale then *magnifies that bitmap*. Whenever the host lays the element out larger than `internalSize.width` — which the Flappy Bird stage does, the element running up to `480px` against a `288`-unit space — the scale is `> 1` and the baked text is upscaled into softness. This is the most common "why isn't it crisp?" once the geometry already looks right.
+
+The base solves this generically: `textResolution()` returns `devicePixelRatio × scale`, the device-pixel density a `Text` must bake at so its texture's native size matches its on-screen size. A renderer assigns `node.resolution = this.textResolution()` when it applies a `Text`. Because a resize re-runs `update`, the renderer re-reads it on every frame and it tracks the live size with no extra wiring — set it wherever you set the text's other style, and the HUD stays as sharp as the vector art around it. (Flappy Bird does this in `applyHud`.)
+
 ## The retained scene graph and determinism
 
 PixiJS is retained-mode: you create display objects once and mutate them, rather than clearing a surface and repainting it each frame. The previous renderer was immediate-mode (`computeScene` → `paint`, rebuilding everything per state). Reconciling the two is the central design point, and it is done by splitting drawing into a pure description and an idempotent application of it:

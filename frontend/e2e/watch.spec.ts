@@ -18,6 +18,10 @@ test('watch a scripted session, and a spectator gets no controls', async ({ page
   // A scripted session's owner gets controls (stop) but no input window (no controlled slot).
   await expect(page.getByText(/Per-step input window/)).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Stop' })).toBeVisible()
+  // Hold the scripted run open before a second context attaches. The built-in agent can naturally
+  // finish very quickly on CI, which would turn the spectator assertion into an ended-session race.
+  await page.getByRole('button', { name: 'Pause' }).click()
+  await expect(page.locator('.overlay-banner')).toHaveText('Paused')
 
   // A second context opening the same URL is a spectator: the renderer draws, but no controls appear.
   const spectatorContext = await browser.newContext()

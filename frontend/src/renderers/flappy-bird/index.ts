@@ -180,6 +180,8 @@ export class FlappyBirdRenderer extends PixiRenderer {
   /** Reconcile the HUD text nodes, mutating in place so an unchanged label needs no re-layout. */
   private reconcileHud(scene: Scene): void {
     const { hud } = scene
+    // The bitmap each Text bakes must match its on-screen size, or the root's upscale blurs it.
+    const resolution = this.textResolution()
     for (let i = 0; i < hud.length; i++) {
       let node = this.hudNodes[i]
       if (node === undefined) {
@@ -187,7 +189,7 @@ export class FlappyBirdRenderer extends PixiRenderer {
         this.hudLayer.addChild(node)
         this.hudNodes[i] = node
       }
-      applyHud(node, hud[i] as HudText)
+      applyHud(node, hud[i] as HudText, resolution)
     }
     removeExtra(this.hudNodes, hud.length)
   }
@@ -205,8 +207,13 @@ function alignAnchor(align: HudText['align']): number {
   return align === 'left' ? 0 : align === 'right' ? 1 : 0.5
 }
 
-/** Apply one HUD entry to a (reused) Text node: text, position, alignment, size, outline, and shadow. */
-function applyHud(node: Text, hud: HudText): void {
+/**
+ * Apply one HUD entry to a (reused) Text node: text, position, alignment, size, outline, and shadow.
+ * `resolution` is the device-pixel density to bake the glyph bitmap at (see `PixiRenderer.textResolution`),
+ * so the text stays crisp under the root container's upscale rather than magnifying a low-res bitmap.
+ */
+function applyHud(node: Text, hud: HudText, resolution: number): void {
+  node.resolution = resolution
   node.text = hud.text
   node.anchor.set(alignAnchor(hud.align), 0.5)
   node.position.set(hud.x, hud.y)

@@ -84,6 +84,8 @@ export abstract class PixiRenderer implements RendererInstance {
 
   private app: Application | null = null
   private root: Container | null = null
+  /** The current root scale (`cssWidth / internalSize.width`); see {@link textResolution}. */
+  private scaleFactor = 1
   private latestState: StepState | null = null
   private ready = false
   private destroyed = false
@@ -207,9 +209,22 @@ export abstract class PixiRenderer implements RendererInstance {
   /** Scale the root so one internal unit maps to the right number of CSS pixels for the current size.
    *  The host lays the element out at the renderer's aspect ratio, so a single uniform scale fits. */
   private applyScale(cssWidth: number): void {
+    this.scaleFactor = cssWidth / this.internalSize.width
     if (this.root !== null) {
-      this.root.scale.set(cssWidth / this.internalSize.width)
+      this.root.scale.set(this.scaleFactor)
     }
+  }
+
+  /**
+   * The device-pixel resolution a `Text` node must bake its bitmap at to stay crisp. PixiJS `Graphics`
+   * are vector and re-rasterize sharply under any transform, but `Text` bakes a fixed bitmap (at the
+   * app's `resolution`, i.e. `devicePixelRatio`) that the root's scale then *magnifies* — soft text.
+   * Multiplying by {@link scaleFactor} makes the texture's native density match its on-screen size.
+   * A subclass sets `node.resolution = this.textResolution()` when it applies a `Text`; because a
+   * resize re-runs `update`, the value tracks the live size with no extra wiring.
+   */
+  protected textResolution(): number {
+    return (window.devicePixelRatio || 1) * this.scaleFactor
   }
 
   private observeResize(): void {
