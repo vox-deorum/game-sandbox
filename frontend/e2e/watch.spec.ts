@@ -29,12 +29,13 @@ test('watch a scripted session, and a spectator gets no controls', async ({ page
   await spectatorContext.close()
 
   // Clean up the live session. The scripted game can end on its own before this point (the agent
-  // plays a real game), so stop only a still-running session; either way the end card follows.
+  // plays a real game), so stop only a still-running session; either way it ends into its terminal
+  // state, which the bar marks by surfacing the replay link.
   const stop = page.getByRole('button', { name: 'Stop' })
   if (await stop.isVisible()) {
-    // The game can also end between the visibility check and the click; the end card below is the
-    // real assertion either way.
+    // The game can also end between the visibility check and the click; the ended-state assertion
+    // below is the real check either way.
     await stop.click({ timeout: 5000 }).catch(() => {})
   }
-  await expect(page.locator('.end-card')).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Open replay' })).toBeVisible()
 })

@@ -34,8 +34,23 @@ export interface RendererContext {
   sendAction?: (slot: string, action: unknown) => void
 }
 
-/** A mounted renderer: fed one state at a time, torn down once. */
+/** A mounted renderer: fed one state at a time, torn down once, and carrying its own shape. */
 export interface RendererInstance {
+  /**
+   * The fixed logical coordinate space the renderer draws in, in logical pixels (Flappy Bird's is
+   * 288 × 512). The renderer's code only ever speaks these coordinates and never sees a device pixel;
+   * the PixiJS base class scales this space onto whatever real size the host gives it and keeps it
+   * sharp on high-DPI displays. This replaces the single `targetCanvasSize` of the 2D era.
+   */
+  readonly internalSize: InternalSize
+  /**
+   * `internalSize.width / internalSize.height`, surfaced explicitly because it is the shape the host
+   * reasons about: it sizes the stage element with a CSS `aspect-ratio` and places the decision log
+   * beside a portrait canvas (`aspectRatio < 1`, a column is left free) or below a landscape one.
+   * Keeping this on the renderer makes responsive layout a property the renderer owns rather than
+   * something the host reverse-engineers from rendered pixels.
+   */
+  readonly aspectRatio: number
   render(state: StepState): void
   destroy(): void
 }
@@ -46,24 +61,15 @@ export interface InternalSize {
   height: number
 }
 
-/** The module an environment registers: how to mount it, the home-card thumbnail, and its shape. */
-export interface RendererModule {
+/**
+ * What an environment registers: the renderer's static identity. A renderer is one class — the
+ * {@link PixiRenderer} subclass itself satisfies this, so there is no separate module object to keep
+ * in sync. `mount` is a static factory that constructs the mounted instance (which carries the
+ * `internalSize`/`aspectRatio` shape). The home-card thumbnail is not on the renderer at all: it is a
+ * static SVG asset passed alongside the class to `registerRenderer`, so the cards never mount a
+ * renderer to show its art.
+ */
+export interface Renderer {
+  /** Construct and mount an instance into the host described by `ctx`. */
   mount(ctx: RendererContext): RendererInstance
-  /** Static asset URL for the home cards. */
-  thumbnail: string
-  /**
-   * The fixed logical coordinate space the renderer draws in, in logical pixels (Flappy Bird's is
-   * 288 × 512). The renderer's code only ever speaks these coordinates and never sees a device pixel;
-   * the PixiJS base class scales this space onto whatever real size the host gives it and keeps it
-   * sharp on high-DPI displays. These two fields replace the single `targetCanvasSize` of the 2D era.
-   */
-  internalSize: InternalSize
-  /**
-   * `internalSize.width / internalSize.height`, surfaced explicitly because it is the shape the host
-   * reasons about: it sizes the stage element with a CSS `aspect-ratio` and places the decision log
-   * beside a portrait canvas (`aspectRatio < 1`, a column is left free) or below a landscape one.
-   * Keeping this on the module makes responsive layout a property the renderer owns rather than
-   * something the host reverse-engineers from rendered pixels.
-   */
-  aspectRatio: number
 }

@@ -12,7 +12,6 @@
 import type { StepState } from '@game-sandbox/schema'
 import { Container, Graphics, Text } from 'pixi.js'
 
-import { defineRenderer } from '../base/defineRenderer.js'
 import { type InputIntent, PixiRenderer } from '../base/PixiRenderer.js'
 import { type BirdShape, computeScene, type HudText, type Scene, type Shape } from './scene.js'
 
@@ -30,7 +29,7 @@ const EYE_PUPIL = '#222222'
 export class FlappyBirdRenderer extends PixiRenderer {
   // 288×512 is the pinned game's logical surface (see scene.ts): a tall, narrow space, so the host
   // seats the decision log in the column it leaves free rather than below it.
-  static readonly internalSize = { width: 288, height: 512 } as const
+  readonly internalSize = { width: 288, height: 512 } as const
 
   /** Persistent layers: the world shapes below, the in-game HUD text above. Built once in setup. */
   private shapeLayer!: Container
@@ -143,24 +142,3 @@ function applyHud(node: Text, hud: HudText): void {
     angle: Math.PI / 4,
   }
 }
-
-// A flat-color vector thumbnail for the home card: sky, two pipes, and the bird, matching the renderer.
-const THUMBNAIL =
-  'data:image/svg+xml,' +
-  encodeURIComponent(
-    '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180" viewBox="0 0 320 180">' +
-      '<rect width="320" height="180" fill="#4ec0ca"/>' +
-      '<rect x="90" y="0" width="40" height="60" fill="#5bb33a"/>' +
-      '<rect x="86" y="48" width="48" height="12" fill="#3f8c28"/>' +
-      '<rect x="90" y="120" width="40" height="60" fill="#5bb33a"/>' +
-      '<rect x="86" y="120" width="48" height="12" fill="#3f8c28"/>' +
-      '<rect x="220" y="0" width="40" height="90" fill="#5bb33a"/>' +
-      '<rect x="216" y="78" width="48" height="12" fill="#3f8c28"/>' +
-      '<rect x="0" y="160" width="320" height="20" fill="#ded895"/>' +
-      '<ellipse cx="160" cy="92" rx="22" ry="18" fill="#f4d03f" stroke="#c79a1e" stroke-width="3"/>' +
-      '<polygon points="180,88 196,92 180,98" fill="#e8772e"/>' +
-      '<circle cx="168" cy="84" r="6" fill="#fff"/><circle cx="170" cy="84" r="3" fill="#222"/>' +
-      '</svg>',
-  )
-
-export const flappyBirdRenderer = defineRenderer(FlappyBirdRenderer, { thumbnail: THUMBNAIL })

@@ -2,7 +2,7 @@
 
 This is the design system's home, for contributors and agents. The frontend is built from two layers: semantic CSS custom properties (the tokens) and a small library of Vue primitives under `frontend/src/components/ui/`. A new page is assembled from documented primitives and tokens, not new ad hoc CSS. Read this page before any visual work; [AGENTS.md](../../AGENTS.md) carries the short version of the rules.
 
-It covers the principles, the token system, type and color, the primitives, layout and responsiveness, and the accessibility baseline. For the renderer contract (how a game draws itself) see the [interaction spec](../../specs/interaction.md); for package mechanics see [frontend.md](frontend.md).
+It covers the principles, the token system, type and color, the primitives, layout and responsiveness, and the accessibility baseline. For the renderer contract (how a game draws itself) see the [interaction spec](../specs/interaction.md); for package mechanics see [frontend.md](frontend.md).
 
 ## Design principles
 
@@ -79,5 +79,5 @@ The renderer canvas itself is exempt (it is the game, and renderers own their id
 
 ## See also
 
-- [specs/interaction.md](../../specs/interaction.md) — the renderer contract and the chrome split this system frames.
+- [specs/interaction.md](../specs/interaction.md) — the renderer contract and the chrome split this system frames.
 - [frontend.md](frontend.md) — the package, the source layout, and the page-by-page mechanics.

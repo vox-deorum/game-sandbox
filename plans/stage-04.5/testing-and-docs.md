@@ -30,7 +30,7 @@ The design system's home, written for contributors and agents. Its sections:
 4. Component primitives: the inventory, the hand-rolled versus Reka UI policy, how to add a variant, and the rule that every variant appears on the styleguide route.
 5. Layout and responsiveness: the app shell, the breakpoints, page width conventions.
 6. The accessibility baseline as a concrete checklist (the one the audit in [accessibility-and-responsive.md](accessibility-and-responsive.md) walks).
-7. Cross-links to [specs/interaction.md](../../specs/interaction.md) for the renderer contract and to `frontend.md` for package mechanics, rather than duplicating either.
+7. Cross-links to [specs/interaction.md](../specs/interaction.md) for the renderer contract and to `frontend.md` for package mechanics, rather than duplicating either.
 
 ## agents.md
 

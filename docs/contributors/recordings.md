@@ -1,6 +1,6 @@
 # Recordings
 
-A recording is state only: a JSONL file whose first line is the header and whose following lines are one per-step state each (see the [recording spec](../../specs/recording.md)). This is the same line-delimited JSON the harness streams over its transport during a live session, so the wire form and the stored form are a single format. Human input, pause and resume, and chat commands travel a separate command envelope and are not recording lines.
+A recording is state only: a JSONL file whose first line is the header and whose following lines are one per-step state each (see the [recording spec](../specs/recording.md)). This is the same line-delimited JSON the harness streams over its transport during a live session, so the wire form and the stored form are a single format. Human input, pause and resume, and chat commands travel a separate command envelope and are not recording lines.
 
 ## The store interface
 

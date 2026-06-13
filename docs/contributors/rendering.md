@@ -24,33 +24,34 @@ interface RendererContext {
 }
 
 interface RendererInstance {
+  readonly internalSize: { width: number; height: number }  // the logical space the renderer draws in
+  readonly aspectRatio: number                 // width / height; the layout-facing shape
   render(state: StepState): void               // draw one step
   destroy(): void                              // tear down once
 }
 
-interface RendererModule {
+interface Renderer {                           // the static side of a renderer class
   mount(ctx: RendererContext): RendererInstance
-  thumbnail: string                            // static asset URL for the home cards
-  internalSize: { width: number; height: number }  // the logical space the renderer draws in
-  aspectRatio: number                          // width / height; the layout-facing shape
 }
 ```
+
+A renderer is **one class**: the `PixiRenderer` subclass _is_ the `Renderer` the registry stores. Its static side is just `mount` (the factory); a renderer's shape — `internalSize` and the derived `aspectRatio` — rides on the mounted `RendererInstance`. There is no separate module object to keep in sync with the class. The home-card thumbnail is not on the renderer at all: it is a static SVG asset (e.g. `flappy-bird/thumbnail.svg`) passed alongside the class to `registerRenderer`, so the cards never mount a renderer to show its art.
 
 Two declarations replace the single `targetCanvasSize` of the 2D era, and the difference matters:
 
 - **`internalSize`** is the fixed logical coordinate space the renderer draws in (Flappy Bird's is `288 × 512`). The renderer's code only ever speaks these coordinates; it never sees a device pixel. The base class scales this space onto whatever real size the host gives it.
-- **`aspectRatio`** is `internalSize.width / internalSize.height`, surfaced explicitly because it is the shape the host reasons about: it sizes the stage element with a CSS `aspect-ratio` and places the decision log beside a portrait canvas (`aspectRatio < 1`, a column is left free) or below a landscape one. It is derived from `internalSize` by default; a renderer never sets the two inconsistently (the base asserts they agree in development).
+- **`aspectRatio`** is `internalSize.width / internalSize.height`, surfaced explicitly because it is the shape the host reasons about: it sizes the stage element with a CSS `aspect-ratio` and places the decision log beside a portrait canvas (`aspectRatio < 1`, a column is left free) or below a landscape one. The base derives it from `internalSize` with a getter, so a renderer only ever declares `internalSize` and the two can never disagree.
 
 Two rules give the architecture its properties.
 
 - **Determinism.** `render(state)` must draw a frame that is a pure function of `state` (plus the mount-time header and metadata) — no dependence on what was rendered before. This is the property the replay scrubber relies on: jumping to tick 200 must look identical whether you played forward to it or scrubbed backward to it. Retained-mode drawing does **not** weaken this; see [the scene graph](#the-retained-scene-graph-and-determinism) below.
 - **The chrome split.** The renderer owns the game frame — the world plus the in-game UI that belongs inside the game (score, tick, in-world status). The hosting page owns the session chrome that must work for every environment: the status strip, the pause/stop controls, the active-timeout display, the decision log, the end-of-session card. That split is what lets the live and replay hosts be built once, for every future environment.
 
-`registry.ts` maps the environment metadata's `renderer` key to its module; `index.ts` is the registration barrel `main.ts` imports. The home-card thumbnail comes from the module's `thumbnail`, with a placeholder for an environment whose renderer is not registered yet.
+`registry.ts` maps the environment metadata's `renderer` key to its renderer class and home-card thumbnail; `index.ts` is the registration barrel `main.ts` imports. The thumbnail is the SVG asset the barrel passes to `registerRenderer` alongside the class, with a placeholder (`renderers/placeholder.svg`) for an environment whose renderer is not registered yet.
 
 ## The base class
 
-`PixiRenderer` (abstract, in `renderers/base/`) implements `RendererInstance` and carries everything common to every environment. A subclass inherits it and supplies only the game.
+`PixiRenderer` (abstract, in `renderers/base/`) is the `Renderer`/`RendererInstance` in one: its instances implement `RendererInstance`, and its static side is the `Renderer` the registry stores. It carries everything common to every environment, including the static `mount` factory and the `aspectRatio` getter derived from each subclass's `internalSize`. A subclass inherits it and supplies only the game.
 
 The base class owns:
 
@@ -102,11 +103,11 @@ A renderer never sends a no-op: the container applies the environment default fo
 
 This is the page a new environment lands on. To give an environment its visuals:
 
-1. Write a class under `src/renderers/<env>/` that extends `PixiRenderer`. Declare its `internalSize`, build its persistent display objects in `setup`, mutate them from state in `update` (keep the per-state logic in a pure `computeScene` so it is testable in jsdom), and, if it is human-playable, declare its input intents in `inputs`.
-2. Export a `RendererModule` for it (a small `defineRenderer(YourRenderer, { thumbnail })` helper builds the module from the class's metadata, so `internalSize`, `aspectRatio`, `mount`, and `thumbnail` all come from one declaration). Provide a `thumbnail` so the home card shows the environment's art instead of the placeholder.
-3. Register it: `registerRenderer("<renderer-key>", yourModule)` with the environment metadata's `renderer` value, and add the import to `src/renderers/index.ts` (the barrel `main.ts` imports) so it registers on app load.
+1. Write a class under `src/renderers/<env>/` that extends `PixiRenderer`. Declare its `internalSize` (an instance field), build its persistent display objects in `setup`, mutate them from state in `update` (keep the per-state logic in a pure `computeScene` so it is testable in jsdom), and, if it is human-playable, declare its input intents in `inputs`. The class is the `Renderer`: `mount` and the derived `aspectRatio` come from the base, so `internalSize` is all the class supplies.
+2. Add a `thumbnail.svg` next to the class so the home card shows the environment's art instead of the placeholder.
+3. Register it in the barrel `src/renderers/index.ts` (the one `main.ts` imports): `registerRenderer("<renderer-key>", YourRenderer, yourThumbnail)` with the environment metadata's `renderer` value, the class itself, and the imported SVG.
 
-Adding an environment's visuals is one frontend module and zero metadata or host changes.
+Adding an environment's visuals is one frontend class plus a thumbnail and zero metadata or host changes.
 
 ## The Flappy Bird renderer
 

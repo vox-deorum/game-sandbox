@@ -5,10 +5,11 @@
  * the headless guard — lives here. See docs/contributors/rendering.md, which is the authority for the
  * model this implements.
  *
- * The class implements {@link RendererInstance}, so the hosts mount it through the same contract every
- * renderer satisfies. A subclass declares its `internalSize` once as a static (its fixed logical
- * coordinate space, which {@link defineRenderer} reads to build the module and the base reads to scale)
- * and implements three protected hooks: {@link setup}, {@link update}, and {@link inputs}.
+ * The class is the {@link Renderer} the registry stores: its static side is the `mount` factory, while
+ * its instances are the mounted {@link RendererInstance} and carry the `internalSize`/`aspectRatio`
+ * shape. There is no separate module object — a subclass supplies `internalSize` and implements three
+ * protected hooks: {@link setup}, {@link update}, and {@link inputs}. The home-card thumbnail is not
+ * the renderer's concern: it is passed as an SVG asset to `registerRenderer`.
  */
 import type { StepState } from '@game-sandbox/schema'
 import { Application, Container } from 'pixi.js'
@@ -39,6 +40,9 @@ export interface InputIntent {
   action: unknown
 }
 
+/** A concrete renderer constructor: the `this` type {@link PixiRenderer.mount} binds to its caller. */
+type RendererCreator = new (ctx: RendererContext) => PixiRenderer
+
 /** True when the environment can give us a WebGL context; false under jsdom (the headless guard). */
 function hasWebGL(): boolean {
   try {
@@ -49,19 +53,29 @@ function hasWebGL(): boolean {
   }
 }
 
-/** A renderer subclass constructor, carrying the static `internalSize` the module and base read. */
-export interface PixiRendererClass {
-  new (ctx: RendererContext): PixiRenderer
-  readonly internalSize: InternalSize
-}
-
 export abstract class PixiRenderer implements RendererInstance {
-  protected readonly ctx: RendererContext
+  // --- Static side: the `Renderer` the registry stores (see types.ts). ---
 
-  /** The fixed logical coordinate space this renderer draws in, read from the subclass's static. */
-  get internalSize(): InternalSize {
-    return (this.constructor as PixiRendererClass).internalSize
+  /**
+   * Construct and mount an instance. The `this` annotation pins the factory to the concrete subclass
+   * (so `new this(ctx)` is allowed despite the base being abstract) and binds it to the caller's
+   * class, e.g. `FlappyBirdRenderer.mount(ctx)`.
+   */
+  static mount(this: RendererCreator, ctx: RendererContext): RendererInstance {
+    return new this(ctx)
   }
+
+  // --- Instance shape (see RendererInstance) ---
+
+  /** The fixed logical coordinate space this renderer draws in, supplied by each subclass. */
+  abstract readonly internalSize: InternalSize
+
+  /** `internalSize.width / internalSize.height`; the layout-facing shape the host reads. */
+  get aspectRatio(): number {
+    return this.internalSize.width / this.internalSize.height
+  }
+
+  protected readonly ctx: RendererContext
 
   private app: Application | null = null
   private root: Container | null = null

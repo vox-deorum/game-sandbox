@@ -1,6 +1,6 @@
 # The backend
 
-The backend is the Node/TypeScript service outside the container boundary: it lists environments, starts and supervises live sessions, and bridges each session's container to the browser over WebSocket (see the [execution spec](../../specs/execution.md) and the [frontend spec](../../specs/frontend.md)). It never runs Python and never touches a game; the container is authoritative and the backend is a relay. This page covers the package itself — its layout, configuration, storage, and the identity stub. The session machinery (the execution driver, the transport, and the orchestrator) is its own page: [the execution boundary](execution.md).
+The backend is the Node/TypeScript service outside the container boundary: it lists environments, starts and supervises live sessions, and bridges each session's container to the browser over WebSocket (see the [execution spec](../specs/execution.md) and the [frontend spec](../specs/frontend.md)). It never runs Python and never touches a game; the container is authoritative and the backend is a relay. This page covers the package itself — its layout, configuration, storage, and the identity stub. The session machinery (the execution driver, the transport, and the orchestrator) is its own page: [the execution boundary](execution.md).
 
 ## Package layout
 
@@ -58,7 +58,7 @@ Engine portability comes from Kysely itself, not a second type layer: queries go
 
 ## Recording retention
 
-`retention.ts` owns the recording lifecycle the [recording spec](../../specs/recording.md) describes. The directory on the volume is the recording itself; the `recordings` row is its retention metadata. A row is written by the session finalize routine — every end path converges there, so each produced recording gets exactly one row (the insert is idempotent on the id). A directory with no row after the migration backfill is foreign debris: listed header-only, never evicted.
+`retention.ts` owns the recording lifecycle the [recording spec](../specs/recording.md) describes. The directory on the volume is the recording itself; the `recordings` row is its retention metadata. A row is written by the session finalize routine — every end path converges there, so each produced recording gets exactly one row (the insert is idempotent on the id). A directory with no row after the migration backfill is foreign debris: listed header-only, never evicted.
 
 The eviction sweep runs at startup, on `RECORDING_SWEEP_INTERVAL_MS`, and after each session finalize (the only moment the data grows). It applies the policy in two passes over the rows: delete unpinned recordings older than `RECORDING_RETENTION_DAYS`, then for each user over `RECORDING_USER_QUOTA` delete oldest-unpinned-first until back within it. Pinned recordings are exempt from both passes but count against the quota; deletion removes the directory and then the row, and either half missing is tolerated, so a crash mid-deletion leaves only ignorable debris the next pass cleans. Because pinned recordings count against the quota but never evict, a pin is refused (`409`, `code: "pinned_quota"`) once the user is at their pinned cap, keeping the quota a hard storage bound.
 

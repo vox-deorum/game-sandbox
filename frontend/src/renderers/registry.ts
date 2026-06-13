@@ -1,38 +1,41 @@
 /**
  * The renderer registry: maps an environment's metadata `renderer` key (Flappy Bird's is
- * `"flappy-bird"`) to its module. Each renderer module registers itself here on import; the host
- * pages and the home cards look modules up by key.
+ * `"flappy-bird"`) to its renderer class and home-card thumbnail. The barrel registers each one on
+ * import; the host pages look renderers up by key and the home cards look thumbnails up by key.
  *
- * The home-card thumbnail the spec asks for is not in the environment metadata; it comes from the
- * registered module's `thumbnail`, with a generic placeholder for an environment whose renderer is
- * not registered yet. So adding an environment's visuals is one frontend module and zero metadata
- * changes.
+ * The home-card thumbnail the spec asks for is not in the environment metadata; it is the SVG asset
+ * registered alongside the class, with a generic placeholder for an environment whose renderer is not
+ * registered yet. So adding an environment's visuals is one frontend class plus its thumbnail and zero
+ * metadata changes.
  */
-import type { RendererModule } from './types.js'
 
-const registry = new Map<string, RendererModule>()
+// A neutral placeholder card image for environments whose renderer is not registered yet.
+import placeholderThumbnail from './placeholder.svg'
+import type { Renderer } from './types.js'
 
-/** Register a module under its metadata `renderer` key. The last registration for a key wins. */
-export function registerRenderer(key: string, module: RendererModule): void {
-  registry.set(key, module)
+/** A registered renderer and the home-card thumbnail (an SVG asset URL) registered alongside it. */
+interface RegistryEntry {
+  renderer: Renderer
+  thumbnail: string
 }
 
-/** The module registered for a key, or `undefined` when no renderer is registered yet. */
-export function getRenderer(key: string): RendererModule | undefined {
-  return registry.get(key)
+const registry = new Map<string, RegistryEntry>()
+
+/**
+ * Register a renderer and its home-card thumbnail under its metadata `renderer` key. The thumbnail is
+ * a static SVG asset URL (imported by the barrel), kept off the renderer so the cards never mount one
+ * to show its art. The last registration for a key wins.
+ */
+export function registerRenderer(key: string, renderer: Renderer, thumbnail: string): void {
+  registry.set(key, { renderer, thumbnail })
 }
 
-// A neutral placeholder card image for environments whose renderer module is not registered yet.
-const PLACEHOLDER_THUMBNAIL =
-  'data:image/svg+xml,' +
-  encodeURIComponent(
-    '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180" viewBox="0 0 320 180">' +
-      '<rect width="320" height="180" fill="#1f2933"/>' +
-      '<text x="160" y="96" fill="#9aa5b1" font-family="sans-serif" font-size="18" ' +
-      'text-anchor="middle">No preview yet</text></svg>',
-  )
+/** The renderer registered for a key, or `undefined` when none is registered yet. */
+export function getRenderer(key: string): Renderer | undefined {
+  return registry.get(key)?.renderer
+}
 
 /** The thumbnail for a renderer key, falling back to the placeholder when unregistered. */
 export function thumbnailFor(key: string): string {
-  return registry.get(key)?.thumbnail ?? PLACEHOLDER_THUMBNAIL
+  return registry.get(key)?.thumbnail ?? placeholderThumbnail
 }

@@ -1,6 +1,6 @@
 # Stage 3: The Execution Driver and the Session Image
 
-Part of [Stage 3](../stage-03-backend-and-live-sessions.md). This file defines the execution driver interface from [execution.md](../../specs/execution.md) in driver-neutral terms, the local Docker implementation on dockerode, the session base image, and the lint rule that keeps Docker knowledge inside the driver so the Kubernetes driver stays a pure addition.
+Part of [Stage 3](../stage-03-backend-and-live-sessions.md). This file defines the execution driver interface from [execution.md](../specs/execution.md) in driver-neutral terms, the local Docker implementation on dockerode, the session base image, and the lint rule that keeps Docker knowledge inside the driver so the Kubernetes driver stays a pure addition.
 
 ## The interface
 
@@ -31,7 +31,7 @@ Driver configuration: the daemon socket (dockerode defaults suffice on both Wind
 
 ## The session base image
 
-One base image per dependency-set version, tagged `game-sandbox/session-base:deps-v<N>`, per [execution.md](../../specs/execution.md); this stage needs only v1. The Dockerfile lives at `backend/images/session-base/Dockerfile` and builds with the repo root as context, since the image is assembled from monorepo sources: `python:3.12-slim`, the pinned dependency set installed from `templates/base/requirements.txt` (the compiled v1 set from Stage 2), then the `harness` and `environments` packages installed from source with `--no-deps` so the pinned set stays exactly authoritative (their own pins are kept compatible with the set, per Stage 2, but the set is the single source of dependency truth inside a session).
+One base image per dependency-set version, tagged `game-sandbox/session-base:deps-v<N>`, per [execution.md](../specs/execution.md); this stage needs only v1. The Dockerfile lives at `backend/images/session-base/Dockerfile` and builds with the repo root as context, since the image is assembled from monorepo sources: `python:3.12-slim`, the pinned dependency set installed from `templates/base/requirements.txt` (the compiled v1 set from Stage 2), then the `harness` and `environments` packages installed from source with `--no-deps` so the pinned set stays exactly authoritative (their own pins are kept compatible with the set, per Stage 2, but the set is the single source of dependency truth inside a session).
 
 The built-in scripted agent required by the parent file is the composed `hello` example: the image build runs `scripts/compose.py` for `examples/flappy_bird/hello` and places the result at `/opt/agents/builtin`, manifest included. The live runner loads it through the same manifest loader a Stage 5 submission will use, so watch-style sessions exercise the real submission code path before submissions exist.
 

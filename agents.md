@@ -6,7 +6,7 @@ This file is for AI coding agents working on the Game Sandbox repository. It cap
 
 Game Sandbox is a classwise playground for Game AI. Participants submit agents through GitHub, and everyone can watch those agents, play with or against them, rate them, and see them ranked on per-environment leaderboards. The system is built on PettingZoo, with Shimmy wrapping single-agent games so the rest of the codebase only sees a PettingZoo interface. Web users authenticate with GitHub OAuth, submissions are repo links pinned to a commit and tagged with an iteration, and there are two leaderboards per environment per iteration (automated and human feedback). Unity ML-Agents support is planned for later but not in scope today.
 
-The full specification lives under [specs/](specs/README.md). Read it before changing anything substantive. The implementation plan lives under [plans/](plans/README.md); implementation work must stay connected to it, so when code diverges from a stage file, revise the stage file in the same change set (see the plan README for the rules).
+The full specification lives under [docs/specs/](docs/specs/README.md). Read it before changing anything substantive. The implementation plan lives under [plans/](plans/README.md); implementation work must stay connected to it, so when code diverges from a stage file, revise the stage file in the same change set (see the plan README for the rules).
 
 ## Writing style
 
@@ -24,10 +24,10 @@ When you write documentation, specs, or any prose in this repo, follow these rul
 
 A few defaults that will save back-and-forth:
 
-- Read the relevant files under [specs/](specs/README.md) before proposing changes that touch the design. Start with [specs/overview.md](specs/overview.md).
+- Read the relevant files under [docs/specs/](docs/specs/README.md) before proposing changes that touch the design. Start with [specs/overview.md](specs/overview.md).
 - Ask before expanding scope. If a request implies new features beyond what is in the spec, raise it rather than quietly adding them.
 - Prefer editing existing files over creating new ones.
-- Keep specification documents under [specs/](specs/README.md). Each file should have a single clear topic and cross-link to the others rather than duplicating content.
+- Keep specification documents under [docs/specs/](docs/specs/README.md). Each file should have a single clear topic and cross-link to the others rather than duplicating content.
 
 ### UI consistency
 
@@ -37,3 +37,4 @@ The frontend has a design system; new UI joins it rather than reinventing CSS. B
 - Build UI from the `frontend/src/components/ui/` primitives (`UiButton`, `UiCard`, `UiField`, `UiDialog`, …) instead of new ad hoc markup and CSS. Reach for a third-party UI library only where focus and ARIA are genuinely hard (the project uses Reka UI for the dialog and slider, nothing more).
 - Put every new primitive variant on the dev-only `/styleguide` route; a variant that is not shown there does not exist.
 - Confirm with the owner before inventing a new visual pattern or settling an open design question. Design decisions are the owner's to make.
+- After completing a piece of UI work, run the browser end-to-end suite with `uv run python scripts/ci.py frontend-e2e` (it needs a running Docker daemon). The default `check` and `test` loop only lints, typechecks, and runs the jsdom unit tests, none of which exercise the live DOM or its locators, so a renamed class or restructured markup can pass everything local and still break the Playwright journeys that CI runs. The e2e suite is the only thing that catches that before CI does.

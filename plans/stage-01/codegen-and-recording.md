@@ -1,6 +1,6 @@
 # Stage 1: Code Generation, Validation, and the Recording Store
 
-Part of [Stage 1](../stage-01-contracts.md). This file covers how each language consumes the schema from [state-schema.md](state-schema.md) and how recordings are written and read, per [recording.md](../../specs/recording.md).
+Part of [Stage 1](../stage-01-contracts.md). This file covers how each language consumes the schema from [state-schema.md](state-schema.md) and how recordings are written and read, per [recording.md](../specs/recording.md).
 
 ## TypeScript: generated types plus Ajv guards
 
@@ -43,4 +43,4 @@ harness/
 
 `RecordingStore` is a `typing.Protocol` with three members. `create(recording_id, header)` returns a `RecordingWriter` context manager whose `write_step(state)` validates the state, appends one JSONL line, and flushes on every write so a crashed session leaves a readable prefix. `open(recording_id)` returns a `Recording` holding the parsed, validated header and a lazy iterator of validated states. `list_ids()` enumerates stored recordings.
 
-`FolderRecordingStore(root)` lays out one directory per recording, `<root>/<id>/recording.jsonl`, with sidecars at their header-declared relative paths inside that directory. The per-recording directory is the S3 seam: it maps one to one onto an object-key prefix, and the protocol has no filesystem types in its signatures (ids and streams only), so an `S3RecordingStore` later is purely additive, exactly as [recording.md](../../specs/recording.md) requires. There is deliberately no sidecar writing API until Stage 7; Stage 1 readers only tolerate declared sidecars.
+`FolderRecordingStore(root)` lays out one directory per recording, `<root>/<id>/recording.jsonl`, with sidecars at their header-declared relative paths inside that directory. The per-recording directory is the S3 seam: it maps one to one onto an object-key prefix, and the protocol has no filesystem types in its signatures (ids and streams only), so an `S3RecordingStore` later is purely additive, exactly as [recording.md](../specs/recording.md) requires. There is deliberately no sidecar writing API until Stage 7; Stage 1 readers only tolerate declared sidecars.

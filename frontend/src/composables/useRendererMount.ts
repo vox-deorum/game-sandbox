@@ -37,14 +37,13 @@ export function useRendererMount(options: UseRendererMountOptions) {
     if (instance.value !== null || options.meta.value === null || options.host.value === null) {
       return
     }
-    const module = getRenderer(options.meta.value.renderer)
-    if (module === undefined) {
+    const renderer = getRenderer(options.meta.value.renderer)
+    if (renderer === undefined) {
       noRenderer.value = true
       return
     }
-    aspectRatio.value = module.aspectRatio
     const slots = toValue(options.controlledSlots ?? [])
-    instance.value = module.mount({
+    const mounted = renderer.mount({
       container: options.host.value,
       meta: options.meta.value,
       header,
@@ -52,6 +51,9 @@ export function useRendererMount(options: UseRendererMountOptions) {
       // Input only for the owner of controlled slots; a spectator or replay gets a draw-only renderer.
       sendAction: slots.length > 0 ? options.sendAction : undefined,
     })
+    // The shape is carried by the instance now; surface it for the page's stage layout.
+    aspectRatio.value = mounted.aspectRatio
+    instance.value = mounted
   }
 
   function render(state: StepState): void {

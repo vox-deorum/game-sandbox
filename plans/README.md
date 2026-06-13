@@ -1,6 +1,6 @@
 # Implementation Plan
 
-This folder is the implementation-level plan for Game Sandbox. The specification under [specs/](../specs/README.md) describes what the system is; these plans describe how and in what order we build it. Read the spec first, then the stage you are about to work on.
+This folder is the implementation-level plan for Game Sandbox. The specification under [docs/specs/](../docs/specs/README.md) describes what the system is; these plans describe how and in what order we build it. Read the spec first, then the stage you are about to work on.
 
 ## How the plan stays connected to the implementation
 

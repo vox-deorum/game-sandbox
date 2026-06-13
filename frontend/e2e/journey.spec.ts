@@ -36,11 +36,11 @@ test('play Flappy Bird live, pause/resume, stop, then replay and pin', async ({ 
   await page.getByRole('button', { name: 'Resume' }).click()
   await expect(page.locator('.overlay-banner')).toHaveCount(0)
 
-  // Stop ends the session into the end card.
+  // Stop ends the session; the bar swaps its controls for the ended state, surfacing the replay link.
   await page.getByRole('button', { name: 'Stop' }).click()
-  await expect(page.locator('.end-card')).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Open replay' })).toBeVisible()
 
-  // Open the replay from the end card and scrub it.
+  // Open the replay from the ended session and scrub it.
   await page.getByRole('link', { name: 'Open replay' }).click()
   await expect(page).toHaveURL(/\/replays\//)
   await expect(page.getByRole('button', { name: 'Play' })).toBeVisible()

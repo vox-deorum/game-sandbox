@@ -1,6 +1,6 @@
 # The State Schema
 
-The per-step state object is the contract across the container boundary (see the [execution spec](../../specs/execution.md)). It is defined once as a versioned JSON Schema under `schema/`, draft 2020-12, and it is the single source of truth for both the wire format and the stored format. The TypeScript backend and renderer derive their types from it, and the Python harness validates every payload it emits against it. This page is the normative home of the version rule and the sidecar rule; the schema files only carry field descriptions, and `schema/README.md` points here.
+The per-step state object is the contract across the container boundary (see the [execution spec](../specs/execution.md)). It is defined once as a versioned JSON Schema under `schema/`, draft 2020-12, and it is the single source of truth for both the wire format and the stored format. The TypeScript backend and renderer derive their types from it, and the Python harness validates every payload it emits against it. This page is the normative home of the version rule and the sidecar rule; the schema files only carry field descriptions, and `schema/README.md` points here.
 
 ## The two files
 

@@ -2,7 +2,7 @@
  * The execution driver interface, in driver-neutral terms.
  *
  * This module holds types only — no implementation, and deliberately no `dockerode` or any
- * other platform import. It is the seam from [execution.md](../../../specs/execution.md): the
+ * other platform import. It is the seam from [execution.md](../../../docs/specs/execution.md): the
  * orchestrator builds or fetches an image, launches a session against a driver-neutral sandbox
  * profile, streams the session's line channel, and tears it down, all without knowing whether
  * the driver is Docker, Kubernetes, or a test double. The local Docker driver lives in a sibling
@@ -17,7 +17,7 @@
 
 /**
  * What image a session needs. The only kind this stage builds is the session base image, keyed
- * by dependency-set version per [execution.md](../../../specs/execution.md). Stage 5 adds the
+ * by dependency-set version per [execution.md](../../../docs/specs/execution.md). Stage 5 adds the
  * submission-overlay kind to this union; the union is the extension point.
  */
 export type ImageSpec = SessionBaseImageSpec
@@ -58,7 +58,7 @@ export interface MountSpec {
 export type SandboxNetwork = 'none'
 
 /**
- * The sandbox expressed in driver-neutral terms, per [execution.md](../../../specs/execution.md).
+ * The sandbox expressed in driver-neutral terms, per [execution.md](../../../docs/specs/execution.md).
  * Each driver maps these onto its platform (the Docker driver onto `NanoCpus`, `Memory`,
  * `ReadonlyRootfs`, `Tmpfs`, `NetworkMode`, and `Binds`).
  */

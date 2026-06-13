@@ -1,6 +1,6 @@
 # Adding an Environment
 
-Every environment in Game Sandbox exposes a PettingZoo AEC interface and registers a single `ENTRY` discovered by the harness through a Python entry point. Single-agent games come in through the in-house compatibility wrapper, so they fit the same shape as multi-agent games. This page is the how-to; the design rationale lives in the [environment spec](../../specs/environment.md). Flappy Bird is the worked example throughout, and Hearts (Stage 8) will be the first to follow this path from scratch.
+Every environment in Game Sandbox exposes a PettingZoo AEC interface and registers a single `ENTRY` discovered by the harness through a Python entry point. Single-agent games come in through the in-house compatibility wrapper, so they fit the same shape as multi-agent games. This page is the how-to; the design rationale lives in the [environment spec](../specs/environment.md). Flappy Bird is the worked example throughout, and Hearts (Stage 8) will be the first to follow this path from scratch.
 
 ## Directory layout
 

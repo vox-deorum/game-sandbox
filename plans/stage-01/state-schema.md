@@ -1,6 +1,6 @@
 # Stage 1: Per-Step State Schema and Versioning
 
-Part of [Stage 1](../stage-01-contracts.md). This file designs the two schema files, the version rule, and the sidecar rule. The schema is the single source of truth for the wire format and the stored format alike, per [execution.md](../../specs/execution.md) and [recording.md](../../specs/recording.md); the fields come from [interaction.md](../../specs/interaction.md).
+Part of [Stage 1](../stage-01-contracts.md). This file designs the two schema files, the version rule, and the sidecar rule. The schema is the single source of truth for the wire format and the stored format alike, per [execution.md](../specs/execution.md) and [recording.md](../specs/recording.md); the fields come from [interaction.md](../specs/interaction.md).
 
 ## Files and conventions
 

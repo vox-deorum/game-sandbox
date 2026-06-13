@@ -1,6 +1,6 @@
 # The execution boundary
 
-A live session straddles the container boundary: a sandboxed container runs the Python harness and the game, and the Node backend supervises it and relays its state to the browser. This page describes that seam — the execution-driver interface, the sandbox profile, the transport between container and backend, the WebSocket protocol between backend and browser, the live runner inside the container, and how a second driver slots in. The design rationale lives in the [execution spec](../../specs/execution.md) and the [interaction spec](../../specs/interaction.md); this page is how it is built.
+A live session straddles the container boundary: a sandboxed container runs the Python harness and the game, and the Node backend supervises it and relays its state to the browser. This page describes that seam — the execution-driver interface, the sandbox profile, the transport between container and backend, the WebSocket protocol between backend and browser, the live runner inside the container, and how a second driver slots in. The design rationale lives in the [execution spec](../specs/execution.md) and the [interaction spec](../specs/interaction.md); this page is how it is built.
 
 ## The execution driver interface
 
@@ -34,7 +34,7 @@ Every end path converges on one idempotent finalize that records the reason, tel
 
 ## The live session runner (container side)
 
-Inside the container, `python -m game_sandbox_harness.live` is the harness's live runner. It is a second thin loop over the very same `Episode.step_once` that the headless `run_episode` uses; the only realtime-versus-turn-based difference is one conditional on the environment's pace interval, which is the "one code path reading the pace interval" the [interaction spec](../../specs/interaction.md) requires.
+Inside the container, `python -m game_sandbox_harness.live` is the harness's live runner. It is a second thin loop over the very same `Episode.step_once` that the headless `run_episode` uses; the only realtime-versus-turn-based difference is one conditional on the environment's pace interval, which is the "one code path reading the pace interval" the [interaction spec](../specs/interaction.md) requires.
 
 - **Pacing.** For an environment with a pace interval (Flappy Bird, realtime) the loop waits until the next cadence instant before each step; for one with no interval (turn-based) it does not, and its external source blocks for input instead.
 - **Pause.** Pausing freezes the cadence and the decision clock together: the injected `PausableClock` subtracts accumulated paused time, so every duration in the system — a step's decision budget, the next cadence instant — freezes with it, with no special case in the loop. Headless runs never construct a live loop, so they never pace and never pause.
