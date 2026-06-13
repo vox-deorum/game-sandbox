@@ -1,0 +1,36 @@
+# Stage 5.6: Watch-Run and Agent Profile
+
+Status: not started.
+
+Part of [Stage 5](../stage-05-submissions.md). This is build-order step 6, the demonstrable end of the stage: the orchestrator names a `ready` submission for the agent slot and runs its overlay image, the watch flow lets a viewer pick a submitted agent and stream it into the Flappy Bird renderer, and the agent profile page shows submission history, build/validation status, and recent replays.
+
+## Orchestrator: a submission in the agent slot
+
+Extend the session orchestrator (see [stage-03/orchestrator-and-http-api.md](../stage-03/orchestrator-and-http-api.md)) so a watch session can **name a submission for its non-human slot and run the corresponding image**. The orchestrator looks up the submission (must be `ready` and for the requested environment's open iteration), asks a small submission-image helper to ensure the overlay image through the driver, records the `session_submissions` row for `player_0`, and launches the session container from that image instead of the built-in scripted agent. That helper reuses the existing overlay when driver policy allows it and refetches the pinned source when a rebuild is required. Everything downstream, the per-step state relay, recording, lifecycle limits, and finalization, is the Stage 3 path unchanged; only the image and the slot's agent source differ.
+
+The live runner already accepts a path override on a `builtin-agent` slot binding, so Stage 5 can bind `player_0` to `/opt/agents/submissions/player_0` without inventing a new harness slot kind. The scope is deliberately the **current single-agent environment**: Flappy Bird has one slot. The machinery is built so environments with separate human and agent slots can reuse it for play-with-agent sessions later, but **this stage does not pretend there is an opponent slot**. Choosing a submitted opponent for a human-capable slot appears only when an environment actually exposes both human and agent slots, with the first full multi-agent version in Stage 8. Human-controlled Flappy Bird stays a human-controlled single-slot session through the Stage 3 path, untouched.
+
+## Watch Submitted Agent Flow
+
+Wire the watch flow for Flappy Bird: a picker lists the environment's active `ready` submitted agents, the viewer chooses one, the orchestrator runs it in the single slot, and the run streams to the renderer with no input controls. This is the same watch presentation Stage 4 built for the built-in agent, now sourced from a submission. The picker reads the submission list (step 5's read endpoint) filtered to active `ready` rows for the environment's open iteration, so superseded submissions remain profile history rather than ordinary watch choices. The existing scripted watch button can keep offering the built-in agent as a development option, but the submitted-agent path is the participant-facing one this stage proves.
+
+## Agent profile page
+
+One page per submitted agent, linked to the participant's GitHub when OAuth is present, per [frontend.md](../../docs/specs/frontend.md). In this stage the route is keyed by environment id and owner id, which matches the one-active-submission-per-user-per-iteration rule and keeps a future Hearts agent separate from the same user's Flappy Bird agent.
+
+- **Submission history across iterations** - the rows from step 1's `listSubmissionsByUser(userId, envId)`, including superseded ones, so the owner sees every commit they submitted, not just the active one.
+- **Build / validation status** - each submission's `status` and its per-stage validation log (`listSubmissionChecks` from step 1) rendered with the Stage 4.5 status primitives, so a failed submission shows which stage rejected and that stage's detail, not just the rollup status. This reuses the same stage-timeline presentation the form (step 5) polls, now over stored history. This is where a `load_failed` submission shows its load failure with the captured error **instead of a session**, the exit-criterion case made visible to the owner.
+- **Recent replays** - the agent's recent watch/replay recordings, using `session_submissions` to find sessions for the agent's submissions and then reusing the Stage 4 replay listing.
+- **Placeholders** for leaderboard placements (Stage 6) and the owner's LLM debug view (Stage 7), visible but inert, matching the Stage 4.5 convention of showing where later stages plug in.
+
+Built on the Stage 4.5 primitives and registered in the router; owner-only affordances (the future debug view) gate on the signed-in identity matching the agent's owner.
+
+## Tests
+
+- **Backend (Vitest, FakeDriver / `:memory:`):** the orchestrator refuses to run a non-`ready` submission; a `ready` submission's session launches from its overlay image (FakeDriver records the image named and the `player_0` path binding); starting the session records `session_submissions`; the profile read returns history including superseded rows with their statuses, per-stage validation logs, and reasons, plus recent recording ids for sessions that ran those submissions.
+- **Frontend (Vitest, jsdom):** the watch picker lists only active `ready` submissions; the profile renders history, per-submission stage timelines with the failed stage and its detail, and the inert Stage 6/7 placeholders.
+- **End-to-end (Playwright, Docker-gated):** extending the Stage 4 suite, a local-folder submission of the worked example is submitted, built, and run in a Flappy Bird watch session streaming to the canvas; a missing-class fixture shows `load_failed` on the owner's profile and never opens a session; human-controlled Flappy Bird still works through the Stage 3 path. This is the stage's experiential "Done when" as an executable journey.
+
+## Done when
+
+A local-folder submission of the worked example (and the extra Flappy Bird examples) passes static validation and the sandboxed load check, is built, and runs in a Flappy Bird watch session via the orchestrator. A repo whose manifest names a missing class shows a load failure on the owner's agent profile instead of a session. Human-controlled Flappy Bird sessions still work through the Stage 3 path. With this step the full stage exit criteria in [Stage 5](../stage-05-submissions.md) are met.
