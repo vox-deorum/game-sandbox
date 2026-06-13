@@ -1,29 +1,11 @@
-import type { RecordingHeader } from '@game-sandbox/schema'
-import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { flappyBirdRenderer } from '../src/renderers/flappy-bird/index.js'
 import type { RendererContext } from '../src/renderers/types.js'
+import { flappyHeader, flappyMeta } from './helpers/fixtures.js'
 
-const META: EnvironmentMeta = {
-  env_id: 'flappy_bird',
-  display_name: 'Flappy Bird',
-  description: '',
-  min_slots: 1,
-  max_slots: 1,
-  human_slots: ['player_0'],
-  human_timeout_ms: null,
-  recommended_episode_ticks: 1000,
-  pace_interval_ms: 50,
-  step_limit_ms: 1000,
-  episode_limit_ms: 120_000,
-  messaging: false,
-  message_cap: null,
-  llm: false,
-  renderer: 'flappy-bird',
-}
-
-const HEADER: RecordingHeader = { schema_version: 1, environment: 'flappy_bird', seed: 0 }
+const META = flappyMeta({ description: '' })
+const HEADER = flappyHeader()
 
 function context(overrides: Partial<RendererContext>): RendererContext {
   return {

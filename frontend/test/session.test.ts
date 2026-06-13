@@ -1,31 +1,13 @@
-import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
-import { fireEvent, render, screen, waitFor } from '@testing-library/vue'
+import { fireEvent, screen, waitFor } from '@testing-library/vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { h } from 'vue'
-import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 
 import type { SessionSocketHandlers } from '../src/api/socket.js'
 import type { RendererContext } from '../src/renderers/types.js'
+import { flappyHeader, flappyMeta, flappyState, recordingText } from './helpers/fixtures.js'
+import { memoryRouter, renderWithMe } from './helpers/render.js'
 
-const META: EnvironmentMeta = {
-  env_id: 'flappy_bird',
-  display_name: 'Flappy Bird',
-  description: '',
-  min_slots: 1,
-  max_slots: 1,
-  human_slots: ['player_0'],
-  human_timeout_ms: null,
-  recommended_episode_ticks: 1000,
-  pace_interval_ms: 50,
-  step_limit_ms: 1000,
-  episode_limit_ms: 120_000,
-  messaging: false,
-  message_cap: null,
-  llm: false,
-  renderer: 'flappy-bird',
-}
-
-const HEADER = { schema_version: 1 as const, environment: 'flappy_bird', seed: 0 }
+const META = flappyMeta({ description: '' })
+const HEADER = flappyHeader()
 
 // A controllable SessionSocket double: it captures the handlers so the test can drive frames, and
 // records the commands the page sends.
@@ -68,7 +50,6 @@ vi.mock('../src/api/client.js', () => ({
 }))
 
 import { getMe, getRecording, getSession, listRecordings } from '../src/api/client.js'
-import { MeProvider } from '../src/me.js'
 import SessionPage from '../src/pages/SessionPage.vue'
 
 function ownerRow() {
@@ -94,33 +75,24 @@ function endedOwnerRow() {
   }
 }
 
-function recordingText(): string {
-  const header = JSON.stringify(HEADER)
-  const states = [0, 1, 2].map((tick) =>
-    JSON.stringify({
-      schema_version: 1,
-      tick,
-      agents: { player_0: { reward: 0, score: 20 + tick } },
-      timing: { started_at: tick, duration_ms: 1 },
-    }),
-  )
-  return `${header}\n${states.join('\n')}\n`
+/** The recorded states the ended-session view hydrates from (score 20 + tick, as the suite asserts). */
+function sessionRecording(): string {
+  return recordingText([flappyState(0, 20), flappyState(1, 21), flappyState(2, 22)], {
+    seed: HEADER.seed,
+  })
 }
 
 async function renderSession() {
-  const router = createRouter({
-    history: createMemoryHistory(),
-    routes: [
-      // Stubs so the stage's "Environments / … / Live session" context-line links resolve.
-      { path: '/', component: { template: '<div />' } },
-      { path: '/environments/:envId', component: { template: '<div />' } },
-      { path: '/sessions/:id', component: SessionPage },
-      { path: '/replays/:id', component: { template: '<div>replay</div>' } },
-    ],
-  })
+  const router = memoryRouter([
+    // Stubs so the stage's "Environments / … / Live session" context-line links resolve.
+    { path: '/', component: { template: '<div />' } },
+    { path: '/environments/:envId', component: { template: '<div />' } },
+    { path: '/sessions/:id', component: SessionPage },
+    { path: '/replays/:id', component: { template: '<div>replay</div>' } },
+  ])
   router.push('/sessions/s1')
   await router.isReady()
-  render(MeProvider, { slots: { default: () => h(RouterView) }, global: { plugins: [router] } })
+  renderWithMe(router)
 }
 
 /** Wait until the page has connected its socket and we hold its handlers. */
@@ -135,7 +107,7 @@ describe('SessionPage', () => {
     sent = []
     mountCtx = null
     drawn = []
-    vi.mocked(getRecording).mockResolvedValue(recordingText())
+    vi.mocked(getRecording).mockResolvedValue(sessionRecording())
     vi.mocked(listRecordings).mockResolvedValue([])
   })
 

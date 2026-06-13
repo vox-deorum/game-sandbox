@@ -1,43 +1,18 @@
 import type { StepState } from '@game-sandbox/schema'
-import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
-import { fireEvent, render, screen, waitFor } from '@testing-library/vue'
+import { fireEvent, screen, waitFor } from '@testing-library/vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { h } from 'vue'
-import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 
 import type { RendererContext } from '../src/renderers/types.js'
+import { flappyMeta, flappyState, recordingText } from './helpers/fixtures.js'
+import { memoryRouter, renderWithMe } from './helpers/render.js'
 
-const META: EnvironmentMeta = {
-  env_id: 'flappy_bird',
-  display_name: 'Flappy Bird',
-  description: '',
-  min_slots: 1,
-  max_slots: 1,
-  human_slots: ['player_0'],
-  human_timeout_ms: null,
-  recommended_episode_ticks: 1000,
-  pace_interval_ms: 50,
-  step_limit_ms: 1000,
-  episode_limit_ms: 120_000,
-  messaging: false,
-  message_cap: null,
-  llm: false,
-  renderer: 'flappy-bird',
-}
+const META = flappyMeta({ description: '' })
 
-function state(tick: number): StepState {
-  return {
-    schema_version: 1,
-    tick,
-    agents: { player_0: { reward: 0, score: 10 + tick } },
-    timing: { started_at: tick, duration_ms: 1 },
-  }
-}
-
-function recordingText(version = 1): string {
-  const header = JSON.stringify({ schema_version: version, environment: 'flappy_bird', seed: 0 })
-  const lines = [0, 1, 2, 3].map((t) => JSON.stringify(state(t)))
-  return `${header}\n${lines.join('\n')}\n`
+/** The four-state Flappy Bird recording the suite scrubs (score 10 + tick). `version` overrides the
+ *  header schema version to exercise the needs-newer-viewer path. */
+function replayRecording(version = 1): string {
+  const states = [0, 1, 2, 3].map((t) => flappyState(t, 10 + t))
+  return recordingText(states, { schemaVersion: version })
 }
 
 let drawn: StepState[]
@@ -62,25 +37,18 @@ vi.mock('../src/api/client.js', () => ({
 }))
 
 import { getMe, getRecording, listRecordings, pinRecording } from '../src/api/client.js'
-import { MeProvider } from '../src/me.js'
 import ReplayPage from '../src/pages/ReplayPage.vue'
 
-async function renderReplay(path = '/replays/rec-1'): Promise<ReturnType<typeof render>> {
-  const router = createRouter({
-    history: createMemoryHistory(),
-    routes: [
-      // Stubs so the replay stage's "Environments / … / Replay" context-line links resolve.
-      { path: '/', component: { template: '<div />' } },
-      { path: '/environments/:envId', component: { template: '<div />' } },
-      { path: '/replays/:id', component: ReplayPage },
-    ],
-  })
+async function renderReplay(path = '/replays/rec-1'): Promise<ReturnType<typeof renderWithMe>> {
+  const router = memoryRouter([
+    // Stubs so the replay stage's "Environments / … / Replay" context-line links resolve.
+    { path: '/', component: { template: '<div />' } },
+    { path: '/environments/:envId', component: { template: '<div />' } },
+    { path: '/replays/:id', component: ReplayPage },
+  ])
   router.push(path)
   await router.isReady()
-  return render(MeProvider, {
-    slots: { default: () => h(RouterView) },
-    global: { plugins: [router] },
-  })
+  return renderWithMe(router)
 }
 
 describe('ReplayPage', () => {
@@ -92,7 +60,7 @@ describe('ReplayPage', () => {
   })
 
   it('loads, mounts a draw-only renderer, and renders transport controls', async () => {
-    vi.mocked(getRecording).mockResolvedValue(recordingText())
+    vi.mocked(getRecording).mockResolvedValue(replayRecording())
     const view = await renderReplay()
 
     expect(await screen.findByRole('button', { name: 'Play' })).toBeInTheDocument()
@@ -115,7 +83,7 @@ describe('ReplayPage', () => {
   })
 
   it('scrubs with the slider keyboard to the state under the index', async () => {
-    vi.mocked(getRecording).mockResolvedValue(recordingText())
+    vi.mocked(getRecording).mockResolvedValue(replayRecording())
     await renderReplay()
     const slider = await screen.findByRole('slider')
     // The scrubber is the Reka UiSlider: the arrow keys move it, and each move seeks the transport.
@@ -125,7 +93,7 @@ describe('ReplayPage', () => {
   })
 
   it('operates the transport from the keyboard on the stage region', async () => {
-    vi.mocked(getRecording).mockResolvedValue(recordingText())
+    vi.mocked(getRecording).mockResolvedValue(replayRecording())
     const view = await renderReplay()
     await screen.findByRole('button', { name: 'Play' })
     const stage = view.container.querySelector('.stage') as HTMLElement
@@ -139,19 +107,19 @@ describe('ReplayPage', () => {
   })
 
   it('seeks on load from a ?t= deep link', async () => {
-    vi.mocked(getRecording).mockResolvedValue(recordingText())
+    vi.mocked(getRecording).mockResolvedValue(replayRecording())
     await renderReplay('/replays/rec-1?t=2')
     await waitFor(() => expect(drawn.at(-1)?.tick).toBe(2))
   })
 
   it('shows the needs-newer-viewer message for an unknown schema version', async () => {
-    vi.mocked(getRecording).mockResolvedValue(recordingText(2))
+    vi.mocked(getRecording).mockResolvedValue(replayRecording(2))
     await renderReplay()
     expect(await screen.findByText(/needs a newer viewer/)).toBeInTheDocument()
   })
 
   it('offers a pin toggle to the owner and pins on click', async () => {
-    vi.mocked(getRecording).mockResolvedValue(recordingText())
+    vi.mocked(getRecording).mockResolvedValue(replayRecording())
     vi.mocked(listRecordings).mockResolvedValue([
       {
         id: 'rec-1',
@@ -169,7 +137,7 @@ describe('ReplayPage', () => {
   })
 
   it('shows no pin toggle to a non-owner', async () => {
-    vi.mocked(getRecording).mockResolvedValue(recordingText())
+    vi.mocked(getRecording).mockResolvedValue(replayRecording())
     vi.mocked(listRecordings).mockResolvedValue([
       {
         id: 'rec-1',

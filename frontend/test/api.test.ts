@@ -1,4 +1,3 @@
-import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -10,37 +9,10 @@ import {
   startSession,
   unpinRecording,
 } from '../src/api/client.js'
+import { jsonResponse, stubFetch } from './helpers/fetchStub.js'
+import { flappyMeta } from './helpers/fixtures.js'
 
-const META: EnvironmentMeta = {
-  env_id: 'flappy_bird',
-  display_name: 'Flappy Bird',
-  description: 'A paced single-human clone.',
-  min_slots: 1,
-  max_slots: 1,
-  human_slots: ['player_0'],
-  human_timeout_ms: null,
-  recommended_episode_ticks: 1000,
-  pace_interval_ms: 50,
-  step_limit_ms: 1000,
-  episode_limit_ms: 120_000,
-  messaging: false,
-  message_cap: null,
-  llm: false,
-  renderer: 'flappy-bird',
-}
-
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'content-type': 'application/json' },
-  })
-}
-
-function stubFetch(impl: (url: string, init?: RequestInit) => Promise<Response>) {
-  const mock = vi.fn(impl)
-  vi.stubGlobal('fetch', mock)
-  return mock
-}
+const META = flappyMeta()
 
 describe('api client', () => {
   afterEach(() => {

@@ -1,26 +1,10 @@
-import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
-import { fireEvent, render, screen } from '@testing-library/vue'
+import { fireEvent, screen } from '@testing-library/vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { h } from 'vue'
-import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 
-const META: EnvironmentMeta = {
-  env_id: 'flappy_bird',
-  display_name: 'Flappy Bird',
-  description: 'A paced single-human clone.',
-  min_slots: 1,
-  max_slots: 1,
-  human_slots: ['player_0'],
-  human_timeout_ms: null,
-  recommended_episode_ticks: 1000,
-  pace_interval_ms: 50,
-  step_limit_ms: 1000,
-  episode_limit_ms: 120_000,
-  messaging: false,
-  message_cap: null,
-  llm: false,
-  renderer: 'flappy-bird',
-}
+import { flappyMeta } from './helpers/fixtures.js'
+import { memoryRouter, renderWithMe } from './helpers/render.js'
+
+const META = flappyMeta()
 
 vi.mock('../src/api/client.js', () => ({
   getEnvironments: vi.fn(),
@@ -30,31 +14,24 @@ vi.mock('../src/api/client.js', () => ({
 }))
 
 import { getEnvironments, getMe, listRecordings, startSession } from '../src/api/client.js'
-import { MeProvider } from '../src/me.js'
 import EnvironmentPage from '../src/pages/EnvironmentPage.vue'
 
 // A stub for the session route: this suite tests the environment page's navigation seam, not the
 // session host, so the route only needs to surface the id it landed on.
 const SessionStub = { template: '<div>{{ $route.params.id }}</div>' }
 
-// Render the environment page inside the me provider (so the allowlist gate has its one /api/me fetch)
-// and a real router carrying the session route, so navigation on start lands on the stub.
+// Render the environment page (renderWithMe wires the MeProvider so the allowlist gate has its one
+// /api/me fetch) on a router carrying the session route, so navigation on start lands on the stub.
 async function renderPage() {
-  const router = createRouter({
-    history: createMemoryHistory(),
-    routes: [
-      // A home stub so the hub's "Environments / …" context-line link resolves in the test router.
-      { path: '/', component: { template: '<div />' } },
-      { path: '/environments/:envId', component: EnvironmentPage },
-      { path: '/sessions/:id', component: SessionStub },
-    ],
-  })
+  const router = memoryRouter([
+    // A home stub so the hub's "Environments / …" context-line link resolves in the test router.
+    { path: '/', component: { template: '<div />' } },
+    { path: '/environments/:envId', component: EnvironmentPage },
+    { path: '/sessions/:id', component: SessionStub },
+  ])
   router.push('/environments/flappy_bird')
   await router.isReady()
-  return render(MeProvider, {
-    slots: { default: () => h(RouterView) },
-    global: { plugins: [router] },
-  })
+  return renderWithMe(router)
 }
 
 describe('EnvironmentPage', () => {
