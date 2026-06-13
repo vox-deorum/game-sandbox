@@ -29,6 +29,7 @@ The language split follows the container boundary (see the [execution spec](../.
 - [Examples and the template](examples-and-template.md): overlays, tags, and publishing.
 - [The backend](backend.md): the package layout, configuration, storage, the identity stub, and the HTTP API.
 - [The execution boundary](execution.md): the driver interface, the sandbox profile, the transport, the WebSocket protocol, and the live runner.
-- [The frontend](frontend.md): the package layout, the dev server, the mock identity, and the renderer contract and registry.
+- [The frontend](frontend.md): the package layout, the dev server, the mock identity, and the live and replay hosts.
+- [Rendering](rendering.md): the renderer contract, the PixiJS base class, the sizing-and-scaling model, and how to add a renderer for a new environment.
 
 The full build plan lives in the [implementation plan](https://github.com/vox-deorum/game-sandbox/blob/main/plans/README.md), and the authoritative design lives in the [Specification](../../specs/overview.md).

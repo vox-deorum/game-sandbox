@@ -52,7 +52,7 @@ The operator-configured allowlist from [frontend.md](../../specs/frontend.md) ga
 
 ## The renderer contract and registry
 
-Per [interaction.md](../../specs/interaction.md), each environment registers a frontend module that draws per-step states; live play and replay share it by design. The contract, in `renderers/types.ts`:
+Per [interaction.md](../../specs/interaction.md), each environment registers a frontend module that draws per-step states; live play and replay share it by design. Renderers draw on PixiJS through a shared base class; [rendering.md](../../docs/contributors/rendering.md) is the authority for that infrastructure, and this section records the contract the rest of the frontend depends on. The contract, in `renderers/types.ts`:
 
 ```ts
 interface RendererContext {
@@ -69,10 +69,14 @@ interface RendererInstance {
 interface RendererModule {
   mount(ctx: RendererContext): RendererInstance
   thumbnail: string                 // static asset URL for the home cards
+  internalSize: { width: number; height: number }  // the logical space the renderer draws in
+  aspectRatio: number               // width / height; the shape the host lays out around
 }
 ```
 
-Two rules give the architecture its properties. First, **purity**: `render(state)` must draw entirely from the passed state (plus the mount-time header and metadata) with no accumulated history, so the live page, the replay player, and the scrubber are all the same call with a different state source. Second, **the chrome split**: the renderer owns the game frame — world plus in-game UI (score, tick, status that belongs inside the game) — while the hosting page owns the session chrome that must work for every environment: start/stop/pause controls, the status banner, the active-timeout display, and later the feedback prompt. That split is what lets [live-session-control.md](live-session-control.md) and [replay-and-retention.md](replay-and-retention.md) build their hosts once, for all future environments.
+Two rules give the architecture its properties. First, **determinism**: `render(state)` must draw a frame that is a pure function of the passed state (plus the mount-time header and metadata), with no dependence on what was rendered before, so the live page, the replay player, and the scrubber are all the same call with a different state source. The PixiJS scene graph is retained (display objects persist and are mutated), but the visible frame still depends only on the current state — see [rendering.md](../../docs/contributors/rendering.md). Second, **the chrome split**: the renderer owns the game frame — world plus in-game UI (score, tick, status that belongs inside the game) — while the hosting page owns the session chrome that must work for every environment: start/stop/pause controls, the status banner, the active-timeout display, and later the feedback prompt. That split is what lets [live-session-control.md](live-session-control.md) and [replay-and-retention.md](replay-and-retention.md) build their hosts once, for all future environments.
+
+A renderer declares the shape it draws in, not a pixel size: `internalSize` is its fixed logical coordinate space, and `aspectRatio` (derived from it) is what the host lays out around — sizing the stage element and seating the decision log beside a portrait canvas or below a landscape one. The base class derives the actual device resolution from the host's rect, scales the internal space onto it, and resizes in place when the rect changes; the renderer code only ever speaks internal coordinates. These two fields replace the single `targetCanvasSize` an earlier iteration carried.
 
 `renderers/registry.ts` maps the metadata `renderer` key (Flappy Bird's is `"flappy-bird"`) to its module. The home-card thumbnail the spec asks for is not in the environment metadata; it comes from the registered module's `thumbnail` export, with a generic placeholder for an environment whose renderer is not registered yet — so adding an environment's visuals is one frontend module and zero metadata changes.
 

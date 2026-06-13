@@ -1,6 +1,6 @@
 # The frontend
 
-The frontend is the browser app outside the container and backend: Vue 3 with Vite and TypeScript, served on one origin in development. It reads the public environment metadata, hosts live play and replays through per-environment renderers, and signs everyone in as a single mock development user until GitHub OAuth lands (see the [frontend spec](../../specs/frontend.md) and the [interaction spec](../../specs/interaction.md)). This page covers the package, the renderer contract and the Flappy Bird renderer, the live-session host, and the replay viewer.
+The frontend is the browser app outside the container and backend: Vue 3 with Vite and TypeScript, served on one origin in development. It reads the public environment metadata, hosts live play and replays through per-environment renderers, and signs everyone in as a single mock development user until GitHub OAuth lands (see the [frontend spec](../../specs/frontend.md) and the [interaction spec](../../specs/interaction.md)). This page covers the package, the live-session host, and the replay viewer; the renderer contract and the PixiJS infrastructure every renderer inherits have their own authority in [rendering.md](rendering.md).
 
 The frontend is built on a design system — semantic CSS tokens plus a small set of Vue primitives under `components/ui/`. [design.md](design.md) is the authority for that: the tokens, the primitives, the accessibility baseline, and the rule that new UI is assembled from documented primitives rather than ad hoc CSS. This page covers package mechanics and does not duplicate it.
 
@@ -17,7 +17,7 @@ The frontend is built on a design system — semantic CSS tokens plus a small se
 | `src/me.ts` | The `provide`/`inject` store that fetches `GET /api/me` once, shares the allowlist answer, and exposes `whenSettled()` so a page can await identity without polling. |
 | `src/api/client.ts` | Typed wrappers per backend route; failures the UI must distinguish (403, 409) come back as typed results. |
 | `src/api/socket.ts` | The session WebSocket client: classifies frames with the shared rule, exposes typed callbacks, sends commands, reconnects. |
-| `src/renderers/` | The renderer contract (`types.ts`), the registry (`registry.ts`), the registration barrel (`index.ts`), and one module per environment (`flappy-bird/`). |
+| `src/renderers/` | The renderer contract (`types.ts`), the PixiJS base class (`base/`), the registry (`registry.ts`), the registration barrel (`index.ts`), and one module per environment (`flappy-bird/`). See [rendering.md](rendering.md). |
 | `src/replay/` | The dependency-free recording parser (`parse.ts`) and the replay transport controller (`transport.ts`). |
 | `src/components/ui/` | The design-system primitives, `Ui` prefix (`UiButton`, `UiCard`, `UiField`, `UiDialog`, `UiSlider`, …). See [design.md](design.md). |
 | `src/components/` | Feature components built on the primitives: `AppShell`, `AppNav`, `StartForm`, `RunMetadata`, `RecentReplays`, `DecisionLog`. |
@@ -41,34 +41,15 @@ To act as a different user (for example to exercise the allowlist), set `VITE_SA
 
 ## The renderer contract and registry
 
-Each environment registers a frontend module that draws per-step states, and live play and replay share it by design. The contract lives in `renderers/types.ts`:
+Each environment registers a frontend module that draws per-step states, and live play and replay share it by design. Renderers draw on PixiJS through a shared base class; [rendering.md](rendering.md) is the authority for the contract, the base class, the sizing-and-scaling model, and how a retained scene graph stays deterministic. The essentials the rest of this page leans on:
 
-- `RendererContext` is everything a renderer is handed once at mount: the `container` element it owns, the environment `meta`, the recording `header`, the `controlledSlots` (empty when spectating or replaying), and an optional `sendAction` (absent outside live human play).
-- `RendererInstance` is the mounted renderer: `render(state)` per step, and `destroy()` once.
-- `RendererModule` is what an environment exports: `mount(ctx)`, a `thumbnail` URL for the home cards, and a `targetCanvasSize` (the intrinsic logical canvas size the renderer is designed for). The host reads the size to place the decision log beside a portrait canvas or below a landscape one, so responsive layout is a property the renderer owns rather than one the host reverse-engineers from pixels.
+- A renderer is handed a `RendererContext` once at mount (the `container`, the environment `meta`, the recording `header`, the `controlledSlots`, and an optional `sendAction`) and returns a `RendererInstance` (`render(state)` per step, `destroy()` once).
+- A `RendererModule` exports `mount(ctx)`, a `thumbnail` for the home cards, and the shape it draws in — `internalSize` (its fixed logical coordinate space) plus the derived `aspectRatio`. The host reads `aspectRatio` to size the stage and place the decision log beside a portrait canvas or below a landscape one; the base class scales the internal space onto the real rect and resizes in place when the rect changes.
+- Two rules: **determinism** (`render(state)` draws a frame that is a pure function of state, so live, replay, and the scrubber are one call with a different source) and **the chrome split** (the renderer owns the game frame; the host owns the session chrome that works for every environment).
 
-Two rules give the architecture its properties. First, purity: `render(state)` must draw entirely from the passed state plus the mount-time header and metadata, with no accumulated history, so the live page, the replay player, and the scrubber are the same call with a different state source. Second, the chrome split: the renderer owns the game frame (the world plus in-game UI such as score, tick, and status that belongs inside the game), while the hosting page owns the session chrome that must work for every environment (the start/stop/pause controls, the status banner, the active-timeout display, and later the feedback prompt).
+`registry.ts` maps the metadata `renderer` key to its module; the home-card thumbnail comes from the registered module's `thumbnail`, with a placeholder for an unregistered environment. Adding an environment's visuals is one frontend module and zero metadata changes — the full recipe is in [rendering.md](rendering.md).
 
-`registry.ts` maps the metadata `renderer` key to its module. The home-card thumbnail comes from the registered module's `thumbnail`, with a generic placeholder for an environment whose renderer is not registered yet.
-
-## Adding a renderer for a new environment
-
-This is the page future environments land on. To give an environment its visuals:
-
-1. Write a module under `src/renderers/<env>/` that satisfies `RendererModule`, drawing only from the per-step state, the header, and the metadata. Keep any logic (scene computation) separate from the actual drawing so it is testable as plain functions in jsdom.
-2. Call `registerRenderer("<renderer-key>", module)` with the environment metadata's `renderer` value, and add an import for the module to `src/renderers/index.ts` (the registration barrel `main.ts` imports), so it registers on app load.
-3. Export a `thumbnail` (so the home card and environment page show the environment's art instead of the placeholder) and a `targetCanvasSize` (so the session and replay stages lay the decision log out around the canvas).
-
-Adding an environment's visuals is one frontend module and zero metadata changes.
-
-## The Flappy Bird renderer
-
-`renderers/flappy-bird/` is the first real renderer and the template for the rule above. It splits into a pure `scene.ts` and a thin `paint.ts`:
-
-- `computeScene(state, config)` turns one `StepState` into a `Scene` — a list of drawing primitives (sky, pipes, ground, the bird) plus the in-game HUD (the big score, the pipe counter, and a paced time/tick readout) — reading only the overlay's unnormalized screen coordinates plus the mount-time config. It is pure, so the same state always yields the same scene; that is the property the replay scrubber relies on, and it makes the logic unit-testable in jsdom with no canvas.
-- `paint(ctx, scene)` is a trivial switch that rasterizes the scene into a 2D canvas. Real pixels are the end-to-end suite's job; jsdom has no canvas, so the module tolerates a null 2D context and simply skips painting under unit tests.
-
-Input is raw device input, wired only for the owner of a live human session (the context's `sendAction` present and `player_0` among the `controlledSlots`): keydown (Space, ArrowUp, W; auto-repeat ignored), pointerdown, and touchstart each send one flap as `sendAction("player_0", 1)`, which the session host wraps in an `input` command. A spectator or the replay viewer mounts the same module with no `sendAction` and gets a draw-only renderer with every input path inert.
+The first renderer, `renderers/flappy-bird/`, is the reference implementation: it declares a `288 × 512` internal space, keeps a pure `computeScene(state)` (unit-tested in jsdom) feeding a retained PixiJS reconciler in `update(state)`, and wires Space / ArrowUp / W and pointer-or-touch to the flap action for the live owner only. See [rendering.md](rendering.md#the-flappy-bird-renderer).
 
 ## The live-session host
 
