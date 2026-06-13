@@ -164,7 +164,7 @@ describe('SessionPage', () => {
     handlers.onResult?.({ ticks: 42, reason: 'terminated', scores: { player_0: 7 } })
     handlers.onSessionStatus?.('ended', 'terminated')
 
-    expect(await screen.findByRole('heading', { name: 'Game over' })).toBeInTheDocument()
+    expect(await screen.findByText('Game over')).toBeInTheDocument()
     expect(screen.getByText('7')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Open replay' })).toHaveAttribute(
       'href',
@@ -186,13 +186,13 @@ describe('SessionPage', () => {
     ])
     await renderSession()
 
-    expect(await screen.findByRole('heading', { name: 'Game over' })).toBeInTheDocument()
+    expect(await screen.findByText('Game over')).toBeInTheDocument()
     expect(handlers).toBeUndefined()
     expect(screen.getByText('Mode')).toBeInTheDocument()
     expect(screen.getByText('Human')).toBeInTheDocument()
     expect(await screen.findByText('Final score')).toBeInTheDocument()
     expect(screen.getByText('22')).toBeInTheDocument()
-    expect(screen.getByText('Pinned')).toBeInTheDocument()
+    // Pin state is conveyed by the button alone now, not a duplicate metadata row.
     expect(await screen.findByRole('button', { name: 'Pinned ✓' })).toBeInTheDocument()
     expect(mountCtx?.controlledSlots).toEqual([])
     expect(mountCtx?.sendAction).toBeUndefined()

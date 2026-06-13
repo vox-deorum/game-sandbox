@@ -29,7 +29,6 @@ import {
 import DecisionLog, { type DecisionEntry } from '../components/DecisionLog.vue'
 import RunMetadata from '../components/RunMetadata.vue'
 import UiButton from '../components/ui/UiButton.vue'
-import UiCard from '../components/ui/UiCard.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import UiStatusBadge from '../components/ui/UiStatusBadge.vue'
 import { usePinning } from '../composables/usePinning.js'
@@ -101,29 +100,31 @@ const showActiveTimeout = computed(
 )
 
 const statusLabel = computed(() => {
+  if (status.value === 'ended') {
+    return reasonText(endReason.value)
+  }
   if (paused.value) {
     return 'Paused'
   }
   return status.value === 'running' ? 'Live' : 'Starting…'
 })
-const statusTone = computed<'neutral' | 'success' | 'warning'>(() =>
-  paused.value ? 'warning' : status.value === 'running' ? 'success' : 'neutral',
-)
+const statusTone = computed<'neutral' | 'success' | 'warning'>(() => {
+  if (status.value === 'ended') {
+    return 'neutral'
+  }
+  return paused.value ? 'warning' : status.value === 'running' ? 'success' : 'neutral'
+})
 
 // One facts list feeds the terminal card, so live results and returned ended sessions stay aligned.
+// The environment sits in the context line and the card title already names the end reason, while the
+// pin button shows pin state — so the strip carries only the run's own facts, not those echoes.
 const metadataItems = computed(() => [
-  { label: 'Environment', value: meta.value?.display_name ?? row.value?.env_id },
-  { label: 'Environment ID', value: row.value?.env_id, code: true },
-  { label: 'Session', value: row.value?.id, code: true },
-  { label: 'Recording', value: recordingId.value, code: true },
   { label: 'Mode', value: row.value === null ? null : formatMode(row.value.mode) },
-  { label: 'Reason', value: status.value === 'ended' ? reasonText(endReason.value) : null },
   { label: 'Final score', value: finalResult.value?.score },
   { label: 'Ticks', value: finalResult.value?.ticks },
   { label: 'Owner', value: row.value?.user_id },
   { label: 'Started', value: formatDate(row.value?.created_at) },
   { label: 'Ended', value: formatDate(row.value?.ended_at) },
-  { label: 'Pinned', value: recordingId.value === null ? null : pinned.value ? 'Yes' : 'No' },
 ])
 
 /** A friendly line for a termination reason, so a paused-and-idled session reads as normal, not error. */
@@ -245,53 +246,72 @@ function formatMode(mode: SessionRow['mode']): string {
       <span>{{ status === 'ended' ? 'Session' : 'Live session' }}</span>
     </p>
 
-    <header v-if="status !== 'ended'" class="session-bar">
+    <header class="session-bar">
       <div class="session-status">
         <UiStatusBadge :tone="statusTone" :label="statusLabel" />
-        <UiStatusBadge v-if="connection === 'reconnecting'" tone="warning" label="Reconnecting…" />
+        <UiStatusBadge
+          v-if="connection === 'reconnecting' && status !== 'ended'"
+          tone="warning"
+          label="Reconnecting…"
+        />
       </div>
-      <div v-if="isOwner" class="session-controls">
-        <UiButton variant="secondary" @click="togglePause">{{ paused ? 'Resume' : 'Pause' }}</UiButton>
-        <UiButton variant="danger" @click="stop">Stop</UiButton>
+      <div
+        v-if="status === 'ended' ? recordingId !== null : isOwner"
+        class="session-controls"
+      >
+        <template v-if="status === 'ended'">
+          <UiButton v-if="recordingId !== null" :to="`/replays/${recordingId}`">Open replay</UiButton>
+          <UiButton
+            v-if="isOwner && recordingId !== null"
+            variant="secondary"
+            :loading="pinBusy"
+            @click="togglePin"
+          >
+            {{ pinned ? 'Pinned ✓' : 'Pin this recording' }}
+          </UiButton>
+        </template>
+        <template v-else>
+          <UiButton variant="secondary" @click="togglePause">{{ paused ? 'Resume' : 'Pause' }}</UiButton>
+          <UiButton variant="danger" @click="stop">Stop</UiButton>
+        </template>
       </div>
     </header>
 
+    <UiEmptyState v-if="status === 'ended' && pinError !== null" tone="danger">
+      {{ pinError }}
+    </UiEmptyState>
+
+    <RunMetadata :items="metadataItems" />
     <p v-if="showActiveTimeout" class="active-timeout">{{ activeTimeoutLabel }}</p>
 
     <div class="stage" :class="logBeside ? 'beside' : 'below'">
-      <div class="stage-canvas">
-        <div class="renderer-host" ref="hostEl">
+      <section class="stage-canvas" aria-label="Game">
+        <h2 class="stage-title">{{ meta?.display_name ?? row?.env_id ?? 'Game' }}</h2>
+        <div
+          class="renderer-host"
+          ref="hostEl"
+          :style="
+            targetCanvasSize !== null
+              ? { aspectRatio: `${targetCanvasSize.width} / ${targetCanvasSize.height}` }
+              : undefined
+          "
+        >
           <div v-if="paused && status !== 'ended'" class="overlay-banner">Paused</div>
         </div>
         <UiEmptyState v-if="noRenderer">No renderer is registered for this environment yet.</UiEmptyState>
-      </div>
+      </section>
 
       <section v-if="logBeside" class="stage-log" aria-label="Decision log">
-        <h2 class="stage-log-title">Decision log</h2>
-        <DecisionLog :entries="decisions" />
+        <h2 class="stage-title">Decision log</h2>
+        <div class="stage-log-body">
+          <DecisionLog :entries="decisions" />
+        </div>
       </section>
       <details v-else class="stage-log stage-log-below">
         <summary>Decision log</summary>
         <DecisionLog :entries="decisions" />
       </details>
     </div>
-
-    <UiCard v-if="status === 'ended'" class="end-card">
-      <h2 class="end-title">{{ reasonText(endReason) }}</h2>
-      <RunMetadata :items="metadataItems" />
-      <div class="end-actions">
-        <UiButton v-if="recordingId !== null" :to="`/replays/${recordingId}`">Open replay</UiButton>
-        <UiButton
-          v-if="isOwner && recordingId !== null"
-          variant="secondary"
-          :loading="pinBusy"
-          @click="togglePin"
-        >
-          {{ pinned ? 'Pinned ✓' : 'Pin this recording' }}
-        </UiButton>
-      </div>
-      <UiEmptyState v-if="pinError !== null" tone="danger">{{ pinError }}</UiEmptyState>
-    </UiCard>
   </section>
 </template>
 
@@ -338,14 +358,28 @@ function formatMode(mode: SessionRow['mode']): string {
   gap: var(--space-4);
 }
 
+/* Beside layout: the columns stretch to a common height so the log matches the canvas to its left,
+   and each column is a header + body stack so the two headers sit on the same baseline. */
 .stage.beside {
   grid-template-columns: minmax(0, 22rem) minmax(0, 1fr);
-  align-items: start;
+  align-items: stretch;
+}
+
+.stage.beside .stage-canvas,
+.stage.beside .stage-log {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .stage.below {
   grid-template-columns: minmax(0, 1fr);
   justify-items: center;
+}
+
+.stage-title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-md);
 }
 
 .renderer-host {
@@ -371,13 +405,18 @@ function formatMode(mode: SessionRow['mode']): string {
   background: var(--color-scrim);
 }
 
-.stage-log-title {
-  margin: 0 0 var(--space-2);
-  font-size: var(--text-md);
+/* The log fills the height the canvas defines and scrolls within it. The body is positioned so its
+   table never contributes to the row height — otherwise a long log would stretch the row past the
+   canvas; instead the canvas defines the height and the log scrolls inside it. */
+.stage.beside .stage-log-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
 }
 
-.stage-log :deep(.decision-log) {
-  max-height: 480px;
+.stage.beside .stage-log-body :deep(.decision-log) {
+  position: absolute;
+  inset: 0;
 }
 
 .stage-log-below {
@@ -394,21 +433,6 @@ function formatMode(mode: SessionRow['mode']): string {
 
 .stage-log-below :deep(.decision-log) {
   max-height: 12rem;
-}
-
-.end-card {
-  max-width: 480px;
-  margin: var(--space-4) auto 0;
-}
-
-.end-title {
-  margin-top: 0;
-}
-
-.end-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
 }
 
 /* On a narrow screen the stage stacks regardless of canvas shape. */

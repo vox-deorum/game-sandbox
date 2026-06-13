@@ -70,17 +70,15 @@ const scrubIndex = computed({
   set: (i) => transport.value?.seek(i),
 })
 
-// Keep replay facts in the same shape as the ended-session card.
+// Keep replay facts in the same shape as the ended-session card. The environment and recording id
+// already sit in the context line and URL, and pin state is shown by the pin button — so the strip
+// carries only the run's own facts, not those echoes.
 const metadataItems = computed(() => [
-  { label: 'Environment', value: meta.value?.display_name ?? header.value?.environment },
-  { label: 'Environment ID', value: header.value?.environment, code: true },
-  { label: 'Recording', value: id, code: true },
   { label: 'Seed', value: header.value?.seed },
   { label: 'Final score', value: finalSummary.value.score },
   { label: 'Ticks', value: finalSummary.value.ticks },
   { label: 'Owner', value: listingEntry.value?.user_id },
   { label: 'Created', value: formatDate(listingEntry.value?.created_at) },
-  { label: 'Pinned', value: listingEntry.value === null ? null : pinned.value ? 'Yes' : 'No' },
 ])
 
 /** One decision-log row per state: the first agent's action (single-agent today). */
@@ -158,15 +156,27 @@ onMounted(async () => {
     This replay needs a newer viewer. {{ versionMessage }}
   </UiEmptyState>
   <section v-else class="replay">
-    <p class="context-line">
-      <RouterLink to="/">Environments</RouterLink>
-      <span aria-hidden="true"> / </span>
-      <RouterLink v-if="header !== null" :to="`/environments/${header.environment}`">
-        {{ meta?.display_name ?? header.environment }}
-      </RouterLink>
-      <span aria-hidden="true"> / </span>
-      <span>Replay</span>
-    </p>
+    <div class="context-row">
+      <p class="context-line">
+        <RouterLink to="/">Environments</RouterLink>
+        <span aria-hidden="true"> / </span>
+        <RouterLink v-if="header !== null" :to="`/environments/${header.environment}`">
+          {{ meta?.display_name ?? header.environment }}
+        </RouterLink>
+        <span aria-hidden="true"> / </span>
+        <span>Replay</span>
+      </p>
+      <UiButton
+        v-if="owned"
+        class="context-pin"
+        variant="secondary"
+        :loading="pinBusy"
+        @click="togglePin"
+      >
+        {{ pinned ? 'Pinned ✓' : 'Pin this recording' }}
+      </UiButton>
+    </div>
+    <UiEmptyState v-if="owned && pinError !== null" tone="danger">{{ pinError }}</UiEmptyState>
 
     <RunMetadata :items="metadataItems" />
 
@@ -198,39 +208,55 @@ onMounted(async () => {
       aria-label="Replay stage"
       @keydown="onKeydown"
     >
-      <div class="stage-canvas">
-        <div class="renderer-host" ref="hostEl" />
+      <section class="stage-canvas" aria-label="Replay">
+        <h2 class="stage-title">{{ meta?.display_name ?? header?.environment ?? 'Replay' }}</h2>
+        <div
+          class="renderer-host"
+          ref="hostEl"
+          :style="
+            targetCanvasSize !== null
+              ? { aspectRatio: `${targetCanvasSize.width} / ${targetCanvasSize.height}` }
+              : undefined
+          "
+        />
         <UiEmptyState v-if="noRenderer">No renderer is registered for this environment.</UiEmptyState>
-      </div>
+      </section>
 
       <section v-if="logBeside" class="stage-log" aria-label="Decision log">
-        <h2 class="stage-log-title">Decision log</h2>
-        <DecisionLog :entries="decisions" :current-index="replayState.index" />
+        <h2 class="stage-title">Decision log</h2>
+        <div class="stage-log-body">
+          <DecisionLog :entries="decisions" :current-index="replayState.index" />
+        </div>
       </section>
       <details v-else class="stage-log stage-log-below">
         <summary>Decision log</summary>
         <DecisionLog :entries="decisions" :current-index="replayState.index" />
       </details>
     </div>
-
-    <div v-if="owned" class="replay-pin">
-      <UiButton variant="secondary" :loading="pinBusy" @click="togglePin">
-        {{ pinned ? 'Pinned ✓' : 'Pin this recording' }}
-      </UiButton>
-      <UiEmptyState v-if="pinError !== null" tone="danger">{{ pinError }}</UiEmptyState>
-    </div>
   </section>
 </template>
 
 <style scoped>
-.context-line {
+.context-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
   margin: 0 0 var(--space-4);
+}
+
+.context-line {
+  margin: 0;
   font-size: var(--text-sm);
   color: var(--color-text-muted);
 }
 
 .context-line a:hover {
   color: var(--color-accent);
+}
+
+.context-pin {
+  flex: none;
 }
 
 .replay-controls {
@@ -272,14 +298,28 @@ onMounted(async () => {
   border-radius: var(--radius-md);
 }
 
+/* Beside layout: the columns stretch to a common height so the log matches the canvas to its left,
+   and each column is a header + body stack so the two headers sit on the same baseline. */
 .stage.beside {
   grid-template-columns: minmax(0, 22rem) minmax(0, 1fr);
-  align-items: start;
+  align-items: stretch;
+}
+
+.stage.beside .stage-canvas,
+.stage.beside .stage-log {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .stage.below {
   grid-template-columns: minmax(0, 1fr);
   justify-items: center;
+}
+
+.stage-title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-md);
 }
 
 .renderer-host {
@@ -292,13 +332,18 @@ onMounted(async () => {
   overflow: hidden;
 }
 
-.stage-log-title {
-  margin: 0 0 var(--space-2);
-  font-size: var(--text-md);
+/* The log fills the height the canvas defines and scrolls within it. The body is positioned so its
+   table never contributes to the row height — otherwise a long log would stretch the row past the
+   canvas; instead the canvas defines the height and the log scrolls inside it. */
+.stage.beside .stage-log-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
 }
 
-.stage-log :deep(.decision-log) {
-  max-height: 480px;
+.stage.beside .stage-log-body :deep(.decision-log) {
+  position: absolute;
+  inset: 0;
 }
 
 .stage-log-below {
@@ -315,10 +360,6 @@ onMounted(async () => {
 
 .stage-log-below :deep(.decision-log) {
   max-height: 12rem;
-}
-
-.replay-pin {
-  margin-top: var(--space-4);
 }
 
 @media (max-width: 768px) {

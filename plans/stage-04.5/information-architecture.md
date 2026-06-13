@@ -85,7 +85,7 @@ The trailing placeholder is one muted sentence, not styled section stubs, so the
 
 ### Live stage (`/sessions/:id`)
 
-Purpose: host one active session with the renderer as the star. The chrome is one status strip above the stage and the end-of-session card after it ends.
+Purpose: host one active session with the renderer as the star. The chrome is one status strip and a compact metadata strip above the stage, both present while the session runs and after it ends; the only thing the end changes is the strip's controls, where the replay and pin actions take the place the pause and stop buttons held.
 
 ```
 |  top bar                                                                             |
@@ -93,14 +93,15 @@ Purpose: host one active session with the renderer as the star. The chrome is on
 |  Environments / Flappy Bird / Live Session      (context line, links back)           |
 |                                                                                      |
 |  ● running    reconnecting…        [ Pause ] [ Stop ]      (one status strip)        |
-|  metadata (environment, seed, score, ticks, ...)                                     |
+|  Mode · score · ticks · started …                (compact inline metadata strip)     |
 |                                                                                      |
-|  +-------------------------------------+   Decision log                              |
-|  |                                     |   Tick | Decision                           |
-|  |          renderer canvas            |   -----+---------                           |
-|  |                                     |    118 | flap                               |
+|  Flappy Bird                            Decision log    (each column gets a header)   |
+|  +-------------------------------------+   Tick | Decision                           |
+|  |                                     |   -----+---------                           |
+|  |          renderer canvas            |    118 | flap                               |
 |  |                                     |    119 | hold                               |
 |  +-------------------------------------+    120 | flap                               |
+|  (the log's height matches the canvas beside it and scrolls within that height)      |
 |                                                                                      |
 |  (wide canvas, no room beside it — log moves below, same table:)                     |
 |  +-------------------------------------------+                                       |
@@ -108,18 +109,23 @@ Purpose: host one active session with the renderer as the star. The chrome is on
 |  +-------------------------------------------+                                       |
 |  ▸ Decision log    Tick | Decision               (collapsed when stacked)            |
 |                                                                                      |
-|  (after the session ends, in place of the strip:)                                    |
-|  ● completed                                                                         |
-|  metadata (environment, seed, score, ticks, ...)                                     |
-|  (canvas stays at the last moment)                                                   |
-|  [ Watch replay ]  [ Pin replay ]                                                    |
+|  (after the session ends, the strip and metadata stay above the canvas:)             |
+|  ● Game over            [ Watch replay ] [ Pin ]  (actions replace Pause/Stop)        |
+|  Mode · score · ticks · started · ended …         (same metadata strip)              |
+|  Flappy Bird                            Decision log                                  |
+|  +-------------------------------------+   …      (canvas stays at the last moment)   |
+|  +-------------------------------------+                                              |
 ```
 
-The status indicator pairs the colored dot with a text label always (running, ended, reconnecting), never color alone. Pause, stop, and the timeout display keep their Stage 4 behavior.
+The status indicator pairs the colored dot with a text label always (running, ended, reconnecting), never color alone; when the session ends the badge names the termination reason (Game over, Stopped, …) in place of a separate end-card heading. The status strip and metadata strip stay above the canvas across the whole lifecycle so the page does not reflow when the session ends — the strip's right zone simply swaps its controls, the replay and pin actions taking the place pause and stop held. Pause, stop, and the timeout display keep their Stage 4 behavior.
 
 A running decision log shows the agent's per-tick actions as the session plays. The data is already in the stream the renderer consumes, so the log needs no new transport: each `StepState` carries `agents[slot].action` (the action that agent took on the tick) and `agents[slot].timing.decision_ms` (how long it spent deciding). It is a two-column table, `Tick | Decision`, scrolling independently and pinned to the latest tick unless the reader scrolls up. The cells are terse by nature — a tick number and an action value — because an action is all an agent emits per tick. The column is sized to grow so a future environment with a richer (structured or multi-field) action space reads cleanly, not because anything streams in later: Stage 7's LLM call metadata is queried by request (see "What later stages slot in"), a detail view you open, not a live feed piped into this log.
 
 The log's placement is responsive and driven by the canvas, not the viewport alone. It sits **alongside** the canvas when there is horizontal room left over after the canvas takes the size it wants — the common case for tall, narrow (vertical) canvases, which leave a column free. When the canvas is wide enough to claim the full width, the log **moves below** it and collapses by default, so it never forces the stage to shrink. The renderer is the star in both layouts; the log only takes space the canvas does not want.
+
+In the alongside layout the two columns read as a matched pair: the canvas carries its own header (the environment name) level with the log's `Decision log` heading, so their bodies start on the same baseline, and the log's height matches the canvas beside it, scrolling within that height rather than stopping short. The canvas declares its intrinsic aspect ratio (the same `targetCanvasSize` metadata below), which fixes the canvas height and so the height the log fills.
+
+The metadata above the stage is a single compact inline strip of the run's own facts (mode, score, ticks, dates), not a stacked block. It deliberately omits what the surrounding chrome already states: the environment is in the context line, the recording id is in the URL, the end reason titles the end card, and pin state is shown by the pin button — so none of those repeat in the strip. On the replay page the pin control sits at the top-right of the context line (the `[pin]` above); on the live page it stays in the end-of-session card beside the replay link.
 
 To decide this without guessing, each renderer declares its **targeted canvas size** as metadata on its `RendererModule` (alongside `thumbnail`) — an intrinsic size and/or aspect ratio the renderer is designed for. The host lays the canvas out at or under that target, then places the log beside or below based on the room that remains. This keeps responsive layout a property the renderer owns (it knows its own shape) rather than something the host reverse-engineers from rendered pixels, and the same metadata lets the home-card thumbnails and the replay stage reason about canvas shape consistently.
 
@@ -131,13 +137,13 @@ Purpose: play back one recording, shareable by URL. Same stage layout as the liv
 |  top bar                                                                             |
 |--------------------------------------------------------------------------------------|
 |  Environments / Flappy Bird / Replay            (context line, links back)     [pin] |
-|  metadata (environment, session, seed, score, owner, dates)                          |
+|  seed · score · ticks · owner · created          (compact inline metadata strip)     |
 |  [⏮] [⏪] [ ▶ play ] [⏩] [⏭]  ───────●─────────  tick 120 / 300                  |
 |                                                                                      |
-|  +-------------------------------------+   Decision log                              |
-|  |                                     |   Tick | Decision                           |
-|  |          renderer canvas            |   -----+---------                           |
-|  |                                     |    118 | flap                               |
+|  Flappy Bird                            Decision log    (each column gets a header)   |
+|  +-------------------------------------+   Tick | Decision                           |
+|  |                                     |   -----+---------                           |
+|  |          renderer canvas            |    118 | flap                               |
 |  |                                     |    119 | hold                               |
 |  +-------------------------------------+    120 | flap                               |
 ```
