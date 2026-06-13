@@ -10,10 +10,19 @@
  * `renderers/index.ts`). See docs/contributors/rendering.md for the architecture.
  */
 import type { StepState } from '@game-sandbox/schema'
-import { Container, Graphics, Text } from 'pixi.js'
+import { Container, FillGradient, Graphics, Text } from 'pixi.js'
 
 import { type InputIntent, PixiRenderer } from '../base/PixiRenderer.js'
-import { type BirdShape, computeScene, type HudText, type Scene, type Shape } from './scene.js'
+import {
+  type BirdShape,
+  COLORS,
+  computeScene,
+  type GradientFill,
+  type HudText,
+  type RectShape,
+  type Scene,
+  type Shape,
+} from './scene.js'
 
 /** The slot Flappy Bird's human plays, and the flap action value the harness latches per pace step. */
 const HUMAN_SLOT = 'player_0'
@@ -23,8 +32,19 @@ const FLAP_KEYS = ['Space', 'ArrowUp', 'KeyW'] as const
 
 /** The beak and eye colors, ported from the old 2D rasterizer so the bird reads the same. */
 const BEAK_FILL = '#e8772e'
+const BEAK_SHADOW = '#c85f1e'
 const EYE_WHITE = '#ffffff'
 const EYE_PUPIL = '#222222'
+
+/** The bird body's top-light shading, resolved to a cached gradient like any other shape fill. */
+const BIRD_GRADIENT: GradientFill = {
+  dir: 'vertical',
+  stops: [
+    { offset: 0, color: COLORS.birdLight },
+    { offset: 0.55, color: COLORS.bird },
+    { offset: 1, color: COLORS.birdDark },
+  ],
+}
 
 export class FlappyBirdRenderer extends PixiRenderer {
   // 288×512 is the pinned game's logical surface (see scene.ts): a tall, narrow space, so the host
@@ -37,12 +57,44 @@ export class FlappyBirdRenderer extends PixiRenderer {
   /** Pooled display objects, reconciled toward the scene each update (created/reused/removed). */
   private readonly shapeNodes: Graphics[] = []
   private readonly hudNodes: Text[] = []
+  /**
+   * Cached `FillGradient` instances, keyed by their definition. A gradient allocates a GPU texture, so
+   * we build each look once and reuse it across every shape and frame rather than per draw (which would
+   * leak a texture every tick). Freed in {@link destroy}.
+   */
+  private readonly gradients = new Map<string, FillGradient>()
 
   protected setup(root: Container): void {
     this.shapeLayer = new Container()
     this.hudLayer = new Container()
     root.addChild(this.shapeLayer)
     root.addChild(this.hudLayer)
+  }
+
+  override destroy(): void {
+    for (const gradient of this.gradients.values()) {
+      gradient.destroy()
+    }
+    this.gradients.clear()
+    super.destroy()
+  }
+
+  /** Resolve a scene gradient to a cached `FillGradient`, building (and caching) it on first sight. */
+  private gradientFor(grad: GradientFill): FillGradient {
+    const key = `${grad.dir}|${grad.stops.map((s) => `${s.offset}:${s.color}`).join(',')}`
+    let gradient = this.gradients.get(key)
+    if (gradient === undefined) {
+      gradient = new FillGradient({
+        type: 'linear',
+        // Local space: (0,0)→(1,1) is each filled shape's own box, so one instance shades any size.
+        start: { x: 0, y: 0 },
+        end: grad.dir === 'vertical' ? { x: 0, y: 1 } : { x: 1, y: 0 },
+        colorStops: grad.stops,
+        textureSpace: 'local',
+      })
+      this.gradients.set(key, gradient)
+    }
+    return gradient
   }
 
   protected update(state: StepState): void {
@@ -66,9 +118,63 @@ export class FlappyBirdRenderer extends PixiRenderer {
         this.shapeLayer.addChild(node)
         this.shapeNodes[i] = node
       }
-      drawShape(node, shapes[i] as Shape)
+      this.drawShape(node, shapes[i] as Shape)
     }
     removeExtra(this.shapeNodes, shapes.length)
+  }
+
+  /** Draw one scene shape into a (reused) Graphics, resetting any transform a prior shape set. */
+  private drawShape(g: Graphics, shape: Shape): void {
+    g.clear()
+    g.position.set(0, 0)
+    g.rotation = 0
+    if (shape.kind === 'rect') {
+      this.drawRect(g, shape)
+      return
+    }
+    if (shape.kind === 'circle') {
+      g.circle(shape.x, shape.y, shape.radius).fill({ color: shape.fill, alpha: shape.alpha ?? 1 })
+      return
+    }
+    this.drawBird(g, shape)
+  }
+
+  /** Draw a rect, honoring its optional gradient fill, rounded corners, outline, and alpha. */
+  private drawRect(g: Graphics, shape: RectShape): void {
+    if (shape.radius !== undefined && shape.radius > 0) {
+      g.roundRect(shape.x, shape.y, shape.w, shape.h, shape.radius)
+    } else {
+      g.rect(shape.x, shape.y, shape.w, shape.h)
+    }
+    g.fill(
+      shape.gradient !== undefined
+        ? this.gradientFor(shape.gradient)
+        : { color: shape.fill, alpha: shape.alpha ?? 1 },
+    )
+    if (shape.stroke !== undefined) {
+      g.stroke({ color: shape.stroke.color, width: shape.stroke.width })
+    }
+  }
+
+  /** The bird: a top-lit body with a flapping wing, beak, and eye, drawn around its center. */
+  private drawBird(g: Graphics, bird: BirdShape): void {
+    g.position.set(bird.x, bird.y)
+    g.rotation = (bird.rot * Math.PI) / 180
+    const r = bird.radius
+    // Wing behind the body: ellipse() has no per-call rotation, so the flap is sold by lifting the
+    // wing's center — high on the upstroke (wing > 0), low on the downstroke.
+    g.ellipse(-r * 0.2, r * 0.15 - bird.wing * r * 0.35, r * 0.7, r * 0.42)
+      .fill(COLORS.birdDark)
+      .stroke({ color: bird.edge, width: 1.5 })
+    // Body.
+    g.ellipse(0, 0, r * 1.2, r)
+      .fill(this.gradientFor(BIRD_GRADIENT))
+      .stroke({ color: bird.edge, width: 2 })
+    // Beak with a thin shadow under it, then the eye with a catch-light pupil.
+    g.poly([r * 1.1, -2, r * 1.75, 1, r * 1.1, 6]).fill(BEAK_SHADOW)
+    g.poly([r * 1.1, -3, r * 1.7, 0, r * 1.1, 3]).fill(BEAK_FILL)
+    g.circle(r * 0.4, -r * 0.4, r * 0.35).fill(EYE_WHITE)
+    g.circle(r * 0.5, -r * 0.4, r * 0.15).fill(EYE_PUPIL)
   }
 
   /** Reconcile the HUD text nodes, mutating in place so an unchanged label needs no re-layout. */
@@ -95,36 +201,11 @@ function removeExtra(pool: Array<Graphics | Text>, keep: number): void {
   pool.length = keep
 }
 
-/** Draw one scene shape into a (reused) Graphics, resetting the transform a prior shape may have set. */
-function drawShape(g: Graphics, shape: Shape): void {
-  g.clear()
-  g.position.set(0, 0)
-  g.rotation = 0
-  if (shape.kind === 'rect') {
-    g.rect(shape.x, shape.y, shape.w, shape.h).fill(shape.fill)
-    return
-  }
-  drawBird(g, shape)
-}
-
-/** The bird: a rotated body with a small beak and eye, drawn around its center (ported from paint.ts). */
-function drawBird(g: Graphics, bird: BirdShape): void {
-  g.position.set(bird.x, bird.y)
-  g.rotation = (bird.rot * Math.PI) / 180
-  const r = bird.radius
-  g.ellipse(0, 0, r * 1.2, r)
-    .fill(bird.fill)
-    .stroke({ color: bird.edge, width: 2 })
-  g.poly([r * 1.1, -2, r * 1.7, 0, r * 1.1, 4]).fill(BEAK_FILL)
-  g.circle(r * 0.4, -r * 0.4, r * 0.35).fill(EYE_WHITE)
-  g.circle(r * 0.5, -r * 0.4, r * 0.15).fill(EYE_PUPIL)
-}
-
 function alignAnchor(align: HudText['align']): number {
   return align === 'left' ? 0 : align === 'right' ? 1 : 0.5
 }
 
-/** Apply one HUD entry to a (reused) Text node: text, position, alignment, size, and the soft shadow. */
+/** Apply one HUD entry to a (reused) Text node: text, position, alignment, size, outline, and shadow. */
 function applyHud(node: Text, hud: HudText): void {
   node.text = hud.text
   node.anchor.set(alignAnchor(hud.align), 0.5)
@@ -133,6 +214,12 @@ function applyHud(node: Text, hud: HudText): void {
   node.style.fontWeight = 'bold'
   node.style.fontSize = hud.size
   node.style.fill = hud.fill
+  // An optional outline (the big score) keeps it crisp over busy pipes; clear it when absent so a
+  // reused node never carries a prior entry's stroke.
+  node.style.stroke =
+    hud.stroke !== undefined
+      ? { color: hud.stroke.color, width: hud.stroke.width }
+      : { width: 0, color: '#000000' }
   // A soft drop shadow so the white HUD stays legible over the sky and pipes (the old paint.ts effect).
   node.style.dropShadow = {
     color: '#000000',
