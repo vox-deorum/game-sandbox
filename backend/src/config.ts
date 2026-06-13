@@ -151,7 +151,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       scratchMb: intVar(env, 'SANDBOX_SCRATCH_MB', 256),
     },
     executionDriver: 'docker',
-    docker: { 
+    docker: {
       imageTagPrefix:
         env.DOCKER_IMAGE_TAG_PREFIX && env.DOCKER_IMAGE_TAG_PREFIX !== ''
           ? env.DOCKER_IMAGE_TAG_PREFIX
