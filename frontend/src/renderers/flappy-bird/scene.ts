@@ -20,8 +20,13 @@ export const PLAYER_HEIGHT = 24
  * replace the constant if a variant ever varies it.
  */
 export const PIPE_WIDTH = 52
-/** Height of the ground strip drawn along the bottom, a visual constant matching the game's base. */
-export const GROUND_HEIGHT = 56
+/**
+ * Fraction of the surface height at which the ground's top edge sits. This is the game's authoritative
+ * collision line: `flappy_bird_env` sets `self._ground["y"] = screen_height * 0.79` and a ground crash
+ * fires when the bird's bottom reaches it. The drawn ground top MUST match this, or the bird looks like
+ * it ends the game floating in mid-air (the painted ground was 52px too low under the old 56px constant).
+ */
+export const GROUND_RATIO = 0.79
 /** Fallback logical surface when the overlay omits it (a degenerate state); the pinned game is 288×512. */
 const DEFAULT_WIDTH = 288
 const DEFAULT_HEIGHT = 512
@@ -142,7 +147,9 @@ export function formatScore(score: number): string {
  */
 export function computeScene(state: StepState, config: SceneConfig = {}): Scene {
   const o = readOverlay(state)
-  const groundY = o.height - GROUND_HEIGHT
+  // The ground top is the game's collision line (height * 0.79), not a fixed-height strip, so the bird
+  // visibly meets the ground at the same y the env ends the game on.
+  const groundY = o.height * GROUND_RATIO
   const shapes: Shape[] = []
 
   // Sky.
@@ -185,7 +192,7 @@ export function computeScene(state: StepState, config: SceneConfig = {}): Scene 
     x: 0,
     y: groundY + 4,
     w: o.width,
-    h: GROUND_HEIGHT - 4,
+    h: o.height - groundY - 4,
     fill: COLORS.ground,
   })
 
