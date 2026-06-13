@@ -18,7 +18,7 @@ A checked-in fixture set is the backbone of the stage's provability and is share
 
 ## CI wiring
 
-- The Docker-free suites ride the existing `check:ts` and `test:ts` workspace jobs with no YAML change, picking up the new backend submission modules and the frontend form/profile components. The Biome restricted-import overrides grow one narrow allowance for the git process wrapper under `backend/src/submission/source/`, and the check proves no other backend source imports `child_process`.
+- The Docker-free suites ride the existing `check:ts` and `test:ts` workspace jobs with no YAML change, picking up the new backend submission modules and the frontend form/profile components. The Biome restricted-import overrides gain a new block for the git process wrapper under `backend/src/submission/source/` **plus** the matching exclusion in the broad backend block (the two-edit change [2-source-resolution.md](2-source-resolution.md) describes, preserving the "exactly one override per file" invariant), and the check proves no other backend source imports `child_process`.
 - The harness `validate` tests ride the existing harness test job.
 - The Docker-gated build/load-check and the submission e2e extend the existing gated jobs (`backend-integration` and `frontend-e2e` in `scripts/ci.py` / `ci.yml`), needing the session base image and the Docker daemon, runnable directly the same way. Decide per implementation whether these are new gated jobs or additions to the existing ones; record the choice here.
 - If the manifest contract changes, the `generated-code-fresh` / lockstep check between the TS static validator and [manifest.py](../../harness/src/game_sandbox_harness/manifest.py) must stay green. The two halves of the loader contract cannot drift.
@@ -38,6 +38,8 @@ Participant-facing docs: this is the first stage that changes anything participa
 ## Parent-plan upkeep
 
 Per [the plan README](../README.md), this stage's files and the specs must not drift from what gets built: confirm or correct the proposed defaults (caching policy, validation-worker processing, config names) in the relevant step files as implementation confirms them, flip the [Stage 5](../stage-05-submissions.md) status line when work begins and ends, and keep the static-validator/`manifest.py` contract changes in the same change set on both sides.
+
+One existing doc comment needs reconciling in the same change set: [backend/src/deps-version.ts](../../backend/src/deps-version.ts) currently says "Stage 5 resolves a session's version per submission **from its manifest**." Stage 5 as planned resolves the version from the **iteration's pinned `deps_version`** and only _validates_ that the submission's manifest `template_version` matches it (steps 3–4); the overlay build and the watch run both take the version from the iteration, not the manifest directly. Update that comment when step 4 lands so code and plan agree on where the version comes from.
 
 ## Done when
 

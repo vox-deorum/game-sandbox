@@ -36,7 +36,7 @@ This is the Docker-free, fixtures-driven heart of the stage's "Done when". A `fi
 - an extra unknown key returns `manifest_unknown_key` naming the key.
 - entry-point module named but absent returns `entry_point_missing`.
 - `template_version` with no deployment base image returns `unknown_template_version`.
-- `template_version` known to the deployment but different from the open iteration returns `template_version_mismatch`.
+- `template_version` known to the deployment but different from the open iteration returns `template_version_mismatch`. Because the validator takes the known-version set and the iteration's `deps_version` as explicit arguments (not globals), this case is exercised by passing a synthetic set like `{1, 2}` with iteration `deps_version` 1 and a manifest `template_version` of 2 — the real Stage 5 deployment only has v1, so the mismatch is realizable in the unit test rather than against a live multi-version deployment.
 
 Every malformed fixture rejects with the correct, specific reason, matching the exit criterion verbatim, and the worked example's real manifest passes. These run in plain Vitest, no Docker, no network, and are the proof this stage is demonstrable before any container work exists.
 

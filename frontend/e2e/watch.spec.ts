@@ -24,7 +24,12 @@ test('watch a scripted session, and a spectator gets no controls', async ({ page
   await expect(page.locator('.overlay-banner')).toHaveText('Paused')
 
   // A second context opening the same URL is a spectator: the renderer draws, but no controls appear.
+  // It must act as a different user, or it would share the owner's mock identity and get the owner's
+  // controls; the localStorage override (the seam OAuth's per-session cookie drops into) gives it one.
   const spectatorContext = await browser.newContext()
+  await spectatorContext.addInitScript(() => {
+    window.localStorage.setItem('sandbox-user', 'spectator-user')
+  })
   const spectator = await spectatorContext.newPage()
   await spectator.goto(sessionUrl)
   await expect(spectator.locator('canvas.renderer-canvas')).toBeVisible()

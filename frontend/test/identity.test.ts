@@ -11,6 +11,7 @@ describe('identity', () => {
   afterEach(() => {
     vi.unstubAllEnvs()
     vi.resetModules()
+    localStorage.clear()
   })
 
   it('resolves the dev-user fallback when no override is set', () => {
@@ -31,5 +32,13 @@ describe('identity', () => {
     vi.resetModules()
     const reloaded = await import('../src/identity.js')
     expect(reloaded.currentUserId).toBe('tester')
+  })
+
+  it('lets a localStorage override act as a different user at runtime, over the env override', async () => {
+    vi.stubEnv('VITE_SANDBOX_USER', 'tester')
+    localStorage.setItem('sandbox-user', 'spectator-user')
+    vi.resetModules()
+    const reloaded = await import('../src/identity.js')
+    expect(reloaded.currentUserId).toBe('spectator-user')
   })
 })
