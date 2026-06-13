@@ -54,7 +54,9 @@ const isOwner = computed(
   () => me.me?.user_id !== undefined && row.value?.user_id === me.me.user_id,
 )
 const controlledSlots = computed<string[]>(() =>
-  isOwner.value && row.value?.mode === 'human' ? (meta.value?.human_slots ?? []) : [],
+  isOwner.value && row.value?.mode === 'human' && status.value !== 'ended'
+    ? (meta.value?.human_slots ?? [])
+    : [],
 )
 const recordingId = computed(() => row.value?.recording_id ?? null)
 
@@ -173,6 +175,9 @@ onMounted(async () => {
   }
   meta.value =
     (await getEnvironments().catch(() => [])).find((e) => e.env_id === fetched.env_id) ?? null
+  if (meta.value === null) {
+    noRenderer.value = true
+  }
 
   // Identity must be resolved before the renderer mounts (attach replays the header immediately), or
   // the owner would be misjudged a spectator. The shared /api/me fetch is usually settled by now; this
@@ -207,6 +212,11 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
   try {
     const parsed = parseRecording(text)
     decisions.value = parsed.states.map(toDecision)
+    mountRenderer(parsed.header)
+    const finalState = parsed.states.at(-1)
+    if (finalState !== undefined) {
+      renderState(finalState)
+    }
     if (finalResult.value === null) {
       finalResult.value = summarizeStates(parsed.states)
     }

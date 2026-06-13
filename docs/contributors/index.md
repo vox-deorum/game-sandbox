@@ -1,10 +1,10 @@
 # For Contributors
 
-This section is for people developing Game Sandbox itself. It explains how to set the repository up, how the cross-boundary contract behaves in practice, and how the example and template publishing pipeline works. Where a topic is about design rather than operation, it links to the [Specification](../specs/overview.md) instead of restating it.
+This section is for people developing Game Sandbox itself. It explains how to set the repository up, how the cross-boundary contract behaves in practice, and how the example and template publishing pipeline works. Where a topic is about design rather than operation, it links to the [Specification](../../specs/overview.md) instead of restating it.
 
 ## The monorepo map
 
-The language split follows the container boundary (see the [execution spec](../specs/execution.md)): everything inside a session container is Python, everything outside is TypeScript on Node.
+The language split follows the container boundary (see the [execution spec](../../specs/execution.md)): everything inside a session container is Python, everything outside is TypeScript on Node.
 
 | Directory | What it is |
 | --- | --- |
@@ -31,4 +31,4 @@ The language split follows the container boundary (see the [execution spec](../s
 - [The execution boundary](execution.md): the driver interface, the sandbox profile, the transport, the WebSocket protocol, and the live runner.
 - [The frontend](frontend.md): the package layout, the dev server, the mock identity, and the renderer contract and registry.
 
-The full build plan lives in the [implementation plan](https://github.com/vox-deorum/game-sandbox/blob/main/plans/README.md), and the authoritative design lives in the [Specification](../specs/overview.md).
+The full build plan lives in the [implementation plan](https://github.com/vox-deorum/game-sandbox/blob/main/plans/README.md), and the authoritative design lives in the [Specification](../../specs/overview.md).

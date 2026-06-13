@@ -19,7 +19,7 @@ withDefaults(
   display: inline-block;
   font-size: var(--text-xs);
   font-weight: 600;
-  padding: 0.15rem var(--space-2);
+  padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-full);
   background: var(--color-surface-raised);
   color: var(--color-text);

@@ -207,7 +207,7 @@ onMounted(async () => {
         <h2 class="stage-log-title">Decision log</h2>
         <DecisionLog :entries="decisions" :current-index="replayState.index" />
       </section>
-      <details v-else class="stage-log stage-log-below" open>
+      <details v-else class="stage-log stage-log-below">
         <summary>Decision log</summary>
         <DecisionLog :entries="decisions" :current-index="replayState.index" />
       </details>

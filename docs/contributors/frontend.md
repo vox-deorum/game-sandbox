@@ -1,6 +1,6 @@
 # The frontend
 
-The frontend is the browser app outside the container and backend: Vue 3 with Vite and TypeScript, served on one origin in development. It reads the public environment metadata, hosts live play and replays through per-environment renderers, and signs everyone in as a single mock development user until GitHub OAuth lands (see the [frontend spec](../specs/frontend.md) and the [interaction spec](../specs/interaction.md)). This page covers the package, the renderer contract and the Flappy Bird renderer, the live-session host, and the replay viewer.
+The frontend is the browser app outside the container and backend: Vue 3 with Vite and TypeScript, served on one origin in development. It reads the public environment metadata, hosts live play and replays through per-environment renderers, and signs everyone in as a single mock development user until GitHub OAuth lands (see the [frontend spec](../../specs/frontend.md) and the [interaction spec](../../specs/interaction.md)). This page covers the package, the renderer contract and the Flappy Bird renderer, the live-session host, and the replay viewer.
 
 The frontend is built on a design system — semantic CSS tokens plus a small set of Vue primitives under `components/ui/`. [design.md](design.md) is the authority for that: the tokens, the primitives, the accessibility baseline, and the rule that new UI is assembled from documented primitives rather than ad hoc CSS. This page covers package mechanics and does not duplicate it.
 

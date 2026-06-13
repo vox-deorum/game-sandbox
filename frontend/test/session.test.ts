@@ -36,6 +36,7 @@ vi.mock('../src/renderers/registry.js', () => ({
       return { render: (s: unknown) => drawn.push(s), destroy: () => {} }
     },
     thumbnail: '',
+    targetCanvasSize: { width: 288, height: 512 },
   }),
 }))
 
@@ -193,6 +194,9 @@ describe('SessionPage', () => {
     expect(screen.getByText('22')).toBeInTheDocument()
     expect(screen.getByText('Pinned')).toBeInTheDocument()
     expect(await screen.findByRole('button', { name: 'Pinned ✓' })).toBeInTheDocument()
+    expect(mountCtx?.controlledSlots).toEqual([])
+    expect(mountCtx?.sendAction).toBeUndefined()
+    expect(drawn.at(-1)).toMatchObject({ tick: 2 })
   })
 
   it('gives a spectator no controls and no input', async () => {

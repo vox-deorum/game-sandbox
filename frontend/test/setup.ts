@@ -36,3 +36,12 @@ if (typeof globalThis.ResizeObserver === 'undefined') {
   }
   globalThis.ResizeObserver = ResizeObserverStub as unknown as typeof ResizeObserver
 }
+
+// jsdom exposes canvas elements but no rasterizer. Returning null matches browsers that cannot
+// provide a 2D context and keeps renderer input tests from printing jsdom's not-implemented warning.
+if (typeof HTMLCanvasElement !== 'undefined') {
+  Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
+    configurable: true,
+    value: () => null,
+  })
+}
