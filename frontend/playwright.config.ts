@@ -19,6 +19,19 @@ const BACKEND = 'npm run start --workspace @game-sandbox/backend'
 const MAIN_PORT = 8090
 const RESTRICTED_PORT = 8091
 
+/**
+ * The renderer needs a WebGL context (PixiJS skips its app entirely without one — see
+ * PixiRenderer.hasWebGL), but headless Chromium on a GPU-less CI runner has no hardware GL. These
+ * flags route GL through ANGLE's SwiftShader software backend so the canvas mounts as it does on a
+ * desktop. `--enable-unsafe-swiftshader` opts in to SwiftShader after recent Chromium versions began
+ * gating it behind that flag.
+ */
+const SOFTWARE_WEBGL_ARGS = [
+  '--use-gl=angle',
+  '--use-angle=swiftshader',
+  '--enable-unsafe-swiftshader',
+]
+
 function backendEnv(port: number, allowlist: string, dataSubdir: string): Record<string, string> {
   return {
     PORT: String(port),
@@ -59,12 +72,20 @@ export default defineConfig({
   projects: [
     {
       name: 'main',
-      use: { ...devices['Desktop Chrome'], baseURL: `http://127.0.0.1:${MAIN_PORT}` },
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: `http://127.0.0.1:${MAIN_PORT}`,
+        launchOptions: { args: SOFTWARE_WEBGL_ARGS },
+      },
       testIgnore: /allowlist\.spec\.ts/,
     },
     {
       name: 'restricted',
-      use: { ...devices['Desktop Chrome'], baseURL: `http://127.0.0.1:${RESTRICTED_PORT}` },
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: `http://127.0.0.1:${RESTRICTED_PORT}`,
+        launchOptions: { args: SOFTWARE_WEBGL_ARGS },
+      },
       testMatch: /allowlist\.spec\.ts/,
     },
   ],

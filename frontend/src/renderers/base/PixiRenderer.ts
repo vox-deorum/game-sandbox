@@ -62,7 +62,12 @@ export abstract class PixiRenderer implements RendererInstance {
    * class, e.g. `FlappyBirdRenderer.mount(ctx)`.
    */
   static mount(this: RendererCreator, ctx: RendererContext): RendererInstance {
-    return new this(ctx)
+    const instance = new this(ctx)
+    // Start the lifecycle only after construction is fully complete. A subclass supplies `internalSize`
+    // (and other state) through field initializers, which run *after* this base constructor returns — so
+    // the constructor must not touch them. `start` runs here, once the instance is whole.
+    instance.start()
+    return instance
   }
 
   // --- Instance shape (see RendererInstance) ---
@@ -87,7 +92,14 @@ export abstract class PixiRenderer implements RendererInstance {
   private detachInput: (() => void) | null = null
 
   constructor(ctx: RendererContext) {
+    // The constructor only stores the context: it must not touch subclass field initializers (e.g.
+    // `internalSize`), which run after it returns. The lifecycle is kicked off by `start`, which the
+    // `mount` factory calls once the instance is fully constructed.
     this.ctx = ctx
+  }
+
+  /** Begin the lifecycle: wire input, then kick off the async app init. Called by `mount` only. */
+  private start(): void {
     // Input is wired synchronously (it needs no GPU), so it is live before the app finishes init and
     // works under jsdom where the app is skipped entirely.
     this.wireInput()

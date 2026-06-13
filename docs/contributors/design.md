@@ -1,6 +1,6 @@
 # The design system
 
-This is the design system's home, for contributors and agents. The frontend is built from two layers: semantic CSS custom properties (the tokens) and a small library of Vue primitives under `frontend/src/components/ui/`. A new page is assembled from documented primitives and tokens, not new ad hoc CSS. Read this page before any visual work; [AGENTS.md](../../AGENTS.md) carries the short version of the rules.
+This is the design system's home, for contributors and agents. The frontend is built from two layers: semantic CSS custom properties (the tokens) and a small library of Vue primitives under `frontend/src/components/ui/`. A new page is assembled from documented primitives and tokens, not new ad hoc CSS. Read this page before any visual work.
 
 It covers the principles, the token system, type and color, the primitives, layout and responsiveness, and the accessibility baseline. For the renderer contract (how a game draws itself) see the [interaction spec](../specs/interaction.md); for package mechanics see [frontend.md](frontend.md).
 
