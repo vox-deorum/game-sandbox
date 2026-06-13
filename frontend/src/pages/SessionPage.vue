@@ -62,7 +62,7 @@ const recordingId = computed(() => row.value?.recording_id ?? null)
 // The renderer (shared with replay) forwards the owner's live input. The socket owns the chrome state
 // and hands recording frames back here to draw and log. The two reference each other through stable
 // functions, so declaration order does not matter at call time.
-const { noRenderer, targetCanvasSize, mount: mountRenderer, render: renderState } = useRendererMount({
+const { noRenderer, aspectRatio, mount: mountRenderer, render: renderState } = useRendererMount({
   host: hostEl,
   meta,
   controlledSlots,
@@ -90,10 +90,7 @@ function toDecision(state: StepState): DecisionEntry {
 }
 
 // The decision log sits beside a portrait canvas (a column is left free) and below a landscape one.
-const logBeside = computed(() => {
-  const size = targetCanvasSize.value
-  return size != null && size.height > size.width
-})
+const logBeside = computed(() => aspectRatio.value !== null && aspectRatio.value < 1)
 
 const showActiveTimeout = computed(
   () => controlledSlots.value.length > 0 && status.value !== 'ended',
@@ -290,11 +287,7 @@ function formatMode(mode: SessionRow['mode']): string {
         <div
           class="renderer-host"
           ref="hostEl"
-          :style="
-            targetCanvasSize !== null
-              ? { aspectRatio: `${targetCanvasSize.width} / ${targetCanvasSize.height}` }
-              : undefined
-          "
+          :style="aspectRatio !== null ? { aspectRatio: String(aspectRatio) } : undefined"
         >
           <div v-if="paused && status !== 'ended'" class="overlay-banner">Paused</div>
         </div>

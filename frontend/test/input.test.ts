@@ -17,6 +17,9 @@ function context(overrides: Partial<RendererContext>): RendererContext {
   }
 }
 
+// The base class wires the device input a renderer declares from `inputs()`: keyboard on `window`,
+// pointer/touch on the container (the GPU canvas is absent under jsdom, so the stage element carries
+// the pointer listeners). These tests drive that plumbing through the Flappy Bird renderer.
 describe('flappy-bird input', () => {
   let container: HTMLElement
 
@@ -52,18 +55,15 @@ describe('flappy-bird input', () => {
     instance.destroy()
   })
 
-  it('sends a flap on pointerdown and touchstart on the canvas', () => {
+  it('sends a flap on pointerdown and touchstart on the stage', () => {
     const sendAction = vi.fn()
     const instance = flappyBirdRenderer.mount(
       context({ container, controlledSlots: ['player_0'], sendAction }),
     )
-    const canvas = container.querySelector('canvas')
-    if (canvas === null) {
-      throw new Error('no canvas mounted')
-    }
-    canvas.dispatchEvent(new Event('pointerdown', { cancelable: true }))
-    canvas.dispatchEvent(new Event('touchstart', { cancelable: true }))
+    container.dispatchEvent(new Event('pointerdown', { cancelable: true }))
+    container.dispatchEvent(new Event('touchstart', { cancelable: true }))
     expect(sendAction).toHaveBeenCalledTimes(2)
+    expect(sendAction).toHaveBeenCalledWith('player_0', 1)
     instance.destroy()
   })
 
@@ -73,16 +73,18 @@ describe('flappy-bird input', () => {
       context({ container, controlledSlots: [], sendAction }),
     )
     window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space' }))
-    container.querySelector('canvas')?.dispatchEvent(new Event('pointerdown'))
+    container.dispatchEvent(new Event('pointerdown'))
     expect(sendAction).not.toHaveBeenCalled()
     instance.destroy()
   })
 
   it('attaches no input when sendAction is absent (spectator / replay)', () => {
+    // No throw, every input path inert: this is the draw-only path the replay viewer mounts.
     const instance = flappyBirdRenderer.mount(context({ container, controlledSlots: ['player_0'] }))
-    // No throw, no canvas listeners doing anything: this is the draw-only path.
-    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space' }))
-    expect(container.querySelector('canvas')).not.toBeNull()
+    expect(() =>
+      window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space' })),
+    ).not.toThrow()
+    container.dispatchEvent(new Event('pointerdown'))
     instance.destroy()
   })
 
@@ -93,7 +95,7 @@ describe('flappy-bird input', () => {
     )
     instance.destroy()
     window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space' }))
+    container.dispatchEvent(new Event('pointerdown'))
     expect(sendAction).not.toHaveBeenCalled()
-    expect(container.querySelector('canvas')).toBeNull()
   })
 })

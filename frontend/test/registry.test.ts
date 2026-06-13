@@ -6,7 +6,8 @@ import type { RendererModule } from '../src/renderers/types.js'
 const demoModule: RendererModule = {
   mount: () => ({ render: () => {}, destroy: () => {} }),
   thumbnail: 'demo-thumb.png',
-  targetCanvasSize: { width: 288, height: 512 },
+  internalSize: { width: 288, height: 512 },
+  aspectRatio: 288 / 512,
 }
 
 describe('renderer registry', () => {

@@ -1,0 +1,8 @@
+/*
+ * Presentation common to every renderer's canvas, owned by the base class (it was per-renderer CSS in
+ * the 2D era). PixiJS sets the canvas's pixel size and, with autoDensity, its CSS width/height inline;
+ * this only makes it a block so it leaves no inline descender gap inside the host's stage element.
+ */
+.renderer-canvas {
+  display: block;
+}

@@ -51,7 +51,7 @@ const decisions = ref<DecisionEntry[]>([])
 
 const hostEl = ref<HTMLElement | null>(null)
 
-const { noRenderer, targetCanvasSize, mount: mountRenderer, render: renderState } = useRendererMount({
+const { noRenderer, aspectRatio, mount: mountRenderer, render: renderState } = useRendererMount({
   host: hostEl,
   meta,
 })
@@ -59,10 +59,7 @@ const { state: replayState, transport, init: initTransport, onKeydown } = useRep
 const { pinned, busy: pinBusy, error: pinError, toggle: togglePin } = usePinning(id)
 
 // The decision log sits beside a portrait canvas and below a landscape one (the same rule as live).
-const logBeside = computed(() => {
-  const size = targetCanvasSize.value
-  return size != null && size.height > size.width
-})
+const logBeside = computed(() => aspectRatio.value !== null && aspectRatio.value < 1)
 
 // The scrubber's value is the transport index; setting it (drag or keyboard) seeks the transport.
 const scrubIndex = computed({
@@ -213,11 +210,7 @@ onMounted(async () => {
         <div
           class="renderer-host"
           ref="hostEl"
-          :style="
-            targetCanvasSize !== null
-              ? { aspectRatio: `${targetCanvasSize.width} / ${targetCanvasSize.height}` }
-              : undefined
-          "
+          :style="aspectRatio !== null ? { aspectRatio: String(aspectRatio) } : undefined"
         />
         <UiEmptyState v-if="noRenderer">No renderer is registered for this environment.</UiEmptyState>
       </section>

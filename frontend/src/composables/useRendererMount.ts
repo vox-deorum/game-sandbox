@@ -2,8 +2,8 @@
  * The renderer mount/teardown the session and replay pages share (see
  * plans/stage-04.5/page-restructure.md). It resolves the environment's module from the registry,
  * mounts it into the host element with the controlled slots and optional live `sendAction`, relays
- * states to it, and tears it down on unmount. It also surfaces the module's targeted canvas size so
- * the page can place the decision log beside or below the canvas.
+ * states to it, and tears it down on unmount. It also surfaces the module's aspect ratio so the page
+ * can size the stage element and place the decision log beside (portrait) or below (landscape) it.
  *
  * Mount is idempotent: the live socket replays the header on every reconnect, but the renderer mounts
  * once and is fed states thereafter.
@@ -28,7 +28,10 @@ export function useRendererMount(options: UseRendererMountOptions) {
   // shallowRef: the instance is an imperatively mutated class, not reactive data.
   const instance = shallowRef<RendererInstance | null>(null)
   const noRenderer = ref(false)
-  const targetCanvasSize = ref<{ width: number; height: number } | null>(null)
+  // The renderer's declared shape (width / height): the page sizes the stage with a CSS aspect-ratio
+  // and seats the decision log beside a portrait canvas (< 1) or below a landscape one. The base class
+  // owns the pixel sizing and scaling within that shape; the host only needs the ratio.
+  const aspectRatio = ref<number | null>(null)
 
   function mount(header: RecordingHeader): void {
     if (instance.value !== null || options.meta.value === null || options.host.value === null) {
@@ -39,7 +42,7 @@ export function useRendererMount(options: UseRendererMountOptions) {
       noRenderer.value = true
       return
     }
-    targetCanvasSize.value = module.targetCanvasSize
+    aspectRatio.value = module.aspectRatio
     const slots = toValue(options.controlledSlots ?? [])
     instance.value = module.mount({
       container: options.host.value,
@@ -62,5 +65,5 @@ export function useRendererMount(options: UseRendererMountOptions) {
 
   onBeforeUnmount(destroy)
 
-  return { instance, noRenderer, targetCanvasSize, mount, render, destroy }
+  return { instance, noRenderer, aspectRatio, mount, render, destroy }
 }

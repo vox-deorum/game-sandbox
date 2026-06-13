@@ -21,7 +21,7 @@ test('play Flappy Bird live, pause/resume, stop, then replay and pin', async ({ 
 
   // The session page mounts the renderer and shows the per-step input window while we control a slot.
   await expect(page).toHaveURL(/\/sessions\//)
-  await expect(page.locator('canvas.flappy-canvas')).toBeVisible()
+  await expect(page.locator('canvas.renderer-canvas')).toBeVisible()
   await expect(page.getByText(/Per-step input window/)).toBeVisible()
 
   // Flap with the keyboard so the bird stays alive long enough to pause.

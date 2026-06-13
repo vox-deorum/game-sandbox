@@ -24,7 +24,8 @@ vi.mock('../src/renderers/registry.js', () => ({
       return { render: (s: StepState) => drawn.push(s), destroy: () => {} }
     },
     thumbnail: '',
-    targetCanvasSize: { width: 288, height: 512 },
+    internalSize: { width: 288, height: 512 },
+    aspectRatio: 288 / 512,
   }),
 }))
 

@@ -12,7 +12,7 @@ test('watch a scripted session, and a spectator gets no controls', async ({ page
   await page.getByRole('button', { name: 'Start watching' }).click()
 
   await expect(page).toHaveURL(/\/sessions\//)
-  await expect(page.locator('canvas.flappy-canvas')).toBeVisible()
+  await expect(page.locator('canvas.renderer-canvas')).toBeVisible()
   const sessionUrl = page.url()
 
   // A scripted session's owner gets controls (stop) but no input window (no controlled slot).
@@ -23,7 +23,7 @@ test('watch a scripted session, and a spectator gets no controls', async ({ page
   const spectatorContext = await browser.newContext()
   const spectator = await spectatorContext.newPage()
   await spectator.goto(sessionUrl)
-  await expect(spectator.locator('canvas.flappy-canvas')).toBeVisible()
+  await expect(spectator.locator('canvas.renderer-canvas')).toBeVisible()
   await expect(spectator.getByRole('button', { name: 'Stop' })).toHaveCount(0)
   await expect(spectator.getByRole('button', { name: 'Pause' })).toHaveCount(0)
   await spectatorContext.close()

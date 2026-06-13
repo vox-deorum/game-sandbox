@@ -1,8 +1,8 @@
 /**
  * The pure half of the Flappy Bird renderer: one `StepState` in, one {@link Scene} out, with no
  * canvas and no accumulated history. This is where all the drawing logic lives, so it is unit-testable
- * in plain Vitest (jsdom has no canvas) and the contract's purity rule is mechanically checkable: the
- * same state always yields the same scene, which is the property the replay scrubber depends on.
+ * in plain Vitest (jsdom has no canvas) and the contract's determinism rule is mechanically checkable:
+ * the same state always yields the same scene, which is the property the replay scrubber depends on.
  *
  * The overlay is the whole truth — Stage 2's `extract_overlay` carries everything in unnormalized
  * screen pixels: the logical `width`/`height`, the `player` (`x`/`y` top-left, `vel_y`, `rot` degrees),

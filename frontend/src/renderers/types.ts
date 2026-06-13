@@ -2,9 +2,13 @@
  * The renderer contract. Each environment registers a frontend module that draws per-step states;
  * live play and replay share it by design, which gives the architecture two properties.
  *
- * First, **purity**: `render(state)` must draw entirely from the passed state (plus the mount-time
- * header and metadata) with no accumulated history, so the live page, the replay player, and the
- * scrubber are all the same call with a different state source.
+ * First, **determinism**: `render(state)` must draw a frame that is a pure function of the passed
+ * state (plus the mount-time header and metadata) with no dependence on what was rendered before, so
+ * the live page, the replay player, and the scrubber are all the same call with a different state
+ * source. The renderers draw on a retained PixiJS scene graph (display objects persist and are
+ * mutated rather than a surface repainted each frame); that is an implementation detail beneath the
+ * deterministic surface, because the reconciliation toward a given state is idempotent. See
+ * `renderers/base/` and docs/contributors/rendering.md.
  *
  * Second, **the chrome split**: the renderer owns the game frame (the world plus the in-game UI such
  * as score, tick, and status that belongs inside the game) while the hosting page owns the session
@@ -36,17 +40,30 @@ export interface RendererInstance {
   destroy(): void
 }
 
-/** The module an environment registers: how to mount it, and the home-card thumbnail. */
+/** The fixed logical coordinate space a renderer draws in; the base class scales it onto the host. */
+export interface InternalSize {
+  width: number
+  height: number
+}
+
+/** The module an environment registers: how to mount it, the home-card thumbnail, and its shape. */
 export interface RendererModule {
   mount(ctx: RendererContext): RendererInstance
   /** Static asset URL for the home cards. */
   thumbnail: string
   /**
-   * The intrinsic canvas size the renderer is designed for, in logical pixels. The host lays the
-   * canvas out at or under this and reads its shape to place the decision log: a portrait (taller
-   * than wide) canvas leaves a column free, so the log sits beside it; a landscape one claims the
-   * width, so the log moves below. Keeping this on the module makes responsive layout a property the
-   * renderer owns rather than something the host reverse-engineers from rendered pixels.
+   * The fixed logical coordinate space the renderer draws in, in logical pixels (Flappy Bird's is
+   * 288 × 512). The renderer's code only ever speaks these coordinates and never sees a device pixel;
+   * the PixiJS base class scales this space onto whatever real size the host gives it and keeps it
+   * sharp on high-DPI displays. These two fields replace the single `targetCanvasSize` of the 2D era.
    */
-  targetCanvasSize: { width: number; height: number }
+  internalSize: InternalSize
+  /**
+   * `internalSize.width / internalSize.height`, surfaced explicitly because it is the shape the host
+   * reasons about: it sizes the stage element with a CSS `aspect-ratio` and places the decision log
+   * beside a portrait canvas (`aspectRatio < 1`, a column is left free) or below a landscape one.
+   * Keeping this on the module makes responsive layout a property the renderer owns rather than
+   * something the host reverse-engineers from rendered pixels.
+   */
+  aspectRatio: number
 }
