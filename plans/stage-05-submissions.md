@@ -4,28 +4,48 @@ Status: not started
 
 ## Goal
 
-Participants can submit agents through the website and watch them play. A submission is verified, stored, built into a session image, and runnable in the watch flow for the current single-agent environment. Environments with separate human and agent slots can use the same machinery for play-with-agent sessions later; the first Flappy Bird slice does not pretend there is an opponent slot.
+Participants can submit agents through the website and watch them play. A submission is fetched, validated without running a game session, stored, built into a session image, and runnable in the watch flow for the current single-agent environment. The hard, testable-first part is validation: every submission is gated by a static check and a sandboxed load check, each rejecting with a specific reason the owner can see. Environments with separate human and agent slots can use the same machinery for play-with-agent sessions later; the first Flappy Bird slice does not pretend there is an opponent slot.
 
 ## Scope
 
-Implement submission storage and rules from [submission.md](../specs/submission.md): a submission is the repo URL pinned to a commit ref, the submitter's GitHub username, and the iteration. One active submission per participant per iteration; resubmission replaces. This stage creates or seeds a minimal current open iteration record so submissions have the right identity boundary and dependency-set version. Stage 6 replaces that placeholder workflow with the operator CLI, full configuration, open and close controls, and historical iteration views.
+Implement submission storage and rules from [submission.md](../docs/specs/submission.md): a submission is the repository pinned to a commit, the submitter's GitHub username, and the iteration. One active submission per participant per iteration; resubmission replaces. This stage creates or seeds a minimal current open iteration record per environment so submissions have the right identity boundary and dependency-set version. Stage 6 replaces that placeholder workflow with the operator CLI, full configuration, open and close controls, and historical iteration views.
 
-Build the "Submit agent" form on the environment page per [frontend.md](../specs/frontend.md): paste repo URL and commit ref, verify both are reachable before accepting (through the GitHub API, using the operator-provided token when one is configured for private repos), and record the submission under the signed-in identity.
+Submissions come from two sources. A **git repo URL** is the participant-facing path: the participant pastes the URL, optionally with a branch, tag, or commit, and the backend resolves it to an exact commit SHA and pins that (defaulting to the default-branch head). A **local folder** is a development-only source, gated off in normal deployments, so the whole pipeline can be exercised without GitHub. Resolving a git URL uses both mechanisms the deployment has: the GitHub REST API for reachability verification and private-repo auth with the operator token, and the host-agnostic git CLI (`git ls-remote` plus a shallow clone) to read the tree for any git host.
 
-Implement the build pipeline from [execution.md](../specs/execution.md): clone the pinned commit, read the manifest, and overlay the code into its per-slot directory on the base image for the dependency-set version the iteration pins. There is no per-submission dependency installation; dependencies come from the versioned template set (see [submission.md](../specs/submission.md)). A failed build (missing or malformed manifest, an entry point or class that does not load, a manifest targeting a dependency-set version with no base image) is stored and shown to the owner rather than run. Builds go through the Stage 3 execution driver, and caching is driver configuration; the default proposal is to build on first use and keep images until their submission is replaced.
+**Validation never runs a game session** (see [submission.md](../docs/specs/submission.md)). It has two layers, each producing an owner-visible rejection reason:
 
-Extend the session orchestrator so a session can name submissions for its non-human slots and run the corresponding image. Wire the watch self-play flow for Flappy Bird (pick an agent, run it in the single slot, stream to the renderer). Keep human Flappy Bird play as a human-controlled single-slot session; choosing submitted opponents for human-capable slots appears when an environment actually exposes both human and agent slots, with the first full multi-agent version in Stage 8.
+- A **static check** in the TypeScript backend reads the fetched tree and runs no participant code: the manifest is present, is valid JSON, carries exactly the required fields with the right types and no unknown keys, names an entry-point module file that exists, and targets a `template_version` the deployment has a base image for. This mirrors the static half of the harness loader (`load_manifest` in [manifest.py](../harness/src/game_sandbox_harness/manifest.py)) and is fully exercisable in Docker-free unit tests against local fixtures. This is the first demonstrable slice of the stage.
+- A **sandboxed load check** then confirms the agent loads: a new harness `validate` command runs `load_agent` (import the module, instantiate the class, confirm callable `reset`/`act`) inside the locked-down container with no environment stepping. Reuses the dynamic half of the same loader.
 
-Build the agent profile page: submission history across iterations, recent replays, and placeholders for leaderboard placements (Stage 6) and the LLM debug view (Stage 7).
+Build the "Submit agent" form on the environment page per [frontend.md](../docs/specs/frontend.md): paste repo URL (optionally a ref), verify reachability before accepting, surface rejection reasons, and record the submission under the signed-in identity. In dev builds the form also offers a local-folder path.
+
+Implement the build pipeline from [execution.md](../docs/specs/execution.md): overlay the submitted code into its per-slot directory on the base image for the dependency-set version the iteration pins, and run the sandboxed load check against the built overlay. There is no per-submission dependency installation; dependencies come from the versioned template set (see [submission.md](../docs/specs/submission.md)). A submission that fails static validation, the load check, or the build is stored and shown to the owner rather than run. Builds go through the Stage 3 execution driver, and caching is driver configuration; the default is to build on first use and keep the overlay image until its submission is superseded.
+
+Extend the session orchestrator so a session can name a submission for its non-human slot and run the corresponding image. Wire the watch self-play flow for Flappy Bird (pick a submitted agent, run it in the single slot, stream to the renderer). Keep human Flappy Bird play as a human-controlled single-slot session through the Stage 3 path; choosing submitted opponents for human-capable slots appears when an environment actually exposes both human and agent slots, with the first full multi-agent version in Stage 8.
+
+Build the agent profile page: submission history across iterations, recent replays, build/validation status, and placeholders for leaderboard placements (Stage 6) and the LLM debug view (Stage 7).
 
 ## Spec references
 
-[submission.md](../specs/submission.md), [frontend.md](../specs/frontend.md) (form, agent profile, flows), [execution.md](../specs/execution.md) (build pipeline, images).
+[submission.md](../docs/specs/submission.md) (sources, validation, rules), [frontend.md](../docs/specs/frontend.md) (form, agent profile, flows), [execution.md](../docs/specs/execution.md) (overlay build, sandboxed load check, images).
 
 ## Depends on
 
-Stage 3 (orchestrator, base image), Stage 4 (identity, environment page, flows).
+Stage 3 (orchestrator, driver, base image), Stage 4 (identity, environment page, flows).
+
+## Build order
+
+1. **Storage and the iteration seed.** Add `iterations` and `submissions` tables to the single Kysely schema, a migration, and the storage-interface methods; seed one open iteration per environment with the current `DEPS_VERSION`. Docker-free.
+2. **Source resolution.** A `SubmissionSource` seam: the dev-gated local-folder source, the git CLI source (`ls-remote` to resolve the ref to a SHA, shallow clone to read the tree), and the GitHub API client for reachability and private-repo auth. Docker-free for local folders.
+3. **Static validator.** A pure TypeScript check over the fetched tree, mirroring `load_manifest` plus entry-point-file existence and known-`template_version`, returning a typed accept or a specific reason. Fully unit-testable against local fixtures with no Docker. First demonstrable slice.
+4. **Sandboxed load check and overlay build.** The harness `validate` command and a `submission-overlay` image spec on the driver; the load check runs against the built overlay image under the no-network, read-only profile with a short timeout.
+5. **Submission API and form.** The endpoints and `SubmitAgentForm.vue`, with rejection reasons surfaced on the form.
+6. **Watch-run and agent profile.** The orchestrator names a submission for the agent slot, the watch picker, and the agent profile page.
 
 ## Done when
 
-A signed-in participant submits the template repo pinned to a commit, sees it verified and accepted, and a second submission replaces the first for the current iteration. The backend builds the image, and a viewer runs the submitted agent in a Flappy Bird watch session. Human-controlled Flappy Bird sessions still work through the Stage 3 path. An unreachable commit is rejected at the form, and a repo whose manifest names a class that does not exist shows a build failure on the owner's profile instead of a session.
+A signed-in participant submits the template repo by URL, the backend pins the default-branch head commit, validation accepts it, and a second submission replaces the first for the current iteration. Static validation rejects each malformed fixture with the correct, specific reason, proven by Docker-free unit tests. A local-folder submission of the worked example and the additional Flappy Bird examples passes static validation and the sandboxed load check, is built, and runs in a Flappy Bird watch session. A repo whose manifest names a class that does not exist is accepted statically but fails the sandboxed load check, showing a load failure on the owner's profile instead of a session. Human-controlled Flappy Bird sessions still work through the Stage 3 path.
+
+## Open questions
+
+The overlay-image caching policy (build on first use, keep until the submission is superseded) is a driver-configuration default proposed here and can be tuned once submission volume is real. Whether local-folder submissions should be allowed to skip the overlay build and validate against a bind mount, rather than a built image, is an optimization deferred until the Docker-gated tests show the build step is the bottleneck.

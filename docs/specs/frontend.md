@@ -13,7 +13,7 @@ The frontend is organized into a small number of clearly scoped pages and a shar
 
 ## Submitting an agent
 
-The environment page carries a "Submit agent" form for the currently open iteration. The participant pastes their repository URL and the commit ref to pin. The frontend verifies that the repo and commit are reachable before accepting, and records the submission under the signed-in GitHub identity. The submission rules (one active submission per iteration, resubmitting replaces) live in [submission.md](submission.md).
+The environment page carries a "Submit agent" form for the currently open iteration. The participant pastes their repository URL, optionally with a branch, tag, or commit to target; the frontend verifies the repo and ref are reachable before accepting, and the backend pins the resolved commit (the default-branch head when no ref is given). The submission is recorded under the signed-in GitHub identity. If validation rejects the submission, the specific reason is shown back on the form and on the owner's agent profile. The submission rules (one active submission per iteration, resubmitting replaces) and the validation layers live in [submission.md](submission.md).
 
 ## Flows
 
