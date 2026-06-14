@@ -32,7 +32,12 @@ const SOFTWARE_WEBGL_ARGS = [
   '--enable-unsafe-swiftshader',
 ]
 
-function backendEnv(port: number, allowlist: string, dataSubdir: string): Record<string, string> {
+function backendEnv(
+  port: number,
+  allowlist: string,
+  dataSubdir: string,
+  extra: Record<string, string> = {},
+): Record<string, string> {
   return {
     PORT: String(port),
     FRONTEND_DIST: DIST,
@@ -40,6 +45,7 @@ function backendEnv(port: number, allowlist: string, dataSubdir: string): Record
     SESSION_ALLOWLIST: allowlist,
     // A short idle window keeps a forgotten session from holding a container across the run.
     SESSION_IDLE_TIMEOUT_MS: '30000',
+    ...extra,
   }
 }
 
@@ -55,7 +61,9 @@ export default defineConfig({
     {
       command: BACKEND,
       cwd: REPO_ROOT,
-      env: backendEnv(MAIN_PORT, 'dev-user', 'main'),
+      // The main backend also enables the dev-only local-folder submission source so submission.spec
+      // can drive the real validate-and-build pipeline from a checked-in fixture, with no network.
+      env: backendEnv(MAIN_PORT, 'dev-user', 'main', { ALLOW_LOCAL_SUBMISSIONS: 'true' }),
       url: `http://127.0.0.1:${MAIN_PORT}/api/me`,
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,

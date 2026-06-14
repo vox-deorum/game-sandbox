@@ -20,10 +20,10 @@ The frontend is built on a design system — semantic CSS tokens plus a small se
 | `src/renderers/` | The renderer contract (`types.ts`), the PixiJS base class (`base/`), the registry (`registry.ts`), the registration barrel (`index.ts`), and one module per environment (`flappy-bird/`). See [rendering.md](rendering.md). |
 | `src/replay/` | The dependency-free recording parser (`parse.ts`) and the replay transport controller (`transport.ts`). |
 | `src/components/ui/` | The design-system primitives, `Ui` prefix (`UiButton`, `UiCard`, `UiField`, `UiDialog`, `UiSlider`, …). See [design.md](design.md). |
-| `src/components/` | Feature components built on the primitives: `AppShell`, `AppNav`, `StartForm`, `RunMetadata`, `RecentReplays`, `DecisionLog`. |
+| `src/components/` | Feature components built on the primitives: `AppShell`, `AppNav`, `StartForm`, `RunMetadata`, `RecentReplays`, `DecisionLog`, and the submission set — `SubmitAgentForm`, `SubmissionStageTimeline`, `WatchAgentPicker`. |
 | `src/composables/` | Page logic more than one page needs: `useEnvironmentMeta`, `useSessionSocket`, `useRendererMount`, `usePinning`, `useReplayTransport`. |
 | `src/lib/` | Pure helpers with no reactivity: `format.ts` (`formatDate`, `slotLabel`, `formatAction`). |
-| `src/pages/` | Route components, PascalCase with a `Page` suffix: `HomePage`, `EnvironmentPage`, `SessionPage`, `ReplayPage`, and the dev-only `StyleguidePage`. |
+| `src/pages/` | Route components, PascalCase with a `Page` suffix: `HomePage`, `EnvironmentPage`, `SessionPage`, `ReplayPage`, `AgentProfilePage`, and the dev-only `StyleguidePage`. |
 
 ## Running the dev server against a local backend
 
@@ -58,6 +58,16 @@ The first renderer, `renderers/flappy-bird/`, is the reference implementation: i
 Capabilities derive from identity and mode, not separate flags: the owner of a human session controls the human slots and gets a live `sendAction`; the owner of a scripted session gets controls but no input; anyone else is a spectator. Pause state is never tracked locally — the UI reflects the `pause`/`resume` echoes the backend broadcasts, so it cannot disagree with the container. The active-timeout display reads the metadata: a paced environment shows its per-step input window (50 ms / 20 steps per second for Flappy Bird), an unpaced one its move clock.
 
 The **decision log** (`components/DecisionLog.vue`) shows the agent's per-tick action — `StepState.agents[slot].action`, already in the state stream, so it needs no new transport. It is a two-column `Tick | Decision` table that follows the latest tick, shared with the replay page (where it follows the scrubber instead). An already-ended session is a historical view: it hydrates the final facts and the decision log from the stored recording and never opens a socket.
+
+## Submitting and watching agents
+
+The submission surface is three feature components on the typed `api/client.ts` wrappers (`getSubmissionCapabilities`, `checkReachability`, `submitAgent`, `getSubmission`, `listActiveSubmissions`, `getAgentProfile`), all returning the typed result/refusal shapes the rest of the app already uses for `403`/`409`.
+
+`components/SubmitAgentForm.vue` sits on the Environment page for the open iteration. The participant pastes a repository URL and an optional ref; a **local-folder path** field appears only when `import.meta.env.DEV` _and_ the backend's `local_submissions` capability are both true, so a production build neither renders nor ships the dev affordance. Submit is armed only after a reachability pre-check passes for the exact current input — editing the URL or ref disarms it again — so a row is never written for an unreachable repo. Once submitted the form switches to **polling** `getSubmission(id)` on an interval and renders `SubmissionStageTimeline` over the returned `checks`, so the owner watches each stage (`resolve → static → build → load`) start, pass, or fail and reads the exact `detail` on the stage that rejected, rather than a single terminal status. A stall guard flips to a plain notice if the log stops advancing, and terminal statuses map to friendly copy (the pinned-commit prefix on success; the typed `no_open_iteration` / `resubmit_conflict` / `local_disabled` / `invalid_source` reasons on refusal).
+
+`pages/AgentProfilePage.vue` (route `/environments/:envId/agents/:ownerId`) is one owner's agent for an environment: submission history across iterations (superseded rows included), each with its rollup status badge, its full per-stage `SubmissionStageTimeline` (detail shown, so a `load_failed` submission's captured error is on the profile exactly as the form showed it), and its recent replays. It carries inert placeholders for the Stage 6 leaderboard and the Stage 9 owner-only LLM debug view, the latter rendered only when the viewer is the owner (`me.user_id === ownerId`) — a display gate, since the data is not there yet.
+
+`components/WatchAgentPicker.vue` lists the environment's `ready` submissions (`listActiveSubmissions(envId, {status: 'ready'})`) and starts a watch run by `POST /api/sessions` with the chosen `submissionId` and scripted mode, navigating to the session on success and rejoining the active one on a `409`. Like every start affordance it renders only for an allowlisted user, with the backend `403` as the real enforcement. A submitted-agent watch is otherwise the same live-session host described above — the renderer and chrome do not know the agent came from a submission.
 
 ## The replay viewer and transport
 

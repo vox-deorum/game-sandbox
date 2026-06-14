@@ -1,6 +1,6 @@
 # Stage 5.7: Testing, CI Wiring, and Docs
 
-Status: not started.
+Status: in progress.
 
 Part of [Stage 5](../stage-05-submissions.md). This is the cross-cutting companion to build-order steps 1-6, matching the convention every prior stage follows (see [stage-04/testing-ci-and-docs.md](../stage-04/testing-ci-and-docs.md)). It collects where the stage's exit criteria become executable, what new CI jobs gate them, and which docs change. Most of the testing detail lives in each step's own file; this file is the wiring and the seams that no single step owns.
 
@@ -20,7 +20,7 @@ A checked-in fixture set is the backbone of the stage's provability and is share
 
 - The Docker-free suites ride the existing `check:ts` and `test:ts` workspace jobs with no YAML change, picking up the new backend submission modules and the frontend form/profile components. CI applies the two coordinated Biome edits [2-source-resolution.md](2-source-resolution.md) describes (the `submission/source/` override block plus the broad-block exclusion, preserving "exactly one override per file") and proves no other backend source imports `child_process`; a _package_ HTTP client, if chosen over global `fetch`, is confined the same way per that file.
 - The harness `validate` tests ride the existing harness test job.
-- The Docker-gated build/load-check and the submission e2e extend the existing gated jobs (`backend-integration` and `frontend-e2e` in `scripts/ci.py` / `ci.yml`), needing the session base image and the Docker daemon, runnable directly the same way. Decide per implementation whether these are new gated jobs or additions to the existing ones; record the choice here.
+- The Docker-gated build/load-check and the submission e2e extend the existing gated jobs (`backend-integration` and `frontend-e2e` in `scripts/ci.py` / `ci.yml`), needing the session base image and the Docker daemon, runnable directly the same way. **Decision: additions, not new jobs.** `backend-integration` is the `test/integration/**` Vitest project, so it picks up `overlay-build.test.ts` (overlay build, load check, caching, eviction) and `submission-source-network.test.ts` (live `git` reachability/pin) with no YAML change. `frontend-e2e` runs every `frontend/e2e/*.spec.ts`, so it picks up `submission.spec.ts`; the only wiring is the `main` Playwright backend setting `ALLOW_LOCAL_SUBMISSIONS=true` so a checked-in fixture drives the real pipeline with no network (`frontend/playwright.config.ts`). Keeping them in the existing jobs reuses the one base-image build each job already does.
 - If the manifest contract changes, the `generated-code-fresh` / lockstep check between the TS static validator and [manifest.py](../../harness/src/game_sandbox_harness/manifest.py) must stay green. The two halves of the loader contract cannot drift.
 
 ## Docs
