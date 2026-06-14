@@ -1,6 +1,6 @@
 # Stage 5.6: Watch-Run and Agent Profile
 
-Status: not started.
+Status: implemented (Docker-free). The orchestrator runs a `ready` submission in the agent slot from its overlay image, the watch picker streams a submitted agent into the renderer, and the agent profile page shows submission history, per-stage build/validation status, and recent replays. Backend (Vitest/FakeDriver/`:memory:`) and frontend (Vitest/jsdom) suites are green; the Docker-gated end-to-end Playwright journey is carried by the cross-cutting [testing companion](7-testing-ci-and-docs.md).
 
 Part of [Stage 5](../stage-05-submissions.md). This is build-order step 6, the demonstrable end of the stage: the orchestrator names a `ready` submission for the agent slot and runs its overlay image, the watch flow lets a viewer pick a submitted agent and stream it into the Flappy Bird renderer, and the agent profile page shows submission history, build/validation status, and recent replays.
 

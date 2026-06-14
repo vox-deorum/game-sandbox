@@ -10,7 +10,7 @@ The full specification lives under [docs/specs/](docs/specs/README.md). Read it 
 
 ## Writing style
 
-When you write documentation, specs, or any prose in this repo, follow these rules:
+When you write documentation, specs, responses, or any prose in this repo, follow these rules:
 
 - Write naturally, the way a thoughtful human would write a spec. No marketing voice.
 - Do not use em-dashes. Use commas, periods, parentheses, or rewording instead.

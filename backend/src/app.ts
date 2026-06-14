@@ -57,6 +57,9 @@ const START_SESSION_SCHEMA = {
       mode: { type: 'string', enum: ['human', 'scripted'] },
       seed: { type: 'integer', minimum: 0 },
       human_slot_timeout_ms: { type: 'integer', minimum: 0 },
+      // When present, run this submitted agent in the slot (a watch run); the orchestrator validates
+      // it is `ready` for the open iteration. Identity still rides the header, never this field.
+      submission_id: { type: 'string', minLength: 1 },
     },
   },
 } as const
@@ -66,6 +69,7 @@ interface StartBody {
   mode: 'human' | 'scripted'
   seed?: number
   human_slot_timeout_ms?: number
+  submission_id?: string
 }
 
 /** The source fields shared by the reachability pre-check and the submit body. */
@@ -100,6 +104,9 @@ interface SourceBody {
 interface SubmitBody extends SourceBody {
   env_id: string
 }
+
+/** How many recent recordings the agent profile lists per submission; older runs stay queryable. */
+const PROFILE_REPLAY_LIMIT = 10
 
 /**
  * Map a wire source body onto the seam's {@link SourceInput}: a non-empty `local_path` is a local
@@ -140,6 +147,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
           mode: request.body.mode,
           seed: request.body.seed,
           humanSlotTimeoutMs: request.body.human_slot_timeout_ms,
+          submissionId: request.body.submission_id,
         })
         return reply.code(201).send({ id: result.id, ws_path: result.wsPath })
       } catch (error) {
@@ -318,6 +326,36 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         iteration.id,
         request.query.status as SubmissionStatus | undefined,
       )
+    },
+  )
+
+  // The agent profile (step 6): one owner's submission history for an environment, with every commit they
+  // submitted across iterations (including superseded rows), each joined with its per-stage validation
+  // log and its recent watch/replay recording ids. Keyed by environment id and owner id so a future
+  // Hearts agent stays separate from the same user's Flappy Bird agent. Open (read-only); owner-only
+  // affordances (the Stage 7 debug view) gate on the client comparing this owner_id to its identity.
+  app.get<{ Params: { envId: string; ownerId: string } }>(
+    '/api/environments/:envId/agents/:ownerId',
+    async (request) => {
+      const submissions = await deps.storage.listSubmissionsByUser(
+        request.params.ownerId,
+        request.params.envId,
+      )
+      const detailed = await Promise.all(
+        submissions.map(async (submission) => ({
+          ...submission,
+          checks: await deps.storage.listSubmissionChecks(submission.id),
+          replays: await deps.storage.listRecordingsBySubmission(
+            submission.id,
+            PROFILE_REPLAY_LIMIT,
+          ),
+        })),
+      )
+      return {
+        env_id: request.params.envId,
+        owner_id: request.params.ownerId,
+        submissions: detailed,
+      }
     },
   )
 

@@ -37,16 +37,26 @@ async function main(): Promise<void> {
   const recordings = new RecordingsStore(resolve(config.recordingsDir))
   const retention = new Retention(storage, recordings, config, log)
   const overlayEviction = new OverlayEviction(driver, storage, config, log)
+  // The submission source seam resolves and fetches participant code. The orchestrator needs it too,
+  // to rebuild a submission's overlay when the cached image was evicted before a watch run.
+  const submissionSource = createSubmissionSource(config.submission)
   // The sweep runs at startup, on the interval, and after each session finalize (the only moment
   // the data grows); the orchestrator triggers the finalize sweep through this callback.
-  const orchestrator = new Orchestrator(driver, storage, environments, config, log, () => {
-    void retention.sweep()
-  })
+  const orchestrator = new Orchestrator(
+    driver,
+    storage,
+    environments,
+    config,
+    log,
+    () => {
+      void retention.sweep()
+    },
+    submissionSource,
+  )
 
-  // The submission pipeline (Stage 5): the source seam resolves and fetches participant code; the
-  // bounded worker drives it through the four validation stages, sweeping overlay images after each
-  // build. The deployment has a base image for the current dependency-set version only.
-  const submissionSource = createSubmissionSource(config.submission)
+  // The submission pipeline (Stage 5): the bounded worker drives the source seam through the four
+  // validation stages, sweeping overlay images after each build. The deployment has a base image for
+  // the current dependency-set version only.
   const validationWorker = new ValidationWorker({
     driver,
     storage,

@@ -386,13 +386,13 @@ export class KyselyStorage implements Storage {
     const rows = await this.db
       .selectFrom('session_submissions')
       .innerJoin('sessions', 'sessions.id', 'session_submissions.session_id')
-      .select('sessions.recording_id as recording_id')
+      .innerJoin('recordings', 'recordings.id', 'sessions.recording_id')
+      .select('recordings.id as recording_id')
       .where('session_submissions.submission_id', '=', submissionId)
-      .where('sessions.recording_id', 'is not', null)
-      .orderBy('sessions.created_at', 'desc')
+      .orderBy('recordings.created_at', 'desc')
       .limit(limit)
       .execute()
-    return rows.map((row) => row.recording_id).filter((id): id is string => id !== null)
+    return rows.map((row) => row.recording_id)
   }
 
   async close(): Promise<void> {

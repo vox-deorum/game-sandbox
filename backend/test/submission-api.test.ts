@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import type { FastifyInstance } from 'fastify'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 
 import { buildApp } from '../src/app.js'
 import { RecordingsStore } from '../src/recordings.js'
@@ -275,5 +275,103 @@ describe('submission API', () => {
     const res = await app.inject({ method: 'GET', url: `/api/environments/${ENV_ID}/submissions` })
     expect(res.statusCode).toBe(200)
     expect(res.json()).toEqual([])
+  })
+
+  describe('agent profile read', () => {
+    it('returns one owner submission history with per-stage logs and recent replays', async () => {
+      await build()
+      const iteration = await storage.ensureOpenIteration(ENV_ID, 1)
+      // The owner's first (now superseded) submission, which failed its load check.
+      const first = await storage.createSubmission({
+        iteration_id: iteration.id,
+        env_id: ENV_ID,
+        user_id: 'eve',
+        source_kind: 'git',
+        repo_url: 'https://example.test/one',
+        commit_sha: null,
+        local_path: null,
+        ref: null,
+        created_at: new Date(Date.now() - 1000).toISOString(),
+      })
+      await storage.startSubmissionCheck(first.id, 'resolve')
+      await storage.finishSubmissionCheck(first.id, 'resolve', 'passed')
+      await storage.startSubmissionCheck(first.id, 'static')
+      await storage.finishSubmissionCheck(first.id, 'static', 'passed')
+      await storage.startSubmissionCheck(first.id, 'build')
+      await storage.finishSubmissionCheck(first.id, 'build', 'passed')
+      await storage.startSubmissionCheck(first.id, 'load')
+      await storage.finishSubmissionCheck(first.id, 'load', 'failed', "no class named 'Agent'")
+      await storage.updateSubmissionStatus(first.id, 'load_failed', "no class named 'Agent'")
+
+      // The owner's current ready submission, which ran in a watch session that produced a recording.
+      const second = await storage.createSubmission({
+        iteration_id: iteration.id,
+        env_id: ENV_ID,
+        user_id: 'eve',
+        source_kind: 'git',
+        repo_url: 'https://example.test/two',
+        commit_sha: 'sha999',
+        local_path: null,
+        ref: null,
+        created_at: new Date().toISOString(),
+      })
+      await storage.updateSubmissionStatus(second.id, 'ready')
+      await storage.createSession({
+        id: 'sess-1',
+        user_id: 'watcher',
+        env_id: ENV_ID,
+        mode: 'scripted',
+        recording_id: `${ENV_ID}-sess-1`,
+        created_at: new Date().toISOString(),
+      })
+      await storage.recordSessionSubmission('sess-1', second.id, 'player_0')
+      await storage.createRecording({
+        id: `${ENV_ID}-sess-1`,
+        user_id: 'watcher',
+        env_id: ENV_ID,
+        created_at: new Date().toISOString(),
+      })
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/environments/${ENV_ID}/agents/eve`,
+      })
+      expect(res.statusCode).toBe(200)
+      const body = res.json() as {
+        env_id: string
+        owner_id: string
+        submissions: Array<{
+          id: string
+          status: string
+          reason: string | null
+          checks: Array<{ stage: string; status: string; detail: string | null }>
+          replays: string[]
+        }>
+      }
+      expect(body).toMatchObject({ env_id: ENV_ID, owner_id: 'eve' })
+      // Newest first: the ready submission, then the superseded failed one (history is preserved).
+      expect(body.submissions.map((s) => s.id)).toEqual([second.id, first.id])
+      const ready = body.submissions[0]
+      expect(ready?.status).toBe('ready')
+      expect(ready?.replays).toEqual([`${ENV_ID}-sess-1`])
+      // The failed submission shows which stage rejected and the captured error, not just the rollup.
+      const failed = body.submissions[1]
+      expect(failed?.status).toBe('load_failed')
+      expect(failed?.checks.find((c) => c.stage === 'load')).toMatchObject({
+        status: 'failed',
+        detail: "no class named 'Agent'",
+      })
+      expect(failed?.replays).toEqual([])
+    })
+
+    it('returns an empty history for an owner with no submissions', async () => {
+      await build()
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/environments/${ENV_ID}/agents/nobody`,
+      })
+      expect(res.statusCode).toBe(200)
+      expect(res.json()).toMatchObject({ env_id: ENV_ID, owner_id: 'nobody', submissions: [] })
+    })
   })
 })

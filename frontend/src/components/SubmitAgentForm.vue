@@ -27,9 +27,9 @@ import {
   type ReachabilityResult,
   type SubmissionDetail,
   type SubmissionSourceInput,
-  type SubmissionStage,
   submitAgent,
 } from '../api/client.js'
+import SubmissionStageTimeline from './SubmissionStageTimeline.vue'
 import UiButton from './ui/UiButton.vue'
 import UiCard from './ui/UiCard.vue'
 import UiField from './ui/UiField.vue'
@@ -46,14 +46,6 @@ const props = withDefaults(
   }>(),
   { pollIntervalMs: 1500, stallAfterPolls: 20 },
 )
-
-/** The ordered timeline stages and their owner-facing labels. */
-const STAGES: { stage: SubmissionStage; label: string }[] = [
-  { stage: 'resolve', label: 'Resolve source' },
-  { stage: 'static', label: 'Static checks' },
-  { stage: 'build', label: 'Build image' },
-  { stage: 'load', label: 'Load check' },
-]
 
 const repoUrl = ref('')
 const refInput = ref('')
@@ -190,28 +182,6 @@ async function poll(id: string): Promise<void> {
   timer = setTimeout(() => void poll(id), props.pollIntervalMs)
 }
 
-/** The display state of a stage, derived from its check (absent or skipped reads as not-yet-run). */
-function stageState(stage: SubmissionStage): 'pending' | 'running' | 'passed' | 'failed' {
-  const check = submission.value?.checks.find((c) => c.stage === stage)
-  if (check === undefined || check.status === 'skipped') {
-    return 'pending'
-  }
-  return check.status
-}
-
-const STAGE_STATUS_LABEL: Record<ReturnType<typeof stageState>, string> = {
-  pending: 'not started',
-  running: 'running',
-  passed: 'passed',
-  failed: 'failed',
-}
-const STAGE_STATUS_TONE: Record<ReturnType<typeof stageState>, 'neutral' | 'success' | 'danger' | 'warning'> = {
-  pending: 'neutral',
-  running: 'warning',
-  passed: 'success',
-  failed: 'danger',
-}
-
 const isReady = computed(() => submission.value?.status === 'ready')
 const isFailed = computed(
   () => submission.value !== null && submission.value.status !== 'pending' && !isReady.value,
@@ -273,12 +243,7 @@ const isFailed = computed(
 
     <div v-else class="submit-progress">
       <h3 class="submit-progress-title">Validating your submission</h3>
-      <ol class="submit-timeline">
-        <li v-for="item in STAGES" :key="item.stage" :data-testid="`stage-${item.stage}`" class="submit-stage">
-          <span class="submit-stage-label">{{ item.label }}</span>
-          <UiStatusBadge :tone="STAGE_STATUS_TONE[stageState(item.stage)]" :label="STAGE_STATUS_LABEL[stageState(item.stage)]" />
-        </li>
-      </ol>
+      <SubmissionStageTimeline :checks="submission?.checks ?? []" />
 
       <p v-if="isReady" class="submit-result submit-result-ok" role="status">
         Accepted.
@@ -324,7 +289,7 @@ const isFailed = computed(
 
 .submit-error {
   margin: 0;
-  color: var(--color-danger, #c0392b);
+  color: var(--color-danger);
   font-size: var(--text-sm);
 }
 
@@ -338,37 +303,17 @@ const isFailed = computed(
   margin: 0;
 }
 
-.submit-timeline {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.submit-stage {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-
-.submit-stage-label {
-  color: var(--color-text);
-}
-
 .submit-result {
   margin: 0;
   font-size: var(--text-sm);
 }
 
 .submit-result-ok {
-  color: var(--color-success, #2e7d32);
+  color: var(--color-success);
 }
 
 .submit-result-fail {
-  color: var(--color-danger, #c0392b);
+  color: var(--color-danger);
 }
 
 .submit-result-wait {

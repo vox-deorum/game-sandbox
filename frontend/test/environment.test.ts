@@ -11,8 +11,10 @@ vi.mock('../src/api/client.js', () => ({
   listRecordings: vi.fn(),
   startSession: vi.fn(),
   getMe: vi.fn(),
-  // The embedded SubmitAgentForm probes capabilities on mount; the rest are unused in this suite.
+  // The embedded SubmitAgentForm probes capabilities on mount and the WatchAgentPicker lists the
+  // active ready agents; both default to empty here. The rest are unused in this suite.
   getSubmissionCapabilities: vi.fn().mockResolvedValue({ local_submissions: false }),
+  listActiveSubmissions: vi.fn().mockResolvedValue([]),
   checkReachability: vi.fn(),
   submitAgent: vi.fn(),
   getSubmission: vi.fn(),

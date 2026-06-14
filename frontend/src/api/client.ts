@@ -77,6 +77,8 @@ export interface StartSessionInput {
   mode: 'human' | 'scripted'
   seed?: number
   humanSlotTimeoutMs?: number
+  /** When set, run this submitted agent in the slot as a watch run sourced from a submission. */
+  submissionId?: string
 }
 
 /** A started session's id and the socket path the live host attaches to. */
@@ -116,6 +118,7 @@ export async function startSession(input: StartSessionInput): Promise<StartSessi
       mode: input.mode,
       seed: input.seed,
       human_slot_timeout_ms: input.humanSlotTimeoutMs,
+      submission_id: input.submissionId,
     }),
   })
   if (res.status === 201) {
@@ -307,6 +310,46 @@ export async function getSubmission(id: string): Promise<SubmissionDetail> {
     await request(`/submissions/${encodeURIComponent(id)}`),
     'GET /submissions/:id',
   )) as SubmissionDetail
+}
+
+/** A submission row without its per-stage log: the shape the active-iteration listing returns. */
+export type SubmissionSummary = Omit<SubmissionDetail, 'checks'>
+
+/**
+ * The environment's active submitted agents, optionally narrowed by status. The watch picker reads
+ * the `ready` set, so superseded submissions stay profile history rather than watch choices.
+ */
+export async function listActiveSubmissions(
+  envId: string,
+  filter?: { status?: SubmissionStatus },
+): Promise<SubmissionSummary[]> {
+  const query = filter?.status ? `?status=${encodeURIComponent(filter.status)}` : ''
+  return (await json(
+    await request(`/environments/${encodeURIComponent(envId)}/submissions${query}`),
+    'GET /environments/:envId/submissions',
+  )) as SubmissionSummary[]
+}
+
+/** One submission on the agent profile: its per-stage log plus the recent recordings it ran in. */
+export interface AgentProfileSubmission extends SubmissionDetail {
+  replays: string[]
+}
+
+/** One owner's agent for an environment: submission history (with logs) and recent replays. */
+export interface AgentProfile {
+  env_id: string
+  owner_id: string
+  submissions: AgentProfileSubmission[]
+}
+
+/** An owner's agent profile for an environment: history across iterations, newest first. */
+export async function getAgentProfile(envId: string, ownerId: string): Promise<AgentProfile> {
+  return (await json(
+    await request(
+      `/environments/${encodeURIComponent(envId)}/agents/${encodeURIComponent(ownerId)}`,
+    ),
+    'GET /environments/:envId/agents/:ownerId',
+  )) as AgentProfile
 }
 
 /** Pin a recording (owner-only). Maps the backend's 409 `pinned_quota` onto a typed result. */

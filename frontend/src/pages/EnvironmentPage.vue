@@ -19,6 +19,7 @@ import { startSession } from '../api/client.js'
 import RecentReplays from '../components/RecentReplays.vue'
 import StartForm from '../components/StartForm.vue'
 import SubmitAgentForm from '../components/SubmitAgentForm.vue'
+import WatchAgentPicker from '../components/WatchAgentPicker.vue'
 import UiBadge from '../components/ui/UiBadge.vue'
 import UiButton from '../components/ui/UiButton.vue'
 import UiDialog from '../components/ui/UiDialog.vue'
@@ -117,6 +118,11 @@ async function start(input: { seed?: number; humanSlotTimeoutMs?: number }): Pro
       </template>
       <UiEmptyState v-else>Live play is limited to allowlisted users.</UiEmptyState>
     </div>
+
+    <section class="env-section">
+      <h2>Watch a submitted agent</h2>
+      <WatchAgentPicker :env-id="meta.env_id" />
+    </section>
 
     <section class="env-section">
       <h2>Submit an agent</h2>

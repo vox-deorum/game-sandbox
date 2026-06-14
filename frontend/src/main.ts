@@ -11,6 +11,7 @@ import { createApp } from 'vue'
 import { createRouter, createWebHistory } from 'vue-router'
 
 import App from './App.vue'
+import AgentProfilePage from './pages/AgentProfilePage.vue'
 import EnvironmentPage from './pages/EnvironmentPage.vue'
 import HomePage from './pages/HomePage.vue'
 import ReplayPage from './pages/ReplayPage.vue'
@@ -28,6 +29,7 @@ const router = createRouter({
   routes: [
     { path: '/', component: HomePage },
     { path: '/environments/:envId', component: EnvironmentPage },
+    { path: '/environments/:envId/agents/:ownerId', component: AgentProfilePage },
     { path: '/sessions/:id', component: SessionPage },
     { path: '/replays/:id', component: ReplayPage },
   ],

@@ -266,6 +266,18 @@ describe('submission storage on :memory:', () => {
     await storage.recordSessionSubmission('sess-old', sub.id, 'player_0')
     await storage.recordSessionSubmission('sess-new', sub.id, 'player_0')
     await storage.recordSessionSubmission('sess-none', sub.id, 'player_0')
+    await storage.createRecording({
+      id: 'rec-old',
+      user_id: 'alice',
+      env_id: 'flappy_bird',
+      created_at: '2026-06-11T00:00:00.000Z',
+    })
+    await storage.createRecording({
+      id: 'rec-new',
+      user_id: 'alice',
+      env_id: 'flappy_bird',
+      created_at: '2026-06-11T00:05:00.000Z',
+    })
 
     const recordings = await storage.listRecordingsBySubmission(sub.id, 10)
     expect(recordings).toEqual(['rec-new', 'rec-old'])
