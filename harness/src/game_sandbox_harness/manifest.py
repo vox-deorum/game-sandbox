@@ -33,7 +33,18 @@ _LOADED_REPO_ROOTS: set[Path] = set()
 
 
 class ManifestError(Exception):
-    """Raised when a manifest is missing, malformed, or names an unloadable agent."""
+    """Raised when a manifest is missing, malformed, or names an unloadable agent.
+
+    Carries a ``code`` classifying the failure for the Stage 5.4 ``validate`` command, which turns
+    it into the owner-visible load-check reason. The dynamic-load codes (``import_error``,
+    ``class_not_found``, ``constructor_error``, ``missing_hook``) are the closed set that command
+    reports; static manifest problems keep the default ``manifest_invalid`` because the backend's
+    step-3 static mirror is the gate for those and they never reach the load check in practice.
+    """
+
+    def __init__(self, message: str, *, code: str = "manifest_invalid") -> None:
+        super().__init__(message)
+        self.code = code
 
 
 @dataclass(frozen=True)
@@ -119,9 +130,12 @@ def load_agent(repo_root: Path | str) -> Any:
     importlib.invalidate_caches()
     try:
         module = importlib.import_module(manifest.entry_point)
-    except ImportError as error:
+    except Exception as error:  # noqa: BLE001 - a raising import is an import failure too
+        # ImportError covers a missing module; a module whose body raises (a bad top-level
+        # statement) is a failed import too, so both classify as import_error rather than escaping.
         raise ManifestError(
-            f"repo {root}: could not import entry-point module {manifest.entry_point!r}: {error}"
+            f"repo {root}: could not import entry-point module {manifest.entry_point!r}: {error}",
+            code="import_error",
         ) from error
     _ensure_module_loaded_from_repo(root, manifest.entry_point, module)
 
@@ -129,20 +143,28 @@ def load_agent(repo_root: Path | str) -> Any:
         agent_cls = getattr(module, manifest.class_name)
     except AttributeError as error:
         raise ManifestError(
-            f"repo {root}: module {manifest.entry_point!r} has no class {manifest.class_name!r}"
+            f"repo {root}: module {manifest.entry_point!r} has no class {manifest.class_name!r}",
+            code="class_not_found",
         ) from error
 
     try:
         agent = agent_cls()
     except Exception as error:  # noqa: BLE001 - surfaced verbatim to the participant
         raise ManifestError(
-            f"repo {root}: constructing {manifest.class_name!r} failed: {error}"
+            f"repo {root}: constructing {manifest.class_name!r} failed: {error}",
+            code="constructor_error",
         ) from error
 
     if not callable(getattr(agent, "reset", None)):
-        raise ManifestError(f"repo {root}: {manifest.class_name!r} has no callable 'reset' method")
+        raise ManifestError(
+            f"repo {root}: {manifest.class_name!r} has no callable 'reset' method",
+            code="missing_hook",
+        )
     if not callable(getattr(agent, "act", None)):
-        raise ManifestError(f"repo {root}: {manifest.class_name!r} has no callable 'act' method")
+        raise ManifestError(
+            f"repo {root}: {manifest.class_name!r} has no callable 'act' method",
+            code="missing_hook",
+        )
 
     return agent
 
@@ -181,13 +203,15 @@ def _ensure_module_loaded_from_repo(root: Path, entry_point: str, module: Any) -
     if raw_path is None:
         raise ManifestError(
             f"repo {root}: entry-point module {entry_point!r} has no file on disk; "
-            "the entry point must resolve inside the repo root"
+            "the entry point must resolve inside the repo root",
+            code="import_error",
         )
     module_path = Path(raw_path).resolve()
     if not module_path.is_relative_to(root):
         raise ManifestError(
             f"repo {root}: entry-point module {entry_point!r} resolved to {module_path}, "
-            "which is outside the repo root"
+            "which is outside the repo root",
+            code="import_error",
         )
 
 

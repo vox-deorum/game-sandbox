@@ -12,8 +12,16 @@ import type { Container, ContainerCreateOptions } from 'dockerode'
 import Docker from 'dockerode'
 
 import type { DockerDriverOptions } from '../../config.js'
-import type { ExecutionDriver, ImageRef, ImageSpec, LaunchSpec, SessionProcess } from '../index.js'
-import { ensureImage } from './image.js'
+import type {
+  ExecutionDriver,
+  ImageRef,
+  ImageSpec,
+  LaunchSpec,
+  OverlayImage,
+  SessionProcess,
+} from '../index.js'
+import { ensureImage, imageTag } from './image.js'
+import { ensureOverlayImage, listOverlayImages, removeImage } from './overlay.js'
 import { DockerSessionProcess } from './session-process.js'
 
 /** The label every session container carries, keyed by session id, for supervision and reaping. */
@@ -26,7 +34,34 @@ export class DockerDriver implements ExecutionDriver {
   ) {}
 
   ensureImage(spec: ImageSpec): Promise<ImageRef> {
-    return ensureImage(this.docker, this.options.imageTagPrefix, this.options.imagePolicy, spec)
+    const { imageTagPrefix, imagePolicy } = this.options
+    if (spec.kind === 'submission-overlay') {
+      // The overlay layers onto the base image for its deps version, referenced by tag in the
+      // Dockerfile `FROM`; the worker ensures that base exists before requesting an overlay.
+      const baseTag = imageTag(imageTagPrefix, {
+        kind: 'session-base',
+        depsVersion: spec.depsVersion,
+      })
+      return ensureOverlayImage(
+        this.docker,
+        imageTagPrefix,
+        imagePolicy,
+        this.options.overlayBuildTimeoutMs,
+        baseTag,
+        spec,
+      )
+    }
+    return ensureImage(this.docker, imageTagPrefix, imagePolicy, spec)
+  }
+
+  /** Enumerate the overlay images this driver manages, for the Stage 5.4 eviction sweep. */
+  listOverlayImages(): Promise<OverlayImage[]> {
+    return listOverlayImages(this.docker, this.options.imageTagPrefix)
+  }
+
+  /** Remove one image by ref, tolerating an already-absent image. */
+  removeImage(ref: string): Promise<void> {
+    return removeImage(this.docker, ref)
   }
 
   async launch(spec: LaunchSpec): Promise<SessionProcess> {

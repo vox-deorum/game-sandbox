@@ -47,7 +47,11 @@ describe('driver-level sandbox guarantees', () => {
   })
 
   it('kills a container that exceeds its memory quota and reports oomKilled', async () => {
-    const driver = await createDockerDriver({ imageTagPrefix: TAG_PREFIX, imagePolicy: 'reuse' })
+    const driver = await createDockerDriver({
+      imageTagPrefix: TAG_PREFIX,
+      imagePolicy: 'reuse',
+      overlayBuildTimeoutMs: 120_000,
+    })
     const script =
       'import mmap, os, signal\n' +
       'chunks=[]\n' +
@@ -74,7 +78,11 @@ describe('driver-level sandbox guarantees', () => {
   })
 
   it('has no network route under network: none', async () => {
-    const driver = await createDockerDriver({ imageTagPrefix: TAG_PREFIX, imagePolicy: 'reuse' })
+    const driver = await createDockerDriver({
+      imageTagPrefix: TAG_PREFIX,
+      imagePolicy: 'reuse',
+      overlayBuildTimeoutMs: 120_000,
+    })
     // Exit 0 only if an outbound TCP connect succeeds; exit 7 when the network is unreachable.
     const script =
       'import socket,sys\n' +
@@ -110,7 +118,11 @@ describe('driver-level sandbox guarantees', () => {
     })
 
     // Constructing a driver reaps every container carrying the session label.
-    await createDockerDriver({ imageTagPrefix: TAG_PREFIX, imagePolicy: 'reuse' })
+    await createDockerDriver({
+      imageTagPrefix: TAG_PREFIX,
+      imagePolicy: 'reuse',
+      overlayBuildTimeoutMs: 120_000,
+    })
 
     await expect(orphan.inspect()).rejects.toThrow()
   })

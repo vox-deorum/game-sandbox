@@ -16,6 +16,7 @@ import type {
   ImageRef,
   ImageSpec,
   LaunchSpec,
+  OverlayImage,
   SessionProcess,
 } from '../../src/driver/index.js'
 
@@ -166,9 +167,25 @@ export class FakeDriver implements ExecutionDriver {
   /** Called synchronously inside {@link launch}, before it returns — drive the process from here. */
   onLaunch?: (launch: FakeLaunch) => void
 
+  /** Overlay images the fake "manages", keyed by ref; tests seed and inspect this directly. */
+  readonly overlayImages = new Map<string, OverlayImage>()
+  /** Every {@link removeImage} ref, in order. */
+  readonly removedImages: string[] = []
+
   ensureImage(spec: ImageSpec): Promise<ImageRef> {
     this.imageRequests.push(spec)
-    return Promise.resolve({ ref: `fake-image:${spec.kind}:deps-v${spec.depsVersion}` })
+    const suffix = spec.kind === 'submission-overlay' ? `:${spec.submissionId}` : ''
+    return Promise.resolve({ ref: `fake-image:${spec.kind}:deps-v${spec.depsVersion}${suffix}` })
+  }
+
+  listOverlayImages(): Promise<OverlayImage[]> {
+    return Promise.resolve([...this.overlayImages.values()])
+  }
+
+  removeImage(ref: string): Promise<void> {
+    this.removedImages.push(ref)
+    this.overlayImages.delete(ref)
+    return Promise.resolve()
   }
 
   launch(spec: LaunchSpec): Promise<SessionProcess> {

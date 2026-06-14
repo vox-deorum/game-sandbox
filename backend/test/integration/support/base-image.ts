@@ -24,6 +24,10 @@ export const BASE_IMAGE_REF: ImageRef = {
 
 /** Build the base image if absent (`reuse`) or unconditionally (`rebuild`), returning its ref. */
 export async function ensureBaseImage(policy: 'reuse' | 'rebuild' = 'reuse'): Promise<ImageRef> {
-  const driver = await createDockerDriver({ imageTagPrefix: TAG_PREFIX, imagePolicy: policy })
+  const driver = await createDockerDriver({
+    imageTagPrefix: TAG_PREFIX,
+    imagePolicy: policy,
+    overlayBuildTimeoutMs: 120_000,
+  })
   return driver.ensureImage(currentSessionBaseImageSpec())
 }

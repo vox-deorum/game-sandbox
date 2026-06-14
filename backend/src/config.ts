@@ -32,6 +32,8 @@ export interface SandboxDefaults {
 export interface DockerDriverOptions {
   imageTagPrefix: string
   imagePolicy: ImagePolicy
+  /** Wall-clock ceiling on one overlay build, so a hung build cannot stall the validation worker. */
+  overlayBuildTimeoutMs: number
 }
 
 /**
@@ -49,6 +51,11 @@ export interface SubmissionOptions {
   allowLocalSubmissions: boolean
   /** Wall-clock ceiling on each `git` invocation, so an unreachable repo fails fast rather than hanging. */
   gitTimeoutMs: number
+  /**
+   * Wall-clock ceiling on one sandboxed load check (Stage 5.4). Import-and-construct should be
+   * near-instant, so a hang is itself a failure; kept short but clear of a cold container start.
+   */
+  loadCheckTimeoutMs: number
 }
 
 export interface Config {
@@ -75,6 +82,14 @@ export interface Config {
   recordingUserQuota: number
   /** How often the eviction sweep runs on its own timer (it also runs at startup and on finalize). */
   recordingSweepIntervalMs: number
+  /**
+   * Max overlay images retained by the Stage 5.4 eviction sweep. Active-`ready` submissions' images
+   * are always kept and count toward this budget (they are never evicted, like pinned recordings);
+   * the rest are trimmed newest-kept, oldest-first.
+   */
+  overlayImageBudget: number
+  /** How often the overlay-image sweep runs (it also runs at startup and after each overlay build). */
+  overlayImageSweepIntervalMs: number
   /**
    * The built frontend bundle the backend serves at the root in production, so one process and one
    * command launch the whole stack. Vite serves the app in development (and proxies `/api` here), and
@@ -174,6 +189,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     recordingRetentionDays: intVar(env, 'RECORDING_RETENTION_DAYS', 30),
     recordingUserQuota: intVar(env, 'RECORDING_USER_QUOTA', 100),
     recordingSweepIntervalMs: intVar(env, 'RECORDING_SWEEP_INTERVAL_MS', 3_600_000),
+    overlayImageBudget: intVar(env, 'OVERLAY_IMAGE_BUDGET', 50),
+    overlayImageSweepIntervalMs: intVar(env, 'OVERLAY_IMAGE_SWEEP_INTERVAL_MS', 3_600_000),
     frontendDir:
       env.FRONTEND_DIST && env.FRONTEND_DIST !== ''
         ? env.FRONTEND_DIST
@@ -190,11 +207,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
           ? env.DOCKER_IMAGE_TAG_PREFIX
           : 'game-sandbox',
       imagePolicy,
+      overlayBuildTimeoutMs: intVar(env, 'SUBMISSION_BUILD_TIMEOUT_MS', 120_000),
     },
     submission: {
       githubToken: env.GITHUB_TOKEN && env.GITHUB_TOKEN !== '' ? env.GITHUB_TOKEN : undefined,
       allowLocalSubmissions: boolVar(env, 'ALLOW_LOCAL_SUBMISSIONS', false),
       gitTimeoutMs: intVar(env, 'SUBMISSION_GIT_TIMEOUT_MS', 15_000),
+      loadCheckTimeoutMs: intVar(env, 'SUBMISSION_LOAD_CHECK_TIMEOUT_MS', 30_000),
     },
   }
 }

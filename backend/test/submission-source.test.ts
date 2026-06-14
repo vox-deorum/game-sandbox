@@ -63,7 +63,12 @@ function ok(stdout: string): GitResult {
 }
 
 function config(overrides: Partial<SubmissionOptions> = {}): SubmissionOptions {
-  return { allowLocalSubmissions: false, gitTimeoutMs: 15_000, ...overrides }
+  return {
+    allowLocalSubmissions: false,
+    gitTimeoutMs: 15_000,
+    loadCheckTimeoutMs: 30_000,
+    ...overrides,
+  }
 }
 
 describe('parseGitHubRepo and tokenizedUrl', () => {

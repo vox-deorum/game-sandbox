@@ -16,17 +16,66 @@
  */
 
 /**
- * What image a session needs. The only kind this stage builds is the session base image, keyed
- * by dependency-set version per [execution.md](../../../docs/specs/execution.md). Stage 5 adds the
- * submission-overlay kind to this union; the union is the extension point.
+ * What image a session or a submission load check needs. The session base image is keyed by
+ * dependency-set version per [execution.md](../../../docs/specs/execution.md); the
+ * submission-overlay image (Stage 5.4) layers a fetched submission's code onto that base. The
+ * union is the extension point — both kinds carry `depsVersion`, the only field image resolution
+ * needed before this stage.
  */
-export type ImageSpec = SessionBaseImageSpec
+export type ImageSpec = SessionBaseImageSpec | SubmissionOverlayImageSpec
 
 /** The base image for a dependency-set version: Python, the harness, the environments, the deps. */
 export interface SessionBaseImageSpec {
   kind: 'session-base'
   /** The dependency-set version `N`, tagged `…:deps-v<N>`. This stage needs only v1. */
   depsVersion: number
+}
+
+/**
+ * A submission's overlay image (Stage 5.4): the base image for {@link depsVersion} with the
+ * submitted code copied into its per-slot directory under `/opt/agents/submissions`. The overlay is
+ * **code-only** — there is no per-submission dependency installation, since dependencies come
+ * entirely from the versioned base image — so the build is fast. The tag is derived deterministically
+ * from the driver's prefix, {@link depsVersion}, and {@link submissionId}, so a built image's
+ * submission id is recoverable from its tag (the eviction sweep relies on this).
+ */
+export interface SubmissionOverlayImageSpec {
+  kind: 'submission-overlay'
+  /** The dependency-set version whose base image this overlay is built on. */
+  depsVersion: number
+  /** The submission this overlay belongs to; part of the deterministic tag. */
+  submissionId: string
+  /** Absolute host path to the prepared source tree (the step-2 checkout or a local-folder copy). */
+  sourceTreePath: string
+  /** The slot id whose directory the tree is copied into: `/opt/agents/submissions/<slotId>`. */
+  slotId: string
+}
+
+/**
+ * One overlay image the driver manages, as the eviction sweep (Stage 5.4) sees it: an opaque
+ * {@link ref} to pass to {@link OverlayImageManager.removeImage}, the {@link submissionId} recovered
+ * from its deterministic tag (so the sweep can exempt active-`ready` submissions without parsing tags
+ * itself), and a creation timestamp for oldest-first eviction.
+ */
+export interface OverlayImage {
+  ref: string
+  submissionId: string
+  /** Epoch milliseconds the image was created, for oldest-first eviction. */
+  createdAtMs: number
+}
+
+/**
+ * The driver-neutral overlay-image capability the eviction sweep drives: enumerate the overlay
+ * images the driver manages (filtered to the overlay tag prefix, so base and unrelated images are
+ * never touched) and remove one best-effort. Both are pure additions to {@link ExecutionDriver}; a
+ * Kubernetes driver implements the same two methods, and nothing above the driver learns Docker
+ * specifics.
+ */
+export interface OverlayImageManager {
+  /** Enumerate the overlay images this driver manages, each with its submission id and age. */
+  listOverlayImages(): Promise<OverlayImage[]>
+  /** Remove one image by its opaque ref, tolerating an already-absent image (best-effort). */
+  removeImage(ref: string): Promise<void>
 }
 
 /**
@@ -123,11 +172,11 @@ export interface SessionProcess {
 }
 
 /**
- * The execution driver: build or fetch images, and launch sessions against them. Two methods,
- * both async; everything else a session needs (its channel, its exit, its teardown) hangs off the
- * {@link SessionProcess} that `launch` returns.
+ * The execution driver: build or fetch images, launch containers against them, and (Stage 5.4)
+ * enumerate and reclaim the overlay images it manages. Everything else a session needs (its channel,
+ * its exit, its teardown) hangs off the {@link SessionProcess} that `launch` returns.
  */
-export interface ExecutionDriver {
+export interface ExecutionDriver extends OverlayImageManager {
   /**
    * Resolve an image for `spec`, building or fetching as needed. Whether an existing image is
    * reused or rebuilt is driver configuration (the Docker driver's `imagePolicy`), not caller

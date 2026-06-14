@@ -18,6 +18,7 @@ import { RecordingsStore } from './recordings.js'
 import { Retention } from './retention.js'
 import { Orchestrator } from './session/orchestrator.js'
 import { openSqliteStorage } from './storage/sqlite.js'
+import { OverlayEviction } from './submission/overlay-eviction.js'
 
 async function main(): Promise<void> {
   const config = loadConfig()
@@ -33,6 +34,7 @@ async function main(): Promise<void> {
   const driver = await createDockerDriver(config.docker)
   const recordings = new RecordingsStore(resolve(config.recordingsDir))
   const retention = new Retention(storage, recordings, config, log)
+  const overlayEviction = new OverlayEviction(driver, storage, config, log)
   // The sweep runs at startup, on the interval, and after each session finalize (the only moment
   // the data grows); the orchestrator triggers the finalize sweep through this callback.
   const orchestrator = new Orchestrator(driver, storage, environments, config, log, () => {
@@ -48,6 +50,7 @@ async function main(): Promise<void> {
     frontendDir: config.frontendDir,
   })
   retention.start()
+  overlayEviction.start()
   await app.listen({ port: config.port, host: '0.0.0.0' })
   log(`backend listening on :${config.port}`)
 
@@ -60,6 +63,7 @@ async function main(): Promise<void> {
     log(`received ${signal}, shutting down`)
     void (async () => {
       retention.stop()
+      overlayEviction.stop()
       await orchestrator.shutdown()
       await app.close()
       await storage.close()

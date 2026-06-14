@@ -1,0 +1,240 @@
+/**
+ * Overlay images for the Docker driver (Stage 5.4): build a submission's code-only overlay on the
+ * session base image, enumerate the overlays the driver manages, and remove one.
+ *
+ * The overlay is the base image for a dependency-set version with the fetched submission tree copied
+ * into its per-slot directory under `/opt/agents/submissions`. There is **no per-submission
+ * dependency install** — the deps come entirely from the base image — so the build is just a `COPY`
+ * and is fast. The tag is derived deterministically from the prefix, deps version, and submission id,
+ * so the submission id is recoverable from the tag (the eviction sweep relies on it). Caching honors
+ * the same {@link ImagePolicy} the base build does, and the build is bounded by a timeout so a hung
+ * or pathological build cannot stall the single-concurrency validation worker.
+ *
+ * This is the one place (with `image.ts`) that touches `dockerode` and `tar-fs`; everything above the
+ * driver expresses the build as a driver-neutral {@link SubmissionOverlayImageSpec}.
+ */
+import type Docker from 'dockerode'
+import tar from 'tar-fs'
+import type { Pack } from 'tar-stream'
+
+import type { ImagePolicy } from '../../config.js'
+import type { ImageRef, OverlayImage, SubmissionOverlayImageSpec } from '../index.js'
+
+/** The Docker repository (the part before `:`) every overlay tag lives under. */
+const OVERLAY_REPO_SUFFIX = 'submission-overlay'
+/** Where the base image expects each slot's repo root; lockstep with the harness `validate` default. */
+const SUBMISSION_SLOT_BASE = '/opt/agents/submissions'
+
+/** Raised when an overlay build exceeds its configured timeout, so the worker records a timeout reason. */
+export class OverlayBuildTimeoutError extends Error {
+  constructor(timeoutMs: number) {
+    super(`overlay build exceeded its ${timeoutMs}ms timeout`)
+    this.name = 'OverlayBuildTimeoutError'
+  }
+}
+
+/** The overlay repository name (prefix + suffix) all of a deployment's overlay tags share. */
+function overlayRepo(prefix: string): string {
+  return `${prefix}/${OVERLAY_REPO_SUFFIX}`
+}
+
+/**
+ * The deterministic tag for an overlay: `<prefix>/submission-overlay:deps-v<N>-<submissionId>`. The
+ * submission id is appended whole after the `deps-v<N>-` marker, so {@link parseOverlayTag} can
+ * recover it even though a UUID itself contains hyphens.
+ */
+export function overlayImageTag(prefix: string, depsVersion: number, submissionId: string): string {
+  return `${overlayRepo(prefix)}:deps-v${depsVersion}-${submissionId}`
+}
+
+/** Recover the submission id from an overlay tag, or null if the tag is not one of ours. */
+export function parseOverlayTag(prefix: string, tag: string): string | null {
+  const marker = `${overlayRepo(prefix)}:deps-v`
+  if (!tag.startsWith(marker)) {
+    return null
+  }
+  // After the marker the shape is `<digits>-<submissionId>`; take everything past the first hyphen.
+  const rest = tag.slice(marker.length)
+  const hyphen = rest.indexOf('-')
+  if (hyphen <= 0) {
+    return null
+  }
+  const submissionId = rest.slice(hyphen + 1)
+  return submissionId.length > 0 ? submissionId : null
+}
+
+async function imageExists(docker: Docker, tag: string): Promise<boolean> {
+  try {
+    await docker.getImage(tag).inspect()
+    return true
+  } catch {
+    return false
+  }
+}
+
+interface BuildProgress {
+  stream?: string
+  error?: string
+  errorDetail?: { message?: string }
+}
+
+/**
+ * The build context: the source tree under `tree/` plus a generated Dockerfile at the root. The
+ * tree is namespaced under `tree/` (via the header `map`) so `COPY tree …` copies only the
+ * submission's files and never the Dockerfile itself. `finalize: false` + `finish` appends the
+ * Dockerfile entry after `tar-fs` has walked the tree, then finalizes the archive.
+ */
+function buildContext(sourceTreePath: string, dockerfile: string): NodeJS.ReadableStream {
+  return tar.pack(sourceTreePath, {
+    map: (header) => {
+      header.name = `tree/${header.name}`
+      return header
+    },
+    finalize: false,
+    finish: (pack: Pack) => {
+      pack.entry({ name: 'Dockerfile' }, dockerfile, () => pack.finalize())
+    },
+  })
+}
+
+/**
+ * The overlay Dockerfile. `COPY tree <dest>` lays the submission's repo root into its slot
+ * directory; the `chmod -R a+rX` mirrors the base image's normalization so a tree packed from a host
+ * without Unix execute bits (a Windows checkout) still has the directory search bit a CapDrop-ALL
+ * container needs to stat the manifest.
+ */
+function overlayDockerfile(baseTag: string, slotId: string): string {
+  const dest = `${SUBMISSION_SLOT_BASE}/${slotId}`
+  return [`FROM ${baseTag}`, `COPY tree ${dest}`, `RUN chmod -R a+rX ${dest}`, ''].join('\n')
+}
+
+/** Run the build stream to completion, rejecting on a build-step error or the configured timeout. */
+function runBuild(
+  docker: Docker,
+  context: NodeJS.ReadableStream,
+  tag: string,
+  timeoutMs: number,
+): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    let settled = false
+    const settle = (fn: () => void): void => {
+      if (settled) {
+        return
+      }
+      settled = true
+      clearTimeout(timer)
+      fn()
+    }
+
+    const timer = setTimeout(() => {
+      settle(() => {
+        // Best-effort teardown: drop the context stream so the daemon stops pulling the build input.
+        ;(context as { destroy?: () => void }).destroy?.()
+        reject(new OverlayBuildTimeoutError(timeoutMs))
+      })
+    }, timeoutMs)
+    timer.unref?.()
+
+    docker
+      .buildImage(context, { t: tag, dockerfile: 'Dockerfile' })
+      .then((buildStream) => {
+        docker.modem.followProgress(
+          buildStream,
+          (err: Error | null, output: BuildProgress[]) => {
+            if (err) {
+              settle(() => reject(err))
+              return
+            }
+            const failure = output.find((entry) => entry.error)
+            if (failure) {
+              settle(() =>
+                reject(
+                  new Error(
+                    failure.errorDetail?.message ?? failure.error ?? 'overlay build failed',
+                  ),
+                ),
+              )
+              return
+            }
+            settle(resolve)
+          },
+          () => undefined,
+        )
+      })
+      .catch((error: unknown) => settle(() => reject(error)))
+  })
+}
+
+/**
+ * Resolve a {@link SubmissionOverlayImageSpec} to a launch-ready overlay {@link ImageRef}, building
+ * on the base image's tag. Under `reuse` an existing overlay tag is returned untouched; under
+ * `rebuild` it is always rebuilt. The base image for the spec's deps version must already exist —
+ * the worker ensures it before building overlays — and is referenced by tag in the Dockerfile `FROM`.
+ */
+export async function ensureOverlayImage(
+  docker: Docker,
+  prefix: string,
+  policy: ImagePolicy,
+  timeoutMs: number,
+  baseTag: string,
+  spec: SubmissionOverlayImageSpec,
+): Promise<ImageRef> {
+  const tag = overlayImageTag(prefix, spec.depsVersion, spec.submissionId)
+  if (policy === 'reuse' && (await imageExists(docker, tag))) {
+    return { ref: tag }
+  }
+  const dockerfile = overlayDockerfile(baseTag, spec.slotId)
+  const context = buildContext(spec.sourceTreePath, dockerfile)
+  await runBuild(docker, context, tag, timeoutMs)
+  return { ref: tag }
+}
+
+/**
+ * Enumerate the overlay images this driver manages: every image carrying a tag under the overlay
+ * repository, paired with the submission id recovered from that tag and the image's creation time.
+ * Base images and unrelated images are never returned (they carry no overlay tag).
+ */
+export async function listOverlayImages(docker: Docker, prefix: string): Promise<OverlayImage[]> {
+  const images = await docker.listImages()
+  const overlays: OverlayImage[] = []
+  for (const image of images) {
+    const createdAtMs = (image.Created ?? 0) * 1000
+    for (const tag of image.RepoTags ?? []) {
+      const submissionId = parseOverlayTag(prefix, tag)
+      if (submissionId !== null) {
+        overlays.push({ ref: tag, submissionId, createdAtMs })
+      }
+    }
+  }
+  return overlays
+}
+
+/** Remove one image by ref, tolerating an already-absent image (a racing sweep or manual cleanup). */
+export async function removeImage(docker: Docker, ref: string): Promise<void> {
+  try {
+    await docker.getImage(ref).remove({ force: true })
+  } catch (error) {
+    if (isImageNotFound(error)) {
+      // Already gone, or removed by a concurrent sweep.
+      return
+    }
+    throw error
+  }
+}
+
+function isImageNotFound(error: unknown): boolean {
+  const candidate = error as {
+    statusCode?: unknown
+    status?: unknown
+    reason?: unknown
+    json?: { message?: unknown }
+    message?: unknown
+  }
+  if (candidate.statusCode === 404 || candidate.status === 404) {
+    return true
+  }
+  const message = [candidate.message, candidate.reason, candidate.json?.message]
+    .filter((part): part is string => typeof part === 'string')
+    .join('\n')
+  return /no such image|not found/i.test(message)
+}

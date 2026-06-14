@@ -21,10 +21,16 @@ export function makeConfig(overrides: Partial<Config> = {}): Config {
     recordingRetentionDays: 30,
     recordingUserQuota: 100,
     recordingSweepIntervalMs: 3_600_000,
+    overlayImageBudget: 50,
+    overlayImageSweepIntervalMs: 3_600_000,
     sandbox: { cpus: 1, memoryMb: 512, scratchMb: 256 },
     executionDriver: 'docker',
-    docker: { imageTagPrefix: 'game-sandbox', imagePolicy: 'reuse' },
-    submission: { allowLocalSubmissions: false, gitTimeoutMs: 15_000 },
+    docker: {
+      imageTagPrefix: 'game-sandbox',
+      imagePolicy: 'reuse',
+      overlayBuildTimeoutMs: 120_000,
+    },
+    submission: { allowLocalSubmissions: false, gitTimeoutMs: 15_000, loadCheckTimeoutMs: 30_000 },
     ...overrides,
   }
 }
