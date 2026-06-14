@@ -10,8 +10,10 @@ import { resolve } from 'node:path'
 
 import { buildApp } from './app.js'
 import { loadConfig } from './config.js'
+import { DEPS_VERSION } from './deps-version.js'
 import { createDockerDriver } from './driver/docker/index.js'
 import { EnvironmentRegistry } from './environments.js'
+import { seedOpenIterations } from './iterations-seed.js'
 import { RecordingsStore } from './recordings.js'
 import { Retention } from './retention.js'
 import { Orchestrator } from './session/orchestrator.js'
@@ -25,6 +27,9 @@ async function main(): Promise<void> {
 
   const storage = await openSqliteStorage(config.dbPath)
   const environments = EnvironmentRegistry.load()
+  // Seed one open iteration per environment at the current dependency-set version, so submissions
+  // have an identity boundary and pinned deps_version. Idempotent across restarts.
+  await seedOpenIterations(storage, environments, DEPS_VERSION)
   const driver = await createDockerDriver(config.docker)
   const recordings = new RecordingsStore(resolve(config.recordingsDir))
   const retention = new Retention(storage, recordings, config, log)
