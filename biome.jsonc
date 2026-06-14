@@ -9,7 +9,17 @@
     // Vue single-file components are excluded: Biome lints the script block but not the template, so
     // it false-flags bindings used only in the template. vue-tsc type-checks the .vue files instead;
     // Biome still owns every .ts/.tsx file in the frontend.
-    "includes": ["**", "!**/generated", "!**/dist", "!**/node_modules", "!**/*.vue"]
+    // Test fixtures are data, not source: some are intentionally malformed (e.g. a deliberately
+    // invalid manifest.json the static validator must reject), so Biome must not try to parse or
+    // format them.
+    "includes": [
+      "**",
+      "!**/generated",
+      "!**/dist",
+      "!**/node_modules",
+      "!**/*.vue",
+      "!**/test/fixtures"
+    ]
   },
   "formatter": {
     "enabled": true,

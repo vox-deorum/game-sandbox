@@ -1,6 +1,6 @@
 # Stage 5.3: Static Validator
 
-Status: not started.
+Status: done. Implemented as the pure `validateStatic(treeRoot, depsVersion, knownTemplateVersions)` in `backend/src/submission/validate/static.ts` (re-exported from `validate/index.js`), returning `{ ok: true, manifest }` or `{ ok: false, reason }` where `reason` is the discriminated `StaticReason` union (each variant carrying an owner-facing `message`, plus `field`/`key` on the field/unknown-key variants). The fixture set lives under `backend/test/fixtures/validate/` and the Docker-free tests in `backend/test/submission-static.test.ts`. Two notes worth recording: (a) the worked example's real `manifest.json` lives under the git-ignored `build/` tree, so the suite proves the contract against a byte-identical checked-in `valid/` fixture and additionally validates the on-disk template only when present (a no-op in CI); (b) `biome.jsonc` now excludes `**/test/fixtures` from formatting/linting, because the `invalid-json` fixture is intentionally malformed and Biome would otherwise fail to parse it.
 
 Part of [Stage 5](../stage-05-submissions.md). This is build-order step 3 and **the first demonstrable slice of the stage**: a pure TypeScript check over the fetched tree that runs no participant code, mirrors the static half of the harness loader, and returns either a typed accept or one specific, owner-visible rejection reason. Fully unit-testable against local fixtures with no Docker and no network.
 
