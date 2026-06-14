@@ -69,4 +69,32 @@ describe('loadConfig', () => {
   it('rejects an invalid image policy', () => {
     expect(() => loadConfig({ DOCKER_IMAGE_POLICY: 'cache' })).toThrow(/DOCKER_IMAGE_POLICY/)
   })
+
+  it('defaults the submission settings to the dev gate off and no token', () => {
+    const { submission } = loadConfig({})
+    expect(submission.allowLocalSubmissions).toBe(false)
+    expect(submission.gitTimeoutMs).toBe(15_000)
+    expect(submission.githubToken).toBeUndefined()
+  })
+
+  it('parses the submission overrides', () => {
+    const { submission } = loadConfig({
+      ALLOW_LOCAL_SUBMISSIONS: 'true',
+      SUBMISSION_GIT_TIMEOUT_MS: '5000',
+      GITHUB_TOKEN: 'ghp_abc',
+    })
+    expect(submission.allowLocalSubmissions).toBe(true)
+    expect(submission.gitTimeoutMs).toBe(5000)
+    expect(submission.githubToken).toBe('ghp_abc')
+  })
+
+  it('accepts the documented boolean spellings and rejects anything else', () => {
+    expect(loadConfig({ ALLOW_LOCAL_SUBMISSIONS: '1' }).submission.allowLocalSubmissions).toBe(true)
+    expect(loadConfig({ ALLOW_LOCAL_SUBMISSIONS: 'no' }).submission.allowLocalSubmissions).toBe(
+      false,
+    )
+    expect(() => loadConfig({ ALLOW_LOCAL_SUBMISSIONS: 'maybe' })).toThrow(
+      /ALLOW_LOCAL_SUBMISSIONS/,
+    )
+  })
 })

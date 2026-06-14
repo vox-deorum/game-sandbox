@@ -32,13 +32,15 @@
   "overrides": [
     // Import isolation (Stage 3): every backend/src file matches exactly one override below, so the
     // restricted-import sets never have to merge. General backend code may not reach for Docker, the
-    // database engine, or child_process; storage owns the database; the Docker driver owns dockerode.
-    // A Kubernetes driver is then a pure addition, and the existing Biome CI check enforces all of it.
+    // database engine, child_process, or the git client; storage owns the database; the Docker driver
+    // owns dockerode; the submission source resolver (Stage 5.2) owns the one allowed `simple-git`
+    // dependency. A Kubernetes driver is then a pure addition, and the Biome CI check enforces all of it.
     {
       "includes": [
         "**/backend/src/**",
         "!**/backend/src/storage/**",
-        "!**/backend/src/driver/docker/**"
+        "!**/backend/src/driver/docker/**",
+        "!**/backend/src/submission/source/**"
       ],
       "linter": {
         "rules": {
@@ -51,7 +53,8 @@
                   "kysely": "The database layer lives only in backend/src/storage/. Import the Storage interface and the derived domain types from backend/src/storage instead.",
                   "better-sqlite3": "The database layer lives only in backend/src/storage/. Import the Storage interface and the derived domain types from backend/src/storage instead.",
                   "child_process": "Shelling out is denied across the backend; containers are controlled through the execution driver, not a CLI.",
-                  "node:child_process": "Shelling out is denied across the backend; containers are controlled through the execution driver, not a CLI."
+                  "node:child_process": "Shelling out is denied across the backend; containers are controlled through the execution driver, not a CLI.",
+                  "simple-git": "The git client lives only in backend/src/submission/source/. Import the SubmissionSource seam from backend/src/submission/source instead."
                 }
               }
             }
@@ -70,7 +73,8 @@
                 "paths": {
                   "dockerode": "Docker APIs belong only in backend/src/driver/docker/.",
                   "child_process": "Shelling out is denied across the backend.",
-                  "node:child_process": "Shelling out is denied across the backend."
+                  "node:child_process": "Shelling out is denied across the backend.",
+                  "simple-git": "The git client lives only in backend/src/submission/source/."
                 }
               }
             }
@@ -90,7 +94,35 @@
                   "kysely": "The database layer lives only in backend/src/storage/.",
                   "better-sqlite3": "The database layer lives only in backend/src/storage/.",
                   "child_process": "Shelling out is denied across the backend; use dockerode's API, not the docker CLI.",
-                  "node:child_process": "Shelling out is denied across the backend; use dockerode's API, not the docker CLI."
+                  "node:child_process": "Shelling out is denied across the backend; use dockerode's API, not the docker CLI.",
+                  "simple-git": "The git client lives only in backend/src/submission/source/."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    // The submission source resolver (Stage 5.2) is the one place the `simple-git` dependency is
+    // allowed: it drives the non-interactive `git` binary to resolve and fetch participant
+    // repositories. Raw `child_process` is still banned even here (use simple-git, not the CLI
+    // directly), as are Docker and the database engine — the carve-out is for simple-git, not a
+    // general escape hatch. The GitHub reachability client uses the global `fetch`, which is
+    // unimportable and therefore confined by file location plus the CI grep, not a restricted import.
+    {
+      "includes": ["**/backend/src/submission/source/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "dockerode": "Docker APIs belong only in backend/src/driver/docker/.",
+                  "kysely": "The database layer lives only in backend/src/storage/.",
+                  "better-sqlite3": "The database layer lives only in backend/src/storage/.",
+                  "child_process": "Drive git through simple-git, not a raw child_process spawn.",
+                  "node:child_process": "Drive git through simple-git, not a raw child_process spawn."
                 }
               }
             }

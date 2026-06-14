@@ -24,6 +24,7 @@ export function makeConfig(overrides: Partial<Config> = {}): Config {
     sandbox: { cpus: 1, memoryMb: 512, scratchMb: 256 },
     executionDriver: 'docker',
     docker: { imageTagPrefix: 'game-sandbox', imagePolicy: 'reuse' },
+    submission: { allowLocalSubmissions: false, gitTimeoutMs: 15_000 },
     ...overrides,
   }
 }

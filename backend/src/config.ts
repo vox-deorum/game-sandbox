@@ -34,6 +34,23 @@ export interface DockerDriverOptions {
   imagePolicy: ImagePolicy
 }
 
+/**
+ * Submission source-resolution settings, consumed by `submission/source/` (Stage 5.2). The token is
+ * the only secret here; it is used to authenticate GitHub reachability checks and back private-repo
+ * clone/fetch credentials, and is never stored on a submission row or logged.
+ */
+export interface SubmissionOptions {
+  /** Optional GitHub token for private-repo auth and authenticated reachability; public repos need none. */
+  githubToken?: string
+  /**
+   * Whether the dev-only local-folder source is constructed and offered. Off by default; the gate,
+   * not path-sanitization, is the security boundary, so this must stay off in real deployments.
+   */
+  allowLocalSubmissions: boolean
+  /** Wall-clock ceiling on each `git` invocation, so an unreachable repo fails fast rather than hanging. */
+  gitTimeoutMs: number
+}
+
 export interface Config {
   /** TCP port the HTTP/WebSocket server listens on. */
   port: number
@@ -68,6 +85,7 @@ export interface Config {
   sandbox: SandboxDefaults
   executionDriver: ExecutionDriverKind
   docker: DockerDriverOptions
+  submission: SubmissionOptions
 }
 
 class ConfigError extends Error {}
@@ -94,6 +112,21 @@ function listVar(env: NodeJS.ProcessEnv, name: string, fallback: string[]): stri
     .map((item) => item.trim())
     .filter((item) => item !== '')
   return items
+}
+
+function boolVar(env: NodeJS.ProcessEnv, name: string, fallback: boolean): boolean {
+  const raw = env[name]
+  if (raw === undefined || raw === '') {
+    return fallback
+  }
+  const value = raw.trim().toLowerCase()
+  if (value === 'true' || value === '1' || value === 'yes') {
+    return true
+  }
+  if (value === 'false' || value === '0' || value === 'no') {
+    return false
+  }
+  throw new ConfigError(`${name} must be a boolean (true/false), got ${raw}`)
 }
 
 function numberVar(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
@@ -157,6 +190,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
           ? env.DOCKER_IMAGE_TAG_PREFIX
           : 'game-sandbox',
       imagePolicy,
+    },
+    submission: {
+      githubToken: env.GITHUB_TOKEN && env.GITHUB_TOKEN !== '' ? env.GITHUB_TOKEN : undefined,
+      allowLocalSubmissions: boolVar(env, 'ALLOW_LOCAL_SUBMISSIONS', false),
+      gitTimeoutMs: intVar(env, 'SUBMISSION_GIT_TIMEOUT_MS', 15_000),
     },
   }
 }
