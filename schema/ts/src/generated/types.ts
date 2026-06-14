@@ -27,7 +27,7 @@ export interface StepState {
    */
   overlay?: {};
   /**
-   * Messages sent on this tick. Absent when empty to keep lines small. Lit up in Stage 9.
+   * Messages sent on this tick. Absent when empty to keep lines small. Lit up in Stage 8.
    */
   messages?: Message[];
   timing: StepTiming;

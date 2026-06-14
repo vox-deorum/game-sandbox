@@ -1,4 +1,4 @@
-# Stage 7: LLM Gateway
+# Stage 9: LLM Gateway
 
 Status: not started
 
@@ -24,7 +24,7 @@ Surface it: per-tick model, token, and latency metadata in the replay viewer whe
 
 ## Depends on
 
-Stage 3 (orchestrator, networks), Stage 5 (agent profile), Stage 6 (iteration overrides, board). Independent of Stage 9 (communication).
+Stage 3 (orchestrator, networks), Stage 5 (agent profile), Stage 6 (iteration overrides, board). Independent of Stage 8 (communication).
 
 ## Done when
 

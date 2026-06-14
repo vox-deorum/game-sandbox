@@ -13,7 +13,7 @@ The language split follows the container boundary (see the [execution spec](../s
 | `environments/` | Environment packages: the single-agent adapter and the Flappy Bird clone. |
 | `backend/` | The Node/TypeScript backend: sessions, the execution driver, and the WebSocket bridge. |
 | `frontend/` | The browser frontend: Vue with Vite, the renderers, and the mock-identity layer. |
-| `gateway/` | The LLM gateway. Placeholder until Stage 7. |
+| `gateway/` | The LLM gateway. Placeholder until Stage 9. |
 | `templates/` | The student starter kit: an env-agnostic `base/` layer plus one `<env>/` layer per environment. |
 | `examples/` | Example overlays under `<env>/<name>/`, holding only their diff against the composed template. |
 | `docs/` | This site. |

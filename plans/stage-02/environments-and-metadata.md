@@ -19,7 +19,7 @@ environments/
   tests/
 ```
 
-One directory per environment, each exporting a module-level `ENTRY`. Hearts adds a sibling directory in Stage 8 and touches nothing else.
+One directory per environment, each exporting a module-level `ENTRY`. Hearts adds a sibling directory in Stage 7 and touches nothing else.
 
 ## The adapter
 

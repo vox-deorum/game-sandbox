@@ -27,7 +27,7 @@
     },
     "messages": {
       "type": "array",
-      "description": "Messages sent on this tick. Absent when empty to keep lines small. Lit up in Stage 9.",
+      "description": "Messages sent on this tick. Absent when empty to keep lines small. Lit up in Stage 8.",
       "items": { "$ref": "#/$defs/message" }
     },
     "timing": { "$ref": "#/$defs/step_timing" }

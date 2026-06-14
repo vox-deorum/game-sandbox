@@ -10,7 +10,7 @@
  * Outbound (container → backend → browser) this stage defines one envelope kind, `result`, plus the
  * backend-originated `session` status frame and the relayed `pause`/`resume` echoes. Inbound
  * (browser → backend → container) the command envelopes are `input` (with a slot and action),
- * `pause`, `resume`, and `stop`; Stage 9 adds `chat` on the same shape. The backend validates a
+ * `pause`, `resume`, and `stop`; Stage 8 adds `chat` on the same shape. The backend validates a
  * command's shape and the sender's authority, then forwards it — it never interprets an action,
  * because the container is authoritative.
  *

@@ -333,7 +333,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   // submitted across iterations (including superseded rows), each joined with its per-stage validation
   // log and its recent watch/replay recording ids. Keyed by environment id and owner id so a future
   // Hearts agent stays separate from the same user's Flappy Bird agent. Open (read-only); owner-only
-  // affordances (the Stage 7 debug view) gate on the client comparing this owner_id to its identity.
+  // affordances (the Stage 9 debug view) gate on the client comparing this owner_id to its identity.
   app.get<{ Params: { envId: string; ownerId: string } }>(
     '/api/environments/:envId/agents/:ownerId',
     async (request) => {

@@ -1,10 +1,10 @@
-# Stage 9: Agent Communication
+# Stage 8: Agent Communication
 
 Status: not started
 
 ## Goal
 
-Agents and human-controlled slots can exchange messages during a session, the chat panel shows them live, and they appear in recordings and replays. Everything is optional: agents without the hook and environments without the flag behave exactly as before. This stage comes last so the Hearts environment from Stage 8 is already in place to serve as the product test bed where broadcast-versus-targeted visibility actually matters.
+Agents and human-controlled slots can exchange messages during a session, the chat panel shows them live, and they appear in recordings and replays. Everything is optional: agents without the hook and environments without the flag behave exactly as before. This stage comes right after multi-agent so the Hearts environment from Stage 7 is already in place to serve as the product test bed where broadcast-versus-targeted visibility actually matters.
 
 ## Scope
 
@@ -14,7 +14,7 @@ Messages flow into the per-step state object (sender slot, recipient, text, tick
 
 Wire the human side per [interaction.md](../specs/interaction.md): outgoing messages from human-controlled slots travel the session WebSocket like input and are queued for the next tick. Build the chat panel as part of the on-screen renderer UI, showing broadcasts and messages addressed to slots controlled by the connected user, with an input box when that user controls a slot. Show recorded messages in the replay viewer at their ticks.
 
-Turn messaging on for the Stage 8 Hearts environment as the product use: a low per-step cap, agents openly warning the table about a suspected moon shot (broadcast) or quietly coordinating (targeted), and the visibility rules deciding who sees what during play versus in the recording. Verify the template repo's `chat` stub against the real harness, and leave Flappy Bird messaging disabled unless there is a concrete human-facing use for it. Beyond Hearts, the harness and relay rules can also be exercised in isolation with a minimal multi-slot test fixture, but Hearts is what makes agent-to-agent chat matter.
+Turn messaging on for the Stage 7 Hearts environment as the product use: a low per-step cap, agents openly warning the table about a suspected moon shot (broadcast) or quietly coordinating (targeted), and the visibility rules deciding who sees what during play versus in the recording. Verify the template repo's `chat` stub against the real harness, and leave Flappy Bird messaging disabled unless there is a concrete human-facing use for it. Beyond Hearts, the harness and relay rules can also be exercised in isolation with a minimal multi-slot test fixture, but Hearts is what makes agent-to-agent chat matter.
 
 ## Spec references
 
@@ -22,7 +22,7 @@ Turn messaging on for the Stage 8 Hearts environment as the product use: a low p
 
 ## Depends on
 
-Stage 3 (relay), Stage 4 (renderer UI), Stage 6 (iteration overrides), Stage 8 (Hearts as the multi-agent test bed). Independent of Stage 7 (LLM).
+Stage 3 (relay), Stage 4 (renderer UI), Stage 6 (iteration overrides), Stage 7 (Hearts as the multi-agent test bed). Independent of Stage 9 (LLM).
 
 ## Done when
 

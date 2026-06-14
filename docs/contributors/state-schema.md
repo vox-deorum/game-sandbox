@@ -7,7 +7,7 @@ The per-step state object is the contract across the container boundary (see the
 - `schema/step-state.schema.json` is the per-step state object: `schema_version`, `tick`, per-agent observations, actions, rewards and cumulative scores, an open `overlay` for environment-specific fields, optional `messages`, and `timing`. Field names are snake_case throughout, which is JSON-conventional and Python-native, and the generated TypeScript types mirror it.
 - `schema/recording-header.schema.json` is the recording header: `schema_version`, `environment`, an optional `seed` and `created_at`, and the `sidecars` array.
 
-`messages` and `overlay` exist from day one even though messaging arrives in Stage 9, so the schema needs no breaking revision when chat lights up. Every closed region sets `additionalProperties: false` so accidental drift is loud; `overlay` is the one open object, the designated extension region for environment payloads.
+`messages` and `overlay` exist from day one even though messaging arrives in Stage 8, so the schema needs no breaking revision when chat lights up. Every closed region sets `additionalProperties: false` so accidental drift is loud; `overlay` is the one open object, the designated extension region for environment payloads.
 
 ## The version rule
 
@@ -21,4 +21,4 @@ The compatibility rule in one sentence: a reader built for version N accepts exa
 
 A sidecar is an auxiliary file stored alongside a recording, declared in the header's `sidecars` array by `name` and `path`. The `name` identifies the sidecar's kind against a registry of known names, which is empty today; the `path` is relative to the recording's own directory. A reader that does not recognize a sidecar name must skip that entry and load the recording normally, and unknown keys inside a sidecar entry are likewise ignored.
 
-Sidecar payload schemas, when they arrive (the Stage 7 LLM telemetry is the first), are covered by the same `schema_version` as the recording header, so adding one is an additive contract change, never a second storage format.
+Sidecar payload schemas, when they arrive (the Stage 9 LLM telemetry is the first), are covered by the same `schema_version` as the recording header, so adding one is an additive contract change, never a second storage format.

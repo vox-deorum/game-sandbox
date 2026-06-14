@@ -102,7 +102,7 @@ export interface MountSpec {
 
 /**
  * The container's network posture. `none` is the only value this stage uses; the internal,
- * gateway-only value for LLM-enabled sessions arrives in Stage 7 as a new member of this union.
+ * gateway-only value for LLM-enabled sessions arrives in Stage 9 as a new member of this union.
  */
 export type SandboxNetwork = 'none'
 

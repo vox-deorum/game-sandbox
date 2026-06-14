@@ -9,7 +9,7 @@
     with the shared stage timeline. A load_failed submission shows the failed stage and its captured
     error here instead of a session, making the exit-criterion case visible to the owner.
   - Recent replays: the recordings the agent's submissions ran in, each linking to its replay page.
-  - Inert placeholders for leaderboard placements (Stage 6) and the owner's LLM debug view (Stage 7),
+  - Inert placeholders for leaderboard placements (Stage 6) and the owner's LLM debug view (Stage 9),
     matching the Stage 4.5 convention of showing where later stages plug in. The debug placeholder is
     owner-only, gating on the signed-in identity matching the agent's owner.
 -->
@@ -60,7 +60,7 @@ const STATUS_TONE: Record<SubmissionStatus, 'neutral' | 'success' | 'danger' | '
   load_failed: 'danger',
 }
 
-/** The owner viewing their own profile unlocks the owner-only affordances (the Stage 7 debug view). */
+/** The owner viewing their own profile unlocks the owner-only affordances (the Stage 9 debug view). */
 const isOwner = () => me.me?.user_id === ownerId
 </script>
 

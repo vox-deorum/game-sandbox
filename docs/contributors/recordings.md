@@ -16,4 +16,4 @@ Reading enforces that every line's `schema_version` matches the header's, and a 
 
 `FolderRecordingStore(root)` lays out one directory per recording, `<root>/<id>/recording.jsonl`, with any sidecars at their header-declared relative paths inside that directory. The per-recording directory is the seam for object storage: it maps one to one onto an object-key prefix, and the protocol names only ids and streams, never filesystem types, so an `S3RecordingStore` can be added behind the same interface later as a purely additive change. No other backends are planned.
 
-There is deliberately no sidecar writing API yet. Stage 1 readers only tolerate declared sidecars; the first writer arrives with the Stage 7 telemetry sidecar. The rule for unknown sidecars is documented under [the state schema](state-schema.md#the-sidecar-rule).
+There is deliberately no sidecar writing API yet. Stage 1 readers only tolerate declared sidecars; the first writer arrives with the Stage 9 telemetry sidecar. The rule for unknown sidecars is documented under [the state schema](state-schema.md#the-sidecar-rule).

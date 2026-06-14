@@ -13,7 +13,7 @@ The outbound stream from the container is JSONL, and recording lines pass throug
 
 The classification rule — recording lines never carry a top-level `kind` property — holds because the state schema defines no such field, and a test asserts that against the packaged schema so the rule cannot rot silently. The same rule classifies WebSocket frames.
 
-Inbound command envelopes (backend to container, over the driver channel) carry a `kind`, a slot id where applicable, and a payload: `{"kind": "input", "slot": "player_0", "action": <action JSON>}`, `{"kind": "pause"}`, `{"kind": "resume"}`, and `{"kind": "stop"}` for graceful end. Stage 9 adds `{"kind": "chat", ...}` on the same envelope. Unknown kinds and malformed lines are logged to stderr and ignored — the container must never die because a client sent garbage.
+Inbound command envelopes (backend to container, over the driver channel) carry a `kind`, a slot id where applicable, and a payload: `{"kind": "input", "slot": "player_0", "action": <action JSON>}`, `{"kind": "pause"}`, `{"kind": "resume"}`, and `{"kind": "stop"}` for graceful end. Stage 8 adds `{"kind": "chat", ...}` on the same envelope. Unknown kinds and malformed lines are logged to stderr and ignored — the container must never die because a client sent garbage.
 
 ## The WebSocket protocol
 

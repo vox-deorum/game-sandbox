@@ -37,7 +37,7 @@ class AgentBase(ABC):
       during play. Its time counts against the per-step and per-episode limits.
     - ``chat(inbox)`` is called on the agent's turn with the messages addressed to its slot;
       it returns messages to send, or nothing to stay silent. Defined and detected in Stage
-      2 but never called until messaging routing arrives in Stage 9.
+      2 but never called until messaging routing arrives in Stage 8.
     """
 
     @abstractmethod

@@ -1,10 +1,10 @@
-# Stage 8: Multi-Agent
+# Stage 7: Multi-Agent
 
 Status: not started
 
 ## Goal
 
-The system runs its first natively multi-agent environment end to end: multiple submissions share a session, the watch multi-agent flow exists, play-with-agent sessions have distinct human and agent slots, and the unpaced multi-slot session loop works in practice. The environment for this stage is the card game **Hearts**. Hearts is a natural home for agent-to-agent messaging, but messaging itself lands in Stage 9; this stage ships Hearts chat-less and Stage 9 lights chat up on it.
+The system runs its first natively multi-agent environment end to end: multiple submissions share a session, the watch multi-agent flow exists, play-with-agent sessions have distinct human and agent slots, and the unpaced multi-slot session loop works in practice. The environment for this stage is the card game **Hearts**. Hearts is a natural home for agent-to-agent messaging, but messaging itself lands in Stage 8; this stage ships Hearts chat-less and Stage 8 lights chat up on it.
 
 ## Scope
 
@@ -15,7 +15,7 @@ Hearts specifics to build:
 - **Slots and scoring.** Four slots. For this stage, one connected human can occupy one slot and submitted agents fill the rest, but the slot metadata and session assignment must not assume Hearts can only ever have one human-controlled seat. Native Hearts scoring is penalty-based: each heart is one point, the queen of spades is thirteen, lower total is better, and "shooting the moon" (taking every heart and the queen) flips to zero for the shooter and twenty-six for everyone else. The renderer shows those native penalty scores. For automated ranking, Hearts reports a normalized leaderboard score, such as negative penalty total, so the Stage 6 board can keep its higher-is-better rule. Per-slot display scores and leaderboard scores must both render and replay correctly where they appear.
 - **Rules to enforce in the environment.** Follow suit if able; hearts may not be led until broken; the two of clubs leads the first trick; no hearts or queen of spades on the first trick. The first cut may use the no-pass variant of Hearts to avoid modeling the opening three-card pass as a separate decision round; note the pass as a follow-up if we want it, since it is itself an interesting multi-agent signaling moment.
 - **Renderer and on-screen input.** Draw the player's hand, the current trick, a turn indicator, and the running per-slot penalty scores. Clicking a card plays it; cards that are not legal on the current turn (wrong suit when the led suit is held, hearts before broken, first-trick restrictions) are greyed out. This is the on-screen input UI from [interaction.md](../specs/interaction.md), in place of raw device input.
-- **Messaging stays off here.** Hearts is built with the messaging flag disabled in this stage; Stage 9 enables it (a low per-step cap, moon-shot broadcast-versus-targeted coordination) using this same environment as its test bed. Building Hearts chat-less keeps the multi-slot stepping, isolation, and turn-based work separate from the chat-routing work.
+- **Messaging stays off here.** Hearts is built with the messaging flag disabled in this stage; Stage 8 enables it (a low per-step cap, moon-shot broadcast-versus-targeted coordination) using this same environment as its test bed. Building Hearts chat-less keeps the multi-slot stepping, isolation, and turn-based work separate from the chat-routing work.
 - **Template layer.** Hearts lands as a second environment template on the existing two-layer machinery: a `templates/hearts/` layer (its `agent.py` stub, README, and generated `sandbox_env/`) over the shared `templates/base/`, registered in `TEMPLATE_ENVS`, with at least one `examples/hearts/<name>` example. It shares the single global dependency set, so no new `template-v<N>` axis is introduced. See [Examples and the template](../docs/contributors/examples-and-template.md).
 
 Exercise the harness's multi-slot path for real: sequential stepping across the non-human slots, per-slot timing and timeouts, and a human-controlled slot among agents. Fix what the single-agent stages never had to get right.
@@ -26,7 +26,7 @@ Build the watch multi-agent flow from [frontend.md](../specs/frontend.md): pick 
 
 ## Human-slot timeout use
 
-The human-slot timeout is defined and exposed before this stage (Stages 2 through 4, and [interaction.md](../specs/interaction.md)). Stage 8 only needs to exercise it in an unpaced (turn-based) product environment: Hearts provides a legal default action for a timed-out human-controlled slot, for example the lowest legal card, and the renderer shows the active move clock using the session value.
+The human-slot timeout is defined and exposed before this stage (Stages 2 through 4, and [interaction.md](../specs/interaction.md)). Stage 7 only needs to exercise it in an unpaced (turn-based) product environment: Hearts provides a legal default action for a timed-out human-controlled slot, for example the lowest legal card, and the renderer shows the active move clock using the session value.
 
 ## Spec references
 
@@ -34,7 +34,7 @@ The human-slot timeout is defined and exposed before this stage (Stages 2 throug
 
 ## Depends on
 
-Stages 5 and 6 (submissions, workflow). Messaging is not required here; it arrives in Stage 9, which uses this Hearts environment as its test bed.
+Stages 5 and 6 (submissions, workflow). Messaging is not required here; it arrives in Stage 8, which uses this Hearts environment as its test bed.
 
 ## Done when
 

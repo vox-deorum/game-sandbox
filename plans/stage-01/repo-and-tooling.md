@@ -16,7 +16,7 @@ backend/                 placeholder README (filled in Stage 3)
 frontend/                placeholder README (filled in Stage 4)
 templates/               base/ layer + one <env>/ layer per environment (real content in Stage 2)
 examples/                example overlays under <env>/<name>/, starting with flappy_bird/hello/
-gateway/                 placeholder README (filled in Stage 7)
+gateway/                 placeholder README (filled in Stage 9)
 docs/                    MkDocs source (see docs-site.md)
 scripts/                 cross-platform Python dev scripts
 build/                   gitignored output (composed examples, built docs)
