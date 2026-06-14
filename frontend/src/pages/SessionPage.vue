@@ -68,8 +68,18 @@ const { noRenderer, aspectRatio, mount: mountRenderer, render: renderState } = u
   controlledSlots,
   sendAction: sendInput,
 })
-const { connection, status, paused, endReason, finalResult, connect, togglePause, stop, send } =
-  useSessionSocket(id, {
+const {
+  connection,
+  status,
+  paused,
+  buffering,
+  endReason,
+  finalResult,
+  connect,
+  togglePause,
+  stop,
+  send,
+} = useSessionSocket(id, {
     onHeader: (header) => mountRenderer(header),
     onState: (state) => {
       renderState(state)
@@ -188,7 +198,10 @@ onMounted(async () => {
     connection.value = 'closed'
     return
   }
-  connect()
+  // A watch run (scripted) plays paced so a container that streams faster than real time still
+  // animates at the environment's cadence and reveals game over only once the frames have played
+  // out. A human session renders every frame on arrival, for immediate feedback to the owner's input.
+  connect({ pace: fetched.mode === 'scripted', paceMs: meta.value?.pace_interval_ms ?? null })
 })
 
 async function hydrateRecording(session: SessionRow): Promise<void> {
@@ -290,6 +303,14 @@ function formatMode(mode: SessionRow['mode']): string {
           :style="aspectRatio !== null ? { aspectRatio: String(aspectRatio) } : undefined"
         >
           <div v-if="paused && status !== 'ended'" class="overlay-banner">Paused</div>
+          <div
+            v-else-if="buffering && status !== 'ended'"
+            class="overlay-banner overlay-banner--waiting"
+            role="status"
+          >
+            <span class="overlay-spinner" aria-hidden="true" />
+            <span>Waiting…</span>
+          </div>
         </div>
         <UiEmptyState v-if="noRenderer">No renderer is registered for this environment yet.</UiEmptyState>
       </section>
@@ -396,6 +417,35 @@ function formatMode(mode: SessionRow['mode']): string {
   letter-spacing: 0.1em;
   color: var(--color-text);
   background: var(--color-scrim);
+}
+
+/* The buffer-underrun indicator: a spinner over the held frame while the next frames are awaited. */
+.overlay-banner--waiting {
+  flex-direction: column;
+  gap: var(--space-3);
+  font-size: var(--text-md);
+  letter-spacing: 0.05em;
+}
+
+.overlay-spinner {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  border: 3px solid var(--color-border);
+  border-top-color: var(--color-accent);
+  animation: overlay-spin 0.8s linear infinite;
+}
+
+@keyframes overlay-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .overlay-spinner {
+    animation: none;
+  }
 }
 
 /* The log fills the height the canvas defines and scrolls within it. The body is positioned so its

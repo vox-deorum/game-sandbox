@@ -7,6 +7,16 @@
  *
  * Pause state is never tracked locally: it reflects the pause/resume echoes the backend broadcasts, so
  * the UI cannot disagree with the container.
+ *
+ * A watch (scripted) run plays through a client-side jitter buffer. The container runs as fast as it
+ * can and the carrier delivers frames unevenly — in bursts, with stalls — so rendering them on arrival
+ * makes the animation race ahead and snap to the result. Instead the client buffers frames, waits for
+ * a small lead to accumulate (so a late or bursty frame does not starve playback), then plays them out
+ * one per cadence tick; an underrun simply holds the last frame until more arrive rather than
+ * stuttering. The end facts (the `ended` status and the `result`) ride at the tail of the buffer: they
+ * are held until the last buffered frame has been shown, so the animation plays out fully and only then
+ * reveals game over. A human session never buffers: its owner needs every frame the instant it arrives
+ * to react to their own input.
  */
 import type { RecordingHeader, StepState } from '@game-sandbox/schema'
 import type { Command } from '@game-sandbox/schema/protocol'
@@ -15,10 +25,26 @@ import { onBeforeUnmount, ref, shallowRef } from 'vue'
 import { type ConnectionState, SessionSocket } from '../api/socket.js'
 import { formatScoreMap } from '../replay/summary.js'
 
+/** The viewing cadence for a paced watch run whose environment declares no pace interval. */
+const DEFAULT_WATCH_CADENCE_MS = 1000
+
+/** How much playback to buffer before starting, to absorb network jitter. The added startup latency
+ *  is irrelevant for a non-interactive watch run, and it keeps a late or bursty frame from starving
+ *  the very first cadence ticks. */
+const JITTER_BUFFER_LEAD_MS = 150
+
 /** The recording frames the page wires to its renderer. */
 export interface SessionFrameHandlers {
   onHeader(header: RecordingHeader): void
   onState(state: StepState): void
+}
+
+/** How to drive the live stream. Paced playback is opt-in per session (watch runs only). */
+export interface ConnectOptions {
+  /** Buffer frames and play them out at {@link paceMs}, holding the end facts until they drain. */
+  pace?: boolean
+  /** The environment's pace interval; falls back to {@link DEFAULT_WATCH_CADENCE_MS} when unset. */
+  paceMs?: number | null
 }
 
 export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers) {
@@ -27,20 +53,119 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
   const paused = ref(false)
   const endReason = ref<string | null>(null)
   const finalResult = ref<{ score: string | null; ticks: number | null } | null>(null)
+  // True while playout has begun but the jitter buffer has run dry awaiting more frames, so the page
+  // can show a waiting indicator over the held last frame. Only ever set in buffered (watch) mode.
+  const buffering = ref(false)
   // shallowRef: the socket is an imperative class, not reactive data.
   const socket = shallowRef<SessionSocket | null>(null)
 
+  // --- watch jitter buffer ---
+  // The buffer of frames awaiting their cadence tick, the timer that drains it, whether playout has
+  // begun (it waits for the lead to fill), and the end facts held back until the buffer empties so the
+  // result lands with the final frame, not ahead of it.
+  let pacing = false
+  let cadence = DEFAULT_WATCH_CADENCE_MS
+  let leadFrames = 1
+  let playing = false
+  const frameQueue: StepState[] = []
+  let paceTimer: ReturnType<typeof setInterval> | null = null
+  let endHeld = false
+  let heldEndReason: string | null = null
+  let heldResult: Record<string, unknown> | null = null
+
+  function applyResult(value: Record<string, unknown>): void {
+    const scores = (value.scores ?? {}) as Record<string, number>
+    finalResult.value = {
+      score: formatScoreMap(scores),
+      ticks: typeof value.ticks === 'number' ? value.ticks : null,
+    }
+    if (typeof value.reason === 'string') {
+      endReason.value = value.reason
+    }
+  }
+
+  /** Reveal the end of the run: surface the held result, mark ended, and stop draining. */
+  function applyEnd(reason: string | null): void {
+    if (heldResult !== null) {
+      applyResult(heldResult)
+      heldResult = null
+    }
+    status.value = 'ended'
+    if (reason !== null) {
+      endReason.value = reason
+    }
+    buffering.value = false
+    stopPacer()
+  }
+
+  /** Begin playout once the lead buffer has filled, or immediately once the stream has ended so a run
+   *  shorter than the lead still plays. After the first start the buffer is allowed to underrun (the
+   *  pacer simply holds the last frame), so this only ever flips playout on. */
+  function maybeStart(streamEnded: boolean): void {
+    if (playing || !(streamEnded || frameQueue.length >= leadFrames)) {
+      return
+    }
+    playing = true
+    paceTimer = setInterval(drainOne, cadence)
+  }
+
+  function stopPacer(): void {
+    if (paceTimer !== null) {
+      clearInterval(paceTimer)
+      paceTimer = null
+    }
+  }
+
+  /** Play the next buffered frame; once the buffer drains and the stream has ended, reveal game over.
+   *  An empty buffer with the stream still live is an underrun: hold the last frame and flag waiting. */
+  function drainOne(): void {
+    const state = frameQueue.shift()
+    if (state !== undefined) {
+      buffering.value = false
+      frames.onState(state)
+    } else if (!endHeld) {
+      buffering.value = true
+    }
+    if (frameQueue.length === 0 && endHeld) {
+      applyEnd(heldEndReason)
+    }
+  }
+
   /** Open the socket. The caller gates this on identity and metadata being resolved, and skips it
-   *  entirely for an already-ended session (a historical view with no live transport). */
-  function connect(): void {
+   *  entirely for an already-ended session (a historical view with no live transport). Pass
+   *  `pace` for a watch run so frames play at the environment's cadence rather than as they arrive. */
+  function connect(options: ConnectOptions = {}): void {
+    pacing = options.pace === true
+    cadence =
+      pacing && typeof options.paceMs === 'number' && options.paceMs > 0
+        ? options.paceMs
+        : DEFAULT_WATCH_CADENCE_MS
+    leadFrames = Math.max(1, Math.ceil(JITTER_BUFFER_LEAD_MS / cadence))
+    playing = false
+    buffering.value = false
     const client = new SessionSocket(`/api/sessions/${sessionId}/ws`, {
       onHeader: frames.onHeader,
-      onState: frames.onState,
-      onSessionStatus: (next, reason) => {
-        status.value = next
-        if (next === 'ended') {
-          endReason.value = reason ?? endReason.value
+      onState: (state) => {
+        if (pacing) {
+          frameQueue.push(state)
+          maybeStart(false)
+        } else {
+          frames.onState(state)
         }
+      },
+      onSessionStatus: (next, reason) => {
+        if (next === 'running') {
+          status.value = 'running'
+          return
+        }
+        // ended: hold it while frames are still draining, else reveal it now.
+        if (pacing && frameQueue.length > 0) {
+          endHeld = true
+          heldEndReason = reason ?? null
+          maybeStart(true)
+          return
+        }
+        applyEnd(reason ?? endReason.value)
       },
       onPause: () => {
         paused.value = true
@@ -49,14 +174,12 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
         paused.value = false
       },
       onResult: (value) => {
-        const scores = (value.scores ?? {}) as Record<string, number>
-        finalResult.value = {
-          score: formatScoreMap(scores),
-          ticks: typeof value.ticks === 'number' ? value.ticks : null,
+        // In paced mode the result is held and revealed with the last frame; otherwise apply it now.
+        if (pacing) {
+          heldResult = value
+          return
         }
-        if (typeof value.reason === 'string') {
-          endReason.value = value.reason
-        }
+        applyResult(value)
       },
       onConnectionChange: (state) => {
         connection.value = state
@@ -81,6 +204,7 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
   }
 
   function close(): void {
+    stopPacer()
     socket.value?.close()
     socket.value = null
   }
@@ -91,6 +215,7 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
     connection,
     status,
     paused,
+    buffering,
     endReason,
     finalResult,
     connect,

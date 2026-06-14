@@ -1,5 +1,6 @@
 import { fireEvent, screen, waitFor } from '@testing-library/vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 
 import type { SessionSocketHandlers } from '../src/api/socket.js'
 import type { RendererContext } from '../src/renderers/types.js'
@@ -66,6 +67,11 @@ function ownerRow() {
     created_at: '2026-06-11T00:00:00.000Z',
     ended_at: null,
   }
+}
+
+/** A watch run: a scripted (non-human) session a viewer streams with no controls. */
+function scriptedRow() {
+  return { ...ownerRow(), user_id: 'someone-else', mode: 'scripted' as const }
 }
 
 function endedOwnerRow() {
@@ -213,6 +219,84 @@ describe('SessionPage', () => {
     await waitFor(() => expect(screen.getByText('Live')).toBeInTheDocument())
     expect(screen.queryByRole('button', { name: 'Pause' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull()
+  })
+
+  it('buffers a watch run through the jitter buffer and reveals game over only after it drains', async () => {
+    vi.mocked(getMe).mockResolvedValue({ user_id: 'viewer', allowlisted: true })
+    vi.mocked(getSession).mockResolvedValue(scriptedRow())
+    await renderSession()
+    await waitForHandlers()
+
+    vi.useFakeTimers()
+    try {
+      handlers.onHeader(HEADER)
+      // Two frames sit below the lead (150 ms / 50 ms cadence = 3), so playout has not begun: even
+      // after time passes nothing draws — the buffer is still filling to absorb network jitter.
+      handlers.onState(flappyState(0, 1))
+      handlers.onState(flappyState(1, 2))
+      vi.advanceTimersByTime(200)
+      await nextTick()
+      expect(drawn).toHaveLength(0)
+
+      // A third frame fills the lead; playout begins and plays one buffered frame per cadence tick.
+      handlers.onState(flappyState(2, 3))
+      vi.advanceTimersByTime(50)
+      await nextTick()
+      expect(drawn).toHaveLength(1)
+      expect(screen.queryByText('Game over')).toBeNull()
+
+      // The stream ends while frames remain buffered; game over stays hidden until they drain.
+      handlers.onResult?.({ ticks: 42, reason: 'terminated', scores: { player_0: 7 } })
+      handlers.onSessionStatus?.('ended', 'terminated')
+      vi.advanceTimersByTime(50)
+      await nextTick()
+      expect(drawn).toHaveLength(2)
+      expect(screen.queryByText('Game over')).toBeNull()
+
+      // The last frame plays and only then is game over revealed, with the held result.
+      vi.advanceTimersByTime(50)
+      await nextTick()
+      expect(drawn).toHaveLength(3)
+      expect(screen.getByText('Game over')).toBeInTheDocument()
+      expect(screen.getByText('7')).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('shows a waiting indicator when the jitter buffer underruns, and clears it when frames resume', async () => {
+    vi.mocked(getMe).mockResolvedValue({ user_id: 'viewer', allowlisted: true })
+    vi.mocked(getSession).mockResolvedValue(scriptedRow())
+    await renderSession()
+    await waitForHandlers()
+
+    vi.useFakeTimers()
+    try {
+      handlers.onHeader(HEADER)
+      handlers.onSessionStatus?.('running')
+      // Fill the lead (3 frames) so playout begins, then drain all three.
+      handlers.onState(flappyState(0, 1))
+      handlers.onState(flappyState(1, 2))
+      handlers.onState(flappyState(2, 3))
+      vi.advanceTimersByTime(150)
+      await nextTick()
+      expect(drawn).toHaveLength(3)
+      expect(screen.queryByText('Waiting…')).toBeNull()
+
+      // The next tick finds the buffer empty with the stream still live: the indicator appears.
+      vi.advanceTimersByTime(50)
+      await nextTick()
+      expect(screen.getByText('Waiting…')).toBeInTheDocument()
+
+      // A fresh frame arrives and plays on the next tick; the indicator clears.
+      handlers.onState(flappyState(3, 4))
+      vi.advanceTimersByTime(50)
+      await nextTick()
+      expect(drawn).toHaveLength(4)
+      expect(screen.queryByText('Waiting…')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('shows "No such session" when the row is missing', async () => {
