@@ -19,6 +19,8 @@ import { Retention } from './retention.js'
 import { Orchestrator } from './session/orchestrator.js'
 import { openSqliteStorage } from './storage/sqlite.js'
 import { OverlayEviction } from './submission/overlay-eviction.js'
+import { createSubmissionSource } from './submission/source/index.js'
+import { ValidationWorker } from './submission/worker.js'
 
 async function main(): Promise<void> {
   const config = loadConfig()
@@ -41,6 +43,23 @@ async function main(): Promise<void> {
     void retention.sweep()
   })
 
+  // The submission pipeline (Stage 5): the source seam resolves and fetches participant code; the
+  // bounded worker drives it through the four validation stages, sweeping overlay images after each
+  // build. The deployment has a base image for the current dependency-set version only.
+  const submissionSource = createSubmissionSource(config.submission)
+  const validationWorker = new ValidationWorker({
+    driver,
+    storage,
+    source: submissionSource,
+    sandbox: config.sandbox,
+    loadCheckTimeoutMs: config.submission.loadCheckTimeoutMs,
+    knownTemplateVersions: new Set([DEPS_VERSION]),
+    log,
+    onOverlayBuilt: () => {
+      void overlayEviction.sweep()
+    },
+  })
+
   const app = await buildApp({
     orchestrator,
     environments,
@@ -48,9 +67,15 @@ async function main(): Promise<void> {
     retention,
     allowlist: config.sessionAllowlist,
     frontendDir: config.frontendDir,
+    storage,
+    submissionSource,
+    validationWorker,
+    allowLocalSubmissions: config.submission.allowLocalSubmissions,
   })
   retention.start()
   overlayEviction.start()
+  // Re-enqueue active pending submissions stranded by a prior restart, then accept new ones.
+  await validationWorker.start()
   await app.listen({ port: config.port, host: '0.0.0.0' })
   log(`backend listening on :${config.port}`)
 
@@ -64,8 +89,10 @@ async function main(): Promise<void> {
     void (async () => {
       retention.stop()
       overlayEviction.stop()
-      await orchestrator.shutdown()
+      // Stop accepting routes before draining the worker so no submit can enqueue during shutdown.
       await app.close()
+      await orchestrator.shutdown()
+      await validationWorker.whenIdle()
       await storage.close()
       process.exit(0)
     })()

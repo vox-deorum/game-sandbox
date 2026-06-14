@@ -1,6 +1,6 @@
 # Stage 5: Submissions
 
-Status: in progress (subplans 1-4 complete)
+Status: in progress (subplans 1-5 complete)
 
 ## Goal
 

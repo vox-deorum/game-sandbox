@@ -18,6 +18,9 @@ import type { RecordingsStore } from './recordings.js'
 import type { Retention } from './retention.js'
 import type { ClientSocket } from './session/live-session.js'
 import { type Orchestrator, OrchestratorError } from './session/orchestrator.js'
+import { type Storage, SubmissionConflictError, type SubmissionStatus } from './storage/index.js'
+import type { SourceInput, SubmissionSource } from './submission/source/index.js'
+import type { SubmissionEnqueuer } from './submission/worker.js'
 
 export interface AppDeps {
   orchestrator: Orchestrator
@@ -27,6 +30,14 @@ export interface AppDeps {
   retention: Retention
   /** The operator-configured session allowlist, so `/api/me` can report what the user may do. */
   allowlist: readonly string[]
+  /** The storage seam, for the submission create/read/list routes (Stage 5.5). */
+  storage: Storage
+  /** The submission-source seam, for the reachability pre-check (Stage 5.2/5.5). */
+  submissionSource: SubmissionSource
+  /** The bounded validation worker the submit route enqueues onto; the pipeline runs out of band. */
+  validationWorker: SubmissionEnqueuer
+  /** Whether the dev-only local-folder source is offered; drives capabilities and the local gate. */
+  allowLocalSubmissions: boolean
   /**
    * The built frontend bundle to serve at the root. When present (a production launch), the backend
    * serves the SPA so the whole stack is one origin and one process. Omitted in dev (Vite serves it
@@ -55,6 +66,53 @@ interface StartBody {
   mode: 'human' | 'scripted'
   seed?: number
   human_slot_timeout_ms?: number
+}
+
+/** The source fields shared by the reachability pre-check and the submit body. */
+const SOURCE_PROPERTIES = {
+  repo_url: { type: 'string' },
+  ref: { type: ['string', 'null'] },
+  local_path: { type: 'string' },
+} as const
+
+/** JSON-schema body for POST /api/submissions/reachability. */
+const REACHABILITY_SCHEMA = {
+  body: { type: 'object', additionalProperties: false, properties: SOURCE_PROPERTIES },
+} as const
+
+/** JSON-schema body for POST /api/submissions; the source is validated in the handler. */
+const SUBMIT_SCHEMA = {
+  body: {
+    type: 'object',
+    required: ['env_id'],
+    additionalProperties: false,
+    properties: { env_id: { type: 'string', minLength: 1 }, ...SOURCE_PROPERTIES },
+  },
+} as const
+
+/** A participant's source as it arrives on the wire: a git repo (+ optional ref) or a local folder. */
+interface SourceBody {
+  repo_url?: string
+  ref?: string | null
+  local_path?: string
+}
+
+interface SubmitBody extends SourceBody {
+  env_id: string
+}
+
+/**
+ * Map a wire source body onto the seam's {@link SourceInput}: a non-empty `local_path` is a local
+ * source, otherwise a non-empty `repo_url` is a git source, otherwise null (neither was supplied).
+ */
+function sourceInputFromBody(body: SourceBody): SourceInput | null {
+  if (typeof body.local_path === 'string' && body.local_path !== '') {
+    return { kind: 'local', localPath: body.local_path }
+  }
+  if (typeof body.repo_url === 'string' && body.repo_url !== '') {
+    return { kind: 'git', repoUrl: body.repo_url, ref: body.ref ?? null }
+  }
+  return null
 }
 
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
@@ -151,6 +209,115 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       }
       socket.on('message', (data: Buffer) => attachment.handleMessage(data.toString()))
       socket.on('close', () => attachment.detach())
+    },
+  )
+
+  // --- Submissions (Stage 5.5) ---------------------------------------------------------------
+  // The capabilities probe: the form mirrors the backend's dev gate so the local-folder field is
+  // driven by both `import.meta.env.DEV` and this flag, never by the frontend build alone.
+  app.get('/api/submissions/capabilities', () => ({
+    local_submissions: deps.allowLocalSubmissions,
+  }))
+
+  // The cheap pre-accept reachability check: verify the repo (and ref) before a row is written, the
+  // explicit frontend requirement. A local source is refused here when the dev gate is off, before
+  // the source seam is touched, matching step 2's gating.
+  app.post<{ Body: SourceBody }>(
+    '/api/submissions/reachability',
+    { schema: REACHABILITY_SCHEMA },
+    async (request, reply) => {
+      const input = sourceInputFromBody(request.body)
+      if (input === null) {
+        return reply
+          .code(400)
+          .send({ error: 'a repo_url or local_path is required', code: 'invalid_source' })
+      }
+      if (input.kind === 'local' && !deps.allowLocalSubmissions) {
+        return reply
+          .code(403)
+          .send({ error: 'local submissions are disabled', code: 'local_disabled' })
+      }
+      return reply.code(200).send(await deps.submissionSource.verifyReachable(input))
+    },
+  )
+
+  // Submit: resolve the open iteration, create the pending row under the resolved identity, enqueue
+  // the validate-and-build job, and return 202 — the pipeline never runs inline. The submitter is
+  // never read from the client. Resubmission supersedes the prior active row inside createSubmission.
+  app.post<{ Body: SubmitBody }>(
+    '/api/submissions',
+    { schema: SUBMIT_SCHEMA },
+    async (request, reply) => {
+      const input = sourceInputFromBody(request.body)
+      if (input === null) {
+        return reply
+          .code(400)
+          .send({ error: 'a repo_url or local_path is required', code: 'invalid_source' })
+      }
+      if (input.kind === 'local' && !deps.allowLocalSubmissions) {
+        return reply
+          .code(403)
+          .send({ error: 'local submissions are disabled', code: 'local_disabled' })
+      }
+      const iteration = await deps.storage.getOpenIteration(request.body.env_id)
+      if (iteration === undefined) {
+        return reply
+          .code(409)
+          .send({ error: 'submissions are closed for this environment', code: 'no_open_iteration' })
+      }
+      try {
+        const submission = await deps.storage.createSubmission({
+          iteration_id: iteration.id,
+          env_id: request.body.env_id,
+          user_id: resolveUserId(request.headers),
+          source_kind: input.kind,
+          repo_url: input.kind === 'git' ? input.repoUrl : null,
+          commit_sha: null,
+          local_path: input.kind === 'local' ? input.localPath : null,
+          ref: input.kind === 'git' ? input.ref : null,
+          created_at: new Date().toISOString(),
+        })
+        deps.validationWorker.enqueue(submission.id)
+        return reply.code(202).send({ id: submission.id, status: submission.status })
+      } catch (error) {
+        if (error instanceof SubmissionConflictError) {
+          // A concurrent resubmit won the active slot; the client may retry.
+          return reply.code(409).send({ error: error.message, code: 'resubmit_conflict' })
+        }
+        throw error
+      }
+    },
+  )
+
+  // The current user's submissions (including superseded history), newest first, optionally one
+  // environment. The agent profile (step 6) reads this; the form reads the single submission below.
+  app.get<{ Querystring: { env?: string } }>('/api/submissions', (request) =>
+    deps.storage.listSubmissionsByUser(resolveUserId(request.headers), request.query.env),
+  )
+
+  // One submission joined with its ordered per-stage validation log, so a poll is a single request.
+  app.get<{ Params: { id: string } }>('/api/submissions/:id', async (request, reply) => {
+    const submission = await deps.storage.getSubmission(request.params.id)
+    if (submission === undefined) {
+      return reply.code(404).send({ error: 'no such submission' })
+    }
+    const checks = await deps.storage.listSubmissionChecks(submission.id)
+    return { ...submission, checks }
+  })
+
+  // Active submissions for an environment's open iteration, optionally narrowed by status. The watch
+  // picker (step 6) reads the `ready` set; returns empty when the environment has no open iteration.
+  app.get<{ Params: { envId: string }; Querystring: { status?: string } }>(
+    '/api/environments/:envId/submissions',
+    async (request) => {
+      const iteration = await deps.storage.getOpenIteration(request.params.envId)
+      if (iteration === undefined) {
+        return []
+      }
+      return deps.storage.listActiveSubmissionsByIteration(
+        iteration.id,
+        request.query.status as SubmissionStatus | undefined,
+      )
     },
   )
 

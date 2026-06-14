@@ -178,6 +178,137 @@ export type PinResult =
   | { ok: false; reason: 'pinned_quota' }
   | { ok: false; reason: 'failed'; status: number }
 
+// --- Submissions (Stage 5.5) -----------------------------------------------------------------
+
+/** The validation pipeline's ordered stages, the form renders them as a four-step timeline. */
+export type SubmissionStage = 'resolve' | 'static' | 'build' | 'load'
+/** A submission's terminal-or-pending rollup status. */
+export type SubmissionStatus =
+  | 'pending'
+  | 'static_failed'
+  | 'build_failed'
+  | 'load_failed'
+  | 'ready'
+
+/** One per-stage validation check, as returned inside the single-submission read. */
+export interface SubmissionCheck {
+  stage: SubmissionStage
+  status: 'running' | 'passed' | 'failed' | 'skipped'
+  detail: string | null
+  started_at: string
+  ended_at: string | null
+}
+
+/** A submission joined with its ordered per-stage log: the form's one-request poll payload. */
+export interface SubmissionDetail {
+  id: string
+  env_id: string
+  user_id: string
+  source_kind: 'git' | 'local'
+  repo_url: string | null
+  commit_sha: string | null
+  local_path: string | null
+  ref: string | null
+  status: SubmissionStatus
+  reason: string | null
+  created_at: string
+  superseded_at: string | null
+  checks: SubmissionCheck[]
+}
+
+/** Whether the backend offers the dev-only local-folder source, mirrored into the form's gate. */
+export async function getSubmissionCapabilities(): Promise<{ local_submissions: boolean }> {
+  return (await json(
+    await request('/submissions/capabilities'),
+    'GET /submissions/capabilities',
+  )) as { local_submissions: boolean }
+}
+
+/** The form's source input: a git repo (+ optional ref) or a dev-only local folder path. */
+export interface SubmissionSourceInput {
+  repoUrl?: string
+  ref?: string | null
+  localPath?: string
+}
+
+/** The reachability pre-check verdict, surfaced inline before the form enables submit. */
+export interface ReachabilityResult {
+  reachable: boolean
+  failure?: string
+  detail?: string
+}
+
+function sourceBody(input: SubmissionSourceInput): Record<string, unknown> {
+  const body: Record<string, unknown> = {}
+  if (input.localPath !== undefined && input.localPath !== '') {
+    body.local_path = input.localPath
+  } else {
+    body.repo_url = input.repoUrl
+    if (input.ref !== undefined && input.ref !== null && input.ref !== '') {
+      body.ref = input.ref
+    }
+  }
+  return body
+}
+
+/** Verify the repo (and ref) reach before accepting; a refused local gate reads as not-reachable. */
+export async function checkReachability(input: SubmissionSourceInput): Promise<ReachabilityResult> {
+  const res = await request('/submissions/reachability', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(sourceBody(input)),
+  })
+  if (res.ok) {
+    return (await res.json()) as ReachabilityResult
+  }
+  const body = (await res.json().catch(() => ({}))) as { code?: string; error?: string }
+  return { reachable: false, failure: body.code ?? 'failed', detail: body.error }
+}
+
+/** The typed outcome of a submit: the accepted pending row, or one of the route's typed refusals. */
+export type SubmitAgentResult =
+  | { ok: true; id: string; status: SubmissionStatus }
+  | {
+      ok: false
+      reason:
+        | 'no_open_iteration'
+        | 'resubmit_conflict'
+        | 'local_disabled'
+        | 'invalid_source'
+        | 'failed'
+      message: string
+    }
+
+/** Submit an agent for an environment; identity rides the request header, never the body. */
+export async function submitAgent(
+  envId: string,
+  input: SubmissionSourceInput,
+): Promise<SubmitAgentResult> {
+  const res = await request('/submissions', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ env_id: envId, ...sourceBody(input) }),
+  })
+  if (res.status === 202) {
+    const body = (await res.json()) as { id: string; status: SubmissionStatus }
+    return { ok: true, id: body.id, status: body.status }
+  }
+  const body = (await res.json().catch(() => ({}))) as { code?: string; error?: string }
+  return {
+    ok: false,
+    reason: (body.code ?? 'failed') as Exclude<SubmitAgentResult, { ok: true }>['reason'],
+    message: body.error ?? res.statusText,
+  }
+}
+
+/** Poll a submission's status and per-stage validation log in one request. */
+export async function getSubmission(id: string): Promise<SubmissionDetail> {
+  return (await json(
+    await request(`/submissions/${encodeURIComponent(id)}`),
+    'GET /submissions/:id',
+  )) as SubmissionDetail
+}
+
 /** Pin a recording (owner-only). Maps the backend's 409 `pinned_quota` onto a typed result. */
 export async function pinRecording(id: string): Promise<PinResult> {
   const res = await request(`/recordings/${encodeURIComponent(id)}/pin`, { method: 'POST' })

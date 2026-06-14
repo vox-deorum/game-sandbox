@@ -129,6 +129,12 @@ export interface Storage {
   /** The current open iteration for an environment, the identity boundary every submission needs. */
   getOpenIteration(envId: string): Promise<Iteration | undefined>
   /**
+   * One iteration by id, regardless of status. The validation worker reads the pinned
+   * `deps_version` of the iteration a submission belongs to (which may differ from the env's
+   * currently-open one once Stage 6 can close an iteration).
+   */
+  getIteration(id: string): Promise<Iteration | undefined>
+  /**
    * The seed primitive: ensure an open iteration exists for the environment at `depsVersion` and
    * return it. Idempotent, an environment already carrying an open iteration is left untouched.
    */

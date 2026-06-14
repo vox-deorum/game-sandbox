@@ -4,8 +4,16 @@
  * everything runs against the {@link FakeDriver} and in-memory SQLite.
  */
 import type { Config } from '../../src/config.js'
+import type { ExecutionDriver } from '../../src/driver/index.js'
 import { EnvironmentRegistry } from '../../src/environments.js'
 import type { ClientSocket } from '../../src/session/live-session.js'
+import type { Storage } from '../../src/storage/index.js'
+import {
+  createSubmissionSource,
+  type SubmissionSourceDeps,
+} from '../../src/submission/source/index.js'
+import { ValidationWorker } from '../../src/submission/worker.js'
+import { FakeDriver } from './fake-driver.js'
 
 /** A config with class-scale defaults overridable per test (e.g. a tiny idle window). */
 export function makeConfig(overrides: Partial<Config> = {}): Config {
@@ -32,6 +40,44 @@ export function makeConfig(overrides: Partial<Config> = {}): Config {
     },
     submission: { allowLocalSubmissions: false, gitTimeoutMs: 15_000, loadCheckTimeoutMs: 30_000 },
     ...overrides,
+  }
+}
+
+/**
+ * The submission-specific {@link import('../../src/app.js').AppDeps} slice every `buildApp` caller now
+ * needs: the storage seam, the source seam (tests may inject fake git/GitHub clients), the bounded
+ * validation worker, and the local-source gate. The worker defaults to a {@link FakeDriver} since the
+ * non-submission suites never enqueue; submission suites pass their own driver and source fakes.
+ */
+export function makeSubmissionDeps(
+  storage: Storage,
+  config: Config,
+  options: {
+    driver?: ExecutionDriver
+    source?: SubmissionSourceDeps
+    knownTemplateVersions?: ReadonlySet<number>
+  } = {},
+): {
+  storage: Storage
+  submissionSource: ReturnType<typeof createSubmissionSource>
+  validationWorker: ValidationWorker
+  allowLocalSubmissions: boolean
+} {
+  const driver = options.driver ?? new FakeDriver()
+  const submissionSource = createSubmissionSource(config.submission, options.source)
+  const validationWorker = new ValidationWorker({
+    driver,
+    storage,
+    source: submissionSource,
+    sandbox: config.sandbox,
+    loadCheckTimeoutMs: config.submission.loadCheckTimeoutMs,
+    knownTemplateVersions: options.knownTemplateVersions ?? new Set([1]),
+  })
+  return {
+    storage,
+    submissionSource,
+    validationWorker,
+    allowLocalSubmissions: config.submission.allowLocalSubmissions,
   }
 }
 

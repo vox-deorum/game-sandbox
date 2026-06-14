@@ -12,7 +12,7 @@ import { Orchestrator } from '../src/session/orchestrator.js'
 import type { Storage } from '../src/storage/index.js'
 import { openSqliteStorage } from '../src/storage/sqlite.js'
 import { FakeDriver } from './support/fake-driver.js'
-import { makeConfig, makeEnvironments } from './support/harness.js'
+import { makeConfig, makeEnvironments, makeSubmissionDeps } from './support/harness.js'
 
 // A built bundle is a tiny stand-in for `frontend/dist`: an index.html and one hashed asset, enough
 // to prove the backend serves files, falls back to index.html for client routes, and leaves /api alone.
@@ -45,6 +45,7 @@ describe('serving the built frontend', () => {
       retention: new Retention(storage, recordings, config),
       allowlist: ['dev-user'],
       frontendDir,
+      ...makeSubmissionDeps(storage, config),
     })
   })
 

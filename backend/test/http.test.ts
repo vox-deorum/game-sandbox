@@ -13,7 +13,7 @@ import { Orchestrator } from '../src/session/orchestrator.js'
 import type { Storage } from '../src/storage/index.js'
 import { openSqliteStorage } from '../src/storage/sqlite.js'
 import { FakeDriver } from './support/fake-driver.js'
-import { makeConfig, makeEnvironments } from './support/harness.js'
+import { makeConfig, makeEnvironments, makeSubmissionDeps } from './support/harness.js'
 
 const ALLOWLIST = ['dev-user', 'alice', 'bob']
 
@@ -35,6 +35,7 @@ describe('HTTP API', () => {
       recordings,
       retention: new Retention(storage, recordings, config),
       allowlist: ALLOWLIST,
+      ...makeSubmissionDeps(storage, config),
     })
   })
 

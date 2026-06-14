@@ -15,6 +15,8 @@ import { Retention } from '../../../src/retention.js'
 import { Orchestrator } from '../../../src/session/orchestrator.js'
 import type { Storage } from '../../../src/storage/index.js'
 import { openSqliteStorage } from '../../../src/storage/sqlite.js'
+import { createSubmissionSource } from '../../../src/submission/source/index.js'
+import { ValidationWorker } from '../../../src/submission/worker.js'
 
 export interface Stack {
   httpBase: string
@@ -67,12 +69,25 @@ export async function startStack(overrides: Partial<Config> = {}): Promise<Stack
       void retention.sweep()
     },
   )
+  const submissionSource = createSubmissionSource(config.submission)
+  const validationWorker = new ValidationWorker({
+    driver,
+    storage,
+    source: submissionSource,
+    sandbox: config.sandbox,
+    loadCheckTimeoutMs: config.submission.loadCheckTimeoutMs,
+    knownTemplateVersions: new Set([1]),
+  })
   const app = await buildApp({
     orchestrator,
     environments,
     recordings,
     retention,
     allowlist: config.sessionAllowlist,
+    storage,
+    submissionSource,
+    validationWorker,
+    allowLocalSubmissions: config.submission.allowLocalSubmissions,
   })
 
   const httpBase = await app.listen({ port: 0, host: '127.0.0.1' })

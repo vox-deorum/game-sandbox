@@ -148,6 +148,14 @@ export class KyselyStorage implements Storage {
       .executeTakeFirst()
   }
 
+  async getIteration(id: string): Promise<Iteration | undefined> {
+    return await this.db
+      .selectFrom('iterations')
+      .selectAll()
+      .where('id', '=', id)
+      .executeTakeFirst()
+  }
+
   async ensureOpenIteration(envId: string, depsVersion: number): Promise<Iteration> {
     const existing = await this.getOpenIteration(envId)
     if (existing !== undefined) {

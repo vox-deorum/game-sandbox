@@ -18,6 +18,7 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { startSession } from '../api/client.js'
 import RecentReplays from '../components/RecentReplays.vue'
 import StartForm from '../components/StartForm.vue'
+import SubmitAgentForm from '../components/SubmitAgentForm.vue'
 import UiBadge from '../components/ui/UiBadge.vue'
 import UiButton from '../components/ui/UiButton.vue'
 import UiDialog from '../components/ui/UiDialog.vue'
@@ -118,11 +119,16 @@ async function start(input: { seed?: number; humanSlotTimeoutMs?: number }): Pro
     </div>
 
     <section class="env-section">
+      <h2>Submit an agent</h2>
+      <SubmitAgentForm :env-id="meta.env_id" />
+    </section>
+
+    <section class="env-section">
       <h2>Recent replays</h2>
       <RecentReplays :env-id="meta.env_id" />
     </section>
 
-    <p class="env-placeholder">Leaderboards and agent submissions arrive in later stages.</p>
+    <p class="env-placeholder">Leaderboards arrive in a later stage.</p>
 
     <UiDialog v-model:open="dialogOpen" :title="dialogTitle">
       <StartForm v-if="formMode !== null" :meta="meta" :mode="formMode" @submit="start" @cancel="formMode = null" />
