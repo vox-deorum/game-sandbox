@@ -2,7 +2,7 @@
 
 Status: approved. This document is checkpoint one of [Stage 4.5](../stage-04.5-ui-restructure.md).
 
-This is the rethought information architecture for the frontend. It covers what exists today (four pages plus the dev styleguide) and reserves visible room for what stages 5 through 9 add (agent profiles, submissions, leaderboards, telemetry), per [specs/frontend.md](../specs/frontend.md). The guiding idea: the site is a small number of strong pages, and the navigation should make the eventual shape of the product legible now, so a student landing on the site understands what it will become.
+This is the rethought information architecture for the frontend. It covers what exists today (four pages plus the dev styleguide) and reserves visible room for what stages 5 through 9 add (agent profiles, submissions, leaderboards, telemetry), per [specs/frontend.md](../../docs/specs/frontend.md). The guiding idea: the site is a small number of strong pages, and the navigation should make the eventual shape of the product legible now, so a student landing on the site understands what it will become.
 
 ## Sitemap
 
