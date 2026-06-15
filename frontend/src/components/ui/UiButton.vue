@@ -10,7 +10,7 @@ import { RouterLink } from 'vue-router'
 const props = withDefaults(
   defineProps<{
     variant?: 'primary' | 'secondary' | 'ghost' | 'danger'
-    size?: 'md' | 'lg'
+    size?: 'tight' | 'md' | 'lg'
     /** Renders the button as a RouterLink to this target. */
     to?: string
     type?: 'button' | 'submit'
@@ -58,6 +58,10 @@ const isDisabled = computed(() => props.disabled || props.loading)
     background-color var(--motion-fast) var(--ease-out),
     border-color var(--motion-fast) var(--ease-out),
     filter var(--motion-fast) var(--ease-out);
+}
+
+.ui-button.tight {
+  padding: var(--space-1) var(--space-4);
 }
 
 .ui-button.lg {

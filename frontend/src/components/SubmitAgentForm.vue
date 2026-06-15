@@ -223,19 +223,16 @@ const isFailed = computed(
         </template>
       </UiField>
 
-      <div class="submit-reach">
+      <div class="submit-actions">
         <UiButton type="button" variant="secondary" :loading="verifying" :disabled="!hasSource" @click="verify">
           Verify reachability
         </UiButton>
+        <UiButton type="submit" :loading="submitting" :disabled="!canSubmit">Submit agent</UiButton>
         <UiStatusBadge
           v-if="reachability !== null && verifiedKey === inputKey"
           :tone="reachability.reachable ? 'success' : 'danger'"
           :label="reachability.reachable ? 'reachable' : reachability.detail ?? 'not reachable'"
         />
-      </div>
-
-      <div class="submit-actions">
-        <UiButton type="submit" :loading="submitting" :disabled="!canSubmit">Submit agent</UiButton>
       </div>
 
       <p v-if="submitError !== null" class="submit-error" role="alert">{{ submitError }}</p>
@@ -276,15 +273,10 @@ const isFailed = computed(
   font-size: var(--text-sm);
 }
 
-.submit-reach {
+.submit-actions {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-}
-
-.submit-actions {
-  display: flex;
-  gap: var(--space-2);
 }
 
 .submit-error {

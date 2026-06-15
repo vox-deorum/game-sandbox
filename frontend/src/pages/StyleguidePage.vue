@@ -91,6 +91,8 @@ const sliderValue = ref(120)
       <div class="row">
         <UiButton size="lg">Large primary</UiButton>
         <UiButton variant="secondary" size="lg">Large secondary</UiButton>
+        <UiButton size="tight">Tight primary</UiButton>
+        <UiButton variant="secondary" size="tight">Tight secondary</UiButton>
       </div>
       <div class="row">
         <UiButton disabled>Disabled</UiButton>

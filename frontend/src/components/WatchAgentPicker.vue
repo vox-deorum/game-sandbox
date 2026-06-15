@@ -93,6 +93,7 @@ async function startWatch(loadingKey: string, submissionId: string | undefined):
         </div>
         <UiButton
           v-if="me.me?.allowlisted"
+          size="tight"
           :loading="starting === BUILTIN_KEY"
           @click="watchBuiltin()"
         >
@@ -108,6 +109,7 @@ async function startWatch(loadingKey: string, submissionId: string | undefined):
         </div>
         <UiButton
           v-if="me.me?.allowlisted"
+          size="tight"
           :loading="starting === agent.id"
           @click="watch(agent)"
         >
