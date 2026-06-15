@@ -19,6 +19,22 @@ import type { ImageRef, ImageSpec } from '../index.js'
 /** backend/src/driver/docker/image.ts → repo root is four directories up. */
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..')
 const DOCKERFILE = 'backend/images/session-base/Dockerfile'
+const BUILD_RETRY_DELAYS_MS = [2_000, 8_000, 20_000]
+const TRANSIENT_BUILD_ERROR = new RegExp(
+  [
+    'context deadline exceeded',
+    'Client\\.Timeout exceeded',
+    'TLS handshake timeout',
+    'i/o timeout',
+    'temporary failure',
+    'connection reset',
+    'unexpected EOF',
+    '502 Bad Gateway',
+    '503 Service Unavailable',
+    '504 Gateway Timeout',
+  ].join('|'),
+  'i',
+)
 
 /** Directories and files never worth sending to the daemon as build context. */
 const IGNORED_SEGMENTS = new Set([
@@ -67,6 +83,21 @@ interface BuildProgress {
   errorDetail?: { message?: string }
 }
 
+function errorText(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message
+  }
+  return String(error)
+}
+
+function isTransientBuildError(error: unknown): boolean {
+  return TRANSIENT_BUILD_ERROR.test(errorText(error))
+}
+
+async function wait(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 /** Build the session base image from the repo-root context, rejecting on any build-step error. */
 async function build(docker: Docker, tag: string): Promise<void> {
   const context = tar.pack(REPO_ROOT, { ignore: isIgnored })
@@ -93,6 +124,30 @@ async function build(docker: Docker, tag: string): Promise<void> {
 }
 
 /**
+ * Cold CI runners sometimes hit transient Docker Hub or package-index timeouts while resolving the
+ * base layers. Retry only those network-shaped failures so real Dockerfile errors still fail fast.
+ */
+async function buildWithRetry(docker: Docker, tag: string): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await build(docker, tag)
+      return
+    } catch (error) {
+      const delayMs = BUILD_RETRY_DELAYS_MS[attempt]
+      if (delayMs === undefined || !isTransientBuildError(error)) {
+        throw error
+      }
+      console.warn(
+        `docker build for ${tag} hit a transient registry or network error; retrying in ${
+          delayMs / 1000
+        }s`,
+      )
+      await wait(delayMs)
+    }
+  }
+}
+
+/**
  * Resolve `spec` to a launch-ready {@link ImageRef}, building when needed. Under `reuse` an
  * existing tag is returned untouched; under `rebuild` the image is always rebuilt.
  */
@@ -106,6 +161,6 @@ export async function ensureImage(
   if (policy === 'reuse' && (await imageExists(docker, tag))) {
     return { ref: tag }
   }
-  await build(docker, tag)
+  await buildWithRetry(docker, tag)
   return { ref: tag }
 }
