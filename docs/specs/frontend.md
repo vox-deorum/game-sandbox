@@ -5,7 +5,7 @@ The frontend is organized into a small number of clearly scoped pages and a shar
 ## Pages
 
 - **Home.** Lists environments as cards. Each card shows the display name, a short description, the number of agent slots, whether a human can play, and a thumbnail.
-- **Environment page.** Shows the environment's description, the two leaderboards for the current iteration, links to historical iterations, recent replays, entry points into the play and watch flows, and the agent submission form (see below). The human entry point sits in the page header next to the title as **Play Yourself**. The watch list always offers the environment's built-in **Naive agent** pinned at the top, a baseline that behaves like a submitted agent, followed by the ready submissions.
+- **Environment page.** Shows the environment's description, the two leaderboards for the current iteration, links to historical iterations, recent replays, entry points into the play and watch flows, and the agent submission form (see below). The human entry point sits in the page header next to the title as **Play Yourself**. The watch list always offers the environment's built-in **Naive agent** pinned at the top, a baseline that behaves like a submitted agent, followed by the ready submissions. Any Watch action opens the same watch configuration dialog with the chosen row preselected.
 - **Agent profile.** One page per submitted agent. Linked to the participant's GitHub. Shows submission history across iterations, leaderboard placements, and recent replays. The agent's owner additionally gets a debug view with the agent's full LLM telemetry, prompts and completions included (see [llm.md](llm.md)).
 - **Replay viewer.** Plays back a recorded run step by step, including chat messages and per-tick LLM call metadata (model, token counts, latency). It states who played each slot, a human (annotated with the user) or the agent that ran (the Naive agent, or a submission owner's agent), read from the recording header's attribution. Full prompts and completions stay owner-only (see [llm.md](llm.md)). Linkable by URL. See [recording.md](recording.md).
 - **Live play.** Hosts an active session, which can be self-play, multi-agent, or human with agent.
@@ -17,11 +17,11 @@ The environment page carries a "Submit agent" form for the currently open iterat
 
 ## Flows
 
-- **Watch self-play.** Pick an agent, run it against the environment or itself, stream the state to the renderer. The built-in Naive agent is always available as the pinned first choice, so a watch run works before any agent is submitted.
-- **Watch multi-agent.** Pick agents for each slot in environments whose metadata allows more than one slot. This flow arrives together with the first multi-agent environment (see [environment.md](environment.md)).
+- **Watch self-play.** Pick an agent, confirm the configured seat assignment, set the random seed and any supported session overrides, then stream the state to the renderer. The built-in Naive agent is always available as the pinned first choice, so a watch run works before any agent is submitted.
+- **Watch multi-agent.** Pick agents for each required slot in environments whose metadata allows more than one slot. The same watch configuration dialog is used for built-in and submitted agents, and all required seats must be assigned before a session can start. This flow arrives together with the first multi-agent environment (see [environment.md](environment.md)).
 - **Play with or against agents.** Available when the environment metadata exposes human-capable slots. The initial flow can assign one connected human to one slot and fill the others with agents, but the session model should be slot-based so a later flow can assign multiple connected humans in the same session. Feedback is collected at the end of the session.
 
-Live-session controls include slot assignment for human-capable environments and any session-level overrides, including the human-slot timeout described in [interaction.md](interaction.md). A renderer that has an active human timeout should show it as part of the play UI.
+Live-session controls include slot assignment for human-capable environments and any session-level overrides, including the human-slot timeout described in [interaction.md](interaction.md). Watch-session controls include agent slot assignment, a seed, and the same supported session overrides. A renderer that has an active human timeout should show it as part of the play UI.
 
 ## On-demand live play
 
