@@ -99,7 +99,7 @@ export type CheckStatus = 'running' | 'passed' | 'failed' | 'skipped'
 /**
  * The `iterations` table: one row per environment's competition iteration. This stage seeds a
  * single open iteration per environment so submissions have an identity boundary and a pinned
- * dependency-set version; Stage 6 replaces the seed with the operator CLI and full configuration,
+ * dependency-set version; Stage 6 replaces the seed with the operator admin console and API,
  * extending this column set rather than rewriting it.
  */
 export interface IterationsTable {

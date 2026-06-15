@@ -6,7 +6,7 @@
  * submissions, nothing of Stage 6's operator configuration. It is idempotent: it calls the storage
  * `ensureOpenIteration` primitive per environment, so a restart against an existing database is a
  * no-op and an environment already carrying an open iteration is left untouched. Stage 6 replaces
- * this with the operator CLI and open/close controls.
+ * this with the operator admin console and open/close controls.
  */
 import type { EnvironmentRegistry } from './environments.js'
 import type { Storage } from './storage/index.js'

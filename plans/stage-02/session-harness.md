@@ -34,7 +34,7 @@ Python cannot preempt a synchronous `act()` in-process, and the harness shares t
 
 The per-episode limit is a cumulative budget of measured agent compute (`act` plus `learn`) per slot; when a slot exhausts it, the episode truncates with reason `episode_limit`, recorded in the result. Episode-limit semantics across multiple slots are confirmed in Stage 7 when a second multi-slot environment exists; Stage 2 implements per-slot budgets, which degenerate to the obvious thing for one slot. Both limits default from `EnvironmentMeta` and are overridable per call, since iterations override them in Stage 6.
 
-`learn` is called after the environment step with that step's transition, only when present. Its time counts against both limits. The schema's per-agent timing object is an open region, so a `learn_ms` field is added now as a documented optional property — an additive change, no version bump, regenerated through the Stage 1 staleness machinery — keeping `decision_ms` as pure `act` time so the leaderboard column stays comparable between learning and non-learning agents.
+`learn` is called after the environment step with that step's transition, only when present. Its time counts against both limits. The schema's per-agent timing object is an open region, so a `learn_ms` field is added now as a documented optional property, an additive change with no version bump, regenerated through the Stage 1 staleness machinery. `decision_ms` stays pure `act` time, while the later leaderboard compute column can combine `decision_ms`, `learn_ms`, and future hook timings.
 
 ## The loop and state assembly
 

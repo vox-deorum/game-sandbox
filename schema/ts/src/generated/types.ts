@@ -55,11 +55,11 @@ export interface AgentStep {
   score: number;
   timing?: {
     /**
-     * Wall-clock time the agent spent deciding this tick (act only). The leaderboard timing column reads this. chat_ms may be added later without a version bump.
+     * Wall-clock time the agent spent deciding this tick (act only). The leaderboard compute column combines this with learn_ms and later hook timing fields.
      */
     decision_ms?: number;
     /**
-     * Wall-clock time the agent spent in the optional learn hook this tick. Present only for learning agents. Kept separate from decision_ms so the leaderboard column stays comparable between learning and non-learning agents.
+     * Wall-clock time the agent spent in the optional learn hook this tick. Present only for learning agents. Kept separate from decision_ms so consumers can show act time separately while the leaderboard compute column can include both.
      */
     learn_ms?: number;
   };
