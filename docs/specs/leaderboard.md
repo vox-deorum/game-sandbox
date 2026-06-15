@@ -17,12 +17,13 @@ Each iteration carries its own configuration, set by the operator when the itera
 - Optional overrides of the environment's default per-step and per-episode time limits. If the iteration does not override, the environment's defaults (see [environment.md](environment.md)) are used.
 - Optional overrides of the environment's messaging settings: the message length cap, or disabling messaging for the iteration (see [communication.md](communication.md)).
 - Optional overrides of the LLM model allowlist and the token, call, and rate budgets (see [llm.md](llm.md)).
+- An optional **rating prompt** for the iteration: a short question or rubric the operator wants every human rater to consider when rating any agent in this iteration (for example, "Rate how human-like this agent felt"). It guides the human-feedback rating and is shown at rating time alongside any prompt the agent's own author set (see the human-feedback board below and [frontend.md](frontend.md)).
 
 Iterations are declared, configured, opened and closed for submissions, run, re-run, and published through an **operator admin console** on the website, backed by an operator-only admin HTTP API. The backend runs the workflow (it already holds the execution driver that launches the match containers), so the console can trigger runs and stream their container logs live. Operator access is gated by an operator allowlist in the deployment configuration, checked against the same GitHub identity used everywhere else (a mock operator identity in local development until OAuth lands). The admin HTTP API is the stable contract, so the same operations are scriptable for headless deployments without a separate configuration-file format.
 
 ## Automated board
 
-The automated board ranks agents by mean episode score across the iteration's runs, and shows mean wall-clock time per decision as a separate column. Episode score is the environment's leaderboard score, normalized so higher is better. If an environment has a native lower-is-better display score, such as penalty points, it reports a transformed leaderboard score while still exposing the native display score in the per-step state. Performance orders the board; efficiency stands next to it for everyone to see. The two are never folded into one number.
+The automated board ranks agents by mean episode score across the iteration's runs, and shows mean wall-clock agent compute time per decision as a separate column. That compute figure is a per-decision proxy that includes the agent's optional `learn` and `chat` hooks and any time spent waiting on LLM calls, not just the bare action call (see the timing measurement below). Episode score is the environment's leaderboard score, normalized so higher is better. If an environment has a native lower-is-better display score, such as penalty points, it reports a transformed leaderboard score while still exposing the native display score in the per-step state. Performance orders the board; efficiency stands next to it for everyone to see. The two are never folded into one number.
 
 The board is produced by a workflow that the operator triggers manually for the current iteration. The workflow:
 
@@ -40,3 +41,5 @@ Each match runs in its own Docker container holding the harness, the environment
 ## Human-feedback board
 
 The human-feedback board aggregates the ratings collected through the play and watch flows for that environment in that iteration. It shows each agent's mean rating along with the number of ratings, and an agent needs at least three ratings to be ranked. See [frontend.md](frontend.md) for how ratings are collected and the rules they follow.
+
+Two optional **rating prompts** guide what the human is rating: one set by the operator on the iteration (applies to every agent), and one set by an agent's own author for their submission (applies only to that agent). Both are shown to the rater at rating time when present. The prompts are guidance for the single 1-to-5 rating, not separate scores. The built-in baseline agent has no author, so only the iteration prompt applies to it.

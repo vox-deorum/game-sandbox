@@ -32,7 +32,9 @@ Signed-in users on the deployment's allowlist can start a new live session whene
 
 Every session is recorded automatically (see [recording.md](recording.md)). At the end of a session, next to the feedback prompt, the user can pin the replay to keep it past the retention window.
 
-After any session, watch or play, the user can rate each agent involved on a 1 to 5 scale. A user has one effective rating per agent per iteration; rating the same agent again overwrites the previous value. Ratings of the user's own agent are excluded. Ratings feed the per-environment, per-iteration human-feedback leaderboard (see [leaderboard.md](leaderboard.md)) and do not affect the automated leaderboard.
+After any session, watch or play, the user can rate each agent involved on a 1 to 5 scale. A user has one effective rating per agent per iteration; rating the same agent again overwrites the previous value. Ratings of the user's own agent are excluded; the built-in baseline agent has no author and can be rated. Ratings feed the per-environment, per-iteration human-feedback leaderboard (see [leaderboard.md](leaderboard.md)) and do not affect the automated leaderboard.
+
+Each rating can be guided by up to two **rating prompts**, shown next to the agent at rating time: one the operator set on the iteration, and one the agent's own author set for their submission. Authors set their agent's prompt from their agent profile; the prompt is presentation metadata about what to evaluate and is not part of the pinned, validated submission. The prompts are context for the single rating, not extra scores.
 
 ## Identity: GitHub OAuth
 
