@@ -6,17 +6,19 @@ There are two leaderboards per environment per iteration: an automated board and
 
 An iteration is one competition. For a single environment, the operator declares an iteration, accepts submissions for that iteration (see [submission.md](submission.md)), runs the automated workflow, and collects human feedback through the website. When the next competition starts, a new iteration begins, both boards reset, and the previous iteration remains viewable as a historical board. An iteration can map to a class assignment, a workshop, or a round of an open competition; the unit is always the same (see [overview.md](overview.md)).
 
+An iteration has two independent states. A **submission window** (open or closed) controls whether participants can still submit to it. A **visibility** (draft or published) controls who can see it: a draft iteration and its boards are visible only to operators, so the operator can run and inspect the workflow privately before exposing anything; publishing makes the iteration and its boards appear on the environment page and in history. The operator can re-run the workflow on an iteration, which recomputes its boards in place; publishing is a separate, explicit step, so a re-run can be verified before it is exposed.
+
 ## Per-iteration configuration
 
 Each iteration carries its own configuration, set by the operator when the iteration is declared:
 
-- The set of match configurations the automated workflow will run (environment, opponents, seeds, repetitions).
+- The match design the automated workflow will run: each match configuration's slot composition (which seats are built-in baseline agents and which are submissions, plus opponents for multi-slot environments), its seeds, and a per-configuration game count. The workflow expands this design over the iteration's submissions into a balanced run schedule (see the automated board below).
 - The template dependency-set version every submission in the iteration is built and run against. It defaults to the latest template release when the iteration is declared (see [submission.md](submission.md)).
 - Optional overrides of the environment's default per-step and per-episode time limits. If the iteration does not override, the environment's defaults (see [environment.md](environment.md)) are used.
 - Optional overrides of the environment's messaging settings: the message length cap, or disabling messaging for the iteration (see [communication.md](communication.md)).
 - Optional overrides of the LLM model allowlist and the token, call, and rate budgets (see [llm.md](llm.md)).
 
-Iterations are declared, configured, and their workflow triggered through a configuration file and CLI on the deployment. There is no admin UI.
+Iterations are declared, configured, opened and closed for submissions, run, re-run, and published through an **operator admin console** on the website, backed by an operator-only admin HTTP API. The backend runs the workflow (it already holds the execution driver that launches the match containers), so the console can trigger runs and stream their container logs live. Operator access is gated by an operator allowlist in the deployment configuration, checked against the same GitHub identity used everywhere else (a mock operator identity in local development until OAuth lands). The admin HTTP API is the stable contract, so the same operations are scriptable for headless deployments without a separate configuration-file format.
 
 ## Automated board
 
@@ -24,7 +26,7 @@ The automated board ranks agents by mean episode score across the iteration's ru
 
 The board is produced by a workflow that the operator triggers manually for the current iteration. The workflow:
 
-- Runs the iteration's configured match configurations.
+- Runs the iteration's configured match configurations, expanded over the iteration's submissions into a balanced schedule. The environment's built-in baseline agent is always included as a row, so every board has a fixed point of comparison.
 - Supports controlled repetitions per configuration, with seeds passed to both the environment and the agents (see [environment.md](environment.md) and [submission.md](submission.md)), so a single lucky run does not dominate.
 - Records every run so it can be replayed afterwards. See [recording.md](recording.md).
 - Measures wall-clock time per decision and per episode as a proxy for computational intensity. Time an agent spends in its optional `learn` and `chat` hooks counts too, as does time spent waiting on LLM calls.

@@ -10,6 +10,7 @@ The frontend is organized into a small number of clearly scoped pages and a shar
 - **Replay viewer.** Plays back a recorded run step by step, including chat messages and per-tick LLM call metadata (model, token counts, latency). It states who played each slot, a human (annotated with the user) or the agent that ran (the Naive agent, or a submission owner's agent), read from the recording header's attribution. Full prompts and completions stay owner-only (see [llm.md](llm.md)). Linkable by URL. See [recording.md](recording.md).
 - **Live play.** Hosts an active session, which can be self-play, multi-agent, or human with agent.
 - **Leaderboards.** Per environment, per iteration. The automated board and the human-feedback board sit side by side. See [leaderboard.md](leaderboard.md).
+- **Operator admin console.** Visible only to operators (an allowlist in the deployment configuration, checked against the signed-in identity). The operator declares and configures an iteration and its match design, opens and closes its submission window, triggers and re-runs the automated workflow while watching the match containers' logs stream live, inspects the resulting boards privately, and publishes the iteration so its boards appear on the environment page. This replaces the configuration-file-and-CLI model; see [leaderboard.md](leaderboard.md).
 
 ## Submitting an agent
 
