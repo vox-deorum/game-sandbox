@@ -48,11 +48,12 @@ describe('EnvironmentPage', () => {
     vi.mocked(listRecordings).mockResolvedValue([])
   })
 
-  it('hides the play and watch entry points for a non-allowlisted user', async () => {
+  it('hides the play entry point for a non-allowlisted user', async () => {
     vi.mocked(getMe).mockResolvedValue({ user_id: 'carol', allowlisted: false })
     await renderPage()
     expect(await screen.findByText(/limited to allowlisted users/)).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Play' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Play Yourself' })).toBeNull()
+    // Watching moved to the picker, whose Watch buttons are likewise hidden when not allowlisted.
     expect(screen.queryByRole('button', { name: 'Watch' })).toBeNull()
   })
 
@@ -63,13 +64,13 @@ describe('EnvironmentPage', () => {
       session: { id: 's1', wsPath: '/api/sessions/s1/ws' },
     })
     await renderPage()
-    // The entry point opens the start form; submitting it starts the session.
-    await fireEvent.click(await screen.findByRole('button', { name: 'Watch' }))
-    await fireEvent.click(await screen.findByRole('button', { name: 'Start watching' }))
+    // The header's Play Yourself button opens the start form; submitting it starts the session.
+    await fireEvent.click(await screen.findByRole('button', { name: 'Play Yourself' }))
+    await fireEvent.click(await screen.findByRole('button', { name: 'Start playing' }))
     expect(await screen.findByText('s1')).toBeInTheDocument()
     expect(vi.mocked(startSession)).toHaveBeenCalledWith({
       envId: 'flappy_bird',
-      mode: 'scripted',
+      mode: 'human',
       seed: undefined,
       humanSlotTimeoutMs: undefined,
     })
@@ -82,7 +83,7 @@ describe('EnvironmentPage', () => {
       session: { id: 's1', wsPath: '/api/sessions/s1/ws' },
     })
     await renderPage()
-    await fireEvent.click(await screen.findByRole('button', { name: 'Play' }))
+    await fireEvent.click(await screen.findByRole('button', { name: 'Play Yourself' }))
     // The paced game's start form exposes the per-step input window as an override field.
     await fireEvent.update(screen.getByPlaceholderText('50'), '250')
     await fireEvent.click(await screen.findByRole('button', { name: 'Start playing' }))
@@ -102,7 +103,7 @@ describe('EnvironmentPage', () => {
       activeSessionId: 'active-9',
     })
     await renderPage()
-    await fireEvent.click(await screen.findByRole('button', { name: 'Play' }))
+    await fireEvent.click(await screen.findByRole('button', { name: 'Play Yourself' }))
     await fireEvent.click(await screen.findByRole('button', { name: 'Start playing' }))
     expect(await screen.findByText('active-9')).toBeInTheDocument()
   })

@@ -60,6 +60,17 @@ class StepState(TypedDict):
     timing: StepTiming
 
 
+class PlayerAttribution(TypedDict, total=False):
+    """Who or what drove one slot: a connected human or an agent. ``kind`` and ``label`` are
+    always present on a written entry (the schema requires them); ``user`` and ``submission_id``
+    are optional. ``total=False`` keeps the builders ergonomic; the store validates on write."""
+
+    kind: str  # "human" or "agent"
+    label: str
+    user: str
+    submission_id: str
+
+
 class RecordingHeader(TypedDict):
     """Line 1 of a recording / first frame of a live stream."""
 
@@ -68,6 +79,7 @@ class RecordingHeader(TypedDict):
     created_at: NotRequired[str]
     seed: NotRequired[int]
     sidecars: NotRequired[list[Sidecar]]
+    players: NotRequired[dict[str, PlayerAttribution]]
 
 
 class Sidecar(TypedDict):
@@ -134,6 +146,7 @@ def build_header(
     created_at: str | None = None,
     seed: int | None = None,
     sidecars: list[Sidecar] | None = None,
+    players: dict[str, PlayerAttribution] | None = None,
 ) -> RecordingHeader:
     """Build a recording header stamped with the current schema version."""
     header: RecordingHeader = {
@@ -146,4 +159,6 @@ def build_header(
         header["seed"] = seed
     if sidecars is not None:
         header["sidecars"] = sidecars
+    if players is not None:
+        header["players"] = players
     return header

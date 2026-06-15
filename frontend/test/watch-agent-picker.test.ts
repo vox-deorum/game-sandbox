@@ -75,13 +75,33 @@ describe('WatchAgentPicker', () => {
       session: { id: 'sess-9', wsPath: '/api/sessions/sess-9/ws' },
     })
     await renderPicker()
-    await fireEvent.click(await screen.findByRole('button', { name: 'Watch' }))
+    // The first Watch button is the pinned built-in row; the submitted agent's is the second.
+    const watchButtons = await screen.findAllByRole('button', { name: 'Watch' })
+    await fireEvent.click(watchButtons[1] as HTMLElement)
     expect(vi.mocked(startSession)).toHaveBeenCalledWith({
       envId: 'flappy_bird',
       mode: 'scripted',
       submissionId: 'sub1',
     })
     expect(await screen.findByText('session sess-9')).toBeInTheDocument()
+  })
+
+  it('pins the built-in Naive agent and watches it with no submission', async () => {
+    vi.mocked(listActiveSubmissions).mockResolvedValue([])
+    vi.mocked(startSession).mockResolvedValue({
+      ok: true,
+      session: { id: 'sess-naive', wsPath: '/api/sessions/sess-naive/ws' },
+    })
+    await renderPicker()
+    expect(await screen.findByText('Naive agent')).toBeInTheDocument()
+    // The built-in row is the only one here, so its Watch button is the first (and only) one.
+    await fireEvent.click(await screen.findByRole('button', { name: 'Watch' }))
+    expect(vi.mocked(startSession)).toHaveBeenCalledWith({
+      envId: 'flappy_bird',
+      mode: 'scripted',
+      submissionId: undefined,
+    })
+    expect(await screen.findByText('session sess-naive')).toBeInTheDocument()
   })
 
   it('hides the Watch action for a non-allowlisted viewer but still lists agents', async () => {

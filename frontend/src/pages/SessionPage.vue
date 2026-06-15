@@ -14,7 +14,7 @@
   the decision log from the stored recording and never opens a socket.
 -->
 <script setup lang="ts">
-import type { StepState } from '@game-sandbox/schema'
+import type { RecordingHeader, StepState } from '@game-sandbox/schema'
 import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
@@ -27,6 +27,7 @@ import {
   type SessionRow,
 } from '../api/client.js'
 import DecisionLog, { type DecisionEntry } from '../components/DecisionLog.vue'
+import PlayerAttribution from '../components/PlayerAttribution.vue'
 import RunMetadata from '../components/RunMetadata.vue'
 import UiButton from '../components/ui/UiButton.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
@@ -48,6 +49,8 @@ const meta = ref<EnvironmentMeta | null>(null)
 const loadError = ref(false)
 const hostEl = ref<HTMLElement | null>(null)
 const decisions = ref<DecisionEntry[]>([])
+// The recording header carries per-slot attribution (`players`); retained to show who played.
+const header = ref<RecordingHeader | null>(null)
 
 const isOwner = computed(
   () => me.me?.user_id !== undefined && row.value?.user_id === me.me.user_id,
@@ -80,7 +83,10 @@ const {
   stop,
   send,
 } = useSessionSocket(id, {
-    onHeader: (header) => mountRenderer(header),
+    onHeader: (incoming) => {
+      header.value = incoming
+      mountRenderer(incoming)
+    },
     onState: (state) => {
       renderState(state)
       decisions.value.push(toDecision(state))
@@ -222,6 +228,7 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
   }
   try {
     const parsed = parseRecording(text)
+    header.value = parsed.header
     decisions.value = parsed.states.map(toDecision)
     mountRenderer(parsed.header)
     const finalState = parsed.states.at(-1)
@@ -292,6 +299,7 @@ function formatMode(mode: SessionRow['mode']): string {
     </UiEmptyState>
 
     <RunMetadata :items="metadataItems" />
+    <PlayerAttribution :players="header?.players" />
     <p v-if="showActiveTimeout" class="active-timeout">{{ activeTimeoutLabel }}</p>
 
     <div class="stage" :class="logBeside ? 'beside' : 'below'">

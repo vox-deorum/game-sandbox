@@ -1,8 +1,8 @@
 # Example: flappy_bird/hello
 
-A real, minimal Flappy Bird agent that doubles as the example-machinery proof. It holds only its diff against the composed `flappy_bird` template:
+A real, minimal Flappy Bird agent that doubles as the example-machinery proof. Composed into the session base image at `/opt/agents/builtin`, it is also the environment's built-in **Naive agent**, the baseline the frontend pins atop the watch list and that anyone can watch like a submitted agent (a scripted run with no submission). It holds only its diff against the composed `flappy_bird` template:
 
-- It overrides one template file (`agent.py`) with a heuristic agent — flap when the bird is below the next gap's center — that clearly outperforms doing nothing.
+- It overrides one template file (`agent.py`) with a heuristic agent, flap when the bird is below the next gap's center, that clearly outperforms doing nothing.
 - It adds one extra pinned dependency (`requirements.extra.txt`, `wcwidth`), which compose appends to the template's `requirements.txt`, keeping the dependency-extension path exercised end to end.
 - It adds one test (`tests/test_hello.py`) on top of the inherited template tests, asserting the heuristic beats noop and that the extra dependency composed in.
 

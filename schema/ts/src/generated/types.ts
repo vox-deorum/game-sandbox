@@ -119,5 +119,28 @@ export interface RecordingHeader {
      */
     path: string;
   }[];
+  /**
+   * Per-slot attribution: who or what drove each slot this episode, keyed by slot id (the PettingZoo agent id, as in a step state's agents map). Optional and additive; older recordings omit it and readers must tolerate its absence.
+   */
+  players?: {
+    [k: string]: {
+      /**
+       * Whether a connected human or an agent drove this slot.
+       */
+      kind: "human" | "agent";
+      /**
+       * Display label: for a human, the user's handle; for an agent, the agent's name ("Naive agent", or the submission owner's agent).
+       */
+      label: string;
+      /**
+       * The GitHub username this slot is attributed to: the human player, or the submission owner for a submitted agent. Absent for the built-in Naive agent.
+       */
+      user?: string;
+      /**
+       * The submission whose code ran this slot, when it was a submitted agent. Absent for human and built-in slots.
+       */
+      submission_id?: string;
+    };
+  };
   [k: string]: unknown;
 }

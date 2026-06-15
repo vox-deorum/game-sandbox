@@ -5,7 +5,7 @@ The per-step state object is the contract across the container boundary (see the
 ## The two files
 
 - `schema/step-state.schema.json` is the per-step state object: `schema_version`, `tick`, per-agent observations, actions, rewards and cumulative scores, an open `overlay` for environment-specific fields, optional `messages`, and `timing`. Field names are snake_case throughout, which is JSON-conventional and Python-native, and the generated TypeScript types mirror it.
-- `schema/recording-header.schema.json` is the recording header: `schema_version`, `environment`, an optional `seed` and `created_at`, and the `sidecars` array.
+- `schema/recording-header.schema.json` is the recording header: `schema_version`, `environment`, an optional `seed` and `created_at`, the `sidecars` array, and an optional `players` map (slot id to `{kind, label, user?, submission_id?}`) that attributes each slot to a human or an agent. The header object stays open (`additionalProperties: true`) so a new optional field like `players` is purely additive, with no `schema_version` bump, and the generated TypeScript field comes for free from `scripts/generate.py`; each `players` entry is itself a closed region (`additionalProperties: false`) so a malformed attribution is loud.
 
 `messages` and `overlay` exist from day one even though messaging arrives in Stage 8, so the schema needs no breaking revision when chat lights up. Every closed region sets `additionalProperties: false` so accidental drift is loud; `overlay` is the one open object, the designated extension region for environment payloads.
 

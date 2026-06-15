@@ -8,8 +8,9 @@ import { expect, test } from '@playwright/test'
  */
 test('watch a scripted session, and a spectator gets no controls', async ({ page, browser }) => {
   await page.goto('/environments/flappy_bird')
-  await page.getByRole('button', { name: 'Watch' }).click()
-  await page.getByRole('button', { name: 'Start watching' }).click()
+  // The built-in Naive agent is pinned atop the watch list; its Watch button starts a scripted run.
+  const builtinRow = page.locator('.agent-row').filter({ hasText: 'Naive agent' })
+  await builtinRow.getByRole('button', { name: 'Watch' }).click()
 
   await expect(page).toHaveURL(/\/sessions\//)
   await expect(page.locator('canvas.renderer-canvas')).toBeVisible()

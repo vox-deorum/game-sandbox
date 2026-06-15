@@ -83,7 +83,7 @@ test('a submitted agent validates to ready and runs in a watch session', async (
   }
 
   // The watch picker lists the ready agent; the allowlisted dev user can watch it. Scope to the
-  // agent's row so its Watch button is not confused with the page's top-level scripted-watch button.
+  // agent's row so its Watch button is not confused with the pinned built-in Naive agent's.
   await page.goto(`/environments/${ENV_ID}`)
   const row0 = page.locator('.agent-row').filter({ hasText: owner })
   await expect(row0).toBeVisible()

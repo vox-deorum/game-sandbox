@@ -9,7 +9,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
-import { parseStepState, readRecording, SchemaValidationError } from '../src/index.js'
+import { parseHeader, parseStepState, readRecording, SchemaValidationError } from '../src/index.js'
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'fixtures')
 
@@ -32,6 +32,10 @@ describe('readRecording', () => {
     expect(agent?.reward).toBe(0)
     expect(agent?.score).toBe(0)
     expect(second?.tick).toBe(1)
+
+    // Per-slot attribution round-trips through the real store into the generated `players` field.
+    expect(header.players?.player_0?.kind).toBe('agent')
+    expect(header.players?.player_0?.label).toBe('Naive agent')
   })
 
   it('rejects a recording whose schema_version was bumped', () => {
@@ -56,5 +60,17 @@ describe('parseStepState', () => {
     const text = `${fixture('two-step').trimEnd()}\n{"schema_version":1,"tick":2,"age`
     const { states } = readRecording(text)
     expect(states).toHaveLength(2)
+  })
+})
+
+describe('parseHeader', () => {
+  it('rejects player attribution with an empty label', () => {
+    expect(() =>
+      parseHeader({
+        schema_version: 1,
+        environment: 'flappy',
+        players: { player_0: { kind: 'agent', label: '' } },
+      }),
+    ).toThrow(SchemaValidationError)
   })
 })

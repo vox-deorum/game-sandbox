@@ -100,7 +100,16 @@ async function start(input: { seed?: number; humanSlotTimeoutMs?: number }): Pro
 
     <header class="env-header">
       <div class="env-headline">
-        <h1>{{ meta.display_name }}</h1>
+        <div class="env-title-row">
+          <h1>{{ meta.display_name }}</h1>
+          <UiButton
+            v-if="me.me?.allowlisted && meta.human_slots.length > 0"
+            size="lg"
+            @click="open('human')"
+          >
+            Play Yourself
+          </UiButton>
+        </div>
         <p class="env-description">{{ meta.description }}</p>
         <div class="env-meta">
           <UiBadge>{{ slotLabel(meta) }}</UiBadge>
@@ -111,16 +120,8 @@ async function start(input: { seed?: number; humanSlotTimeoutMs?: number }): Pro
       <img class="env-thumb" :src="thumbnailFor(meta.renderer)" alt="" />
     </header>
 
-    <div class="env-actions">
-      <template v-if="me.me?.allowlisted">
-        <UiButton v-if="meta.human_slots.length > 0" size="lg" @click="open('human')">Play</UiButton>
-        <UiButton size="lg" variant="secondary" @click="open('scripted')">Watch</UiButton>
-      </template>
-      <UiEmptyState v-else>Live play is limited to allowlisted users.</UiEmptyState>
-    </div>
-
     <section class="env-section">
-      <h2>Watch a submitted agent</h2>
+      <h2>Watch an agent</h2>
       <WatchAgentPicker :env-id="meta.env_id" />
     </section>
 
@@ -161,8 +162,16 @@ async function start(input: { seed?: number; humanSlotTimeoutMs?: number }): Pro
   gap: var(--space-5);
 }
 
-.env-headline h1 {
+.env-title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
   margin: 0 0 var(--space-2);
+}
+
+.env-headline h1 {
+  margin: 0;
 }
 
 .env-description {
@@ -183,12 +192,6 @@ async function start(input: { seed?: number; humanSlotTimeoutMs?: number }): Pro
   border-radius: var(--radius-md);
   background: var(--color-surface-raised);
   flex: none;
-}
-
-.env-actions {
-  display: flex;
-  gap: var(--space-3);
-  margin: var(--space-5) 0;
 }
 
 .env-section {

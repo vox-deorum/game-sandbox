@@ -52,11 +52,22 @@ export interface StartRequest {
   submissionId?: string
 }
 
+/** Per-slot attribution copied into the recording header: who or what drove a slot. Mirrors the
+ *  `players` value shape in recording-header.schema.json. */
+interface PlayerAttribution {
+  kind: 'human' | 'agent'
+  label: string
+  user?: string
+  submission_id?: string
+}
+
 /** Which submission fills which slot from which container path, threaded into the session config. */
 interface SubmissionBinding {
   submissionId: string
   slotId: string
   path: string
+  /** The submission owner, attributed to the slot in the recording header. */
+  userId: string
 }
 
 /** What the HTTP layer returns to a client that started a session. */
@@ -177,6 +188,7 @@ export class Orchestrator {
       humanTimeoutMs,
       recordingId,
       submissionBinding,
+      request.userId,
     )
     await ensureRecordingsDir(this.recordingsHostDir())
 
@@ -281,6 +293,7 @@ export class Orchestrator {
         submissionId: submission.id,
         slotId: SUBMISSION_SLOT_ID,
         path: submissionSlotPath(SUBMISSION_SLOT_ID),
+        userId: submission.user_id,
       },
     }
   }
@@ -358,6 +371,7 @@ export class Orchestrator {
     humanTimeoutMs: number | null,
     recordingId: string,
     submissionBinding: SubmissionBinding | null,
+    ownerLogin: string,
   ): Record<string, unknown> {
     const slotIds = new Set<string>(meta.human_slots)
     for (let i = 0; i < meta.max_slots; i++) {
@@ -365,13 +379,25 @@ export class Orchestrator {
     }
     const humanSlots = new Set(meta.human_slots)
     const slots: Record<string, { kind: string; path?: string }> = {}
+    // Per-slot attribution written verbatim into the recording header, so a replay can name who or
+    // what played each slot: the connected human, the submission owner's agent, or the Naive agent.
+    const players: Record<string, PlayerAttribution> = {}
     for (const slotId of slotIds) {
       if (submissionBinding !== null && slotId === submissionBinding.slotId) {
         slots[slotId] = { kind: 'builtin-agent', path: submissionBinding.path }
+        players[slotId] = {
+          kind: 'agent',
+          label: `${submissionBinding.userId}'s agent`,
+          user: submissionBinding.userId,
+          submission_id: submissionBinding.submissionId,
+        }
         continue
       }
       const external = mode === 'human' && humanSlots.has(slotId)
       slots[slotId] = { kind: external ? 'external' : 'builtin-agent' }
+      players[slotId] = external
+        ? { kind: 'human', label: ownerLogin, user: ownerLogin }
+        : { kind: 'agent', label: 'Naive agent' }
     }
     return {
       env_id: meta.env_id,
@@ -380,6 +406,7 @@ export class Orchestrator {
       human_timeout_ms: humanTimeoutMs,
       recording_dir: CONTAINER_RECORDINGS_DIR,
       recording_id: recordingId,
+      players,
     }
   }
 }

@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
-from game_sandbox_harness.schema import SCHEMA_VERSION, validate_header, validate_step
+import pytest
+
+from game_sandbox_harness.schema import (
+    SCHEMA_VERSION,
+    SchemaValidationError,
+    validate_header,
+    validate_step,
+)
 from game_sandbox_harness.state import build_agent_step, build_header, build_step_state
 
 
@@ -39,3 +46,26 @@ def test_full_step_is_valid():
 def test_header_builder_is_valid():
     validate_header(build_header(environment="flappy"))
     validate_header(build_header(environment="flappy", created_at="2026-06-10T00:00:00Z", seed=9))
+
+
+def test_header_builder_carries_player_attribution():
+    header = build_header(
+        environment="flappy",
+        players={
+            "player_0": {"kind": "human", "label": "alice", "user": "alice"},
+            "player_1": {"kind": "agent", "label": "Naive agent"},
+        },
+    )
+    validate_header(header)
+    assert header["players"]["player_0"]["user"] == "alice"
+    assert header["players"]["player_1"]["label"] == "Naive agent"
+
+
+def test_header_rejects_player_attribution_with_empty_label():
+    with pytest.raises(SchemaValidationError):
+        validate_header(
+            build_header(
+                environment="flappy",
+                players={"player_0": {"kind": "agent", "label": ""}},
+            )
+        )

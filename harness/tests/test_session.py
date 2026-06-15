@@ -7,6 +7,7 @@ AEC surface ``run_episode`` actually uses is implemented.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -139,6 +140,23 @@ def test_same_seed_same_agent_byte_identical_recordings(tmp_path: Path):
     # The recording carries the overlay and the per-step decision timing.
     assert b'"overlay"' in a
     assert b'"decision_ms"' in a
+
+
+def test_players_attribution_lands_in_the_recording_header(tmp_path: Path):
+    entry = make_entry(n_steps=2)
+    store = FolderRecordingStore(tmp_path)
+    run_episode(
+        entry,
+        {"player_0": AgentSlot(ScriptedAgent([0, 1]))},
+        seed=1,
+        store=store,
+        recording_id="r",
+        clock=ManualClock(),
+        players={"player_0": {"kind": "agent", "label": "Naive agent"}},
+    )
+    lines = (tmp_path / "r" / "recording.jsonl").read_text(encoding="utf-8").splitlines()
+    header = json.loads(lines[0])
+    assert header["players"] == {"player_0": {"kind": "agent", "label": "Naive agent"}}
 
 
 def test_agent_per_step_timeout_discards_action_and_counts_overage():

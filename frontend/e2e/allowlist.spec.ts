@@ -9,7 +9,8 @@ import { expect, test } from '@playwright/test'
 test('a non-allowlisted user sees no play entry points', async ({ page }) => {
   await page.goto('/environments/flappy_bird')
   await expect(page.getByText(/limited to allowlisted users/)).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Play' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Play Yourself' })).toHaveCount(0)
+  // The watch list's Watch buttons (built-in Naive agent and any submissions) are hidden too.
   await expect(page.getByRole('button', { name: 'Watch' })).toHaveCount(0)
 })
 

@@ -42,6 +42,7 @@ from game_sandbox_harness.live_io import (
 )
 from game_sandbox_harness.manifest import load_agent
 from game_sandbox_harness.session import REASON_STOPPED, AgentSlot, Episode, ExternalSlot, Slot
+from game_sandbox_harness.state import PlayerAttribution
 
 #: Where the session base image stages the built-in agent the watch-style runs load.
 DEFAULT_BUILTIN_AGENT_PATH = "/opt/agents/builtin"
@@ -77,6 +78,9 @@ class LiveConfig:
     human_timeout_ms: int | None
     recording_dir: str
     recording_id: str | None
+    #: Per-slot attribution copied verbatim into the recording header (slot id -> attribution
+    #: object). Computed by the backend, opaque to the harness; ``None`` when not supplied.
+    players: dict[str, PlayerAttribution] | None = None
 
 
 def parse_config(argv: list[str]) -> LiveConfig:
@@ -133,6 +137,8 @@ def parse_config(argv: list[str]) -> LiveConfig:
     if recording_id is not None and not isinstance(recording_id, str):
         raise LiveConfigError("config 'recording_id' must be a string or null")
 
+    players = _parse_players(config.get("players"))
+
     return LiveConfig(
         env_id=env_id,
         seed=seed,
@@ -140,7 +146,43 @@ def parse_config(argv: list[str]) -> LiveConfig:
         human_timeout_ms=human_timeout_ms,
         recording_dir=recording_dir,
         recording_id=recording_id,
+        players=players,
     )
+
+
+def _parse_players(raw: object) -> dict[str, PlayerAttribution] | None:
+    """Validate the optional per-slot ``players`` attribution map from the config.
+
+    Each entry must name a ``kind`` of ``human`` or ``agent`` and a non-empty ``label``; ``user``
+    and ``submission_id`` are optional strings. The validated entries are passed through verbatim
+    into the recording header, so the harness keeps no opinion on their meaning beyond being
+    well-formed.
+    """
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise LiveConfigError("config 'players' must be an object keyed by slot id or null")
+    players: dict[str, PlayerAttribution] = {}
+    for slot_id, raw_entry in cast("dict[str, Any]", raw).items():
+        if not isinstance(raw_entry, dict):
+            raise LiveConfigError(f"config player {slot_id!r} must be an object")
+        entry = cast("dict[str, Any]", raw_entry)
+        kind = entry.get("kind")
+        if kind not in ("human", "agent"):
+            raise LiveConfigError(
+                f"config player {slot_id!r} has kind {kind!r}; expected 'human' or 'agent'"
+            )
+        label = entry.get("label")
+        if not isinstance(label, str) or not label:
+            raise LiveConfigError(f"config player {slot_id!r} 'label' must be a non-empty string")
+        for optional in ("user", "submission_id"):
+            value = entry.get(optional)
+            if value is not None and not isinstance(value, str):
+                raise LiveConfigError(
+                    f"config player {slot_id!r} {optional!r} must be a string when present"
+                )
+        players[slot_id] = cast("PlayerAttribution", entry)
+    return players
 
 
 def build_slots(
@@ -247,6 +289,7 @@ def main(argv: list[str] | None = None) -> int:
             store=store,
             recording_id=config.recording_id,
             clock=clock,
+            players=config.players,
         ) as episode:
             run_live_loop(
                 episode,

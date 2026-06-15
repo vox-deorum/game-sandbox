@@ -191,8 +191,16 @@ def generate_fixtures() -> None:
             overlay={"pipes": [{"x": 100 - tick, "gap_y": 50}]},
         )
 
-    # 1. A two-step recording that must parse into generated types with no casts.
-    with store.create("two-step", build_header(environment="flappy", seed=7)) as writer:
+    # 1. A two-step recording that must parse into generated types with no casts. It carries a
+    #    per-slot players block so the generated `players` field is exercised by the read-back test.
+    with store.create(
+        "two-step",
+        build_header(
+            environment="flappy",
+            seed=7,
+            players={"player_0": {"kind": "agent", "label": "Naive agent"}},
+        ),
+    ) as writer:
         writer.write_step(step(0))
         writer.write_step(step(1))
 

@@ -15,8 +15,9 @@ test('play Flappy Bird live, pause/resume, stop, then replay and pin', async ({ 
   await page.getByRole('link', { name: /Flappy Bird/ }).click()
   await expect(page.getByRole('heading', { name: 'Flappy Bird' })).toBeVisible()
 
-  // The Play entry point opens the start form; submit it to start a human session.
-  await page.getByRole('button', { name: 'Play' }).click()
+  // The Play Yourself entry point (in the page header) opens the start form; submit it to start a
+  // human session.
+  await page.getByRole('button', { name: 'Play Yourself' }).click()
   await page.getByRole('button', { name: 'Start playing' }).click()
 
   // The session page mounts the renderer and shows the per-step input window while we control a slot.

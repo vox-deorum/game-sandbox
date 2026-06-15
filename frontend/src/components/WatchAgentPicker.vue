@@ -12,12 +12,17 @@ import { RouterLink, useRouter } from 'vue-router'
 
 import { listActiveSubmissions, startSession, type SubmissionSummary } from '../api/client.js'
 import { useMe } from '../me.js'
+import UiBadge from './ui/UiBadge.vue'
 import UiButton from './ui/UiButton.vue'
 import UiEmptyState from './ui/UiEmptyState.vue'
 
 const props = defineProps<{ envId: string }>()
 const router = useRouter()
 const me = useMe()
+
+// The built-in Naive agent has no submission id, so a sentinel keys its loading state distinctly
+// from any real submission id.
+const BUILTIN_KEY = '__builtin__'
 
 const agents = ref<SubmissionSummary[] | null>(null)
 const startError = ref<string | null>(null)
@@ -43,11 +48,22 @@ function sourceLabel(agent: SubmissionSummary): string {
   return agent.source_kind === 'local' ? 'local folder' : 'git'
 }
 
-async function watch(agent: SubmissionSummary): Promise<void> {
+/** Watch a submitted agent: a scripted run bound to its submission. */
+function watch(agent: SubmissionSummary): Promise<void> {
+  return startWatch(agent.id, agent.id)
+}
+
+/** Watch the built-in Naive agent: a scripted run with no submission, so the harness loads the
+ *  image's default built-in agent. */
+function watchBuiltin(): Promise<void> {
+  return startWatch(BUILTIN_KEY, undefined)
+}
+
+async function startWatch(loadingKey: string, submissionId: string | undefined): Promise<void> {
   startError.value = null
-  starting.value = agent.id
+  starting.value = loadingKey
   try {
-    const result = await startSession({ envId: props.envId, mode: 'scripted', submissionId: agent.id })
+    const result = await startSession({ envId: props.envId, mode: 'scripted', submissionId })
     if (result.ok) {
       await router.push(`/sessions/${result.session.id}`)
     } else if (result.reason === 'already_active') {
@@ -66,11 +82,23 @@ async function watch(agent: SubmissionSummary): Promise<void> {
 
 <template>
   <UiEmptyState v-if="agents === null">Loading agents…</UiEmptyState>
-  <UiEmptyState v-else-if="agents.length === 0">
-    No submitted agents are ready to watch yet.
-  </UiEmptyState>
   <template v-else>
     <ul class="agent-list">
+      <!-- The environment's built-in Naive agent, pinned at the top and watchable like a
+           submitted agent (a scripted run with no submission). It has no owner profile. -->
+      <li class="agent-row agent-row--builtin">
+        <div class="agent-id">
+          <span class="agent-name">Naive agent</span>
+          <UiBadge>Built-in</UiBadge>
+        </div>
+        <UiButton
+          v-if="me.me?.allowlisted"
+          :loading="starting === BUILTIN_KEY"
+          @click="watchBuiltin()"
+        >
+          Watch
+        </UiButton>
+      </li>
       <li v-for="agent in agents" :key="agent.id" class="agent-row">
         <div class="agent-id">
           <RouterLink class="agent-owner" :to="`/environments/${envId}/agents/${agent.user_id}`">
@@ -87,8 +115,9 @@ async function watch(agent: SubmissionSummary): Promise<void> {
         </UiButton>
       </li>
     </ul>
+    <p v-if="agents.length === 0" class="agent-subnote">No submitted agents are ready to watch yet.</p>
     <UiEmptyState v-if="!me.me?.allowlisted">
-      Watching a submitted agent is limited to allowlisted users.
+      Watching an agent is limited to allowlisted users.
     </UiEmptyState>
     <p v-if="startError !== null" class="agent-error" role="alert">{{ startError }}</p>
   </template>
@@ -114,6 +143,16 @@ async function watch(agent: SubmissionSummary): Promise<void> {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+}
+
+.agent-name {
+  color: var(--color-text);
+}
+
+.agent-subnote {
+  margin: var(--space-2) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
 }
 
 .agent-owner {

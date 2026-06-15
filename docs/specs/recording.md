@@ -1,6 +1,6 @@
 # Recording and Replay
 
-Recordings are state only. A recording is the sequence of per-step states, actions, rewards, and timings produced during an episode, prefixed by a small header that names the environment and the version of its state schema. There are no video files. A replay re-renders the stored states through the same frontend renderer used during live play (see [interaction.md](interaction.md)); it does not re-simulate the episode.
+Recordings are state only. A recording is the sequence of per-step states, actions, rewards, and timings produced during an episode, prefixed by a small header that names the environment, the version of its state schema, and the per-slot attribution: who or what drove each slot, either a connected human (annotated with the player) or an agent (the built-in Naive agent, or a submission owner's agent). A replay reads that attribution from the header to state who played. There are no video files. A replay re-renders the stored states through the same frontend renderer used during live play (see [interaction.md](interaction.md)); it does not re-simulate the episode.
 
 Three things follow from this:
 

@@ -159,6 +159,7 @@ def test_parse_config_minimal_and_full():
                     "human_timeout_ms": 5000,
                     "recording_dir": "/recordings",
                     "recording_id": "abc",
+                    "players": {"player_0": {"kind": "human", "label": "alice", "user": "alice"}},
                 }
             )
         ]
@@ -170,7 +171,13 @@ def test_parse_config_minimal_and_full():
         human_timeout_ms=5000,
         recording_dir="/recordings",
         recording_id="abc",
+        players={"player_0": {"kind": "human", "label": "alice", "user": "alice"}},
     )
+
+
+def test_parse_config_players_defaults_to_none():
+    payload = {"env_id": "fake", "slots": {"p": {"kind": "external"}}, "recording_dir": "/r"}
+    assert parse_config([json.dumps(payload)]).players is None
 
 
 def test_parse_config_defaults_seed_and_optional_fields():
@@ -190,6 +197,25 @@ def test_parse_config_defaults_seed_and_optional_fields():
         {"env_id": "fake", "slots": {"p": {"kind": "robot"}}, "recording_dir": "/r"},  # bad kind
         {"env_id": "fake", "slots": {"p": {"kind": "external"}}},  # no recording_dir
         {"env_id": "fake", "slots": {"p": {"kind": "ext"}}, "recording_dir": "/r", "seed": 1.5},
+        # players: bad kind, missing label, and a non-object map.
+        {
+            "env_id": "fake",
+            "slots": {"p": {"kind": "external"}},
+            "recording_dir": "/r",
+            "players": {"p": {"kind": "robot", "label": "x"}},
+        },
+        {
+            "env_id": "fake",
+            "slots": {"p": {"kind": "external"}},
+            "recording_dir": "/r",
+            "players": {"p": {"kind": "human"}},
+        },
+        {
+            "env_id": "fake",
+            "slots": {"p": {"kind": "external"}},
+            "recording_dir": "/r",
+            "players": [],
+        },
     ],
 )
 def test_parse_config_rejects_bad_payloads(payload: dict[str, Any]):

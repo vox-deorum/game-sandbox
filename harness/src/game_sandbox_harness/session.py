@@ -33,7 +33,12 @@ from game_sandbox_harness.agent import has_learn
 from game_sandbox_harness.clock import Clock, SystemClock
 from game_sandbox_harness.environment import EnvironmentEntry
 from game_sandbox_harness.recording import RecordingStore
-from game_sandbox_harness.state import build_agent_step, build_header, build_step_state
+from game_sandbox_harness.state import (
+    PlayerAttribution,
+    build_agent_step,
+    build_header,
+    build_step_state,
+)
 
 # Termination reasons reported in EpisodeResult.
 REASON_TERMINATED = "terminated"
@@ -152,12 +157,14 @@ class Episode:
         step_limit_ms: int | None = None,
         episode_limit_ms: int | None = None,
         max_steps: int | None = None,
+        players: Mapping[str, PlayerAttribution] | None = None,
     ) -> None:
         self._entry = entry
         self._slots = slots
         self._seed = seed
         self._store = store
         self._recording_id = recording_id
+        self._players = players
         self._clock = clock or SystemClock()
         self._step_limit = step_limit_ms if step_limit_ms is not None else entry.meta.step_limit_ms
         self._episode_limit = (
@@ -195,6 +202,7 @@ class Episode:
                 environment=self._entry.meta.env_id,
                 seed=self._seed,
                 created_at=_iso_utc(created_at_ms),
+                players=dict(self._players) if self._players is not None else None,
             )
             self._writer_cm = self._store.create(self._recording_id, header)
             self._writer = self._writer_cm.__enter__()
@@ -341,6 +349,7 @@ def run_episode(
     step_limit_ms: int | None = None,
     episode_limit_ms: int | None = None,
     max_steps: int | None = None,
+    players: Mapping[str, PlayerAttribution] | None = None,
 ) -> EpisodeResult:
     """Play one seeded episode of ``entry`` with the given slot bindings.
 
@@ -361,6 +370,7 @@ def run_episode(
         step_limit_ms=step_limit_ms,
         episode_limit_ms=episode_limit_ms,
         max_steps=max_steps,
+        players=players,
     ) as episode:
         while not episode.done:
             episode.step_once()

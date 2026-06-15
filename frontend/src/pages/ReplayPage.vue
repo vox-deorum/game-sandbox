@@ -23,6 +23,7 @@ import {
   type RecordingSummary,
 } from '../api/client.js'
 import DecisionLog, { type DecisionEntry } from '../components/DecisionLog.vue'
+import PlayerAttribution from '../components/PlayerAttribution.vue'
 import RunMetadata from '../components/RunMetadata.vue'
 import UiButton from '../components/ui/UiButton.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
@@ -176,6 +177,7 @@ onMounted(async () => {
     <UiEmptyState v-if="owned && pinError !== null" tone="danger">{{ pinError }}</UiEmptyState>
 
     <RunMetadata :items="metadataItems" />
+    <PlayerAttribution :players="header?.players" />
 
     <div v-if="transport !== null" class="replay-controls">
       <UiButton variant="secondary" :disabled="replayState.index === 0" @click="transport?.stepBack()">

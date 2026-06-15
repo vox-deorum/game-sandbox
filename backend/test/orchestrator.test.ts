@@ -173,11 +173,17 @@ describe('orchestrator', () => {
         recording_dir: '/recordings',
         recording_id: `flappy_bird-${id}`,
       })
+      // The human slot is attributed to the session owner in the recording header.
+      expect(config.players).toEqual({
+        player_0: { kind: 'human', label: 'alice', user: 'alice' },
+      })
     })
 
     it('binds the built-in agent for a scripted (watch) session', async () => {
       const { config } = await start(makeOrchestrator(), { mode: 'scripted' })
       expect(config.slots).toEqual({ player_0: { kind: 'builtin-agent' } })
+      // A plain watch run attributes the slot to the built-in Naive agent.
+      expect(config.players).toEqual({ player_0: { kind: 'agent', label: 'Naive agent' } })
     })
 
     it('prepares the recording volume for the cap-dropped session container', async () => {
@@ -257,9 +263,21 @@ describe('orchestrator', () => {
 
       const launch = driver.lastLaunch()
       expect(launch?.spec.image.ref).toBe(overlayRef)
-      const config = JSON.parse(launch?.spec.argv[0] ?? '{}') as { slots: Record<string, unknown> }
+      const config = JSON.parse(launch?.spec.argv[0] ?? '{}') as {
+        slots: Record<string, unknown>
+        players: Record<string, unknown>
+      }
       expect(config.slots).toEqual({
         player_0: { kind: 'builtin-agent', path: '/opt/agents/submissions/player_0' },
+      })
+      // The submitted-agent slot is attributed to the submission owner ('eve' from the seed helper).
+      expect(config.players).toEqual({
+        player_0: {
+          kind: 'agent',
+          label: "eve's agent",
+          user: 'eve',
+          submission_id: submission.id,
+        },
       })
       // The reuse path never touched the source seam.
       expect(source.fetchCount).toBe(0)
