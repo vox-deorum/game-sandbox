@@ -32,17 +32,17 @@ Placeholder directories hold a short README naming the stage that fills them, no
 
 ## Python tooling
 
-The root `pyproject.toml` declares a uv workspace whose members grow stage by stage, starting with `harness/`. Dev dependencies live in root dependency groups: `dev` carries ruff, pytest, and pyright; `docs` carries mkdocs-material. Python is pinned to 3.12 through `.python-version`, since 3.12 currently has the widest wheel coverage for the game and RL libraries Stage 2 pulls in.
+The root `pyproject.toml` declares a uv workspace whose members grow stage by stage, starting with `harness/`. Dev dependencies live in root dependency groups: `dev` carries ruff, pytest, and pyright, and `docs` carries mkdocs-material. Python is pinned to 3.12 through `.python-version`, since 3.12 currently has the widest wheel coverage for the game and RL libraries Stage 2 pulls in.
 
-Ruff does both linting and formatting, replacing black, isort, and flake8 with one fast tool. Pytest is the only Python test runner. Pyright type-checks the workspace, basic mode repo-wide and strict on `harness/`, because the contracts package is exactly where types pay for themselves.
+Ruff does both linting and formatting, replacing black, isort, and flake8 with one fast tool. Pytest is the only Python test runner. Pyright type-checks the workspace: basic mode repo-wide, strict on `harness/`, because the contracts package is exactly where types pay for themselves.
 
 ## TypeScript tooling
 
-npm workspaces from the root `package.json`, starting with `schema/ts`. Biome handles linting and formatting; it is one dependency with one config, it is fast, and this repo has no legacy eslint setup to honor. If a rule gap ever appears, switching costs little because nothing else depends on the config. Vitest is the test runner, which pairs naturally with the Vite frontend arriving in Stage 4. TypeScript runs in strict mode with `tsc --noEmit` as the typecheck step. Node is pinned to the 22 LTS line through `.nvmrc` and the `engines` field.
+npm workspaces from the root `package.json`, starting with `schema/ts`. Biome handles linting and formatting. It is one dependency with one config, it is fast, and this repo has no legacy eslint setup to honor. If a rule gap ever appears, switching costs little because nothing else depends on the config. Vitest is the test runner, which pairs naturally with the Vite frontend arriving in Stage 4. TypeScript runs in strict mode with `tsc --noEmit` as the typecheck step. Node is pinned to the 22 LTS line through `.nvmrc` and the `engines` field.
 
 ## Dev scripts
 
-Every dev script is Python under `scripts/`, run as `uv run python scripts/<name>.py`. Development machines are Windows and CI is Linux, so nothing is written in bash. The root `package.json` and the docs map intents to commands:
+Every dev script is Python under `scripts/`, run as `uv run python scripts/<name>.py`. Development machines are Windows and CI is Linux, so nothing is written in bash. The root `package.json` and the docs map intents to commands.
 
 | Intent | Command |
 | --- | --- |

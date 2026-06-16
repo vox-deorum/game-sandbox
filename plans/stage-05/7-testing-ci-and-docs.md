@@ -2,25 +2,39 @@
 
 Status: in progress.
 
-Part of [Stage 5](../stage-05-submissions.md). This is the cross-cutting companion to build-order steps 1-6, matching the convention every prior stage follows (see [stage-04/testing-ci-and-docs.md](../stage-04/testing-ci-and-docs.md)). It collects where the stage's exit criteria become executable, what new CI jobs gate them, and which docs change. Most of the testing detail lives in each step's own file; this file is the wiring and the seams that no single step owns.
+Part of [Stage 5](../stage-05-submissions.md). This is the cross-cutting companion to build-order steps 1-6, matching the convention every prior stage follows (see [stage-04/testing-ci-and-docs.md](../stage-04/testing-ci-and-docs.md)). It collects where the stage's exit criteria become executable, which new CI jobs gate them, and which docs change. Most of the testing detail lives in each step's own file; this file is the wiring and the seams that no single step owns.
 
 ## Test layering
 
 The stage splits cleanly along the Docker line, the same split Stage 4 used:
 
-- **Docker-free unit (Vitest, `:memory:` / FakeDriver):** the storage supersede-and-seed rules plus `session_submissions` attribution, the `submission_checks` log transitions, and pending-row recovery read (step 1), the local-folder source and stubbed git resolution (step 2), the **entire static validator against fixtures** (step 3, the first demonstrable slice and the bulk of the "Done when" provable with no Docker), the reachability and submit routes' non-build paths, the validation worker's queue and per-stage log writes, and the form's polled stage-timeline behavior (step 5), the overlay-image eviction policy over a fake driver (step 4 — the budget, oldest-first, active-`ready` exemption, and debris tolerance, with the real `removeImage` left to the Docker gate), and the orchestrator/profile reads (step 6). These run on the existing workspace-wide `test:ts` with no new infrastructure.
+- **Docker-free unit (Vitest, `:memory:` / FakeDriver):**
+  - the storage supersede-and-seed rules plus `session_submissions` attribution, the `submission_checks` log transitions, and the pending-row recovery read (step 1);
+  - the local-folder source and stubbed git resolution (step 2);
+  - the **entire static validator against fixtures** (step 3, the first demonstrable slice and the bulk of the "Done when" provable with no Docker);
+  - the reachability and submit routes' non-build paths, the validation worker's queue and per-stage log writes, and the form's polled stage-timeline behavior (step 5);
+  - the overlay-image eviction policy over a fake driver (step 4 — the budget, oldest-first, active-`ready` exemption, and debris tolerance, with the real `removeImage` left to the Docker gate);
+  - the orchestrator and profile reads (step 6).
+
+  These run on the existing workspace-wide `test:ts` with no new infrastructure.
+
 - **Harness (Python):** the `validate` command's load-check outcomes (step 4), run by the harness's own suite alongside the existing session tests.
 - **Docker-gated integration + e2e:** the overlay build and the real sandboxed load check (step 4), and the end-to-end submit, build, watch journey plus the `load_failed`-on-profile and human-play-still-works variations (step 6). Gated behind the Docker daemon exactly like `backend-integration` and the Stage 4 `frontend-e2e`.
 
 ## Fixtures
 
-A checked-in fixture set is the backbone of the stage's provability and is shared across steps 3, 4, and 6: a valid worked-example repo, the extra Flappy Bird example agents, and a family of intentionally malformed repos. The static cases cover missing manifest, bad JSON, each bad field, unknown key, missing entry point, unknown `template_version`, and iteration `template_version` mismatch. The dynamic cases cover a manifest naming a non-existent class, a module that fails on import, a constructor that raises, and a class missing a hook. Living in one place keeps the static-validator unit tests, the harness `validate` tests, and the e2e journey citing the same inputs.
+A checked-in fixture set is the backbone of the stage's provability and is shared across steps 3, 4, and 6: a valid worked-example repo, the extra Flappy Bird example agents, and a family of intentionally malformed repos. The static cases cover a missing manifest, bad JSON, each bad field, an unknown key, a missing entry point, an unknown `template_version`, and an iteration `template_version` mismatch. The dynamic cases cover a manifest naming a non-existent class, a module that fails on import, a constructor that raises, and a class missing a hook. Living in one place keeps the static-validator unit tests, the harness `validate` tests, and the e2e journey citing the same inputs.
 
 ## CI wiring
 
-- The Docker-free suites ride the existing `check:ts` and `test:ts` workspace jobs with no YAML change, picking up the new backend submission modules and the frontend form/profile components. CI applies the two coordinated Biome edits [2-source-resolution.md](2-source-resolution.md) describes (the `submission/source/` override block plus the broad-block exclusion, preserving "exactly one override per file") and proves no other backend source imports `child_process`; a _package_ HTTP client, if chosen over global `fetch`, is confined the same way per that file.
+- The Docker-free suites ride the existing `check:ts` and `test:ts` workspace jobs with no YAML change, picking up the new backend submission modules and the frontend form/profile components. CI applies the two coordinated Biome edits [2-source-resolution.md](2-source-resolution.md) describes — the `submission/source/` override block plus the broad-block exclusion, preserving "exactly one override per file" — and proves no other backend source imports `child_process`. A _package_ HTTP client, if chosen over global `fetch`, is confined the same way per that file.
 - The harness `validate` tests ride the existing harness test job.
-- The Docker-gated build/load-check and the submission e2e extend the existing gated jobs (`backend-integration` and `frontend-e2e` in `scripts/ci.py` / `ci.yml`), needing the session base image and the Docker daemon, runnable directly the same way. **Decision: additions, not new jobs.** `backend-integration` is the `test/integration/**` Vitest project, so it picks up `overlay-build.test.ts` (overlay build, load check, caching, eviction) and `submission-source-network.test.ts` (live `git` reachability/pin) with no YAML change. `frontend-e2e` runs every `frontend/e2e/*.spec.ts`, so it picks up `submission.spec.ts`; the only wiring is the `main` Playwright backend setting `ALLOW_LOCAL_SUBMISSIONS=true` so a checked-in fixture drives the real pipeline with no network (`frontend/playwright.config.ts`). Keeping them in the existing jobs reuses the one base-image build each job already does.
+- The Docker-gated build/load-check and the submission e2e extend the existing gated jobs (`backend-integration` and `frontend-e2e` in `scripts/ci.py` / `ci.yml`). They need the session base image and the Docker daemon, and are runnable directly the same way. **Decision: additions, not new jobs.**
+  - `backend-integration` is the `test/integration/**` Vitest project, so it picks up `overlay-build.test.ts` (overlay build, load check, caching, eviction) and `submission-source-network.test.ts` (live `git` reachability/pin) with no YAML change.
+  - `frontend-e2e` runs every `frontend/e2e/*.spec.ts`, so it picks up `submission.spec.ts`. The only wiring is the `main` Playwright backend setting `ALLOW_LOCAL_SUBMISSIONS=true`, so a checked-in fixture drives the real pipeline with no network (`frontend/playwright.config.ts`).
+
+  Keeping them in the existing jobs reuses the one base-image build each job already does.
+
 - If the manifest contract changes, the `generated-code-fresh` / lockstep check between the TS static validator and [manifest.py](../../harness/src/game_sandbox_harness/manifest.py) must stay green. The two halves of the loader contract cannot drift.
 
 ## Docs
@@ -37,10 +51,10 @@ Participant-facing docs: this is the first stage that changes anything participa
 
 ## Parent-plan upkeep
 
-Per [the plan README](../README.md), this stage's files and the specs must not drift from what gets built: confirm or correct the proposed defaults (caching policy, validation-worker processing, config names) in the relevant step files as implementation confirms them, flip the [Stage 5](../stage-05-submissions.md) status line when work begins and ends, and keep the static-validator/`manifest.py` contract changes in the same change set on both sides.
+Per [the plan README](../README.md), this stage's files and the specs must not drift from what gets built. So: confirm or correct the proposed defaults (caching policy, validation-worker processing, config names) in the relevant step files as implementation confirms them; flip the [Stage 5](../stage-05-submissions.md) status line when work begins and ends; and keep the static-validator/`manifest.py` contract changes in the same change set on both sides.
 
-One existing doc comment needs reconciling in the same change set: [backend/src/deps-version.ts](../../backend/src/deps-version.ts) currently says "Stage 5 resolves a session's version per submission **from its manifest**." Stage 5 as planned resolves the version from the **iteration's pinned `deps_version`** and only _validates_ that the submission's manifest `template_version` matches it (steps 3–4); the overlay build and the watch run both take the version from the iteration, not the manifest directly. Update that comment when step 4 lands so code and plan agree on where the version comes from.
+One existing doc comment needs reconciling in the same change set. [backend/src/deps-version.ts](../../backend/src/deps-version.ts) currently says "Stage 5 resolves a session's version per submission **from its manifest**." Stage 5 as planned resolves the version from the **iteration's pinned `deps_version`** and only _validates_ that the submission's manifest `template_version` matches it (steps 3–4); the overlay build and the watch run both take the version from the iteration, not the manifest directly. Update that comment when step 4 lands so code and plan agree on where the version comes from.
 
 ## Done when
 
-Every exit criterion in [Stage 5](../stage-05-submissions.md) maps to a green test at the right layer: the static-rejection matrix and the supersede rule prove out Docker-free; the build, load check, watch run, and `load_failed`-on-profile prove out under the Docker gate; the harness `validate` outcomes prove out in Python. CI runs them in the right jobs, and the docs describe the system that was actually built.
+Every exit criterion in [Stage 5](../stage-05-submissions.md) maps to a green test at the right layer. The static-rejection matrix and the supersede rule prove out Docker-free. The build, load check, watch run, and `load_failed`-on-profile prove out under the Docker gate. The harness `validate` outcomes prove out in Python. CI runs them in the right jobs, and the docs describe the system that was actually built.

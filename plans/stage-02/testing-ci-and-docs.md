@@ -4,7 +4,12 @@ Part of [Stage 2](../stage-02-harness-and-first-environment.md). Stage 1's workf
 
 ## Tests per package
 
-`environments/` carries pytest suites for: the adapter passing PettingZoo's `api_test`; seeded determinism at the environment level (two resets with the same seed produce identical observation and overlay sequences under a scripted action list — this isolates environment nondeterminism from harness nondeterminism before the recording-level test below ever runs); the overlay extractor returning every documented field with finite values; and `EnvironmentMeta.to_json()` round-tripping through `json.dumps`.
+`environments/` carries pytest suites for:
+
+- the adapter passing PettingZoo's `api_test`;
+- seeded determinism at the environment level: two resets with the same seed produce identical observation and overlay sequences under a scripted action list. This isolates environment nondeterminism from harness nondeterminism before the recording-level test below ever runs.
+- the overlay extractor returning every documented field with finite values;
+- `EnvironmentMeta.to_json()` round-tripping through `json.dumps`.
 
 `harness/` adds suites that are the exit criteria made executable, all on `ManualClock`:
 
@@ -16,16 +21,21 @@ Part of [Stage 2](../stage-02-harness-and-first-environment.md). Stage 1's workf
 - **Interface parity**: the template's `agent.py` stub and `AgentBase` agree method-for-method, so the two deliberately separate copies cannot drift.
 - **CLI smoke**: the CLI runs the composed hello agent for a full seeded episode and the recording validates — the "scripted agent loaded from a manifest plays a full episode through the CLI" criterion, also the test that crosses all three packages.
 
-Template-level testing rides the existing composed-example CI job: compose, fresh venv, pytest — now including the short headless `play.py` episode, which is the "clean machine with no sandbox backend" criterion in CI form, since the composed venv contains only `requirements.txt` and never the harness or backend.
+Template-level testing rides the existing composed-example CI job: compose, fresh venv, pytest. It now includes the short headless `play.py` episode, which is the "clean machine with no sandbox backend" criterion in CI form, since the composed venv contains only `requirements.txt` and never the harness or backend.
 
 ## Tooling and CI wiring
 
-Workspace changes ripple through existing config rather than new jobs: `environments` joins the uv workspace members and `tool.uv.sources`, `pytest` testpaths, ruff `src`, and pyright `include` (basic mode; the harness stays the only strict package — environment wrappers talk to untyped game internals, where strictness buys suppressions, not safety). The `python` CI job picks all of this up via `uv sync` with no YAML change. The `generated-code-fresh` job grows a per-environment generated location, `templates/<env>/sandbox_env/` (one per entry in `TEMPLATE_ENVS`). The `examples` job gets slower because composed venvs now install pygame and numpy; uv's wheel cache keeps that tolerable, and no structural change is needed. `scripts/ci.py all` remains the one pre-PR command.
+Workspace changes ripple through existing config rather than new jobs. `environments` joins the uv workspace members and `tool.uv.sources`, `pytest` testpaths, ruff `src`, and pyright `include` in basic mode. The harness stays the only strict package, because environment wrappers talk to untyped game internals, where strictness buys suppressions, not safety. The `python` CI job picks all of this up via `uv sync` with no YAML change. The `generated-code-fresh` job grows a per-environment generated location, `templates/<env>/sandbox_env/`, one per entry in `TEMPLATE_ENVS`. The `examples` job gets slower because composed venvs now install pygame and numpy, but uv's wheel cache keeps that tolerable and no structural change is needed. `scripts/ci.py all` remains the one pre-PR command.
 
-The schema change in this stage is exactly one additive edit — the optional `learn_ms` property on the per-agent timing object — flowing through `scripts/generate.py` as usual: regenerated TypeScript types, packaged schema copies, and golden fixtures in one run, no version bump per the [versioning rule](../stage-01/state-schema.md).
+The schema change in this stage is exactly one additive edit: the optional `learn_ms` property on the per-agent timing object. It flows through `scripts/generate.py` as usual, regenerating TypeScript types, packaged schema copies, and golden fixtures in one run, with no version bump per the [versioning rule](../stage-01/state-schema.md).
 
 ## Docs
 
-Two student stubs become real pages, written against the published template rather than the monorepo: `students/getting-started.md` (use the template repository, install the pinned set, run `play.py` and `evaluate.py`, set up `.env`) and `students/agent-interface.md` (the four methods, what the harness guarantees about calls and seeds, the manifest fields, the timeout rules an agent lives under). `students/submitting.md` stays a stub until Stage 5 exists.
+Two student stubs become real pages, written against the published template rather than the monorepo:
 
-One contributor page is added: `contributors/environments.md`, the how-to-add-an-environment walkthrough — directory layout, the adapter, `EnvironmentEntry`, metadata fields and their meanings, the overlay contract with the renderer, the entry-point registration, and the `api_test` requirement. Hearts in Stage 7 is its first consumer. The `environments/README.md` placeholder is replaced with a pointer to that page, and the harness docs page gains the session-loop and CLI sections.
+- `students/getting-started.md`: use the template repository, install the pinned set, run `play.py` and `evaluate.py`, set up `.env`.
+- `students/agent-interface.md`: the four methods, what the harness guarantees about calls and seeds, the manifest fields, and the timeout rules an agent lives under.
+
+`students/submitting.md` stays a stub until Stage 5 exists.
+
+One contributor page is added: `contributors/environments.md`, the how-to-add-an-environment walkthrough. It covers the directory layout, the adapter, `EnvironmentEntry`, metadata fields and their meanings, the overlay contract with the renderer, the entry-point registration, and the `api_test` requirement. Hearts in Stage 7 is its first consumer. The `environments/README.md` placeholder is replaced with a pointer to that page, and the harness docs page gains the session-loop and CLI sections.
