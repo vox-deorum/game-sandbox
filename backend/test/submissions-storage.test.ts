@@ -290,7 +290,7 @@ describe('submission storage on :memory:', () => {
   })
 })
 
-describe('migration and seed idempotency on a file database', () => {
+describe('schema and seed idempotency on a file database', () => {
   let dir: string
   let dbPath: string
 
@@ -303,7 +303,7 @@ describe('migration and seed idempotency on a file database', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
-  it('runs the migration once and is a no-op on reopen, seeding one iteration per env', async () => {
+  it('creates the schema once and is a no-op on reopen, seeding one iteration per env', async () => {
     const environments = makeEnvironments()
     const expectedEnvCount = environments.list().length
 
@@ -321,7 +321,7 @@ describe('migration and seed idempotency on a file database', () => {
     const firstIds = afterFirst.map((it) => it?.id)
     await first.close()
 
-    // Reopen the same file: migrations re-run as a no-op and the seed leaves iterations untouched.
+    // Reopen the same file: schema setup re-runs as a no-op and the seed leaves iterations untouched.
     const second = await openSqliteStorage(dbPath)
     await seedOpenIterations(second, environments, 1)
     const afterSecond = await Promise.all(

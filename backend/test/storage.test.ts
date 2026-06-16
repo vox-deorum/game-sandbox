@@ -19,7 +19,7 @@ describe('storage on :memory:', () => {
   let storage: Storage
 
   beforeEach(async () => {
-    // The real implementation on an in-memory SQLite, migrations and all.
+    // The real implementation on an in-memory SQLite, schema and all.
     storage = await openSqliteStorage(':memory:')
   })
 

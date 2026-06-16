@@ -305,8 +305,8 @@ export class KyselyStorage implements Storage {
       return existing
     }
     try {
-      // The migrated-seed equivalent: submission-`open` and play-`open` for local continuity, with a
-      // default config carrying the pinned version and an empty match design.
+      // The seed row: submission-`open` and play-`open` for local continuity, with a default config
+      // carrying the pinned version and an empty match design.
       return await this.db
         .insertInto('iterations')
         .values({
@@ -384,7 +384,8 @@ export class KyselyStorage implements Storage {
       if (iteration === undefined) {
         throw new Error(`no such iteration: ${id}`)
       }
-      const depsChanged = decodeIterationConfig(iteration.config).deps_version !== config.deps_version
+      const depsChanged =
+        decodeIterationConfig(iteration.config).deps_version !== config.deps_version
 
       const runCount = await countRows(trx, 'iteration_runs', 'iteration_id', id)
       if (runCount > 0 && !force) {
@@ -1019,21 +1020,23 @@ export class KyselyStorage implements Storage {
       }
     }
 
-    return [...groups.values()]
-      .map((acc) => ({
-        agent: agentRefFromColumns(acc.agent),
-        mean_score: acc.games > 0 ? acc.scoreSum / acc.games : 0,
-        mean_agent_compute_ms: acc.tickSum > 0 ? acc.computeSum / acc.tickSum : null,
-        failure_count: acc.failureCount,
-        games: acc.games,
-        recording_id: acc.bestRecording,
-      }))
-      // Descending by mean score, with the stable agent key breaking ties so the board order is
-      // deterministic rather than dependent on Map-insertion order.
-      .sort(
-        (a, b) =>
-          b.mean_score - a.mean_score || agentRefKey(a.agent).localeCompare(agentRefKey(b.agent)),
-      )
+    return (
+      [...groups.values()]
+        .map((acc) => ({
+          agent: agentRefFromColumns(acc.agent),
+          mean_score: acc.games > 0 ? acc.scoreSum / acc.games : 0,
+          mean_agent_compute_ms: acc.tickSum > 0 ? acc.computeSum / acc.tickSum : null,
+          failure_count: acc.failureCount,
+          games: acc.games,
+          recording_id: acc.bestRecording,
+        }))
+        // Descending by mean score, with the stable agent key breaking ties so the board order is
+        // deterministic rather than dependent on Map-insertion order.
+        .sort(
+          (a, b) =>
+            b.mean_score - a.mean_score || agentRefKey(a.agent).localeCompare(agentRefKey(b.agent)),
+        )
+    )
   }
 
   async upsertRating(input: UpsertRatingInput): Promise<UpsertRatingResult> {

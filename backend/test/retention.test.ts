@@ -3,17 +3,12 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import BetterSqlite3 from 'better-sqlite3'
-import { Kysely, SqliteDialect } from 'kysely'
-import { Migrator } from 'kysely/migration'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { RecordingsStore } from '../src/recordings.js'
 import { Retention, type RetentionConfig } from '../src/retention.js'
 import { LiveSession } from '../src/session/live-session.js'
 import type { NewRecordingInput, Storage } from '../src/storage/index.js'
-import { migrationProvider } from '../src/storage/migrations/index.js'
-import type { Database } from '../src/storage/schema.js'
 import { openSqliteStorage } from '../src/storage/sqlite.js'
 import { FakeSessionProcess } from './support/fake-driver.js'
 import { flush } from './support/harness.js'
@@ -110,62 +105,6 @@ describe('retention', () => {
         env_id: 'flappy_bird',
         pinned: 0,
       })
-    })
-  })
-
-  describe('migration backfill', () => {
-    it('backfills a recordings row from each pre-existing session that produced a recording', async () => {
-      // The real upgrade path: migration 001 has already run and sessions exist; then migration 002
-      // runs and backfills. Drive the migrator to 001, insert sessions, then migrate to latest.
-      const sqlite = new BetterSqlite3(':memory:')
-      const db = new Kysely<Database>({ dialect: new SqliteDialect({ database: sqlite }) })
-      const migrator = new Migrator({ db, provider: migrationProvider })
-      const toFirst = await migrator.migrateTo('001_create_sessions')
-      expect(toFirst.error).toBeUndefined()
-
-      await db
-        .insertInto('sessions')
-        .values([
-          {
-            id: 's1',
-            user_id: 'alice',
-            env_id: 'flappy_bird',
-            mode: 'human',
-            status: 'ended',
-            termination_reason: 'stopped',
-            recording_id: 'flappy_bird-s1',
-            created_at: ago(2),
-            ended_at: ago(2),
-          },
-          {
-            // A session that never produced a recording must not be backfilled.
-            id: 's2',
-            user_id: 'bob',
-            env_id: 'flappy_bird',
-            mode: 'human',
-            status: 'ended',
-            termination_reason: 'error',
-            recording_id: null,
-            created_at: ago(2),
-            ended_at: ago(2),
-          },
-        ])
-        .execute()
-
-      const toLatest = await migrator.migrateToLatest()
-      expect(toLatest.error).toBeUndefined()
-
-      const rows = await db.selectFrom('recordings').selectAll().execute()
-      expect(rows).toEqual([
-        {
-          id: 'flappy_bird-s1',
-          user_id: 'alice',
-          env_id: 'flappy_bird',
-          created_at: ago(2),
-          pinned: 0,
-        },
-      ])
-      await db.destroy()
     })
   })
 
