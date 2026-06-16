@@ -13,8 +13,9 @@ describe('loadConfig', () => {
     // The db and recordings paths are derived from the data dir.
     expect(config.dbPath.endsWith('sandbox.db')).toBe(true)
     expect(config.recordingsDir.endsWith('recordings')).toBe(true)
-    // A fresh checkout plays out of the box: the dev user is allowlisted by default.
+    // A fresh checkout plays out of the box: the dev user is session- and operator-allowlisted.
     expect(config.sessionAllowlist).toEqual(['dev-user'])
+    expect(config.operatorAllowlist).toEqual(['dev-user'])
     // The retention spec's defaults: 30-day window, 100 per user, hourly sweep.
     expect(config.recordingRetentionDays).toBe(30)
     expect(config.recordingUserQuota).toBe(100)
@@ -40,6 +41,11 @@ describe('loadConfig', () => {
     ])
     // An explicitly empty value is an empty allowlist (no one may start a session).
     expect(loadConfig({ SESSION_ALLOWLIST: '' }).sessionAllowlist).toEqual([])
+  })
+
+  it('parses OPERATOR_ALLOWLIST the same way as the session allowlist', () => {
+    expect(loadConfig({ OPERATOR_ALLOWLIST: 'op1, op2' }).operatorAllowlist).toEqual(['op1', 'op2'])
+    expect(loadConfig({ OPERATOR_ALLOWLIST: '' }).operatorAllowlist).toEqual([])
   })
 
   it('parses overrides and derives paths from DATA_DIR', () => {

@@ -38,6 +38,7 @@ export async function startStack(overrides: Partial<Config> = {}): Promise<Stack
     sessionIdleTimeoutMs: 60_000,
     sessionMaxDurationMs: 600_000,
     sessionAllowlist: ['dev-user', 'alice', 'bob', 'carol'],
+    operatorAllowlist: ['dev-user'],
     recordingRetentionDays: 30,
     recordingUserQuota: 100,
     recordingSweepIntervalMs: 3_600_000,

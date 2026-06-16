@@ -17,16 +17,28 @@
 import { readFile, realpath, stat } from 'node:fs/promises'
 import { join, sep } from 'node:path'
 
+import { z } from 'zod'
+
 const MANIFEST_FILENAME = 'manifest.json'
 /** The manifest's required keys, in the order field errors are reported. Lockstep with manifest.py. */
 const REQUIRED_FIELDS = ['entry_point', 'class_name', 'template_version'] as const
 
+/**
+ * The manifest contract as a single strict zod object: exactly the required fields, the right types,
+ * and no unknown keys (`strictObject` rejects extras). It and `manifest.py` are kept deliberately in
+ * lockstep. {@link checkFields} maps a parse failure back to the closed {@link StaticReason} set so
+ * the owner-visible code/field/key vocabulary is unchanged by the validation-library switch.
+ */
+const MANIFEST_SCHEMA = z.strictObject({
+  entry_point: z.string().min(1),
+  class_name: z.string().min(1),
+  // typeof distinguishes a JSON number from a JSON boolean (unlike Python), and `.int()` rejects a
+  // float like 1.5, matching the prior hand-written guard.
+  template_version: z.number().int(),
+})
+
 /** A parsed, validated `manifest.json`, mirroring the harness `Manifest` dataclass. */
-export interface ParsedManifest {
-  entry_point: string
-  class_name: string
-  template_version: number
-}
+export type ParsedManifest = z.infer<typeof MANIFEST_SCHEMA>
 
 /**
  * The closed set of static rejection reasons, each carrying an owner-facing `message`. The codes
@@ -127,7 +139,19 @@ export async function validateStatic(
   return { ok: true, manifest }
 }
 
-/** Validate the parsed JSON against the manifest contract: missing keys, then unknown keys, then types. */
+/** The per-field "what was wrong" message, shared by the missing and bad-type cases (lockstep). */
+const FIELD_MESSAGE: Record<(typeof REQUIRED_FIELDS)[number], string> = {
+  entry_point: "field 'entry_point' must be a non-empty string",
+  class_name: "field 'class_name' must be a non-empty string",
+  template_version: "field 'template_version' must be an integer",
+}
+
+/**
+ * Validate the parsed JSON against {@link MANIFEST_SCHEMA} and translate the first relevant zod issue
+ * into the closed {@link StaticReason} vocabulary, preserving the prior reporting order: a missing or
+ * mistyped required field (in {@link REQUIRED_FIELDS} order) before an unknown key. The codes/fields
+ * are exactly what the worker records and the form shows, so the switch to zod is invisible to them.
+ */
 function checkFields(
   parsed: unknown,
 ): { ok: true; manifest: ParsedManifest } | { ok: false; reason: StaticReason } {
@@ -137,60 +161,36 @@ function checkFields(
       message: `${MANIFEST_FILENAME} must be a JSON object`,
     })
   }
-  const raw = parsed as Record<string, unknown>
 
+  const result = MANIFEST_SCHEMA.safeParse(parsed)
+  if (result.success) {
+    return { ok: true, manifest: result.data }
+  }
+  const issues = result.error.issues
+
+  // A required field that is missing or has the wrong type, reported in declaration order.
   for (const field of REQUIRED_FIELDS) {
-    if (!(field in raw)) {
-      return reject({
-        code: 'manifest_field_invalid',
-        field,
-        message: `${MANIFEST_FILENAME} is missing required field '${field}'`,
-      })
+    if (issues.some((issue) => issue.path[0] === field)) {
+      return reject({ code: 'manifest_field_invalid', field, message: FIELD_MESSAGE[field] })
     }
   }
 
-  const allowed = new Set<string>(REQUIRED_FIELDS)
-  for (const key of Object.keys(raw).sort()) {
-    if (!allowed.has(key)) {
-      return reject({
-        code: 'manifest_unknown_key',
-        key,
-        message: `${MANIFEST_FILENAME} has unknown key '${key}'; allowed keys are ${REQUIRED_FIELDS.join(', ')}`,
-      })
-    }
-  }
-
-  const entryPoint = raw.entry_point
-  if (typeof entryPoint !== 'string' || entryPoint === '') {
+  // An unknown key (strictObject's `unrecognized_keys` issue), naming the first offending key.
+  const unknown = issues.find((issue) => issue.code === 'unrecognized_keys')
+  if (unknown !== undefined && 'keys' in unknown && Array.isArray(unknown.keys)) {
+    const key = [...(unknown.keys as string[])].sort()[0] ?? ''
     return reject({
-      code: 'manifest_field_invalid',
-      field: 'entry_point',
-      message: "field 'entry_point' must be a non-empty string",
-    })
-  }
-  const className = raw.class_name
-  if (typeof className !== 'string' || className === '') {
-    return reject({
-      code: 'manifest_field_invalid',
-      field: 'class_name',
-      message: "field 'class_name' must be a non-empty string",
-    })
-  }
-  const templateVersion = raw.template_version
-  // typeof distinguishes a JSON number from a JSON boolean (unlike Python, where bool is an int), so a
-  // JSON `true` is already excluded; the integer guard then rejects a float like 1.5.
-  if (typeof templateVersion !== 'number' || !Number.isInteger(templateVersion)) {
-    return reject({
-      code: 'manifest_field_invalid',
-      field: 'template_version',
-      message: "field 'template_version' must be an integer",
+      code: 'manifest_unknown_key',
+      key,
+      message: `${MANIFEST_FILENAME} has unknown key '${key}'; allowed keys are ${REQUIRED_FIELDS.join(', ')}`,
     })
   }
 
-  return {
-    ok: true,
-    manifest: { entry_point: entryPoint, class_name: className, template_version: templateVersion },
-  }
+  // No issue should fall through, but keep a typed rejection rather than throwing if one does.
+  return reject({
+    code: 'manifest_invalid_json',
+    message: `${MANIFEST_FILENAME} does not match the manifest contract`,
+  })
 }
 
 /**

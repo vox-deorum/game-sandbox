@@ -48,3 +48,14 @@ export function resolveUserId(headers: RequestHeaders, query?: RequestQuery): st
 export function isAllowlisted(userId: string, allowlist: readonly string[]): boolean {
   return allowlist.includes(userId)
 }
+
+/**
+ * Whether a resolved user id is an operator: the single authorization predicate the Stage 6 admin
+ * routes and the admin-only iteration reads consult. It is built over {@link isAllowlisted} against
+ * the operator allowlist (not a new build-mode special case), so the dev mock user — in the default
+ * `[DEV_USER_ID]` list — is an operator out of the box, and a real deployment lists its operator
+ * handles, checked against the resolved GitHub identity once OAuth lands.
+ */
+export function isOperator(userId: string, operatorAllowlist: readonly string[]): boolean {
+  return isAllowlisted(userId, operatorAllowlist)
+}

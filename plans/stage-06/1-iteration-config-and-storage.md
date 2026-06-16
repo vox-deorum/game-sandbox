@@ -1,6 +1,6 @@
 # Stage 6.1: Iteration Config, Release Status, and Storage
 
-Status: not started.
+Status: done. Implemented as the storage/config/identity foundation: migration 4 reshapes `iterations` (the three gates, `config` with the folded `deps_version`, `rating_prompt`, `released_at`) and adds the run/game/result/placement/rating/agent-prompt tables; the `IterationConfig` zod codec (`storage/iteration-config.ts`) is the validated gate; the full `Storage` surface, `isOperator`/`OPERATOR_ALLOWLIST`, and the Stage 5 caller updates (the `getOpenSubmissionIteration` rename, `config.deps_version`) are in place. Covered by the codec, migration, leaderboard-storage, and operator-predicate suites on `:memory:`. The backend also standardized data validation on zod in this change set (config env parsing and the manifest static validator migrated, owner-visible codes unchanged).
 
 Part of [Stage 6](../stage-06-leaderboards.md). This is build-order step 1, the data foundation the rest of the stage attaches to. It grows the minimal Stage 5 `iterations` record into full per-iteration configuration. It adds the submission, public-play, and release-status gates; the run/game/result/placement/rating tables; their migration and storage methods; and the operator-allowlist seam the admin API gates on. It is entirely Docker-free.
 

@@ -355,7 +355,7 @@ describe('orchestrator', () => {
       const orch = makeOrchestrator(60_000, source)
       const submission = await seedReadySubmission(storage)
       // Resubmitting supersedes the ready row, so it is no longer the active open-iteration submission.
-      const iteration = await storage.getOpenIteration('flappy_bird')
+      const iteration = await storage.getOpenSubmissionIteration('flappy_bird')
       await storage.createSubmission({
         iteration_id: iteration?.id ?? '',
         env_id: 'flappy_bird',

@@ -5,7 +5,12 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { seedOpenIterations } from '../src/iterations-seed.js'
-import type { NewSessionInput, NewSubmissionInput, Storage } from '../src/storage/index.js'
+import {
+  decodeIterationConfig,
+  type NewSessionInput,
+  type NewSubmissionInput,
+  type Storage,
+} from '../src/storage/index.js'
 import { openSqliteStorage } from '../src/storage/sqlite.js'
 import { makeEnvironments } from './support/harness.js'
 
@@ -57,10 +62,11 @@ describe('submission storage on :memory:', () => {
     const first = await storage.ensureOpenIteration('flappy_bird', 1)
     const second = await storage.ensureOpenIteration('flappy_bird', 2)
     expect(second.id).toBe(first.id)
-    expect(first.status).toBe('open')
-    expect(first.deps_version).toBe(1)
-    expect(second.deps_version).toBe(1)
-    expect((await storage.getOpenIteration('flappy_bird'))?.id).toBe(first.id)
+    expect(first.submission_status).toBe('open')
+    // The pinned deps version now lives inside the validated config document.
+    expect(decodeIterationConfig(first.config).deps_version).toBe(1)
+    expect(decodeIterationConfig(second.config).deps_version).toBe(1)
+    expect((await storage.getOpenSubmissionIteration('flappy_bird'))?.id).toBe(first.id)
   })
 
   it('createSubmission inserts a pending row and supersedes a same-user resubmit', async () => {
@@ -304,9 +310,14 @@ describe('migration and seed idempotency on a file database', () => {
     const first = await openSqliteStorage(dbPath)
     await seedOpenIterations(first, environments, 1)
     const afterFirst = await Promise.all(
-      environments.list().map((m) => first.getOpenIteration(m.env_id)),
+      environments.list().map((m) => first.getOpenSubmissionIteration(m.env_id)),
     )
-    expect(afterFirst.every((it) => it?.status === 'open' && it.deps_version === 1)).toBe(true)
+    expect(
+      afterFirst.every(
+        (it) =>
+          it?.submission_status === 'open' && decodeIterationConfig(it.config).deps_version === 1,
+      ),
+    ).toBe(true)
     const firstIds = afterFirst.map((it) => it?.id)
     await first.close()
 
@@ -314,7 +325,7 @@ describe('migration and seed idempotency on a file database', () => {
     const second = await openSqliteStorage(dbPath)
     await seedOpenIterations(second, environments, 1)
     const afterSecond = await Promise.all(
-      environments.list().map((m) => second.getOpenIteration(m.env_id)),
+      environments.list().map((m) => second.getOpenSubmissionIteration(m.env_id)),
     )
     expect(afterSecond.map((it) => it?.id)).toEqual(firstIds)
     expect(afterSecond).toHaveLength(expectedEnvCount)

@@ -30,6 +30,7 @@ import type {
   SubmissionFailureStatus,
   SubmissionStage,
 } from '../storage/index.js'
+import { decodeIterationConfig } from '../storage/index.js'
 import type { ResolvedSource, SourceInput, SubmissionSource, TreeHandle } from './source/index.js'
 import { SourceError } from './source/index.js'
 import { runLoadCheck, validateStatic } from './validate/index.js'
@@ -164,7 +165,7 @@ export class ValidationWorker implements SubmissionEnqueuer {
       this.log(`validation worker: submission ${submissionId} has no iteration; skipping`)
       return
     }
-    const depsVersion = iteration.deps_version
+    const depsVersion = decodeIterationConfig(iteration.config).deps_version
 
     let tree: TreeHandle | null = null
     let runningStage: SubmissionStage | null = null

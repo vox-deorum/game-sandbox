@@ -267,7 +267,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
           .code(403)
           .send({ error: 'local submissions are disabled', code: 'local_disabled' })
       }
-      const iteration = await deps.storage.getOpenIteration(request.body.env_id)
+      const iteration = await deps.storage.getOpenSubmissionIteration(request.body.env_id)
       if (iteration === undefined) {
         return reply
           .code(409)
@@ -318,7 +318,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.get<{ Params: { envId: string }; Querystring: { status?: string } }>(
     '/api/environments/:envId/submissions',
     async (request) => {
-      const iteration = await deps.storage.getOpenIteration(request.params.envId)
+      const iteration = await deps.storage.getOpenSubmissionIteration(request.params.envId)
       if (iteration === undefined) {
         return []
       }

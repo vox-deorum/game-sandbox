@@ -16,7 +16,7 @@ import { currentSessionBaseImageSpec } from '../deps-version.js'
 import type { ExecutionDriver, ImageRef, SandboxProfile } from '../driver/index.js'
 import type { EnvironmentMeta, EnvironmentRegistry } from '../environments.js'
 import { isAllowlisted } from '../identity.js'
-import type { Storage } from '../storage/index.js'
+import { decodeIterationConfig, type Storage } from '../storage/index.js'
 import type { Session, SessionMode } from '../storage/schema.js'
 import type { SubmissionSource } from '../submission/source/index.js'
 import { ensureSubmissionImage, submissionSlotPath } from '../submission/submission-image.js'
@@ -265,7 +265,7 @@ export class Orchestrator {
     }
     // Only the open iteration's active submissions are watch choices; a superseded (resubmitted-over)
     // or closed-iteration submission stays profile history rather than a runnable agent.
-    const iteration = await this.storage.getOpenIteration(meta.env_id)
+    const iteration = await this.storage.getOpenSubmissionIteration(meta.env_id)
     if (
       iteration === undefined ||
       submission.iteration_id !== iteration.id ||
@@ -284,7 +284,7 @@ export class Orchestrator {
         imagePolicy: this.config.docker.imagePolicy,
       },
       submission,
-      iteration.deps_version,
+      decodeIterationConfig(iteration.config).deps_version,
       SUBMISSION_SLOT_ID,
     )
     return {

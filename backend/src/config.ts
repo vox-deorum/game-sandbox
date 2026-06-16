@@ -9,6 +9,8 @@
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { z } from 'zod'
+
 import { DEV_USER_ID } from './identity.js'
 
 // The repo root sits two levels above backend/src, so the default frontend bundle path resolves the
@@ -76,6 +78,13 @@ export interface Config {
    * Stage 3 identity stub until OAuth brings real handles; everything read-only stays open.
    */
   sessionAllowlist: string[]
+  /**
+   * The operator allowlist of user ids that may reach the Stage 6 admin console and API (declaring
+   * iterations, configuring them, opening/closing the gates, triggering runs). Read from
+   * `OPERATOR_ALLOWLIST`, defaulting to `[DEV_USER_ID]` exactly as {@link Config.sessionAllowlist}
+   * does, so the console works out of the box in dev; `isOperator` is the single predicate over it.
+   */
+  operatorAllowlist: string[]
   /** Retention window in days: an unpinned recording older than this is swept. */
   recordingRetentionDays: number
   /** Per-user recording quota; oldest-unpinned-first eviction brings a user back within it. */
@@ -105,16 +114,30 @@ export interface Config {
 
 class ConfigError extends Error {}
 
+/**
+ * Environment variables arrive as strings; these helpers wrap small zod schemas so every typed
+ * value passes through the one validation library the backend standardizes on. Each helper applies
+ * the unset/empty fallback first, then validates the present string, rethrowing a zod failure as a
+ * {@link ConfigError} naming the offending variable (the message the operator and the tests read).
+ */
+
+/** Non-negative integer (`Number()`-coerced); rejects floats, NaN, and negatives. */
+const NON_NEGATIVE_INT = z.coerce.number().int().nonnegative()
+/** Positive, finite number; floats allowed (e.g. fractional CPU shares). */
+const POSITIVE_NUMBER = z.coerce.number().positive().finite()
+/** The documented boolean spellings, normalized lower-case; anything else throws. */
+const ENV_BOOL = z.stringbool({ truthy: ['true', '1', 'yes'], falsy: ['false', '0', 'no'] })
+
 function intVar(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
   const raw = env[name]
   if (raw === undefined || raw === '') {
     return fallback
   }
-  const value = Number(raw)
-  if (!Number.isFinite(value) || !Number.isInteger(value) || value < 0) {
+  const result = NON_NEGATIVE_INT.safeParse(raw)
+  if (!result.success) {
     throw new ConfigError(`${name} must be a non-negative integer, got ${raw}`)
   }
-  return value
+  return result.data
 }
 
 function listVar(env: NodeJS.ProcessEnv, name: string, fallback: string[]): string[] {
@@ -134,14 +157,11 @@ function boolVar(env: NodeJS.ProcessEnv, name: string, fallback: boolean): boole
   if (raw === undefined || raw === '') {
     return fallback
   }
-  const value = raw.trim().toLowerCase()
-  if (value === 'true' || value === '1' || value === 'yes') {
-    return true
+  const result = ENV_BOOL.safeParse(raw.trim().toLowerCase())
+  if (!result.success) {
+    throw new ConfigError(`${name} must be a boolean (true/false), got ${raw}`)
   }
-  if (value === 'false' || value === '0' || value === 'no') {
-    return false
-  }
-  throw new ConfigError(`${name} must be a boolean (true/false), got ${raw}`)
+  return result.data
 }
 
 function numberVar(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
@@ -149,11 +169,11 @@ function numberVar(env: NodeJS.ProcessEnv, name: string, fallback: number): numb
   if (raw === undefined || raw === '') {
     return fallback
   }
-  const value = Number(raw)
-  if (!Number.isFinite(value) || value <= 0) {
+  const result = POSITIVE_NUMBER.safeParse(raw)
+  if (!result.success) {
     throw new ConfigError(`${name} must be a positive number, got ${raw}`)
   }
-  return value
+  return result.data
 }
 
 /**
@@ -166,17 +186,22 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const port = intVar(env, 'PORT', 8080)
   const dataDir = env.DATA_DIR && env.DATA_DIR !== '' ? env.DATA_DIR : join(process.cwd(), 'data')
 
-  const driver = env.EXECUTION_DRIVER ?? 'docker'
-  if (driver !== 'docker') {
+  const driverResult = z.enum(['docker']).safeParse(env.EXECUTION_DRIVER ?? 'docker')
+  if (!driverResult.success) {
     throw new ConfigError(
-      `EXECUTION_DRIVER must be 'docker' (the only driver in this stage), got ${driver}`,
+      `EXECUTION_DRIVER must be 'docker' (the only driver in this stage), got ${env.EXECUTION_DRIVER}`,
     )
   }
 
-  const imagePolicy = env.DOCKER_IMAGE_POLICY ?? 'reuse'
-  if (imagePolicy !== 'reuse' && imagePolicy !== 'rebuild') {
-    throw new ConfigError(`DOCKER_IMAGE_POLICY must be 'reuse' or 'rebuild', got ${imagePolicy}`)
+  const imagePolicyResult = z
+    .enum(['reuse', 'rebuild'])
+    .safeParse(env.DOCKER_IMAGE_POLICY ?? 'reuse')
+  if (!imagePolicyResult.success) {
+    throw new ConfigError(
+      `DOCKER_IMAGE_POLICY must be 'reuse' or 'rebuild', got ${env.DOCKER_IMAGE_POLICY}`,
+    )
   }
+  const imagePolicy = imagePolicyResult.data
 
   return {
     port,
@@ -186,6 +211,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     sessionIdleTimeoutMs: intVar(env, 'SESSION_IDLE_TIMEOUT_MS', 60_000),
     sessionMaxDurationMs: intVar(env, 'SESSION_MAX_DURATION_MS', 600_000),
     sessionAllowlist: listVar(env, 'SESSION_ALLOWLIST', [DEV_USER_ID]),
+    operatorAllowlist: listVar(env, 'OPERATOR_ALLOWLIST', [DEV_USER_ID]),
     recordingRetentionDays: intVar(env, 'RECORDING_RETENTION_DAYS', 30),
     recordingUserQuota: intVar(env, 'RECORDING_USER_QUOTA', 100),
     recordingSweepIntervalMs: intVar(env, 'RECORDING_SWEEP_INTERVAL_MS', 3_600_000),

@@ -26,6 +26,7 @@ export function makeConfig(overrides: Partial<Config> = {}): Config {
     sessionMaxDurationMs: 600_000,
     // The identities the start-succeeding suites use; allowlist tests override this explicitly.
     sessionAllowlist: ['dev-user', 'alice', 'bob'],
+    operatorAllowlist: ['dev-user'],
     recordingRetentionDays: 30,
     recordingUserQuota: 100,
     recordingSweepIntervalMs: 3_600_000,

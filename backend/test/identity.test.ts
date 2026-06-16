@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { DEV_USER_ID, isAllowlisted, resolveUserId } from '../src/identity.js'
+import { DEV_USER_ID, isAllowlisted, isOperator, resolveUserId } from '../src/identity.js'
 
 describe('resolveUserId', () => {
   it('returns the x-sandbox-user header when present', () => {
@@ -42,5 +42,17 @@ describe('isAllowlisted', () => {
     expect(isAllowlisted('alice', ['alice', 'bob'])).toBe(true)
     expect(isAllowlisted('mallory', ['alice', 'bob'])).toBe(false)
     expect(isAllowlisted('alice', [])).toBe(false)
+  })
+})
+
+describe('isOperator', () => {
+  it('resolves the dev mock user as operator under the default allowlist', () => {
+    expect(isOperator(DEV_USER_ID, [DEV_USER_ID])).toBe(true)
+  })
+
+  it('honors a configured operator allowlist and rejects everyone else', () => {
+    expect(isOperator('alice', ['alice', 'bob'])).toBe(true)
+    expect(isOperator('mallory', ['alice', 'bob'])).toBe(false)
+    expect(isOperator('alice', [])).toBe(false)
   })
 })
