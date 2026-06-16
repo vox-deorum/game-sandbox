@@ -52,6 +52,7 @@ This is the only environment module that imports the harness, which is why it is
 | `step_limit_ms`, `episode_limit_ms` | Default agent time limits (overridable per run). |
 | `messaging`, `message_cap` | Whether agents may message, and the length cap. |
 | `llm` | Whether the LLM API is available to agents here. |
+| `seat_order_matters` | Whether swapping agents between seats makes a distinct game for scheduler rotation. |
 | `renderer` | The id the frontend resolves to a renderer module. |
 
 The single session loop reads `pace_interval_ms` rather than branching on an environment type: realtime vs turn-based is this one field, not a second code path.

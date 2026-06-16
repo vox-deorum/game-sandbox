@@ -46,6 +46,12 @@ class EnvironmentMeta:
     message_cap: int | None
     llm: bool
     renderer: str
+    #: Whether two agents swapping seats produce a genuinely different game. ``True`` for a
+    #: positional game (Hearts: seat order is part of play), ``False`` for a symmetric one
+    #: where only the participant set matters. The Stage 6/7 multi-seat scheduler reads this to
+    #: choose ordered (permutation) versus unordered (combination) seat expansion; single-slot
+    #: environments leave it ``False``. Defaulted so additive declaration never breaks a caller.
+    seat_order_matters: bool = False
 
     def to_json(self) -> dict[str, Any]:
         """Return the snake_case JSON-serialisable dict the backend serves verbatim."""
@@ -65,6 +71,7 @@ class EnvironmentMeta:
             "message_cap": self.message_cap,
             "llm": self.llm,
             "renderer": self.renderer,
+            "seat_order_matters": self.seat_order_matters,
         }
 
 

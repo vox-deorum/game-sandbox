@@ -100,6 +100,7 @@ function meta(overrides: Record<string, unknown>): Record<string, unknown> {
     message_cap: null,
     llm: false,
     renderer: 'flappy-bird',
+    seat_order_matters: false,
     ...overrides,
   }
 }

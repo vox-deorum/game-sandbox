@@ -43,6 +43,7 @@ def test_meta_to_json_round_trips():
     assert parsed["human_slots"] == ["player_0"]  # tuple serialized as a JSON array
     assert parsed["human_timeout_ms"] is None
     assert parsed["pace_interval_ms"] == 50
+    assert parsed["seat_order_matters"] is False
 
 
 def test_flappy_bird_is_discoverable():

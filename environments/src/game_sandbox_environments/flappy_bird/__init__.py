@@ -40,6 +40,8 @@ META = EnvironmentMeta(
     message_cap=None,
     llm=False,
     renderer="flappy-bird",
+    # Single-slot, so seat order is moot; the scheduler never multi-seats this environment.
+    seat_order_matters=False,
 )
 
 

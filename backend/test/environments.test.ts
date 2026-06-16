@@ -15,6 +15,7 @@ describe('EnvironmentRegistry', () => {
       expect(Array.isArray(meta.human_slots)).toBe(true)
       expect(typeof meta.step_limit_ms).toBe('number')
       expect(typeof meta.episode_limit_ms).toBe('number')
+      expect(typeof meta.seat_order_matters).toBe('boolean')
       // pace_interval_ms and human_timeout_ms are int-or-null per the metadata contract.
       expect(meta.pace_interval_ms === null || typeof meta.pace_interval_ms === 'number').toBe(true)
     }

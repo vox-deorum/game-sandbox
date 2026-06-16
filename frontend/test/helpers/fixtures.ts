@@ -24,6 +24,7 @@ export function flappyMeta(overrides: Partial<EnvironmentMeta> = {}): Environmen
     message_cap: null,
     llm: false,
     renderer: 'flappy-bird',
+    seat_order_matters: false,
     ...overrides,
   }
 }

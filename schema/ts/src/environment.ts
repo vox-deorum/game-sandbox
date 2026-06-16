@@ -2,8 +2,8 @@
  * The public-facing environment metadata shape and its validation guard.
  *
  * The metadata registry itself lives in Python and is emitted as a generated JSON artifact the
- * backend reads at startup. This module carries only the wire shape both sides share — the field
- * set of one environment's `to_json()` — plus the structural guard that validates it. The backend
+ * backend reads at startup. This module carries only the wire shape both sides share: the field
+ * set of one environment's `to_json()`, plus the structural guard that validates it. The backend
  * keeps the `EnvironmentRegistry` and the generated-JSON loading; the browser uses the same guard
  * to validate the `GET /api/environments` response. Keeping the shape here means there is one
  * declaration of it, not a backend copy and a frontend copy that drift.
@@ -28,6 +28,12 @@ export interface EnvironmentMeta {
   message_cap: number | null
   llm: boolean
   renderer: string
+  /**
+   * Whether two agents swapping seats produce a genuinely different game. `true` for a positional
+   * game (Hearts), `false` for a symmetric one or a single-slot environment. The multi-seat
+   * scheduler reads this to choose ordered (permutation) versus unordered (combination) expansion.
+   */
+  seat_order_matters: boolean
 }
 
 function isStringArray(value: unknown): value is string[] {
@@ -59,6 +65,7 @@ export function isEnvironmentMeta(value: unknown): value is EnvironmentMeta {
     typeof m.messaging === 'boolean' &&
     isIntOrNull(m.message_cap) &&
     typeof m.llm === 'boolean' &&
-    typeof m.renderer === 'string'
+    typeof m.renderer === 'string' &&
+    typeof m.seat_order_matters === 'boolean'
   )
 }

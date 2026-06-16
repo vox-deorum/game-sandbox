@@ -16,6 +16,7 @@
     "pace_interval_ms": 50,
     "recommended_episode_ticks": 1000,
     "renderer": "flappy-bird",
+    "seat_order_matters": false,
     "step_limit_ms": 1000
   }
 ]

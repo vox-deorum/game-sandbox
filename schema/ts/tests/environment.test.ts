@@ -18,6 +18,7 @@ const VALID: EnvironmentMeta = {
   message_cap: null,
   llm: false,
   renderer: 'flappy-bird',
+  seat_order_matters: false,
 }
 
 describe('isEnvironmentMeta', () => {
