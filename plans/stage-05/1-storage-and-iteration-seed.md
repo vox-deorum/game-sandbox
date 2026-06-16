@@ -46,7 +46,7 @@ Name each index explicitly rather than leaving "profile lookups" to implementati
 
 ## Storage interface
 
-Extend the `Storage` interface (`storage/index.ts`) and its Kysely implementation (`storage/kysely.ts`) with the domain-shaped methods the later steps call, never exposing SQL or query building:
+Extend the `Storage` interface (`storage/index.ts`) and its Kysely implementation (`storage/kysely/`) with the domain-shaped methods the later steps call, never exposing SQL or query building:
 
 - `getOpenIteration(envId)` - the current open iteration for an environment, the identity boundary every submission needs.
 - `ensureOpenIteration(envId, depsVersion)` - the seed primitive (below), idempotent.
