@@ -5,7 +5,7 @@
 import type Docker from 'dockerode'
 import { describe, expect, it } from 'vitest'
 
-import { removeImage } from '../src/driver/docker/overlay.js'
+import { removeImage } from '../../../src/driver/docker/overlay.js'
 
 function dockerRemoveRejects(error: unknown): Docker {
   return {

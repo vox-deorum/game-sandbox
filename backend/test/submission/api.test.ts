@@ -12,19 +12,19 @@ import { join } from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { buildApp } from '../src/app.js'
-import { RecordingsStore } from '../src/recordings.js'
-import { Retention } from '../src/retention.js'
-import { Orchestrator } from '../src/session/orchestrator.js'
-import { type Storage, SubmissionConflictError } from '../src/storage/index.js'
-import { openSqliteStorage } from '../src/storage/sqlite.js'
+import { buildApp } from '../../src/app.js'
+import { RecordingsStore } from '../../src/recordings.js'
+import { Retention } from '../../src/retention.js'
+import { Orchestrator } from '../../src/session/orchestrator.js'
+import { type Storage, SubmissionConflictError } from '../../src/storage/index.js'
+import { openSqliteStorage } from '../../src/storage/sqlite.js'
 import type {
   ReachabilityResult,
   SourceInput,
   SubmissionSource,
-} from '../src/submission/source/index.js'
-import { FakeDriver } from './support/fake-driver.js'
-import { makeConfig, makeEnvironments } from './support/harness.js'
+} from '../../src/submission/source/index.js'
+import { FakeDriver } from '../support/fake-driver.js'
+import { makeConfig, makeEnvironments } from '../support/harness.js'
 
 const ENV_ID = 'flappy_bird'
 

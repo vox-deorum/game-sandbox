@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import type { SessionProcess } from '../src/driver/index.js'
-import { LiveSession } from '../src/session/live-session.js'
-import type { Storage } from '../src/storage/index.js'
-import type { SessionMode } from '../src/storage/schema.js'
-import { openSqliteStorage } from '../src/storage/sqlite.js'
-import { FakeSessionProcess } from './support/fake-driver.js'
-import { FakeSocket, flush } from './support/harness.js'
+import type { SessionProcess } from '../../src/driver/index.js'
+import { LiveSession } from '../../src/session/live-session.js'
+import type { Storage } from '../../src/storage/index.js'
+import type { SessionMode } from '../../src/storage/schema.js'
+import { openSqliteStorage } from '../../src/storage/sqlite.js'
+import { FakeSessionProcess } from '../support/fake-driver.js'
+import { FakeSocket, flush } from '../support/harness.js'
 
 const HEADER = '{"schema_version":1,"environment":"flappy_bird","seed":0}'
 const STATE_0 =

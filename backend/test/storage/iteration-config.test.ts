@@ -13,7 +13,7 @@ import {
   type IterationConfig,
   IterationConfigError,
   parseIterationConfig,
-} from '../src/storage/iteration-config.js'
+} from '../../src/storage/iteration-config.js'
 
 function validConfig(overrides: Partial<IterationConfig> = {}): IterationConfig {
   return {

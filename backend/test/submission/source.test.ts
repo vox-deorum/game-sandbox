@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
-import type { SubmissionOptions } from '../src/config.js'
+import type { SubmissionOptions } from '../../src/config.js'
 import {
   createSubmissionSource,
   type GitHubClient,
@@ -21,9 +21,9 @@ import {
   parseGitHubRepo,
   SourceError,
   tokenizedUrl,
-} from '../src/submission/source/index.js'
+} from '../../src/submission/source/index.js'
 
-const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'sources')
+const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), '..', 'fixtures', 'sources')
 const LOCAL_BASIC = join(FIXTURES, 'local-basic')
 
 const SHA_A = 'a'.repeat(40)

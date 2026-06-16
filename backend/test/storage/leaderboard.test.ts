@@ -14,9 +14,9 @@ import type {
   NewSubmissionInput,
   ScheduledGameInput,
   Storage,
-} from '../src/storage/index.js'
-import { decodeIterationConfig } from '../src/storage/index.js'
-import { openSqliteStorage } from '../src/storage/sqlite.js'
+} from '../../src/storage/index.js'
+import { decodeIterationConfig } from '../../src/storage/index.js'
+import { openSqliteStorage } from '../../src/storage/sqlite.js'
 
 const ENV = 'flappy_bird'
 const NAIVE: AgentRef = { kind: 'builtin-naive' }

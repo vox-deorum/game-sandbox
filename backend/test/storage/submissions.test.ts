@@ -4,15 +4,15 @@ import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { seedOpenIterations } from '../src/iterations-seed.js'
+import { seedOpenIterations } from '../../src/iterations-seed.js'
 import {
   decodeIterationConfig,
   type NewSessionInput,
   type NewSubmissionInput,
   type Storage,
-} from '../src/storage/index.js'
-import { openSqliteStorage } from '../src/storage/sqlite.js'
-import { makeEnvironments } from './support/harness.js'
+} from '../../src/storage/index.js'
+import { openSqliteStorage } from '../../src/storage/sqlite.js'
+import { makeEnvironments } from '../support/harness.js'
 
 /** A pending git submission input, overridable. The iteration id is filled per test. */
 function subInput(overrides: Partial<NewSubmissionInput> = {}): NewSubmissionInput {

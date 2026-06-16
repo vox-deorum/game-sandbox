@@ -12,10 +12,10 @@ import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
-import { validateStatic } from '../src/submission/validate/index.js'
+import { validateStatic } from '../../../src/submission/validate/index.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
-const FIXTURES = join(HERE, 'fixtures', 'validate')
+const FIXTURES = join(HERE, '..', '..', 'fixtures', 'validate')
 const fixture = (name: string) => join(FIXTURES, name)
 
 // The single-version Stage 5 deployment: one base image (v1) and an open iteration pinned to v1.

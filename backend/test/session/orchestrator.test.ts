@@ -3,19 +3,19 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { ensureRecordingsDir } from '../src/session/live-session.js'
-import { Orchestrator, OrchestratorError } from '../src/session/orchestrator.js'
-import type { Storage, Submission } from '../src/storage/index.js'
-import type { SessionMode } from '../src/storage/schema.js'
-import { openSqliteStorage } from '../src/storage/sqlite.js'
+import { ensureRecordingsDir } from '../../src/session/live-session.js'
+import { Orchestrator, OrchestratorError } from '../../src/session/orchestrator.js'
+import type { Storage, Submission } from '../../src/storage/index.js'
+import type { SessionMode } from '../../src/storage/schema.js'
+import { openSqliteStorage } from '../../src/storage/sqlite.js'
 import type {
   ResolvedSource,
   SourceInput,
   SubmissionSource,
   TreeHandle,
-} from '../src/submission/source/index.js'
-import { FakeDriver, type FakeSessionProcess } from './support/fake-driver.js'
-import { delay, flush, makeConfig, makeEnvironments } from './support/harness.js'
+} from '../../src/submission/source/index.js'
+import { FakeDriver, type FakeSessionProcess } from '../support/fake-driver.js'
+import { delay, flush, makeConfig, makeEnvironments } from '../support/harness.js'
 
 /**
  * A submission-source double for the submitted-agent watch path. Records the inputs it resolves and

@@ -7,8 +7,8 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import type { OverlayImage, OverlayImageManager } from '../src/driver/index.js'
-import { OverlayEviction } from '../src/submission/overlay-eviction.js'
+import type { OverlayImage, OverlayImageManager } from '../../src/driver/index.js'
+import { OverlayEviction } from '../../src/submission/overlay-eviction.js'
 
 /** An in-memory overlay-image manager: seed images, observe removals, optionally fail a call. */
 class FakeOverlayDriver implements OverlayImageManager {

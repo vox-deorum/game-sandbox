@@ -3,7 +3,7 @@
  * and a shallow `--depth 1` fetch against a small public repository. It is gated behind
  * `SUBMISSION_NETWORK_TESTS=1` so neither the default unit run (which excludes `test/integration/`)
  * nor the Docker integration job depends on github.com reachability — run it explicitly when
- * validating the real git path. The stubbed unit coverage in `test/submission-source.test.ts` is
+ * validating the real git path. The stubbed unit coverage in `test/submission/source.test.ts` is
  * what runs everywhere.
  */
 import { existsSync } from 'node:fs'

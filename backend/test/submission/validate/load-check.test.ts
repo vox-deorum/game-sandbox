@@ -8,9 +8,9 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import type { ImageRef, SandboxProfile } from '../src/driver/index.js'
-import { runLoadCheck } from '../src/submission/validate/load-check.js'
-import { FakeDriver } from './support/fake-driver.js'
+import type { ImageRef, SandboxProfile } from '../../../src/driver/index.js'
+import { runLoadCheck } from '../../../src/submission/validate/load-check.js'
+import { FakeDriver } from '../../support/fake-driver.js'
 
 const IMAGE: ImageRef = { ref: 'overlay:sub-1' }
 

@@ -3,9 +3,9 @@
  *
  * A narrow, domain-shaped interface over the relational data: callers see the derived domain
  * types from `schema.ts`, never SQL or query building. This interface is what the orchestrator
- * and the HTTP tests are written against; `kysely.ts` is its one implementation and `sqlite.ts`
- * its one wiring today. Swapping engines is a new wiring file against the same schema, queries,
- * and interface.
+ * and the HTTP tests are written against; the `kysely/` module is its one implementation and
+ * `sqlite.ts` its one wiring today. Swapping engines is a new wiring file against the same schema,
+ * queries, and interface.
  */
 import type {
   AgentRatingPrompt,

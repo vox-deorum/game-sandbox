@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import type { NewSessionInput, Storage } from '../src/storage/index.js'
-import { openSqliteStorage } from '../src/storage/sqlite.js'
+import type { NewSessionInput, Storage } from '../../src/storage/index.js'
+import { openSqliteStorage } from '../../src/storage/sqlite.js'
 
 function input(overrides: Partial<NewSessionInput> = {}): NewSessionInput {
   return {

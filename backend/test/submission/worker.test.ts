@@ -12,19 +12,19 @@ import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import type { ExecutionDriver } from '../src/driver/index.js'
-import type { Storage, Submission } from '../src/storage/index.js'
-import { openSqliteStorage } from '../src/storage/sqlite.js'
+import type { ExecutionDriver } from '../../src/driver/index.js'
+import type { Storage, Submission } from '../../src/storage/index.js'
+import { openSqliteStorage } from '../../src/storage/sqlite.js'
 import type {
   ResolvedSource,
   SourceInput,
   SubmissionSource,
   TreeHandle,
-} from '../src/submission/source/index.js'
-import { SourceError } from '../src/submission/source/index.js'
-import { ValidationWorker } from '../src/submission/worker.js'
-import { FakeDriver } from './support/fake-driver.js'
-import { makeConfig } from './support/harness.js'
+} from '../../src/submission/source/index.js'
+import { SourceError } from '../../src/submission/source/index.js'
+import { ValidationWorker } from '../../src/submission/worker.js'
+import { FakeDriver } from '../support/fake-driver.js'
+import { makeConfig } from '../support/harness.js'
 
 const ENV_ID = 'flappy_bird'
 
