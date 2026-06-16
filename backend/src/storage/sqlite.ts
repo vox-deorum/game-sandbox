@@ -15,7 +15,7 @@ import { Kysely, SqliteDialect } from 'kysely'
 
 import { createSchema } from './create-schema.js'
 import type { Storage } from './index.js'
-import { KyselyStorage } from './kysely.js'
+import { KyselyStorage } from './kysely/index.js'
 import type { Database } from './schema.js'
 
 /**

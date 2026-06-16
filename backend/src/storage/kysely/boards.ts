@@ -1,0 +1,160 @@
+/**
+ * Automated-board queries: rewrite an iteration's persisted placement rows, read an agent's
+ * placements for its profile, and aggregate the latest completed run's per-seat results into the
+ * live public board (per-agent means, failure counts, and a representative replay link).
+ */
+import { randomUUID } from 'node:crypto'
+
+import type { Kysely } from 'kysely'
+
+import type { AgentRef, AutomatedBoardRow, PlacementInput } from '../index.js'
+import type { AutomatedPlacement, Database } from '../schema.js'
+import { getLatestCompletedRun } from './runs.js'
+import {
+  type AgentColumns,
+  agentColumns,
+  agentKey,
+  agentRefFromColumns,
+  agentRefKey,
+} from './shared.js'
+
+export async function replaceAutomatedPlacements(
+  db: Kysely<Database>,
+  iterationId: string,
+  envId: string,
+  runId: string,
+  rows: PlacementInput[],
+): Promise<void> {
+  await db.transaction().execute(async (trx) => {
+    await trx.deleteFrom('automated_placements').where('iteration_id', '=', iterationId).execute()
+    const now = new Date().toISOString()
+    for (const row of rows) {
+      await trx
+        .insertInto('automated_placements')
+        .values({
+          id: randomUUID(),
+          iteration_id: iterationId,
+          env_id: envId,
+          run_id: runId,
+          rank: row.rank,
+          ...agentColumns(row.agent),
+          mean_score: row.mean_score,
+          mean_agent_compute_ms: row.mean_agent_compute_ms,
+          failure_count: row.failure_count,
+          recording_id: row.recording_id,
+          created_at: now,
+        })
+        .execute()
+    }
+  })
+}
+
+export async function listPlacementsByAgent(
+  db: Kysely<Database>,
+  agent: AgentRef,
+  envId?: string,
+): Promise<AutomatedPlacement[]> {
+  const cols = agentColumns(agent)
+  let query = db
+    .selectFrom('automated_placements')
+    .selectAll()
+    .where('agent_kind', '=', cols.agent_kind)
+  query =
+    cols.agent_submission_id === null
+      ? query.where('agent_submission_id', 'is', null)
+      : query.where('agent_submission_id', '=', cols.agent_submission_id)
+  if (envId !== undefined) {
+    query = query.where('env_id', '=', envId)
+  }
+  return await query.orderBy('created_at', 'desc').execute()
+}
+
+export async function getAutomatedBoard(
+  db: Kysely<Database>,
+  iterationId: string,
+): Promise<AutomatedBoardRow[]> {
+  const run = await getLatestCompletedRun(db, iterationId)
+  if (run === undefined) {
+    return []
+  }
+  // Aggregate the run's per-seat results per agent. Joining the game gives the per-row replay link;
+  // the representative recording is the agent's best game (ties broken by lower game_index).
+  const rows = await db
+    .selectFrom('game_results')
+    .innerJoin('iteration_run_games', 'iteration_run_games.id', 'game_results.game_id')
+    .where('iteration_run_games.run_id', '=', run.id)
+    .select([
+      'game_results.agent_kind as agent_kind',
+      'game_results.agent_submission_id as agent_submission_id',
+      'game_results.agent_user_id as agent_user_id',
+      'game_results.episode_score as episode_score',
+      'game_results.agent_compute_ms_total as agent_compute_ms_total',
+      'game_results.acted_tick_count as acted_tick_count',
+      'game_results.failed as failed',
+      'iteration_run_games.recording_id as recording_id',
+      'iteration_run_games.game_index as game_index',
+    ])
+    .execute()
+
+  interface Acc {
+    agent: AgentColumns
+    scoreSum: number
+    computeSum: number
+    tickSum: number
+    failureCount: number
+    games: number
+    bestScore: number
+    bestGameIndex: number
+    bestRecording: string | null
+  }
+  const groups = new Map<string, Acc>()
+  for (const row of rows) {
+    const key = agentKey(row)
+    let acc = groups.get(key)
+    if (acc === undefined) {
+      acc = {
+        agent: row,
+        scoreSum: 0,
+        computeSum: 0,
+        tickSum: 0,
+        failureCount: 0,
+        games: 0,
+        bestScore: Number.NEGATIVE_INFINITY,
+        bestGameIndex: Number.POSITIVE_INFINITY,
+        bestRecording: null,
+      }
+      groups.set(key, acc)
+    }
+    acc.scoreSum += row.episode_score
+    acc.computeSum += row.agent_compute_ms_total
+    acc.tickSum += row.acted_tick_count
+    acc.failureCount += row.failed === 1 ? 1 : 0
+    acc.games += 1
+    const better =
+      row.episode_score > acc.bestScore ||
+      (row.episode_score === acc.bestScore && row.game_index < acc.bestGameIndex)
+    if (better) {
+      acc.bestScore = row.episode_score
+      acc.bestGameIndex = row.game_index
+      acc.bestRecording = row.recording_id
+    }
+  }
+
+  return (
+    [...groups.values()]
+      .map((acc) => ({
+        agent: agentRefFromColumns(acc.agent),
+        mean_score: acc.games > 0 ? acc.scoreSum / acc.games : 0,
+        mean_agent_compute_ms: acc.tickSum > 0 ? acc.computeSum / acc.tickSum : null,
+        failure_count: acc.failureCount,
+        games: acc.games,
+        recording_id: acc.bestRecording,
+      }))
+      // Descending by mean score, with the stable agent key breaking ties so the board order is
+      // deterministic rather than dependent on Map-insertion order.
+      .sort(
+        (a, b) =>
+          b.mean_score - a.mean_score || agentRefKey(a.agent).localeCompare(agentRefKey(b.agent)),
+      )
+  )
+}
