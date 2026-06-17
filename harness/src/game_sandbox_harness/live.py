@@ -81,6 +81,12 @@ class LiveConfig:
     #: Per-slot attribution copied verbatim into the recording header (slot id -> attribution
     #: object). Computed by the backend, opaque to the harness; ``None`` when not supplied.
     players: dict[str, PlayerAttribution] | None = None
+    #: Optional per-step/per-episode time-limit overrides (the Stage 6 iteration overrides).
+    #: ``None`` takes the environment's metadata default, as a session with no override does.
+    step_timeout_ms: int | None = None
+    episode_timeout_ms: int | None = None
+    #: Workflow containers set this to run as fast as the agents compute, without live pacing.
+    headless: bool = False
 
 
 def parse_config(argv: list[str]) -> LiveConfig:
@@ -138,6 +144,11 @@ def parse_config(argv: list[str]) -> LiveConfig:
         raise LiveConfigError("config 'recording_id' must be a string or null")
 
     players = _parse_players(config.get("players"))
+    step_timeout_ms = _parse_optional_int(config, "step_timeout_ms")
+    episode_timeout_ms = _parse_optional_int(config, "episode_timeout_ms")
+    headless = config.get("headless", False)
+    if not isinstance(headless, bool):
+        raise LiveConfigError("config 'headless' must be a boolean")
 
     return LiveConfig(
         env_id=env_id,
@@ -147,7 +158,20 @@ def parse_config(argv: list[str]) -> LiveConfig:
         recording_dir=recording_dir,
         recording_id=recording_id,
         players=players,
+        step_timeout_ms=step_timeout_ms,
+        episode_timeout_ms=episode_timeout_ms,
+        headless=headless,
     )
+
+
+def _parse_optional_int(config: dict[str, Any], key: str) -> int | None:
+    """Validate an optional positive-integer config value, defaulting to ``None`` when absent."""
+    value = config.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise LiveConfigError(f"config {key!r} must be an integer or null")
+    return value
 
 
 def _parse_players(raw: object) -> dict[str, PlayerAttribution] | None:
@@ -199,7 +223,7 @@ def build_slots(
     default. Built-in-agent slots are loaded through the same manifest loader Stage 5 uses for
     submissions, from ``path`` or the image's default built-in agent location.
     """
-    paced = entry.meta.pace_interval_ms is not None
+    paced = not config.headless and entry.meta.pace_interval_ms is not None
     resolved_timeout = (
         config.human_timeout_ms
         if config.human_timeout_ms is not None
@@ -289,11 +313,13 @@ def main(argv: list[str] | None = None) -> int:
             store=store,
             recording_id=config.recording_id,
             clock=clock,
+            step_limit_ms=config.step_timeout_ms,
+            episode_limit_ms=config.episode_timeout_ms,
             players=config.players,
         ) as episode:
             run_live_loop(
                 episode,
-                pace_interval_ms=entry.meta.pace_interval_ms,
+                pace_interval_ms=None if config.headless else entry.meta.pace_interval_ms,
                 control=control,
                 clock=clock,
                 sleeper=sleeper,

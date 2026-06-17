@@ -137,8 +137,12 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
               })
             }
           }
+          const force = parseForce(request.query.force)
+          if (force) {
+            await cancelActiveRunsForForcedEdit(deps, iteration.id)
+          }
           const result = await deps.storage.updateIterationConfig(request.params.id, parsed.data, {
-            force: parseForce(request.query.force),
+            force,
           })
           if (!result.ok) {
             return reply.code(409).send({ error: result.conflict, code: result.conflict })
@@ -413,6 +417,17 @@ async function flipSubmission(
     return reply.code(409).send({ error: result.conflict, code: result.conflict })
   }
   return reply.code(200).send(iterationView(result.iteration))
+}
+
+/** Forced config edits delete run rows; cancel live containers before those rows disappear. */
+async function cancelActiveRunsForForcedEdit(deps: AdminDeps, iterationId: string): Promise<void> {
+  const activeRuns = [
+    ...(await deps.storage.listRunsByStatus('pending')),
+    ...(await deps.storage.listRunsByStatus('running')),
+  ].filter((run) => run.iteration_id === iterationId)
+  for (const run of activeRuns) {
+    deps.workflowRunner.cancel(run.id)
+  }
 }
 
 async function flipPlay(

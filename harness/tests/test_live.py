@@ -186,6 +186,25 @@ def test_parse_config_defaults_seed_and_optional_fields():
     assert cfg.seed == 0
     assert cfg.human_timeout_ms is None
     assert cfg.recording_id is None
+    # The Stage 6 timeout overrides default to None (take the environment metadata default).
+    assert cfg.step_timeout_ms is None
+    assert cfg.episode_timeout_ms is None
+    assert cfg.headless is False
+
+
+def test_parse_config_reads_workflow_overrides():
+    payload = {
+        "env_id": "fake",
+        "slots": {"p": {"kind": "builtin-agent"}},
+        "recording_dir": "/r",
+        "step_timeout_ms": 250,
+        "episode_timeout_ms": 60_000,
+        "headless": True,
+    }
+    cfg = parse_config([json.dumps(payload)])
+    assert cfg.step_timeout_ms == 250
+    assert cfg.episode_timeout_ms == 60_000
+    assert cfg.headless is True
 
 
 @pytest.mark.parametrize(
@@ -215,6 +234,18 @@ def test_parse_config_defaults_seed_and_optional_fields():
             "slots": {"p": {"kind": "external"}},
             "recording_dir": "/r",
             "players": [],
+        },
+        {  # a non-integer timeout override is rejected
+            "env_id": "fake",
+            "slots": {"p": {"kind": "external"}},
+            "recording_dir": "/r",
+            "step_timeout_ms": "soon",
+        },
+        {  # a non-boolean headless flag is rejected
+            "env_id": "fake",
+            "slots": {"p": {"kind": "external"}},
+            "recording_dir": "/r",
+            "headless": "yes",
         },
     ],
 )

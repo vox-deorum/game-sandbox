@@ -20,6 +20,7 @@ import { decodeIterationConfig, type Storage } from '../storage/index.js'
 import type { Session, SessionMode } from '../storage/schema.js'
 import type { SubmissionSource } from '../submission/source/index.js'
 import { ensureSubmissionImage, submissionSlotPath } from '../submission/submission-image.js'
+import { assembleSeats, type SeatBinding } from './launch-config.js'
 import {
   type Attachment,
   type ClientSocket,
@@ -50,15 +51,6 @@ export interface StartRequest {
    * who started the session. The run is still attributed to {@link StartRequest.userId}.
    */
   submissionId?: string
-}
-
-/** Per-slot attribution copied into the recording header: who or what drove a slot. Mirrors the
- *  `players` value shape in recording-header.schema.json. */
-interface PlayerAttribution {
-  kind: 'human' | 'agent'
-  label: string
-  user?: string
-  submission_id?: string
 }
 
 /** Which submission fills which slot from which container path, threaded into the session config. */
@@ -378,27 +370,27 @@ export class Orchestrator {
       slotIds.add(`player_${i}`)
     }
     const humanSlots = new Set(meta.human_slots)
-    const slots: Record<string, { kind: string; path?: string }> = {}
-    // Per-slot attribution written verbatim into the recording header, so a replay can name who or
-    // what played each slot: the connected human, the submission owner's agent, or the Naive agent.
-    const players: Record<string, PlayerAttribution> = {}
+    // Decide what fills each slot — the submitted agent, a connected human, or the Naive baseline —
+    // then hand the assignment to the shared seam that produces the `slots`/`players` wire blocks the
+    // headless workflow runner builds the same way.
+    const seats = new Map<string, SeatBinding>()
     for (const slotId of slotIds) {
       if (submissionBinding !== null && slotId === submissionBinding.slotId) {
-        slots[slotId] = { kind: 'builtin-agent', path: submissionBinding.path }
-        players[slotId] = {
-          kind: 'agent',
-          label: `${submissionBinding.userId}'s agent`,
-          user: submissionBinding.userId,
-          submission_id: submissionBinding.submissionId,
-        }
+        seats.set(slotId, {
+          driver: 'submission',
+          submissionId: submissionBinding.submissionId,
+          userId: submissionBinding.userId,
+          path: submissionBinding.path,
+        })
         continue
       }
-      const external = mode === 'human' && humanSlots.has(slotId)
-      slots[slotId] = { kind: external ? 'external' : 'builtin-agent' }
-      players[slotId] = external
-        ? { kind: 'human', label: ownerLogin, user: ownerLogin }
-        : { kind: 'agent', label: 'Naive agent' }
+      if (mode === 'human' && humanSlots.has(slotId)) {
+        seats.set(slotId, { driver: 'human', login: ownerLogin })
+      } else {
+        seats.set(slotId, { driver: 'naive' })
+      }
     }
+    const { slots, players } = assembleSeats(seats)
     return {
       env_id: meta.env_id,
       seed,

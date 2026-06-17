@@ -21,7 +21,8 @@ import { openSqliteStorage } from './storage/sqlite.js'
 import { OverlayEviction } from './submission/overlay-eviction.js'
 import { createSubmissionSource } from './submission/source/index.js'
 import { ValidationWorker } from './submission/worker.js'
-import { createPlaceholderRunner, reconcileInterruptedRuns } from './workflow/runner.js'
+import { reconcileInterruptedRuns } from './workflow/runner.js'
+import { createWorkflowRunner } from './workflow/workflow-runner.js'
 
 async function main(): Promise<void> {
   const config = loadConfig()
@@ -55,11 +56,24 @@ async function main(): Promise<void> {
     submissionSource,
   )
 
-  // The workflow runner seam (Stage 6.3): a placeholder until Stage 6.4 lands the Docker-backed
-  // runner. Reconcile first — any run a prior process death left non-terminal is failed, since a
-  // partial leaderboard run is never silently resumed.
+  // The workflow runner (Stage 6.4): the Docker-backed background engine that drives a triggered run's
+  // schedule one container at a time. Reconcile first — any run a prior process death left non-terminal
+  // is failed, since a partial leaderboard run is never silently resumed.
   await reconcileInterruptedRuns(storage, log)
-  const workflowRunner = createPlaceholderRunner(storage, log)
+  const workflowRunner = createWorkflowRunner({
+    driver,
+    storage,
+    environments,
+    source: submissionSource,
+    sandbox: config.sandbox,
+    recordingsDir: resolve(config.recordingsDir),
+    imagePolicy: config.docker.imagePolicy,
+    log,
+    // A completed run grew the recordings and the board's source; sweep retention as sessions do.
+    onRunComplete: () => {
+      void retention.sweep()
+    },
+  })
 
   // The submission pipeline (Stage 5): the bounded worker drives the source seam through the four
   // validation stages, sweeping overlay images after each build. The deployment has a base image for

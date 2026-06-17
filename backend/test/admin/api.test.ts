@@ -283,6 +283,7 @@ describe('admin API', () => {
       })
       expect(refused.statusCode).toBe(409)
       expect(refused.json()).toMatchObject({ code: 'iteration_has_runs' })
+      expect(runner.cancelled).toEqual([])
 
       const forced = await app.inject({
         method: 'PUT',
@@ -291,6 +292,7 @@ describe('admin API', () => {
         payload: flappyConfig({ matches: [{ slots: ['submission'], seeds: [9], games: 1 }] }),
       })
       expect(forced.statusCode).toBe(200)
+      expect(runner.cancelled).toEqual([run.id])
       expect(await storage.getLatestRun(id)).toBeUndefined()
       expect(await storage.listGameResultsByRun(run.id)).toEqual([])
       expect(await storage.listPlacementsByAgent(agentRef(ready))).toEqual([])
