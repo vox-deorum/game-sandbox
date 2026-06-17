@@ -238,6 +238,12 @@ export class KyselyStorage implements Storage {
   setRunStatus(id: string, status: RunStatus, error?: string): Promise<void> {
     return runs.setRunStatus(this.db, id, status, error)
   }
+  getRun(id: string): Promise<IterationRun | undefined> {
+    return runs.getRun(this.db, id)
+  }
+  listRunsByStatus(status: RunStatus): Promise<IterationRun[]> {
+    return runs.listRunsByStatus(this.db, status)
+  }
   getLatestRun(iterationId: string): Promise<IterationRun | undefined> {
     return runs.getLatestRun(this.db, iterationId)
   }

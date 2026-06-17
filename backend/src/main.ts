@@ -21,6 +21,7 @@ import { openSqliteStorage } from './storage/sqlite.js'
 import { OverlayEviction } from './submission/overlay-eviction.js'
 import { createSubmissionSource } from './submission/source/index.js'
 import { ValidationWorker } from './submission/worker.js'
+import { createPlaceholderRunner, reconcileInterruptedRuns } from './workflow/runner.js'
 
 async function main(): Promise<void> {
   const config = loadConfig()
@@ -54,6 +55,12 @@ async function main(): Promise<void> {
     submissionSource,
   )
 
+  // The workflow runner seam (Stage 6.3): a placeholder until Stage 6.4 lands the Docker-backed
+  // runner. Reconcile first — any run a prior process death left non-terminal is failed, since a
+  // partial leaderboard run is never silently resumed.
+  await reconcileInterruptedRuns(storage, log)
+  const workflowRunner = createPlaceholderRunner(storage, log)
+
   // The submission pipeline (Stage 5): the bounded worker drives the source seam through the four
   // validation stages, sweeping overlay images after each build. The deployment has a base image for
   // the current dependency-set version only.
@@ -76,6 +83,8 @@ async function main(): Promise<void> {
     recordings,
     retention,
     allowlist: config.sessionAllowlist,
+    operatorAllowlist: config.operatorAllowlist,
+    workflowRunner,
     frontendDir: config.frontendDir,
     storage,
     submissionSource,

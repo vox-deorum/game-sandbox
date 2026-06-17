@@ -13,7 +13,9 @@ import {
   type SubmissionSourceDeps,
 } from '../../src/submission/source/index.js'
 import { ValidationWorker } from '../../src/submission/worker.js'
+import type { WorkflowRunner } from '../../src/workflow/runner.js'
 import { FakeDriver } from './fake-driver.js'
+import { StubWorkflowRunner } from './stub-runner.js'
 
 /** A config with class-scale defaults overridable per test (e.g. a tiny idle window). */
 export function makeConfig(overrides: Partial<Config> = {}): Config {
@@ -63,6 +65,8 @@ export function makeSubmissionDeps(
   submissionSource: ReturnType<typeof createSubmissionSource>
   validationWorker: ValidationWorker
   allowLocalSubmissions: boolean
+  operatorAllowlist: readonly string[]
+  workflowRunner: WorkflowRunner
 } {
   const driver = options.driver ?? new FakeDriver()
   const submissionSource = createSubmissionSource(config.submission, options.source)
@@ -79,6 +83,10 @@ export function makeSubmissionDeps(
     submissionSource,
     validationWorker,
     allowLocalSubmissions: config.submission.allowLocalSubmissions,
+    // The non-leaderboard suites don't exercise the admin API, but buildApp now requires these; a
+    // stub runner and the config's operator allowlist complete the deps without Docker.
+    operatorAllowlist: config.operatorAllowlist,
+    workflowRunner: new StubWorkflowRunner(storage),
   }
 }
 

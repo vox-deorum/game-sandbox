@@ -17,6 +17,7 @@ import type { Storage } from '../../../src/storage/index.js'
 import { openSqliteStorage } from '../../../src/storage/sqlite.js'
 import { createSubmissionSource } from '../../../src/submission/source/index.js'
 import { ValidationWorker } from '../../../src/submission/worker.js'
+import { createPlaceholderRunner } from '../../../src/workflow/runner.js'
 
 export interface Stack {
   httpBase: string
@@ -85,6 +86,8 @@ export async function startStack(overrides: Partial<Config> = {}): Promise<Stack
     recordings,
     retention,
     allowlist: config.sessionAllowlist,
+    operatorAllowlist: config.operatorAllowlist,
+    workflowRunner: createPlaceholderRunner(storage),
     storage,
     submissionSource,
     validationWorker,

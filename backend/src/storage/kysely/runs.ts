@@ -132,6 +132,23 @@ export async function setRunStatus(
     .execute()
 }
 
+export async function getRun(db: Kysely<Database>, id: string): Promise<IterationRun | undefined> {
+  return await db.selectFrom('iteration_runs').selectAll().where('id', '=', id).executeTakeFirst()
+}
+
+export async function listRunsByStatus(
+  db: Kysely<Database>,
+  status: RunStatus,
+): Promise<IterationRun[]> {
+  return await db
+    .selectFrom('iteration_runs')
+    .selectAll()
+    .where('status', '=', status)
+    .orderBy('started_at', 'asc')
+    .orderBy(sql`rowid`, 'asc')
+    .execute()
+}
+
 export async function getLatestRun(
   db: Kysely<Database>,
   iterationId: string,

@@ -8,18 +8,22 @@ The backend is the Node/TypeScript service outside the container boundary: it li
 
 | Path | What it is |
 | --- | --- |
-| `main.ts` | Process entrypoint: load config, open storage, build the driver and orchestrator, listen, handle signals. |
+| `main.ts` | Process entrypoint: load config, open storage, reconcile interrupted workflow runs, build the driver, orchestrator, and workflow runner, listen, handle signals. |
 | `config.ts` | Environment-variable configuration parsed once into a typed `Config`. |
-| `app.ts` | The Fastify assembly: the HTTP routes and the WebSocket endpoint. |
-| `identity.ts` | The stub user identity, until Stage 4 brings OAuth. |
+| `app.ts` | The Fastify assembly: the HTTP routes and the WebSocket endpoint; it also mounts the Stage 6 admin API and the public leaderboard reads. |
+| `identity.ts` | The stub user identity (until Stage 4 brings OAuth) plus the `isAllowlisted`/`isOperator` predicates. |
 | `environments.ts` | Typed access to the generated environment metadata. |
 | `storage/` | The Kysely schema, the `Storage` interface, the SQLite wiring, the schema bootstrap, and the `IterationConfig` codec. |
 | `driver/` | The execution-driver interface and the local Docker implementation. |
 | `session/` | The orchestrator, the per-session relay, and the in-memory registry. |
+| `admin/` | The operator-gated Stage 6 admin API (`/api/admin`): declare/configure iterations, the three lifecycle gates, trigger/cancel runs, status/list, and the WebSocket log stream. |
+| `leaderboards/` | The public, released-only board and history reads, separate from the `/api/admin` prefix. |
+| `workflow/` | The workflow-runner seam: the `WorkflowRunner` interface and its events, the startup reconcile, and the step-3 placeholder runner (the Docker runner lands in Stage 6.4). |
+| `iteration-views.ts` | Wire-shape helpers that decode an iteration's/run's JSON columns (`config`, snapshots, `slots`) for the admin and public responses. |
 | `recordings.ts` | Read (and delete) access to the recordings volume for the HTTP API. |
 | `retention.ts` | The recording retention service: the eviction sweep, the merged listing, and pinning. |
 | `submission/` | The submission pipeline: the source seam (`source/`), the static and load-check validators (`validate/`), the overlay-image build (`submission-image.ts`), the bounded validation worker, and the overlay-image eviction sweep. |
-| `iterations-seed.ts` | Seeds one open iteration per environment at the current `DEPS_VERSION` on startup, the minimal stand-in until the Stage 6 operator admin console and API. |
+| `iterations-seed.ts` | Seeds one open iteration per environment at the current `DEPS_VERSION` on startup, the minimal stand-in the Stage 6 operator admin console and API build on. |
 | `deps-version.ts` | The current dependency-set version `N` and the base-image spec it resolves to: the one home for the number the template tag, the base image, and an agent's `template_version` all share. |
 
 The wire protocol the browser shares with the backend (the line-classification rule, the command envelopes, and the environment-metadata shape with its guard) lives in `@game-sandbox/schema` so there is one declaration, not a backend copy and a frontend copy that drift. Those modules are dependency-free and exposed as subpath exports (`@game-sandbox/schema/protocol`, `@game-sandbox/schema/environment`) so the browser bundle imports them without pulling in the package's Ajv-backed recording readers; the `session/` relay and `environments.ts` import them through the barrel.
@@ -28,7 +32,7 @@ The wire protocol the browser shares with the backend (the line-classification r
 
 `npm run dev` runs `tsx watch src/main.ts`; `npm run start` runs it once. Both need a reachable Docker daemon, because starting a session launches a container — the backend builds the session base image on first use (see [the execution boundary](execution.md#the-session-base-image)). Because the default `reuse` policy then keeps that first build forever, rebuild the image explicitly after changing the Dockerfile or anything it bundles (the harness, an environment, the built-in agent) with `npm run build:image` (`build-image.ts`); it drives the driver's own build path and always rebuilds the `…:deps-v1` tag, where setting `DOCKER_IMAGE_POLICY=rebuild` instead rebuilds on the next session start. A compiled `dist/` build is deferred until a real deployment exists. The unit suite (`npm test`) runs everywhere with no Docker, against a fake driver and in-memory SQLite; the Docker-gated suite (`npm run test:integration`) launches real containers and is described under [testing](test.md).
 
-The unit tests under `test/` mirror the `src/` layout above so a module and its coverage sit in the same place: `test/storage/` (the session/recording core, submissions, the leaderboard surface, the `IterationConfig` codec), `test/submission/` (the worker, overlay eviction, the HTTP routes, the source seam, and `test/submission/validate/` for the static and load-check validators), `test/session/` (the orchestrator and the live-session relay), and `test/driver/docker/` (the daemon-free overlay helpers). The seam-level modules keep their tests at the root (`app`, `config`, `environments`, `identity`, `recordings`, `retention`, `static`). Shared test doubles live in `test/support/` (the `FakeDriver`, the config/environment/socket builders) and checked-in trees in `test/fixtures/`; the Docker-gated suite is its own Vitest project under `test/integration/` (see [testing](test.md)). Both `vitest.config.ts` and `vitest.integration.config.ts` select by the `test/**` glob, so adding a subdirectory needs no config change.
+The unit tests under `test/` mirror the `src/` layout above so a module and its coverage sit in the same place: `test/storage/` (the session/recording core, submissions, the leaderboard surface, the `IterationConfig` codec), `test/submission/` (the worker, overlay eviction, the HTTP routes, the source seam, and `test/submission/validate/` for the static and load-check validators), `test/session/` (the orchestrator and the live-session relay), `test/driver/docker/` (the daemon-free overlay helpers), `test/admin/` and `test/leaderboards/` (the Stage 6 admin and public route contracts), and `test/workflow/` (the runner seam's reconcile and placeholder). The seam-level modules keep their tests at the root (`app`, `config`, `environments`, `identity`, `recordings`, `retention`, `static`, `scheduler`). Shared test doubles live in `test/support/` (the `FakeDriver`, the `StubWorkflowRunner`, the config/environment/socket builders) and checked-in trees in `test/fixtures/`; the Docker-gated suite is its own Vitest project under `test/integration/` (see [testing](test.md)). Both `vitest.config.ts` and `vitest.integration.config.ts` select by the `test/**` glob, so adding a subdirectory needs no config change.
 
 ## Configuration
 
@@ -104,7 +108,7 @@ Every place this stage stores or returns an agent uses one identity shape, `Agen
 - **`ratings`** — one effective 1-5 human rating per user per agent per iteration (re-rating upserts); a unique index enforces it, a partial index covers the Naive row, and a rating of one's own submitted agent is rejected before any write. `sessions` also gains a nullable `iteration_id` (the competition key ratings attach to; old null rows cannot be rated).
 - **`agent_rating_prompts`** — the agent author's own rating prompt, keyed per author per iteration so it survives resubmission, separate from the pinned submission artifact.
 
-The storage interface grows the full Stage 6.1 surface against these: the gate setters (`setSubmissionStatus`/`setPlayStatus` return typed open-conflicts; `setReleaseStatus` stamps once), `createIteration`/`updateIterationConfig` (the forced-edit path deletes runs, and a forced deps change deletes submissions), `listIterations`/`getReleasedIteration`/`getPublicPlayIteration`, the run/game/result writers and `getLatestCompletedRun` (what the board reads, so a failed re-run never blanks a good board), `replaceAutomatedPlacements`, the rating upsert/aggregate and both rating-prompt setters, and `listProtectedLeaderboardRecordingIds`, which exempts each iteration's latest-completed-run recordings from the retention sweep.
+The storage interface grows the full Stage 6.1 surface against these: the gate setters (`setSubmissionStatus`/`setPlayStatus` return typed open-conflicts; `setReleaseStatus` stamps once), `createIteration`/`updateIterationConfig` (the forced-edit path deletes runs, and a forced deps change deletes submissions), `listIterations`/`getReleasedIteration`/`getPublicPlayIteration`, the run/game/result writers, `getLatestCompletedRun` (what the board reads, so a failed re-run never blanks a good board) alongside `getRun`/`getLatestRun`/`listRunsByStatus` (the last two backing the admin status view and the startup reconcile), `replaceAutomatedPlacements`, the rating upsert/aggregate and both rating-prompt setters, and `listProtectedLeaderboardRecordingIds`, which exempts each iteration's latest-completed-run recordings from the retention sweep.
 
 ## Recording retention
 
@@ -118,7 +122,7 @@ The eviction sweep runs at startup, on `RECORDING_SWEEP_INTERVAL_MS`, and after 
 
 `isAllowlisted(userId, allowlist)` lives alongside it: the operator-configured `SESSION_ALLOWLIST` gates starting a live session in either mode, since a watch run also consumes a container. Everything read-only (listing environments and sessions, fetching recordings, spectating an existing session's socket) stays open. The frontend learns membership from `GET /api/me` and hides the start entry points, but the backend check is the enforcement.
 
-`isOperator(userId, operatorAllowlist)` is the second predicate over the same seam: built on `isAllowlisted` against `OPERATOR_ALLOWLIST` (not a new build-mode special case), it is the single authorization check every Stage 6 admin route and admin-only iteration read will consult. The dev mock user is in the default list, so the operator console works out of the box; a real deployment lists its operator handles, checked against the resolved GitHub identity once OAuth lands. It adds the operator predicate over the existing identity resolution without changing it.
+`isOperator(userId, operatorAllowlist)` is the second predicate over the same seam: built on `isAllowlisted` against `OPERATOR_ALLOWLIST` (not a new build-mode special case), it is the single authorization check the Stage 6 admin API enforces — one `onRequest` guard on the `/api/admin` plugin runs it before any handler, reading the identity from the header on a normal request and the `user` query parameter on the WebSocket log-stream upgrade. A non-operator gets `403 not_operator`. The dev mock user is in the default list, so the operator console works out of the box; a real deployment lists its operator handles, checked against the resolved GitHub identity once OAuth lands. It adds the operator predicate over the existing identity resolution without changing it.
 
 ## Environment metadata
 
@@ -179,3 +183,31 @@ The submission routes (Stage 5) follow the same typed-`code` convention:
 - `GET /api/submissions/:id` — one submission joined with its ordered per-stage validation log (`{...submission, checks}`), so a poll is a single request; `404` for an unknown id. This is the payload the form and profile read.
 - `GET /api/environments/:envId/submissions` — the active submissions in the environment's open iteration, optionally narrowed by `?status=` (the watch picker reads the `ready` set); an empty array when there is no open iteration.
 - `GET /api/environments/:envId/agents/:ownerId` — the agent profile: `{env_id, owner_id, submissions}`, where each submission carries its `checks` log and recent `replays` (recording ids, newest first). Open and read-only; owner-only affordances gate on the client comparing `owner_id` to its identity. Keyed by environment and owner so a future Hearts agent stays separate from the same user's Flappy Bird agent.
+
+### The Stage 6 admin API
+
+The operator admin routes (`admin/routes.ts`) are the stable contract the admin console and any headless client drive. They are an encapsulated Fastify plugin under `/api/admin`, behind one `onRequest` `isOperator` guard (above) — the single authorization choke point for the whole prefix, returning `403 not_operator` before any handler. The public reads below are deliberately **not** under this prefix, so unreleased boards cannot leak through a public endpoint. The lifecycle actions are path segments (`…/submissions/open`, `…/runs/:runId/cancel`) rather than a mid-segment colon, which Fastify's router would parse as a path parameter; the destructive-edit `force` flag rides as `?force=true`, since the config codec rejects unknown keys.
+
+- `POST /api/admin/environments/:envId/iterations`: declare an `unreleased`, submission-`closed`, play-`closed` iteration with a default config carrying the current `deps_version`; `400 invalid_iteration_declaration` for a malformed optional body, `404` for an unknown environment.
+- `PUT /api/admin/iterations/:id/config` — replace the whole `IterationConfig` (body = the config document); `400 invalid_config` with a specific `reason` for a malformed config or a slot count outside the environment's min/max; `409 iteration_has_runs` / `409 iteration_has_submissions` unless `?force=true` clears the invalidated runs (and, on a `deps_version` change, submissions) first.
+- `PUT /api/admin/iterations/:id/rating-prompt`: set or clear the operator's iteration-wide rating prompt; always editable, never gated by the config rules; `400 invalid_rating_prompt` for a malformed body and `400 rating_prompt_too_long` for an overlong prompt.
+- `POST /api/admin/iterations/:id/submissions/open` | `…/submissions/close` — flip `submission_status`; opening returns `409 open_iteration_exists` under the one-open invariant.
+- `POST /api/admin/iterations/:id/play/open` | `…/play/close` — flip `play_status` (allowed on an `unreleased` iteration); opening returns `409 open_play_iteration_exists`.
+- `POST /api/admin/iterations/:id/release` | `…/unrelease` — flip `release_status`, stamping `released_at` once.
+- `POST /api/admin/iterations/:id/runs` — trigger/re-run: snapshot config/deps/roster, build and persist the schedule, enqueue the run on the runner seam, and return `{id, status}` without blocking on Docker; `409 empty_schedule` for an empty resolved schedule, `409 run_in_progress` when a run is already `pending`/`running`.
+- `POST /api/admin/iterations/:id/runs/:runId/cancel` — request a cooperative cancel through the runner; `409 run_not_in_progress` for a terminal run, `404` when the run is not the iteration's.
+- `GET /api/admin/iterations/:id` — the full admin view `{iteration, latest_run, board}` (decoded config, the latest run with its per-game statuses, and the `automated`/`human` board aggregates even while unreleased); `GET /api/admin/environments/:envId/iterations` lists all iterations including unreleased ones.
+- `GET /api/admin/iterations/:id/runs/:runId/logs/ws` — the WebSocket log stream, reusing the session-streaming transport; it subscribes to the runner and relays live `log`/`game_status`/`terminal` events, closing on the terminal (and sending an immediate terminal for an already-finished run).
+
+### The public leaderboard reads
+
+Separate, ungated, and released-only at the route boundary (`leaderboards/routes.ts`):
+
+- `GET /api/environments/:envId/iterations` — released iterations, newest first, for history links.
+- `GET /api/environments/:envId/leaderboards` — the current released iteration and both boards, plus the separate `open_submission_iteration_id` and `play_open_iteration_id` targets (reported even when unreleased); an empty current-board payload when nothing is released.
+- `GET /api/environments/:envId/iterations/:iterationId/leaderboards` — both boards for a specific released iteration; `404` for an unreleased or unknown one.
+- `GET /api/environments/:envId/agents/:ownerId/placements`: the owner's released-iteration automated placements (Naive-free submitted-agent rows only).
+
+### Background execution and the runner seam
+
+Triggering a run never blocks the request on Docker, the same posture as the Stage 5 submit route. The trigger snapshots config/deps and the ready-submission roster, persists the resolved schedule with a `pending` run row (`createRunWithSchedule`), and enqueues the run id on a `WorkflowRunner` (`workflow/runner.ts`) — an interface of `enqueue`/`cancel`/`subscribe` over a small `RunEvent` union. Stage 6.3 ships a `createPlaceholderRunner` (it accepts the enqueue and leaves the run `pending`, marks a cancel `cancelled`, and emits no events) so the whole surface works end to end now; Stage 6.4 swaps in the Docker-backed runner behind the same interface without touching the routes. On startup `reconcileInterruptedRuns` fails any run a process death left non-terminal (`running`/`pending`) — a partial leaderboard run is never silently resumed.

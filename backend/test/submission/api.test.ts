@@ -25,6 +25,7 @@ import type {
 } from '../../src/submission/source/index.js'
 import { FakeDriver } from '../support/fake-driver.js'
 import { makeConfig, makeEnvironments } from '../support/harness.js'
+import { StubWorkflowRunner } from '../support/stub-runner.js'
 
 const ENV_ID = 'flappy_bird'
 
@@ -65,6 +66,8 @@ describe('submission API', () => {
       recordings,
       retention: new Retention(storage, recordings, config),
       allowlist: ['dev-user'],
+      operatorAllowlist: ['dev-user'],
+      workflowRunner: new StubWorkflowRunner(storage),
       storage,
       submissionSource: source,
       validationWorker: { enqueue: (id) => enqueued.push(id) },

@@ -12,8 +12,10 @@ import fastifyStatic from '@fastify/static'
 import websocket from '@fastify/websocket'
 import Fastify, { type FastifyInstance } from 'fastify'
 
+import { registerAdminRoutes } from './admin/routes.js'
 import type { EnvironmentRegistry } from './environments.js'
 import { isAllowlisted, resolveUserId } from './identity.js'
+import { registerLeaderboardRoutes } from './leaderboards/routes.js'
 import type { RecordingsStore } from './recordings.js'
 import type { Retention } from './retention.js'
 import type { ClientSocket } from './session/live-session.js'
@@ -21,6 +23,7 @@ import { type Orchestrator, OrchestratorError } from './session/orchestrator.js'
 import { type Storage, SubmissionConflictError, type SubmissionStatus } from './storage/index.js'
 import type { SourceInput, SubmissionSource } from './submission/source/index.js'
 import type { SubmissionEnqueuer } from './submission/worker.js'
+import type { WorkflowRunner } from './workflow/runner.js'
 
 export interface AppDeps {
   orchestrator: Orchestrator
@@ -30,6 +33,10 @@ export interface AppDeps {
   retention: Retention
   /** The operator-configured session allowlist, so `/api/me` can report what the user may do. */
   allowlist: readonly string[]
+  /** The operator allowlist gating the Stage 6 admin API; the `isOperator` predicate consults it. */
+  operatorAllowlist: readonly string[]
+  /** The background workflow execution seam the admin trigger enqueues onto and the log stream relays. */
+  workflowRunner: WorkflowRunner
   /** The storage seam, for the submission create/read/list routes (Stage 5.5). */
   storage: Storage
   /** The submission-source seam, for the reachability pre-check (Stage 5.2/5.5). */
@@ -358,6 +365,18 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       }
     },
   )
+
+  // --- Leaderboards: operator admin API and public reads (Stage 6.3) ------------------------
+  // The admin routes are an encapsulated, operator-gated plugin under `/api/admin`; the public
+  // board/history reads are ungated and serve only released results. Registered before the SPA
+  // fallback below so the catch-all never shadows them.
+  await registerAdminRoutes(app, {
+    storage: deps.storage,
+    environments: deps.environments,
+    workflowRunner: deps.workflowRunner,
+    operatorAllowlist: deps.operatorAllowlist,
+  })
+  registerLeaderboardRoutes(app, { storage: deps.storage })
 
   // Serve the built frontend from the same origin in production so the whole stack is one process.
   // `wildcard: false` registers a route per built file and lets unmatched paths fall to the

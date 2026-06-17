@@ -352,6 +352,14 @@ export interface Storage {
   deleteSubmissionsForIteration(iterationId: string): Promise<void>
   /** Advance a run's status, stamping `ended_at` on a terminal status and recording an optional error. */
   setRunStatus(id: string, status: RunStatus, error?: string): Promise<void>
+  /** One run by id, any status; the admin status and log-stream routes resolve a run by its id. */
+  getRun(id: string): Promise<IterationRun | undefined>
+  /**
+   * Every run in a given status, oldest first. The startup reconcile uses it to find runs a prior
+   * process death left non-terminal (`running`/`pending`) and fail them, since a partial workflow run
+   * is never silently resumed.
+   */
+  listRunsByStatus(status: RunStatus): Promise<IterationRun[]>
   /** The most recent run for an iteration, any status. */
   getLatestRun(iterationId: string): Promise<IterationRun | undefined>
   /**
