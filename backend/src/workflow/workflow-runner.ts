@@ -7,7 +7,7 @@
  * through the shared launch-config seam ({@link assembleSeats}), the runner drains its stdout protocol
  * (the recording, tee'd live, plus the final `result` envelope) and its stderr diagnostics, waits for
  * the container to exit, then reads the per-seat outcome straight out of the recording it produced.
- * No socket, no human timeout, no relay — the container drives itself to its episode's end and exits.
+ * No socket, no human timeout, no relay. The container drives itself to its episode's end and exits.
  *
  * For each game the runner: registers the produced recording (owned by the seat's natural owner) and
  * attaches its id; writes one `game_results` row per participating seat with the normalized episode
@@ -65,7 +65,7 @@ export interface WorkflowRunnerDeps {
   environments: EnvironmentRegistry
   /** The submission-source seam, needed to rebuild a submission overlay when its cached image was evicted. */
   source: SubmissionSource
-  /** The sandbox quotas each match container runs under — the same profile shape sessions use. */
+  /** The sandbox quotas each match container runs under, the same profile shape sessions use. */
   sandbox: SandboxDefaults
   /** The recordings volume root, mounted into each match container and read back after it exits. */
   recordingsDir: string
@@ -78,9 +78,10 @@ export interface WorkflowRunnerDeps {
   log?: (message: string) => void
   /**
    * Called once a run settles to a terminal status, so step 5 can recompute the board and retention
-   * can sweep. Fire-and-forget; defaults to a no-op for tests that do not exercise the board.
+   * can sweep. The runner awaits the hook before emitting the terminal event, so dependent snapshots
+   * settle before subscribers learn the run is done.
    */
-  onRunComplete?: (runId: string, status: TerminalRunStatus) => void
+  onRunComplete?: (runId: string, status: TerminalRunStatus) => Promise<void> | void
 }
 
 /** The `result` envelope the harness emits once at episode end, as the runner reads it back. */
@@ -176,15 +177,19 @@ class DockerWorkflowRunner implements WorkflowRunner {
     }
   }
 
-  /** Settle a run to a terminal status: persist it, emit the terminal event, and fire the hook. */
+  /** Settle a run to a terminal status: persist it, run the completion hook, and emit terminal. */
   private async finishRun(runId: string, status: TerminalRunStatus, error?: string): Promise<void> {
     await this.deps.storage.setRunStatus(runId, status, error).catch((cause) => {
       this.log(`run ${runId}: setRunStatus(${status}) failed: ${String(cause)}`)
     })
-    this.emit(runId, { type: 'terminal', status })
     this.cancelRequested.delete(runId)
     this.inFlight.delete(runId)
-    this.deps.onRunComplete?.(runId, status)
+    try {
+      await this.deps.onRunComplete?.(runId, status)
+    } catch (cause) {
+      this.log(`run ${runId}: completion hook failed: ${String(cause)}`)
+    }
+    this.emit(runId, { type: 'terminal', status })
   }
 
   /**
@@ -319,7 +324,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
       }
     })()
     const recordingLines: string[] = []
-    // A holder (not a bare `let`) so reading it back after the await keeps its declared type — TS does
+    // A holder (not a bare `let`) so reading it back after the await keeps its declared type. TS does
     // not narrow a closure-mutated local and would otherwise see it as forever-null here.
     const captured: { result: ResultEnvelope | null } = { result: null }
     const stdout = (async (): Promise<void> => {
@@ -351,7 +356,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
       return
     }
 
-    // No readable recording header → infrastructure fault. No invented result row.
+    // No readable recording header means an infrastructure fault. No invented result row.
     let parsed: ParsedRecording
     try {
       parsed = readRecording(recordingLines)

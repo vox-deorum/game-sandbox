@@ -4,11 +4,17 @@
  * The policy from the recording spec, in two passes over the rows: delete unpinned recordings older
  * than the configured window, then for each user over quota delete oldest-unpinned-first until back
  * within it. Pinned recordings are exempt from both passes but count against the quota, so unbounded
- * pinning could make the quota meaningless — hence the pin guard, which refuses a pin once the user's
+ * pinning could make the quota meaningless, hence the pin guard, which refuses a pin once the user's
  * pinned count reaches the quota. The sweep runs at startup, on an interval, and after each session
- * finalize (the only moment the data grows). Deletion removes the directory and then the row; the
- * listing tolerates either half missing, so a crash mid-deletion leaves only ignorable debris the
- * next pass cleans.
+ * finalize and workflow-run completion (the moments the data grows). Deletion removes the directory and
+ * then the row; the listing tolerates either half missing, so a crash mid-deletion leaves only
+ * ignorable debris the next pass cleans.
+ *
+ * Stage 6.5 layers leaderboard retention on top of this live-session policy. Leaderboard recordings
+ * from each iteration's latest completed run are kept for as long as the iteration is viewable, so the
+ * sweep filters those protected ids out before either pass, so they are neither evicted nor counted
+ * toward a user's quota. A superseded run's recordings fall outside the protected set and rejoin the
+ * normal window/quota passes, so repeated re-runs do not accumulate recordings without bound.
  *
  * The recording itself is the directory on the volume ({@link RecordingsStore}); the row in storage
  * is its retention metadata. The merged listing pairs each readable directory with its row, so an
@@ -78,13 +84,27 @@ export class Retention {
    * double-delete is a no-op (the directory and row removals tolerate a missing half).
    */
   async sweep(): Promise<void> {
-    let rows: Recording[]
+    let allRows: Recording[]
     try {
-      rows = await this.storage.listRecordings()
+      allRows = await this.storage.listRecordings()
     } catch (error) {
       this.log(`retention: listing rows failed: ${String(error)}`)
       return
     }
+
+    // Exempt the current-run leaderboard recordings of every viewable iteration. If we cannot
+    // determine the protected set, skip the sweep entirely rather than risk reclaiming a protected
+    // recording; the next pass retries.
+    let protectedIds: Set<string>
+    try {
+      protectedIds = new Set(await this.storage.listProtectedLeaderboardRecordingIds())
+    } catch (error) {
+      this.log(`retention: listing protected leaderboard recordings failed: ${String(error)}`)
+      return
+    }
+    // Filter protected ids out before either pass, so they are neither evicted nor counted toward a
+    // user's quota; what remains is the live-session population the Stage 4 policy governs.
+    const rows = allRows.filter((row) => !protectedIds.has(row.id))
 
     const evicted = new Set<string>()
     const cutoff = this.now() - this.config.recordingRetentionDays * MS_PER_DAY
@@ -98,7 +118,7 @@ export class Retention {
     }
 
     // Pass 2: quota, per user. Pinned rows count toward the quota but are never evicted, so a user
-    // can sit over quota entirely on pinned recordings — the pin guard is what bounds that.
+    // can sit over quota entirely on pinned recordings. The pin guard is what bounds that.
     const remaining = rows.filter((row) => !evicted.has(row.id))
     const byUser = new Map<string, Recording[]>()
     for (const row of remaining) {

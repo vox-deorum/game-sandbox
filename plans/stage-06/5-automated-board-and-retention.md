@@ -1,6 +1,6 @@
 # Stage 6.5: Automated Board and Retention
 
-Status: not started.
+Status: implemented.
 
 Part of [Stage 6](../stage-06-leaderboards.md). This is build-order step 5. It turns the `game_results` the runner writes (step 4) into the ranked automated board. It also persists per-agent placements for the agent profile, links a replay to each row, and extends the Stage 4 retention sweep so leaderboard recordings live exactly as long as their iteration is viewable.
 
@@ -38,7 +38,7 @@ Per [recording.md](../../docs/specs/recording.md), **leaderboard recordings are 
 
 Vitest, `:memory:`, no Docker (board math and retention are pure over stored rows):
 
-- `getAutomatedBoard` ranks agents by descending mean normalized score over a fixture of `game_results`. `mean_agent_compute_ms` is computed as weighted per-decision time from total compute and acted tick count, and is a separate column that does not affect order (two agents with equal scores but different timings keep score order). The Naive baseline appears. Attributable failed games are folded into the mean with a surfaced failure count. Infrastructure failures without result rows do not become agent rows. Zero acted ticks yields a blank compute value. The board reads from the latest _completed_ run and ignores a later `running`/`failed` run.
+- `getAutomatedBoard` ranks agents by descending mean normalized score over a fixture of `game_results`. `mean_agent_compute_ms` is computed as weighted per-decision time from total compute and acted tick count, and is a separate column that is never folded into the score, but breaks an exact score tie: two agents with equal mean scores rank by the lower mean compute (the faster one first), and an agent with no contributing ticks sorts last on such a tie. This is a deliberate revision of the earlier "timing never affects order" rule, carried in the same change set into [leaderboard.md](../../docs/specs/leaderboard.md). The Naive baseline appears. Attributable failed games are folded into the mean with a surfaced failure count. Infrastructure failures without result rows do not become agent rows. Zero acted ticks yields a blank compute value. The board reads from the latest _completed_ run and ignores a later `running`/`failed` run.
 - Placements are persisted on run completion and rewritten when a re-run completes, so `listPlacementsByAgent` reflects the latest board. A superseded run's placements do not linger. Submitted-agent and Naive placement rows both round-trip.
 - Each board row resolves a `recording_id` to a replayable Stage 4 recording (the best-score completed game, with ties broken by earliest `game_index`). The public board service refuses an unreleased iteration, while the admin service returns it.
 - The retention sweep exempts a viewable iteration's current-run leaderboard recordings from the live-session window/quota, reclaims a superseded run's recordings, and leaves live-session recordings on their Stage 4 policy. A fixture mixing all three kinds proves this.

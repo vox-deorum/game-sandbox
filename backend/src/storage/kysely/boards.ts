@@ -150,11 +150,21 @@ export async function getAutomatedBoard(
         games: acc.games,
         recording_id: acc.bestRecording,
       }))
-      // Descending by mean score, with the stable agent key breaking ties so the board order is
-      // deterministic rather than dependent on Map-insertion order.
-      .sort(
-        (a, b) =>
-          b.mean_score - a.mean_score || agentRefKey(a.agent).localeCompare(agentRefKey(b.agent)),
-      )
+      // Descending by mean score. A score tie is broken by lower mean agent compute, so the faster
+      // agent ranks higher. Per the Stage 6.5 decision, the efficiency column decides an exact
+      // tie (a deliberate revision of leaderboard.md, where score alone otherwise orders the board).
+      // An agent with no contributing ticks (null compute) sorts last on the tie; the stable agent
+      // key is the final tiebreak so the order is fully deterministic.
+      .sort((a, b) => {
+        if (b.mean_score !== a.mean_score) {
+          return b.mean_score - a.mean_score
+        }
+        const ca = a.mean_agent_compute_ms ?? Number.POSITIVE_INFINITY
+        const cb = b.mean_agent_compute_ms ?? Number.POSITIVE_INFINITY
+        if (ca !== cb) {
+          return ca - cb
+        }
+        return agentRefKey(a.agent).localeCompare(agentRefKey(b.agent))
+      })
   )
 }

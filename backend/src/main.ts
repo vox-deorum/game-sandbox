@@ -14,6 +14,10 @@ import { DEPS_VERSION } from './deps-version.js'
 import { createDockerDriver } from './driver/docker/index.js'
 import { EnvironmentRegistry } from './environments.js'
 import { seedOpenIterations } from './iterations-seed.js'
+import {
+  persistPlacementsForCompletedRun,
+  reconcileCompletedRunPlacements,
+} from './leaderboards/placements.js'
 import { RecordingsStore } from './recordings.js'
 import { Retention } from './retention.js'
 import { Orchestrator } from './session/orchestrator.js'
@@ -57,9 +61,10 @@ async function main(): Promise<void> {
   )
 
   // The workflow runner (Stage 6.4): the Docker-backed background engine that drives a triggered run's
-  // schedule one container at a time. Reconcile first — any run a prior process death left non-terminal
-  // is failed, since a partial leaderboard run is never silently resumed.
+  // schedule one container at a time. Reconcile first: any run a prior process death left non-terminal
+  // is failed, then any completed run missing its placement snapshot is backfilled.
   await reconcileInterruptedRuns(storage, log)
+  await reconcileCompletedRunPlacements(storage, log)
   const workflowRunner = createWorkflowRunner({
     driver,
     storage,
@@ -69,9 +74,18 @@ async function main(): Promise<void> {
     recordingsDir: resolve(config.recordingsDir),
     imagePolicy: config.docker.imagePolicy,
     log,
-    // A completed run grew the recordings and the board's source; sweep retention as sessions do.
-    onRunComplete: () => {
-      void retention.sweep()
+    // A completed run is the board's new source: snapshot its ranked placements, then sweep retention
+    // (the run grew the recordings and may have superseded a prior run's, freeing them). Placements
+    // only change on a `completed` run; other terminal statuses just sweep.
+    onRunComplete: async (runId, status) => {
+      if (status === 'completed') {
+        try {
+          await persistPlacementsForCompletedRun(storage, runId)
+        } catch (error) {
+          log(`run ${runId}: persisting placements failed: ${String(error)}`)
+        }
+      }
+      await retention.sweep()
     },
   })
 

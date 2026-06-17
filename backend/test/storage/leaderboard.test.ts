@@ -6,7 +6,10 @@
  * upsert/own-agent/Naive rules, both rating prompts, and leaderboard-recording retention protection.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-
+import {
+  persistPlacementsForCompletedRun,
+  reconcileCompletedRunPlacements,
+} from '../../src/leaderboards/placements.js'
 import type {
   AgentRef,
   IterationConfig,
@@ -488,6 +491,144 @@ describe('leaderboard storage on :memory:', () => {
       recording_id: 'rec1', // the agent's best game (score 20)
     })
     expect(board[2]).toMatchObject({ mean_score: 5, mean_agent_compute_ms: null })
+  })
+
+  it('getAutomatedBoard breaks an exact score tie by lower mean compute, with null compute last', async () => {
+    const iteration = await storage.createIteration({ env_id: ENV, deps_version: 1 })
+    const oneGame: ScheduledGameInput[] = [
+      { match_index: 0, game_index: 0, seed: 1, slots: [{ kind: 'builtin-naive' }] },
+    ]
+    const run = await storage.createRunWithSchedule(iteration.id, 'dev-user', [], oneGame)
+    const game = firstOf(await storage.listRunGames(run.id))
+    // Submission ids are chosen so the stable agent-key tiebreak would order them slow-before-fast;
+    // proving the compute tiebreak (not the key) decides when scores are exactly equal.
+    const fast: AgentRef = { kind: 'submission', submission_id: 'z-fast', user_id: 'alice' }
+    const slow: AgentRef = { kind: 'submission', submission_id: 'a-slow', user_id: 'bob' }
+    const seats: Array<[AgentRef, number, number]> = [
+      [slow, 200, 10], // 20 ms / decision
+      [fast, 100, 10], // 10 ms / decision
+      [NAIVE, 0, 0], // no contributing ticks -> null compute
+    ]
+    let slot = 0
+    for (const [agent, compute, ticks] of seats) {
+      await storage.recordGameResult({
+        game_id: game.id,
+        slot_index: slot++,
+        agent,
+        episode_score: 10,
+        agent_compute_ms_total: compute,
+        acted_tick_count: ticks,
+        failed: false,
+      })
+    }
+    await storage.setRunStatus(run.id, 'completed')
+
+    const board = await storage.getAutomatedBoard(iteration.id)
+    expect(board.map((row) => row.agent)).toEqual([fast, slow, NAIVE])
+  })
+
+  it('persistPlacementsForCompletedRun snapshots ranked placements and a re-run rewrites them', async () => {
+    const iteration = await storage.createIteration({ env_id: ENV, deps_version: 1 })
+    const s1: AgentRef = { kind: 'submission', submission_id: 's1', user_id: 'alice' }
+    const oneGame: ScheduledGameInput[] = [{ match_index: 0, game_index: 0, seed: 1, slots: [s1] }]
+
+    const run1 = await storage.createRunWithSchedule(iteration.id, 'dev-user', [s1], oneGame)
+    const game1 = firstOf(await storage.listRunGames(run1.id))
+    await storage.recordGameResult({
+      game_id: game1.id,
+      slot_index: 0,
+      agent: s1,
+      episode_score: 20,
+      agent_compute_ms_total: 50,
+      acted_tick_count: 10,
+      failed: false,
+    })
+    await storage.recordGameResult({
+      game_id: game1.id,
+      slot_index: 1,
+      agent: NAIVE,
+      episode_score: 5,
+      agent_compute_ms_total: 0,
+      acted_tick_count: 0,
+      failed: false,
+    })
+    await storage.setRunStatus(run1.id, 'completed')
+
+    await persistPlacementsForCompletedRun(storage, run1.id)
+    expect(firstOf(await storage.listPlacementsByAgent(s1))).toMatchObject({
+      rank: 1,
+      mean_score: 20,
+      run_id: run1.id,
+    })
+    expect(firstOf(await storage.listPlacementsByAgent(NAIVE, ENV))).toMatchObject({
+      rank: 2,
+      mean_score: 5,
+      mean_agent_compute_ms: null,
+    })
+
+    // A re-run with the baseline ahead rewrites the snapshot to the new run, leaving no stale rows.
+    const run2 = await storage.createRunWithSchedule(iteration.id, 'dev-user', [s1], oneGame)
+    const game2 = firstOf(await storage.listRunGames(run2.id))
+    await storage.recordGameResult({
+      game_id: game2.id,
+      slot_index: 0,
+      agent: NAIVE,
+      episode_score: 30,
+      agent_compute_ms_total: 0,
+      acted_tick_count: 0,
+      failed: false,
+    })
+    await storage.recordGameResult({
+      game_id: game2.id,
+      slot_index: 1,
+      agent: s1,
+      episode_score: 8,
+      agent_compute_ms_total: 40,
+      acted_tick_count: 10,
+      failed: false,
+    })
+    await storage.setRunStatus(run2.id, 'completed')
+
+    await persistPlacementsForCompletedRun(storage, run2.id)
+    const naive = await storage.listPlacementsByAgent(NAIVE, ENV)
+    expect(naive).toHaveLength(1)
+    expect(firstOf(naive)).toMatchObject({ rank: 1, mean_score: 30, run_id: run2.id })
+    expect(firstOf(await storage.listPlacementsByAgent(s1))).toMatchObject({
+      rank: 2,
+      mean_score: 8,
+      run_id: run2.id,
+    })
+  })
+
+  it('reconcileCompletedRunPlacements backfills a completed run missing its snapshot', async () => {
+    const iteration = await storage.createIteration({ env_id: ENV, deps_version: 1 })
+    const s1: AgentRef = { kind: 'submission', submission_id: 's1', user_id: 'alice' }
+    const run = await storage.createRunWithSchedule(
+      iteration.id,
+      'dev-user',
+      [s1],
+      [{ match_index: 0, game_index: 0, seed: 1, slots: [s1] }],
+    )
+    const game = firstOf(await storage.listRunGames(run.id))
+    await storage.recordGameResult({
+      game_id: game.id,
+      slot_index: 0,
+      agent: s1,
+      episode_score: 12,
+      agent_compute_ms_total: 60,
+      acted_tick_count: 10,
+      failed: false,
+    })
+    await storage.setRunStatus(run.id, 'completed')
+    expect(await storage.listPlacementsByAgent(s1)).toEqual([])
+
+    expect(await reconcileCompletedRunPlacements(storage)).toBe(1)
+    expect(firstOf(await storage.listPlacementsByAgent(s1))).toMatchObject({
+      rank: 1,
+      mean_score: 12,
+      run_id: run.id,
+    })
+    expect(await reconcileCompletedRunPlacements(storage)).toBe(0)
   })
 
   it('getAutomatedBoard is empty until a run completes', async () => {

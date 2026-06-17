@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { RecordingsStore } from '../src/recordings.js'
 import { Retention, type RetentionConfig } from '../src/retention.js'
 import { LiveSession } from '../src/session/live-session.js'
-import type { NewRecordingInput, Storage } from '../src/storage/index.js'
+import type { NewRecordingInput, ScheduledGameInput, Storage } from '../src/storage/index.js'
 import { openSqliteStorage } from '../src/storage/sqlite.js'
 import { FakeSessionProcess } from './support/fake-driver.js'
 import { flush } from './support/harness.js'
@@ -207,6 +207,79 @@ describe('retention', () => {
       })
       await expect(makeRetention().sweep()).resolves.toBeUndefined()
       expect(await storage.getRecording('rowless-dir')).toBeUndefined()
+    })
+  })
+
+  describe('sweep: leaderboard protection', () => {
+    const NAIVE_GAME: ScheduledGameInput[] = [
+      { match_index: 0, game_index: 0, seed: 1, slots: [{ kind: 'builtin-naive' }] },
+    ]
+
+    /** Drive a completed run for an iteration whose single game points at a recording id. */
+    async function completedRunWithRecording(
+      iterationId: string,
+      recordingId: string,
+    ): Promise<void> {
+      const run = await storage.createRunWithSchedule(iterationId, 'op', [], NAIVE_GAME)
+      const game = run && (await storage.listRunGames(run.id))[0]
+      if (game === undefined) {
+        throw new Error('expected a scheduled game')
+      }
+      await storage.attachRunGameRecording(game.id, recordingId)
+      await storage.setRunStatus(run.id, 'completed')
+    }
+
+    it('exempts the current run, reclaims a superseded run, leaves live sessions on the window', async () => {
+      const iteration = await storage.createIteration({ env_id: 'flappy_bird', deps_version: 1 })
+      // An earlier completed run (superseded) and the latest completed run, both old enough that the
+      // window would evict their recordings if they were not leaderboard-protected.
+      await writeRecording({
+        id: 'lb-superseded',
+        user_id: 'op',
+        env_id: 'flappy_bird',
+        created_at: ago(90),
+      })
+      await completedRunWithRecording(iteration.id, 'lb-superseded')
+      await writeRecording({
+        id: 'lb-current',
+        user_id: 'op',
+        env_id: 'flappy_bird',
+        created_at: ago(90),
+      })
+      await completedRunWithRecording(iteration.id, 'lb-current')
+      // Live-session recordings: one past the window, one inside it.
+      await writeRecording({
+        id: 'live-old',
+        user_id: 'op',
+        env_id: 'flappy_bird',
+        created_at: ago(40),
+      })
+      await writeRecording({
+        id: 'live-new',
+        user_id: 'op',
+        env_id: 'flappy_bird',
+        created_at: ago(5),
+      })
+
+      await makeRetention().sweep()
+
+      expect(await storage.getRecording('lb-current')).toBeDefined() // protected, survives the window
+      expect(await storage.getRecording('lb-superseded')).toBeUndefined() // superseded, reclaimable
+      expect(await storage.getRecording('live-old')).toBeUndefined() // live window evicts it
+      expect(await storage.getRecording('live-new')).toBeDefined()
+    })
+
+    it('a protected leaderboard recording does not count toward the owner quota', async () => {
+      const iteration = await storage.createIteration({ env_id: 'flappy_bird', deps_version: 1 })
+      await writeRecording({ id: 'lb', user_id: 'op', env_id: 'flappy_bird', created_at: ago(1) })
+      await completedRunWithRecording(iteration.id, 'lb')
+      await writeRecording({ id: 'live', user_id: 'op', env_id: 'flappy_bird', created_at: ago(1) })
+
+      // Quota 1: if the protected recording counted, the owner would be over quota and the live
+      // recording would be evicted. It is filtered out before the quota pass, so the live one survives.
+      await makeRetention({ recordingUserQuota: 1 }).sweep()
+      expect(await storage.getRecording('lb')).toBeDefined()
+      expect(await storage.getRecording('live')).toBeDefined()
     })
   })
 
