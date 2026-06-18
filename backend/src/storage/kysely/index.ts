@@ -14,6 +14,7 @@ import type {
   AgentRef,
   AutomatedBoardRow,
   CreateIterationInput,
+  HumanBoardRow,
   NewRecordingInput,
   NewSessionInput,
   NewSubmissionInput,
@@ -45,6 +46,7 @@ import type {
   ReleaseStatus,
   RunStatus,
   Session,
+  SessionSubmission,
   Submission,
   SubmissionCheck,
   SubmissionStage,
@@ -183,6 +185,9 @@ export class KyselyStorage implements Storage {
   recordSessionSubmission(sessionId: string, submissionId: string, slotId: string): Promise<void> {
     return submissions.recordSessionSubmission(this.db, sessionId, submissionId, slotId)
   }
+  listSessionSubmissions(sessionId: string): Promise<SessionSubmission[]> {
+    return submissions.listSessionSubmissions(this.db, sessionId)
+  }
   getSubmission(id: string): Promise<Submission | undefined> {
     return submissions.getSubmission(this.db, id)
   }
@@ -300,6 +305,9 @@ export class KyselyStorage implements Storage {
   }
   aggregateRatingsByAgent(iterationId: string): Promise<RatingAggregate[]> {
     return ratings.aggregateRatingsByAgent(this.db, iterationId)
+  }
+  getHumanBoard(iterationId: string): Promise<HumanBoardRow[]> {
+    return boards.getHumanBoard(this.db, iterationId)
   }
   upsertAgentRatingPrompt(iterationId: string, userId: string, prompt: string): Promise<void> {
     return ratings.upsertAgentRatingPrompt(this.db, iterationId, userId, prompt)

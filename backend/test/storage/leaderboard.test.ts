@@ -397,6 +397,53 @@ describe('leaderboard storage on :memory:', () => {
     expect(naiveAgg).toEqual({ agent: NAIVE, mean: 3, count: 2 })
   })
 
+  it('getHumanBoard ranks agents with three ratings and lists under-threshold agents unranked', async () => {
+    const iteration = await storage.createIteration({ env_id: ENV, deps_version: 1 })
+    const ranked: AgentRef = { kind: 'submission', submission_id: 'r', user_id: 'owner-r' }
+    const thin: AgentRef = { kind: 'submission', submission_id: 't', user_id: 'owner-t' }
+
+    // The ranked agent gets three ratings (mean 4); the Naive baseline three (mean 5, so it leads).
+    for (const [rater, score] of [
+      ['u1', 3],
+      ['u2', 4],
+      ['u3', 5],
+    ] as const) {
+      await storage.upsertRating({
+        iteration_id: iteration.id,
+        env_id: ENV,
+        rater_user_id: rater,
+        agent: ranked,
+        score,
+      })
+    }
+    for (const rater of ['u1', 'u2', 'u3']) {
+      await storage.upsertRating({
+        iteration_id: iteration.id,
+        env_id: ENV,
+        rater_user_id: rater,
+        agent: NAIVE,
+        score: 5,
+      })
+    }
+    // The thin agent has only two ratings, so it stays unranked below the ranked set.
+    for (const rater of ['u1', 'u2']) {
+      await storage.upsertRating({
+        iteration_id: iteration.id,
+        env_id: ENV,
+        rater_user_id: rater,
+        agent: thin,
+        score: 5,
+      })
+    }
+
+    const board = await storage.getHumanBoard(iteration.id)
+    expect(board).toEqual([
+      { agent: NAIVE, mean: 5, count: 3, rank: 1 },
+      { agent: ranked, mean: 4, count: 3, rank: 2 },
+      { agent: thin, mean: 5, count: 2, rank: null },
+    ])
+  })
+
   // --- rating prompts ---
 
   it('setIterationRatingPrompt sets and clears, and stays editable after a run exists', async () => {

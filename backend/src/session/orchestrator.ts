@@ -60,6 +60,8 @@ interface SubmissionBinding {
   path: string
   /** The submission owner, attributed to the slot in the recording header. */
   userId: string
+  /** The submission's iteration — the competition boundary this watch session's ratings attach to. */
+  iterationId: string
 }
 
 /** What the HTTP layer returns to a client that started a session. */
@@ -152,6 +154,15 @@ export class Orchestrator {
     // path; otherwise it is the built-in scripted/human path on the base image, exactly as before.
     const { image, submissionBinding } = await this.resolveImage(request, meta)
 
+    // The iteration this session competes in, the key ratings attach to. A submitted-agent watch run
+    // takes the submission's iteration; any other public session (human play, Naive watch) takes the
+    // environment's current play-open iteration when one exists. Best-effort: a session with no
+    // resolvable iteration is simply not rateable (the rating route rejects a null-iteration session).
+    const iterationId =
+      submissionBinding !== null
+        ? submissionBinding.iterationId
+        : ((await this.storage.getPublicPlayIteration(meta.env_id))?.id ?? null)
+
     const id = randomUUID()
     const recordingId = `${meta.env_id}-${id}`
     const createdAt = new Date().toISOString()
@@ -161,6 +172,7 @@ export class Orchestrator {
       env_id: meta.env_id,
       mode: request.mode,
       recording_id: recordingId,
+      iteration_id: iterationId,
       created_at: createdAt,
     })
     if (submissionBinding !== null) {
@@ -286,6 +298,9 @@ export class Orchestrator {
         slotId: SUBMISSION_SLOT_ID,
         path: submissionSlotPath(SUBMISSION_SLOT_ID),
         userId: submission.user_id,
+        // Ratings attach to the submission's own iteration, never re-resolved from the open-submission
+        // window, since submissions and public play can be open on different rounds.
+        iterationId: submission.iteration_id,
       },
     }
   }

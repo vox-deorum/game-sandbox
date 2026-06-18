@@ -29,6 +29,7 @@ import {
 import DecisionLog, { type DecisionEntry } from '../components/DecisionLog.vue'
 import PlayerAttribution from '../components/PlayerAttribution.vue'
 import RunMetadata from '../components/RunMetadata.vue'
+import SessionRatings from '../components/SessionRatings.vue'
 import UiButton from '../components/ui/UiButton.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import UiStatusBadge from '../components/ui/UiStatusBadge.vue'
@@ -334,6 +335,10 @@ function formatMode(mode: SessionRow['mode']): string {
         <DecisionLog :entries="decisions" />
       </details>
     </div>
+
+    <!-- End-of-session feedback: rate each agent the finished session involved. The panel reads its
+         own rateable set and renders nothing for sessions that cannot be rated. -->
+    <SessionRatings v-if="status === 'ended'" :session-id="id" />
   </section>
 </template>
 

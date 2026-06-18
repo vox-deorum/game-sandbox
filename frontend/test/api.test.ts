@@ -2,11 +2,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   ApiError,
+  getAuthorPrompt,
   getEnvironments,
   getMe,
   getRecording,
+  getSessionRatings,
   pinRecording,
+  setAuthorPrompt,
   startSession,
+  submitRatings,
   unpinRecording,
 } from '../src/api/client.js'
 import { jsonResponse, stubFetch } from './helpers/fetchStub.js'
@@ -99,5 +103,69 @@ describe('api client', () => {
     const mock = stubFetch(async () => new Response(null, { status: 204 }))
     expect(await unpinRecording('rec-1')).toEqual({ ok: true })
     expect((mock.mock.calls[0]?.[1] as RequestInit).method).toBe('DELETE')
+  })
+
+  it('reads a session rating view and maps the unrateable conflicts onto typed reasons', async () => {
+    const view = {
+      session_id: 's1',
+      iteration_id: 'iter-1',
+      read_only: false,
+      iteration_prompt: null,
+      agents: [],
+    }
+    stubFetch(async () => jsonResponse(view))
+    expect(await getSessionRatings('s1')).toEqual({ ok: true, ratings: view })
+
+    vi.unstubAllGlobals()
+    stubFetch(async () => jsonResponse({ code: 'session_not_finished' }, 409))
+    expect(await getSessionRatings('s1')).toEqual({ ok: false, reason: 'not_finished' })
+
+    vi.unstubAllGlobals()
+    stubFetch(async () => jsonResponse({ code: 'session_not_rateable' }, 409))
+    expect(await getSessionRatings('s1')).toEqual({ ok: false, reason: 'not_rateable' })
+  })
+
+  it('posts the ratings batch and maps a play-closed conflict', async () => {
+    const fetchMock = stubFetch(async () =>
+      jsonResponse({
+        session_id: 's1',
+        iteration_id: 'iter-1',
+        read_only: false,
+        iteration_prompt: null,
+        agents: [],
+      }),
+    )
+    const batch = [{ agent: { kind: 'builtin-naive' as const }, score: 4 }]
+    expect((await submitRatings('s1', batch)).ok).toBe(true)
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe('/api/sessions/s1/ratings')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body as string)).toEqual({ ratings: batch })
+
+    vi.unstubAllGlobals()
+    stubFetch(async () => jsonResponse({ code: 'play_closed' }, 409))
+    expect(await submitRatings('s1', batch)).toEqual({ ok: false, reason: 'play_closed' })
+  })
+
+  it('reads and sets the author prompt, mapping the no-agent refusal', async () => {
+    stubFetch(async () => jsonResponse({ iteration_id: 'iter-1', prompt: 'Judge skill' }))
+    expect(await getAuthorPrompt('iter-1')).toEqual({
+      iteration_id: 'iter-1',
+      prompt: 'Judge skill',
+    })
+
+    vi.unstubAllGlobals()
+    const setMock = stubFetch(async () => jsonResponse({ iteration_id: 'iter-1', prompt: null }))
+    expect(await setAuthorPrompt('iter-1', null)).toEqual({ ok: true, prompt: null })
+    const [url, init] = setMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe('/api/iterations/iter-1/agent-rating-prompt')
+    expect(init.method).toBe('PUT')
+
+    vi.unstubAllGlobals()
+    stubFetch(async () => jsonResponse({ code: 'no_agent_in_iteration' }, 409))
+    expect(await setAuthorPrompt('iter-1', 'x')).toEqual({
+      ok: false,
+      reason: 'no_agent_in_iteration',
+    })
   })
 })

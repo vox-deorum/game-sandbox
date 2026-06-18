@@ -32,6 +32,7 @@ function detail(
 ): SubmissionDetail {
   return {
     id: 'sub1',
+    iteration_id: 'flappy_bird-iter-1',
     env_id: 'flappy_bird',
     user_id: 'dev-user',
     source_kind: 'git',

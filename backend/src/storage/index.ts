@@ -23,6 +23,7 @@ import type {
   RunStatus,
   Session,
   SessionMode,
+  SessionSubmission,
   Submission,
   SubmissionCheck,
   SubmissionSourceKind,
@@ -228,6 +229,18 @@ export interface RatingAggregate {
 }
 
 /**
+ * One human-board row: a {@link RatingAggregate} with the ranking applied. `rank` is the 1-based
+ * placement when the agent has at least {@link HUMAN_BOARD_MIN_RATINGS} ratings, or `null` when it is
+ * still under the threshold and shown unranked below the ranked set.
+ */
+export interface HumanBoardRow {
+  agent: AgentRef
+  mean: number
+  count: number
+  rank: number | null
+}
+
+/**
  * One automated-board row: a per-agent aggregate over the latest completed run's results. The board
  * service (step 5) shapes the public response from these; mean per-decision time is null when no tick
  * contributed.
@@ -402,6 +415,12 @@ export interface Storage {
   listRatingsByIteration(iterationId: string): Promise<Rating[]>
   /** Mean score and count per agent for an iteration's human board. */
   aggregateRatingsByAgent(iterationId: string): Promise<RatingAggregate[]>
+  /**
+   * The human-feedback board: the per-agent aggregates with the ranking rule applied. Agents with at
+   * least three ratings are ranked (1-based, by mean then count); agents with one or two ratings follow
+   * unranked (`rank: null`), so accumulating feedback is visible without assigning a rank.
+   */
+  getHumanBoard(iterationId: string): Promise<HumanBoardRow[]>
 
   /** Insert or overwrite the agent author's per-iteration rating prompt, keyed by `(iteration, user)`. */
   upsertAgentRatingPrompt(iterationId: string, userId: string, prompt: string): Promise<void>
@@ -444,6 +463,12 @@ export interface Storage {
   ): Promise<void>
   /** Record which submitted agent ran in which session slot, for agent-profile replay history. */
   recordSessionSubmission(sessionId: string, submissionId: string, slotId: string): Promise<void>
+  /**
+   * The submitted-slot links for a session: the fallback the rating route uses to recover the involved
+   * submitted agents when a recording header cannot be read. It cannot surface a pure-Naive session,
+   * which has no link rows; the header is the authoritative source.
+   */
+  listSessionSubmissions(sessionId: string): Promise<SessionSubmission[]>
 
   /** One submission by id. */
   getSubmission(id: string): Promise<Submission | undefined>

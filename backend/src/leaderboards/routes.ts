@@ -20,7 +20,7 @@ export interface LeaderboardDeps {
 async function boardsFor(storage: Storage, iterationId: string) {
   const [automated, human] = await Promise.all([
     storage.getAutomatedBoard(iterationId),
-    storage.aggregateRatingsByAgent(iterationId),
+    storage.getHumanBoard(iterationId),
   ])
   return { automated, human }
 }

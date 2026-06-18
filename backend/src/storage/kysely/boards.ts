@@ -7,8 +7,9 @@ import { randomUUID } from 'node:crypto'
 
 import type { Kysely } from 'kysely'
 
-import type { AgentRef, AutomatedBoardRow, PlacementInput } from '../index.js'
+import type { AgentRef, AutomatedBoardRow, HumanBoardRow, PlacementInput } from '../index.js'
 import type { AutomatedPlacement, Database } from '../schema.js'
+import { aggregateRatingsByAgent } from './ratings.js'
 import { getLatestCompletedRun } from './runs.js'
 import {
   type AgentColumns,
@@ -17,6 +18,13 @@ import {
   agentRefFromColumns,
   agentRefKey,
 } from './shared.js'
+
+/**
+ * The minimum number of ratings an agent needs before the human board assigns it a rank. Under this
+ * threshold the agent's mean and count still show, but unranked, so a single early rating cannot place
+ * an agent atop the board.
+ */
+export const HUMAN_BOARD_MIN_RATINGS = 3
 
 export async function replaceAutomatedPlacements(
   db: Kysely<Database>,
@@ -167,4 +175,32 @@ export async function getAutomatedBoard(
         return agentRefKey(a.agent).localeCompare(agentRefKey(b.agent))
       })
   )
+}
+
+/**
+ * The human-feedback board: aggregate the iteration's ratings per agent, order them by mean (then
+ * count, then the stable agent key), and apply the ranking rule — agents at or above the threshold get
+ * a 1-based rank, the rest follow unranked. The ordering is the same for both groups, so the unranked
+ * tail reads as "next in line" below the ranked set.
+ */
+export async function getHumanBoard(
+  db: Kysely<Database>,
+  iterationId: string,
+): Promise<HumanBoardRow[]> {
+  const aggregates = await aggregateRatingsByAgent(db, iterationId)
+  const ordered = [...aggregates].sort((a, b) => {
+    if (b.mean !== a.mean) {
+      return b.mean - a.mean
+    }
+    if (b.count !== a.count) {
+      return b.count - a.count
+    }
+    return agentRefKey(a.agent).localeCompare(agentRefKey(b.agent))
+  })
+  const ranked = ordered.filter((row) => row.count >= HUMAN_BOARD_MIN_RATINGS)
+  const unranked = ordered.filter((row) => row.count < HUMAN_BOARD_MIN_RATINGS)
+  return [
+    ...ranked.map((row, index) => ({ ...row, rank: index + 1 })),
+    ...unranked.map((row) => ({ ...row, rank: null })),
+  ]
 }

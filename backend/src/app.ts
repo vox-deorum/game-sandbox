@@ -16,6 +16,7 @@ import { registerAdminRoutes } from './admin/routes.js'
 import type { EnvironmentRegistry } from './environments.js'
 import { isAllowlisted, resolveUserId } from './identity.js'
 import { registerLeaderboardRoutes } from './leaderboards/routes.js'
+import { registerRatingRoutes } from './ratings/routes.js'
 import type { RecordingsStore } from './recordings.js'
 import type { Retention } from './retention.js'
 import type { ClientSocket } from './session/live-session.js'
@@ -377,6 +378,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     operatorAllowlist: deps.operatorAllowlist,
   })
   registerLeaderboardRoutes(app, { storage: deps.storage })
+  // Participant ratings and the author's per-iteration rating prompt: ungated, attributed to the
+  // resolved identity. The rateable-agent set is read from the finished recording header.
+  registerRatingRoutes(app, { storage: deps.storage, recordings: deps.recordings })
 
   // Serve the built frontend from the same origin in production so the whole stack is one process.
   // `wildcard: false` registers a route per built file and lets unmatched paths fall to the

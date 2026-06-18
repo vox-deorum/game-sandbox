@@ -205,6 +205,7 @@ export interface SubmissionCheck {
 /** A submission joined with its ordered per-stage log: the form's one-request poll payload. */
 export interface SubmissionDetail {
   id: string
+  iteration_id: string
   env_id: string
   user_id: string
   source_kind: 'git' | 'local'
@@ -372,4 +373,138 @@ export async function unpinRecording(id: string): Promise<PinResult> {
     return { ok: true }
   }
   return { ok: false, reason: 'failed', status: res.status }
+}
+
+// --- Ratings and the author prompt (Stage 6.6) -----------------------------------------------
+
+/** The agent identity as it travels on the wire: no `user_id`, which the backend resolves itself. */
+export type AgentRefWire = { kind: 'submission'; submission_id: string } | { kind: 'builtin-naive' }
+
+/** One rateable agent in a session, as the rating read/write returns it. */
+export interface RateableAgent {
+  agent: AgentRefWire
+  /** True when the caller owns this submitted agent: the UI shows it without a rating control. */
+  is_own: boolean
+  /** The agent author's prompt for this iteration, when set (null for the ownerless Naive baseline). */
+  author_prompt: string | null
+  /** The caller's current effective rating, or null when they have not rated this agent. */
+  your_rating: number | null
+}
+
+/** The rating read/write payload for one session: the iteration prompt and the per-agent view. */
+export interface SessionRatings {
+  session_id: string
+  iteration_id: string
+  /** True when the iteration's play window is closed: prior ratings show, but no new write is taken. */
+  read_only: boolean
+  /** The operator's iteration-wide rating prompt, applying to every agent (null when unset). */
+  iteration_prompt: string | null
+  agents: RateableAgent[]
+}
+
+/**
+ * Reading a finished session's ratings: the view, or a reason it is not rateable. An old session with
+ * no iteration and one without a finalized recording both come back unrateable, so the post-session UI
+ * simply renders nothing rather than an error.
+ */
+export type SessionRatingsResult =
+  | { ok: true; ratings: SessionRatings }
+  | { ok: false; reason: 'not_rateable' | 'not_finished' | 'failed' }
+
+/** Read the caller's existing ratings and the two applicable prompts for a finished session's agents. */
+export async function getSessionRatings(sessionId: string): Promise<SessionRatingsResult> {
+  const res = await request(`/sessions/${encodeURIComponent(sessionId)}/ratings`)
+  if (res.ok) {
+    return { ok: true, ratings: (await res.json()) as SessionRatings }
+  }
+  const body = (await res.json().catch(() => ({}))) as { code?: string }
+  return { ok: false, reason: rateabilityReason(body.code) }
+}
+
+/** Submitting (or overwriting) ratings: the saved view, or a typed refusal the UI surfaces inline. */
+export type SubmitRatingsResult =
+  | { ok: true; ratings: SessionRatings }
+  | { ok: false; reason: 'play_closed' | 'not_rateable' | 'not_finished' | 'invalid' | 'failed' }
+
+/** Submit a batch of `{ agent, score }` ratings for a session. The whole batch saves or none does. */
+export async function submitRatings(
+  sessionId: string,
+  ratings: ReadonlyArray<{ agent: AgentRefWire; score: number }>,
+): Promise<SubmitRatingsResult> {
+  const res = await request(`/sessions/${encodeURIComponent(sessionId)}/ratings`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ratings }),
+  })
+  if (res.ok) {
+    return { ok: true, ratings: (await res.json()) as SessionRatings }
+  }
+  const body = (await res.json().catch(() => ({}))) as { code?: string }
+  if (body.code === 'play_closed') {
+    return { ok: false, reason: 'play_closed' }
+  }
+  if (body.code === 'session_not_rateable') {
+    return { ok: false, reason: 'not_rateable' }
+  }
+  if (body.code === 'session_not_finished') {
+    return { ok: false, reason: 'not_finished' }
+  }
+  if (res.status === 400) {
+    return { ok: false, reason: 'invalid' }
+  }
+  return { ok: false, reason: 'failed' }
+}
+
+/** Map the read endpoint's conflict code onto the reason the UI branches on. */
+function rateabilityReason(code: string | undefined): 'not_rateable' | 'not_finished' | 'failed' {
+  if (code === 'session_not_rateable') {
+    return 'not_rateable'
+  }
+  if (code === 'session_not_finished') {
+    return 'not_finished'
+  }
+  return 'failed'
+}
+
+/** The author's per-iteration rating prompt, as the get/set routes return it (null when unset). */
+export interface AuthorPrompt {
+  iteration_id: string
+  prompt: string | null
+}
+
+/** Read the caller's own rating prompt for an iteration, to populate the agent-profile editor. */
+export async function getAuthorPrompt(iterationId: string): Promise<AuthorPrompt> {
+  return (await json(
+    await request(`/iterations/${encodeURIComponent(iterationId)}/agent-rating-prompt`),
+    'GET /iterations/:iterationId/agent-rating-prompt',
+  )) as AuthorPrompt
+}
+
+/** Setting (or clearing) the author prompt: the saved value, or a typed refusal. */
+export type SetAuthorPromptResult =
+  | { ok: true; prompt: string | null }
+  | { ok: false; reason: 'no_agent_in_iteration' | 'too_long' | 'failed' }
+
+/** Set or clear the caller's rating prompt for an iteration. A null or empty prompt clears it. */
+export async function setAuthorPrompt(
+  iterationId: string,
+  prompt: string | null,
+): Promise<SetAuthorPromptResult> {
+  const res = await request(`/iterations/${encodeURIComponent(iterationId)}/agent-rating-prompt`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ prompt }),
+  })
+  if (res.ok) {
+    const body = (await res.json()) as AuthorPrompt
+    return { ok: true, prompt: body.prompt }
+  }
+  const body = (await res.json().catch(() => ({}))) as { code?: string }
+  if (body.code === 'no_agent_in_iteration') {
+    return { ok: false, reason: 'no_agent_in_iteration' }
+  }
+  if (body.code === 'author_prompt_too_long') {
+    return { ok: false, reason: 'too_long' }
+  }
+  return { ok: false, reason: 'failed' }
 }

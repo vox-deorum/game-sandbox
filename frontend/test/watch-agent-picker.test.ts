@@ -19,6 +19,7 @@ const ProfileStub = { template: '<div>profile {{ $route.params.ownerId }}</div>'
 function summary(overrides: Partial<SubmissionSummary> = {}): SubmissionSummary {
   return {
     id: 'sub1',
+    iteration_id: 'flappy_bird-iter-1',
     env_id: 'flappy_bird',
     user_id: 'eve',
     source_kind: 'git',

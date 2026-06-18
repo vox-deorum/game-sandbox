@@ -50,6 +50,10 @@ vi.mock('../src/api/client.js', () => ({
   getMe: vi.fn(),
   pinRecording: vi.fn(async () => ({ ok: true })),
   unpinRecording: vi.fn(async () => ({ ok: true })),
+  // The end-of-session rating panel self-fetches on mount; default it to not-rateable so these
+  // session-chrome tests render no panel. The rating UI has its own suite.
+  getSessionRatings: vi.fn(async () => ({ ok: false, reason: 'not_rateable' })),
+  submitRatings: vi.fn(),
 }))
 
 import { getMe, getRecording, getSession, listRecordings } from '../src/api/client.js'

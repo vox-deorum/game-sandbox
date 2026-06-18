@@ -16,6 +16,7 @@ import type {
 import { SubmissionConflictError } from '../index.js'
 import type {
   Database,
+  SessionSubmission,
   Submission,
   SubmissionCheck,
   SubmissionStage,
@@ -189,6 +190,17 @@ export async function getSubmission(
   id: string,
 ): Promise<Submission | undefined> {
   return await db.selectFrom('submissions').selectAll().where('id', '=', id).executeTakeFirst()
+}
+
+export async function listSessionSubmissions(
+  db: Kysely<Database>,
+  sessionId: string,
+): Promise<SessionSubmission[]> {
+  return await db
+    .selectFrom('session_submissions')
+    .selectAll()
+    .where('session_id', '=', sessionId)
+    .execute()
 }
 
 export async function findActiveSubmission(

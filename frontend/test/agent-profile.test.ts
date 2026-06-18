@@ -7,6 +7,9 @@ import { memoryRouter, renderWithMe } from './helpers/render.js'
 vi.mock('../src/api/client.js', () => ({
   getMe: vi.fn(),
   getAgentProfile: vi.fn(),
+  // The owner-only author-prompt editor self-fetches on mount; default it to an unset prompt.
+  getAuthorPrompt: vi.fn(async () => ({ iteration_id: 'flappy_bird-iter-1', prompt: null })),
+  setAuthorPrompt: vi.fn(async () => ({ ok: true, prompt: null })),
 }))
 
 import { getAgentProfile, getMe } from '../src/api/client.js'
@@ -25,6 +28,7 @@ function check(
 function submission(overrides: Partial<AgentProfileSubmission> = {}): AgentProfileSubmission {
   return {
     id: 'sub1',
+    iteration_id: 'flappy_bird-iter-1',
     env_id: 'flappy_bird',
     user_id: 'eve',
     source_kind: 'git',

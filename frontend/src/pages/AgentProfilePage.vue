@@ -14,10 +14,11 @@
     owner-only, gating on the signed-in identity matching the agent's owner.
 -->
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
 import { type AgentProfile, getAgentProfile, type SubmissionStatus } from '../api/client.js'
+import AuthorPromptEditor from '../components/AuthorPromptEditor.vue'
 import SubmissionStageTimeline from '../components/SubmissionStageTimeline.vue'
 import UiBadge from '../components/ui/UiBadge.vue'
 import UiCard from '../components/ui/UiCard.vue'
@@ -62,6 +63,15 @@ const STATUS_TONE: Record<SubmissionStatus, 'neutral' | 'success' | 'danger' | '
 
 /** The owner viewing their own profile unlocks the owner-only affordances (the Stage 9 debug view). */
 const isOwner = () => me.me?.user_id === ownerId
+
+/**
+ * The owner's current-iteration submission (the active, non-superseded one), whose iteration the
+ * author-prompt editor targets. A prompt is keyed by iteration and owner, so only the active round
+ * gets an editor; superseded history rows are read-only.
+ */
+const activeSubmission = computed(
+  () => profile.value?.submissions.find((submission) => submission.superseded_at === null) ?? null,
+)
 </script>
 
 <template>
@@ -121,6 +131,11 @@ const isOwner = () => me.me?.user_id === ownerId
         </li>
       </ol>
     </section>
+
+    <AuthorPromptEditor
+      v-if="isOwner() && activeSubmission !== null"
+      :iteration-id="activeSubmission.iteration_id"
+    />
 
     <p class="agent-placeholder">Leaderboard placements arrive in a later stage.</p>
     <p v-if="isOwner()" class="agent-placeholder">

@@ -282,7 +282,7 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
         const games = latest === undefined ? [] : await deps.storage.listRunGames(latest.id)
         const [automated, human] = await Promise.all([
           deps.storage.getAutomatedBoard(iteration.id),
-          deps.storage.aggregateRatingsByAgent(iteration.id),
+          deps.storage.getHumanBoard(iteration.id),
         ])
         return reply.code(200).send({
           iteration: iterationView(iteration),
