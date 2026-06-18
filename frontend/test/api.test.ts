@@ -2,15 +2,22 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   ApiError,
+  configureIteration,
+  declareIteration,
   getAuthorPrompt,
+  getEnvironmentLeaderboards,
   getEnvironments,
+  getIterationLeaderboards,
   getMe,
   getRecording,
   getSessionRatings,
+  type IterationConfig,
+  openSubmissions,
   pinRecording,
   setAuthorPrompt,
   startSession,
   submitRatings,
+  triggerRun,
   unpinRecording,
 } from '../src/api/client.js'
 import { jsonResponse, stubFetch } from './helpers/fetchStub.js'
@@ -37,9 +44,11 @@ describe('api client', () => {
     await expect(getEnvironments()).rejects.toBeInstanceOf(ApiError)
   })
 
-  it('reports identity and allowlist membership from /api/me', async () => {
-    stubFetch(async () => jsonResponse({ user_id: 'dev-user', allowlisted: true }))
-    expect(await getMe()).toEqual({ user_id: 'dev-user', allowlisted: true })
+  it('reports identity, allowlist membership, and operator status from /api/me', async () => {
+    stubFetch(async () =>
+      jsonResponse({ user_id: 'dev-user', allowlisted: true, is_operator: true }),
+    )
+    expect(await getMe()).toEqual({ user_id: 'dev-user', allowlisted: true, is_operator: true })
   })
 
   it('maps a 201 to a started session', async () => {
@@ -167,5 +176,84 @@ describe('api client', () => {
       ok: false,
       reason: 'no_agent_in_iteration',
     })
+  })
+
+  // --- Leaderboards and the admin console (Stage 6.7) ---------------------------------------
+
+  it('reads the environment leaderboards with the separate submit and play targets', async () => {
+    const payload = {
+      current: null,
+      submission_iteration_id: 'iter-sub',
+      play_iteration_id: 'iter-play',
+    }
+    const fetchMock = stubFetch(async () => jsonResponse(payload))
+    expect(await getEnvironmentLeaderboards('flappy_bird')).toEqual(payload)
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/environments/flappy_bird/leaderboards')
+  })
+
+  it('maps a 404 iteration leaderboards read (unreleased) to undefined', async () => {
+    stubFetch(async () => jsonResponse({ error: 'no such released iteration' }, 404))
+    expect(await getIterationLeaderboards('flappy_bird', 'iter-x')).toBeUndefined()
+  })
+
+  it('declares an iteration through the admin prefix', async () => {
+    const iteration = { id: 'iter-new' }
+    const fetchMock = stubFetch(async () => jsonResponse(iteration, 201))
+    expect(await declareIteration('flappy_bird', { label: 'Week 2' })).toEqual(iteration)
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe('/api/admin/environments/flappy_bird/iterations')
+    expect(JSON.parse(init.body as string)).toEqual({ label: 'Week 2' })
+  })
+
+  it('sends ?force=true on a forced config edit and maps the unforced conflict', async () => {
+    const config: IterationConfig = {
+      deps_version: 1,
+      matches: [{ slots: ['submission'], seeds: [0], games: 1 }],
+    }
+    const conflictMock = stubFetch(async () =>
+      jsonResponse({ error: 'iteration has runs', code: 'iteration_has_runs' }, 409),
+    )
+    const unforced = await configureIteration('iter-1', config)
+    expect(unforced).toEqual({
+      ok: false,
+      reason: 'iteration_has_runs',
+      message: 'iteration has runs',
+    })
+    expect(conflictMock.mock.calls[0]?.[0]).toBe('/api/admin/iterations/iter-1/config')
+
+    vi.unstubAllGlobals()
+    const okMock = stubFetch(async () => jsonResponse({ id: 'iter-1' }))
+    const forced = await configureIteration('iter-1', config, true)
+    expect(forced.ok).toBe(true)
+    expect(okMock.mock.calls[0]?.[0]).toBe('/api/admin/iterations/iter-1/config?force=true')
+  })
+
+  it('maps the open-submissions one-open invariant conflict', async () => {
+    stubFetch(async () => jsonResponse({ code: 'open_iteration_exists' }, 409))
+    expect(await openSubmissions('iter-1')).toEqual({
+      ok: false,
+      reason: 'open_iteration_exists',
+    })
+  })
+
+  it('maps the trigger-run conflicts (run_in_progress, empty_schedule)', async () => {
+    stubFetch(async () => jsonResponse({ error: 'busy', code: 'run_in_progress' }, 409))
+    expect(await triggerRun('iter-1')).toEqual({
+      ok: false,
+      reason: 'run_in_progress',
+      message: 'busy',
+    })
+
+    vi.unstubAllGlobals()
+    stubFetch(async () => jsonResponse({ error: 'empty', code: 'empty_schedule' }, 409))
+    expect(await triggerRun('iter-1')).toEqual({
+      ok: false,
+      reason: 'empty_schedule',
+      message: 'empty',
+    })
+
+    vi.unstubAllGlobals()
+    stubFetch(async () => jsonResponse({ id: 'run-1', status: 'pending' }, 201))
+    expect(await triggerRun('iter-1')).toEqual({ ok: true, id: 'run-1', status: 'pending' })
   })
 })

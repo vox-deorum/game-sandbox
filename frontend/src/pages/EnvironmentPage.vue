@@ -12,10 +12,11 @@
   session instead of dead-ending.
 -->
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 
-import { startSession } from '../api/client.js'
+import { type EnvironmentLeaderboards, getEnvironmentLeaderboards, startSession } from '../api/client.js'
+import LeaderboardBoards from '../components/LeaderboardBoards.vue'
 import RecentReplays from '../components/RecentReplays.vue'
 import StartForm from '../components/StartForm.vue'
 import SubmitAgentForm from '../components/SubmitAgentForm.vue'
@@ -36,6 +37,30 @@ const envId = String(route.params.envId)
 
 const { meta, notFound, loading } = useEnvironmentMeta(envId)
 const startError = ref<string | null>(null)
+
+// The current released boards plus the separate public submit and play targets. The boards embed and
+// the watch/play gate read from this; an unreleased iteration's boards never appear (the public read
+// only returns released results).
+const leaderboards = ref<EnvironmentLeaderboards | null>(null)
+// Public watch/play is enabled only when an iteration is the environment's play-open target. Released
+// history stays readable regardless, so the boards embed below is independent of this gate.
+const playOpen = computed(() => leaderboards.value?.play_iteration_id != null)
+// Submission and play targets are independent. Mount the form only for an actual open submission
+// target, otherwise its reachability controls would invite a request the backend must reject.
+const submissionsOpen = computed(() => leaderboards.value?.submission_iteration_id != null)
+
+onMounted(() => {
+  getEnvironmentLeaderboards(envId).then(
+    (data) => {
+      leaderboards.value = data
+    },
+    () => {
+      // A failed leaderboards read leaves the section empty rather than breaking the hub; the play
+      // gate then reads closed, which is the safe default.
+      leaderboards.value = { current: null, submission_iteration_id: null, play_iteration_id: null }
+    },
+  )
+})
 // Which start form the dialog shows (Play opens human, Watch opens scripted); null when closed.
 const formMode = ref<'human' | 'scripted' | null>(null)
 
@@ -103,11 +128,18 @@ async function start(input: { seed?: number; humanSlotTimeoutMs?: number }): Pro
         <div class="env-title-row">
           <h1>{{ meta.display_name }}</h1>
           <UiButton
-            v-if="me.me?.allowlisted && meta.human_slots.length > 0"
+            v-if="me.me?.allowlisted && meta.human_slots.length > 0 && playOpen"
             size="lg"
             @click="open('human')"
           >
             Play Yourself
+          </UiButton>
+          <UiButton
+            v-if="me.me?.is_operator"
+            variant="secondary"
+            :to="`/environments/${meta.env_id}/admin`"
+          >
+            Admin console
           </UiButton>
         </div>
         <p class="env-description">{{ meta.description }}</p>
@@ -122,20 +154,36 @@ async function start(input: { seed?: number; humanSlotTimeoutMs?: number }): Pro
 
     <section class="env-section">
       <h2>Watch an agent</h2>
-      <WatchAgentPicker :env-id="meta.env_id" />
+      <WatchAgentPicker v-if="playOpen" :env-id="meta.env_id" />
+      <UiEmptyState v-else>Public play is closed for this environment right now.</UiEmptyState>
     </section>
 
     <section class="env-section">
       <h2>Submit an agent</h2>
-      <SubmitAgentForm :env-id="meta.env_id" />
+      <UiEmptyState v-if="leaderboards === null">Loading submission status…</UiEmptyState>
+      <SubmitAgentForm v-else-if="submissionsOpen" :env-id="meta.env_id" />
+      <UiEmptyState v-else>Submissions are closed for this environment right now.</UiEmptyState>
+    </section>
+
+    <section class="env-section">
+      <div class="env-section-head">
+        <h2>Leaderboards</h2>
+        <RouterLink class="env-section-link" :to="`/environments/${meta.env_id}/leaderboards`">
+          View all &amp; history →
+        </RouterLink>
+      </div>
+      <LeaderboardBoards
+        v-if="leaderboards?.current != null"
+        :board="leaderboards.current.board"
+        :env-id="meta.env_id"
+      />
+      <UiEmptyState v-else>No released results for this environment yet.</UiEmptyState>
     </section>
 
     <section class="env-section">
       <h2>Recent replays</h2>
       <RecentReplays :env-id="meta.env_id" />
     </section>
-
-    <p class="env-placeholder">Leaderboards arrive in a later stage.</p>
 
     <UiDialog v-model:open="dialogOpen" :title="dialogTitle">
       <StartForm v-if="formMode !== null" :meta="meta" :mode="formMode" @submit="start" @cancel="formMode = null" />
@@ -198,10 +246,22 @@ async function start(input: { seed?: number; humanSlotTimeoutMs?: number }): Pro
   margin-top: var(--space-6);
 }
 
-.env-placeholder {
-  margin-top: var(--space-6);
-  color: var(--color-text-muted);
+.env-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.env-section-link {
   font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  transition: color var(--motion-fast) var(--ease-out);
+}
+
+.env-section-link:hover {
+  color: var(--color-accent);
 }
 
 /* The thumbnail drops below the description on narrow screens (the responsive pass). */

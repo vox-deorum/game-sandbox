@@ -17,14 +17,20 @@
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
-import { type AgentProfile, getAgentProfile, type SubmissionStatus } from '../api/client.js'
+import {
+  type AgentPlacements,
+  type AgentProfile,
+  getAgentPlacements,
+  getAgentProfile,
+  type SubmissionStatus,
+} from '../api/client.js'
 import AuthorPromptEditor from '../components/AuthorPromptEditor.vue'
 import SubmissionStageTimeline from '../components/SubmissionStageTimeline.vue'
 import UiBadge from '../components/ui/UiBadge.vue'
 import UiCard from '../components/ui/UiCard.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import UiStatusBadge from '../components/ui/UiStatusBadge.vue'
-import { formatDate } from '../lib/format.js'
+import { formatComputeMs, formatDate, formatScore } from '../lib/format.js'
 import { useMe } from '../me.js'
 
 const route = useRoute()
@@ -34,6 +40,9 @@ const ownerId = String(route.params.ownerId)
 
 const profile = ref<AgentProfile | null>(null)
 const failed = ref(false)
+// The agent's released leaderboard placements (Stage 6.7), read from the public placements route. A
+// failed read leaves the list empty rather than failing the whole profile.
+const placements = ref<AgentPlacements | null>(null)
 
 onMounted(() => {
   getAgentProfile(envId, ownerId).then(
@@ -42,6 +51,14 @@ onMounted(() => {
     },
     () => {
       failed.value = true
+    },
+  )
+  getAgentPlacements(envId, ownerId).then(
+    (data) => {
+      placements.value = data
+    },
+    () => {
+      placements.value = { env_id: envId, owner_id: ownerId, placements: [] }
     },
   )
 })
@@ -156,7 +173,39 @@ const promptSubmission = computed(() => {
       :iteration-id="promptSubmission.iteration_id"
     />
 
-    <p class="agent-placeholder">Leaderboard placements arrive in a later stage.</p>
+    <section class="agent-section">
+      <h2>Leaderboard placements</h2>
+      <UiEmptyState v-if="placements === null">Loading…</UiEmptyState>
+      <UiEmptyState v-else-if="placements.placements.length === 0">
+        No released placements for this agent yet.
+      </UiEmptyState>
+      <table v-else class="placements-table">
+        <thead>
+          <tr>
+            <th scope="col" class="num">Rank</th>
+            <th scope="col" class="num">Mean score</th>
+            <th scope="col" class="num">Agent compute</th>
+            <th scope="col">Iteration</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="placement in placements.placements" :key="placement.id">
+            <td class="num">{{ placement.rank }}</td>
+            <td class="num">{{ formatScore(placement.mean_score) }}</td>
+            <td class="num">{{ formatComputeMs(placement.mean_agent_compute_ms) }}</td>
+            <td>
+              <RouterLink
+                class="placement-link"
+                :to="`/environments/${envId}/leaderboards/${placement.iteration_id}`"
+              >
+                View leaderboards
+              </RouterLink>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
     <p v-if="isOwner()" class="agent-placeholder">
       Your agent's LLM debug view arrives in a later stage.
     </p>
@@ -246,6 +295,33 @@ const promptSubmission = computed(() => {
 }
 
 .replay-id:hover {
+  color: var(--color-accent);
+}
+
+.placements-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.placements-table th,
+.placements-table td {
+  text-align: left;
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.placements-table th {
+  color: var(--color-text-muted);
+  font-weight: 600;
+}
+
+.placements-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.placement-link {
   color: var(--color-accent);
 }
 

@@ -1,6 +1,6 @@
 # Stage 6.8: Testing, CI, and Docs
 
-Status: not started.
+Status: in progress. The step-level Docker-free suites are in place, and the Stage 6.7 browser journeys now cover released Leaderboards history and the operator console's live run log. The rating browser journey, Docker-gated leaderboard workflow coverage, CI wiring audit, and final documentation pass remain.
 
 Part of [Stage 6](../stage-06-leaderboards.md). This is the cross-cutting companion to build-order steps 1-7, mirroring [Stage 5.7](../stage-05/7-testing-ci-and-docs.md). It does three things. It pulls the per-step test obligations into one suite picture. It slots the Docker-gated workflow path into CI, the same way the Stage 5 build/load leg already is. And it updates the spec, plan, and contributor docs that the direction change touches. This is not a separate phase done at the end. Each step lands its own tests. This file tracks the whole-stage coverage and the doc/CI obligations so nothing falls between steps.
 

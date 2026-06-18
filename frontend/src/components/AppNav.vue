@@ -1,24 +1,31 @@
 <!--
   The primary section nav in the app shell's top bar (see plans/stage-04.5/information-architecture.md).
-  Environments is live today; Agents and Leaderboards are visible coming-soon placeholders — inert
-  text with a `soon` tag, not links and not focusable — so the product's eventual shape is legible
-  without dead-end links. Stage 5 turns Agents into a real link; Stage 6 does the same for
-  Leaderboards. On narrow screens the placeholders collapse first because they carry no function yet.
+  Environments and Leaderboards are live. Leaderboards follows the current environment when the
+  route names one; elsewhere it returns to the environment gallery so the user can choose which
+  environment's boards to open. Agents remains an inert coming-soon placeholder.
 -->
 <script setup lang="ts">
-import { RouterLink } from 'vue-router'
+import { computed } from 'vue'
+import { RouterLink, useRoute } from 'vue-router'
 
-// Sections that have no destination yet. When a stage lands its section, it moves up to a RouterLink.
-const placeholders = ['Agents', 'Leaderboards']
+const route = useRoute()
+
+const leaderboardsTo = computed(() => {
+  const envId = route.params.envId
+  return typeof envId === 'string' && envId !== ''
+    ? `/environments/${envId}/leaderboards`
+    : '/'
+})
 </script>
 
 <template>
   <nav class="app-nav" aria-label="Primary">
     <RouterLink class="nav-link" to="/">Environments</RouterLink>
-    <span v-for="label in placeholders" :key="label" class="nav-placeholder">
-      {{ label }}
+    <span class="nav-placeholder">
+      Agents
       <span class="nav-soon">soon</span>
     </span>
+    <RouterLink class="nav-link" :to="leaderboardsTo">Leaderboards</RouterLink>
   </nav>
 </template>
 
@@ -67,7 +74,7 @@ const placeholders = ['Agents', 'Leaderboards']
   border-radius: var(--radius-sm);
 }
 
-/* The placeholders carry no function yet, so they are the first thing to drop on a narrow bar. */
+/* The remaining placeholder carries no function, so it is the first thing to drop on a narrow bar. */
 @media (max-width: 480px) {
   .nav-placeholder {
     display: none;

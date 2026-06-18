@@ -49,7 +49,11 @@ async function renderPicker() {
 describe('WatchAgentPicker', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.mocked(getMe).mockResolvedValue({ user_id: 'dev-user', allowlisted: true })
+    vi.mocked(getMe).mockResolvedValue({
+      user_id: 'dev-user',
+      allowlisted: true,
+      is_operator: false,
+    })
   })
 
   it('requests only the active ready submissions and lists them', async () => {
@@ -106,7 +110,7 @@ describe('WatchAgentPicker', () => {
   })
 
   it('hides the Watch action for a non-allowlisted viewer but still lists agents', async () => {
-    vi.mocked(getMe).mockResolvedValue({ user_id: 'carol', allowlisted: false })
+    vi.mocked(getMe).mockResolvedValue({ user_id: 'carol', allowlisted: false, is_operator: false })
     vi.mocked(listActiveSubmissions).mockResolvedValue([summary()])
     await renderPicker()
     expect(await screen.findByText('eve')).toBeInTheDocument()

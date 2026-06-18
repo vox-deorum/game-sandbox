@@ -14,7 +14,7 @@ import Fastify, { type FastifyInstance } from 'fastify'
 
 import { registerAdminRoutes } from './admin/routes.js'
 import type { EnvironmentRegistry } from './environments.js'
-import { isAllowlisted, resolveUserId } from './identity.js'
+import { isAllowlisted, isOperator, resolveUserId } from './identity.js'
 import { registerLeaderboardRoutes } from './leaderboards/routes.js'
 import { registerRatingRoutes } from './ratings/routes.js'
 import type { RecordingsStore } from './recordings.js'
@@ -137,11 +137,17 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.get('/api/environments', () => deps.environments.list())
 
   // The frontend's single source for who-am-I and what-may-I-do. One mock user is auto-logged-on
-  // by the browser; this reports the resolved id and allowlist membership so the OAuth replacement
-  // has one obvious place to land.
+  // by the browser; this reports the resolved id, session-allowlist membership, and operator status
+  // (the Stage 6 admin console gates its route and nav entry on the last). The backend admin guard is
+  // the real authority; `is_operator` only lets the UI avoid showing dead controls. The OAuth
+  // replacement has one obvious place to land.
   app.get('/api/me', (request) => {
     const userId = resolveUserId(request.headers)
-    return { user_id: userId, allowlisted: isAllowlisted(userId, deps.allowlist) }
+    return {
+      user_id: userId,
+      allowlisted: isAllowlisted(userId, deps.allowlist),
+      is_operator: isOperator(userId, deps.operatorAllowlist),
+    }
   })
 
   app.post<{ Body: StartBody }>(

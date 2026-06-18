@@ -1,0 +1,201 @@
+<!--
+  The two leaderboards side by side (Stage 6.7), per frontend.md. The same component renders the
+  current released iteration embedded on the environment page, a specific iteration on the Leaderboards
+  page, and the operator's verify-before-release view in the admin console — the data shape is identical,
+  only the surrounding context differs.
+
+  The boards never merge into one number, mirroring the spec. The automated board shows rank, agent,
+  mean normalized score, the weighted mean agent compute time as its own column, a failure indicator,
+  and a per-row Replay link into the Stage 4 viewer. The human-feedback board shows rank, agent, mean
+  rating, and count; an agent under three ratings appears unranked (the backend leaves its `rank` null).
+-->
+<script setup lang="ts">
+import { RouterLink } from 'vue-router'
+
+import type { Board, BoardAgentRef } from '../api/client.js'
+import { formatComputeMs, formatRating, formatScore } from '../lib/format.js'
+import UiBadge from './ui/UiBadge.vue'
+import UiEmptyState from './ui/UiEmptyState.vue'
+
+const props = defineProps<{ board: Board; envId: string }>()
+
+/** A stable key for an agent row, so v-for keys never collide across the Naive baseline and submissions. */
+function agentKey(agent: BoardAgentRef): string {
+  return agent.kind === 'submission' ? `submission:${agent.submission_id}` : 'builtin-naive'
+}
+
+/** The owner id a submitted-agent row links to; null for the ownerless Naive baseline. */
+function ownerOf(agent: BoardAgentRef): string | null {
+  return agent.kind === 'submission' ? agent.user_id : null
+}
+</script>
+
+<template>
+  <div class="boards">
+    <section class="board" aria-labelledby="automated-board-title">
+      <h3 id="automated-board-title" class="board-title">Automated board</h3>
+      <UiEmptyState v-if="props.board.automated.length === 0">
+        No automated results yet.
+      </UiEmptyState>
+      <table v-else class="board-table">
+        <thead>
+          <tr>
+            <th scope="col" class="num">#</th>
+            <th scope="col">Agent</th>
+            <th scope="col" class="num">Mean score</th>
+            <th scope="col" class="num">Agent compute</th>
+            <th scope="col">Replay</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="(row, index) in props.board.automated" :key="agentKey(row.agent)">
+            <td class="num">{{ index + 1 }}</td>
+            <td>
+              <RouterLink
+                v-if="ownerOf(row.agent) !== null"
+                class="agent-link"
+                :to="`/environments/${props.envId}/agents/${ownerOf(row.agent)}`"
+              >
+                {{ ownerOf(row.agent) }}
+              </RouterLink>
+              <span v-else class="agent-naive">
+                Naive baseline <UiBadge>Built-in</UiBadge>
+              </span>
+              <UiBadge v-if="row.failure_count > 0" variant="accent" class="failure-flag">
+                {{ row.failure_count }} failed
+              </UiBadge>
+            </td>
+            <td class="num">{{ formatScore(row.mean_score) }}</td>
+            <td class="num">{{ formatComputeMs(row.mean_agent_compute_ms) }}</td>
+            <td>
+              <RouterLink
+                v-if="row.recording_id !== null"
+                class="replay-link"
+                :to="`/replays/${row.recording_id}`"
+              >
+                Replay
+              </RouterLink>
+              <span v-else class="muted">—</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="board" aria-labelledby="human-board-title">
+      <h3 id="human-board-title" class="board-title">Human feedback</h3>
+      <UiEmptyState v-if="props.board.human.length === 0">No ratings yet.</UiEmptyState>
+      <table v-else class="board-table">
+        <thead>
+          <tr>
+            <th scope="col" class="num">#</th>
+            <th scope="col">Agent</th>
+            <th scope="col" class="num">Mean rating</th>
+            <th scope="col" class="num">Ratings</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr
+            v-for="row in props.board.human"
+            :key="agentKey(row.agent)"
+            :class="{ unranked: row.rank === null }"
+          >
+            <td class="num">
+              <span v-if="row.rank !== null">{{ row.rank }}</span>
+              <span v-else class="muted" title="Fewer than three ratings">—</span>
+            </td>
+            <td>
+              <RouterLink
+                v-if="ownerOf(row.agent) !== null"
+                class="agent-link"
+                :to="`/environments/${props.envId}/agents/${ownerOf(row.agent)}`"
+              >
+                {{ ownerOf(row.agent) }}
+              </RouterLink>
+              <span v-else class="agent-naive">
+                Naive baseline <UiBadge>Built-in</UiBadge>
+              </span>
+            </td>
+            <td class="num">{{ formatRating(row.mean) }}</td>
+            <td class="num">{{ row.count }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+  </div>
+</template>
+
+<style scoped>
+.boards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-5);
+}
+
+.board-title {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-md);
+}
+
+.board-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.board-table th,
+.board-table td {
+  text-align: left;
+  padding: var(--space-2) var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.board-table th {
+  color: var(--color-text-muted);
+  font-weight: 600;
+}
+
+.board-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.agent-link {
+  color: var(--color-text);
+  transition: color var(--motion-fast) var(--ease-out);
+}
+
+.agent-link:hover {
+  color: var(--color-accent);
+}
+
+.agent-naive {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text);
+}
+
+.failure-flag {
+  margin-left: var(--space-2);
+}
+
+.replay-link {
+  color: var(--color-accent);
+}
+
+.muted {
+  color: var(--color-text-muted);
+}
+
+/* Under-threshold human rows read as "next in line" below the ranked set. */
+.unranked {
+  opacity: 0.7;
+}
+
+@media (max-width: 768px) {
+  .boards {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

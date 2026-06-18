@@ -105,14 +105,19 @@ describe('HTTP API', () => {
   it('reports identity and allowlist membership at GET /api/me', async () => {
     const mine = await app.inject({ method: 'GET', url: '/api/me' })
     expect(mine.statusCode).toBe(200)
-    expect(mine.json()).toEqual({ user_id: 'dev-user', allowlisted: true })
+    // The dev mock user is in the default operator allowlist, so it reports as an operator too.
+    expect(mine.json()).toEqual({ user_id: 'dev-user', allowlisted: true, is_operator: true })
 
     const stranger = await app.inject({
       method: 'GET',
       url: '/api/me',
       headers: { 'x-sandbox-user': 'carol' },
     })
-    expect(stranger.json()).toEqual({ user_id: 'carol', allowlisted: false })
+    expect(stranger.json()).toEqual({
+      user_id: 'carol',
+      allowlisted: false,
+      is_operator: false,
+    })
   })
 
   it('rejects a non-allowlisted user starting a session in either mode with 403', async () => {

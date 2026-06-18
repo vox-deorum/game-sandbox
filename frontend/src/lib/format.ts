@@ -22,6 +22,24 @@ export function slotLabel(meta: EnvironmentMeta): string {
     : `${meta.min_slots}–${meta.max_slots} slots`
 }
 
+/** A leaderboard mean score, to two decimals (the normalized higher-is-better number). */
+export function formatScore(value: number): string {
+  return value.toFixed(2)
+}
+
+/** A weighted-mean agent compute time in milliseconds, or an em dash when no tick contributed. */
+export function formatComputeMs(value: number | null | undefined): string {
+  if (value === null || value === undefined) {
+    return '—'
+  }
+  return `${value.toFixed(1)} ms`
+}
+
+/** A mean human rating, to one decimal (the 1-5 feedback mean). */
+export function formatRating(value: number): string {
+  return value.toFixed(1)
+}
+
 /**
  * The decision-log cell text for one tick's agent action. The action shape is environment-specific
  * (a scalar like Flappy Bird's 0/1, or a structured object for a richer action space), so this stays

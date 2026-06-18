@@ -11,6 +11,9 @@ vi.mock('../src/api/client.js', () => ({
   listRecordings: vi.fn(),
   startSession: vi.fn(),
   getMe: vi.fn(),
+  // The page fetches the environment leaderboards on mount for the boards embed and the watch/play
+  // gate; default it to a play-open, nothing-released payload so the entry points stay enabled.
+  getEnvironmentLeaderboards: vi.fn(),
   // The embedded SubmitAgentForm probes capabilities on mount and the WatchAgentPicker lists the
   // active ready agents; both default to empty here. The rest are unused in this suite.
   getSubmissionCapabilities: vi.fn().mockResolvedValue({ local_submissions: false }),
@@ -20,7 +23,13 @@ vi.mock('../src/api/client.js', () => ({
   getSubmission: vi.fn(),
 }))
 
-import { getEnvironments, getMe, listRecordings, startSession } from '../src/api/client.js'
+import {
+  getEnvironmentLeaderboards,
+  getEnvironments,
+  getMe,
+  listRecordings,
+  startSession,
+} from '../src/api/client.js'
 import EnvironmentPage from '../src/pages/EnvironmentPage.vue'
 
 // A stub for the session route: this suite tests the environment page's navigation seam, not the
@@ -34,6 +43,8 @@ async function renderPage() {
     // A home stub so the hub's "Environments / …" context-line link resolves in the test router.
     { path: '/', component: { template: '<div />' } },
     { path: '/environments/:envId', component: EnvironmentPage },
+    { path: '/environments/:envId/leaderboards/:iterationId?', component: { template: '<div />' } },
+    { path: '/environments/:envId/admin', component: { template: '<div />' } },
     { path: '/sessions/:id', component: SessionStub },
   ])
   router.push('/environments/flappy_bird')
@@ -46,19 +57,78 @@ describe('EnvironmentPage', () => {
     vi.clearAllMocks()
     vi.mocked(getEnvironments).mockResolvedValue([META])
     vi.mocked(listRecordings).mockResolvedValue([])
+    // Default: an iteration is play-open (so the watch/play entry points are enabled) but nothing is
+    // released yet. Individual tests override this to exercise the closed-play and released states.
+    vi.mocked(getEnvironmentLeaderboards).mockResolvedValue({
+      current: null,
+      submission_iteration_id: 'iter-1',
+      play_iteration_id: 'iter-1',
+    })
   })
 
   it('hides the play entry point for a non-allowlisted user', async () => {
-    vi.mocked(getMe).mockResolvedValue({ user_id: 'carol', allowlisted: false })
+    vi.mocked(getMe).mockResolvedValue({ user_id: 'carol', allowlisted: false, is_operator: false })
     await renderPage()
     expect(await screen.findByText(/limited to allowlisted users/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Play Yourself' })).toBeNull()
     // Watching moved to the picker, whose Watch buttons are likewise hidden when not allowlisted.
     expect(screen.queryByRole('button', { name: 'Watch' })).toBeNull()
+    // The operator-only admin entry point is hidden from a non-operator.
+    expect(screen.queryByRole('link', { name: 'Admin console' })).toBeNull()
+  })
+
+  it('disables watch and play when no iteration is play-open', async () => {
+    vi.mocked(getMe).mockResolvedValue({
+      user_id: 'dev-user',
+      allowlisted: true,
+      is_operator: false,
+    })
+    vi.mocked(getEnvironmentLeaderboards).mockResolvedValue({
+      current: null,
+      submission_iteration_id: 'iter-1',
+      play_iteration_id: null,
+    })
+    await renderPage()
+    expect(await screen.findByText(/Public play is closed/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Play Yourself' })).toBeNull()
+    // The submit form stays available even with play closed.
+    expect(screen.getByRole('heading', { name: 'Submit an agent' })).toBeInTheDocument()
+  })
+
+  it('hides the submission form when no iteration is accepting submissions', async () => {
+    vi.mocked(getMe).mockResolvedValue({
+      user_id: 'dev-user',
+      allowlisted: true,
+      is_operator: false,
+    })
+    vi.mocked(getEnvironmentLeaderboards).mockResolvedValue({
+      current: null,
+      submission_iteration_id: null,
+      play_iteration_id: 'iter-1',
+    })
+    await renderPage()
+    expect(await screen.findByText(/Submissions are closed/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Verify reachability' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Submit agent' })).toBeNull()
+  })
+
+  it('shows the operator admin entry point only to an operator', async () => {
+    vi.mocked(getMe).mockResolvedValue({
+      user_id: 'dev-user',
+      allowlisted: true,
+      is_operator: true,
+    })
+    await renderPage()
+    const adminLink = await screen.findByRole('link', { name: 'Admin console' })
+    expect(adminLink).toHaveAttribute('href', '/environments/flappy_bird/admin')
   })
 
   it('starts a session through the start form and navigates to it', async () => {
-    vi.mocked(getMe).mockResolvedValue({ user_id: 'dev-user', allowlisted: true })
+    vi.mocked(getMe).mockResolvedValue({
+      user_id: 'dev-user',
+      allowlisted: true,
+      is_operator: false,
+    })
     vi.mocked(startSession).mockResolvedValue({
       ok: true,
       session: { id: 's1', wsPath: '/api/sessions/s1/ws' },
@@ -77,7 +147,11 @@ describe('EnvironmentPage', () => {
   })
 
   it('sends the human-slot timeout override entered in the start form', async () => {
-    vi.mocked(getMe).mockResolvedValue({ user_id: 'dev-user', allowlisted: true })
+    vi.mocked(getMe).mockResolvedValue({
+      user_id: 'dev-user',
+      allowlisted: true,
+      is_operator: false,
+    })
     vi.mocked(startSession).mockResolvedValue({
       ok: true,
       session: { id: 's1', wsPath: '/api/sessions/s1/ws' },
@@ -96,7 +170,11 @@ describe('EnvironmentPage', () => {
   })
 
   it('navigates to the active session on an already-active start (rejoin)', async () => {
-    vi.mocked(getMe).mockResolvedValue({ user_id: 'dev-user', allowlisted: true })
+    vi.mocked(getMe).mockResolvedValue({
+      user_id: 'dev-user',
+      allowlisted: true,
+      is_operator: false,
+    })
     vi.mocked(startSession).mockResolvedValue({
       ok: false,
       reason: 'already_active',

@@ -58,7 +58,11 @@ describe('ReplayPage', () => {
     vi.clearAllMocks()
     drawn = []
     mountCtx = null
-    vi.mocked(getMe).mockResolvedValue({ user_id: 'dev-user', allowlisted: true })
+    vi.mocked(getMe).mockResolvedValue({
+      user_id: 'dev-user',
+      allowlisted: true,
+      is_operator: false,
+    })
   })
 
   it('loads, mounts a draw-only renderer, and renders transport controls', async () => {

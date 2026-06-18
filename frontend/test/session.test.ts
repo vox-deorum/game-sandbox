@@ -124,7 +124,11 @@ describe('SessionPage', () => {
   })
 
   it('mounts the renderer for the owner of a human session and wires input + active timeout', async () => {
-    vi.mocked(getMe).mockResolvedValue({ user_id: 'dev-user', allowlisted: true })
+    vi.mocked(getMe).mockResolvedValue({
+      user_id: 'dev-user',
+      allowlisted: true,
+      is_operator: false,
+    })
     vi.mocked(getSession).mockResolvedValue(ownerRow())
     await renderSession()
     await waitForHandlers()
@@ -149,7 +153,11 @@ describe('SessionPage', () => {
   })
 
   it('reflects pause/resume echoes and sends the toggle command', async () => {
-    vi.mocked(getMe).mockResolvedValue({ user_id: 'dev-user', allowlisted: true })
+    vi.mocked(getMe).mockResolvedValue({
+      user_id: 'dev-user',
+      allowlisted: true,
+      is_operator: false,
+    })
     vi.mocked(getSession).mockResolvedValue(ownerRow())
     await renderSession()
     await waitForHandlers()
@@ -167,7 +175,11 @@ describe('SessionPage', () => {
   })
 
   it('shows the end card with the result facts and a replay link', async () => {
-    vi.mocked(getMe).mockResolvedValue({ user_id: 'dev-user', allowlisted: true })
+    vi.mocked(getMe).mockResolvedValue({
+      user_id: 'dev-user',
+      allowlisted: true,
+      is_operator: false,
+    })
     vi.mocked(getSession).mockResolvedValue(ownerRow())
     await renderSession()
     await waitForHandlers()
@@ -184,7 +196,11 @@ describe('SessionPage', () => {
   })
 
   it('returns to an ended session without opening a socket and shows recording metadata', async () => {
-    vi.mocked(getMe).mockResolvedValue({ user_id: 'dev-user', allowlisted: true })
+    vi.mocked(getMe).mockResolvedValue({
+      user_id: 'dev-user',
+      allowlisted: true,
+      is_operator: false,
+    })
     vi.mocked(getSession).mockResolvedValue(endedOwnerRow())
     vi.mocked(listRecordings).mockResolvedValue([
       {
@@ -211,7 +227,11 @@ describe('SessionPage', () => {
   })
 
   it('gives a spectator no controls and no input', async () => {
-    vi.mocked(getMe).mockResolvedValue({ user_id: 'someone-else', allowlisted: true })
+    vi.mocked(getMe).mockResolvedValue({
+      user_id: 'someone-else',
+      allowlisted: true,
+      is_operator: false,
+    })
     vi.mocked(getSession).mockResolvedValue(ownerRow())
     await renderSession()
     await waitForHandlers()
@@ -226,7 +246,7 @@ describe('SessionPage', () => {
   })
 
   it('buffers a watch run through the jitter buffer and reveals game over only after it drains', async () => {
-    vi.mocked(getMe).mockResolvedValue({ user_id: 'viewer', allowlisted: true })
+    vi.mocked(getMe).mockResolvedValue({ user_id: 'viewer', allowlisted: true, is_operator: false })
     vi.mocked(getSession).mockResolvedValue(scriptedRow())
     await renderSession()
     await waitForHandlers()
@@ -269,7 +289,7 @@ describe('SessionPage', () => {
   })
 
   it('shows a waiting indicator when the jitter buffer underruns, and clears it when frames resume', async () => {
-    vi.mocked(getMe).mockResolvedValue({ user_id: 'viewer', allowlisted: true })
+    vi.mocked(getMe).mockResolvedValue({ user_id: 'viewer', allowlisted: true, is_operator: false })
     vi.mocked(getSession).mockResolvedValue(scriptedRow())
     await renderSession()
     await waitForHandlers()
@@ -304,7 +324,11 @@ describe('SessionPage', () => {
   })
 
   it('shows "No such session" when the row is missing', async () => {
-    vi.mocked(getMe).mockResolvedValue({ user_id: 'dev-user', allowlisted: true })
+    vi.mocked(getMe).mockResolvedValue({
+      user_id: 'dev-user',
+      allowlisted: true,
+      is_operator: false,
+    })
     vi.mocked(getSession).mockResolvedValue(undefined)
     await renderSession()
     expect(await screen.findByText('No such session.')).toBeInTheDocument()
