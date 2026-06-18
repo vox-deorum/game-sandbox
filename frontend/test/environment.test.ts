@@ -112,6 +112,23 @@ describe('EnvironmentPage', () => {
     expect(screen.queryByRole('button', { name: 'Submit agent' })).toBeNull()
   })
 
+  it('keeps the submit form available when the leaderboards read fails', async () => {
+    vi.mocked(getMe).mockResolvedValue({
+      user_id: 'dev-user',
+      allowlisted: true,
+      is_operator: false,
+    })
+    // A transient failure must not read as "submissions closed": the form falls back to its own
+    // status handling instead, while the play gate stays at its safe-closed default.
+    vi.mocked(getEnvironmentLeaderboards).mockRejectedValue(new Error('network blip'))
+    await renderPage()
+    expect(await screen.findByRole('button', { name: 'Submit agent' })).toBeInTheDocument()
+    expect(screen.queryByText(/Submissions are closed/)).toBeNull()
+    expect(screen.queryByText(/Loading submission status/)).toBeNull()
+    // Play stays closed when the read fails (the gate cannot confirm an open play target).
+    expect(screen.getByText(/Public play is closed/)).toBeInTheDocument()
+  })
+
   it('shows the operator admin entry point only to an operator', async () => {
     vi.mocked(getMe).mockResolvedValue({
       user_id: 'dev-user',

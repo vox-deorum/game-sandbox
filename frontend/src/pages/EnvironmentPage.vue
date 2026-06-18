@@ -42,12 +42,17 @@ const startError = ref<string | null>(null)
 // the watch/play gate read from this; an unreleased iteration's boards never appear (the public read
 // only returns released results).
 const leaderboards = ref<EnvironmentLeaderboards | null>(null)
+// True once the leaderboards read has failed: we can no longer trust it to report the submission
+// target, so the submit form falls back to its own status handling rather than reading "closed".
+const leaderboardsError = ref(false)
 // Public watch/play is enabled only when an iteration is the environment's play-open target. Released
 // history stays readable regardless, so the boards embed below is independent of this gate.
 const playOpen = computed(() => leaderboards.value?.play_iteration_id != null)
-// Submission and play targets are independent. Mount the form only for an actual open submission
-// target, otherwise its reachability controls would invite a request the backend must reject.
+// Submission and play targets are independent. Mount the form for an actual open submission target;
+// also mount it when the read failed, so a network blip degrades to the form's own no_open_iteration
+// handling instead of falsely reading "closed".
 const submissionsOpen = computed(() => leaderboards.value?.submission_iteration_id != null)
+const showSubmitForm = computed(() => submissionsOpen.value || leaderboardsError.value)
 
 onMounted(() => {
   getEnvironmentLeaderboards(envId).then(
@@ -55,9 +60,10 @@ onMounted(() => {
       leaderboards.value = data
     },
     () => {
-      // A failed leaderboards read leaves the section empty rather than breaking the hub; the play
-      // gate then reads closed, which is the safe default.
-      leaderboards.value = { current: null, submission_iteration_id: null, play_iteration_id: null }
+      // A failed read leaves the boards empty rather than breaking the hub, and keeps the play gate at
+      // its safe-closed default (leaderboards stays null). The submit form, however, degrades to its
+      // own status check via leaderboardsError so a transient blip does not read as "submissions closed".
+      leaderboardsError.value = true
     },
   )
 })
@@ -160,8 +166,10 @@ async function start(input: { seed?: number; humanSlotTimeoutMs?: number }): Pro
 
     <section class="env-section">
       <h2>Submit an agent</h2>
-      <UiEmptyState v-if="leaderboards === null">Loading submission status…</UiEmptyState>
-      <SubmitAgentForm v-else-if="submissionsOpen" :env-id="meta.env_id" />
+      <UiEmptyState v-if="leaderboards === null && !leaderboardsError">
+        Loading submission status…
+      </UiEmptyState>
+      <SubmitAgentForm v-else-if="showSubmitForm" :env-id="meta.env_id" />
       <UiEmptyState v-else>Submissions are closed for this environment right now.</UiEmptyState>
     </section>
 
