@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/vue'
+import { screen, waitFor, within } from '@testing-library/vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AgentProfile, AgentProfileSubmission, SubmissionCheck } from '../src/api/client.js'
@@ -12,7 +12,7 @@ vi.mock('../src/api/client.js', () => ({
   setAuthorPrompt: vi.fn(async () => ({ ok: true, prompt: null })),
 }))
 
-import { getAgentProfile, getMe } from '../src/api/client.js'
+import { getAgentProfile, getAuthorPrompt, getMe } from '../src/api/client.js'
 import AgentProfilePage from '../src/pages/AgentProfilePage.vue'
 
 const ReplayStub = { template: '<div>replay {{ $route.params.id }}</div>' }
@@ -46,8 +46,18 @@ function submission(overrides: Partial<AgentProfileSubmission> = {}): AgentProfi
   }
 }
 
-async function renderProfile(profile: AgentProfile) {
-  vi.mocked(getAgentProfile).mockResolvedValue(profile)
+type ProfileFixture = Omit<
+  AgentProfile,
+  'submission_iteration_id' | 'play_iteration_id'
+> &
+  Partial<Pick<AgentProfile, 'submission_iteration_id' | 'play_iteration_id'>>
+
+async function renderProfile(profile: ProfileFixture) {
+  vi.mocked(getAgentProfile).mockResolvedValue({
+    submission_iteration_id: null,
+    play_iteration_id: null,
+    ...profile,
+  })
   const router = memoryRouter([
     // Stubs for the breadcrumb links so the context-line RouterLinks resolve in the test router.
     { path: '/', component: { template: '<div />' } },
@@ -139,6 +149,26 @@ describe('AgentProfilePage', () => {
     await renderProfile({ env_id: 'flappy_bird', owner_id: 'eve', submissions: [submission()] })
     expect(await screen.findByText(/Leaderboard placements/)).toBeInTheDocument()
     expect(screen.queryByText(/LLM debug view/)).toBeNull()
+  })
+
+  it('edits the play-open prompt when submissions are open for a newer round', async () => {
+    vi.mocked(getMe).mockResolvedValue({ user_id: 'eve', allowlisted: true })
+    await renderProfile({
+      env_id: 'flappy_bird',
+      owner_id: 'eve',
+      submission_iteration_id: 'iter-next',
+      play_iteration_id: 'iter-play',
+      submissions: [
+        submission({ id: 'next', iteration_id: 'iter-next' }),
+        submission({
+          id: 'play',
+          iteration_id: 'iter-play',
+          created_at: '2026-06-13T00:00:00Z',
+        }),
+      ],
+    })
+
+    await waitFor(() => expect(vi.mocked(getAuthorPrompt)).toHaveBeenCalledWith('iter-play'))
   })
 
   it('shows an empty history for an owner with no submissions', async () => {

@@ -236,9 +236,9 @@ export class Orchestrator {
 
   /**
    * Resolve the image to launch. A plain run ensures the session base image, as before. A
-   * `submissionId` run resolves the submission (it must be `ready` and for the requested
-   * environment's open iteration), ensures its overlay image through the submission-image helper, and
-   * returns the slot binding the session config threads into `player_0`.
+   * `submissionId` run resolves the submission (it must be `ready` and active for the requested
+   * environment's play-open iteration), ensures its overlay image through the submission-image helper,
+   * and returns the slot binding the session config threads into `player_0`.
    */
   private async resolveImage(
     request: StartRequest,
@@ -267,9 +267,9 @@ export class Orchestrator {
     if (submission.status !== 'ready') {
       throw new OrchestratorError(409, 'submission is not ready to run', 'submission_not_ready')
     }
-    // Only the open iteration's active submissions are watch choices; a superseded (resubmitted-over)
-    // or closed-iteration submission stays profile history rather than a runnable agent.
-    const iteration = await this.storage.getOpenSubmissionIteration(meta.env_id)
+    // Only the play-open iteration's active submissions are watch choices. The submission window may
+    // already point at the next round, while the previous round remains the public play target.
+    const iteration = await this.storage.getPublicPlayIteration(meta.env_id)
     if (
       iteration === undefined ||
       submission.iteration_id !== iteration.id ||
@@ -277,7 +277,7 @@ export class Orchestrator {
     ) {
       throw new OrchestratorError(
         409,
-        'submission is not the active submission for the open iteration',
+        'submission is not active for the play-open iteration',
         'submission_not_active',
       )
     }

@@ -9,10 +9,10 @@
   - The built-in Naive baseline gets a normal control (it has no owner).
   - A closed play window is read-only: prior ratings show, but no save control is offered.
 
-  The two prompts that guide the single 1-5 score render next to each agent — the operator's iteration
-  prompt (applies to every agent) and the agent author's own prompt (only that agent). Both arrive in
-  the read payload, so no second request is needed. The Naive baseline has no author, so only the
-  iteration prompt applies to it.
+  The two prompts that guide the 1-5 scores arrive in the read payload, so no second request is needed.
+  The operator's iteration prompt applies to every agent, so it renders once above the list. The agent
+  author's own prompt applies to only that agent, so it renders next to it. The Naive baseline has no
+  author, so only the iteration prompt applies to it.
 -->
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
@@ -142,6 +142,11 @@ function errorMessage(reason: 'play_closed' | 'not_rateable' | 'not_finished' | 
       Rating for this round has closed. Your previous ratings are shown below.
     </p>
 
+    <!-- The operator's iteration prompt applies to every agent, so it shows once for the panel. -->
+    <p v-if="ratings?.iteration_prompt" class="prompt">
+      <span class="prompt-from">From the operator:</span> {{ ratings.iteration_prompt }}
+    </p>
+
     <ul class="agent-list">
       <li v-for="agent in agents" :key="wireKey(agent.agent)" class="agent">
         <div class="agent-head">
@@ -168,9 +173,6 @@ function errorMessage(reason: 'play_closed' | 'not_rateable' | 'not_finished' | 
           </div>
         </div>
 
-        <p v-if="ratings?.iteration_prompt" class="prompt">
-          <span class="prompt-from">From the operator:</span> {{ ratings.iteration_prompt }}
-        </p>
         <p v-if="agent.author_prompt" class="prompt">
           <span class="prompt-from">From the author:</span> {{ agent.author_prompt }}
         </p>

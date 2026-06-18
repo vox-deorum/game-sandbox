@@ -25,6 +25,7 @@ import { makeConfig, makeEnvironments, makeSubmissionDeps } from '../support/har
 const ENV_ID = 'flappy_bird'
 const BOB = { 'x-sandbox-user': 'bob' }
 const ALICE = { 'x-sandbox-user': 'alice' }
+const MALLORY = { 'x-sandbox-user': 'mallory' }
 
 /** A header `players` entry as the recording schema shapes it. */
 type PlayerEntry =
@@ -49,7 +50,7 @@ describe('rating API', () => {
       environments,
       recordings,
       retention: new Retention(storage, recordings, config),
-      allowlist: ['dev-user'],
+      allowlist: ['dev-user', 'alice', 'bob'],
       ...makeSubmissionDeps(storage, config),
     })
     await app.ready()
@@ -198,6 +199,28 @@ describe('rating API', () => {
     expect(
       (second.json() as { agents: Array<{ your_rating: number | null }> }).agents[0]?.your_rating,
     ).toBe(5)
+  })
+
+  it('rejects a rating write from a user outside the session allowlist', async () => {
+    const iteration = await playOpenIteration()
+    const subId = await submissionFor(iteration.id, 'alice')
+    const recId = await writeRecording('flappy_bird-not-allowed', {
+      player_0: { kind: 'agent', label: "alice's agent", submission_id: subId },
+    })
+    const sessionId = await seedSession({ iterationId: iteration.id, recordingId: recId })
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/sessions/${sessionId}/ratings`,
+      headers: MALLORY,
+      payload: {
+        ratings: [{ agent: { kind: 'submission', submission_id: subId }, score: 5 }],
+      },
+    })
+
+    expect(res.statusCode).toBe(403)
+    expect((res.json() as { code: string }).code).toBe('not_allowlisted')
+    expect(await storage.listRatingsByIteration(iteration.id)).toHaveLength(0)
   })
 
   it('rejects an out-of-range score and a mixed valid/invalid payload writes nothing', async () => {
@@ -404,6 +427,23 @@ describe('rating API', () => {
     const body = res.json() as { agents: Array<{ is_own: boolean; your_rating: number | null }> }
     expect(body.agents[0]?.is_own).toBe(true)
     expect(body.agents[0]?.your_rating).toBeNull()
+  })
+
+  it('returns no rateable agents for a pure Naive watch recording', async () => {
+    const iteration = await playOpenIteration()
+    const recId = await writeRecording('flappy_bird-naive-only', {
+      player_0: { kind: 'agent', label: 'Naive agent' },
+    })
+    const sessionId = await seedSession({ iterationId: iteration.id, recordingId: recId })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${sessionId}/ratings`,
+      headers: BOB,
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect((res.json() as { agents: unknown[] }).agents).toEqual([])
   })
 
   it('sets the author prompt under the caller identity and rejects a caller with no agent', async () => {

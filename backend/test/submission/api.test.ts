@@ -273,11 +273,52 @@ describe('submission API', () => {
     expect(rows.map((r) => r.id)).not.toContain(first.id)
   })
 
-  it('returns an empty active list for an environment with no open iteration', async () => {
+  it('returns an empty active list for an environment with no play-open iteration', async () => {
     await build()
     const res = await app.inject({ method: 'GET', url: `/api/environments/${ENV_ID}/submissions` })
     expect(res.statusCode).toBe(200)
     expect(res.json()).toEqual([])
+  })
+
+  it('lists ready submissions from the play-open iteration when the submission target differs', async () => {
+    await build()
+    const playIteration = await storage.ensureOpenIteration(ENV_ID, 1)
+    const playable = await storage.createSubmission({
+      iteration_id: playIteration.id,
+      env_id: ENV_ID,
+      user_id: 'play-owner',
+      source_kind: 'git',
+      repo_url: 'https://example.test/playable',
+      commit_sha: 'play-sha',
+      local_path: null,
+      ref: null,
+      created_at: new Date().toISOString(),
+    })
+    await storage.updateSubmissionStatus(playable.id, 'ready')
+    await storage.setSubmissionStatus(playIteration.id, 'closed')
+
+    const submissionIteration = await storage.createIteration({ env_id: ENV_ID, deps_version: 1 })
+    await storage.setSubmissionStatus(submissionIteration.id, 'open')
+    const nextRound = await storage.createSubmission({
+      iteration_id: submissionIteration.id,
+      env_id: ENV_ID,
+      user_id: 'next-owner',
+      source_kind: 'git',
+      repo_url: 'https://example.test/next',
+      commit_sha: 'next-sha',
+      local_path: null,
+      ref: null,
+      created_at: new Date().toISOString(),
+    })
+    await storage.updateSubmissionStatus(nextRound.id, 'ready')
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/environments/${ENV_ID}/submissions?status=ready`,
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect((res.json() as Array<{ id: string }>).map((row) => row.id)).toEqual([playable.id])
   })
 
   describe('agent profile read', () => {
@@ -343,6 +384,8 @@ describe('submission API', () => {
       const body = res.json() as {
         env_id: string
         owner_id: string
+        submission_iteration_id: string | null
+        play_iteration_id: string | null
         submissions: Array<{
           id: string
           status: string
@@ -351,7 +394,12 @@ describe('submission API', () => {
           replays: string[]
         }>
       }
-      expect(body).toMatchObject({ env_id: ENV_ID, owner_id: 'eve' })
+      expect(body).toMatchObject({
+        env_id: ENV_ID,
+        owner_id: 'eve',
+        submission_iteration_id: iteration.id,
+        play_iteration_id: iteration.id,
+      })
       // Newest first: the ready submission, then the superseded failed one (history is preserved).
       expect(body.submissions.map((s) => s.id)).toEqual([second.id, first.id])
       const ready = body.submissions[0]

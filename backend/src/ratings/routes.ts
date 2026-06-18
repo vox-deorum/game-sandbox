@@ -6,17 +6,18 @@
  *
  * The authoritative source of which agents a session involved is the finished recording's header
  * `players` attribution: it names every slot's driver (human, submission, or the built-in Naive
- * baseline), for both submitted and built-in slots, so it surfaces a pure-Naive watch session that
- * `session_submissions` alone could not. The header entry shape is the recording schema's; this module
+ * baseline), for both submitted and built-in slots. The header entry shape is the recording schema's;
+ * this module
  * is the one place it is translated into the `AgentRef` the rest of the stage stores — an `agent`
  * entry with a `submission_id` becomes a `submission` ref (its owner resolved server-side from the
  * submission, never trusted from the header), an `agent` entry without one becomes `builtin-naive`
  * (keyed on the absence of `submission_id`, not the display label), and `human` entries are skipped.
+ * A resolved set containing only the built-in baseline is intentionally returned as empty.
  */
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import { z } from 'zod'
 
-import { resolveUserId } from '../identity.js'
+import { isAllowlisted, resolveUserId } from '../identity.js'
 import type { RecordingsStore } from '../recordings.js'
 import type { AgentRef, Iteration, Session, Storage } from '../storage/index.js'
 
@@ -25,6 +26,8 @@ export interface RatingDeps {
   storage: Storage
   /** The recordings volume, read for the finished session's `players` attribution. */
   recordings: RecordingsStore
+  /** The same public-session allowlist that controls who may submit human-feedback ratings. */
+  allowlist: readonly string[]
 }
 
 /** The author's per-submission rating prompt is display-only guidance; cap it so it stays a prompt. */
@@ -137,8 +140,8 @@ function fail(status: number, code: string, error: string): { ok: false; failure
 
 /**
  * The rateable agents a session involved. The recording header's `players` map is authoritative; when
- * it cannot be read, fall back to the session's submitted-slot links (which cannot surface a pure-Naive
- * session, but recover submitted agents). Submitted-agent owners are always resolved server-side from
+ * it cannot be read, fall back to the session's submitted-slot links. Submitted-agent owners are
+ * always resolved server-side from
  * the submission row, never trusted from the header. Human slots are skipped — humans are not rateable.
  */
 async function resolveRateableAgents(deps: RatingDeps, session: Session): Promise<RateableAgent[]> {
@@ -169,8 +172,7 @@ async function resolveRateableAgents(deps: RatingDeps, session: Session): Promis
       refs.push({ kind: 'builtin-naive' })
     }
   } else {
-    // No readable header: recover submitted agents from the slot links. A pure-Naive session has no
-    // link rows and so surfaces no rateable agent through this path, as documented.
+    // No readable header: recover submitted agents from the slot links.
     const links = await deps.storage.listSessionSubmissions(session.id)
     for (const link of links) {
       const submission = await deps.storage.getSubmission(link.submission_id)
@@ -196,7 +198,9 @@ async function resolveRateableAgents(deps: RatingDeps, session: Session): Promis
     seen.add(key)
     agents.push({ ref, wire })
   }
-  return agents
+  // A baseline-only watch recording is useful as a replay, but there is no participant agent to give
+  // feedback about. Mixed sessions still include the Naive baseline as a normal rateable agent.
+  return agents.some((agent) => agent.ref.kind === 'submission') ? agents : []
 }
 
 /**
@@ -254,7 +258,7 @@ function emptyToNull(value: string | null | undefined): string | null {
   return value === null || value === undefined || value === '' ? null : value
 }
 
-/** Register the participant rating and author-prompt routes on the plain (ungated) HTTP layer. */
+/** Register participant rating and author-prompt routes outside the operator-only HTTP layer. */
 export function registerRatingRoutes(app: FastifyInstance, deps: RatingDeps): void {
   // Read the caller's existing ratings and the two applicable prompts per involved agent, so the
   // post-session UI renders without a second request and pre-fills what the user already rated.
@@ -279,6 +283,12 @@ export function registerRatingRoutes(app: FastifyInstance, deps: RatingDeps): vo
       if (!parsed.success) {
         return reply.code(400).send({ error: 'invalid ratings payload', code: 'invalid_request' })
       }
+      const callerId = resolveUserId(request.headers)
+      if (!isAllowlisted(callerId, deps.allowlist)) {
+        return reply
+          .code(403)
+          .send({ error: 'user is not on the session allowlist', code: 'not_allowlisted' })
+      }
       const resolved = await resolveContext(deps, request.params.sessionId)
       if (!resolved.ok) {
         return sendFailure(reply, resolved.failure)
@@ -289,7 +299,6 @@ export function registerRatingRoutes(app: FastifyInstance, deps: RatingDeps): vo
           .code(409)
           .send({ error: 'the play window for this iteration is closed', code: 'play_closed' })
       }
-      const callerId = resolveUserId(request.headers)
       const validated = validatePayload(parsed.data.ratings, context, callerId)
       if (!validated.ok) {
         return reply.code(400).send({ error: validated.error, code: validated.code })

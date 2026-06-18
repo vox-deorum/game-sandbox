@@ -78,14 +78,14 @@ describe('public leaderboard API', () => {
     expect(res.statusCode).toBe(200)
     const body = res.json() as {
       current: unknown
-      open_submission_iteration_id: string | null
-      play_open_iteration_id: string | null
+      submission_iteration_id: string | null
+      play_iteration_id: string | null
     }
     // Nothing released → empty current board, but the submit and play targets are still reported even
     // though both their iterations are unreleased.
     expect(body.current).toBeNull()
-    expect(body.open_submission_iteration_id).toBe(submitTarget.id)
-    expect(body.play_open_iteration_id).toBe(playTarget.id)
+    expect(body.submission_iteration_id).toBe(submitTarget.id)
+    expect(body.play_iteration_id).toBe(playTarget.id)
   })
 
   it('returns the released current iteration and both boards', async () => {

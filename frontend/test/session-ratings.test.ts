@@ -49,6 +49,13 @@ describe('SessionRatings', () => {
     expect(screen.queryByText('Rate the agents')).toBeNull()
   })
 
+  it('renders nothing when the backend returns no participant agents', async () => {
+    vi.mocked(getSessionRatings).mockResolvedValue({ ok: true, ratings: view([]) })
+    renderPanel()
+    await waitFor(() => expect(vi.mocked(getSessionRatings)).toHaveBeenCalled())
+    expect(screen.queryByText('Rate the agents')).toBeNull()
+  })
+
   it('renders a control per rateable agent, including Naive and none for the own agent', async () => {
     vi.mocked(getSessionRatings).mockResolvedValue({
       ok: true,
@@ -69,7 +76,7 @@ describe('SessionRatings', () => {
     expect(screen.getByRole('radiogroup', { name: /Rate Naive baseline/ })).toBeInTheDocument()
   })
 
-  it('shows the iteration prompt and the author prompt next to the right agents; Naive shows only the iteration prompt', async () => {
+  it('shows the iteration prompt once for the panel and the author prompt next to its own agent', async () => {
     vi.mocked(getSessionRatings).mockResolvedValue({
       ok: true,
       ratings: view(
@@ -82,16 +89,20 @@ describe('SessionRatings', () => {
     })
     renderPanel()
 
-    const list = await screen.findByRole('list')
+    // The operator's iteration prompt applies to every agent, so it shows exactly once, above the list.
+    await screen.findByText('Rate the agents')
+    expect(screen.getAllByText('Judge overall skill.')).toHaveLength(1)
+
+    const list = screen.getByRole('list')
     const items = within(list).getAllByRole('listitem')
     const submissionItem = items[0] as HTMLElement
     const naiveItem = items[1] as HTMLElement
-    // The submitted agent shows both prompts.
-    expect(within(submissionItem).getByText('Judge overall skill.')).toBeInTheDocument()
+    // The author prompt shows only next to its own agent; the iteration prompt is not repeated per item.
     expect(within(submissionItem).getByText('Did it dodge cleanly?')).toBeInTheDocument()
-    // Naive has no author, so only the operator's iteration prompt shows.
-    expect(within(naiveItem).getByText('Judge overall skill.')).toBeInTheDocument()
+    expect(within(submissionItem).queryByText('Judge overall skill.')).toBeNull()
+    // Naive has no author, so it carries no per-agent prompt at all.
     expect(within(naiveItem).queryByText(/From the author/)).toBeNull()
+    expect(within(naiveItem).queryByText('Judge overall skill.')).toBeNull()
   })
 
   it('pre-fills a prior rating and submits a changed score, reflecting the saved state', async () => {

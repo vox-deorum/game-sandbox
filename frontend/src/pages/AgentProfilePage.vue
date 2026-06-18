@@ -65,13 +65,32 @@ const STATUS_TONE: Record<SubmissionStatus, 'neutral' | 'success' | 'danger' | '
 const isOwner = () => me.me?.user_id === ownerId
 
 /**
- * The owner's current-iteration submission (the active, non-superseded one), whose iteration the
- * author-prompt editor targets. A prompt is keyed by iteration and owner, so only the active round
- * gets an editor; superseded history rows are read-only.
+ * The active submission whose iteration the author-prompt editor targets. Public play takes
+ * precedence because that is the agent raters can currently encounter. When no round is play-open,
+ * fall back to the submission-open round so an author can prepare its prompt before play begins.
  */
-const activeSubmission = computed(
-  () => profile.value?.submissions.find((submission) => submission.superseded_at === null) ?? null,
-)
+const promptSubmission = computed(() => {
+  const data = profile.value
+  if (data === null) {
+    return null
+  }
+  for (const iterationId of [
+    data.play_iteration_id,
+    data.submission_iteration_id,
+  ]) {
+    if (iterationId === null) {
+      continue
+    }
+    const submission = data.submissions.find(
+      (candidate) =>
+        candidate.iteration_id === iterationId && candidate.superseded_at === null,
+    )
+    if (submission !== undefined) {
+      return submission
+    }
+  }
+  return null
+})
 </script>
 
 <template>
@@ -133,8 +152,8 @@ const activeSubmission = computed(
     </section>
 
     <AuthorPromptEditor
-      v-if="isOwner() && activeSubmission !== null"
-      :iteration-id="activeSubmission.iteration_id"
+      v-if="isOwner() && promptSubmission !== null"
+      :iteration-id="promptSubmission.iteration_id"
     />
 
     <p class="agent-placeholder">Leaderboard placements arrive in a later stage.</p>

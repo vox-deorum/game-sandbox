@@ -3,9 +3,9 @@
   It answers "what should people evaluate about my agent?" — plain presentation guidance shown to
   raters next to the 1-5 control, kept distinct from the submission's validated artifact and status.
 
-  It is keyed to the owner's current iteration (the active submission's), and calls the get/set
-  author-prompt routes, which resolve and authorize the caller server-side. Saving an empty prompt
-  clears it. The editor reflects the saved value, so reopening the profile shows what was set.
+  Its parent chooses the applicable active submission, preferring the play-open iteration and then
+  the submission-open iteration. The get/set routes resolve and authorize the caller server-side.
+  Saving an empty prompt clears it. The editor reflects the saved value on reopening.
 -->
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'

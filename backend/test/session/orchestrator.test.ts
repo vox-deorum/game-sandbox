@@ -282,7 +282,10 @@ describe('orchestrator', () => {
       // The reuse path never touched the source seam.
       expect(source.fetchCount).toBe(0)
       // The session is recorded as scripted and tied to the submission for profile history.
-      expect((await storage.getSession(result.id))?.mode).toBe('scripted')
+      expect(await storage.getSession(result.id)).toMatchObject({
+        mode: 'scripted',
+        iteration_id: submission.iteration_id,
+      })
       // Replay history appears only after finalization registers the produced recording row.
       expect(await storage.listRecordingsBySubmission(submission.id, 10)).toEqual([])
       await storage.createRecording({
@@ -350,12 +353,12 @@ describe('orchestrator', () => {
       expect(driver.launches).toHaveLength(0)
     })
 
-    it('refuses a submission that is not for the open iteration', async () => {
+    it('refuses a submission that is not active for the play-open iteration', async () => {
       const source = new FakeSource()
       const orch = makeOrchestrator(60_000, source)
       const submission = await seedReadySubmission(storage)
       // Resubmitting supersedes the ready row, so it is no longer the active open-iteration submission.
-      const iteration = await storage.getOpenSubmissionIteration('flappy_bird')
+      const iteration = await storage.getPublicPlayIteration('flappy_bird')
       await storage.createSubmission({
         iteration_id: iteration?.id ?? '',
         env_id: 'flappy_bird',
@@ -375,6 +378,38 @@ describe('orchestrator', () => {
           submissionId: submission.id,
         }),
       ).rejects.toMatchObject({ status: 409, code: 'submission_not_active' })
+    })
+
+    it('uses the play-open iteration when submissions are already open for the next round', async () => {
+      const source = new FakeSource()
+      const orch = makeOrchestrator(60_000, source)
+      const submission = await seedReadySubmission(storage)
+      const playIteration = await storage.getIteration(submission.iteration_id)
+      if (playIteration === undefined) {
+        throw new Error('missing play iteration')
+      }
+      await storage.setSubmissionStatus(playIteration.id, 'closed')
+      const nextIteration = await storage.createIteration({
+        env_id: 'flappy_bird',
+        deps_version: 1,
+      })
+      await storage.setSubmissionStatus(nextIteration.id, 'open')
+
+      const overlayRef = `game-sandbox/submission-overlay:deps-v1-${submission.id}`
+      driver.overlayImages.set(overlayRef, {
+        ref: overlayRef,
+        submissionId: submission.id,
+        createdAtMs: 1,
+      })
+
+      const result = await orch.start({
+        userId: 'alice',
+        envId: 'flappy_bird',
+        mode: 'scripted',
+        submissionId: submission.id,
+      })
+
+      expect((await storage.getSession(result.id))?.iteration_id).toBe(playIteration.id)
     })
 
     it('refuses a human-mode submission run as a malformed request', async () => {

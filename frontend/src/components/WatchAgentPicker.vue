@@ -1,7 +1,7 @@
 <!--
   The submitted-agent watch picker (Stage 5.6): lists the environment's active `ready` submitted
   agents and lets a viewer stream one into the renderer with no input controls. The list reads the
-  active-iteration `ready` set, so superseded submissions stay profile history rather than watch
+  play-open iteration's `ready` set, so superseded submissions stay profile history rather than watch
   choices. Choosing one starts a scripted watch run bound to that submission and navigates to the
   session; the backend enforces the allowlist, so a non-allowlisted viewer can browse the list (and
   open agent profiles) but the Watch action is gated, mirroring the page's play/watch entry points.

@@ -66,7 +66,7 @@ const START_SESSION_SCHEMA = {
       seed: { type: 'integer', minimum: 0 },
       human_slot_timeout_ms: { type: 'integer', minimum: 0 },
       // When present, run this submitted agent in the slot (a watch run); the orchestrator validates
-      // it is `ready` for the open iteration. Identity still rides the header, never this field.
+      // it is `ready` and active for the play-open iteration. Identity still rides the header.
       submission_id: { type: 'string', minLength: 1 },
     },
   },
@@ -321,12 +321,12 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     return { ...submission, checks }
   })
 
-  // Active submissions for an environment's open iteration, optionally narrowed by status. The watch
-  // picker (step 6) reads the `ready` set; returns empty when the environment has no open iteration.
+  // Active submissions for an environment's play-open iteration, optionally narrowed by status. The
+  // submission window may point at a different round, so it must not drive public watch choices.
   app.get<{ Params: { envId: string }; Querystring: { status?: string } }>(
     '/api/environments/:envId/submissions',
     async (request) => {
-      const iteration = await deps.storage.getOpenSubmissionIteration(request.params.envId)
+      const iteration = await deps.storage.getPublicPlayIteration(request.params.envId)
       if (iteration === undefined) {
         return []
       }
@@ -345,10 +345,11 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.get<{ Params: { envId: string; ownerId: string } }>(
     '/api/environments/:envId/agents/:ownerId',
     async (request) => {
-      const submissions = await deps.storage.listSubmissionsByUser(
-        request.params.ownerId,
-        request.params.envId,
-      )
+      const [submissions, submissionTarget, playTarget] = await Promise.all([
+        deps.storage.listSubmissionsByUser(request.params.ownerId, request.params.envId),
+        deps.storage.getOpenSubmissionIteration(request.params.envId),
+        deps.storage.getPublicPlayIteration(request.params.envId),
+      ])
       const detailed = await Promise.all(
         submissions.map(async (submission) => ({
           ...submission,
@@ -362,6 +363,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       return {
         env_id: request.params.envId,
         owner_id: request.params.ownerId,
+        submission_iteration_id: submissionTarget?.id ?? null,
+        play_iteration_id: playTarget?.id ?? null,
         submissions: detailed,
       }
     },
@@ -378,9 +381,13 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     operatorAllowlist: deps.operatorAllowlist,
   })
   registerLeaderboardRoutes(app, { storage: deps.storage })
-  // Participant ratings and the author's per-iteration rating prompt: ungated, attributed to the
-  // resolved identity. The rateable-agent set is read from the finished recording header.
-  registerRatingRoutes(app, { storage: deps.storage, recordings: deps.recordings })
+  // Participant ratings and the author's per-iteration rating prompt are attributed to the resolved
+  // identity. Rating writes also use the public-session allowlist.
+  registerRatingRoutes(app, {
+    storage: deps.storage,
+    recordings: deps.recordings,
+    allowlist: deps.allowlist,
+  })
 
   // Serve the built frontend from the same origin in production so the whole stack is one process.
   // `wildcard: false` registers a route per built file and lets unmatched paths fall to the

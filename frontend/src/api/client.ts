@@ -313,7 +313,7 @@ export async function getSubmission(id: string): Promise<SubmissionDetail> {
   )) as SubmissionDetail
 }
 
-/** A submission row without its per-stage log: the shape the active-iteration listing returns. */
+/** A submission row without its per-stage log: the shape the play-open listing returns. */
 export type SubmissionSummary = Omit<SubmissionDetail, 'checks'>
 
 /**
@@ -340,6 +340,8 @@ export interface AgentProfileSubmission extends SubmissionDetail {
 export interface AgentProfile {
   env_id: string
   owner_id: string
+  submission_iteration_id: string | null
+  play_iteration_id: string | null
   submissions: AgentProfileSubmission[]
 }
 

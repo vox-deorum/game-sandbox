@@ -59,8 +59,8 @@ export function registerLeaderboardRoutes(app: FastifyInstance, deps: Leaderboar
                 iteration: iterationView(released),
                 board: await boardsFor(deps.storage, released.id),
               },
-        open_submission_iteration_id: submissionTarget?.id ?? null,
-        play_open_iteration_id: playTarget?.id ?? null,
+        submission_iteration_id: submissionTarget?.id ?? null,
+        play_iteration_id: playTarget?.id ?? null,
       })
     },
   )
