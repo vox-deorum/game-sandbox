@@ -80,7 +80,7 @@ export interface Config {
   sessionAllowlist: string[]
   /**
    * The operator allowlist of user ids that may reach the Stage 6 admin console and API (declaring
-   * iterations, configuring them, opening/closing the gates, triggering runs). Read from
+   * seasons, configuring them, opening/closing the gates, triggering runs). Read from
    * `OPERATOR_ALLOWLIST`, defaulting to `[DEV_USER_ID]` exactly as {@link Config.sessionAllowlist}
    * does, so the console works out of the box in dev; `isOperator` is the single predicate over it.
    */

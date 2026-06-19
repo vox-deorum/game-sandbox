@@ -4,11 +4,11 @@
   `me.is_operator` — but the backend admin guard is the real authority; this UI gate just avoids
   showing dead controls. A non-operator who reaches the route sees an access notice, not the console.
 
-  The console lets the operator declare and configure an iteration's match design, set the iteration's
+  The console lets the operator declare and configure a season's match design, set the season's
   always-editable rating prompt, drive the three independent lifecycle gates (submissions, public play,
   release), trigger and re-run the workflow while watching its container logs stream live, and inspect
   the unreleased boards before releasing them — the verify-before-expose flow. Declaring creates an
-  unreleased, submission-closed, play-closed iteration, so the console keeps opening submissions,
+  unreleased, submission-closed, play-closed season, so the console keeps opening submissions,
   opening public play, and releasing results visibly separate.
 -->
 <script setup lang="ts">
@@ -16,14 +16,14 @@ import { onMounted, ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
 import {
-  type AdminIterationView,
-  declareIteration,
-  getAdminIteration,
-  type IterationView,
-  listAdminIterations,
+  type AdminSeasonView,
+  declareSeason,
+  getAdminSeason,
+  type SeasonView,
+  listAdminSeasons,
 } from '../api/client.js'
-import IterationConfigEditor from '../components/admin/IterationConfigEditor.vue'
-import IterationLifecycleControls from '../components/admin/IterationLifecycleControls.vue'
+import SeasonConfigEditor from '../components/admin/SeasonConfigEditor.vue'
+import SeasonLifecycleControls from '../components/admin/SeasonLifecycleControls.vue'
 import OperatorRatingPromptEditor from '../components/admin/OperatorRatingPromptEditor.vue'
 import RunPanel from '../components/admin/RunPanel.vue'
 import LeaderboardBoards from '../components/LeaderboardBoards.vue'
@@ -43,14 +43,14 @@ const { meta } = useEnvironmentMeta(envId)
 type Access = 'loading' | 'denied' | 'ready'
 const access = ref<Access>('loading')
 
-const iterations = ref<IterationView[]>([])
+const seasons = ref<SeasonView[]>([])
 const selectedId = ref<string | null>(null)
-const view = ref<AdminIterationView | null>(null)
+const view = ref<AdminSeasonView | null>(null)
 const loadingDetail = ref(false)
 const declaring = ref(false)
 const newLabel = ref('')
 // Monotonically identifies the newest detail request. A slower response for a previously selected
-// iteration must never replace the controls for the iteration the sidebar now highlights.
+// season must never replace the controls for the season the sidebar now highlights.
 let detailRequest = 0
 
 onMounted(async () => {
@@ -62,13 +62,13 @@ onMounted(async () => {
     return
   }
   access.value = 'ready'
-  await loadIterations()
+  await loadSeasons()
 })
 
-async function loadIterations(): Promise<void> {
-  iterations.value = await listAdminIterations(envId)
-  if (selectedId.value === null && iterations.value.length > 0) {
-    selectedId.value = iterations.value[0]!.id
+async function loadSeasons(): Promise<void> {
+  seasons.value = await listAdminSeasons(envId)
+  if (selectedId.value === null && seasons.value.length > 0) {
+    selectedId.value = seasons.value[0]!.id
   }
   if (selectedId.value !== null) {
     await loadDetail()
@@ -76,15 +76,15 @@ async function loadIterations(): Promise<void> {
 }
 
 async function loadDetail(): Promise<void> {
-  const iterationId = selectedId.value
-  if (iterationId === null) {
+  const seasonId = selectedId.value
+  if (seasonId === null) {
     return
   }
   const requestId = ++detailRequest
   loadingDetail.value = true
   try {
-    const loaded = await getAdminIteration(iterationId)
-    if (requestId === detailRequest && selectedId.value === iterationId) {
+    const loaded = await getAdminSeason(seasonId)
+    if (requestId === detailRequest && selectedId.value === seasonId) {
       view.value = loaded
     }
   } finally {
@@ -99,17 +99,17 @@ async function select(id: string): Promise<void> {
     return
   }
   selectedId.value = id
-  // Hide the previous iteration's destructive controls while the new detail is in flight.
+  // Hide the previous season's destructive controls while the new detail is in flight.
   view.value = null
   await loadDetail()
 }
 
-/** Reload both the picker (labels/gates may have changed) and the selected iteration's detail. */
-async function refresh(updated?: IterationView): Promise<void> {
+/** Reload both the picker (labels/gates may have changed) and the selected season's detail. */
+async function refresh(updated?: SeasonView): Promise<void> {
   if (updated !== undefined && view.value !== null) {
-    view.value = { ...view.value, iteration: updated }
+    view.value = { ...view.value, season: updated }
   }
-  iterations.value = await listAdminIterations(envId)
+  seasons.value = await listAdminSeasons(envId)
   await loadDetail()
 }
 
@@ -117,17 +117,17 @@ async function declare(): Promise<void> {
   declaring.value = true
   try {
     const label = newLabel.value.trim()
-    const iteration = await declareIteration(envId, label === '' ? {} : { label })
+    const season = await declareSeason(envId, label === '' ? {} : { label })
     newLabel.value = ''
-    selectedId.value = iteration.id
-    await loadIterations()
+    selectedId.value = season.id
+    await loadSeasons()
   } finally {
     declaring.value = false
   }
 }
 
-function iterationLabel(iteration: IterationView): string {
-  return iteration.label ?? `Iteration ${iteration.id.slice(0, 8)}`
+function seasonLabel(season: SeasonView): string {
+  return season.label ?? `Season ${season.id.slice(0, 8)}`
 }
 </script>
 
@@ -153,66 +153,66 @@ function iterationLabel(iteration: IterationView): string {
       </header>
 
       <div class="admin-body">
-        <aside class="admin-sidebar" aria-label="Iterations">
+        <aside class="admin-sidebar" aria-label="Seasons">
           <div class="declare">
-            <UiInput v-model="newLabel" type="text" placeholder="New iteration label (optional)" />
-            <UiButton :loading="declaring" @click="declare">Declare iteration</UiButton>
+            <UiInput v-model="newLabel" type="text" placeholder="New season label (optional)" />
+            <UiButton :loading="declaring" @click="declare">Declare season</UiButton>
           </div>
           <p class="declare-note">
-            Declaring creates an unreleased, submission-closed, play-closed iteration. Opening
+            Declaring creates an unreleased, submission-closed, play-closed season. Opening
             submissions, opening play, and releasing are separate actions.
           </p>
-          <ul class="iteration-list">
-            <li v-for="iteration in iterations" :key="iteration.id">
+          <ul class="season-list">
+            <li v-for="season in seasons" :key="season.id">
               <button
                 type="button"
-                class="iteration-button"
-                :class="{ selected: iteration.id === selectedId }"
-                @click="select(iteration.id)"
+                class="season-button"
+                :class="{ selected: season.id === selectedId }"
+                @click="select(season.id)"
               >
-                <span class="iteration-name">{{ iterationLabel(iteration) }}</span>
-                <span class="iteration-gates">
-                  {{ iteration.release_status === 'released' ? 'released' : 'unreleased' }} ·
-                  sub {{ iteration.submission_status }} · play {{ iteration.play_status }}
+                <span class="season-name">{{ seasonLabel(season) }}</span>
+                <span class="season-gates">
+                  {{ season.release_status === 'released' ? 'released' : 'unreleased' }} ·
+                  sub {{ season.submission_status }} · play {{ season.play_status }}
                 </span>
               </button>
             </li>
           </ul>
-          <UiEmptyState v-if="iterations.length === 0">
-            No iterations yet. Declare one to begin.
+          <UiEmptyState v-if="seasons.length === 0">
+            No seasons yet. Declare one to begin.
           </UiEmptyState>
         </aside>
 
         <main class="admin-main">
           <UiEmptyState v-if="selectedId === null">
-            Select or declare an iteration to configure it.
+            Select or declare a season to configure it.
           </UiEmptyState>
           <UiEmptyState v-else-if="view === null && loadingDetail">Loading…</UiEmptyState>
           <template v-else-if="view !== null">
             <UiCard class="admin-card">
               <div class="card-head">
-                <h2>{{ iterationLabel(view.iteration) }}</h2>
-                <span v-if="view.iteration.released_at !== null" class="card-meta">
-                  released {{ formatDate(view.iteration.released_at) }}
+                <h2>{{ seasonLabel(view.season) }}</h2>
+                <span v-if="view.season.released_at !== null" class="card-meta">
+                  released {{ formatDate(view.season.released_at) }}
                 </span>
               </div>
-              <IterationLifecycleControls :iteration="view.iteration" @changed="refresh" />
+              <SeasonLifecycleControls :season="view.season" @changed="refresh" />
             </UiCard>
 
             <UiCard class="admin-card">
-              <IterationConfigEditor :iteration="view.iteration" @changed="refresh" />
+              <SeasonConfigEditor :season="view.season" @changed="refresh" />
             </UiCard>
 
             <OperatorRatingPromptEditor
               class="admin-card"
-              :iteration="view.iteration"
+              :season="view.season"
               @changed="refresh"
             />
 
             <UiCard class="admin-card">
               <h2 class="card-title">Run</h2>
               <RunPanel
-                :iteration="view.iteration"
+                :season="view.season"
                 :latest-run="view.latest_run"
                 @changed="loadDetail"
               />
@@ -220,8 +220,8 @@ function iterationLabel(iteration: IterationView): string {
 
             <UiCard class="admin-card">
               <h2 class="card-title">Boards</h2>
-              <p v-if="view.iteration.release_status !== 'released'" class="card-meta">
-                These boards are operator-only until you release the iteration.
+              <p v-if="view.season.release_status !== 'released'" class="card-meta">
+                These boards are operator-only until you release the season.
               </p>
               <LeaderboardBoards :board="view.board" :env-id="envId" />
             </UiCard>
@@ -271,7 +271,7 @@ function iterationLabel(iteration: IterationView): string {
   color: var(--color-text-muted);
 }
 
-.iteration-list {
+.season-list {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -280,7 +280,7 @@ function iterationLabel(iteration: IterationView): string {
   gap: var(--space-2);
 }
 
-.iteration-button {
+.season-button {
   width: 100%;
   text-align: left;
   font: inherit;
@@ -296,19 +296,19 @@ function iterationLabel(iteration: IterationView): string {
   transition: border-color var(--motion-fast) var(--ease-out);
 }
 
-.iteration-button:hover {
+.season-button:hover {
   border-color: var(--color-border-strong);
 }
 
-.iteration-button.selected {
+.season-button.selected {
   border-color: var(--color-accent);
 }
 
-.iteration-name {
+.season-name {
   font-weight: 600;
 }
 
-.iteration-gates {
+.season-gates {
   font-size: var(--text-xs);
   color: var(--color-text-muted);
 }

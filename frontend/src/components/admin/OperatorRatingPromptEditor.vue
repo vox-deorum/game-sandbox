@@ -1,32 +1,32 @@
 <!--
-  The operator's iteration-wide rating prompt editor (Stage 6.7). Unlike the match-design config, this
-  prompt stays editable at every point in the iteration's life — before or after runs and release — so
+  The operator's season-wide rating prompt editor (Stage 6.7). Unlike the match-design config, this
+  prompt stays editable at every point in the season's life — before or after runs and release — so
   it is its own small, always-available field rather than part of the force-confirmed config editor.
 
-  The prompt is shown to human raters next to the 1-5 control for every agent in the iteration. It is
+  The prompt is shown to human raters next to the 1-5 control for every agent in the season. It is
   distinct from each author's own per-agent prompt, which authors set on their agent profile.
 -->
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 
-import { type IterationView, setIterationRatingPrompt } from '../../api/client.js'
+import { type SeasonView, setSeasonRatingPrompt } from '../../api/client.js'
 import UiButton from '../ui/UiButton.vue'
 import UiCard from '../ui/UiCard.vue'
 import UiField from '../ui/UiField.vue'
 
-const props = defineProps<{ iteration: IterationView }>()
-const emit = defineEmits<{ (e: 'changed', iteration: IterationView): void }>()
+const props = defineProps<{ season: SeasonView }>()
+const emit = defineEmits<{ (e: 'changed', season: SeasonView): void }>()
 
-const draft = ref(props.iteration.rating_prompt ?? '')
+const draft = ref(props.season.rating_prompt ?? '')
 const saving = ref(false)
 const saved = ref(false)
 const error = ref<string | null>(null)
 
-// Re-seed when the selected iteration changes under us (the console switches between iterations).
+// Re-seed when the selected season changes under us (the console switches between seasons).
 watch(
-  () => props.iteration.id,
+  () => props.season.id,
   () => {
-    draft.value = props.iteration.rating_prompt ?? ''
+    draft.value = props.season.rating_prompt ?? ''
     saved.value = false
     error.value = null
   },
@@ -37,11 +37,11 @@ async function save(): Promise<void> {
   saved.value = false
   error.value = null
   const trimmed = draft.value.trim()
-  const result = await setIterationRatingPrompt(props.iteration.id, trimmed === '' ? null : trimmed)
+  const result = await setSeasonRatingPrompt(props.season.id, trimmed === '' ? null : trimmed)
   saving.value = false
   if (result.ok) {
     saved.value = true
-    emit('changed', result.iteration)
+    emit('changed', result.season)
     return
   }
   error.value =
@@ -53,9 +53,9 @@ async function save(): Promise<void> {
 
 <template>
   <UiCard class="prompt">
-    <h3 class="prompt-title">Iteration rating prompt</h3>
+    <h3 class="prompt-title">Season rating prompt</h3>
     <p class="prompt-sub">
-      Shown to human raters for every agent in this iteration. Editable at any time, including after a
+      Shown to human raters for every agent in this season. Editable at any time, including after a
       run or release. Separate from each author's own per-agent prompt.
     </p>
     <UiField label="Rating prompt" hint="Leave empty to clear it.">

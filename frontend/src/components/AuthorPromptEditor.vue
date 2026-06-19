@@ -3,8 +3,8 @@
   It answers "what should people evaluate about my agent?" — plain presentation guidance shown to
   raters next to the 1-5 control, kept distinct from the submission's validated artifact and status.
 
-  Its parent chooses the applicable active submission, preferring the play-open iteration and then
-  the submission-open iteration. The get/set routes resolve and authorize the caller server-side.
+  Its parent chooses the applicable active submission, preferring the play-open season and then
+  the submission-open season. The get/set routes resolve and authorize the caller server-side.
   Saving an empty prompt clears it. The editor reflects the saved value on reopening.
 -->
 <script setup lang="ts">
@@ -15,7 +15,7 @@ import UiButton from './ui/UiButton.vue'
 import UiCard from './ui/UiCard.vue'
 import UiField from './ui/UiField.vue'
 
-const props = defineProps<{ iterationId: string }>()
+const props = defineProps<{ seasonId: string }>()
 
 const draft = ref('')
 // The last saved value, so the Save button can tell a real edit from a no-op.
@@ -27,7 +27,7 @@ const error = ref<string | null>(null)
 
 onMounted(async () => {
   try {
-    const current = await getAuthorPrompt(props.iterationId)
+    const current = await getAuthorPrompt(props.seasonId)
     draft.value = current.prompt ?? ''
     savedValue.value = current.prompt ?? ''
   } catch {
@@ -44,7 +44,7 @@ async function save(): Promise<void> {
   error.value = null
   saved.value = false
   const trimmed = draft.value.trim()
-  const result = await setAuthorPrompt(props.iterationId, trimmed === '' ? null : trimmed)
+  const result = await setAuthorPrompt(props.seasonId, trimmed === '' ? null : trimmed)
   saving.value = false
   if (result.ok) {
     savedValue.value = result.prompt ?? ''
@@ -55,9 +55,9 @@ async function save(): Promise<void> {
   error.value = errorMessage(result.reason)
 }
 
-function errorMessage(reason: 'no_agent_in_iteration' | 'too_long' | 'failed'): string {
+function errorMessage(reason: 'no_agent_in_season' | 'too_long' | 'failed'): string {
   switch (reason) {
-    case 'no_agent_in_iteration':
+    case 'no_agent_in_season':
       return 'You have no agent in the current round, so there is nothing to add a prompt to.'
     case 'too_long':
       return 'That prompt is too long.'

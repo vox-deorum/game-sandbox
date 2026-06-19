@@ -21,19 +21,19 @@ describe('workflow runner seam', () => {
     await storage.close()
   })
 
-  /** A declared, configured iteration plus a created run (status `pending`). */
+  /** A declared, configured season plus a created run (status `pending`). */
   async function makeRun(): Promise<string> {
-    const iteration = await storage.createIteration({
+    const season = await storage.createSeason({
       env_id: ENV_ID,
       deps_version: 1,
       label: null,
     })
-    await storage.updateIterationConfig(iteration.id, {
+    await storage.updateSeasonConfig(season.id, {
       deps_version: 1,
       matches: [{ slots: ['submission'], seeds: [1], games: 1 }],
     })
     const run = await storage.createRunWithSchedule(
-      iteration.id,
+      season.id,
       'dev-user',
       [],
       [{ match_index: 0, game_index: 0, seed: 1, slots: [{ kind: 'builtin-naive' }] }],

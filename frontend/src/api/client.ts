@@ -207,7 +207,7 @@ export interface SubmissionCheck {
 /** A submission joined with its ordered per-stage log: the form's one-request poll payload. */
 export interface SubmissionDetail {
   id: string
-  iteration_id: string
+  season_id: string
   env_id: string
   user_id: string
   source_kind: 'git' | 'local'
@@ -277,7 +277,7 @@ export type SubmitAgentResult =
   | {
       ok: false
       reason:
-        | 'no_open_iteration'
+        | 'no_open_season'
         | 'resubmit_conflict'
         | 'local_disabled'
         | 'invalid_source'
@@ -342,12 +342,12 @@ export interface AgentProfileSubmission extends SubmissionDetail {
 export interface AgentProfile {
   env_id: string
   owner_id: string
-  submission_iteration_id: string | null
-  play_iteration_id: string | null
+  submission_season_id: string | null
+  play_season_id: string | null
   submissions: AgentProfileSubmission[]
 }
 
-/** An owner's agent profile for an environment: history across iterations, newest first. */
+/** An owner's agent profile for an environment: history across seasons, newest first. */
 export async function getAgentProfile(envId: string, ownerId: string): Promise<AgentProfile> {
   return (await json(
     await request(
@@ -389,26 +389,26 @@ export interface RateableAgent {
   agent: AgentRefWire
   /** True when the caller owns this submitted agent: the UI shows it without a rating control. */
   is_own: boolean
-  /** The agent author's prompt for this iteration, when set (null for the ownerless Naive baseline). */
+  /** The agent author's prompt for this season, when set (null for the ownerless Naive baseline). */
   author_prompt: string | null
   /** The caller's current effective rating, or null when they have not rated this agent. */
   your_rating: number | null
 }
 
-/** The rating read/write payload for one session: the iteration prompt and the per-agent view. */
+/** The rating read/write payload for one session: the season prompt and the per-agent view. */
 export interface SessionRatings {
   session_id: string
-  iteration_id: string
-  /** True when the iteration's play window is closed: prior ratings show, but no new write is taken. */
+  season_id: string
+  /** True when the season's play window is closed: prior ratings show, but no new write is taken. */
   read_only: boolean
-  /** The operator's iteration-wide rating prompt, applying to every agent (null when unset). */
-  iteration_prompt: string | null
+  /** The operator's season-wide rating prompt, applying to every agent (null when unset). */
+  season_prompt: string | null
   agents: RateableAgent[]
 }
 
 /**
  * Reading a finished session's ratings: the view, or a reason it is not rateable. An old session with
- * no iteration and one without a finalized recording both come back unrateable, so the post-session UI
+ * no season and one without a finalized recording both come back unrateable, so the post-session UI
  * simply renders nothing rather than an error.
  */
 export type SessionRatingsResult =
@@ -470,31 +470,31 @@ function rateabilityReason(code: string | undefined): 'not_rateable' | 'not_fini
   return 'failed'
 }
 
-/** The author's per-iteration rating prompt, as the get/set routes return it (null when unset). */
+/** The author's per-season rating prompt, as the get/set routes return it (null when unset). */
 export interface AuthorPrompt {
-  iteration_id: string
+  season_id: string
   prompt: string | null
 }
 
-/** Read the caller's own rating prompt for an iteration, to populate the agent-profile editor. */
-export async function getAuthorPrompt(iterationId: string): Promise<AuthorPrompt> {
+/** Read the caller's own rating prompt for a season, to populate the agent-profile editor. */
+export async function getAuthorPrompt(seasonId: string): Promise<AuthorPrompt> {
   return (await json(
-    await request(`/iterations/${encodeURIComponent(iterationId)}/agent-rating-prompt`),
-    'GET /iterations/:iterationId/agent-rating-prompt',
+    await request(`/seasons/${encodeURIComponent(seasonId)}/agent-rating-prompt`),
+    'GET /seasons/:seasonId/agent-rating-prompt',
   )) as AuthorPrompt
 }
 
 /** Setting (or clearing) the author prompt: the saved value, or a typed refusal. */
 export type SetAuthorPromptResult =
   | { ok: true; prompt: string | null }
-  | { ok: false; reason: 'no_agent_in_iteration' | 'too_long' | 'failed' }
+  | { ok: false; reason: 'no_agent_in_season' | 'too_long' | 'failed' }
 
-/** Set or clear the caller's rating prompt for an iteration. A null or empty prompt clears it. */
+/** Set or clear the caller's rating prompt for a season. A null or empty prompt clears it. */
 export async function setAuthorPrompt(
-  iterationId: string,
+  seasonId: string,
   prompt: string | null,
 ): Promise<SetAuthorPromptResult> {
-  const res = await request(`/iterations/${encodeURIComponent(iterationId)}/agent-rating-prompt`, {
+  const res = await request(`/seasons/${encodeURIComponent(seasonId)}/agent-rating-prompt`, {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ prompt }),
@@ -504,8 +504,8 @@ export async function setAuthorPrompt(
     return { ok: true, prompt: body.prompt }
   }
   const body = (await res.json().catch(() => ({}))) as { code?: string }
-  if (body.code === 'no_agent_in_iteration') {
-    return { ok: false, reason: 'no_agent_in_iteration' }
+  if (body.code === 'no_agent_in_season') {
+    return { ok: false, reason: 'no_agent_in_season' }
   }
   if (body.code === 'author_prompt_too_long') {
     return { ok: false, reason: 'too_long' }
@@ -513,7 +513,7 @@ export async function setAuthorPrompt(
   return { ok: false, reason: 'failed' }
 }
 
-// --- Iterations, boards, and the admin console (Stage 6.7) -----------------------------------
+// --- Seasons, boards, and the admin console (Stage 6.7) -----------------------------------
 
 /**
  * An agent identity as the boards, placements, and scheduled slots carry it. Unlike {@link AgentRefWire}
@@ -526,7 +526,7 @@ export type BoardAgentRef =
 
 /** A public gate's two-valued state, mirrored from the backend's `WindowStatus`. */
 export type WindowStatus = 'open' | 'closed'
-/** Whether an iteration's results are shown outside the operator console. */
+/** Whether a season's results are shown outside the operator console. */
 export type ReleaseStatus = 'unreleased' | 'released'
 /** One automated run's lifecycle state. */
 export type RunStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
@@ -547,29 +547,29 @@ export interface MatchConfig {
  * The override block. `step_timeout_ms`/`episode_timeout_ms` take effect this stage; `messaging` and
  * `llm` are parsed-but-inert opaque objects until Stages 8/9 give them a concrete shape.
  */
-export interface IterationOverrides {
+export interface SeasonOverrides {
   step_timeout_ms?: number
   episode_timeout_ms?: number
   messaging?: Record<string, unknown>
   llm?: Record<string, unknown>
 }
 
-/** The whole iteration configuration document (the `iterations.config` JSON, decoded). */
-export interface IterationConfig {
+/** The whole season configuration document (the `seasons.config` JSON, decoded). */
+export interface SeasonConfig {
   deps_version: number
   matches: MatchConfig[]
-  overrides?: IterationOverrides
+  overrides?: SeasonOverrides
 }
 
-/** An iteration row with its `config` JSON decoded: the shape both the admin and public reads return. */
-export interface IterationView {
+/** A season row with its `config` JSON decoded: the shape both the admin and public reads return. */
+export interface SeasonView {
   id: string
   env_id: string
   submission_status: WindowStatus
   play_status: WindowStatus
   release_status: ReleaseStatus
   label: string | null
-  config: IterationConfig
+  config: SeasonConfig
   rating_prompt: string | null
   created_at: string
   released_at: string | null
@@ -595,7 +595,7 @@ export interface HumanBoardRow {
   rank: number | null
 }
 
-/** Both boards for an iteration: the automated aggregate and the human-rating aggregate. */
+/** Both boards for a season: the automated aggregate and the human-rating aggregate. */
 export interface Board {
   automated: AutomatedBoardRow[]
   human: HumanBoardRow[]
@@ -619,9 +619,9 @@ export interface RunGameView {
 /** A run with its frozen snapshots decoded and its scheduled games attached (the admin status view). */
 export interface RunView {
   id: string
-  iteration_id: string
+  season_id: string
   requested_by: string
-  config_snapshot: IterationConfig
+  config_snapshot: SeasonConfig
   submission_snapshot: BoardAgentRef[]
   status: RunStatus
   started_at: string
@@ -630,33 +630,33 @@ export interface RunView {
   games: RunGameView[]
 }
 
-/** The full admin view of one iteration: its config and gates, the latest run, and both boards. */
-export interface AdminIterationView {
-  iteration: IterationView
+/** The full admin view of one season: its config and gates, the latest run, and both boards. */
+export interface AdminSeasonView {
+  season: SeasonView
   latest_run: RunView | null
   board: Board
 }
 
-/** The current released iteration plus its boards, as the environment leaderboards read returns it. */
+/** The current released season plus its boards, as the environment leaderboards read returns it. */
 export interface CurrentLeaderboards {
-  iteration: IterationView
+  season: SeasonView
   board: Board
 }
 
 /**
  * The environment leaderboards payload: the current released boards (or null when nothing is released),
- * plus the separate public submit and play targets, reported even when their iterations are unreleased.
+ * plus the separate public submit and play targets, reported even when their seasons are unreleased.
  */
 export interface EnvironmentLeaderboards {
   current: CurrentLeaderboards | null
-  submission_iteration_id: string | null
-  play_iteration_id: string | null
+  submission_season_id: string | null
+  play_season_id: string | null
 }
 
 /** One automated placement on an agent profile, read from the public placements route. */
 export interface AutomatedPlacement {
   id: string
-  iteration_id: string
+  season_id: string
   env_id: string
   run_id: string
   rank: number
@@ -679,7 +679,7 @@ export interface AgentPlacements {
 
 // --- Public, released-only reads -------------------------------------------------------------
 
-/** The current released iteration's boards plus the separate public submit and play targets. */
+/** The current released season's boards plus the separate public submit and play targets. */
 export async function getEnvironmentLeaderboards(envId: string): Promise<EnvironmentLeaderboards> {
   return (await json(
     await request(`/environments/${encodeURIComponent(envId)}/leaderboards`),
@@ -687,31 +687,31 @@ export async function getEnvironmentLeaderboards(envId: string): Promise<Environ
   )) as EnvironmentLeaderboards
 }
 
-/** The environment's released iterations, newest first, for the history links. */
-export async function listReleasedIterations(envId: string): Promise<IterationView[]> {
+/** The environment's released seasons, newest first, for the history links. */
+export async function listReleasedSeasons(envId: string): Promise<SeasonView[]> {
   return (await json(
-    await request(`/environments/${encodeURIComponent(envId)}/iterations`),
-    'GET /environments/:envId/iterations',
-  )) as IterationView[]
+    await request(`/environments/${encodeURIComponent(envId)}/seasons`),
+    'GET /environments/:envId/seasons',
+  )) as SeasonView[]
 }
 
 /**
- * Both boards for a specific released iteration. Returns `undefined` for an unreleased or unknown
- * iteration, which the public route answers with 404 — the boundary that keeps unreleased boards private.
+ * Both boards for a specific released season. Returns `undefined` for an unreleased or unknown
+ * season, which the public route answers with 404 — the boundary that keeps unreleased boards private.
  */
-export async function getIterationLeaderboards(
+export async function getSeasonLeaderboards(
   envId: string,
-  iterationId: string,
+  seasonId: string,
 ): Promise<CurrentLeaderboards | undefined> {
   const res = await request(
-    `/environments/${encodeURIComponent(envId)}/iterations/${encodeURIComponent(iterationId)}/leaderboards`,
+    `/environments/${encodeURIComponent(envId)}/seasons/${encodeURIComponent(seasonId)}/leaderboards`,
   )
   if (res.status === 404) {
     return undefined
   }
   return (await json(
     res,
-    'GET /environments/:envId/iterations/:iterationId/leaderboards',
+    'GET /environments/:envId/seasons/:seasonId/leaderboards',
   )) as CurrentLeaderboards
 }
 
@@ -727,65 +727,65 @@ export async function getAgentPlacements(envId: string, ownerId: string): Promis
 
 // --- Operator admin console (gated server-side under /api/admin) ------------------------------
 
-/** Every iteration for the environment, including unreleased ones, for the console picker. */
-export async function listAdminIterations(envId: string): Promise<IterationView[]> {
+/** Every season for the environment, including unreleased ones, for the console picker. */
+export async function listAdminSeasons(envId: string): Promise<SeasonView[]> {
   return (await json(
-    await request(`/admin/environments/${encodeURIComponent(envId)}/iterations`),
-    'GET /api/admin/environments/:envId/iterations',
-  )) as IterationView[]
+    await request(`/admin/environments/${encodeURIComponent(envId)}/seasons`),
+    'GET /api/admin/environments/:envId/seasons',
+  )) as SeasonView[]
 }
 
-/** The full admin view of one iteration: config, gates, latest run, and both (possibly unreleased) boards. */
-export async function getAdminIteration(iterationId: string): Promise<AdminIterationView> {
+/** The full admin view of one season: config, gates, latest run, and both (possibly unreleased) boards. */
+export async function getAdminSeason(seasonId: string): Promise<AdminSeasonView> {
   return (await json(
-    await request(`/admin/iterations/${encodeURIComponent(iterationId)}`),
-    'GET /api/admin/iterations/:id',
-  )) as AdminIterationView
+    await request(`/admin/seasons/${encodeURIComponent(seasonId)}`),
+    'GET /api/admin/seasons/:id',
+  )) as AdminSeasonView
 }
 
-/** Declare a new unreleased, submission-closed, play-closed iteration for the environment. */
-export async function declareIteration(
+/** Declare a new unreleased, submission-closed, play-closed season for the environment. */
+export async function declareSeason(
   envId: string,
   input: { label?: string | null; depsVersion?: number } = {},
-): Promise<IterationView> {
+): Promise<SeasonView> {
   const body: Record<string, unknown> = {}
   if (input.label !== undefined) body.label = input.label
   if (input.depsVersion !== undefined) body.deps_version = input.depsVersion
-  const res = await request(`/admin/environments/${encodeURIComponent(envId)}/iterations`, {
+  const res = await request(`/admin/environments/${encodeURIComponent(envId)}/seasons`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
   })
-  return (await json(res, 'POST /api/admin/environments/:envId/iterations')) as IterationView
+  return (await json(res, 'POST /api/admin/environments/:envId/seasons')) as SeasonView
 }
 
 /**
- * The outcome of replacing an iteration's config. An unforced edit against existing runs (or a
+ * The outcome of replacing a season's config. An unforced edit against existing runs (or a
  * `deps_version` change against existing submissions) is refused; the console re-sends with `force`
  * after the confirmation dialog. An invalid config carries the backend's specific reason.
  */
-export type ConfigureIterationResult =
-  | { ok: true; iteration: IterationView }
+export type ConfigureSeasonResult =
+  | { ok: true; season: SeasonView }
   | {
       ok: false
-      reason: 'iteration_has_runs' | 'iteration_has_submissions' | 'invalid_config' | 'failed'
+      reason: 'season_has_runs' | 'season_has_submissions' | 'invalid_config' | 'failed'
       message: string
     }
 
-/** Replace an iteration's whole config. `force` carries the destructive-edit confirmation. */
-export async function configureIteration(
-  iterationId: string,
-  config: IterationConfig,
+/** Replace a season's whole config. `force` carries the destructive-edit confirmation. */
+export async function configureSeason(
+  seasonId: string,
+  config: SeasonConfig,
   force = false,
-): Promise<ConfigureIterationResult> {
+): Promise<ConfigureSeasonResult> {
   const query = force ? '?force=true' : ''
-  const res = await request(`/admin/iterations/${encodeURIComponent(iterationId)}/config${query}`, {
+  const res = await request(`/admin/seasons/${encodeURIComponent(seasonId)}/config${query}`, {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(config),
   })
   if (res.ok) {
-    return { ok: true, iteration: (await res.json()) as IterationView }
+    return { ok: true, season: (await res.json()) as SeasonView }
   }
   const body = (await res.json().catch(() => ({}))) as {
     code?: string
@@ -793,31 +793,31 @@ export async function configureIteration(
     error?: string
   }
   const reason =
-    body.code === 'iteration_has_runs' ||
-    body.code === 'iteration_has_submissions' ||
+    body.code === 'season_has_runs' ||
+    body.code === 'season_has_submissions' ||
     body.code === 'invalid_config'
       ? body.code
       : 'failed'
   return { ok: false, reason, message: body.reason ?? body.error ?? res.statusText }
 }
 
-/** The outcome of setting the operator's iteration-wide rating prompt; an overlong prompt is typed. */
-export type SetIterationRatingPromptResult =
-  | { ok: true; iteration: IterationView }
+/** The outcome of setting the operator's season-wide rating prompt; an overlong prompt is typed. */
+export type SetSeasonRatingPromptResult =
+  | { ok: true; season: SeasonView }
   | { ok: false; reason: 'too_long' | 'failed' }
 
-/** Set or clear the operator's always-editable iteration rating prompt. */
-export async function setIterationRatingPrompt(
-  iterationId: string,
+/** Set or clear the operator's always-editable season rating prompt. */
+export async function setSeasonRatingPrompt(
+  seasonId: string,
   prompt: string | null,
-): Promise<SetIterationRatingPromptResult> {
-  const res = await request(`/admin/iterations/${encodeURIComponent(iterationId)}/rating-prompt`, {
+): Promise<SetSeasonRatingPromptResult> {
+  const res = await request(`/admin/seasons/${encodeURIComponent(seasonId)}/rating-prompt`, {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ prompt }),
   })
   if (res.ok) {
-    return { ok: true, iteration: (await res.json()) as IterationView }
+    return { ok: true, season: (await res.json()) as SeasonView }
   }
   const body = (await res.json().catch(() => ({}))) as { code?: string }
   if (body.code === 'rating_prompt_too_long') {
@@ -826,85 +826,84 @@ export async function setIterationRatingPrompt(
   return { ok: false, reason: 'failed' }
 }
 
-/** The outcome of opening the submission window: a typed conflict when another iteration is open. */
+/** The outcome of opening the submission window: a typed conflict when another season is open. */
 export type OpenSubmissionsResult =
-  | { ok: true; iteration: IterationView }
-  | { ok: false; reason: 'open_iteration_exists' | 'failed' }
+  | { ok: true; season: SeasonView }
+  | { ok: false; reason: 'open_season_exists' | 'failed' }
 
-/** Open the submission window. The one-open-submission invariant surfaces as `open_iteration_exists`. */
-export async function openSubmissions(iterationId: string): Promise<OpenSubmissionsResult> {
-  const res = await request(
-    `/admin/iterations/${encodeURIComponent(iterationId)}/submissions/open`,
-    { method: 'POST' },
-  )
+/** Open the submission window. The one-open-submission invariant surfaces as `open_season_exists`. */
+export async function openSubmissions(seasonId: string): Promise<OpenSubmissionsResult> {
+  const res = await request(`/admin/seasons/${encodeURIComponent(seasonId)}/submissions/open`, {
+    method: 'POST',
+  })
   if (res.ok) {
-    return { ok: true, iteration: (await res.json()) as IterationView }
+    return { ok: true, season: (await res.json()) as SeasonView }
   }
   const body = (await res.json().catch(() => ({}))) as { code?: string }
   return {
     ok: false,
-    reason: body.code === 'open_iteration_exists' ? 'open_iteration_exists' : 'failed',
+    reason: body.code === 'open_season_exists' ? 'open_season_exists' : 'failed',
   }
 }
 
 /** Close the submission window. */
-export async function closeSubmissions(iterationId: string): Promise<IterationView> {
+export async function closeSubmissions(seasonId: string): Promise<SeasonView> {
   return (await json(
-    await request(`/admin/iterations/${encodeURIComponent(iterationId)}/submissions/close`, {
+    await request(`/admin/seasons/${encodeURIComponent(seasonId)}/submissions/close`, {
       method: 'POST',
     }),
-    'POST /api/admin/iterations/:id/submissions/close',
-  )) as IterationView
+    'POST /api/admin/seasons/:id/submissions/close',
+  )) as SeasonView
 }
 
-/** The outcome of opening public play: a typed conflict when another iteration is already play-open. */
+/** The outcome of opening public play: a typed conflict when another season is already play-open. */
 export type OpenPlayResult =
-  | { ok: true; iteration: IterationView }
-  | { ok: false; reason: 'open_play_iteration_exists' | 'failed' }
+  | { ok: true; season: SeasonView }
+  | { ok: false; reason: 'open_play_season_exists' | 'failed' }
 
-/** Open the public-play window. The one-play-open invariant surfaces as `open_play_iteration_exists`. */
-export async function openPlay(iterationId: string): Promise<OpenPlayResult> {
-  const res = await request(`/admin/iterations/${encodeURIComponent(iterationId)}/play/open`, {
+/** Open the public-play window. The one-play-open invariant surfaces as `open_play_season_exists`. */
+export async function openPlay(seasonId: string): Promise<OpenPlayResult> {
+  const res = await request(`/admin/seasons/${encodeURIComponent(seasonId)}/play/open`, {
     method: 'POST',
   })
   if (res.ok) {
-    return { ok: true, iteration: (await res.json()) as IterationView }
+    return { ok: true, season: (await res.json()) as SeasonView }
   }
   const body = (await res.json().catch(() => ({}))) as { code?: string }
   return {
     ok: false,
-    reason: body.code === 'open_play_iteration_exists' ? 'open_play_iteration_exists' : 'failed',
+    reason: body.code === 'open_play_season_exists' ? 'open_play_season_exists' : 'failed',
   }
 }
 
 /** Close the public-play window. */
-export async function closePlay(iterationId: string): Promise<IterationView> {
+export async function closePlay(seasonId: string): Promise<SeasonView> {
   return (await json(
-    await request(`/admin/iterations/${encodeURIComponent(iterationId)}/play/close`, {
+    await request(`/admin/seasons/${encodeURIComponent(seasonId)}/play/close`, {
       method: 'POST',
     }),
-    'POST /api/admin/iterations/:id/play/close',
-  )) as IterationView
+    'POST /api/admin/seasons/:id/play/close',
+  )) as SeasonView
 }
 
-/** Release the iteration's results, exposing its boards on the environment page. */
-export async function releaseIteration(iterationId: string): Promise<IterationView> {
+/** Release the season's results, exposing its boards on the environment page. */
+export async function releaseSeason(seasonId: string): Promise<SeasonView> {
   return (await json(
-    await request(`/admin/iterations/${encodeURIComponent(iterationId)}/release`, {
+    await request(`/admin/seasons/${encodeURIComponent(seasonId)}/release`, {
       method: 'POST',
     }),
-    'POST /api/admin/iterations/:id/release',
-  )) as IterationView
+    'POST /api/admin/seasons/:id/release',
+  )) as SeasonView
 }
 
-/** Pull the iteration's results back to operator-only. */
-export async function unreleaseIteration(iterationId: string): Promise<IterationView> {
+/** Pull the season's results back to operator-only. */
+export async function unreleaseSeason(seasonId: string): Promise<SeasonView> {
   return (await json(
-    await request(`/admin/iterations/${encodeURIComponent(iterationId)}/unrelease`, {
+    await request(`/admin/seasons/${encodeURIComponent(seasonId)}/unrelease`, {
       method: 'POST',
     }),
-    'POST /api/admin/iterations/:id/unrelease',
-  )) as IterationView
+    'POST /api/admin/seasons/:id/unrelease',
+  )) as SeasonView
 }
 
 /** The outcome of triggering a run: the new run id, or a typed refusal the console surfaces. */
@@ -913,8 +912,8 @@ export type TriggerRunResult =
   | { ok: false; reason: 'run_in_progress' | 'empty_schedule' | 'failed'; message: string }
 
 /** Trigger (or re-run) the workflow. Non-blocking; returns the new run id immediately. */
-export async function triggerRun(iterationId: string): Promise<TriggerRunResult> {
-  const res = await request(`/admin/iterations/${encodeURIComponent(iterationId)}/runs`, {
+export async function triggerRun(seasonId: string): Promise<TriggerRunResult> {
+  const res = await request(`/admin/seasons/${encodeURIComponent(seasonId)}/runs`, {
     method: 'POST',
   })
   if (res.status === 201) {
@@ -931,9 +930,9 @@ export async function triggerRun(iterationId: string): Promise<TriggerRunResult>
 export type CancelRunResult = { ok: true } | { ok: false; reason: 'run_not_in_progress' | 'failed' }
 
 /** Request cancellation of an in-progress run. */
-export async function cancelRun(iterationId: string, runId: string): Promise<CancelRunResult> {
+export async function cancelRun(seasonId: string, runId: string): Promise<CancelRunResult> {
   const res = await request(
-    `/admin/iterations/${encodeURIComponent(iterationId)}/runs/${encodeURIComponent(runId)}/cancel`,
+    `/admin/seasons/${encodeURIComponent(seasonId)}/runs/${encodeURIComponent(runId)}/cancel`,
     { method: 'POST' },
   )
   if (res.ok) {
@@ -947,6 +946,6 @@ export async function cancelRun(iterationId: string, runId: string): Promise<Can
 }
 
 /** The path of the admin run-log WebSocket the {@link RunLogSocket} attaches to. */
-export function runLogWsPath(iterationId: string, runId: string): string {
-  return `/api/admin/iterations/${encodeURIComponent(iterationId)}/runs/${encodeURIComponent(runId)}/logs/ws`
+export function runLogWsPath(seasonId: string, runId: string): string {
+  return `/api/admin/seasons/${encodeURIComponent(seasonId)}/runs/${encodeURIComponent(runId)}/logs/ws`
 }

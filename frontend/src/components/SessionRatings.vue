@@ -10,9 +10,9 @@
   - A closed play window is read-only: prior ratings show, but no save control is offered.
 
   The two prompts that guide the 1-5 scores arrive in the read payload, so no second request is needed.
-  The operator's iteration prompt applies to every agent, so it renders once above the list. The agent
+  The operator's season prompt applies to every agent, so it renders once above the list. The agent
   author's own prompt applies to only that agent, so it renders next to it. The Naive baseline has no
-  author, so only the iteration prompt applies to it.
+  author, so only the season prompt applies to it.
 -->
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
@@ -63,7 +63,7 @@ onMounted(load)
 async function load(): Promise<void> {
   const result = await getSessionRatings(props.sessionId)
   if (!result.ok) {
-    // Not rateable (old null-iteration session, or no finalized recording): render nothing.
+    // Not rateable (old null-season session, or no finalized recording): render nothing.
     return
   }
   ratings.value = result.ratings
@@ -142,9 +142,9 @@ function errorMessage(reason: 'play_closed' | 'not_rateable' | 'not_finished' | 
       Rating for this round has closed. Your previous ratings are shown below.
     </p>
 
-    <!-- The operator's iteration prompt applies to every agent, so it shows once for the panel. -->
-    <p v-if="ratings?.iteration_prompt" class="prompt">
-      <span class="prompt-from">From the operator:</span> {{ ratings.iteration_prompt }}
+    <!-- The operator's season prompt applies to every agent, so it shows once for the panel. -->
+    <p v-if="ratings?.season_prompt" class="prompt">
+      <span class="prompt-from">From the operator:</span> {{ ratings.season_prompt }}
     </p>
 
     <ul class="agent-list">

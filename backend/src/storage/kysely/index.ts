@@ -5,7 +5,7 @@
  *
  * The class is a thin facade: it holds the `Kysely<Database>` handle and delegates each
  * interface method to a free function in the matching per-domain module (`sessions.ts`,
- * `iterations.ts`, …). The query logic lives there; this file is the table of contents that
+ * `seasons.ts`, …). The query logic lives there; this file is the table of contents that
  * binds the flat {@link Storage} contract to it.
  */
 import type { Kysely } from 'kysely'
@@ -13,7 +13,7 @@ import type { Kysely } from 'kysely'
 import type {
   AgentRef,
   AutomatedBoardRow,
-  CreateIterationInput,
+  CreateSeasonInput,
   HumanBoardRow,
   NewRecordingInput,
   NewSessionInput,
@@ -27,24 +27,23 @@ import type {
   Storage,
   SubmissionCheckOutcome,
   SubmissionFailureStatus,
-  UpdateIterationConfigResult,
+  UpdateSeasonConfigResult,
   UpsertRatingInput,
   UpsertRatingResult,
 } from '../index.js'
-import type { IterationConfig } from '../iteration-config.js'
 import type {
   AgentRatingPrompt,
   AutomatedPlacement,
   Database,
   GameResult,
   GameStatus,
-  Iteration,
-  IterationRun,
-  IterationRunGame,
   Rating,
   Recording,
   ReleaseStatus,
   RunStatus,
+  Season,
+  SeasonRun,
+  SeasonRunGame,
   Session,
   SessionSubmission,
   Submission,
@@ -54,12 +53,13 @@ import type {
   TerminationReason,
   WindowStatus,
 } from '../schema.js'
+import type { SeasonConfig } from '../season-config.js'
 import * as boards from './boards.js'
-import * as iterations from './iterations.js'
 import * as ratings from './ratings.js'
 import * as recordings from './recordings.js'
 import * as retention from './retention.js'
 import * as runs from './runs.js'
+import * as seasons from './seasons.js'
 import * as sessions from './sessions.js'
 import * as submissions from './submissions.js'
 
@@ -108,50 +108,50 @@ export class KyselyStorage implements Storage {
     return recordings.deleteRecording(this.db, id)
   }
 
-  // --- Iterations ---
+  // --- Seasons ---
 
-  getOpenSubmissionIteration(envId: string): Promise<Iteration | undefined> {
-    return iterations.getOpenSubmissionIteration(this.db, envId)
+  getOpenSubmissionSeason(envId: string): Promise<Season | undefined> {
+    return seasons.getOpenSubmissionSeason(this.db, envId)
   }
-  getIteration(id: string): Promise<Iteration | undefined> {
-    return iterations.getIteration(this.db, id)
+  getSeason(id: string): Promise<Season | undefined> {
+    return seasons.getSeason(this.db, id)
   }
-  ensureOpenIteration(envId: string, depsVersion: number): Promise<Iteration> {
-    return iterations.ensureOpenIteration(this.db, envId, depsVersion)
+  ensureOpenSeason(envId: string, depsVersion: number): Promise<Season> {
+    return seasons.ensureOpenSeason(this.db, envId, depsVersion)
   }
-  getPublicPlayIteration(envId: string): Promise<Iteration | undefined> {
-    return iterations.getPublicPlayIteration(this.db, envId)
+  getPublicPlaySeason(envId: string): Promise<Season | undefined> {
+    return seasons.getPublicPlaySeason(this.db, envId)
   }
-  createIteration(input: CreateIterationInput): Promise<Iteration> {
-    return iterations.createIteration(this.db, input)
+  createSeason(input: CreateSeasonInput): Promise<Season> {
+    return seasons.createSeason(this.db, input)
   }
-  updateIterationConfig(
+  updateSeasonConfig(
     id: string,
-    config: IterationConfig,
+    config: SeasonConfig,
     options?: { force?: boolean },
-  ): Promise<UpdateIterationConfigResult> {
-    return iterations.updateIterationConfig(this.db, id, config, options)
+  ): Promise<UpdateSeasonConfigResult> {
+    return seasons.updateSeasonConfig(this.db, id, config, options)
   }
   setSubmissionStatus(id: string, status: WindowStatus): Promise<SetSubmissionStatusResult> {
-    return iterations.setSubmissionStatus(this.db, id, status)
+    return seasons.setSubmissionStatus(this.db, id, status)
   }
   setPlayStatus(id: string, status: WindowStatus): Promise<SetPlayStatusResult> {
-    return iterations.setPlayStatus(this.db, id, status)
+    return seasons.setPlayStatus(this.db, id, status)
   }
-  setReleaseStatus(id: string, status: ReleaseStatus): Promise<Iteration> {
-    return iterations.setReleaseStatus(this.db, id, status)
+  setReleaseStatus(id: string, status: ReleaseStatus): Promise<Season> {
+    return seasons.setReleaseStatus(this.db, id, status)
   }
-  listIterations(envId: string, options?: { includeUnreleased?: boolean }): Promise<Iteration[]> {
-    return iterations.listIterations(this.db, envId, options)
+  listSeasons(envId: string, options?: { includeUnreleased?: boolean }): Promise<Season[]> {
+    return seasons.listSeasons(this.db, envId, options)
   }
-  getReleasedIteration(envId: string): Promise<Iteration | undefined> {
-    return iterations.getReleasedIteration(this.db, envId)
+  getReleasedSeason(envId: string): Promise<Season | undefined> {
+    return seasons.getReleasedSeason(this.db, envId)
   }
-  setSessionIteration(sessionId: string, iterationId: string): Promise<void> {
-    return iterations.setSessionIteration(this.db, sessionId, iterationId)
+  setSessionSeason(sessionId: string, seasonId: string): Promise<void> {
+    return seasons.setSessionSeason(this.db, sessionId, seasonId)
   }
-  setIterationRatingPrompt(iterationId: string, prompt: string | null): Promise<void> {
-    return iterations.setIterationRatingPrompt(this.db, iterationId, prompt)
+  setSeasonRatingPrompt(seasonId: string, prompt: string | null): Promise<void> {
+    return seasons.setSeasonRatingPrompt(this.db, seasonId, prompt)
   }
 
   // --- Submissions ---
@@ -191,8 +191,8 @@ export class KyselyStorage implements Storage {
   getSubmission(id: string): Promise<Submission | undefined> {
     return submissions.getSubmission(this.db, id)
   }
-  findActiveSubmission(iterationId: string, userId: string): Promise<Submission | undefined> {
-    return submissions.findActiveSubmission(this.db, iterationId, userId)
+  findActiveSubmission(seasonId: string, userId: string): Promise<Submission | undefined> {
+    return submissions.findActiveSubmission(this.db, seasonId, userId)
   }
   listPendingSubmissions(): Promise<Submission[]> {
     return submissions.listPendingSubmissions(this.db)
@@ -200,11 +200,11 @@ export class KyselyStorage implements Storage {
   listSubmissionsByUser(userId: string, envId?: string): Promise<Submission[]> {
     return submissions.listSubmissionsByUser(this.db, userId, envId)
   }
-  listActiveSubmissionsByIteration(
-    iterationId: string,
+  listActiveSubmissionsBySeason(
+    seasonId: string,
     status?: SubmissionStatus,
   ): Promise<Submission[]> {
-    return submissions.listActiveSubmissionsByIteration(this.db, iterationId, status)
+    return submissions.listActiveSubmissionsBySeason(this.db, seasonId, status)
   }
   listSubmissionChecks(submissionId: string): Promise<SubmissionCheck[]> {
     return submissions.listSubmissionChecks(this.db, submissionId)
@@ -219,43 +219,43 @@ export class KyselyStorage implements Storage {
   // --- Runs & games ---
 
   createRunWithSchedule(
-    iterationId: string,
+    seasonId: string,
     requestedBy: string,
     submissionSnapshot: AgentRef[],
     scheduledGames: ScheduledGameInput[],
-  ): Promise<IterationRun> {
+  ): Promise<SeasonRun> {
     return runs.createRunWithSchedule(
       this.db,
-      iterationId,
+      seasonId,
       requestedBy,
       submissionSnapshot,
       scheduledGames,
     )
   }
-  async deleteRunsForIteration(iterationId: string): Promise<void> {
-    await this.db.transaction().execute((trx) => runs.deleteRunsForIteration(trx, iterationId))
+  async deleteRunsForSeason(seasonId: string): Promise<void> {
+    await this.db.transaction().execute((trx) => runs.deleteRunsForSeason(trx, seasonId))
   }
-  async deleteSubmissionsForIteration(iterationId: string): Promise<void> {
+  async deleteSubmissionsForSeason(seasonId: string): Promise<void> {
     await this.db
       .transaction()
-      .execute((trx) => submissions.deleteSubmissionsForIteration(trx, iterationId))
+      .execute((trx) => submissions.deleteSubmissionsForSeason(trx, seasonId))
   }
   setRunStatus(id: string, status: RunStatus, error?: string): Promise<void> {
     return runs.setRunStatus(this.db, id, status, error)
   }
-  getRun(id: string): Promise<IterationRun | undefined> {
+  getRun(id: string): Promise<SeasonRun | undefined> {
     return runs.getRun(this.db, id)
   }
-  listRunsByStatus(status: RunStatus): Promise<IterationRun[]> {
+  listRunsByStatus(status: RunStatus): Promise<SeasonRun[]> {
     return runs.listRunsByStatus(this.db, status)
   }
-  getLatestRun(iterationId: string): Promise<IterationRun | undefined> {
-    return runs.getLatestRun(this.db, iterationId)
+  getLatestRun(seasonId: string): Promise<SeasonRun | undefined> {
+    return runs.getLatestRun(this.db, seasonId)
   }
-  getLatestCompletedRun(iterationId: string): Promise<IterationRun | undefined> {
-    return runs.getLatestCompletedRun(this.db, iterationId)
+  getLatestCompletedRun(seasonId: string): Promise<SeasonRun | undefined> {
+    return runs.getLatestCompletedRun(this.db, seasonId)
   }
-  listRunGames(runId: string): Promise<IterationRunGame[]> {
+  listRunGames(runId: string): Promise<SeasonRunGame[]> {
     return runs.listRunGames(this.db, runId)
   }
   setRunGameStatus(id: string, status: GameStatus, error?: string): Promise<void> {
@@ -274,18 +274,18 @@ export class KyselyStorage implements Storage {
   // --- Automated board & placements ---
 
   replaceAutomatedPlacements(
-    iterationId: string,
+    seasonId: string,
     envId: string,
     runId: string,
     rows: PlacementInput[],
   ): Promise<void> {
-    return boards.replaceAutomatedPlacements(this.db, iterationId, envId, runId, rows)
+    return boards.replaceAutomatedPlacements(this.db, seasonId, envId, runId, rows)
   }
   listPlacementsByAgent(agent: AgentRef, envId?: string): Promise<AutomatedPlacement[]> {
     return boards.listPlacementsByAgent(this.db, agent, envId)
   }
-  getAutomatedBoard(iterationId: string): Promise<AutomatedBoardRow[]> {
-    return boards.getAutomatedBoard(this.db, iterationId)
+  getAutomatedBoard(seasonId: string): Promise<AutomatedBoardRow[]> {
+    return boards.getAutomatedBoard(this.db, seasonId)
   }
 
   // --- Ratings & rating prompts ---
@@ -293,33 +293,26 @@ export class KyselyStorage implements Storage {
   upsertRating(input: UpsertRatingInput): Promise<UpsertRatingResult> {
     return ratings.upsertRating(this.db, input)
   }
-  getRating(
-    iterationId: string,
-    raterUserId: string,
-    agent: AgentRef,
-  ): Promise<Rating | undefined> {
-    return ratings.getRating(this.db, iterationId, raterUserId, agent)
+  getRating(seasonId: string, raterUserId: string, agent: AgentRef): Promise<Rating | undefined> {
+    return ratings.getRating(this.db, seasonId, raterUserId, agent)
   }
-  listRatingsByIteration(iterationId: string): Promise<Rating[]> {
-    return ratings.listRatingsByIteration(this.db, iterationId)
+  listRatingsBySeason(seasonId: string): Promise<Rating[]> {
+    return ratings.listRatingsBySeason(this.db, seasonId)
   }
-  aggregateRatingsByAgent(iterationId: string): Promise<RatingAggregate[]> {
-    return ratings.aggregateRatingsByAgent(this.db, iterationId)
+  aggregateRatingsByAgent(seasonId: string): Promise<RatingAggregate[]> {
+    return ratings.aggregateRatingsByAgent(this.db, seasonId)
   }
-  getHumanBoard(iterationId: string): Promise<HumanBoardRow[]> {
-    return boards.getHumanBoard(this.db, iterationId)
+  getHumanBoard(seasonId: string): Promise<HumanBoardRow[]> {
+    return boards.getHumanBoard(this.db, seasonId)
   }
-  upsertAgentRatingPrompt(iterationId: string, userId: string, prompt: string): Promise<void> {
-    return ratings.upsertAgentRatingPrompt(this.db, iterationId, userId, prompt)
+  upsertAgentRatingPrompt(seasonId: string, userId: string, prompt: string): Promise<void> {
+    return ratings.upsertAgentRatingPrompt(this.db, seasonId, userId, prompt)
   }
-  getAgentRatingPrompt(
-    iterationId: string,
-    userId: string,
-  ): Promise<AgentRatingPrompt | undefined> {
-    return ratings.getAgentRatingPrompt(this.db, iterationId, userId)
+  getAgentRatingPrompt(seasonId: string, userId: string): Promise<AgentRatingPrompt | undefined> {
+    return ratings.getAgentRatingPrompt(this.db, seasonId, userId)
   }
-  listAgentRatingPromptsByIteration(iterationId: string): Promise<AgentRatingPrompt[]> {
-    return ratings.listAgentRatingPromptsByIteration(this.db, iterationId)
+  listAgentRatingPromptsBySeason(seasonId: string): Promise<AgentRatingPrompt[]> {
+    return ratings.listAgentRatingPromptsBySeason(this.db, seasonId)
   }
 
   // --- Retention ---

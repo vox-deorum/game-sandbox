@@ -18,7 +18,7 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const FIXTURES = join(HERE, '..', '..', 'fixtures', 'validate')
 const fixture = (name: string) => join(FIXTURES, name)
 
-// The single-version Stage 5 deployment: one base image (v1) and an open iteration pinned to v1.
+// The single-version Stage 5 deployment: one base image (v1) and an open season pinned to v1.
 const KNOWN_V1 = new Set([1])
 const DEPS_V1 = 1
 
@@ -100,9 +100,9 @@ describe('static validator — template version', () => {
     expect(result).toMatchObject({ ok: false, reason: { code: 'unknown_template_version' } })
   })
 
-  it('rejects a known template_version that does not match the open iteration (synthetic multi-version)', async () => {
-    // Reachable only when the deployment has a base image for a version the iteration does not pin:
-    // known versions {1, 2}, iteration pinned to 1, manifest targets 2.
+  it('rejects a known template_version that does not match the open season (synthetic multi-version)', async () => {
+    // Reachable only when the deployment has a base image for a version the season does not pin:
+    // known versions {1, 2}, season pinned to 1, manifest targets 2.
     const result = await validateStatic(
       fixture('template-version-mismatch'),
       DEPS_V1,

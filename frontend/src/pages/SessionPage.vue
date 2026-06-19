@@ -304,8 +304,8 @@ function formatMode(mode: SessionRow['mode']): string {
     <p v-if="showActiveTimeout" class="active-timeout">{{ activeTimeoutLabel }}</p>
 
     <div class="stage" :class="logBeside ? 'beside' : 'below'">
-      <section class="stage-canvas" aria-label="Game">
-        <h2 class="stage-title">{{ meta?.display_name ?? row?.env_id ?? 'Game' }}</h2>
+      <section class="stage-canvas" aria-label="Environment">
+        <h2 class="stage-title">{{ meta?.display_name ?? row?.env_id ?? 'Environment' }}</h2>
         <div
           class="renderer-host"
           ref="hostEl"

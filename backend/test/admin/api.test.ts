@@ -15,7 +15,7 @@ import { RecordingsStore } from '../../src/recordings.js'
 import { Retention } from '../../src/retention.js'
 import { Orchestrator } from '../../src/session/orchestrator.js'
 import type { Storage } from '../../src/storage/index.js'
-import type { IterationConfig } from '../../src/storage/iteration-config.js'
+import type { SeasonConfig } from '../../src/storage/season-config.js'
 import { openSqliteStorage } from '../../src/storage/sqlite.js'
 import { FakeDriver } from '../support/fake-driver.js'
 import { makeConfig, makeEnvironments, makeSubmissionDeps } from '../support/harness.js'
@@ -26,7 +26,7 @@ const OPERATOR = { 'x-sandbox-user': 'dev-user' }
 const STRANGER = { 'x-sandbox-user': 'carol' }
 
 /** A valid single-submission-seat Flappy Bird config; `deps_version` overridable for the change path. */
-function flappyConfig(overrides: Partial<IterationConfig> = {}): IterationConfig {
+function flappyConfig(overrides: Partial<SeasonConfig> = {}): SeasonConfig {
   return {
     deps_version: 1,
     matches: [{ slots: ['submission'], seeds: [1, 2], games: 2 }],
@@ -68,11 +68,11 @@ describe('admin API', () => {
     await app.ready()
   }
 
-  /** Declare an iteration over HTTP and return its id. */
+  /** Declare a season over HTTP and return its id. */
   async function declare(): Promise<string> {
     const res = await app.inject({
       method: 'POST',
-      url: `/api/admin/environments/${ENV_ID}/iterations`,
+      url: `/api/admin/environments/${ENV_ID}/seasons`,
       headers: OPERATOR,
       payload: {},
     })
@@ -93,19 +93,19 @@ describe('admin API', () => {
     it('rejects every admin route for a non-operator with 403 not_operator', async () => {
       const id = await declare()
       const routes: Array<[string, string]> = [
-        ['POST', `/api/admin/environments/${ENV_ID}/iterations`],
-        ['PUT', `/api/admin/iterations/${id}/config`],
-        ['PUT', `/api/admin/iterations/${id}/rating-prompt`],
-        ['POST', `/api/admin/iterations/${id}/submissions/open`],
-        ['POST', `/api/admin/iterations/${id}/submissions/close`],
-        ['POST', `/api/admin/iterations/${id}/play/open`],
-        ['POST', `/api/admin/iterations/${id}/play/close`],
-        ['POST', `/api/admin/iterations/${id}/release`],
-        ['POST', `/api/admin/iterations/${id}/unrelease`],
-        ['POST', `/api/admin/iterations/${id}/runs`],
-        ['POST', `/api/admin/iterations/${id}/runs/whatever/cancel`],
-        ['GET', `/api/admin/iterations/${id}`],
-        ['GET', `/api/admin/environments/${ENV_ID}/iterations`],
+        ['POST', `/api/admin/environments/${ENV_ID}/seasons`],
+        ['PUT', `/api/admin/seasons/${id}/config`],
+        ['PUT', `/api/admin/seasons/${id}/rating-prompt`],
+        ['POST', `/api/admin/seasons/${id}/submissions/open`],
+        ['POST', `/api/admin/seasons/${id}/submissions/close`],
+        ['POST', `/api/admin/seasons/${id}/play/open`],
+        ['POST', `/api/admin/seasons/${id}/play/close`],
+        ['POST', `/api/admin/seasons/${id}/release`],
+        ['POST', `/api/admin/seasons/${id}/unrelease`],
+        ['POST', `/api/admin/seasons/${id}/runs`],
+        ['POST', `/api/admin/seasons/${id}/runs/whatever/cancel`],
+        ['GET', `/api/admin/seasons/${id}`],
+        ['GET', `/api/admin/environments/${ENV_ID}/seasons`],
       ]
       for (const [method, url] of routes) {
         const res = await app.inject({
@@ -122,7 +122,7 @@ describe('admin API', () => {
     it('proceeds for an operator (the dev mock user is one out of the box)', async () => {
       const res = await app.inject({
         method: 'GET',
-        url: `/api/admin/environments/${ENV_ID}/iterations`,
+        url: `/api/admin/environments/${ENV_ID}/seasons`,
         headers: OPERATOR,
       })
       expect(res.statusCode).toBe(200)
@@ -130,10 +130,10 @@ describe('admin API', () => {
   })
 
   describe('declare', () => {
-    it('creates an unreleased, submission-closed, play-closed iteration with the current deps_version', async () => {
+    it('creates an unreleased, submission-closed, play-closed season with the current deps_version', async () => {
       const res = await app.inject({
         method: 'POST',
-        url: `/api/admin/environments/${ENV_ID}/iterations`,
+        url: `/api/admin/environments/${ENV_ID}/seasons`,
         headers: OPERATOR,
         payload: { label: 'Week 1' },
       })
@@ -144,7 +144,7 @@ describe('admin API', () => {
         play_status: string
         release_status: string
         label: string
-        config: IterationConfig
+        config: SeasonConfig
       }
       expect(body).toMatchObject({
         submission_status: 'closed',
@@ -158,7 +158,7 @@ describe('admin API', () => {
     it('404s declaring against an unknown environment', async () => {
       const res = await app.inject({
         method: 'POST',
-        url: '/api/admin/environments/nope/iterations',
+        url: '/api/admin/environments/nope/seasons',
         headers: OPERATOR,
         payload: {},
       })
@@ -175,28 +175,28 @@ describe('admin API', () => {
       for (const [name, payload] of cases) {
         const res = await app.inject({
           method: 'POST',
-          url: `/api/admin/environments/${ENV_ID}/iterations`,
+          url: `/api/admin/environments/${ENV_ID}/seasons`,
           headers: OPERATOR,
           payload,
         })
         expect(res.statusCode, name).toBe(400)
-        expect(res.json()).toMatchObject({ code: 'invalid_iteration_declaration' })
+        expect(res.json()).toMatchObject({ code: 'invalid_season_declaration' })
         expect((res.json() as { reason: string }).reason).toBeTruthy()
       }
     })
   })
 
   describe('configure', () => {
-    it('round-trips a valid IterationConfig', async () => {
+    it('round-trips a valid SeasonConfig', async () => {
       const id = await declare()
       const res = await app.inject({
         method: 'PUT',
-        url: `/api/admin/iterations/${id}/config`,
+        url: `/api/admin/seasons/${id}/config`,
         headers: OPERATOR,
         payload: flappyConfig(),
       })
       expect(res.statusCode).toBe(200)
-      expect((res.json() as { config: IterationConfig }).config).toEqual(flappyConfig())
+      expect((res.json() as { config: SeasonConfig }).config).toEqual(flappyConfig())
     })
 
     it('400s an invalid config with a specific reason', async () => {
@@ -216,7 +216,7 @@ describe('admin API', () => {
       for (const [name, payload] of cases) {
         const res = await app.inject({
           method: 'PUT',
-          url: `/api/admin/iterations/${id}/config`,
+          url: `/api/admin/seasons/${id}/config`,
           headers: OPERATOR,
           payload,
         })
@@ -231,7 +231,7 @@ describe('admin API', () => {
       const id = await declare()
       const res = await app.inject({
         method: 'PUT',
-        url: `/api/admin/iterations/${id}/config`,
+        url: `/api/admin/seasons/${id}/config`,
         headers: OPERATOR,
         payload: {
           deps_version: 1,
@@ -245,7 +245,7 @@ describe('admin API', () => {
 
     it('refuses a config edit against existing runs without force, and succeeds with force', async () => {
       const id = await declare()
-      await storage.updateIterationConfig(id, flappyConfig())
+      await storage.updateSeasonConfig(id, flappyConfig())
       // A run plus a result and a placement, all of which a forced edit must clear.
       const ready = await makeReadySubmission(storage, id)
       const run = await storage.createRunWithSchedule(
@@ -277,17 +277,17 @@ describe('admin API', () => {
 
       const refused = await app.inject({
         method: 'PUT',
-        url: `/api/admin/iterations/${id}/config`,
+        url: `/api/admin/seasons/${id}/config`,
         headers: OPERATOR,
         payload: flappyConfig({ matches: [{ slots: ['submission'], seeds: [9], games: 1 }] }),
       })
       expect(refused.statusCode).toBe(409)
-      expect(refused.json()).toMatchObject({ code: 'iteration_has_runs' })
+      expect(refused.json()).toMatchObject({ code: 'season_has_runs' })
       expect(runner.cancelled).toEqual([])
 
       const forced = await app.inject({
         method: 'PUT',
-        url: `/api/admin/iterations/${id}/config?force=true`,
+        url: `/api/admin/seasons/${id}/config?force=true`,
         headers: OPERATOR,
         payload: flappyConfig({ matches: [{ slots: ['submission'], seeds: [9], games: 1 }] }),
       })
@@ -300,33 +300,33 @@ describe('admin API', () => {
 
     it('refuses a deps_version change against existing submissions without force, deletes them with force', async () => {
       const id = await declare()
-      await storage.updateIterationConfig(id, flappyConfig())
+      await storage.updateSeasonConfig(id, flappyConfig())
       await makeReadySubmission(storage, id)
 
       const refused = await app.inject({
         method: 'PUT',
-        url: `/api/admin/iterations/${id}/config`,
+        url: `/api/admin/seasons/${id}/config`,
         headers: OPERATOR,
         payload: flappyConfig({ deps_version: 2 }),
       })
       expect(refused.statusCode).toBe(409)
-      expect(refused.json()).toMatchObject({ code: 'iteration_has_submissions' })
+      expect(refused.json()).toMatchObject({ code: 'season_has_submissions' })
 
       const forced = await app.inject({
         method: 'PUT',
-        url: `/api/admin/iterations/${id}/config?force=true`,
+        url: `/api/admin/seasons/${id}/config?force=true`,
         headers: OPERATOR,
         payload: flappyConfig({ deps_version: 2 }),
       })
       expect(forced.statusCode).toBe(200)
-      expect(await storage.listActiveSubmissionsByIteration(id)).toEqual([])
+      expect(await storage.listActiveSubmissionsBySeason(id)).toEqual([])
     })
   })
 
   describe('rating prompt', () => {
     it('sets the operator prompt even after a run exists (never gated by the config rules)', async () => {
       const id = await declare()
-      await storage.updateIterationConfig(id, flappyConfig())
+      await storage.updateSeasonConfig(id, flappyConfig())
       await storage.createRunWithSchedule(
         id,
         'dev-user',
@@ -335,7 +335,7 @@ describe('admin API', () => {
       )
       const res = await app.inject({
         method: 'PUT',
-        url: `/api/admin/iterations/${id}/rating-prompt`,
+        url: `/api/admin/seasons/${id}/rating-prompt`,
         headers: OPERATOR,
         payload: { prompt: 'Rate creativity 1-5' },
       })
@@ -344,7 +344,7 @@ describe('admin API', () => {
       // Clearing it round-trips back to null.
       const cleared = await app.inject({
         method: 'PUT',
-        url: `/api/admin/iterations/${id}/rating-prompt`,
+        url: `/api/admin/seasons/${id}/rating-prompt`,
         headers: OPERATOR,
         payload: { prompt: null },
       })
@@ -355,7 +355,7 @@ describe('admin API', () => {
       const id = await declare()
       const invalidType = await app.inject({
         method: 'PUT',
-        url: `/api/admin/iterations/${id}/rating-prompt`,
+        url: `/api/admin/seasons/${id}/rating-prompt`,
         headers: OPERATOR,
         payload: { prompt: 123 },
       })
@@ -364,7 +364,7 @@ describe('admin API', () => {
 
       const tooLong = await app.inject({
         method: 'PUT',
-        url: `/api/admin/iterations/${id}/rating-prompt`,
+        url: `/api/admin/seasons/${id}/rating-prompt`,
         headers: OPERATOR,
         payload: { prompt: 'x'.repeat(2_001) },
       })
@@ -379,7 +379,7 @@ describe('admin API', () => {
       const b = await declare()
       const open = await app.inject({
         method: 'POST',
-        url: `/api/admin/iterations/${a}/submissions/open`,
+        url: `/api/admin/seasons/${a}/submissions/open`,
         headers: OPERATOR,
       })
       expect(open.statusCode).toBe(200)
@@ -387,31 +387,31 @@ describe('admin API', () => {
 
       const conflict = await app.inject({
         method: 'POST',
-        url: `/api/admin/iterations/${b}/submissions/open`,
+        url: `/api/admin/seasons/${b}/submissions/open`,
         headers: OPERATOR,
       })
       expect(conflict.statusCode).toBe(409)
-      expect(conflict.json()).toMatchObject({ code: 'open_iteration_exists' })
+      expect(conflict.json()).toMatchObject({ code: 'open_season_exists' })
 
       await app.inject({
         method: 'POST',
-        url: `/api/admin/iterations/${a}/submissions/close`,
+        url: `/api/admin/seasons/${a}/submissions/close`,
         headers: OPERATOR,
       })
       const reopen = await app.inject({
         method: 'POST',
-        url: `/api/admin/iterations/${b}/submissions/open`,
+        url: `/api/admin/seasons/${b}/submissions/open`,
         headers: OPERATOR,
       })
       expect(reopen.statusCode).toBe(200)
     })
 
-    it('opens public play on an unreleased iteration under the one-play-open invariant', async () => {
+    it('opens public play on an unreleased season under the one-play-open invariant', async () => {
       const a = await declare()
       const b = await declare()
       const open = await app.inject({
         method: 'POST',
-        url: `/api/admin/iterations/${a}/play/open`,
+        url: `/api/admin/seasons/${a}/play/open`,
         headers: OPERATOR,
       })
       expect(open.statusCode).toBe(200)
@@ -421,18 +421,18 @@ describe('admin API', () => {
 
       const conflict = await app.inject({
         method: 'POST',
-        url: `/api/admin/iterations/${b}/play/open`,
+        url: `/api/admin/seasons/${b}/play/open`,
         headers: OPERATOR,
       })
       expect(conflict.statusCode).toBe(409)
-      expect(conflict.json()).toMatchObject({ code: 'open_play_iteration_exists' })
+      expect(conflict.json()).toMatchObject({ code: 'open_play_season_exists' })
     })
 
     it('releases and unreleases, stamping released_at once', async () => {
       const id = await declare()
       const released = await app.inject({
         method: 'POST',
-        url: `/api/admin/iterations/${id}/release`,
+        url: `/api/admin/seasons/${id}/release`,
         headers: OPERATOR,
       })
       const first = released.json() as { release_status: string; released_at: string }
@@ -441,22 +441,22 @@ describe('admin API', () => {
 
       await app.inject({
         method: 'POST',
-        url: `/api/admin/iterations/${id}/unrelease`,
+        url: `/api/admin/seasons/${id}/unrelease`,
         headers: OPERATOR,
       })
       const rereleased = await app.inject({
         method: 'POST',
-        url: `/api/admin/iterations/${id}/release`,
+        url: `/api/admin/seasons/${id}/release`,
         headers: OPERATOR,
       })
       // The stamp is stable across an unrelease/re-release cycle.
       expect((rereleased.json() as { released_at: string }).released_at).toBe(first.released_at)
     })
 
-    it('404s a gate flip against an unknown iteration', async () => {
+    it('404s a gate flip against an unknown season', async () => {
       const res = await app.inject({
         method: 'POST',
-        url: '/api/admin/iterations/nope/release',
+        url: '/api/admin/seasons/nope/release',
         headers: OPERATOR,
       })
       expect(res.statusCode).toBe(404)
@@ -466,12 +466,12 @@ describe('admin API', () => {
   describe('trigger and cancel', () => {
     it('snapshots the roster and schedule, persists before enqueue, and returns the run id without Docker', async () => {
       const id = await declare()
-      await storage.updateIterationConfig(id, flappyConfig())
+      await storage.updateSeasonConfig(id, flappyConfig())
       const ready = await makeReadySubmission(storage, id)
 
       const res = await app.inject({
         method: 'POST',
-        url: `/api/admin/iterations/${id}/runs`,
+        url: `/api/admin/seasons/${id}/runs`,
         headers: OPERATOR,
       })
       expect(res.statusCode).toBe(201)
@@ -491,7 +491,7 @@ describe('admin API', () => {
       const id = await declare() // default config has no matches
       const res = await app.inject({
         method: 'POST',
-        url: `/api/admin/iterations/${id}/runs`,
+        url: `/api/admin/seasons/${id}/runs`,
         headers: OPERATOR,
       })
       expect(res.statusCode).toBe(409)
@@ -501,16 +501,16 @@ describe('admin API', () => {
 
     it('refuses a second trigger while a run is in progress with 409 run_in_progress', async () => {
       const id = await declare()
-      await storage.updateIterationConfig(id, flappyConfig())
+      await storage.updateSeasonConfig(id, flappyConfig())
       const first = await app.inject({
         method: 'POST',
-        url: `/api/admin/iterations/${id}/runs`,
+        url: `/api/admin/seasons/${id}/runs`,
         headers: OPERATOR,
       })
       expect(first.statusCode).toBe(201)
       const second = await app.inject({
         method: 'POST',
-        url: `/api/admin/iterations/${id}/runs`,
+        url: `/api/admin/seasons/${id}/runs`,
         headers: OPERATOR,
       })
       expect(second.statusCode).toBe(409)
@@ -519,17 +519,17 @@ describe('admin API', () => {
 
     it('cancels an in-progress run through the runner stub', async () => {
       const id = await declare()
-      await storage.updateIterationConfig(id, flappyConfig())
+      await storage.updateSeasonConfig(id, flappyConfig())
       const run = (
         await app.inject({
           method: 'POST',
-          url: `/api/admin/iterations/${id}/runs`,
+          url: `/api/admin/seasons/${id}/runs`,
           headers: OPERATOR,
         })
       ).json() as { id: string }
       const res = await app.inject({
         method: 'POST',
-        url: `/api/admin/iterations/${id}/runs/${run.id}/cancel`,
+        url: `/api/admin/seasons/${id}/runs/${run.id}/cancel`,
         headers: OPERATOR,
       })
       expect(res.statusCode).toBe(202)
@@ -537,11 +537,11 @@ describe('admin API', () => {
       expect((await storage.getRun(run.id))?.status).toBe('cancelled')
     })
 
-    it('404s a cancel for a run that does not belong to the iteration', async () => {
+    it('404s a cancel for a run that does not belong to the season', async () => {
       const id = await declare()
       const res = await app.inject({
         method: 'POST',
-        url: `/api/admin/iterations/${id}/runs/ghost/cancel`,
+        url: `/api/admin/seasons/${id}/runs/ghost/cancel`,
         headers: OPERATOR,
       })
       expect(res.statusCode).toBe(404)
@@ -549,9 +549,9 @@ describe('admin API', () => {
   })
 
   describe('status and list', () => {
-    it('returns the admin view, including an unreleased iteration board after a completed run', async () => {
+    it('returns the admin view, including an unreleased season board after a completed run', async () => {
       const id = await declare()
-      await storage.updateIterationConfig(id, flappyConfig())
+      await storage.updateSeasonConfig(id, flappyConfig())
       // A completed run with one Naive result, so the (still unreleased) board has a row.
       const run = await storage.createRunWithSchedule(
         id,
@@ -573,37 +573,37 @@ describe('admin API', () => {
 
       const res = await app.inject({
         method: 'GET',
-        url: `/api/admin/iterations/${id}`,
+        url: `/api/admin/seasons/${id}`,
         headers: OPERATOR,
       })
       expect(res.statusCode).toBe(200)
       const body = res.json() as {
-        iteration: { release_status: string; config: IterationConfig }
+        season: { release_status: string; config: SeasonConfig }
         latest_run: { id: string; status: string; games: unknown[] }
         board: { automated: Array<{ mean_score: number }> }
       }
-      expect(body.iteration.release_status).toBe('unreleased')
+      expect(body.season.release_status).toBe('unreleased')
       expect(body.latest_run.id).toBe(run.id)
       expect(body.latest_run.games).toHaveLength(1)
       expect(body.board.automated).toHaveLength(1)
       expect(first(body.board.automated).mean_score).toBe(7)
     })
 
-    it('404s the status route for an unknown iteration', async () => {
+    it('404s the status route for an unknown season', async () => {
       const res = await app.inject({
         method: 'GET',
-        url: '/api/admin/iterations/nope',
+        url: '/api/admin/seasons/nope',
         headers: OPERATOR,
       })
       expect(res.statusCode).toBe(404)
     })
 
-    it('lists all iterations including unreleased ones for the operator', async () => {
+    it('lists all seasons including unreleased ones for the operator', async () => {
       const a = await declare()
       const b = await declare()
       const res = await app.inject({
         method: 'GET',
-        url: `/api/admin/environments/${ENV_ID}/iterations`,
+        url: `/api/admin/environments/${ENV_ID}/seasons`,
         headers: OPERATOR,
       })
       expect(res.statusCode).toBe(200)
@@ -616,18 +616,16 @@ describe('admin API', () => {
   describe('log stream (WebSocket)', () => {
     it('relays the stub runner emitted lines and closes on the terminal event', async () => {
       const id = await declare()
-      await storage.updateIterationConfig(id, flappyConfig())
+      await storage.updateSeasonConfig(id, flappyConfig())
       const run = (
         await app.inject({
           method: 'POST',
-          url: `/api/admin/iterations/${id}/runs`,
+          url: `/api/admin/seasons/${id}/runs`,
           headers: OPERATOR,
         })
       ).json() as { id: string }
 
-      const ws = await app.injectWS(
-        `/api/admin/iterations/${id}/runs/${run.id}/logs/ws?user=dev-user`,
-      )
+      const ws = await app.injectWS(`/api/admin/seasons/${id}/runs/${run.id}/logs/ws?user=dev-user`)
       const messages: string[] = []
       ws.on('message', (data: Buffer) => messages.push(data.toString()))
 
@@ -648,7 +646,7 @@ describe('admin API', () => {
 
     it('sends an immediate terminal and closes for an already-finished run', async () => {
       const id = await declare()
-      await storage.updateIterationConfig(id, flappyConfig())
+      await storage.updateSeasonConfig(id, flappyConfig())
       const run = await storage.createRunWithSchedule(
         id,
         'dev-user',
@@ -657,9 +655,7 @@ describe('admin API', () => {
       )
       await storage.setRunStatus(run.id, 'completed')
 
-      const ws = await app.injectWS(
-        `/api/admin/iterations/${id}/runs/${run.id}/logs/ws?user=dev-user`,
-      )
+      const ws = await app.injectWS(`/api/admin/seasons/${id}/runs/${run.id}/logs/ws?user=dev-user`)
       const messages: string[] = []
       ws.on('message', (data: Buffer) => messages.push(data.toString()))
       await new Promise((resolve) => ws.on('close', resolve))
@@ -670,10 +666,10 @@ describe('admin API', () => {
   })
 })
 
-/** Create a `ready` submission in an iteration and return its row. */
-async function makeReadySubmission(storage: Storage, iterationId: string) {
+/** Create a `ready` submission in a season and return its row. */
+async function makeReadySubmission(storage: Storage, seasonId: string) {
   const submission = await storage.createSubmission({
-    iteration_id: iterationId,
+    season_id: seasonId,
     env_id: ENV_ID,
     user_id: 'alice',
     source_kind: 'git',

@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from '@testing-library/vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { Board, IterationView } from '../src/api/client.js'
+import type { Board, SeasonView } from '../src/api/client.js'
 import { flappyMeta } from './helpers/fixtures.js'
 import { memoryRouter, renderWithMe } from './helpers/render.js'
 
@@ -9,19 +9,19 @@ vi.mock('../src/api/client.js', () => ({
   getMe: vi.fn(async () => ({ user_id: 'dev-user', allowlisted: true, is_operator: false })),
   getEnvironments: vi.fn(),
   getEnvironmentLeaderboards: vi.fn(),
-  getIterationLeaderboards: vi.fn(),
-  listReleasedIterations: vi.fn(),
+  getSeasonLeaderboards: vi.fn(),
+  listReleasedSeasons: vi.fn(),
 }))
 
 import {
   getEnvironmentLeaderboards,
   getEnvironments,
-  getIterationLeaderboards,
-  listReleasedIterations,
+  getSeasonLeaderboards,
+  listReleasedSeasons,
 } from '../src/api/client.js'
 import LeaderboardsPage from '../src/pages/LeaderboardsPage.vue'
 
-function iteration(overrides: Partial<IterationView> = {}): IterationView {
+function season(overrides: Partial<SeasonView> = {}): SeasonView {
   return {
     id: 'iter-1',
     env_id: 'flappy_bird',
@@ -77,7 +77,7 @@ async function renderAt(path: string) {
     { path: '/', component: { template: '<div />' } },
     { path: '/environments/:envId', component: { template: '<div />' } },
     { path: '/environments/:envId/agents/:ownerId', component: AgentStub },
-    { path: '/environments/:envId/leaderboards/:iterationId?', component: LeaderboardsPage },
+    { path: '/environments/:envId/leaderboards/:seasonId?', component: LeaderboardsPage },
     { path: '/replays/:id', component: ReplayStub },
   ])
   router.push(path)
@@ -89,17 +89,17 @@ describe('LeaderboardsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(getEnvironments).mockResolvedValue([flappyMeta()])
-    vi.mocked(listReleasedIterations).mockResolvedValue([
-      iteration({ id: 'iter-1', label: 'Week 1' }),
-      iteration({ id: 'iter-0', label: 'Week 0' }),
+    vi.mocked(listReleasedSeasons).mockResolvedValue([
+      season({ id: 'iter-1', label: 'Week 1' }),
+      season({ id: 'iter-0', label: 'Week 0' }),
     ])
   })
 
-  it('renders both boards side by side from the current released iteration', async () => {
+  it('renders both boards side by side from the current released season', async () => {
     vi.mocked(getEnvironmentLeaderboards).mockResolvedValue({
-      current: { iteration: iteration(), board: board() },
-      submission_iteration_id: null,
-      play_iteration_id: null,
+      current: { season: season(), board: board() },
+      submission_season_id: null,
+      play_season_id: null,
     })
     await renderAt('/environments/flappy_bird/leaderboards')
 
@@ -121,14 +121,14 @@ describe('LeaderboardsPage', () => {
 
     // The default route reads the public environment leaderboards, never the admin board.
     expect(vi.mocked(getEnvironmentLeaderboards)).toHaveBeenCalledWith('flappy_bird')
-    expect(vi.mocked(getIterationLeaderboards)).not.toHaveBeenCalled()
+    expect(vi.mocked(getSeasonLeaderboards)).not.toHaveBeenCalled()
   })
 
   it('ranks the human board at three ratings and leaves under-threshold rows unranked', async () => {
     vi.mocked(getEnvironmentLeaderboards).mockResolvedValue({
-      current: { iteration: iteration(), board: board() },
-      submission_iteration_id: null,
-      play_iteration_id: null,
+      current: { season: season(), board: board() },
+      submission_season_id: null,
+      play_season_id: null,
     })
     await renderAt('/environments/flappy_bird/leaderboards')
 
@@ -146,26 +146,26 @@ describe('LeaderboardsPage', () => {
     expect(within(unrankedRow).getByText('—')).toBeInTheDocument()
   })
 
-  it('resolves a specific iteration by URL through the released-only read', async () => {
-    vi.mocked(getIterationLeaderboards).mockResolvedValue({
-      iteration: iteration({ id: 'iter-0', label: 'Week 0' }),
+  it('resolves a specific season by URL through the released-only read', async () => {
+    vi.mocked(getSeasonLeaderboards).mockResolvedValue({
+      season: season({ id: 'iter-0', label: 'Week 0' }),
       board: board(),
     })
     await renderAt('/environments/flappy_bird/leaderboards/iter-0')
 
     await waitFor(() =>
-      expect(vi.mocked(getIterationLeaderboards)).toHaveBeenCalledWith('flappy_bird', 'iter-0'),
+      expect(vi.mocked(getSeasonLeaderboards)).toHaveBeenCalledWith('flappy_bird', 'iter-0'),
     )
     expect(screen.getByText('Week 0')).toBeInTheDocument()
-    // History links are present for navigation between released iterations.
+    // History links are present for navigation between released seasons.
     expect(screen.getByRole('link', { name: 'Week 1' })).toHaveAttribute(
       'href',
       '/environments/flappy_bird/leaderboards/iter-1',
     )
   })
 
-  it('shows a not-released message for an unreleased or unknown iteration (404)', async () => {
-    vi.mocked(getIterationLeaderboards).mockResolvedValue(undefined)
+  it('shows a not-released message for an unreleased or unknown season (404)', async () => {
+    vi.mocked(getSeasonLeaderboards).mockResolvedValue(undefined)
     await renderAt('/environments/flappy_bird/leaderboards/iter-secret')
     expect(await screen.findByText(/No released results/)).toBeInTheDocument()
   })

@@ -15,7 +15,7 @@ import { type APIRequestContext, expect, test } from '@playwright/test'
  * built submission in a real session.
  *
  * Each test uses a unique owner id so re-runs against a reused dev database never collide on the
- * one-active-submission-per-iteration rule.
+ * one-active-submission-per-season rule.
  */
 
 const ENV_ID = 'flappy_bird'

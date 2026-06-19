@@ -30,7 +30,7 @@ import type {
   SubmissionFailureStatus,
   SubmissionStage,
 } from '../storage/index.js'
-import { decodeIterationConfig } from '../storage/index.js'
+import { decodeSeasonConfig } from '../storage/index.js'
 import type { ResolvedSource, SourceInput, SubmissionSource, TreeHandle } from './source/index.js'
 import { SourceError } from './source/index.js'
 import { runLoadCheck, validateStatic } from './validate/index.js'
@@ -160,12 +160,12 @@ export class ValidationWorker implements SubmissionEnqueuer {
       // The row was hard-deleted out from under us; nothing to validate or roll up.
       return
     }
-    const iteration = await this.deps.storage.getIteration(submission.iteration_id)
-    if (iteration === undefined) {
-      this.log(`validation worker: submission ${submissionId} has no iteration; skipping`)
+    const season = await this.deps.storage.getSeason(submission.season_id)
+    if (season === undefined) {
+      this.log(`validation worker: submission ${submissionId} has no season; skipping`)
       return
     }
-    const depsVersion = decodeIterationConfig(iteration.config).deps_version
+    const depsVersion = decodeSeasonConfig(season.config).deps_version
 
     let tree: TreeHandle | null = null
     let runningStage: SubmissionStage | null = null
@@ -205,7 +205,7 @@ export class ValidationWorker implements SubmissionEnqueuer {
       await this.deps.storage.finishSubmissionCheck(submissionId, 'static', 'passed')
       runningStage = null
 
-      // Stage 3 — build: the code-only overlay image on the iteration's base image.
+      // Stage 3 — build: the code-only overlay image on the season's base image.
       runningStage = 'build'
       await this.deps.storage.startSubmissionCheck(submissionId, 'build')
       let image: ImageRef

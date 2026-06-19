@@ -9,6 +9,6 @@ The specification is split across several files so each topic can be read on its
 - [communication.md](communication.md). Optional messaging between agents and human-controlled slots: the chat hook, message limits, visibility, and recording.
 - [llm.md](llm.md). The OpenAI-compatible LLM API for agents: the gateway, one-off slot keys for each session, telemetry, budgets, and what it means for sandboxing and the leaderboard.
 - [frontend.md](frontend.md). Pages, the submission form, play and watch flows, on-demand live play, feedback, and GitHub OAuth identity.
-- [leaderboard.md](leaderboard.md). What an iteration is, the automated board, and the human-feedback board.
+- [leaderboard.md](leaderboard.md). What a season is, the automated board, and the human-feedback board.
 - [execution.md](execution.md). Where the renderer, the environment, and the agents run, how the session container is sandboxed, and the implementation languages.
 - [recording.md](recording.md). State-only recordings, replays, and storage.

@@ -13,10 +13,14 @@ import { createRouter, createWebHistory } from 'vue-router'
 import App from './App.vue'
 import AdminConsolePage from './pages/AdminConsolePage.vue'
 import AgentProfilePage from './pages/AgentProfilePage.vue'
+import DocsPage from './pages/DocsPage.vue'
 import EnvironmentPage from './pages/EnvironmentPage.vue'
 import HomePage from './pages/HomePage.vue'
 import LeaderboardsPage from './pages/LeaderboardsPage.vue'
+import MyAgentsPage from './pages/MyAgentsPage.vue'
+import ProfilePage from './pages/ProfilePage.vue'
 import ReplayPage from './pages/ReplayPage.vue'
+import SeasonsPage from './pages/SeasonsPage.vue'
 import SessionPage from './pages/SessionPage.vue'
 import './renderers/index.js'
 // Style layers in order: tokens, reset, then the app shell layout. Component styling lives in scoped
@@ -30,11 +34,17 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/', component: HomePage },
+    // Global, cross-game sections in the sidebar. Seasons and My Agents aggregate over the per-game
+    // public reads for now; Documentation is a placeholder until the guides move in-app.
+    { path: '/seasons', component: SeasonsPage },
+    { path: '/docs', component: DocsPage },
+    { path: '/my/agents', component: MyAgentsPage },
+    { path: '/my/profile', component: ProfilePage },
     { path: '/environments/:envId', component: EnvironmentPage },
     { path: '/environments/:envId/agents/:ownerId', component: AgentProfilePage },
-    // The per-environment, per-iteration Leaderboards page; the iteration id is optional and defaults
-    // to the current released iteration, so a specific iteration's boards are shareable by URL.
-    { path: '/environments/:envId/leaderboards/:iterationId?', component: LeaderboardsPage },
+    // The per-environment, per-season Leaderboards page; the season id is optional and defaults
+    // to the current released season, so a specific season's boards are shareable by URL.
+    { path: '/environments/:envId/leaderboards/:seasonId?', component: LeaderboardsPage },
     // The operator admin console. The page itself gates on `me.is_operator` (and the backend admin API
     // is the real authority), so a non-operator who reaches the route sees an access notice.
     { path: '/environments/:envId/admin', component: AdminConsolePage },

@@ -18,9 +18,9 @@ function agent(overrides: Partial<RateableAgent> & { agent: AgentRefWire }): Rat
 function view(agents: RateableAgent[], overrides: Partial<Ratings> = {}): Ratings {
   return {
     session_id: 's1',
-    iteration_id: 'iter-1',
+    season_id: 'iter-1',
     read_only: false,
-    iteration_prompt: null,
+    season_prompt: null,
     agents,
     ...overrides,
   }
@@ -76,7 +76,7 @@ describe('SessionRatings', () => {
     expect(screen.getByRole('radiogroup', { name: /Rate Naive baseline/ })).toBeInTheDocument()
   })
 
-  it('shows the iteration prompt once for the panel and the author prompt next to its own agent', async () => {
+  it('shows the season prompt once for the panel and the author prompt next to its own agent', async () => {
     vi.mocked(getSessionRatings).mockResolvedValue({
       ok: true,
       ratings: view(
@@ -84,12 +84,12 @@ describe('SessionRatings', () => {
           agent({ agent: SUBMISSION, author_prompt: 'Did it dodge cleanly?' }),
           agent({ agent: NAIVE }),
         ],
-        { iteration_prompt: 'Judge overall skill.' },
+        { season_prompt: 'Judge overall skill.' },
       ),
     })
     renderPanel()
 
-    // The operator's iteration prompt applies to every agent, so it shows exactly once, above the list.
+    // The operator's season prompt applies to every agent, so it shows exactly once, above the list.
     await screen.findByText('Rate the agents')
     expect(screen.getAllByText('Judge overall skill.')).toHaveLength(1)
 
@@ -97,7 +97,7 @@ describe('SessionRatings', () => {
     const items = within(list).getAllByRole('listitem')
     const submissionItem = items[0] as HTMLElement
     const naiveItem = items[1] as HTMLElement
-    // The author prompt shows only next to its own agent; the iteration prompt is not repeated per item.
+    // The author prompt shows only next to its own agent; the season prompt is not repeated per item.
     expect(within(submissionItem).getByText('Did it dodge cleanly?')).toBeInTheDocument()
     expect(within(submissionItem).queryByText('Judge overall skill.')).toBeNull()
     // Naive has no author, so it carries no per-agent prompt at all.

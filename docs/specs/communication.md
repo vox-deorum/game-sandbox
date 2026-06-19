@@ -12,7 +12,7 @@ This follows the precedent of `learn`, an optional hook the harness calls only w
 
 ## Messages
 
-A message carries the sender slot, the recipient, the text, and the tick it was sent on. The recipient is either a specific slot, human-controlled slots included, or a broadcast to everyone. Per turn, an agent may send at most one message per recipient plus one broadcast. Message text is plain UTF-8 of variable length, capped by a limit each environment sets in its metadata (see [environment.md](environment.md)); an iteration can override the limit or disable messaging (see [leaderboard.md](leaderboard.md)). There are no binary payloads and no structured side channels.
+A message carries the sender slot, the recipient, the text, and the tick it was sent on. The recipient is either a specific slot, human-controlled slots included, or a broadcast to everyone. Per turn, an agent may send at most one message per recipient plus one broadcast. Message text is plain UTF-8 of variable length, capped by a limit each environment sets in its metadata (see [environment.md](environment.md)); a season can override the limit or disable messaging (see [leaderboard.md](leaderboard.md)). There are no binary payloads and no structured side channels.
 
 ## Delivery
 

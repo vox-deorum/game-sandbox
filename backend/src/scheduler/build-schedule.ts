@@ -1,5 +1,5 @@
 /**
- * The pure matchmaking scheduler: it turns an iteration's match design plus its trigger-time
+ * The pure matchmaking scheduler: it turns a season's match design plus its trigger-time
  * ready-submission snapshot into the concrete, ordered list of games the runner executes.
  *
  * This is the Stage 6.2 scheduler (`plans/stage-06/2-matchmaking-schedule.md`) carrying the Stage
@@ -15,8 +15,8 @@
  */
 
 import type { ScheduledGameInput } from '../storage/index.js'
-import type { MatchConfig } from '../storage/iteration-config.js'
 import type { AgentRef } from '../storage/schema.js'
+import type { MatchConfig } from '../storage/season-config.js'
 
 /** The submitted-agent variant of {@link AgentRef}; the only kind a submission snapshot carries. */
 export type SubmissionRef = Extract<AgentRef, { kind: 'submission' }>
@@ -28,7 +28,7 @@ const NAIVE: AgentRef = { kind: 'builtin-naive' }
 export type ScheduleErrorReason = 'zero_slots' | 'empty_seeds' | 'non_positive_games'
 
 /**
- * Thrown when a match configuration is structurally unrunnable. The {@link IterationConfig} codec
+ * Thrown when a match configuration is structurally unrunnable. The {@link SeasonConfig} codec
  * already rejects these at write time; the scheduler guards again so a hand-built or corrupted
  * snapshot fails loudly here rather than producing a partial schedule.
  */
@@ -44,7 +44,7 @@ export class ScheduleError extends Error {
 
 /** Inputs to {@link buildSchedule}: the match design, the live roster, and the seat-order capability. */
 export interface BuildScheduleInput {
-  /** The iteration's match configurations, in order; the `match_index` is the array index. */
+  /** The season's match configurations, in order; the `match_index` is the array index. */
   matches: readonly MatchConfig[]
   /** The trigger-time snapshot of active `ready` submitted agents eligible to fill submission seats. */
   submissions: readonly SubmissionRef[]
@@ -70,14 +70,14 @@ export function buildSchedule(input: BuildScheduleInput): ScheduledGameInput[] {
   const { matches, submissions, seatOrderMatters } = input
 
   // Sort by stable submission id once; every seat expansion below enumerates over this order, so the
-  // concrete schedule is identical across re-runs regardless of snapshot iteration order.
+  // concrete schedule is identical across re-runs regardless of snapshot season order.
   const roster = [...submissions].sort((a, b) => compareIds(a.submission_id, b.submission_id))
 
   const schedule: ScheduledGameInput[] = []
   let gameIndex = 0
 
   matches.forEach((match, matchIndex) => {
-    // Defensive guards; the codec enforces these too (see iteration-config.ts).
+    // Defensive guards; the codec enforces these too (see season-config.ts).
     if (match.slots.length === 0) throw new ScheduleError('zero_slots', matchIndex)
     if (match.seeds.length === 0) throw new ScheduleError('empty_seeds', matchIndex)
     if (match.games <= 0) throw new ScheduleError('non_positive_games', matchIndex)

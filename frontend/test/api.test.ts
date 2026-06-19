@@ -2,18 +2,18 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   ApiError,
-  configureIteration,
-  declareIteration,
+  configureSeason,
+  declareSeason,
   getAuthorPrompt,
   getEnvironmentLeaderboards,
   getEnvironments,
-  getIterationLeaderboards,
   getMe,
   getRecording,
+  getSeasonLeaderboards,
   getSessionRatings,
-  type IterationConfig,
   openSubmissions,
   pinRecording,
+  type SeasonConfig,
   setAuthorPrompt,
   startSession,
   submitRatings,
@@ -117,9 +117,9 @@ describe('api client', () => {
   it('reads a session rating view and maps the unrateable conflicts onto typed reasons', async () => {
     const view = {
       session_id: 's1',
-      iteration_id: 'iter-1',
+      season_id: 'iter-1',
       read_only: false,
-      iteration_prompt: null,
+      season_prompt: null,
       agents: [],
     }
     stubFetch(async () => jsonResponse(view))
@@ -138,9 +138,9 @@ describe('api client', () => {
     const fetchMock = stubFetch(async () =>
       jsonResponse({
         session_id: 's1',
-        iteration_id: 'iter-1',
+        season_id: 'iter-1',
         read_only: false,
-        iteration_prompt: null,
+        season_prompt: null,
         agents: [],
       }),
     )
@@ -157,24 +157,24 @@ describe('api client', () => {
   })
 
   it('reads and sets the author prompt, mapping the no-agent refusal', async () => {
-    stubFetch(async () => jsonResponse({ iteration_id: 'iter-1', prompt: 'Judge skill' }))
+    stubFetch(async () => jsonResponse({ season_id: 'iter-1', prompt: 'Judge skill' }))
     expect(await getAuthorPrompt('iter-1')).toEqual({
-      iteration_id: 'iter-1',
+      season_id: 'iter-1',
       prompt: 'Judge skill',
     })
 
     vi.unstubAllGlobals()
-    const setMock = stubFetch(async () => jsonResponse({ iteration_id: 'iter-1', prompt: null }))
+    const setMock = stubFetch(async () => jsonResponse({ season_id: 'iter-1', prompt: null }))
     expect(await setAuthorPrompt('iter-1', null)).toEqual({ ok: true, prompt: null })
     const [url, init] = setMock.mock.calls[0] as [string, RequestInit]
-    expect(url).toBe('/api/iterations/iter-1/agent-rating-prompt')
+    expect(url).toBe('/api/seasons/iter-1/agent-rating-prompt')
     expect(init.method).toBe('PUT')
 
     vi.unstubAllGlobals()
-    stubFetch(async () => jsonResponse({ code: 'no_agent_in_iteration' }, 409))
+    stubFetch(async () => jsonResponse({ code: 'no_agent_in_season' }, 409))
     expect(await setAuthorPrompt('iter-1', 'x')).toEqual({
       ok: false,
-      reason: 'no_agent_in_iteration',
+      reason: 'no_agent_in_season',
     })
   })
 
@@ -183,56 +183,56 @@ describe('api client', () => {
   it('reads the environment leaderboards with the separate submit and play targets', async () => {
     const payload = {
       current: null,
-      submission_iteration_id: 'iter-sub',
-      play_iteration_id: 'iter-play',
+      submission_season_id: 'iter-sub',
+      play_season_id: 'iter-play',
     }
     const fetchMock = stubFetch(async () => jsonResponse(payload))
     expect(await getEnvironmentLeaderboards('flappy_bird')).toEqual(payload)
     expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/environments/flappy_bird/leaderboards')
   })
 
-  it('maps a 404 iteration leaderboards read (unreleased) to undefined', async () => {
-    stubFetch(async () => jsonResponse({ error: 'no such released iteration' }, 404))
-    expect(await getIterationLeaderboards('flappy_bird', 'iter-x')).toBeUndefined()
+  it('maps a 404 season leaderboards read (unreleased) to undefined', async () => {
+    stubFetch(async () => jsonResponse({ error: 'no such released season' }, 404))
+    expect(await getSeasonLeaderboards('flappy_bird', 'iter-x')).toBeUndefined()
   })
 
-  it('declares an iteration through the admin prefix', async () => {
-    const iteration = { id: 'iter-new' }
-    const fetchMock = stubFetch(async () => jsonResponse(iteration, 201))
-    expect(await declareIteration('flappy_bird', { label: 'Week 2' })).toEqual(iteration)
+  it('declares a season through the admin prefix', async () => {
+    const season = { id: 'iter-new' }
+    const fetchMock = stubFetch(async () => jsonResponse(season, 201))
+    expect(await declareSeason('flappy_bird', { label: 'Week 2' })).toEqual(season)
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(url).toBe('/api/admin/environments/flappy_bird/iterations')
+    expect(url).toBe('/api/admin/environments/flappy_bird/seasons')
     expect(JSON.parse(init.body as string)).toEqual({ label: 'Week 2' })
   })
 
   it('sends ?force=true on a forced config edit and maps the unforced conflict', async () => {
-    const config: IterationConfig = {
+    const config: SeasonConfig = {
       deps_version: 1,
       matches: [{ slots: ['submission'], seeds: [0], games: 1 }],
     }
     const conflictMock = stubFetch(async () =>
-      jsonResponse({ error: 'iteration has runs', code: 'iteration_has_runs' }, 409),
+      jsonResponse({ error: 'season has runs', code: 'season_has_runs' }, 409),
     )
-    const unforced = await configureIteration('iter-1', config)
+    const unforced = await configureSeason('iter-1', config)
     expect(unforced).toEqual({
       ok: false,
-      reason: 'iteration_has_runs',
-      message: 'iteration has runs',
+      reason: 'season_has_runs',
+      message: 'season has runs',
     })
-    expect(conflictMock.mock.calls[0]?.[0]).toBe('/api/admin/iterations/iter-1/config')
+    expect(conflictMock.mock.calls[0]?.[0]).toBe('/api/admin/seasons/iter-1/config')
 
     vi.unstubAllGlobals()
     const okMock = stubFetch(async () => jsonResponse({ id: 'iter-1' }))
-    const forced = await configureIteration('iter-1', config, true)
+    const forced = await configureSeason('iter-1', config, true)
     expect(forced.ok).toBe(true)
-    expect(okMock.mock.calls[0]?.[0]).toBe('/api/admin/iterations/iter-1/config?force=true')
+    expect(okMock.mock.calls[0]?.[0]).toBe('/api/admin/seasons/iter-1/config?force=true')
   })
 
   it('maps the open-submissions one-open invariant conflict', async () => {
-    stubFetch(async () => jsonResponse({ code: 'open_iteration_exists' }, 409))
+    stubFetch(async () => jsonResponse({ code: 'open_season_exists' }, 409))
     expect(await openSubmissions('iter-1')).toEqual({
       ok: false,
-      reason: 'open_iteration_exists',
+      reason: 'open_season_exists',
     })
   })
 

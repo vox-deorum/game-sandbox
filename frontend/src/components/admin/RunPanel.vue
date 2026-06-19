@@ -8,7 +8,7 @@
   The stream is live-only — the buffered backlog-on-attach is deferred — so earlier lines are not
   replayed. A `409 run_in_progress` surfaces as "a run is already in progress"; a `409 empty_schedule`
   points back at the match design. After a run reaches a terminal state the console reloads, so the
-  freshly computed boards appear (operator-only until the iteration is released).
+  freshly computed boards appear (operator-only until the season is released).
 -->
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue'
@@ -16,7 +16,7 @@ import { computed, onUnmounted, ref, watch } from 'vue'
 import {
   cancelRun,
   type GameStatus,
-  type IterationView,
+  type SeasonView,
   type RunView,
   runLogWsPath,
   triggerRun,
@@ -25,7 +25,7 @@ import { RunLogSocket } from '../../api/runLogSocket.js'
 import UiButton from '../ui/UiButton.vue'
 import UiStatusBadge from '../ui/UiStatusBadge.vue'
 
-const props = defineProps<{ iteration: IterationView; latestRun: RunView | null }>()
+const props = defineProps<{ season: SeasonView; latestRun: RunView | null }>()
 const emit = defineEmits<{ (e: 'changed'): void }>()
 
 const triggering = ref(false)
@@ -76,7 +76,7 @@ function connect(run: RunView): void {
   }
   disconnect()
   streamingRunId = run.id
-  socket = new RunLogSocket(runLogWsPath(props.iteration.id, run.id), {
+  socket = new RunLogSocket(runLogWsPath(props.season.id, run.id), {
     onLog: (event) => {
       logLines.value.push(`[m${event.match_index}/g${event.game_index}] ${event.line}`)
       if (logLines.value.length > LOG_CAP) {
@@ -119,7 +119,7 @@ onUnmounted(disconnect)
 async function trigger(): Promise<void> {
   triggering.value = true
   error.value = null
-  const result = await triggerRun(props.iteration.id)
+  const result = await triggerRun(props.season.id)
   triggering.value = false
   if (result.ok) {
     logLines.value = []
@@ -128,10 +128,10 @@ async function trigger(): Promise<void> {
     return
   }
   if (result.reason === 'run_in_progress') {
-    error.value = 'A run is already in progress for this iteration.'
+    error.value = 'A run is already in progress for this season.'
   } else if (result.reason === 'empty_schedule') {
     error.value =
-      'This iteration resolves to an empty schedule. Add at least one match in the match design before running.'
+      'This season resolves to an empty schedule. Add at least one match in the match design before running.'
   } else {
     error.value = 'Could not start the run. Please try again.'
   }
@@ -143,7 +143,7 @@ async function cancel(): Promise<void> {
   }
   cancelling.value = true
   error.value = null
-  const result = await cancelRun(props.iteration.id, props.latestRun.id)
+  const result = await cancelRun(props.season.id, props.latestRun.id)
   cancelling.value = false
   if (result.ok) {
     emit('changed')

@@ -14,7 +14,7 @@ python -m venv .venv
 pip install -r requirements.txt -r requirements-dev.txt
 ```
 
-Install exactly `requirements.txt`. It is the **pinned dependency set** for this template version — the same set the server installs — so your local runs match the server's. If you need a library it lacks, ask the operator for a new template release rather than pinning it yourself; everyone in an iteration runs on the same set.
+Install exactly `requirements.txt`. It is the **pinned dependency set** for this template version — the same set the server installs — so your local runs match the server's. If you need a library it lacks, ask the operator for a new template release rather than pinning it yourself; everyone in a season runs on the same set.
 
 ## 2. Write your agent
 
@@ -56,4 +56,4 @@ Your code reads `OPENAI_BASE_URL` and `OPENAI_API_KEY`. Server-side the harness 
 
 ## 6. Submit
 
-Push to GitHub and submit the repository link, pinned to a commit, through the course website. Submitting again while an iteration is open replaces your previous submission. The full rules are in the [submission spec](../specs/submission.md).
+Push to GitHub and submit the repository link, pinned to a commit, through the course website. Submitting again while a season is open replaces your previous submission. The full rules are in the [submission spec](../specs/submission.md).

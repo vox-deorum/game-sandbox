@@ -122,7 +122,7 @@ async function verify(): Promise<void> {
 }
 
 const REASON_MESSAGE: Record<string, string> = {
-  no_open_iteration: 'Submissions are closed for this environment.',
+  no_open_season: 'Submissions are closed for this environment.',
   resubmit_conflict: 'Another submission just took the slot — please try again.',
   local_disabled: 'Local submissions are disabled on this deployment.',
   invalid_source: 'Enter a repository URL (or a local folder path).',
@@ -192,7 +192,7 @@ const isFailed = computed(
   <UiCard>
     <form v-if="phase === 'form'" class="submit-form" @submit.prevent="onSubmit">
       <p class="submit-intro">
-        Submit an agent for the open iteration. Paste a public repository URL; we verify it is
+        Submit an agent for the open season. Paste a public repository URL; we verify it is
         reachable before accepting, then validate and build it in the background.
       </p>
 

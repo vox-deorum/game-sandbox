@@ -14,13 +14,9 @@ vi.mock('../src/api/client.js', () => ({
   // The page fetches the environment leaderboards on mount for the boards embed and the watch/play
   // gate; default it to a play-open, nothing-released payload so the entry points stay enabled.
   getEnvironmentLeaderboards: vi.fn(),
-  // The embedded SubmitAgentForm probes capabilities on mount and the WatchAgentPicker lists the
-  // active ready agents; both default to empty here. The rest are unused in this suite.
-  getSubmissionCapabilities: vi.fn().mockResolvedValue({ local_submissions: false }),
+  // The WatchAgentPicker lists the active ready agents; default it to empty. Submission moved off the
+  // hub to the Submit / My Agent tab (the agent profile), so the hub no longer mounts the submit form.
   listActiveSubmissions: vi.fn().mockResolvedValue([]),
-  checkReachability: vi.fn(),
-  submitAgent: vi.fn(),
-  getSubmission: vi.fn(),
 }))
 
 import {
@@ -43,7 +39,7 @@ async function renderPage() {
     // A home stub so the hub's "Environments / …" context-line link resolves in the test router.
     { path: '/', component: { template: '<div />' } },
     { path: '/environments/:envId', component: EnvironmentPage },
-    { path: '/environments/:envId/leaderboards/:iterationId?', component: { template: '<div />' } },
+    { path: '/environments/:envId/leaderboards/:seasonId?', component: { template: '<div />' } },
     { path: '/environments/:envId/admin', component: { template: '<div />' } },
     { path: '/sessions/:id', component: SessionStub },
   ])
@@ -57,12 +53,12 @@ describe('EnvironmentPage', () => {
     vi.clearAllMocks()
     vi.mocked(getEnvironments).mockResolvedValue([META])
     vi.mocked(listRecordings).mockResolvedValue([])
-    // Default: an iteration is play-open (so the watch/play entry points are enabled) but nothing is
+    // Default: a season is play-open (so the watch/play entry points are enabled) but nothing is
     // released yet. Individual tests override this to exercise the closed-play and released states.
     vi.mocked(getEnvironmentLeaderboards).mockResolvedValue({
       current: null,
-      submission_iteration_id: 'iter-1',
-      play_iteration_id: 'iter-1',
+      submission_season_id: 'iter-1',
+      play_season_id: 'iter-1',
     })
   })
 
@@ -77,7 +73,7 @@ describe('EnvironmentPage', () => {
     expect(screen.queryByRole('link', { name: 'Admin console' })).toBeNull()
   })
 
-  it('disables watch and play when no iteration is play-open', async () => {
+  it('disables watch and play when no season is play-open', async () => {
     vi.mocked(getMe).mockResolvedValue({
       user_id: 'dev-user',
       allowlisted: true,
@@ -85,59 +81,25 @@ describe('EnvironmentPage', () => {
     })
     vi.mocked(getEnvironmentLeaderboards).mockResolvedValue({
       current: null,
-      submission_iteration_id: 'iter-1',
-      play_iteration_id: null,
+      submission_season_id: 'iter-1',
+      play_season_id: null,
     })
     await renderPage()
     expect(await screen.findByText(/Public play is closed/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Play Yourself' })).toBeNull()
-    // The submit form stays available even with play closed.
-    expect(screen.getByRole('heading', { name: 'Submit an agent' })).toBeInTheDocument()
   })
 
-  it('hides the submission form when no iteration is accepting submissions', async () => {
+  it('keeps the hub stable when the leaderboards read fails (play stays safe-closed)', async () => {
     vi.mocked(getMe).mockResolvedValue({
       user_id: 'dev-user',
       allowlisted: true,
       is_operator: false,
     })
-    vi.mocked(getEnvironmentLeaderboards).mockResolvedValue({
-      current: null,
-      submission_iteration_id: null,
-      play_iteration_id: 'iter-1',
-    })
-    await renderPage()
-    expect(await screen.findByText(/Submissions are closed/)).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Verify reachability' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Submit agent' })).toBeNull()
-  })
-
-  it('keeps the submit form available when the leaderboards read fails', async () => {
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'dev-user',
-      allowlisted: true,
-      is_operator: false,
-    })
-    // A transient failure must not read as "submissions closed": the form falls back to its own
-    // status handling instead, while the play gate stays at its safe-closed default.
+    // A transient failure must not crash the hub; the play gate stays at its safe-closed default.
     vi.mocked(getEnvironmentLeaderboards).mockRejectedValue(new Error('network blip'))
     await renderPage()
-    expect(await screen.findByRole('button', { name: 'Submit agent' })).toBeInTheDocument()
-    expect(screen.queryByText(/Submissions are closed/)).toBeNull()
-    expect(screen.queryByText(/Loading submission status/)).toBeNull()
-    // Play stays closed when the read fails (the gate cannot confirm an open play target).
-    expect(screen.getByText(/Public play is closed/)).toBeInTheDocument()
-  })
-
-  it('shows the operator admin entry point only to an operator', async () => {
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'dev-user',
-      allowlisted: true,
-      is_operator: true,
-    })
-    await renderPage()
-    const adminLink = await screen.findByRole('link', { name: 'Admin console' })
-    expect(adminLink).toHaveAttribute('href', '/environments/flappy_bird/admin')
+    expect(await screen.findByText(/Public play is closed/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Play Yourself' })).toBeNull()
   })
 
   it('starts a session through the start form and navigates to it', async () => {

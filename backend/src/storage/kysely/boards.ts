@@ -1,5 +1,5 @@
 /**
- * Automated-board queries: rewrite an iteration's persisted placement rows, read an agent's
+ * Automated-board queries: rewrite a season's persisted placement rows, read an agent's
  * placements for its profile, and aggregate the latest completed run's per-seat results into the
  * live public board (per-agent means, failure counts, and a representative replay link).
  */
@@ -28,20 +28,20 @@ export const HUMAN_BOARD_MIN_RATINGS = 3
 
 export async function replaceAutomatedPlacements(
   db: Kysely<Database>,
-  iterationId: string,
+  seasonId: string,
   envId: string,
   runId: string,
   rows: PlacementInput[],
 ): Promise<void> {
   await db.transaction().execute(async (trx) => {
-    await trx.deleteFrom('automated_placements').where('iteration_id', '=', iterationId).execute()
+    await trx.deleteFrom('automated_placements').where('season_id', '=', seasonId).execute()
     const now = new Date().toISOString()
     for (const row of rows) {
       await trx
         .insertInto('automated_placements')
         .values({
           id: randomUUID(),
-          iteration_id: iterationId,
+          season_id: seasonId,
           env_id: envId,
           run_id: runId,
           rank: row.rank,
@@ -79,9 +79,9 @@ export async function listPlacementsByAgent(
 
 export async function getAutomatedBoard(
   db: Kysely<Database>,
-  iterationId: string,
+  seasonId: string,
 ): Promise<AutomatedBoardRow[]> {
-  const run = await getLatestCompletedRun(db, iterationId)
+  const run = await getLatestCompletedRun(db, seasonId)
   if (run === undefined) {
     return []
   }
@@ -89,8 +89,8 @@ export async function getAutomatedBoard(
   // the representative recording is the agent's best game (ties broken by lower game_index).
   const rows = await db
     .selectFrom('game_results')
-    .innerJoin('iteration_run_games', 'iteration_run_games.id', 'game_results.game_id')
-    .where('iteration_run_games.run_id', '=', run.id)
+    .innerJoin('season_run_games', 'season_run_games.id', 'game_results.game_id')
+    .where('season_run_games.run_id', '=', run.id)
     .select([
       'game_results.agent_kind as agent_kind',
       'game_results.agent_submission_id as agent_submission_id',
@@ -99,8 +99,8 @@ export async function getAutomatedBoard(
       'game_results.agent_compute_ms_total as agent_compute_ms_total',
       'game_results.acted_tick_count as acted_tick_count',
       'game_results.failed as failed',
-      'iteration_run_games.recording_id as recording_id',
-      'iteration_run_games.game_index as game_index',
+      'season_run_games.recording_id as recording_id',
+      'season_run_games.game_index as game_index',
     ])
     .execute()
 
@@ -178,16 +178,16 @@ export async function getAutomatedBoard(
 }
 
 /**
- * The human-feedback board: aggregate the iteration's ratings per agent, order them by mean (then
+ * The human-feedback board: aggregate the season's ratings per agent, order them by mean (then
  * count, then the stable agent key), and apply the ranking rule — agents at or above the threshold get
  * a 1-based rank, the rest follow unranked. The ordering is the same for both groups, so the unranked
  * tail reads as "next in line" below the ranked set.
  */
 export async function getHumanBoard(
   db: Kysely<Database>,
-  iterationId: string,
+  seasonId: string,
 ): Promise<HumanBoardRow[]> {
-  const aggregates = await aggregateRatingsByAgent(db, iterationId)
+  const aggregates = await aggregateRatingsByAgent(db, seasonId)
   const ordered = [...aggregates].sort((a, b) => {
     if (b.mean !== a.mean) {
       return b.mean - a.mean

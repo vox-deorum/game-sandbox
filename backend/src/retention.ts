@@ -11,7 +11,7 @@
  * ignorable debris the next pass cleans.
  *
  * Stage 6.5 layers leaderboard retention on top of this live-session policy. Leaderboard recordings
- * from each iteration's latest completed run are kept for as long as the iteration is viewable, so the
+ * from each season's latest completed run are kept for as long as the season is viewable, so the
  * sweep filters those protected ids out before either pass, so they are neither evicted nor counted
  * toward a user's quota. A superseded run's recordings fall outside the protected set and rejoin the
  * normal window/quota passes, so repeated re-runs do not accumulate recordings without bound.
@@ -92,7 +92,7 @@ export class Retention {
       return
     }
 
-    // Exempt the current-run leaderboard recordings of every viewable iteration. If we cannot
+    // Exempt the current-run leaderboard recordings of every viewable season. If we cannot
     // determine the protected set, skip the sweep entirely rather than risk reclaiming a protected
     // recording; the next pass retries.
     let protectedIds: Set<string>

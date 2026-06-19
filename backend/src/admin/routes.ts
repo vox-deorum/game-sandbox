@@ -1,13 +1,13 @@
 /**
  * The operator-gated admin HTTP API (Stage 6.3): the stable contract the admin console and any
- * headless client drive. It declares and configures iterations, flips the three independent gates
+ * headless client drive. It declares and configures seasons, flips the three independent gates
  * (submission window, public play window, release status), triggers and re-runs the workflow,
  * inspects status, and streams a running run's container logs over WebSocket.
  *
  * Every route here lives under `/api/admin` and is gated by one `onRequest` operator guard on the
  * encapsulated plugin, so there is a single authorization choke point rather than per-route code. A
  * non-operator gets `403 not_operator` before any work runs. The public board/history reads do not go
- * through this prefix (see `leaderboards/routes.ts`); they only ever return released iterations, so
+ * through this prefix (see `leaderboards/routes.ts`); they only ever return released seasons, so
  * unreleased results cannot leak no matter the caller.
  *
  * Route shape note: the plan sketched action endpoints as `…/submissions:open`. Fastify's router
@@ -21,11 +21,11 @@ import { z } from 'zod'
 import { DEPS_VERSION } from '../deps-version.js'
 import type { EnvironmentMeta, EnvironmentRegistry } from '../environments.js'
 import { isOperator, resolveUserId } from '../identity.js'
-import { iterationView, runView } from '../iteration-views.js'
 import { buildSchedule, type SubmissionRef } from '../scheduler/build-schedule.js'
+import { runView, seasonView } from '../season-views.js'
 import type { ClientSocket } from '../session/live-session.js'
 import type { Storage } from '../storage/index.js'
-import { IterationConfigSchema } from '../storage/iteration-config.js'
+import { SeasonConfigSchema } from '../storage/season-config.js'
 import type { RunEvent, WorkflowRunner } from '../workflow/runner.js'
 
 /** Everything the admin routes need beyond the Fastify instance. */
@@ -36,15 +36,15 @@ export interface AdminDeps {
   workflowRunner: WorkflowRunner
   /** The operator allowlist `isOperator` consults; the single authorization predicate for this prefix. */
   operatorAllowlist: readonly string[]
-  /** The dependency-set version a freshly declared iteration pins by default. */
+  /** The dependency-set version a freshly declared season pins by default. */
   depsVersion?: number
 }
 
-/** The operator's iteration-wide rating prompt is display-only guidance; cap it so it stays a prompt. */
+/** The operator's season-wide rating prompt is display-only guidance; cap it so it stays a prompt. */
 const RATING_PROMPT_MAX = 2_000
 
-/** The optional body accepted when declaring an iteration. */
-const DeclareIterationBodySchema = z.strictObject({
+/** The optional body accepted when declaring a season. */
+const DeclareSeasonBodySchema = z.strictObject({
   label: z.string().nullable().optional(),
   deps_version: z.int().positive().optional(),
 })
@@ -78,60 +78,60 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
       })
 
       // --- Declare ---------------------------------------------------------------------------
-      // Create an unreleased, submission-closed, play-closed iteration for the environment with a
+      // Create an unreleased, submission-closed, play-closed season for the environment with a
       // default config carrying the current deps_version. Declaring does not auto-close any open
-      // iteration; opening/closing are explicit lifecycle actions below.
+      // season; opening/closing are explicit lifecycle actions below.
       admin.post<{
         Params: { envId: string }
         Body: unknown
-      }>('/environments/:envId/iterations', async (request, reply) => {
+      }>('/environments/:envId/seasons', async (request, reply) => {
         const meta = deps.environments.get(request.params.envId)
         if (meta === undefined) {
           return reply.code(404).send({ error: 'no such environment' })
         }
-        const parsed = DeclareIterationBodySchema.safeParse(request.body ?? {})
+        const parsed = DeclareSeasonBodySchema.safeParse(request.body ?? {})
         if (!parsed.success) {
           return reply.code(400).send({
-            error: 'invalid iteration declaration',
-            code: 'invalid_iteration_declaration',
+            error: 'invalid season declaration',
+            code: 'invalid_season_declaration',
             reason: zodReason(parsed.error),
           })
         }
-        const iteration = await deps.storage.createIteration({
+        const season = await deps.storage.createSeason({
           env_id: request.params.envId,
           deps_version: parsed.data.deps_version ?? depsVersion,
           label: parsed.data.label ?? null,
         })
-        return reply.code(201).send(iterationView(iteration))
+        return reply.code(201).send(seasonView(season))
       })
 
       // --- Configure -------------------------------------------------------------------------
-      // Replace the whole IterationConfig through the typed codec, validating slot counts against the
+      // Replace the whole SeasonConfig through the typed codec, validating slot counts against the
       // environment metadata. A config edit once runs exist (or a deps_version change once submissions
       // exist) is destructive, so it needs an explicit `?force=true` after the console's confirmation.
       admin.put<{ Params: { id: string }; Querystring: { force?: string }; Body: unknown }>(
-        '/iterations/:id/config',
+        '/seasons/:id/config',
         async (request, reply) => {
-          const iteration = await deps.storage.getIteration(request.params.id)
-          if (iteration === undefined) {
-            return reply.code(404).send({ error: 'no such iteration' })
+          const season = await deps.storage.getSeason(request.params.id)
+          if (season === undefined) {
+            return reply.code(404).send({ error: 'no such season' })
           }
-          const parsed = IterationConfigSchema.safeParse(request.body)
+          const parsed = SeasonConfigSchema.safeParse(request.body)
           if (!parsed.success) {
             const issue = parsed.error.issues[0]
             const path = issue && issue.path.length > 0 ? issue.path.join('.') : '(root)'
             return reply.code(400).send({
-              error: 'invalid iteration config',
+              error: 'invalid season config',
               code: 'invalid_config',
-              reason: issue ? `${path}: ${issue.message}` : 'invalid iteration config',
+              reason: issue ? `${path}: ${issue.message}` : 'invalid season config',
             })
           }
-          const meta = deps.environments.get(iteration.env_id)
+          const meta = deps.environments.get(season.env_id)
           if (meta !== undefined) {
             const slotIssue = validateSlotCounts(parsed.data.matches, meta)
             if (slotIssue !== null) {
               return reply.code(400).send({
-                error: 'invalid iteration config',
+                error: 'invalid season config',
                 code: 'invalid_config',
                 reason: slotIssue,
               })
@@ -139,27 +139,27 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
           }
           const force = parseForce(request.query.force)
           if (force) {
-            await cancelActiveRunsForForcedEdit(deps, iteration.id)
+            await cancelActiveRunsForForcedEdit(deps, season.id)
           }
-          const result = await deps.storage.updateIterationConfig(request.params.id, parsed.data, {
+          const result = await deps.storage.updateSeasonConfig(request.params.id, parsed.data, {
             force,
           })
           if (!result.ok) {
             return reply.code(409).send({ error: result.conflict, code: result.conflict })
           }
-          return reply.code(200).send(iterationView(result.iteration))
+          return reply.code(200).send(seasonView(result.season))
         },
       )
 
       // --- Rating prompt ---------------------------------------------------------------------
-      // Set or clear the operator's iteration-wide rating prompt. Unlike config, this is editable at
-      // any point in the iteration's life — it is display-only and never affects workflow execution.
+      // Set or clear the operator's season-wide rating prompt. Unlike config, this is editable at
+      // any point in the season's life — it is display-only and never affects workflow execution.
       admin.put<{ Params: { id: string }; Body: unknown }>(
-        '/iterations/:id/rating-prompt',
+        '/seasons/:id/rating-prompt',
         async (request, reply) => {
-          const iteration = await deps.storage.getIteration(request.params.id)
-          if (iteration === undefined) {
-            return reply.code(404).send({ error: 'no such iteration' })
+          const season = await deps.storage.getSeason(request.params.id)
+          if (season === undefined) {
+            return reply.code(404).send({ error: 'no such season' })
           }
           const parsed = RatingPromptBodySchema.safeParse(request.body ?? {})
           if (!parsed.success) {
@@ -174,34 +174,33 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
           }
           const raw = parsed.data.prompt
           const prompt = raw === undefined || raw === null || raw === '' ? null : raw
-          await deps.storage.setIterationRatingPrompt(request.params.id, prompt)
-          const updated = await deps.storage.getIteration(request.params.id)
-          return reply.code(200).send(iterationView(updated ?? iteration))
+          await deps.storage.setSeasonRatingPrompt(request.params.id, prompt)
+          const updated = await deps.storage.getSeason(request.params.id)
+          return reply.code(200).send(seasonView(updated ?? season))
         },
       )
 
       // --- Submission window -----------------------------------------------------------------
-      admin.post<{ Params: { id: string } }>('/iterations/:id/submissions/open', (request, reply) =>
+      admin.post<{ Params: { id: string } }>('/seasons/:id/submissions/open', (request, reply) =>
         flipSubmission(deps, reply, request.params.id, 'open'),
       )
-      admin.post<{ Params: { id: string } }>(
-        '/iterations/:id/submissions/close',
-        (request, reply) => flipSubmission(deps, reply, request.params.id, 'closed'),
+      admin.post<{ Params: { id: string } }>('/seasons/:id/submissions/close', (request, reply) =>
+        flipSubmission(deps, reply, request.params.id, 'closed'),
       )
 
       // --- Public play window ----------------------------------------------------------------
-      admin.post<{ Params: { id: string } }>('/iterations/:id/play/open', (request, reply) =>
+      admin.post<{ Params: { id: string } }>('/seasons/:id/play/open', (request, reply) =>
         flipPlay(deps, reply, request.params.id, 'open'),
       )
-      admin.post<{ Params: { id: string } }>('/iterations/:id/play/close', (request, reply) =>
+      admin.post<{ Params: { id: string } }>('/seasons/:id/play/close', (request, reply) =>
         flipPlay(deps, reply, request.params.id, 'closed'),
       )
 
       // --- Release ---------------------------------------------------------------------------
-      admin.post<{ Params: { id: string } }>('/iterations/:id/release', (request, reply) =>
+      admin.post<{ Params: { id: string } }>('/seasons/:id/release', (request, reply) =>
         flipRelease(deps, reply, request.params.id, 'released'),
       )
-      admin.post<{ Params: { id: string } }>('/iterations/:id/unrelease', (request, reply) =>
+      admin.post<{ Params: { id: string } }>('/seasons/:id/unrelease', (request, reply) =>
         flipRelease(deps, reply, request.params.id, 'unreleased'),
       )
 
@@ -209,22 +208,22 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
       // Snapshot the config (incl. deps) and the eligible ready submissions, build the concrete
       // schedule with the pure scheduler, persist it with a pending run row, then enqueue the runner
       // and return the run id immediately. Never blocks on containers.
-      admin.post<{ Params: { id: string } }>('/iterations/:id/runs', async (request, reply) => {
-        const iteration = await deps.storage.getIteration(request.params.id)
-        if (iteration === undefined) {
-          return reply.code(404).send({ error: 'no such iteration' })
+      admin.post<{ Params: { id: string } }>('/seasons/:id/runs', async (request, reply) => {
+        const season = await deps.storage.getSeason(request.params.id)
+        if (season === undefined) {
+          return reply.code(404).send({ error: 'no such season' })
         }
-        const latest = await deps.storage.getLatestRun(iteration.id)
+        const latest = await deps.storage.getLatestRun(season.id)
         if (latest !== undefined && IN_PROGRESS_RUN.has(latest.status)) {
           return reply.code(409).send({
-            error: 'a run is already in progress for this iteration',
+            error: 'a run is already in progress for this season',
             code: 'run_in_progress',
             run_id: latest.id,
           })
         }
-        const config = iterationView(iteration).config
-        const meta = deps.environments.get(iteration.env_id)
-        const ready = await deps.storage.listActiveSubmissionsByIteration(iteration.id, 'ready')
+        const config = seasonView(season).config
+        const meta = deps.environments.get(season.env_id)
+        const ready = await deps.storage.listActiveSubmissionsBySeason(season.id, 'ready')
         const submissions: SubmissionRef[] = ready.map((s) => ({
           kind: 'submission',
           submission_id: s.id,
@@ -238,11 +237,11 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
         if (schedule.length === 0) {
           return reply
             .code(409)
-            .send({ error: 'the iteration resolves to an empty schedule', code: 'empty_schedule' })
+            .send({ error: 'the season resolves to an empty schedule', code: 'empty_schedule' })
         }
         const requestedBy = resolveUserId(request.headers)
         const run = await deps.storage.createRunWithSchedule(
-          iteration.id,
+          season.id,
           requestedBy,
           submissions,
           schedule,
@@ -253,10 +252,10 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
 
       // --- Cancel ----------------------------------------------------------------------------
       admin.post<{ Params: { id: string; runId: string } }>(
-        '/iterations/:id/runs/:runId/cancel',
+        '/seasons/:id/runs/:runId/cancel',
         async (request, reply) => {
           const run = await deps.storage.getRun(request.params.runId)
-          if (run === undefined || run.iteration_id !== request.params.id) {
+          if (run === undefined || run.season_id !== request.params.id) {
             return reply.code(404).send({ error: 'no such run' })
           }
           if (!IN_PROGRESS_RUN.has(run.status)) {
@@ -273,31 +272,31 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
       // The full admin view: config, all three gates, the latest run with its per-game statuses, and
       // the computed boards even while unreleased. The board fields are empty until a run completes
       // (automated) or ratings arrive (human); steps 5/6 shape the public response from these.
-      admin.get<{ Params: { id: string } }>('/iterations/:id', async (request, reply) => {
-        const iteration = await deps.storage.getIteration(request.params.id)
-        if (iteration === undefined) {
-          return reply.code(404).send({ error: 'no such iteration' })
+      admin.get<{ Params: { id: string } }>('/seasons/:id', async (request, reply) => {
+        const season = await deps.storage.getSeason(request.params.id)
+        if (season === undefined) {
+          return reply.code(404).send({ error: 'no such season' })
         }
-        const latest = await deps.storage.getLatestRun(iteration.id)
+        const latest = await deps.storage.getLatestRun(season.id)
         const games = latest === undefined ? [] : await deps.storage.listRunGames(latest.id)
         const [automated, human] = await Promise.all([
-          deps.storage.getAutomatedBoard(iteration.id),
-          deps.storage.getHumanBoard(iteration.id),
+          deps.storage.getAutomatedBoard(season.id),
+          deps.storage.getHumanBoard(season.id),
         ])
         return reply.code(200).send({
-          iteration: iterationView(iteration),
+          season: seasonView(season),
           latest_run: latest === undefined ? null : runView(latest, games),
           board: { automated, human },
         })
       })
 
       admin.get<{ Params: { envId: string } }>(
-        '/environments/:envId/iterations',
+        '/environments/:envId/seasons',
         async (request, reply) => {
-          const iterations = await deps.storage.listIterations(request.params.envId, {
+          const seasons = await deps.storage.listSeasons(request.params.envId, {
             includeUnreleased: true,
           })
-          return reply.code(200).send(iterations.map(iterationView))
+          return reply.code(200).send(seasons.map(seasonView))
         },
       )
 
@@ -307,11 +306,11 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
       // it attached (buffered backlog is deferred polish). A run already terminal at attach time gets
       // an immediate terminal event and close, so the console always learns the run is done.
       admin.get<{ Params: { id: string; runId: string } }>(
-        '/iterations/:id/runs/:runId/logs/ws',
+        '/seasons/:id/runs/:runId/logs/ws',
         { websocket: true },
         (socket, request) => {
           void attachLogStream(deps, socket as unknown as ClientSocket, {
-            iterationId: request.params.id,
+            seasonId: request.params.id,
             runId: request.params.runId,
           })
         },
@@ -327,18 +326,18 @@ interface CloseableSocket extends ClientSocket {
 }
 
 /**
- * Wire one log-stream subscriber. Validates the run belongs to the iteration, sends an immediate
+ * Wire one log-stream subscriber. Validates the run belongs to the season, sends an immediate
  * terminal for an already-finished run, otherwise subscribes to the runner and relays each event,
  * closing on the terminal. The subscription is torn down when the socket closes.
  */
 async function attachLogStream(
   deps: AdminDeps,
   socket: ClientSocket,
-  ids: { iterationId: string; runId: string },
+  ids: { seasonId: string; runId: string },
 ): Promise<void> {
   const closeable = socket as CloseableSocket
   const run = await deps.storage.getRun(ids.runId)
-  if (run === undefined || run.iteration_id !== ids.iterationId) {
+  if (run === undefined || run.season_id !== ids.seasonId) {
     socket.close()
     return
   }
@@ -416,15 +415,15 @@ async function flipSubmission(
   if (!result.ok) {
     return reply.code(409).send({ error: result.conflict, code: result.conflict })
   }
-  return reply.code(200).send(iterationView(result.iteration))
+  return reply.code(200).send(seasonView(result.season))
 }
 
 /** Forced config edits delete run rows; cancel live containers before those rows disappear. */
-async function cancelActiveRunsForForcedEdit(deps: AdminDeps, iterationId: string): Promise<void> {
+async function cancelActiveRunsForForcedEdit(deps: AdminDeps, seasonId: string): Promise<void> {
   const activeRuns = [
     ...(await deps.storage.listRunsByStatus('pending')),
     ...(await deps.storage.listRunsByStatus('running')),
-  ].filter((run) => run.iteration_id === iterationId)
+  ].filter((run) => run.season_id === seasonId)
   for (const run of activeRuns) {
     deps.workflowRunner.cancel(run.id)
   }
@@ -443,7 +442,7 @@ async function flipPlay(
   if (!result.ok) {
     return reply.code(409).send({ error: result.conflict, code: result.conflict })
   }
-  return reply.code(200).send(iterationView(result.iteration))
+  return reply.code(200).send(seasonView(result.season))
 }
 
 async function flipRelease(
@@ -455,15 +454,15 @@ async function flipRelease(
   if (!(await ensureExists(deps, reply, id))) {
     return reply
   }
-  const iteration = await deps.storage.setReleaseStatus(id, status)
-  return reply.code(200).send(iterationView(iteration))
+  const season = await deps.storage.setReleaseStatus(id, status)
+  return reply.code(200).send(seasonView(season))
 }
 
-/** 404 when the iteration is absent so the gate setters never run against a missing row. */
+/** 404 when the season is absent so the gate setters never run against a missing row. */
 async function ensureExists(deps: AdminDeps, reply: FastifyReply, id: string): Promise<boolean> {
-  const iteration = await deps.storage.getIteration(id)
-  if (iteration === undefined) {
-    await reply.code(404).send({ error: 'no such iteration' })
+  const season = await deps.storage.getSeason(id)
+  if (season === undefined) {
+    await reply.code(404).send({ error: 'no such season' })
     return false
   }
   return true

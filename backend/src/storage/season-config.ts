@@ -1,7 +1,7 @@
 /**
- * The `IterationConfig` codec: the single validated gate over the `iterations.config` JSON column.
+ * The `SeasonConfig` codec: the single validated gate over the `seasons.config` JSON column.
  *
- * The iteration configuration is a nested, evolving document (a match design plus override blocks),
+ * The season configuration is a nested, evolving document (a match design plus override blocks),
  * read and written whole by the admin API (step 3) and the scheduler/runner (steps 2/4), never by
  * field. Storing it as one JSON column keeps the schema flat and lets the shape grow without a
  * migration per field; this codec is what keeps the column from ever holding unvalidated text. It is
@@ -46,22 +46,22 @@ export const OverridesSchema = z.strictObject({
 export type Overrides = z.infer<typeof OverridesSchema>
 
 /**
- * The whole iteration configuration. `matches` may be empty while an iteration is still unconfigured
+ * The whole season configuration. `matches` may be empty while a season is still unconfigured
  * (the workflow trigger, not this codec, refuses to run an empty design). Unknown keys are rejected
  * at every level except the inert `messaging`/`llm` blocks.
  */
-export const IterationConfigSchema = z.strictObject({
+export const SeasonConfigSchema = z.strictObject({
   deps_version: z.int().positive(),
   matches: z.array(MatchConfigSchema),
   overrides: OverridesSchema.optional(),
 })
-export type IterationConfig = z.infer<typeof IterationConfigSchema>
+export type SeasonConfig = z.infer<typeof SeasonConfigSchema>
 
-/** Thrown when a value or stored document does not satisfy {@link IterationConfigSchema}. */
-export class IterationConfigError extends Error {
+/** Thrown when a value or stored document does not satisfy {@link SeasonConfigSchema}. */
+export class SeasonConfigError extends Error {
   constructor(message: string) {
     super(message)
-    this.name = 'IterationConfigError'
+    this.name = 'SeasonConfigError'
   }
 }
 
@@ -69,47 +69,47 @@ export class IterationConfigError extends Error {
 function summarize(error: z.ZodError): string {
   const issue = error.issues[0]
   if (issue === undefined) {
-    return 'invalid iteration config'
+    return 'invalid season config'
   }
   const path = issue.path.length > 0 ? issue.path.join('.') : '(root)'
   return `${path}: ${issue.message}`
 }
 
 /**
- * Validate an already-parsed value as an {@link IterationConfig}, throwing {@link IterationConfigError}
- * on any failure. The admin API can instead call `IterationConfigSchema.safeParse` directly when it
+ * Validate an already-parsed value as an {@link SeasonConfig}, throwing {@link SeasonConfigError}
+ * on any failure. The admin API can instead call `SeasonConfigSchema.safeParse` directly when it
  * wants to map a specific issue to a 400 reason.
  */
-export function parseIterationConfig(value: unknown): IterationConfig {
-  const result = IterationConfigSchema.safeParse(value)
+export function parseSeasonConfig(value: unknown): SeasonConfig {
+  const result = SeasonConfigSchema.safeParse(value)
   if (!result.success) {
-    throw new IterationConfigError(summarize(result.error))
+    throw new SeasonConfigError(summarize(result.error))
   }
   return result.data
 }
 
 /** Parse the stored JSON text and validate it; used by the storage layer when reading the column. */
-export function decodeIterationConfig(text: string): IterationConfig {
+export function decodeSeasonConfig(text: string): SeasonConfig {
   let parsed: unknown
   try {
     parsed = JSON.parse(text)
   } catch (error) {
-    throw new IterationConfigError(
-      `iteration config is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+    throw new SeasonConfigError(
+      `season config is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
     )
   }
-  return parseIterationConfig(parsed)
+  return parseSeasonConfig(parsed)
 }
 
 /** Validate then serialize to the canonical JSON text the column stores. */
-export function encodeIterationConfig(config: IterationConfig): string {
-  return JSON.stringify(parseIterationConfig(config))
+export function encodeSeasonConfig(config: SeasonConfig): string {
+  return JSON.stringify(parseSeasonConfig(config))
 }
 
 /**
- * The default configuration a freshly declared or seeded iteration carries: the pinned dependency-set
+ * The default configuration a freshly declared or seeded season carries: the pinned dependency-set
  * version and an empty match design. The operator fills in `matches` before a run can be triggered.
  */
-export function emptyIterationConfig(depsVersion: number): IterationConfig {
+export function emptySeasonConfig(depsVersion: number): SeasonConfig {
   return { deps_version: depsVersion, matches: [] }
 }

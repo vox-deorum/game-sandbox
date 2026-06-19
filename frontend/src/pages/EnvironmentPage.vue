@@ -1,7 +1,7 @@
 <!--
   Environment hub: everything about one environment in one place — the description and metadata, the
   entry points into play and watch (gated by the allowlist), and the recent-replays list. Laid out as
-  a column of sections that Stages 5 and 6 append to (submission form, leaderboards, iteration
+  a column of sections that Stages 5 and 6 append to (submission form, leaderboards, season
   history); a quiet trailing sentence names that future rather than stubbing empty boxes.
 
   The play and watch entry points are hidden when `/api/me` says the user is not allowlisted, and the
@@ -19,7 +19,6 @@ import { type EnvironmentLeaderboards, getEnvironmentLeaderboards, startSession 
 import LeaderboardBoards from '../components/LeaderboardBoards.vue'
 import RecentReplays from '../components/RecentReplays.vue'
 import StartForm from '../components/StartForm.vue'
-import SubmitAgentForm from '../components/SubmitAgentForm.vue'
 import WatchAgentPicker from '../components/WatchAgentPicker.vue'
 import UiBadge from '../components/ui/UiBadge.vue'
 import UiButton from '../components/ui/UiButton.vue'
@@ -38,21 +37,13 @@ const envId = String(route.params.envId)
 const { meta, notFound, loading } = useEnvironmentMeta(envId)
 const startError = ref<string | null>(null)
 
-// The current released boards plus the separate public submit and play targets. The boards embed and
-// the watch/play gate read from this; an unreleased iteration's boards never appear (the public read
-// only returns released results).
+// The current released boards plus the public play target. The boards embed and the watch/play gate
+// read from this; an unreleased season's boards never appear (the public read only returns released
+// results). Submission now lives on the Submit / My Agent tab (the agent profile), not on this hub.
 const leaderboards = ref<EnvironmentLeaderboards | null>(null)
-// True once the leaderboards read has failed: we can no longer trust it to report the submission
-// target, so the submit form falls back to its own status handling rather than reading "closed".
-const leaderboardsError = ref(false)
-// Public watch/play is enabled only when an iteration is the environment's play-open target. Released
-// history stays readable regardless, so the boards embed below is independent of this gate.
-const playOpen = computed(() => leaderboards.value?.play_iteration_id != null)
-// Submission and play targets are independent. Mount the form for an actual open submission target;
-// also mount it when the read failed, so a network blip degrades to the form's own no_open_iteration
-// handling instead of falsely reading "closed".
-const submissionsOpen = computed(() => leaderboards.value?.submission_iteration_id != null)
-const showSubmitForm = computed(() => submissionsOpen.value || leaderboardsError.value)
+// Public watch/play is enabled only when a season is the game's play-open target. Released history
+// stays readable regardless, so the boards embed below is independent of this gate.
+const playOpen = computed(() => leaderboards.value?.play_season_id != null)
 
 onMounted(() => {
   getEnvironmentLeaderboards(envId).then(
@@ -61,9 +52,7 @@ onMounted(() => {
     },
     () => {
       // A failed read leaves the boards empty rather than breaking the hub, and keeps the play gate at
-      // its safe-closed default (leaderboards stays null). The submit form, however, degrades to its
-      // own status check via leaderboardsError so a transient blip does not read as "submissions closed".
-      leaderboardsError.value = true
+      // its safe-closed default (leaderboards stays null).
     },
   )
 })
@@ -140,13 +129,6 @@ async function start(input: { seed?: number; humanSlotTimeoutMs?: number }): Pro
           >
             Play Yourself
           </UiButton>
-          <UiButton
-            v-if="me.me?.is_operator"
-            variant="secondary"
-            :to="`/environments/${meta.env_id}/admin`"
-          >
-            Admin console
-          </UiButton>
         </div>
         <p class="env-description">{{ meta.description }}</p>
         <div class="env-meta">
@@ -162,15 +144,6 @@ async function start(input: { seed?: number; humanSlotTimeoutMs?: number }): Pro
       <h2>Watch an agent</h2>
       <WatchAgentPicker v-if="playOpen" :env-id="meta.env_id" />
       <UiEmptyState v-else>Public play is closed for this environment right now.</UiEmptyState>
-    </section>
-
-    <section class="env-section">
-      <h2>Submit an agent</h2>
-      <UiEmptyState v-if="leaderboards === null && !leaderboardsError">
-        Loading submission status…
-      </UiEmptyState>
-      <SubmitAgentForm v-else-if="showSubmitForm" :env-id="meta.env_id" />
-      <UiEmptyState v-else>Submissions are closed for this environment right now.</UiEmptyState>
     </section>
 
     <section class="env-section">

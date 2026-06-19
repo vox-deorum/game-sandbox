@@ -1,46 +1,46 @@
 import { fireEvent, screen, waitFor } from '@testing-library/vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { AdminIterationView, Board, IterationView, RunView } from '../src/api/client.js'
+import type { AdminSeasonView, Board, RunView, SeasonView } from '../src/api/client.js'
 import { flappyMeta } from './helpers/fixtures.js'
 import { memoryRouter, renderWithMe } from './helpers/render.js'
 
 vi.mock('../src/api/client.js', () => ({
   getMe: vi.fn(),
   getEnvironments: vi.fn(),
-  listAdminIterations: vi.fn(),
-  getAdminIteration: vi.fn(),
-  declareIteration: vi.fn(),
-  configureIteration: vi.fn(),
-  setIterationRatingPrompt: vi.fn(),
+  listAdminSeasons: vi.fn(),
+  getAdminSeason: vi.fn(),
+  declareSeason: vi.fn(),
+  configureSeason: vi.fn(),
+  setSeasonRatingPrompt: vi.fn(),
   openSubmissions: vi.fn(),
   closeSubmissions: vi.fn(),
   openPlay: vi.fn(),
   closePlay: vi.fn(),
-  releaseIteration: vi.fn(),
-  unreleaseIteration: vi.fn(),
+  releaseSeason: vi.fn(),
+  unreleaseSeason: vi.fn(),
   triggerRun: vi.fn(),
   cancelRun: vi.fn(),
-  runLogWsPath: (iterationId: string, runId: string) =>
-    `/api/admin/iterations/${iterationId}/runs/${runId}/logs/ws`,
+  runLogWsPath: (seasonId: string, runId: string) =>
+    `/api/admin/seasons/${seasonId}/runs/${runId}/logs/ws`,
 }))
 
 import {
-  configureIteration,
-  declareIteration,
-  getAdminIteration,
+  configureSeason,
+  declareSeason,
+  getAdminSeason,
   getEnvironments,
   getMe,
-  listAdminIterations,
+  listAdminSeasons,
   openPlay,
   openSubmissions,
-  releaseIteration,
-  setIterationRatingPrompt,
+  releaseSeason,
+  setSeasonRatingPrompt,
   triggerRun,
 } from '../src/api/client.js'
 import AdminConsolePage from '../src/pages/AdminConsolePage.vue'
 
-function iteration(overrides: Partial<IterationView> = {}): IterationView {
+function season(overrides: Partial<SeasonView> = {}): SeasonView {
   return {
     id: 'iter-1',
     env_id: 'flappy_bird',
@@ -60,9 +60,9 @@ function emptyBoard(): Board {
   return { automated: [], human: [] }
 }
 
-function adminView(overrides: Partial<AdminIterationView> = {}): AdminIterationView {
+function adminView(overrides: Partial<AdminSeasonView> = {}): AdminSeasonView {
   return {
-    iteration: iteration(),
+    season: season(),
     latest_run: null,
     board: emptyBoard(),
     ...overrides,
@@ -72,7 +72,7 @@ function adminView(overrides: Partial<AdminIterationView> = {}): AdminIterationV
 function runningRun(): RunView {
   return {
     id: 'run-1',
-    iteration_id: 'iter-1',
+    season_id: 'iter-1',
     requested_by: 'dev-user',
     config_snapshot: {
       deps_version: 1,
@@ -123,8 +123,8 @@ describe('AdminConsolePage', () => {
       allowlisted: true,
       is_operator: true,
     })
-    vi.mocked(listAdminIterations).mockResolvedValue([iteration()])
-    vi.mocked(getAdminIteration).mockResolvedValue(adminView())
+    vi.mocked(listAdminSeasons).mockResolvedValue([season()])
+    vi.mocked(getAdminSeason).mockResolvedValue(adminView())
   })
 
   afterEach(() => {
@@ -135,45 +135,45 @@ describe('AdminConsolePage', () => {
     vi.mocked(getMe).mockResolvedValue({ user_id: 'carol', allowlisted: true, is_operator: false })
     await renderConsole()
     expect(await screen.findByText(/limited to operators/)).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Declare iteration' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Declare season' })).toBeNull()
   })
 
-  it('renders the console and the selected iteration for an operator', async () => {
+  it('renders the console and the selected season for an operator', async () => {
     await renderConsole()
     expect(await screen.findByRole('heading', { name: 'Admin console' })).toBeInTheDocument()
-    expect(vi.mocked(getAdminIteration)).toHaveBeenCalledWith('iter-1')
+    expect(vi.mocked(getAdminSeason)).toHaveBeenCalledWith('iter-1')
     // The three independent gates each show their current state (await the detail load).
     expect(await screen.findByText('Unreleased')).toBeInTheDocument()
     expect(screen.getByText('Submissions closed')).toBeInTheDocument()
     expect(screen.getByText('Play closed')).toBeInTheDocument()
   })
 
-  it('declares a new iteration through the admin API', async () => {
-    vi.mocked(declareIteration).mockResolvedValue(iteration({ id: 'iter-2', label: 'Week 2' }))
+  it('declares a new season through the admin API', async () => {
+    vi.mocked(declareSeason).mockResolvedValue(season({ id: 'iter-2', label: 'Week 2' }))
     await renderConsole()
-    await fireEvent.click(await screen.findByRole('button', { name: 'Declare iteration' }))
-    expect(vi.mocked(declareIteration)).toHaveBeenCalledWith('flappy_bird', {})
+    await fireEvent.click(await screen.findByRole('button', { name: 'Declare season' }))
+    expect(vi.mocked(declareSeason)).toHaveBeenCalledWith('flappy_bird', {})
   })
 
   it('surfaces the one-open-submission invariant when opening submissions', async () => {
-    vi.mocked(openSubmissions).mockResolvedValue({ ok: false, reason: 'open_iteration_exists' })
+    vi.mocked(openSubmissions).mockResolvedValue({ ok: false, reason: 'open_season_exists' })
     await renderConsole()
     await fireEvent.click(await screen.findByRole('button', { name: 'Open submissions' }))
     expect(await screen.findByText(/already accepting submissions/)).toBeInTheDocument()
   })
 
-  it('surfaces the one-play-open invariant when opening play on an unreleased iteration', async () => {
-    vi.mocked(openPlay).mockResolvedValue({ ok: false, reason: 'open_play_iteration_exists' })
+  it('surfaces the one-play-open invariant when opening play on an unreleased season', async () => {
+    vi.mocked(openPlay).mockResolvedValue({ ok: false, reason: 'open_play_season_exists' })
     await renderConsole()
     await fireEvent.click(await screen.findByRole('button', { name: 'Open play' }))
     expect(await screen.findByText(/already open for public play/)).toBeInTheDocument()
   })
 
-  it('releases the iteration through the release endpoint', async () => {
-    vi.mocked(releaseIteration).mockResolvedValue(iteration({ release_status: 'released' }))
+  it('releases the season through the release endpoint', async () => {
+    vi.mocked(releaseSeason).mockResolvedValue(season({ release_status: 'released' }))
     await renderConsole()
     await fireEvent.click(await screen.findByRole('button', { name: 'Release' }))
-    expect(vi.mocked(releaseIteration)).toHaveBeenCalledWith('iter-1')
+    expect(vi.mocked(releaseSeason)).toHaveBeenCalledWith('iter-1')
   })
 
   it('refuses to save a match with zero slots', async () => {
@@ -182,14 +182,14 @@ describe('AdminConsolePage', () => {
     await fireEvent.click(await screen.findByRole('button', { name: '×' }))
     await fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }))
     expect(await screen.findByText(/has no slots/)).toBeInTheDocument()
-    expect(vi.mocked(configureIteration)).not.toHaveBeenCalled()
+    expect(vi.mocked(configureSeason)).not.toHaveBeenCalled()
   })
 
   it('prompts the force confirmation when runs exist and re-sends with force', async () => {
-    vi.mocked(getAdminIteration).mockResolvedValue(adminView({ latest_run: runningRun() }))
-    vi.mocked(configureIteration)
-      .mockResolvedValueOnce({ ok: false, reason: 'iteration_has_runs', message: 'has runs' })
-      .mockResolvedValueOnce({ ok: true, iteration: iteration() })
+    vi.mocked(getAdminSeason).mockResolvedValue(adminView({ latest_run: runningRun() }))
+    vi.mocked(configureSeason)
+      .mockResolvedValueOnce({ ok: false, reason: 'season_has_runs', message: 'has runs' })
+      .mockResolvedValueOnce({ ok: true, season: season() })
     await renderConsole()
 
     await fireEvent.click(await screen.findByRole('button', { name: 'Save configuration' }))
@@ -197,14 +197,14 @@ describe('AdminConsolePage', () => {
     expect(await screen.findByText(/deletes its existing runs and boards/)).toBeInTheDocument()
     await fireEvent.click(screen.getByRole('button', { name: 'Delete and save' }))
 
-    await waitFor(() => expect(vi.mocked(configureIteration)).toHaveBeenCalledTimes(2))
-    expect(vi.mocked(configureIteration).mock.calls[1]?.[2]).toBe(true)
+    await waitFor(() => expect(vi.mocked(configureSeason)).toHaveBeenCalledTimes(2))
+    expect(vi.mocked(configureSeason).mock.calls[1]?.[2]).toBe(true)
   })
 
   it('warns that a forced dependency change also deletes submissions when runs exist', async () => {
-    vi.mocked(configureIteration).mockResolvedValue({
+    vi.mocked(configureSeason).mockResolvedValue({
       ok: false,
-      reason: 'iteration_has_runs',
+      reason: 'season_has_runs',
       message: 'has runs',
     })
     await renderConsole()
@@ -212,19 +212,19 @@ describe('AdminConsolePage', () => {
     await fireEvent.update(await screen.findByLabelText('Dependency-set version'), '2')
     await fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }))
 
-    expect(await screen.findByText(/deletes this iteration's submissions/)).toBeInTheDocument()
+    expect(await screen.findByText(/deletes this season's submissions/)).toBeInTheDocument()
     expect(screen.getByText(/along with its existing runs and boards/)).toBeInTheDocument()
   })
 
-  it('discards a stale detail response after the operator selects another iteration', async () => {
-    const second = iteration({ id: 'iter-2', label: 'Week 2' })
-    vi.mocked(listAdminIterations).mockResolvedValue([iteration(), second])
+  it('discards a stale detail response after the operator selects another season', async () => {
+    const second = season({ id: 'iter-2', label: 'Week 2' })
+    vi.mocked(listAdminSeasons).mockResolvedValue([season(), second])
     await renderConsole()
     expect(await screen.findByRole('heading', { name: 'Week 1' })).toBeInTheDocument()
 
-    let resolveWeek1: ((value: AdminIterationView) => void) | undefined
-    let resolveWeek2: ((value: AdminIterationView) => void) | undefined
-    vi.mocked(getAdminIteration).mockImplementation((id) => {
+    let resolveWeek1: ((value: AdminSeasonView) => void) | undefined
+    let resolveWeek2: ((value: AdminSeasonView) => void) | undefined
+    vi.mocked(getAdminSeason).mockImplementation((id) => {
       return new Promise((resolve) => {
         if (id === 'iter-2') {
           resolveWeek2 = resolve
@@ -239,24 +239,24 @@ describe('AdminConsolePage', () => {
     resolveWeek1?.(adminView())
     expect(await screen.findByRole('heading', { name: 'Week 1' })).toBeInTheDocument()
 
-    resolveWeek2?.(adminView({ iteration: second }))
+    resolveWeek2?.(adminView({ season: second }))
     await Promise.resolve()
     expect(screen.queryByRole('heading', { name: 'Week 2' })).toBeNull()
     expect(screen.getByRole('heading', { name: 'Week 1' })).toBeInTheDocument()
   })
 
-  it('saves the iteration rating prompt and stays editable after a run', async () => {
-    vi.mocked(getAdminIteration).mockResolvedValue(adminView({ latest_run: runningRun() }))
-    vi.mocked(setIterationRatingPrompt).mockResolvedValue({
+  it('saves the season rating prompt and stays editable after a run', async () => {
+    vi.mocked(getAdminSeason).mockResolvedValue(adminView({ latest_run: runningRun() }))
+    vi.mocked(setSeasonRatingPrompt).mockResolvedValue({
       ok: true,
-      iteration: iteration({ rating_prompt: 'Judge smoothness' }),
+      season: season({ rating_prompt: 'Judge smoothness' }),
     })
     await renderConsole()
 
     const textarea = await screen.findByLabelText('Rating prompt')
     await fireEvent.update(textarea, 'Judge smoothness')
     await fireEvent.click(screen.getByRole('button', { name: 'Save prompt' }))
-    expect(vi.mocked(setIterationRatingPrompt)).toHaveBeenCalledWith('iter-1', 'Judge smoothness')
+    expect(vi.mocked(setSeasonRatingPrompt)).toHaveBeenCalledWith('iter-1', 'Judge smoothness')
     expect(await screen.findByText('Saved ✓')).toBeInTheDocument()
   })
 
@@ -296,7 +296,7 @@ describe('AdminConsolePage', () => {
     vi.stubGlobal('WebSocket', FakeWS as unknown as typeof WebSocket)
 
     // Before the trigger there is no run; after it, the reload returns a running run with one game.
-    vi.mocked(getAdminIteration)
+    vi.mocked(getAdminSeason)
       .mockResolvedValueOnce(adminView())
       .mockResolvedValue(adminView({ latest_run: runningRun() }))
     vi.mocked(triggerRun).mockResolvedValue({ ok: true, id: 'run-1', status: 'pending' })
@@ -307,7 +307,7 @@ describe('AdminConsolePage', () => {
     // The reload moves the run in-progress, so the panel opens the live stream.
     await waitFor(() => expect(sockets.length).toBe(1))
     const ws = sockets[0] as FakeWS
-    expect(ws.url).toContain('/api/admin/iterations/iter-1/runs/run-1/logs/ws')
+    expect(ws.url).toContain('/api/admin/seasons/iter-1/runs/run-1/logs/ws')
 
     ws.onmessage?.({
       data: JSON.stringify({
@@ -334,7 +334,7 @@ describe('AdminConsolePage', () => {
       ],
       human: [],
     }
-    vi.mocked(getAdminIteration).mockResolvedValue(adminView({ board }))
+    vi.mocked(getAdminSeason).mockResolvedValue(adminView({ board }))
     await renderConsole()
     expect(await screen.findByText(/operator-only until you release/)).toBeInTheDocument()
     expect(screen.getByText('Naive baseline')).toBeInTheDocument()

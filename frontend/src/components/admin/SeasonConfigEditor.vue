@@ -1,6 +1,6 @@
 <!--
-  The match-design config editor of the operator console (Stage 6.7). It edits the iteration's whole
-  IterationConfig: the match design (each match's slot composition of builtin-naive / submission seats,
+  The match-design config editor of the operator console (Stage 6.7). It edits the season's whole
+  SeasonConfig: the match design (each match's slot composition of builtin-naive / submission seats,
   its seeds, and its game count), the deps_version (defaulted to the current release at declaration),
   and the override blocks. The per-step / per-episode timeout overrides are active this stage; the
   messaging and LLM fields are present but labeled as applying in Stages 8/9, and round-trip unchanged.
@@ -17,9 +17,9 @@
 import { ref, watch } from 'vue'
 
 import {
-  configureIteration,
-  type IterationConfig,
-  type IterationView,
+  configureSeason,
+  type SeasonConfig,
+  type SeasonView,
   type MatchConfig,
   type SlotSpec,
 } from '../../api/client.js'
@@ -28,8 +28,8 @@ import UiDialog from '../ui/UiDialog.vue'
 import UiField from '../ui/UiField.vue'
 import UiInput from '../ui/UiInput.vue'
 
-const props = defineProps<{ iteration: IterationView }>()
-const emit = defineEmits<{ (e: 'changed', iteration: IterationView): void }>()
+const props = defineProps<{ season: SeasonView }>()
+const emit = defineEmits<{ (e: 'changed', season: SeasonView): void }>()
 
 const SLOT_SPECS: SlotSpec[] = ['submission', 'builtin-naive']
 
@@ -40,7 +40,7 @@ interface MatchDraft {
   games: number
 }
 
-const depsVersion = ref(props.iteration.config.deps_version)
+const depsVersion = ref(props.season.config.deps_version)
 const matches = ref<MatchDraft[]>([])
 const stepTimeout = ref<number | ''>('')
 const episodeTimeout = ref<number | ''>('')
@@ -51,14 +51,14 @@ const error = ref<string | null>(null)
 // When the backend refuses a destructive edit, this holds the pending config and the reason so the
 // confirmation dialog can spell out what `force` will delete before re-sending.
 const confirm = ref<{
-  config: IterationConfig
-  reason: 'iteration_has_runs' | 'iteration_has_submissions'
+  config: SeasonConfig
+  reason: 'season_has_runs' | 'season_has_submissions'
   deletesSubmissions: boolean
 } | null>(null)
 
-/** Seed the form from the iteration's config (and re-seed when the selected iteration changes). */
-function seedFromIteration(): void {
-  const config = props.iteration.config
+/** Seed the form from the season's config (and re-seed when the selected season changes). */
+function seedFromSeason(): void {
+  const config = props.season.config
   depsVersion.value = config.deps_version
   matches.value = config.matches.map((match) => ({
     slots: [...match.slots],
@@ -71,7 +71,7 @@ function seedFromIteration(): void {
   error.value = null
 }
 
-watch(() => props.iteration.id, seedFromIteration, { immediate: true })
+watch(() => props.season.id, seedFromSeason, { immediate: true })
 
 function addMatch(): void {
   matches.value.push({ slots: ['submission'], seedsText: '0', games: 1 })
@@ -100,7 +100,7 @@ function parseSeeds(text: string): number[] {
 }
 
 /** Build the config document from the form, or return a client-side validation message. */
-function buildConfig(): { config: IterationConfig } | { error: string } {
+function buildConfig(): { config: SeasonConfig } | { error: string } {
   const built: MatchConfig[] = []
   for (let i = 0; i < matches.value.length; i++) {
     const match = matches.value[i]!
@@ -120,13 +120,13 @@ function buildConfig(): { config: IterationConfig } | { error: string } {
     return { error: 'The dependency-set version must be a positive integer.' }
   }
   // Preserve the inert messaging/llm override blocks untouched; only the active timeouts are edited here.
-  const overrides: NonNullable<IterationConfig['overrides']> = {}
+  const overrides: NonNullable<SeasonConfig['overrides']> = {}
   if (stepTimeout.value !== '') overrides.step_timeout_ms = Number(stepTimeout.value)
   if (episodeTimeout.value !== '') overrides.episode_timeout_ms = Number(episodeTimeout.value)
-  const existing = props.iteration.config.overrides
+  const existing = props.season.config.overrides
   if (existing?.messaging !== undefined) overrides.messaging = existing.messaging
   if (existing?.llm !== undefined) overrides.llm = existing.llm
-  const config: IterationConfig = { deps_version: depsVersion.value, matches: built }
+  const config: SeasonConfig = { deps_version: depsVersion.value, matches: built }
   if (Object.keys(overrides).length > 0) {
     config.overrides = overrides
   }
@@ -143,26 +143,26 @@ async function save(): Promise<void> {
 }
 
 /** Send the config; a destructive-edit conflict opens the confirmation dialog instead of failing. */
-async function send(config: IterationConfig, force: boolean): Promise<void> {
+async function send(config: SeasonConfig, force: boolean): Promise<void> {
   saving.value = true
   saved.value = false
   error.value = null
-  const result = await configureIteration(props.iteration.id, config, force)
+  const result = await configureSeason(props.season.id, config, force)
   saving.value = false
   if (result.ok) {
     confirm.value = null
     saved.value = true
-    emit('changed', result.iteration)
+    emit('changed', result.season)
     return
   }
-  if (result.reason === 'iteration_has_runs' || result.reason === 'iteration_has_submissions') {
+  if (result.reason === 'season_has_runs' || result.reason === 'season_has_submissions') {
     // The backend reports existing runs before it checks whether a dependency-version change also
     // invalidates submissions. Derive that second consequence from the edit itself so the operator
     // sees the complete deletion set before approving `force`.
     confirm.value = {
       config,
       reason: result.reason,
-      deletesSubmissions: config.deps_version !== props.iteration.config.deps_version,
+      deletesSubmissions: config.deps_version !== props.season.config.deps_version,
     }
     return
   }
@@ -271,11 +271,11 @@ watch(confirmOpen, (open) => {
     <UiDialog v-model:open="confirmOpen" title="Confirm a destructive edit">
       <p class="confirm-text">
         <template v-if="confirm?.deletesSubmissions">
-          Changing the dependency-set version deletes this iteration's submissions (they were built
+          Changing the dependency-set version deletes this season's submissions (they were built
           against the old dependency set), along with its existing runs and boards.
         </template>
-        <template v-else-if="confirm?.reason === 'iteration_has_runs'">
-          This iteration already has runs. Saving a new configuration deletes its existing runs and
+        <template v-else-if="confirm?.reason === 'season_has_runs'">
+          This season already has runs. Saving a new configuration deletes its existing runs and
           boards so they can be recomputed from the new design.
         </template>
       </p>

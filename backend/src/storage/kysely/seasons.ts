@@ -1,7 +1,7 @@
 /**
- * Iteration queries: the seed/declare creates, the gated whole-config edit (with its forced
+ * Season queries: the seed/declare creates, the gated whole-config edit (with its forced
  * cascade), the submission/play/release window setters and their one-open invariants, and the
- * reads behind public/admin listings. Owns {@link requireIteration} (shared with ratings) and the
+ * reads behind public/admin listings. Owns {@link requireSeason} (shared with ratings) and the
  * {@link countRows} conflict pre-check.
  */
 import { randomUUID } from 'node:crypto'
@@ -10,27 +10,27 @@ import type { Kysely } from 'kysely'
 import { sql } from 'kysely'
 
 import type {
-  CreateIterationInput,
+  CreateSeasonInput,
   SetPlayStatusResult,
   SetSubmissionStatusResult,
-  UpdateIterationConfigResult,
+  UpdateSeasonConfigResult,
 } from '../index.js'
+import type { Database, ReleaseStatus, Season, WindowStatus } from '../schema.js'
 import {
-  decodeIterationConfig,
-  emptyIterationConfig,
-  encodeIterationConfig,
-  type IterationConfig,
-} from '../iteration-config.js'
-import type { Database, Iteration, ReleaseStatus, WindowStatus } from '../schema.js'
-import { deleteRunsForIteration } from './runs.js'
+  decodeSeasonConfig,
+  emptySeasonConfig,
+  encodeSeasonConfig,
+  type SeasonConfig,
+} from '../season-config.js'
+import { deleteRunsForSeason } from './runs.js'
 import { isUniqueConstraintViolation } from './shared.js'
-import { deleteSubmissionsForIteration } from './submissions.js'
+import { deleteSubmissionsForSeason } from './submissions.js'
 
 /** Count rows in `table` whose `column` equals `value`; the config-edit conflict pre-checks use it. */
 async function countRows(
   db: Kysely<Database>,
-  table: 'iteration_runs' | 'submissions',
-  column: 'iteration_id',
+  table: 'season_runs' | 'submissions',
+  column: 'season_id',
   value: string,
 ): Promise<number> {
   const row = await db
@@ -41,40 +41,37 @@ async function countRows(
   return Number(row?.count ?? 0)
 }
 
-/** One iteration by id or a clear error; the gate setters need its `env_id`/`config`/`released_at`. */
-export async function requireIteration(db: Kysely<Database>, id: string): Promise<Iteration> {
-  const iteration = await getIteration(db, id)
-  if (iteration === undefined) {
-    throw new Error(`no such iteration: ${id}`)
+/** One season by id or a clear error; the gate setters need its `env_id`/`config`/`released_at`. */
+export async function requireSeason(db: Kysely<Database>, id: string): Promise<Season> {
+  const season = await getSeason(db, id)
+  if (season === undefined) {
+    throw new Error(`no such season: ${id}`)
   }
-  return iteration
+  return season
 }
 
-export async function getOpenSubmissionIteration(
+export async function getOpenSubmissionSeason(
   db: Kysely<Database>,
   envId: string,
-): Promise<Iteration | undefined> {
+): Promise<Season | undefined> {
   return await db
-    .selectFrom('iterations')
+    .selectFrom('seasons')
     .selectAll()
     .where('env_id', '=', envId)
     .where('submission_status', '=', 'open')
     .executeTakeFirst()
 }
 
-export async function getIteration(
-  db: Kysely<Database>,
-  id: string,
-): Promise<Iteration | undefined> {
-  return await db.selectFrom('iterations').selectAll().where('id', '=', id).executeTakeFirst()
+export async function getSeason(db: Kysely<Database>, id: string): Promise<Season | undefined> {
+  return await db.selectFrom('seasons').selectAll().where('id', '=', id).executeTakeFirst()
 }
 
-export async function ensureOpenIteration(
+export async function ensureOpenSeason(
   db: Kysely<Database>,
   envId: string,
   depsVersion: number,
-): Promise<Iteration> {
-  const existing = await getOpenSubmissionIteration(db, envId)
+): Promise<Season> {
+  const existing = await getOpenSubmissionSeason(db, envId)
   if (existing !== undefined) {
     return existing
   }
@@ -82,7 +79,7 @@ export async function ensureOpenIteration(
     // The seed row: submission-`open` and play-`open` for local continuity, with a default config
     // carrying the pinned version and an empty match design.
     return await db
-      .insertInto('iterations')
+      .insertInto('seasons')
       .values({
         id: randomUUID(),
         env_id: envId,
@@ -90,7 +87,7 @@ export async function ensureOpenIteration(
         play_status: 'open',
         release_status: 'unreleased',
         label: null,
-        config: encodeIterationConfig(emptyIterationConfig(depsVersion)),
+        config: encodeSeasonConfig(emptySeasonConfig(depsVersion)),
         rating_prompt: null,
         created_at: new Date().toISOString(),
         released_at: null,
@@ -99,7 +96,7 @@ export async function ensureOpenIteration(
       .executeTakeFirstOrThrow()
   } catch (error) {
     const raced = isUniqueConstraintViolation(error)
-      ? await getOpenSubmissionIteration(db, envId)
+      ? await getOpenSubmissionSeason(db, envId)
       : undefined
     if (raced !== undefined) {
       return raced
@@ -108,24 +105,24 @@ export async function ensureOpenIteration(
   }
 }
 
-export async function getPublicPlayIteration(
+export async function getPublicPlaySeason(
   db: Kysely<Database>,
   envId: string,
-): Promise<Iteration | undefined> {
+): Promise<Season | undefined> {
   return await db
-    .selectFrom('iterations')
+    .selectFrom('seasons')
     .selectAll()
     .where('env_id', '=', envId)
     .where('play_status', '=', 'open')
     .executeTakeFirst()
 }
 
-export async function createIteration(
+export async function createSeason(
   db: Kysely<Database>,
-  input: CreateIterationInput,
-): Promise<Iteration> {
+  input: CreateSeasonInput,
+): Promise<Season> {
   return await db
-    .insertInto('iterations')
+    .insertInto('seasons')
     .values({
       id: randomUUID(),
       env_id: input.env_id,
@@ -133,7 +130,7 @@ export async function createIteration(
       play_status: 'closed',
       release_status: 'unreleased',
       label: input.label ?? null,
-      config: encodeIterationConfig(emptyIterationConfig(input.deps_version)),
+      config: encodeSeasonConfig(emptySeasonConfig(input.deps_version)),
       rating_prompt: null,
       created_at: new Date().toISOString(),
       released_at: null,
@@ -142,59 +139,59 @@ export async function createIteration(
     .executeTakeFirstOrThrow()
 }
 
-export async function updateIterationConfig(
+export async function updateSeasonConfig(
   db: Kysely<Database>,
   id: string,
-  config: IterationConfig,
+  config: SeasonConfig,
   options?: { force?: boolean },
-): Promise<UpdateIterationConfigResult> {
+): Promise<UpdateSeasonConfigResult> {
   const force = options?.force ?? false
   // Validate (and serialize) the new config before touching anything, so a malformed edit never
-  // reaches — let alone deletes — the iteration's runs or submissions.
-  const encoded = encodeIterationConfig(config)
+  // reaches — let alone deletes — the season's runs or submissions.
+  const encoded = encodeSeasonConfig(config)
 
   // One transaction so the conflict pre-checks, the forced deletes, and the config write are all
   // atomic: a failure anywhere rolls back the deletes rather than leaving runs/submissions wiped but
   // the config unchanged.
   return await db.transaction().execute(async (trx) => {
-    const iteration = await trx
-      .selectFrom('iterations')
+    const season = await trx
+      .selectFrom('seasons')
       .selectAll()
       .where('id', '=', id)
       .executeTakeFirst()
-    if (iteration === undefined) {
-      throw new Error(`no such iteration: ${id}`)
+    if (season === undefined) {
+      throw new Error(`no such season: ${id}`)
     }
-    const depsChanged = decodeIterationConfig(iteration.config).deps_version !== config.deps_version
+    const depsChanged = decodeSeasonConfig(season.config).deps_version !== config.deps_version
 
-    const runCount = await countRows(trx, 'iteration_runs', 'iteration_id', id)
+    const runCount = await countRows(trx, 'season_runs', 'season_id', id)
     if (runCount > 0 && !force) {
-      return { ok: false, conflict: 'iteration_has_runs' }
+      return { ok: false, conflict: 'season_has_runs' }
     }
     let submissionCount = 0
     if (depsChanged) {
-      submissionCount = await countRows(trx, 'submissions', 'iteration_id', id)
+      submissionCount = await countRows(trx, 'submissions', 'season_id', id)
       if (submissionCount > 0 && !force) {
-        return { ok: false, conflict: 'iteration_has_submissions' }
+        return { ok: false, conflict: 'season_has_submissions' }
       }
     }
 
     // Forced: clear the rows the edit would otherwise corrupt. Runs (and their games/results/
     // placements) go whenever any exist; submissions go only when the pinned version changed.
     if (force && runCount > 0) {
-      await deleteRunsForIteration(trx, id)
+      await deleteRunsForSeason(trx, id)
     }
     if (force && depsChanged && submissionCount > 0) {
-      await deleteSubmissionsForIteration(trx, id)
+      await deleteSubmissionsForSeason(trx, id)
     }
 
     const updated = await trx
-      .updateTable('iterations')
+      .updateTable('seasons')
       .set({ config: encoded })
       .where('id', '=', id)
       .returningAll()
       .executeTakeFirstOrThrow()
-    return { ok: true, iteration: updated }
+    return { ok: true, season: updated }
   })
 }
 
@@ -203,30 +200,30 @@ export async function setSubmissionStatus(
   id: string,
   status: WindowStatus,
 ): Promise<SetSubmissionStatusResult> {
-  const iteration = await requireIteration(db, id)
+  const season = await requireSeason(db, id)
   if (status === 'open') {
     const other = await db
-      .selectFrom('iterations')
+      .selectFrom('seasons')
       .select('id')
-      .where('env_id', '=', iteration.env_id)
+      .where('env_id', '=', season.env_id)
       .where('submission_status', '=', 'open')
       .where('id', '!=', id)
       .executeTakeFirst()
     if (other !== undefined) {
-      return { ok: false, conflict: 'open_iteration_exists' }
+      return { ok: false, conflict: 'open_season_exists' }
     }
   }
   try {
     const updated = await db
-      .updateTable('iterations')
+      .updateTable('seasons')
       .set({ submission_status: status })
       .where('id', '=', id)
       .returningAll()
       .executeTakeFirstOrThrow()
-    return { ok: true, iteration: updated }
+    return { ok: true, season: updated }
   } catch (error) {
     if (isUniqueConstraintViolation(error)) {
-      return { ok: false, conflict: 'open_iteration_exists' }
+      return { ok: false, conflict: 'open_season_exists' }
     }
     throw error
   }
@@ -237,30 +234,30 @@ export async function setPlayStatus(
   id: string,
   status: WindowStatus,
 ): Promise<SetPlayStatusResult> {
-  const iteration = await requireIteration(db, id)
+  const season = await requireSeason(db, id)
   if (status === 'open') {
     const other = await db
-      .selectFrom('iterations')
+      .selectFrom('seasons')
       .select('id')
-      .where('env_id', '=', iteration.env_id)
+      .where('env_id', '=', season.env_id)
       .where('play_status', '=', 'open')
       .where('id', '!=', id)
       .executeTakeFirst()
     if (other !== undefined) {
-      return { ok: false, conflict: 'open_play_iteration_exists' }
+      return { ok: false, conflict: 'open_play_season_exists' }
     }
   }
   try {
     const updated = await db
-      .updateTable('iterations')
+      .updateTable('seasons')
       .set({ play_status: status })
       .where('id', '=', id)
       .returningAll()
       .executeTakeFirstOrThrow()
-    return { ok: true, iteration: updated }
+    return { ok: true, season: updated }
   } catch (error) {
     if (isUniqueConstraintViolation(error)) {
-      return { ok: false, conflict: 'open_play_iteration_exists' }
+      return { ok: false, conflict: 'open_play_season_exists' }
     }
     throw error
   }
@@ -270,40 +267,40 @@ export async function setReleaseStatus(
   db: Kysely<Database>,
   id: string,
   status: ReleaseStatus,
-): Promise<Iteration> {
-  const iteration = await requireIteration(db, id)
+): Promise<Season> {
+  const season = await requireSeason(db, id)
   // Stamp `released_at` only on the first release; a re-release leaves it stable, and un-releasing
   // keeps the prior stamp as history.
   const releasedAt =
-    status === 'released' && iteration.released_at === null
+    status === 'released' && season.released_at === null
       ? new Date().toISOString()
-      : iteration.released_at
+      : season.released_at
   return await db
-    .updateTable('iterations')
+    .updateTable('seasons')
     .set({ release_status: status, released_at: releasedAt })
     .where('id', '=', id)
     .returningAll()
     .executeTakeFirstOrThrow()
 }
 
-export async function listIterations(
+export async function listSeasons(
   db: Kysely<Database>,
   envId: string,
   options?: { includeUnreleased?: boolean },
-): Promise<Iteration[]> {
-  let query = db.selectFrom('iterations').selectAll().where('env_id', '=', envId)
+): Promise<Season[]> {
+  let query = db.selectFrom('seasons').selectAll().where('env_id', '=', envId)
   if (!(options?.includeUnreleased ?? false)) {
     query = query.where('release_status', '=', 'released')
   }
   return await query.orderBy('created_at', 'desc').orderBy(sql`rowid`, 'desc').execute()
 }
 
-export async function getReleasedIteration(
+export async function getReleasedSeason(
   db: Kysely<Database>,
   envId: string,
-): Promise<Iteration | undefined> {
+): Promise<Season | undefined> {
   return await db
-    .selectFrom('iterations')
+    .selectFrom('seasons')
     .selectAll()
     .where('env_id', '=', envId)
     .where('release_status', '=', 'released')
@@ -312,26 +309,26 @@ export async function getReleasedIteration(
     .executeTakeFirst()
 }
 
-export async function setSessionIteration(
+export async function setSessionSeason(
   db: Kysely<Database>,
   sessionId: string,
-  iterationId: string,
+  seasonId: string,
 ): Promise<void> {
   await db
     .updateTable('sessions')
-    .set({ iteration_id: iterationId })
+    .set({ season_id: seasonId })
     .where('id', '=', sessionId)
     .execute()
 }
 
-export async function setIterationRatingPrompt(
+export async function setSeasonRatingPrompt(
   db: Kysely<Database>,
-  iterationId: string,
+  seasonId: string,
   prompt: string | null,
 ): Promise<void> {
   await db
-    .updateTable('iterations')
+    .updateTable('seasons')
     .set({ rating_prompt: prompt })
-    .where('id', '=', iterationId)
+    .where('id', '=', seasonId)
     .execute()
 }

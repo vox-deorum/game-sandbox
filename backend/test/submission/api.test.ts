@@ -1,6 +1,6 @@
 /**
  * The submission HTTP routes (Stage 5.5), Docker-free: capabilities, the reachability pre-check, the
- * submit-and-enqueue route, the single read joined with its checks, and the user/active-iteration
+ * submit-and-enqueue route, the single read joined with its checks, and the user/active-season
  * listings. The pipeline is stubbed out — the worker is a recording enqueuer and the source seam is a
  * canned double — so these prove the route contract (identity attribution, the typed 4xx codes, the
  * pending row, no inline pipeline) without resolving git or building images.
@@ -124,7 +124,7 @@ describe('submission API', () => {
 
   it('creates a pending submission under the resolved identity without running the pipeline', async () => {
     await build()
-    await storage.ensureOpenIteration(ENV_ID, 1)
+    await storage.ensureOpenSeason(ENV_ID, 1)
     const res = await app.inject({
       method: 'POST',
       url: '/api/submissions',
@@ -144,7 +144,7 @@ describe('submission API', () => {
 
   it('attributes a submission to the request identity, not a client-supplied submitter', async () => {
     await build()
-    await storage.ensureOpenIteration(ENV_ID, 1)
+    await storage.ensureOpenSeason(ENV_ID, 1)
     const res = await app.inject({
       method: 'POST',
       url: '/api/submissions',
@@ -162,9 +162,9 @@ describe('submission API', () => {
     expect((await storage.getSubmission(body.id))?.user_id).toBe('alice')
   })
 
-  it('refuses a submit when the environment has no open iteration, writing no row', async () => {
+  it('refuses a submit when the environment has no open season, writing no row', async () => {
     await build()
-    // No ensureOpenIteration: the environment has no open iteration.
+    // No ensureOpenSeason: the environment has no open season.
     const res = await app.inject({
       method: 'POST',
       url: '/api/submissions',
@@ -172,7 +172,7 @@ describe('submission API', () => {
       payload: { env_id: ENV_ID, repo_url: 'https://example.test/repo' },
     })
     expect(res.statusCode).toBe(409)
-    expect(res.json()).toMatchObject({ code: 'no_open_iteration' })
+    expect(res.json()).toMatchObject({ code: 'no_open_season' })
     expect(enqueued).toEqual([])
     const mine = await app.inject({
       method: 'GET',
@@ -184,7 +184,7 @@ describe('submission API', () => {
 
   it('refuses a local submit when the dev gate is off', async () => {
     await build({ allowLocalSubmissions: false })
-    await storage.ensureOpenIteration(ENV_ID, 1)
+    await storage.ensureOpenSeason(ENV_ID, 1)
     const res = await app.inject({
       method: 'POST',
       url: '/api/submissions',
@@ -198,7 +198,7 @@ describe('submission API', () => {
 
   it('maps a concurrent-resubmit conflict to a retryable 409', async () => {
     await build()
-    await storage.ensureOpenIteration(ENV_ID, 1)
+    await storage.ensureOpenSeason(ENV_ID, 1)
     storage.createSubmission = () => Promise.reject(new SubmissionConflictError())
     const res = await app.inject({
       method: 'POST',
@@ -212,9 +212,9 @@ describe('submission API', () => {
 
   it('returns a submission joined with its ordered validation log', async () => {
     await build()
-    const iteration = await storage.ensureOpenIteration(ENV_ID, 1)
+    const season = await storage.ensureOpenSeason(ENV_ID, 1)
     const submission = await storage.createSubmission({
-      iteration_id: iteration.id,
+      season_id: season.id,
       env_id: ENV_ID,
       user_id: 'alice',
       source_kind: 'git',
@@ -244,9 +244,9 @@ describe('submission API', () => {
     expect(res.statusCode).toBe(404)
   })
 
-  it('supersedes on resubmission so the active-iteration lookup returns the new row', async () => {
+  it('supersedes on resubmission so the active-season lookup returns the new row', async () => {
     await build()
-    await storage.ensureOpenIteration(ENV_ID, 1)
+    await storage.ensureOpenSeason(ENV_ID, 1)
     const first = (
       await app.inject({
         method: 'POST',
@@ -273,18 +273,18 @@ describe('submission API', () => {
     expect(rows.map((r) => r.id)).not.toContain(first.id)
   })
 
-  it('returns an empty active list for an environment with no play-open iteration', async () => {
+  it('returns an empty active list for an environment with no play-open season', async () => {
     await build()
     const res = await app.inject({ method: 'GET', url: `/api/environments/${ENV_ID}/submissions` })
     expect(res.statusCode).toBe(200)
     expect(res.json()).toEqual([])
   })
 
-  it('lists ready submissions from the play-open iteration when the submission target differs', async () => {
+  it('lists ready submissions from the play-open season when the submission target differs', async () => {
     await build()
-    const playIteration = await storage.ensureOpenIteration(ENV_ID, 1)
+    const playSeason = await storage.ensureOpenSeason(ENV_ID, 1)
     const playable = await storage.createSubmission({
-      iteration_id: playIteration.id,
+      season_id: playSeason.id,
       env_id: ENV_ID,
       user_id: 'play-owner',
       source_kind: 'git',
@@ -295,12 +295,12 @@ describe('submission API', () => {
       created_at: new Date().toISOString(),
     })
     await storage.updateSubmissionStatus(playable.id, 'ready')
-    await storage.setSubmissionStatus(playIteration.id, 'closed')
+    await storage.setSubmissionStatus(playSeason.id, 'closed')
 
-    const submissionIteration = await storage.createIteration({ env_id: ENV_ID, deps_version: 1 })
-    await storage.setSubmissionStatus(submissionIteration.id, 'open')
+    const submissionSeason = await storage.createSeason({ env_id: ENV_ID, deps_version: 1 })
+    await storage.setSubmissionStatus(submissionSeason.id, 'open')
     const nextRound = await storage.createSubmission({
-      iteration_id: submissionIteration.id,
+      season_id: submissionSeason.id,
       env_id: ENV_ID,
       user_id: 'next-owner',
       source_kind: 'git',
@@ -324,10 +324,10 @@ describe('submission API', () => {
   describe('agent profile read', () => {
     it('returns one owner submission history with per-stage logs and recent replays', async () => {
       await build()
-      const iteration = await storage.ensureOpenIteration(ENV_ID, 1)
+      const season = await storage.ensureOpenSeason(ENV_ID, 1)
       // The owner's first (now superseded) submission, which failed its load check.
       const first = await storage.createSubmission({
-        iteration_id: iteration.id,
+        season_id: season.id,
         env_id: ENV_ID,
         user_id: 'eve',
         source_kind: 'git',
@@ -349,7 +349,7 @@ describe('submission API', () => {
 
       // The owner's current ready submission, which ran in a watch session that produced a recording.
       const second = await storage.createSubmission({
-        iteration_id: iteration.id,
+        season_id: season.id,
         env_id: ENV_ID,
         user_id: 'eve',
         source_kind: 'git',
@@ -384,8 +384,8 @@ describe('submission API', () => {
       const body = res.json() as {
         env_id: string
         owner_id: string
-        submission_iteration_id: string | null
-        play_iteration_id: string | null
+        submission_season_id: string | null
+        play_season_id: string | null
         submissions: Array<{
           id: string
           status: string
@@ -397,8 +397,8 @@ describe('submission API', () => {
       expect(body).toMatchObject({
         env_id: ENV_ID,
         owner_id: 'eve',
-        submission_iteration_id: iteration.id,
-        play_iteration_id: iteration.id,
+        submission_season_id: season.id,
+        play_season_id: season.id,
       })
       // Newest first: the ready submission, then the superseded failed one (history is preserved).
       expect(body.submissions.map((s) => s.id)).toEqual([second.id, first.id])

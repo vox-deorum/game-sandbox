@@ -1,22 +1,22 @@
 /**
- * Snapshot an iteration's automated board into persisted placement rows (Stage 6.5).
+ * Snapshot a season's automated board into persisted placement rows (Stage 6.5).
  *
  * The board is computed live on read from `game_results` ({@link Storage.getAutomatedBoard}). The one
  * thing this stage materializes is per-agent placements, so the agent profile and history can read an
- * agent's standing directly without re-aggregating every iteration's run. This module is the seam that
+ * agent's standing directly without re-aggregating every season's run. This module is the seam that
  * recomputes that snapshot when a run settles `completed`: it reads the same live board, stamps a
  * 1-based rank in board order (the board already orders by descending mean score, with the efficiency
- * column breaking exact ties), and rewrites the iteration's `automated_placements` rows for the run.
+ * column breaking exact ties), and rewrites the season's `automated_placements` rows for the run.
  *
- * Keyed to the iteration's latest completed run, so a re-run replaces the prior snapshot and a
+ * Keyed to the season's latest completed run, so a re-run replaces the prior snapshot and a
  * superseded run's placements do not linger. Pure orchestration over storage; no Docker, no board math
  * of its own.
  */
 import type { PlacementInput, Storage } from '../storage/index.js'
 
 /**
- * Recompute and persist placements after a run settles `completed`. Resolves the run's iteration and
- * defers to {@link persistPlacementsForIteration}; a no-op if the run vanished.
+ * Recompute and persist placements after a run settles `completed`. Resolves the run's season and
+ * defers to {@link persistPlacementsForSeason}; a no-op if the run vanished.
  */
 export async function persistPlacementsForCompletedRun(
   storage: Storage,
@@ -26,7 +26,7 @@ export async function persistPlacementsForCompletedRun(
   if (run === undefined) {
     return
   }
-  await persistPlacementsForIteration(storage, run.iteration_id)
+  await persistPlacementsForSeason(storage, run.season_id)
 }
 
 /**
@@ -39,45 +39,45 @@ export async function reconcileCompletedRunPlacements(
   log: (message: string) => void = () => {},
 ): Promise<number> {
   const completedRuns = await storage.listRunsByStatus('completed')
-  const iterationIds = new Set(completedRuns.map((run) => run.iteration_id))
+  const seasonIds = new Set(completedRuns.map((run) => run.season_id))
   let rewritten = 0
 
-  for (const iterationId of iterationIds) {
+  for (const seasonId of seasonIds) {
     try {
-      if (await placementSnapshotCurrent(storage, iterationId)) {
+      if (await placementSnapshotCurrent(storage, seasonId)) {
         continue
       }
-      await persistPlacementsForIteration(storage, iterationId)
+      await persistPlacementsForSeason(storage, seasonId)
       rewritten += 1
     } catch (error) {
-      log(`iteration ${iterationId}: reconciling placements failed: ${String(error)}`)
+      log(`season ${seasonId}: reconciling placements failed: ${String(error)}`)
     }
   }
 
   if (rewritten > 0) {
-    log(`reconciled placement snapshots for ${rewritten} completed iteration(s)`)
+    log(`reconciled placement snapshots for ${rewritten} completed season(s)`)
   }
   return rewritten
 }
 
 /**
- * Rewrite an iteration's placement rows from its current automated board. The board's source is the
+ * Rewrite a season's placement rows from its current automated board. The board's source is the
  * latest completed run, so the persisted run id is read back from there rather than trusting a caller's
  * id, keeping the snapshot consistent with what the board aggregates. A no-op while no run has completed.
  */
-export async function persistPlacementsForIteration(
+export async function persistPlacementsForSeason(
   storage: Storage,
-  iterationId: string,
+  seasonId: string,
 ): Promise<void> {
-  const run = await storage.getLatestCompletedRun(iterationId)
+  const run = await storage.getLatestCompletedRun(seasonId)
   if (run === undefined) {
     return
   }
-  const iteration = await storage.getIteration(iterationId)
-  if (iteration === undefined) {
+  const season = await storage.getSeason(seasonId)
+  if (season === undefined) {
     return
   }
-  const board = await storage.getAutomatedBoard(iterationId)
+  const board = await storage.getAutomatedBoard(seasonId)
   const rows: PlacementInput[] = board.map((row, index) => ({
     rank: index + 1,
     agent: row.agent,
@@ -86,19 +86,19 @@ export async function persistPlacementsForIteration(
     failure_count: row.failure_count,
     recording_id: row.recording_id,
   }))
-  await storage.replaceAutomatedPlacements(iterationId, iteration.env_id, run.id, rows)
+  await storage.replaceAutomatedPlacements(seasonId, season.env_id, run.id, rows)
 }
 
-async function placementSnapshotCurrent(storage: Storage, iterationId: string): Promise<boolean> {
-  const [run, iteration] = await Promise.all([
-    storage.getLatestCompletedRun(iterationId),
-    storage.getIteration(iterationId),
+async function placementSnapshotCurrent(storage: Storage, seasonId: string): Promise<boolean> {
+  const [run, season] = await Promise.all([
+    storage.getLatestCompletedRun(seasonId),
+    storage.getSeason(seasonId),
   ])
-  if (run === undefined || iteration === undefined) {
+  if (run === undefined || season === undefined) {
     return true
   }
 
-  const board = await storage.getAutomatedBoard(iterationId)
+  const board = await storage.getAutomatedBoard(seasonId)
   if (board.length === 0) {
     return false
   }
@@ -107,7 +107,7 @@ async function placementSnapshotCurrent(storage: Storage, iterationId: string): 
   if (firstRow === undefined) {
     return false
   }
-  const placements = await storage.listPlacementsByAgent(firstRow.agent, iteration.env_id)
-  const placement = placements.find((row) => row.iteration_id === iterationId)
+  const placements = await storage.listPlacementsByAgent(firstRow.agent, season.env_id)
+  const placement = placements.find((row) => row.season_id === seasonId)
   return placement?.run_id === run.id
 }

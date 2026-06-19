@@ -12,12 +12,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import type { ExitInfo } from '../../src/driver/index.js'
 import { EnvironmentRegistry } from '../../src/environments.js'
-import type {
-  AgentRef,
-  IterationRun,
-  ScheduledGameInput,
-  Storage,
-} from '../../src/storage/index.js'
+import type { AgentRef, ScheduledGameInput, SeasonRun, Storage } from '../../src/storage/index.js'
 import { openSqliteStorage } from '../../src/storage/sqlite.js'
 import type { SubmissionSource } from '../../src/submission/source/index.js'
 import type { RunEvent, TerminalRunStatus } from '../../src/workflow/runner.js'
@@ -89,24 +84,19 @@ function makeRunner(
   return { driver, storage, runner }
 }
 
-/** Create a configured iteration and a pending run with the given schedule; returns the run row. */
+/** Create a configured season and a pending run with the given schedule; returns the run row. */
 async function makeRun(
   storage: Storage,
   schedule: ScheduledGameInput[],
   options: { submissions?: AgentRef[]; overrides?: Record<string, unknown> } = {},
-): Promise<IterationRun> {
-  const iteration = await storage.createIteration({ env_id: ENV_ID, deps_version: 1, label: null })
-  await storage.updateIterationConfig(iteration.id, {
+): Promise<SeasonRun> {
+  const season = await storage.createSeason({ env_id: ENV_ID, deps_version: 1, label: null })
+  await storage.updateSeasonConfig(season.id, {
     deps_version: 1,
     matches: [{ slots: ['submission'], seeds: [1], games: 1 }],
     ...(options.overrides ? { overrides: options.overrides } : {}),
   })
-  return storage.createRunWithSchedule(
-    iteration.id,
-    'dev-user',
-    options.submissions ?? [],
-    schedule,
-  )
+  return storage.createRunWithSchedule(season.id, 'dev-user', options.submissions ?? [], schedule)
 }
 
 /** One scheduled game's resolved slots, the all-Naive single seat by default. */
@@ -270,7 +260,7 @@ describe('Docker-backed workflow runner', () => {
     expect(recordings).toHaveLength(2)
     expect(recordings.every((r) => r.user_id === 'dev-user')).toBe(true)
 
-    expect((await storage.getLatestCompletedRun(run.iteration_id))?.id).toBe(run.id)
+    expect((await storage.getLatestCompletedRun(run.season_id))?.id).toBe(run.id)
   })
 
   it('treats an absent learn_ms as zero in the compute total', async () => {
@@ -448,7 +438,7 @@ describe('Docker-backed workflow runner', () => {
     expect(games[1]?.status).toBe('cancelled')
     expect(games[2]?.status).toBe('cancelled')
     // A cancelled run is not the latest completed run.
-    expect(await storage.getLatestCompletedRun(run.iteration_id)).toBeUndefined()
+    expect(await storage.getLatestCompletedRun(run.season_id)).toBeUndefined()
   })
 
   it('re-runs into a fresh run that becomes the latest completed', async () => {
@@ -460,9 +450,9 @@ describe('Docker-backed workflow runner', () => {
     }
     await runToTerminal(handle, first.id)
 
-    // A second run for the same iteration (the re-run).
+    // A second run for the same season (the re-run).
     const second = await storage.createRunWithSchedule(
-      first.iteration_id,
+      first.season_id,
       'dev-user',
       [],
       [naiveGame(0)],
@@ -470,14 +460,14 @@ describe('Docker-backed workflow runner', () => {
     await runToTerminal(handle, second.id)
 
     expect(second.id).not.toBe(first.id)
-    expect((await storage.getLatestCompletedRun(first.iteration_id))?.id).toBe(second.id)
+    expect((await storage.getLatestCompletedRun(first.season_id))?.id).toBe(second.id)
   })
 
   it('resolves the submission overlay image and attributes its recording to the owner', async () => {
     const driver = new FakeDriver()
     // Seed a cached overlay for the submission so the reuse path returns it without the source seam.
     const submission = await storage.createSubmission({
-      iteration_id: 'placeholder',
+      season_id: 'placeholder',
       env_id: ENV_ID,
       user_id: 'alice',
       source_kind: 'git',

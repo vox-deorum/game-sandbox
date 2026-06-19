@@ -1,7 +1,7 @@
 /**
  * Human-rating queries: the validated 1-5 rating upsert (own-agent rule enforced before any
- * write), the per-user/per-iteration reads, the mean-and-count aggregation behind the human board,
- * and the agent author's per-iteration rating prompt.
+ * write), the per-user/per-season reads, the mean-and-count aggregation behind the human board,
+ * and the agent author's per-season rating prompt.
  */
 import { randomUUID } from 'node:crypto'
 
@@ -9,7 +9,7 @@ import type { Kysely } from 'kysely'
 
 import type { AgentRef, RatingAggregate, UpsertRatingInput, UpsertRatingResult } from '../index.js'
 import type { AgentRatingPrompt, Database, Rating } from '../schema.js'
-import { requireIteration } from './iterations.js'
+import { requireSeason } from './seasons.js'
 import { type AgentColumns, agentColumns, agentKey, agentRefFromColumns } from './shared.js'
 
 export async function upsertRating(
@@ -23,7 +23,7 @@ export async function upsertRating(
   if (input.agent.kind === 'submission' && input.agent.user_id === input.rater_user_id) {
     return { ok: false, reason: 'own_agent' }
   }
-  const existing = await getRating(db, input.iteration_id, input.rater_user_id, input.agent)
+  const existing = await getRating(db, input.season_id, input.rater_user_id, input.agent)
   const now = new Date().toISOString()
   if (existing !== undefined) {
     const updated = await db
@@ -38,7 +38,7 @@ export async function upsertRating(
     .insertInto('ratings')
     .values({
       id: randomUUID(),
-      iteration_id: input.iteration_id,
+      season_id: input.season_id,
       env_id: input.env_id,
       rater_user_id: input.rater_user_id,
       ...agentColumns(input.agent),
@@ -53,7 +53,7 @@ export async function upsertRating(
 
 export async function getRating(
   db: Kysely<Database>,
-  iterationId: string,
+  seasonId: string,
   raterUserId: string,
   agent: AgentRef,
 ): Promise<Rating | undefined> {
@@ -61,7 +61,7 @@ export async function getRating(
   let query = db
     .selectFrom('ratings')
     .selectAll()
-    .where('iteration_id', '=', iterationId)
+    .where('season_id', '=', seasonId)
     .where('rater_user_id', '=', raterUserId)
     .where('agent_kind', '=', cols.agent_kind)
   query =
@@ -71,22 +71,18 @@ export async function getRating(
   return await query.executeTakeFirst()
 }
 
-export async function listRatingsByIteration(
+export async function listRatingsBySeason(
   db: Kysely<Database>,
-  iterationId: string,
+  seasonId: string,
 ): Promise<Rating[]> {
-  return await db
-    .selectFrom('ratings')
-    .selectAll()
-    .where('iteration_id', '=', iterationId)
-    .execute()
+  return await db.selectFrom('ratings').selectAll().where('season_id', '=', seasonId).execute()
 }
 
 export async function aggregateRatingsByAgent(
   db: Kysely<Database>,
-  iterationId: string,
+  seasonId: string,
 ): Promise<RatingAggregate[]> {
-  const ratings = await listRatingsByIteration(db, iterationId)
+  const ratings = await listRatingsBySeason(db, seasonId)
   const groups = new Map<string, { agent: AgentColumns; sum: number; count: number }>()
   for (const rating of ratings) {
     const key = agentKey(rating)
@@ -104,47 +100,47 @@ export async function aggregateRatingsByAgent(
 
 export async function upsertAgentRatingPrompt(
   db: Kysely<Database>,
-  iterationId: string,
+  seasonId: string,
   userId: string,
   prompt: string,
 ): Promise<void> {
-  const iteration = await requireIteration(db, iterationId)
+  const season = await requireSeason(db, seasonId)
   const now = new Date().toISOString()
   await db
     .insertInto('agent_rating_prompts')
     .values({
-      iteration_id: iterationId,
-      env_id: iteration.env_id,
+      season_id: seasonId,
+      env_id: season.env_id,
       user_id: userId,
       prompt,
       updated_at: now,
     })
     .onConflict((oc) =>
-      oc.columns(['iteration_id', 'user_id']).doUpdateSet({ prompt, updated_at: now }),
+      oc.columns(['season_id', 'user_id']).doUpdateSet({ prompt, updated_at: now }),
     )
     .execute()
 }
 
 export async function getAgentRatingPrompt(
   db: Kysely<Database>,
-  iterationId: string,
+  seasonId: string,
   userId: string,
 ): Promise<AgentRatingPrompt | undefined> {
   return await db
     .selectFrom('agent_rating_prompts')
     .selectAll()
-    .where('iteration_id', '=', iterationId)
+    .where('season_id', '=', seasonId)
     .where('user_id', '=', userId)
     .executeTakeFirst()
 }
 
-export async function listAgentRatingPromptsByIteration(
+export async function listAgentRatingPromptsBySeason(
   db: Kysely<Database>,
-  iterationId: string,
+  seasonId: string,
 ): Promise<AgentRatingPrompt[]> {
   return await db
     .selectFrom('agent_rating_prompts')
     .selectAll()
-    .where('iteration_id', '=', iterationId)
+    .where('season_id', '=', seasonId)
     .execute()
 }

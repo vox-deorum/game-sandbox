@@ -20,7 +20,7 @@ Models used, token counts, and latency are public wherever the replay is public.
 
 ## Budgets and limits
 
-Each session and each leaderboard run carries a token and call budget plus a rate limit, with deployment defaults that an iteration can override (see [leaderboard.md](leaderboard.md)). A call over budget fails with an ordinary API error that the agent can catch, and the run continues. Budgets are what keep the operator's bill bounded.
+Each session and each leaderboard run carries a token and call budget plus a rate limit, with deployment defaults that a season can override (see [leaderboard.md](leaderboard.md)). A call over budget fails with an ordinary API error that the agent can catch, and the run continues. Budgets are what keep the operator's bill bounded.
 
 ## Determinism and timing
 

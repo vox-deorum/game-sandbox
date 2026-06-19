@@ -1,34 +1,48 @@
 <!--
-  The app shell: the three-zone top bar (site name + primary nav on the left, the signed-in readout
-  on the right) around the routed page, per the approved information architecture. It reads the
-  injected identity through useMe, so it must render inside the me.ts provider (see App.vue). While
-  /api/me is in flight it falls back to the locally resolved id so the header never flickers.
+  The app shell: a two-tier navigation frame around the routed page. The collapsible left sidebar
+  (AppSidebar) carries the global, cross-game sections; the contextual tab strip (ExperimentTabs)
+  appears only inside a game and carries its per-game tasks. On narrow screens the sidebar becomes an
+  off-canvas drawer behind a scrim, toggled from the mobile bar and closed again on navigation.
+
+  It must render inside the me.ts provider (see App.vue): the account block and the tabs read the
+  injected identity through useMe.
 -->
 <script setup lang="ts">
-import { computed } from 'vue'
-import { RouterLink, RouterView } from 'vue-router'
+import { Menu } from '@lucide/vue'
+import { computed, watch } from 'vue'
+import { RouterLink, RouterView, useRoute } from 'vue-router'
 
-import { currentUserId } from '../identity.js'
-import { useMe } from '../me.js'
-import AppNav from './AppNav.vue'
+import { useSidebar } from '../composables/useSidebar.js'
+import AppSidebar from './AppSidebar.vue'
+import ExperimentTabs from './ExperimentTabs.vue'
 
-const me = useMe()
-const signedInLabel = computed(() =>
-  me.loading ? 'signing in…' : `signed in as ${me.me?.user_id ?? currentUserId}`,
-)
+const route = useRoute()
+const { collapsed, mobileOpen, toggleMobile, closeMobile } = useSidebar()
+
+/** The game tab strip shows only on routes scoped to one game (those carrying an :envId param). */
+const inGame = computed(() => typeof route.params.envId === 'string' && route.params.envId !== '')
+
+// A drawer is momentary: close it whenever the route changes so a tapped link does not leave it open.
+watch(() => route.fullPath, () => closeMobile())
 </script>
 
 <template>
-  <div class="app">
-    <header class="app-header">
-      <div class="app-header-start">
-        <RouterLink class="site-name" to="/">Game Sandbox</RouterLink>
-        <AppNav />
-      </div>
-      <span class="signed-in">{{ signedInLabel }}</span>
+  <div class="app" :class="{ 'sidebar-collapsed': collapsed, 'mobile-open': mobileOpen }">
+    <header class="app-mobilebar">
+      <button class="mobile-menu" type="button" aria-label="Open menu" @click="toggleMobile">
+        <Menu :size="20" />
+      </button>
+      <RouterLink class="mobile-brand" to="/">Game Sandbox</RouterLink>
     </header>
-    <main class="app-main">
-      <RouterView />
-    </main>
+
+    <AppSidebar />
+    <button class="app-scrim" type="button" aria-label="Close menu" tabindex="-1" @click="closeMobile" />
+
+    <div class="app-body">
+      <ExperimentTabs v-if="inGame" />
+      <main class="app-main">
+        <RouterView />
+      </main>
+    </div>
   </div>
 </template>

@@ -1,39 +1,147 @@
 /*
- * App shell layout only: the three-zone top bar and the main content column. The shell's markup is
- * components/AppShell.vue and the section list is components/AppNav.vue (with its own scoped styles);
- * the layout classes live here because they frame every page.
+ * App shell layout only: the two-tier nav frame (the collapsible left sidebar and the routed body)
+ * plus the mobile drawer behaviour. The shell markup is components/AppShell.vue; the sidebar and the
+ * per-game tab strip are AppSidebar.vue / ExperimentTabs.vue with their own scoped styles. These
+ * layout classes live here because they frame every page.
  */
-.app-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-  padding: var(--space-4) var(--space-5);
-  border-bottom: 1px solid var(--color-border);
+.app {
+  --sidebar-width: 240px;
+  display: grid;
+  grid-template-columns: var(--sidebar-width) 1fr;
+  grid-template-areas: "sidebar body";
+  min-height: 100vh;
+  transition: grid-template-columns var(--motion-base) var(--ease-out);
 }
 
-.app-header-start {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-5);
+.app.sidebar-collapsed {
+  --sidebar-width: 64px;
+}
+
+.app-sidebar {
+  grid-area: sidebar;
+}
+
+.app-body {
+  grid-area: body;
   min-width: 0;
-}
-
-.site-name {
-  font-family: var(--font-heading);
-  font-size: var(--text-lg);
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.signed-in {
-  color: var(--color-text-muted);
-  font-size: var(--text-sm);
-  white-space: nowrap;
+  display: flex;
+  flex-direction: column;
 }
 
 .app-main {
+  width: 100%;
   max-width: 960px;
   margin: 0 auto;
   padding: var(--space-5);
+}
+
+/*
+ * Collapsed rail (desktop): the toggle lives outside the sidebar's component scope (on .app), and a
+ * scoped block cannot reach an ancestor, so the rules that react to it sit here. They target the
+ * sidebar/account classes by name — the elements keep those classes regardless of their scope id.
+ */
+.app.sidebar-collapsed .brand-name,
+.app.sidebar-collapsed .nav-label,
+.app.sidebar-collapsed .account-text {
+  display: none;
+}
+
+.app.sidebar-collapsed .sidebar-head {
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.app.sidebar-collapsed .nav-item {
+  justify-content: center;
+}
+
+/* The mobile bar and scrim exist only below the drawer breakpoint. */
+.app-mobilebar {
+  display: none;
+}
+
+.app-scrim {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .app {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "mobilebar"
+      "body";
+  }
+
+  .app-mobilebar {
+    grid-area: mobilebar;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-surface);
+  }
+
+  .mobile-menu {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border: none;
+    background: transparent;
+    color: var(--color-text);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+  }
+
+  .mobile-brand {
+    font-family: var(--font-heading);
+    font-size: var(--text-lg);
+    font-weight: 700;
+  }
+
+  /* The sidebar leaves the grid flow and slides in over the page as a drawer. */
+  .app-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 240px;
+    z-index: 50;
+    overflow-y: auto;
+    transform: translateX(-100%);
+    transition: transform var(--motion-base) var(--ease-out);
+  }
+
+  .app.mobile-open .app-sidebar {
+    transform: none;
+  }
+
+  .app.mobile-open .app-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    border: none;
+    background: var(--color-scrim);
+  }
+
+  /* The drawer is always full width, so undo the desktop collapsed-rail rules inside it. */
+  .app.sidebar-collapsed .brand-name,
+  .app.sidebar-collapsed .nav-label {
+    display: inline;
+  }
+
+  .app.sidebar-collapsed .account-text {
+    display: flex;
+  }
+
+  .app.sidebar-collapsed .sidebar-head {
+    flex-direction: row;
+  }
+
+  .app.sidebar-collapsed .nav-item {
+    justify-content: flex-start;
+  }
 }

@@ -2,7 +2,7 @@
  * Storage coverage for the Stage 6.1 leaderboard surface, against the real Kysely implementation on
  * better-sqlite3 `:memory:` (no Docker). It proves the config codec gate, the one-open submission and
  * one-play-open invariants, the three-gate lifecycle, trigger-time roster/schedule snapshots, session
- * iteration attribution, latest-completed-run selection, placement rewrites, the rating
+ * season attribution, latest-completed-run selection, placement rewrites, the rating
  * upsert/own-agent/Naive rules, both rating prompts, and leaderboard-recording retention protection.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -12,19 +12,19 @@ import {
 } from '../../src/leaderboards/placements.js'
 import type {
   AgentRef,
-  IterationConfig,
   NewSessionInput,
   NewSubmissionInput,
   ScheduledGameInput,
+  SeasonConfig,
   Storage,
 } from '../../src/storage/index.js'
-import { decodeIterationConfig } from '../../src/storage/index.js'
+import { decodeSeasonConfig } from '../../src/storage/index.js'
 import { openSqliteStorage } from '../../src/storage/sqlite.js'
 
 const ENV = 'flappy_bird'
 const NAIVE: AgentRef = { kind: 'builtin-naive' }
 
-function configWithMatch(depsVersion = 1): IterationConfig {
+function configWithMatch(depsVersion = 1): SeasonConfig {
   return {
     deps_version: depsVersion,
     matches: [{ slots: ['submission'], seeds: [1, 2], games: 2 }],
@@ -33,7 +33,7 @@ function configWithMatch(depsVersion = 1): IterationConfig {
 
 function submissionInput(overrides: Partial<NewSubmissionInput> = {}): NewSubmissionInput {
   return {
-    iteration_id: 'iter',
+    season_id: 'iter',
     env_id: ENV,
     user_id: 'alice',
     source_kind: 'git',
@@ -94,136 +94,136 @@ describe('leaderboard storage on :memory:', () => {
     await storage.close()
   })
 
-  // --- iteration declaration and config ---
+  // --- season declaration and config ---
 
-  it('createIteration writes an unreleased, submission-closed, play-closed row carrying deps_version', async () => {
-    const iteration = await storage.createIteration({
+  it('createSeason writes an unreleased, submission-closed, play-closed row carrying deps_version', async () => {
+    const season = await storage.createSeason({
       env_id: ENV,
       deps_version: 1,
       label: 'Week 1',
     })
-    expect(iteration.submission_status).toBe('closed')
-    expect(iteration.play_status).toBe('closed')
-    expect(iteration.release_status).toBe('unreleased')
-    expect(iteration.label).toBe('Week 1')
-    expect(decodeIterationConfig(iteration.config)).toEqual({ deps_version: 1, matches: [] })
+    expect(season.submission_status).toBe('closed')
+    expect(season.play_status).toBe('closed')
+    expect(season.release_status).toBe('unreleased')
+    expect(season.label).toBe('Week 1')
+    expect(decodeSeasonConfig(season.config)).toEqual({ deps_version: 1, matches: [] })
   })
 
-  it('updateIterationConfig writes when there are no runs and no deps change', async () => {
-    const iteration = await storage.createIteration({ env_id: ENV, deps_version: 1 })
-    const result = await storage.updateIterationConfig(iteration.id, configWithMatch())
+  it('updateSeasonConfig writes when there are no runs and no deps change', async () => {
+    const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
+    const result = await storage.updateSeasonConfig(season.id, configWithMatch())
     expect(result.ok).toBe(true)
-    const reread = await storage.getIteration(iteration.id)
-    expect(decodeIterationConfig(defined(reread).config).matches).toHaveLength(1)
+    const reread = await storage.getSeason(season.id)
+    expect(decodeSeasonConfig(defined(reread).config).matches).toHaveLength(1)
   })
 
   it('refuses an unforced config edit once a run exists, and a forced edit deletes the runs', async () => {
-    const iteration = await storage.createIteration({ env_id: ENV, deps_version: 1 })
-    await storage.updateIterationConfig(iteration.id, configWithMatch())
-    await storage.createRunWithSchedule(iteration.id, 'dev-user', [], ONE_GAME)
+    const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
+    await storage.updateSeasonConfig(season.id, configWithMatch())
+    await storage.createRunWithSchedule(season.id, 'dev-user', [], ONE_GAME)
 
-    const refused = await storage.updateIterationConfig(iteration.id, configWithMatch())
-    expect(refused).toEqual({ ok: false, conflict: 'iteration_has_runs' })
+    const refused = await storage.updateSeasonConfig(season.id, configWithMatch())
+    expect(refused).toEqual({ ok: false, conflict: 'season_has_runs' })
 
-    const forced = await storage.updateIterationConfig(iteration.id, configWithMatch(), {
+    const forced = await storage.updateSeasonConfig(season.id, configWithMatch(), {
       force: true,
     })
     expect(forced.ok).toBe(true)
-    expect(await storage.getLatestRun(iteration.id)).toBeUndefined()
+    expect(await storage.getLatestRun(season.id)).toBeUndefined()
   })
 
   it('refuses an unforced deps change with submissions, and a forced one deletes the submissions', async () => {
-    const iteration = await storage.createIteration({ env_id: ENV, deps_version: 1 })
-    await storage.createSubmission(submissionInput({ iteration_id: iteration.id }))
+    const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
+    await storage.createSubmission(submissionInput({ season_id: season.id }))
 
-    const refused = await storage.updateIterationConfig(iteration.id, configWithMatch(2))
-    expect(refused).toEqual({ ok: false, conflict: 'iteration_has_submissions' })
+    const refused = await storage.updateSeasonConfig(season.id, configWithMatch(2))
+    expect(refused).toEqual({ ok: false, conflict: 'season_has_submissions' })
 
-    const forced = await storage.updateIterationConfig(iteration.id, configWithMatch(2), {
+    const forced = await storage.updateSeasonConfig(season.id, configWithMatch(2), {
       force: true,
     })
     expect(forced.ok).toBe(true)
-    expect(await storage.findActiveSubmission(iteration.id, 'alice')).toBeUndefined()
+    expect(await storage.findActiveSubmission(season.id, 'alice')).toBeUndefined()
   })
 
   // --- the three independent gates ---
 
-  it('flips the three gates independently and opens play on an unreleased iteration', async () => {
-    const iteration = await storage.createIteration({ env_id: ENV, deps_version: 1 })
-    const play = await storage.setPlayStatus(iteration.id, 'open')
+  it('flips the three gates independently and opens play on an unreleased season', async () => {
+    const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
+    const play = await storage.setPlayStatus(season.id, 'open')
     expect(play).toMatchObject({ ok: true })
-    const after = await storage.getIteration(iteration.id)
+    const after = await storage.getSeason(season.id)
     expect(after?.play_status).toBe('open')
     expect(after?.submission_status).toBe('closed')
     expect(after?.release_status).toBe('unreleased')
-    expect(await storage.getPublicPlayIteration(ENV)).toMatchObject({ id: iteration.id })
+    expect(await storage.getPublicPlaySeason(ENV)).toMatchObject({ id: season.id })
   })
 
   it('rejects opening a second submission window and a second play window for an environment', async () => {
-    const a = await storage.createIteration({ env_id: ENV, deps_version: 1 })
-    const b = await storage.createIteration({ env_id: ENV, deps_version: 1 })
+    const a = await storage.createSeason({ env_id: ENV, deps_version: 1 })
+    const b = await storage.createSeason({ env_id: ENV, deps_version: 1 })
     expect(await storage.setSubmissionStatus(a.id, 'open')).toMatchObject({ ok: true })
     expect(await storage.setSubmissionStatus(b.id, 'open')).toEqual({
       ok: false,
-      conflict: 'open_iteration_exists',
+      conflict: 'open_season_exists',
     })
     expect(await storage.setPlayStatus(a.id, 'open')).toMatchObject({ ok: true })
     expect(await storage.setPlayStatus(b.id, 'open')).toEqual({
       ok: false,
-      conflict: 'open_play_iteration_exists',
+      conflict: 'open_play_season_exists',
     })
   })
 
-  it('stamps released_at once and leaves it stable across re-release; getReleasedIteration ignores unreleased', async () => {
-    const iteration = await storage.createIteration({ env_id: ENV, deps_version: 1 })
-    expect(await storage.getReleasedIteration(ENV)).toBeUndefined()
-    const released = await storage.setReleaseStatus(iteration.id, 'released')
+  it('stamps released_at once and leaves it stable across re-release; getReleasedSeason ignores unreleased', async () => {
+    const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
+    expect(await storage.getReleasedSeason(ENV)).toBeUndefined()
+    const released = await storage.setReleaseStatus(season.id, 'released')
     expect(released.released_at).not.toBeNull()
     const stamp = released.released_at
-    const reReleased = await storage.setReleaseStatus(iteration.id, 'released')
+    const reReleased = await storage.setReleaseStatus(season.id, 'released')
     expect(reReleased.released_at).toBe(stamp)
-    expect(await storage.getReleasedIteration(ENV)).toMatchObject({ id: iteration.id })
+    expect(await storage.getReleasedSeason(ENV)).toMatchObject({ id: season.id })
   })
 
-  it('listIterations hides unreleased history for public reads but shows it for admin reads', async () => {
-    const released = await storage.createIteration({ env_id: ENV, deps_version: 1 })
+  it('listSeasons hides unreleased history for public reads but shows it for admin reads', async () => {
+    const released = await storage.createSeason({ env_id: ENV, deps_version: 1 })
     await storage.setReleaseStatus(released.id, 'released')
-    await storage.createIteration({ env_id: ENV, deps_version: 1 })
+    await storage.createSeason({ env_id: ENV, deps_version: 1 })
 
-    const publicList = await storage.listIterations(ENV, { includeUnreleased: false })
+    const publicList = await storage.listSeasons(ENV, { includeUnreleased: false })
     expect(publicList).toHaveLength(1)
     expect(publicList[0]?.id).toBe(released.id)
 
-    const adminList = await storage.listIterations(ENV, { includeUnreleased: true })
+    const adminList = await storage.listSeasons(ENV, { includeUnreleased: true })
     expect(adminList).toHaveLength(2)
   })
 
-  // --- session iteration attribution ---
+  // --- session season attribution ---
 
-  it('records a nullable iteration_id on a session, by create input or by setSessionIteration', async () => {
-    const iteration = await storage.createIteration({ env_id: ENV, deps_version: 1 })
+  it('records a nullable season_id on a session, by create input or by setSessionSeason', async () => {
+    const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
     const attributed = await storage.createSession(
-      sessionInput({ id: 'sess-it', iteration_id: iteration.id }),
+      sessionInput({ id: 'sess-it', season_id: season.id }),
     )
-    expect(attributed.iteration_id).toBe(iteration.id)
+    expect(attributed.season_id).toBe(season.id)
 
     const orphan = await storage.createSession(sessionInput({ id: 'sess-null' }))
-    expect(orphan.iteration_id).toBeNull()
-    await storage.setSessionIteration('sess-null', iteration.id)
-    expect((await storage.getSession('sess-null'))?.iteration_id).toBe(iteration.id)
+    expect(orphan.season_id).toBeNull()
+    await storage.setSessionSeason('sess-null', season.id)
+    expect((await storage.getSession('sess-null'))?.season_id).toBe(season.id)
   })
 
   // --- runs, games, results ---
 
   it('createRunWithSchedule snapshots config and roster and persists deterministic games', async () => {
-    const iteration = await storage.createIteration({ env_id: ENV, deps_version: 3 })
-    await storage.updateIterationConfig(iteration.id, configWithMatch(3))
+    const season = await storage.createSeason({ env_id: ENV, deps_version: 3 })
+    await storage.updateSeasonConfig(season.id, configWithMatch(3))
     const roster: AgentRef[] = [{ kind: 'submission', submission_id: 's1', user_id: 'alice' }]
-    const run = await storage.createRunWithSchedule(iteration.id, 'dev-user', roster, ONE_GAME)
+    const run = await storage.createRunWithSchedule(season.id, 'dev-user', roster, ONE_GAME)
 
     expect(run.status).toBe('pending')
     expect(run.requested_by).toBe('dev-user')
-    expect(decodeIterationConfig(run.config_snapshot).deps_version).toBe(3)
+    expect(decodeSeasonConfig(run.config_snapshot).deps_version).toBe(3)
     expect(JSON.parse(run.submission_snapshot)).toEqual(roster)
 
     const games = await storage.listRunGames(run.id)
@@ -233,8 +233,8 @@ describe('leaderboard storage on :memory:', () => {
   })
 
   it('recordGameResult round-trips concrete agent columns and timing aggregates', async () => {
-    const iteration = await storage.createIteration({ env_id: ENV, deps_version: 1 })
-    const run = await storage.createRunWithSchedule(iteration.id, 'dev-user', [], ONE_GAME)
+    const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
+    const run = await storage.createRunWithSchedule(season.id, 'dev-user', [], ONE_GAME)
     const game = firstOf(await storage.listRunGames(run.id))
     await storage.recordGameResult({
       game_id: game.id,
@@ -258,20 +258,20 @@ describe('leaderboard storage on :memory:', () => {
   })
 
   it('getLatestCompletedRun returns the latest completed run and ignores a later running/failed one', async () => {
-    const iteration = await storage.createIteration({ env_id: ENV, deps_version: 1 })
-    const good = await storage.createRunWithSchedule(iteration.id, 'dev-user', [], ONE_GAME)
+    const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
+    const good = await storage.createRunWithSchedule(season.id, 'dev-user', [], ONE_GAME)
     await storage.setRunStatus(good.id, 'completed')
-    const reRun = await storage.createRunWithSchedule(iteration.id, 'dev-user', [], ONE_GAME)
+    const reRun = await storage.createRunWithSchedule(season.id, 'dev-user', [], ONE_GAME)
     await storage.setRunStatus(reRun.id, 'failed', 'boom')
 
-    const latest = await storage.getLatestCompletedRun(iteration.id)
+    const latest = await storage.getLatestCompletedRun(season.id)
     expect(latest?.id).toBe(good.id)
-    expect((await storage.getLatestRun(iteration.id))?.id).toBe(reRun.id)
+    expect((await storage.getLatestRun(season.id))?.id).toBe(reRun.id)
   })
 
   it('attachRunGameRecording links a game to a recording for the board replay link', async () => {
-    const iteration = await storage.createIteration({ env_id: ENV, deps_version: 1 })
-    const run = await storage.createRunWithSchedule(iteration.id, 'dev-user', [], ONE_GAME)
+    const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
+    const run = await storage.createRunWithSchedule(season.id, 'dev-user', [], ONE_GAME)
     const game = firstOf(await storage.listRunGames(run.id))
     await storage.attachRunGameRecording(game.id, 'rec-1')
     expect((await storage.listRunGames(run.id))[0]?.recording_id).toBe('rec-1')
@@ -280,9 +280,9 @@ describe('leaderboard storage on :memory:', () => {
   // --- placements ---
 
   it('replaceAutomatedPlacements rewrites rows for a re-run and supports submitted and Naive agents', async () => {
-    const iteration = await storage.createIteration({ env_id: ENV, deps_version: 1 })
-    const run1 = await storage.createRunWithSchedule(iteration.id, 'dev-user', [], ONE_GAME)
-    await storage.replaceAutomatedPlacements(iteration.id, ENV, run1.id, [
+    const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
+    const run1 = await storage.createRunWithSchedule(season.id, 'dev-user', [], ONE_GAME)
+    await storage.replaceAutomatedPlacements(season.id, ENV, run1.id, [
       {
         rank: 1,
         agent: { kind: 'submission', submission_id: 's1', user_id: 'alice' },
@@ -310,8 +310,8 @@ describe('leaderboard storage on :memory:', () => {
     expect(await storage.listPlacementsByAgent(NAIVE, ENV)).toHaveLength(1)
 
     // A re-run rewrites the snapshot rather than appending.
-    const run2 = await storage.createRunWithSchedule(iteration.id, 'dev-user', [], ONE_GAME)
-    await storage.replaceAutomatedPlacements(iteration.id, ENV, run2.id, [
+    const run2 = await storage.createRunWithSchedule(season.id, 'dev-user', [], ONE_GAME)
+    await storage.replaceAutomatedPlacements(season.id, ENV, run2.id, [
       {
         rank: 1,
         agent: NAIVE,
@@ -334,11 +334,11 @@ describe('leaderboard storage on :memory:', () => {
   // --- ratings ---
 
   it('upserts a 1-5 rating, overwrites on re-rate, rejects own-agent, and rates Naive', async () => {
-    const iteration = await storage.createIteration({ env_id: ENV, deps_version: 1 })
+    const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
     const aliceAgent: AgentRef = { kind: 'submission', submission_id: 's1', user_id: 'alice' }
 
     const first = await storage.upsertRating({
-      iteration_id: iteration.id,
+      season_id: season.id,
       env_id: ENV,
       rater_user_id: 'bob',
       agent: aliceAgent,
@@ -346,18 +346,18 @@ describe('leaderboard storage on :memory:', () => {
     })
     expect(first).toMatchObject({ ok: true })
     const overwrite = await storage.upsertRating({
-      iteration_id: iteration.id,
+      season_id: season.id,
       env_id: ENV,
       rater_user_id: 'bob',
       agent: aliceAgent,
       score: 2,
     })
     expect(overwrite).toMatchObject({ ok: true })
-    expect(await storage.listRatingsByIteration(iteration.id)).toHaveLength(1)
-    expect((await storage.getRating(iteration.id, 'bob', aliceAgent))?.score).toBe(2)
+    expect(await storage.listRatingsBySeason(season.id)).toHaveLength(1)
+    expect((await storage.getRating(season.id, 'bob', aliceAgent))?.score).toBe(2)
 
     const own = await storage.upsertRating({
-      iteration_id: iteration.id,
+      season_id: season.id,
       env_id: ENV,
       rater_user_id: 'alice',
       agent: aliceAgent,
@@ -366,7 +366,7 @@ describe('leaderboard storage on :memory:', () => {
     expect(own).toEqual({ ok: false, reason: 'own_agent' })
 
     const badScore = await storage.upsertRating({
-      iteration_id: iteration.id,
+      season_id: season.id,
       env_id: ENV,
       rater_user_id: 'bob',
       agent: NAIVE,
@@ -376,7 +376,7 @@ describe('leaderboard storage on :memory:', () => {
 
     expect(
       await storage.upsertRating({
-        iteration_id: iteration.id,
+        season_id: season.id,
         env_id: ENV,
         rater_user_id: 'alice',
         agent: NAIVE,
@@ -385,20 +385,20 @@ describe('leaderboard storage on :memory:', () => {
     ).toMatchObject({ ok: true })
     expect(
       await storage.upsertRating({
-        iteration_id: iteration.id,
+        season_id: season.id,
         env_id: ENV,
         rater_user_id: 'bob',
         agent: NAIVE,
         score: 2,
       }),
     ).toMatchObject({ ok: true })
-    const agg = await storage.aggregateRatingsByAgent(iteration.id)
+    const agg = await storage.aggregateRatingsByAgent(season.id)
     const naiveAgg = agg.find((row) => row.agent.kind === 'builtin-naive')
     expect(naiveAgg).toEqual({ agent: NAIVE, mean: 3, count: 2 })
   })
 
   it('getHumanBoard ranks agents with three ratings and lists under-threshold agents unranked', async () => {
-    const iteration = await storage.createIteration({ env_id: ENV, deps_version: 1 })
+    const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
     const ranked: AgentRef = { kind: 'submission', submission_id: 'r', user_id: 'owner-r' }
     const thin: AgentRef = { kind: 'submission', submission_id: 't', user_id: 'owner-t' }
 
@@ -409,7 +409,7 @@ describe('leaderboard storage on :memory:', () => {
       ['u3', 5],
     ] as const) {
       await storage.upsertRating({
-        iteration_id: iteration.id,
+        season_id: season.id,
         env_id: ENV,
         rater_user_id: rater,
         agent: ranked,
@@ -418,7 +418,7 @@ describe('leaderboard storage on :memory:', () => {
     }
     for (const rater of ['u1', 'u2', 'u3']) {
       await storage.upsertRating({
-        iteration_id: iteration.id,
+        season_id: season.id,
         env_id: ENV,
         rater_user_id: rater,
         agent: NAIVE,
@@ -428,7 +428,7 @@ describe('leaderboard storage on :memory:', () => {
     // The thin agent has only two ratings, so it stays unranked below the ranked set.
     for (const rater of ['u1', 'u2']) {
       await storage.upsertRating({
-        iteration_id: iteration.id,
+        season_id: season.id,
         env_id: ENV,
         rater_user_id: rater,
         agent: thin,
@@ -436,7 +436,7 @@ describe('leaderboard storage on :memory:', () => {
       })
     }
 
-    const board = await storage.getHumanBoard(iteration.id)
+    const board = await storage.getHumanBoard(season.id)
     expect(board).toEqual([
       { agent: NAIVE, mean: 5, count: 3, rank: 1 },
       { agent: ranked, mean: 4, count: 3, rank: 2 },
@@ -446,40 +446,40 @@ describe('leaderboard storage on :memory:', () => {
 
   // --- rating prompts ---
 
-  it('setIterationRatingPrompt sets and clears, and stays editable after a run exists', async () => {
-    const iteration = await storage.createIteration({ env_id: ENV, deps_version: 1 })
-    await storage.createRunWithSchedule(iteration.id, 'dev-user', [], ONE_GAME)
-    await storage.setIterationRatingPrompt(iteration.id, 'Rate creativity')
-    expect((await storage.getIteration(iteration.id))?.rating_prompt).toBe('Rate creativity')
-    await storage.setIterationRatingPrompt(iteration.id, null)
-    expect((await storage.getIteration(iteration.id))?.rating_prompt).toBeNull()
+  it('setSeasonRatingPrompt sets and clears, and stays editable after a run exists', async () => {
+    const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
+    await storage.createRunWithSchedule(season.id, 'dev-user', [], ONE_GAME)
+    await storage.setSeasonRatingPrompt(season.id, 'Rate creativity')
+    expect((await storage.getSeason(season.id))?.rating_prompt).toBe('Rate creativity')
+    await storage.setSeasonRatingPrompt(season.id, null)
+    expect((await storage.getSeason(season.id))?.rating_prompt).toBeNull()
   })
 
   it('upsertAgentRatingPrompt inserts then overwrites per author and survives resubmission', async () => {
-    const iteration = await storage.createIteration({ env_id: ENV, deps_version: 1 })
-    await storage.upsertAgentRatingPrompt(iteration.id, 'alice', 'Judge my dodging')
-    await storage.upsertAgentRatingPrompt(iteration.id, 'alice', 'Judge my new dodging')
-    await storage.upsertAgentRatingPrompt(iteration.id, 'bob', 'Judge my scoring')
+    const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
+    await storage.upsertAgentRatingPrompt(season.id, 'alice', 'Judge my dodging')
+    await storage.upsertAgentRatingPrompt(season.id, 'alice', 'Judge my new dodging')
+    await storage.upsertAgentRatingPrompt(season.id, 'bob', 'Judge my scoring')
 
-    // Keyed by (iteration, user), so it is independent of which submission id ratings key on.
-    expect((await storage.getAgentRatingPrompt(iteration.id, 'alice'))?.prompt).toBe(
+    // Keyed by (season, user), so it is independent of which submission id ratings key on.
+    expect((await storage.getAgentRatingPrompt(season.id, 'alice'))?.prompt).toBe(
       'Judge my new dodging',
     )
-    const all = await storage.listAgentRatingPromptsByIteration(iteration.id)
+    const all = await storage.listAgentRatingPromptsBySeason(season.id)
     expect(all).toHaveLength(2)
   })
 
   // --- retention protection ---
 
   it('listProtectedLeaderboardRecordingIds exempts current-run recordings and excludes superseded ones', async () => {
-    const iteration = await storage.createIteration({ env_id: ENV, deps_version: 1 })
+    const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
 
-    const run1 = await storage.createRunWithSchedule(iteration.id, 'dev-user', [], ONE_GAME)
+    const run1 = await storage.createRunWithSchedule(season.id, 'dev-user', [], ONE_GAME)
     const game1 = firstOf(await storage.listRunGames(run1.id))
     await storage.attachRunGameRecording(game1.id, 'rec-old')
     await storage.setRunStatus(run1.id, 'completed')
 
-    const run2 = await storage.createRunWithSchedule(iteration.id, 'dev-user', [], ONE_GAME)
+    const run2 = await storage.createRunWithSchedule(season.id, 'dev-user', [], ONE_GAME)
     const game2 = firstOf(await storage.listRunGames(run2.id))
     await storage.attachRunGameRecording(game2.id, 'rec-new')
     await storage.setRunStatus(run2.id, 'completed')
@@ -492,12 +492,12 @@ describe('leaderboard storage on :memory:', () => {
   // --- automated board aggregation ---
 
   it('getAutomatedBoard aggregates per agent over the latest completed run with a deterministic order', async () => {
-    const iteration = await storage.createIteration({ env_id: ENV, deps_version: 1 })
+    const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
     const twoGames: ScheduledGameInput[] = [
       { match_index: 0, game_index: 0, seed: 1, slots: [{ kind: 'builtin-naive' }] },
       { match_index: 0, game_index: 1, seed: 2, slots: [{ kind: 'builtin-naive' }] },
     ]
-    const run = await storage.createRunWithSchedule(iteration.id, 'dev-user', [], twoGames)
+    const run = await storage.createRunWithSchedule(season.id, 'dev-user', [], twoGames)
     const games = await storage.listRunGames(run.id)
     const [g0, g1] = [firstOf(games), defined(games[1])]
     await storage.attachRunGameRecording(g0.id, 'rec0')
@@ -528,7 +528,7 @@ describe('leaderboard storage on :memory:', () => {
     }
     await storage.setRunStatus(run.id, 'completed')
 
-    const board = await storage.getAutomatedBoard(iteration.id)
+    const board = await storage.getAutomatedBoard(season.id)
     expect(board.map((row) => row.agent)).toEqual([s1, s2, NAIVE])
     expect(board[0]).toMatchObject({
       mean_score: 15,
@@ -541,11 +541,11 @@ describe('leaderboard storage on :memory:', () => {
   })
 
   it('getAutomatedBoard breaks an exact score tie by lower mean compute, with null compute last', async () => {
-    const iteration = await storage.createIteration({ env_id: ENV, deps_version: 1 })
+    const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
     const oneGame: ScheduledGameInput[] = [
       { match_index: 0, game_index: 0, seed: 1, slots: [{ kind: 'builtin-naive' }] },
     ]
-    const run = await storage.createRunWithSchedule(iteration.id, 'dev-user', [], oneGame)
+    const run = await storage.createRunWithSchedule(season.id, 'dev-user', [], oneGame)
     const game = firstOf(await storage.listRunGames(run.id))
     // Submission ids are chosen so the stable agent-key tiebreak would order them slow-before-fast;
     // proving the compute tiebreak (not the key) decides when scores are exactly equal.
@@ -570,16 +570,16 @@ describe('leaderboard storage on :memory:', () => {
     }
     await storage.setRunStatus(run.id, 'completed')
 
-    const board = await storage.getAutomatedBoard(iteration.id)
+    const board = await storage.getAutomatedBoard(season.id)
     expect(board.map((row) => row.agent)).toEqual([fast, slow, NAIVE])
   })
 
   it('persistPlacementsForCompletedRun snapshots ranked placements and a re-run rewrites them', async () => {
-    const iteration = await storage.createIteration({ env_id: ENV, deps_version: 1 })
+    const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
     const s1: AgentRef = { kind: 'submission', submission_id: 's1', user_id: 'alice' }
     const oneGame: ScheduledGameInput[] = [{ match_index: 0, game_index: 0, seed: 1, slots: [s1] }]
 
-    const run1 = await storage.createRunWithSchedule(iteration.id, 'dev-user', [s1], oneGame)
+    const run1 = await storage.createRunWithSchedule(season.id, 'dev-user', [s1], oneGame)
     const game1 = firstOf(await storage.listRunGames(run1.id))
     await storage.recordGameResult({
       game_id: game1.id,
@@ -614,7 +614,7 @@ describe('leaderboard storage on :memory:', () => {
     })
 
     // A re-run with the baseline ahead rewrites the snapshot to the new run, leaving no stale rows.
-    const run2 = await storage.createRunWithSchedule(iteration.id, 'dev-user', [s1], oneGame)
+    const run2 = await storage.createRunWithSchedule(season.id, 'dev-user', [s1], oneGame)
     const game2 = firstOf(await storage.listRunGames(run2.id))
     await storage.recordGameResult({
       game_id: game2.id,
@@ -648,10 +648,10 @@ describe('leaderboard storage on :memory:', () => {
   })
 
   it('reconcileCompletedRunPlacements backfills a completed run missing its snapshot', async () => {
-    const iteration = await storage.createIteration({ env_id: ENV, deps_version: 1 })
+    const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
     const s1: AgentRef = { kind: 'submission', submission_id: 's1', user_id: 'alice' }
     const run = await storage.createRunWithSchedule(
-      iteration.id,
+      season.id,
       'dev-user',
       [s1],
       [{ match_index: 0, game_index: 0, seed: 1, slots: [s1] }],
@@ -679,25 +679,25 @@ describe('leaderboard storage on :memory:', () => {
   })
 
   it('getAutomatedBoard is empty until a run completes', async () => {
-    const iteration = await storage.createIteration({ env_id: ENV, deps_version: 1 })
-    await storage.createRunWithSchedule(iteration.id, 'dev-user', [], ONE_GAME)
-    expect(await storage.getAutomatedBoard(iteration.id)).toEqual([])
+    const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
+    await storage.createRunWithSchedule(season.id, 'dev-user', [], ONE_GAME)
+    expect(await storage.getAutomatedBoard(season.id)).toEqual([])
   })
 
   it('a malformed forced config edit throws and deletes nothing (validate before mutate)', async () => {
-    const iteration = await storage.createIteration({ env_id: ENV, deps_version: 1 })
-    await storage.updateIterationConfig(iteration.id, configWithMatch())
-    await storage.createRunWithSchedule(iteration.id, 'dev-user', [], ONE_GAME)
-    await storage.createSubmission(submissionInput({ iteration_id: iteration.id }))
+    const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
+    await storage.updateSeasonConfig(season.id, configWithMatch())
+    await storage.createRunWithSchedule(season.id, 'dev-user', [], ONE_GAME)
+    await storage.createSubmission(submissionInput({ season_id: season.id }))
 
     // A bad config (negative deps_version) fails the codec; even with force the runs/submissions the
     // forced path would otherwise clear must survive, because validation precedes any deletion.
-    const malformed = { deps_version: -1, matches: [] } as unknown as IterationConfig
+    const malformed = { deps_version: -1, matches: [] } as unknown as SeasonConfig
     await expect(
-      storage.updateIterationConfig(iteration.id, malformed, { force: true }),
+      storage.updateSeasonConfig(season.id, malformed, { force: true }),
     ).rejects.toThrow()
 
-    expect(await storage.getLatestRun(iteration.id)).toBeDefined()
-    expect(await storage.findActiveSubmission(iteration.id, 'alice')).toBeDefined()
+    expect(await storage.getLatestRun(season.id)).toBeDefined()
+    expect(await storage.findActiveSubmission(season.id, 'alice')).toBeDefined()
   })
 })

@@ -66,7 +66,7 @@ const START_SESSION_SCHEMA = {
       seed: { type: 'integer', minimum: 0 },
       human_slot_timeout_ms: { type: 'integer', minimum: 0 },
       // When present, run this submitted agent in the slot (a watch run); the orchestrator validates
-      // it is `ready` and active for the play-open iteration. Identity still rides the header.
+      // it is `ready` and active for the play-open season. Identity still rides the header.
       submission_id: { type: 'string', minLength: 1 },
     },
   },
@@ -263,7 +263,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     },
   )
 
-  // Submit: resolve the open iteration, create the pending row under the resolved identity, enqueue
+  // Submit: resolve the open season, create the pending row under the resolved identity, enqueue
   // the validate-and-build job, and return 202 — the pipeline never runs inline. The submitter is
   // never read from the client. Resubmission supersedes the prior active row inside createSubmission.
   app.post<{ Body: SubmitBody }>(
@@ -281,15 +281,15 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
           .code(403)
           .send({ error: 'local submissions are disabled', code: 'local_disabled' })
       }
-      const iteration = await deps.storage.getOpenSubmissionIteration(request.body.env_id)
-      if (iteration === undefined) {
+      const season = await deps.storage.getOpenSubmissionSeason(request.body.env_id)
+      if (season === undefined) {
         return reply
           .code(409)
-          .send({ error: 'submissions are closed for this environment', code: 'no_open_iteration' })
+          .send({ error: 'submissions are closed for this environment', code: 'no_open_season' })
       }
       try {
         const submission = await deps.storage.createSubmission({
-          iteration_id: iteration.id,
+          season_id: season.id,
           env_id: request.body.env_id,
           user_id: resolveUserId(request.headers),
           source_kind: input.kind,
@@ -327,24 +327,24 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     return { ...submission, checks }
   })
 
-  // Active submissions for an environment's play-open iteration, optionally narrowed by status. The
+  // Active submissions for an environment's play-open season, optionally narrowed by status. The
   // submission window may point at a different round, so it must not drive public watch choices.
   app.get<{ Params: { envId: string }; Querystring: { status?: string } }>(
     '/api/environments/:envId/submissions',
     async (request) => {
-      const iteration = await deps.storage.getPublicPlayIteration(request.params.envId)
-      if (iteration === undefined) {
+      const season = await deps.storage.getPublicPlaySeason(request.params.envId)
+      if (season === undefined) {
         return []
       }
-      return deps.storage.listActiveSubmissionsByIteration(
-        iteration.id,
+      return deps.storage.listActiveSubmissionsBySeason(
+        season.id,
         request.query.status as SubmissionStatus | undefined,
       )
     },
   )
 
   // The agent profile (step 6): one owner's submission history for an environment, with every commit they
-  // submitted across iterations (including superseded rows), each joined with its per-stage validation
+  // submitted across seasons (including superseded rows), each joined with its per-stage validation
   // log and its recent watch/replay recording ids. Keyed by environment id and owner id so a future
   // Hearts agent stays separate from the same user's Flappy Bird agent. Open (read-only); owner-only
   // affordances (the Stage 9 debug view) gate on the client comparing this owner_id to its identity.
@@ -353,8 +353,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     async (request) => {
       const [submissions, submissionTarget, playTarget] = await Promise.all([
         deps.storage.listSubmissionsByUser(request.params.ownerId, request.params.envId),
-        deps.storage.getOpenSubmissionIteration(request.params.envId),
-        deps.storage.getPublicPlayIteration(request.params.envId),
+        deps.storage.getOpenSubmissionSeason(request.params.envId),
+        deps.storage.getPublicPlaySeason(request.params.envId),
       ])
       const detailed = await Promise.all(
         submissions.map(async (submission) => ({
@@ -369,8 +369,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       return {
         env_id: request.params.envId,
         owner_id: request.params.ownerId,
-        submission_iteration_id: submissionTarget?.id ?? null,
-        play_iteration_id: playTarget?.id ?? null,
+        submission_season_id: submissionTarget?.id ?? null,
+        play_season_id: playTarget?.id ?? null,
         submissions: detailed,
       }
     },
@@ -387,7 +387,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     operatorAllowlist: deps.operatorAllowlist,
   })
   registerLeaderboardRoutes(app, { storage: deps.storage })
-  // Participant ratings and the author's per-iteration rating prompt are attributed to the resolved
+  // Participant ratings and the author's per-season rating prompt are attributed to the resolved
   // identity. Rating writes also use the public-session allowlist.
   registerRatingRoutes(app, {
     storage: deps.storage,

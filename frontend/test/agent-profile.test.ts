@@ -14,8 +14,11 @@ vi.mock('../src/api/client.js', () => ({
     placements: [],
   })),
   // The owner-only author-prompt editor self-fetches on mount; default it to an unset prompt.
-  getAuthorPrompt: vi.fn(async () => ({ iteration_id: 'flappy_bird-iter-1', prompt: null })),
+  getAuthorPrompt: vi.fn(async () => ({ season_id: 'flappy_bird-iter-1', prompt: null })),
   setAuthorPrompt: vi.fn(async () => ({ ok: true, prompt: null })),
+  // The owner-only submit form (shown when a season is accepting submissions) probes capabilities on
+  // mount; default the dev local-folder gate off. The submit/verify calls only fire on interaction.
+  getSubmissionCapabilities: vi.fn(async () => ({ local_submissions: false })),
 }))
 
 import type { AutomatedPlacement } from '../src/api/client.js'
@@ -35,7 +38,7 @@ function check(
 function submission(overrides: Partial<AgentProfileSubmission> = {}): AgentProfileSubmission {
   return {
     id: 'sub1',
-    iteration_id: 'flappy_bird-iter-1',
+    season_id: 'flappy_bird-iter-1',
     env_id: 'flappy_bird',
     user_id: 'eve',
     source_kind: 'git',
@@ -53,13 +56,13 @@ function submission(overrides: Partial<AgentProfileSubmission> = {}): AgentProfi
   }
 }
 
-type ProfileFixture = Omit<AgentProfile, 'submission_iteration_id' | 'play_iteration_id'> &
-  Partial<Pick<AgentProfile, 'submission_iteration_id' | 'play_iteration_id'>>
+type ProfileFixture = Omit<AgentProfile, 'submission_season_id' | 'play_season_id'> &
+  Partial<Pick<AgentProfile, 'submission_season_id' | 'play_season_id'>>
 
 async function renderProfile(profile: ProfileFixture) {
   vi.mocked(getAgentProfile).mockResolvedValue({
-    submission_iteration_id: null,
-    play_iteration_id: null,
+    submission_season_id: null,
+    play_season_id: null,
     ...profile,
   })
   const router = memoryRouter([
@@ -67,7 +70,7 @@ async function renderProfile(profile: ProfileFixture) {
     { path: '/', component: { template: '<div />' } },
     { path: '/environments/:envId', component: { template: '<div />' } },
     { path: '/environments/:envId/agents/:ownerId', component: AgentProfilePage },
-    { path: '/environments/:envId/leaderboards/:iterationId?', component: { template: '<div />' } },
+    { path: '/environments/:envId/leaderboards/:seasonId?', component: { template: '<div />' } },
     { path: '/replays/:id', component: ReplayStub },
   ])
   router.push('/environments/flappy_bird/agents/eve')
@@ -154,10 +157,10 @@ describe('AgentProfilePage', () => {
     expect(screen.getByText(/No released placements/)).toBeInTheDocument()
   })
 
-  it('shows real placements linking to the iteration leaderboards (replacing the placeholder)', async () => {
+  it('shows real placements linking to the season leaderboards (replacing the placeholder)', async () => {
     const placement: AutomatedPlacement = {
       id: 'p1',
-      iteration_id: 'iter-released',
+      season_id: 'iter-released',
       env_id: 'flappy_bird',
       run_id: 'run-1',
       rank: 2,
@@ -198,13 +201,13 @@ describe('AgentProfilePage', () => {
     await renderProfile({
       env_id: 'flappy_bird',
       owner_id: 'eve',
-      submission_iteration_id: 'iter-next',
-      play_iteration_id: 'iter-play',
+      submission_season_id: 'iter-next',
+      play_season_id: 'iter-play',
       submissions: [
-        submission({ id: 'next', iteration_id: 'iter-next' }),
+        submission({ id: 'next', season_id: 'iter-next' }),
         submission({
           id: 'play',
-          iteration_id: 'iter-play',
+          season_id: 'iter-play',
           created_at: '2026-06-13T00:00:00Z',
         }),
       ],

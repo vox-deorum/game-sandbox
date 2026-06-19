@@ -64,7 +64,7 @@ Your code reads `OPENAI_BASE_URL` and `OPENAI_API_KEY`. Server-side the harness 
 
 ## Submitting
 
-Push your repository to GitHub and submit its link through the course website, pinned to a commit. Submitting again while an iteration is open replaces your previous submission.
+Push your repository to GitHub and submit its link through the course website, pinned to a commit. Submitting again while a season is open replaces your previous submission.
 
 ## Updating dependencies
 

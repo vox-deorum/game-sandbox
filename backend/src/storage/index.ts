@@ -14,13 +14,13 @@ import type {
   CheckStatus,
   GameResult,
   GameStatus,
-  Iteration,
-  IterationRun,
-  IterationRunGame,
   Rating,
   Recording,
   ReleaseStatus,
   RunStatus,
+  Season,
+  SeasonRun,
+  SeasonRunGame,
   Session,
   SessionMode,
   SessionSubmission,
@@ -41,14 +41,14 @@ export type {
   CheckStatus,
   GameResult,
   GameStatus,
-  Iteration,
-  IterationRun,
-  IterationRunGame,
-  IterationStatus,
   Rating,
   Recording,
   ReleaseStatus,
   RunStatus,
+  Season,
+  SeasonRun,
+  SeasonRunGame,
+  SeasonStatus,
   Session,
   SessionMode,
   SessionStatus,
@@ -62,23 +62,23 @@ export type {
   WindowStatus,
 } from './schema.js'
 
-import type { IterationConfig } from './iteration-config.js'
+import type { SeasonConfig } from './season-config.js'
 
 export type {
-  IterationConfig,
   MatchConfig,
   Overrides,
+  SeasonConfig,
   SlotSpec,
-} from './iteration-config.js'
+} from './season-config.js'
 
 export {
-  decodeIterationConfig,
-  emptyIterationConfig,
-  encodeIterationConfig,
-  IterationConfigError,
-  IterationConfigSchema,
-  parseIterationConfig,
-} from './iteration-config.js'
+  decodeSeasonConfig,
+  emptySeasonConfig,
+  encodeSeasonConfig,
+  parseSeasonConfig,
+  SeasonConfigError,
+  SeasonConfigSchema,
+} from './season-config.js'
 
 /** The fields the orchestrator provides when starting a session. */
 export interface NewSessionInput {
@@ -88,10 +88,10 @@ export interface NewSessionInput {
   mode: SessionMode
   recording_id: string | null
   /**
-   * The iteration this session competes in, or null when it has no competition boundary (the key
+   * The season this session competes in, or null when it has no competition boundary (the key
    * ratings later attach to). Defaults to null when omitted, preserving the Stage 5 callers.
    */
-  iteration_id?: string | null
+  season_id?: string | null
   created_at: string
 }
 
@@ -107,10 +107,10 @@ export interface NewRecordingInput {
  * The domain-shaped fields the submission route provides when creating a pending submission. The
  * row is always inserted as `pending`; `commit_sha` may still be null (it is filled by source
  * resolution for git, and stays null for local). The `created_at` doubles as the supersede stamp
- * written onto any prior active submission by the same user in the same iteration.
+ * written onto any prior active submission by the same user in the same season.
  */
 export interface NewSubmissionInput {
-  iteration_id: string
+  season_id: string
   env_id: string
   user_id: string
   source_kind: SubmissionSourceKind
@@ -123,7 +123,7 @@ export interface NewSubmissionInput {
 
 /**
  * Raised by {@link Storage.createSubmission} when two submits for the same participant and
- * iteration race and the partial unique index rejects the second transaction. The route turns
+ * season race and the partial unique index rejects the second transaction. The route turns
  * this into a retryable 409 rather than a 500.
  */
 export class SubmissionConflictError extends Error {
@@ -142,8 +142,8 @@ export type SubmissionFailureStatus = Exclude<SubmissionStatus, 'pending' | 'rea
 /** Any terminal submission status the validation/build worker can write. */
 export type SubmissionTerminalStatus = Exclude<SubmissionStatus, 'pending'>
 
-/** The fields the admin "declare iteration" action provides. Config (incl. deps) defaults internally. */
-export interface CreateIterationInput {
+/** The fields the admin "declare season" action provides. Config (incl. deps) defaults internally. */
+export interface CreateSeasonInput {
   env_id: string
   /** The pinned dependency-set version, defaulting to the current release at declaration. */
   deps_version: number
@@ -152,24 +152,24 @@ export interface CreateIterationInput {
 }
 
 /**
- * The outcome of {@link Storage.updateIterationConfig}. An unforced edit against existing runs is
- * refused with `iteration_has_runs`; an unforced `deps_version` change against existing submissions is
- * refused with `iteration_has_submissions`. A forced edit clears the blocking rows first (step 3
+ * The outcome of {@link Storage.updateSeasonConfig}. An unforced edit against existing runs is
+ * refused with `season_has_runs`; an unforced `deps_version` change against existing submissions is
+ * refused with `season_has_submissions`. A forced edit clears the blocking rows first (step 3
  * surfaces this as a UI confirmation).
  */
-export type UpdateIterationConfigResult =
-  | { ok: true; iteration: Iteration }
-  | { ok: false; conflict: 'iteration_has_runs' | 'iteration_has_submissions' }
+export type UpdateSeasonConfigResult =
+  | { ok: true; season: Season }
+  | { ok: false; conflict: 'season_has_runs' | 'season_has_submissions' }
 
 /** The outcome of opening the submission window: a typed conflict when the one-open invariant blocks it. */
 export type SetSubmissionStatusResult =
-  | { ok: true; iteration: Iteration }
-  | { ok: false; conflict: 'open_iteration_exists' }
+  | { ok: true; season: Season }
+  | { ok: false; conflict: 'open_season_exists' }
 
 /** The outcome of opening the public-play window: a typed conflict when one is already play-open. */
 export type SetPlayStatusResult =
-  | { ok: true; iteration: Iteration }
-  | { ok: false; conflict: 'open_play_iteration_exists' }
+  | { ok: true; season: Season }
+  | { ok: false; conflict: 'open_play_season_exists' }
 
 /** One concrete scheduled game the pure scheduler produced, persisted by `createRunWithSchedule`. */
 export interface ScheduledGameInput {
@@ -192,7 +192,7 @@ export interface RecordGameResultInput {
   failure_reason?: string | null
 }
 
-/** One placement row for `replaceAutomatedPlacements`; the iteration/env/run are passed alongside. */
+/** One placement row for `replaceAutomatedPlacements`; the season/env/run are passed alongside. */
 export interface PlacementInput {
   rank: number
   agent: AgentRef
@@ -205,7 +205,7 @@ export interface PlacementInput {
 
 /** A rating to insert or overwrite. The own-agent rule is enforced before any write. */
 export interface UpsertRatingInput {
-  iteration_id: string
+  season_id: string
   env_id: string
   rater_user_id: string
   agent: AgentRef
@@ -288,100 +288,100 @@ export interface Storage {
   deleteRecording(id: string): Promise<void>
 
   /**
-   * The environment's submission-`open` iteration, the identity boundary every submission needs (the
-   * Stage 5 `getOpenIteration`, renamed now that "open" is ambiguous across the submission and play
+   * The environment's submission-`open` season, the identity boundary every submission needs (the
+   * Stage 5 `getOpenSeason`, renamed now that "open" is ambiguous across the submission and play
    * windows).
    */
-  getOpenSubmissionIteration(envId: string): Promise<Iteration | undefined>
+  getOpenSubmissionSeason(envId: string): Promise<Season | undefined>
   /**
-   * One iteration by id, regardless of its gates. The validation worker reads the pinned
-   * `deps_version` (now inside `config`) of the iteration a submission belongs to.
+   * One season by id, regardless of its gates. The validation worker reads the pinned
+   * `deps_version` (now inside `config`) of the season a submission belongs to.
    */
-  getIteration(id: string): Promise<Iteration | undefined>
+  getSeason(id: string): Promise<Season | undefined>
   /**
-   * The seed primitive: ensure a submission-`open` iteration exists for the environment at
+   * The seed primitive: ensure a submission-`open` season exists for the environment at
    * `depsVersion` and return it, writing a default config that carries the version and an empty match
-   * design. Idempotent; an environment already carrying a submission-open iteration is left untouched.
+   * design. Idempotent; an environment already carrying a submission-open season is left untouched.
    * The seed row is play-`open` for local continuity.
    */
-  ensureOpenIteration(envId: string, depsVersion: number): Promise<Iteration>
-  /** The environment's play-`open` iteration: the default public watch/play target, if any. */
-  getPublicPlayIteration(envId: string): Promise<Iteration | undefined>
+  ensureOpenSeason(envId: string, depsVersion: number): Promise<Season>
+  /** The environment's play-`open` season: the default public watch/play target, if any. */
+  getPublicPlaySeason(envId: string): Promise<Season | undefined>
   /**
-   * Declare a new iteration: `unreleased`, submission-`closed`, play-`closed`, with a default config
+   * Declare a new season: `unreleased`, submission-`closed`, play-`closed`, with a default config
    * (including the given `deps_version`) and an empty match design.
    */
-  createIteration(input: CreateIterationInput): Promise<Iteration>
+  createSeason(input: CreateSeasonInput): Promise<Season>
   /**
-   * Replace the whole {@link IterationConfig} (including `deps_version`). With no runs and no
+   * Replace the whole {@link SeasonConfig} (including `deps_version`). With no runs and no
    * `deps_version` change it just writes; otherwise it needs `force`, which first deletes the
-   * iteration's runs, and — when `deps_version` changed and submissions exist — its submissions.
+   * season's runs, and — when `deps_version` changed and submissions exist — its submissions.
    * Returns a typed conflict when a write is refused for want of `force`.
    */
-  updateIterationConfig(
+  updateSeasonConfig(
     id: string,
-    config: IterationConfig,
+    config: SeasonConfig,
     options?: { force?: boolean },
-  ): Promise<UpdateIterationConfigResult>
+  ): Promise<UpdateSeasonConfigResult>
   /**
-   * Open or close the submission window. Opening returns `open_iteration_exists` when another iteration
+   * Open or close the submission window. Opening returns `open_season_exists` when another season
    * for the same environment already accepts submissions (the one-open invariant).
    */
   setSubmissionStatus(id: string, status: WindowStatus): Promise<SetSubmissionStatusResult>
   /**
-   * Open or close the public-play window. Opening returns `open_play_iteration_exists` when another
-   * iteration for the same environment is already play-open, regardless of release status.
+   * Open or close the public-play window. Opening returns `open_play_season_exists` when another
+   * season for the same environment is already play-open, regardless of release status.
    */
   setPlayStatus(id: string, status: WindowStatus): Promise<SetPlayStatusResult>
   /** Set the release status, stamping `released_at` on the first release and leaving it stable after. */
-  setReleaseStatus(id: string, status: ReleaseStatus): Promise<Iteration>
+  setReleaseStatus(id: string, status: ReleaseStatus): Promise<Season>
   /**
-   * An environment's iterations, newest first. Public reads pass `includeUnreleased: false` to hide
+   * An environment's seasons, newest first. Public reads pass `includeUnreleased: false` to hide
    * unreleased boards/history; admin reads pass `true`.
    */
-  listIterations(envId: string, options?: { includeUnreleased?: boolean }): Promise<Iteration[]>
-  /** The latest `released` iteration for an environment, ordered by `released_at`. */
-  getReleasedIteration(envId: string): Promise<Iteration | undefined>
-  /** Attribute an existing session to an iteration (the alternative to passing it at create time). */
-  setSessionIteration(sessionId: string, iterationId: string): Promise<void>
+  listSeasons(envId: string, options?: { includeUnreleased?: boolean }): Promise<Season[]>
+  /** The latest `released` season for an environment, ordered by `released_at`. */
+  getReleasedSeason(envId: string): Promise<Season | undefined>
+  /** Attribute an existing session to a season (the alternative to passing it at create time). */
+  setSessionSeason(sessionId: string, seasonId: string): Promise<void>
 
-  /** The operator's iteration-wide rating prompt; editable anytime, never gated by the config rules. */
-  setIterationRatingPrompt(iterationId: string, prompt: string | null): Promise<void>
+  /** The operator's season-wide rating prompt; editable anytime, never gated by the config rules. */
+  setSeasonRatingPrompt(seasonId: string, prompt: string | null): Promise<void>
 
   /**
-   * Snapshot the iteration's config (incl. deps) and the eligible submitted-agent roster into a new
+   * Snapshot the season's config (incl. deps) and the eligible submitted-agent roster into a new
    * run row, and persist the concrete scheduled games, all in one transaction. The run starts
-   * `pending`; the runner reads the persisted games, not the mutable iteration/submission rows.
+   * `pending`; the runner reads the persisted games, not the mutable season/submission rows.
    */
   createRunWithSchedule(
-    iterationId: string,
+    seasonId: string,
     requestedBy: string,
     submissionSnapshot: AgentRef[],
     scheduledGames: ScheduledGameInput[],
-  ): Promise<IterationRun>
-  /** Delete an iteration's runs, their games, results, and placements (the forced config-edit path). */
-  deleteRunsForIteration(iterationId: string): Promise<void>
-  /** Delete an iteration's submissions (the forced `deps_version`-change path). */
-  deleteSubmissionsForIteration(iterationId: string): Promise<void>
+  ): Promise<SeasonRun>
+  /** Delete a season's runs, their games, results, and placements (the forced config-edit path). */
+  deleteRunsForSeason(seasonId: string): Promise<void>
+  /** Delete a season's submissions (the forced `deps_version`-change path). */
+  deleteSubmissionsForSeason(seasonId: string): Promise<void>
   /** Advance a run's status, stamping `ended_at` on a terminal status and recording an optional error. */
   setRunStatus(id: string, status: RunStatus, error?: string): Promise<void>
   /** One run by id, any status; the admin status and log-stream routes resolve a run by its id. */
-  getRun(id: string): Promise<IterationRun | undefined>
+  getRun(id: string): Promise<SeasonRun | undefined>
   /**
    * Every run in a given status, oldest first. The startup reconcile uses it to find runs a prior
    * process death left non-terminal (`running`/`pending`) and fail them, since a partial workflow run
    * is never silently resumed.
    */
-  listRunsByStatus(status: RunStatus): Promise<IterationRun[]>
-  /** The most recent run for an iteration, any status. */
-  getLatestRun(iterationId: string): Promise<IterationRun | undefined>
+  listRunsByStatus(status: RunStatus): Promise<SeasonRun[]>
+  /** The most recent run for a season, any status. */
+  getLatestRun(seasonId: string): Promise<SeasonRun | undefined>
   /**
-   * The most recent `completed` run for an iteration; what the board reads, so a later running/failed
+   * The most recent `completed` run for a season; what the board reads, so a later running/failed
    * re-run does not blank a good board.
    */
-  getLatestCompletedRun(iterationId: string): Promise<IterationRun | undefined>
+  getLatestCompletedRun(seasonId: string): Promise<SeasonRun | undefined>
   /** A run's scheduled games, ordered by `game_index`. */
-  listRunGames(runId: string): Promise<IterationRunGame[]>
+  listRunGames(runId: string): Promise<SeasonRunGame[]>
   /** Advance a scheduled game's status, stamping `started_at`/`ended_at` and recording an optional error. */
   setRunGameStatus(id: string, status: GameStatus, error?: string): Promise<void>
   /** Link a scheduled game to its Stage 4 recording so the board row can deep-link a replay. */
@@ -391,46 +391,46 @@ export interface Storage {
   /** Every game result for a run (joined through its games), for the board aggregation. */
   listGameResultsByRun(runId: string): Promise<GameResult[]>
 
-  /** Rewrite an iteration's placement rows for a newly completed run (supersedes the prior set). */
+  /** Rewrite a season's placement rows for a newly completed run (supersedes the prior set). */
   replaceAutomatedPlacements(
-    iterationId: string,
+    seasonId: string,
     envId: string,
     runId: string,
     rows: PlacementInput[],
   ): Promise<void>
-  /** An agent's placements across iterations, optionally narrowed to one environment (agent profile). */
+  /** An agent's placements across seasons, optionally narrowed to one environment (agent profile). */
   listPlacementsByAgent(agent: AgentRef, envId?: string): Promise<AutomatedPlacement[]>
-  /** The automated board: per-agent aggregates over the iteration's latest completed run. */
-  getAutomatedBoard(iterationId: string): Promise<AutomatedBoardRow[]>
+  /** The automated board: per-agent aggregates over the season's latest completed run. */
+  getAutomatedBoard(seasonId: string): Promise<AutomatedBoardRow[]>
 
   /**
-   * Insert or overwrite a 1-5 rating, keyed by `(iteration, rater, agent)`. Rejects a rating of the
+   * Insert or overwrite a 1-5 rating, keyed by `(season, rater, agent)`. Rejects a rating of the
    * user's own submitted agent (`own_agent`) and an out-of-range score (`invalid_score`) before any
    * write; the Naive baseline is rateable.
    */
   upsertRating(input: UpsertRatingInput): Promise<UpsertRatingResult>
-  /** One user's effective rating of an agent in an iteration, if any. */
-  getRating(iterationId: string, raterUserId: string, agent: AgentRef): Promise<Rating | undefined>
-  /** Every rating in an iteration. */
-  listRatingsByIteration(iterationId: string): Promise<Rating[]>
-  /** Mean score and count per agent for an iteration's human board. */
-  aggregateRatingsByAgent(iterationId: string): Promise<RatingAggregate[]>
+  /** One user's effective rating of an agent in a season, if any. */
+  getRating(seasonId: string, raterUserId: string, agent: AgentRef): Promise<Rating | undefined>
+  /** Every rating in a season. */
+  listRatingsBySeason(seasonId: string): Promise<Rating[]>
+  /** Mean score and count per agent for a season's human board. */
+  aggregateRatingsByAgent(seasonId: string): Promise<RatingAggregate[]>
   /**
    * The human-feedback board: the per-agent aggregates with the ranking rule applied. Agents with at
    * least three ratings are ranked (1-based, by mean then count); agents with one or two ratings follow
    * unranked (`rank: null`), so accumulating feedback is visible without assigning a rank.
    */
-  getHumanBoard(iterationId: string): Promise<HumanBoardRow[]>
+  getHumanBoard(seasonId: string): Promise<HumanBoardRow[]>
 
-  /** Insert or overwrite the agent author's per-iteration rating prompt, keyed by `(iteration, user)`. */
-  upsertAgentRatingPrompt(iterationId: string, userId: string, prompt: string): Promise<void>
-  /** The agent author's prompt for an iteration, if any. */
-  getAgentRatingPrompt(iterationId: string, userId: string): Promise<AgentRatingPrompt | undefined>
-  /** Every agent-author prompt in an iteration (one per author), for the rating read. */
-  listAgentRatingPromptsByIteration(iterationId: string): Promise<AgentRatingPrompt[]>
+  /** Insert or overwrite the agent author's per-season rating prompt, keyed by `(season, user)`. */
+  upsertAgentRatingPrompt(seasonId: string, userId: string, prompt: string): Promise<void>
+  /** The agent author's prompt for a season, if any. */
+  getAgentRatingPrompt(seasonId: string, userId: string): Promise<AgentRatingPrompt | undefined>
+  /** Every agent-author prompt in a season (one per author), for the rating read. */
+  listAgentRatingPromptsBySeason(seasonId: string): Promise<AgentRatingPrompt[]>
 
   /**
-   * The recording ids referenced by the latest completed run of every viewable iteration (released,
+   * The recording ids referenced by the latest completed run of every viewable season (released,
    * or unreleased-but-operator-worked), so the Stage 4 retention sweep can exempt them from the
    * age/quota passes. Superseded-run recordings fall outside the set and can be reclaimed.
    */
@@ -438,7 +438,7 @@ export interface Storage {
 
   /**
    * Create a submission as `pending`, superseding any active submission by the same user in the
-   * same iteration first; the supersede-then-insert runs in one transaction so a concurrent
+   * same season first; the supersede-then-insert runs in one transaction so a concurrent
    * resubmit cannot leave two active rows or none. Throws {@link SubmissionConflictError} if the
    * partial unique index rejects a racing insert. Returns the stored row.
    */
@@ -472,21 +472,18 @@ export interface Storage {
 
   /** One submission by id. */
   getSubmission(id: string): Promise<Submission | undefined>
-  /** The user's active (`superseded_at IS NULL`) submission in an iteration, regardless of status. */
-  findActiveSubmission(iterationId: string, userId: string): Promise<Submission | undefined>
+  /** The user's active (`superseded_at IS NULL`) submission in a season, regardless of status. */
+  findActiveSubmission(seasonId: string, userId: string): Promise<Submission | undefined>
   /** Active pending submissions, newest first, for the validation worker's startup re-enqueue. */
   listPendingSubmissions(): Promise<Submission[]>
   /** A user's submissions (including superseded history), newest first, optionally one environment. */
   listSubmissionsByUser(userId: string, envId?: string): Promise<Submission[]>
-  /** Active (`superseded_at IS NULL`) submissions in an iteration, optionally narrowed by status. */
-  listActiveSubmissionsByIteration(
-    iterationId: string,
-    status?: SubmissionStatus,
-  ): Promise<Submission[]>
+  /** Active (`superseded_at IS NULL`) submissions in a season, optionally narrowed by status. */
+  listActiveSubmissionsBySeason(seasonId: string, status?: SubmissionStatus): Promise<Submission[]>
   /** A submission's per-stage validation log, ordered by pipeline-stage sequence. */
   listSubmissionChecks(submissionId: string): Promise<SubmissionCheck[]>
   /**
-   * Every active (`superseded_at IS NULL`) `ready` submission id across all iterations and
+   * Every active (`superseded_at IS NULL`) `ready` submission id across all seasons and
    * environments, the exempt set the overlay-image eviction sweep (step 4) keeps.
    */
   listActiveReadySubmissionIds(): Promise<string[]>

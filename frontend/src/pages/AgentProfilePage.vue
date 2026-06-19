@@ -1,9 +1,9 @@
 <!--
   The agent profile page (Stage 5.6): one page per submitted agent, keyed by environment id and owner
-  id (the one-active-submission-per-user-per-iteration boundary, which keeps a future Hearts agent
+  id (the one-active-submission-per-user-per-season boundary, which keeps a future Hearts agent
   separate from the same user's Flappy Bird agent). It shows, from the single profile read:
 
-  - Submission history across iterations, including superseded rows, so the owner sees every commit
+  - Submission history across seasons, including superseded rows, so the owner sees every commit
     they submitted, not just the active one.
   - Build / validation status: each submission's rollup plus its per-stage validation log, rendered
     with the shared stage timeline. A load_failed submission shows the failed stage and its captured
@@ -26,6 +26,7 @@ import {
 } from '../api/client.js'
 import AuthorPromptEditor from '../components/AuthorPromptEditor.vue'
 import SubmissionStageTimeline from '../components/SubmissionStageTimeline.vue'
+import SubmitAgentForm from '../components/SubmitAgentForm.vue'
 import UiBadge from '../components/ui/UiBadge.vue'
 import UiCard from '../components/ui/UiCard.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
@@ -82,7 +83,7 @@ const STATUS_TONE: Record<SubmissionStatus, 'neutral' | 'success' | 'danger' | '
 const isOwner = () => me.me?.user_id === ownerId
 
 /**
- * The active submission whose iteration the author-prompt editor targets. Public play takes
+ * The active submission whose season the author-prompt editor targets. Public play takes
  * precedence because that is the agent raters can currently encounter. When no round is play-open,
  * fall back to the submission-open round so an author can prepare its prompt before play begins.
  */
@@ -91,16 +92,16 @@ const promptSubmission = computed(() => {
   if (data === null) {
     return null
   }
-  for (const iterationId of [
-    data.play_iteration_id,
-    data.submission_iteration_id,
+  for (const seasonId of [
+    data.play_season_id,
+    data.submission_season_id,
   ]) {
-    if (iterationId === null) {
+    if (seasonId === null) {
       continue
     }
     const submission = data.submissions.find(
       (candidate) =>
-        candidate.iteration_id === iterationId && candidate.superseded_at === null,
+        candidate.season_id === seasonId && candidate.superseded_at === null,
     )
     if (submission !== undefined) {
       return submission
@@ -126,6 +127,12 @@ const promptSubmission = computed(() => {
       <h1>{{ ownerId }}</h1>
       <p class="agent-sub">Submitted agents for {{ envId }}.</p>
     </header>
+
+    <section v-if="isOwner()" class="agent-section">
+      <h2>Submit an agent</h2>
+      <SubmitAgentForm v-if="profile.submission_season_id !== null" :env-id="envId" />
+      <UiEmptyState v-else>Submissions are closed for this environment right now.</UiEmptyState>
+    </section>
 
     <section class="agent-section">
       <h2>Submission history</h2>
@@ -170,7 +177,7 @@ const promptSubmission = computed(() => {
 
     <AuthorPromptEditor
       v-if="isOwner() && promptSubmission !== null"
-      :iteration-id="promptSubmission.iteration_id"
+      :season-id="promptSubmission.season_id"
     />
 
     <section class="agent-section">
@@ -185,7 +192,7 @@ const promptSubmission = computed(() => {
             <th scope="col" class="num">Rank</th>
             <th scope="col" class="num">Mean score</th>
             <th scope="col" class="num">Agent compute</th>
-            <th scope="col">Iteration</th>
+            <th scope="col">Season</th>
           </tr>
         </thead>
         <tbody>
@@ -196,7 +203,7 @@ const promptSubmission = computed(() => {
             <td>
               <RouterLink
                 class="placement-link"
-                :to="`/environments/${envId}/leaderboards/${placement.iteration_id}`"
+                :to="`/environments/${envId}/leaderboards/${placement.season_id}`"
               >
                 View leaderboards
               </RouterLink>

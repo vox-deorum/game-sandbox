@@ -215,12 +215,9 @@ describe('retention', () => {
       { match_index: 0, game_index: 0, seed: 1, slots: [{ kind: 'builtin-naive' }] },
     ]
 
-    /** Drive a completed run for an iteration whose single game points at a recording id. */
-    async function completedRunWithRecording(
-      iterationId: string,
-      recordingId: string,
-    ): Promise<void> {
-      const run = await storage.createRunWithSchedule(iterationId, 'op', [], NAIVE_GAME)
+    /** Drive a completed run for a season whose single game points at a recording id. */
+    async function completedRunWithRecording(seasonId: string, recordingId: string): Promise<void> {
+      const run = await storage.createRunWithSchedule(seasonId, 'op', [], NAIVE_GAME)
       const game = run && (await storage.listRunGames(run.id))[0]
       if (game === undefined) {
         throw new Error('expected a scheduled game')
@@ -230,7 +227,7 @@ describe('retention', () => {
     }
 
     it('exempts the current run, reclaims a superseded run, leaves live sessions on the window', async () => {
-      const iteration = await storage.createIteration({ env_id: 'flappy_bird', deps_version: 1 })
+      const season = await storage.createSeason({ env_id: 'flappy_bird', deps_version: 1 })
       // An earlier completed run (superseded) and the latest completed run, both old enough that the
       // window would evict their recordings if they were not leaderboard-protected.
       await writeRecording({
@@ -239,14 +236,14 @@ describe('retention', () => {
         env_id: 'flappy_bird',
         created_at: ago(90),
       })
-      await completedRunWithRecording(iteration.id, 'lb-superseded')
+      await completedRunWithRecording(season.id, 'lb-superseded')
       await writeRecording({
         id: 'lb-current',
         user_id: 'op',
         env_id: 'flappy_bird',
         created_at: ago(90),
       })
-      await completedRunWithRecording(iteration.id, 'lb-current')
+      await completedRunWithRecording(season.id, 'lb-current')
       // Live-session recordings: one past the window, one inside it.
       await writeRecording({
         id: 'live-old',
@@ -270,9 +267,9 @@ describe('retention', () => {
     })
 
     it('a protected leaderboard recording does not count toward the owner quota', async () => {
-      const iteration = await storage.createIteration({ env_id: 'flappy_bird', deps_version: 1 })
+      const season = await storage.createSeason({ env_id: 'flappy_bird', deps_version: 1 })
       await writeRecording({ id: 'lb', user_id: 'op', env_id: 'flappy_bird', created_at: ago(1) })
-      await completedRunWithRecording(iteration.id, 'lb')
+      await completedRunWithRecording(season.id, 'lb')
       await writeRecording({ id: 'live', user_id: 'op', env_id: 'flappy_bird', created_at: ago(1) })
 
       // Quota 1: if the protected recording counted, the owner would be over quota and the live

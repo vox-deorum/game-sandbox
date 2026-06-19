@@ -15,7 +15,7 @@ import {
   ScheduleError,
   type SubmissionRef,
 } from '../../src/scheduler/build-schedule.js'
-import type { MatchConfig } from '../../src/storage/iteration-config.js'
+import type { MatchConfig } from '../../src/storage/season-config.js'
 
 /** Build N submission refs with deterministic, sortable ids `s1..sN` (and matching user ids). */
 function subs(n: number): SubmissionRef[] {

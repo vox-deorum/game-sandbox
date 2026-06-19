@@ -53,11 +53,11 @@ class FakeSource implements SubmissionSource {
   }
 }
 
-/** Seed a `ready` Flappy Bird submission for `userId` on the env's open iteration. */
+/** Seed a `ready` Flappy Bird submission for `userId` on the env's open season. */
 async function seedReadySubmission(storage: Storage, userId = 'eve'): Promise<Submission> {
-  const iteration = await storage.ensureOpenIteration('flappy_bird', 1)
+  const season = await storage.ensureOpenSeason('flappy_bird', 1)
   const submission = await storage.createSubmission({
-    iteration_id: iteration.id,
+    season_id: season.id,
     env_id: 'flappy_bird',
     user_id: userId,
     source_kind: 'git',
@@ -284,7 +284,7 @@ describe('orchestrator', () => {
       // The session is recorded as scripted and tied to the submission for profile history.
       expect(await storage.getSession(result.id)).toMatchObject({
         mode: 'scripted',
-        iteration_id: submission.iteration_id,
+        season_id: submission.season_id,
       })
       // Replay history appears only after finalization registers the produced recording row.
       expect(await storage.listRecordingsBySubmission(submission.id, 10)).toEqual([])
@@ -329,9 +329,9 @@ describe('orchestrator', () => {
     it('refuses to run a non-ready submission with 409', async () => {
       const source = new FakeSource()
       const orch = makeOrchestrator(60_000, source)
-      const iteration = await storage.ensureOpenIteration('flappy_bird', 1)
+      const season = await storage.ensureOpenSeason('flappy_bird', 1)
       const submission = await storage.createSubmission({
-        iteration_id: iteration.id,
+        season_id: season.id,
         env_id: 'flappy_bird',
         user_id: 'eve',
         source_kind: 'git',
@@ -353,14 +353,14 @@ describe('orchestrator', () => {
       expect(driver.launches).toHaveLength(0)
     })
 
-    it('refuses a submission that is not active for the play-open iteration', async () => {
+    it('refuses a submission that is not active for the play-open season', async () => {
       const source = new FakeSource()
       const orch = makeOrchestrator(60_000, source)
       const submission = await seedReadySubmission(storage)
-      // Resubmitting supersedes the ready row, so it is no longer the active open-iteration submission.
-      const iteration = await storage.getPublicPlayIteration('flappy_bird')
+      // Resubmitting supersedes the ready row, so it is no longer the active open-season submission.
+      const season = await storage.getPublicPlaySeason('flappy_bird')
       await storage.createSubmission({
-        iteration_id: iteration?.id ?? '',
+        season_id: season?.id ?? '',
         env_id: 'flappy_bird',
         user_id: 'eve',
         source_kind: 'git',
@@ -380,20 +380,20 @@ describe('orchestrator', () => {
       ).rejects.toMatchObject({ status: 409, code: 'submission_not_active' })
     })
 
-    it('uses the play-open iteration when submissions are already open for the next round', async () => {
+    it('uses the play-open season when submissions are already open for the next round', async () => {
       const source = new FakeSource()
       const orch = makeOrchestrator(60_000, source)
       const submission = await seedReadySubmission(storage)
-      const playIteration = await storage.getIteration(submission.iteration_id)
-      if (playIteration === undefined) {
-        throw new Error('missing play iteration')
+      const playSeason = await storage.getSeason(submission.season_id)
+      if (playSeason === undefined) {
+        throw new Error('missing play season')
       }
-      await storage.setSubmissionStatus(playIteration.id, 'closed')
-      const nextIteration = await storage.createIteration({
+      await storage.setSubmissionStatus(playSeason.id, 'closed')
+      const nextSeason = await storage.createSeason({
         env_id: 'flappy_bird',
         deps_version: 1,
       })
-      await storage.setSubmissionStatus(nextIteration.id, 'open')
+      await storage.setSubmissionStatus(nextSeason.id, 'open')
 
       const overlayRef = `game-sandbox/submission-overlay:deps-v1-${submission.id}`
       driver.overlayImages.set(overlayRef, {
@@ -409,7 +409,7 @@ describe('orchestrator', () => {
         submissionId: submission.id,
       })
 
-      expect((await storage.getSession(result.id))?.iteration_id).toBe(playIteration.id)
+      expect((await storage.getSession(result.id))?.season_id).toBe(playSeason.id)
     })
 
     it('refuses a human-mode submission run as a malformed request', async () => {

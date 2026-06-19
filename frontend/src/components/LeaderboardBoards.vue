@@ -1,6 +1,6 @@
 <!--
   The two leaderboards side by side (Stage 6.7), per frontend.md. The same component renders the
-  current released iteration embedded on the environment page, a specific iteration on the Leaderboards
+  current released season embedded on the environment page, a specific season on the Leaderboards
   page, and the operator's verify-before-release view in the admin console — the data shape is identical,
   only the surrounding context differs.
 

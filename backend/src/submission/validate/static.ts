@@ -3,7 +3,7 @@
  * step 2) that runs **no participant code**. It mirrors the static half of the harness loader
  * (`load_manifest` in [manifest.py](../../../../harness/src/game_sandbox_harness/manifest.py)) plus
  * the checks this layer owns — entry-point-file existence, a known `template_version`, and matching
- * the open iteration's `deps_version` — and returns either a typed accept or one specific,
+ * the open season's `deps_version` — and returns either a typed accept or one specific,
  * owner-visible rejection reason.
  *
  * The function is the first manifest gate in the submission pipeline and the first demonstrable slice
@@ -62,7 +62,7 @@ export type StaticResult =
 
 /**
  * Run the static checks over the tree rooted at `treeRoot` (a {@link TreeHandle.path}). `depsVersion`
- * is the open iteration's pinned dependency-set version; `knownTemplateVersions` is the set of
+ * is the open season's pinned dependency-set version; `knownTemplateVersions` is the set of
  * versions the deployment has a base image for. The checks run in the order of the spec's list and
  * short-circuit on the first failure.
  */
@@ -128,11 +128,11 @@ export async function validateStatic(
     })
   }
 
-  // 6: the template_version matches the open iteration's pinned deps_version.
+  // 6: the template_version matches the open season's pinned deps_version.
   if (manifest.template_version !== depsVersion) {
     return reject({
       code: 'template_version_mismatch',
-      message: `template_version ${manifest.template_version} does not match the open iteration's dependency set (version ${depsVersion})`,
+      message: `template_version ${manifest.template_version} does not match the open season's dependency set (version ${depsVersion})`,
     })
   }
 

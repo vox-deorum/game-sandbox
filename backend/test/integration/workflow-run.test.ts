@@ -1,5 +1,5 @@
 /**
- * The Stage 6.4 exit criterion end to end against a real Docker daemon: a small iteration runs to
+ * The Stage 6.4 exit criterion end to end against a real Docker daemon: a small season runs to
  * completion through the workflow runner. It uses a worked Flappy Bird example as a submission plus
  * the always-scheduled Naive baseline, with two seeds, and asserts every game produced a replayable
  * recording with a valid header and that the deterministic example reproduces an identical
@@ -19,7 +19,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createDockerDriver } from '../../src/driver/docker/index.js'
 import { EnvironmentRegistry } from '../../src/environments.js'
 import { RecordingsStore } from '../../src/recordings.js'
-import type { AgentRef, IterationRun, Storage } from '../../src/storage/index.js'
+import type { AgentRef, SeasonRun, Storage } from '../../src/storage/index.js'
 import { openSqliteStorage } from '../../src/storage/sqlite.js'
 import { createSubmissionSource } from '../../src/submission/source/index.js'
 import type { TerminalRunStatus, WorkflowRunner } from '../../src/workflow/runner.js'
@@ -88,12 +88,12 @@ describe('workflow run end to end (Docker)', () => {
     }
   })
 
-  /** Run a fresh run for the iteration to completion and return the per-game submission scores. */
+  /** Run a fresh run for the season to completion and return the per-game submission scores. */
   async function runOnce(
-    iterationId: string,
+    seasonId: string,
     submissions: AgentRef[],
     seeds: number[],
-  ): Promise<{ run: IterationRun; status: TerminalRunStatus }> {
+  ): Promise<{ run: SeasonRun; status: TerminalRunStatus }> {
     const submissionRef = submissions[0] as AgentRef
     const schedule = [
       // Two submission games (one per seed), then the always-scheduled Naive baseline on each seed.
@@ -112,7 +112,7 @@ describe('workflow run end to end (Docker)', () => {
         slots: [{ kind: 'builtin-naive' } as AgentRef],
       },
     ]
-    const run = await storage.createRunWithSchedule(iterationId, 'dev-user', submissions, schedule)
+    const run = await storage.createRunWithSchedule(seasonId, 'dev-user', submissions, schedule)
     const status = await new Promise<TerminalRunStatus>((res) => {
       const unsubscribe = runner.subscribe(run.id, (event) => {
         if (event.type === 'terminal') {
@@ -130,17 +130,17 @@ describe('workflow run end to end (Docker)', () => {
     trees.push(tree)
     const seeds = [11, 22]
 
-    const iteration = await storage.createIteration({
+    const season = await storage.createSeason({
       env_id: ENV_ID,
       deps_version: DEPS_VERSION,
       label: null,
     })
-    await storage.updateIterationConfig(iteration.id, {
+    await storage.updateSeasonConfig(season.id, {
       deps_version: DEPS_VERSION,
       matches: [{ slots: ['submission'], seeds, games: 2 }],
     })
     const submission = await storage.createSubmission({
-      iteration_id: iteration.id,
+      season_id: season.id,
       env_id: ENV_ID,
       user_id: 'alice',
       source_kind: 'local',
@@ -157,7 +157,7 @@ describe('workflow run end to end (Docker)', () => {
       user_id: 'alice',
     }
 
-    const first = await runOnce(iteration.id, [submissionRef], seeds)
+    const first = await runOnce(season.id, [submissionRef], seeds)
     expect(first.status).toBe('completed')
 
     const games = await storage.listRunGames(first.run.id)
@@ -176,10 +176,10 @@ describe('workflow run end to end (Docker)', () => {
     const firstScores = await submissionScoresBySeed(storage, first.run.id, submission.id)
 
     // Re-run the same configuration: a fresh run, same deterministic schedule and seeds.
-    const second = await runOnce(iteration.id, [submissionRef], seeds)
+    const second = await runOnce(season.id, [submissionRef], seeds)
     expect(second.status).toBe('completed')
     expect(second.run.id).not.toBe(first.run.id)
-    expect((await storage.getLatestCompletedRun(iteration.id))?.id).toBe(second.run.id)
+    expect((await storage.getLatestCompletedRun(season.id))?.id).toBe(second.run.id)
 
     const secondScores = await submissionScoresBySeed(storage, second.run.id, submission.id)
     expect(secondScores).toEqual(firstScores)

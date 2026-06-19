@@ -1,7 +1,7 @@
 /**
  * The bounded validation worker (Stage 5.5), Docker-free: it drives the real {@link ValidationWorker}
  * against in-memory storage, a {@link FakeDriver}, and a programmable fake source seam. Each test
- * seeds an open iteration and a pending submission row, enqueues it, awaits the worker idle, and
+ * seeds an open season and a pending submission row, enqueues it, awaits the worker idle, and
  * asserts the resulting rollup status and the ordered per-stage check log. It proves the four-stage
  * pipeline, every stage's failure rollup, the crash wrapper that never leaves a check `running`, the
  * tree-handle disposal on both success and throw, the commit pin, and the re-enqueue idempotency.
@@ -118,11 +118,11 @@ describe('ValidationWorker', () => {
     return dir
   }
 
-  /** Seed an open iteration and a pending git submission, returning the stored row. */
+  /** Seed an open season and a pending git submission, returning the stored row. */
   async function seedSubmission(source: 'git' | 'local' = 'git'): Promise<Submission> {
-    const iteration = await storage.ensureOpenIteration(ENV_ID, 1)
+    const season = await storage.ensureOpenSeason(ENV_ID, 1)
     return storage.createSubmission({
-      iteration_id: iteration.id,
+      season_id: season.id,
       env_id: ENV_ID,
       user_id: 'alice',
       source_kind: source,

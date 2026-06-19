@@ -42,8 +42,8 @@ import type { EnvironmentMeta, EnvironmentRegistry } from '../environments.js'
 import { normalizeEpisodeScore } from '../leaderboards/score.js'
 import { assembleSeats, type SeatBinding } from '../session/launch-config.js'
 import { ensureRecordingsDir } from '../session/live-session.js'
-import { decodeIterationConfig, type Storage } from '../storage/index.js'
-import type { AgentRef, IterationRun, IterationRunGame } from '../storage/schema.js'
+import { decodeSeasonConfig, type Storage } from '../storage/index.js'
+import type { AgentRef, SeasonRun, SeasonRunGame } from '../storage/schema.js'
 import type { SubmissionSource } from '../submission/source/index.js'
 import { ensureSubmissionImage, submissionSlotPath } from '../submission/submission-image.js'
 import { aggregateSeat } from './aggregate.js'
@@ -216,17 +216,17 @@ class DockerWorkflowRunner implements WorkflowRunner {
     }
 
     try {
-      const iteration = await this.deps.storage.getIteration(run.iteration_id)
-      if (iteration === undefined) {
-        await this.finishRun(runId, 'failed', 'the iteration was deleted before the run started')
+      const season = await this.deps.storage.getSeason(run.season_id)
+      if (season === undefined) {
+        await this.finishRun(runId, 'failed', 'the season was deleted before the run started')
         return
       }
-      const meta = this.deps.environments.get(iteration.env_id)
+      const meta = this.deps.environments.get(season.env_id)
       if (meta === undefined) {
-        await this.finishRun(runId, 'failed', `unknown environment ${iteration.env_id}`)
+        await this.finishRun(runId, 'failed', `unknown environment ${season.env_id}`)
         return
       }
-      const config = decodeIterationConfig(run.config_snapshot)
+      const config = decodeSeasonConfig(run.config_snapshot)
       await this.deps.storage.setRunStatus(runId, 'running')
       await ensureRecordingsDir(this.deps.recordingsDir)
 
@@ -251,7 +251,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
   }
 
   /** Mark a not-yet-started game cancelled when the run was cancelled before it ran. */
-  private async markGameCancelled(runId: string, game: IterationRunGame): Promise<void> {
+  private async markGameCancelled(runId: string, game: SeasonRunGame): Promise<void> {
     await this.deps.storage.setRunGameStatus(game.id, 'cancelled')
     this.emit(runId, { type: 'game_status', game_index: game.game_index, status: 'cancelled' })
   }
@@ -262,11 +262,11 @@ class DockerWorkflowRunner implements WorkflowRunner {
    * game `failed` with no result row; an attributable agent crash/timeout flags the seat and game.
    */
   private async runGame(
-    run: IterationRun,
+    run: SeasonRun,
     meta: EnvironmentMeta,
     depsVersion: number,
-    overrides: ReturnType<typeof decodeIterationConfig>['overrides'],
-    game: IterationRunGame,
+    overrides: ReturnType<typeof decodeSeasonConfig>['overrides'],
+    game: SeasonRunGame,
   ): Promise<void> {
     const runId = run.id
     const envId = meta.env_id
@@ -415,7 +415,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
   /** Kill a game container if it exceeds its bounded wall-clock allowance. */
   private startGameWatchdog(
     runId: string,
-    game: IterationRunGame,
+    game: SeasonRunGame,
     process: SessionProcess,
     timeoutMs: number,
   ): { timedOut: () => boolean; stop: () => void } {
@@ -467,7 +467,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
     seed: number,
     slots: readonly AgentRef[],
     recordingId: string,
-    overrides: ReturnType<typeof decodeIterationConfig>['overrides'],
+    overrides: ReturnType<typeof decodeSeasonConfig>['overrides'],
   ): Record<string, unknown> {
     const seats = new Map<string, SeatBinding>()
     for (let i = 0; i < slots.length; i++) {
@@ -523,7 +523,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
   }
 
   /** Mark a game an infrastructure fault: `failed` with an error, no `game_results` row written. */
-  private async infraFault(runId: string, game: IterationRunGame, reason: string): Promise<void> {
+  private async infraFault(runId: string, game: SeasonRunGame, reason: string): Promise<void> {
     this.inFlight.delete(runId)
     await this.deps.storage.setRunGameStatus(game.id, 'failed', reason)
     this.emit(runId, { type: 'game_status', game_index: game.game_index, status: 'failed' })
@@ -531,7 +531,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
   }
 
   /** Emit one log event for a game, carrying its schedule and match indices for the admin stream. */
-  private gameLog(runId: string, game: IterationRunGame, line: string): void {
+  private gameLog(runId: string, game: SeasonRunGame, line: string): void {
     this.emit(runId, {
       type: 'log',
       game_index: game.game_index,
@@ -582,7 +582,7 @@ function parseResultEnvelope(value: Record<string, unknown>): ResultEnvelope {
 /** The wall-clock watchdog bound for one game, derived from the same effective episode timeout. */
 function gameWatchdogMs(
   meta: EnvironmentMeta,
-  overrides: ReturnType<typeof decodeIterationConfig>['overrides'],
+  overrides: ReturnType<typeof decodeSeasonConfig>['overrides'],
   graceMs: number,
 ): number {
   return (overrides?.episode_timeout_ms ?? meta.episode_limit_ms) + graceMs

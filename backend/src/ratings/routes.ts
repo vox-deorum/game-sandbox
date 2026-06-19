@@ -1,6 +1,6 @@
 /**
  * The participant rating API (Stage 6.6): collecting 1-5 ratings after a session and the agent
- * author's per-iteration rating prompt. These are participant actions attributed to the resolved
+ * author's per-season rating prompt. These are participant actions attributed to the resolved
  * Stage 4 identity, never a body-supplied user, so they live in the plain HTTP layer rather than the
  * operator-gated `/api/admin` prefix.
  *
@@ -19,7 +19,7 @@ import { z } from 'zod'
 
 import { isAllowlisted, resolveUserId } from '../identity.js'
 import type { RecordingsStore } from '../recordings.js'
-import type { AgentRef, Iteration, Session, Storage } from '../storage/index.js'
+import type { AgentRef, Season, Session, Storage } from '../storage/index.js'
 
 /** Everything the rating routes need beyond the Fastify instance. */
 export interface RatingDeps {
@@ -55,20 +55,20 @@ interface RateableAgentView {
   agent: AgentWire
   /** True when the caller owns this submitted agent, so the UI shows it without a rating control. */
   is_own: boolean
-  /** The agent author's prompt for this iteration, when set (null for the ownerless Naive baseline). */
+  /** The agent author's prompt for this season, when set (null for the ownerless Naive baseline). */
   author_prompt: string | null
   /** The caller's current effective rating, or null when they have not rated this agent. */
   your_rating: number | null
 }
 
-/** The rating read/write payload: the iteration's prompt and a per-agent view, read-only when closed. */
+/** The rating read/write payload: the season's prompt and a per-agent view, read-only when closed. */
 interface RatingView {
   session_id: string
-  iteration_id: string
-  /** True when the iteration's play window is closed: existing ratings show, but no new write is taken. */
+  season_id: string
+  /** True when the season's play window is closed: existing ratings show, but no new write is taken. */
   read_only: boolean
-  /** The operator's iteration-wide rating prompt, applying to every agent (null when unset). */
-  iteration_prompt: string | null
+  /** The operator's season-wide rating prompt, applying to every agent (null when unset). */
+  season_prompt: string | null
   agents: RateableAgentView[]
 }
 
@@ -78,10 +78,10 @@ interface RateableAgent {
   wire: AgentWire
 }
 
-/** The session context the rating routes resolve before doing anything: the row, its iteration, agents. */
+/** The session context the rating routes resolve before doing anything: the row, its season, agents. */
 interface RatingContext {
   session: Session
-  iteration: Iteration
+  season: Season
   agents: RateableAgent[]
 }
 
@@ -101,8 +101,8 @@ function toWire(ref: AgentRef): AgentWire {
 }
 
 /**
- * Resolve the session, its iteration, and the set of rateable agents involved, or a typed refusal.
- * Ordering matters: a null-iteration session is not rateable at all; a session without a finalized
+ * Resolve the session, its season, and the set of rateable agents involved, or a typed refusal.
+ * Ordering matters: a null-season session is not rateable at all; a session without a finalized
  * recording cannot have its involved agents read; only then is the play window considered (by the
  * caller, which differs for reads and writes).
  */
@@ -114,12 +114,12 @@ async function resolveContext(
   if (session === undefined) {
     return fail(404, 'no_such_session', 'no such session')
   }
-  if (session.iteration_id === null) {
-    return fail(409, 'session_not_rateable', 'this session has no iteration to rate against')
+  if (session.season_id === null) {
+    return fail(409, 'session_not_rateable', 'this session has no season to rate against')
   }
-  const iteration = await deps.storage.getIteration(session.iteration_id)
-  if (iteration === undefined) {
-    return fail(409, 'session_not_rateable', 'this session has no iteration to rate against')
+  const season = await deps.storage.getSeason(session.season_id)
+  if (season === undefined) {
+    return fail(409, 'session_not_rateable', 'this session has no season to rate against')
   }
   // A finalized recording means the session has ended and written its recording. A still-running
   // session has a header on the volume but is not finished, so the recording check alone is not enough.
@@ -131,7 +131,7 @@ async function resolveContext(
     return fail(409, 'session_not_finished', 'this session has no finalized recording yet')
   }
   const agents = await resolveRateableAgents(deps, session)
-  return { ok: true, context: { session, iteration, agents } }
+  return { ok: true, context: { session, season, agents } }
 }
 
 function fail(status: number, code: string, error: string): { ok: false; failure: ContextFailure } {
@@ -204,7 +204,7 @@ async function resolveRateableAgents(deps: RatingDeps, session: Session): Promis
 }
 
 /**
- * Build the rating view returned by both the read and the write: the iteration's prompt, and per agent
+ * Build the rating view returned by both the read and the write: the season's prompt, and per agent
  * its ownership, author prompt, and the caller's current effective rating. `read_only` reflects a
  * closed play window, so the UI can show prior ratings without offering a save control.
  */
@@ -213,15 +213,13 @@ async function buildRatingView(
   context: RatingContext,
   callerId: string,
 ): Promise<RatingView> {
-  const { session, iteration, agents } = context
+  const { session, season, agents } = context
   const agentViews = await Promise.all(
     agents.map(async (agent): Promise<RateableAgentView> => {
       const isOwn = agent.ref.kind === 'submission' && agent.ref.user_id === callerId
       const [authorPrompt, rating] = await Promise.all([
-        resolveAuthorPrompt(deps, iteration.id, agent.ref),
-        isOwn
-          ? Promise.resolve(undefined)
-          : deps.storage.getRating(iteration.id, callerId, agent.ref),
+        resolveAuthorPrompt(deps, season.id, agent.ref),
+        isOwn ? Promise.resolve(undefined) : deps.storage.getRating(season.id, callerId, agent.ref),
       ])
       return {
         agent: agent.wire,
@@ -233,9 +231,9 @@ async function buildRatingView(
   )
   return {
     session_id: session.id,
-    iteration_id: iteration.id,
-    read_only: iteration.play_status !== 'open',
-    iteration_prompt: emptyToNull(iteration.rating_prompt),
+    season_id: season.id,
+    read_only: season.play_status !== 'open',
+    season_prompt: emptyToNull(season.rating_prompt),
     agents: agentViews,
   }
 }
@@ -243,13 +241,13 @@ async function buildRatingView(
 /** The author's prompt for a submitted agent, resolved by the owner's identity (survives resubmission). */
 async function resolveAuthorPrompt(
   deps: RatingDeps,
-  iterationId: string,
+  seasonId: string,
   ref: AgentRef,
 ): Promise<string | null> {
   if (ref.kind !== 'submission') {
     return null
   }
-  const row = await deps.storage.getAgentRatingPrompt(iterationId, ref.user_id)
+  const row = await deps.storage.getAgentRatingPrompt(seasonId, ref.user_id)
   return emptyToNull(row?.prompt ?? null)
 }
 
@@ -294,10 +292,10 @@ export function registerRatingRoutes(app: FastifyInstance, deps: RatingDeps): vo
         return sendFailure(reply, resolved.failure)
       }
       const { context } = resolved
-      if (context.iteration.play_status !== 'open') {
+      if (context.season.play_status !== 'open') {
         return reply
           .code(409)
-          .send({ error: 'the play window for this iteration is closed', code: 'play_closed' })
+          .send({ error: 'the play window for this season is closed', code: 'play_closed' })
       }
       const validated = validatePayload(parsed.data.ratings, context, callerId)
       if (!validated.ok) {
@@ -306,8 +304,8 @@ export function registerRatingRoutes(app: FastifyInstance, deps: RatingDeps): vo
       // Validation passed for every rating; only now write, so nothing partially saves.
       for (const accepted of validated.accepted) {
         await deps.storage.upsertRating({
-          iteration_id: context.iteration.id,
-          env_id: context.iteration.env_id,
+          season_id: context.season.id,
+          env_id: context.season.env_id,
           rater_user_id: callerId,
           agent: accepted,
           score: validated.scores.get(wireKey(toWire(accepted))) ?? 0,
@@ -317,14 +315,14 @@ export function registerRatingRoutes(app: FastifyInstance, deps: RatingDeps): vo
     },
   )
 
-  // The agent author sets or clears their per-iteration rating prompt. The caller must have an agent
-  // (a submission) in the iteration; the prompt is keyed by the caller's resolved identity.
-  app.put<{ Params: { iterationId: string }; Body: unknown }>(
-    '/api/iterations/:iterationId/agent-rating-prompt',
+  // The agent author sets or clears their per-season rating prompt. The caller must have an agent
+  // (a submission) in the season; the prompt is keyed by the caller's resolved identity.
+  app.put<{ Params: { seasonId: string }; Body: unknown }>(
+    '/api/seasons/:seasonId/agent-rating-prompt',
     async (request, reply) => {
-      const iteration = await deps.storage.getIteration(request.params.iterationId)
-      if (iteration === undefined) {
-        return reply.code(404).send({ error: 'no such iteration' })
+      const season = await deps.storage.getSeason(request.params.seasonId)
+      if (season === undefined) {
+        return reply.code(404).send({ error: 'no such season' })
       }
       const parsed = AuthorPromptBodySchema.safeParse(request.body ?? {})
       if (!parsed.success) {
@@ -337,27 +335,27 @@ export function registerRatingRoutes(app: FastifyInstance, deps: RatingDeps): vo
         })
       }
       const callerId = resolveUserId(request.headers)
-      const submission = await deps.storage.findActiveSubmission(iteration.id, callerId)
+      const submission = await deps.storage.findActiveSubmission(season.id, callerId)
       if (submission === undefined) {
         return reply.code(409).send({
-          error: 'you have no agent in this iteration',
-          code: 'no_agent_in_iteration',
+          error: 'you have no agent in this season',
+          code: 'no_agent_in_season',
         })
       }
       const prompt = emptyToNull(parsed.data.prompt) ?? ''
-      await deps.storage.upsertAgentRatingPrompt(iteration.id, callerId, prompt)
-      return reply.code(200).send({ iteration_id: iteration.id, prompt: emptyToNull(prompt) })
+      await deps.storage.upsertAgentRatingPrompt(season.id, callerId, prompt)
+      return reply.code(200).send({ season_id: season.id, prompt: emptyToNull(prompt) })
     },
   )
 
   // The author reads their own prompt back to populate the editor on their agent profile.
-  app.get<{ Params: { iterationId: string } }>(
-    '/api/iterations/:iterationId/agent-rating-prompt',
+  app.get<{ Params: { seasonId: string } }>(
+    '/api/seasons/:seasonId/agent-rating-prompt',
     async (request, reply) => {
       const callerId = resolveUserId(request.headers)
-      const row = await deps.storage.getAgentRatingPrompt(request.params.iterationId, callerId)
+      const row = await deps.storage.getAgentRatingPrompt(request.params.seasonId, callerId)
       return reply.code(200).send({
-        iteration_id: request.params.iterationId,
+        season_id: request.params.seasonId,
         prompt: emptyToNull(row?.prompt ?? null),
       })
     },

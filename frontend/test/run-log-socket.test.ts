@@ -38,7 +38,7 @@ describe('RunLogSocket', () => {
   })
 
   it('carries the identity as the user query parameter on the ws URL', () => {
-    const socket = new RunLogSocket('/api/admin/iterations/i1/runs/r1/logs/ws', {}, deps)
+    const socket = new RunLogSocket('/api/admin/seasons/i1/runs/r1/logs/ws', {}, deps)
     socket.connect()
     const url = new URL((instances[0] as FakeWebSocket).url)
     expect(url.protocol).toBe('ws:')
@@ -51,7 +51,7 @@ describe('RunLogSocket', () => {
     let terminal: string | null = null
     let closed = false
     const socket = new RunLogSocket(
-      '/api/admin/iterations/i1/runs/r1/logs/ws',
+      '/api/admin/seasons/i1/runs/r1/logs/ws',
       {
         onLog: (event) => logs.push(`${event.match_index}/${event.game_index}:${event.line}`),
         onGameStatus: (event) => statuses.push({ index: event.game_index, status: event.status }),
@@ -82,7 +82,7 @@ describe('RunLogSocket', () => {
   it('ignores malformed frames without throwing', () => {
     let logged = false
     const socket = new RunLogSocket(
-      '/api/admin/iterations/i1/runs/r1/logs/ws',
+      '/api/admin/seasons/i1/runs/r1/logs/ws',
       { onLog: () => (logged = true) },
       deps,
     )

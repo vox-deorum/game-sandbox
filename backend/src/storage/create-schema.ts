@@ -28,7 +28,7 @@ export async function createSchema(db: Kysely<Database>): Promise<void> {
     .addColumn('status', 'text', (col) => col.notNull())
     .addColumn('termination_reason', 'text')
     .addColumn('recording_id', 'text')
-    .addColumn('iteration_id', 'text')
+    .addColumn('season_id', 'text')
     .addColumn('created_at', 'text', (col) => col.notNull())
     .addColumn('ended_at', 'text')
     .execute()
@@ -56,9 +56,9 @@ export async function createSchema(db: Kysely<Database>): Promise<void> {
     .columns(['user_id', 'created_at'])
     .execute()
 
-  // --- iterations: one row per environment's competition iteration. ---
+  // --- seasons: one row per environment's competition season. ---
   await db.schema
-    .createTable('iterations')
+    .createTable('seasons')
     .ifNotExists()
     .addColumn('id', 'text', (col) => col.primaryKey())
     .addColumn('env_id', 'text', (col) => col.notNull())
@@ -71,16 +71,16 @@ export async function createSchema(db: Kysely<Database>): Promise<void> {
     .addColumn('created_at', 'text', (col) => col.notNull())
     .addColumn('released_at', 'text')
     .execute()
-  // One iteration per environment may accept submissions, and one may be the default public-play
+  // One season per environment may accept submissions, and one may be the default public-play
   // target. Partial unique indexes are raw SQL (not in Kysely's schema builder).
   await sql`
-    CREATE UNIQUE INDEX IF NOT EXISTS iterations_submission_open_unique
-    ON iterations (env_id)
+    CREATE UNIQUE INDEX IF NOT EXISTS seasons_submission_open_unique
+    ON seasons (env_id)
     WHERE submission_status = 'open'
   `.execute(db)
   await sql`
-    CREATE UNIQUE INDEX IF NOT EXISTS iterations_play_open_unique
-    ON iterations (env_id)
+    CREATE UNIQUE INDEX IF NOT EXISTS seasons_play_open_unique
+    ON seasons (env_id)
     WHERE play_status = 'open'
   `.execute(db)
 
@@ -89,7 +89,7 @@ export async function createSchema(db: Kysely<Database>): Promise<void> {
     .createTable('submissions')
     .ifNotExists()
     .addColumn('id', 'text', (col) => col.primaryKey())
-    .addColumn('iteration_id', 'text', (col) => col.notNull())
+    .addColumn('season_id', 'text', (col) => col.notNull())
     .addColumn('env_id', 'text', (col) => col.notNull())
     .addColumn('user_id', 'text', (col) => col.notNull())
     .addColumn('source_kind', 'text', (col) => col.notNull())
@@ -102,17 +102,17 @@ export async function createSchema(db: Kysely<Database>): Promise<void> {
     .addColumn('created_at', 'text', (col) => col.notNull())
     .addColumn('superseded_at', 'text')
     .execute()
-  // The one-active-submission-per-participant-per-iteration rule, enforced at the storage layer.
+  // The one-active-submission-per-participant-per-season rule, enforced at the storage layer.
   await sql`
     CREATE UNIQUE INDEX IF NOT EXISTS submissions_active_unique
-    ON submissions (iteration_id, user_id)
+    ON submissions (season_id, user_id)
     WHERE superseded_at IS NULL
   `.execute(db)
   await db.schema
-    .createIndex('submissions_iteration_user')
+    .createIndex('submissions_season_user')
     .ifNotExists()
     .on('submissions')
-    .columns(['iteration_id', 'user_id'])
+    .columns(['season_id', 'user_id'])
     .execute()
   await db.schema
     .createIndex('submissions_user_env')
@@ -165,12 +165,12 @@ export async function createSchema(db: Kysely<Database>): Promise<void> {
     .column('submission_id')
     .execute()
 
-  // --- iteration_runs: one workflow execution. ---
+  // --- season_runs: one workflow execution. ---
   await db.schema
-    .createTable('iteration_runs')
+    .createTable('season_runs')
     .ifNotExists()
     .addColumn('id', 'text', (col) => col.primaryKey())
-    .addColumn('iteration_id', 'text', (col) => col.notNull())
+    .addColumn('season_id', 'text', (col) => col.notNull())
     .addColumn('requested_by', 'text', (col) => col.notNull())
     .addColumn('config_snapshot', 'text', (col) => col.notNull())
     .addColumn('submission_snapshot', 'text', (col) => col.notNull())
@@ -180,15 +180,15 @@ export async function createSchema(db: Kysely<Database>): Promise<void> {
     .addColumn('error', 'text')
     .execute()
   await db.schema
-    .createIndex('iteration_runs_iteration')
+    .createIndex('season_runs_season')
     .ifNotExists()
-    .on('iteration_runs')
-    .column('iteration_id')
+    .on('season_runs')
+    .column('season_id')
     .execute()
 
-  // --- iteration_run_games: one scheduled match. ---
+  // --- season_run_games: one scheduled match. ---
   await db.schema
-    .createTable('iteration_run_games')
+    .createTable('season_run_games')
     .ifNotExists()
     .addColumn('id', 'text', (col) => col.primaryKey())
     .addColumn('run_id', 'text', (col) => col.notNull())
@@ -203,9 +203,9 @@ export async function createSchema(db: Kysely<Database>): Promise<void> {
     .addColumn('error', 'text')
     .execute()
   await db.schema
-    .createIndex('iteration_run_games_run_game')
+    .createIndex('season_run_games_run_game')
     .ifNotExists()
-    .on('iteration_run_games')
+    .on('season_run_games')
     .columns(['run_id', 'game_index'])
     .execute()
 
@@ -243,7 +243,7 @@ export async function createSchema(db: Kysely<Database>): Promise<void> {
     .createTable('automated_placements')
     .ifNotExists()
     .addColumn('id', 'text', (col) => col.primaryKey())
-    .addColumn('iteration_id', 'text', (col) => col.notNull())
+    .addColumn('season_id', 'text', (col) => col.notNull())
     .addColumn('env_id', 'text', (col) => col.notNull())
     .addColumn('run_id', 'text', (col) => col.notNull())
     .addColumn('rank', 'integer', (col) => col.notNull())
@@ -266,20 +266,20 @@ export async function createSchema(db: Kysely<Database>): Promise<void> {
   // gets a second partial index (SQLite treats nulls as distinct).
   await sql`
     CREATE UNIQUE INDEX IF NOT EXISTS automated_placements_submission_unique
-    ON automated_placements (iteration_id, agent_kind, agent_submission_id)
+    ON automated_placements (season_id, agent_kind, agent_submission_id)
   `.execute(db)
   await sql`
     CREATE UNIQUE INDEX IF NOT EXISTS automated_placements_naive_unique
-    ON automated_placements (iteration_id, agent_kind)
+    ON automated_placements (season_id, agent_kind)
     WHERE agent_kind = 'builtin-naive'
   `.execute(db)
 
-  // --- ratings: one 1-5 human rating per user per agent per iteration. ---
+  // --- ratings: one 1-5 human rating per user per agent per season. ---
   await db.schema
     .createTable('ratings')
     .ifNotExists()
     .addColumn('id', 'text', (col) => col.primaryKey())
-    .addColumn('iteration_id', 'text', (col) => col.notNull())
+    .addColumn('season_id', 'text', (col) => col.notNull())
     .addColumn('env_id', 'text', (col) => col.notNull())
     .addColumn('rater_user_id', 'text', (col) => col.notNull())
     .addColumn('agent_kind', 'text', (col) => col.notNull())
@@ -290,32 +290,32 @@ export async function createSchema(db: Kysely<Database>): Promise<void> {
     .addColumn('updated_at', 'text', (col) => col.notNull())
     .execute()
   await db.schema
-    .createIndex('ratings_iteration_agent')
+    .createIndex('ratings_season_agent')
     .ifNotExists()
     .on('ratings')
-    .columns(['iteration_id', 'agent_kind', 'agent_submission_id'])
+    .columns(['season_id', 'agent_kind', 'agent_submission_id'])
     .execute()
-  // Rating uniqueness: one effective rating per user per agent per iteration, with the Naive row
+  // Rating uniqueness: one effective rating per user per agent per season, with the Naive row
   // covered by a second partial index for the same null-distinctness reason.
   await sql`
     CREATE UNIQUE INDEX IF NOT EXISTS ratings_one_per_user_agent
-    ON ratings (iteration_id, rater_user_id, agent_kind, agent_submission_id)
+    ON ratings (season_id, rater_user_id, agent_kind, agent_submission_id)
   `.execute(db)
   await sql`
     CREATE UNIQUE INDEX IF NOT EXISTS ratings_one_per_user_naive
-    ON ratings (iteration_id, rater_user_id, agent_kind)
+    ON ratings (season_id, rater_user_id, agent_kind)
     WHERE agent_kind = 'builtin-naive'
   `.execute(db)
 
-  // --- agent_rating_prompts: the author's per-iteration prompt (keyed by author, survives resubmit). ---
+  // --- agent_rating_prompts: the author's per-season prompt (keyed by author, survives resubmit). ---
   await db.schema
     .createTable('agent_rating_prompts')
     .ifNotExists()
-    .addColumn('iteration_id', 'text', (col) => col.notNull())
+    .addColumn('season_id', 'text', (col) => col.notNull())
     .addColumn('env_id', 'text', (col) => col.notNull())
     .addColumn('user_id', 'text', (col) => col.notNull())
     .addColumn('prompt', 'text', (col) => col.notNull())
     .addColumn('updated_at', 'text', (col) => col.notNull())
-    .addPrimaryKeyConstraint('agent_rating_prompts_pk', ['iteration_id', 'user_id'])
+    .addPrimaryKeyConstraint('agent_rating_prompts_pk', ['season_id', 'user_id'])
     .execute()
 }

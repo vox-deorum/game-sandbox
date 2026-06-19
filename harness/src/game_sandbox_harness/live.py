@@ -81,7 +81,7 @@ class LiveConfig:
     #: Per-slot attribution copied verbatim into the recording header (slot id -> attribution
     #: object). Computed by the backend, opaque to the harness; ``None`` when not supplied.
     players: dict[str, PlayerAttribution] | None = None
-    #: Optional per-step/per-episode time-limit overrides (the Stage 6 iteration overrides).
+    #: Optional per-step/per-episode time-limit overrides (the Stage 6 season overrides).
     #: ``None`` takes the environment's metadata default, as a session with no override does.
     step_timeout_ms: int | None = None
     episode_timeout_ms: int | None = None

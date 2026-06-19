@@ -16,7 +16,7 @@ import { currentSessionBaseImageSpec } from '../deps-version.js'
 import type { ExecutionDriver, ImageRef, SandboxProfile } from '../driver/index.js'
 import type { EnvironmentMeta, EnvironmentRegistry } from '../environments.js'
 import { isAllowlisted } from '../identity.js'
-import { decodeIterationConfig, type Storage } from '../storage/index.js'
+import { decodeSeasonConfig, type Storage } from '../storage/index.js'
 import type { Session, SessionMode } from '../storage/schema.js'
 import type { SubmissionSource } from '../submission/source/index.js'
 import { ensureSubmissionImage, submissionSlotPath } from '../submission/submission-image.js'
@@ -60,8 +60,8 @@ interface SubmissionBinding {
   path: string
   /** The submission owner, attributed to the slot in the recording header. */
   userId: string
-  /** The submission's iteration — the competition boundary this watch session's ratings attach to. */
-  iterationId: string
+  /** The submission's season — the competition boundary this watch session's ratings attach to. */
+  seasonId: string
 }
 
 /** What the HTTP layer returns to a client that started a session. */
@@ -154,14 +154,14 @@ export class Orchestrator {
     // path; otherwise it is the built-in scripted/human path on the base image, exactly as before.
     const { image, submissionBinding } = await this.resolveImage(request, meta)
 
-    // The iteration this session competes in, the key ratings attach to. A submitted-agent watch run
-    // takes the submission's iteration; any other public session (human play, Naive watch) takes the
-    // environment's current play-open iteration when one exists. Best-effort: a session with no
-    // resolvable iteration is simply not rateable (the rating route rejects a null-iteration session).
-    const iterationId =
+    // The season this session competes in, the key ratings attach to. A submitted-agent watch run
+    // takes the submission's season; any other public session (human play, Naive watch) takes the
+    // environment's current play-open season when one exists. Best-effort: a session with no
+    // resolvable season is simply not rateable (the rating route rejects a null-season session).
+    const seasonId =
       submissionBinding !== null
-        ? submissionBinding.iterationId
-        : ((await this.storage.getPublicPlayIteration(meta.env_id))?.id ?? null)
+        ? submissionBinding.seasonId
+        : ((await this.storage.getPublicPlaySeason(meta.env_id))?.id ?? null)
 
     const id = randomUUID()
     const recordingId = `${meta.env_id}-${id}`
@@ -172,7 +172,7 @@ export class Orchestrator {
       env_id: meta.env_id,
       mode: request.mode,
       recording_id: recordingId,
-      iteration_id: iterationId,
+      season_id: seasonId,
       created_at: createdAt,
     })
     if (submissionBinding !== null) {
@@ -237,7 +237,7 @@ export class Orchestrator {
   /**
    * Resolve the image to launch. A plain run ensures the session base image, as before. A
    * `submissionId` run resolves the submission (it must be `ready` and active for the requested
-   * environment's play-open iteration), ensures its overlay image through the submission-image helper,
+   * environment's play-open season), ensures its overlay image through the submission-image helper,
    * and returns the slot binding the session config threads into `player_0`.
    */
   private async resolveImage(
@@ -267,17 +267,17 @@ export class Orchestrator {
     if (submission.status !== 'ready') {
       throw new OrchestratorError(409, 'submission is not ready to run', 'submission_not_ready')
     }
-    // Only the play-open iteration's active submissions are watch choices. The submission window may
+    // Only the play-open season's active submissions are watch choices. The submission window may
     // already point at the next round, while the previous round remains the public play target.
-    const iteration = await this.storage.getPublicPlayIteration(meta.env_id)
+    const season = await this.storage.getPublicPlaySeason(meta.env_id)
     if (
-      iteration === undefined ||
-      submission.iteration_id !== iteration.id ||
+      season === undefined ||
+      submission.season_id !== season.id ||
       submission.superseded_at !== null
     ) {
       throw new OrchestratorError(
         409,
-        'submission is not active for the play-open iteration',
+        'submission is not active for the play-open season',
         'submission_not_active',
       )
     }
@@ -288,7 +288,7 @@ export class Orchestrator {
         imagePolicy: this.config.docker.imagePolicy,
       },
       submission,
-      decodeIterationConfig(iteration.config).deps_version,
+      decodeSeasonConfig(season.config).deps_version,
       SUBMISSION_SLOT_ID,
     )
     return {
@@ -298,9 +298,9 @@ export class Orchestrator {
         slotId: SUBMISSION_SLOT_ID,
         path: submissionSlotPath(SUBMISSION_SLOT_ID),
         userId: submission.user_id,
-        // Ratings attach to the submission's own iteration, never re-resolved from the open-submission
+        // Ratings attach to the submission's own season, never re-resolved from the open-submission
         // window, since submissions and public play can be open on different rounds.
-        iterationId: submission.iteration_id,
+        seasonId: submission.season_id,
       },
     }
   }

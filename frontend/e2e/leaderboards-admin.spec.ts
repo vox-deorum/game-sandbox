@@ -2,24 +2,24 @@ import { type APIRequestContext, expect, test } from '@playwright/test'
 
 const ENV_ID = 'flappy_bird'
 
-interface Iteration {
+interface Season {
   id: string
   label: string | null
 }
 
-async function declareIteration(
+async function declareSeason(
   request: APIRequestContext,
   label: string,
   options: { runnable?: boolean } = {},
-): Promise<Iteration> {
-  const declared = await request.post(`/api/admin/environments/${ENV_ID}/iterations`, {
+): Promise<Season> {
+  const declared = await request.post(`/api/admin/environments/${ENV_ID}/seasons`, {
     data: { label },
   })
   expect(declared.status(), await declared.text()).toBe(201)
-  const iteration = (await declared.json()) as Iteration
+  const season = (await declared.json()) as Season
 
   if (options.runnable) {
-    const configured = await request.put(`/api/admin/iterations/${iteration.id}/config`, {
+    const configured = await request.put(`/api/admin/seasons/${season.id}/config`, {
       data: {
         deps_version: 1,
         matches: [{ slots: ['builtin-naive'], seeds: [0], games: 1 }],
@@ -28,23 +28,23 @@ async function declareIteration(
     expect(configured.status(), await configured.text()).toBe(200)
   }
 
-  return iteration
+  return season
 }
 
-async function releaseIteration(request: APIRequestContext, iterationId: string): Promise<void> {
-  const released = await request.post(`/api/admin/iterations/${iterationId}/release`)
+async function releaseSeason(request: APIRequestContext, seasonId: string): Promise<void> {
+  const released = await request.post(`/api/admin/seasons/${seasonId}/release`)
   expect(released.status(), await released.text()).toBe(200)
 }
 
-test('released leaderboard history is visible and navigates by iteration URL', async ({
+test('released leaderboard history is visible and navigates by season URL', async ({
   page,
   request,
 }) => {
   const suffix = `${Date.now()}`
-  const older = await declareIteration(request, `E2E older ${suffix}`)
-  await releaseIteration(request, older.id)
-  const newer = await declareIteration(request, `E2E newer ${suffix}`)
-  await releaseIteration(request, newer.id)
+  const older = await declareSeason(request, `E2E older ${suffix}`)
+  await releaseSeason(request, older.id)
+  const newer = await declareSeason(request, `E2E newer ${suffix}`)
+  await releaseSeason(request, newer.id)
 
   await page.goto(`/environments/${ENV_ID}/leaderboards`)
 
@@ -61,7 +61,7 @@ test('released leaderboard history is visible and navigates by iteration URL', a
 test('the operator console tails a triggered workflow run', async ({ page, request }) => {
   test.setTimeout(180_000)
   const label = `E2E run ${Date.now()}`
-  await declareIteration(request, label, { runnable: true })
+  await declareSeason(request, label, { runnable: true })
 
   await page.goto(`/environments/${ENV_ID}/admin`)
   await page.getByRole('button', { name: new RegExp(label) }).click()

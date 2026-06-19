@@ -1,7 +1,7 @@
 /**
  * Submission queries: the supersede-then-insert create, the validation-check pipeline log, the
  * status transitions, and the reads behind the worker re-enqueue, agent profiles, and the
- * overlay-image eviction sweep. Also owns {@link deleteSubmissionsForIteration}, reused by the
+ * overlay-image eviction sweep. Also owns {@link deleteSubmissionsForSeason}, reused by the
  * forced `deps_version`-change path.
  */
 import { randomUUID } from 'node:crypto'
@@ -32,21 +32,21 @@ const STAGE_ORDER: Record<SubmissionStage, number> = {
   load: 3,
 }
 
-/** Delete an iteration's submissions and their checks; same executor-passing rationale as runs. */
-export async function deleteSubmissionsForIteration(
+/** Delete a season's submissions and their checks; same executor-passing rationale as runs. */
+export async function deleteSubmissionsForSeason(
   db: Kysely<Database>,
-  iterationId: string,
+  seasonId: string,
 ): Promise<void> {
   const submissions = await db
     .selectFrom('submissions')
     .select('id')
-    .where('iteration_id', '=', iterationId)
+    .where('season_id', '=', seasonId)
     .execute()
   const submissionIds = submissions.map((row) => row.id)
   if (submissionIds.length > 0) {
     await db.deleteFrom('submission_checks').where('submission_id', 'in', submissionIds).execute()
   }
-  await db.deleteFrom('submissions').where('iteration_id', '=', iterationId).execute()
+  await db.deleteFrom('submissions').where('season_id', '=', seasonId).execute()
 }
 
 export async function createSubmission(
@@ -60,7 +60,7 @@ export async function createSubmission(
       await trx
         .updateTable('submissions')
         .set({ superseded_at: input.created_at })
-        .where('iteration_id', '=', input.iteration_id)
+        .where('season_id', '=', input.season_id)
         .where('user_id', '=', input.user_id)
         .where('superseded_at', 'is', null)
         .execute()
@@ -68,7 +68,7 @@ export async function createSubmission(
         .insertInto('submissions')
         .values({
           id: randomUUID(),
-          iteration_id: input.iteration_id,
+          season_id: input.season_id,
           env_id: input.env_id,
           user_id: input.user_id,
           source_kind: input.source_kind,
@@ -205,13 +205,13 @@ export async function listSessionSubmissions(
 
 export async function findActiveSubmission(
   db: Kysely<Database>,
-  iterationId: string,
+  seasonId: string,
   userId: string,
 ): Promise<Submission | undefined> {
   return await db
     .selectFrom('submissions')
     .selectAll()
-    .where('iteration_id', '=', iterationId)
+    .where('season_id', '=', seasonId)
     .where('user_id', '=', userId)
     .where('superseded_at', 'is', null)
     .executeTakeFirst()
@@ -239,15 +239,15 @@ export async function listSubmissionsByUser(
   return await query.orderBy('created_at', 'desc').execute()
 }
 
-export async function listActiveSubmissionsByIteration(
+export async function listActiveSubmissionsBySeason(
   db: Kysely<Database>,
-  iterationId: string,
+  seasonId: string,
   status?: SubmissionStatus,
 ): Promise<Submission[]> {
   let query = db
     .selectFrom('submissions')
     .selectAll()
-    .where('iteration_id', '=', iterationId)
+    .where('season_id', '=', seasonId)
     .where('superseded_at', 'is', null)
   if (status !== undefined) {
     query = query.where('status', '=', status)

@@ -10,7 +10,7 @@ import { getAuthorPrompt, setAuthorPrompt } from '../src/api/client.js'
 import AuthorPromptEditor from '../src/components/AuthorPromptEditor.vue'
 
 function renderEditor() {
-  return render(AuthorPromptEditor, { props: { iterationId: 'iter-1' } })
+  return render(AuthorPromptEditor, { props: { seasonId: 'iter-1' } })
 }
 
 describe('AuthorPromptEditor', () => {
@@ -19,7 +19,7 @@ describe('AuthorPromptEditor', () => {
   })
 
   it('pre-fills the saved prompt and saves an edited value', async () => {
-    vi.mocked(getAuthorPrompt).mockResolvedValue({ iteration_id: 'iter-1', prompt: 'Old prompt' })
+    vi.mocked(getAuthorPrompt).mockResolvedValue({ season_id: 'iter-1', prompt: 'Old prompt' })
     vi.mocked(setAuthorPrompt).mockResolvedValue({ ok: true, prompt: 'New prompt' })
     renderEditor()
 
@@ -34,7 +34,7 @@ describe('AuthorPromptEditor', () => {
   })
 
   it('keeps Save disabled until the prompt is actually edited', async () => {
-    vi.mocked(getAuthorPrompt).mockResolvedValue({ iteration_id: 'iter-1', prompt: 'Same' })
+    vi.mocked(getAuthorPrompt).mockResolvedValue({ season_id: 'iter-1', prompt: 'Same' })
     renderEditor()
 
     await screen.findByLabelText('Rating prompt')
@@ -45,7 +45,7 @@ describe('AuthorPromptEditor', () => {
   })
 
   it('clears the prompt by saving an empty value as null', async () => {
-    vi.mocked(getAuthorPrompt).mockResolvedValue({ iteration_id: 'iter-1', prompt: 'Remove me' })
+    vi.mocked(getAuthorPrompt).mockResolvedValue({ season_id: 'iter-1', prompt: 'Remove me' })
     vi.mocked(setAuthorPrompt).mockResolvedValue({ ok: true, prompt: null })
     renderEditor()
 
@@ -56,8 +56,8 @@ describe('AuthorPromptEditor', () => {
   })
 
   it('surfaces the no-agent refusal', async () => {
-    vi.mocked(getAuthorPrompt).mockResolvedValue({ iteration_id: 'iter-1', prompt: null })
-    vi.mocked(setAuthorPrompt).mockResolvedValue({ ok: false, reason: 'no_agent_in_iteration' })
+    vi.mocked(getAuthorPrompt).mockResolvedValue({ season_id: 'iter-1', prompt: null })
+    vi.mocked(setAuthorPrompt).mockResolvedValue({ ok: false, reason: 'no_agent_in_season' })
     renderEditor()
 
     await fireEvent.update(await screen.findByLabelText('Rating prompt'), 'Anything')

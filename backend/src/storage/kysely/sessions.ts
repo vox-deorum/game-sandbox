@@ -18,7 +18,7 @@ export async function createSession(
     .insertInto('sessions')
     .values({
       ...input,
-      iteration_id: input.iteration_id ?? null,
+      season_id: input.season_id ?? null,
       status: 'starting',
       termination_reason: null,
       ended_at: null,

@@ -1,7 +1,7 @@
 /**
- * Iteration-run, scheduled-game, and per-seat-result queries: snapshot a run with its games,
+ * Season-run, scheduled-game, and per-seat-result queries: snapshot a run with its games,
  * advance run/game statuses, attach replays, and record/read results for the board aggregation.
- * Also owns {@link deleteRunsForIteration}, the cascade the forced config-edit path reuses.
+ * Also owns {@link deleteRunsForSeason}, the cascade the forced config-edit path reuses.
  */
 import { randomUUID } from 'node:crypto'
 
@@ -13,9 +13,9 @@ import type {
   Database,
   GameResult,
   GameStatus,
-  IterationRun,
-  IterationRunGame,
   RunStatus,
+  SeasonRun,
+  SeasonRunGame,
 } from '../schema.js'
 import { agentColumns } from './shared.js'
 
@@ -31,23 +31,20 @@ const TERMINAL_GAME_STATUSES: ReadonlySet<GameStatus> = new Set([
 ])
 
 /**
- * Delete an iteration's runs and everything that hangs off them (scheduled games, per-seat results,
+ * Delete a season's runs and everything that hangs off them (scheduled games, per-seat results,
  * placements). Takes an executor so it composes inside a larger transaction (the forced config edit)
  * as well as on its own; `Transaction<Database>` is assignable to `Kysely<Database>`.
  */
-export async function deleteRunsForIteration(
-  db: Kysely<Database>,
-  iterationId: string,
-): Promise<void> {
+export async function deleteRunsForSeason(db: Kysely<Database>, seasonId: string): Promise<void> {
   const runs = await db
-    .selectFrom('iteration_runs')
+    .selectFrom('season_runs')
     .select('id')
-    .where('iteration_id', '=', iterationId)
+    .where('season_id', '=', seasonId)
     .execute()
   const runIds = runs.map((row) => row.id)
   if (runIds.length > 0) {
     const games = await db
-      .selectFrom('iteration_run_games')
+      .selectFrom('season_run_games')
       .select('id')
       .where('run_id', 'in', runIds)
       .execute()
@@ -55,36 +52,36 @@ export async function deleteRunsForIteration(
     if (gameIds.length > 0) {
       await db.deleteFrom('game_results').where('game_id', 'in', gameIds).execute()
     }
-    await db.deleteFrom('iteration_run_games').where('run_id', 'in', runIds).execute()
-    await db.deleteFrom('iteration_runs').where('id', 'in', runIds).execute()
+    await db.deleteFrom('season_run_games').where('run_id', 'in', runIds).execute()
+    await db.deleteFrom('season_runs').where('id', 'in', runIds).execute()
   }
-  await db.deleteFrom('automated_placements').where('iteration_id', '=', iterationId).execute()
+  await db.deleteFrom('automated_placements').where('season_id', '=', seasonId).execute()
 }
 
 export async function createRunWithSchedule(
   db: Kysely<Database>,
-  iterationId: string,
+  seasonId: string,
   requestedBy: string,
   submissionSnapshot: AgentRef[],
   scheduledGames: ScheduledGameInput[],
-): Promise<IterationRun> {
+): Promise<SeasonRun> {
   return await db.transaction().execute(async (trx) => {
-    // Freeze the iteration's already-validated config (incl. deps) and the eligible roster onto the
+    // Freeze the season's already-validated config (incl. deps) and the eligible roster onto the
     // run, then persist the concrete games. The runner reads these, not the mutable source rows.
-    const iteration = await trx
-      .selectFrom('iterations')
+    const season = await trx
+      .selectFrom('seasons')
       .select('config')
-      .where('id', '=', iterationId)
+      .where('id', '=', seasonId)
       .executeTakeFirstOrThrow()
     const runId = randomUUID()
     const now = new Date().toISOString()
     const run = await trx
-      .insertInto('iteration_runs')
+      .insertInto('season_runs')
       .values({
         id: runId,
-        iteration_id: iterationId,
+        season_id: seasonId,
         requested_by: requestedBy,
-        config_snapshot: iteration.config,
+        config_snapshot: season.config,
         submission_snapshot: JSON.stringify(submissionSnapshot),
         status: 'pending',
         started_at: now,
@@ -95,7 +92,7 @@ export async function createRunWithSchedule(
       .executeTakeFirstOrThrow()
     for (const game of scheduledGames) {
       await trx
-        .insertInto('iteration_run_games')
+        .insertInto('season_run_games')
         .values({
           id: randomUUID(),
           run_id: runId,
@@ -122,7 +119,7 @@ export async function setRunStatus(
   error?: string,
 ): Promise<void> {
   await db
-    .updateTable('iteration_runs')
+    .updateTable('season_runs')
     .set({
       status,
       error: error ?? null,
@@ -132,16 +129,16 @@ export async function setRunStatus(
     .execute()
 }
 
-export async function getRun(db: Kysely<Database>, id: string): Promise<IterationRun | undefined> {
-  return await db.selectFrom('iteration_runs').selectAll().where('id', '=', id).executeTakeFirst()
+export async function getRun(db: Kysely<Database>, id: string): Promise<SeasonRun | undefined> {
+  return await db.selectFrom('season_runs').selectAll().where('id', '=', id).executeTakeFirst()
 }
 
 export async function listRunsByStatus(
   db: Kysely<Database>,
   status: RunStatus,
-): Promise<IterationRun[]> {
+): Promise<SeasonRun[]> {
   return await db
-    .selectFrom('iteration_runs')
+    .selectFrom('season_runs')
     .selectAll()
     .where('status', '=', status)
     .orderBy('started_at', 'asc')
@@ -151,12 +148,12 @@ export async function listRunsByStatus(
 
 export async function getLatestRun(
   db: Kysely<Database>,
-  iterationId: string,
-): Promise<IterationRun | undefined> {
+  seasonId: string,
+): Promise<SeasonRun | undefined> {
   return await db
-    .selectFrom('iteration_runs')
+    .selectFrom('season_runs')
     .selectAll()
-    .where('iteration_id', '=', iterationId)
+    .where('season_id', '=', seasonId)
     .orderBy('started_at', 'desc')
     .orderBy(sql`rowid`, 'desc')
     .executeTakeFirst()
@@ -164,26 +161,23 @@ export async function getLatestRun(
 
 export async function getLatestCompletedRun(
   db: Kysely<Database>,
-  iterationId: string,
-): Promise<IterationRun | undefined> {
+  seasonId: string,
+): Promise<SeasonRun | undefined> {
   // `rowid` (insertion order) breaks ties when two runs share a millisecond timestamp, so the
   // "latest completed" is deterministic and a failed re-run never blanks a good board.
   return await db
-    .selectFrom('iteration_runs')
+    .selectFrom('season_runs')
     .selectAll()
-    .where('iteration_id', '=', iterationId)
+    .where('season_id', '=', seasonId)
     .where('status', '=', 'completed')
     .orderBy('started_at', 'desc')
     .orderBy(sql`rowid`, 'desc')
     .executeTakeFirst()
 }
 
-export async function listRunGames(
-  db: Kysely<Database>,
-  runId: string,
-): Promise<IterationRunGame[]> {
+export async function listRunGames(db: Kysely<Database>, runId: string): Promise<SeasonRunGame[]> {
   return await db
-    .selectFrom('iteration_run_games')
+    .selectFrom('season_run_games')
     .selectAll()
     .where('run_id', '=', runId)
     .orderBy('game_index', 'asc')
@@ -198,7 +192,7 @@ export async function setRunGameStatus(
 ): Promise<void> {
   const now = new Date().toISOString()
   await db
-    .updateTable('iteration_run_games')
+    .updateTable('season_run_games')
     .set({
       status,
       error: error ?? null,
@@ -215,7 +209,7 @@ export async function attachRunGameRecording(
   recordingId: string,
 ): Promise<void> {
   await db
-    .updateTable('iteration_run_games')
+    .updateTable('season_run_games')
     .set({ recording_id: recordingId })
     .where('id', '=', gameId)
     .execute()
@@ -248,8 +242,8 @@ export async function listGameResultsByRun(
 ): Promise<GameResult[]> {
   return await db
     .selectFrom('game_results')
-    .innerJoin('iteration_run_games', 'iteration_run_games.id', 'game_results.game_id')
-    .where('iteration_run_games.run_id', '=', runId)
+    .innerJoin('season_run_games', 'season_run_games.id', 'game_results.game_id')
+    .where('season_run_games.run_id', '=', runId)
     .selectAll('game_results')
     .execute()
 }
