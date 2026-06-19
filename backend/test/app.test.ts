@@ -26,6 +26,9 @@ describe('HTTP API', () => {
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'gs-http-'))
     storage = await openSqliteStorage(':memory:')
+    // Plain public sessions attach to the environment's play-open season; seed it so the start
+    // routes are exercised against a normal play-open environment.
+    await storage.ensureOpenSeason('flappy_bird', 1)
     const config = makeConfig({ recordingsDir: dir, sessionAllowlist: ALLOWLIST })
     orchestrator = new Orchestrator(new FakeDriver(), storage, makeEnvironments(), config)
     const recordings = new RecordingsStore(dir)

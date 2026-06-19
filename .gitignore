@@ -14,6 +14,7 @@ venv/
 .pytest_cache/
 .ruff_cache/
 .pyright/
+.pytest-tmp/
 
 # Node
 node_modules/

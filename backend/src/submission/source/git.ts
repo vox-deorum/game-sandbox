@@ -31,6 +31,18 @@ function stripRefPrefix(ref: string): string {
   return ref.replace(/^refs\/(heads|tags)\//, '')
 }
 
+/**
+ * Reject a participant-supplied ref that git would parse as an option rather than a ref. The ref is
+ * passed as a positional argv to `ls-remote`/`fetch`; a value like `--upload-pack=…` or `--output=…`
+ * would otherwise be interpreted as a flag (an argument-injection vector). A real branch/tag/SHA
+ * never begins with a dash, so refusing the whole class is both safe and git-version-agnostic.
+ */
+function assertSafeRef(ref: string | null): void {
+  if (ref?.startsWith('-')) {
+    throw new SourceError('invalid_input', 'a git ref must not begin with a dash')
+  }
+}
+
 /** Classify a non-zero git exit from its stderr into a typed failure with a credential-free detail. */
 function classifyGitStderr(stderr: string): { failure: SourceFailureKind; detail: string } {
   const text = stderr.toLowerCase()
@@ -94,6 +106,13 @@ export class GitSource {
         detail: 'only http(s) git URLs are supported',
       }
     }
+    if (input.ref?.startsWith('-')) {
+      return {
+        reachable: false,
+        failure: 'invalid_input',
+        detail: 'a git ref must not begin with a dash',
+      }
+    }
     const github = parseGitHubRepo(input.repoUrl)
     if (github !== null) {
       // A GitHub URL gets an authenticated REST reachability check — cheaper than ls-remote and able
@@ -153,6 +172,7 @@ export class GitSource {
 
   async resolve(input: GitSourceInput): Promise<ResolvedSource> {
     this.assertHttpUrl(input.repoUrl)
+    assertSafeRef(input.ref)
     const url = this.fetchUrl(input.repoUrl)
     if (input.ref === null) {
       return await this.resolveDefaultBranch(input.repoUrl, url)

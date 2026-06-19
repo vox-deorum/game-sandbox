@@ -21,9 +21,9 @@ The environment page's recent-replays list comes from `GET /api/recordings` filt
 
 ## Retention metadata
 
-Stage 3 lists recordings straight off the volume with no notion of owner or age, which retention needs. A `recordings` table joins the Kysely schema (migration 2) with `id` (text, the recording id), `user_id`, `env_id`, `created_at`, and `pinned` (0/1, default 0). The row is the recording's retention metadata; the directory on the volume remains the recording itself.
+Stage 3 lists recordings straight off the volume with no notion of owner or age, which retention needs. A `recordings` table joins the fresh-build Kysely schema with `id` (text, the recording id), `user_id`, `env_id`, `created_at`, and `pinned` (0/1, default 0). The row is the recording's retention metadata; the directory on the volume remains the recording itself.
 
-Rows are written by the orchestrator's finalize routine. Every end path already converges there, so every session-produced recording gets exactly one row. The migration backfills rows from the existing `sessions` table (which carries `recording_id`, `user_id`, `env_id`, `created_at`), so pre-Stage-4 recordings join the policy instead of becoming invisible exceptions. A directory with no row after backfill is foreign debris — a half-written crash artifact or hand-copied data. It is listed header-only, never evicted, and is an operator concern.
+Rows are written by the orchestrator's finalize routine. Every end path already converges there, so every session-produced recording gets exactly one row. (An earlier plan iteration had a migration backfill rows from the existing `sessions` table for pre-Stage-4 recordings; with the single fresh-build schema and no deployed data, there is nothing to backfill, so a fresh deployment simply accrues rows as sessions finalize.) A directory with no row is foreign debris — a half-written crash artifact or hand-copied data. It is listed header-only, never evicted, and is an operator concern.
 
 `GET /api/recordings` merges the volume listing with the rows, so each entry carries the header plus `user_id`, `created_at`, and `pinned`; `GET /api/recordings/:id` is unchanged.
 

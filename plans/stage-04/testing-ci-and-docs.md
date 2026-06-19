@@ -23,7 +23,7 @@ jsdom implements no WebGL or canvas rasterization, and pulling in a native GPU/c
 Extending the Stage 3 suites on the same fixtures — no Docker:
 
 - **Identity and allowlist**: `resolveUserId` takes the WS `user` query parameter when the header is absent; `GET /api/me` reports the resolved user and allowlist membership; and `POST /api/sessions` is 403 for a non-allowlisted header identity in both modes, while the same identity can list sessions, fetch recordings, and attach as a spectator.
-- **Retention**: finalize writes the recordings row; the migration backfills from `sessions`; the sweep evicts an unpinned recording past the window, evicts oldest-unpinned-first over quota, never evicts pinned, and ignores rowless directories; deletion removes directory and row and tolerates a missing half; and the listing merges rows with headers and filters on `?env=`.
+- **Retention**: finalize writes the recordings row; the sweep evicts an unpinned recording past the window, evicts oldest-unpinned-first over quota, never evicts pinned, and ignores rowless directories; deletion removes directory and row and tolerates a missing half; and the listing merges rows with headers and filters on `?env=`.
 - **Pinning**: pin and unpin flip the flag owner-only; pinning is refused with `pinned_quota` at the pinned cap; a pinned recording survives a sweep that evicts its unpinned neighbors — the exit criterion verbatim.
 - **Start route**: the 409 body carries the active session id.
 

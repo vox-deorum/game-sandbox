@@ -26,6 +26,24 @@ import { DockerSessionProcess } from './session-process.js'
 
 /** The label every session container carries, keyed by session id, for supervision and reaping. */
 const SESSION_LABEL = 'game-sandbox.session'
+/**
+ * The OS process id of the backend that created the container. Reaping uses it to tell a true
+ * orphan (a container whose creating process is gone — a crashed or previous backend) from a peer
+ * backend's live container when several share one Docker daemon. Only the former is reaped.
+ */
+const OWNER_PID_LABEL = 'game-sandbox.owner-pid'
+
+/** Whether a process with this id currently exists, so its containers are not orphans yet. */
+function isProcessAlive(pid: number): boolean {
+  try {
+    // Signal 0 performs the existence/permission check without delivering a signal.
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    // ESRCH means no such process (a true orphan); EPERM means it exists but we may not signal it.
+    return (error as NodeJS.ErrnoException).code === 'EPERM'
+  }
+}
 
 export class DockerDriver implements ExecutionDriver {
   constructor(
@@ -81,7 +99,7 @@ export class DockerDriver implements ExecutionDriver {
       Cmd: spec.argv,
       // The orchestrator never overrides the entrypoint; the driver-level sandbox tests do.
       ...(spec.entrypoint ? { Entrypoint: spec.entrypoint } : {}),
-      Labels: { [SESSION_LABEL]: spec.sessionId },
+      Labels: { [SESSION_LABEL]: spec.sessionId, [OWNER_PID_LABEL]: String(process.pid) },
       Tty: false,
       OpenStdin: true,
       StdinOnce: false,
@@ -103,9 +121,11 @@ export class DockerDriver implements ExecutionDriver {
   }
 
   /**
-   * Kill and remove every container carrying the session label. On construction these belong to a
-   * previous backend process whose sessions no longer exist, so reaping keeps crashed-backend
-   * restarts clean without a supervisor.
+   * Remove orphaned session containers: those whose creating backend process is no longer alive (a
+   * crash or a previous run), plus legacy containers from before the owner-pid label existed. This
+   * keeps crashed-backend restarts clean without a supervisor while never touching a *peer* backend's
+   * live containers when several share one Docker daemon — its process is still alive, so its
+   * containers are skipped rather than killed.
    */
   async reapOrphans(): Promise<void> {
     const containers = await this.docker.listContainers({
@@ -114,6 +134,12 @@ export class DockerDriver implements ExecutionDriver {
     })
     await Promise.all(
       containers.map(async (info) => {
+        const ownerPid = info.Labels?.[OWNER_PID_LABEL]
+        const pid = ownerPid !== undefined ? Number.parseInt(ownerPid, 10) : Number.NaN
+        // A container whose owner process is still running belongs to a live peer backend; leave it.
+        if (Number.isInteger(pid) && isProcessAlive(pid)) {
+          return
+        }
         const container: Container = this.docker.getContainer(info.Id)
         try {
           await container.remove({ force: true })

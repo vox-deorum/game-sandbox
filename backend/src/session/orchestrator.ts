@@ -150,18 +150,32 @@ export class Orchestrator {
       request.humanSlotTimeoutMs !== undefined ? request.humanSlotTimeoutMs : meta.human_timeout_ms
     const seed = request.seed ?? randomInt(0, 2 ** 31)
 
+    // A plain public session — human play or a Naive watch run — must target the environment's
+    // current play-open season; with none open the public launch is refused so a play-closed
+    // environment never starts an unattributable session (a submitted-agent run instead takes its
+    // submission's season, validated in resolveImage). Resolve it before any launch work so the
+    // refusal is cheap.
+    let publicPlaySeasonId: string | null = null
+    if (request.submissionId === undefined) {
+      const playSeason = await this.storage.getPublicPlaySeason(meta.env_id)
+      if (playSeason === undefined) {
+        throw new OrchestratorError(
+          409,
+          'no season is open for public play in this environment',
+          'no_play_open_season',
+        )
+      }
+      publicPlaySeasonId = playSeason.id
+    }
+
     // For a submitted-agent run the image is the submission's overlay and the agent slot binds its
     // path; otherwise it is the built-in scripted/human path on the base image, exactly as before.
     const { image, submissionBinding } = await this.resolveImage(request, meta)
 
     // The season this session competes in, the key ratings attach to. A submitted-agent watch run
-    // takes the submission's season; any other public session (human play, Naive watch) takes the
-    // environment's current play-open season when one exists. Best-effort: a session with no
-    // resolvable season is simply not rateable (the rating route rejects a null-season session).
-    const seasonId =
-      submissionBinding !== null
-        ? submissionBinding.seasonId
-        : ((await this.storage.getPublicPlaySeason(meta.env_id))?.id ?? null)
+    // takes the submission's season; any other public session takes the play-open season resolved
+    // above.
+    const seasonId = submissionBinding !== null ? submissionBinding.seasonId : publicPlaySeasonId
 
     const id = randomUUID()
     const recordingId = `${meta.env_id}-${id}`

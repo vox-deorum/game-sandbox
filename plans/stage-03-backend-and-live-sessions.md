@@ -44,7 +44,7 @@ A scripted WebSocket test client starts a session, receives schema-valid states 
 
 ## Build order
 
-1. The backend package skeleton: workspace membership, tooling, config, the identity stub, the storage layer (the Kysely schema and derived domain types, the interface, SQLite wiring, and the sessions migration), and the generated `environments.json` through `scripts/generate.py` and the staleness check.
+1. The backend package skeleton: workspace membership, tooling, config, the identity stub, the storage layer (the Kysely schema and derived domain types, the interface, SQLite wiring, and the fresh-build schema bootstrap with the `sessions` table), and the generated `environments.json` through `scripts/generate.py` and the staleness check.
 2. The driver interface types, the `FakeDriver` test double, and the import-isolation lint configuration. Can run in parallel with 1.
 3. The protocols and the live runner: the `Episode` extraction in `session.py` with the Stage 2 suites as the regression gate, then the live modules with their pytest suites. Python-only; can run in parallel with 1 and 2.
 4. The Docker driver and the session base image, with the driver-level integration tests (memory quota, no network, orphan reaping). Needs 2.

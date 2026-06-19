@@ -58,6 +58,11 @@ export async function startStack(overrides: Partial<Config> = {}): Promise<Stack
 
   const storage = await openSqliteStorage(':memory:')
   const environments = EnvironmentRegistry.load()
+  // A plain public session attaches to its environment's play-open season; seed one per environment
+  // (the seed season is both submission- and play-open) so the start routes behave as in production.
+  for (const meta of environments.list()) {
+    await storage.ensureOpenSeason(meta.env_id, 1)
+  }
   const driver = await createDockerDriver(config.docker)
   const recordings = new RecordingsStore(resolve(recordingsDir))
   const retention = new Retention(storage, recordings, config)

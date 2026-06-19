@@ -10,7 +10,7 @@ Status: implemented. The unit suites live under `backend/test/` and run with the
 
 - **Orchestrator lifecycle**: start inserts the row and launches with the right profile and argv; the resolved human-slot timeout lands in the session config; one session per user returns 409; each teardown path records its reason; finalize is idempotent under exit/idle/kill races; `oomKilled` and crash exits are reported cleanly (the orchestrator half of the memory-quota criterion — the container half lives in integration).
 - **Relay and protocol**: recording lines broadcast verbatim; header, latest state, and status replayed to late attachers; the line-classification rule; envelope validation, slot authority, and unknown-kind tolerance; the slow-socket drop.
-- **Storage**: migrations and the interface methods on `:memory:`.
+- **Storage**: the schema bootstrap (idempotent on reopen) and the interface methods on `:memory:`.
 - **Generated metadata**: `environments.json` parses and every entry carries the fields the API serves.
 - **Schema guard**: the packaged state schema defines no top-level `kind` property, so the classification rule cannot rot silently.
 

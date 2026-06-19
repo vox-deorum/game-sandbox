@@ -130,6 +130,10 @@ describe('orchestrator', () => {
     storage = await openSqliteStorage(':memory:')
     driver = new FakeDriver()
     recordingsDir = mkdtempSync(join(tmpdir(), 'gs-orch-'))
+    // A plain public session needs a play-open season to attach to (the seed season is both
+    // submission- and play-open); seed it for the environments the plain-session tests exercise.
+    await storage.ensureOpenSeason('flappy_bird', 1)
+    await storage.ensureOpenSeason('turn_based', 1)
   })
 
   afterEach(async () => {
@@ -224,6 +228,17 @@ describe('orchestrator', () => {
       await expect(
         orch.start({ userId: 'bob', envId: 'flappy_bird', mode: 'scripted' }),
       ).resolves.toBeDefined()
+    })
+
+    it('refuses a plain public session when no season is open for public play', async () => {
+      const orch = makeOrchestrator()
+      // Close the seeded play window: a Naive watch or human play run now has no season to attach to.
+      const season = await storage.getPublicPlaySeason('flappy_bird')
+      await storage.setPlayStatus(season?.id ?? '', 'closed')
+      await expect(
+        orch.start({ userId: 'alice', envId: 'flappy_bird', mode: 'scripted' }),
+      ).rejects.toMatchObject({ status: 409, code: 'no_play_open_season' })
+      expect(driver.launches).toHaveLength(0)
     })
 
     it('rejects an unknown environment, an invalid mode, and human mode without a human slot', async () => {

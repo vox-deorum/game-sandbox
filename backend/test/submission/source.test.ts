@@ -206,6 +206,29 @@ describe('git source resolution', () => {
     ).rejects.toMatchObject({ failure: 'timeout' })
   })
 
+  it('rejects an option-like ref before shelling out, so it cannot be parsed as a git flag', async () => {
+    const runner = new FakeGitRunner(() => {
+      throw new Error('the runner must not run for an option-like ref')
+    })
+    const source = createSubmissionSource(config(), { gitRunner: runner })
+    await expect(
+      source.resolve({
+        kind: 'git',
+        repoUrl: 'https://example.com/alice/agent.git',
+        ref: '--upload-pack=touch /tmp/pwned',
+      }),
+    ).rejects.toMatchObject({ failure: 'invalid_input' })
+    // The same guard holds on the reachability path.
+    expect(
+      await source.verifyReachable({
+        kind: 'git',
+        repoUrl: 'https://example.com/alice/agent.git',
+        ref: '--output=/tmp/pwned',
+      }),
+    ).toMatchObject({ reachable: false, failure: 'invalid_input' })
+    expect(runner.calls).toHaveLength(0)
+  })
+
   it('rejects a non-http(s) URL as invalid_input before shelling out', async () => {
     const runner = new FakeGitRunner(() => {
       throw new Error('the runner must not run for an invalid URL')

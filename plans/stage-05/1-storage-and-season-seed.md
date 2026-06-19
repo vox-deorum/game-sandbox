@@ -6,7 +6,7 @@ Part of [Stage 5](../stage-05-submissions.md). This is build-order step 1, the d
 
 - the `seasons`, `submissions`, and `submission_checks` tables;
 - the submission-to-session attribution that agent replay history needs;
-- their migration;
+- their place in the fresh-build schema;
 - the `Storage` methods that speak them;
 - the seed that gives every environment one open season, so a submission has an identity boundary and a pinned dependency-set version.
 
@@ -33,16 +33,16 @@ Two invariants on this split, stated here so a later reader does not "fix" them 
 
 The one-active-submission-per-participant-per-season rule from [submission.md](../../docs/specs/submission.md) is enforced at the storage layer, not by a route: a partial unique index (or SQLite's equivalent) on `(season_id, user_id)` where `superseded_at IS NULL`. Decision recorded here: resubmission replaces by marking the prior row superseded and inserting a new one, so the owner's profile (step 6) can still show submission history across the season rather than losing the old commit. The active-submission lookup filters on `superseded_at IS NULL` regardless of status, so a failed resubmission is still the participant's active submission until they submit again.
 
-## Migration
+## Schema
 
-One new ordered TypeScript migration module under the storage package, run on startup through Kysely's `Migrator` exactly as Stage 3 established (no migration CLI; deployment is "start the process"). It creates:
+These tables join the single fresh-build schema definition (`backend/src/storage/create-schema.ts`, established in Stage 3), each declared in its final shape with `ifNotExists` so the bootstrap stays idempotent (no Kysely `Migrator`; deployment is "start the process"). They are:
 
 - the new tables (`seasons`, `submissions`, `session_submissions`, `submission_checks`);
 - the active-submission index;
 - the unique `(submission_id, stage)` index on `submission_checks`;
 - foreign-key indexes for the lookups the later steps run hot: `submissions(season_id, user_id)` for the active-submission rule, `submissions(user_id, env_id)` for the agent profile history, `submission_checks(submission_id)` for the polled validation log, and `session_submissions(submission_id)` for `listRecordingsBySubmission` on the profile.
 
-Name each index explicitly rather than leaving "profile lookups" to implementation, so the profile's per-submission reads do not table-scan. The migration is additive over the Stage 3 and Stage 4 migrations and does not rewrite existing rows.
+Name each index explicitly rather than leaving "profile lookups" to implementation, so the profile's per-submission reads do not table-scan.
 
 ## Storage interface
 
@@ -73,7 +73,7 @@ On startup the backend seeds one open season per registered environment using th
 
 Vitest against the real Kysely implementation on better-sqlite3 `:memory:`, no Docker:
 
-- The migration creates the new tables and indexes; a second `Migrator` run is a no-op.
+- The schema bootstrap creates the new tables and indexes; running it again on the same database is a no-op.
 - The seed creates exactly one open season per environment and is idempotent across a simulated restart.
 - `createSubmission` inserts a `pending` row; a second submission by the same user in the same season stamps `superseded_at` on the first, `findActiveSubmission` returns only the new one, and `listSubmissionsByUser` still returns both (history preserved, this is the same superseded-inclusive read the agent profile in step 6 uses).
 - A second submission by a _different_ user in the same season does not supersede the first, because the uniqueness is per participant.
@@ -87,4 +87,4 @@ Vitest against the real Kysely implementation on better-sqlite3 `:memory:`, no D
 
 ## Done when
 
-The backend boots against an empty database, runs the new migration, and seeds one open season per environment at the current `DEPS_VERSION`. The storage suite proves the supersede-on-resubmit rule and the seed's idempotency on `:memory:`. No route, form, Docker, or harness work is required for this slice. It is the storage seam the next five steps are written against.
+The backend boots against an empty database, creates the schema, and seeds one open season per environment at the current `DEPS_VERSION`. The storage suite proves the supersede-on-resubmit rule and the seed's idempotency on `:memory:`. No route, form, Docker, or harness work is required for this slice. It is the storage seam the next five steps are written against.

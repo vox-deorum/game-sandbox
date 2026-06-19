@@ -70,15 +70,30 @@ export class DockerSessionProcess implements SessionProcess {
    * for the exit *after* the start — `wait()` on a not-yet-started container returns immediately.
    */
   static async start(container: Container): Promise<DockerSessionProcess> {
-    const stdio = (await container.attach({
-      stream: true,
-      stdin: true,
-      stdout: true,
-      stderr: true,
-      hijack: true,
-    })) as unknown as NodeJS.ReadWriteStream
+    let stdio: NodeJS.ReadWriteStream
+    try {
+      stdio = (await container.attach({
+        stream: true,
+        stdin: true,
+        stdout: true,
+        stderr: true,
+        hijack: true,
+      })) as unknown as NodeJS.ReadWriteStream
+    } catch (error) {
+      // Attach failed before any process wrapped the container; the container was already created by
+      // the driver, so remove it directly or it leaks (nothing upstream holds a handle to clean up).
+      await container.remove({ force: true }).catch(() => undefined)
+      throw error
+    }
     const process = new DockerSessionProcess(container, stdio)
-    await container.start()
+    try {
+      await container.start()
+    } catch (error) {
+      // The container exists and is attached but never started; remove it (and tear the channels
+      // down) so a failed launch leaves nothing behind for the next reap to find.
+      await process.remove()
+      throw error
+    }
     container.wait().then(
       (result: { StatusCode: number }) => process.onExit(result.StatusCode),
       (error: unknown) => {
