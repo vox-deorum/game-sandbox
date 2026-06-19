@@ -19,6 +19,19 @@ import type { ImageSpec } from './driver/index.js'
 /** The current dependency-set version `N`, tagged `…:deps-v<N>`. This stage uses only v1. */
 export const DEPS_VERSION = 1
 
+/**
+ * Every dependency-set version the deployment can serve, as the inclusive range from the first
+ * deps-pinned release (v1) through {@link DEPS_VERSION}. A season may pin any of these — each
+ * released version keeps its `…:deps-v<N>` base image — so the submission static check accepts a
+ * manifest whose `template_version` names any supported version, then separately requires it to
+ * equal the season's pinned version. Keeping this distinct from the single current default means
+ * bumping `DEPS_VERSION` leaves older still-supported seasons accepting resubmissions instead of
+ * rejecting their (still valid) manifests as `unknown_template_version`.
+ */
+export const KNOWN_DEPS_VERSIONS: ReadonlySet<number> = new Set(
+  Array.from({ length: DEPS_VERSION }, (_, index) => index + 1),
+)
+
 /** The session base image spec for {@link DEPS_VERSION} — the one place that pairs kind and version. */
 export function currentSessionBaseImageSpec(): ImageSpec {
   return { kind: 'session-base', depsVersion: DEPS_VERSION }

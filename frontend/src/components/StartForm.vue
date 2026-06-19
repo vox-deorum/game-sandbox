@@ -1,7 +1,8 @@
 <!--
-  The start form the environment page's Play and Watch entry points open inside a UiDialog: an
-  optional seed (for reproducible runs) and, for a human session, the human-slot timeout control. The
-  control's meaning follows the pace interval, per interaction.md:
+  The start form the environment page's Play entry point opens inside a UiDialog: an optional seed
+  (for reproducible runs) and the human-slot timeout control. Watch starts through WatchAgentPicker
+  instead, so this form is human-play only. The timeout control's meaning follows the pace interval,
+  per interaction.md:
 
   - Paced environment (Flappy Bird): the per-step deadline IS the pace interval — a step with no input
     gets the noop. The hint states this; an entered value is still sent as an override (the Stage 3 API
@@ -20,7 +21,7 @@ import UiButton from './ui/UiButton.vue'
 import UiField from './ui/UiField.vue'
 import UiInput from './ui/UiInput.vue'
 
-const props = defineProps<{ meta: EnvironmentMeta; mode: 'human' | 'scripted' }>()
+const props = defineProps<{ meta: EnvironmentMeta }>()
 const emit = defineEmits<{
   submit: [{ seed?: number; humanSlotTimeoutMs?: number }]
   cancel: []
@@ -83,7 +84,7 @@ function onSubmit(): void {
       </template>
     </UiField>
 
-    <UiField v-if="mode === 'human'" :label="timeoutLabel" :hint="timeoutHint">
+    <UiField :label="timeoutLabel" :hint="timeoutHint">
       <template #default="{ id, describedby }">
         <UiInput
           :id="id"
@@ -97,7 +98,7 @@ function onSubmit(): void {
     </UiField>
 
     <div class="start-form-actions">
-      <UiButton type="submit">{{ mode === 'human' ? 'Start playing' : 'Start watching' }}</UiButton>
+      <UiButton type="submit">Start playing</UiButton>
       <UiButton type="button" variant="ghost" @click="emit('cancel')">Cancel</UiButton>
     </div>
   </form>

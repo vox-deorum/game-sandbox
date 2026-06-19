@@ -386,9 +386,12 @@ class DockerWorkflowRunner implements WorkflowRunner {
       const agent = slots[slotIndex] as AgentRef
       const slotId = `player_${slotIndex}`
       const aggregate = aggregateSeat(parsed.states, slotId)
+      // The recording the harness produced is authoritative for episode score (Stage 6's "final
+      // `score` for episode score"). The result envelope's self-reported score is only a fallback
+      // for a recording that never reported this seat's score.
       const envelopeScore = captured.result?.scores[slotId]
       const rawScore =
-        typeof envelopeScore === 'number' ? envelopeScore : (aggregate.finalScore ?? 0)
+        aggregate.finalScore ?? (typeof envelopeScore === 'number' ? envelopeScore : 0)
       await this.deps.storage.recordGameResult({
         game_id: game.id,
         slot_index: slotIndex,

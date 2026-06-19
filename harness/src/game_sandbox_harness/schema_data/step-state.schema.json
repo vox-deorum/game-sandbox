@@ -23,6 +23,7 @@
     },
     "overlay": {
       "type": "object",
+      "additionalProperties": true,
       "description": "Open extension region for environment-specific payloads (for example Flappy Bird pipe positions). The only object with additionalProperties allowed."
     },
     "messages": {
@@ -39,9 +40,11 @@
       "additionalProperties": false,
       "properties": {
         "observation": {
+          "tsType": "unknown",
           "description": "Display observation for this agent. Shape is environment-specific; the renderer is its only consumer."
         },
         "action": {
+          "tsType": "unknown",
           "description": "Action this agent took on this tick. Shape is environment-specific."
         },
         "reward": {

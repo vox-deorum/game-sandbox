@@ -178,6 +178,9 @@ export async function runLoadCheck(
   const outcome = await Promise.race([proc.exited, timeout])
   if (outcome === TIMEOUT) {
     await proc.kill(KILL_GRACE_MS)
+    // The kill closes stdout, so the collector loop ends; await it (swallowing any iteration error
+    // on the torn-down stream) so it never outlives this call as an unhandled rejection.
+    await collect.catch(() => undefined)
     return timeoutFailure(options.timeoutMs)
   }
   clearTimeout(timer)

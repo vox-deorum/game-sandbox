@@ -1,6 +1,6 @@
 # Stage 2: Harness and the First Environment
 
-Status: in progress. The Python vertical slice is built and green locally. This change set lands the environments package, the session harness, the agent interface and manifest loader, the CLI, the real template content, the hello heuristic agent, and the docs. `scripts/ci.py` passes `python`, `typescript`, `examples`, `docs`, and `publish-dry-run` (`generated-code-fresh` passes once the regenerated files are committed). What remains is the outward-facing release: run the `template-publish` workflow for version 1 and stamp `template-v1` on the monorepo (build-order step 8). That is a deliberate, separately triggered action.
+Status: complete. The Python vertical slice is built and green locally. This change set landed the environments package, the session harness, the agent interface and manifest loader, the CLI, the real template content, the hello heuristic agent, and the docs. `scripts/ci.py` passes `python`, `typescript`, `examples`, `docs`, `publish-dry-run`, and `generated-code-fresh`. The outward-facing release is done: the `template-publish` workflow ran for version 1 and `template-v1` is stamped on the monorepo (build-order step 8).
 
 ## Goal
 

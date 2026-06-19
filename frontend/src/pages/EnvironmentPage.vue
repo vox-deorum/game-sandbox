@@ -56,42 +56,40 @@ onMounted(() => {
     },
   )
 })
-// Which start form the dialog shows (Play opens human, Watch opens scripted); null when closed.
-const formMode = ref<'human' | 'scripted' | null>(null)
+// The play start dialog's open state. Watch starts through WatchAgentPicker, so this dialog is the
+// human-play entry point only.
+const playFormOpen = ref(false)
 
-// The dialog's open state is derived from formMode, so closing it (escape, overlay, cancel) clears
-// the mode and any prior error in one place.
+// Closing the dialog (escape, overlay, cancel) clears the open flag and any prior error in one place.
 const dialogOpen = computed({
-  get: () => formMode.value !== null,
+  get: () => playFormOpen.value,
   set: (open) => {
+    playFormOpen.value = open
     if (!open) {
-      formMode.value = null
       startError.value = null
     }
   },
 })
-const dialogTitle = computed(() =>
-  meta.value === null ? '' : `${formMode.value === 'human' ? 'Play' : 'Watch'} ${meta.value.display_name}`,
-)
+const dialogTitle = computed(() => (meta.value === null ? '' : `Play ${meta.value.display_name}`))
 
 const paceLabel = computed(() => {
   const ms = meta.value?.pace_interval_ms
   return ms === null || ms === undefined ? null : `paced ${ms} ms`
 })
 
-function open(mode: 'human' | 'scripted'): void {
+function open(): void {
   startError.value = null
-  formMode.value = mode
+  playFormOpen.value = true
 }
 
 async function start(input: { seed?: number; humanSlotTimeoutMs?: number }): Promise<void> {
-  if (meta.value === null || formMode.value === null) {
+  if (meta.value === null || !playFormOpen.value) {
     return
   }
   startError.value = null
   const result = await startSession({
     envId: meta.value.env_id,
-    mode: formMode.value,
+    mode: 'human',
     seed: input.seed,
     humanSlotTimeoutMs: input.humanSlotTimeoutMs,
   })
@@ -125,7 +123,7 @@ async function start(input: { seed?: number; humanSlotTimeoutMs?: number }): Pro
           <UiButton
             v-if="me.me?.allowlisted && meta.human_slots.length > 0 && playOpen"
             size="lg"
-            @click="open('human')"
+            @click="open()"
           >
             Play Yourself
           </UiButton>
@@ -167,7 +165,7 @@ async function start(input: { seed?: number; humanSlotTimeoutMs?: number }): Pro
     </section>
 
     <UiDialog v-model:open="dialogOpen" :title="dialogTitle">
-      <StartForm v-if="formMode !== null" :meta="meta" :mode="formMode" @submit="start" @cancel="formMode = null" />
+      <StartForm v-if="playFormOpen" :meta="meta" @submit="start" @cancel="playFormOpen = false" />
       <UiEmptyState v-if="startError !== null" tone="danger">{{ startError }}</UiEmptyState>
     </UiDialog>
   </section>

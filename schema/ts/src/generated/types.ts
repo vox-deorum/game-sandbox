@@ -25,7 +25,9 @@ export interface StepState {
   /**
    * Open extension region for environment-specific payloads (for example Flappy Bird pipe positions). The only object with additionalProperties allowed.
    */
-  overlay?: {};
+  overlay?: {
+    [k: string]: unknown;
+  };
   /**
    * Messages sent on this tick. Absent when empty to keep lines small. Lit up in Stage 8.
    */
@@ -36,15 +38,11 @@ export interface AgentStep {
   /**
    * Display observation for this agent. Shape is environment-specific; the renderer is its only consumer.
    */
-  observation?: {
-    [k: string]: unknown;
-  };
+  observation?: unknown;
   /**
    * Action this agent took on this tick. Shape is environment-specific.
    */
-  action?: {
-    [k: string]: unknown;
-  };
+  action?: unknown;
   /**
    * Reward for this agent on this tick.
    */

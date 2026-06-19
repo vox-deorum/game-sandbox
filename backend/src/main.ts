@@ -10,7 +10,7 @@ import { resolve } from 'node:path'
 
 import { buildApp } from './app.js'
 import { loadConfig } from './config.js'
-import { DEPS_VERSION } from './deps-version.js'
+import { DEPS_VERSION, KNOWN_DEPS_VERSIONS } from './deps-version.js'
 import { createDockerDriver } from './driver/docker/index.js'
 import { EnvironmentRegistry } from './environments.js'
 import {
@@ -98,7 +98,7 @@ async function main(): Promise<void> {
     source: submissionSource,
     sandbox: config.sandbox,
     loadCheckTimeoutMs: config.submission.loadCheckTimeoutMs,
-    knownTemplateVersions: new Set([DEPS_VERSION]),
+    knownTemplateVersions: KNOWN_DEPS_VERSIONS,
     log,
     onOverlayBuilt: () => {
       void overlayEviction.sweep()
