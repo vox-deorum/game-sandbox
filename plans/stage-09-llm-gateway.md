@@ -14,7 +14,7 @@ Implement key issuance. When the orchestrator launches a container for an enviro
 
 Capture telemetry for every call: session, slot (from the slot-scoped key), model, full prompt and completion, input, reasoning, and output token counts, and latency. The harness stamps tick attribution. This is unambiguous because agents step sequentially. Define the telemetry sidecar payload now. Attach it through the Stage 1 recording sidecar rule and store it next to the session's recording, keyed by tick and slot, under the same schema version, per [recording.md](../docs/specs/recording.md).
 
-Enforce budgets and limits: per-session and per-leaderboard-run token and call budgets, plus a rate limit. These have deployment defaults and the Stage 6 iteration overrides. An over-budget call fails with an ordinary API error the agent can catch, and the run continues.
+Enforce budgets and limits: per-session and per-leaderboard-run token and call budgets, plus a rate limit. These have deployment defaults and the Stage 6 season overrides. An over-budget call fails with an ordinary API error the agent can catch, and the run continues.
 
 Surface it. Show per-tick model, token, and latency metadata in the replay viewer wherever the replay is public. Show full prompts and completions only in the owner's debug view on the agent profile. Show aggregated token usage per model as a column on the automated board, next to timing. Wall-clock time spent waiting on the model already counts against the step limits through the harness timing.
 
@@ -24,7 +24,7 @@ Surface it. Show per-tick model, token, and latency metadata in the replay viewe
 
 ## Depends on
 
-Stage 3 (orchestrator, networks), Stage 5 (agent profile), Stage 6 (iteration overrides, board). Independent of Stage 8 (communication).
+Stage 3 (orchestrator, networks), Stage 5 (agent profile), Stage 6 (season overrides, board). Independent of Stage 8 (communication).
 
 ## Done when
 

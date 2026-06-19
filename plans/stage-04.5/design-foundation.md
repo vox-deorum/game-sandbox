@@ -1,6 +1,6 @@
 # Stage 4.5: Design Foundation
 
-Status: implemented. The tokens, the three-file global stylesheet, the Reka UI adoption, the `components/ui/` primitives with their suites, and the dev-only styleguide route are all built. The production build confirms the styleguide chunk's absence and that Reka contributes only the imported Dialog and Slider. The token values below are as implemented; they may still move during checkpoint-two iteration.
+Status: implemented. The tokens, the three-file global stylesheet, the Reka UI adoption, the `components/ui/` primitives with their suites, and the dev-only styleguide route are all built. The production build confirms the styleguide chunk's absence and that Reka contributes only the imported Dialog and Slider. The token values below are as implemented; they may still move during checkpoint-two season.
 
 Part of [Stage 4.5](../stage-04.5-ui-restructure.md). This document covers the layer everything else builds on: the design tokens, the reorganized global stylesheets, the Reka UI adoption, the `components/ui/` primitives, and the dev-only styleguide route. None of this depends on the IA approval. It proceeds in parallel and is reviewed at checkpoint two, which covers the styleguide plus the redesigned Home.
 
@@ -18,7 +18,7 @@ The semantic tier is the public vocabulary components consume:
 - Radii: `--radius-sm` (4px), `--radius-md` (8px), `--radius-lg` (12px), `--radius-full` (999px).
 - Motion: `--motion-fast` (about 120ms), `--motion-base` (about 200ms), and `--ease-out`. A global `prefers-reduced-motion: reduce` block zeroes the durations, which satisfies the calm-motion principle mechanically for every component at once.
 
-The visual direction for the palette is dark only: a modern-minimal base with slightly playful accents, a compromise between playfulness and usefulness. Concretely, the background and surface ramp stays a quiet blue-charcoal family close to Stage 4's, while the accent family gets livelier. The mint accent brightens, and warning amber and danger coral join it as real tokens instead of hardcoded hex. The exact values are expected to move during the checkpoint-two iteration on the styleguide; this file records them as implemented once the checkpoint passes.
+The visual direction for the palette is dark only: a modern-minimal base with slightly playful accents, a compromise between playfulness and usefulness. Concretely, the background and surface ramp stays a quiet blue-charcoal family close to Stage 4's, while the accent family gets livelier. The mint accent brightens, and warning amber and danger coral join it as real tokens instead of hardcoded hex. The exact values are expected to move during the checkpoint-two season on the styleguide; this file records them as implemented once the checkpoint passes.
 
 Breakpoints (480px, 768px, 1024px) cannot be custom properties, because CSS variables do not work inside media queries. They are documented constants in `docs/contributors/design.md` and used as plain values in scoped media queries.
 

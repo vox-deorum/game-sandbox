@@ -23,7 +23,7 @@ The stage splits cleanly along the Docker line, the same split Stage 4 used:
 
 ## Fixtures
 
-A checked-in fixture set is the backbone of the stage's provability and is shared across steps 3, 4, and 6: a valid worked-example repo, the extra Flappy Bird example agents, and a family of intentionally malformed repos. The static cases cover a missing manifest, bad JSON, each bad field, an unknown key, a missing entry point, an unknown `template_version`, and an iteration `template_version` mismatch. The dynamic cases cover a manifest naming a non-existent class, a module that fails on import, a constructor that raises, and a class missing a hook. Living in one place keeps the static-validator unit tests, the harness `validate` tests, and the e2e journey citing the same inputs.
+A checked-in fixture set is the backbone of the stage's provability and is shared across steps 3, 4, and 6: a valid worked-example repo, the extra Flappy Bird example agents, and a family of intentionally malformed repos. The static cases cover a missing manifest, bad JSON, each bad field, an unknown key, a missing entry point, an unknown `template_version`, and a season `template_version` mismatch. The dynamic cases cover a manifest naming a non-existent class, a module that fails on import, a constructor that raises, and a class missing a hook. Living in one place keeps the static-validator unit tests, the harness `validate` tests, and the e2e journey citing the same inputs.
 
 ## CI wiring
 
@@ -41,7 +41,7 @@ A checked-in fixture set is the backbone of the stage's provability and is share
 
 Contributor docs under `docs/contributors/`:
 
-- `docs/contributors/backend.md` - the `iterations`, `submissions`, `session_submissions`, and `submission_checks` tables and the seed, the pending-submission worker and the per-stage validation log it writes, the `SubmissionSource` seam and its config (`GITHUB_TOKEN`, `ALLOW_LOCAL_SUBMISSIONS`, `SUBMISSION_GIT_TIMEOUT_MS`, `DEPS_VERSION`), the static-validator reasons, and the submission/reachability/status endpoints including the validation-log payload.
+- `docs/contributors/backend.md` - the `seasons`, `submissions`, `session_submissions`, and `submission_checks` tables and the seed, the pending-submission worker and the per-stage validation log it writes, the `SubmissionSource` seam and its config (`GITHUB_TOKEN`, `ALLOW_LOCAL_SUBMISSIONS`, `SUBMISSION_GIT_TIMEOUT_MS`, `DEPS_VERSION`), the static-validator reasons, and the submission/reachability/status endpoints including the validation-log payload.
 - `docs/contributors/execution.md` - the overlay build path, the `submission-overlay` image spec, the load check under the sandbox profile, the driver options that bound and cache it (the caching default and the build/load-check timeouts that keep a hung build from stalling the worker), and the overlay-image eviction sweep with its config (`OVERLAY_IMAGE_BUDGET`, `OVERLAY_IMAGE_SWEEP_INTERVAL_MS`), its active-`ready` exemption, and the two driver-interface additions it needs (overlay-image enumeration and best-effort `removeImage`).
 - The harness contributor docs - the `validate` subcommand and its structured result.
 - `docs/contributors/frontend.md` - `SubmitAgentForm.vue` and its polled per-stage validation timeline, the dev-only local-path gate, the agent profile page (including the stored validation log), and the watch picker.
@@ -53,7 +53,7 @@ Participant-facing docs: this is the first stage that changes anything participa
 
 Per [the plan README](../README.md), this stage's files and the specs must not drift from what gets built. So: confirm or correct the proposed defaults (caching policy, validation-worker processing, config names) in the relevant step files as implementation confirms them; flip the [Stage 5](../stage-05-submissions.md) status line when work begins and ends; and keep the static-validator/`manifest.py` contract changes in the same change set on both sides.
 
-One existing doc comment needs reconciling in the same change set. [backend/src/deps-version.ts](../../backend/src/deps-version.ts) currently says "Stage 5 resolves a session's version per submission **from its manifest**." Stage 5 as planned resolves the version from the **iteration's pinned `deps_version`** and only _validates_ that the submission's manifest `template_version` matches it (steps 3–4); the overlay build and the watch run both take the version from the iteration, not the manifest directly. Update that comment when step 4 lands so code and plan agree on where the version comes from.
+One existing doc comment needs reconciling in the same change set. [backend/src/deps-version.ts](../../backend/src/deps-version.ts) currently says "Stage 5 resolves a session's version per submission **from its manifest**." Stage 5 as planned resolves the version from the **season's pinned `deps_version`** and only _validates_ that the submission's manifest `template_version` matches it (steps 3–4); the overlay build and the watch run both take the version from the season, not the manifest directly. Update that comment when step 4 lands so code and plan agree on where the version comes from.
 
 ## Done when
 

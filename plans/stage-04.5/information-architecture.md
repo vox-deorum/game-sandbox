@@ -1,6 +1,6 @@
 # Stage 4.5: Information Architecture
 
-Status: approved, navigation model since superseded. This document is checkpoint one of [Stage 4.5](../stage-04.5-ui-restructure.md). The page set and the game-stage principle below still hold, but the single three-zone top bar described under "Navigation model" has been replaced by a two-tier model: a collapsible left sidebar for the cross-game sections (Games, Seasons, Documentation, My Agents, account) plus a per-game contextual tab strip (Overview, Leaderboard, Submit / My Agent, Manage). Front-facing the site now says "Game" for an environment and "Season" for an iteration. The current authority is the [frontend spec](../../docs/specs/frontend.md) and [frontend contributor guide](../../docs/contributors/frontend.md).
+Status: approved, navigation model since superseded. This document is checkpoint one of [Stage 4.5](../stage-04.5-ui-restructure.md). The page set and the game-stage principle below still hold, but the single three-zone top bar described under "Navigation model" has been replaced by a two-tier model: a collapsible left sidebar for the cross-game sections (Games, Seasons, Documentation, My Agents, account) plus a per-game contextual tab strip (Overview, Leaderboard, Submit / My Agent, Manage). Front-facing the site now says "Game" for an environment and "Season" for a season. The current authority is the [frontend spec](../../docs/specs/frontend.md) and [frontend contributor guide](../../docs/contributors/frontend.md).
 
 This is the rethought information architecture for the frontend. It covers what exists today, which is four pages plus the dev styleguide. It also reserves visible room for what stages 5 through 9 add: agent profiles, submissions, leaderboards, and telemetry, per [specs/frontend.md](../../docs/specs/frontend.md). The guiding idea is that the site is a small number of strong pages, and the navigation should make the eventual shape of the product legible now, so a student landing on the site understands what it will become.
 
@@ -9,14 +9,14 @@ This is the rethought information architecture for the frontend. It covers what 
 ```
 /                      Environments (the home page, the gallery)
 /environments/:envId   Environment hub (overview, play and watch, recent replays;
-                       later: leaderboards, submission form, iteration history)
+                       later: leaderboards, submission form, season history)
 /sessions/:id          Live stage (an active session)
 /replays/:id           Replay stage (a recorded session)
 /styleguide            Dev-only primitive showcase, absent from production builds
 
 Future, anticipated but not routed yet:
 /agents/:agentId       Agent profile (stage 5)
-leaderboards           Stage 6; per environment per iteration, so it most likely
+leaderboards           Stage 6; per environment per season, so it most likely
                        lives on the environment hub rather than as its own route,
                        with the nav entry scrolling or linking there
 ```
@@ -37,7 +37,7 @@ On narrow screens the bar keeps all three zones. The placeholder entries collaps
 
 ## Page purposes and wireframes
 
-The wireframes are structural, not visual. Spacing, type, and color come from the design foundation and the styleguide iteration. The game-stage spotlight principle applies throughout: on session and replay pages the renderer canvas is the visual center, and the chrome around it stays quiet.
+The wireframes are structural, not visual. Spacing, type, and color come from the design foundation and the styleguide season. The game-stage spotlight principle applies throughout: on session and replay pages the renderer canvas is the visual center, and the chrome around it stays quiet.
 
 ### Environments (home, `/`)
 
@@ -59,7 +59,7 @@ Each card carries a thumbnail, display name, short description, slot count, and 
 
 ### Environment hub (`/environments/:envId`)
 
-Purpose: everything about one environment in one place. Today that is the description, the entry points, and recent replays. Stages 5 and 6 add the submission form, leaderboards, and iteration history to this same page. The hub is therefore laid out as a column of sections that future stages append to.
+Purpose: everything about one environment in one place. Today that is the description, the entry points, and recent replays. Stages 5 and 6 add the submission form, leaderboards, and season history to this same page. The hub is therefore laid out as a column of sections that future stages append to.
 
 ```
 |  top bar                                                                             |
@@ -157,7 +157,7 @@ Purpose: render every primitive in every variant and state, plus the token swatc
 ## What later stages slot in
 
 - Stage 5 (submissions): the `Agents` nav entry becomes a real section (agent profiles), and the environment hub gains the submission form section. The hub's section-column layout is the insertion point.
-- Stage 6 (leaderboards): the `Leaderboards` nav entry becomes real, pointing at the per-environment boards on the hub. The hub gains the two boards and iteration history, and the replay stage gains the rating prompt next to pinning.
+- Stage 6 (leaderboards): the `Leaderboards` nav entry becomes real, pointing at the per-environment boards on the hub. The hub gains the two boards and season history, and the replay stage gains the rating prompt next to pinning.
 - Stage 9 (LLM gateway): the replay stage and agent profiles gain an owner-only view of an agent's LLM call metadata for a run (prompt, model, token and latency detail), queried by request for a tick or a run rather than streamed, because telemetry is detail you open, not a live feed. This is a separate surface from the decision log. The log shows agent actions from the state stream and is unchanged by Stage 9; the call-metadata view answers "why did it act that way" on demand. No new top-level sections.
 - Stages 8 and 9 (multi-agent, chat): the live and replay stages gain slot assignment and the chat panel inside the existing stage layout, and the start dialog grows slot pickers.
 

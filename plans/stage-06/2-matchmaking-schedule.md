@@ -2,7 +2,7 @@
 
 Status: done.
 
-Part of [Stage 6](../stage-06-leaderboards.md). This is build-order step 2 and the **first demonstrable slice**. It is a pure, deterministic function. Given an iteration's match design and its live submission set, it produces the concrete list of matches the workflow will run. It has no I/O, no Docker, and no database. It takes plain inputs and returns a plain schedule, so it is fully unit-testable. This is where the "auto-generate balanced matchup schedules from opened slots" decision lives.
+Part of [Stage 6](../stage-06-leaderboards.md). This is build-order step 2 and the **first demonstrable slice**. It is a pure, deterministic function. Given a season's match design and its live submission set, it produces the concrete list of matches the workflow will run. It has no I/O, no Docker, and no database. It takes plain inputs and returns a plain schedule, so it is fully unit-testable. This is where the "auto-generate balanced matchup schedules from opened slots" decision lives.
 
 ## Why this is its own seam
 
@@ -12,14 +12,14 @@ The runner (step 4) should not hold the rules for _which_ games to run. It shoul
 
 A `buildSchedule` function taking:
 
-- The iteration's `IterationConfig.matches` (from step 1): each match configuration's `slots` (ordered seat specs, `builtin-naive` or `submission`), `seeds`, and `games` count.
-- The trigger-time snapshot of the iteration's active `ready` submissions (`listActiveSubmissionsByIteration(iterationId, 'ready')` from Stage 5.1). These are the agents eligible to fill submission seats. The scheduler receives them as plain data, so the background runner never re-reads live submissions.
+- The season's `SeasonConfig.matches` (from step 1): each match configuration's `slots` (ordered seat specs, `builtin-naive` or `submission`), `seeds`, and `games` count.
+- The trigger-time snapshot of the season's active `ready` submissions (`listActiveSubmissionsBySeason(seasonId, 'ready')` from Stage 5.1). These are the agents eligible to fill submission seats. The scheduler receives them as plain data, so the background runner never re-reads live submissions.
 - The built-in Naive baseline as the shared Stage 6 `AgentRef` (`{ kind: 'builtin-naive' }`). The scheduler owns this constant; it is not a submission row.
 - The environment's `seat_order_matters` capability (from its `EnvironmentMeta`), which selects ordered versus unordered submission-seat expansion. The trigger reads it from the registry and passes it in, keeping the scheduler a pure function of plain data. It is moot for the single-seat case.
 
 ## Output
 
-An ordered list of **scheduled games**. Each one carries the originating `match_index`, a deterministic `game_index`, a concrete `seed`, and a resolved `slots` assignment. That assignment names exactly what fills every seat as an `AgentRef` (a specific submission/user pair, or `builtin-naive`). This is exactly the shape step 1's `iteration_run_games.slots` stores and step 4 executes. The list order is the execution order (sequential, single host). It is deterministic for a given input, so a re-run schedules the same games.
+An ordered list of **scheduled games**. Each one carries the originating `match_index`, a deterministic `game_index`, a concrete `seed`, and a resolved `slots` assignment. That assignment names exactly what fills every seat as an `AgentRef` (a specific submission/user pair, or `builtin-naive`). This is exactly the shape step 1's `season_run_games.slots` stores and step 4 executes. The list order is the execution order (sequential, single host). It is deterministic for a given input, so a re-run schedules the same games.
 
 ## Balancing rules
 
@@ -31,7 +31,7 @@ The operator designs _match shapes_ (slot compositions plus a game count), not a
 
 Determinism: no `Math.random()`. Submission refs are sorted by stable submission id before expansion. Baseline rows are emitted after the submitted rows for each match configuration. Seed-cycling is index-driven from the seed list. The same inputs always yield the same ordered schedule, which is what lets a re-run reproduce a deterministic agent's games exactly.
 
-The function handles these edge cases explicitly, and tests pin each one. Zero ready submissions: the schedule is just the Naive baseline games, so an operator can dry-run an iteration before anyone submits. A match with no submission seat at all: pure baseline, emitted once for its `games` count. An empty `seeds` list: rejected by the config codec in step 1, but the scheduler also guards. `games` of zero or less: typed rejection. A match with zero slots: typed rejection, also rejected by the admin config validator. An empty overall match list: returns an empty schedule that the trigger refuses with `empty_schedule`, because an unconfigured iteration can be stored but cannot be run. More submission seats than ready submissions (`N < K`): no submitted seatings, just the Naive baseline, so a thin iteration still dry-runs rather than erroring.
+The function handles these edge cases explicitly, and tests pin each one. Zero ready submissions: the schedule is just the Naive baseline games, so an operator can dry-run a season before anyone submits. A match with no submission seat at all: pure baseline, emitted once for its `games` count. An empty `seeds` list: rejected by the config codec in step 1, but the scheduler also guards. `games` of zero or less: typed rejection. A match with zero slots: typed rejection, also rejected by the admin config validator. An empty overall match list: returns an empty schedule that the trigger refuses with `empty_schedule`, because an unconfigured season can be stored but cannot be run. More submission seats than ready submissions (`N < K`): no submitted seatings, just the Naive baseline, so a thin season still dry-runs rather than erroring.
 
 ## Tests
 
