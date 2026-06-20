@@ -309,6 +309,25 @@ describe('retention', () => {
       const onlyFlappy = await makeRetention().list({ env: 'flappy_bird' })
       expect(onlyFlappy.map((r) => r.id)).toEqual(['fb-new', 'fb-old'])
     })
+
+    it('surfaces the producing session’s termination reason, null when none ended', async () => {
+      // One recording produced by an ended session, one rowless of a session (debris, never ended).
+      await writeRecording({ id: 'ended', user_id: 'a', env_id: 'flappy_bird', created_at: ago(1) })
+      await writeRecording({ id: 'orphan', user_id: 'a', env_id: 'flappy_bird', created_at: ago(2) })
+      await storage.createSession({
+        id: 'sess-ended',
+        user_id: 'a',
+        env_id: 'flappy_bird',
+        mode: 'human',
+        recording_id: 'ended',
+        created_at: ago(1),
+      })
+      await storage.markEnded('sess-ended', 'idle_timeout', ago(1))
+
+      const byId = new Map((await makeRetention().list()).map((r) => [r.id, r]))
+      expect(byId.get('ended')?.termination_reason).toBe('idle_timeout')
+      expect(byId.get('orphan')?.termination_reason).toBeNull()
+    })
   })
 
   describe('pinning', () => {

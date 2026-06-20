@@ -125,7 +125,7 @@ describe('SessionPage', () => {
     vi.mocked(listRecordings).mockResolvedValue([])
   })
 
-  it('mounts the renderer for the owner of a human session and wires input + active timeout', async () => {
+  it('mounts the renderer for the owner of a human session and wires input', async () => {
     vi.mocked(getMe).mockResolvedValue({
       user_id: 'dev-user',
       allowlisted: true,
@@ -149,9 +149,6 @@ describe('SessionPage', () => {
     // The owner gets a live sendAction that the page forwards as an input command.
     mountCtx?.sendAction?.('player_0', 1)
     expect(sent).toContainEqual({ kind: 'input', slot: 'player_0', action: 1 })
-
-    // The paced per-step window shows while the owner controls a slot.
-    expect(await screen.findByText(/Per-step input window: 50 ms/)).toBeInTheDocument()
   })
 
   it('reflects pause/resume echoes and sends the toggle command', async () => {
@@ -211,6 +208,7 @@ describe('SessionPage', () => {
         user_id: 'dev-user',
         created_at: '2026-06-11T00:00:00.000Z',
         pinned: true,
+        termination_reason: 'terminated',
       },
     ])
     await renderSession()

@@ -14,7 +14,7 @@
 import type { RecordingHeader, StepState } from '@game-sandbox/schema'
 import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
 import { computed, onMounted, ref } from 'vue'
-import { RouterLink, useRoute } from 'vue-router'
+import { useRoute } from 'vue-router'
 
 import {
   getEnvironments,
@@ -23,17 +23,20 @@ import {
   type RecordingSummary,
 } from '../api/client.js'
 import DecisionLog, { type DecisionEntry } from '../components/DecisionLog.vue'
+import ExperimentTabs from '../components/ExperimentTabs.vue'
 import PlayerAttribution from '../components/PlayerAttribution.vue'
 import RunMetadata from '../components/RunMetadata.vue'
 import UiButton from '../components/ui/UiButton.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import UiSlider from '../components/ui/UiSlider.vue'
+import UiStatusBadge from '../components/ui/UiStatusBadge.vue'
 import { usePinning } from '../composables/usePinning.js'
 import { useRendererMount } from '../composables/useRendererMount.js'
 import { useReplayTransport } from '../composables/useReplayTransport.js'
 import { formatDate } from '../lib/format.js'
 import { useMe } from '../me.js'
 import { parseRecording, UnsupportedVersionError } from '../replay/parse.js'
+import { reasonText } from '../replay/reason.js'
 import { type RunSummary, summarizeStates } from '../replay/summary.js'
 
 const route = useRoute()
@@ -61,6 +64,15 @@ const { pinned, busy: pinBusy, error: pinError, toggle: togglePin } = usePinning
 
 // The decision log sits beside a portrait canvas and below a landscape one (the same rule as live).
 const logBeside = computed(() => aspectRatio.value !== null && aspectRatio.value < 1)
+
+// The status badge mirrors the ended-session card: it names how the run ended once the listing supplies
+// the producing session's termination reason, falling back to a plain "Replay" until then (or when no
+// ended session claims the recording).
+const statusLabel = computed(() =>
+  listingEntry.value?.termination_reason != null
+    ? reasonText(listingEntry.value.termination_reason)
+    : 'Replay',
+)
 
 // The scrubber's value is the transport index; setting it (drag or keyboard) seeks the transport.
 const scrubIndex = computed({
@@ -158,29 +170,22 @@ onMounted(async () => {
     This replay needs a newer viewer. {{ versionMessage }}
   </UiEmptyState>
   <section v-else class="replay">
-    <div class="context-row">
-      <p class="context-line">
-        <RouterLink to="/">Environments</RouterLink>
-        <span aria-hidden="true"> / </span>
-        <RouterLink v-if="header !== null" :to="`/environments/${header.environment}`">
-          {{ meta?.display_name ?? header.environment }}
-        </RouterLink>
-        <span aria-hidden="true"> / </span>
-        <span>Replay</span>
-      </p>
-      <UiButton
-        v-if="owned"
-        class="context-pin"
-        variant="secondary"
-        :loading="pinBusy"
-        @click="togglePin"
-      >
-        {{ pinned ? 'Pinned ✓' : 'Pin this recording' }}
-      </UiButton>
-    </div>
+    <ExperimentTabs v-if="header !== null" class="replay-tabs" :env-id="header.environment" />
+
+    <header class="replay-bar">
+      <div class="replay-status">
+        <UiStatusBadge tone="neutral" :label="statusLabel" />
+        <RunMetadata class="status-facts" :items="metadataItems" />
+      </div>
+      <div v-if="owned" class="replay-actions">
+        <UiButton variant="secondary" size="tight" :loading="pinBusy" @click="togglePin">
+          {{ pinned ? 'Pinned ✓' : 'Pin this recording' }}
+        </UiButton>
+      </div>
+    </header>
+
     <UiEmptyState v-if="owned && pinError !== null" tone="danger">{{ pinError }}</UiEmptyState>
 
-    <RunMetadata :items="metadataItems" />
     <PlayerAttribution :players="header?.players" />
 
     <div v-if="transport !== null" class="replay-controls">
@@ -212,7 +217,6 @@ onMounted(async () => {
       @keydown="onKeydown"
     >
       <section class="stage-canvas" aria-label="Replay">
-        <h2 class="stage-title">{{ meta?.display_name ?? header?.environment ?? 'Replay' }}</h2>
         <div
           class="renderer-host"
           ref="hostEl"
@@ -222,7 +226,6 @@ onMounted(async () => {
       </section>
 
       <section v-if="logBeside" class="stage-log" aria-label="Decision log">
-        <h2 class="stage-title">Decision log</h2>
         <div class="stage-log-body">
           <DecisionLog :entries="decisions" :current-index="replayState.index" />
         </div>
@@ -236,26 +239,39 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.context-row {
+/* The shared tab strip carries its own full-width border and an inner max-width/padding that the shell
+   normally aligns to the page edges. Inside the padded page content we bleed it back out by the page
+   padding so its border spans the content width and its inner labels line up with the page below. */
+.replay-tabs {
+  margin: calc(var(--space-5) * -1) calc(var(--space-5) * -1) var(--space-4);
+}
+
+.replay-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
-  margin: 0 0 var(--space-4);
+  margin-bottom: var(--space-3);
+  flex-wrap: wrap;
 }
 
-.context-line {
+.replay-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+}
+
+/* The run facts sit inline beside the status badge, so the bar stays one row about button height; drop
+   RunMetadata's own bottom margin that would otherwise break the row's vertical centering. (The class
+   lands on RunMetadata's root, which carries this scope id, so no :deep is needed.) */
+.status-facts {
   margin: 0;
-  font-size: var(--text-sm);
-  color: var(--color-text-muted);
 }
 
-.context-line a:hover {
-  color: var(--color-accent);
-}
-
-.context-pin {
-  flex: none;
+.replay-actions {
+  display: flex;
+  gap: var(--space-1);
 }
 
 .replay-controls {
@@ -297,8 +313,7 @@ onMounted(async () => {
   border-radius: var(--radius-md);
 }
 
-/* Beside layout: the columns stretch to a common height so the log matches the canvas to its left,
-   and each column is a header + body stack so the two headers sit on the same baseline. */
+/* Beside layout: the columns stretch to a common height so the log matches the canvas to its left. */
 .stage.beside {
   grid-template-columns: minmax(0, 22rem) minmax(0, 1fr);
   align-items: stretch;
@@ -314,11 +329,6 @@ onMounted(async () => {
 .stage.below {
   grid-template-columns: minmax(0, 1fr);
   justify-items: center;
-}
-
-.stage-title {
-  margin: 0 0 var(--space-2);
-  font-size: var(--text-md);
 }
 
 .renderer-host {

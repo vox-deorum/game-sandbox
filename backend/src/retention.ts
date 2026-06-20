@@ -41,6 +41,12 @@ export interface RecordingListing {
   user_id: string | null
   created_at: string | null
   pinned: boolean
+  /**
+   * How the session that produced this recording ended, joined from the session row, so the replay
+   * viewer can label its outcome the way the ended-session card does. Null when no ended session
+   * claims the recording (foreign debris, or a session still running when listed).
+   */
+  termination_reason: string | null
 }
 
 /** The outcome of a pin request the HTTP layer maps to a status. */
@@ -160,11 +166,20 @@ export class Retention {
    * matched against their header's environment.
    */
   async list(filter?: { env?: string }): Promise<RecordingListing[]> {
-    const [volume, rows] = await Promise.all([
+    const [volume, rows, sessions] = await Promise.all([
       this.recordings.list(),
       this.storage.listRecordings(),
+      this.storage.listSessions(),
     ])
     const rowById = new Map(rows.map((row) => [row.id, row]))
+    // The termination reason lives on the session, keyed back to the recording it produced. Only an
+    // ended session carries one; a running session's recording lists with a null reason until it ends.
+    const reasonByRecording = new Map<string, string | null>()
+    for (const session of sessions) {
+      if (session.recording_id !== null) {
+        reasonByRecording.set(session.recording_id, session.termination_reason)
+      }
+    }
 
     const merged: RecordingListing[] = volume.map((entry) => {
       const row = rowById.get(entry.id)
@@ -174,6 +189,7 @@ export class Retention {
         user_id: row?.user_id ?? null,
         created_at: row?.created_at ?? null,
         pinned: row?.pinned === 1,
+        termination_reason: reasonByRecording.get(entry.id) ?? null,
       }
     })
 

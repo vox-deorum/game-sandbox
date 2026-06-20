@@ -71,6 +71,8 @@ export interface RecordingSummary {
   user_id: string | null
   created_at: string | null
   pinned: boolean
+  /** How the producing session ended, so the replay viewer can label its outcome; null when unknown. */
+  termination_reason: string | null
 }
 
 /** The fields a start request resolves; the host page fills them from the environment metadata. */

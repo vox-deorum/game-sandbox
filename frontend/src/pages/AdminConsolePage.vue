@@ -136,7 +136,7 @@ async function declare(): Promise<void> {
 }
 
 function seasonLabel(season: SeasonView): string {
-  return season.label ?? `Season ${season.id.slice(0, 8)}`
+  return season.label ?? `Season: ${season.id.slice(0, 8)}`
 }
 
 // The detail heading reads "Season <label>" for a named season; an unnamed one already falls back to
@@ -185,7 +185,7 @@ async function saveRename(seasonId: string): Promise<void> {
 
     <template v-else>
       <header class="admin-header">
-        <h1>Admin console</h1>
+        <h1>Season Management</h1>
       </header>
 
       <div class="admin-body">
@@ -262,7 +262,7 @@ async function saveRename(seasonId: string): Promise<void> {
             </section>
 
             <section class="admin-section">
-              <h2>Season rating prompt</h2>
+              <h2>Human Rating Prompt</h2>
               <UiCard class="admin-card">
                 <OperatorRatingPromptEditor :season="view.season" @changed="refresh" />
               </UiCard>
@@ -289,9 +289,21 @@ async function saveRename(seasonId: string): Promise<void> {
 
 .admin-body {
   display: grid;
-  grid-template-columns: 16rem 1fr;
+  grid-template-columns: 1fr 16rem;
   gap: var(--space-6);
   align-items: start;
+}
+
+/* The seasons sidebar stays first in the DOM (it is the section's navigation) but sits in the right
+   column; the configuration main fills the wider left column. */
+.admin-sidebar {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.admin-main {
+  grid-column: 1;
+  grid-row: 1;
 }
 
 .declare {
@@ -391,6 +403,13 @@ async function saveRename(seasonId: string): Promise<void> {
 @media (max-width: 768px) {
   .admin-body {
     grid-template-columns: 1fr;
+  }
+
+  /* Stacked: drop the explicit placement so the columns flow in DOM order (sidebar, then main). */
+  .admin-sidebar,
+  .admin-main {
+    grid-column: auto;
+    grid-row: auto;
   }
 }
 </style>

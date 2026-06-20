@@ -43,10 +43,12 @@ import ReplayPage from '../src/pages/ReplayPage.vue'
 
 async function renderReplay(path = '/replays/rec-1'): Promise<ReturnType<typeof renderWithMe>> {
   const router = memoryRouter([
-    // Stubs so the replay stage's "Environments / … / Replay" context-line links resolve.
+    // Stubs so the ExperimentTabs strip's links (game name, Overview, Leaderboards, My Submissions)
+    // resolve; the catch-all absorbs the per-section tab targets without a route each.
     { path: '/', component: { template: '<div />' } },
     { path: '/environments/:envId', component: { template: '<div />' } },
     { path: '/replays/:id', component: ReplayPage },
+    { path: '/:pathMatch(.*)*', component: { template: '<div />' } },
   ])
   router.push(path)
   await router.isReady()
@@ -133,6 +135,7 @@ describe('ReplayPage', () => {
         user_id: 'dev-user',
         created_at: '2026-06-11T00:00:00.000Z',
         pinned: false,
+        termination_reason: 'terminated',
       },
     ])
     await renderReplay()
@@ -140,6 +143,31 @@ describe('ReplayPage', () => {
     await fireEvent.click(pinButton)
     expect(vi.mocked(pinRecording)).toHaveBeenCalledWith('rec-1')
     expect(await screen.findByRole('button', { name: 'Pinned ✓' })).toBeInTheDocument()
+  })
+
+  it('labels the status badge with the producing session’s termination reason', async () => {
+    vi.mocked(getRecording).mockResolvedValue(replayRecording())
+    vi.mocked(listRecordings).mockResolvedValue([
+      {
+        id: 'rec-1',
+        header: { schema_version: 1, environment: 'flappy_bird' },
+        user_id: 'someone-else',
+        created_at: '2026-06-11T00:00:00.000Z',
+        pinned: false,
+        termination_reason: 'terminated',
+      },
+    ])
+    await renderReplay()
+    // The reason resolves with the listing; until then the badge reads the neutral "Replay" fallback.
+    expect(await screen.findByText('Game over')).toBeInTheDocument()
+  })
+
+  it('falls back to a plain Replay badge when no listing reason is available', async () => {
+    vi.mocked(getRecording).mockResolvedValue(replayRecording())
+    vi.mocked(listRecordings).mockResolvedValue([])
+    await renderReplay()
+    await screen.findByRole('button', { name: 'Play' })
+    expect(screen.getByText('Replay')).toBeInTheDocument()
   })
 
   it('shows no pin toggle to a non-owner', async () => {
@@ -151,6 +179,7 @@ describe('ReplayPage', () => {
         user_id: 'someone-else',
         created_at: '2026-06-11T00:00:00.000Z',
         pinned: false,
+        termination_reason: null,
       },
     ])
     await renderReplay()

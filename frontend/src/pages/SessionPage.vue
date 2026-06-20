@@ -2,7 +2,7 @@
   The live session page: it fetches the session row, connects the socket, and mounts the environment's
   renderer over the live stream. The renderer owns the game frame; this page owns the session chrome
   that works for every environment — the status strip, the pause/resume toggle, the stop button, the
-  active-timeout display, the decision log, and the end-of-session card with the replay link and pin.
+  decision log, and the end-of-session card with the replay link and pin.
 
   The chrome is composed from small composables: useSessionSocket owns the socket and the state derived
   from its frames, useRendererMount owns the canvas, usePinning owns the pin toggle. Capabilities derive
@@ -40,6 +40,7 @@ import { useSessionSocket } from '../composables/useSessionSocket.js'
 import { formatDate } from '../lib/format.js'
 import { useMe } from '../me.js'
 import { parseRecording } from '../replay/parse.js'
+import { reasonText } from '../replay/reason.js'
 import { summarizeStates } from '../replay/summary.js'
 
 const route = useRoute()
@@ -114,10 +115,6 @@ function toDecision(state: StepState): DecisionEntry {
 // The decision log sits beside a portrait canvas (a column is left free) and below a landscape one.
 const logBeside = computed(() => aspectRatio.value !== null && aspectRatio.value < 1)
 
-const showActiveTimeout = computed(
-  () => controlledSlots.value.length > 0 && status.value !== 'ended',
-)
-
 const statusLabel = computed(() => {
   if (status.value === 'ended') {
     return reasonText(endReason.value)
@@ -143,42 +140,6 @@ const statusFacts = computed(() => [
   { label: 'Ticks', value: finalResult.value?.ticks },
   { label: 'Started', value: formatDate(row.value?.created_at) },
 ])
-
-/** A friendly line for a termination reason, so a paused-and-idled session reads as normal, not error. */
-function reasonText(reason: string | null): string {
-  switch (reason) {
-    case 'terminated':
-      return 'Game over'
-    case 'truncated':
-    case 'episode_limit':
-      return 'Episode complete'
-    case 'stopped':
-      return 'Stopped'
-    case 'idle_timeout':
-      return 'Ended after a period of inactivity'
-    case 'time_limit':
-      return 'Reached the time limit'
-    case 'oom_killed':
-      return 'Ended (out of memory)'
-    case 'error':
-      return 'Ended unexpectedly'
-    default:
-      return reason ?? 'Ended'
-  }
-}
-
-/** The active-timeout readout: a paced game shows its per-step input window; an unpaced one its clock. */
-const activeTimeoutLabel = computed(() => {
-  const m = meta.value
-  if (m === null) {
-    return ''
-  }
-  if (m.pace_interval_ms !== null && m.pace_interval_ms > 0) {
-    const perSecond = Math.round(1000 / m.pace_interval_ms)
-    return `Per-step input window: ${m.pace_interval_ms} ms (${perSecond} steps/second)`
-  }
-  return m.human_timeout_ms !== null ? `Move time limit: ${m.human_timeout_ms} ms` : 'No move clock'
-})
 
 onMounted(async () => {
   const fetched = await getSession(id).catch(() => undefined)
@@ -270,10 +231,11 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
         class="session-controls"
       >
         <template v-if="status === 'ended'">
-          <UiButton v-if="recordingId !== null" :to="`/replays/${recordingId}`">Open replay</UiButton>
+          <UiButton v-if="recordingId !== null" size="tight" :to="`/replays/${recordingId}`">Open replay</UiButton>
           <UiButton
             v-if="isOwner && recordingId !== null"
             variant="secondary"
+            size="tight"
             :loading="pinBusy"
             @click="togglePin"
           >
@@ -281,8 +243,8 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
           </UiButton>
         </template>
         <template v-else>
-          <UiButton variant="secondary" @click="togglePause">{{ paused ? 'Resume' : 'Pause' }}</UiButton>
-          <UiButton variant="danger" @click="stop">Stop</UiButton>
+          <UiButton variant="secondary" size="tight" @click="togglePause">{{ paused ? 'Resume' : 'Pause' }}</UiButton>
+          <UiButton variant="danger" size="tight" @click="stop">Stop</UiButton>
         </template>
       </div>
     </header>
@@ -292,7 +254,6 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
     </UiEmptyState>
 
     <PlayerAttribution :players="header?.players" />
-    <p v-if="showActiveTimeout" class="active-timeout">{{ activeTimeoutLabel }}</p>
 
     <div class="stage" :class="logBeside ? 'beside' : 'below'">
       <section class="stage-canvas" aria-label="Environment">
@@ -365,12 +326,6 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
 .session-controls {
   display: flex;
   gap: var(--space-1);
-}
-
-.active-timeout {
-  margin: 0 0 var(--space-3);
-  color: var(--color-text-muted);
-  font-size: var(--text-sm);
 }
 
 /* The stage centers the canvas as the star; the log takes only the room the canvas leaves. */
