@@ -90,9 +90,90 @@ describe('public leaderboard API', () => {
         (season) =>
           season.config === undefined &&
           season.rating_prompt === undefined &&
-          season.board === undefined,
+          season.board === undefined &&
+          typeof season.submission_count === 'number' &&
+          typeof season.session_count === 'number',
       ),
     ).toBe(true)
+  })
+
+  it('counts active submissions and ended attributed sessions in the public season index', async () => {
+    const season = await declare()
+    await storage.setReleaseStatus(season.id, 'released')
+
+    await storage.createSubmission({
+      season_id: season.id,
+      env_id: ENV_ID,
+      user_id: 'alice',
+      source_kind: 'git',
+      repo_url: 'https://example.test/alice/first',
+      commit_sha: 'sha-1',
+      local_path: null,
+      ref: null,
+      created_at: '2026-06-11T00:00:00.000Z',
+    })
+    await storage.createSubmission({
+      season_id: season.id,
+      env_id: ENV_ID,
+      user_id: 'alice',
+      source_kind: 'git',
+      repo_url: 'https://example.test/alice/current',
+      commit_sha: 'sha-2',
+      local_path: null,
+      ref: null,
+      created_at: '2026-06-11T00:01:00.000Z',
+    })
+    await storage.createSubmission({
+      season_id: season.id,
+      env_id: ENV_ID,
+      user_id: 'bob',
+      source_kind: 'git',
+      repo_url: 'https://example.test/bob/current',
+      commit_sha: 'sha-3',
+      local_path: null,
+      ref: null,
+      created_at: '2026-06-11T00:02:00.000Z',
+    })
+
+    await storage.createSession({
+      id: 'ended-season-session',
+      user_id: 'viewer',
+      env_id: ENV_ID,
+      mode: 'scripted',
+      recording_id: 'ended-recording',
+      season_id: season.id,
+      created_at: '2026-06-11T01:00:00.000Z',
+    })
+    await storage.markEnded('ended-season-session', 'terminated', '2026-06-11T01:01:00.000Z')
+    await storage.createSession({
+      id: 'active-season-session',
+      user_id: 'viewer-2',
+      env_id: ENV_ID,
+      mode: 'human',
+      recording_id: null,
+      season_id: season.id,
+      created_at: '2026-06-11T02:00:00.000Z',
+    })
+    await storage.createSession({
+      id: 'ended-unattributed-session',
+      user_id: 'viewer-3',
+      env_id: ENV_ID,
+      mode: 'human',
+      recording_id: 'unattributed-recording',
+      season_id: null,
+      created_at: '2026-06-11T03:00:00.000Z',
+    })
+    await storage.markEnded('ended-unattributed-session', 'terminated', '2026-06-11T03:01:00.000Z')
+
+    const res = await app.inject({ method: 'GET', url: '/api/seasons' })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual([
+      expect.objectContaining({
+        id: season.id,
+        submission_count: 2,
+        session_count: 1,
+      }),
+    ])
   })
 
   it('narrows the public seasons list to one environment with ?envId=', async () => {

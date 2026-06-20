@@ -12,7 +12,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 
-import { formatAction, formatSlot } from '../lib/format.js'
+import { formatAction, formatSlotIndex } from '../lib/format.js'
 
 export interface DecisionEntry {
   tick: number
@@ -67,7 +67,7 @@ watch(
           :data-active="i === activeIndex || undefined"
           :aria-current="i === activeIndex ? 'true' : undefined"
         >
-          <td class="player-col">{{ entry.slot ? formatSlot(entry.slot) : '—' }}</td>
+          <td class="player-col">{{ entry.slot ? formatSlotIndex(entry.slot) : '—' }}</td>
           <td class="tick-col">{{ entry.tick }}</td>
           <td>{{ formatAction(entry.action) }}</td>
         </tr>

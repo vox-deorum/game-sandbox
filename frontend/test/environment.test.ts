@@ -113,6 +113,8 @@ describe('EnvironmentPage', () => {
         label: 'Week 1',
         created_at: '2026-06-10T00:00:00Z',
         released_at: null,
+        submission_count: 0,
+        session_count: 0,
       },
     ])
     await renderPage()

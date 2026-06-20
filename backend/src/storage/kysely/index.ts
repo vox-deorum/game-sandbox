@@ -37,6 +37,7 @@ import type {
   Database,
   GameResult,
   GameStatus,
+  PublicSeason,
   Rating,
   Recording,
   ReleaseStatus,
@@ -151,7 +152,7 @@ export class KyselyStorage implements Storage {
   getReleasedSeason(envId: string): Promise<Season | undefined> {
     return seasons.getReleasedSeason(this.db, envId)
   }
-  listPublicSeasons(options?: { envId?: string }): Promise<Season[]> {
+  listPublicSeasons(options?: { envId?: string }): Promise<PublicSeason[]> {
     return seasons.listPublicSeasons(this.db, options)
   }
   setSessionSeason(sessionId: string, seasonId: string): Promise<void> {

@@ -296,7 +296,6 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
 
     <div class="stage" :class="logBeside ? 'beside' : 'below'">
       <section class="stage-canvas" aria-label="Environment">
-        <h2 class="stage-title">{{ meta?.display_name ?? row?.env_id ?? 'Environment' }}</h2>
         <div
           class="renderer-host"
           ref="hostEl"
@@ -316,7 +315,6 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
       </section>
 
       <section v-if="logBeside" class="stage-log" aria-label="Decision log">
-        <h2 class="stage-title">Decision log</h2>
         <div class="stage-log-body">
           <DecisionLog :entries="decisions" />
         </div>
@@ -366,7 +364,7 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
 
 .session-controls {
   display: flex;
-  gap: var(--space-2);
+  gap: var(--space-1);
 }
 
 .active-timeout {
@@ -381,8 +379,7 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
   gap: var(--space-4);
 }
 
-/* Beside layout: the columns stretch to a common height so the log matches the canvas to its left,
-   and each column is a header + body stack so the two headers sit on the same baseline. */
+/* Beside layout: the columns stretch to a common height so the log matches the canvas to its left. */
 .stage.beside {
   grid-template-columns: minmax(0, 22rem) minmax(0, 1fr);
   align-items: stretch;
@@ -398,11 +395,6 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
 .stage.below {
   grid-template-columns: minmax(0, 1fr);
   justify-items: center;
-}
-
-.stage-title {
-  margin: 0 0 var(--space-2);
-  font-size: var(--text-md);
 }
 
 .renderer-host {

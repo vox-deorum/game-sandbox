@@ -431,6 +431,15 @@ export type NewRecording = Insertable<RecordingsTable>
 /** A season row as read back from the database. */
 export type Season = Selectable<SeasonsTable>
 
+/**
+ * One row in the public cross-environment season index. The counters are computed by the listing
+ * query, not stored on the season, so resubmissions and completed sessions are reflected immediately.
+ */
+export type PublicSeason = Season & {
+  submission_count: number
+  session_count: number
+}
+
 /** A partial season update. */
 export type SeasonUpdate = Updateable<SeasonsTable>
 

@@ -15,7 +15,7 @@ import type {
   SetSubmissionStatusResult,
   UpdateSeasonConfigResult,
 } from '../index.js'
-import type { Database, ReleaseStatus, Season, WindowStatus } from '../schema.js'
+import type { Database, PublicSeason, ReleaseStatus, Season, WindowStatus } from '../schema.js'
 import {
   decodeSeasonConfig,
   emptySeasonConfig,
@@ -317,14 +317,28 @@ export async function getReleasedSeason(
 export async function listPublicSeasons(
   db: Kysely<Database>,
   options?: { envId?: string },
-): Promise<Season[]> {
+): Promise<PublicSeason[]> {
   // Any season with at least one public-facing flag — released, accepting submissions, or open for
-  // play — newest first, optionally narrowed to a single environment. The labels and flags are
-  // public, but the boards stay released-only (read through the season-boards route), so an
-  // open-but-unreleased season lists here without its results leaking.
+  // play — newest first, optionally narrowed to a single environment. Correlated count subqueries
+  // keep the public metadata in this one listing query: active submissions exclude superseded
+  // attempts, and sessions count only completed public watch/play sessions attributed to the season.
   let query = db
     .selectFrom('seasons')
     .selectAll()
+    .select((eb) => [
+      eb
+        .selectFrom('submissions')
+        .select((submissions) => submissions.fn.countAll<number>().as('count'))
+        .whereRef('submissions.season_id', '=', 'seasons.id')
+        .where('submissions.superseded_at', 'is', null)
+        .as('submission_count'),
+      eb
+        .selectFrom('sessions')
+        .select((sessions) => sessions.fn.countAll<number>().as('count'))
+        .whereRef('sessions.season_id', '=', 'seasons.id')
+        .where('sessions.status', '=', 'ended')
+        .as('session_count'),
+    ])
     .where((eb) =>
       eb.or([
         eb('release_status', '=', 'released'),
@@ -335,7 +349,12 @@ export async function listPublicSeasons(
   if (options?.envId !== undefined) {
     query = query.where('env_id', '=', options.envId)
   }
-  return await query.orderBy('created_at', 'desc').orderBy(sql`rowid`, 'desc').execute()
+  const rows = await query.orderBy('created_at', 'desc').orderBy(sql`rowid`, 'desc').execute()
+  return rows.map((row) => ({
+    ...row,
+    submission_count: Number(row.submission_count),
+    session_count: Number(row.session_count),
+  }))
 }
 
 export async function setSessionSeason(

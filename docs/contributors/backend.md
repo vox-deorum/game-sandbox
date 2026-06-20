@@ -202,8 +202,9 @@ The operator admin routes (`admin/routes.ts`) are the stable contract the admin 
 
 ### The public leaderboard reads
 
-Separate, ungated, and released-only at the route boundary (`leaderboards/routes.ts`):
+Separate and ungated (`leaderboards/routes.ts`). The season index may include open unreleased seasons, while board and history reads are released-only at the route boundary:
 
+- `GET /api/seasons` — every public-facing season, optionally filtered by environment, with identity, label, public gates, timestamps, active non-superseded submission count, and ended attributed session count. Configuration, rating prompts, and boards are excluded.
 - `GET /api/environments/:envId/seasons` — released seasons, newest first, for history links.
 - `GET /api/environments/:envId/leaderboards` — the current released season and both boards, plus the separate `submission_season_id` and `play_season_id` targets (reported even when unreleased); an empty current-board payload when nothing is released. The `human` board is the ranked aggregate (`getHumanBoard`): agents with at least three ratings carry a 1-based `rank`, the rest follow `rank: null`.
 - `GET /api/environments/:envId/seasons/:seasonId/leaderboards` — both boards for a specific released season; `404` for an unreleased or unknown one.

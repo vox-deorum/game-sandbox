@@ -15,12 +15,19 @@ export function formatDate(value: string | null | undefined): string | null {
   }).format(new Date(value))
 }
 
-/** "player_0" → "Player 0": a human-readable slot label, for attribution and the decision log. */
+/** "player_0" → "Player 0": a human-readable slot label, for attribution. */
 export function formatSlot(slot: string): string {
   return slot
     .split('_')
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ')
+}
+
+/** "player_0" → "0": the terse slot index for the decision log, whose column header already reads
+ *  "Player". Falls back to the whole slot id when it carries no trailing index. */
+export function formatSlotIndex(slot: string): string {
+  const last = slot.split('_').at(-1)
+  return last !== undefined && last !== '' ? last : slot
 }
 
 /** "1 slot", "2 slots", or "1–4 slots" from an environment's slot range. */

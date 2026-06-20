@@ -36,6 +36,26 @@ async function releaseSeason(request: APIRequestContext, seasonId: string): Prom
   expect(released.status(), await released.text()).toBe(200)
 }
 
+test('the Seasons index shows the refreshed released-season card and navigates to its boards', async ({
+  page,
+  request,
+}) => {
+  const label = `E2E season card ${Date.now()}`
+  const season = await declareSeason(request, label)
+  await releaseSeason(request, season.id)
+
+  await page.goto('/seasons')
+
+  const card = page.locator('li').filter({ hasText: label })
+  await expect(card.getByRole('link', { name: 'Results released' })).toBeVisible()
+  await expect(card.getByText(/0 Submissions · 0 Sessions Played/)).toBeVisible()
+  await expect(card.locator('img.season-thumb')).toBeVisible()
+  await expect(card.getByText('Open now')).toHaveCount(0)
+
+  await card.getByRole('link', { name: `Open ${label}` }).click()
+  await expect(page).toHaveURL(new RegExp(`/environments/${ENV_ID}/leaderboards/${season.id}$`))
+})
+
 test('released leaderboard history is visible and navigates by season URL', async ({
   page,
   request,

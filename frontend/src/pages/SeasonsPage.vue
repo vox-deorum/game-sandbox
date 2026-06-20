@@ -1,13 +1,12 @@
 <!--
-  Seasons: the cross-game competition view — one row per public season, not per environment. A season
+  Seasons: the cross-game competition view, one row per public season, not per environment. A season
   appears here only when at least one of its three flags is public: released, accepting submissions,
   or open for play. The season is the subject; the environment is secondary context. This answers the
   student's first question ("what should I work on, and what just finished?") without first picking a
   game, and is no longer a clone of the home environment gallery.
 
-  A play-open season links to the environment's play entry point even when results are also released.
-  A released season whose play window is closed links to its boards. The backing read is a single
-  `GET /api/seasons`.
+  The card destination follows lifecycle priority: released results, then submissions, then play.
+  Each active gate also has its own direct action tag. The backing read is a single `GET /api/seasons`.
 -->
 <script setup lang="ts">
 import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
@@ -18,11 +17,16 @@ import { getEnvironments, listPublicSeasons, type PublicSeasonView } from '../ap
 import UiBadge from '../components/ui/UiBadge.vue'
 import UiCard from '../components/ui/UiCard.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
+import { currentUserId } from '../identity.js'
 import { formatDate } from '../lib/format.js'
+import { useMe } from '../me.js'
+import { thumbnailFor } from '../renderers/registry.js'
 
 const seasons = ref<PublicSeasonView[] | null>(null)
 const environments = ref<Map<string, EnvironmentMeta>>(new Map())
 const error = ref(false)
+const me = useMe()
+const ownerId = computed(() => me.me?.user_id ?? currentUserId)
 
 onMounted(async () => {
   try {
@@ -42,22 +46,52 @@ function envName(season: PublicSeasonView): string {
   return environments.value.get(season.env_id)?.display_name ?? season.env_id
 }
 
-/** An open submission or play window — the live competitions that lead the list. */
+function envThumbnail(season: PublicSeasonView): string {
+  return thumbnailFor(environments.value.get(season.env_id)?.renderer ?? '')
+}
+
+/** An open submission or play window, the live competitions that lead the list. */
 function isOpen(season: PublicSeasonView): boolean {
   return season.submission_status === 'open' || season.play_status === 'open'
 }
 
-/** Live play takes precedence over released history; closed released seasons link to their boards. */
-function seasonLink(season: PublicSeasonView): string {
+function leaderboardLink(season: PublicSeasonView): string {
+  return `/environments/${season.env_id}/leaderboards/${season.id}`
+}
+
+function submissionLink(season: PublicSeasonView): string {
+  return `/environments/${season.env_id}/agents/${ownerId.value}`
+}
+
+function playLink(season: PublicSeasonView): string {
   const environmentPath = `/environments/${season.env_id}`
-  if (season.play_status === 'open') {
-    return environments.value.get(season.env_id)?.human_slots.length
-      ? `${environmentPath}?play=1`
-      : `${environmentPath}#play`
+  return environments.value.get(season.env_id)?.human_slots.length
+    ? `${environmentPath}?play=1`
+    : `${environmentPath}#play`
+}
+
+/** Results take precedence, followed by the submission target and then the play target. */
+function seasonLink(season: PublicSeasonView): string | null {
+  if (season.release_status === 'released') {
+    return leaderboardLink(season)
   }
-  return season.release_status === 'released'
-    ? `/environments/${season.env_id}/leaderboards/${season.id}`
-    : environmentPath
+  if (season.submission_status === 'open') {
+    return submissionLink(season)
+  }
+  if (season.play_status === 'open') {
+    return playLink(season)
+  }
+  return null
+}
+
+function metadataLine(season: PublicSeasonView): string {
+  const parts: string[] = []
+  if (season.released_at !== null) {
+    parts.push(`Released at ${formatDate(season.released_at)}`)
+  }
+  parts.push(`${season.submission_count} Submissions`)
+  parts.push(`${season.session_count} Sessions Played`)
+  return parts.join(' · ')
 }
 
 /** Open seasons first (live action leads), then the released history; the API already sorts newest-first. */
@@ -80,23 +114,45 @@ const ordered = computed(() =>
     <UiEmptyState v-else-if="seasons.length === 0">No active or released seasons yet.</UiEmptyState>
     <ul v-else class="season-list">
       <li v-for="season in ordered" :key="season.id">
-        <RouterLink class="season-card-link" :to="seasonLink(season)">
-          <UiCard interactive>
+        <UiCard class="season-card" :interactive="seasonLink(season) !== null">
+          <RouterLink
+            v-if="seasonLink(season) !== null"
+            class="season-card-link"
+            :to="seasonLink(season) ?? ''"
+            :aria-label="`Open ${seasonLabel(season)}`"
+          />
+          <div class="season-body">
             <div class="season-head">
               <span class="season-name">{{ seasonLabel(season) }}</span>
-              <UiBadge v-if="isOpen(season)" variant="accent">Open now</UiBadge>
+              <div class="season-actions">
+                <RouterLink
+                  v-if="season.submission_status === 'open'"
+                  class="season-action"
+                  :to="submissionLink(season)"
+                >
+                  <UiBadge>Submissions open</UiBadge>
+                </RouterLink>
+                <RouterLink
+                  v-if="season.play_status === 'open'"
+                  class="season-action"
+                  :to="playLink(season)"
+                >
+                  <UiBadge>Play open</UiBadge>
+                </RouterLink>
+                <RouterLink
+                  v-if="season.release_status === 'released'"
+                  class="season-action"
+                  :to="leaderboardLink(season)"
+                >
+                  <UiBadge>Results released</UiBadge>
+                </RouterLink>
+              </div>
             </div>
             <div class="season-env">Environment: {{ envName(season) }}</div>
-            <div class="season-status">
-              <UiBadge v-if="season.submission_status === 'open'">Submissions open</UiBadge>
-              <UiBadge v-if="season.play_status === 'open'">Play open</UiBadge>
-              <UiBadge v-if="season.release_status === 'released'">Results released</UiBadge>
-              <span v-if="season.released_at !== null" class="season-released">
-                {{ formatDate(season.released_at) }}
-              </span>
-            </div>
-          </UiCard>
-        </RouterLink>
+            <div class="season-metadata">{{ metadataLine(season) }}</div>
+          </div>
+          <img class="season-thumb" :src="envThumbnail(season)" alt="" />
+        </UiCard>
       </li>
     </ul>
   </section>
@@ -104,7 +160,7 @@ const ordered = computed(() =>
 
 <style scoped>
 .seasons-intro {
-  margin-bottom: var(--space-5);
+  margin-bottom: var(--space-6);
 }
 
 .seasons-intro h1 {
@@ -125,14 +181,26 @@ const ordered = computed(() =>
   gap: var(--space-4);
 }
 
+.season-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 160px;
+  align-items: center;
+  gap: var(--space-5);
+}
+
 .season-card-link {
-  display: block;
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
 }
 
 .season-head {
   display: flex;
   align-items: center;
   gap: var(--space-3);
+  flex-wrap: wrap;
   margin-bottom: var(--space-1);
 }
 
@@ -141,21 +209,46 @@ const ordered = computed(() =>
   font-weight: 600;
 }
 
+.season-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.season-action {
+  position: relative;
+  z-index: 2;
+  display: inline-flex;
+}
+
 .season-env {
   color: var(--color-text-muted);
   font-size: var(--text-sm);
-  margin-bottom: var(--space-3);
 }
 
-.season-status {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  flex-wrap: wrap;
+.season-metadata {
+  margin-top: var(--space-3);
+  color: var(--color-text-muted);
   font-size: var(--text-sm);
 }
 
-.season-released {
-  color: var(--color-text-muted);
+.season-thumb {
+  display: block;
+  width: 160px;
+  max-width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  background: var(--color-surface-raised);
+}
+
+@media (max-width: 768px) {
+  .season-card {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .season-thumb {
+    width: 100%;
+  }
 }
 </style>

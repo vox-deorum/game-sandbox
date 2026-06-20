@@ -586,7 +586,12 @@ export type PublicSeasonView = Pick<
   | 'label'
   | 'created_at'
   | 'released_at'
->
+> & {
+  /** Active participant submissions, excluding superseded attempts. */
+  submission_count: number
+  /** Completed public watch/play sessions attributed to this season. */
+  session_count: number
+}
 
 /** One automated-board row: a per-agent aggregate over the latest completed run's results. */
 export interface AutomatedBoardRow {
@@ -711,7 +716,8 @@ export async function listReleasedSeasons(envId: string): Promise<SeasonView[]> 
 /**
  * Every public-facing season — released, submission-open, or play-open — newest first, optionally
  * narrowed to a single environment. Backs the cross-game seasons list and the per-environment hub;
- * identity, labels, flags, and timestamps only, never config, rating prompts, or boards.
+ * identity, labels, flags, timestamps, and aggregate activity counts only, never config, rating
+ * prompts, or boards.
  */
 export async function listPublicSeasons(envId?: string): Promise<PublicSeasonView[]> {
   const path = envId === undefined ? '/seasons' : `/seasons?envId=${encodeURIComponent(envId)}`

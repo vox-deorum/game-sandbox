@@ -25,8 +25,9 @@ Under `/api/admin/`, attributing actions to the resolved operator identity. The 
 
 ## Public routes
 
-Public board and history reads are separate from `/api/admin/*` and serve only `released` results at the route boundary:
+Public season and leaderboard reads are separate from `/api/admin/*`. The season index may include open unreleased seasons, while every board and history payload serves only `released` results at the route boundary:
 
+- `GET /api/seasons`: list every public-facing season across environments, optionally filtered by environment. The restricted DTO includes identity, label, the three public gates, timestamps, the count of active non-superseded submissions, and the count of ended sessions attributed to the season. It excludes configuration, rating prompts, and boards.
 - `GET /api/environments/:envId/seasons`: list released seasons for the environment, newest first, for history links.
 - `GET /api/environments/:envId/leaderboards`: return the current released season and both boards. Also return the current open submission season id and current play-open season id when either exists. If nothing is released yet, return an empty current-board payload. The submission and play targets are reported even when their seasons are unreleased, since an open submission or play window makes a season publicly reachable without exposing its boards.
 - `GET /api/environments/:envId/seasons/:seasonId/leaderboards`: return both boards for a specific released season. Return `404` for unreleased or unknown seasons.

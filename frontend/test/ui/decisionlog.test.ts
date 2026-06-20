@@ -5,7 +5,7 @@ import DecisionLog from '../../src/components/DecisionLog.vue'
 
 describe('DecisionLog', () => {
   it('renders a row per tick, formats the action and player, and marks the latest tick current', () => {
-    render(DecisionLog, {
+    const { container } = render(DecisionLog, {
       props: {
         entries: [
           { tick: 5, slot: 'player_0', action: 0 },
@@ -16,8 +16,9 @@ describe('DecisionLog', () => {
     })
     // One header row plus a row per tick.
     expect(screen.getAllByRole('row')).toHaveLength(4)
-    // The slot is named in the Player column, humanized.
-    expect(screen.getAllByText('Player 0')).toHaveLength(3)
+    // The Player column shows the bare slot index (the column header already names it "Player").
+    const playerCells = container.querySelectorAll('tbody td.player-col')
+    expect([...playerCells].map((c) => c.textContent)).toEqual(['0', '0', '0'])
     // A structured action is formatted generically as key=value.
     expect(screen.getByText('flap=true')).toBeInTheDocument()
     // The live log pins to the latest tick: that row is the current one.

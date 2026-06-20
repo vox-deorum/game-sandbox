@@ -8,7 +8,7 @@
  * configuration and rating prompts.
  */
 
-import type { AgentRef, Season, SeasonRun, SeasonRunGame } from './storage/schema.js'
+import type { AgentRef, PublicSeason, Season, SeasonRun, SeasonRunGame } from './storage/schema.js'
 import { decodeSeasonConfig, type SeasonConfig } from './storage/season-config.js'
 
 /** A season row with its `config` column decoded into the structured {@link SeasonConfig}. */
@@ -21,7 +21,7 @@ export function seasonView(season: Season): SeasonView {
 
 /** The public season-list shape, intentionally excluding config and rating prompts. */
 export type PublicSeasonView = Pick<
-  Season,
+  PublicSeason,
   | 'id'
   | 'env_id'
   | 'submission_status'
@@ -30,13 +30,15 @@ export type PublicSeasonView = Pick<
   | 'label'
   | 'created_at'
   | 'released_at'
+  | 'submission_count'
+  | 'session_count'
 >
 
 /**
- * Return only the identity, label, public gates, and timestamps needed by public season indexes.
- * Unreleased season configuration and rating prompts remain operator-only.
+ * Return only the identity, label, public gates, timestamps, and aggregate activity counts needed by
+ * public season indexes. Unreleased season configuration and rating prompts remain operator-only.
  */
-export function publicSeasonView(season: Season): PublicSeasonView {
+export function publicSeasonView(season: PublicSeason): PublicSeasonView {
   return {
     id: season.id,
     env_id: season.env_id,
@@ -46,6 +48,8 @@ export function publicSeasonView(season: Season): PublicSeasonView {
     label: season.label,
     created_at: season.created_at,
     released_at: season.released_at,
+    submission_count: season.submission_count,
+    session_count: season.session_count,
   }
 }
 

@@ -14,6 +14,7 @@ import type {
   CheckStatus,
   GameResult,
   GameStatus,
+  PublicSeason,
   Rating,
   Recording,
   ReleaseStatus,
@@ -41,6 +42,7 @@ export type {
   CheckStatus,
   GameResult,
   GameStatus,
+  PublicSeason,
   Rating,
   Recording,
   ReleaseStatus,
@@ -353,7 +355,7 @@ export interface Storage {
    * first, optionally narrowed to a single environment. Backs the cross-game seasons list and the
    * per-environment hub; labels and flags are public but the boards stay released-only.
    */
-  listPublicSeasons(options?: { envId?: string }): Promise<Season[]>
+  listPublicSeasons(options?: { envId?: string }): Promise<PublicSeason[]>
   /** Attribute an existing session to a season (the alternative to passing it at create time). */
   setSessionSeason(sessionId: string, seasonId: string): Promise<void>
 
