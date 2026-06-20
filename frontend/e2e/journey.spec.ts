@@ -55,6 +55,6 @@ test('play Flappy Bird live, pause/resume, stop, then replay and pin', async ({ 
   await slider.press('ArrowRight')
 
   // Pin the recording (the viewer owns it).
-  await page.getByRole('button', { name: 'Pin this recording' }).click()
+  await page.getByRole('button', { name: 'Pin recording' }).click()
   await expect(page.getByRole('button', { name: 'Pinned ✓' })).toBeVisible()
 })

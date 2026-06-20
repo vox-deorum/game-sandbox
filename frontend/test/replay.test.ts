@@ -72,6 +72,8 @@ describe('ReplayPage', () => {
     const view = await renderReplay()
 
     expect(await screen.findByRole('button', { name: 'Play' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Step back' })).toHaveTextContent('←')
+    expect(screen.getByRole('button', { name: 'Step forward' })).toHaveTextContent('→')
     // Draw-only: no controlled slots and no input.
     expect(mountCtx?.controlledSlots).toEqual([])
     expect(mountCtx?.sendAction).toBeUndefined()
@@ -83,6 +85,7 @@ describe('ReplayPage', () => {
     expect(screen.getByText('4')).toBeInTheDocument()
     const controls = view.container.querySelector('.replay-controls')
     const renderer = view.container.querySelector('.renderer-host')
+    expect(controls?.querySelectorAll('.ui-button.tight')).toHaveLength(3)
     expect(
       controls !== null &&
         renderer !== null &&
@@ -138,8 +141,11 @@ describe('ReplayPage', () => {
         termination_reason: 'terminated',
       },
     ])
-    await renderReplay()
-    const pinButton = await screen.findByRole('button', { name: 'Pin this recording' })
+    const view = await renderReplay()
+    const pinButton = await screen.findByRole('button', { name: 'Pin recording' })
+    const controls = view.container.querySelector('.replay-controls')
+    expect(controls?.lastElementChild).toBe(pinButton)
+    expect(controls?.querySelectorAll('.ui-button.tight')).toHaveLength(4)
     await fireEvent.click(pinButton)
     expect(vi.mocked(pinRecording)).toHaveBeenCalledWith('rec-1')
     expect(await screen.findByRole('button', { name: 'Pinned ✓' })).toBeInTheDocument()

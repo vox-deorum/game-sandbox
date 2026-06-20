@@ -125,7 +125,7 @@ The log's placement is responsive and driven by the canvas, not the viewport alo
 
 In the alongside layout the two columns read as a matched pair. Neither carries a section heading — the environment is already named in the tab strip and the log heads its own columns — so the canvas and the log table both start at the top of the row, and the log's height matches the canvas beside it, scrolling within that height rather than stopping short. The canvas declares its intrinsic aspect ratio (the same renderer metadata below), which fixes the canvas height and so the height the log fills.
 
-The metadata above the stage is a single compact inline strip of the run's own facts (mode, score, ticks, dates), not a stacked block. It deliberately omits what the surrounding chrome already states, so none of those repeat in the strip: the environment is in the context line, the recording id is in the URL, the end reason titles the end card, and pin state is shown by the pin button. On the replay page the pin control sits at the top-right of the context line (the `[pin]` above); on the live page it stays in the end-of-session card beside the replay link.
+The metadata above the stage is a single compact inline strip of the run's own facts (mode, score, ticks, dates), not a stacked block. It deliberately omits what the surrounding chrome already states, so none of those repeat in the strip: the environment is in the context line, the recording id is in the URL, the end reason titles the end card, and pin state is shown by the pin button. On the replay page the pin control sits at the trailing edge of the transport bar; on the live page it stays in the end-of-session card beside the replay link.
 
 To decide this without guessing, each renderer declares its **aspect ratio** as metadata on its `RendererModule` (alongside `thumbnail`), derived from the fixed internal coordinate space the renderer draws in (its `internalSize`). The host sizes the canvas to that aspect ratio within the room available, then places the log beside a portrait canvas or below a landscape one based on what remains. The renderer draws in its internal space and the PixiJS base class scales it onto the real size, re-fitting in place when the rect changes (see [rendering.md](../../docs/contributors/rendering.md)). This keeps responsive layout a property the renderer owns, since it knows its own shape, rather than something the host reverse-engineers from rendered pixels. The same metadata lets the home-card thumbnails and the replay stage reason about canvas shape consistently.
 
@@ -136,9 +136,9 @@ Purpose: play back one recording, shareable by URL. Same stage layout as the liv
 ```
 |  top bar                                                                             |
 |--------------------------------------------------------------------------------------|
-|  Environments / Flappy Bird / Replay            (context line, links back)     [pin] |
+|  Environments / Flappy Bird / Replay            (context line, links back)           |
 |  seed · score · ticks · owner · created          (compact inline metadata strip)     |
-|  [⏮] [⏪] [ ▶ play ] [⏩] [⏭]  ───────●─────────  tick 120 / 300                  |
+|  [←] [▶ play] [→]  ─────────────●──────────────  tick 120 / 300  [Pin recording] |
 |                                                                                      |
 |  Flappy Bird                            Decision log    (each column gets a header)   |
 |  +-------------------------------------+   Tick | Decision                           |
@@ -148,7 +148,7 @@ Purpose: play back one recording, shareable by URL. Same stage layout as the liv
 |  +-------------------------------------+    120 | flap                               |
 ```
 
-The transport gains full keyboard operation (space toggles play, arrows step, Home and End jump), and the scrubber announces its position to assistive tech. The metadata block reuses the same component as the end-of-session card. Similarly, the decision log should reuse the same component.
+The transport gains full keyboard operation (space toggles play, arrows step, Home and End jump), and the scrubber announces its position to assistive tech. Its buttons use the tight primitive size, the step controls show compact arrows with accessible names, and the pin action is last. The metadata block reuses the same component as the end-of-session card. Similarly, the decision log should reuse the same component.
 
 ### Styleguide (`/styleguide`, dev only)
 

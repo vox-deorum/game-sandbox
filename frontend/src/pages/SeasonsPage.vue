@@ -130,14 +130,14 @@ const ordered = computed(() =>
                   class="season-action"
                   :to="submissionLink(season)"
                 >
-                  <UiBadge>Submissions open</UiBadge>
+                  <UiBadge variant="accent">Submissions open</UiBadge>
                 </RouterLink>
                 <RouterLink
                   v-if="season.play_status === 'open'"
                   class="season-action"
                   :to="playLink(season)"
                 >
-                  <UiBadge>Play open</UiBadge>
+                  <UiBadge variant="accent">Play open</UiBadge>
                 </RouterLink>
                 <RouterLink
                   v-if="season.release_status === 'released'"

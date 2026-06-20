@@ -177,28 +177,31 @@ onMounted(async () => {
         <UiStatusBadge tone="neutral" :label="statusLabel" />
         <RunMetadata class="status-facts" :items="metadataItems" />
       </div>
-      <div v-if="owned" class="replay-actions">
-        <UiButton variant="secondary" size="tight" :loading="pinBusy" @click="togglePin">
-          {{ pinned ? 'Pinned ✓' : 'Pin this recording' }}
-        </UiButton>
-      </div>
     </header>
-
-    <UiEmptyState v-if="owned && pinError !== null" tone="danger">{{ pinError }}</UiEmptyState>
 
     <PlayerAttribution :players="header?.players" />
 
     <div v-if="transport !== null" class="replay-controls">
-      <UiButton variant="secondary" :disabled="replayState.index === 0" @click="transport?.stepBack()">
-        Step back
-      </UiButton>
-      <UiButton @click="transport?.toggle()">{{ replayState.playing ? 'Pause' : 'Play' }}</UiButton>
       <UiButton
         variant="secondary"
+        size="tight"
+        aria-label="Step back"
+        :disabled="replayState.index === 0"
+        @click="transport?.stepBack()"
+      >
+        <span aria-hidden="true">←</span>
+      </UiButton>
+      <UiButton size="tight" @click="transport?.toggle()">
+        {{ replayState.playing ? 'Pause' : 'Play' }}
+      </UiButton>
+      <UiButton
+        variant="secondary"
+        size="tight"
+        aria-label="Step forward"
         :disabled="replayState.index >= replayState.total - 1"
         @click="transport?.stepForward()"
       >
-        Step forward
+        <span aria-hidden="true">→</span>
       </UiButton>
       <div class="scrubber">
         <UiSlider v-model="scrubIndex" :max="Math.max(0, replayState.total - 1)" label="Replay position" />
@@ -206,7 +209,18 @@ onMounted(async () => {
       <span class="replay-position">
         tick {{ replayState.tick ?? 0 }} · {{ replayState.index + 1 }}/{{ replayState.total }}
       </span>
+      <UiButton
+        v-if="owned"
+        variant="secondary"
+        size="tight"
+        :loading="pinBusy"
+        @click="togglePin"
+      >
+        {{ pinned ? 'Pinned ✓' : 'Pin recording' }}
+      </UiButton>
     </div>
+
+    <UiEmptyState v-if="owned && pinError !== null" tone="danger">{{ pinError }}</UiEmptyState>
 
     <div
       class="stage"
@@ -267,11 +281,6 @@ onMounted(async () => {
    lands on RunMetadata's root, which carries this scope id, so no :deep is needed.) */
 .status-facts {
   margin: 0;
-}
-
-.replay-actions {
-  display: flex;
-  gap: var(--space-1);
 }
 
 .replay-controls {
