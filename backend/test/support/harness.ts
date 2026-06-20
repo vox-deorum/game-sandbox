@@ -66,6 +66,7 @@ export function makeSubmissionDeps(
   validationWorker: ValidationWorker
   allowLocalSubmissions: boolean
   operatorAllowlist: readonly string[]
+  knownDepsVersions: ReadonlySet<number>
   workflowRunner: WorkflowRunner
 } {
   const driver = options.driver ?? new FakeDriver()
@@ -86,6 +87,7 @@ export function makeSubmissionDeps(
     // The non-leaderboard suites don't exercise the admin API, but buildApp now requires these; a
     // stub runner and the config's operator allowlist complete the deps without Docker.
     operatorAllowlist: config.operatorAllowlist,
+    knownDepsVersions: options.knownTemplateVersions ?? new Set([1]),
     workflowRunner: new StubWorkflowRunner(storage),
   }
 }

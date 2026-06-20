@@ -2,13 +2,13 @@
 #
 # It carries everything a Stage 3 live session needs inside the sandbox: Python, the pinned v1
 # dependency set, the harness and environment packages, and the built-in scripted agent. Stage 5
-# overlays submission code on top of an image like this; for now the built-in agent (the composed
-# `hello` example) lets watch-style sessions exercise the real submission load path before any
+# overlays submission code on top of an image like this; the frozen v1 `hello` agent lets
+# watch-style sessions exercise the real submission load path before any
 # submission exists.
 #
 # Built with the REPO ROOT as the build context (see backend/src/driver/docker/image.ts), because
-# the image is assembled from monorepo sources: the compiled requirements, the two Python packages,
-# and the compose script that materializes the built-in agent.
+# the image includes the two Python packages plus this versioned definition's frozen requirements
+# and built-in agent.
 FROM python:3.12-slim
 
 # Headless, read-only-root friendly: no SDL display/audio device, no bytecode writes onto the
@@ -32,9 +32,10 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# 1. The pinned v1 dependency set — the single source of dependency truth inside a session. The
-#    compiled set from Stage 2 (templates/base/requirements.txt) installs first and alone.
-COPY templates/base/requirements.txt ./requirements.txt
+# 1. The frozen v1 dependency set installs first and alone. It is copied into this versioned image
+#    definition when the template release is cut, so a later template release cannot change a cold
+#    rebuild of the deps-v1 tag.
+COPY backend/images/session-base/deps-v1/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 # 2. The harness and environment packages from source. The environments package installs --no-deps
@@ -47,27 +48,21 @@ COPY environments ./environments
 RUN pip install --no-cache-dir ./harness \
     && pip install --no-cache-dir --no-deps ./environments
 
-# 3. The built-in scripted agent: the composed `hello` example, placed at /opt/agents/builtin and
-#    loaded through the very manifest loader a Stage 5 submission will use. compose.py runs with the
-#    repo root as REPO_ROOT, writing under build/; we copy the result to its runtime home and then
-#    install the example's extra pins (wcwidth) on top of the set — extras extend, never override.
+# 3. The frozen v1 built-in scripted agent, placed at /opt/agents/builtin and loaded through the very
+#    manifest loader a Stage 5 submission uses. Keeping this snapshot beside the requirements avoids
+#    composing from the mutable current template, whose later full requirements could otherwise
+#    upgrade packages after the v1 set was installed.
 #
 #    `chmod a+rX` normalizes the tree's permissions: a session container runs as root but with
 #    CapDrop ALL, so it loses CAP_DAC_READ_SEARCH and is subject to the real mode bits. A build
 #    context coming from a host that does not carry Unix execute bits (a Windows checkout) can leave
-#    the composed directories without their search bit, which makes even root unable to stat the
+#    the copied directories without their search bit, which makes even root unable to stat the
 #    manifest inside — a session-time PermissionError that a Linux-built image never shows. `a+rX`
 #    adds read for all and execute only where it already applies (directories), so the agent loads
 #    regardless of the build host without marking data files executable.
-COPY scripts ./scripts
-COPY templates ./templates
-COPY examples ./examples
-RUN python scripts/compose.py flappy_bird hello \
-    && mkdir -p /opt/agents \
-    && cp -r build/examples/flappy_bird/hello /opt/agents/builtin \
-    && chmod -R a+rX /opt/agents/builtin \
-    && pip install --no-cache-dir -r /opt/agents/builtin/requirements.txt \
-    && rm -rf build
+COPY backend/images/session-base/deps-v1/builtin /opt/agents/builtin
+RUN chmod -R a+rX /opt/agents/builtin \
+    && pip install --no-cache-dir -r /opt/agents/builtin/requirements.txt
 
 # Fail the build, not a session, if the packages or the built-in agent cannot load: import the
 # environment (which imports PyGame) and load the built-in agent through the manifest loader.

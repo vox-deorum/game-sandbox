@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { buildApp } from '../../../src/app.js'
 import type { Config } from '../../../src/config.js'
+import { KNOWN_DEPS_VERSIONS } from '../../../src/deps-version.js'
 import { createDockerDriver } from '../../../src/driver/docker/index.js'
 import { EnvironmentRegistry } from '../../../src/environments.js'
 import { RecordingsStore } from '../../../src/recordings.js'
@@ -92,6 +93,7 @@ export async function startStack(overrides: Partial<Config> = {}): Promise<Stack
     retention,
     allowlist: config.sessionAllowlist,
     operatorAllowlist: config.operatorAllowlist,
+    knownDepsVersions: KNOWN_DEPS_VERSIONS,
     workflowRunner: createPlaceholderRunner(storage),
     storage,
     submissionSource,

@@ -36,6 +36,8 @@ export interface AppDeps {
   allowlist: readonly string[]
   /** The operator allowlist gating the Stage 6 admin API; the `isOperator` predicate consults it. */
   operatorAllowlist: readonly string[]
+  /** Dependency-set versions backed by concrete base-image definitions on this deployment. */
+  knownDepsVersions: ReadonlySet<number>
   /** The background workflow execution seam the admin trigger enqueues onto and the log stream relays. */
   workflowRunner: WorkflowRunner
   /** The storage seam, for the submission create/read/list routes (Stage 5.5). */
@@ -385,6 +387,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     environments: deps.environments,
     workflowRunner: deps.workflowRunner,
     operatorAllowlist: deps.operatorAllowlist,
+    knownDepsVersions: deps.knownDepsVersions,
   })
   registerLeaderboardRoutes(app, { storage: deps.storage })
   // Participant ratings and the author's per-season rating prompt are attributed to the resolved

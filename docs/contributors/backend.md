@@ -25,7 +25,7 @@ The backend is the Node/TypeScript service outside the container boundary: it li
 | `retention.ts` | The recording retention service: the eviction sweep, the merged listing, and pinning. |
 | `submission/` | The submission pipeline: the source seam (`source/`), the static and load-check validators (`validate/`), the overlay-image build (`submission-image.ts`), the bounded validation worker, and the overlay-image eviction sweep. |
 | `seasons-seed.ts` | Seeds one open season per environment at the current `DEPS_VERSION` on startup, the minimal stand-in the Stage 6 operator admin console and API build on. |
-| `deps-version.ts` | The current dependency-set version `N` and the base-image spec it resolves to: the one home for the number the template tag, the base image, and an agent's `template_version` all share. |
+| `deps-version.ts` | The current dependency-set version plus the explicit registry of supported version-specific base-image definitions. Submission and season validation derive their accepted versions from this registry. |
 
 The wire protocol the browser shares with the backend (the line-classification rule, the command envelopes, and the environment-metadata shape with its guard) lives in `@game-sandbox/schema` so there is one declaration, not a backend copy and a frontend copy that drift. Those modules are dependency-free and exposed as subpath exports (`@game-sandbox/schema/protocol`, `@game-sandbox/schema/environment`) so the browser bundle imports them without pulling in the package's Ajv-backed recording readers; the `session/` relay and `environments.ts` import them through the barrel.
 

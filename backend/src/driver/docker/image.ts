@@ -14,11 +14,11 @@ import { fileURLToPath } from 'node:url'
 import type Docker from 'dockerode'
 import tar from 'tar-fs'
 import type { ImagePolicy } from '../../config.js'
-import type { ImageRef, ImageSpec } from '../index.js'
+import { sessionBaseImageDefinition } from '../../deps-version.js'
+import type { ImageRef, SessionBaseImageSpec } from '../index.js'
 
 /** backend/src/driver/docker/image.ts → repo root is four directories up. */
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..')
-const DOCKERFILE = 'backend/images/session-base/Dockerfile'
 const BUILD_RETRY_DELAYS_MS = [2_000, 8_000, 20_000]
 const TRANSIENT_BUILD_ERROR = new RegExp(
   [
@@ -51,8 +51,10 @@ const IGNORED_SEGMENTS = new Set([
   '__pycache__',
 ])
 
-/** The tag for a spec under a prefix: this stage's only kind is the session base image per deps version. */
-export function imageTag(prefix: string, spec: ImageSpec): string {
+/** The tag for a supported session base image under a deployment prefix. */
+export function imageTag(prefix: string, spec: SessionBaseImageSpec): string {
+  // Refuse to name a tag the deployment cannot build; throws for an unregistered version.
+  sessionBaseImageDefinition(spec.depsVersion)
   return `${prefix}/session-base:deps-v${spec.depsVersion}`
 }
 
@@ -99,9 +101,9 @@ async function wait(ms: number): Promise<void> {
 }
 
 /** Build the session base image from the repo-root context, rejecting on any build-step error. */
-async function build(docker: Docker, tag: string): Promise<void> {
+async function build(docker: Docker, tag: string, dockerfile: string): Promise<void> {
   const context = tar.pack(REPO_ROOT, { ignore: isIgnored })
-  const buildStream = await docker.buildImage(context, { t: tag, dockerfile: DOCKERFILE })
+  const buildStream = await docker.buildImage(context, { t: tag, dockerfile })
   await new Promise<void>((resolve, reject) => {
     docker.modem.followProgress(
       buildStream,
@@ -127,10 +129,10 @@ async function build(docker: Docker, tag: string): Promise<void> {
  * Cold CI runners sometimes hit transient Docker Hub or package-index timeouts while resolving the
  * base layers. Retry only those network-shaped failures so real Dockerfile errors still fail fast.
  */
-async function buildWithRetry(docker: Docker, tag: string): Promise<void> {
+async function buildWithRetry(docker: Docker, tag: string, dockerfile: string): Promise<void> {
   for (let attempt = 0; ; attempt += 1) {
     try {
-      await build(docker, tag)
+      await build(docker, tag, dockerfile)
       return
     } catch (error) {
       const delayMs = BUILD_RETRY_DELAYS_MS[attempt]
@@ -155,12 +157,13 @@ export async function ensureImage(
   docker: Docker,
   prefix: string,
   policy: ImagePolicy,
-  spec: ImageSpec,
+  spec: SessionBaseImageSpec,
 ): Promise<ImageRef> {
+  const definition = sessionBaseImageDefinition(spec.depsVersion)
   const tag = imageTag(prefix, spec)
   if (policy === 'reuse' && (await imageExists(docker, tag))) {
     return { ref: tag }
   }
-  await buildWithRetry(docker, tag)
+  await buildWithRetry(docker, tag, definition.dockerfile)
   return { ref: tag }
 }

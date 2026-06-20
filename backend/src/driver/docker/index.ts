@@ -18,6 +18,7 @@ import type {
   ImageSpec,
   LaunchSpec,
   OverlayImage,
+  SessionBaseImageSpec,
   SessionProcess,
 } from '../index.js'
 import { ensureImage, imageTag } from './image.js'
@@ -170,6 +171,9 @@ export async function createDockerDriver(options: DockerDriverOptions): Promise<
  * the `new Docker()` inside the import-isolation boundary; the build path itself — the repo-root
  * context, the ignore list, and the deps-version tag — is exactly the one a session launch uses.
  */
-export function buildImage(options: DockerDriverOptions, spec: ImageSpec): Promise<ImageRef> {
+export function buildImage(
+  options: DockerDriverOptions,
+  spec: SessionBaseImageSpec,
+): Promise<ImageRef> {
   return ensureImage(new Docker(), options.imageTagPrefix, options.imagePolicy, spec)
 }

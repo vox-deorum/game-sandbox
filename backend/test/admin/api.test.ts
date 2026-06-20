@@ -47,7 +47,10 @@ describe('admin API', () => {
   let runner: StubWorkflowRunner
   let dir: string
 
-  async function build(operatorAllowlist: string[] = ['dev-user']): Promise<void> {
+  async function build(
+    operatorAllowlist: string[] = ['dev-user'],
+    knownDepsVersions: ReadonlySet<number> = new Set([1, 2]),
+  ): Promise<void> {
     dir = mkdtempSync(join(tmpdir(), 'gs-admin-'))
     storage = await openSqliteStorage(':memory:')
     const config = makeConfig({ recordingsDir: dir })
@@ -63,6 +66,7 @@ describe('admin API', () => {
       allowlist: ['dev-user'],
       ...makeSubmissionDeps(storage, config),
       operatorAllowlist,
+      knownDepsVersions,
       workflowRunner: runner,
     })
     await app.ready()
@@ -184,6 +188,20 @@ describe('admin API', () => {
         expect((res.json() as { reason: string }).reason).toBeTruthy()
       }
     })
+
+    it('400s a dependency version with no deployment image definition', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/admin/environments/${ENV_ID}/seasons`,
+        headers: OPERATOR,
+        payload: { deps_version: 3 },
+      })
+      expect(res.statusCode).toBe(400)
+      expect(res.json()).toMatchObject({
+        code: 'invalid_season_declaration',
+        reason: expect.stringContaining('deps_version 3 is not supported'),
+      })
+    })
   })
 
   describe('configure', () => {
@@ -241,6 +259,21 @@ describe('admin API', () => {
       expect(res.statusCode).toBe(400)
       expect(res.json()).toMatchObject({ code: 'invalid_config' })
       expect((res.json() as { reason: string }).reason).toMatch(/exceeds the environment maximum/)
+    })
+
+    it('400s a config whose dependency version has no deployment image definition', async () => {
+      const id = await declare()
+      const res = await app.inject({
+        method: 'PUT',
+        url: `/api/admin/seasons/${id}/config`,
+        headers: OPERATOR,
+        payload: flappyConfig({ deps_version: 3 }),
+      })
+      expect(res.statusCode).toBe(400)
+      expect(res.json()).toMatchObject({
+        code: 'invalid_config',
+        reason: expect.stringContaining('deps_version 3 is not supported'),
+      })
     })
 
     it('refuses a config edit against existing runs without force, and succeeds with force', async () => {

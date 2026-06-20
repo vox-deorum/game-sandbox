@@ -67,6 +67,7 @@ describe('submission API', () => {
       retention: new Retention(storage, recordings, config),
       allowlist: ['dev-user'],
       operatorAllowlist: ['dev-user'],
+      knownDepsVersions: new Set([1]),
       workflowRunner: new StubWorkflowRunner(storage),
       storage,
       submissionSource: source,

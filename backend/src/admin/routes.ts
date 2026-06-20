@@ -38,6 +38,8 @@ export interface AdminDeps {
   operatorAllowlist: readonly string[]
   /** The dependency-set version a freshly declared season pins by default. */
   depsVersion?: number
+  /** Versions the deployment can actually serve with a concrete session base image. */
+  knownDepsVersions: ReadonlySet<number>
 }
 
 /** The operator's season-wide rating prompt is display-only guidance; cap it so it stays a prompt. */
@@ -97,9 +99,13 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
             reason: zodReason(parsed.error),
           })
         }
+        const requestedDepsVersion = parsed.data.deps_version ?? depsVersion
+        if (!deps.knownDepsVersions.has(requestedDepsVersion)) {
+          return unsupportedDepsVersion(reply, requestedDepsVersion, 'invalid_season_declaration')
+        }
         const season = await deps.storage.createSeason({
           env_id: request.params.envId,
-          deps_version: parsed.data.deps_version ?? depsVersion,
+          deps_version: requestedDepsVersion,
           label: parsed.data.label ?? null,
         })
         return reply.code(201).send(seasonView(season))
@@ -125,6 +131,9 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
               code: 'invalid_config',
               reason: issue ? `${path}: ${issue.message}` : 'invalid season config',
             })
+          }
+          if (!deps.knownDepsVersions.has(parsed.data.deps_version)) {
+            return unsupportedDepsVersion(reply, parsed.data.deps_version, 'invalid_config')
           }
           const meta = deps.environments.get(season.env_id)
           if (meta !== undefined) {
@@ -400,6 +409,19 @@ function zodReason(error: z.ZodError): string {
   }
   const path = issue.path.length > 0 ? issue.path.join('.') : '(root)'
   return `${path}: ${issue.message}`
+}
+
+/** Reject a season declaration/configuration that names no deployable base image. */
+function unsupportedDepsVersion(
+  reply: FastifyReply,
+  depsVersion: number,
+  code: 'invalid_season_declaration' | 'invalid_config',
+): unknown {
+  return reply.code(400).send({
+    error: code === 'invalid_config' ? 'invalid season config' : 'invalid season declaration',
+    code,
+    reason: `deps_version ${depsVersion} is not supported by this deployment`,
+  })
 }
 
 async function flipSubmission(

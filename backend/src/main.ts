@@ -90,8 +90,8 @@ async function main(): Promise<void> {
   })
 
   // The submission pipeline (Stage 5): the bounded worker drives the source seam through the four
-  // validation stages, sweeping overlay images after each build. The deployment has a base image for
-  // the current dependency-set version only.
+  // validation stages, sweeping overlay images after each build. The accepted manifest versions come
+  // from the explicit base-image registry, so validation cannot promise an image the driver cannot serve.
   const validationWorker = new ValidationWorker({
     driver,
     storage,
@@ -112,6 +112,7 @@ async function main(): Promise<void> {
     retention,
     allowlist: config.sessionAllowlist,
     operatorAllowlist: config.operatorAllowlist,
+    knownDepsVersions: KNOWN_DEPS_VERSIONS,
     workflowRunner,
     frontendDir: config.frontendDir,
     storage,

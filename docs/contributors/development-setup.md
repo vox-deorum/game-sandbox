@@ -32,7 +32,7 @@ Every dev script is Python under `scripts/`, run through uv, so nothing depends 
 
 Anything generated from the schema (the TypeScript types, the packaged schema copies, and the golden fixtures) is produced by `scripts/generate.py`. Do not edit those by hand; edit the schema and regenerate. CI fails if a generated artifact is stale.
 
-One build helper lives outside `scripts/` because it drives the backend's own TypeScript build path rather than a Python wrapper around Docker: `npm run build:image` (re)builds the session base image that live sessions run in. The backend builds it lazily on the first session and then reuses the tag, so run this after changing its Dockerfile or anything it bundles (the harness, an environment, the built-in agent); see [the backend](backend.md#running-it-locally).
+One build helper lives outside `scripts/` because it drives the backend's own TypeScript build path rather than a Python wrapper around Docker: `npm run build:image` (re)builds the current dependency version's session base image from its registered version-specific Dockerfile. The backend builds it lazily on the first session and then reuses the tag, so run this after changing that Dockerfile or anything it bundles (the harness, an environment, the built-in agent); see [the backend](backend.md#running-it-locally).
 
 ## Windows and WSL
 
