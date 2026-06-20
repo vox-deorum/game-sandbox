@@ -223,12 +223,13 @@ const ordered = computed(() =>
 }
 
 .season-env {
+  margin-top: var(--space-1);
   color: var(--color-text-muted);
   font-size: var(--text-sm);
 }
 
 .season-metadata {
-  margin-top: var(--space-3);
+  margin-top: var(--space-1);
   color: var(--color-text-muted);
   font-size: var(--text-sm);
 }
