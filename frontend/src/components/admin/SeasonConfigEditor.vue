@@ -14,7 +14,7 @@
     back as `invalid_config` and render inline.
 -->
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import {
   configureSeason,
@@ -29,7 +29,11 @@ import UiField from '../ui/UiField.vue'
 import UiInput from '../ui/UiInput.vue'
 
 const props = defineProps<{ season: SeasonView }>()
-const emit = defineEmits<{ (e: 'changed', season: SeasonView): void }>()
+const emit = defineEmits<{
+  (e: 'changed', season: SeasonView): void
+  /** Whether the form holds match-design edits not yet persisted; drives the Run gate upstream. */
+  (e: 'dirty-change', dirty: boolean): void
+}>()
 
 const SLOT_SPECS: SlotSpec[] = ['submission', 'builtin-naive']
 
@@ -132,6 +136,42 @@ function buildConfig(): { config: SeasonConfig } | { error: string } {
   }
   return { config }
 }
+
+/**
+ * A canonical string for a config's *meaningful* content, so a dirty check ignores incidental
+ * differences (seed-text spacing, override key order) and compares only what a save would persist.
+ */
+function canonicalConfig(config: SeasonConfig): string {
+  const overrides = config.overrides
+  return JSON.stringify({
+    deps_version: config.deps_version,
+    matches: config.matches.map((m) => ({ slots: m.slots, seeds: m.seeds, games: m.games })),
+    overrides:
+      overrides === undefined
+        ? null
+        : {
+            step_timeout_ms: overrides.step_timeout_ms ?? null,
+            episode_timeout_ms: overrides.episode_timeout_ms ?? null,
+            messaging: overrides.messaging ?? null,
+            llm: overrides.llm ?? null,
+          },
+  })
+}
+
+/**
+ * Whether the form differs from the saved season config. An incomplete/invalid draft (e.g. a match
+ * mid-edit with no seeds yet) counts as dirty: it still needs a save, and a run on it must be blocked.
+ */
+const dirty = computed(() => {
+  const result = buildConfig()
+  if ('error' in result) {
+    return true
+  }
+  return canonicalConfig(result.config) !== canonicalConfig(props.season.config)
+})
+
+// Surface the dirty state to the console so it can gate "Run workflow" on a saved design.
+watch(dirty, (value) => emit('dirty-change', value), { immediate: true })
 
 async function save(): Promise<void> {
   const result = buildConfig()
@@ -264,7 +304,8 @@ watch(confirmOpen, (open) => {
 
     <div class="config-actions">
       <UiButton :loading="saving" @click="save">Save configuration</UiButton>
-      <span v-if="saved" class="config-saved" role="status">Saved ✓</span>
+      <span v-if="dirty" class="config-dirty" role="status">● Unsaved changes</span>
+      <span v-else-if="saved" class="config-saved" role="status">Saved ✓</span>
       <span v-if="error" class="config-error" role="alert">{{ error }}</span>
     </div>
 
@@ -376,6 +417,12 @@ watch(confirmOpen, (open) => {
 .config-saved {
   font-size: var(--text-sm);
   color: var(--color-success);
+}
+
+.config-dirty {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-accent);
 }
 
 .config-error {

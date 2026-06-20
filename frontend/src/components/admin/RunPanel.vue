@@ -30,6 +30,8 @@ const props = defineProps<{
   latestRun: RunView | null
   envId: string
   boardAvailable: boolean
+  /** The config editor has unsaved match-design edits; a run would use the stale persisted design. */
+  configDirty: boolean
 }>()
 const emit = defineEmits<{ (e: 'changed'): void }>()
 
@@ -164,7 +166,7 @@ async function cancel(): Promise<void> {
 <template>
   <div class="run-panel">
     <div class="run-actions">
-      <UiButton :loading="triggering" :disabled="inProgress" @click="trigger">
+      <UiButton :loading="triggering" :disabled="inProgress || configDirty" @click="trigger">
         {{ triggerLabel }}
       </UiButton>
       <UiButton v-if="inProgress" variant="danger" :loading="cancelling" @click="cancel">
@@ -185,6 +187,9 @@ async function cancel(): Promise<void> {
       />
     </div>
 
+    <p v-if="configDirty" class="run-hint" role="status">
+      Save the match design before running — a run uses the last saved configuration.
+    </p>
     <p v-if="error" class="run-error" role="alert">{{ error }}</p>
     <p v-if="latestRun?.error" class="run-error">{{ latestRun.error }}</p>
 
@@ -266,7 +271,7 @@ async function cancel(): Promise<void> {
 }
 
 .run-hint {
-  margin: 0;
+  margin: var(--space-2) 0 0;
   font-size: var(--text-sm);
   color: var(--color-text-muted);
 }

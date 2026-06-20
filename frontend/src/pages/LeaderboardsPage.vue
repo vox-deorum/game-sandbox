@@ -116,13 +116,13 @@ watch(requestedSeasonId, load, { immediate: true })
   <section class="leaderboards">
     <header class="leaderboards-header">
       <h1>Leaderboards</h1>
-      <p v-if="season !== null" class="leaderboards-sub">
-        {{ seasonLabel(season) }}
+      <h2 v-if="season !== null" class="leaderboards-sub">
+        Season: {{ seasonLabel(season) }}
         <UiBadge v-if="operatorPreview" variant="accent">Operator preview · unreleased</UiBadge>
         <span v-else-if="season.released_at !== null" class="leaderboards-released">
           · released {{ formatDate(season.released_at) }}
         </span>
-      </p>
+      </h2>
     </header>
 
     <div class="leaderboards-body">
@@ -156,12 +156,6 @@ watch(requestedSeasonId, load, { immediate: true })
 <style scoped>
 .leaderboards-header h1 {
   margin: 0 0 var(--space-1);
-}
-
-.leaderboards-sub {
-  margin: 0 0 var(--space-5);
-  color: var(--color-text-muted);
-  font-size: var(--text-sm);
 }
 
 .leaderboards-body {
