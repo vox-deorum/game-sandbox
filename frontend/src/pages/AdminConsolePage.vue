@@ -12,7 +12,7 @@
   opening public play, and releasing results visibly separate.
 -->
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 
 import {
@@ -27,7 +27,6 @@ import SeasonConfigEditor from '../components/admin/SeasonConfigEditor.vue'
 import SeasonLifecycleControls from '../components/admin/SeasonLifecycleControls.vue'
 import OperatorRatingPromptEditor from '../components/admin/OperatorRatingPromptEditor.vue'
 import RunPanel from '../components/admin/RunPanel.vue'
-import LeaderboardBoards from '../components/LeaderboardBoards.vue'
 import UiButton from '../components/ui/UiButton.vue'
 import UiCard from '../components/ui/UiCard.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
@@ -47,6 +46,10 @@ const seasons = ref<SeasonView[]>([])
 const selectedId = ref<string | null>(null)
 const view = ref<AdminSeasonView | null>(null)
 const loadingDetail = ref(false)
+// A board exists to inspect only once a run has computed one; before that the link is disabled.
+const boardAvailable = computed(
+  () => (view.value?.board.automated.length ?? 0) > 0 || (view.value?.board.human.length ?? 0) > 0,
+)
 const declaring = ref(false)
 const newLabel = ref('')
 // Inline rename of the selected season: opens with the current label, saves through the admin API.
@@ -222,8 +225,8 @@ async function saveRename(seasonId: string): Promise<void> {
           </UiEmptyState>
           <UiEmptyState v-else-if="view === null && loadingDetail">Loading…</UiEmptyState>
           <template v-else-if="view !== null">
-            <UiCard class="admin-card">
-              <div class="card-head">
+            <section class="admin-section">
+              <div class="section-head">
                 <template v-if="renaming">
                   <form class="rename" @submit.prevent="saveRename(view.season.id)">
                     <UiInput
@@ -246,35 +249,32 @@ async function saveRename(seasonId: string): Promise<void> {
                 </template>
               </div>
               <p v-if="renameError" class="rename-error" role="alert">{{ renameError }}</p>
-              <SeasonLifecycleControls :season="view.season" @changed="refresh" />
-            </UiCard>
+              <UiCard class="admin-card">
+                <SeasonLifecycleControls :season="view.season" @changed="refresh" />
+              </UiCard>
+            </section>
 
-            <UiCard class="admin-card">
-              <SeasonConfigEditor :season="view.season" @changed="refresh" />
-            </UiCard>
+            <section class="admin-section">
+              <h2>Run Configuration</h2>
+              <UiCard class="admin-card">
+                <SeasonConfigEditor :season="view.season" @changed="refresh" />
+              </UiCard>
+            </section>
 
-            <OperatorRatingPromptEditor
-              class="admin-card"
+            <section class="admin-section">
+              <h2>Season rating prompt</h2>
+              <UiCard class="admin-card">
+                <OperatorRatingPromptEditor :season="view.season" @changed="refresh" />
+              </UiCard>
+            </section>
+
+            <RunPanel
               :season="view.season"
-              @changed="refresh"
+              :latest-run="view.latest_run"
+              :env-id="envId"
+              :board-available="boardAvailable"
+              @changed="loadDetail"
             />
-
-            <UiCard class="admin-card">
-              <h2 class="card-title">Run</h2>
-              <RunPanel
-                :season="view.season"
-                :latest-run="view.latest_run"
-                @changed="loadDetail"
-              />
-            </UiCard>
-
-            <UiCard class="admin-card">
-              <h2 class="card-title">Boards</h2>
-              <p v-if="view.season.release_status !== 'released'" class="card-meta">
-                These boards are operator-only until you release the season.
-              </p>
-              <LeaderboardBoards :board="view.board" :env-id="envId" />
-            </UiCard>
           </template>
         </main>
       </div>
@@ -358,7 +358,12 @@ async function saveRename(seasonId: string): Promise<void> {
   margin: 0;
 }
 
-.card-head {
+.admin-section h2 {
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-lg);
+}
+
+.section-head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -366,10 +371,8 @@ async function saveRename(seasonId: string): Promise<void> {
   margin-bottom: var(--space-4);
 }
 
-.card-head h2,
-.card-title {
+.section-head h2 {
   margin: 0;
-  font-size: var(--text-lg);
 }
 
 .rename {
@@ -383,15 +386,6 @@ async function saveRename(seasonId: string): Promise<void> {
   margin: 0 0 var(--space-3);
   font-size: var(--text-sm);
   color: var(--color-danger);
-}
-
-.card-title {
-  margin-bottom: var(--space-3);
-}
-
-.card-meta {
-  font-size: var(--text-sm);
-  color: var(--color-text-muted);
 }
 
 @media (max-width: 768px) {

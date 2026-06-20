@@ -25,7 +25,12 @@ import { RunLogSocket } from '../../api/runLogSocket.js'
 import UiButton from '../ui/UiButton.vue'
 import UiStatusBadge from '../ui/UiStatusBadge.vue'
 
-const props = defineProps<{ season: SeasonView; latestRun: RunView | null }>()
+const props = defineProps<{
+  season: SeasonView
+  latestRun: RunView | null
+  envId: string
+  boardAvailable: boolean
+}>()
 const emit = defineEmits<{ (e: 'changed'): void }>()
 
 const triggering = ref(false)
@@ -165,6 +170,14 @@ async function cancel(): Promise<void> {
       <UiButton v-if="inProgress" variant="danger" :loading="cancelling" @click="cancel">
         Cancel run
       </UiButton>
+      <UiButton
+        v-if="boardAvailable"
+        variant="secondary"
+        :to="`/environments/${envId}/leaderboards/${season.id}`"
+      >
+        Check leaderboard
+      </UiButton>
+      <UiButton v-else variant="secondary" disabled>Check leaderboard</UiButton>
       <UiStatusBadge
         v-if="latestRun !== null"
         :tone="STATUS_TONE[latestRun.status]"

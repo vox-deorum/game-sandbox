@@ -10,12 +10,15 @@ vi.mock('../src/api/client.js', () => ({
   getEnvironments: vi.fn(),
   getEnvironmentLeaderboards: vi.fn(),
   getSeasonLeaderboards: vi.fn(),
+  getAdminSeason: vi.fn(),
   listReleasedSeasons: vi.fn(),
 }))
 
 import {
+  getAdminSeason,
   getEnvironmentLeaderboards,
   getEnvironments,
+  getMe,
   getSeasonLeaderboards,
   listReleasedSeasons,
 } from '../src/api/client.js'
@@ -168,5 +171,31 @@ describe('LeaderboardsPage', () => {
     vi.mocked(getSeasonLeaderboards).mockResolvedValue(undefined)
     await renderAt('/environments/flappy_bird/leaderboards/iter-secret')
     expect(await screen.findByText(/No released results/)).toBeInTheDocument()
+    // A non-operator never reaches the operator-only admin read.
+    expect(vi.mocked(getAdminSeason)).not.toHaveBeenCalled()
+  })
+
+  it('lets an operator preview an unreleased season board through the admin read', async () => {
+    vi.mocked(getMe).mockResolvedValue({
+      user_id: 'dev-user',
+      allowlisted: true,
+      is_operator: true,
+    })
+    vi.mocked(getSeasonLeaderboards).mockResolvedValue(undefined)
+    vi.mocked(getAdminSeason).mockResolvedValue({
+      season: season({
+        id: 'iter-secret',
+        label: 'Secret',
+        release_status: 'unreleased',
+        released_at: null,
+      }),
+      latest_run: null,
+      board: board(),
+    })
+    await renderAt('/environments/flappy_bird/leaderboards/iter-secret')
+
+    await waitFor(() => expect(vi.mocked(getAdminSeason)).toHaveBeenCalledWith('iter-secret'))
+    expect(await screen.findByText('Automated board')).toBeInTheDocument()
+    expect(screen.getByText(/Operator preview/)).toBeInTheDocument()
   })
 })

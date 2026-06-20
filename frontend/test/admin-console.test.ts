@@ -108,6 +108,7 @@ async function renderConsole() {
     { path: '/', component: { template: '<div />' } },
     { path: '/environments/:envId', component: { template: '<div />' } },
     { path: '/environments/:envId/agents/:ownerId', component: { template: '<div />' } },
+    { path: '/environments/:envId/leaderboards/:seasonId?', component: { template: '<div />' } },
     { path: '/replays/:id', component: { template: '<div />' } },
     { path: '/environments/:envId/admin', component: AdminConsolePage },
   ])
@@ -350,7 +351,7 @@ describe('AdminConsolePage', () => {
     expect(await screen.findByText(/container started/)).toBeInTheDocument()
   })
 
-  it('renders the unreleased boards in the console before release', async () => {
+  it('links to the season board once a run has computed one', async () => {
     const board: Board = {
       automated: [
         {
@@ -366,7 +367,12 @@ describe('AdminConsolePage', () => {
     }
     vi.mocked(getAdminSeason).mockResolvedValue(adminView({ board }))
     await renderConsole()
-    expect(await screen.findByText(/operator-only until you release/)).toBeInTheDocument()
-    expect(screen.getByText('Naive baseline')).toBeInTheDocument()
+    const link = await screen.findByRole('link', { name: 'Check leaderboard' })
+    expect(link).toHaveAttribute('href', '/environments/flappy_bird/leaderboards/iter-1')
+  })
+
+  it('disables the board link before any run has computed a board', async () => {
+    await renderConsole()
+    expect(await screen.findByRole('button', { name: 'Check leaderboard' })).toBeDisabled()
   })
 })

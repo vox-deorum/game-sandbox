@@ -11,7 +11,6 @@ import { ref, watch } from 'vue'
 
 import { type SeasonView, setSeasonRatingPrompt } from '../../api/client.js'
 import UiButton from '../ui/UiButton.vue'
-import UiCard from '../ui/UiCard.vue'
 import UiField from '../ui/UiField.vue'
 
 const props = defineProps<{ season: SeasonView }>()
@@ -52,8 +51,7 @@ async function save(): Promise<void> {
 </script>
 
 <template>
-  <UiCard class="prompt">
-    <h3 class="prompt-title">Season rating prompt</h3>
+  <div class="prompt">
     <p class="prompt-sub">
       Shown to human raters for every agent in this season. Editable at any time, including after a
       run or release. Separate from each author's own per-agent prompt.
@@ -75,15 +73,10 @@ async function save(): Promise<void> {
       <span v-if="saved" class="prompt-saved" role="status">Saved ✓</span>
       <span v-if="error" class="prompt-error" role="alert">{{ error }}</span>
     </div>
-  </UiCard>
+  </div>
 </template>
 
 <style scoped>
-.prompt-title {
-  margin: 0 0 var(--space-1);
-  font-size: var(--text-md);
-}
-
 .prompt-sub {
   margin: 0 0 var(--space-3);
   font-size: var(--text-sm);

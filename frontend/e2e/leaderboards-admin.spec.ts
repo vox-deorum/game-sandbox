@@ -92,4 +92,11 @@ test('the operator console tails a triggered workflow run', async ({ page, reque
   await expect(logs).toBeVisible({ timeout: 120_000 })
   await expect(logs).toContainText(/\S/)
   await expect(page.getByText('Run completed')).toBeVisible({ timeout: 120_000 })
+
+  // Once the run computed a board, the operator can open it through the public leaderboards URL,
+  // even though the season is still unreleased.
+  await page.getByRole('link', { name: 'Check leaderboard' }).click()
+  await expect(page).toHaveURL(new RegExp(`/environments/${ENV_ID}/leaderboards/`))
+  await expect(page.getByText('Operator preview · unreleased')).toBeVisible()
+  await expect(page.getByText('Automated board')).toBeVisible()
 })

@@ -14,17 +14,21 @@ import { RouterLink, useRoute } from 'vue-router'
 
 import {
   type Board,
+  getAdminSeason,
   getEnvironmentLeaderboards,
   getSeasonLeaderboards,
   type SeasonView,
   listReleasedSeasons,
 } from '../api/client.js'
 import LeaderboardBoards from '../components/LeaderboardBoards.vue'
+import UiBadge from '../components/ui/UiBadge.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import { useEnvironmentMeta } from '../composables/useEnvironmentMeta.js'
 import { formatDate } from '../lib/format.js'
+import { useMe } from '../me.js'
 
 const route = useRoute()
+const me = useMe()
 const envId = String(route.params.envId)
 const { meta } = useEnvironmentMeta(envId)
 
@@ -34,6 +38,9 @@ const failed = ref(false)
 const board = ref<Board | null>(null)
 const season = ref<SeasonView | null>(null)
 const history = ref<SeasonView[]>([])
+// True when the board shown is an unreleased season surfaced through the operator-only admin read,
+// so the page can flag it as not yet public. Only ever set for an operator viewing a specific season.
+const operatorPreview = ref(false)
 
 /** The season id in the URL, or undefined to default to the current released season. */
 const requestedSeasonId = computed(() => {
@@ -51,12 +58,13 @@ async function load(): Promise<void> {
   failed.value = false
   board.value = null
   season.value = null
+  operatorPreview.value = false
   try {
     history.value = await listReleasedSeasons(envId)
     if (requestedSeasonId.value !== undefined) {
       const result = await getSeasonLeaderboards(envId, requestedSeasonId.value)
       if (result === undefined) {
-        notReleased.value = true
+        await loadOperatorPreview(requestedSeasonId.value)
       } else {
         season.value = result.season
         board.value = result.board
@@ -77,6 +85,29 @@ async function load(): Promise<void> {
   }
 }
 
+// The public read 404s for an unreleased season. An operator may still preview it before release, so
+// fall back to the operator-only admin read; a non-operator (or any failure) keeps the not-released
+// message. The admin board is the same shape the public read returns, so the rendering is unchanged.
+async function loadOperatorPreview(seasonId: string): Promise<void> {
+  await me.whenSettled()
+  if (!me.me?.is_operator) {
+    notReleased.value = true
+    return
+  }
+  try {
+    const view = await getAdminSeason(seasonId)
+    if (view.season.env_id !== envId) {
+      notReleased.value = true
+      return
+    }
+    season.value = view.season
+    board.value = view.board
+    operatorPreview.value = true
+  } catch {
+    notReleased.value = true
+  }
+}
+
 // Re-resolve when the season id in the URL changes, so the history links navigate in place.
 watch(requestedSeasonId, load, { immediate: true })
 </script>
@@ -87,7 +118,8 @@ watch(requestedSeasonId, load, { immediate: true })
       <h1>Leaderboards</h1>
       <p v-if="season !== null" class="leaderboards-sub">
         {{ seasonLabel(season) }}
-        <span v-if="season.released_at !== null" class="leaderboards-released">
+        <UiBadge v-if="operatorPreview" variant="accent">Operator preview · unreleased</UiBadge>
+        <span v-else-if="season.released_at !== null" class="leaderboards-released">
           · released {{ formatDate(season.released_at) }}
         </span>
       </p>
