@@ -82,7 +82,11 @@ const metadataItems = computed(() => [
 /** One decision-log row per state: the first agent's action (single-agent today). */
 function toDecision(state: StepState): DecisionEntry {
   const slot = Object.keys(state.agents)[0]
-  return { tick: state.tick, action: slot === undefined ? undefined : state.agents[slot]?.action }
+  return {
+    tick: state.tick,
+    slot: slot ?? '',
+    action: slot === undefined ? undefined : state.agents[slot]?.action,
+  }
 }
 
 onMounted(async () => {

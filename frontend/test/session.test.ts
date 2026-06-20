@@ -96,9 +96,11 @@ function sessionRecording(): string {
 
 async function renderSession() {
   const router = memoryRouter([
-    // Stubs so the stage's "Environments / … / Live session" context-line links resolve.
+    // Stubs so the ExperimentTabs strip's links (game, leaderboards, submissions) resolve.
     { path: '/', component: { template: '<div />' } },
     { path: '/environments/:envId', component: { template: '<div />' } },
+    { path: '/environments/:envId/leaderboards', component: { template: '<div />' } },
+    { path: '/environments/:envId/agents/:ownerId', component: { template: '<div />' } },
     { path: '/sessions/:id', component: SessionPage },
     { path: '/replays/:id', component: { template: '<div>replay</div>' } },
   ])
@@ -215,9 +217,8 @@ describe('SessionPage', () => {
 
     expect(await screen.findByText('Game over')).toBeInTheDocument()
     expect(handlers).toBeUndefined()
-    expect(screen.getByText('Mode')).toBeInTheDocument()
-    expect(screen.getByText('Human')).toBeInTheDocument()
-    expect(await screen.findByText('Final score')).toBeInTheDocument()
+    // Mode/owner are gone; the run facts now sit inline in the status row as Score/Ticks/Started.
+    expect(await screen.findByText('Score')).toBeInTheDocument()
     expect(screen.getByText('22')).toBeInTheDocument()
     // Pin state is conveyed by the button alone now, not a duplicate metadata row.
     expect(await screen.findByRole('button', { name: 'Pinned ✓' })).toBeInTheDocument()

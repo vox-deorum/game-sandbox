@@ -15,6 +15,14 @@ export function formatDate(value: string | null | undefined): string | null {
   }).format(new Date(value))
 }
 
+/** "player_0" → "Player 0": a human-readable slot label, for attribution and the decision log. */
+export function formatSlot(slot: string): string {
+  return slot
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
 /** "1 slot", "2 slots", or "1–4 slots" from an environment's slot range. */
 export function slotLabel(meta: EnvironmentMeta): string {
   return meta.min_slots === meta.max_slots

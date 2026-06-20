@@ -8,6 +8,8 @@
 import type { RecordingHeader } from '@game-sandbox/schema'
 import { computed } from 'vue'
 
+import { formatSlot } from '../lib/format.js'
+
 const props = defineProps<{ players?: RecordingHeader['players'] }>()
 
 const items = computed(() => {
@@ -25,7 +27,7 @@ const items = computed(() => {
 <template>
   <ul v-if="items.length > 0" class="players">
     <li v-for="item in items" :key="item.slot" class="player">
-      <span class="player-slot">{{ item.slot }}</span>
+      <span class="player-slot">{{ formatSlot(item.slot) }}</span>
       <span class="player-who">{{ item.text }}</span>
     </li>
   </ul>
@@ -50,8 +52,6 @@ const items = computed(() => {
 }
 
 .player-slot {
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
   color: var(--color-text-muted);
 }
 

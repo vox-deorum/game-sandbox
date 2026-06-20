@@ -12,10 +12,14 @@ import { getEnvironments } from '../api/client.js'
 import { currentUserId } from '../identity.js'
 import { useMe } from '../me.js'
 
+// The env id normally comes from the route (the shell mounts these tabs on /environments/:envId/*),
+// but the session page (route /sessions/:id) passes it explicitly so the same strip can render there.
+const props = defineProps<{ envId?: string }>()
+
 const route = useRoute()
 const me = useMe()
 
-const envId = computed(() => String(route.params.envId))
+const envId = computed(() => props.envId ?? String(route.params.envId))
 const gameName = ref('')
 
 /** The current user's id, used as the My Submissions tab target. */

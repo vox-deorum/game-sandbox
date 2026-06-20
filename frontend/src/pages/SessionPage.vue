@@ -17,7 +17,7 @@
 import type { RecordingHeader, StepState } from '@game-sandbox/schema'
 import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
 import { computed, onMounted, ref } from 'vue'
-import { RouterLink, useRoute } from 'vue-router'
+import { useRoute } from 'vue-router'
 
 import {
   getEnvironments,
@@ -27,6 +27,7 @@ import {
   type SessionRow,
 } from '../api/client.js'
 import DecisionLog, { type DecisionEntry } from '../components/DecisionLog.vue'
+import ExperimentTabs from '../components/ExperimentTabs.vue'
 import PlayerAttribution from '../components/PlayerAttribution.vue'
 import RunMetadata from '../components/RunMetadata.vue'
 import SessionRatings from '../components/SessionRatings.vue'
@@ -103,7 +104,11 @@ function sendInput(slot: string, action: unknown): void {
  *  first agent (single-agent today; multi-agent slot selection is a later stage's concern). */
 function toDecision(state: StepState): DecisionEntry {
   const slot = controlledSlots.value[0] ?? Object.keys(state.agents)[0]
-  return { tick: state.tick, action: slot === undefined ? undefined : state.agents[slot]?.action }
+  return {
+    tick: state.tick,
+    slot: slot ?? '',
+    action: slot === undefined ? undefined : state.agents[slot]?.action,
+  }
 }
 
 // The decision log sits beside a portrait canvas (a column is left free) and below a landscape one.
@@ -129,16 +134,14 @@ const statusTone = computed<'neutral' | 'success' | 'warning'>(() => {
   return paused.value ? 'warning' : status.value === 'running' ? 'success' : 'neutral'
 })
 
-// One facts list feeds the terminal card, so live results and returned ended sessions stay aligned.
-// The environment sits in the context line and the card title already names the end reason, while the
-// pin button shows pin state — so the strip carries only the run's own facts, not those echoes.
-const metadataItems = computed(() => [
-  { label: 'Mode', value: row.value === null ? null : formatMode(row.value.mode) },
-  { label: 'Final score', value: finalResult.value?.score },
+// The run's own facts, shown inline in the status row beside the badge. The tabs name the environment,
+// the status badge names the end reason, and the pin button shows pin state — so the strip carries only
+// score, ticks, and start time. Score and ticks resolve only once a session ends, so RunMetadata's
+// drop-empties rule keeps a live session's row to just the start time.
+const statusFacts = computed(() => [
+  { label: 'Score', value: finalResult.value?.score },
   { label: 'Ticks', value: finalResult.value?.ticks },
-  { label: 'Owner', value: row.value?.user_id },
   { label: 'Started', value: formatDate(row.value?.created_at) },
-  { label: 'Ended', value: formatDate(row.value?.ended_at) },
 ])
 
 /** A friendly line for a termination reason, so a paused-and-idled session reads as normal, not error. */
@@ -245,24 +248,12 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
     }
   }
 }
-
-function formatMode(mode: SessionRow['mode']): string {
-  return mode === 'human' ? 'Human' : 'Scripted agent'
-}
 </script>
 
 <template>
   <UiEmptyState v-if="loadError" tone="danger">No such session.</UiEmptyState>
   <section v-else class="session">
-    <p class="context-line">
-      <RouterLink to="/">Environments</RouterLink>
-      <span aria-hidden="true"> / </span>
-      <RouterLink v-if="row !== null" :to="`/environments/${row.env_id}`">
-        {{ meta?.display_name ?? row.env_id }}
-      </RouterLink>
-      <span aria-hidden="true"> / </span>
-      <span>{{ status === 'ended' ? 'Session' : 'Live session' }}</span>
-    </p>
+    <ExperimentTabs v-if="row !== null" class="session-tabs" :env-id="row.env_id" />
 
     <header class="session-bar">
       <div class="session-status">
@@ -272,6 +263,7 @@ function formatMode(mode: SessionRow['mode']): string {
           tone="warning"
           label="Reconnecting…"
         />
+        <RunMetadata class="status-facts" :items="statusFacts" />
       </div>
       <div
         v-if="status === 'ended' ? recordingId !== null : isOwner"
@@ -299,7 +291,6 @@ function formatMode(mode: SessionRow['mode']): string {
       {{ pinError }}
     </UiEmptyState>
 
-    <RunMetadata :items="metadataItems" />
     <PlayerAttribution :players="header?.players" />
     <p v-if="showActiveTimeout" class="active-timeout">{{ activeTimeoutLabel }}</p>
 
@@ -343,14 +334,11 @@ function formatMode(mode: SessionRow['mode']): string {
 </template>
 
 <style scoped>
-.context-line {
-  margin: 0 0 var(--space-4);
-  font-size: var(--text-sm);
-  color: var(--color-text-muted);
-}
-
-.context-line a:hover {
-  color: var(--color-accent);
+/* The shared tab strip carries its own full-width border and an inner max-width/padding that the shell
+   normally aligns to the page edges. Inside the padded page content we bleed it back out by the page
+   padding so its border spans the content width and its inner labels line up with the page below. */
+.session-tabs {
+  margin: calc(var(--space-5) * -1) calc(var(--space-5) * -1) var(--space-4);
 }
 
 .session-bar {
@@ -365,7 +353,15 @@ function formatMode(mode: SessionRow['mode']): string {
 .session-status {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+}
+
+/* The run facts sit inline beside the status badge, so the bar stays one row about button height; drop
+   RunMetadata's own bottom margin that would otherwise break the row's vertical centering. (The class
+   lands on RunMetadata's root, which carries this scope id, so no :deep is needed.) */
+.status-facts {
+  margin: 0;
 }
 
 .session-controls {
