@@ -561,7 +561,7 @@ export interface SeasonConfig {
   overrides?: SeasonOverrides
 }
 
-/** A season row with its `config` JSON decoded: the shape both the admin and public reads return. */
+/** A season row with decoded config, returned by admin and released-board/history reads. */
 export interface SeasonView {
   id: string
   env_id: string

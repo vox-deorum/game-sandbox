@@ -2,25 +2,21 @@
   The per-game contextual tab strip, shown by the shell only on /environments/:envId/* routes. It is
   the second navigation tier: the sidebar carries the cross-game jobs, these tabs carry the in-game
   tasks. Tabs are labelled by task, not by data model — the "My Submissions" tab hosts the agent
-  profile and resubmission form. The season switcher makes "the current season" the default you are
-  already in, with past seasons reachable by selecting them; changing it opens that season's
-  leaderboard.
+  profile and resubmission form.
 -->
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { RouterLink, useRoute } from 'vue-router'
 
-import { getEnvironments, type SeasonView, listReleasedSeasons } from '../api/client.js'
+import { getEnvironments } from '../api/client.js'
 import { currentUserId } from '../identity.js'
 import { useMe } from '../me.js'
 
 const route = useRoute()
-const router = useRouter()
 const me = useMe()
 
 const envId = computed(() => String(route.params.envId))
 const gameName = ref('')
-const history = ref<SeasonView[]>([])
 
 /** The current user's id, used as the My Submissions tab target. */
 const ownerId = computed(() => me.me?.user_id ?? currentUserId)
@@ -32,14 +28,6 @@ function load(id: string): void {
     },
     () => {
       gameName.value = id
-    },
-  )
-  listReleasedSeasons(id).then(
-    (rows) => {
-      history.value = rows
-    },
-    () => {
-      history.value = []
     },
   )
 }
@@ -73,23 +61,6 @@ const tabs = computed(() => {
   }
   return list
 })
-
-/** "Season 3" from the operator label, or a short id when a season was never named. */
-function seasonLabel(view: SeasonView): string {
-  return view.label ?? `Season ${view.id.slice(0, 8)}`
-}
-
-/** The season id in the URL (on the leaderboard tab), or '' for the current-season default. */
-const selectedSeason = computed(() => {
-  const raw = route.params.seasonId
-  return typeof raw === 'string' ? raw : ''
-})
-
-function onSeasonChange(event: Event): void {
-  const id = (event.target as HTMLSelectElement).value
-  const base = `/environments/${envId.value}/leaderboards`
-  void router.push(id === '' ? base : `${base}/${id}`)
-}
 </script>
 
 <template>
@@ -107,15 +78,6 @@ function onSeasonChange(event: Event): void {
           {{ tab.label }}
         </RouterLink>
       </nav>
-      <label v-if="history.length > 0" class="season-switch">
-        <span class="season-switch-label">Season</span>
-        <select :value="selectedSeason" @change="onSeasonChange">
-          <option value="">Current</option>
-          <option v-for="entry in history" :key="entry.id" :value="entry.id">
-            {{ seasonLabel(entry) }}
-          </option>
-        </select>
-      </label>
     </div>
   </div>
 </template>
@@ -151,7 +113,7 @@ function onSeasonChange(event: Event): void {
 .tab-row {
   display: flex;
   align-items: stretch;
-  gap: var(--space-4);
+  margin-left: var(--space-4);
   flex: 1 1 auto;
   min-width: 0;
   overflow-x: auto;
@@ -174,25 +136,6 @@ function onSeasonChange(event: Event): void {
   color: var(--color-text);
   font-weight: 600;
   border-bottom-color: var(--color-accent);
-}
-
-.season-switch {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  font-size: var(--text-sm);
-  color: var(--color-text-muted);
-  padding-bottom: var(--space-2);
-}
-
-.season-switch select {
-  font: inherit;
-  font-size: var(--text-sm);
-  color: var(--color-text);
-  background: var(--color-surface-raised);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  padding: var(--space-1) var(--space-2);
 }
 
 @media (max-width: 768px) {

@@ -60,6 +60,7 @@ describe('EnvironmentPage', () => {
     vi.clearAllMocks()
     vi.mocked(getEnvironments).mockResolvedValue([META])
     vi.mocked(listRecordings).mockResolvedValue([])
+    vi.mocked(listPublicSeasons).mockResolvedValue([])
     // Default: a season is play-open (so the watch/play entry points are enabled) but nothing is
     // released yet. Individual tests override this to exercise the closed-play and released states.
     vi.mocked(getEnvironmentLeaderboards).mockResolvedValue({

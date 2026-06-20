@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/vue'
+import { render, screen } from '@testing-library/vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { h } from 'vue'
 
@@ -8,10 +8,9 @@ import { memoryRouter } from './helpers/render.js'
 vi.mock('../src/api/client.js', () => ({
   getMe: vi.fn(),
   getEnvironments: vi.fn(),
-  listReleasedSeasons: vi.fn(),
 }))
 
-import { getEnvironments, getMe, listReleasedSeasons } from '../src/api/client.js'
+import { getEnvironments, getMe } from '../src/api/client.js'
 import ExperimentTabs from '../src/components/ExperimentTabs.vue'
 import { MeProvider } from '../src/me.js'
 
@@ -38,7 +37,6 @@ describe('ExperimentTabs', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(getEnvironments).mockResolvedValue([META])
-    vi.mocked(listReleasedSeasons).mockResolvedValue([])
   })
 
   it('shows the task tabs targeting the user, and hides Manage for a non-operator', async () => {
@@ -61,6 +59,7 @@ describe('ExperimentTabs', () => {
     const submit = await screen.findByRole('link', { name: 'My Submissions' })
     expect(submit).toHaveAttribute('href', '/environments/flappy_bird/agents/dev-user')
     expect(screen.queryByRole('link', { name: 'Manage' })).toBeNull()
+    expect(screen.queryByRole('combobox', { name: 'Season' })).toBeNull()
   })
 
   it('targets the agent tab at the signed-in user and shows Manage for an operator', async () => {
@@ -75,33 +74,5 @@ describe('ExperimentTabs', () => {
       'href',
       '/environments/flappy_bird/admin',
     )
-  })
-
-  it('lists released seasons in the switcher', async () => {
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'dev-user',
-      allowlisted: true,
-      is_operator: false,
-    })
-    vi.mocked(listReleasedSeasons).mockResolvedValue([
-      {
-        id: 'iter-9',
-        env_id: 'flappy_bird',
-        submission_status: 'closed',
-        play_status: 'closed',
-        release_status: 'released',
-        label: 'Season 2',
-        config: { deps_version: 1, matches: [] },
-        rating_prompt: null,
-        created_at: '2026-06-14T00:00:00Z',
-        released_at: '2026-06-15T00:00:00Z',
-      },
-    ])
-    await renderTabs()
-
-    await waitFor(() =>
-      expect(screen.getByRole('option', { name: 'Season 2' })).toBeInTheDocument(),
-    )
-    expect(screen.getByRole('option', { name: 'Current' })).toBeInTheDocument()
   })
 })

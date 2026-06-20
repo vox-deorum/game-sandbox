@@ -3,9 +3,9 @@
  *
  * The storage rows carry their nested documents as JSON text (`seasons.config`, a run's
  * `config_snapshot`/`submission_snapshot`, a scheduled game's `slots`). The admin and public routes
- * return them decoded so a client reads structured config rather than re-parsing strings. These
- * helpers are the single place that decoding happens, shared by the admin status view and the public
- * leaderboard reads so the two never drift.
+ * return them decoded where configuration is part of the response, so a client reads structured
+ * config rather than re-parsing strings. The separate public season-index helper deliberately omits
+ * configuration and rating prompts.
  */
 
 import type { AgentRef, Season, SeasonRun, SeasonRunGame } from './storage/schema.js'

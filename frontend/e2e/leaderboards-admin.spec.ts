@@ -65,7 +65,7 @@ test('the operator console tails a triggered workflow run', async ({ page, reque
 
   await page.goto(`/environments/${ENV_ID}/admin`)
   await page.getByRole('button', { name: new RegExp(label) }).click()
-  await expect(page.getByRole('heading', { name: label })).toBeVisible()
+  await expect(page.getByRole('heading', { name: `Season ${label}` })).toBeVisible()
 
   await page.getByRole('button', { name: 'Run workflow' }).click()
   const logs = page.getByTestId('log-view')
