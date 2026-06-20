@@ -69,9 +69,16 @@ test('released leaderboard history is visible and navigates by season URL', asyn
   await page.goto(`/environments/${ENV_ID}/leaderboards`)
 
   await expect(page.locator('.leaderboards-sub')).toContainText(`E2E newer ${suffix}`)
-  await expect(page.getByText('Automated board')).toBeVisible()
-  await expect(page.getByText('Human feedback')).toBeVisible()
+  await expect(page.getByText('Scoreboard')).toBeVisible()
+  await expect(page.getByText('Human Ratings')).toBeVisible()
   await expect(page.getByText('No automated results yet.')).toBeVisible()
+
+  const boards = page.locator('.boards > .board')
+  const scoreboardBox = await boards.nth(0).boundingBox()
+  const ratingsBox = await boards.nth(1).boundingBox()
+  expect(scoreboardBox).not.toBeNull()
+  expect(ratingsBox).not.toBeNull()
+  expect(ratingsBox?.y).toBeGreaterThan((scoreboardBox?.y ?? 0) + (scoreboardBox?.height ?? 0))
 
   await page.getByRole('link', { name: `E2E older ${suffix}` }).click()
   await expect(page).toHaveURL(new RegExp(`/environments/${ENV_ID}/leaderboards/${older.id}$`))
@@ -98,5 +105,5 @@ test('the operator console tails a triggered workflow run', async ({ page, reque
   await page.getByRole('link', { name: 'Check leaderboard' }).click()
   await expect(page).toHaveURL(new RegExp(`/environments/${ENV_ID}/leaderboards/`))
   await expect(page.getByText('Operator preview · unreleased')).toBeVisible()
-  await expect(page.getByText('Automated board')).toBeVisible()
+  await expect(page.getByText('Scoreboard')).toBeVisible()
 })

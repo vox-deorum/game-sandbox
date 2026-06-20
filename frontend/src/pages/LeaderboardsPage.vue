@@ -1,5 +1,5 @@
 <!--
-  The Leaderboards page (Stage 6.7): the per-environment, per-season full side-by-side board view,
+  The Leaderboards page (Stage 6.7): the per-environment, per-season full-width stacked board view,
   the spec's "Leaderboards" page. It is linkable by URL with the season id, so a specific released
   season's boards are shareable; with no season id it defaults to the environment's current
   released season. The environment page embeds the current boards and links here for history.
@@ -150,14 +150,14 @@ watch(requestedSeasonId, load, { immediate: true })
     </main>
 
     <section v-if="history.length > 0" class="leaderboards-history" aria-label="Released seasons">
-      <h2 class="history-title">Seasons</h2>
+      <h2 class="history-title">All Seasons</h2>
       <table class="history-table">
         <thead>
           <tr>
             <th scope="col">Season</th>
             <th scope="col">Released</th>
-            <th scope="col" class="num">Submissions</th>
-            <th scope="col" class="num">Games run</th>
+            <th scope="col" class="num"># Submissions</th>
+            <th scope="col" class="num"># Games Run</th>
           </tr>
         </thead>
         <tbody>

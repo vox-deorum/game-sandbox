@@ -1,5 +1,5 @@
 <!--
-  The two leaderboards side by side (Stage 6.7), per frontend.md. The same component renders the
+  The two leaderboards stacked in one full-width column (Stage 6.7), per frontend.md. The same component renders the
   current released season embedded on the environment page, a specific season on the Leaderboards
   page, and the operator's verify-before-release view in the admin console — the data shape is identical,
   only the surrounding context differs.
@@ -33,7 +33,7 @@ function ownerOf(agent: BoardAgentRef): string | null {
 <template>
   <div class="boards">
     <section class="board" aria-labelledby="automated-board-title">
-      <h3 id="automated-board-title" class="board-title">Automated board</h3>
+      <h3 id="automated-board-title" class="board-title">Scoreboard</h3>
       <UiEmptyState v-if="props.board.automated.length === 0">
         No automated results yet.
       </UiEmptyState>
@@ -83,7 +83,7 @@ function ownerOf(agent: BoardAgentRef): string | null {
     </section>
 
     <section class="board" aria-labelledby="human-board-title">
-      <h3 id="human-board-title" class="board-title">Human feedback</h3>
+      <h3 id="human-board-title" class="board-title">Human Ratings</h3>
       <UiEmptyState v-if="props.board.human.length === 0">No ratings yet.</UiEmptyState>
       <table v-else class="board-table">
         <thead>
@@ -128,7 +128,7 @@ function ownerOf(agent: BoardAgentRef): string | null {
 <style scoped>
 .boards {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-5);
 }
 
@@ -193,9 +193,4 @@ function ownerOf(agent: BoardAgentRef): string | null {
   opacity: 0.7;
 }
 
-@media (max-width: 768px) {
-  .boards {
-    grid-template-columns: 1fr;
-  }
-}
 </style>

@@ -11,7 +11,7 @@ vi.mock('../src/api/client.js', () => ({
   getEnvironmentLeaderboards: vi.fn(),
   getSeasonLeaderboards: vi.fn(),
   getAdminSeason: vi.fn(),
-  listReleasedSeasons: vi.fn(),
+  listPublicSeasons: vi.fn(),
 }))
 
 import {
@@ -20,7 +20,7 @@ import {
   getEnvironments,
   getMe,
   getSeasonLeaderboards,
-  listReleasedSeasons,
+  listPublicSeasons,
 } from '../src/api/client.js'
 import LeaderboardsPage from '../src/pages/LeaderboardsPage.vue'
 
@@ -92,13 +92,13 @@ describe('LeaderboardsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(getEnvironments).mockResolvedValue([flappyMeta()])
-    vi.mocked(listReleasedSeasons).mockResolvedValue([
-      season({ id: 'iter-1', label: 'Week 1' }),
-      season({ id: 'iter-0', label: 'Week 0' }),
+    vi.mocked(listPublicSeasons).mockResolvedValue([
+      { ...season({ id: 'iter-1', label: 'Week 1' }), submission_count: 2, session_count: 4 },
+      { ...season({ id: 'iter-0', label: 'Week 0' }), submission_count: 1, session_count: 2 },
     ])
   })
 
-  it('renders both boards side by side from the current released season', async () => {
+  it('renders both boards in one column from the current released season', async () => {
     vi.mocked(getEnvironmentLeaderboards).mockResolvedValue({
       current: { season: season(), board: board() },
       submission_season_id: null,
@@ -106,8 +106,8 @@ describe('LeaderboardsPage', () => {
     })
     await renderAt('/environments/flappy_bird/leaderboards')
 
-    expect(await screen.findByText('Automated board')).toBeInTheDocument()
-    expect(screen.getByText('Human feedback')).toBeInTheDocument()
+    expect(await screen.findByText('Scoreboard')).toBeInTheDocument()
+    expect(screen.getByText('Human Ratings')).toBeInTheDocument()
 
     // The automated board shows the weighted mean agent compute time as its own column.
     expect(screen.getByRole('columnheader', { name: 'Agent compute' })).toBeInTheDocument()
@@ -137,7 +137,7 @@ describe('LeaderboardsPage', () => {
 
     // The human board is its own section, so scope row queries to it rather than crossing into the
     // automated board.
-    const humanHeading = await screen.findByText('Human feedback')
+    const humanHeading = await screen.findByText('Human Ratings')
     const humanSection = humanHeading.closest('section') as HTMLElement
     const rows = within(humanSection).getAllByRole('row')
     const rankedRow = rows[1] as HTMLElement
@@ -195,7 +195,7 @@ describe('LeaderboardsPage', () => {
     await renderAt('/environments/flappy_bird/leaderboards/iter-secret')
 
     await waitFor(() => expect(vi.mocked(getAdminSeason)).toHaveBeenCalledWith('iter-secret'))
-    expect(await screen.findByText('Automated board')).toBeInTheDocument()
+    expect(await screen.findByText('Scoreboard')).toBeInTheDocument()
     expect(screen.getByText(/Operator preview/)).toBeInTheDocument()
   })
 })
