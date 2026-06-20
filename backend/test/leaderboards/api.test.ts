@@ -68,6 +68,50 @@ describe('public leaderboard API', () => {
     expect(ids).not.toContain(unreleased.id)
   })
 
+  it('lists every public-facing season across the three flags, without boards', async () => {
+    const released = await declare()
+    await storage.setReleaseStatus(released.id, 'released')
+    const submitOpen = await declare()
+    await storage.setSubmissionStatus(submitOpen.id, 'open')
+    const playOpen = await declare()
+    await storage.setPlayStatus(playOpen.id, 'open')
+    const hidden = await declare() // closed and unreleased — never public
+
+    const res = await app.inject({ method: 'GET', url: '/api/seasons' })
+    expect(res.statusCode).toBe(200)
+    const body = res.json() as Array<Record<string, unknown> & { id: string }>
+    const ids = body.map((s) => s.id)
+    expect(new Set(ids)).toEqual(new Set([released.id, submitOpen.id, playOpen.id]))
+    expect(ids).not.toContain(hidden.id)
+    // The index exposes only public listing metadata. Unreleased configuration, rating prompts, and
+    // board payloads stay behind their operator/released-only routes.
+    expect(
+      body.every(
+        (season) =>
+          season.config === undefined &&
+          season.rating_prompt === undefined &&
+          season.board === undefined,
+      ),
+    ).toBe(true)
+  })
+
+  it('narrows the public seasons list to one environment with ?envId=', async () => {
+    const here = await declare()
+    await storage.setReleaseStatus(here.id, 'released')
+    const elsewhere = await storage.createSeason({
+      env_id: 'turn_based',
+      deps_version: 1,
+      label: null,
+    })
+    await storage.setReleaseStatus(elsewhere.id, 'released')
+
+    const res = await app.inject({ method: 'GET', url: `/api/seasons?envId=${ENV_ID}` })
+    expect(res.statusCode).toBe(200)
+    const ids = (res.json() as Array<{ id: string }>).map((s) => s.id)
+    expect(ids).toEqual([here.id])
+    expect(ids).not.toContain(elsewhere.id)
+  })
+
   it('returns an empty current board when nothing is released, plus the public targets', async () => {
     const submitTarget = await declare()
     await storage.setSubmissionStatus(submitTarget.id, 'open')

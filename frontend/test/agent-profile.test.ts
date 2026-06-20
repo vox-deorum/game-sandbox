@@ -112,7 +112,10 @@ describe('AgentProfilePage', () => {
       ],
     })
 
-    expect(await screen.findByRole('heading', { name: 'eve', level: 1 })).toBeInTheDocument()
+    // A non-owner (dev-user) viewing eve's profile sees a possessive heading, not "My Submissions".
+    expect(
+      await screen.findByRole('heading', { name: "eve's Submissions", level: 1 }),
+    ).toBeInTheDocument()
     // The active (non-superseded) submission carries the Active badge; the superseded one does not.
     expect(screen.getByText('Active')).toBeInTheDocument()
     expect(screen.getByText('ready')).toBeInTheDocument()
@@ -151,6 +154,10 @@ describe('AgentProfilePage', () => {
   it('shows the owner-only debug placeholder only to the agent owner', async () => {
     vi.mocked(getMe).mockResolvedValue({ user_id: 'eve', allowlisted: true, is_operator: false })
     await renderProfile({ env_id: 'flappy_bird', owner_id: 'eve', submissions: [submission()] })
+    // The owner sees the first-person heading rather than the possessive form.
+    expect(
+      await screen.findByRole('heading', { name: 'My Submissions', level: 1 }),
+    ).toBeInTheDocument()
     expect(await screen.findByText(/LLM debug view/)).toBeInTheDocument()
     // The leaderboard placements section is visible to everyone (empty until released results exist).
     expect(screen.getByRole('heading', { name: 'Leaderboard placements' })).toBeInTheDocument()

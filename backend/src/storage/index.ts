@@ -348,6 +348,12 @@ export interface Storage {
   listSeasons(envId: string, options?: { includeUnreleased?: boolean }): Promise<Season[]>
   /** The latest `released` season for an environment, ordered by `released_at`. */
   getReleasedSeason(envId: string): Promise<Season | undefined>
+  /**
+   * Every season with a public-facing flag — `released`, submission-`open`, or play-`open` — newest
+   * first, optionally narrowed to a single environment. Backs the cross-game seasons list and the
+   * per-environment hub; labels and flags are public but the boards stay released-only.
+   */
+  listPublicSeasons(options?: { envId?: string }): Promise<Season[]>
   /** Attribute an existing session to a season (the alternative to passing it at create time). */
   setSessionSeason(sessionId: string, seasonId: string): Promise<void>
 

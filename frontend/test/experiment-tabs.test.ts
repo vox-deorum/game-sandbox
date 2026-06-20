@@ -9,10 +9,9 @@ vi.mock('../src/api/client.js', () => ({
   getMe: vi.fn(),
   getEnvironments: vi.fn(),
   listReleasedSeasons: vi.fn(),
-  getAgentProfile: vi.fn(),
 }))
 
-import { getAgentProfile, getEnvironments, getMe, listReleasedSeasons } from '../src/api/client.js'
+import { getEnvironments, getMe, listReleasedSeasons } from '../src/api/client.js'
 import ExperimentTabs from '../src/components/ExperimentTabs.vue'
 import { MeProvider } from '../src/me.js'
 
@@ -42,18 +41,11 @@ describe('ExperimentTabs', () => {
     vi.mocked(listReleasedSeasons).mockResolvedValue([])
   })
 
-  it('shows the task tabs, labels the agent tab "Submit" with no submission, and hides Manage', async () => {
+  it('shows the task tabs targeting the user, and hides Manage for a non-operator', async () => {
     vi.mocked(getMe).mockResolvedValue({
       user_id: 'dev-user',
       allowlisted: true,
       is_operator: false,
-    })
-    vi.mocked(getAgentProfile).mockResolvedValue({
-      env_id: 'flappy_bird',
-      owner_id: 'dev-user',
-      submission_season_id: null,
-      play_season_id: null,
-      submissions: [],
     })
     await renderTabs()
 
@@ -61,46 +53,21 @@ describe('ExperimentTabs', () => {
       'href',
       '/environments/flappy_bird',
     )
-    expect(screen.getByRole('link', { name: 'Leaderboard' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Leaderboards' })).toHaveAttribute(
       'href',
       '/environments/flappy_bird/leaderboards',
     )
-    // No submission yet → the dynamic tab reads "Submit" and targets the user's own agent page.
-    const submit = await screen.findByRole('link', { name: 'Submit' })
+    // The agent tab reads "My Submissions" and targets the signed-in user's own agent page.
+    const submit = await screen.findByRole('link', { name: 'My Submissions' })
     expect(submit).toHaveAttribute('href', '/environments/flappy_bird/agents/dev-user')
     expect(screen.queryByRole('link', { name: 'Manage' })).toBeNull()
   })
 
-  it('labels the agent tab "My Agent" once submitted and shows Manage for an operator', async () => {
+  it('targets the agent tab at the signed-in user and shows Manage for an operator', async () => {
     vi.mocked(getMe).mockResolvedValue({ user_id: 'eve', allowlisted: true, is_operator: true })
-    vi.mocked(getAgentProfile).mockResolvedValue({
-      env_id: 'flappy_bird',
-      owner_id: 'eve',
-      submission_season_id: 'iter-1',
-      play_season_id: null,
-      submissions: [
-        {
-          id: 'sub1',
-          season_id: 'iter-1',
-          env_id: 'flappy_bird',
-          user_id: 'eve',
-          source_kind: 'git',
-          repo_url: 'https://example.test/a',
-          commit_sha: 'abc',
-          local_path: null,
-          ref: null,
-          status: 'ready',
-          reason: null,
-          created_at: '2026-06-14T00:00:00Z',
-          superseded_at: null,
-          checks: [],
-          replays: [],
-        },
-      ],
-    })
     await renderTabs()
 
-    expect(await screen.findByRole('link', { name: 'My Agent' })).toHaveAttribute(
+    expect(await screen.findByRole('link', { name: 'My Submissions' })).toHaveAttribute(
       'href',
       '/environments/flappy_bird/agents/eve',
     )
@@ -115,13 +82,6 @@ describe('ExperimentTabs', () => {
       user_id: 'dev-user',
       allowlisted: true,
       is_operator: false,
-    })
-    vi.mocked(getAgentProfile).mockResolvedValue({
-      env_id: 'flappy_bird',
-      owner_id: 'dev-user',
-      submission_season_id: null,
-      play_season_id: null,
-      submissions: [],
     })
     vi.mocked(listReleasedSeasons).mockResolvedValue([
       {

@@ -19,6 +19,36 @@ export function seasonView(season: Season): SeasonView {
   return { ...season, config: decodeSeasonConfig(season.config) }
 }
 
+/** The public season-list shape, intentionally excluding config and rating prompts. */
+export type PublicSeasonView = Pick<
+  Season,
+  | 'id'
+  | 'env_id'
+  | 'submission_status'
+  | 'play_status'
+  | 'release_status'
+  | 'label'
+  | 'created_at'
+  | 'released_at'
+>
+
+/**
+ * Return only the identity, label, public gates, and timestamps needed by public season indexes.
+ * Unreleased season configuration and rating prompts remain operator-only.
+ */
+export function publicSeasonView(season: Season): PublicSeasonView {
+  return {
+    id: season.id,
+    env_id: season.env_id,
+    submission_status: season.submission_status,
+    play_status: season.play_status,
+    release_status: season.release_status,
+    label: season.label,
+    created_at: season.created_at,
+    released_at: season.released_at,
+  }
+}
+
 /** A scheduled game with its `slots` JSON decoded into resolved {@link AgentRef}s. */
 export type RunGameView = Omit<SeasonRunGame, 'slots'> & { slots: AgentRef[] }
 

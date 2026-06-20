@@ -12,10 +12,18 @@
   session instead of dead-ending.
 -->
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 
-import { type EnvironmentLeaderboards, getEnvironmentLeaderboards, startSession } from '../api/client.js'
+import {
+  type EnvironmentLeaderboards,
+  getEnvironmentLeaderboards,
+  listPublicSeasons,
+  listReleasedSeasons,
+  type PublicSeasonView,
+  type SeasonView,
+  startSession,
+} from '../api/client.js'
 import LeaderboardBoards from '../components/LeaderboardBoards.vue'
 import RecentReplays from '../components/RecentReplays.vue'
 import StartForm from '../components/StartForm.vue'
@@ -25,7 +33,7 @@ import UiButton from '../components/ui/UiButton.vue'
 import UiDialog from '../components/ui/UiDialog.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import { useEnvironmentMeta } from '../composables/useEnvironmentMeta.js'
-import { slotLabel } from '../lib/format.js'
+import { formatDate, slotLabel } from '../lib/format.js'
 import { useMe } from '../me.js'
 import { thumbnailFor } from '../renderers/registry.js'
 
@@ -39,11 +47,36 @@ const startError = ref<string | null>(null)
 
 // The current released boards plus the public play target. The boards embed and the watch/play gate
 // read from this; an unreleased season's boards never appear (the public read only returns released
-// results). Submission now lives on the Submit / My Agent tab (the agent profile), not on this hub.
+// results). Submission now lives on the My Submissions tab (the agent profile), not on this hub.
 const leaderboards = ref<EnvironmentLeaderboards | null>(null)
+// The environment's released seasons, newest first — the season record under the boards. Independent
+// of the current-boards read so a failure of either leaves the other intact.
+const releasedSeasons = ref<SeasonView[]>([])
 // Public watch/play is enabled only when a season is the game's play-open target. Released history
 // stays readable regardless, so the boards embed below is independent of this gate.
 const playOpen = computed(() => leaderboards.value?.play_season_id != null)
+
+// This environment's public seasons, used to name the live play-open and submission-open seasons in
+// the header (their labels aren't on the leaderboards payload, which carries only their ids).
+const publicSeasons = ref<PublicSeasonView[]>([])
+const playableSeason = computed(
+  () => publicSeasons.value.find((s) => s.play_status === 'open') ?? null,
+)
+const submittableSeason = computed(
+  () => publicSeasons.value.find((s) => s.submission_status === 'open') ?? null,
+)
+
+// The last released season — the one whose boards are embedded below, named in the section header.
+const releasedSeason = computed(() => leaderboards.value?.current?.season ?? null)
+function seasonLabel(season: Pick<SeasonView, 'id' | 'label'>): string {
+  return season.label ?? `Season ${season.id.slice(0, 8)}`
+}
+
+// The released history minus the season already shown above (named in the header, boards embedded);
+// these are the older seasons whose boards you reach by clicking through.
+const pastSeasons = computed(() =>
+  releasedSeasons.value.filter((s) => s.id !== releasedSeason.value?.id),
+)
 
 onMounted(() => {
   getEnvironmentLeaderboards(envId).then(
@@ -55,10 +88,39 @@ onMounted(() => {
       // its safe-closed default (leaderboards stays null).
     },
   )
+  listPublicSeasons(envId).then(
+    (seasons) => {
+      publicSeasons.value = seasons
+    },
+    () => {
+      // A failed read just leaves the play/submit season badges off; the hub is otherwise unaffected.
+    },
+  )
+  listReleasedSeasons(envId).then(
+    (seasons) => {
+      releasedSeasons.value = seasons
+    },
+    () => {
+      // A failed read leaves the season record empty rather than breaking the hub.
+    },
+  )
 })
 // The play start dialog's open state. Watch starts through WatchAgentPicker, so this dialog is the
 // human-play entry point only.
 const playFormOpen = ref(false)
+const canStartHumanPlay = computed(
+  () => Boolean(me.me?.allowlisted && meta.value?.human_slots.length && playOpen.value),
+)
+
+/** Remove a consumed play deep-link without discarding unrelated query parameters. */
+function clearPlayQuery(): void {
+  if (route.query.play !== '1') {
+    return
+  }
+  const query = { ...route.query }
+  delete query.play
+  void router.replace({ path: route.path, query, hash: route.hash })
+}
 
 // Closing the dialog (escape, overlay, cancel) clears the open flag and any prior error in one place.
 const dialogOpen = computed({
@@ -67,6 +129,7 @@ const dialogOpen = computed({
     playFormOpen.value = open
     if (!open) {
       startError.value = null
+      clearPlayQuery()
     }
   },
 })
@@ -81,6 +144,18 @@ function open(): void {
   startError.value = null
   playFormOpen.value = true
 }
+
+// A season card or badge can deep-link to the existing play flow. Wait for identity, environment
+// metadata, and the play-open target to resolve before opening the dialog.
+watch(
+  [() => route.query.play, canStartHumanPlay],
+  ([play, canPlay]) => {
+    if (play === '1' && canPlay) {
+      open()
+    }
+  },
+  { immediate: true },
+)
 
 async function start(input: { seed?: number; humanSlotTimeoutMs?: number }): Promise<void> {
   if (meta.value === null || !playFormOpen.value) {
@@ -114,25 +189,37 @@ async function start(input: { seed?: number; humanSlotTimeoutMs?: number }): Pro
       <div class="env-headline">
         <div class="env-title-row">
           <h1>{{ meta.display_name }}</h1>
-          <UiButton
-            v-if="me.me?.allowlisted && meta.human_slots.length > 0 && playOpen"
-            size="lg"
-            @click="open()"
-          >
+          <UiButton v-if="canStartHumanPlay" size="lg" @click="open()">
             Play Yourself
           </UiButton>
         </div>
         <p class="env-description">{{ meta.description }}</p>
         <div class="env-meta">
           <UiBadge>{{ slotLabel(meta) }}</UiBadge>
-          <UiBadge v-if="meta.human_slots.length > 0" variant="accent">Human playable</UiBadge>
+          <RouterLink
+            v-if="playableSeason !== null && canStartHumanPlay"
+            class="env-meta-link"
+            :to="`/environments/${meta.env_id}?play=1`"
+          >
+            <UiBadge variant="accent">{{ seasonLabel(playableSeason) }}: Playable</UiBadge>
+          </RouterLink>
+          <UiBadge v-else-if="playableSeason !== null" variant="accent">
+            {{ seasonLabel(playableSeason) }}: Playable
+          </UiBadge>
+          <RouterLink
+            v-if="submittableSeason !== null && me.me != null"
+            class="env-meta-link"
+            :to="`/environments/${meta.env_id}/agents/${me.me.user_id}`"
+          >
+            <UiBadge variant="accent">{{ seasonLabel(submittableSeason) }}: Submittable</UiBadge>
+          </RouterLink>
           <UiBadge v-if="paceLabel !== null">{{ paceLabel }}</UiBadge>
         </div>
       </div>
       <img class="env-thumb" :src="thumbnailFor(meta.renderer)" alt="" />
     </header>
 
-    <section class="env-section">
+    <section id="play" class="env-section">
       <h2>Watch an agent</h2>
       <WatchAgentPicker v-if="playOpen" :env-id="meta.env_id" />
       <UiEmptyState v-else>Public play is closed for this environment right now.</UiEmptyState>
@@ -140,7 +227,15 @@ async function start(input: { seed?: number; humanSlotTimeoutMs?: number }): Pro
 
     <section class="env-section">
       <div class="env-section-head">
-        <h2>Leaderboards</h2>
+        <div class="env-section-title">
+          <h2>Leaderboards</h2>
+          <span v-if="releasedSeason !== null" class="env-section-season">
+            {{ seasonLabel(releasedSeason) }}
+            <span v-if="releasedSeason.released_at !== null">
+              · released {{ formatDate(releasedSeason.released_at) }}
+            </span>
+          </span>
+        </div>
         <RouterLink class="env-section-link" :to="`/environments/${meta.env_id}/leaderboards`">
           View all &amp; history →
         </RouterLink>
@@ -151,6 +246,18 @@ async function start(input: { seed?: number; humanSlotTimeoutMs?: number }): Pro
         :env-id="meta.env_id"
       />
       <UiEmptyState v-else>No released results for this environment yet.</UiEmptyState>
+
+      <div v-if="pastSeasons.length > 0" class="env-season-record">
+        <span class="env-season-record-label">Past seasons:</span>
+        <RouterLink
+          v-for="entry in pastSeasons"
+          :key="entry.id"
+          class="env-season-record-link"
+          :to="`/environments/${meta.env_id}/leaderboards/${entry.id}`"
+        >
+          {{ seasonLabel(entry) }}
+        </RouterLink>
+      </div>
     </section>
 
     <section class="env-section">
@@ -196,6 +303,10 @@ async function start(input: { seed?: number; humanSlotTimeoutMs?: number }): Pro
   flex-wrap: wrap;
 }
 
+.env-meta-link {
+  display: inline-flex;
+}
+
 .env-thumb {
   width: 200px;
   aspect-ratio: 16 / 9;
@@ -217,6 +328,18 @@ async function start(input: { seed?: number; humanSlotTimeoutMs?: number }): Pro
   flex-wrap: wrap;
 }
 
+.env-section-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.env-section-season {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
 .env-section-link {
   font-size: var(--text-sm);
   color: var(--color-text-muted);
@@ -225,6 +348,27 @@ async function start(input: { seed?: number; humanSlotTimeoutMs?: number }): Pro
 
 .env-section-link:hover {
   color: var(--color-accent);
+}
+
+.env-season-record {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-top: var(--space-4);
+  font-size: var(--text-sm);
+}
+
+.env-season-record-label {
+  color: var(--color-text-muted);
+}
+
+.env-season-record-link {
+  color: var(--color-accent);
+}
+
+.env-season-record-link:hover {
+  color: var(--color-text);
 }
 
 /* The thumbnail drops below the description on narrow screens (the responsive pass). */

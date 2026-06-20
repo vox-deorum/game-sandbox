@@ -314,6 +314,30 @@ export async function getReleasedSeason(
     .executeTakeFirst()
 }
 
+export async function listPublicSeasons(
+  db: Kysely<Database>,
+  options?: { envId?: string },
+): Promise<Season[]> {
+  // Any season with at least one public-facing flag — released, accepting submissions, or open for
+  // play — newest first, optionally narrowed to a single environment. The labels and flags are
+  // public, but the boards stay released-only (read through the season-boards route), so an
+  // open-but-unreleased season lists here without its results leaking.
+  let query = db
+    .selectFrom('seasons')
+    .selectAll()
+    .where((eb) =>
+      eb.or([
+        eb('release_status', '=', 'released'),
+        eb('submission_status', '=', 'open'),
+        eb('play_status', '=', 'open'),
+      ]),
+    )
+  if (options?.envId !== undefined) {
+    query = query.where('env_id', '=', options.envId)
+  }
+  return await query.orderBy('created_at', 'desc').orderBy(sql`rowid`, 'desc').execute()
+}
+
 export async function setSessionSeason(
   db: Kysely<Database>,
   sessionId: string,

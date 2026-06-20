@@ -14,6 +14,12 @@ vi.mock('../src/api/client.js', () => ({
   // The page fetches the environment leaderboards on mount for the boards embed and the watch/play
   // gate; default it to a play-open, nothing-released payload so the entry points stay enabled.
   getEnvironmentLeaderboards: vi.fn(),
+  // The page also fetches the released-season record on mount for the "Past seasons" links; default
+  // it to empty so the record stays hidden unless a test sets it.
+  listReleasedSeasons: vi.fn().mockResolvedValue([]),
+  // And the cross-game public seasons, to name the live play-open / submission-open seasons in the
+  // header; default to empty so those badges stay off unless a test sets it.
+  listPublicSeasons: vi.fn().mockResolvedValue([]),
   // The WatchAgentPicker lists the active ready agents; default it to empty. Submission moved off the
   // hub to the Submit / My Agent tab (the agent profile), so the hub no longer mounts the submit form.
   listActiveSubmissions: vi.fn().mockResolvedValue([]),
@@ -23,6 +29,7 @@ import {
   getEnvironmentLeaderboards,
   getEnvironments,
   getMe,
+  listPublicSeasons,
   listRecordings,
   startSession,
 } from '../src/api/client.js'
@@ -87,6 +94,32 @@ describe('EnvironmentPage', () => {
     await renderPage()
     expect(await screen.findByText(/Public play is closed/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Play Yourself' })).toBeNull()
+  })
+
+  it('opens the play flow from the play-open season badge instead of linking to its boards', async () => {
+    vi.mocked(getMe).mockResolvedValue({
+      user_id: 'dev-user',
+      allowlisted: true,
+      is_operator: false,
+    })
+    vi.mocked(listPublicSeasons).mockResolvedValue([
+      {
+        id: 'iter-1',
+        env_id: 'flappy_bird',
+        submission_status: 'closed',
+        play_status: 'open',
+        release_status: 'unreleased',
+        label: 'Week 1',
+        created_at: '2026-06-10T00:00:00Z',
+        released_at: null,
+      },
+    ])
+    await renderPage()
+
+    const playable = await screen.findByRole('link', { name: 'Week 1: Playable' })
+    expect(playable).toHaveAttribute('href', '/environments/flappy_bird?play=1')
+    await fireEvent.click(playable)
+    expect(await screen.findByRole('button', { name: 'Start playing' })).toBeInTheDocument()
   })
 
   it('keeps the hub stable when the leaderboards read fails (play stays safe-closed)', async () => {

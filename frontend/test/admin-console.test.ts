@@ -150,6 +150,15 @@ describe('AdminConsolePage', () => {
     expect(screen.getByText('Play closed')).toBeInTheDocument()
   })
 
+  it('prefixes an unnamed season exactly once', async () => {
+    const unnamed = season({ id: 'abcdef123456', label: null })
+    vi.mocked(listAdminSeasons).mockResolvedValue([unnamed])
+    vi.mocked(getAdminSeason).mockResolvedValue(adminView({ season: unnamed }))
+    await renderConsole()
+    expect(await screen.findByRole('heading', { name: 'Season abcdef12' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: /Season Season/ })).toBeNull()
+  })
+
   it('declares a new season through the admin API', async () => {
     vi.mocked(declareSeason).mockResolvedValue(season({ id: 'iter-2', label: 'Week 2' }))
     await renderConsole()
@@ -184,14 +193,16 @@ describe('AdminConsolePage', () => {
       season: season({ label: 'Playground' }),
     })
     // The reload after a successful rename reads back the renamed season.
-    vi.mocked(getAdminSeason).mockResolvedValue(adminView({ season: season({ label: 'Playground' }) }))
+    vi.mocked(getAdminSeason).mockResolvedValue(
+      adminView({ season: season({ label: 'Playground' }) }),
+    )
     await renderConsole()
     await fireEvent.click(await screen.findByRole('button', { name: 'Rename' }))
     await fireEvent.update(await screen.findByLabelText('Season name'), 'Playground')
     await fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     expect(vi.mocked(renameSeason)).toHaveBeenCalledWith('iter-1', 'Playground')
-    // Rename mode closes and the new name shows.
-    expect(await screen.findByRole('heading', { name: 'Playground' })).toBeInTheDocument()
+    // Rename mode closes and the new name shows, prefixed in the detail heading.
+    expect(await screen.findByRole('heading', { name: 'Season Playground' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Rename' })).toBeInTheDocument()
   })
 
@@ -239,7 +250,7 @@ describe('AdminConsolePage', () => {
     const second = season({ id: 'iter-2', label: 'Week 2' })
     vi.mocked(listAdminSeasons).mockResolvedValue([season(), second])
     await renderConsole()
-    expect(await screen.findByRole('heading', { name: 'Week 1' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Season Week 1' })).toBeInTheDocument()
 
     let resolveWeek1: ((value: AdminSeasonView) => void) | undefined
     let resolveWeek2: ((value: AdminSeasonView) => void) | undefined
@@ -256,12 +267,12 @@ describe('AdminConsolePage', () => {
     await fireEvent.click(screen.getByRole('button', { name: /Week 2/ }))
     await fireEvent.click(screen.getByRole('button', { name: /Week 1/ }))
     resolveWeek1?.(adminView())
-    expect(await screen.findByRole('heading', { name: 'Week 1' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Season Week 1' })).toBeInTheDocument()
 
     resolveWeek2?.(adminView({ season: second }))
     await Promise.resolve()
-    expect(screen.queryByRole('heading', { name: 'Week 2' })).toBeNull()
-    expect(screen.getByRole('heading', { name: 'Week 1' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Season Week 2' })).toBeNull()
+    expect(screen.getByRole('heading', { name: 'Season Week 1' })).toBeInTheDocument()
   })
 
   it('saves the season rating prompt and stays editable after a run', async () => {

@@ -8,7 +8,7 @@
  */
 import type { FastifyInstance } from 'fastify'
 
-import { seasonView } from '../season-views.js'
+import { publicSeasonView, seasonView } from '../season-views.js'
 import type { Storage } from '../storage/index.js'
 
 /** Everything the public leaderboard reads need. */
@@ -27,6 +27,15 @@ async function boardsFor(storage: Storage, seasonId: string) {
 
 /** Register the public, released-only leaderboard and history routes. */
 export function registerLeaderboardRoutes(app: FastifyInstance, deps: LeaderboardDeps): void {
+  // Every public-facing season — released, submission-open, or play-open — newest first, for the
+  // cross-game seasons list. Pass `?envId=` to narrow to a single environment (the hub uses this).
+  // Returns identity, labels, flags, and timestamps only. Config, rating prompts, and boards are
+  // excluded; boards stay reachable only through the released-only season-boards route below.
+  app.get<{ Querystring: { envId?: string } }>('/api/seasons', async (request, reply) => {
+    const seasons = await deps.storage.listPublicSeasons({ envId: request.query.envId })
+    return reply.code(200).send(seasons.map(publicSeasonView))
+  })
+
   // Released seasons for an environment, newest first, for history links. Unreleased seasons
   // are filtered at the storage boundary (`includeUnreleased: false`).
   app.get<{ Params: { envId: string } }>(

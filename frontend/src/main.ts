@@ -34,8 +34,8 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/', component: HomePage },
-    // Global, cross-game sections in the sidebar. Seasons and My Agents aggregate over the per-game
-    // public reads for now; Documentation is a placeholder until the guides move in-app.
+    // Global, cross-game sections in the sidebar. Seasons uses the public cross-game season index;
+    // My Agents aggregates the signed-in user's profiles; Documentation remains a placeholder.
     { path: '/seasons', component: SeasonsPage },
     { path: '/docs', component: DocsPage },
     { path: '/my/agents', component: MyAgentsPage },

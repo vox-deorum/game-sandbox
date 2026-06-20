@@ -1,96 +1,102 @@
 <!--
-  Seasons: the cross-game competition view — "what is open right now, and what was last released."
-  It answers the student's first question ("what should I work on?") without first picking a game.
+  Seasons: the cross-game competition view — one row per public season, not per environment. A season
+  appears here only when at least one of its three flags is public: released, accepting submissions,
+  or open for play. The season is the subject; the environment is secondary context. This answers the
+  student's first question ("what should I work on, and what just finished?") without first picking a
+  game, and is no longer a clone of the home environment gallery.
 
-  Phase 1 builds this by aggregating the public per-game leaderboards read across every environment
-  (submission and play windows, plus the current released season). A later pass replaces the fan-out
-  with a single backing endpoint; the page shape stays the same.
+  A play-open season links to the environment's play entry point even when results are also released.
+  A released season whose play window is closed links to its boards. The backing read is a single
+  `GET /api/seasons`.
 -->
 <script setup lang="ts">
 import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 
-import { type EnvironmentLeaderboards, getEnvironmentLeaderboards, getEnvironments } from '../api/client.js'
+import { getEnvironments, listPublicSeasons, type PublicSeasonView } from '../api/client.js'
 import UiBadge from '../components/ui/UiBadge.vue'
 import UiCard from '../components/ui/UiCard.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
+import { formatDate } from '../lib/format.js'
 
-interface EnvironmentSeasons {
-  meta: EnvironmentMeta
-  leaderboards: EnvironmentLeaderboards | null
-}
-
-const rows = ref<EnvironmentSeasons[] | null>(null)
+const seasons = ref<PublicSeasonView[] | null>(null)
+const environments = ref<Map<string, EnvironmentMeta>>(new Map())
 const error = ref(false)
 
 onMounted(async () => {
   try {
-    const envs = await getEnvironments()
-    rows.value = await Promise.all(
-      envs.map(async (meta) => ({
-        meta,
-        leaderboards: await getEnvironmentLeaderboards(meta.env_id).catch(() => null),
-      })),
-    )
+    const [envs, publicSeasons] = await Promise.all([getEnvironments(), listPublicSeasons()])
+    environments.value = new Map(envs.map((meta: EnvironmentMeta) => [meta.env_id, meta]))
+    seasons.value = publicSeasons
   } catch {
     error.value = true
   }
 })
 
-function isOpen(row: EnvironmentSeasons): boolean {
-  return (
-    row.leaderboards?.submission_season_id != null || row.leaderboards?.play_season_id != null
-  )
+function seasonLabel(season: PublicSeasonView): string {
+  return season.label ?? `Season ${season.id.slice(0, 8)}`
 }
 
-/** Open games first, so the live competitions lead. */
-const ordered = computed(() =>
-  rows.value === null
-    ? []
-    : [...rows.value].sort((a, b) => Number(isOpen(b)) - Number(isOpen(a))),
-)
+function envName(season: PublicSeasonView): string {
+  return environments.value.get(season.env_id)?.display_name ?? season.env_id
+}
 
-function currentSeasonLabel(row: EnvironmentSeasons): string | null {
-  const current = row.leaderboards?.current
-  if (current == null) {
-    return null
+/** An open submission or play window — the live competitions that lead the list. */
+function isOpen(season: PublicSeasonView): boolean {
+  return season.submission_status === 'open' || season.play_status === 'open'
+}
+
+/** Live play takes precedence over released history; closed released seasons link to their boards. */
+function seasonLink(season: PublicSeasonView): string {
+  const environmentPath = `/environments/${season.env_id}`
+  if (season.play_status === 'open') {
+    return environments.value.get(season.env_id)?.human_slots.length
+      ? `${environmentPath}?play=1`
+      : `${environmentPath}#play`
   }
-  return current.season.label ?? `Season ${current.season.id.slice(0, 8)}`
+  return season.release_status === 'released'
+    ? `/environments/${season.env_id}/leaderboards/${season.id}`
+    : environmentPath
 }
+
+/** Open seasons first (live action leads), then the released history; the API already sorts newest-first. */
+const ordered = computed(() =>
+  seasons.value === null
+    ? []
+    : [...seasons.value].sort((a, b) => Number(isOpen(b)) - Number(isOpen(a))),
+)
 </script>
 
 <template>
   <section class="seasons">
     <header class="seasons-intro">
       <h1>Seasons</h1>
-      <p class="seasons-lede">Where the action is — open submissions and play across every environment.</p>
+      <p class="seasons-lede">Live competitions and released results across every environment.</p>
     </header>
 
     <UiEmptyState v-if="error" tone="danger">Could not load seasons.</UiEmptyState>
-    <UiEmptyState v-else-if="rows === null">Loading…</UiEmptyState>
-    <UiEmptyState v-else-if="rows.length === 0">No environments yet.</UiEmptyState>
+    <UiEmptyState v-else-if="seasons === null">Loading…</UiEmptyState>
+    <UiEmptyState v-else-if="seasons.length === 0">No active or released seasons yet.</UiEmptyState>
     <ul v-else class="season-list">
-      <li v-for="row in ordered" :key="row.meta.env_id">
-        <UiCard>
-          <div class="season-head">
-            <RouterLink class="season-game" :to="`/environments/${row.meta.env_id}`">
-              {{ row.meta.display_name }}
-            </RouterLink>
-            <UiBadge v-if="isOpen(row)" variant="accent">Open now</UiBadge>
-          </div>
-          <div class="season-status">
-            <UiBadge v-if="row.leaderboards?.submission_season_id != null">Submissions open</UiBadge>
-            <UiBadge v-if="row.leaderboards?.play_season_id != null">Play open</UiBadge>
-            <span v-if="currentSeasonLabel(row) !== null" class="season-current">
-              Latest released: {{ currentSeasonLabel(row) }}
-            </span>
-            <span v-else class="season-current muted">No released results yet</span>
-          </div>
-          <RouterLink class="season-link" :to="`/environments/${row.meta.env_id}/leaderboards`">
-            View leaderboard →
-          </RouterLink>
-        </UiCard>
+      <li v-for="season in ordered" :key="season.id">
+        <RouterLink class="season-card-link" :to="seasonLink(season)">
+          <UiCard interactive>
+            <div class="season-head">
+              <span class="season-name">{{ seasonLabel(season) }}</span>
+              <UiBadge v-if="isOpen(season)" variant="accent">Open now</UiBadge>
+            </div>
+            <div class="season-env">Environment: {{ envName(season) }}</div>
+            <div class="season-status">
+              <UiBadge v-if="season.submission_status === 'open'">Submissions open</UiBadge>
+              <UiBadge v-if="season.play_status === 'open'">Play open</UiBadge>
+              <UiBadge v-if="season.release_status === 'released'">Results released</UiBadge>
+              <span v-if="season.released_at !== null" class="season-released">
+                {{ formatDate(season.released_at) }}
+              </span>
+            </div>
+          </UiCard>
+        </RouterLink>
       </li>
     </ul>
   </section>
@@ -119,20 +125,26 @@ function currentSeasonLabel(row: EnvironmentSeasons): string | null {
   gap: var(--space-4);
 }
 
+.season-card-link {
+  display: block;
+}
+
 .season-head {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  margin-bottom: var(--space-3);
+  margin-bottom: var(--space-1);
 }
 
-.season-game {
+.season-name {
   font-size: var(--text-lg);
   font-weight: 600;
 }
 
-.season-game:hover {
-  color: var(--color-accent);
+.season-env {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-3);
 }
 
 .season-status {
@@ -140,20 +152,10 @@ function currentSeasonLabel(row: EnvironmentSeasons): string | null {
   align-items: center;
   gap: var(--space-3);
   flex-wrap: wrap;
-  margin-bottom: var(--space-3);
   font-size: var(--text-sm);
 }
 
-.season-current {
+.season-released {
   color: var(--color-text-muted);
-}
-
-.season-current.muted {
-  font-style: italic;
-}
-
-.season-link {
-  color: var(--color-accent);
-  font-size: var(--text-sm);
 }
 </style>

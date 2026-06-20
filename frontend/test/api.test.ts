@@ -11,6 +11,7 @@ import {
   getRecording,
   getSeasonLeaderboards,
   getSessionRatings,
+  listPublicSeasons,
   openSubmissions,
   pinRecording,
   type SeasonConfig,
@@ -189,6 +190,24 @@ describe('api client', () => {
     const fetchMock = stubFetch(async () => jsonResponse(payload))
     expect(await getEnvironmentLeaderboards('flappy_bird')).toEqual(payload)
     expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/environments/flappy_bird/leaderboards')
+  })
+
+  it('reads the public season index with an optional encoded environment filter', async () => {
+    const payload = [
+      {
+        id: 'iter-1',
+        env_id: 'flappy bird',
+        submission_status: 'closed',
+        play_status: 'open',
+        release_status: 'unreleased',
+        label: 'Week 1',
+        created_at: '2026-06-10T00:00:00Z',
+        released_at: null,
+      },
+    ]
+    const fetchMock = stubFetch(async () => jsonResponse(payload))
+    expect(await listPublicSeasons('flappy bird')).toEqual(payload)
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/seasons?envId=flappy%20bird')
   })
 
   it('maps a 404 season leaderboards read (unreleased) to undefined', async () => {

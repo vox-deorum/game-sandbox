@@ -136,6 +136,12 @@ function seasonLabel(season: SeasonView): string {
   return season.label ?? `Season ${season.id.slice(0, 8)}`
 }
 
+// The detail heading reads "Season <label>" for a named season; an unnamed one already falls back to
+// "Season <id>", so prefix only the named case to avoid a doubled "Season Season …".
+function seasonHeading(season: SeasonView): string {
+  return season.label === null ? seasonLabel(season) : `Season ${season.label}`
+}
+
 function startRename(season: SeasonView): void {
   renameLabel.value = season.label ?? ''
   renameError.value = null
@@ -233,7 +239,7 @@ async function saveRename(seasonId: string): Promise<void> {
                   </form>
                 </template>
                 <template v-else>
-                  <h2>{{ seasonLabel(view.season) }}</h2>
+                  <h2>{{ seasonHeading(view.season) }}</h2>
                   <UiButton variant="secondary" size="tight" @click="startRename(view.season)">
                     Rename
                   </UiButton>

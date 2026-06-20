@@ -82,6 +82,9 @@ const STATUS_TONE: Record<SubmissionStatus, 'neutral' | 'success' | 'danger' | '
 /** The owner viewing their own profile unlocks the owner-only affordances (the Stage 9 debug view). */
 const isOwner = () => me.me?.user_id === ownerId
 
+/** "My Submissions" on your own profile, "{owner}'s Submissions" when viewing someone else's. */
+const heading = computed(() => (isOwner() ? 'My Submissions' : `${ownerId}'s Submissions`))
+
 /**
  * The active submission whose season the author-prompt editor targets. Public play takes
  * precedence because that is the agent raters can currently encounter. When no round is play-open,
@@ -116,8 +119,7 @@ const promptSubmission = computed(() => {
   <UiEmptyState v-else-if="profile === null">Loading…</UiEmptyState>
   <section v-else class="agent">
     <header class="agent-header">
-      <h1>{{ ownerId }}</h1>
-      <p class="agent-sub">Submitted agents for {{ envId }}.</p>
+      <h1>{{ heading }}</h1>
     </header>
 
     <section v-if="isOwner()" class="agent-section">
@@ -214,11 +216,6 @@ const promptSubmission = computed(() => {
 <style scoped>
 .agent-header h1 {
   margin: 0 0 var(--space-2);
-}
-
-.agent-sub {
-  margin: 0;
-  color: var(--color-text-muted);
 }
 
 .agent-section {

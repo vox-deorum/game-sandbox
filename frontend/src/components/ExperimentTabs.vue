@@ -1,16 +1,16 @@
 <!--
   The per-game contextual tab strip, shown by the shell only on /environments/:envId/* routes. It is
   the second navigation tier: the sidebar carries the cross-game jobs, these tabs carry the in-game
-  tasks. Tabs are labelled by task, not by data model — and the Submit/My Agent tab is one tab that
-  reads "Submit" until the signed-in user has an agent here, then "My Agent" (its page hosts the
-  resubmission form). The season switcher makes "the current season" the default you are already in,
-  with past seasons reachable by selecting them; changing it opens that season's leaderboard.
+  tasks. Tabs are labelled by task, not by data model — the "My Submissions" tab hosts the agent
+  profile and resubmission form. The season switcher makes "the current season" the default you are
+  already in, with past seasons reachable by selecting them; changing it opens that season's
+  leaderboard.
 -->
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 
-import { getAgentProfile, getEnvironments, type SeasonView, listReleasedSeasons } from '../api/client.js'
+import { getEnvironments, type SeasonView, listReleasedSeasons } from '../api/client.js'
 import { currentUserId } from '../identity.js'
 import { useMe } from '../me.js'
 
@@ -21,12 +21,11 @@ const me = useMe()
 const envId = computed(() => String(route.params.envId))
 const gameName = ref('')
 const history = ref<SeasonView[]>([])
-const hasSubmitted = ref(false)
 
-/** The current user's id, used both for the My Agent tab target and the has-submitted lookup. */
+/** The current user's id, used as the My Submissions tab target. */
 const ownerId = computed(() => me.me?.user_id ?? currentUserId)
 
-async function load(id: string): Promise<void> {
+function load(id: string): void {
   getEnvironments().then(
     (envs) => {
       gameName.value = envs.find((e) => e.env_id === id)?.display_name ?? id
@@ -43,18 +42,9 @@ async function load(id: string): Promise<void> {
       history.value = []
     },
   )
-  await me.whenSettled()
-  getAgentProfile(id, ownerId.value).then(
-    (profile) => {
-      hasSubmitted.value = profile.submissions.length > 0
-    },
-    () => {
-      hasSubmitted.value = false
-    },
-  )
 }
 
-watch(envId, (id) => void load(id), { immediate: true })
+watch(envId, (id) => load(id), { immediate: true })
 
 const tabs = computed(() => {
   const base = `/environments/${envId.value}`
@@ -62,13 +52,13 @@ const tabs = computed(() => {
     { key: 'overview', label: 'Overview', to: base, active: route.path === base },
     {
       key: 'leaderboard',
-      label: 'Leaderboard',
+      label: 'Leaderboards',
       to: `${base}/leaderboards`,
       active: route.path.startsWith(`${base}/leaderboards`),
     },
     {
       key: 'agent',
-      label: hasSubmitted.value ? 'My Agent' : 'Submit',
+      label: 'My Submissions',
       to: `${base}/agents/${ownerId.value}`,
       active: route.path.startsWith(`${base}/agents`),
     },
@@ -142,7 +132,6 @@ function onSeasonChange(event: Event): void {
   padding: var(--space-3) var(--space-5) 0;
   display: flex;
   align-items: center;
-  gap: var(--space-4);
   flex-wrap: wrap;
 }
 
@@ -169,7 +158,7 @@ function onSeasonChange(event: Event): void {
 }
 
 .tab {
-  padding: var(--space-2) var(--space-2) var(--space-3) var(--space-2);
+  padding: var(--space-2) var(--space-4) var(--space-3) var(--space-4);
   font-size: var(--text-sm);
   color: var(--color-text-muted);
   border-bottom: 2px solid transparent;

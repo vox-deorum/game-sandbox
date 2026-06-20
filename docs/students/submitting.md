@@ -14,7 +14,7 @@ A green `pytest` means your `manifest.json` names a loadable agent and your agen
 
 ## How to submit
 
-Open your game and go to the **Submit** tab (it reads **My Agent** once you have submitted), then paste your repository URL on your agent page. You can optionally target a branch, tag, or commit; leave the ref blank to take the head of the default branch. The form verifies the repository and ref are reachable before it lets you submit, then the server resolves your choice to an exact commit and pins it. You never type a username — the submission is recorded under the account you are signed in as.
+Open your game and go to **My Submissions**, then paste your repository URL on your submissions page. You can optionally target a branch, tag, or commit; leave the ref blank to take the head of the default branch. The form verifies the repository and ref are reachable before it lets you submit, then the server resolves your choice to an exact commit and pins it. You never type a username because the submission is recorded under the account you are signed in as.
 
 **One active submission per season.** Submitting again while the season is open replaces your active submission; your earlier submissions stay visible as history on your agent profile. The full rules are in the [submission spec](../specs/submission.md).
 

@@ -575,6 +575,19 @@ export interface SeasonView {
   released_at: string | null
 }
 
+/** Public season-index metadata, excluding operator configuration and rating prompts. */
+export type PublicSeasonView = Pick<
+  SeasonView,
+  | 'id'
+  | 'env_id'
+  | 'submission_status'
+  | 'play_status'
+  | 'release_status'
+  | 'label'
+  | 'created_at'
+  | 'released_at'
+>
+
 /** One automated-board row: a per-agent aggregate over the latest completed run's results. */
 export interface AutomatedBoardRow {
   agent: BoardAgentRef
@@ -693,6 +706,16 @@ export async function listReleasedSeasons(envId: string): Promise<SeasonView[]> 
     await request(`/environments/${encodeURIComponent(envId)}/seasons`),
     'GET /environments/:envId/seasons',
   )) as SeasonView[]
+}
+
+/**
+ * Every public-facing season — released, submission-open, or play-open — newest first, optionally
+ * narrowed to a single environment. Backs the cross-game seasons list and the per-environment hub;
+ * identity, labels, flags, and timestamps only, never config, rating prompts, or boards.
+ */
+export async function listPublicSeasons(envId?: string): Promise<PublicSeasonView[]> {
+  const path = envId === undefined ? '/seasons' : `/seasons?envId=${encodeURIComponent(envId)}`
+  return (await json(await request(path), 'GET /seasons')) as PublicSeasonView[]
 }
 
 /**

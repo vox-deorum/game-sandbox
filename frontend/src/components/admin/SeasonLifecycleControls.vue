@@ -110,7 +110,7 @@ async function toggleRelease(): Promise<void> {
       <span v-if="season.released_at !== null" class="gate-hint">
         released {{ formatDate(season.released_at) }}
       </span>
-      <span class="gate-hint">Releases the leaderboard results.</span>
+      <span v-if="season.released_at === null" class="gate-hint">Releases the leaderboard results.</span>
     </div>
 
     <div class="gate">
