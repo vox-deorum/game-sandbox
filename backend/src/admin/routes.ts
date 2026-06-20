@@ -45,10 +45,18 @@ export interface AdminDeps {
 /** The operator's season-wide rating prompt is display-only guidance; cap it so it stays a prompt. */
 const RATING_PROMPT_MAX = 2_000
 
+/** A season label is a short operator-facing name; cap it so it stays a label rather than prose. */
+const SEASON_LABEL_MAX = 100
+
 /** The optional body accepted when declaring a season. */
 const DeclareSeasonBodySchema = z.strictObject({
   label: z.string().nullable().optional(),
   deps_version: z.int().positive().optional(),
+})
+
+/** The body accepted when renaming a season; a null or empty label clears it back to unnamed. */
+const RenameSeasonBodySchema = z.strictObject({
+  label: z.string().max(SEASON_LABEL_MAX).nullable().optional(),
 })
 
 /** The optional body accepted when setting or clearing the operator rating prompt. */
@@ -184,6 +192,35 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
           const raw = parsed.data.prompt
           const prompt = raw === undefined || raw === null || raw === '' ? null : raw
           await deps.storage.setSeasonRatingPrompt(request.params.id, prompt)
+          const updated = await deps.storage.getSeason(request.params.id)
+          return reply.code(200).send(seasonView(updated ?? season))
+        },
+      )
+
+      // --- Rename ----------------------------------------------------------------------------
+      // Set or clear the season's operator-facing label. Like the rating prompt, the label is purely
+      // descriptive and never affects execution, so it is editable at any point in the season's life.
+      admin.put<{ Params: { id: string }; Body: unknown }>(
+        '/seasons/:id/label',
+        async (request, reply) => {
+          const season = await deps.storage.getSeason(request.params.id)
+          if (season === undefined) {
+            return reply.code(404).send({ error: 'no such season' })
+          }
+          const parsed = RenameSeasonBodySchema.safeParse(request.body ?? {})
+          if (!parsed.success) {
+            const tooLong = parsed.error.issues.some(
+              (issue) => issue.path[0] === 'label' && issue.code === 'too_big',
+            )
+            return reply.code(400).send({
+              error: tooLong ? 'season label too long' : 'invalid season label',
+              code: tooLong ? 'season_label_too_long' : 'invalid_season_label',
+              reason: zodReason(parsed.error),
+            })
+          }
+          const raw = parsed.data.label
+          const label = raw === undefined || raw === null || raw.trim() === '' ? null : raw.trim()
+          await deps.storage.setSeasonLabel(request.params.id, label)
           const updated = await deps.storage.getSeason(request.params.id)
           return reply.code(200).send(seasonView(updated ?? season))
         },

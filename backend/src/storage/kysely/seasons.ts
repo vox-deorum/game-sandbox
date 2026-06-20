@@ -70,14 +70,19 @@ export async function ensureOpenSeason(
   db: Kysely<Database>,
   envId: string,
   depsVersion: number,
+  defaults?: { label?: string | null; release?: ReleaseStatus },
 ): Promise<Season> {
   const existing = await getOpenSubmissionSeason(db, envId)
   if (existing !== undefined) {
     return existing
   }
+  const release = defaults?.release ?? 'unreleased'
+  const now = new Date().toISOString()
   try {
     // The seed row: submission-`open` and play-`open` for local continuity, with a default config
-    // carrying the pinned version and an empty match design.
+    // carrying the pinned version and an empty match design. The default-season `defaults` let the
+    // seed name and release it (the "Playground" default); a fresh row otherwise stays unlabeled and
+    // unreleased.
     return await db
       .insertInto('seasons')
       .values({
@@ -85,12 +90,12 @@ export async function ensureOpenSeason(
         env_id: envId,
         submission_status: 'open',
         play_status: 'open',
-        release_status: 'unreleased',
-        label: null,
+        release_status: release,
+        label: defaults?.label ?? null,
         config: encodeSeasonConfig(emptySeasonConfig(depsVersion)),
         rating_prompt: null,
-        created_at: new Date().toISOString(),
-        released_at: null,
+        created_at: now,
+        released_at: release === 'released' ? now : null,
       })
       .returningAll()
       .executeTakeFirstOrThrow()
@@ -331,4 +336,12 @@ export async function setSeasonRatingPrompt(
     .set({ rating_prompt: prompt })
     .where('id', '=', seasonId)
     .execute()
+}
+
+export async function setSeasonLabel(
+  db: Kysely<Database>,
+  seasonId: string,
+  label: string | null,
+): Promise<void> {
+  await db.updateTable('seasons').set({ label }).where('id', '=', seasonId).execute()
 }

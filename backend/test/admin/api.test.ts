@@ -100,6 +100,7 @@ describe('admin API', () => {
         ['POST', `/api/admin/environments/${ENV_ID}/seasons`],
         ['PUT', `/api/admin/seasons/${id}/config`],
         ['PUT', `/api/admin/seasons/${id}/rating-prompt`],
+        ['PUT', `/api/admin/seasons/${id}/label`],
         ['POST', `/api/admin/seasons/${id}/submissions/open`],
         ['POST', `/api/admin/seasons/${id}/submissions/close`],
         ['POST', `/api/admin/seasons/${id}/play/open`],
@@ -403,6 +404,49 @@ describe('admin API', () => {
       })
       expect(tooLong.statusCode).toBe(400)
       expect(tooLong.json()).toMatchObject({ code: 'rating_prompt_too_long' })
+    })
+  })
+
+  describe('rename', () => {
+    it('renames a season and clears the label back to null on empty input', async () => {
+      const id = await declare()
+      const renamed = await app.inject({
+        method: 'PUT',
+        url: `/api/admin/seasons/${id}/label`,
+        headers: OPERATOR,
+        payload: { label: '  Playground  ' },
+      })
+      expect(renamed.statusCode).toBe(200)
+      // The label is trimmed on the way in.
+      expect((renamed.json() as { label: string }).label).toBe('Playground')
+
+      const cleared = await app.inject({
+        method: 'PUT',
+        url: `/api/admin/seasons/${id}/label`,
+        headers: OPERATOR,
+        payload: { label: '   ' },
+      })
+      expect((cleared.json() as { label: string | null }).label).toBeNull()
+    })
+
+    it('404s renaming an unknown season and 400s an overlong label', async () => {
+      const id = await declare()
+      const missing = await app.inject({
+        method: 'PUT',
+        url: `/api/admin/seasons/does-not-exist/label`,
+        headers: OPERATOR,
+        payload: { label: 'x' },
+      })
+      expect(missing.statusCode).toBe(404)
+
+      const tooLong = await app.inject({
+        method: 'PUT',
+        url: `/api/admin/seasons/${id}/label`,
+        headers: OPERATOR,
+        payload: { label: 'x'.repeat(101) },
+      })
+      expect(tooLong.statusCode).toBe(400)
+      expect(tooLong.json()).toMatchObject({ code: 'season_label_too_long' })
     })
   })
 

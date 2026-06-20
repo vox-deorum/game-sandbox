@@ -11,6 +11,7 @@ vi.mock('../src/api/client.js', () => ({
   listAdminSeasons: vi.fn(),
   getAdminSeason: vi.fn(),
   declareSeason: vi.fn(),
+  renameSeason: vi.fn(),
   configureSeason: vi.fn(),
   setSeasonRatingPrompt: vi.fn(),
   openSubmissions: vi.fn(),
@@ -35,6 +36,7 @@ import {
   openPlay,
   openSubmissions,
   releaseSeason,
+  renameSeason,
   setSeasonRatingPrompt,
   triggerRun,
 } from '../src/api/client.js'
@@ -174,6 +176,23 @@ describe('AdminConsolePage', () => {
     await renderConsole()
     await fireEvent.click(await screen.findByRole('button', { name: 'Release' }))
     expect(vi.mocked(releaseSeason)).toHaveBeenCalledWith('iter-1')
+  })
+
+  it('renames the selected season through the admin API', async () => {
+    vi.mocked(renameSeason).mockResolvedValue({
+      ok: true,
+      season: season({ label: 'Playground' }),
+    })
+    // The reload after a successful rename reads back the renamed season.
+    vi.mocked(getAdminSeason).mockResolvedValue(adminView({ season: season({ label: 'Playground' }) }))
+    await renderConsole()
+    await fireEvent.click(await screen.findByRole('button', { name: 'Rename' }))
+    await fireEvent.update(await screen.findByLabelText('Season name'), 'Playground')
+    await fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(vi.mocked(renameSeason)).toHaveBeenCalledWith('iter-1', 'Playground')
+    // Rename mode closes and the new name shows.
+    expect(await screen.findByRole('heading', { name: 'Playground' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Rename' })).toBeInTheDocument()
   })
 
   it('refuses to save a match with zero slots', async () => {

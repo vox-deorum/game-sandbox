@@ -302,9 +302,15 @@ export interface Storage {
    * The seed primitive: ensure a submission-`open` season exists for the environment at
    * `depsVersion` and return it, writing a default config that carries the version and an empty match
    * design. Idempotent; an environment already carrying a submission-open season is left untouched.
-   * The seed row is play-`open` for local continuity.
+   * The seed row is play-`open` for local continuity. `defaults` apply only when a row is created:
+   * the seed passes a `label` and `release` to stand up the default "Playground" season; without them
+   * a fresh row is unlabeled and unreleased.
    */
-  ensureOpenSeason(envId: string, depsVersion: number): Promise<Season>
+  ensureOpenSeason(
+    envId: string,
+    depsVersion: number,
+    defaults?: { label?: string | null; release?: ReleaseStatus },
+  ): Promise<Season>
   /** The environment's play-`open` season: the default public watch/play target, if any. */
   getPublicPlaySeason(envId: string): Promise<Season | undefined>
   /**
@@ -347,6 +353,8 @@ export interface Storage {
 
   /** The operator's season-wide rating prompt; editable anytime, never gated by the config rules. */
   setSeasonRatingPrompt(seasonId: string, prompt: string | null): Promise<void>
+  /** Rename a season (or clear its label with `null`); editable anytime, never gated by the config rules. */
+  setSeasonLabel(seasonId: string, label: string | null): Promise<void>
 
   /**
    * Snapshot the season's config (incl. deps) and the eligible submitted-agent roster into a new

@@ -116,8 +116,12 @@ export class KyselyStorage implements Storage {
   getSeason(id: string): Promise<Season | undefined> {
     return seasons.getSeason(this.db, id)
   }
-  ensureOpenSeason(envId: string, depsVersion: number): Promise<Season> {
-    return seasons.ensureOpenSeason(this.db, envId, depsVersion)
+  ensureOpenSeason(
+    envId: string,
+    depsVersion: number,
+    defaults?: { label?: string | null; release?: ReleaseStatus },
+  ): Promise<Season> {
+    return seasons.ensureOpenSeason(this.db, envId, depsVersion, defaults)
   }
   getPublicPlaySeason(envId: string): Promise<Season | undefined> {
     return seasons.getPublicPlaySeason(this.db, envId)
@@ -152,6 +156,9 @@ export class KyselyStorage implements Storage {
   }
   setSeasonRatingPrompt(seasonId: string, prompt: string | null): Promise<void> {
     return seasons.setSeasonRatingPrompt(this.db, seasonId, prompt)
+  }
+  setSeasonLabel(seasonId: string, label: string | null): Promise<void> {
+    return seasons.setSeasonLabel(this.db, seasonId, label)
   }
 
   // --- Submissions ---

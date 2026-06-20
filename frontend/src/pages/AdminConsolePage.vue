@@ -19,6 +19,7 @@ import {
   type AdminSeasonView,
   declareSeason,
   getAdminSeason,
+  renameSeason,
   type SeasonView,
   listAdminSeasons,
 } from '../api/client.js'
@@ -49,6 +50,11 @@ const view = ref<AdminSeasonView | null>(null)
 const loadingDetail = ref(false)
 const declaring = ref(false)
 const newLabel = ref('')
+// Inline rename of the selected season: opens with the current label, saves through the admin API.
+const renaming = ref(false)
+const renameLabel = ref('')
+const savingRename = ref(false)
+const renameError = ref<string | null>(null)
 // Monotonically identifies the newest detail request. A slower response for a previously selected
 // season must never replace the controls for the season the sidebar now highlights.
 let detailRequest = 0
@@ -99,8 +105,9 @@ async function select(id: string): Promise<void> {
     return
   }
   selectedId.value = id
-  // Hide the previous season's destructive controls while the new detail is in flight.
+  // Hide the previous season's destructive controls (and any open rename) while the new detail loads.
   view.value = null
+  renaming.value = false
   await loadDetail()
 }
 
@@ -128,6 +135,36 @@ async function declare(): Promise<void> {
 
 function seasonLabel(season: SeasonView): string {
   return season.label ?? `Season ${season.id.slice(0, 8)}`
+}
+
+function startRename(season: SeasonView): void {
+  renameLabel.value = season.label ?? ''
+  renameError.value = null
+  renaming.value = true
+}
+
+function cancelRename(): void {
+  renaming.value = false
+}
+
+async function saveRename(seasonId: string): Promise<void> {
+  savingRename.value = true
+  renameError.value = null
+  try {
+    const label = renameLabel.value.trim()
+    const result = await renameSeason(seasonId, label === '' ? null : label)
+    if (result.ok) {
+      renaming.value = false
+      await refresh(result.season)
+    } else {
+      renameError.value =
+        result.reason === 'too_long'
+          ? 'That name is too long (100 characters max).'
+          : 'Could not rename the season.'
+    }
+  } finally {
+    savingRename.value = false
+  }
 }
 </script>
 
@@ -182,11 +219,31 @@ function seasonLabel(season: SeasonView): string {
           <template v-else-if="view !== null">
             <UiCard class="admin-card">
               <div class="card-head">
-                <h2>{{ seasonLabel(view.season) }}</h2>
+                <template v-if="renaming">
+                  <form class="rename" @submit.prevent="saveRename(view.season.id)">
+                    <UiInput
+                      v-model="renameLabel"
+                      type="text"
+                      aria-label="Season name"
+                      placeholder="Season name"
+                    />
+                    <UiButton type="submit" size="tight" :loading="savingRename">Save</UiButton>
+                    <UiButton type="button" variant="secondary" size="tight" @click="cancelRename">
+                      Cancel
+                    </UiButton>
+                  </form>
+                </template>
+                <template v-else>
+                  <h2>{{ seasonLabel(view.season) }}</h2>
+                  <UiButton variant="secondary" size="tight" @click="startRename(view.season)">
+                    Rename
+                  </UiButton>
+                </template>
                 <span v-if="view.season.released_at !== null" class="card-meta">
                   released {{ formatDate(view.season.released_at) }}
                 </span>
               </div>
+              <p v-if="renameError" class="rename-error" role="alert">{{ renameError }}</p>
               <SeasonLifecycleControls :season="view.season" @changed="refresh" />
             </UiCard>
 
@@ -311,6 +368,19 @@ function seasonLabel(season: SeasonView): string {
 .card-title {
   margin: 0;
   font-size: var(--text-lg);
+}
+
+.rename {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1;
+}
+
+.rename-error {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--color-danger);
 }
 
 .card-title {

@@ -826,6 +826,31 @@ export async function setSeasonRatingPrompt(
   return { ok: false, reason: 'failed' }
 }
 
+/** The outcome of renaming a season; an overlong label comes back typed. */
+export type RenameSeasonResult =
+  | { ok: true; season: SeasonView }
+  | { ok: false; reason: 'too_long' | 'failed' }
+
+/** Rename a season (or clear its label by passing null/empty). Editable at any point in its life. */
+export async function renameSeason(
+  seasonId: string,
+  label: string | null,
+): Promise<RenameSeasonResult> {
+  const res = await request(`/admin/seasons/${encodeURIComponent(seasonId)}/label`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ label }),
+  })
+  if (res.ok) {
+    return { ok: true, season: (await res.json()) as SeasonView }
+  }
+  const body = (await res.json().catch(() => ({}))) as { code?: string }
+  if (body.code === 'season_label_too_long') {
+    return { ok: false, reason: 'too_long' }
+  }
+  return { ok: false, reason: 'failed' }
+}
+
 /** The outcome of opening the submission window: a typed conflict when another season is open. */
 export type OpenSubmissionsResult =
   | { ok: true; season: SeasonView }

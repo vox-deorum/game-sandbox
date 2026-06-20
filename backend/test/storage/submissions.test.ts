@@ -318,6 +318,15 @@ describe('schema and seed idempotency on a file database', () => {
           it?.submission_status === 'open' && decodeSeasonConfig(it.config).deps_version === 1,
       ),
     ).toBe(true)
+    // The default season is named "Playground" but stays unreleased (results operator-only).
+    expect(
+      afterFirst.every(
+        (it) =>
+          it?.label === 'Playground' &&
+          it?.release_status === 'unreleased' &&
+          it?.released_at === null,
+      ),
+    ).toBe(true)
     const firstIds = afterFirst.map((it) => it?.id)
     await first.close()
 
