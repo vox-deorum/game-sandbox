@@ -106,7 +106,7 @@ async function toggleRelease(): Promise<void> {
       >
         {{ season.release_status === 'released' ? 'Unrelease' : 'Release' }}
       </UiButton>
-      <span class="gate-hint">Exposes the boards on the environment page.</span>
+      <span class="gate-hint">Releases the leaderboard results.</span>
     </div>
 
     <div class="gate">
