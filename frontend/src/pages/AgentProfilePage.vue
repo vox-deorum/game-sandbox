@@ -115,14 +115,6 @@ const promptSubmission = computed(() => {
   <UiEmptyState v-if="failed" tone="danger">Could not load this agent profile.</UiEmptyState>
   <UiEmptyState v-else-if="profile === null">Loading…</UiEmptyState>
   <section v-else class="agent">
-    <p class="context-line">
-      <RouterLink to="/">Environments</RouterLink>
-      <span aria-hidden="true"> / </span>
-      <RouterLink :to="`/environments/${envId}`">{{ envId }}</RouterLink>
-      <span aria-hidden="true"> / </span>
-      <span>{{ ownerId }}'s agent</span>
-    </p>
-
     <header class="agent-header">
       <h1>{{ ownerId }}</h1>
       <p class="agent-sub">Submitted agents for {{ envId }}.</p>
@@ -220,16 +212,6 @@ const promptSubmission = computed(() => {
 </template>
 
 <style scoped>
-.context-line {
-  margin: 0 0 var(--space-4);
-  font-size: var(--text-sm);
-  color: var(--color-text-muted);
-}
-
-.context-line a:hover {
-  color: var(--color-accent);
-}
-
 .agent-header h1 {
   margin: 0 0 var(--space-2);
 }

@@ -13,7 +13,7 @@
 -->
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { RouterLink, useRoute } from 'vue-router'
+import { useRoute } from 'vue-router'
 
 import {
   type AdminSeasonView,
@@ -133,14 +133,6 @@ function seasonLabel(season: SeasonView): string {
 
 <template>
   <section class="admin">
-    <p class="context-line">
-      <RouterLink to="/">Environments</RouterLink>
-      <span aria-hidden="true"> / </span>
-      <RouterLink :to="`/environments/${envId}`">{{ meta?.display_name ?? envId }}</RouterLink>
-      <span aria-hidden="true"> / </span>
-      <span>Admin console</span>
-    </p>
-
     <UiEmptyState v-if="access === 'loading'">Checking access…</UiEmptyState>
     <UiEmptyState v-else-if="access === 'denied'" tone="danger">
       The admin console is limited to operators.
@@ -149,7 +141,6 @@ function seasonLabel(season: SeasonView): string {
     <template v-else>
       <header class="admin-header">
         <h1>Admin console</h1>
-        <p class="admin-sub">{{ meta?.display_name ?? envId }}</p>
       </header>
 
       <div class="admin-body">
@@ -233,23 +224,8 @@ function seasonLabel(season: SeasonView): string {
 </template>
 
 <style scoped>
-.context-line {
-  margin: 0 0 var(--space-4);
-  font-size: var(--text-sm);
-  color: var(--color-text-muted);
-}
-
-.context-line a:hover {
-  color: var(--color-accent);
-}
-
 .admin-header h1 {
   margin: 0 0 var(--space-1);
-}
-
-.admin-sub {
-  margin: 0 0 var(--space-5);
-  color: var(--color-text-muted);
 }
 
 .admin-body {

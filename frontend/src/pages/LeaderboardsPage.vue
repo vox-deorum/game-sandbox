@@ -83,14 +83,6 @@ watch(requestedSeasonId, load, { immediate: true })
 
 <template>
   <section class="leaderboards">
-    <p class="context-line">
-      <RouterLink to="/">Environments</RouterLink>
-      <span aria-hidden="true"> / </span>
-      <RouterLink :to="`/environments/${envId}`">{{ meta?.display_name ?? envId }}</RouterLink>
-      <span aria-hidden="true"> / </span>
-      <span>Leaderboards</span>
-    </p>
-
     <header class="leaderboards-header">
       <h1>Leaderboards</h1>
       <p v-if="season !== null" class="leaderboards-sub">
@@ -130,16 +122,6 @@ watch(requestedSeasonId, load, { immediate: true })
 </template>
 
 <style scoped>
-.context-line {
-  margin: 0 0 var(--space-4);
-  font-size: var(--text-sm);
-  color: var(--color-text-muted);
-}
-
-.context-line a:hover {
-  color: var(--color-accent);
-}
-
 .leaderboards-header h1 {
   margin: 0 0 var(--space-1);
 }

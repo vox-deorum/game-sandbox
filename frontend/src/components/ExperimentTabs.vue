@@ -151,6 +151,8 @@ function onSeasonChange(event: Event): void {
   font-size: var(--text-lg);
   font-weight: 700;
   white-space: nowrap;
+  /* Match the tabs' vertical padding so the title text aligns with the tab labels. */
+  padding: var(--space-2) 0 var(--space-3);
 }
 
 .game-name:hover {
@@ -167,7 +169,7 @@ function onSeasonChange(event: Event): void {
 }
 
 .tab {
-  padding: var(--space-2) 0 var(--space-3);
+  padding: var(--space-2) var(--space-2) var(--space-3) var(--space-2);
   font-size: var(--text-sm);
   color: var(--color-text-muted);
   border-bottom: 2px solid transparent;

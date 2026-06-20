@@ -110,12 +110,6 @@ async function start(input: { seed?: number; humanSlotTimeoutMs?: number }): Pro
   <UiEmptyState v-if="notFound" tone="danger">No such environment.</UiEmptyState>
   <UiEmptyState v-else-if="loading || meta === null">Loading…</UiEmptyState>
   <section v-else class="env">
-    <p class="context-line">
-      <RouterLink to="/">Environments</RouterLink>
-      <span aria-hidden="true"> / </span>
-      <span>{{ meta.display_name }}</span>
-    </p>
-
     <header class="env-header">
       <div class="env-headline">
         <div class="env-title-row">
@@ -172,16 +166,6 @@ async function start(input: { seed?: number; humanSlotTimeoutMs?: number }): Pro
 </template>
 
 <style scoped>
-.context-line {
-  margin: 0 0 var(--space-4);
-  font-size: var(--text-sm);
-  color: var(--color-text-muted);
-}
-
-.context-line a:hover {
-  color: var(--color-accent);
-}
-
 .env-header {
   display: flex;
   align-items: flex-start;
