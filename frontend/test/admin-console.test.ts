@@ -310,6 +310,19 @@ describe('AdminConsolePage', () => {
     expect(await screen.findByText(/match design/)).toBeInTheDocument()
   })
 
+  it('disables Run workflow while the match design has unsaved edits', async () => {
+    await renderConsole()
+    // The seeded config matches the persisted season, so the run trigger starts available.
+    expect(await screen.findByRole('button', { name: 'Run workflow' })).toBeEnabled()
+
+    // Add a match without saving: the design now differs from the persisted config.
+    await fireEvent.click(screen.getByRole('button', { name: 'Add match' }))
+
+    expect(screen.getByRole('button', { name: 'Run workflow' })).toBeDisabled()
+    expect(screen.getByText(/Unsaved changes/)).toBeInTheDocument()
+    expect(screen.getByText(/Save the match design before running/)).toBeInTheDocument()
+  })
+
   it('subscribes to the log stream after a trigger and renders streamed lines', async () => {
     // A fake WebSocket capturing the instance so the test can drive incoming frames.
     const sockets: FakeWS[] = []
