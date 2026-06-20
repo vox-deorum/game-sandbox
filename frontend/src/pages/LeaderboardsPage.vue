@@ -17,8 +17,9 @@ import {
   getAdminSeason,
   getEnvironmentLeaderboards,
   getSeasonLeaderboards,
+  listPublicSeasons,
+  type PublicSeasonView,
   type SeasonView,
-  listReleasedSeasons,
 } from '../api/client.js'
 import LeaderboardBoards from '../components/LeaderboardBoards.vue'
 import UiBadge from '../components/ui/UiBadge.vue'
@@ -37,7 +38,9 @@ const notReleased = ref(false)
 const failed = ref(false)
 const board = ref<Board | null>(null)
 const season = ref<SeasonView | null>(null)
-const history = ref<SeasonView[]>([])
+// Released seasons with their activity counts, newest first; backs the Seasons table and the
+// header annotation for the season in view (matched out of this same list by id).
+const history = ref<PublicSeasonView[]>([])
 // True when the board shown is an unreleased season surfaced through the operator-only admin read,
 // so the page can flag it as not yet public. Only ever set for an operator viewing a specific season.
 const operatorPreview = ref(false)
@@ -48,9 +51,15 @@ const requestedSeasonId = computed(() => {
   return typeof raw === 'string' && raw !== '' ? raw : undefined
 })
 
-function seasonLabel(view: SeasonView): string {
+function seasonLabel(view: { id: string; label: string | null }): string {
   return view.label ?? `Season ${view.id.slice(0, 8)}`
 }
+
+/** The activity counts for the season in view, looked up in the released history (absent for an
+ * operator-only unreleased preview, which never appears in the public list). */
+const currentCounts = computed(() =>
+  season.value === null ? undefined : history.value.find((entry) => entry.id === season.value?.id),
+)
 
 async function load(): Promise<void> {
   loading.value = true
@@ -60,7 +69,9 @@ async function load(): Promise<void> {
   season.value = null
   operatorPreview.value = false
   try {
-    history.value = await listReleasedSeasons(envId)
+    history.value = (await listPublicSeasons(envId)).filter(
+      (entry) => entry.release_status === 'released',
+    )
     if (requestedSeasonId.value !== undefined) {
       const result = await getSeasonLeaderboards(envId, requestedSeasonId.value)
       if (result === undefined) {
@@ -122,34 +133,50 @@ watch(requestedSeasonId, load, { immediate: true })
         <span v-else-if="season.released_at !== null" class="leaderboards-released">
           · released {{ formatDate(season.released_at) }}
         </span>
+        <template v-if="currentCounts !== undefined">
+          <UiBadge class="leaderboards-stat">{{ currentCounts.submission_count }} submissions</UiBadge>
+          <UiBadge class="leaderboards-stat">{{ currentCounts.session_count }} games run</UiBadge>
+        </template>
       </h2>
     </header>
 
-    <div class="leaderboards-body">
-      <main class="leaderboards-main">
-        <UiEmptyState v-if="loading">Loading…</UiEmptyState>
-        <UiEmptyState v-else-if="failed" tone="danger">Could not load the leaderboards.</UiEmptyState>
-        <UiEmptyState v-else-if="notReleased">
-          No released results for this season yet.
-        </UiEmptyState>
-        <LeaderboardBoards v-else-if="board !== null" :board="board" :env-id="envId" />
-      </main>
+    <main class="leaderboards-main">
+      <UiEmptyState v-if="loading">Loading…</UiEmptyState>
+      <UiEmptyState v-else-if="failed" tone="danger">Could not load the leaderboards.</UiEmptyState>
+      <UiEmptyState v-else-if="notReleased">
+        No released results for this season yet.
+      </UiEmptyState>
+      <LeaderboardBoards v-else-if="board !== null" :board="board" :env-id="envId" />
+    </main>
 
-      <aside v-if="history.length > 0" class="leaderboards-history" aria-label="Released seasons">
-        <h2 class="history-title">Seasons</h2>
-        <ul class="history-list">
-          <li v-for="entry in history" :key="entry.id">
-            <RouterLink
-              class="history-link"
-              :class="{ current: entry.id === season?.id }"
-              :to="`/environments/${envId}/leaderboards/${entry.id}`"
-            >
-              {{ seasonLabel(entry) }}
-            </RouterLink>
-          </li>
-        </ul>
-      </aside>
-    </div>
+    <section v-if="history.length > 0" class="leaderboards-history" aria-label="Released seasons">
+      <h2 class="history-title">Seasons</h2>
+      <table class="history-table">
+        <thead>
+          <tr>
+            <th scope="col">Season</th>
+            <th scope="col">Released</th>
+            <th scope="col" class="num">Submissions</th>
+            <th scope="col" class="num">Games run</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="entry in history" :key="entry.id" :class="{ current: entry.id === season?.id }">
+            <td>
+              <RouterLink
+                class="history-link"
+                :to="`/environments/${envId}/leaderboards/${entry.id}`"
+              >
+                {{ seasonLabel(entry) }}
+              </RouterLink>
+            </td>
+            <td>{{ entry.released_at !== null ? formatDate(entry.released_at) : '—' }}</td>
+            <td class="num">{{ entry.submission_count }}</td>
+            <td class="num">{{ entry.session_count }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
   </section>
 </template>
 
@@ -158,11 +185,19 @@ watch(requestedSeasonId, load, { immediate: true })
   margin: 0 0 var(--space-1);
 }
 
-.leaderboards-body {
-  display: grid;
-  grid-template-columns: 1fr 14rem;
-  gap: var(--space-6);
-  align-items: start;
+.leaderboards-sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.leaderboards-stat {
+  font-weight: 500;
+}
+
+.leaderboards-history {
+  margin-top: var(--space-8);
 }
 
 .history-title {
@@ -170,17 +205,35 @@ watch(requestedSeasonId, load, { immediate: true })
   font-size: var(--text-md);
 }
 
-.history-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
+.history-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.history-table th,
+.history-table td {
+  text-align: left;
+  padding: var(--space-2) var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.history-table th {
+  color: var(--color-text-muted);
+  font-weight: 600;
+}
+
+.history-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The season in view stands out as the anchor row of the table. */
+.history-table tr.current td {
+  font-weight: 600;
 }
 
 .history-link {
-  font-size: var(--text-sm);
   color: var(--color-text-muted);
   transition: color var(--motion-fast) var(--ease-out);
 }
@@ -189,14 +242,7 @@ watch(requestedSeasonId, load, { immediate: true })
   color: var(--color-text);
 }
 
-.history-link.current {
+.history-table tr.current .history-link {
   color: var(--color-text);
-  font-weight: 600;
-}
-
-@media (max-width: 768px) {
-  .leaderboards-body {
-    grid-template-columns: 1fr;
-  }
 }
 </style>
