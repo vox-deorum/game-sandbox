@@ -33,7 +33,6 @@ import UiCard from '../components/ui/UiCard.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import UiInput from '../components/ui/UiInput.vue'
 import { useEnvironmentMeta } from '../composables/useEnvironmentMeta.js'
-import { formatDate } from '../lib/format.js'
 import { useMe } from '../me.js'
 
 const route = useRoute()
@@ -239,9 +238,6 @@ async function saveRename(seasonId: string): Promise<void> {
                     Rename
                   </UiButton>
                 </template>
-                <span v-if="view.season.released_at !== null" class="card-meta">
-                  released {{ formatDate(view.season.released_at) }}
-                </span>
               </div>
               <p v-if="renameError" class="rename-error" role="alert">{{ renameError }}</p>
               <SeasonLifecycleControls :season="view.season" @changed="refresh" />

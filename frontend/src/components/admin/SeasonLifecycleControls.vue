@@ -21,6 +21,7 @@ import {
   releaseSeason,
   unreleaseSeason,
 } from '../../api/client.js'
+import { formatDate } from '../../lib/format.js'
 import UiButton from '../ui/UiButton.vue'
 import UiStatusBadge from '../ui/UiStatusBadge.vue'
 
@@ -106,6 +107,9 @@ async function toggleRelease(): Promise<void> {
       >
         {{ season.release_status === 'released' ? 'Unrelease' : 'Release' }}
       </UiButton>
+      <span v-if="season.released_at !== null" class="gate-hint">
+        released {{ formatDate(season.released_at) }}
+      </span>
       <span class="gate-hint">Releases the leaderboard results.</span>
     </div>
 
