@@ -89,7 +89,9 @@ describe('ReplaysPage', () => {
     ])
     await renderPage()
 
-    const link = await screen.findByRole('link', { name: 'flappy_bird-1' })
+    // The env prefix is dropped from the displayed id (the page is already scoped to the environment),
+    // but the link still targets the full recording id.
+    const link = await screen.findByRole('link', { name: '1' })
     expect(link).toHaveAttribute('href', '/replays/flappy_bird-1')
     // The recordings read is scoped to the environment in the route.
     expect(vi.mocked(listRecordings)).toHaveBeenCalledWith({ env: 'flappy_bird' })

@@ -16,10 +16,9 @@ import {
   type PublicSeasonView,
   type RecordingSummary,
 } from '../api/client.js'
-import ExperimentTabs from '../components/ExperimentTabs.vue'
 import UiBadge from '../components/ui/UiBadge.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
-import { formatDate, formatSlot } from '../lib/format.js'
+import { formatDateOnly, formatSlotIndex } from '../lib/format.js'
 import { useMe } from '../me.js'
 import { reasonText } from '../replay/reason.js'
 
@@ -47,10 +46,17 @@ function playersSummary(header: RecordingHeader): string {
   }
   const parts = Object.entries(players).map(([slot, player]) =>
     player.kind === 'human'
-      ? `${formatSlot(slot)}: Human (${player.user ?? player.label})`
-      : `${formatSlot(slot)}: ${player.label}`,
+      ? `${formatSlotIndex(slot)}: Human (${player.user ?? player.label})`
+      : `${formatSlotIndex(slot)}: ${player.label}`,
   )
   return parts.length > 0 ? parts.join(', ') : '—'
+}
+
+/** The replay id with its leading `⟨environment⟩-` prefix dropped, since the page is already scoped
+ *  to one environment — the prefix is redundant noise that only crowds the column. */
+function displayId(replay: RecordingSummary): string {
+  const prefix = `${envId.value}-`
+  return replay.id.startsWith(prefix) ? replay.id.slice(prefix.length) : replay.id
 }
 
 function seasonText(replay: RecordingSummary): string {
@@ -120,7 +126,6 @@ watch(envId, (id) => void load(id), { immediate: true })
 
 <template>
   <section class="replays">
-    <ExperimentTabs class="replays-tabs" :env-id="envId" />
     <h1>Replays</h1>
 
     <UiEmptyState v-if="replays === null">Loading replays…</UiEmptyState>
@@ -149,14 +154,14 @@ watch(envId, (id) => void load(id), { immediate: true })
       <tbody>
         <tr v-for="replay in sortedReplays" :key="replay.id">
           <td>
-            <RouterLink class="replay-id" :to="`/replays/${replay.id}`">{{ replay.id }}</RouterLink>
+            <RouterLink class="replay-id" :to="`/replays/${replay.id}`">{{ displayId(replay) }}</RouterLink>
             <UiBadge v-if="showsPin(replay)" variant="accent">Pinned</UiBadge>
           </td>
           <td class="replay-players">{{ playersSummary(replay.header) }}</td>
           <td>{{ replay.user_id ?? '—' }}</td>
           <td>{{ seasonText(replay) }}</td>
           <td>{{ reasonText(replay.termination_reason) }}</td>
-          <td>{{ formatDate(replay.created_at) ?? '—' }}</td>
+          <td>{{ formatDateOnly(replay.created_at) ?? '—' }}</td>
         </tr>
       </tbody>
     </table>
@@ -164,13 +169,6 @@ watch(envId, (id) => void load(id), { immediate: true })
 </template>
 
 <style scoped>
-/* The shared tab strip carries its own full-width border and an inner max-width/padding the shell
-   aligns to the page edges; bleed it back out by the page padding so its border spans the content
-   width and its inner labels line up with the page below (the same treatment ReplayPage uses). */
-.replays-tabs {
-  margin: calc(var(--space-5) * -1) calc(var(--space-5) * -1) var(--space-4);
-}
-
 .replays h1 {
   margin: 0 0 var(--space-4);
 }

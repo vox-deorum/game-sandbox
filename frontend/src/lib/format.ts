@@ -15,6 +15,14 @@ export function formatDate(value: string | null | undefined): string | null {
   }).format(new Date(value))
 }
 
+/** A medium date with no time in the viewer's locale, or null for a missing value. */
+export function formatDateOnly(value: string | null | undefined): string | null {
+  if (value === null || value === undefined) {
+    return null
+  }
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(value))
+}
+
 /** "player_0" → "Player 0": a human-readable slot label, for attribution. */
 export function formatSlot(slot: string): string {
   return slot
