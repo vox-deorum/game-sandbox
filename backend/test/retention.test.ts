@@ -313,7 +313,12 @@ describe('retention', () => {
     it('surfaces the producing session’s termination reason, null when none ended', async () => {
       // One recording produced by an ended session, one rowless of a session (debris, never ended).
       await writeRecording({ id: 'ended', user_id: 'a', env_id: 'flappy_bird', created_at: ago(1) })
-      await writeRecording({ id: 'orphan', user_id: 'a', env_id: 'flappy_bird', created_at: ago(2) })
+      await writeRecording({
+        id: 'orphan',
+        user_id: 'a',
+        env_id: 'flappy_bird',
+        created_at: ago(2),
+      })
       await storage.createSession({
         id: 'sess-ended',
         user_id: 'a',
