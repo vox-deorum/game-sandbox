@@ -1,6 +1,6 @@
-# Game Sandbox Agent Template — Flappy Bird
+# Game Sandbox Agent Template: Flappy Bird
 
-This is the starter kit for writing a Game Sandbox agent. You develop and test entirely on your own machine against vanilla PettingZoo — no backend, no account, no network — and submit a GitHub repository when you are ready. This template **is** the shape of a submittable repo: fill in `agent.py`, keep the manifest and the pinned dependency set, and you are done.
+This is the starter kit for writing a Game Sandbox agent. You develop and test entirely on your own machine against vanilla PettingZoo: no backend, no account, no network: and submit a GitHub repository when you are ready. This template **is** the shape of a submittable repo: fill in `agent.py`, keep the manifest and the pinned dependency set, and you are done.
 
 This is the **Flappy Bird** template (the default). Other environments are published as branches of this same repository: pick `templates/<env>` from the branch dropdown for a different game's starter kit, or `examples/<env>/<name>` for a complete worked agent. Every environment shares the same pinned dependency set, so the manifest and `requirements.txt` carry over unchanged.
 
@@ -11,7 +11,7 @@ This is the **Flappy Bird** template (the default). Other environments are publi
 | `agent.py` | **Your agent.** Implement `reset` and `act`; optionally `learn` and `chat`. |
 | `manifest.json` | Names your entry-point module, agent class, and the template version. |
 | `requirements.in` | The top-level dependency intents (source of truth). |
-| `requirements.txt` | The fully pinned dependency set — the authoritative list. Do not hand-edit. |
+| `requirements.txt` | The fully pinned dependency set: the authoritative list. Do not hand-edit. |
 | `requirements-dev.txt` | Test-only dependencies (`pytest`). |
 | `sandbox_env/` | The Flappy Bird environment, so you can step it locally. Generated; do not edit. |
 | `play.py` | Play one episode, with or without a render window. |
@@ -34,10 +34,10 @@ Use exactly `requirements.txt`: it is the pinned dependency set for this templat
 
 Edit `agent.py`. The interface is four methods, two required:
 
-- `reset(seed)` — prepare for a new episode. The seed is the same one the environment gets.
-- `act(observation)` — return an action. For Flappy Bird that is `0` (do nothing) or `1` (flap).
-- `learn(observation, action, reward, terminated)` — _optional_; called after each step.
-- `chat(inbox)` — _optional_; only used in environments with messaging.
+- `reset(seed)`: prepare for a new episode. The seed is the same one the environment gets.
+- `act(observation)`: return an action. For Flappy Bird that is `0` (do nothing) or `1` (flap).
+- `learn(observation, action, reward, terminated)`: _optional_; called after each step.
+- `chat(inbox)`: _optional_; only used in environments with messaging.
 
 The optional hooks are detected by presence: leave them out (or commented) and the harness never calls them. Time spent in any of these counts against your timing and episode budget. A late `act` can be replaced with the default action; a late `learn` is recorded as overage after the step.
 

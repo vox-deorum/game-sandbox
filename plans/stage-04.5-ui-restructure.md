@@ -57,9 +57,9 @@ The owner has approved the IA document and the styleguide plus redesigned Home c
 
 ## Open questions
 
-- ~~Reka UI bundle impact.~~ Resolved: the production build was grepped — the bundle carries the imported Dialog and Slider components and none of Reka's others.
+- ~~Reka UI bundle impact.~~ Resolved: the production build was grepped: the bundle carries the imported Dialog and Slider components and none of Reka's others.
 - ~~Reka Slider versus a styled native range input for the replay scrubber.~~ Resolved: Reka Slider is kept (`UiSlider`). Its keyboard operation and value announcement come for free, and the `slider` role survives for the unit and e2e locators; the e2e drives it by keyboard rather than `fill()`.
 - ~~Whether the start form opens as a dialog or stays inline on the Environment page.~~ Resolved (IA): it opens as a `UiDialog`.
-- Whether Playwright screenshots of the styleguide are worth maintaining as visual regression coverage. Still open, deferred — no screenshot coverage was added.
+- Whether Playwright screenshots of the styleguide are worth maintaining as visual regression coverage. Still open, deferred: no screenshot coverage was added.
 - ~~The placeholder copy and the placement of the signed-in readout in the new navigation.~~ Resolved (IA): `Agents` / `Leaderboards` with a `soon` tag on the left; the signed-in readout on the right.
 - Each of stages 5 through 9 must retire its navigation placeholder when it lands; those stage files get a one-line note when this stage closes (i.e. after checkpoint-two sign-off).

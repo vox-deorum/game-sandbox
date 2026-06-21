@@ -6,7 +6,7 @@ It covers the principles, the token system, type and color, the primitives, layo
 
 ## Design principles
 
-- **Clarity for data-dense views.** Sessions, replays, and the leaderboards to come are tables and counters first. Favor legibility — a clear type scale, monospace for identifiers and numbers, restrained color — over decoration.
+- **Clarity for data-dense views.** Sessions, replays, and the leaderboards to come are tables and counters first. Favor legibility: a clear type scale, monospace for identifiers and numbers, restrained color: over decoration.
 - **Accessibility is a rule, not an aspiration.** The baseline below holds for every page and every primitive. It is not a backlog item; a change that regresses it is incomplete.
 - **The game-stage spotlight.** On the session and replay pages the renderer canvas is the star and the chrome around it stays quiet. Renderers own their own visual identity (they are exempt from the token rule); the host owns the calm frame around them.
 - **Calm motion.** Motion is purposeful and short, expressed through the motion tokens so `prefers-reduced-motion` stills all of it at once. Nothing animates to draw attention to itself.
@@ -20,7 +20,7 @@ It covers the principles, the token system, type and color, the primitives, layo
 - The **raw palette** tier (`--palette-*`) holds the literal values and is private: nothing outside `tokens.css` references a `--palette-*` variable. This is what keeps a future light theme a remap of the semantic tier rather than a rewrite of component CSS.
 - The **semantic** tier is the public vocabulary components consume: `--color-*`, `--space-*`, `--text-*`, the font families, `--radius-*`, and the motion tokens.
 
-**The no-raw-values rule:** component CSS uses `var(--…)` only — no raw hex colors, and no arbitrary rem/px for padding, gaps, or margins (use the `--space-*` scale). Layout dimensions that are not on the spacing scale (a column width, a `max-width`, the breakpoints) are plain values. Renderer modules under `src/renderers/` are exempt, because a renderer owns its game's visual identity. Biome excludes `.vue` files, so this rule is enforced by review and a grep over component sources, not by lint.
+**The no-raw-values rule:** component CSS uses `var(--…)` only: no raw hex colors, and no arbitrary rem/px for padding, gaps, or margins (use the `--space-*` scale). Layout dimensions that are not on the spacing scale (a column width, a `max-width`, the breakpoints) are plain values. Renderer modules under `src/renderers/` are exempt, because a renderer owns its game's visual identity. Biome excludes `.vue` files, so this rule is enforced by review and a grep over component sources, not by lint.
 
 The scales:
 
@@ -35,7 +35,7 @@ The global stylesheet is three files imported in order by `main.ts`: `tokens.css
 
 The fonts: **EB Garamond** for headings (`--font-heading`), **Lato** for body (`--font-body`), and a monospace stack (`--font-mono`) for identifiers, ticks, scores, and other counters. The theme is **dark only**; the semantic names are light-ready (a light theme would remap the palette tier) but none is built.
 
-The palette is a modern-minimal base with slightly playful accents. The background and surface ramp is a quiet blue-charcoal family (`--color-bg`, `--color-surface`, `--color-surface-raised`, `--color-border`, `--color-border-strong`); text is `--color-text` and `--color-text-muted`. The accent is a bright mint (`--color-accent` on `--color-on-accent`); status colors are `--color-success`, `--color-warning` (amber), and `--color-danger` (coral). `--color-focus-ring` is the focus sky blue, `--color-scrim` the dialog overlay, and `--color-stage-backdrop` the true black behind a renderer canvas. Status is **never** carried by color alone — see the baseline.
+The palette is a modern-minimal base with slightly playful accents. The background and surface ramp is a quiet blue-charcoal family (`--color-bg`, `--color-surface`, `--color-surface-raised`, `--color-border`, `--color-border-strong`); text is `--color-text` and `--color-text-muted`. The accent is a bright mint (`--color-accent` on `--color-on-accent`); status colors are `--color-success`, `--color-warning` (amber), and `--color-danger` (coral). `--color-focus-ring` is the focus sky blue, `--color-scrim` the dialog overlay, and `--color-stage-backdrop` the true black behind a renderer canvas. Status is **never** carried by color alone: see the baseline.
 
 ## Component primitives
 
@@ -52,7 +52,7 @@ The primitives live in `frontend/src/components/ui/`, PascalCase with a `Ui` pre
 | `UiSlider` | The replay scrubber (keyboard operation and value announcement), wrapping Reka UI Slider. |
 | `UiEmptyState` | The loading / empty / error message line, muted or danger. |
 
-**Hand-rolled versus Reka UI:** simple primitives are hand-rolled on the tokens. A third-party library (Reka UI, the headless Vue library) is used **only** where focus management and ARIA are genuinely hard to get right by hand — today the dialog and the slider, nothing else. At adoption the production bundle was verified to grow only by the components actually imported.
+**Hand-rolled versus Reka UI:** simple primitives are hand-rolled on the tokens. A third-party library (Reka UI, the headless Vue library) is used **only** where focus management and ARIA are genuinely hard to get right by hand: today the dialog and the slider, nothing else. At adoption the production bundle was verified to grow only by the components actually imported.
 
 **Adding a variant:** add the prop value and its scoped styles, then add it to the `/styleguide` route. Every variant and state of every primitive appears there; a variant that is not on the styleguide does not exist. The route is registered only in dev builds (`import.meta.env.DEV`) and loaded by dynamic import, so production carries neither the route nor the code.
 
@@ -62,7 +62,7 @@ Feature components (`AppShell`, `AppSidebar`, `AccountMenu`, `ExperimentTabs`, `
 
 The **app shell** is a two-tier nav frame: a collapsible left sidebar carries the cross-game sections (Games, Seasons, Documentation, My Agents) with the account block at the bottom, and on a game's routes a contextual tab strip carries that game's tasks (Overview, Leaderboards, My Submissions, and an operator-only Manage). The sidebar collapses to an icon rail on desktop and becomes an off-canvas drawer on narrow screens. The main content column is centered with a max width. Pages carry their own one-line context line (`Games / Flappy Bird / …`) rather than a breadcrumb component, because the per-page hierarchy is one level deep. (See the [frontend contributor guide](frontend.md#navigation-the-sidebar-and-the-game-tabs).)
 
-**Breakpoints** are documented constants — **480px, 768px, 1024px** — used as plain values in scoped media queries (CSS custom properties cannot parameterize media queries). The design is desktop-first in origin but must stay usable, not merely unbroken, at narrow widths: the home grid flows with `auto-fill`; the environment hub's thumbnail drops below its description; the session and replay stages stack the canvas and decision log and cap the canvas at the viewport width; the sidebar collapses to a drawer behind a mobile bar. The session and replay stages place the decision log **beside** a portrait canvas (which leaves a column free) and **below** a landscape one, driven by the renderer's declared `aspectRatio` rather than measured pixels.
+**Breakpoints** are documented constants: **480px, 768px, 1024px**: used as plain values in scoped media queries (CSS custom properties cannot parameterize media queries). The design is desktop-first in origin but must stay usable, not merely unbroken, at narrow widths: the home grid flows with `auto-fill`; the environment hub's thumbnail drops below its description; the session and replay stages stack the canvas and decision log and cap the canvas at the viewport width; the sidebar collapses to a drawer behind a mobile bar. The session and replay stages place the decision log **beside** a portrait canvas (which leaves a column free) and **below** a landscape one, driven by the renderer's declared `aspectRatio` rather than measured pixels.
 
 ## The accessibility baseline
 
@@ -79,5 +79,5 @@ The renderer canvas itself is exempt (it is the game, and renderers own their id
 
 ## See also
 
-- [specs/interaction.md](../specs/interaction.md) — the renderer contract and the chrome split this system frames.
-- [frontend.md](frontend.md) — the package, the source layout, and the page-by-page mechanics.
+- [specs/interaction.md](../specs/interaction.md): the renderer contract and the chrome split this system frames.
+- [frontend.md](frontend.md): the package, the source layout, and the page-by-page mechanics.

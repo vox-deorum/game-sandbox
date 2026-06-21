@@ -2,7 +2,7 @@
 
 Status: complete.
 
-Part of [Stage 4](../stage-04-frontend-core.md). This file records the live half of the frontend: starting play and watch sessions from the environment page, the session page that hosts a renderer over the live socket, and the two session-level controls from [interaction.md](../../docs/specs/interaction.md) — the human-slot timeout and pause. It builds on the clients, identity, and renderer contract from [frontend-infrastructure.md](frontend-infrastructure.md), and drives the Stage 3 API and WebSocket protocol unchanged except where noted.
+Part of [Stage 4](../stage-04-frontend-core.md). This file records the live half of the frontend: starting play and watch sessions from the environment page, the session page that hosts a renderer over the live socket, and the two session-level controls from [interaction.md](../../docs/specs/interaction.md): the human-slot timeout and pause. It builds on the clients, identity, and renderer contract from [frontend-infrastructure.md](frontend-infrastructure.md), and drives the Stage 3 API and WebSocket protocol unchanged except where noted.
 
 ## Starting a session
 
@@ -30,13 +30,13 @@ The page derives its capabilities from identity and mode rather than separate fl
 - The owner of a `scripted` session gets controls but no input.
 - Anyone else opening the URL is a spectator: same renderer, no controls. This is the protocol's existing authority rule (commands are accepted only from the owner) reflected in the UI.
 
-Host chrome follows the contract's chrome split and works identically for every future environment: the status banner, the pause/resume toggle, the stop button, the active-timeout display, and the end-of-session card. Stop is sent in-band as the `stop` command over the socket, the graceful path the container honors; the `DELETE /api/sessions/:id` route remains the out-of-band fallback. The end-of-session card shows the result envelope's facts — final score, ticks, termination reason — plus the link to `/replays/:recordingId` and the post-session feedback stub from [replay-and-retention.md](replay-and-retention.md), which for now only offers pinning.
+Host chrome follows the contract's chrome split and works identically for every future environment: the status banner, the pause/resume toggle, the stop button, the active-timeout display, and the end-of-session card. Stop is sent in-band as the `stop` command over the socket, the graceful path the container honors; the `DELETE /api/sessions/:id` route remains the out-of-band fallback. The end-of-session card shows the result envelope's facts: final score, ticks, termination reason: plus the link to `/replays/:recordingId` and the post-session feedback stub from [replay-and-retention.md](replay-and-retention.md), which for now only offers pinning.
 
 ## The human-slot timeout control
 
 One control, no second mechanism, per the parent file and [interaction.md](../../docs/specs/interaction.md). The deadline's meaning splits on the pace interval, and the control follows:
 
-- **Paced environment (Flappy Bird).** The per-step deadline _is_ the pace interval — a step with no input gets the noop. The start form states this, and the play UI shows the resolved deadline as the per-step input window (50 ms / 20 steps per second) whenever the user controls a slot, which is the "show the active timeout when it can affect the session" requirement.
+- **Paced environment (Flappy Bird).** The per-step deadline _is_ the pace interval: a step with no input gets the noop. The start form states this, and the play UI shows the resolved deadline as the per-step input window (50 ms / 20 steps per second) whenever the user controls a slot, which is the "show the active timeout when it can affect the session" requirement.
 - **Unpaced environment (a later turn-based game).** The same control is the move clock: the form prefills the metadata's `human_timeout_ms`, the user may override it, and the play UI shows the resolved move time limit for the acting slot.
 
 In both cases the form sends any entered override as `human_slot_timeout_ms` on session start. The Stage 3 API already accepts, resolves, and forwards it into the harness config, which satisfies the stage's override exit criterion today even though Flappy Bird's paced loop never consults the value. Nothing here is Flappy Bird-specific: when the first turn-based environment arrives, the control and display work from its metadata with no new mechanism.
@@ -45,4 +45,4 @@ In both cases the form sends any entered override as `human_slot_timeout_ms` on 
 
 The pause toggle sends the `pause`/`resume` command envelopes. The container's `PausableClock` freezes the cadence and the decision clock together (built in Stage 3), and the echoes broadcast to every attached socket drive a paused overlay on owner and spectators alike. The UI never tracks pause state locally; it reflects the echo, so it cannot disagree with the container. For single-slot Flappy Bird this is a plain pause, but the control is already wired through the session, so it generalizes to later environments unchanged.
 
-One interaction must stay honest in the UI. A paused-and-forgotten session still idles out — the Stage 3 idle timeout deliberately covers it — ending with reason `idle_timeout`. The status banner and end card must present that as a normal outcome, not an error. The idle window's definition and default were left tunable pending this stage's playtesting; whatever this stage confirms is recorded back into [stage-03/orchestrator-and-http-api.md](../stage-03/orchestrator-and-http-api.md) per the [plan rules](../README.md).
+One interaction must stay honest in the UI. A paused-and-forgotten session still idles out: the Stage 3 idle timeout deliberately covers it: ending with reason `idle_timeout`. The status banner and end card must present that as a normal outcome, not an error. The idle window's definition and default were left tunable pending this stage's playtesting; whatever this stage confirms is recorded back into [stage-03/orchestrator-and-http-api.md](../stage-03/orchestrator-and-http-api.md) per the [plan rules](../README.md).

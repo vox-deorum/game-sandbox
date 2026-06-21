@@ -19,7 +19,7 @@ Part of [Stage 2](../stage-02-harness-and-first-environment.md). Stage 1's workf
 - **External slot**: a `ScriptedSource` drives `player_0` through the programmatic API; a `NoopSource` slot falls back to the default action with no agent-timeout accounting touched (asserted via the result's zeroed overage counts).
 - **Manifest loading**: a fixture repo loads and plays; each malformed-manifest variant raises `ManifestError` naming the actual problem.
 - **Interface parity**: the template's `agent.py` stub and `AgentBase` agree method-for-method, so the two deliberately separate copies cannot drift.
-- **CLI smoke**: the CLI runs the composed hello agent for a full seeded episode and the recording validates — the "scripted agent loaded from a manifest plays a full episode through the CLI" criterion, also the test that crosses all three packages.
+- **CLI smoke**: the CLI runs the composed hello agent for a full seeded episode and the recording validates: the "scripted agent loaded from a manifest plays a full episode through the CLI" criterion, also the test that crosses all three packages.
 
 Template-level testing rides the existing composed-example CI job: compose, fresh venv, pytest. It now includes the short headless `play.py` episode, which is the "clean machine with no sandbox backend" criterion in CI form, since the composed venv contains only `requirements.txt` and never the harness or backend.
 

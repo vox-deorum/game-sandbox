@@ -1,6 +1,6 @@
 # Examples and the Template
 
-The student starter kit lives under `templates/` as two kinds of layer. `templates/base/` is the env-agnostic foundation — the manifest, the global pinned dependency set, the play/evaluate/LLM scripts, and the inherited `tests/`. `templates/<env>/` is a per-environment layer holding only what is specific to that environment: its `agent.py` stub, its README, and its generated `sandbox_env/`. A complete template for an environment is `base` plus that one env layer, composed. An example under `examples/<env>/<name>/` holds only the files that differ from its composed template, so an example is a small reviewable diff, not a copy that can rot.
+The student starter kit lives under `templates/` as two kinds of layer. `templates/base/` is the env-agnostic foundation: the manifest, the global pinned dependency set, the play/evaluate/LLM scripts, and the inherited `tests/`. `templates/<env>/` is a per-environment layer holding only what is specific to that environment: its `agent.py` stub, its README, and its generated `sandbox_env/`. A complete template for an environment is `base` plus that one env layer, composed. An example under `examples/<env>/<name>/` holds only the files that differ from its composed template, so an example is a small reviewable diff, not a copy that can rot.
 
 This two-layer shape lets one repo carry many environments. The shared pieces are written once in `base`; each new environment is a sibling directory under `templates/`, not a forked copy of the whole kit.
 
@@ -20,7 +20,7 @@ The dependency set is **global**: a single `requirements.in`/`requirements.txt` 
 
 CI composes every example from the current `templates/` on every pull request and runs the composed example's tests in a fresh virtualenv. The base layer carries a pytest `tests/` directory and a `requirements-dev.txt`, so every composed example inherits them. A base or env-layer change that breaks an example fails the pull request that made the change, not some later discovery. This is the entire reason for the overlay design.
 
-Because the bare template's pytest is red by design — `agent.py` raises `NotImplementedError` until a student implements it — a composed example is the only green proof that an environment layer works end to end. CI enforces the rule that **every environment layer ships at least one example**.
+Because the bare template's pytest is red by design: `agent.py` raises `NotImplementedError` until a student implements it: a composed example is the only green proof that an environment layer works end to end. CI enforces the rule that **every environment layer ships at least one example**.
 
 ## Adding an environment template
 

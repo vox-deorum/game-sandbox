@@ -1,6 +1,6 @@
 # Agent Interface
 
-Your agent is a Python class with four methods — two required, two optional. You develop against vanilla PettingZoo; the server runs this exact class through the same interface, so there is nothing sandbox-specific to import. The authoritative design is the [submission spec](../specs/submission.md).
+Your agent is a Python class with four methods: two required, two optional. You develop against vanilla PettingZoo; the server runs this exact class through the same interface, so there is nothing sandbox-specific to import. The authoritative design is the [submission spec](../specs/submission.md).
 
 ## The four methods
 
@@ -12,7 +12,7 @@ class Agent:
     def act(self, observation):
         ...                      # required; returns an action in the action space
 
-    # optional — implement only if you want them:
+    # optional: implement only if you want them:
     # def learn(self, observation, action, reward, terminated): ...
     # def chat(self, inbox): ...
 ```
@@ -22,7 +22,7 @@ class Agent:
 - **`learn(observation, action, reward, terminated)`** is _optional_. When present, the harness calls it after each step with that step's transition, so a reinforcement-learning agent can keep updating during play.
 - **`chat(inbox)`** is _optional_ and only used in environments with messaging enabled. It is called on your turn with the messages addressed to your slot, and returns messages to send or nothing to stay silent.
 
-The optional hooks are detected **by presence**: if you do not define `learn` or `chat`, the harness never calls them and you pay no time for them. Do not add empty stubs — that just makes the harness call a method that does nothing.
+The optional hooks are detected **by presence**: if you do not define `learn` or `chat`, the harness never calls them and you pay no time for them. Do not add empty stubs: that just makes the harness call a method that does nothing.
 
 ## What the harness guarantees
 
@@ -51,8 +51,8 @@ A `manifest.json` at your repo root tells the harness how to load your agent. Th
 }
 ```
 
-- `entry_point` — the module (importable from the repo root) that holds your agent class.
-- `class_name` — the class inside it.
-- `template_version` — the integer version of the template dependency set your repo targets.
+- `entry_point`: the module (importable from the repo root) that holds your agent class.
+- `class_name`: the class inside it.
+- `template_version`: the integer version of the template dependency set your repo targets.
 
 Keep the template's manifest as is unless you rename your module or class.

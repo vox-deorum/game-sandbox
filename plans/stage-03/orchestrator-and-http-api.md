@@ -32,7 +32,7 @@ A per-session relay task consumes `SessionProcess.output`:
 - The `result` envelope is relayed and stashed for the sessions row.
 - `diagnostics` lines go to the backend logger, tagged with the session id.
 
-Validated inbound commands go to `SessionProcess.send`, and `pause`/`resume` are echoed to all attached sockets. The backend interprets nothing else — it is a relay, and the container is authoritative.
+Validated inbound commands go to `SessionProcess.send`, and `pause`/`resume` are echoed to all attached sockets. The backend interprets nothing else: it is a relay, and the container is authoritative.
 
 Backpressure is a guardrail, not a hot path. States are small and Flappy-paced, but a socket whose `bufferedAmount` stays above a threshold is dropped, rather than letting one slow client balloon memory or stall the relay.
 
@@ -40,18 +40,18 @@ Backpressure is a guardrail, not a hot path. States are small and Flappy-paced, 
 
 Every end path converges on one idempotent finalize routine: kill the process if still alive, drain the streams, update the row (`ended`, reason, `ended_at`), notify attached sockets with a `session` envelope, close them, and clear the registry entry. The paths are:
 
-- **Container ends itself** — episode termination, environment time limits (the in-container budgets from Stage 2), or a client `stop` command. The reason comes from the `result` envelope (`terminated`, `truncated`, `episode_limit`, `stopped`).
-- **Idle timeout** — for this stage, a session is idle when no WebSocket is attached, or when it is human-mode and no inbound command has arrived, continuously for `SESSION_IDLE_TIMEOUT_MS`. That covers the never-attached session, the abandoned tab, and the paused-and-forgotten session alike. On idle the orchestrator sends `stop`, waits the grace period, then kills, with reason `idle_timeout`. The exact window is config, and the definition may be tuned during Stage 4 playtesting.
-- **Wall-clock backstop** — `SESSION_MAX_DURATION_MS` catches a hung container that in-container budgets cannot, since a truly stuck agent stalls the loop, per stage-02's timeout notes. The orchestrator kills, with reason `time_limit`.
-- **Quota kill or crash** — `exited` reports `oomKilled` or a nonzero code without a `result`, so the reason is `oom_killed` or `error`. It is reported cleanly in the row and to attached clients, which is the parent's exit criterion for a memory hog.
+- **Container ends itself**: episode termination, environment time limits (the in-container budgets from Stage 2), or a client `stop` command. The reason comes from the `result` envelope (`terminated`, `truncated`, `episode_limit`, `stopped`).
+- **Idle timeout**: for this stage, a session is idle when no WebSocket is attached, or when it is human-mode and no inbound command has arrived, continuously for `SESSION_IDLE_TIMEOUT_MS`. That covers the never-attached session, the abandoned tab, and the paused-and-forgotten session alike. On idle the orchestrator sends `stop`, waits the grace period, then kills, with reason `idle_timeout`. The exact window is config, and the definition may be tuned during Stage 4 playtesting.
+- **Wall-clock backstop**: `SESSION_MAX_DURATION_MS` catches a hung container that in-container budgets cannot, since a truly stuck agent stalls the loop, per stage-02's timeout notes. The orchestrator kills, with reason `time_limit`.
+- **Quota kill or crash**: `exited` reports `oomKilled` or a nonzero code without a `result`, so the reason is `oom_killed` or `error`. It is reported cleanly in the row and to attached clients, which is the parent's exit criterion for a memory hog.
 
 ## The HTTP API
 
 Fastify routes under `/api`, request bodies validated with Fastify's JSON-schema support:
 
-- `GET /api/environments` — the generated metadata list, verbatim.
-- `POST /api/sessions` — `{env_id, mode, seed?, human_slot_timeout_ms?}` → 201 with the session id and WebSocket path; 409 when the user already has an active session; 400 for an unknown environment or an invalid mode/override.
-- `GET /api/sessions/:id` — the session row: status, reason, recording id.
-- `DELETE /api/sessions/:id` — graceful stop, owner only.
-- `GET /api/sessions/:id/ws` — the WebSocket upgrade via `@fastify/websocket`; attaches to the live session per the protocol in [transport-and-live-runner.md](transport-and-live-runner.md). Multiple sockets per session are allowed (spectating); commands are accepted only from the session owner, and `input` only in human mode.
-- `GET /api/recordings` and `GET /api/recordings/:id` — list ids and headers from the `FolderRecordingStore` layout on the recordings root, and stream a recording's JSONL. Retention, quotas, and pinning are Stage 4 concerns per [frontend.md](../../docs/specs/frontend.md); this stage lists and fetches only.
+- `GET /api/environments`: the generated metadata list, verbatim.
+- `POST /api/sessions`: `{env_id, mode, seed?, human_slot_timeout_ms?}` → 201 with the session id and WebSocket path; 409 when the user already has an active session; 400 for an unknown environment or an invalid mode/override.
+- `GET /api/sessions/:id`: the session row: status, reason, recording id.
+- `DELETE /api/sessions/:id`: graceful stop, owner only.
+- `GET /api/sessions/:id/ws`: the WebSocket upgrade via `@fastify/websocket`; attaches to the live session per the protocol in [transport-and-live-runner.md](transport-and-live-runner.md). Multiple sockets per session are allowed (spectating); commands are accepted only from the session owner, and `input` only in human mode.
+- `GET /api/recordings` and `GET /api/recordings/:id`: list ids and headers from the `FolderRecordingStore` layout on the recordings root, and stream a recording's JSONL. Retention, quotas, and pinning are Stage 4 concerns per [frontend.md](../../docs/specs/frontend.md); this stage lists and fetches only.

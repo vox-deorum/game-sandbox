@@ -13,7 +13,7 @@ The stage splits cleanly along the Docker line, the same split Stage 4 used:
   - the local-folder source and stubbed git resolution (step 2);
   - the **entire static validator against fixtures** (step 3, the first demonstrable slice and the bulk of the "Done when" provable with no Docker);
   - the reachability and submit routes' non-build paths, the validation worker's queue and per-stage log writes, and the form's polled stage-timeline behavior (step 5);
-  - the overlay-image eviction policy over a fake driver (step 4 — the budget, oldest-first, active-`ready` exemption, and debris tolerance, with the real `removeImage` left to the Docker gate);
+  - the overlay-image eviction policy over a fake driver (step 4: the budget, oldest-first, active-`ready` exemption, and debris tolerance, with the real `removeImage` left to the Docker gate);
   - the orchestrator and profile reads (step 6).
 
   These run on the existing workspace-wide `test:ts` with no new infrastructure.
@@ -27,7 +27,7 @@ A checked-in fixture set is the backbone of the stage's provability and is share
 
 ## CI wiring
 
-- The Docker-free suites ride the existing `check:ts` and `test:ts` workspace jobs with no YAML change, picking up the new backend submission modules and the frontend form/profile components. CI applies the two coordinated Biome edits [2-source-resolution.md](2-source-resolution.md) describes — the `submission/source/` override block plus the broad-block exclusion, preserving "exactly one override per file" — and proves no other backend source imports `child_process`. A _package_ HTTP client, if chosen over global `fetch`, is confined the same way per that file.
+- The Docker-free suites ride the existing `check:ts` and `test:ts` workspace jobs with no YAML change, picking up the new backend submission modules and the frontend form/profile components. CI applies the two coordinated Biome edits [2-source-resolution.md](2-source-resolution.md) describes: the `submission/source/` override block plus the broad-block exclusion, preserving "exactly one override per file": and proves no other backend source imports `child_process`. A _package_ HTTP client, if chosen over global `fetch`, is confined the same way per that file.
 - The harness `validate` tests ride the existing harness test job.
 - The Docker-gated build/load-check and the submission e2e extend the existing gated jobs (`backend-integration` and `frontend-e2e` in `scripts/ci.py` / `ci.yml`). They need the session base image and the Docker daemon, and are runnable directly the same way. **Decision: additions, not new jobs.**
   - `backend-integration` is the `test/integration/**` Vitest project, so it picks up `overlay-build.test.ts` (overlay build, load check, caching, eviction) and `submission-source-network.test.ts` (live `git` reachability/pin) with no YAML change.

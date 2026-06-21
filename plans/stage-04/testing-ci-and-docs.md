@@ -20,16 +20,16 @@ jsdom implements no WebGL or canvas rasterization, and pulling in a native GPU/c
 
 ## Backend unit tests (Vitest, FakeDriver, `:memory:`)
 
-Extending the Stage 3 suites on the same fixtures — no Docker:
+Extending the Stage 3 suites on the same fixtures: no Docker:
 
 - **Identity and allowlist**: `resolveUserId` takes the WS `user` query parameter when the header is absent; `GET /api/me` reports the resolved user and allowlist membership; and `POST /api/sessions` is 403 for a non-allowlisted header identity in both modes, while the same identity can list sessions, fetch recordings, and attach as a spectator.
 - **Retention**: finalize writes the recordings row; the sweep evicts an unpinned recording past the window, evicts oldest-unpinned-first over quota, never evicts pinned, and ignores rowless directories; deletion removes directory and row and tolerates a missing half; and the listing merges rows with headers and filters on `?env=`.
-- **Pinning**: pin and unpin flip the flag owner-only; pinning is refused with `pinned_quota` at the pinned cap; a pinned recording survives a sweep that evicts its unpinned neighbors — the exit criterion verbatim.
+- **Pinning**: pin and unpin flip the flag owner-only; pinning is refused with `pinned_quota` at the pinned cap; a pinned recording survives a sweep that evicts its unpinned neighbors: the exit criterion verbatim.
 - **Start route**: the 409 body carries the active session id.
 
 ## End-to-end tests (Playwright, Docker required)
 
-Playwright drives Chromium against the real backend, with the backend serving the built frontend from one origin. The Docker daemon is required, the same gate as `backend-integration`. The Playwright config starts two backend instances, one allowlisting `dev-user` and one allowlisting no one, so the allowlist variation has a non-allowlisted context. This is the executable form of the stage's experiential criteria — one scripted journey plus the variations:
+Playwright drives Chromium against the real backend, with the backend serving the built frontend from one origin. The Docker daemon is required, the same gate as `backend-integration`. The Playwright config starts two backend instances, one allowlisting `dev-user` and one allowlisting no one, so the allowlist variation has a non-allowlisted context. This is the executable form of the stage's experiential criteria: one scripted journey plus the variations:
 
 - **The main journey**: the auto-logged mock user lands on home, opens the Flappy Bird environment page, starts a play session, sees the canvas drawing states and the per-step input window in the play UI, flaps with the keyboard and sees the score change, pauses and resumes (the paused overlay appears and clears), stops the session, and from the end card opens the replay URL, scrubs it, and pins it.
 - **Watch**: a scripted session streams the built-in agent's run into the same renderer with no input controls.

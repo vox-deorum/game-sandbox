@@ -13,7 +13,7 @@ styles/          tokens.css, base.css, app.css (design foundation; legacy file u
 components/ui/   the primitives, Ui prefix (UiButton.vue, UiCard.vue, ...)
 components/      feature components: AppShell.vue, AppNav.vue (new), StartForm.vue,
                  RunMetadata.vue, DecisionLog.vue (new), RecentReplays.vue (moved from
-                 pages/, it is not a route; since removed — Stage 6 replaced the
+                 pages/, it is not a route; since removed: Stage 6 replaced the
                  overview's recent-replays list with the routed ReplaysPage tab)
 composables/     useSessionSocket.ts, useRendererMount.ts, usePinning.ts,
                  useEnvironmentMeta.ts, useReplayTransport.ts

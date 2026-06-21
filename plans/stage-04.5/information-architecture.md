@@ -61,7 +61,7 @@ Each card carries a thumbnail, display name, short description, slot count, and 
 
 ### Environment hub (`/environments/:envId`)
 
-Purpose: everything about one environment in one place. At this stage that was the description, the entry points, and recent replays. Stages 5 and 6 added the submission form, leaderboards, and season history, and introduced the per-environment tab strip (`ExperimentTabs.vue`) — at which point replays moved off the overview into their own **Replays** tab (a sortable recordings table), and submissions into the **My Submissions** tab. The overview is therefore a column of sections (description, the current season's leaderboards, season history) with the play and watch entry points; the tab strip carries the rest.
+Purpose: everything about one environment in one place. At this stage that was the description, the entry points, and recent replays. Stages 5 and 6 added the submission form, leaderboards, and season history, and introduced the per-environment tab strip (`ExperimentTabs.vue`): at which point replays moved off the overview into their own **Replays** tab (a sortable recordings table), and submissions into the **My Submissions** tab. The overview is therefore a column of sections (description, the current season's leaderboards, season history) with the play and watch entry points; the tab strip carries the rest.
 
 ```
 |  top bar                                                                             |
@@ -80,7 +80,7 @@ Purpose: everything about one environment in one place. At this stage that was t
 
 The start form opens as a modal dialog from Play or Watch instead of expanding inline. The reasoning: the form is a short interruption (seed, timeout, confirm), not a destination, and a dialog keeps the hub stable underneath. The end-to-end journey is unaffected.
 
-At this stage the page closed with a trailing placeholder — one muted sentence, not styled section stubs, so the page did not accumulate empty boxes. Stages 5 and 6 replaced it with the real leaderboards and season-history sections and the tab strip.
+At this stage the page closed with a trailing placeholder: one muted sentence, not styled section stubs, so the page did not accumulate empty boxes. Stages 5 and 6 replaced it with the real leaderboards and season-history sections and the tab strip.
 
 ### Live stage (`/sessions/:id`)
 
@@ -102,7 +102,7 @@ Purpose: host one active session with the renderer as the star. The chrome is on
 |  +-------------------------------------+      0   |  120 | flap                      |
 |  (the log's height matches the canvas beside it and scrolls within that height)      |
 |                                                                                      |
-|  (wide canvas, no room beside it — log moves below, same table:)                     |
+|  (wide canvas, no room beside it: log moves below, same table:)                     |
 |  +-------------------------------------------+                                       |
 |  |              renderer canvas              |                                       |
 |  +-------------------------------------------+                                       |
@@ -122,7 +122,7 @@ A running decision log shows the agent's per-tick actions as the session plays. 
 
 The log's placement is responsive and driven by the canvas, not the viewport alone. It sits **alongside** the canvas when there is horizontal room left over after the canvas takes the size it wants. That is the common case for tall, narrow (vertical) canvases, which leave a column free. When the canvas is wide enough to claim the full width, the log **moves below** it and collapses by default, so it never forces the stage to shrink. The renderer is the star in both layouts, and the log only takes space the canvas does not want.
 
-In the alongside layout the two columns read as a matched pair. Neither carries a section heading — the environment is already named in the tab strip and the log heads its own columns — so the canvas and the log table both start at the top of the row, and the log's height matches the canvas beside it, scrolling within that height rather than stopping short. The canvas declares its intrinsic aspect ratio (the same renderer metadata below), which fixes the canvas height and so the height the log fills.
+In the alongside layout the two columns read as a matched pair. Neither carries a section heading: the environment is already named in the tab strip and the log heads its own columns: so the canvas and the log table both start at the top of the row, and the log's height matches the canvas beside it, scrolling within that height rather than stopping short. The canvas declares its intrinsic aspect ratio (the same renderer metadata below), which fixes the canvas height and so the height the log fills.
 
 The metadata above the stage is a single compact inline strip of the run's own facts (mode, score, ticks, dates), not a stacked block. It deliberately omits what the surrounding chrome already states, so none of those repeat in the strip: the environment is in the context line, the recording id is in the URL, the end reason titles the end card, and pin state is shown by the pin button. On the replay page the pin control sits at the trailing edge of the transport bar; on the live page it stays in the end-of-session card beside the replay link.
 

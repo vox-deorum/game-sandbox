@@ -4,10 +4,10 @@ Part of [Stage 3](../stage-03-backend-and-live-sessions.md). This file defines f
 
 ## The interface
 
-`driver/index.ts` holds types only — no implementation imports. `ExecutionDriver` has two methods:
+`driver/index.ts` holds types only: no implementation imports. `ExecutionDriver` has two methods:
 
-- `ensureImage(spec: ImageSpec): Promise<ImageRef>` — build or fetch the image for a spec. Whether an existing image is reused or rebuilt is driver configuration, not caller policy. This stage's only spec kind is `{kind: 'session-base', depsVersion}`; Stage 5 adds the submission-overlay kind on top.
-- `launch(spec: LaunchSpec): Promise<SessionProcess>` — `LaunchSpec` is the image ref, the argv appended to the image entrypoint (the session config, see [transport-and-live-runner.md](transport-and-live-runner.md)), the sandbox profile, and the session id for labeling.
+- `ensureImage(spec: ImageSpec): Promise<ImageRef>`: build or fetch the image for a spec. Whether an existing image is reused or rebuilt is driver configuration, not caller policy. This stage's only spec kind is `{kind: 'session-base', depsVersion}`; Stage 5 adds the submission-overlay kind on top.
+- `launch(spec: LaunchSpec): Promise<SessionProcess>`: `LaunchSpec` is the image ref, the argv appended to the image entrypoint (the session config, see [transport-and-live-runner.md](transport-and-live-runner.md)), the sandbox profile, and the session id for labeling.
 
 Confirmed during the build: `LaunchSpec` also carries an optional `entrypoint` that _replaces_ the image entrypoint. The orchestrator never sets it, since a session always runs the live-runner entrypoint with the config as argv. The driver-level sandbox tests (memory quota, no network) do set it, to run an arbitrary command in the base image, which keeps the production image free of test hooks. A Kubernetes driver maps it onto a container `command` the same way.
 
@@ -24,13 +24,13 @@ Each driver maps the profile onto its platform.
 
 `SessionProcess` is the launched session, and it carries the transport decision confirmed at stage start: the bidirectional channel between backend and container is part of the driver abstraction, not something the layer above selects. The interface promises an ordered, line-delimited, bidirectional text channel and says nothing about how it is carried:
 
-- `output: AsyncIterable<string>` — newline-stripped UTF-8 protocol lines out of the session.
-- `send(line: string): void` — one protocol line into the session.
-- `diagnostics: AsyncIterable<string>` — log output for the backend logger, never parsed as protocol.
-- `exited: Promise<ExitInfo>` — exit code plus a driver-neutral `oomKilled` flag (Kubernetes reports OOMKilled too).
-- `kill(graceMs): Promise<void>` — forceful teardown, escalating from polite stop to hard kill. Graceful session end is a protocol concern (the `stop` command); `kill` is the orchestrator's backstop.
+- `output: AsyncIterable<string>`: newline-stripped UTF-8 protocol lines out of the session.
+- `send(line: string): void`: one protocol line into the session.
+- `diagnostics: AsyncIterable<string>`: log output for the backend logger, never parsed as protocol.
+- `exited: Promise<ExitInfo>`: exit code plus a driver-neutral `oomKilled` flag (Kubernetes reports OOMKilled too).
+- `kill(graceMs): Promise<void>`: forceful teardown, escalating from polite stop to hard kill. Graceful session end is a protocol concern (the `stop` command); `kill` is the orchestrator's backstop.
 
-The local Docker driver carries the channel over attached stdio; a Kubernetes driver may use attach, exec, or a sidecar — nothing above the interface may assume stdio, file descriptors, ports, or any other Docker semantics.
+The local Docker driver carries the channel over attached stdio; a Kubernetes driver may use attach, exec, or a sidecar: nothing above the interface may assume stdio, file descriptors, ports, or any other Docker semantics.
 
 ## The local Docker driver
 
@@ -60,7 +60,7 @@ Several details were confirmed during the build (`backend/images/session-base/de
 
 ## Keeping Docker inside the driver
 
-Biome's `noRestrictedImports` rule denies `dockerode`, `child_process`, and `node:child_process` across `backend/src`, and the existing Biome CI check enforces it on every PR — the parent file's exit criterion. The same rule confines `kysely` and `better-sqlite3` to `backend/src/storage/`, per [backend-skeleton-and-storage.md](backend-skeleton-and-storage.md), so both isolation boundaries are one configuration.
+Biome's `noRestrictedImports` rule denies `dockerode`, `child_process`, and `node:child_process` across `backend/src`, and the existing Biome CI check enforces it on every PR: the parent file's exit criterion. The same rule confines `kysely` and `better-sqlite3` to `backend/src/storage/`, per [backend-skeleton-and-storage.md](backend-skeleton-and-storage.md), so both isolation boundaries are one configuration.
 
 The configuration is three `overrides` in the root `biome.jsonc`, partitioned by `includes` (with negated globs) so that every `backend/src` file matches exactly one and the restricted-import sets never have to merge:
 
@@ -70,4 +70,4 @@ The configuration is three `overrides` in the root `biome.jsonc`, partitioned by
 
 `driver/index.ts` is type-only and imports nothing restricted, which is what keeps the Kubernetes driver a pure addition: it implements the same interface in a sibling folder and the orchestrator never changes.
 
-This required moving the repo from Biome 1.9.4 to 2.4.16, where `noRestrictedImports` is stable in the `style` group rather than the 1.9 nursery, so the stage-start fallback (an import-scan check in `scripts/ci.py`) is unnecessary and dropped. The config is `biome.jsonc`, not `biome.json`, because the override partition carries an explanatory comment, and Biome silently ignores comments in a plain `.json` config — the rule then quietly stops applying. The `.jsonc` extension is the supported way to comment a Biome config. A side note for anyone extending the rule: `noRestrictedImports` flags imports that bind a value or namespace, not bare side-effect imports (`import 'pkg'`).
+This required moving the repo from Biome 1.9.4 to 2.4.16, where `noRestrictedImports` is stable in the `style` group rather than the 1.9 nursery, so the stage-start fallback (an import-scan check in `scripts/ci.py`) is unnecessary and dropped. The config is `biome.jsonc`, not `biome.json`, because the override partition carries an explanatory comment, and Biome silently ignores comments in a plain `.json` config: the rule then quietly stops applying. The `.jsonc` extension is the supported way to comment a Biome config. A side note for anyone extending the rule: `noRestrictedImports` flags imports that bind a value or namespace, not bare side-effect imports (`import 'pkg'`).

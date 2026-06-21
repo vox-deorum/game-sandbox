@@ -19,22 +19,22 @@ Adding an environment means adding a sibling directory and touching nothing else
 
 ## Single-agent games: the adapter
 
-A natively single-agent `gymnasium.Env` is lifted into a one-slot AEC environment by `GymnasiumToAEC` in `single_agent.py`. It forwards the seed to the underlying env on reset (the seeding contract every environment must honor) and delegates stepping, observation, and termination bookkeeping. The single slot id is `player_0` — slot ids are PettingZoo agent ids verbatim, in state objects, metadata, and the harness API alike. Your factory just wraps your `gymnasium.make(...)` in this adapter. Multi-agent games subclass `pettingzoo.AECEnv` directly and skip the adapter.
+A natively single-agent `gymnasium.Env` is lifted into a one-slot AEC environment by `GymnasiumToAEC` in `single_agent.py`. It forwards the seed to the underlying env on reset (the seeding contract every environment must honor) and delegates stepping, observation, and termination bookkeeping. The single slot id is `player_0`: slot ids are PettingZoo agent ids verbatim, in state objects, metadata, and the harness API alike. Your factory just wraps your `gymnasium.make(...)` in this adapter. Multi-agent games subclass `pettingzoo.AECEnv` directly and skip the adapter.
 
 ## The factory and the default action
 
-`env.py` exposes `make_env()`, a zero-argument factory that returns a fresh AEC env; the seed arrives at `reset`, not here. It also defines the environment's **default action** — the legal move the loop applies on every timeout path (noop for Flappy Bird, but a real game might return the lowest legal card). Keep `env.py` import-self-contained (relative and third-party imports only): the generate script copies it verbatim into the student template's `sandbox_env/`, so it must not import the harness.
+`env.py` exposes `make_env()`, a zero-argument factory that returns a fresh AEC env; the seed arrives at `reset`, not here. It also defines the environment's **default action**: the legal move the loop applies on every timeout path (noop for Flappy Bird, but a real game might return the lowest legal card). Keep `env.py` import-self-contained (relative and third-party imports only): the generate script copies it verbatim into the student template's `sandbox_env/`, so it must not import the harness.
 
 ## The overlay
 
-The renderer never sees pixels, so the per-step `overlay` must carry everything the frontend needs to draw the frame. `overlay.py` exposes `extract_overlay(env)` returning a JSON-able dict of unnormalized display data (for Flappy Bird: the bird's position/velocity/rotation, the pipe coordinates, the score, and the screen dimensions). Reaching into a third-party package's internals is acceptable only here, inside the environment's own wrapper, against a pinned version, and **must** be covered by a test asserting every overlay field exists and is finite — so an upstream upgrade that breaks the internals fails the test before it breaks the renderer.
+The renderer never sees pixels, so the per-step `overlay` must carry everything the frontend needs to draw the frame. `overlay.py` exposes `extract_overlay(env)` returning a JSON-able dict of unnormalized display data (for Flappy Bird: the bird's position/velocity/rotation, the pipe coordinates, the score, and the screen dimensions). Reaching into a third-party package's internals is acceptable only here, inside the environment's own wrapper, against a pinned version, and **must** be covered by a test asserting every overlay field exists and is finite: so an upstream upgrade that breaks the internals fails the test before it breaks the renderer.
 
 ## The registry entry
 
 `__init__.py` ties it together with two frozen dataclasses from `game_sandbox_harness.environment`:
 
-- **`EnvironmentMeta`** — pure, serialisable, public-facing data the backend serves to the frontend. Its `to_json()` output must round-trip through `json.dumps`.
-- **`EnvironmentEntry`** — `meta` plus the non-serialisable hooks: `make`, `default_action`, and the optional `overlay`.
+- **`EnvironmentMeta`**: pure, serialisable, public-facing data the backend serves to the frontend. Its `to_json()` output must round-trip through `json.dumps`.
+- **`EnvironmentEntry`**: `meta` plus the non-serialisable hooks: `make`, `default_action`, and the optional `overlay`.
 
 This is the only environment module that imports the harness, which is why it is **not** synced into the student template.
 
@@ -81,4 +81,4 @@ Pair it with an environment-level determinism test (two resets with the same see
 
 ## Syncing to the template
 
-Students run your environment locally against vanilla PettingZoo, so the import-self-contained modules (`single_agent.py`, `env.py`, `overlay.py`) are copied into that environment's template layer at `templates/<env>/sandbox_env/` by `scripts/generate.py`, and the staleness CI job keeps the copy current. Only the steppable environment is synced — never the harness, recording store, or metadata layer. Register the env id and its synced module list in `scripts/_paths.py` `TEMPLATE_ENVS`, give it generated `__init__` texts in `scripts/generate.py` (the top-level `sandbox_env/__init__.py` exposes the uniform `make_env`/`ENV_ID`/`PLAYER_SLOT` surface the env-agnostic template scripts read), then run `uv run python scripts/generate.py` after changing any synced module. The full template-layer checklist lives in [Examples and the template](examples-and-template.md).
+Students run your environment locally against vanilla PettingZoo, so the import-self-contained modules (`single_agent.py`, `env.py`, `overlay.py`) are copied into that environment's template layer at `templates/<env>/sandbox_env/` by `scripts/generate.py`, and the staleness CI job keeps the copy current. Only the steppable environment is synced: never the harness, recording store, or metadata layer. Register the env id and its synced module list in `scripts/_paths.py` `TEMPLATE_ENVS`, give it generated `__init__` texts in `scripts/generate.py` (the top-level `sandbox_env/__init__.py` exposes the uniform `make_env`/`ENV_ID`/`PLAYER_SLOT` surface the env-agnostic template scripts read), then run `uv run python scripts/generate.py` after changing any synced module. The full template-layer checklist lives in [Examples and the template](examples-and-template.md).

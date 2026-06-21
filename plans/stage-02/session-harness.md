@@ -23,8 +23,8 @@ harness/src/game_sandbox_harness/
 
 `run_episode` takes a mapping from slot id to a binding, one of two kinds:
 
-- `AgentSlot(agent)` — a loaded agent driven by the agent timeout machinery below.
-- `ExternalSlot(source, timeout_ms=None)` — a slot fed from outside, which is what "human" means to the harness. `ActionSource` is a protocol: `get_action(slot_id, observation, deadline_ms) -> action | None`. The source may block up to the deadline, as Stage 3's transport-backed source will. Returning `None` means no input arrived, and the harness applies `entry.default_action(slot_id)` — noop for Flappy Bird, a legal default move for a later turn-based game. The slot's `timeout_ms` defaults from `meta.human_timeout_ms`. When the environment has a pace interval, the interval is the deadline, per [interaction.md](../../docs/specs/interaction.md).
+- `AgentSlot(agent)`: a loaded agent driven by the agent timeout machinery below.
+- `ExternalSlot(source, timeout_ms=None)`: a slot fed from outside, which is what "human" means to the harness. `ActionSource` is a protocol: `get_action(slot_id, observation, deadline_ms) -> action | None`. The source may block up to the deadline, as Stage 3's transport-backed source will. Returning `None` means no input arrived, and the harness applies `entry.default_action(slot_id)`: noop for Flappy Bird, a legal default move for a later turn-based game. The slot's `timeout_ms` defaults from `meta.human_timeout_ms`. When the environment has a pace interval, the interval is the deadline, per [interaction.md](../../docs/specs/interaction.md).
 
 The two paths are deliberately separate machinery, as the exit criteria demand. External slots never consult the per-step agent limit, and their `None`-fallback involves no measurement or overage accounting. Stage 2 ships two trivial sources: `NoopSource` (always `None`) and `ScriptedSource` (replays a list). That is enough to drive the human path through the programmatic API today.
 
@@ -42,18 +42,18 @@ The per-episode limit is a cumulative budget of measured agent compute (`act` pl
 
 `run_episode(entry, slots, *, seed, store=None, recording_id=None, clock=SystemClock(), step_limit_ms=None, episode_limit_ms=None, max_steps=None) -> EpisodeResult`. (`max_steps` backs the CLI's `--steps` cap and truncates the episode with reason `truncated`; the default clock is constructed lazily as `SystemClock()` when `clock` is `None`.)
 
-Reset seeds everything: `env.reset(seed=seed)`, then each agent's `reset(seed)`. The loop is PettingZoo's agent-environment cycle. For each acting slot, it takes the clock, obtains an action (agent path or external path above), steps the environment, calls `learn` if present, assembles one per-step state, validates-and-writes it through the Stage 1 `RecordingWriter`, and advances `tick`. There is one state line per environment step. The `agents` object carries the acting slot's entry — display observation if the entry provides one, action, reward, cumulative score, and `decision_ms` — and `overlay` comes from `entry.overlay(env)` when the hook exists. There is no pacing anywhere in this function: the pace interval is metadata that Stage 3's live loop reads to schedule calls into the same step machinery, and the local CLI steps as fast as the agent acts. The header records the environment id, the seed, and `created_at` from the injected clock.
+Reset seeds everything: `env.reset(seed=seed)`, then each agent's `reset(seed)`. The loop is PettingZoo's agent-environment cycle. For each acting slot, it takes the clock, obtains an action (agent path or external path above), steps the environment, calls `learn` if present, assembles one per-step state, validates-and-writes it through the Stage 1 `RecordingWriter`, and advances `tick`. There is one state line per environment step. The `agents` object carries the acting slot's entry: display observation if the entry provides one, action, reward, cumulative score, and `decision_ms`: and `overlay` comes from `entry.overlay(env)` when the hook exists. There is no pacing anywhere in this function: the pace interval is metadata that Stage 3's live loop reads to schedule calls into the same step machinery, and the local CLI steps as fast as the agent acts. The header records the environment id, the seed, and `created_at` from the injected clock.
 
-`EpisodeResult` reports ticks played, final score per slot, the termination reason (`terminated`, `truncated`, `episode_limit`), per-slot step-timeout counts, and the recording id when a store was given. Recording is optional precisely so the template's evaluation harness pattern — run many seeds, keep scores, store nothing — is the same code path.
+`EpisodeResult` reports ticks played, final score per slot, the termination reason (`terminated`, `truncated`, `episode_limit`), per-slot step-timeout counts, and the recording id when a store was given. Recording is optional precisely so the template's evaluation harness pattern: run many seeds, keep scores, store nothing: is the same code path.
 
 ## The CLI
 
 `python -m game_sandbox_harness.cli` is the development runner. Its flags are:
 
-- `--env flappy_bird` — resolved through the entry-point registry.
-- `--agent <repo-root>` — load a manifest agent, or `--source noop|scripted:<file>` to drive the slot externally.
+- `--env flappy_bird`: resolved through the entry-point registry.
+- `--agent <repo-root>`: load a manifest agent, or `--source noop|scripted:<file>` to drive the slot externally.
 - `--seed`.
-- `--record <dir>` — a `FolderRecordingStore` root; recording id defaults to `<env>-seed<seed>-<created_at>`.
-- `--steps` — cap an episode.
+- `--record <dir>`: a `FolderRecordingStore` root; recording id defaults to `<env>-seed<seed>-<created_at>`.
+- `--steps`: cap an episode.
 
 It prints the `EpisodeResult` summary and the recording id. The CLI is a thin argument-parsing shell over `run_episode`: anything the CLI can do, Stage 3 can do programmatically, which is the point.

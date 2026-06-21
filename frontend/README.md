@@ -9,4 +9,4 @@ npm run check    # biome check + vue-tsc --noEmit
 npm test         # Vitest (jsdom)
 ```
 
-From the repo root, `npm start` builds this bundle and launches the backend serving it on `:8080` — a single command for the whole stack (a Docker daemon is still required to actually run sessions).
+From the repo root, `npm start` builds this bundle and launches the backend serving it on `:8080`: a single command for the whole stack (a Docker daemon is still required to actually run sessions).
