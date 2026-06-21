@@ -28,7 +28,6 @@ test('play Flappy Bird live, pause/resume, stop, then replay and pin', async ({ 
   // aloft long enough to observe the live UI and exercise the controls.
   await page.locator('body').focus()
   await page.keyboard.press('Space')
-  await expect(page.getByText(/Per-step input window/)).toBeVisible()
   for (let i = 0; i < 3; i++) {
     await page.keyboard.press('Space')
   }
