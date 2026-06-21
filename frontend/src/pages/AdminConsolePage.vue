@@ -19,9 +19,10 @@ import {
   type AdminSeasonView,
   declareSeason,
   getAdminSeason,
+  listSeasons,
+  type PublicSeasonView,
   renameSeason,
   type SeasonView,
-  listAdminSeasons,
 } from '../api/client.js'
 import SeasonConfigEditor from '../components/admin/SeasonConfigEditor.vue'
 import SeasonLifecycleControls from '../components/admin/SeasonLifecycleControls.vue'
@@ -42,7 +43,7 @@ const { meta } = useEnvironmentMeta(envId)
 type Access = 'loading' | 'denied' | 'ready'
 const access = ref<Access>('loading')
 
-const seasons = ref<SeasonView[]>([])
+const seasons = ref<PublicSeasonView[]>([])
 const selectedId = ref<string | null>(null)
 const view = ref<AdminSeasonView | null>(null)
 const loadingDetail = ref(false)
@@ -77,7 +78,7 @@ onMounted(async () => {
 })
 
 async function loadSeasons(): Promise<void> {
-  seasons.value = await listAdminSeasons(envId)
+  seasons.value = await listSeasons(envId, { includeUnreleased: true })
   if (selectedId.value === null && seasons.value.length > 0) {
     selectedId.value = seasons.value[0]!.id
   }
@@ -121,7 +122,7 @@ async function refresh(updated?: SeasonView): Promise<void> {
   if (updated !== undefined && view.value !== null) {
     view.value = { ...view.value, season: updated }
   }
-  seasons.value = await listAdminSeasons(envId)
+  seasons.value = await listSeasons(envId, { includeUnreleased: true })
   await loadDetail()
 }
 
@@ -138,7 +139,7 @@ async function declare(): Promise<void> {
   }
 }
 
-function seasonLabel(season: SeasonView): string {
+function seasonLabel(season: { id: string; label: string | null }): string {
   return season.label ?? `Season: ${season.id.slice(0, 8)}`
 }
 

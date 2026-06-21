@@ -197,14 +197,14 @@ The operator admin routes (`admin/routes.ts`) are the stable contract the admin 
 - `POST /api/admin/seasons/:id/release` | `…/unrelease` — flip `release_status`, stamping `released_at` once.
 - `POST /api/admin/seasons/:id/runs` — trigger/re-run: snapshot config/deps/roster, build and persist the schedule, enqueue the run on the runner seam, and return `{id, status}` without blocking on Docker; `409 empty_schedule` for an empty resolved schedule, `409 run_in_progress` when a run is already `pending`/`running`.
 - `POST /api/admin/seasons/:id/runs/:runId/cancel` — request a cooperative cancel through the runner; `409 run_not_in_progress` for a terminal run, `404` when the run is not the season's.
-- `GET /api/admin/seasons/:id` — the full admin view `{season, latest_run, board}` (decoded config, the latest run with its per-game statuses, and the `automated`/`human` board aggregates even while unreleased); `GET /api/admin/environments/:envId/seasons` lists all seasons including unreleased ones.
+- `GET /api/admin/seasons/:id` — the full admin view `{season, latest_run, board}` (decoded config, the latest run with its per-game statuses, and the `automated`/`human` board aggregates even while unreleased). To list every season for an environment, including unreleased ones, operators call the public `GET /api/seasons?envId=…&includeUnreleased=true` (see the public reads below).
 - `GET /api/admin/seasons/:id/runs/:runId/logs/ws` — the WebSocket log stream, reusing the session-streaming transport; it subscribes to the runner and relays live `log`/`game_status`/`terminal` events, closing on the terminal (and sending an immediate terminal for an already-finished run).
 
-### The public leaderboard reads
+### The leaderboard reads
 
-Separate and ungated (`leaderboards/routes.ts`). The season index may include open unreleased seasons, while board and history reads are released-only at the route boundary:
+These live outside the `/api/admin` prefix in `leaderboards/routes.ts`. Their public forms are ungated. The season index may include open unreleased seasons, while board and history reads are released-only at the route boundary; the all-season index variant is explicitly operator-gated:
 
-- `GET /api/seasons` — every public-facing season, optionally filtered by environment, with identity, label, public gates, timestamps, active non-superseded submission count, and ended attributed session count. Configuration, rating prompts, and boards are excluded.
+- `GET /api/seasons` — every public-facing season, optionally filtered by environment, with identity, label, public gates, timestamps, active non-superseded submission count, and ended attributed session count. Configuration, rating prompts, and boards are excluded. An operator may pass `?includeUnreleased=true` to also receive unreleased and fully-private seasons (the leaderboards page and admin console use this); a non-operator who passes the flag is refused with `403 not_operator`.
 - `GET /api/environments/:envId/seasons` — released seasons, newest first, for history links.
 - `GET /api/environments/:envId/leaderboards` — the current released season and both boards, plus the separate `submission_season_id` and `play_season_id` targets (reported even when unreleased); an empty current-board payload when nothing is released. The `human` board is the ranked aggregate (`getHumanBoard`): agents with at least three ratings carry a 1-based `rank`, the rest follow `rank: null`.
 - `GET /api/environments/:envId/seasons/:seasonId/leaderboards` — both boards for a specific released season; `404` for an unreleased or unknown one.

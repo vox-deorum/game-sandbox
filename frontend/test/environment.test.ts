@@ -19,7 +19,7 @@ vi.mock('../src/api/client.js', () => ({
   listReleasedSeasons: vi.fn().mockResolvedValue([]),
   // And the cross-game public seasons, to name the live play-open / submission-open seasons in the
   // header; default to empty so those badges stay off unless a test sets it.
-  listPublicSeasons: vi.fn().mockResolvedValue([]),
+  listSeasons: vi.fn().mockResolvedValue([]),
   // The WatchAgentPicker lists the active ready agents; default it to empty. Submission moved off the
   // hub to the Submit / My Agent tab (the agent profile), so the hub no longer mounts the submit form.
   listActiveSubmissions: vi.fn().mockResolvedValue([]),
@@ -29,8 +29,8 @@ import {
   getEnvironmentLeaderboards,
   getEnvironments,
   getMe,
-  listPublicSeasons,
   listRecordings,
+  listSeasons,
   startSession,
 } from '../src/api/client.js'
 import EnvironmentPage from '../src/pages/EnvironmentPage.vue'
@@ -60,7 +60,7 @@ describe('EnvironmentPage', () => {
     vi.clearAllMocks()
     vi.mocked(getEnvironments).mockResolvedValue([META])
     vi.mocked(listRecordings).mockResolvedValue([])
-    vi.mocked(listPublicSeasons).mockResolvedValue([])
+    vi.mocked(listSeasons).mockResolvedValue([])
     // Default: a season is play-open (so the watch/play entry points are enabled) but nothing is
     // released yet. Individual tests override this to exercise the closed-play and released states.
     vi.mocked(getEnvironmentLeaderboards).mockResolvedValue({
@@ -103,7 +103,7 @@ describe('EnvironmentPage', () => {
       allowlisted: true,
       is_operator: false,
     })
-    vi.mocked(listPublicSeasons).mockResolvedValue([
+    vi.mocked(listSeasons).mockResolvedValue([
       {
         id: 'iter-1',
         env_id: 'flappy_bird',

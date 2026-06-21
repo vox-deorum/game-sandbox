@@ -8,14 +8,14 @@ import { memoryRouter, renderWithMe } from './helpers/render.js'
 vi.mock('../src/api/client.js', () => ({
   getEnvironments: vi.fn(),
   getMe: vi.fn(),
-  listPublicSeasons: vi.fn(),
+  listSeasons: vi.fn(),
 }))
 
 vi.mock('../src/renderers/registry.js', () => ({
   thumbnailFor: vi.fn(() => '/assets/flappy-thumb.svg'),
 }))
 
-import { getEnvironments, getMe, listPublicSeasons } from '../src/api/client.js'
+import { getEnvironments, getMe, listSeasons } from '../src/api/client.js'
 import SeasonsPage from '../src/pages/SeasonsPage.vue'
 import { thumbnailFor } from '../src/renderers/registry.js'
 
@@ -62,7 +62,7 @@ describe('SeasonsPage', () => {
   })
 
   it('renders active gate actions, the thumbnail, and the complete metadata line', async () => {
-    vi.mocked(listPublicSeasons).mockResolvedValue([
+    vi.mocked(listSeasons).mockResolvedValue([
       season({
         id: 'released',
         label: 'Released round',
@@ -105,7 +105,7 @@ describe('SeasonsPage', () => {
   })
 
   it('uses released, submission, then play priority and omits inactive gate tags', async () => {
-    vi.mocked(listPublicSeasons).mockResolvedValue([
+    vi.mocked(listSeasons).mockResolvedValue([
       season({
         id: 'released',
         label: 'Released round',

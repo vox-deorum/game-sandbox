@@ -11,7 +11,7 @@ import {
   getRecording,
   getSeasonLeaderboards,
   getSessionRatings,
-  listPublicSeasons,
+  listSeasons,
   openSubmissions,
   pinRecording,
   type SeasonConfig,
@@ -208,8 +208,16 @@ describe('api client', () => {
       },
     ]
     const fetchMock = stubFetch(async () => jsonResponse(payload))
-    expect(await listPublicSeasons('flappy bird')).toEqual(payload)
-    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/seasons?envId=flappy%20bird')
+    expect(await listSeasons('flappy bird')).toEqual(payload)
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/seasons?envId=flappy+bird')
+  })
+
+  it('adds includeUnreleased=true for an operator season listing', async () => {
+    const fetchMock = stubFetch(async () => jsonResponse([]))
+    await listSeasons('flappy_bird', { includeUnreleased: true })
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      '/api/seasons?envId=flappy_bird&includeUnreleased=true',
+    )
   })
 
   it('maps a 404 season leaderboards read (unreleased) to undefined', async () => {

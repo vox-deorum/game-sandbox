@@ -15,7 +15,14 @@ import type {
   SetSubmissionStatusResult,
   UpdateSeasonConfigResult,
 } from '../index.js'
-import type { Database, PublicSeason, ReleaseStatus, Season, WindowStatus } from '../schema.js'
+import type {
+  Database,
+  PublicSeason,
+  ReleaseStatus,
+  Season,
+  SeasonScope,
+  WindowStatus,
+} from '../schema.js'
 import {
   decodeSeasonConfig,
   emptySeasonConfig,
@@ -288,18 +295,6 @@ export async function setReleaseStatus(
     .executeTakeFirstOrThrow()
 }
 
-export async function listSeasons(
-  db: Kysely<Database>,
-  envId: string,
-  options?: { includeUnreleased?: boolean },
-): Promise<Season[]> {
-  let query = db.selectFrom('seasons').selectAll().where('env_id', '=', envId)
-  if (!(options?.includeUnreleased ?? false)) {
-    query = query.where('release_status', '=', 'released')
-  }
-  return await query.orderBy('created_at', 'desc').orderBy(sql`rowid`, 'desc').execute()
-}
-
 export async function getReleasedSeason(
   db: Kysely<Database>,
   envId: string,
@@ -314,14 +309,16 @@ export async function getReleasedSeason(
     .executeTakeFirst()
 }
 
-export async function listPublicSeasons(
+export async function listSeasons(
   db: Kysely<Database>,
-  options?: { envId?: string },
+  options?: { envId?: string; scope?: SeasonScope },
 ): Promise<PublicSeason[]> {
-  // Any season with at least one public-facing flag — released, accepting submissions, or open for
-  // play — newest first, optionally narrowed to a single environment. Correlated count subqueries
-  // keep the public metadata in this one listing query: active submissions exclude superseded
-  // attempts, and sessions count only completed public watch/play sessions attributed to the season.
+  // Seasons newest first, optionally narrowed to a single environment, with the public activity
+  // counts always computed in this one listing query: active submissions exclude superseded attempts,
+  // and sessions count only completed public watch/play sessions attributed to the season. The
+  // `scope` controls which seasons are visible — `'all'` reaches fully-private unreleased seasons and
+  // is gated to operators at the route boundary.
+  const scope = options?.scope ?? 'released'
   let query = db
     .selectFrom('seasons')
     .selectAll()
@@ -339,13 +336,17 @@ export async function listPublicSeasons(
         .where('sessions.status', '=', 'ended')
         .as('session_count'),
     ])
-    .where((eb) =>
+  if (scope === 'released') {
+    query = query.where('release_status', '=', 'released')
+  } else if (scope === 'public') {
+    query = query.where((eb) =>
       eb.or([
         eb('release_status', '=', 'released'),
         eb('submission_status', '=', 'open'),
         eb('play_status', '=', 'open'),
       ]),
     )
+  }
   if (options?.envId !== undefined) {
     query = query.where('env_id', '=', options.envId)
   }

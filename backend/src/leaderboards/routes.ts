@@ -8,12 +8,15 @@
  */
 import type { FastifyInstance } from 'fastify'
 
+import { isOperator, resolveUserId } from '../identity.js'
 import { publicSeasonView, seasonView } from '../season-views.js'
 import type { Storage } from '../storage/index.js'
 
 /** Everything the public leaderboard reads need. */
 export interface LeaderboardDeps {
   storage: Storage
+  /** The operator allowlist gating the `includeUnreleased` season listing; `isOperator` consults it. */
+  operatorAllowlist: readonly string[]
 }
 
 /** Read both boards for a released season: the automated aggregate and the human-rating aggregate. */
@@ -31,19 +34,35 @@ export function registerLeaderboardRoutes(app: FastifyInstance, deps: Leaderboar
   // cross-game seasons list. Pass `?envId=` to narrow to a single environment (the hub uses this).
   // Returns identity, labels, flags, timestamps, and aggregate submission/session counts only.
   // Config, rating prompts, and boards are excluded; boards stay reachable only through the
-  // released-only season-boards route below.
-  app.get<{ Querystring: { envId?: string } }>('/api/seasons', async (request, reply) => {
-    const seasons = await deps.storage.listPublicSeasons({ envId: request.query.envId })
-    return reply.code(200).send(seasons.map(publicSeasonView))
-  })
+  // released-only season-boards route below. Operators may pass `?includeUnreleased=true` to also
+  // receive unreleased and fully-private seasons (the leaderboards page and admin console use this);
+  // a non-operator who passes the flag is refused, mirroring the `/api/admin` gate.
+  app.get<{ Querystring: { envId?: string; includeUnreleased?: string } }>(
+    '/api/seasons',
+    async (request, reply) => {
+      const includeUnreleased = request.query.includeUnreleased === 'true'
+      if (includeUnreleased) {
+        const userId = resolveUserId(request.headers, request.query as Record<string, string>)
+        if (!isOperator(userId, deps.operatorAllowlist)) {
+          return reply.code(403).send({ error: 'operator access required', code: 'not_operator' })
+        }
+      }
+      const seasons = await deps.storage.listSeasons({
+        envId: request.query.envId,
+        scope: includeUnreleased ? 'all' : 'public',
+      })
+      return reply.code(200).send(seasons.map(publicSeasonView))
+    },
+  )
 
   // Released seasons for an environment, newest first, for history links. Unreleased seasons
-  // are filtered at the storage boundary (`includeUnreleased: false`).
+  // are filtered at the storage boundary (`scope: 'released'`).
   app.get<{ Params: { envId: string } }>(
     '/api/environments/:envId/seasons',
     async (request, reply) => {
-      const seasons = await deps.storage.listSeasons(request.params.envId, {
-        includeUnreleased: false,
+      const seasons = await deps.storage.listSeasons({
+        envId: request.params.envId,
+        scope: 'released',
       })
       return reply.code(200).send(seasons.map(seasonView))
     },
@@ -104,7 +123,7 @@ export function registerLeaderboardRoutes(app: FastifyInstance, deps: Leaderboar
     async (request, reply) => {
       const { envId, ownerId } = request.params
       const [releasedSeasons, submissions] = await Promise.all([
-        deps.storage.listSeasons(envId, { includeUnreleased: false }),
+        deps.storage.listSeasons({ envId, scope: 'released' }),
         deps.storage.listSubmissionsByUser(ownerId, envId),
       ])
       const releasedSeasonIds = new Set(releasedSeasons.map((season) => season.id))

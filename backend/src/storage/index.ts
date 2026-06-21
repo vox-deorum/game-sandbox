@@ -22,6 +22,7 @@ import type {
   Season,
   SeasonRun,
   SeasonRunGame,
+  SeasonScope,
   Session,
   SessionMode,
   SessionSubmission,
@@ -50,6 +51,7 @@ export type {
   Season,
   SeasonRun,
   SeasonRunGame,
+  SeasonScope,
   SeasonStatus,
   Session,
   SessionMode,
@@ -343,19 +345,15 @@ export interface Storage {
   setPlayStatus(id: string, status: WindowStatus): Promise<SetPlayStatusResult>
   /** Set the release status, stamping `released_at` on the first release and leaving it stable after. */
   setReleaseStatus(id: string, status: ReleaseStatus): Promise<Season>
-  /**
-   * An environment's seasons, newest first. Public reads pass `includeUnreleased: false` to hide
-   * unreleased boards/history; admin reads pass `true`.
-   */
-  listSeasons(envId: string, options?: { includeUnreleased?: boolean }): Promise<Season[]>
   /** The latest `released` season for an environment, ordered by `released_at`. */
   getReleasedSeason(envId: string): Promise<Season | undefined>
   /**
-   * Every season with a public-facing flag — `released`, submission-`open`, or play-`open` — newest
-   * first, optionally narrowed to a single environment. Backs the cross-game seasons list and the
-   * per-environment hub; labels and flags are public but the boards stay released-only.
+   * Seasons newest first, with public activity counts, optionally narrowed to one environment. The
+   * `scope` sets visibility: `'released'` (public boards/history), `'public'` (any public-facing flag
+   * — `released`, submission-`open`, or play-`open`), or `'all'` (every season, including
+   * fully-private unreleased ones — gated to operators at the route boundary).
    */
-  listPublicSeasons(options?: { envId?: string }): Promise<PublicSeason[]>
+  listSeasons(options?: { envId?: string; scope?: SeasonScope }): Promise<PublicSeason[]>
   /** Attribute an existing session to a season (the alternative to passing it at create time). */
   setSessionSeason(sessionId: string, seasonId: string): Promise<void>
 

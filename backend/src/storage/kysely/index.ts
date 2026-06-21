@@ -45,6 +45,7 @@ import type {
   Season,
   SeasonRun,
   SeasonRunGame,
+  SeasonScope,
   Session,
   SessionSubmission,
   Submission,
@@ -146,14 +147,11 @@ export class KyselyStorage implements Storage {
   setReleaseStatus(id: string, status: ReleaseStatus): Promise<Season> {
     return seasons.setReleaseStatus(this.db, id, status)
   }
-  listSeasons(envId: string, options?: { includeUnreleased?: boolean }): Promise<Season[]> {
-    return seasons.listSeasons(this.db, envId, options)
-  }
   getReleasedSeason(envId: string): Promise<Season | undefined> {
     return seasons.getReleasedSeason(this.db, envId)
   }
-  listPublicSeasons(options?: { envId?: string }): Promise<PublicSeason[]> {
-    return seasons.listPublicSeasons(this.db, options)
+  listSeasons(options?: { envId?: string; scope?: SeasonScope }): Promise<PublicSeason[]> {
+    return seasons.listSeasons(this.db, options)
   }
   setSessionSeason(sessionId: string, seasonId: string): Promise<void> {
     return seasons.setSessionSeason(this.db, sessionId, seasonId)

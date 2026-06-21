@@ -18,8 +18,8 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 import {
   type EnvironmentLeaderboards,
   getEnvironmentLeaderboards,
-  listPublicSeasons,
   listReleasedSeasons,
+  listSeasons,
   type PublicSeasonView,
   type SeasonView,
   startSession,
@@ -88,7 +88,7 @@ onMounted(() => {
       // its safe-closed default (leaderboards stays null).
     },
   )
-  listPublicSeasons(envId).then(
+  listSeasons(envId).then(
     (seasons) => {
       publicSeasons.value = seasons
     },

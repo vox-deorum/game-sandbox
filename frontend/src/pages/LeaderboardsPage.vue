@@ -5,8 +5,10 @@
   released season. The environment page embeds the current boards and links here for history.
 
   Every read here hits the public, released-only routes, so an unreleased season's boards never
-  appear: an unknown or unreleased season id resolves to a not-found message, never a board. The
-  history rail lists the released seasons newest-first and highlights the one in view.
+  appear: an unknown or unreleased season id resolves to a not-found message, never a board (an
+  operator may still preview one through the operator-only admin read). The history rail lists the
+  released seasons newest-first and highlights the one in view; an operator additionally sees the
+  environment's unreleased seasons there.
 -->
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
@@ -17,7 +19,7 @@ import {
   getAdminSeason,
   getEnvironmentLeaderboards,
   getSeasonLeaderboards,
-  listPublicSeasons,
+  listSeasons,
   type PublicSeasonView,
   type SeasonView,
 } from '../api/client.js'
@@ -38,8 +40,9 @@ const notReleased = ref(false)
 const failed = ref(false)
 const board = ref<Board | null>(null)
 const season = ref<SeasonView | null>(null)
-// Released seasons with their activity counts, newest first; backs the Seasons table and the
-// header annotation for the season in view (matched out of this same list by id).
+// The seasons listed in the Seasons table, newest first, with their activity counts; also backs the
+// header annotation for the season in view (matched out of this same list by id). Released-only for
+// the public, but every season (including unreleased ones) for an operator.
 const history = ref<PublicSeasonView[]>([])
 // True when the board shown is an unreleased season surfaced through the operator-only admin read,
 // so the page can flag it as not yet public. Only ever set for an operator viewing a specific season.
@@ -69,9 +72,12 @@ async function load(): Promise<void> {
   season.value = null
   operatorPreview.value = false
   try {
-    history.value = (await listPublicSeasons(envId)).filter(
-      (entry) => entry.release_status === 'released',
-    )
+    // Operators see every season for the environment — including unreleased and fully-private ones —
+    // so the history rail doubles as their season index; everyone else sees the released seasons only.
+    await me.whenSettled()
+    history.value = me.me?.is_operator
+      ? await listSeasons(envId, { includeUnreleased: true })
+      : (await listSeasons(envId)).filter((entry) => entry.release_status === 'released')
     if (requestedSeasonId.value !== undefined) {
       const result = await getSeasonLeaderboards(envId, requestedSeasonId.value)
       if (result === undefined) {
@@ -149,7 +155,7 @@ watch(requestedSeasonId, load, { immediate: true })
       <LeaderboardBoards v-else-if="board !== null" :board="board" :env-id="envId" />
     </main>
 
-    <section v-if="history.length > 0" class="leaderboards-history" aria-label="Released seasons">
+    <section v-if="history.length > 0" class="leaderboards-history" aria-label="Seasons">
       <h2 class="history-title">All Seasons</h2>
       <table class="history-table">
         <thead>

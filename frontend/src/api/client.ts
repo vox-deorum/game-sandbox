@@ -719,11 +719,22 @@ export async function listReleasedSeasons(envId: string): Promise<SeasonView[]> 
  * Every public-facing season — released, submission-open, or play-open — newest first, optionally
  * narrowed to a single environment. Backs the cross-game seasons list and the per-environment hub;
  * identity, labels, flags, timestamps, and aggregate activity counts only, never config, rating
- * prompts, or boards.
+ * prompts, or boards. Operators may pass `includeUnreleased` to also receive unreleased and
+ * fully-private seasons (the leaderboards page and admin console use this); the backend refuses the
+ * flag for non-operators.
  */
-export async function listPublicSeasons(envId?: string): Promise<PublicSeasonView[]> {
-  const path = envId === undefined ? '/seasons' : `/seasons?envId=${encodeURIComponent(envId)}`
-  return (await json(await request(path), 'GET /seasons')) as PublicSeasonView[]
+export async function listSeasons(
+  envId?: string,
+  options?: { includeUnreleased?: boolean },
+): Promise<PublicSeasonView[]> {
+  const params = new URLSearchParams()
+  if (envId !== undefined) params.set('envId', envId)
+  if (options?.includeUnreleased === true) params.set('includeUnreleased', 'true')
+  const query = params.toString()
+  return (await json(
+    await request(query === '' ? '/seasons' : `/seasons?${query}`),
+    'GET /seasons',
+  )) as PublicSeasonView[]
 }
 
 /**
@@ -757,14 +768,6 @@ export async function getAgentPlacements(envId: string, ownerId: string): Promis
 }
 
 // --- Operator admin console (gated server-side under /api/admin) ------------------------------
-
-/** Every season for the environment, including unreleased ones, for the console picker. */
-export async function listAdminSeasons(envId: string): Promise<SeasonView[]> {
-  return (await json(
-    await request(`/admin/environments/${encodeURIComponent(envId)}/seasons`),
-    'GET /api/admin/environments/:envId/seasons',
-  )) as SeasonView[]
-}
 
 /** The full admin view of one season: config, gates, latest run, and both (possibly unreleased) boards. */
 export async function getAdminSeason(seasonId: string): Promise<AdminSeasonView> {

@@ -440,6 +440,14 @@ export type PublicSeason = Season & {
   session_count: number
 }
 
+/**
+ * How wide a season listing reaches:
+ * - `'released'` — only `released` seasons (public boards/history).
+ * - `'public'` — any season with a public-facing flag (`released`, submission-`open`, or play-`open`).
+ * - `'all'` — every season, including fully-private unreleased ones (operator-only at the route layer).
+ */
+export type SeasonScope = 'released' | 'public' | 'all'
+
 /** A partial season update. */
 export type SeasonUpdate = Updateable<SeasonsTable>
 

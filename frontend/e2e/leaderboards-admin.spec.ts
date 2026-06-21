@@ -85,6 +85,21 @@ test('released leaderboard history is visible and navigates by season URL', asyn
   await expect(page.locator('.leaderboards-sub')).toContainText(`E2E older ${suffix}`)
 })
 
+test('operator leaderboard history includes unreleased seasons', async ({ page, request }) => {
+  const label = `E2E unreleased ${Date.now()}`
+  const season = await declareSeason(request, label)
+
+  await page.goto(`/environments/${ENV_ID}/leaderboards`)
+
+  const link = page.getByRole('link', { name: label })
+  await expect(link).toBeVisible()
+  await link.click()
+
+  await expect(page).toHaveURL(new RegExp(`/environments/${ENV_ID}/leaderboards/${season.id}$`))
+  await expect(page.locator('.leaderboards-sub')).toContainText(label)
+  await expect(page.getByText('Operator preview · unreleased')).toBeVisible()
+})
+
 test('the operator console tails a triggered workflow run', async ({ page, request }) => {
   test.setTimeout(180_000)
   const label = `E2E run ${Date.now()}`

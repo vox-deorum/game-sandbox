@@ -389,7 +389,10 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     operatorAllowlist: deps.operatorAllowlist,
     knownDepsVersions: deps.knownDepsVersions,
   })
-  registerLeaderboardRoutes(app, { storage: deps.storage })
+  registerLeaderboardRoutes(app, {
+    storage: deps.storage,
+    operatorAllowlist: deps.operatorAllowlist,
+  })
   // Participant ratings and the author's per-season rating prompt are attributed to the resolved
   // identity. Rating writes also use the public-session allowlist.
   registerRatingRoutes(app, {

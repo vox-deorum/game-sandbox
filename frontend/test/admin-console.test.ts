@@ -1,14 +1,20 @@
 import { fireEvent, screen, waitFor } from '@testing-library/vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { AdminSeasonView, Board, RunView, SeasonView } from '../src/api/client.js'
+import type {
+  AdminSeasonView,
+  Board,
+  PublicSeasonView,
+  RunView,
+  SeasonView,
+} from '../src/api/client.js'
 import { flappyMeta } from './helpers/fixtures.js'
 import { memoryRouter, renderWithMe } from './helpers/render.js'
 
 vi.mock('../src/api/client.js', () => ({
   getMe: vi.fn(),
   getEnvironments: vi.fn(),
-  listAdminSeasons: vi.fn(),
+  listSeasons: vi.fn(),
   getAdminSeason: vi.fn(),
   declareSeason: vi.fn(),
   renameSeason: vi.fn(),
@@ -32,7 +38,7 @@ import {
   getAdminSeason,
   getEnvironments,
   getMe,
-  listAdminSeasons,
+  listSeasons,
   openPlay,
   openSubmissions,
   releaseSeason,
@@ -56,6 +62,12 @@ function season(overrides: Partial<SeasonView> = {}): SeasonView {
     released_at: null,
     ...overrides,
   }
+}
+
+/** The lighter picker shape the console now lists through `listSeasons` (with activity counts). */
+function pickerSeason(overrides: Partial<SeasonView> = {}): PublicSeasonView {
+  const { config: _config, rating_prompt: _ratingPrompt, ...rest } = season(overrides)
+  return { ...rest, submission_count: 0, session_count: 0 }
 }
 
 function emptyBoard(): Board {
@@ -126,7 +138,7 @@ describe('AdminConsolePage', () => {
       allowlisted: true,
       is_operator: true,
     })
-    vi.mocked(listAdminSeasons).mockResolvedValue([season()])
+    vi.mocked(listSeasons).mockResolvedValue([pickerSeason()])
     vi.mocked(getAdminSeason).mockResolvedValue(adminView())
   })
 
@@ -143,7 +155,7 @@ describe('AdminConsolePage', () => {
 
   it('renders the console and the selected season for an operator', async () => {
     await renderConsole()
-    expect(await screen.findByRole('heading', { name: 'Admin console' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Season Management' })).toBeInTheDocument()
     expect(vi.mocked(getAdminSeason)).toHaveBeenCalledWith('iter-1')
     // The three independent gates each show their current state (await the detail load).
     expect(await screen.findByText('Unreleased')).toBeInTheDocument()
@@ -153,10 +165,10 @@ describe('AdminConsolePage', () => {
 
   it('prefixes an unnamed season exactly once', async () => {
     const unnamed = season({ id: 'abcdef123456', label: null })
-    vi.mocked(listAdminSeasons).mockResolvedValue([unnamed])
+    vi.mocked(listSeasons).mockResolvedValue([pickerSeason({ id: 'abcdef123456', label: null })])
     vi.mocked(getAdminSeason).mockResolvedValue(adminView({ season: unnamed }))
     await renderConsole()
-    expect(await screen.findByRole('heading', { name: 'Season abcdef12' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Season: abcdef12' })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: /Season Season/ })).toBeNull()
   })
 
@@ -249,7 +261,10 @@ describe('AdminConsolePage', () => {
 
   it('discards a stale detail response after the operator selects another season', async () => {
     const second = season({ id: 'iter-2', label: 'Week 2' })
-    vi.mocked(listAdminSeasons).mockResolvedValue([season(), second])
+    vi.mocked(listSeasons).mockResolvedValue([
+      pickerSeason(),
+      pickerSeason({ id: 'iter-2', label: 'Week 2' }),
+    ])
     await renderConsole()
     expect(await screen.findByRole('heading', { name: 'Season Week 1' })).toBeInTheDocument()
 

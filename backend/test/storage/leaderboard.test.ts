@@ -185,17 +185,23 @@ describe('leaderboard storage on :memory:', () => {
     expect(await storage.getReleasedSeason(ENV)).toMatchObject({ id: season.id })
   })
 
-  it('listSeasons hides unreleased history for public reads but shows it for admin reads', async () => {
+  it('listSeasons scopes visibility: released-only, public flags, or all seasons', async () => {
     const released = await storage.createSeason({ env_id: ENV, deps_version: 1 })
     await storage.setReleaseStatus(released.id, 'released')
-    await storage.createSeason({ env_id: ENV, deps_version: 1 })
+    // A freshly created season is fully private: unreleased, submission-closed, and play-closed.
+    const privateSeason = await storage.createSeason({ env_id: ENV, deps_version: 1 })
 
-    const publicList = await storage.listSeasons(ENV, { includeUnreleased: false })
-    expect(publicList).toHaveLength(1)
-    expect(publicList[0]?.id).toBe(released.id)
+    const releasedList = await storage.listSeasons({ envId: ENV, scope: 'released' })
+    expect(releasedList.map((s) => s.id)).toEqual([released.id])
 
-    const adminList = await storage.listSeasons(ENV, { includeUnreleased: true })
-    expect(adminList).toHaveLength(2)
+    // The fully-private season has no public-facing flag, so the public scope still hides it.
+    const publicList = await storage.listSeasons({ envId: ENV, scope: 'public' })
+    expect(publicList.map((s) => s.id)).toEqual([released.id])
+
+    const allList = await storage.listSeasons({ envId: ENV, scope: 'all' })
+    expect(allList.map((s) => s.id)).toEqual([privateSeason.id, released.id])
+    // Counts are always computed, regardless of scope.
+    expect(allList[0]).toMatchObject({ submission_count: 0, session_count: 0 })
   })
 
   // --- session season attribution ---

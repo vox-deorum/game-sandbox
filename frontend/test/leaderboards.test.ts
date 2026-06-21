@@ -11,7 +11,7 @@ vi.mock('../src/api/client.js', () => ({
   getEnvironmentLeaderboards: vi.fn(),
   getSeasonLeaderboards: vi.fn(),
   getAdminSeason: vi.fn(),
-  listPublicSeasons: vi.fn(),
+  listSeasons: vi.fn(),
 }))
 
 import {
@@ -20,7 +20,7 @@ import {
   getEnvironments,
   getMe,
   getSeasonLeaderboards,
-  listPublicSeasons,
+  listSeasons,
 } from '../src/api/client.js'
 import LeaderboardsPage from '../src/pages/LeaderboardsPage.vue'
 
@@ -92,7 +92,7 @@ describe('LeaderboardsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(getEnvironments).mockResolvedValue([flappyMeta()])
-    vi.mocked(listPublicSeasons).mockResolvedValue([
+    vi.mocked(listSeasons).mockResolvedValue([
       { ...season({ id: 'iter-1', label: 'Week 1' }), submission_count: 2, session_count: 4 },
       { ...season({ id: 'iter-0', label: 'Week 0' }), submission_count: 1, session_count: 2 },
     ])
@@ -197,5 +197,56 @@ describe('LeaderboardsPage', () => {
     await waitFor(() => expect(vi.mocked(getAdminSeason)).toHaveBeenCalledWith('iter-secret'))
     expect(await screen.findByText('Scoreboard')).toBeInTheDocument()
     expect(screen.getByText(/Operator preview/)).toBeInTheDocument()
+  })
+
+  it('lists unreleased seasons in the history table for an operator', async () => {
+    vi.mocked(getMe).mockResolvedValue({
+      user_id: 'dev-user',
+      allowlisted: true,
+      is_operator: true,
+    })
+    vi.mocked(listSeasons).mockResolvedValue([
+      {
+        ...season({
+          id: 'iter-2',
+          label: 'Week 2',
+          release_status: 'unreleased',
+          released_at: null,
+        }),
+        submission_count: 0,
+        session_count: 0,
+      },
+      { ...season({ id: 'iter-1', label: 'Week 1' }), submission_count: 2, session_count: 4 },
+    ])
+    vi.mocked(getEnvironmentLeaderboards).mockResolvedValue({
+      current: { season: season(), board: board() },
+      submission_season_id: null,
+      play_season_id: null,
+    })
+    await renderAt('/environments/flappy_bird/leaderboards')
+
+    // The operator listing asks for unreleased seasons, and the unreleased one shows in the table.
+    await waitFor(() =>
+      expect(vi.mocked(listSeasons)).toHaveBeenCalledWith('flappy_bird', {
+        includeUnreleased: true,
+      }),
+    )
+    expect(await screen.findByRole('link', { name: 'Week 2' })).toBeInTheDocument()
+  })
+
+  it('requests only the released listing for a non-operator', async () => {
+    vi.mocked(getMe).mockResolvedValue({
+      user_id: 'dev-user',
+      allowlisted: true,
+      is_operator: false,
+    })
+    vi.mocked(getEnvironmentLeaderboards).mockResolvedValue({
+      current: { season: season(), board: board() },
+      submission_season_id: null,
+      play_season_id: null,
+    })
+    await renderAt('/environments/flappy_bird/leaderboards')
+
+    await waitFor(() => expect(vi.mocked(listSeasons)).toHaveBeenCalledWith('flappy_bird'))
   })
 })

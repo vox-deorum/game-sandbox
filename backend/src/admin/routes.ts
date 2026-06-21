@@ -336,16 +336,6 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
         })
       })
 
-      admin.get<{ Params: { envId: string } }>(
-        '/environments/:envId/seasons',
-        async (request, reply) => {
-          const seasons = await deps.storage.listSeasons(request.params.envId, {
-            includeUnreleased: true,
-          })
-          return reply.code(200).send(seasons.map(seasonView))
-        },
-      )
-
       // --- Log stream (WebSocket) ------------------------------------------------------------
       // Relay the running workflow's per-match container log lines and game-status transitions live,
       // then send a terminal event and close. Live-only: a late subscriber misses lines emitted before

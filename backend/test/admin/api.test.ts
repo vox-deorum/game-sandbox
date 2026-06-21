@@ -110,7 +110,6 @@ describe('admin API', () => {
         ['POST', `/api/admin/seasons/${id}/runs`],
         ['POST', `/api/admin/seasons/${id}/runs/whatever/cancel`],
         ['GET', `/api/admin/seasons/${id}`],
-        ['GET', `/api/admin/environments/${ENV_ID}/seasons`],
       ]
       for (const [method, url] of routes) {
         const res = await app.inject({
@@ -125,9 +124,10 @@ describe('admin API', () => {
     })
 
     it('proceeds for an operator (the dev mock user is one out of the box)', async () => {
+      const id = await declare()
       const res = await app.inject({
         method: 'GET',
-        url: `/api/admin/environments/${ENV_ID}/seasons`,
+        url: `/api/admin/seasons/${id}`,
         headers: OPERATOR,
       })
       expect(res.statusCode).toBe(200)
@@ -673,20 +673,6 @@ describe('admin API', () => {
         headers: OPERATOR,
       })
       expect(res.statusCode).toBe(404)
-    })
-
-    it('lists all seasons including unreleased ones for the operator', async () => {
-      const a = await declare()
-      const b = await declare()
-      const res = await app.inject({
-        method: 'GET',
-        url: `/api/admin/environments/${ENV_ID}/seasons`,
-        headers: OPERATOR,
-      })
-      expect(res.statusCode).toBe(200)
-      const ids = (res.json() as Array<{ id: string }>).map((i) => i.id)
-      expect(ids).toContain(a)
-      expect(ids).toContain(b)
     })
   })
 

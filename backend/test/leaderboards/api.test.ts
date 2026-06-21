@@ -97,6 +97,51 @@ describe('public leaderboard API', () => {
     ).toBe(true)
   })
 
+  it('lets an operator list every season — including fully-private ones — with ?includeUnreleased=true', async () => {
+    const released = await declare()
+    await storage.setReleaseStatus(released.id, 'released')
+    const hidden = await declare() // closed and unreleased — never public
+
+    // The default mock user (`dev-user`) is an operator, so an unauthenticated inject is one here.
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/seasons?envId=${ENV_ID}&includeUnreleased=true`,
+    })
+    expect(res.statusCode).toBe(200)
+    const body = res.json() as Array<Record<string, unknown> & { id: string }>
+    expect(body.map((s) => s.id)).toEqual([hidden.id, released.id])
+    // Still the public listing shape: config, rating prompts, and boards stay out, counts stay in.
+    expect(
+      body.every(
+        (season) =>
+          season.config === undefined &&
+          season.rating_prompt === undefined &&
+          typeof season.submission_count === 'number',
+      ),
+    ).toBe(true)
+  })
+
+  it('refuses ?includeUnreleased=true for a non-operator with 403 not_operator', async () => {
+    const hidden = await declare()
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/seasons?envId=${ENV_ID}&includeUnreleased=true`,
+      headers: { 'x-sandbox-user': 'carol' },
+    })
+    expect(res.statusCode).toBe(403)
+    expect(res.json()).toMatchObject({ code: 'not_operator' })
+
+    // The flagless public list stays open to everyone and still hides the fully-private season.
+    const open = await app.inject({
+      method: 'GET',
+      url: `/api/seasons?envId=${ENV_ID}`,
+      headers: { 'x-sandbox-user': 'carol' },
+    })
+    expect(open.statusCode).toBe(200)
+    expect((open.json() as Array<{ id: string }>).map((s) => s.id)).not.toContain(hidden.id)
+  })
+
   it('counts active submissions and ended attributed sessions in the public season index', async () => {
     const season = await declare()
     await storage.setReleaseStatus(season.id, 'released')

@@ -13,7 +13,7 @@ import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 
-import { getEnvironments, listPublicSeasons, type PublicSeasonView } from '../api/client.js'
+import { getEnvironments, listSeasons, type PublicSeasonView } from '../api/client.js'
 import UiBadge from '../components/ui/UiBadge.vue'
 import UiCard from '../components/ui/UiCard.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
@@ -30,7 +30,7 @@ const ownerId = computed(() => me.me?.user_id ?? currentUserId)
 
 onMounted(async () => {
   try {
-    const [envs, publicSeasons] = await Promise.all([getEnvironments(), listPublicSeasons()])
+    const [envs, publicSeasons] = await Promise.all([getEnvironments(), listSeasons()])
     environments.value = new Map(envs.map((meta: EnvironmentMeta) => [meta.env_id, meta]))
     seasons.value = publicSeasons
   } catch {
