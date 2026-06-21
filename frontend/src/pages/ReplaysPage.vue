@@ -1,0 +1,234 @@
+<!--
+  The environment's Replays tab: the readable recordings for this environment as a sortable table.
+  The backend listing is open to everyone (read-only) and filtered to this environment, newest first;
+  this page resolves each replay's season label from the environment's season list and lets the viewer
+  re-sort client-side. A row links to its `/replays/:id` viewer; the viewer's own pinned recording
+  carries a text "Pinned" badge, so the pin signal is never a bare glyph (the accessibility baseline).
+-->
+<script setup lang="ts">
+import type { RecordingHeader } from '@game-sandbox/schema'
+import { computed, ref, watch } from 'vue'
+import { RouterLink, useRoute } from 'vue-router'
+
+import {
+  listRecordings,
+  listSeasons,
+  type PublicSeasonView,
+  type RecordingSummary,
+} from '../api/client.js'
+import ExperimentTabs from '../components/ExperimentTabs.vue'
+import UiBadge from '../components/ui/UiBadge.vue'
+import UiEmptyState from '../components/ui/UiEmptyState.vue'
+import { formatDate, formatSlot } from '../lib/format.js'
+import { useMe } from '../me.js'
+import { reasonText } from '../replay/reason.js'
+
+const route = useRoute()
+const me = useMe()
+const envId = computed(() => String(route.params.envId))
+
+const replays = ref<RecordingSummary[] | null>(null)
+/** season id → display label, used to render the Season column. */
+const seasonLabels = ref<Map<string, string>>(new Map())
+
+/** The sortable columns and the current sort. Default newest-first, matching the backend order. */
+type SortKey = 'id' | 'owner' | 'season' | 'outcome' | 'created'
+const sort = ref<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'created', dir: 'desc' })
+
+function seasonLabel(season: PublicSeasonView): string {
+  return season.label ?? `Season ${season.id.slice(0, 8)}`
+}
+
+/** A compact one-line summary of who played, read from the recording header's `players` map. */
+function playersSummary(header: RecordingHeader): string {
+  const players = header.players
+  if (players === undefined) {
+    return '—'
+  }
+  const parts = Object.entries(players).map(([slot, player]) =>
+    player.kind === 'human'
+      ? `${formatSlot(slot)}: Human (${player.user ?? player.label})`
+      : `${formatSlot(slot)}: ${player.label}`,
+  )
+  return parts.length > 0 ? parts.join(', ') : '—'
+}
+
+function seasonText(replay: RecordingSummary): string {
+  return replay.season_id !== null ? (seasonLabels.value.get(replay.season_id) ?? '—') : '—'
+}
+
+/** Show a pin badge only on the viewer's own pinned recordings. */
+function showsPin(replay: RecordingSummary): boolean {
+  return replay.pinned && me.me?.user_id !== undefined && replay.user_id === me.me.user_id
+}
+
+/** The value a column sorts on, normalized to a comparable string. */
+function sortValue(replay: RecordingSummary, key: SortKey): string {
+  switch (key) {
+    case 'id':
+      return replay.id
+    case 'owner':
+      return replay.user_id ?? ''
+    case 'season':
+      return seasonText(replay)
+    case 'outcome':
+      return reasonText(replay.termination_reason)
+    case 'created':
+      return replay.created_at ?? ''
+  }
+}
+
+const sortedReplays = computed(() => {
+  if (replays.value === null) {
+    return []
+  }
+  const { key, dir } = sort.value
+  const factor = dir === 'asc' ? 1 : -1
+  return [...replays.value].sort(
+    (a, b) => factor * sortValue(a, key).localeCompare(sortValue(b, key)),
+  )
+})
+
+/** Toggle direction when re-clicking the active column, else switch to it (descending first). */
+function sortBy(key: SortKey): void {
+  if (sort.value.key === key) {
+    sort.value = { key, dir: sort.value.dir === 'asc' ? 'desc' : 'asc' }
+  } else {
+    sort.value = { key, dir: 'desc' }
+  }
+}
+
+function ariaSort(key: SortKey): 'ascending' | 'descending' | 'none' {
+  if (sort.value.key !== key) {
+    return 'none'
+  }
+  return sort.value.dir === 'asc' ? 'ascending' : 'descending'
+}
+
+async function load(id: string): Promise<void> {
+  replays.value = null
+  const [recordings, seasons] = await Promise.all([
+    listRecordings({ env: id }).catch(() => [] as RecordingSummary[]),
+    listSeasons(id, { includeUnreleased: true }).catch(() => [] as PublicSeasonView[]),
+  ])
+  seasonLabels.value = new Map(seasons.map((s) => [s.id, seasonLabel(s)]))
+  replays.value = recordings
+}
+
+watch(envId, (id) => void load(id), { immediate: true })
+</script>
+
+<template>
+  <section class="replays">
+    <ExperimentTabs class="replays-tabs" :env-id="envId" />
+    <h1>Replays</h1>
+
+    <UiEmptyState v-if="replays === null">Loading replays…</UiEmptyState>
+    <UiEmptyState v-else-if="replays.length === 0">No replays yet.</UiEmptyState>
+    <table v-else class="replays-table">
+      <thead>
+        <tr>
+          <th scope="col" :aria-sort="ariaSort('id')">
+            <button type="button" class="sort-head" @click="sortBy('id')">Replay</button>
+          </th>
+          <th scope="col">Players</th>
+          <th scope="col" :aria-sort="ariaSort('owner')">
+            <button type="button" class="sort-head" @click="sortBy('owner')">Owner</button>
+          </th>
+          <th scope="col" :aria-sort="ariaSort('season')">
+            <button type="button" class="sort-head" @click="sortBy('season')">Season</button>
+          </th>
+          <th scope="col" :aria-sort="ariaSort('outcome')">
+            <button type="button" class="sort-head" @click="sortBy('outcome')">Outcome</button>
+          </th>
+          <th scope="col" :aria-sort="ariaSort('created')">
+            <button type="button" class="sort-head" @click="sortBy('created')">Created</button>
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="replay in sortedReplays" :key="replay.id">
+          <td>
+            <RouterLink class="replay-id" :to="`/replays/${replay.id}`">{{ replay.id }}</RouterLink>
+            <UiBadge v-if="showsPin(replay)" variant="accent">Pinned</UiBadge>
+          </td>
+          <td class="replay-players">{{ playersSummary(replay.header) }}</td>
+          <td>{{ replay.user_id ?? '—' }}</td>
+          <td>{{ seasonText(replay) }}</td>
+          <td>{{ reasonText(replay.termination_reason) }}</td>
+          <td>{{ formatDate(replay.created_at) ?? '—' }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+</template>
+
+<style scoped>
+/* The shared tab strip carries its own full-width border and an inner max-width/padding the shell
+   aligns to the page edges; bleed it back out by the page padding so its border spans the content
+   width and its inner labels line up with the page below (the same treatment ReplayPage uses). */
+.replays-tabs {
+  margin: calc(var(--space-5) * -1) calc(var(--space-5) * -1) var(--space-4);
+}
+
+.replays h1 {
+  margin: 0 0 var(--space-4);
+}
+
+.replays-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.replays-table th,
+.replays-table td {
+  text-align: left;
+  padding: var(--space-2) var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: top;
+}
+
+.replays-table th {
+  color: var(--color-text-muted);
+  font-weight: 600;
+}
+
+/* The header button is the sort control: a borderless button styled as the header label, so the
+   whole cell is keyboard-operable without looking like a form control. */
+.sort-head {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.sort-head:hover {
+  color: var(--color-text);
+}
+
+.replays-table th[aria-sort='ascending'] .sort-head::after {
+  content: ' ▲';
+}
+
+.replays-table th[aria-sort='descending'] .sort-head::after {
+  content: ' ▼';
+}
+
+.replay-id {
+  font-family: var(--font-mono);
+  color: var(--color-text);
+  transition: color var(--motion-fast) var(--ease-out);
+}
+
+.replay-id:hover {
+  color: var(--color-accent);
+}
+
+.replay-players {
+  color: var(--color-text-muted);
+}
+</style>

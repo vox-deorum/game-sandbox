@@ -56,7 +56,7 @@ The primitives live in `frontend/src/components/ui/`, PascalCase with a `Ui` pre
 
 **Adding a variant:** add the prop value and its scoped styles, then add it to the `/styleguide` route. Every variant and state of every primitive appears there; a variant that is not on the styleguide does not exist. The route is registered only in dev builds (`import.meta.env.DEV`) and loaded by dynamic import, so production carries neither the route nor the code.
 
-Feature components (`AppShell`, `AppSidebar`, `AccountMenu`, `ExperimentTabs`, `StartForm`, `RunMetadata`, `RecentReplays`, `DecisionLog`) live in `src/components/`, not `components/ui/`; they are built on the primitives but are not primitives themselves.
+Feature components (`AppShell`, `AppSidebar`, `AccountMenu`, `ExperimentTabs`, `StartForm`, `RunMetadata`, `DecisionLog`) live in `src/components/`, not `components/ui/`; they are built on the primitives but are not primitives themselves.
 
 ## Layout and responsiveness
 

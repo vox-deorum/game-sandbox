@@ -45,9 +45,11 @@ export interface SessionsTable {
   termination_reason: TerminationReason | null
   recording_id: string | null
   /**
-   * The season this session competes in, the key ratings later attach to. Null for old (pre-Stage
-   * 6) rows and for any session with no competition boundary; a null-season session can never be
-   * rated. Stage 6 writes it for every new rateable watch/play session from an explicit target.
+   * The season this session competes in, the key ratings later attach to. Set for every rateable
+   * watch/play session from an explicit target: a public session takes the environment's play-open
+   * season (or is refused when none is open), a submitted-agent run takes its submission's season.
+   * Null only for a session with no competition boundary (a non-competitive/internal path); a
+   * null-season session can never be rated.
    */
   season_id: string | null
   /** ISO-8601 UTC timestamps. */

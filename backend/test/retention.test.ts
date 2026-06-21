@@ -310,7 +310,7 @@ describe('retention', () => {
       expect(onlyFlappy.map((r) => r.id)).toEqual(['fb-new', 'fb-old'])
     })
 
-    it('surfaces the producing session’s termination reason, null when none ended', async () => {
+    it('surfaces the producing session’s termination reason and season, null when none claims it', async () => {
       // One recording produced by an ended session, one rowless of a session (debris, never ended).
       await writeRecording({ id: 'ended', user_id: 'a', env_id: 'flappy_bird', created_at: ago(1) })
       await writeRecording({
@@ -319,19 +319,25 @@ describe('retention', () => {
         env_id: 'flappy_bird',
         created_at: ago(2),
       })
+      const season = await storage.createSeason({ env_id: 'flappy_bird', deps_version: 1 })
       await storage.createSession({
         id: 'sess-ended',
         user_id: 'a',
         env_id: 'flappy_bird',
         mode: 'human',
         recording_id: 'ended',
+        season_id: season.id,
         created_at: ago(1),
       })
       await storage.markEnded('sess-ended', 'idle_timeout', ago(1))
 
       const byId = new Map((await makeRetention().list()).map((r) => [r.id, r]))
-      expect(byId.get('ended')?.termination_reason).toBe('idle_timeout')
-      expect(byId.get('orphan')?.termination_reason).toBeNull()
+      expect(byId.get('ended')).toMatchObject({
+        termination_reason: 'idle_timeout',
+        season_id: season.id,
+      })
+      // A rowless directory has no claiming session, so both joined fields are null.
+      expect(byId.get('orphan')).toMatchObject({ termination_reason: null, season_id: null })
     })
   })
 

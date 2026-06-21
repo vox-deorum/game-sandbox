@@ -20,7 +20,7 @@ The authoritative source of which agents were involved is the **finished recordi
 
 The header `players` entry shape is the recording schema's, not `AgentRef`. Each entry has `kind: 'human' | 'agent'` with optional `submission_id` and `user`. Map them deterministically. An `agent` entry with a `submission_id` becomes `{ kind: 'submission', submission_id }`. An `agent` entry with no `submission_id` becomes `{ kind: 'builtin-naive' }`, keyed on the absence of `submission_id` and **not** on the `"Naive agent"` label string, which is display-only. Skip `human` entries, since humans are not rateable agents. After deduplication, return an empty rateable set if every remaining entry is `builtin-naive`. This is the one place header attribution is translated into the `AgentRef` that the rest of the stage stores.
 
-Three kinds of session cannot receive new or updated public ratings: old sessions with null `season_id`, sessions without a finalized recording, and sessions attached to a season whose play window is closed.
+Three kinds of session cannot receive new or updated public ratings: sessions with null `season_id` (no competition boundary), sessions without a finalized recording, and sessions attached to a season whose play window is closed.
 
 ## Rating prompts
 

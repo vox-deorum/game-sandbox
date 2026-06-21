@@ -17,7 +17,7 @@ The transport is a plain client-side controller over the state array, and the co
 - **Scrub.** A slider over the state index, labeled with tick numbers; dragging renders the state under the thumb directly.
 - **Deep link.** `?t=⟨tick⟩` seeks on load, so a moment inside a replay is linkable, not just the replay.
 
-The environment page's recent-replays list comes from `GET /api/recordings` filtered to the environment (a `?env=` query parameter on the listing, matching against the retention rows below), newest first, each linking into the viewer and showing pin state for the owner's own recordings.
+The environment's replays list comes from `GET /api/recordings` filtered to the environment (a `?env=` query parameter on the listing, matching against the retention rows below), newest first, each linking into the viewer and showing pin state for the owner's own recordings. (At this stage it rendered as a recent-replays list on the environment hub; Stage 6 moved it to the dedicated **Replays** tab as a sortable table.)
 
 ## Retention metadata
 

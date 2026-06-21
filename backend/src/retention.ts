@@ -47,6 +47,12 @@ export interface RecordingListing {
    * claims the recording (foreign debris, or a session still running when listed).
    */
   termination_reason: string | null
+  /**
+   * The season the producing session competed in, joined from the session row, so a replay carries
+   * the play-open (or submission) season it belongs to. Null when no session claims the recording
+   * (foreign debris).
+   */
+  season_id: string | null
 }
 
 /** The outcome of a pin request the HTTP layer maps to a status. */
@@ -172,12 +178,15 @@ export class Retention {
       this.storage.listSessions(),
     ])
     const rowById = new Map(rows.map((row) => [row.id, row]))
-    // The termination reason lives on the session, keyed back to the recording it produced. Only an
-    // ended session carries one; a running session's recording lists with a null reason until it ends.
+    // The termination reason and season live on the session, keyed back to the recording it produced.
+    // Only an ended session carries a reason; a running session's recording lists with a null reason
+    // until it ends. The season is the play-open (or submission) season the session competed in.
     const reasonByRecording = new Map<string, string | null>()
+    const seasonByRecording = new Map<string, string | null>()
     for (const session of sessions) {
       if (session.recording_id !== null) {
         reasonByRecording.set(session.recording_id, session.termination_reason)
+        seasonByRecording.set(session.recording_id, session.season_id)
       }
     }
 
@@ -190,6 +199,7 @@ export class Retention {
         created_at: row?.created_at ?? null,
         pinned: row?.pinned === 1,
         termination_reason: reasonByRecording.get(entry.id) ?? null,
+        season_id: seasonByRecording.get(entry.id) ?? null,
       }
     })
 

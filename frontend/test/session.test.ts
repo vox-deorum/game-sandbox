@@ -100,6 +100,7 @@ async function renderSession() {
     { path: '/', component: { template: '<div />' } },
     { path: '/environments/:envId', component: { template: '<div />' } },
     { path: '/environments/:envId/leaderboards', component: { template: '<div />' } },
+    { path: '/environments/:envId/replays', component: { template: '<div />' } },
     { path: '/environments/:envId/agents/:ownerId', component: { template: '<div />' } },
     { path: '/sessions/:id', component: SessionPage },
     { path: '/replays/:id', component: { template: '<div>replay</div>' } },
@@ -209,6 +210,7 @@ describe('SessionPage', () => {
         created_at: '2026-06-11T00:00:00.000Z',
         pinned: true,
         termination_reason: 'terminated',
+        season_id: null,
       },
     ])
     await renderSession()

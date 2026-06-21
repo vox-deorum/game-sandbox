@@ -8,17 +8,19 @@ This is the rethought information architecture for the frontend. It covers what 
 
 ```
 /                      Environments (the home page, the gallery)
-/environments/:envId   Environment hub (overview, play and watch, recent replays;
-                       later: leaderboards, submission form, season history)
+/environments/:envId   Environment hub (overview: description, play and watch,
+                       leaderboards, season history)
 /sessions/:id          Live stage (an active session)
 /replays/:id           Replay stage (a recorded session)
 /styleguide            Dev-only primitive showcase, absent from production builds
 
-Future, anticipated but not routed yet:
-/agents/:agentId       Agent profile (stage 5)
-leaderboards           Stage 6; per environment per season, so it most likely
-                       lives on the environment hub rather than as its own route,
-                       with the nav entry scrolling or linking there
+Since shipped (the per-environment tab strip, ExperimentTabs.vue):
+/environments/:envId/leaderboards/:seasonId?   Leaderboards tab (per season)
+/environments/:envId/replays                   Replays tab (the environment's
+                                               recordings, as a sortable table)
+/environments/:envId/agents/:ownerId           My Submissions / agent profile tab
+                                               (the agent profile, stage 5)
+/environments/:envId/admin                     Operator admin console (operator-only)
 ```
 
 Sessions and replays keep flat top-level routes rather than nesting under the environment, because they are shareable artifacts addressed by id. The page itself shows its environment context and links back.
@@ -59,29 +61,26 @@ Each card carries a thumbnail, display name, short description, slot count, and 
 
 ### Environment hub (`/environments/:envId`)
 
-Purpose: everything about one environment in one place. Today that is the description, the entry points, and recent replays. Stages 5 and 6 add the submission form, leaderboards, and season history to this same page. The hub is therefore laid out as a column of sections that future stages append to.
+Purpose: everything about one environment in one place. At this stage that was the description, the entry points, and recent replays. Stages 5 and 6 added the submission form, leaderboards, and season history, and introduced the per-environment tab strip (`ExperimentTabs.vue`) — at which point replays moved off the overview into their own **Replays** tab (a sortable recordings table), and submissions into the **My Submissions** tab. The overview is therefore a column of sections (description, the current season's leaderboards, season history) with the play and watch entry points; the tab strip carries the rest.
 
 ```
 |  top bar                                                                             |
 |-------------------------------------------------------------------------------------|
-|  Environments / Flappy Bird                      (context line, link back to /)      |
-|                                                                                      |
+|  Flappy Bird   [Overview] [Leaderboards] [Replays] [My Submissions] [Manage*]        |
+|                                                  (* operator-only; the tab strip)     |
+|-------------------------------------------------------------------------------------|
 |  Flappy Bird                                     [thumb, right]                      |
 |  Longer description of the environment.                                              |
 |  1 slot   human-playable   paced 50ms                                                |
 |                                                                                      |
-|  [ Play ]  [ Watch ]                             (hidden when not allowlisted)       |
+|  [ Play Yourself ]  [ Watch ]                    (hidden when not allowlisted)       |
 |                                                                                      |
-|  Recent replays                                                                      |
-|  - replay row (id, date, score, pinned badge)                                        |
-|  - replay row                                                                        |
-|                                                                                      |
-|  Leaderboards and agent submissions arrive in later stages.   (quiet placeholder)    |
+|  Leaderboards (current released season) + season history                            |
 ```
 
 The start form opens as a modal dialog from Play or Watch instead of expanding inline. The reasoning: the form is a short interruption (seed, timeout, confirm), not a destination, and a dialog keeps the hub stable underneath. The end-to-end journey is unaffected.
 
-The trailing placeholder is one muted sentence, not styled section stubs, so the page does not accumulate empty boxes.
+At this stage the page closed with a trailing placeholder — one muted sentence, not styled section stubs, so the page did not accumulate empty boxes. Stages 5 and 6 replaced it with the real leaderboards and season-history sections and the tab strip.
 
 ### Live stage (`/sessions/:id`)
 

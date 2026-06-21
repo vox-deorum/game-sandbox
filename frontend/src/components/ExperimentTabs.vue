@@ -49,6 +49,12 @@ const tabs = computed(() => {
       active: route.path.startsWith(`${base}/leaderboards`),
     },
     {
+      key: 'replays',
+      label: 'Replays',
+      to: `${base}/replays`,
+      active: route.path.startsWith(`${base}/replays`),
+    },
+    {
       key: 'agent',
       label: 'My Submissions',
       to: `${base}/agents/${ownerId.value}`,

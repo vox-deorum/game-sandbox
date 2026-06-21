@@ -1,8 +1,9 @@
 <!--
-  Environment hub: everything about one environment in one place — the description and metadata, the
-  entry points into play and watch (gated by the allowlist), and the recent-replays list. Laid out as
-  a column of sections that Stages 5 and 6 append to (submission form, leaderboards, season
-  history); a quiet trailing sentence names that future rather than stubbing empty boxes.
+  Environment hub (the Overview tab): everything about one environment in one place — the description
+  and metadata, the entry points into play and watch (gated by the allowlist), and the current released
+  season's leaderboards with a link to the full Leaderboards page and season history. Laid out as a
+  column of sections. The other per-environment surfaces live in the tab strip (ExperimentTabs.vue):
+  replays in the Replays tab, submissions in My Submissions, the operator console in Manage.
 
   The play and watch entry points are hidden when `/api/me` says the user is not allowlisted, and the
   backend enforces the same gate, so the UI state is courtesy and the backend check is the enforcement.
@@ -25,7 +26,6 @@ import {
   startSession,
 } from '../api/client.js'
 import LeaderboardBoards from '../components/LeaderboardBoards.vue'
-import RecentReplays from '../components/RecentReplays.vue'
 import StartForm from '../components/StartForm.vue'
 import WatchAgentPicker from '../components/WatchAgentPicker.vue'
 import UiBadge from '../components/ui/UiBadge.vue'
@@ -258,11 +258,6 @@ async function start(input: { seed?: number; humanSlotTimeoutMs?: number }): Pro
           {{ seasonLabel(entry) }}
         </RouterLink>
       </div>
-    </section>
-
-    <section class="env-section">
-      <h2>Recent replays</h2>
-      <RecentReplays :env-id="meta.env_id" />
     </section>
 
     <UiDialog v-model:open="dialogOpen" :title="dialogTitle">

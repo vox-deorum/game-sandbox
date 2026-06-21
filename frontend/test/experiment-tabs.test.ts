@@ -22,6 +22,7 @@ async function renderTabs(path = '/environments/flappy_bird') {
   const router = memoryRouter([
     { path: '/environments/:envId', component: { template: '<div />' } },
     { path: '/environments/:envId/leaderboards/:seasonId?', component: { template: '<div />' } },
+    { path: '/environments/:envId/replays', component: { template: '<div />' } },
     { path: '/environments/:envId/agents/:ownerId', component: { template: '<div />' } },
     { path: '/environments/:envId/admin', component: { template: '<div />' } },
   ])
@@ -54,6 +55,10 @@ describe('ExperimentTabs', () => {
     expect(screen.getByRole('link', { name: 'Leaderboards' })).toHaveAttribute(
       'href',
       '/environments/flappy_bird/leaderboards',
+    )
+    expect(screen.getByRole('link', { name: 'Replays' })).toHaveAttribute(
+      'href',
+      '/environments/flappy_bird/replays',
     )
     // The agent tab reads "My Submissions" and targets the signed-in user's own agent page.
     const submit = await screen.findByRole('link', { name: 'My Submissions' })

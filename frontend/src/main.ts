@@ -20,6 +20,7 @@ import LeaderboardsPage from './pages/LeaderboardsPage.vue'
 import MyAgentsPage from './pages/MyAgentsPage.vue'
 import ProfilePage from './pages/ProfilePage.vue'
 import ReplayPage from './pages/ReplayPage.vue'
+import ReplaysPage from './pages/ReplaysPage.vue'
 import SeasonsPage from './pages/SeasonsPage.vue'
 import SessionPage from './pages/SessionPage.vue'
 import './renderers/index.js'
@@ -45,6 +46,8 @@ const router = createRouter({
     // The per-environment, per-season Leaderboards page; the season id is optional and defaults
     // to the current released season, so a specific season's boards are shareable by URL.
     { path: '/environments/:envId/leaderboards/:seasonId?', component: LeaderboardsPage },
+    // The per-environment Replays tab: the environment's recordings as a sortable table.
+    { path: '/environments/:envId/replays', component: ReplaysPage },
     // The operator admin console. The page itself gates on `me.is_operator` (and the backend admin API
     // is the real authority), so a non-operator who reaches the route sees an access notice.
     { path: '/environments/:envId/admin', component: AdminConsolePage },

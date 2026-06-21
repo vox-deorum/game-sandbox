@@ -139,6 +139,7 @@ describe('ReplayPage', () => {
         created_at: '2026-06-11T00:00:00.000Z',
         pinned: false,
         termination_reason: 'terminated',
+        season_id: null,
       },
     ])
     const view = await renderReplay()
@@ -161,6 +162,7 @@ describe('ReplayPage', () => {
         created_at: '2026-06-11T00:00:00.000Z',
         pinned: false,
         termination_reason: 'terminated',
+        season_id: null,
       },
     ])
     await renderReplay()
@@ -186,6 +188,7 @@ describe('ReplayPage', () => {
         created_at: '2026-06-11T00:00:00.000Z',
         pinned: false,
         termination_reason: null,
+        season_id: null,
       },
     ])
     await renderReplay()
