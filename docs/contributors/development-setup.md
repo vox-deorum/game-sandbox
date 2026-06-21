@@ -29,6 +29,9 @@ Every dev script is Python under `scripts/`, run through uv, so nothing depends 
 | Run one CI job exactly as CI does | `uv run python scripts/ci.py <job>` |
 | Run the full local suite (all three workflows) | `uv run python scripts/ci.py all` |
 | Publish the template and examples (dry-run available) | `uv run python scripts/publish_template.py --dry-run` |
+| Run the app on the e2e-built database | `npm run demo` |
+
+`npm run demo` (`scripts/demo.py`) is for showing the app off with realistic data rather than the empty seasons a bare `npm start` seeds. It reuses the rich database the `frontend-e2e` job leaves behind — sessions, submissions, released seasons, replays — instead of seeding anything: it snapshots that backend's data dir (`frontend/e2e/.data/main/`) into a fresh `demo/` copy on every launch and serves the app on `:8080`. If the e2e database does not exist yet it runs the `frontend-e2e` job first to build it (so the first run needs a Docker daemon, like the job itself). And because the flat migration is not re-run against a database that already recorded it (see [the backend](backend.md#running-it-locally)), a schema change since the e2e run leaves the copy stale; the backend then fails to start with a SQLite "no such column" error, so the demo rebuilds the e2e database from scratch and starts once more. Demo play writes only into the throwaway `demo/` copy, never the `main/` fixture that local e2e runs reuse.
 
 Anything generated from the schema (the TypeScript types, the packaged schema copies, and the golden fixtures) is produced by `scripts/generate.py`. Do not edit those by hand; edit the schema and regenerate. CI fails if a generated artifact is stale.
 

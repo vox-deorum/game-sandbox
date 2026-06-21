@@ -25,6 +25,17 @@ TEMPLATES_DIR = REPO_ROOT / "templates"
 EXAMPLES_DIR = REPO_ROOT / "examples"
 BUILD_DIR = REPO_ROOT / "build"
 
+# The frontend-e2e job leaves a populated SQLite database (submissions, recordings, released
+# seasons) under its "main" backend's data dir; `npm run demo` (scripts/demo.py) reuses that
+# instead of seeding fresh, snapshotting it into a sibling demo/ dir on every launch. The whole
+# .data/ tree is gitignored.
+E2E_DATA_DIR = REPO_ROOT / "frontend" / "e2e" / ".data"
+E2E_MAIN_DATA_DIR = E2E_DATA_DIR / "main"
+E2E_RESTRICTED_DATA_DIR = E2E_DATA_DIR / "restricted"
+E2E_MAIN_DB = E2E_MAIN_DATA_DIR / "sandbox.db"
+DEMO_DATA_DIR = E2E_DATA_DIR / "demo"
+FRONTEND_DIST_DIR = REPO_ROOT / "frontend" / "dist"
+
 # A template is composed from the env-agnostic base layer plus one per-environment layer.
 # templates/base/ never ships alone; templates/<env>/ overlays it whole-file. The default
 # environment is what the student repo's main branch (and "Use this template") instantiates.
