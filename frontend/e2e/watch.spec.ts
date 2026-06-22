@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
 
+import { SPECTATOR } from './support/names.js'
+
 /**
  * The watch and spectator variations. Watch starts a scripted session where the built-in agent plays
  * into the same renderer with no input controls for the user. A second browser context opening the
@@ -28,9 +30,9 @@ test('watch a scripted session, and a spectator gets no controls', async ({ page
   // It must act as a different user, or it would share the owner's mock identity and get the owner's
   // controls; the localStorage override (the seam OAuth's per-session cookie drops into) gives it one.
   const spectatorContext = await browser.newContext()
-  await spectatorContext.addInitScript(() => {
-    window.localStorage.setItem('sandbox-user', 'spectator-user')
-  })
+  await spectatorContext.addInitScript((user) => {
+    window.localStorage.setItem('sandbox-user', user)
+  }, SPECTATOR)
   const spectator = await spectatorContext.newPage()
   await spectator.goto(sessionUrl)
   await expect(spectator.locator('canvas.renderer-canvas')).toBeVisible()

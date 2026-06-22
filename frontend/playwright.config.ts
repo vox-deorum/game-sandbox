@@ -14,7 +14,10 @@ import { defineConfig, devices } from '@playwright/test'
  */
 const DIST = fileURLToPath(new URL('./dist', import.meta.url))
 const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url))
-const BACKEND = 'npm run start --workspace @game-sandbox/backend'
+// A launcher that wipes the backend's data dir before starting it, so every run boots a fresh database
+// (see e2e/fresh-backend.mjs). It must wipe in the launch command, not a global-setup hook: Playwright
+// starts its web servers before global setup, so by then the backend already holds the db file open.
+const FRESH_BACKEND = `node ${JSON.stringify(fileURLToPath(new URL('./e2e/fresh-backend.mjs', import.meta.url)))}`
 
 const MAIN_PORT = 8090
 const RESTRICTED_PORT = 8091
@@ -59,21 +62,27 @@ export default defineConfig({
   reporter: process.env.CI ? 'github' : 'list',
   webServer: [
     {
-      command: BACKEND,
+      command: FRESH_BACKEND,
       cwd: REPO_ROOT,
       // The main backend also enables the dev-only local-folder submission source so submission.spec
       // can drive the real validate-and-build pipeline from a checked-in fixture, with no network.
-      env: backendEnv(MAIN_PORT, 'dev-user', 'main', { ALLOW_LOCAL_SUBMISSIONS: 'true' }),
+      // The allowlist names the rating judges alongside dev-user so the leaderboards arc can post the
+      // several ratings an agent needs to earn a ranked Human Ratings row (see e2e/support/names.ts).
+      env: backendEnv(MAIN_PORT, 'dev-user,jordan-skywatch,morgan-aileron,taylor-gust', 'main', {
+        ALLOW_LOCAL_SUBMISSIONS: 'true',
+      }),
       url: `http://127.0.0.1:${MAIN_PORT}/api/me`,
-      reuseExistingServer: !process.env.CI,
+      // Never reattach to a leftover backend: the launcher just wiped the database for a fresh run, so
+      // a fresh DB requires a fresh server. Playwright shuts down the servers it starts.
+      reuseExistingServer: false,
       timeout: 120_000,
     },
     {
-      command: BACKEND,
+      command: FRESH_BACKEND,
       cwd: REPO_ROOT,
       env: backendEnv(RESTRICTED_PORT, 'nobody', 'restricted'),
       url: `http://127.0.0.1:${RESTRICTED_PORT}/api/me`,
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: false,
       timeout: 120_000,
     },
   ],

@@ -1,6 +1,9 @@
 import { fileURLToPath } from 'node:url'
 
-import { type APIRequestContext, expect, test } from '@playwright/test'
+import { expect, test } from '@playwright/test'
+
+import { submitLocal, waitForTerminal } from './support/api.js'
+import { ENV_ID, OWNERS } from './support/names.js'
 
 /**
  * The submission journey (Stage 5). It needs a Docker daemon — building an overlay and running the
@@ -11,58 +14,15 @@ import { type APIRequestContext, expect, test } from '@playwright/test'
  * The form's local-folder field is dev-only (`import.meta.env.DEV`) and so is absent from the
  * production bundle this suite serves; the submission itself is therefore created through the API
  * (which is the real resolve → static → build → load pipeline), and the browser exercises the parts
- * that are only visible there: the agent profile's per-stage timeline and the watch picker running a
- * built submission in a real session.
+ * that are only visible there: the agent profile's per-stage timeline.
  *
- * Each test uses a unique owner id so re-runs against a reused dev database never collide on the
- * one-active-submission-per-season rule.
+ * These two owners are dedicated to the pipeline-detail tests and never reused by the leaderboards arc,
+ * so each `/agents/<owner>` profile shows exactly one submission with an unambiguous stage timeline.
+ * Both submit into whichever season currently holds the open submission window (the seeded Playground).
  */
 
-const ENV_ID = 'flappy_bird'
 const GOOD_FIXTURE = fileURLToPath(new URL('./fixtures/submission/good', import.meta.url))
 const BAD_CLASS_FIXTURE = fileURLToPath(new URL('./fixtures/submission/bad-class', import.meta.url))
-
-interface SubmissionRow {
-  id: string
-  status: 'pending' | 'ready' | 'static_failed' | 'build_failed' | 'load_failed'
-  checks: { stage: string; status: string; detail: string | null }[]
-}
-
-/** Submit a local-folder agent under a given owner and return the pending submission id. */
-async function submitLocal(
-  request: APIRequestContext,
-  ownerId: string,
-  localPath: string,
-): Promise<string> {
-  const response = await request.post('/api/submissions', {
-    headers: { 'x-sandbox-user': ownerId },
-    data: { env_id: ENV_ID, local_path: localPath },
-  })
-  expect(response.status(), await response.text()).toBe(202)
-  const body = (await response.json()) as { id: string; status: string }
-  expect(body.status).toBe('pending')
-  return body.id
-}
-
-/** Poll the real pipeline to a terminal status (the build and load check run actual containers). */
-async function waitForTerminal(request: APIRequestContext, id: string): Promise<SubmissionRow> {
-  let row: SubmissionRow | undefined
-  await expect
-    .poll(
-      async () => {
-        const response = await request.get(`/api/submissions/${id}`)
-        expect(response.ok()).toBe(true)
-        row = (await response.json()) as SubmissionRow
-        return row.status
-      },
-      { timeout: 150_000, intervals: [1000, 2000, 3000] },
-    )
-    .not.toBe('pending')
-  if (row === undefined) {
-    throw new Error('submission never returned a row')
-  }
-  return row
-}
 
 test('a submitted agent validates to ready and runs in a watch session', async ({
   page,
@@ -70,7 +30,7 @@ test('a submitted agent validates to ready and runs in a watch session', async (
 }) => {
   // The overlay build plus load check plus a real scripted session is well past the default timeout.
   test.setTimeout(240_000)
-  const owner = `e2e-good-${Date.now()}`
+  const owner = OWNERS.pipeline
 
   const id = await submitLocal(request, owner, GOOD_FIXTURE)
   const row = await waitForTerminal(request, id)
@@ -107,7 +67,7 @@ test('an agent that passes static but fails the load check shows the failed stag
   request,
 }) => {
   test.setTimeout(180_000)
-  const owner = `e2e-bad-${Date.now()}`
+  const owner = OWNERS.faulty
 
   // The manifest names a class the module does not define: static and build pass, the load check
   // rejects with class_not_found.

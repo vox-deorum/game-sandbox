@@ -1,0 +1,80 @@
+# Browser end-to-end tests
+
+The end-to-end suite lives under `frontend/e2e/` and runs Playwright (Chromium) against the **real** backend, which serves the **built** frontend from the same origin — the production path, one server, no proxy. Because the backend launches real session containers, the suite needs a Docker daemon, the same gate as `backend:integration`. It is wired into CI as the `frontend-e2e` job.
+
+For the wider verification matrix and how this job fits the pipeline, see [Testing](test.md). This page is about the suite itself: how to run it, how its data is set up, and the conventions to follow when you add to it.
+
+## Running it
+
+```console
+# Full job: build frontend + session image, install Chromium, run the suite.
+uv run python scripts/ci.py frontend-e2e
+
+# Just the tests (frontend bundle and session image already built):
+npm run e2e --workspace @game-sandbox/frontend
+
+# One spec, from the frontend workspace:
+cd frontend && npx playwright test leaderboards-admin.spec.ts
+```
+
+The suite runs serially (`workers: 1`, `fullyParallel: false`) so the real containers and the shared database never contend.
+
+## Two backends
+
+`playwright.config.ts` starts two backends from the same built bundle, so the allowlist case has a context where the auto-logged user is _not_ allowlisted:
+
+| Project | Port | Data dir | Allowlist | Local submissions |
+| --- | --- | --- | --- | --- |
+| `main` | 8090 | `frontend/e2e/.data/main` | `dev-user` + the rating judges | enabled |
+| `restricted` | 8091 | `frontend/e2e/.data/restricted` | nobody | disabled |
+
+| Spec | Project | What it covers |
+| --- | --- | --- |
+| `journey.spec.ts` | main | Live play → pause/resume → stop → replay → pin. |
+| `watch.spec.ts` | main | Watch a scripted session; a second context is a controls-less spectator. |
+| `submission.spec.ts` | main | The resolve → static → build → load pipeline; a ready agent watched, and a load failure. |
+| `leaderboards-admin.spec.ts` | main | Season cards, released history, operator preview, and the full competition arc (below). |
+| `allowlist.spec.ts` | restricted | Hidden entry points and a rejected direct start for a non-allowlisted user. |
+
+## A fresh database every run
+
+Each backend is launched through `e2e/fresh-backend.mjs`, which deletes that server's data directory (its `sandbox.db*` and `recordings/`) **before** starting the backend process, so the backend boots a brand-new database: the flat migration rebuilds the schema and `seedOpenSeasons` recreates the single `Playground` season. The wipe lives in the launch command, not a global-setup hook, because Playwright starts its web servers before global setup — by then the backend already holds the db file open (which on Windows throws `EBUSY`). The web servers use `reuseExistingServer: false`, because a reused backend would still hold the old database — a fresh database means a fresh server.
+
+Two consequences:
+
+- **No timestamped names.** Tests used to suffix `${Date.now()}` onto season labels and owner ids to dodge collisions on a reused database. With a guaranteed-fresh database that is unnecessary, so names can read like real data instead (see below).
+- **Slower local re-runs** than reusing a warm backend — the deliberate cost of a clean slate.
+
+In CI the checkout is already clean, so the wipe is a no-op there. Sibling directories under `.data/` (the demo snapshot, any `db-backup-*`) are left untouched.
+
+## This data is the demo's fixture
+
+`npm run demo` (`scripts/demo.py`) does **not** seed its own data — it snapshots `frontend/e2e/.data/main/` into a `demo/` copy and serves that. So the e2e run _is_ the demo's data builder: better-named, more complete e2e data is a better demo. This is why the leaderboards arc populates real agents, an automated scoreboard, human ratings, and rating prompts, and why the names are meaningful.
+
+## Naming and shared helpers
+
+Shared identities live in `e2e/support/names.ts`; shared API flows in `e2e/support/api.ts`. Reuse them instead of re-deriving fetch-and-assert boilerplate.
+
+- **Seasons** are short, themed, year-free labels (`Updraft Open`, `Thermals Cup`, …). Give each test that declares a season a **distinct** label — the suite shares one database within a run, so a duplicate label makes a label-based assertion ambiguous.
+- **Agents** are identified by their **owner id**, which is the public handle the leaderboard links to and the `/agents/<owner>` profile is keyed on. Use real-looking handles (`ada-lovelace`, `grace-hopper`, …). Keep a given owner to one test's purpose so its profile stays unambiguous.
+- **Raters** must be on the `main` backend's session allowlist (set in `playwright.config.ts`). An agent needs **≥3 distinct raters** before the Human Ratings board assigns it a rank.
+
+## The competition arc
+
+The last test in `leaderboards-admin.spec.ts` drives a whole season against real data, and is the richest fixture the demo serves. In order, it:
+
+1. Borrows the env's single open submission/play windows from the seeded `Playground` season (closing them there, restoring them in a `finally`), and declares the `Updraft Open` season.
+2. Submits three agents with distinct flight behaviours (`fixtures/submission/{glider,flapper,good}`) under three owners, and waits for each to build to `ready`.
+3. Sets the operator's season rating prompt and one agent author's prompt.
+4. Configures a one-submission-seat match and runs the automated workflow from the operator console, tailing the live log to completion (the scheduler runs each ready agent and appends a Naive baseline).
+5. Opens the play window, then seeds each agent's ratings from all four judges over finished watch sessions, with one rating also driven through the post-session panel in the browser.
+6. Releases the season and asserts the public boards: a populated Scoreboard and a fully ranked Human Ratings board.
+
+Because it does several real builds plus a multi-agent run, it carries a wide `test.setTimeout`. If CI time becomes a problem, the cheapest lever is fewer submitted agents (two still produce a ranking).
+
+## Adding a test or fixture
+
+- Add identities to `support/names.ts` and flows to `support/api.ts`; keep specs declarative.
+- A new agent fixture is a folder under `fixtures/submission/` with a `manifest.json` (mirror `good/manifest.json`) and an `agent.py` exposing a callable `Agent` with `reset`/`act`.
+- Assert DOM facts (controls present, canvas painted, board rows), never pixels — the suite must not flake on font or GPU differences across runners.
+- Any UI change that renames text, moves a control, or alters a flow must update both the jsdom tests under `frontend/test/` and the relevant journeys here.

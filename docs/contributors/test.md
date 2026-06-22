@@ -107,6 +107,8 @@ The Playwright journey builds the frontend and session image, starts the real ba
 
 Assertions target the DOM and confirm that the canvas is painted. They do not compare pixels.
 
+Every local run starts from a fresh database, the suite doubles as the demo's data fixture, and the leaderboards arc drives a whole season end to end. See [End-to-end tests](e2e-tests.md) for the data setup, the naming conventions, and how to add a spec or fixture.
+
 Any UI change that renames text, changes markup, moves a control, or alters a flow must update both the jsdom tests under `frontend/test/` and relevant Playwright journeys under `frontend/e2e/`.
 
 ## Examples and template checks

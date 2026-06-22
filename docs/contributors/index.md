@@ -32,6 +32,7 @@ The language split follows the container boundary: Python runs inside sessions, 
 | --- | --- |
 | Set up the repository | [Development setup](development-setup.md) |
 | Choose and run checks | [Testing](test.md) |
+| Write or run browser end-to-end tests | [End-to-end tests](e2e-tests.md) |
 | Change wire or recording data | [State schema](state-schema.md), then [Recordings](recordings.md) |
 | Add a game | [Adding an environment](environments.md), then [Rendering](rendering.md) |
 | Change the student starter kit | [Examples and template](examples-and-template.md) |
