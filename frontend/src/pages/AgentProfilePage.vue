@@ -123,13 +123,13 @@ const promptSubmission = computed(() => {
     </header>
 
     <section v-if="isOwner()" class="agent-section">
-      <h2>Submit an agent</h2>
+      <h2>Submit an Agent</h2>
       <SubmitAgentForm v-if="profile.submission_season_id !== null" :env-id="envId" />
       <UiEmptyState v-else>Submissions are closed for this environment right now.</UiEmptyState>
     </section>
 
     <section class="agent-section">
-      <h2>Submission history</h2>
+      <h2>Submission History</h2>
       <UiEmptyState v-if="profile.submissions.length === 0">
         {{ ownerId }} has not submitted an agent for this environment yet.
       </UiEmptyState>
@@ -175,7 +175,7 @@ const promptSubmission = computed(() => {
     />
 
     <section class="agent-section">
-      <h2>Leaderboard placements</h2>
+      <h2>Leaderboard Placements</h2>
       <UiEmptyState v-if="placements === null">Loading…</UiEmptyState>
       <UiEmptyState v-else-if="placements.placements.length === 0">
         No released placements for this agent yet.

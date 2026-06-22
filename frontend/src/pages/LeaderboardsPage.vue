@@ -152,7 +152,12 @@ watch(requestedSeasonId, load, { immediate: true })
       <UiEmptyState v-else-if="notReleased">
         No released results for this season yet.
       </UiEmptyState>
-      <LeaderboardBoards v-else-if="board !== null" :board="board" :env-id="envId" />
+      <LeaderboardBoards
+        v-else-if="board !== null"
+        :board="board"
+        :env-id="envId"
+        :rating-prompt="season?.rating_prompt ?? null"
+      />
     </main>
 
     <section v-if="history.length > 0" class="leaderboards-history" aria-label="Seasons">

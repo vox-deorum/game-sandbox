@@ -160,7 +160,7 @@ describe('AgentProfilePage', () => {
     ).toBeInTheDocument()
     expect(await screen.findByText(/LLM debug view/)).toBeInTheDocument()
     // The leaderboard placements section is visible to everyone (empty until released results exist).
-    expect(screen.getByRole('heading', { name: 'Leaderboard placements' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Leaderboard Placements' })).toBeInTheDocument()
     expect(screen.getByText(/No released placements/)).toBeInTheDocument()
   })
 
@@ -199,7 +199,7 @@ describe('AgentProfilePage', () => {
       is_operator: false,
     })
     await renderProfile({ env_id: 'flappy_bird', owner_id: 'eve', submissions: [submission()] })
-    expect(await screen.findByText(/Leaderboard placements/)).toBeInTheDocument()
+    expect(await screen.findByText(/Leaderboard Placements/)).toBeInTheDocument()
     expect(screen.queryByText(/LLM debug view/)).toBeNull()
   })
 

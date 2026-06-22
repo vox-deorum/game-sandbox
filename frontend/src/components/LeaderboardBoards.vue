@@ -17,7 +17,7 @@ import { formatComputeMs, formatRating, formatScore } from '../lib/format.js'
 import UiBadge from './ui/UiBadge.vue'
 import UiEmptyState from './ui/UiEmptyState.vue'
 
-const props = defineProps<{ board: Board; envId: string }>()
+const props = defineProps<{ board: Board; envId: string; ratingPrompt?: string | null }>()
 
 /** A stable key for an agent row, so v-for keys never collide across the Naive baseline and submissions. */
 function agentKey(agent: BoardAgentRef): string {
@@ -38,9 +38,16 @@ function ownerOf(agent: BoardAgentRef): string | null {
         No automated results yet.
       </UiEmptyState>
       <table v-else class="board-table">
+        <colgroup>
+          <col class="col-rank" />
+          <col class="col-agent" />
+          <col />
+          <col />
+          <col />
+        </colgroup>
         <thead>
           <tr>
-            <th scope="col" class="num">#</th>
+            <th scope="col" class="rank">#</th>
             <th scope="col">Agent</th>
             <th scope="col" class="num">Mean score</th>
             <th scope="col" class="num">Agent compute</th>
@@ -49,7 +56,7 @@ function ownerOf(agent: BoardAgentRef): string | null {
         </thead>
         <tbody>
           <tr v-for="(row, index) in props.board.automated" :key="agentKey(row.agent)">
-            <td class="num">{{ index + 1 }}</td>
+            <td class="rank">{{ index + 1 }}</td>
             <td>
               <RouterLink
                 v-if="ownerOf(row.agent) !== null"
@@ -84,8 +91,15 @@ function ownerOf(agent: BoardAgentRef): string | null {
 
     <section class="board" aria-labelledby="human-board-title">
       <h3 id="human-board-title" class="board-title">Human Ratings</h3>
+      <p v-if="props.ratingPrompt" class="board-prompt">“{{ props.ratingPrompt }}”</p>
       <UiEmptyState v-if="props.board.human.length === 0">No ratings yet.</UiEmptyState>
       <table v-else class="board-table">
+        <colgroup>
+          <col class="col-rank" />
+          <col class="col-agent" />
+          <col />
+          <col />
+        </colgroup>
         <thead>
           <tr>
             <th scope="col" class="num">#</th>
@@ -137,10 +151,29 @@ function ownerOf(agent: BoardAgentRef): string | null {
   font-size: var(--text-md);
 }
 
+/* The season's rating prompt, shown under the human board heading so readers see what was asked. */
+.board-prompt {
+  margin: calc(-1 * var(--space-2)) 0 var(--space-3);
+  font-size: var(--text-sm);
+  font-style: italic;
+  color: var(--color-text-muted);
+}
+
 .board-table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: var(--text-sm);
+}
+
+/* Pin the leading columns to the same widths in both tables so the rank and
+   agent columns line up despite the human board having one fewer column. */
+.board-table .col-rank {
+  width: 3rem;
+}
+
+.board-table .col-agent {
+  width: 14rem;
 }
 
 .board-table th,

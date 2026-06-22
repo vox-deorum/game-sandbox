@@ -244,6 +244,7 @@ async function start(input: { seed?: number; humanSlotTimeoutMs?: number }): Pro
         v-if="leaderboards?.current != null"
         :board="leaderboards.current.board"
         :env-id="meta.env_id"
+        :rating-prompt="leaderboards.current.season.rating_prompt"
       />
       <UiEmptyState v-else>No released results for this environment yet.</UiEmptyState>
 

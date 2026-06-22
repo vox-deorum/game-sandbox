@@ -1,5 +1,5 @@
-import { rmSync } from 'node:fs'
 import { spawn } from 'node:child_process'
+import { rmSync } from 'node:fs'
 
 /**
  * Launch an e2e backend on a fresh database.
