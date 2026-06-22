@@ -72,10 +72,14 @@ def rebuild_e2e_db() -> None:
         raise SystemExit("e2e rebuild did not produce frontend/e2e/.data/main/sandbox.db")
 
 
-def ensure_frontend_dist() -> None:
-    """The backend serves the SPA only if FRONTEND_DIST exists; build it if missing."""
-    if not FRONTEND_DIST_DIR.exists():
-        _run([_NPM, "run", "build:frontend"])
+def build_frontend() -> None:
+    """Rebuild the SPA bundle the backend serves from FRONTEND_DIST.
+
+    Always rebuilt, not reused: there is no dev watcher here, so a cached dist would silently
+    serve a stale frontend and hide local source edits. The backend itself runs from TypeScript
+    source (``tsx src/main.ts``), so it needs no build step and always reflects current code.
+    """
+    _run([_NPM, "run", "build:frontend"])
 
 
 def prepare_demo_data() -> None:
@@ -156,7 +160,7 @@ def run_backend() -> tuple[int, bool]:
 
 def main() -> None:
     ensure_e2e_db()
-    ensure_frontend_dist()
+    build_frontend()
     prepare_demo_data()
 
     returncode, schema_drift = run_backend()
@@ -165,8 +169,9 @@ def main() -> None:
             "demo backend hit a stale-schema SQLite error -> rebuilding the e2e DB from scratch",
             flush=True,
         )
+        # The frontend bundle is independent of the database, so the build above still stands;
+        # only the e2e data needs recreating before we retry.
         rebuild_e2e_db()
-        ensure_frontend_dist()
         prepare_demo_data()
         returncode, _ = run_backend()
 

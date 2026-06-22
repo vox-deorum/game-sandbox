@@ -104,7 +104,7 @@ function ownerOf(agent: BoardAgentRef): string | null {
         </colgroup>
         <thead>
           <tr>
-            <th scope="col" class="num">#</th>
+            <th scope="col" class="rank">#</th>
             <th scope="col">Agent</th>
             <th scope="col" class="num">Mean rating</th>
             <th scope="col" class="num">Ratings</th>
@@ -117,7 +117,7 @@ function ownerOf(agent: BoardAgentRef): string | null {
             :key="agentKey(row.agent)"
             :class="{ unranked: row.rank === null }"
           >
-            <td class="num">
+            <td class="rank">
               <span v-if="row.rank !== null">{{ row.rank }}</span>
               <span v-else class="muted" title="Fewer than three ratings">—</span>
             </td>
