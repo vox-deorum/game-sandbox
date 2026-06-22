@@ -56,6 +56,10 @@ const releasedSeasons = ref<SeasonView[]>([])
 // stays readable regardless, so the boards embed below is independent of this gate.
 const playOpen = computed(() => leaderboards.value?.play_season_id != null)
 
+// Whether the viewer has something to rate (reported by WatchAgentPicker once its list loads). When
+// true the section is framed as rating rather than watching.
+const rateable = ref(false)
+
 // This environment's public seasons, used to name the live play-open and submission-open seasons in
 // the header (their labels aren't on the leaderboards payload, which carries only their ids).
 const publicSeasons = ref<PublicSeasonView[]>([])
@@ -220,8 +224,12 @@ async function start(input: { seed?: number; humanSlotTimeoutMs?: number }): Pro
     </header>
 
     <section id="play" class="env-section">
-      <h2>Watch an agent</h2>
-      <WatchAgentPicker v-if="playOpen" :env-id="meta.env_id" />
+      <h2>{{ rateable ? 'Rate an Agent' : 'Watch an Agent' }}</h2>
+      <WatchAgentPicker
+        v-if="playOpen"
+        :env-id="meta.env_id"
+        @rateable-change="rateable = $event"
+      />
       <UiEmptyState v-else>Public play is closed for this environment right now.</UiEmptyState>
     </section>
 

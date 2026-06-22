@@ -185,18 +185,23 @@ const seasonLabel = (label: string | null, id: string): string =>
         No released placements for this agent yet.
       </UiEmptyState>
       <table v-else class="placements-table">
+        <colgroup>
+          <col class="col-rank" />
+          <col span="5" />
+        </colgroup>
         <thead>
           <tr>
-            <th scope="col" class="num">Rank</th>
+            <th scope="col" class="rank">Rank</th>
             <th scope="col" class="num">Human rating</th>
             <th scope="col" class="num">Mean score</th>
             <th scope="col" class="num">Agent compute</th>
             <th scope="col">Season</th>
+            <th scope="col">Replay</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="placement in placements.placements" :key="placement.id">
-            <td class="num">{{ placement.rank }}</td>
+            <td class="rank">{{ placement.rank }}</td>
             <td class="num">
               <span v-if="placement.human_mean !== null">{{ formatRating(placement.human_mean) }}</span>
               <span v-else class="muted" title="No ratings yet">—</span>
@@ -210,6 +215,16 @@ const seasonLabel = (label: string | null, id: string): string =>
               >
                 {{ seasonLabel(placement.season_label, placement.season_id) }}
               </RouterLink>
+            </td>
+            <td>
+              <RouterLink
+                v-if="placement.recording_id !== null"
+                class="replay-link"
+                :to="`/replays/${placement.recording_id}`"
+              >
+                Replay
+              </RouterLink>
+              <span v-else class="muted">—</span>
             </td>
           </tr>
         </tbody>
@@ -311,6 +326,11 @@ const seasonLabel = (label: string | null, id: string): string =>
   font-weight: 600;
 }
 
+/* The rank column matches the environment leaderboard: a narrow, left-aligned leading column. */
+.placements-table .col-rank {
+  width: 3rem;
+}
+
 .placements-table .num {
   text-align: right;
   font-variant-numeric: tabular-nums;
@@ -320,7 +340,8 @@ const seasonLabel = (label: string | null, id: string): string =>
   color: var(--color-text-muted);
 }
 
-.placement-link {
+.placement-link,
+.replay-link {
   color: var(--color-accent);
 }
 

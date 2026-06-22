@@ -6,7 +6,7 @@
   the rating after the run. Non-allowlisted viewers can browse the list but cannot start a container.
 -->
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watchEffect } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 
 import { listWatchAgents, startSession, type WatchAgentSummary } from '../api/client.js'
@@ -16,6 +16,10 @@ import UiButton from './ui/UiButton.vue'
 import UiEmptyState from './ui/UiEmptyState.vue'
 
 const props = defineProps<{ envId: string }>()
+// Tells the parent hub whether this viewer actually has something to rate, so it can title the
+// section "Rate an agent" rather than "Watch an agent". True only once the list has loaded with at
+// least one unrated agent and the viewer is allowlisted (rating is allowlisted-only).
+const emit = defineEmits<{ rateableChange: [boolean] }>()
 const router = useRouter()
 const me = useMe()
 
@@ -27,6 +31,16 @@ const agents = ref<WatchAgentSummary[] | null>(null)
 const startError = ref<string | null>(null)
 // The submission a watch run is being started for, so only its button shows the loading state.
 const starting = ref<string | null>(null)
+
+// Whether the viewer can rate something here: allowlisted, and at least one listed agent is unrated.
+// `me` and the list both settle asynchronously, so this is reactive and re-emitted whenever either
+// input changes — letting the parent hub retitle the section once there is something to rate.
+const rateable = computed(
+  () =>
+    Boolean(me.me?.allowlisted) &&
+    (agents.value?.some((agent) => agent.rating_status === 'unrated') ?? false),
+)
+watchEffect(() => emit('rateableChange', rateable.value))
 
 onMounted(() => {
   listWatchAgents(props.envId).then(
@@ -104,6 +118,7 @@ async function startWatch(loadingKey: string, submissionId: string | undefined):
         <UiButton
           v-if="me.me?.allowlisted"
           size="tight"
+          variant="secondary"
           :loading="starting === BUILTIN_KEY"
           @click="watchBuiltin()"
         >
