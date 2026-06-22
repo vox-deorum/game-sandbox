@@ -1,16 +1,23 @@
 # Recordings
 
-A recording is state only: a JSONL file whose first line is the header and whose following lines are one per-step state each (see the [recording spec](../specs/recording.md)). This is the same line-delimited JSON the harness streams over its transport during a live session, so the wire form and the stored form are a single format. Human input, pause and resume, and chat commands travel a separate command envelope and are not recording lines.
+A recording is a JSONL file:
+
+```text
+line 1: recording header
+line 2+: one StepState per line
+```
+
+The harness streams and stores the same serialized state lines. Input, pause, resume, stop, and chat commands are event envelopes, not recording lines. See the [recording specification](../specs/recording.md) and [state schema](state-schema.md).
 
 The header may include a `players` map keyed by slot id, using the same keys as a step state's `agents`. Each entry has the shape `{kind: "human" | "agent", label, user?, submission_id?}`.
 
-The harness copies the map from the backend's live configuration without interpreting it. The backend assigns:
+The harness copies the map from session configuration. The backend assigns:
 
 - Human slots to the session owner.
 - Submitted slots to the submission owner and id.
 - Other built-in slots to the "Naive agent".
 
-The field is optional and additive. Older recordings omit it, and readers tolerate its absence just as they tolerate unknown sidecars.
+The field is optional, so older recordings remain readable.
 
 ## The store interface
 
@@ -20,10 +27,18 @@ The harness exposes a small save and load interface, `RecordingStore`, with thre
 - `open(recording_id)` returns a recording holding the parsed, validated header and a lazy iterator of validated states.
 - `list_ids()` enumerates stored recordings.
 
-Reading enforces that every line's `schema_version` matches the header's, and a blank or truncated trailing line ends the readable prefix instead of failing the read.
+Readers require every state's `schema_version` to match the header. A blank or truncated final line ends the readable prefix instead of invalidating earlier complete lines.
 
 ## The folder store and the S3 seam
 
-`FolderRecordingStore(root)` lays out one directory per recording, `<root>/<id>/recording.jsonl`, with any sidecars at their header-declared relative paths inside that directory. The per-recording directory is the seam for object storage: it maps one to one onto an object-key prefix, and the protocol names only ids and streams, never filesystem types, so an `S3RecordingStore` can be added behind the same interface later as a purely additive change. No other backends are planned.
+`FolderRecordingStore(root)` uses:
 
-There is deliberately no sidecar writing API yet. Stage 1 readers only tolerate declared sidecars; the first writer arrives with the Stage 9 telemetry sidecar. The rule for unknown sidecars is documented under [the state schema](state-schema.md#the-sidecar-rule).
+```text
+<root>/<recording-id>/
+  recording.jsonl
+  <declared sidecars>
+```
+
+One directory maps naturally to one object-storage key prefix. The interface names IDs and streams rather than filesystem paths, so an S3-compatible store can be added later.
+
+There is no general sidecar writing API yet. Readers tolerate declared unknown sidecars according to [the sidecar rule](state-schema.md#the-sidecar-rule).

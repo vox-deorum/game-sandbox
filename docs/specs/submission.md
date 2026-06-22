@@ -1,27 +1,41 @@
 # Submissions
 
+Participants submit Python agents through GitHub. Every accepted submission is tied to a season, a verified user, and an exact commit.
+
 ## Agent interface
 
-Agents are written in Python. A participant implements a small documented interface:
+| Hook | Required? | Purpose |
+| --- | --- | --- |
+| `reset(seed)` | Yes | Prepare for a new episode and seed agent randomness. |
+| `act(observation)` | Yes | Return an action in the environment's action space. |
+| `learn(observation, action, reward, terminated)` | No | Update after a step. |
+| `chat(inbox)` | No | Receive and send messages on the agent's turn. |
 
-- `reset(seed)` prepares the agent for a new episode. The seed comes from the harness, so repeated runs are controlled (see [leaderboard.md](leaderboard.md)).
-- `act(observation)` returns an action in the environment's action space.
-- `learn(observation, action, reward, terminated)` is optional. The harness calls it after each step with that step's transition, so reinforcement learning agents can keep updating during play.
-- `chat(inbox)` is optional too. The harness calls it on the agent's turn with the messages addressed to that slot, and the agent returns messages to send or nothing to stay silent. See [communication.md](communication.md).
+The interface is independent of algorithm style. Agents always run inside the server-side session container. They may also call the optional [LLM API](llm.md).
 
-The same interface works whether the agent is a hand-written tree search, a trained neural network, or a hybrid of both, and agents always run server-side inside the session's Docker container regardless of style (see [execution.md](execution.md)). Agents may also call a provided OpenAI-compatible LLM API; see [llm.md](llm.md).
-
-Learned state may persist across episodes within one leaderboard run, but never across submissions or seasons. Time spent in `learn` and `chat` counts against the same per-step and per-episode time limits as acting, so an agent that learns or talks heavily pays for it in the efficiency column rather than stalling the run.
+Learned state may persist across episodes in one leaderboard run, but not across submissions or seasons. Time spent in optional hooks and model calls counts toward the same limits as acting.
 
 ## Packaging
 
-So the workflow can build and run any submitted repo, each repo carries a small manifest at its root. The manifest names the entry-point module, the agent class, and the version of the template dependency set the repo targets. The template repos include a filled-in example.
+Every repository contains `manifest.json` at its root:
 
-Dependencies are not chosen per repo. The template carries the authoritative dependency set, and the set is versioned: each template release pins exact versions of everything an agent may import, and old set versions stay available, so a submission from years ago can be rebuilt exactly as it ran. A participant who needs a library the set lacks asks the operator for a new template release rather than pinning it in their own repo. Because every agent in a season runs on the same set version (see [leaderboard.md](leaderboard.md)), agents sharing a session container can never have conflicting dependencies (see [execution.md](execution.md)).
+```json
+{
+  "entry_point": "agent",
+  "class_name": "Agent",
+  "template_version": 1
+}
+```
+
+The manifest names the Python module, class, and template dependency version.
+
+Dependencies are set by the template, not by individual submissions. Each template release pins exact package versions, and old versions remain available for reproducibility. Every agent in a season uses the same dependency version, so agents can share a session container without conflicts.
+
+A participant who needs a missing library asks the operator for a new template release rather than adding a private dependency pin. This keeps local development, validation, and official runs on the same package set.
 
 ## Template repos and local development
 
-Before submitting, a participant can develop and test an agent against vanilla PettingZoo on their own machine. The `vox-deorum/game-agent-template` repository provides:
+Participants develop against PettingZoo on their own computers. The `vox-deorum/game-agent-template` repository provides:
 
 - `main` for the default environment.
 - `templates/<env>` for each additional environment.
@@ -36,31 +50,35 @@ Each starter kit includes:
 - Local play and evaluation scripts.
 - A minimal LLM API example.
 
-For local LLM use, participants place the class-provided key in `.env`. On the server, the harness replaces it with a one-off key scoped to the session and acting slot (see [llm.md](llm.md)). Participants can therefore write and test an agent end to end without using the Game Sandbox backend.
+Local LLM credentials go in `.env`. The server replaces them with a temporary session-and-slot key. Participants do not need the Game Sandbox backend to write or test an agent.
 
-For sandbox developers, a submission may also come from a **local folder** on the server instead of a Git URL. This source is disabled in normal deployments and is not pinned to a commit. It exists to exercise the validation and build pipeline with worked examples, additional agents, and intentionally malformed repositories without going through GitHub.
+Developers may enable a local-folder source to test the validation pipeline without GitHub. It is disabled in normal deployments and is not a participant feature.
 
 ## Submission flow
 
-Submission happens through the website. For each season (see [leaderboard.md](leaderboard.md)), a participant submits their GitHub repository link through the form on the environment page (see [frontend.md](frontend.md)). GitHub Classroom is not required; the same flow serves any kind of competition (see [overview.md](overview.md)).
+```text
+Repository URL + optional ref
+             ↓
+Resolve exact commit
+             ↓
+Attach signed-in user and open season
+             ↓
+Validate and build
+```
 
-A submission is a tuple of three things:
+If no branch, tag, or commit is supplied, the system pins the head of the default branch. Later pushes do not change the existing submission. Resubmitting resolves a new commit.
 
-- The repository URL, pinned to a specific commit. The participant supplies the URL alone, or optionally a branch, tag, or commit; the system resolves it to an exact commit SHA at submission time and pins that. The default is the head of the repository's default branch. Later pushes do not silently change the submission for that season, and resubmitting re-resolves to the current commit.
-- The GitHub username of the submitter, used as their identity throughout the system. See [frontend.md](frontend.md).
-- The season the submission is for.
-
-Each participant has one active submission per season. Submitting again while the season is open replaces the previous submission.
-
-The submitter's GitHub identity is verified through the same OAuth login used by the rest of the website, so a participant cannot submit a repo under someone else's name.
+Each participant has one active submission per season. A later submission replaces the active one and preserves history. The signed-in GitHub identity is always the submitter identity.
 
 If a deployment needs to pull from private repos, the operator provides a GitHub token at deploy time. Public repos do not need this.
 
 ## Validation
 
-Every submission is validated before it can run, and never by running a game session. Validation has two layers, and either can reject the submission with a specific reason shown to the owner:
+Validation never runs a game:
 
-- **Static checks** read the submitted tree without executing any participant code: the repository must be reachable and (for git submissions) the ref must resolve to a commit; `manifest.json` must be present at the root, be valid JSON, and carry exactly the required fields with the right types (see [Packaging](#packaging)); the entry-point module file named by the manifest must exist; and the manifest's `template_version` must target a dependency-set version the deployment has a base image for.
-- **A sandboxed load check** then confirms the agent actually loads: inside a locked-down container with no environment stepping, the entry-point module is imported, the named class is instantiated, and it is confirmed to expose the callable `reset` and `act` hooks. This runs the agent's import and constructor once but never starts an episode.
+| Layer | Executes participant code? | Checks |
+| --- | --- | --- |
+| Static | No | Reachable commit, exact manifest shape, existing entry-point module, supported template version that matches the season |
+| Load | Yes, in a sandbox | Module imports, class exists, constructor succeeds, `reset` and `act` are callable |
 
-A submission that passes both is accepted and built into a session image (see [execution.md](execution.md)). A submission that fails either layer is stored and reported to its owner rather than run.
+Every failure has a specific owner-visible reason. A successful submission becomes a runnable overlay image. See [Execution](execution.md).

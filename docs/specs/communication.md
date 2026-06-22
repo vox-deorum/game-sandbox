@@ -1,27 +1,40 @@
 # Agent Communication
 
-Agents can exchange short text messages with each other and with human-controlled slots during a session. A human player occupies an environment slot like any other, so that slot sends and receives messages the same way as agent-controlled slots (see [interaction.md](interaction.md)). The capability is optional at every level: an agent that does not implement the hook stays silent and pays no cost, and an environment can leave messaging disabled entirely (see [environment.md](environment.md)).
+Agents and human-controlled slots may exchange short text messages during a session. Messaging is optional for the environment, season, and agent.
 
 ## Interface
 
-`act(observation)` is untouched. Messaging adds one optional hook that the harness calls on the agent's turn, after `act`:
+Messaging does not change `act(observation)`. An agent may implement:
 
-- `chat(inbox)` receives the messages addressed to this slot since its last turn and returns the messages to send, or nothing to stay silent. An agent that does not define the hook is never asked.
+```python
+def chat(self, inbox):
+    ...
+```
 
-This follows the precedent of `learn`, an optional hook the harness calls only when present (see [submission.md](submission.md)). The template repos include a stub.
+The harness calls `chat` after `act` on the agent's turn. `inbox` contains messages addressed to that slot since its previous turn. The method returns messages or nothing. An agent without the method stays silent and incurs no chat cost. See [Submissions](submission.md).
 
 ## Messages
 
-A message carries the sender slot, the recipient, the text, and the tick it was sent on. The recipient is either a specific slot, human-controlled slots included, or a broadcast to everyone. Per turn, an agent may send at most one message per recipient plus one broadcast. Message text is plain UTF-8 of variable length, capped by a limit each environment sets in its metadata (see [environment.md](environment.md)); a season can override the limit or disable messaging (see [leaderboard.md](leaderboard.md)). There are no binary payloads and no structured side channels.
+A message contains:
 
-## Delivery
+- Sender slot.
+- Recipient slot, or broadcast.
+- Plain UTF-8 text.
+- Tick sent.
 
-Messages always flow through the harness, never directly between agents. A message sent on tick T appears in the recipient's inbox on its next turn. Messages from human-controlled slots travel over the session WebSocket like any other input and are queued for the next tick (see [interaction.md](interaction.md)).
+An agent may send at most one message to each recipient and one broadcast per turn. The environment sets the text limit, and a season may lower the limit or disable messaging. Binary payloads and structured side channels are not supported.
 
-## Visibility
+## Delivery and visibility
 
-Broadcast messages are visible to every slot and to spectators. A targeted message is delivered only to its recipient during play. All messages, targeted ones included, are part of the per-step state object and therefore appear in the recording (see [recording.md](recording.md)), so there is no permanently secret channel.
+```text
+Sender → harness → recipient inbox on its next turn
+             └──→ recording
+```
+
+Agents never communicate directly. Human messages use the session WebSocket and enter the same harness queue.
+
+Broadcasts are visible to every slot and spectator. A targeted message is visible only to its recipient during live play. Every message is recorded, including targeted messages, so no channel is permanently secret. See [Recording](recording.md).
 
 ## Timing
 
-Time spent in `chat` counts against the same per-step and per-episode limits as `act` and `learn`, so an agent that talks heavily pays for it in the efficiency column rather than stalling the run (see [leaderboard.md](leaderboard.md)).
+Time spent in `chat` counts toward the agent's step and episode limits and appears in efficiency measurements. See [Leaderboards](leaderboard.md).

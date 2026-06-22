@@ -8,11 +8,14 @@ Game Sandbox is a classwise playground for Game AI. Participants submit agents t
 
 The full specification lives under [docs/specs/](docs/specs/README.md). Read it before changing anything substantive. The implementation plan lives under [plans/](plans/README.md); implementation work must stay connected to it, so when code diverges from a stage file, revise the stage file in the same change set (see the plan README for the rules).
 
+Public documentation under `docs/` also follows [docs/AGENTS.md](docs/AGENTS.md), including its audience, linking, and beginner-accessibility conventions.
+
 ## Writing style
 
 When you write documentation, specs, responses, or any prose in this repo, follow these rules:
 
 - Write naturally, the way a thoughtful human would write a spec. No marketing voice.
+- State assumptions, prerequisites, and specialized terms instead of relying on context that only an existing maintainer would know. When revising prose, preserve constraints, exceptions, and rationale that a new reader still needs.
 - Do not use em-dashes. Use commas, periods, parentheses, or rewording instead.
 - Specs describe what the system is. They do not include implementation details, build plans, or code scaffolding unless the task explicitly asks for those.
 - Organize clearly with sections and short paragraphs. Avoid bullet soup, which is a wall of single-sentence bullets that could have been a paragraph.
@@ -24,7 +27,7 @@ When you write documentation, specs, responses, or any prose in this repo, follo
 
 A few defaults that will save back-and-forth:
 
-- Read the relevant files under [docs/specs/](docs/specs/README.md) before proposing changes that touch the design. Start with [specs/overview.md](specs/overview.md).
+- Read the relevant files under [docs/specs/](docs/specs/README.md) before proposing changes that touch the design. Start with [docs/specs/overview.md](docs/specs/overview.md).
 - Ask before expanding scope. If a request implies new features beyond what is in the spec, raise it rather than quietly adding them.
 - Prefer editing existing files over creating new ones.
 - Keep specification documents under [docs/specs/](docs/specs/README.md). Each file should have a single clear topic and cross-link to the others rather than duplicating content.

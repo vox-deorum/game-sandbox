@@ -1,47 +1,80 @@
 # Agent Interface
 
-Your agent is a Python class with four methods: two required, two optional. You develop against vanilla PettingZoo; the server runs this exact class through the same interface, so there is nothing sandbox-specific to import. The authoritative design is the [submission spec](../specs/submission.md).
+Your agent is a Python class. The harness creates one instance and asks it to choose actions until the game ends.
 
-## The four methods
+## Minimal agent
 
 ```python
 class Agent:
     def reset(self, seed: int) -> None:
-        ...                      # required
+        self.last_observation = None
 
     def act(self, observation):
-        ...                      # required; returns an action in the action space
-
-    # optional: implement only if you want them:
-    # def learn(self, observation, action, reward, terminated): ...
-    # def chat(self, inbox): ...
+        self.last_observation = observation
+        return 0
 ```
 
-- **`reset(seed)`** prepares the agent for a new episode. It is called once before the first `act`. The seed is the _same_ seed the environment receives, so a stochastic agent can be made reproducible by seeding its own RNG here.
-- **`act(observation)`** returns an action in the environment's action space. For Flappy Bird the observation is a length-12 normalized NumPy array and the action is `0` (do nothing) or `1` (flap).
-- **`learn(observation, action, reward, terminated)`** is _optional_. When present, the harness calls it after each step with that step's transition, so a reinforcement-learning agent can keep updating during play.
-- **`chat(inbox)`** is _optional_ and only used in environments with messaging enabled. It is called on your turn with the messages addressed to your slot, and returns messages to send or nothing to stay silent.
+This example always chooses action `0`, so it is valid but not useful. Replace the decision in `act` with your own algorithm.
 
-The optional hooks are detected **by presence**: if you do not define `learn` or `chat`, the harness never calls them and you pay no time for them. Do not add empty stubs: that just makes the harness call a method that does nothing.
+## Methods
 
-## What the harness guarantees
+| Method | Required? | Purpose |
+| --- | --- | --- |
+| `reset(seed)` | Yes | Clear per-game state and seed any random-number generator. |
+| `act(observation)` | Yes | Return one legal action for the current observation. |
+| `learn(observation, action, reward, terminated)` | No | Update a learning agent after a step. |
+| `chat(inbox)` | No | Receive and send messages when the environment enables messaging. |
 
-- It calls `reset(seed)` once at the start of an episode, then alternates `act` (and `learn`, if present) per step until the episode ends.
-- The same seed produces the same episode, so two runs of a deterministic agent are identical.
-- The constructor takes no arguments. Establish all per-episode state in `reset`, not `__init__`.
+The optional methods are detected by presence. Leave them out unless you use them. An empty optional method still consumes time because the harness must call it.
 
-## Timeouts you live under
+### `reset(seed)`
 
-Two limits, both defaulted by the environment and overridable per run:
+The harness calls `reset` once before the first action of each game. The environment receives the same seed. If your agent uses randomness, seed its random-number generator here so runs can be repeated.
 
-- A **per-step limit**: if a single `act` exceeds it, the harness discards your action, applies the environment's default action for that step, and records the overage. If `learn` is present, its time is added to the same step's overage accounting, but it runs after the step, so it cannot change the action that already happened.
-- A **per-episode budget**: the cumulative measured compute across the episode. Exhaust it and the episode ends early with reason `episode_limit`.
+### `act(observation)`
 
-Time spent in `learn` and `chat` counts against both limits, so an agent that learns or talks heavily pays for it in the efficiency column rather than stalling the run. The recorded `decision_ms` is pure `act` time; `learn_ms`, when present, is reported separately.
+`act` receives the current observation and returns an action from the environment's action space. For Flappy Bird:
 
-## The manifest
+- The observation is a NumPy array with 12 normalized values.
+- Action `0` does nothing.
+- Action `1` flaps.
 
-A `manifest.json` at your repo root tells the harness how to load your agent. Three fields:
+### `learn(...)`
+
+A reinforcement-learning agent can implement `learn`. The harness calls it after each step with the observation, chosen action, reward, and whether the game ended.
+
+### `chat(inbox)`
+
+An agent can implement `chat` in an environment that supports messaging. It receives messages addressed to the agent's slot and may return messages to send. See the [communication specification](../specs/communication.md).
+
+## Call order
+
+```text
+reset(seed)
+    ↓
+act(observation) → environment step → learn(...) → chat(...)
+    ↑                                      |
+    └──────────── next observation ────────┘
+```
+
+The loop ends when the environment terminates or a limit stops the episode.
+
+## Constructor and state
+
+The harness constructs `Agent()` with no arguments. Put configuration that lasts for the whole object in `__init__`, and clear game-specific state in `reset`.
+
+## Time limits
+
+Two limits prevent a slow or stuck agent from blocking a session:
+
+- The **step limit** bounds one decision cycle. If `act` is late, the harness discards its result and uses the environment's legal default action. Optional hook time is included in the step's overage accounting, although `learn` runs after the chosen action has already happened.
+- The **episode limit** bounds the agent's total measured compute for the game. If it is exhausted, the episode ends early.
+
+Time spent in `act`, `learn`, `chat`, and LLM calls counts toward these limits. Recorded `decision_ms` measures `act` itself, while optional hook timings remain separate so the interface can show decision time and the leaderboard can still include the full compute cost.
+
+## Manifest
+
+`manifest.json` tells the harness where your class lives:
 
 ```json
 {
@@ -51,8 +84,12 @@ A `manifest.json` at your repo root tells the harness how to load your agent. Th
 }
 ```
 
-- `entry_point`: the module (importable from the repo root) that holds your agent class.
-- `class_name`: the class inside it.
-- `template_version`: the integer version of the template dependency set your repo targets.
+| Field | Meaning |
+| --- | --- |
+| `entry_point` | Python module containing the class. `agent` means `agent.py`. |
+| `class_name` | Class to construct from that module. |
+| `template_version` | Version of the template's shared dependency set. |
 
 Keep the template's manifest as is unless you rename your module or class.
+
+The [submission specification](../specs/submission.md) is the authority for this interface.

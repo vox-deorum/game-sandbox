@@ -1,50 +1,81 @@
 # Execution Architecture
 
-Execution is split between two places. Rendering and human input always live in the browser (see [interaction.md](interaction.md)). Everything else, the environment stepping and the agents themselves, runs on the server.
+Rendering and human input run in the browser. Environment stepping and agents run on the server.
 
-## Always the same
+```text
+Browser                    Backend                  Session container
+renderer + input ⇄ WebSocket relay ⇄ line transport ⇄ harness + environment + agents
+                                                        │
+                                                        └→ recording volume
+```
 
-- Rendering and human input always live in the browser. See [interaction.md](interaction.md).
-- The environment and its step transitions always come from PettingZoo, with the compatibility wrapper bringing any single-agent game into the same interface. See [environment.md](environment.md).
-- Every live session and every leaderboard match runs inside a single Docker container that holds the session harness, the environment, and all agent slots (see [leaderboard.md](leaderboard.md)). One container per session keeps orchestration simple, keeps participant code off other people's machines, and means no per-tick communication ever crosses a container boundary. Since agents step sequentially, they never legitimately compete for the container's CPU.
+## Invariants
+
+- The browser owns rendering and human input.
+- PettingZoo owns environment transitions.
+- One container holds the harness, environment, and every agent slot for one session.
+- The backend supervises and relays. It does not step the game.
+- The per-step state schema is the container boundary and recording format.
+
+Keeping every slot in one session container avoids a second container boundary inside the per-turn loop and keeps orchestration practical at class scale. Agents act sequentially, so legitimate agent work does not require simultaneous CPU access.
 
 ## Live sessions
 
-A live session connects browsers to the backend over WebSocket. The backend launches one session container, relays each per-step state object from it to renderers, and feeds human input back into the human-controlled slots (see [interaction.md](interaction.md) for the session loop). Inside the container, the harness steps the environment and queries each non-human slot's agent in turn. The harness also relays chat messages between slots and over the WebSocket to human-controlled slots and spectators (see [communication.md](communication.md)). The container lives for the duration of the session.
+The backend launches a container, relays state to browsers over WebSocket, and forwards authorized commands to the harness. The harness steps the environment, calls agent slots, and routes messages. The container lasts for the session.
 
 ## Execution drivers
 
-The backend never talks to container infrastructure directly. It goes through a small execution driver interface: build or fetch an image, launch a session with a sandbox profile, stream its I/O, and tear it down. The first driver runs against local Docker, which is what development and class-scale deployments use. A Kubernetes driver is the planned second implementation for deployments that outgrow one host. Nothing above the driver may assume Docker specifics: the sandbox profile (quotas, read-only filesystem, network policy) is expressed in driver-neutral terms and each driver maps it onto its platform. How aggressively images are cached between sessions is configuration on the driver, not policy hardcoded above it. Where this spec says "Docker container", read "container on the configured driver"; local Docker is simply the driver we run today.
+The backend uses an execution-driver interface to:
+
+- Build or fetch an image.
+- Launch it with a driver-neutral sandbox profile.
+- Exchange ordered text lines.
+- Observe exit status.
+- Tear the process down.
+
+Local Docker is the first driver. A future Kubernetes driver can map the same interface to its platform. Code above the driver does not depend on Docker-specific ports, file descriptors, or image-cache behavior.
 
 ## From submission to image
 
-Dependencies come from the template rather than individual repositories (see [submission.md](submission.md)). The backend keeps one base image per dependency-set version. Each base contains:
+The backend keeps one base image per template dependency version. Each base contains:
 
 - The harness.
 - PettingZoo.
 - The environments.
 - The exact dependency set for that version.
 
-To build a session image, the backend places each repository at its pinned commit in a separate slot directory on the correct base image. Local-folder submissions use the same overlay path without cloning a commit. Every submission in a session uses the season's dependency-set version, which prevents conflicts and keeps old submissions reproducible.
+A submission image adds the pinned repository to the base without installing new dependencies. Every submission in a session uses the season's dependency version.
 
-Before a built image is used, the submission passes a sandboxed load check: the overlaid agent is imported and instantiated once, inside the same locked-down container profile but with no environment stepping, to confirm it loads (see the validation layers in [submission.md](submission.md)). A submission whose static validation or load check fails, or whose build fails, is reported to its owner rather than run.
+Before use, the image passes the sandboxed load check from [Submissions](submission.md). Failed builds and checks are reported to the owner and never run in a game.
 
 ## Sandboxing
 
-Session containers are locked down. They run with fixed CPU and memory quotas and a read-only filesystem except for a scratch directory. The only network a container can reach is an internal one whose single endpoint is the LLM gateway (see [llm.md](llm.md)); there is no general internet access. The original concern behind blocking the network was cheating, an agent secretly phoning an outside service to choose its actions. That concern survives in an updated form: arbitrary network access stays blocked, and the model calls an agent can make go through the gateway, where they are sanctioned, equal for every participant, metered, and fully logged.
+Session containers have:
 
-Agents in a multi-agent session share the container, so a malicious agent could in principle read or interfere with its opponent. We accept that trade at class scale: submissions are pinned commits, so the operator can review the code before it runs, and every leaderboard run is recorded for inspection afterwards (see [recording.md](recording.md)).
+- Fixed CPU and memory quotas.
+- A read-only root filesystem.
+- A bounded writable scratch directory.
+- No general internet access.
+- Access only to the internal LLM gateway when enabled.
+
+General network access stays blocked so an agent cannot secretly outsource decisions or contact an unmetered service. Model use through the gateway is an explicit exception because it is shared, budgeted, and logged.
+
+Agents in a multi-agent session share one container and could interfere with one another. This class-scale tradeoff is accepted because submissions are pinned and reviewable, and every official run is recorded.
 
 ## Local development
 
-Developers of the sandbox itself run the same stack locally, Docker backend included. Participants do not need the stack at all; they develop and test their agents against vanilla PettingZoo using the template repos (see [submission.md](submission.md)).
+Contributors run the full stack locally. Participants use the template and do not need the backend or container stack.
 
 ## Implementation languages
 
-The language split follows the container boundary. Everything inside the session container is Python: the harness loads participant agents in-process alongside PettingZoo, so there is no real alternative. Everything outside is TypeScript on Node: GitHub OAuth, submissions, leaderboard storage, replay serving, the browser-facing WebSocket endpoint, and the session orchestration that launches and supervises containers through the execution driver, all sharing native types and tooling with the browser renderer. The one allowed exception is the LLM gateway, which may be an off-the-shelf proxy such as LiteLLM running as its own service rather than being reimplemented in TypeScript (see [llm.md](llm.md)).
+| Side | Language | Responsibilities |
+| --- | --- | --- |
+| Inside container | Python | Harness, PettingZoo environments, participant agents |
+| Outside container | TypeScript on Node | Identity, submissions, storage, orchestration, WebSocket relay, browser app |
+| Separate service | Implementation-defined | OpenAI-compatible LLM gateway |
 
-The per-step state object is the contract across that boundary. It is defined once as a versioned JSON Schema; the TypeScript backend and renderer derive their types from it, and the Python harness validates the payloads it emits against it. This is the same schema version that recordings carry in their header (see [recording.md](recording.md)), so there is a single source of truth for the wire format and the stored format alike.
+The state contract is a versioned JSON Schema. Python validates emitted payloads, while TypeScript types are generated from the same source.
 
 ## Future work: in-browser agents
 
-Running a pure-Python agent directly in the viewer's browser through Pyodide would make casual play cheaper and lower latency, since no session container is launched on the server. The idea is deferred. It adds a second runtime target and a per-submission dependency-compatibility check, and above all it is a sandboxing problem: untrusted participant code would execute inside other users' browser sessions. If it comes back, it comes back behind real isolation, and it is never used to compute an official leaderboard score.
+Running pure-Python agents in the browser could reduce latency and container use for casual play. It is deferred because it adds a second runtime and per-submission compatibility checks, and it would execute untrusted code in another user's browser. Browser execution will not produce official leaderboard scores.

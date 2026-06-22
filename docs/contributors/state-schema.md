@@ -1,24 +1,41 @@
 # The State Schema
 
-The per-step state object is the contract across the container boundary (see the [execution spec](../specs/execution.md)). It is defined once as a versioned JSON Schema under `schema/`, draft 2020-12, and it is the single source of truth for both the wire format and the stored format. The TypeScript backend and renderer derive their types from it, and the Python harness validates every payload it emits against it. This page is the normative home of the version rule and the sidecar rule; the schema files only carry field descriptions, and `schema/README.md` points here.
+The per-step state is the contract between Python, TypeScript, live transport, and replay:
+
+```text
+JSON Schema → Python validation
+            → generated TypeScript types
+            → live state lines
+            → recording state lines
+```
+
+The source uses JSON Schema draft 2020-12 under `schema/`. This page defines versioning and sidecar compatibility. See [Execution](execution.md) and [Recordings](recordings.md).
 
 ## The two files
 
 - `schema/step-state.schema.json` is the per-step state object: `schema_version`, `tick`, per-agent observations, actions, rewards and cumulative scores, an open `overlay` for environment-specific fields, optional `messages`, and `timing`. Field names are snake_case throughout, which is JSON-conventional and Python-native, and the generated TypeScript types mirror it.
 - `schema/recording-header.schema.json` is the recording header: `schema_version`, `environment`, an optional `seed` and `created_at`, the `sidecars` array, and an optional `players` map (slot id to `{kind, label, user?, submission_id?}`) that attributes each slot to a human or an agent. The header object stays open (`additionalProperties: true`) so a new optional field like `players` is purely additive, with no `schema_version` bump, and the generated TypeScript field comes for free from `scripts/generate.py`; each `players` entry is itself a closed region (`additionalProperties: false`) so a malformed attribution is loud.
 
-`messages` and `overlay` exist from day one even though messaging arrives in Stage 8, so the schema needs no breaking revision when chat lights up. Every closed region sets `additionalProperties: false` so accidental drift is loud; `overlay` is the one open object, the designated extension region for environment payloads.
+Closed regions use `additionalProperties: false` so accidental drift fails loudly. `overlay` is the designated open extension region for environment-specific display data.
+
+`messages` and `overlay` exist in the initial schema even before every capability uses them. Reserving those extension points avoids a breaking schema revision when messaging or another renderer payload becomes active.
 
 ## The version rule
 
-`schema_version` is a single integer, starting at 1. It bumps only on a breaking change: removing, renaming, retyping, or changing the meaning of a defined field. Additive changes (a new optional field, a new sidecar name) do not bump it, and readers ignore unknown content in the regions the schema leaves open. A single integer is enough because producers and consumers are generated from the same repository and nothing is published to a registry, so semver would buy nothing while an integer compares trivially in both languages and stays compact in a JSONL header.
+`schema_version` is an integer that changes only for a breaking change:
 
-The compatibility rule in one sentence: a reader built for version N accepts exactly version N and rejects anything else with a clear error. Old recordings stay replayable because when a bump ever happens the old schema file is retained; the escalation path is to move to `schema/v1/`, `schema/v2/` directories at the first real bump, and stay flat until then.
+- Removing or renaming a field.
+- Changing a field type.
+- Changing a field's meaning.
 
-`schema_version` appears in both the recording header and every per-step state. The header is authoritative for a recording or a stream; the per-step copy makes a single state object self-describing when it travels alone, such as a relayed live frame or a fixture file. Loaders enforce equality between the header and every line. The redundancy is deliberate.
+Adding an optional field or sidecar does not require a new version.
+
+A reader built for version N accepts exactly version N and reports a clear error for another version. At the first real bump, retain old schemas under versioned directories.
+
+The version appears in the header and every state. The header governs the stream, while the per-state copy keeps an isolated frame self-describing. Readers enforce equality.
 
 ## The sidecar rule
 
-A sidecar is an auxiliary file stored alongside a recording, declared in the header's `sidecars` array by `name` and `path`. The `name` identifies the sidecar's kind against a registry of known names, which is empty today; the `path` is relative to the recording's own directory. A reader that does not recognize a sidecar name must skip that entry and load the recording normally, and unknown keys inside a sidecar entry are likewise ignored.
+A sidecar is an auxiliary file declared by `name` and recording-relative `path`. A reader that does not recognize the name skips it and continues loading the recording.
 
-Sidecar payload schemas, when they arrive (the Stage 9 LLM telemetry is the first), are covered by the same `schema_version` as the recording header, so adding one is an additive contract change, never a second storage format.
+Sidecars use the recording header's schema version. Adding a new sidecar kind is additive, not a second recording format.

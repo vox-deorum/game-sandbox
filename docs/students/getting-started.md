@@ -1,60 +1,104 @@
 # Getting Started
 
-You write a Game Sandbox agent in Python and test it entirely on your own machine against vanilla PettingZoo. You do not need an account, backend, or network connection. When the agent is ready, submit its GitHub repository through the course website.
+You write a Game Sandbox agent in Python and test it on your own computer with the environment and PettingZoo tools included in the template. You do not need to run the Game Sandbox website or backend.
 
-## 1. Get the template
+## Before you begin
 
-Start from the agent template repository your instructor points you to. It is a complete, submittable repo: you fill in one file and you are done.
+Install:
 
+- [Python 3.12](https://www.python.org/downloads/)
+- [Git](https://docs.github.com/en/get-started/git-basics/set-up-git)
+- A code editor, such as [Visual Studio Code](https://code.visualstudio.com/)
+
+Git tracks changes to a project. GitHub stores a copy of that project online. A Git project is called a **repository**, often shortened to **repo**. If these ideas are new, GitHub's [Hello World guide](https://docs.github.com/en/get-started/start-your-journey/hello-world) is a friendly introduction.
+
+## 1. Copy the template to your computer
+
+Your instructor will give you a GitHub repository created from the agent template. Copy, or **clone**, it to your computer:
+
+```console
+git clone <your-repository-url>
+cd <your-repository-name>
 ```
-git clone <your-copy-of-the-template>
-cd <your-repo>
+
+Replace the angle-bracket placeholders with the URL and folder name your instructor provides. See GitHub's [cloning guide](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) if you need help finding the URL.
+
+## 2. Create a Python environment
+
+A **virtual environment** keeps this project's Python packages separate from packages used by other projects. Create one inside the repository.
+
+On Windows PowerShell:
+
+```powershell
 python -m venv .venv
-. .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install -r requirements.txt -r requirements-dev.txt
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt -r requirements-dev.txt
 ```
 
-Install exactly `requirements.txt`. It is the **pinned dependency set** for this template version and matches the server's installation. If you need a missing library, ask the operator for a new template release instead of pinning it yourself. Everyone in a season uses the same set.
+On macOS or Linux:
 
-## 2. Write your agent
-
-Edit `agent.py`. The interface is small (see [Agent Interface](agent-interface.md) for the full contract):
-
-- `reset(seed)`: prepare for a new episode.
-- `act(observation)`: return an action. For Flappy Bird that is `0` (do nothing) or `1` (flap).
-- `learn(...)` and `chat(...)` are optional and detected by presence: leave them out unless you implement them.
-
-The Flappy Bird observation is a length-12 NumPy array of normalized features (the next pipe positions, the bird's height, velocity, and rotation).
-
-## 3. Run it
-
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt -r requirements-dev.txt
 ```
-python play.py                 # render in a window
-python play.py --headless      # no window, just the score
+
+When the environment is active, your terminal usually shows `(.venv)` at the start of the prompt. Python's [virtual environment guide](https://docs.python.org/3/tutorial/venv.html) explains why this isolation is useful.
+
+The two requirements files list the exact package versions used by the template and its tests. Do not edit `requirements.txt` or install a different version into the project. If you need a package that is not included, ask your instructor.
+
+## 3. Write your agent
+
+Open `agent.py`. The two required methods are:
+
+- `reset(seed)`, which prepares the agent for a new game.
+- `act(observation)`, which looks at the current state and returns an action.
+
+For Flappy Bird, the observation is a NumPy array of 12 normalized numbers describing the bird and nearby pipes. An action is `0` for do nothing or `1` for flap. If NumPy arrays are new to you, read the first sections of [NumPy's beginner guide](https://numpy.org/doc/stable/user/absolute_beginners.html).
+
+See [Agent interface](agent-interface.md) for the complete method contract and a small example.
+
+## 4. Play and evaluate
+
+```console
+python play.py
+python play.py --headless
 python evaluate.py --episodes 10
 ```
 
-- `play.py` runs one episode through the same agent-environment cycle as the server.
-- `evaluate.py` runs several seeded episodes without rendering and prints the mean, matching the leaderboard's controlled-repetition approach.
+`play.py` runs one visible game. `--headless` runs without opening a game window. `evaluate.py` runs several seeded games and reports the mean score, which is more useful than judging an agent from one lucky run.
 
-## 4. Run the checks
+## 5. Run the checks
 
-```
+```console
 pytest
 ```
 
-The inherited tests check what every submission should satisfy: the manifest names a loadable agent, and your agent can drive the environment. The bare template's `act` raises until you implement it: that is the signal that you have work to do.
+The template tests confirm that the manifest points to a loadable agent and that the agent can drive the environment. The unfinished template fails because `act` raises `NotImplementedError`. After you implement the method, use the test output to find any remaining problems.
 
-## 5. Using the LLM API (optional)
+## 6. Save your work on GitHub
 
-If your environment allows it, your agent may call an OpenAI-compatible LLM. Copy `.env.example` to `.env`, fill in the endpoint and key your instructor provides, then:
+A **commit** is a named snapshot of your repository. Create one and push it to GitHub:
 
+```console
+git status
+git add agent.py
+git commit -m "Implement Flappy Bird agent"
+git push
 ```
+
+`git status` shows what changed, `git add` selects changes for the snapshot, `git commit` creates it, and `git push` sends your commits to GitHub. Review `git status` before adding files, and never add `.env` or an API key. GitHub's [About Git guide](https://docs.github.com/en/get-started/using-git/about-git) explains these commands in more detail.
+
+## 7. Submit
+
+Submit the repository URL through the course website. The server records one exact commit, so later edits do not silently change an existing submission. See [Submitting](submitting.md) for the validation process and common errors.
+
+## Optional: use the LLM API
+
+If your environment allows model calls, copy `.env.example` to `.env`, add the endpoint and key from your instructor, and run:
+
+```console
 python llm_example.py
 ```
 
-Your code reads `OPENAI_BASE_URL` and `OPENAI_API_KEY`. Server-side the harness injects the same two variables per slot with a one-off session key, so the code never changes between your laptop and the container. See the [LLM spec](../specs/llm.md).
-
-## 6. Submit
-
-Push to GitHub and submit the repository link, pinned to a commit, through the course website. Submitting again while a season is open replaces your previous submission. The full rules are in the [submission spec](../specs/submission.md).
+Your agent reads `OPENAI_BASE_URL` and `OPENAI_API_KEY` locally and on the server. Never commit the `.env` file or an API key to GitHub. The [LLM specification](../specs/llm.md) explains server-side budgets and telemetry.

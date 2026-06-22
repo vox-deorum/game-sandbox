@@ -1,5 +1,11 @@
 # environments/
 
-Environment packages for Game Sandbox. Each environment lives in its own subpackage under `src/game_sandbox_environments/`, exposes a PettingZoo AEC interface, and registers a module-level `ENTRY` discovered by the harness through the `game_sandbox.environments` entry-point group. The first environment is the Flappy Bird clone, brought in through the single-agent compatibility wrapper (`single_agent.py`).
+Environment packages for Game Sandbox. Each environment:
 
-To add an environment, see the contributor guide: [Adding an Environment](../docs/contributors/environments.md).
+- Exposes a PettingZoo AEC interface.
+- Registers an `ENTRY` through the `game_sandbox.environments` entry-point group.
+- Defines public metadata, a factory, a legal default action, and optional renderer overlay extraction.
+
+Single-agent Gymnasium games use `single_agent.py` to become one-slot AEC environments.
+
+See [Adding an environment](../docs/contributors/environments.md) and the [environment specification](../docs/specs/environment.md).

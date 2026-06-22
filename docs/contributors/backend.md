@@ -1,291 +1,300 @@
-# The backend
+# Backend
 
-The backend is the Node/TypeScript service outside the container boundary: it lists environments, starts and supervises live sessions, and bridges each session's container to the browser over WebSocket (see the [execution spec](../specs/execution.md) and the [frontend spec](../specs/frontend.md)). It never runs Python and never touches a game; the container is authoritative and the backend is a relay. This page covers the package itself: its layout, configuration, storage, and the identity stub. The session machinery (the execution driver, the transport, and the orchestrator) is its own page: [the execution boundary](execution.md).
+The backend is the Node and TypeScript service outside the session container. It serves the HTTP API and built frontend, resolves development identity, stores relational data, supervises sessions and leaderboard workflows, and relays WebSocket traffic.
 
-## Package layout
+It never steps an environment or runs participant Python. The session container is authoritative for game state.
 
-`backend/` is the `@game-sandbox/backend` npm workspace, run from source through `tsx`. The modules under `src/` divide along their seams:
+Read [the execution boundary](execution.md) for drivers and session transport, [the backend-facing specifications](../specs/execution.md) for architectural rules, and [Testing](test.md) for the verification matrix.
 
-| Path | What it is |
+## Request flow
+
+```text
+Browser
+  ├─ HTTP → Fastify routes → storage / services
+  └─ WebSocket → session relay → execution driver → container
+```
+
+## Package map
+
+`backend/` is the private `@game-sandbox/backend` npm workspace. It runs from TypeScript source through `tsx`.
+
+| Path | Responsibility |
 | --- | --- |
-| `main.ts` | Process entrypoint: load config, open storage, reconcile interrupted workflow runs, build the driver, orchestrator, and workflow runner, listen, handle signals. |
-| `config.ts` | Environment-variable configuration parsed once into a typed `Config`. |
-| `app.ts` | The Fastify assembly: the HTTP routes and the WebSocket endpoint; it also mounts the Stage 6 admin API, the public leaderboard reads, and the participant rating routes. |
-| `identity.ts` | The stub user identity (until Stage 4 brings OAuth) plus the `isAllowlisted`/`isOperator` predicates. |
-| `environments.ts` | Typed access to the generated environment metadata. |
-| `storage/` | The Kysely schema, the `Storage` interface, the SQLite wiring, the schema migration, and the `SeasonConfig` codec. |
-| `driver/` | The execution-driver interface and the local Docker implementation. |
-| `session/` | The orchestrator, the per-session relay, and the in-memory registry. |
-| `admin/` | The operator-gated Stage 6 admin API (`/api/admin`): declare/configure seasons, the three lifecycle gates, trigger/cancel runs, status/list, and the WebSocket log stream. |
-| `leaderboards/` | The public, released-only board and history reads, separate from the `/api/admin` prefix. |
-| `ratings/` | The participant rating API: allowlisted post-session 1-5 rating writes and the agent author's per-season rating prompt, attributed to the resolved identity. |
-| `workflow/` | The workflow-runner seam: the `WorkflowRunner` interface and its events, the startup reconcile, and the step-3 placeholder runner (the Docker runner lands in Stage 6.4). |
-| `season-views.ts` | Wire-shape helpers that decode a season's/run's JSON columns (`config`, snapshots, `slots`) for the admin and public responses. |
-| `recordings.ts` | Read (and delete) access to the recordings volume for the HTTP API. |
-| `retention.ts` | The recording retention service: the eviction sweep, the merged listing, and pinning. |
-| `submission/` | The submission pipeline: the source seam (`source/`), the static and load-check validators (`validate/`), the overlay-image build (`submission-image.ts`), the bounded validation worker, and the overlay-image eviction sweep. |
-| `seasons-seed.ts` | Seeds one open season per environment at the current `DEPS_VERSION` on startup, the minimal stand-in the Stage 6 operator admin console and API build on. |
-| `deps-version.ts` | The current dependency-set version plus the explicit registry of supported version-specific base-image definitions. Submission and season validation derive their accepted versions from this registry. |
+| `src/main.ts` | Load configuration, open storage, reconcile work, assemble services, listen, handle signals |
+| `src/app.ts` | Fastify application, HTTP routes, WebSocket endpoints, static frontend |
+| `src/config.ts` | Parse environment variables into one typed `Config` |
+| `src/identity.ts` | Resolve development identity and apply allowlists |
+| `src/environments.ts` | Load generated environment metadata |
+| `src/storage/` | Kysely schema, domain interface, SQLite implementation, migration |
+| `src/driver/` | Execution-driver interface and Docker implementation |
+| `src/session/` | Orchestrator, live relay, active-session registry |
+| `src/submission/` | Source resolution, validation, image build, worker, eviction |
+| `src/admin/` | Operator-only season and workflow API |
+| `src/leaderboards/` | Public season and leaderboard reads |
+| `src/ratings/` | Session ratings and author prompts |
+| `src/workflow/` | Workflow runner interface, events, and recovery |
+| `src/recordings.ts` | Recording reads and deletion |
+| `src/retention.ts` | Recording metadata, pinning, and eviction |
+| `src/deps-version.ts` | Supported template dependency and base-image registry |
 
-The wire protocol the browser shares with the backend (the line-classification rule, the command envelopes, and the environment-metadata shape with its guard) lives in `@game-sandbox/schema` so there is one declaration, not a backend copy and a frontend copy that drift. Those modules are dependency-free and exposed as subpath exports (`@game-sandbox/schema/protocol`, `@game-sandbox/schema/environment`) so the browser bundle imports them without pulling in the package's Ajv-backed recording readers; the `session/` relay and `environments.ts` import them through the barrel.
+Shared protocol and environment types live in `@game-sandbox/schema`. Browser-safe subpath exports avoid pulling Node-only recording readers into the frontend bundle.
 
-## Running it locally
+## Run and test
 
-Each command below runs from `backend/` unless noted. A compiled `dist/` build is deferred until a real deployment exists, so everything runs from source through `tsx`.
+Run these commands from `backend/` unless noted:
 
-- **`npm run dev`**: runs `tsx watch src/main.ts`, restarting on change. Needs a reachable Docker daemon, because starting a session launches a container: the backend builds the session base image on first use (see [the execution boundary](execution.md#the-session-base-image)).
-- **`npm run start`**: runs the backend once (`tsx src/main.ts`), no watch. Same Docker requirement as `dev`.
-- **`npm run build:image`** (`build-image.ts`): rebuilds the current dependency version's session base image. The default `reuse` policy keeps the first lazily-built image forever, so run this after changing the Dockerfile or anything it bundles (the harness, an environment, the built-in agent); it drives the driver's own build path and always rebuilds the `…:deps-v1` tag. Setting `DOCKER_IMAGE_POLICY=rebuild` instead rebuilds on the next session start.
-- **`npm run demo`** (repo root): starts the app on a populated database rather than freshly-seeded empty seasons, reusing the database the `frontend-e2e` job builds (see [development setup](development-setup.md#dev-scripts)).
-- **`npm test`**: runs the unit suite without Docker, using a fake driver and in-memory SQLite.
-- **`npm run test:integration`**: launches real containers for the Docker-gated suite described under [testing](test.md).
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Start `tsx watch` |
+| `npm run start` | Start once without watch mode |
+| `npm run build:image` | Rebuild the current session base image |
+| `npm test` | Run Docker-free unit tests |
+| `npm run test:integration` | Run real-container integration tests |
+| `npm run demo` | From the repo root, launch the app with populated e2e data |
 
-The unit tests under `test/` mirror the `src/` layout above so a module and its coverage sit in the same place:
+Starting a session requires Docker. Unit tests use an in-memory SQLite database and fake driver.
 
-- **`test/storage/`**: the session/recording core, submissions, the leaderboard surface, the `SeasonConfig` codec.
-- **`test/submission/`**: the worker, overlay eviction, the HTTP routes, the source seam, and `test/submission/validate/` for the static and load-check validators.
-- **`test/session/`**: the orchestrator and the live-session relay.
-- **`test/driver/docker/`**: the daemon-free overlay helpers.
-- **`test/admin/`, `test/leaderboards/`, `test/ratings/`**: the Stage 6 admin, public-board, and participant-rating route contracts.
-- **`test/workflow/`**: the runner seam's reconcile and placeholder.
-- **root of `test/`**: the seam-level modules keep their tests here (`app`, `config`, `environments`, `identity`, `recordings`, `retention`, `static`, `scheduler`).
-- **`test/support/`, `test/fixtures/`**: shared test doubles (the `FakeDriver`, the `StubWorkflowRunner`, the config/environment/socket builders) and checked-in trees.
-- **`test/integration/`**: the Docker-gated suite, its own Vitest project (see [testing](test.md)).
-
-Both `vitest.config.ts` and `vitest.integration.config.ts` select by the `test/**` glob, so adding a subdirectory needs no config change.
+Tests mirror source domains under `test/`. Shared doubles and fixtures live under `test/support/` and `test/fixtures/`; Docker-gated tests live under `test/integration/`.
 
 ## Configuration
 
-`config.ts` reads environment variables once into a validated `Config` with class-scale defaults. Every consumer receives that object, or the slice it needs, through its constructor. Module-level configuration reads are not allowed, which lets tests assemble a complete backend with custom settings.
+`config.ts` reads environment variables once. Services receive `Config`, or the slice they need, through construction. Do not read process environment variables from feature modules.
 
-The parsing helpers use small [zod](https://zod.dev) schemas (`z.coerce.number`, `z.stringbool`, `z.enum`). Zod is the backend's standard validation library for:
+Zod validates environment variables, manifests, and season configuration.
 
-- Environment variables.
-- The manifest contract in the static validator.
-- The season configuration document in storage.
-
-The available variables are:
+### Server and session
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `PORT` | `8080` | The HTTP/WebSocket listen port. |
-| `DATA_DIR` | `./data` | Holds `sandbox.db` and the `recordings/` root that doubles as the volume mounted into containers. |
-| `SESSION_IDLE_TIMEOUT_MS` | `60000` | How long a session with no attached socket (or, in human mode, no inbound command) lives before it is killed. |
-| `SESSION_MAX_DURATION_MS` | `600000` | The wall-clock backstop against a hung container. |
-| `SESSION_ALLOWLIST` | `dev-user` | Comma-separated user ids allowed to start live sessions, in either mode. Defaults to the dev user so a fresh checkout plays out of the box; an empty value allows no one. |
-| `OPERATOR_ALLOWLIST` | `dev-user` | Comma-separated user ids that may reach the Stage 6 operator admin surface (declaring and configuring seasons, opening/closing the gates, triggering runs). Parsed exactly like `SESSION_ALLOWLIST` and defaulting to the dev user, so the console works out of the box; `isOperator` is the single predicate over it. |
-| `RECORDING_RETENTION_DAYS` | `30` | An unpinned recording older than this window is swept (see [recording retention](#recording-retention)). |
-| `RECORDING_USER_QUOTA` | `100` | Per-user recording cap; oldest-unpinned-first eviction brings a user back within it. Pinned recordings count toward it but are never evicted. |
-| `RECORDING_SWEEP_INTERVAL_MS` | `3600000` | How often the eviction sweep runs on its own timer (it also runs at startup and after each session finalize). |
-| `SANDBOX_CPUS` / `SANDBOX_MEMORY_MB` / `SANDBOX_SCRATCH_MB` | `1` / `512` / `256` | The sandbox quotas applied to every session. |
-| `EXECUTION_DRIVER` | `docker` | The only driver in this stage. |
-| `DOCKER_IMAGE_TAG_PREFIX` / `DOCKER_IMAGE_POLICY` | `game-sandbox` / `reuse` | The image tag prefix and whether an existing tag is reused or always rebuilt. |
-| `FRONTEND_DIST` | `frontend/dist` | The built frontend bundle the backend serves at the root (see below). Defaults to the repo's `frontend/dist`; serving is wired only when the directory exists. |
-| `GITHUB_TOKEN` | _unset_ | Optional token for GitHub reachability checks and private-repo clone/fetch. The one secret in this stage; it is never written to a submission row or logged, and public repos need none. |
-| `ALLOW_LOCAL_SUBMISSIONS` | `false` | Whether the dev-only local-folder submission source is constructed and offered. The gate, not path-sanitization, is the security boundary, so it must stay off in real deployments. |
-| `SUBMISSION_GIT_TIMEOUT_MS` | `15000` | Wall-clock ceiling on each `git` invocation, so an unreachable repo fails fast instead of hanging the worker. |
-| `SUBMISSION_BUILD_TIMEOUT_MS` | `120000` | Wall-clock ceiling on one overlay build (a `docker` option), so a hung build cannot stall the validation worker. |
-| `SUBMISSION_LOAD_CHECK_TIMEOUT_MS` | `30000` | Wall-clock ceiling on one sandboxed load check; import-and-construct is near-instant, so a hang is itself a failure. |
-| `OVERLAY_IMAGE_BUDGET` | `50` | Max overlay images the eviction sweep keeps. Active-`ready` images are always kept and count toward the budget; the rest trim newest-kept, oldest-first. |
-| `OVERLAY_IMAGE_SWEEP_INTERVAL_MS` | `3600000` | How often the overlay-image sweep runs on its own timer (it also runs at startup and after each overlay build). |
+| `PORT` | `8080` | HTTP and WebSocket port |
+| `DATA_DIR` | `./data` | Root containing `sandbox.db` and recording directories |
+| `SESSION_IDLE_TIMEOUT_MS` | `60000` | Lifetime with no attached socket, or no human command in human mode |
+| `SESSION_MAX_DURATION_MS` | `600000` | Wall-clock backstop |
+| `SESSION_ALLOWLIST` | `dev-user` | Comma-separated users allowed to start sessions; empty allows no one |
+| `OPERATOR_ALLOWLIST` | `dev-user` | Comma-separated users allowed to use `/api/admin` |
+| `SANDBOX_CPUS` | `1` | Session CPU quota |
+| `SANDBOX_MEMORY_MB` | `512` | Session memory quota |
+| `SANDBOX_SCRATCH_MB` | `256` | Writable scratch quota |
 
-There are no config files and no secrets manager; the lone secret is the optional `GITHUB_TOKEN`. OAuth secrets arrive only when OAuth lands (deferred future work), so there are none yet.
+### Execution and frontend
 
-## Serving the frontend
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `EXECUTION_DRIVER` | `docker` | Active driver |
+| `DOCKER_IMAGE_TAG_PREFIX` | `game-sandbox` | Image prefix |
+| `DOCKER_IMAGE_POLICY` | `reuse` | `reuse` an existing tag or `rebuild` before launch |
+| `FRONTEND_DIST` | `frontend/dist` | Built frontend directory; static serving is disabled when absent |
 
-In production, the backend serves the built frontend from the same origin through `@fastify/static`. The whole stack therefore runs as one process:
+### Recordings
 
-- `npm start` at the repository root builds `frontend/dist/`.
-- The backend serves those files from the root path.
-- A not-found handler returns `index.html` for non-`/api` GET requests, so hard refreshes work on client-side routes such as `/environments/:id`, `/sessions/:id`, and `/replays/:id`.
-- Requests under `/api` keep their JSON `404` responses.
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `RECORDING_RETENTION_DAYS` | `30` | Age limit for unpinned recordings |
+| `RECORDING_USER_QUOTA` | `100` | Per-user recording count; pinned recordings count but are not evicted |
+| `RECORDING_SWEEP_INTERVAL_MS` | `3600000` | Periodic sweep interval; sweeps also run at startup and finalization |
 
-Static serving is enabled only when `config.frontendDir` points to an existing bundle. The Vite development server and tests without a bundle are unaffected.
+### Submissions
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `GITHUB_TOKEN` | unset | Optional private-repository and reachability token; never stored with a submission |
+| `ALLOW_LOCAL_SUBMISSIONS` | `false` | Enable the trusted development-only local source |
+| `SUBMISSION_GIT_TIMEOUT_MS` | `15000` | Git operation deadline |
+| `SUBMISSION_BUILD_TIMEOUT_MS` | `120000` | Overlay build deadline |
+| `SUBMISSION_LOAD_CHECK_TIMEOUT_MS` | `30000` | Sandboxed load-check deadline |
+| `OVERLAY_IMAGE_BUDGET` | `50` | Maximum cached submission overlays; active ready images are protected and count |
+| `OVERLAY_IMAGE_SWEEP_INTERVAL_MS` | `3600000` | Overlay sweep interval; sweeps also run at startup and after builds |
+
+Keep `ALLOW_LOCAL_SUBMISSIONS` disabled in real deployments. The gate, not path sanitization, is its security boundary.
+
+## Static frontend
+
+When `FRONTEND_DIST` exists, the backend serves it through `@fastify/static`.
+
+- Root `npm start` builds `frontend/dist/` first.
+- Non-API GET 404s return `index.html` for client-side routing.
+- `/api` routes keep JSON 404 responses.
+- Vite development and tests without a built bundle are unchanged.
 
 ## Storage
 
-Relational data sits behind a narrow, domain-shaped `Storage` interface over SQLite, using better-sqlite3 and Kysely.
+Relational data sits behind a domain-shaped `Storage` interface implemented with Kysely and better-sqlite3.
 
-- `storage/schema.ts` is the only schema declaration.
-- Stored types such as `Session`, `SessionStatus`, `SessionMode`, and `TerminationReason` derive from the Kysely table interfaces.
-- Callers use domain methods such as `createSession`, `markRunning`, `markEnded`, `findActiveSessionByUser`, `getSession`, and `listSessions`. They never issue SQL.
+Callers use methods such as `createSession`, `markEnded`, `createSubmission`, and `getHumanBoard`. They do not issue SQL.
 
-The implementation lives under `storage/kysely/`:
+| File or directory          | Role                              |
+| -------------------------- | --------------------------------- |
+| `storage/schema.ts`        | Database and row type declaration |
+| `storage/migrations.ts`    | Current initial migration         |
+| `storage/season-config.ts` | Strict season configuration codec |
+| `storage/kysely/index.ts`  | `KyselyStorage` facade            |
+| `storage/kysely/*.ts`      | Domain query modules              |
 
-- `kysely/index.ts` is a thin `KyselyStorage` facade that owns the `Kysely<Database>` handle.
-- Domain queries live in `sessions.ts`, `recordings.ts`, `seasons.ts`, `submissions.ts`, `runs.ts`, `boards.ts`, `ratings.ts`, and `retention.ts`.
-- Cross-cutting query helpers live in `shared.ts`.
-- Domain types are also row types, so queries return `Session` and related types directly without a mapping layer.
+Migration history remains flat while there is no deployed data to preserve. Update `0001_initial_schema`, then recreate the local `sandbox.db`. In-memory tests always use the latest shape.
 
-Kysely provides engine portability through its dialect-neutral query API. Replacing SQLite requires new dialect wiring, not a second type layer. Biome keeps `kysely` and `better-sqlite3` inside `storage/`, just as it keeps Docker imports inside the driver.
+### Main table groups
 
-Migration history is deliberately flat while the project has no deployed data to preserve:
+| Group | Tables | Purpose |
+| --- | --- | --- |
+| Sessions and recordings | `sessions`, recording metadata | Session lifecycle, replay attribution, retention |
+| Submissions | `submissions`, `submission_checks`, `session_submissions` | Pinned source, validation timeline, session attribution |
+| Seasons and runs | `seasons`, `season_runs`, `season_run_games` | Public gates, frozen run snapshot, schedule |
+| Results | `game_results`, `automated_placements` | Per-seat outcomes and published automated board |
+| Feedback | `ratings`, `agent_rating_prompts` | Effective ratings and author guidance |
 
-- `storage/migrations.ts` contains one migration, `0001_initial_schema`, with every table and index in its current shape.
-- Schema changes update that migration instead of appending `0002`, `0003`, and later steps.
-- `openSqliteStorage` runs `migrateToLatest` on startup. A fresh database applies the migration, while a reopened database sees it in `kysely_migration` and does nothing.
-- After editing the migration, recreate the local database by deleting `DATA_DIR/sandbox.db`. In-memory test databases always receive the latest shape.
+Important invariants are enforced in storage:
 
-The migration creates the session, recording-retention, submission, and Stage 6 leaderboard tables. The storage interface also exposes the recording methods `createRecording`, `listRecordings`, `getRecording`, `setRecordingPinned`, `countPinnedByUser`, and `deleteRecording`.
+- One submission-open season per environment.
+- One play-open season per environment.
+- One active submission per user and season.
+- One effective rating per user, agent, and season.
+- Reruns preserve the latest completed board until a newer run completes.
 
-### The submission tables
-
-The four Stage 5 tables, all in the one schema declaration:
-
-- **`seasons`**: one competition per environment. A partial unique index keeps at most one submission-open season per environment, so the seed lookup is unambiguous. `seasons-seed.ts` ensures one such row per environment at startup: a play-open, submission-open, unreleased season with an empty match design; Stage 6 adds the operator admin console and API on top.
-- **`submissions`**: the pinned repository, the resolved identity, and the season. A row carries `season_id`, a denormalized `env_id`, the `user_id` (the Stage 4 identity seam, a GitHub handle once OAuth lands), the `source_kind` (`git` | `local`), the source coordinates (`repo_url`, `commit_sha`, `local_path`, `ref`: all nullable, populated per kind and after pinning), a rollup `status` (`pending` | `static_failed` | `build_failed` | `load_failed` | `ready`), the owner-visible terminal `reason`, `created_at`, and `superseded_at`. A partial unique index on `(season_id, user_id) where superseded_at is null` enforces **one active submission per participant per season** at the storage layer: resubmitting stamps `superseded_at` on the prior active row and inserts a new one in a single transaction, so history is preserved and a concurrent resubmit that loses the race raises `SubmissionConflictError` rather than creating a second active row.
-- **`submission_checks`**: the per-stage validation log. Each pipeline stage (`resolve`, `static`, `build`, or `load`) has one row with a status, optional owner-facing detail, and start and end times. A unique index on `(submission_id, stage)` makes a re-enqueue replace the stage's earlier result instead of adding a duplicate. Keeping checks in a table rather than a JSON column preserves ordered, queryable history.
-- **`session_submissions`**: submission-to-session attribution: `(session_id, slot_id)` is the composite key, with the `submission_id` it ran and `created_at`. It is what lets the agent profile join a submission to its watch/replay recordings.
-
-The storage interface grows the matching methods: `ensureOpenSeason`/`getOpenSubmissionSeason`/`getSeason` (the Stage 5 `getOpenSeason` is renamed `getOpenSubmissionSeason` now that "open" is ambiguous across the submission and play windows); `createSubmission` (which performs the supersede-and-insert and throws `SubmissionConflictError` on the unique-index race), `getSubmission`, `findActiveSubmission`, `listPendingSubmissions`, `listSubmissionsByUser`, `listActiveSubmissionsBySeason`, `listActiveReadySubmissionIds`, and `updateSubmissionPin`/`updateSubmissionStatus`; `startSubmissionCheck`/`finishSubmissionCheck`/`listSubmissionChecks` for the log; and `recordSessionSubmission`/`listRecordingsBySubmission` for the attribution join.
-
-### The leaderboard tables
-
-The Stage 6.1 tables are the data foundation the rest of Stage 6 attaches to: the full `seasons` row and the run/result/rating tables, all still in the one schema declaration. They are Docker-free and are proven by the storage suite on in-memory SQLite.
-
-The submission window, public-play window, and release status are three **independent** gates on `seasons`. Each controls a different surface, so they use separate columns instead of one overloaded `status`:
-
-- `submission_status` (`open` | `closed`) controls whether the submission form accepts agents; its partial unique index (`env_id where submission_status = 'open'`) keeps the one-open-submission invariant.
-- `play_status` (`open` | `closed`) controls whether allowlisted users may start public watch/play sessions and write ratings; its own partial unique index keeps one play-open season per environment as the default target. Play is independent of release: the operator can open play on an `unreleased` season.
-- `release_status` (`unreleased` | `released`) controls whether the boards and history are visible outside the operator console; `released_at` is stamped on first release for history ordering.
-- `label` (operator-facing name), `rating_prompt` (the operator's season-wide rater guidance, always editable), and `config` (below) round out the row. The pinned `deps_version` lives **inside `config`** rather than as its own column, so a run's frozen snapshot is the single record of what governed it.
-
-`config` is one validated JSON document, not normalized into per-field columns: the match design is small, authored and read as a unit, and evolves (the inert messaging/LLM override blocks land now and activate in Stages 8/9). The typed `SeasonConfig` codec in `storage/season-config.ts` is the single gate: a zod `strictObject` (`deps_version`, a list of `matches` each with `slots`/`seeds`/`games`, and optional `overrides`) that rejects unknown keys, empty slots, empty seeds, and non-positive game counts, with `encode`/`decode` helpers the column reads and writes through. The run results below _are_ normalized, because the board queries them per agent.
-
-Every place this stage stores or returns an agent uses one identity shape, `AgentRef = { kind: 'submission', submission_id, user_id } | { kind: 'builtin-naive' }`, flattened into concrete `agent_kind` / `agent_submission_id` / `agent_user_id` columns (both ids null for Naive) so tables filter and group without opaque JSON. The new tables:
-
-- **`season_runs`**: one automated workflow execution. The workflow can re-run, so a run is modeled explicitly and the board points at the latest completed one. A run freezes the validated `config_snapshot` (incl. deps) and the eligible-submission roster at trigger time, so editing the season or resubmitting afterward cannot change what it executes.
-- **`season_run_games`**: one scheduled match (the pure scheduler writes these before the runner starts), carrying its deterministic `game_index`, `seed`, resolved `slots`, status, and the `recording_id` the board deep-links.
-- **`game_results`**: one per-seat outcome per game (normalized so the board aggregates per agent without averaging per-game means), with `episode_score`, `agent_compute_ms_total`, `acted_tick_count`, and a `failed` flag.
-- **`automated_placements`**: the per-agent placement snapshot profiles and history read, rewritten when a completed run supersedes the prior one; unique per submitted agent, with a partial index covering the single null-submission Naive row.
-- **`ratings`**: one effective 1-5 human rating per user per agent per season (re-rating upserts); a unique index enforces it, a partial index covers the Naive row, and a rating of one's own submitted agent is rejected before any write. `sessions` also gains a nullable `season_id` (the competition key ratings attach to; old null rows cannot be rated).
-- **`agent_rating_prompts`**: the agent author's own rating prompt, keyed per author per season so it survives resubmission, separate from the pinned submission artifact.
-
-The storage interface grows the full Stage 6.1 surface against these: the gate setters (`setSubmissionStatus`/`setPlayStatus` return typed open-conflicts; `setReleaseStatus` stamps once), `createSeason`/`updateSeasonConfig` (the forced-edit path deletes runs, and a forced deps change deletes submissions), `listSeasons`/`getReleasedSeason`/`getPublicPlaySeason`, the run/game/result writers, `getLatestCompletedRun` (what the board reads, so a failed re-run never blanks a good board) alongside `getRun`/`getLatestRun`/`listRunsByStatus` (the last two backing the admin status view and the startup reconcile), `replaceAutomatedPlacements`, the rating upsert/aggregate (with `getHumanBoard` applying the three-rating ranking rule the public and admin board reads serve), both rating-prompt setters, `listSessionSubmissions` (the rating route's header-read fallback), and `listProtectedLeaderboardRecordingIds`, which exempts each season's latest-completed-run recordings from the retention sweep.
+Season configuration is one strict JSON document because it is authored and frozen as a unit. Run results are normalized because leaderboards aggregate them by agent.
 
 ## Recording retention
 
-`retention.ts` owns the recording lifecycle the [recording spec](../specs/recording.md) describes. The directory on the volume is the recording itself; the `recordings` row is its retention metadata. A row is written by the session finalize routine: every end path converges there, so each produced recording gets exactly one row (the insert is idempotent on the id). A directory with no row is foreign debris: listed header-only, never evicted.
+A recording directory stores JSONL. Its database row stores retention metadata.
 
-The eviction sweep runs at startup, on `RECORDING_SWEEP_INTERVAL_MS`, and after each session finalize (the only moment the data grows). It applies the policy in two passes over the rows: delete unpinned recordings older than `RECORDING_RETENTION_DAYS`, then for each user over `RECORDING_USER_QUOTA` delete oldest-unpinned-first until back within it. Pinned recordings are exempt from both passes but count against the quota; deletion removes the directory and then the row, and either half missing is tolerated, so a crash mid-deletion leaves only ignorable debris the next pass cleans. Because pinned recordings count against the quota but never evict, a pin is refused (`409`, `code: "pinned_quota"`) once the user is at their pinned cap, keeping the quota a hard storage bound.
+The sweep runs at startup, on its interval, and after session finalization:
 
-## The identity stub
+1. Protect recordings used by the latest completed leaderboard runs.
+2. Delete unpinned recordings older than the retention window.
+3. For each user over quota, delete oldest unpinned recordings until within quota.
 
-`identity.ts` resolves a user id per request and is the one place the backend decides who a request belongs to: the `x-sandbox-user` header when present, otherwise the `user` query parameter, otherwise `dev-user`. The query-parameter source exists because a browser cannot set a header on a WebSocket upgrade, so the socket client carries the identity there; it is the same identity, decided in the same function. The one-concurrent-session-per-user rule, the allowlist gate, and every route that attributes anything to a user key on its output. GitHub OAuth (deferred Stage 4 work) replaces the resolution with the session cookie, which the browser sends on both fetch and upgrade automatically, without touching callers; nothing else in the backend may invent its own notion of identity.
+Pinned recordings count toward quota but are never evicted. A user at the pinned cap receives `409 pinned_quota`.
 
-`isAllowlisted(userId, allowlist)` lives alongside it: the operator-configured `SESSION_ALLOWLIST` gates starting a live session in either mode, since a watch run also consumes a container. Everything read-only (listing environments and sessions, fetching recordings, spectating an existing session's socket) stays open. The frontend learns membership from `GET /api/me` and hides the start entry points, but the backend check is the enforcement.
+Deletion tolerates a missing row or directory so an interrupted sweep can recover on its next pass.
 
-`isOperator(userId, operatorAllowlist)` is the second predicate over the same seam: built on `isAllowlisted` against `OPERATOR_ALLOWLIST` (not a new build-mode special case), it is the single authorization check the Stage 6 admin API enforces: one `onRequest` guard on the `/api/admin` plugin runs it before any handler, reading the identity from the header on a normal request and the `user` query parameter on the WebSocket log-stream upgrade. A non-operator gets `403 not_operator`. The dev mock user is in the default list, so the operator console works out of the box; a real deployment lists its operator handles, checked against the resolved GitHub identity once OAuth lands. It adds the operator predicate over the existing identity resolution without changing it.
+## Development identity and authorization
+
+`identity.ts` resolves a user in this order:
+
+1. `x-sandbox-user` request header.
+2. `user` query parameter for WebSocket upgrades.
+3. `dev-user`.
+
+All attribution and authorization use that resolved value. OAuth can replace this function with cookie-backed identity without changing callers.
+
+`SESSION_ALLOWLIST` controls session starts. Read-only routes and spectating remain open.
+
+`OPERATOR_ALLOWLIST` controls the `/api/admin` plugin through one `onRequest` guard. Non-operators receive `403 not_operator`.
 
 ## Environment metadata
 
-The environment registry lives in Python, and the backend serves it without running Python by reading a generated, committed artifact: `scripts/generate.py` writes `src/generated/environments.json` from `discover_environments()`, the `generated-code-fresh` CI job keeps it in step with the registry, and `environments.ts` parses it once at startup behind a small shape guard. The `EnvironmentMeta` shape and that guard now live in `@game-sandbox/schema` so the browser validates the same `GET /api/environments` response from the same declaration; the `EnvironmentRegistry` and the JSON loading stay in `environments.ts`. The HTTP layer serves the list verbatim, and the orchestrator reads pace interval, human-capable slots, and default timeouts from it.
+The canonical registry lives in Python. `scripts/generate.py` writes committed `src/generated/environments.json`, and the generated-code check prevents drift.
 
-## The submission pipeline
+`environments.ts` parses the artifact once through the shared `EnvironmentMeta` guard. The API serves the metadata, and the orchestrator reads slot, pace, and timeout settings from the same object.
 
-A submission is fetched, pinned, statically checked, built into an overlay image, and load-checked. Validation **never runs a game session** (see the [submission spec](../specs/submission.md)). The HTTP route writes a pending row, enqueues a job, and returns immediately. `submission/` owns the remaining work. The overlay build and sandboxed load check are documented in [the execution boundary](execution.md#from-submission-to-overlay-image).
+## Submission pipeline
 
-### The source seam
+```text
+HTTP request → pending row → resolve → static → build → load → ready
+```
 
-`submission/source/` is a `SubmissionSource` with three methods: `verifyReachable` (a cheap pre-accept check that never throws), `resolve` (input → pinning facts and a commit), and `fetchTree` (a read-only checkout behind a `TreeHandle` whose `dispose` is idempotent and never deletes a developer's folder). Two sources sit behind it, chosen by `source_kind`:
+The route returns after enqueueing. `submission/worker.ts` processes one submission at a time and records each stage before updating the rollup status.
 
-- The **git source** drives the host-agnostic `git` CLI for pinning and checkout. It accepts the default-branch head, a named branch or tag, or an explicit 40-character commit. Every invocation runs non-interactively under `SUBMISSION_GIT_TIMEOUT_MS`. Errors map to `unreachable`, `auth_required`, `ref_not_found`, `timeout`, or `invalid_input`, and tokenized URLs are never echoed. A `GITHUB_TOKEN` enables a cheaper GitHub reachability probe and private-repository authentication; other public repositories use the same non-interactive Git path.
-- The **local-folder source** is development-only, gated by `ALLOW_LOCAL_SUBMISSIONS`. With the gate off a local input is refused (`local_disabled`) before the filesystem is touched; with it on the folder is trusted input with no path constraints, and `fetchTree` hands back the folder directly with a no-op `dispose`. The gate, not sanitization, is the boundary.
+### Sources
 
-The `git` client is the one place `simple-git` may be imported: a single Biome override re-permits it under `backend/src/submission/source/**` (raw `child_process` stays banned even there: drive git through `simple-git`, not the CLI), and the broad backend block excludes that folder so every file still matches exactly one override. The GitHub client uses the global `fetch`, confined to the same folder by location, and CI proves no other backend source imports `child_process`.
+`SubmissionSource` provides:
 
-### The static validator
+- `verifyReachable`
+- `resolve`
+- `fetchTree`
 
-`submission/validate/static.ts` reads the fetched tree and **runs no participant code**. It mirrors the static half of the harness loader (`load_manifest` in [manifest.py](https://github.com/vox-deorum/game-sandbox/blob/main/harness/src/game_sandbox_harness/manifest.py)) and short-circuits on the first failure, returning a typed accept or one specific `StaticReason`:
+The Git source accepts a default-branch head, branch, tag, or 40-character commit. It runs non-interactively under a timeout and maps failures to stable reason codes.
 
-| Reason code | Triggered when |
-| --- | --- |
-| `manifest_missing` | no `manifest.json` at the tree root (or it symlinks outside the tree) |
-| `manifest_invalid_json` | the manifest is not valid JSON, or not a JSON object |
-| `manifest_field_invalid` | a required field (`entry_point`, `class_name`, `template_version`) is missing or the wrong type (`template_version` must be an integer, not a bool or float) |
-| `manifest_unknown_key` | the manifest carries a key outside the three required ones |
-| `entry_point_missing` | the entry-point module names no `<module>.py` or `<module>/__init__.py` inside the tree |
-| `unknown_template_version` | the deployment has no base image for that `template_version` |
-| `template_version_mismatch` | the `template_version` does not match the open season's pinned `deps_version` |
+The local-folder source is trusted development input and is available only when explicitly enabled. Its handle never deletes the developer's folder.
 
-The manifest contract is expressed as a zod `strictObject` and a parse failure is mapped back to the closed `StaticReason` set above, so the owner-visible codes are unchanged by the validation-library switch. The required-field list is kept in lockstep with `manifest.py`; the `generated-code-fresh` / contract check keeps the two halves of the loader from drifting (see [testing](test.md)). This is the first demonstrable slice of the stage and is fully exercised Docker-free against the fixtures under `backend/test/fixtures/validate/`.
+Git implementation details stay under `submission/source/`. Raw `child_process` use remains banned.
 
-### The validation worker
+### Static validation
 
-`submission/worker.ts` is a bounded, in-process `ValidationWorker`. The HTTP route writes a durable pending row, enqueues the work, and returns without waiting.
+Static validation runs no participant code. It checks:
 
-The worker processes one submission at a time:
+| Code                        | Condition                             |
+| --------------------------- | ------------------------------------- |
+| `manifest_missing`          | No root `manifest.json`               |
+| `manifest_invalid_json`     | Invalid JSON or non-object            |
+| `manifest_field_invalid`    | Missing or wrong-typed required field |
+| `manifest_unknown_key`      | Extra manifest field                  |
+| `entry_point_missing`       | Module file or package is absent      |
+| `unknown_template_version`  | No registered base image              |
+| `template_version_mismatch` | Version differs from the season       |
 
-1. `resolve`
-2. `static`
-3. `build`
-4. `load`
+The Zod manifest schema and Python harness loader are kept in sync by contract tests.
+
+### Worker recovery
 
 For each stage, the worker:
 
-- Writes a `running` check before doing the work.
-- Closes the check as `passed` or `failed`.
-- Updates the submission rollup only after the check is recorded.
-- Maps resolve or static failures to `static_failed`, build failures to `build_failed`, load failures to `load_failed`, and a fully successful run to `ready`.
+1. Writes a running check.
+2. Runs the stage.
+3. Closes the check as passed or failed.
+4. Updates the submission rollup.
 
-The `TreeHandle` is disposed in a `finally`. Unexpected errors still close the active check and write a rollup, so a stage cannot remain permanently `running`. At startup, `start()` re-enqueues active `pending` rows. Because checks are keyed by `(submission_id, stage)`, recovery replaces earlier attempts instead of adding duplicates. A successful build also triggers overlay-image eviction through `onOverlayBuilt`.
+Unexpected errors still close the active stage. Startup re-enqueues pending submissions, and the unique `(submission_id, stage)` key replaces prior attempts.
 
-## The HTTP API
+Overlay building and load checking are described in [Execution boundary](execution.md#submission-overlay-images).
 
-Fastify routes under `/api`, with request bodies validated by Fastify's JSON-schema support:
+## HTTP API
 
-- `GET /api/environments`: the generated metadata list, verbatim.
-- `GET /api/me`: `{user_id, allowlisted}` for the resolved user: the frontend's single source for who-am-I and what-may-I-do, and the obvious place the OAuth replacement lands.
-- `POST /api/sessions`: `{env_id, mode, seed?, human_slot_timeout_ms?}` → `201` with the session id and its WebSocket path; `400` for an unknown environment or an invalid mode; `403` with `code: "not_allowlisted"` for a user not on the allowlist; `409` with `code: "already_active"` and `active_session_id` when the user already has an active session (the body the rejoin path reads). The error body always carries the stable `code`; the start route checks request shape (400), then the allowlist (403), then the one-per-user rule (409).
-- `GET /api/sessions/:id`: the session row: status, reason, recording id.
-- `DELETE /api/sessions/:id`: owner-only graceful stop.
-- `GET /api/sessions/:id/ws`: the WebSocket attach point for a live session (see [the WebSocket protocol](execution.md#the-websocket-protocol)).
-- `GET /api/recordings`: the merged listing: each readable recording's header plus its retention metadata (`user_id`, `created_at`, `pinned`), newest first, optionally narrowed to one environment with `?env=`. `GET /api/recordings/:id` streams a recording's JSONL unchanged.
-- `POST /api/recordings/:id/pin` and `DELETE /api/recordings/:id/pin`: owner-only set/clear of the pin flag (`204`); `403` for a non-owner, `404` for an unknown recording, `409` with `code: "pinned_quota"` when the user is at their pinned cap.
+Routes live under `/api`. Request bodies use Fastify JSON-schema validation, and expected refusals use stable `code` values.
 
-The submission routes (Stage 5) follow the same typed-`code` convention:
+### Public and participant groups
 
-- `GET /api/submissions/capabilities`: `{local_submissions}`, the dev-gate flag the form mirrors so the local-folder field is driven by both `import.meta.env.DEV` and the backend, never the build alone.
-- `POST /api/submissions/reachability`: `{repo_url?, ref?, local_path?}` → `200` with the `{reachable, failure?, detail?}` verdict (it never throws on an unreachable repo); `400` `code: "invalid_source"` when neither a `repo_url` nor a `local_path` is given, `403` `code: "local_disabled"` for a local source while the gate is off. The form calls it before it will enable submit.
-- `POST /api/submissions`: `{env_id, repo_url?, ref?, local_path?}` → `202` with `{id, status}`: it resolves the open season, writes the pending row under the **resolved identity** (the submitter is never read from the body), enqueues the validate-and-build job, and returns. `400` `code: "invalid_source"`, `403` `code: "local_disabled"`, `409` `code: "no_open_season"` when the environment has no open season, and `409` `code: "resubmit_conflict"` when a concurrent resubmit won the active slot (retryable).
-- `GET /api/submissions`: the current user's submissions including superseded history, newest first, optionally one environment with `?env=`.
-- `GET /api/submissions/:id`: one submission joined with its ordered per-stage validation log (`{...submission, checks}`), so a poll is a single request; `404` for an unknown id. This is the payload the form and profile read.
-- `GET /api/environments/:envId/submissions`: the active submissions in the environment's play-open season, optionally narrowed by `?status=` (the watch picker reads the `ready` set); an empty array when there is no play-open season.
-- `GET /api/environments/:envId/agents/:ownerId`: the agent profile: `{env_id, owner_id, submissions}`, where each submission carries its `checks` log and recent `replays` (recording ids, newest first). Open and read-only; owner-only affordances gate on the client comparing `owner_id` to its identity. Keyed by environment and owner so a future Hearts agent stays separate from the same user's Flappy Bird agent.
+| Prefix or route | Responsibility |
+| --- | --- |
+| `/api/environments` | Environment metadata |
+| `/api/me` | Resolved user and capabilities |
+| `/api/sessions` | Start, read, stop, and attach to sessions |
+| `/api/recordings` | List, stream, pin, and unpin recordings |
+| `/api/submissions` | Capabilities, reachability, submit, poll, history |
+| `/api/environments/:envId/agents` | Agent profiles and placements |
+| `/api/seasons` | Public season index |
+| `/api/environments/:envId/leaderboards` | Current and historical released boards |
+| `/api/sessions/:sessionId/ratings` | Read and write session ratings |
+| `/api/seasons/:seasonId/agent-rating-prompt` | Author prompt |
 
-### The Stage 6 admin API
+The server derives user identity. Request bodies never choose the submitter, recording owner, or rater.
 
-The operator admin routes (`admin/routes.ts`) are the stable contract the admin console and any headless client drive. They are an encapsulated Fastify plugin under `/api/admin`, behind one `onRequest` `isOperator` guard (above): the single authorization choke point for the whole prefix, returning `403 not_operator` before any handler. The public reads below are deliberately **not** under this prefix, so unreleased boards cannot leak through a public endpoint. The lifecycle actions are path segments (`…/submissions/open`, `…/runs/:runId/cancel`) rather than a mid-segment colon, which Fastify's router would parse as a path parameter; the destructive-edit `force` flag rides as `?force=true`, since the config codec rejects unknown keys.
+### Operator API
 
-- `POST /api/admin/environments/:envId/seasons`: declare an `unreleased`, submission-`closed`, play-`closed` season with a default config carrying the current `deps_version`; `400 invalid_season_declaration` for a malformed optional body, `404` for an unknown environment.
-- `PUT /api/admin/seasons/:id/config`: replace the whole `SeasonConfig` (body = the config document); `400 invalid_config` with a specific `reason` for a malformed config or a slot count outside the environment's min/max; `409 season_has_runs` / `409 season_has_submissions` unless `?force=true` clears the invalidated runs (and, on a `deps_version` change, submissions) first.
-- `PUT /api/admin/seasons/:id/rating-prompt`: set or clear the operator's season-wide rating prompt; always editable, never gated by the config rules; `400 invalid_rating_prompt` for a malformed body and `400 rating_prompt_too_long` for an overlong prompt.
-- `POST /api/admin/seasons/:id/submissions/open` | `…/submissions/close`: flip `submission_status`; opening returns `409 open_season_exists` under the one-open invariant.
-- `POST /api/admin/seasons/:id/play/open` | `…/play/close`: flip `play_status` (allowed on an `unreleased` season); opening returns `409 open_play_season_exists`.
-- `POST /api/admin/seasons/:id/release` | `…/unrelease`: flip `release_status`, stamping `released_at` once.
-- `POST /api/admin/seasons/:id/runs`: trigger/re-run: snapshot config/deps/roster, build and persist the schedule, enqueue the run on the runner seam, and return `{id, status}` without blocking on Docker; `409 empty_schedule` for an empty resolved schedule, `409 run_in_progress` when a run is already `pending`/`running`.
-- `POST /api/admin/seasons/:id/runs/:runId/cancel`: request a cooperative cancel through the runner; `409 run_not_in_progress` for a terminal run, `404` when the run is not the season's.
-- `GET /api/admin/seasons/:id`: the full admin view `{season, latest_run, board}` (decoded config, the latest run with its per-game statuses, and the `automated`/`human` board aggregates even while unreleased). To list every season for an environment, including unreleased ones, operators call the public `GET /api/seasons?envId=…&includeUnreleased=true` (see the public reads below).
-- `GET /api/admin/seasons/:id/runs/:runId/logs/ws`: the WebSocket log stream, reusing the session-streaming transport; it subscribes to the runner and relays live `log`/`game_status`/`terminal` events, closing on the terminal (and sending an immediate terminal for an already-finished run).
+All `/api/admin` routes pass one operator guard. They support:
 
-### The leaderboard reads
+- Declaring seasons.
+- Replacing validated configuration.
+- Setting the season rating prompt.
+- Opening and closing submission and play windows.
+- Releasing and unreleasing results.
+- Triggering and cancelling runs.
+- Reading private season, run, board, and game status.
+- Streaming workflow logs over WebSocket.
 
-These live outside the `/api/admin` prefix in `leaderboards/routes.ts`. Their public forms are ungated. The season index may include open unreleased seasons, while board and history reads are released-only at the route boundary; the all-season index variant is explicitly operator-gated:
+Unreleased board data is available only through operator-gated routes. Public board endpoints enforce release at the route boundary.
 
-- `GET /api/seasons`: every public-facing season, optionally filtered by environment, with identity, label, public gates, timestamps, active non-superseded submission count, and ended attributed session count. Configuration, rating prompts, and boards are excluded. An operator may pass `?includeUnreleased=true` to also receive unreleased and fully-private seasons (the leaderboards page and admin console use this); a non-operator who passes the flag is refused with `403 not_operator`.
-- `GET /api/environments/:envId/seasons`: released seasons, newest first, for history links.
-- `GET /api/environments/:envId/leaderboards`: the current released season and both boards, plus the separate `submission_season_id` and `play_season_id` targets (reported even when unreleased); an empty current-board payload when nothing is released. The `human` board is the ranked aggregate (`getHumanBoard`): agents with at least three ratings carry a 1-based `rank`, the rest follow `rank: null`.
-- `GET /api/environments/:envId/seasons/:seasonId/leaderboards`: both boards for a specific released season; `404` for an unreleased or unknown one.
-- `GET /api/environments/:envId/agents/:ownerId/placements`: the owner's released-season automated placements (Naive-free submitted-agent rows only).
+## Ratings
 
-### The rating API
+The recording header's `players` map is the authority for which agents took part. The backend resolves submission ownership from storage and ignores human entries.
 
-Participant ratings and the agent author's rating prompt (`ratings/routes.ts`) are plain routes attributed to the **resolved identity** (never a body-supplied user), so they sit outside the operator `/api/admin` prefix. Rating writes also enforce the public-session allowlist. The authoritative source of which agents a session involved is the finished recording's `players` header: this module is the one place that header attribution is mapped to the stage's `AgentRef`. An `agent` entry with a `submission_id` becomes a `submission` ref whose owner is resolved **server-side** from the submission row, an `agent` entry without one becomes `builtin-naive`, and `human` entries are skipped. If the header cannot be read, it falls back to the session's `session_submissions` links. After deduplication, a pure Naive-only recording returns no rateable agents; Naive remains rateable in a mixed session containing a submitted agent.
+Rating writes validate the full batch before saving anything. They reject:
 
-- `POST /api/sessions/:sessionId/ratings`: body `{ratings: [{agent, score}]}`, where `agent` is the wire `AgentRef` (`{kind:"submission", submission_id}` or `{kind:"builtin-naive"}`, carrying no `user_id`). A caller outside the session allowlist receives `403 not_allowlisted`. The whole payload is validated before any write, so a mixed valid/invalid request saves nothing: `400 invalid_score` (a score outside 1-5), `400 agent_not_in_session`, `400 own_agent` (the caller's own submitted agent, owner resolved server-side). Each accepted score is an upsert (re-rating overwrites), and the route returns the same view the read does. The session gates reject in order: `409 session_not_rateable` (null-season session), `409 session_not_finished` (the session has not ended or has no recording on the volume), `409 play_closed` (the season's play window is closed).
-- `GET /api/sessions/:sessionId/ratings`: `{session_id, season_id, read_only, season_prompt, agents:[{agent, is_own, author_prompt, your_rating}]}`: per rateable agent the caller's existing rating (pre-fills re-rating) plus the two applicable prompts: the season's operator prompt and the agent author's prompt (resolved by the involved submission's owner, so it survives resubmission; null for Naive). The caller's own submitted agent comes back `is_own` with no rating control implied. Closed play returns the data with `read_only: true` rather than a conflict; a null-season or unfinished session returns the same conflicts as the write.
-- `PUT /api/seasons/:seasonId/agent-rating-prompt`: the agent author sets or clears (`prompt: null`/`""`) their own per-season prompt, keyed by the caller's identity; `409 no_agent_in_season` when the caller has no submission there, `400 author_prompt_too_long` for an overlong prompt, `404` for an unknown season. `GET …/agent-rating-prompt` reads the caller's own prompt back (`{season_id, prompt}`) to populate the editor on their agent profile.
+- Scores outside 1 to 5.
+- Agents not in the session.
+- The caller's own agent.
+- Unfinished or unattributed sessions.
+- A closed play window.
 
-### Background execution and the runner seam
+Rerating upserts the existing value. Closed play returns a read-only view with prior ratings and prompts.
 
-Triggering a run never blocks the request on Docker, the same posture as the Stage 5 submit route. The trigger snapshots config/deps and the ready-submission roster, persists the resolved schedule with a `pending` run row (`createRunWithSchedule`), and enqueues the run id on a `WorkflowRunner` (`workflow/runner.ts`): an interface of `enqueue`/`cancel`/`subscribe` over a small `RunEvent` union. Stage 6.3 ships a `createPlaceholderRunner` (it accepts the enqueue and leaves the run `pending`, marks a cancel `cancelled`, and emits no events) so the whole surface works end to end now; Stage 6.4 swaps in the Docker-backed runner behind the same interface without touching the routes. On startup `reconcileInterruptedRuns` fails any run a process death left non-terminal (`running`/`pending`): a partial leaderboard run is never silently resumed.
+## Workflow runner
+
+Triggering a leaderboard run does not wait for Docker.
+
+The trigger:
+
+1. Freezes configuration, dependency version, and eligible roster.
+2. Persists the balanced schedule and pending run.
+3. Enqueues the run ID on `WorkflowRunner`.
+
+`WorkflowRunner` exposes `enqueue`, `cancel`, and `subscribe` over a small event union. Startup reconciliation marks interrupted pending or running workflows failed rather than silently resuming a partial run.

@@ -1,10 +1,17 @@
 # For Contributors
 
-This section is for people developing Game Sandbox itself. It explains how to set the repository up, how the cross-boundary contract behaves in practice, and how the example and template publishing pipeline works. Where a topic is about design rather than operation, it links to the [Specification](../specs/overview.md) instead of restating it.
+This section explains how to develop Game Sandbox. Read the [specification](../specs/README.md) for product rules and the [implementation plan](https://github.com/vox-deorum/game-sandbox/blob/main/plans/README.md) for stage status.
 
-## The monorepo map
+## System map
 
-The language split follows the container boundary (see the [execution spec](../specs/execution.md)): everything inside a session container is Python, everything outside is TypeScript on Node.
+```text
+Vue frontend ⇄ Node backend ⇄ Python session container
+                    │                    └─ environment + agents
+                    ├─ SQLite metadata
+                    └─ recording files
+```
+
+The language split follows the container boundary: Python runs inside sessions, while TypeScript runs the backend and browser app.
 
 | Directory | What it is |
 | --- | --- |
@@ -19,17 +26,16 @@ The language split follows the container boundary (see the [execution spec](../s
 | `docs/` | This site. |
 | `scripts/` | Cross-platform Python dev scripts. |
 
-## Where to read next
+## Choose a guide
 
-- [Development setup](development-setup.md): tools, scripts, running checks and tests, Windows and WSL notes.
-- [Testing end to end](test.md): the full local suite, reproducing the workflows with `act`, and what only GitHub can test.
-- [State schema](state-schema.md): the contract, the version rule, and the sidecar rule.
-- [Recordings](recordings.md): the JSONL format, the header, the store interface.
-- [Adding an environment](environments.md): the adapter, the registry entry, metadata, and the overlay contract.
-- [Examples and the template](examples-and-template.md): overlays, tags, and publishing.
-- [The backend](backend.md): the package layout, configuration, storage, the identity stub, and the HTTP API.
-- [The execution boundary](execution.md): the driver interface, the sandbox profile, the transport, the WebSocket protocol, and the live runner.
-- [The frontend](frontend.md): the package layout, the dev server, the mock identity, and the live and replay hosts.
-- [Rendering](rendering.md): the renderer contract, the PixiJS base class, the sizing-and-scaling model, and how to add a renderer for a new environment.
-
-The full build plan lives in the [implementation plan](https://github.com/vox-deorum/game-sandbox/blob/main/plans/README.md), and the authoritative design lives in the [Specification](../specs/overview.md).
+| Task | Guide |
+| --- | --- |
+| Set up the repository | [Development setup](development-setup.md) |
+| Choose and run checks | [Testing](test.md) |
+| Change wire or recording data | [State schema](state-schema.md), then [Recordings](recordings.md) |
+| Add a game | [Adding an environment](environments.md), then [Rendering](rendering.md) |
+| Change the student starter kit | [Examples and template](examples-and-template.md) |
+| Work on HTTP, storage, submissions, seasons | [Backend](backend.md) |
+| Work on containers, transport, or session lifecycle | [Execution boundary](execution.md) |
+| Work on pages or browser behavior | [Frontend](frontend.md) |
+| Change visual patterns or components | [Design system](design.md) |

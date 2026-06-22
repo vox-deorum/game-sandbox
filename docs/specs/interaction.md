@@ -1,56 +1,69 @@
 # Interaction: Rendering and Input
 
-This file covers how a game looks in the browser and how human input flows back to the game.
+This specification defines how state reaches the browser, how a renderer draws it, and how human actions return to the environment.
 
-## Custom renderer per environment
+## One renderer per environment
 
-Every environment has a dedicated frontend renderer. We do not stream pixels or video from the server, and we do not fall back to server-rendered frames for any environment. Streaming is too much bandwidth and too much latency for the kinds of games we host, and it makes replays second-class. Writing a small renderer per environment is straightforward, and we accept that cost up front.
+Every environment has a browser renderer. The server sends structured state, not pixels or video.
 
-A renderer is a frontend module that takes a per-step state object and draws the current frame. "The frame" includes both the game world (sprites, board positions, physics, whatever the game is made of) and the game UI around it: scores, lives, current tick, agent labels, turn indicators, status messages, action history, and any other metadata that makes the screen feel like a real game rather than a debugger view. The renderer is what gives each environment its identity on the website. The same renderer is used for live play and for replays, so anything that can be shown live can also be shown in a replay (see [recording.md](recording.md)).
+```text
+Per-step state → environment renderer → game frame
+                         ↑
+                 live play and replay
+```
+
+The renderer owns the game world and in-game interface, including scores, lives, turn indicators, and environment-specific controls. The host page owns shared session controls such as pause, stop, status, and replay transport.
+
+Live play and replay use the same renderer. See [Recording](recording.md).
+
+Structured state keeps bandwidth and latency lower than streamed video and makes replay a first-class interactive view instead of a passive recording. The cost is that each environment must provide a small renderer.
 
 ## Per-step state object
 
-The environment emits one state object per step. It is the canonical wire format between the environment and the renderer, and it is also what gets stored for replay.
-
-A per-step payload includes:
+The harness emits one state object per step. It is both the live wire format and the stored replay format. It contains:
 
 - Tick number.
-- Per-agent observations that are useful for display.
-- Per-agent action taken on that tick.
-- Per-agent reward for that tick.
-- Per-agent cumulative score.
-- Environment-specific overlay fields (for example, a Flappy Bird payload might include pipe positions).
-- Messages sent on that tick, each with its sender and recipient (see [communication.md](communication.md) for visibility rules).
+- Per-agent observation, action, reward, and cumulative score.
+- Environment-specific overlay data needed for rendering.
+- Messages sent on that tick.
 - Timing.
 
-The renderer never reaches behind the state object. If something needs to be drawn, it shows up in the payload.
+The renderer cannot inspect the live environment. Anything needed on screen must appear in state.
 
 ## Session loop
 
-There is one session loop, not two. Every environment is a sequence of steps over its slots (this is just the PettingZoo agent-environment-cycle; wrapped single-agent games present the same shape). On each step the harness asks the acting slot for an action under a deadline, and if the deadline passes it applies an environment-provided default action for that slot. The server is authoritative, one state object goes out per step over the session's WebSocket, and the browser never simulates ahead. Renderers send human inputs as they happen, tagged with the slot they control.
+There is one PettingZoo agent-environment-cycle for realtime, turn-based, single-agent, and multi-agent environments:
 
-What separates a realtime game from a turn-based one is a single piece of [metadata](environment.md), the **pace interval**, not a second code path:
+```text
+Choose acting slot → obtain action or default → step environment → emit state → repeat
+```
 
-- **Turn-based (no pace interval).** The step advances as soon as the acting slot's action is available: an agent slot the moment its agent returns, a human-controlled slot when the browser controlling it submits a move (or when the slot's timeout applies the default).
-- **Realtime (a pace interval is set).** The step advances on a fixed wall-clock cadence regardless of input. The harness latches the latest input received for each human-controlled slot during the interval and uses that, or a noop if none arrived. The cadence, not the input rate, drives the world, which is what makes the game feel realtime rather than running faster the harder a player taps. The Flappy Bird clone sets its pace interval low enough to stay playable.
+The server is authoritative. The browser never simulates ahead. Human inputs include the controlled slot ID.
 
-This puts a plain constraint on the table for realtime play: a human action only shows its effect after a network round trip. That is fine at modest pace intervals and on nearby networks, and it is not a recipe for twitch games over the open internet.
+The transport and state model identify every slot even when an initial product flow connects only one human. Supporting more connected humans later therefore does not change the environment contract.
 
-In a live human-in-the-loop session the pace clock is **pausable** from the play UI: pausing freezes the cadence and the decision clock together (no steps advance and no timeout accrues) until the session resumes. Pausing is a live-session affordance only; headless leaderboard runs are never paced and never pause, so they run as fast as the agents compute and their timing stays honest (see [leaderboard.md](leaderboard.md)).
+The environment's [metadata](environment.md) selects timing:
 
-A live session can have more than one human-controlled slot when the environment metadata allows it, even if the first product flows attach only one connected human. The transport and state model identify the slot for every input and chat message so adding more connected human players later does not change the environment contract.
+| Mode | Pace interval | Advance rule |
+| --- | --- | --- |
+| Turn-based | None | Advance when the action arrives or the move clock expires. |
+| Realtime | Set | Advance on each cadence, using the latest input or the default action. |
 
-Human-controlled slots use a separate timeout from agent decision timeouts; it is the deadline applied to the slot in the loop above. The environment provides a default value, and a session can override it. With a pace interval set, the deadline is the interval itself, so a slot that has not sent input by the time the cadence fires gets the default action (a noop for Flappy Bird). Without a pace interval, it is the move clock: how long the slot may wait before the harness applies the environment-provided legal default action, such as the lowest legal card in a card game. Renderers should show the active timeout when it affects play, for example as a move clock, alongside the pause control.
+Realtime input takes effect after a network round trip, so supported games use modest cadences rather than twitch-sensitive timing.
+
+Live sessions may pause. Pausing freezes stepping and timeout accounting. Headless leaderboard runs do not pace or pause.
+
+Human slots use a separate timeout from agent compute limits. In realtime games, the cadence is the deadline. In turn-based games, the timeout is a move clock. A session may override the environment default, and the interface shows the active value when it affects play.
 
 ## Human input
 
-For environments whose [metadata](environment.md) exposes one or more human-capable slots, the renderer page also takes human input for the slots assigned to its connected user. Input can come from two complementary places, and each environment's renderer decides which to expose:
+An environment may expose human-capable slots. Its renderer can accept:
 
-- **Raw device input.** Keyboard, mouse, gamepad, or touch, captured directly by the renderer page. Best for fast or action-paced games where low-friction control matters more than discoverability (Flappy Bird, racing games, anything realtime).
-- **On-screen input UI.** Buttons, sliders, drag handles, action menus, board cells, card hands, or any other controls the renderer chooses to draw alongside the game. Useful when the action space is structured (a discrete menu of moves, a placement on a grid, a choice from a set), when the game is turn-based, or when raw device input would be awkward (touch devices, accessibility, complex action shapes). The on-screen UI is part of the renderer, so it gets the same per-step state object and can react to it (greying out illegal moves, highlighting the active player, showing whose turn it is). A renderer can use both at once. For example, a turn-based game might accept either a keyboard shortcut or a click on the corresponding on-screen button.
+- Raw device input, such as keyboard, pointer, touch, or gamepad.
+- On-screen controls, such as buttons, board cells, card hands, or sliders.
 
-Whatever the source, input is mapped into an action in the environment's action space and sent to the server with the controlled slot ID. The server feeds it into that slot on the next tick or turn (see the session loop above and [execution.md](execution.md)).
+A renderer may use both. It maps each gesture to an action in the environment's action space and sends the action with the slot ID. Spectators and replay viewers receive no input capability.
 
 ## Chat
 
-For environments with messaging enabled (see [communication.md](communication.md)), the renderer also draws a chat panel as part of the on-screen UI. Broadcasts and messages addressed to any slot controlled by the connected user appear there, and outgoing messages travel the same WebSocket path as input, reaching the other slots on the next tick.
+When messaging is enabled, the renderer provides chat UI. Broadcasts and messages addressed to the connected user's slots appear there. Outgoing messages follow the same WebSocket path as input. See [Communication](communication.md).

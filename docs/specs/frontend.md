@@ -1,72 +1,93 @@
 # Web Frontend
 
-The frontend is organized into a small number of clearly scoped pages and a shared identity layer.
+The frontend lets people discover environments, submit agents, watch or play sessions, inspect replays, rate agents, and manage seasons.
 
 ## Navigation
 
-Navigation has two tiers.
+Navigation has two levels:
 
-The persistent, collapsible **left sidebar** contains:
-
-- **Environments**
-- **Seasons**
-- **Documentation**
-- **My Agents**
-- The account block, including **My Profile** and a logout affordance once OAuth lands
-
-Inside an environment, the **contextual tab strip** contains:
-
-- **Overview**
-- **Leaderboards**
-- **My Submissions**
-- **Manage**, for operators
-
-**My Submissions** opens the signed-in user's profile and submission form for that environment. Historical released seasons remain available from Leaderboards. Operators can also open unreleased seasons there as clearly labelled private previews.
+| Global sidebar | Environment tabs      |
+| -------------- | --------------------- |
+| Environments   | Overview              |
+| Seasons        | Leaderboards          |
+| Documentation  | Replays               |
+| My Agents      | My Submissions        |
+| My Profile     | Manage, for operators |
 
 The site uses **Environment** and **Season** as its front-facing names, matching the `environment` and `season` entity names used throughout the API and the operator console.
 
 ## Pages
 
-- **Home (Environments).** Lists environments as cards. Each card shows the display name, a short description, the number of agent slots, whether a human can play, and a thumbnail.
-- **Environment page (Overview).** Shows the environment's description, the two leaderboards for the current released season, links to historical seasons, and entry points into the play and watch flows. The play and watch entry points target the current play-open season when one exists, which may be a different season from the submission target. The human entry point sits in the page header next to the title as **Play Yourself**. A labelled Playable badge identifies the play-open season and deep-links to the same play dialog for an allowlisted user when the environment supports human play. The watch list always offers the environment's built-in **Naive agent** pinned at the top, a baseline that behaves like a submitted agent, followed by the ready submissions for the selected playable season. Any Watch action opens the same watch configuration dialog with the chosen row preselected.
-- **Agent profile.** One page per participant and environment, reached through the **My Submissions** tab for the signed-in user's own profile and through agent links for another participant. For the owner it carries the agent submission form (see below) and uses the heading **My Submissions**; another participant's page uses a possessive submissions heading. The page shows submission history across seasons, leaderboard placements, and recent replays. The agent's owner additionally gets a debug view with the agent's full LLM telemetry, prompts and completions included (see [llm.md](llm.md)).
-- **Seasons, My Agents, Documentation, My Profile.** The cross-environment sidebar destinations. Seasons lists every public-facing season as its own row, meaning a season appears when submissions are open, play is open, or results are released. Open seasons lead the list. Each row shows the active gate tags, the environment thumbnail, the release time when applicable, the number of active participant submissions, and the number of completed public sessions attributed to the season. The tags link directly to My Submissions, Play, or that season's Leaderboards. The card itself follows lifecycle priority: released results go to that season's boards, otherwise a submission-open season goes to My Submissions, otherwise a play-open season goes to Play. My Agents indexes the signed-in user's submissions across environments; Documentation hosts the student guides (a placeholder for now); My Profile shows the signed-in identity and what it may do.
-- **Replays.** A per-environment tab listing the environment's recordings as a sortable table: each row is one replay, with its id (linking to the viewer), a summary of who played, the owner, the season the producing session ran in, the run's outcome, and when it was created. Replays have no visibility model: the listing is open to everyone and read-only, scoped to the environment and ordered newest-first; a viewer's own pinned replay carries a "Pinned" badge. A replay belongs to the environment, not a season; the Season column surfaces the play-open (or submission) season the session competed in, the only place that play-open assignment is visible.
-- **Replay viewer.** Plays back a recorded run step by step, including chat messages and per-tick LLM call metadata (model, token counts, latency). It states who played each slot, a human (annotated with the user) or the agent that ran (the Naive agent, or a submission owner's agent), read from the recording header's attribution. Full prompts and completions stay owner-only (see [llm.md](llm.md)). Linkable by URL. See [recording.md](recording.md).
-- **Live play.** Hosts an active session, which can be self-play, multi-agent, or human with agent.
-- **Leaderboards.** Per environment, per season. The automated board and the human-feedback board stack in one full-width column so each table has room for its data. See [leaderboard.md](leaderboard.md).
-- **Operator admin console.** Visible only to operators (an allowlist in the deployment configuration, checked against the signed-in identity). The operator declares and configures a season and its match design, opens and closes its submission window, opens and closes its public play window, triggers and re-runs the automated workflow while watching the match containers' logs stream live, inspects the resulting boards privately, and releases the season so its boards appear on the environment page. This replaces the configuration-file-and-CLI model; see [leaderboard.md](leaderboard.md).
+| Page | Main content |
+| --- | --- |
+| Environments | Cards with name, description, slot count, human-play support, and thumbnail |
+| Environment overview | Description, current boards, season history, play and watch entry points |
+| Agent profile | Submission history, status, placements, replays, author prompt, owner-only LLM debug data |
+| Seasons | Public seasons, active gates, environment, release time, submission count, session count |
+| My Agents | Signed-in user's submissions across environments |
+| Replays | Sortable environment recording list |
+| Replay viewer | Renderer, transport, player attribution, chat, public LLM summaries |
+| Live session | Renderer, shared controls, decision log, result, pinning, ratings |
+| Leaderboards | Automated and human-feedback boards for one environment and season |
+| Manage | Operator-only season configuration, workflow logs, preview, and release |
+| Documentation | Student guides |
+| My Profile | Signed-in identity and capabilities |
+
+The environment overview targets three potentially different seasons:
+
+- Boards use the current released season.
+- Watch and play use the current play-open season.
+- My Submissions uses the current submission-open season.
+
+The built-in **Naive agent** is always the first watch option. Ready submissions for the play-open season follow it.
+
+Replays are public and read-only. They belong to an environment, while a season column records the season associated with the producing session. Owners may pin their own recordings.
 
 ## Submitting an agent
 
-The owner's agent profile (the **My Submissions** tab) carries a "Submit agent" form for the environment's currently open submission season. The participant pastes their repository URL, optionally with a branch, tag, or commit to target; the frontend verifies the repo and ref are reachable before accepting, and the backend pins the resolved commit (the default-branch head when no ref is given). The submission is recorded under the signed-in GitHub identity. If validation rejects the submission, the specific reason is shown back on the form and on the owner's agent profile. If no season is open for submissions, the form is unavailable even when another season remains open for play. The submission rules (one active submission per season, resubmitting replaces) and the validation layers live in [submission.md](submission.md).
+The **My Submissions** tab shows the form when a season accepts submissions. The participant enters a repository URL and optional branch, tag, or commit.
 
-## Flows
+The frontend checks reachability before submission. The backend pins the commit and attributes it to the signed-in user. The page shows each validation stage and its failure detail. If no submission window is open, the form is unavailable even when another season remains open for play.
 
-- **Watch self-play.** Pick an agent from the selected play-open season, confirm the configured seat assignment, set the random seed and any supported session overrides, then stream the state to the renderer. The built-in Naive agent is always available as the pinned first choice, so a watch run works before any agent is submitted.
-- **Watch multi-agent.** Pick agents for each required slot in environments whose metadata allows more than one slot. The same watch configuration dialog is used for built-in and submitted agents, and all required seats must be assigned before a session can start. This flow arrives together with the first multi-agent environment (see [environment.md](environment.md)).
-- **Play with or against agents.** Available when the environment metadata exposes human-capable slots. The initial flow can assign one connected human to one slot and fill the others with agents, but the session model should be slot-based so a later flow can assign multiple connected humans in the same session. Feedback is collected at the end of the session.
+See [Submissions](submission.md).
 
-Live-session controls include slot assignment for human-capable environments and any session-level overrides, including the human-slot timeout described in [interaction.md](interaction.md). Watch-session controls include agent slot assignment, a seed, and the same supported session overrides. A renderer that has an active human timeout should show it as part of the play UI.
+## Watch and play flows
+
+| Flow | Configuration |
+| --- | --- |
+| Watch single-agent | Agent, seed, supported overrides |
+| Watch multi-agent | One agent per required seat, seed, supported overrides |
+| Play | Human-capable slot assignment, remaining agents, seed, human timeout, supported overrides |
+
+All required seats must be assigned before a multi-agent session starts. The session model identifies every slot even when the first interface supports only one connected human.
 
 ## On-demand live play
 
-Signed-in users on the deployment's allowlist can start a new live session whenever they want, one concurrent session per user. The allowlist is configured by the operator and is typically a class roster or a GitHub org. The session orchestrator launches one session container for the duration of the session (see [execution.md](execution.md)). Sessions are bounded by the environment's time limits and by a session-level idle timeout, so a forgotten browser tab does not hold resources forever.
+Signed-in allowlisted users may start one concurrent session. Environment limits, a human timeout, an idle timeout, and a wall-clock backstop bound the session. See [Execution](execution.md).
 
 ## Feedback
 
-Every session is recorded automatically (see [recording.md](recording.md)). At the end of a session, next to the feedback prompt, the user can pin the replay to keep it past the retention window.
+Every session is recorded, and the owner may pin the replay.
 
-After any rateable session, watch or play, the user can rate each agent involved on a 1 to 5 scale. A session is rateable only when it is attached to a season that still has its play window open; old sessions from before season attribution, sessions for a closed play window, and operator-only dry runs are read-only. A user has one effective rating per agent per season; rating the same agent again overwrites the previous value while the play window is open. Ratings of the user's own agent are excluded. The built-in baseline has no author and can be rated when it appears alongside a submitted agent, but a pure baseline-only watch recording does not show a feedback panel. Ratings feed the per-environment, per-season human-feedback leaderboard (see [leaderboard.md](leaderboard.md)) and do not affect the automated leaderboard.
+A rateable session must belong to a season whose play window is still open. A user can submit one effective 1 to 5 rating per agent per season, and a later rating replaces it.
 
-Each rating can be guided by up to two **rating prompts**, shown next to the agent at rating time: one the operator set on the season, and one the agent's own author set for their submission. Authors set their agent's prompt from their agent profile; the prompt is presentation metadata about what to evaluate and is not part of the pinned, validated submission. The prompts are context for the single rating, not extra scores.
+The interface prevents:
+
+- Rating the user's own agent.
+- Rating after play closes.
+- Rating a pure built-in-only session.
+
+The built-in baseline may be rated in a mixed session. Ratings affect only the human-feedback board.
+
+The rating view may show the operator's season prompt and the agent author's prompt. Both guide one score. The author's prompt is profile metadata, not part of the pinned submission.
 
 ## Identity: GitHub OAuth
 
-Web users sign in to the frontend with GitHub OAuth. Their GitHub identity is the same identity used everywhere else in the system:
+Web users sign in with GitHub OAuth. One GitHub identity is used for:
 
-- Feedback they leave is attributed to their GitHub username.
-- Sessions they play are attributed to their GitHub username.
-- Submissions they make (see [submission.md](submission.md)) are verified against the same OAuth session, so a participant can only submit under their own handle.
+- Submissions.
+- Sessions and recordings.
+- Ratings.
+- Operator and session allowlists.
 
-Because there is one identity path (GitHub OAuth) and one identifier (GitHub username), everything a person does on the site lines up under the same handle automatically.
+The backend derives identity from the authenticated session, never from a user ID supplied in a request body.

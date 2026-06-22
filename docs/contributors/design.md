@@ -1,8 +1,21 @@
 # The design system
 
-This is the design system's home, for contributors and agents. The frontend is built from two layers: semantic CSS custom properties (the tokens) and a small library of Vue primitives under `frontend/src/components/ui/`. A new page is assembled from documented primitives and tokens, not new ad hoc CSS. Read this page before any visual work.
+The frontend design system has two layers:
 
-It covers the principles, the token system, type and color, the primitives, layout and responsiveness, and the accessibility baseline. For the renderer contract (how a game draws itself) see the [interaction spec](../specs/interaction.md); for package mechanics see [frontend.md](frontend.md).
+```text
+semantic CSS tokens → Vue UI primitives → feature components → pages
+```
+
+Read this page before visual work. Use [Frontend](frontend.md) for package mechanics and [Rendering](rendering.md) for game visuals.
+
+## Working rules
+
+1. Use semantic tokens, not raw color or spacing values.
+2. Build from `src/components/ui/` primitives.
+3. Add every primitive variant to `/styleguide`.
+4. Preserve the accessibility baseline.
+5. Confirm a new visual pattern or open design decision with the owner.
+6. Update jsdom and Playwright coverage for every UI change.
 
 ## Design principles
 
@@ -20,7 +33,7 @@ It covers the principles, the token system, type and color, the primitives, layo
 - The **raw palette** tier (`--palette-*`) holds the literal values and is private: nothing outside `tokens.css` references a `--palette-*` variable. This is what keeps a future light theme a remap of the semantic tier rather than a rewrite of component CSS.
 - The **semantic** tier is the public vocabulary components consume: `--color-*`, `--space-*`, `--text-*`, the font families, `--radius-*`, and the motion tokens.
 
-**The no-raw-values rule:** component CSS uses `var(--…)` only: no raw hex colors, and no arbitrary rem/px for padding, gaps, or margins (use the `--space-*` scale). Layout dimensions that are not on the spacing scale (a column width, a `max-width`, the breakpoints) are plain values. Renderer modules under `src/renderers/` are exempt, because a renderer owns its game's visual identity. Biome excludes `.vue` files, so this rule is enforced by review and a grep over component sources, not by lint.
+Component CSS uses semantic variables: no raw hex colors and no arbitrary spacing values. Layout dimensions such as column width, maximum width, and breakpoints may use plain values. Renderer modules are exempt because each game owns its visual identity.
 
 The scales:
 
@@ -52,9 +65,9 @@ The primitives live in `frontend/src/components/ui/`, PascalCase with a `Ui` pre
 | `UiSlider` | The replay scrubber (keyboard operation and value announcement), wrapping Reka UI Slider. |
 | `UiEmptyState` | The loading / empty / error message line, muted or danger. |
 
-**Hand-rolled versus Reka UI:** simple primitives are hand-rolled on the tokens. A third-party library (Reka UI, the headless Vue library) is used **only** where focus management and ARIA are genuinely hard to get right by hand: today the dialog and the slider, nothing else. At adoption the production bundle was verified to grow only by the components actually imported.
+Simple primitives are local Vue components. Use Reka UI only where focus management and ARIA are difficult to implement safely, currently dialog and slider.
 
-**Adding a variant:** add the prop value and its scoped styles, then add it to the `/styleguide` route. Every variant and state of every primitive appears there; a variant that is not on the styleguide does not exist. The route is registered only in dev builds (`import.meta.env.DEV`) and loaded by dynamic import, so production carries neither the route nor the code.
+To add a variant, update the typed prop, scoped styles, tests, and `/styleguide`. A variant absent from the styleguide does not exist.
 
 Feature components (`AppShell`, `AppSidebar`, `AccountMenu`, `ExperimentTabs`, `StartForm`, `RunMetadata`, `DecisionLog`) live in `src/components/`, not `components/ui/`; they are built on the primitives but are not primitives themselves.
 
@@ -68,9 +81,9 @@ The **app shell** is a two-tier navigation frame:
 - The main content column is centered and width-limited.
 - Pages use a one-line context label such as `Games / Flappy Bird / …` instead of a breadcrumb component.
 
-See the [frontend contributor guide](frontend.md#navigation-the-sidebar-and-the-environment-tabs).
+See the [frontend contributor guide](frontend.md#navigation).
 
-The documented **breakpoints** are **480px, 768px, and 1024px**. They are plain values in scoped media queries because CSS custom properties cannot parameterize media queries.
+The breakpoints are 480px, 768px, and 1024px. They are plain values because CSS custom properties cannot parameterize media queries.
 
 The design began desktop-first but must remain usable at narrow widths:
 

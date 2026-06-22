@@ -1,20 +1,31 @@
 # Recording and Replay
 
-Recordings are state only. A recording is the sequence of per-step states, actions, rewards, and timings produced during an episode, prefixed by a small header that names the environment, the version of its state schema, and the per-slot attribution: who or what drove each slot, either a connected human (annotated with the player) or an agent (the built-in Naive agent, or a submission owner's agent). A replay reads that attribution from the header to state who played. There are no video files. A replay re-renders the stored states through the same frontend renderer used during live play (see [interaction.md](interaction.md)); it does not re-simulate the episode.
+Recordings store state, not video. A replay draws stored states with the same renderer used for live play. It never re-simulates the environment.
 
-Three things follow from this:
+```text
+Header
+  environment, schema version, seed, players, sidecars
+State line 1
+State line 2
+...
+```
+
+The header identifies who controlled each slot, either a human, the built-in agent, or a submitted agent.
+
+This design means:
 
 - Recordings stay small.
-- The renderer can be improved without re-running any games. Old replays automatically pick up the improvements, and the schema version in the header keeps a changed payload format from silently breaking them.
-- A replay is just a web page, not a passive video, so it can be paused, stepped, scrubbed, and inspected.
+- Renderer improvements apply to old compatible recordings.
+- Schema versions prevent incompatible payloads from failing silently.
+- Replays can pause, step, scrub, and expose structured data.
 
 Replays are linkable by URL.
 
-Chat messages are part of the per-step state object, so they are recorded and replayed like everything else (see [communication.md](communication.md)). LLM telemetry is stored as a sidecar next to the recording, keyed by tick and slot and covered by the same schema version (see [llm.md](llm.md)).
+Chat is stored in per-step state. LLM telemetry is a sidecar keyed by tick and slot. See [Communication](communication.md) and [LLM API](llm.md).
 
-## What gets recorded
+## Retention
 
-Every session is recorded automatically, including leaderboard runs and live sessions (see [leaderboard.md](leaderboard.md) and [frontend.md](frontend.md)). Storage stays bounded through retention:
+Every session is recorded. Storage remains bounded:
 
 - Leaderboard recordings remain while their season is viewable.
 - Live-session recordings remain for a deployment-configured window, 30 days by default.
@@ -24,4 +35,8 @@ Every session is recorded automatically, including leaderboard runs and live ses
 
 ## Storage
 
-Recordings are written to a folder on disk behind a minimal save and load interface, as JSONL: the header on the first line, then one per-step state per line. This is the same line-delimited JSON the harness streams outward over its transport during a live session (see [execution.md](execution.md)), so the state wire form and the stored form are one format. Human input, pause and resume, and chat commands use their own command envelope and are not recording lines. Since the workflow runs in Docker, a shared volume mounted into the workflow container is enough. An S3-compatible object store can be added behind the same interface when a real deployment needs one; no other backends are planned.
+The format is JSON Lines, or JSONL: one JSON object per line. The first line is the header and each later line is one step.
+
+The harness writes the same serialized state bytes to storage and the live transport. Input, pause, resume, stop, and chat commands use separate event envelopes and are not recording lines.
+
+The first storage implementation uses a mounted folder. An S3-compatible implementation may be added behind the same save/load interface.

@@ -1,12 +1,26 @@
 # Adding an Environment
 
-Every environment in Game Sandbox exposes a PettingZoo AEC interface and registers a single `ENTRY` discovered by the harness through a Python entry point. Single-agent games come in through the in-house compatibility wrapper, so they fit the same shape as multi-agent games. This page is the how-to; the design rationale lives in the [environment spec](../specs/environment.md). Flappy Bird is the worked example throughout, and Hearts (Stage 7) will be the first to follow this path from scratch.
+Every environment exposes the [PettingZoo AEC API](https://pettingzoo.farama.org/api/aec/) and registers one `ENTRY` through a Python entry point. Single-agent Gymnasium games use the shared adapter.
+
+Read the [environment specification](../specs/environment.md) for product rules and [Rendering](rendering.md) for browser visuals.
+
+## Checklist
+
+1. Add the environment package and factory.
+2. Define a legal default action.
+3. Extract a JSON-compatible renderer overlay.
+4. Create metadata and `ENTRY`.
+5. Register the Python entry point.
+6. Pass PettingZoo `api_test` and determinism tests.
+7. Sync the self-contained environment code to the student template.
+8. Add a template layer and at least one example.
+9. Add and register a frontend renderer.
 
 ## Directory layout
 
 One directory per environment under `environments/src/game_sandbox_environments/`, each exporting a module-level `ENTRY`:
 
-```
+```text
 environments/src/game_sandbox_environments/
   single_agent.py          # the shared Gymnasium -> AEC adapter
   flappy_bird/
@@ -15,7 +29,7 @@ environments/src/game_sandbox_environments/
     overlay.py             # render-data extraction
 ```
 
-Adding an environment means adding a sibling directory and touching nothing else: discovery is automatic.
+Discovery is automatic after registration.
 
 ## Single-agent games: the adapter
 
@@ -70,7 +84,7 @@ flappy_bird = "game_sandbox_environments.flappy_bird:ENTRY"
 
 The harness enumerates installed environments through `importlib.metadata` and never imports this package, keeping the dependency arrow pointing one way (environments → harness).
 
-## The api_test requirement
+## PettingZoo conformance
 
 Every environment must pass PettingZoo's own conformance check, so correctness is verified by the framework rather than our assumptions:
 
@@ -83,4 +97,12 @@ Pair it with an environment-level determinism test (two resets with the same see
 
 ## Syncing to the template
 
-Students run your environment locally against vanilla PettingZoo, so the import-self-contained modules (`single_agent.py`, `env.py`, `overlay.py`) are copied into that environment's template layer at `templates/<env>/sandbox_env/` by `scripts/generate.py`, and the staleness CI job keeps the copy current. Only the steppable environment is synced: never the harness, recording store, or metadata layer. Register the env id and its synced module list in `scripts/_paths.py` `TEMPLATE_ENVS`, give it generated `__init__` texts in `scripts/generate.py` (the top-level `sandbox_env/__init__.py` exposes the uniform `make_env`/`ENV_ID`/`PLAYER_SLOT` surface the env-agnostic template scripts read), then run `uv run python scripts/generate.py` after changing any synced module. The full template-layer checklist lives in [Examples and the template](examples-and-template.md).
+Students run the environment locally without the harness. `scripts/generate.py` copies the self-contained modules into `templates/<env>/sandbox_env/`.
+
+Register the environment and module list in `scripts/_paths.py` under `TEMPLATE_ENVS`, add the generated `__init__` text in `scripts/generate.py`, then regenerate:
+
+```console
+uv run python scripts/generate.py
+```
+
+The template's top-level `sandbox_env` package exposes `make_env`, `ENV_ID`, and `PLAYER_SLOT`. Never sync harness, recording, or metadata modules. See [Examples and the template](examples-and-template.md).

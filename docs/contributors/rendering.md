@@ -1,164 +1,166 @@
 # Rendering
 
-This page is the authority for how environments are drawn in the browser: the renderer contract, the PixiJS base class every renderer inherits, the sizing-and-scaling model, the input plumbing, and the rule that keeps live play and replay byte-for-byte identical. [frontend.md](frontend.md) covers the package around it (the hosts, the routing, the identity layer) and points here for the renderer itself.
+Each environment has one browser renderer shared by live play and replay. Renderers use PixiJS through a common base class, draw from per-step state, and never inspect the live environment.
 
-The renderer is built so that adding a new environment's visuals is one self-contained class. Flappy Bird is the first renderer, but it is an example, not the shape of the system: everything here is designed for the environments that come after it (board games, grid worlds, multi-agent boards), not for one falling bird.
+Read [the interaction specification](../specs/interaction.md) for the product contract and [Frontend](frontend.md) for the pages that host a renderer.
+
+## Rendering model
+
+```text
+StepState → computeScene(state) → Scene → reconcile PixiJS objects → canvas
+```
+
+The important invariant is determinism: rendering a state must produce the same visible frame regardless of which state was rendered before it. A replay can therefore jump directly to any tick.
+
+The renderer owns the game frame and environment-specific controls. The host page owns shared chrome such as connection status, pause, stop, the active timeout, decision log, result, and replay transport.
 
 ## Why PixiJS
 
-The first renderer used a raw 2D canvas. That worked for flat vector shapes, but every new renderer would have needed to solve the same problems:
-
-- Rasterizing each shape through `CanvasRenderingContext2D`.
-- Keeping output sharp across device pixel ratios.
-- Deriving a responsive logical size from rendered pixels.
-
-PixiJS v8 provides those shared capabilities through:
+PixiJS v8 provides:
 
 - A retained scene graph.
-- GPU compositing through WebGL, with a WebGPU path.
-- High-DPI support through `resolution` and `autoDensity`.
-- Federated pointer events.
+- GPU compositing.
+- High-DPI rendering through `resolution` and `autoDensity`.
+- Pointer and touch events.
 
-The base class wraps PixiJS so subclasses can focus on drawing the game.
+The shared `PixiRenderer` base handles those concerns so environment modules focus on game visuals. PixiJS stays in the browser renderer path and does not enter the recording parser or backend.
 
-PixiJS is a browser-only, GPU-backed dependency; it never reaches the recording parser or any Node code, so the bundle rule the replay viewer depends on (no Ajv, no `node:fs`: see [frontend.md](frontend.md)) is unaffected.
+## Contract
 
-## The contract
-
-The contract lives in `renderers/types.ts`. A renderer is handed its context once, draws each state, and is torn down once:
+The types live in `src/renderers/types.ts`:
 
 ```ts
 interface RendererContext {
-  container: HTMLElement                       // the region the renderer owns
-  meta: EnvironmentMeta                        // pace interval, slots, display name
-  header: RecordingHeader                      // environment, schema_version, seed
-  controlledSlots: readonly string[]           // empty when spectating or replaying
-  sendAction?: (slot: string, action: unknown) => void  // absent outside live human play
+  container: HTMLElement
+  meta: EnvironmentMeta
+  header: RecordingHeader
+  controlledSlots: readonly string[]
+  sendAction?: (slot: string, action: unknown) => void
 }
 
 interface RendererInstance {
-  readonly internalSize: { width: number; height: number }  // the logical space the renderer draws in
-  readonly aspectRatio: number                 // width / height; the layout-facing shape
-  render(state: StepState): void               // draw one step
-  destroy(): void                              // tear down once
+  readonly internalSize: { width: number; height: number }
+  readonly aspectRatio: number
+  render(state: StepState): void
+  destroy(): void
 }
 
-interface Renderer {                           // the static side of a renderer class
+interface Renderer {
   mount(ctx: RendererContext): RendererInstance
 }
 ```
 
-A renderer is **one class**. The registry stores the `PixiRenderer` subclass, whose static side provides the `mount` factory. The mounted `RendererInstance` exposes `internalSize` and the derived `aspectRatio`, so there is no separate module object to keep synchronized.
+The registry stores a `PixiRenderer` subclass. Its static `mount` method creates the instance. Registration also supplies a static SVG thumbnail for environment cards.
 
-The home-card thumbnail is a separate static SVG, such as `flappy-bird/thumbnail.svg`. It is passed to `registerRenderer` beside the class, which means cards never mount a renderer just to show artwork.
+### Size declarations
 
-Two declarations replace the single `targetCanvasSize` of the 2D era, and the difference matters:
+| Value | Meaning |
+| --- | --- |
+| `internalSize` | Fixed logical coordinate system used by renderer code |
+| `aspectRatio` | `internalSize.width / internalSize.height`, used by page layout |
 
-- **`internalSize`** is the fixed logical coordinate space the renderer draws in (Flappy Bird's is `288 × 512`). The renderer's code only ever speaks these coordinates; it never sees a device pixel. The base class scales this space onto whatever real size the host gives it.
-- **`aspectRatio`** is `internalSize.width / internalSize.height`, surfaced explicitly because it is the shape the host reasons about: it sizes the stage element with a CSS `aspect-ratio` and places the decision log beside a portrait canvas (`aspectRatio < 1`, a column is left free) or below a landscape one. The base derives it from `internalSize` with a getter, so a renderer only ever declares `internalSize` and the two can never disagree.
+The subclass declares only `internalSize`; the base derives `aspectRatio`.
 
-Two rules give the architecture its properties.
+## Base class responsibilities
 
-- **Determinism.** `render(state)` must draw a frame that is a pure function of `state` (plus the mount-time header and metadata): no dependence on what was rendered before. This is the property the replay scrubber relies on: jumping to tick 200 must look identical whether you played forward to it or scrubbed backward to it. Retained-mode drawing does **not** weaken this; see [the scene graph](#the-retained-scene-graph-and-determinism) below.
-- **The chrome split.** The renderer owns the game frame: the world plus the in-game UI that belongs inside the game (score, tick, in-world status). The hosting page owns the session chrome that must work for every environment: the status strip, the pause/stop controls, the active-timeout display, the decision log, the end-of-session card. That split is what lets the live and replay hosts be built once, for every future environment.
+`PixiRenderer` owns:
 
-`registry.ts` maps the environment metadata's `renderer` key to its renderer class and home-card thumbnail; `index.ts` is the registration barrel `main.ts` imports. The thumbnail is the SVG asset the barrel passes to `registerRenderer` alongside the class, with a placeholder (`renderers/placeholder.svg`) for an environment whose renderer is not registered yet.
+- Asynchronous PixiJS application setup and teardown.
+- A root container that maps internal coordinates to CSS pixels.
+- High-DPI backing-store resolution.
+- Debounced `ResizeObserver` handling without recreating the GPU context.
+- Caching the latest state until asynchronous setup finishes.
+- Input listener setup and cleanup.
+- A jsdom guard that skips GPU initialization during unit tests.
 
-## The base class
+A subclass implements:
 
-`PixiRenderer` (abstract, in `renderers/base/`) is the `Renderer`/`RendererInstance` in one: its instances implement `RendererInstance`, and its static side is the `Renderer` the registry stores. It carries everything common to every environment, including the static `mount` factory and the `aspectRatio` getter derived from each subclass's `internalSize`. A subclass inherits it and supplies only the game.
-
-The base class owns:
-
-- **The PixiJS application lifecycle.** It constructs the `Application`, runs the async `init()` (PixiJS v8 initializes asynchronously), appends the canvas to the container, and tears it all down on `destroy()`. `render(state)` calls that arrive before `init()` resolves are not lost: the base caches the latest state and applies it the moment the app is ready.
-- **The internal→actual scale.** A single root container is scaled so that one internal unit maps to the right number of CSS pixels for the current size. Subclasses add their display objects to this root and draw in internal coordinates; the scale is the base's concern alone.
-- **Resize in place.** A `ResizeObserver` on the container drives a debounced resize: on a settled size change the base calls `renderer.resize(...)` to the new actual resolution, re-applies the root scale, and re-renders the cached latest state. The PixiJS app and its GPU context survive: no teardown, no flash. (This is the responsive "re-launch on rect change" goal, met without an actual relaunch; because `render` is deterministic, a true teardown-and-remount would also be correct, but resizing in place is cheaper and flicker-free.)
-- **Input plumbing.** It wires the device input a renderer declares (see [Input](#input)), but only for the owner of a live human session, and tears the listeners down on `destroy()`.
-- **The headless guard.** Under jsdom (unit tests) there is no WebGL or WebGPU context, so the base skips PixiJS initialization entirely and `render`/`destroy` become no-ops. This is the direct heir of the 2D renderer's "tolerate a null context" rule: pixels are the end-to-end suite's job, and the pure scene layer stays unit-testable without a GPU.
-
-A subclass implements three protected hooks:
-
-- `setup(root)`: build the persistent display objects once (containers, the `Graphics`/`Sprite`/ `Text` nodes the game needs). Called after the app is ready.
-- `update(state)`: mutate those display objects so the frame matches `state`. Called for every `render(state)`. This is where the per-step drawing logic lives, and it must be deterministic.
-- `inputs()`: declare the device-input intents (optional; renderers with no human control omit it).
+| Hook            | Purpose                                    |
+| --------------- | ------------------------------------------ |
+| `setup(root)`   | Create persistent PixiJS display objects   |
+| `update(state)` | Make those objects match the current state |
+| `inputs()`      | Optionally declare human-input intents     |
 
 ## Sizing and scaling
 
-The renderer declares the shape it wants; the runtime decides the pixels. The flow:
+```text
+internalSize
+    ↓ determines aspect ratio
+host lays out stage
+    ↓ provides CSS size
+base resizes PixiJS and uniformly scales root
+```
 
-1. The renderer declares `internalSize` (its logical coordinate space) and, by derivation, `aspectRatio`.
-2. The host lays out the stage element at that aspect ratio, capped to the available width (and, on the live/replay stage, leaving room for the decision log beside a portrait canvas). The element's real CSS size is therefore decided by responsive layout, not by the renderer.
-3. The base class reads the element's content-box size and initializes the PixiJS app to it with `resolution: window.devicePixelRatio` and `autoDensity: true`, so the backing store is sharp on high-DPI displays while the CSS size matches the element.
-4. The base scales the root container by `cssWidth / internalSize.width` so the renderer's internal coordinates fill the surface exactly. Because the aspect ratios agree, this single uniform scale needs no letterboxing.
+The host controls responsive layout. The renderer always draws in internal coordinates and never reads device pixels.
 
-When the element's size changes: a window resize, the decision log moving from beside to below at a breakpoint, a panel collapsing: the `ResizeObserver` fires, the base debounces, then resizes the renderer and re-applies the scale. The renderer subclass is never told the size changed; it keeps drawing in internal coordinates and the frame simply lands at the new resolution.
+The base initializes PixiJS with `window.devicePixelRatio` and `autoDensity: true`. It scales the root by `cssWidth / internalSize.width`. Matching aspect ratios avoid letterboxing.
 
-This keeps the responsive policy in one place. A renderer cannot get DPI sharpness wrong, cannot fight the layout for size, and cannot drift out of aspect: those are the base class's invariants, the same for every environment.
+When the stage changes size, the base resizes in place, reapplies scale, and renders the cached state.
 
-### Crisp text under the root scale
+### Text resolution
 
-The single root scale is what keeps a renderer in internal coordinates, but it is also a trap for one kind of display object. The scale magnifies the whole scene graph, and the two node families react to that differently:
+PixiJS `Graphics` remain sharp under root scaling because they are vector geometry. `Text` uses a rasterized texture and can become soft when enlarged.
 
-- **`Graphics` are vector.** Their geometry is GPU-tessellated and the scale is applied in the vertex shader, so they re-rasterize sharply at the framebuffer resolution at any scale. The base's `resolution: devicePixelRatio` + `autoDensity` is all they need.
-- **`Text` bakes a bitmap.** A `Text` node rasterizes its glyphs once into a texture at the app's `resolution`, which is normally `devicePixelRatio`. The root scale then magnifies that bitmap. For example, the Flappy Bird stage may render a 288-unit scene at 480 CSS pixels, producing a scale above 1 and visibly soft text.
+Set each text node's resolution from:
 
-The base solves this generically: `textResolution()` returns `devicePixelRatio × scale`, the device-pixel density a `Text` must bake at so its texture's native size matches its on-screen size. A renderer assigns `node.resolution = this.textResolution()` when it applies a `Text`. Because a resize re-runs `update`, the renderer re-reads it on every frame and it tracks the live size with no extra wiring: set it wherever you set the text's other style, and the HUD stays as sharp as the vector art around it. (Flappy Bird does this in `applyHud`.)
+```ts
+node.resolution = this.textResolution()
+```
 
-## The retained scene graph and determinism
+`textResolution()` returns device pixel ratio multiplied by the current root scale. `update` runs again after resize, so text tracks the new size.
 
-PixiJS is retained-mode: you create display objects once and mutate them, rather than clearing a surface and repainting it each frame. The previous renderer was immediate-mode (`computeScene` → `paint`, rebuilding everything per state). Reconciling the two is the central design point, and it is done by splitting drawing into a pure description and an idempotent application of it:
+## Deterministic retained rendering
 
-- **`computeScene(state, config): Scene`** stays a pure function: one state in, one plain-data `Scene` out (a list of drawing primitives and HUD text, in internal coordinates), with no canvas and no accumulated history. This is where the drawing _logic_ lives, and it is unit-tested in plain Vitest under jsdom, exactly as before. The same state always yields the same scene.
-- **`update(state)`** computes the scene and **reconciles** the retained PixiJS objects toward it: for each element in the scene it creates the display object if missing, sets its properties from the scene, and removes display objects the scene no longer contains (e.g. a pipe that scrolled off).
+Retained mode does not permit history-dependent output. Keep the drawing logic in two layers:
 
-The determinism rule still holds:
+1. `computeScene(state, config)` is a pure function that returns plain scene data.
+2. `update(state)` reconciles persistent PixiJS objects to that scene.
 
-- `Scene` is a pure function of state.
-- Reconciling display objects toward a `Scene` is idempotent.
-- The visible result depends only on the current state, even though display objects are retained.
+The reconciler must be idempotent:
 
-The replay scrubber therefore gets the same deterministic surface as the immediate-mode renderer without rebuilding the entire scene graph 20 times per second.
+- Create a node when the scene first needs it.
+- Set every visible property from the current scene.
+- Remove nodes absent from the current scene.
 
-The split is also still the testing seam: `computeScene` is pure and unit-tested; the reconciler touches the GPU and is covered by the end-to-end suite. A checked-in recording feeds the scene-computation tests, so any visual logic has a byte-identical input to reproduce against.
+Unit-test `computeScene` under jsdom with checked-in recording states. Cover GPU reconciliation and visible canvas behavior in the browser end-to-end suite.
 
 ## Input
 
-Renderers that allow human control declare their input intents from `inputs()`; the base class wires them, and only for the owner of a live human session: `sendAction` present **and** at least one of the renderer's slots in `controlledSlots`. Spectators and the replay viewer mount the same renderer with no `sendAction` and get a draw-only instance with every input path inert. This is the same capability rule as before, lifted out of each renderer and into the base.
+`inputs()` declares mappings from device gestures to environment actions. The base handles:
 
-An intent maps a device gesture to an action sent through `sendAction`. The base handles the mechanics every renderer would otherwise repeat:
-
-- Keyboard listeners on `window`.
-- Pointer and touch input through PixiJS events.
-- `preventDefault` to stop scrolling or zooming on the game surface.
+- Keyboard listeners.
+- PixiJS pointer and touch events.
 - Auto-repeat suppression.
-- Listener cleanup in `destroy()`.
+- `preventDefault` where the game surface owns the gesture.
+- Listener cleanup.
 
-A renderer only declares that Space, ArrowUp, W, pointer, and touch all mean `flap`. It does not manage listener bookkeeping.
+Input is enabled only when `sendAction` exists and the renderer controls at least one slot. Spectators and replay viewers mount a draw-only renderer.
 
-A renderer never sends a no-op: the container applies the environment default for a step with no input, and the harness latches the latest input per pace interval, so sending only meaningful actions is both sufficient and minimal.
+Send meaningful actions only. The harness supplies the environment's default action when no input arrives.
 
-## Adding a renderer
+## Add a renderer
 
-This is the page a new environment lands on. To give an environment its visuals:
+1. Create `src/renderers/<env>/`.
+2. Add a class extending `PixiRenderer`.
+3. Declare `internalSize`.
+4. Create display objects in `setup`.
+5. Put state-to-scene logic in a pure `computeScene`.
+6. Reconcile the scene in `update`.
+7. Add `inputs()` if humans can control the environment.
+8. Add `thumbnail.svg`.
+9. Register the class and thumbnail in `src/renderers/index.ts`.
+10. Add unit tests and update the browser journeys.
 
-1. Write a class under `src/renderers/<env>/` that extends `PixiRenderer`. Declare its `internalSize` (an instance field), build its persistent display objects in `setup`, mutate them from state in `update` (keep the per-state logic in a pure `computeScene` so it is testable in jsdom), and, if it is human-playable, declare its input intents in `inputs`. The class is the `Renderer`: `mount` and the derived `aspectRatio` come from the base, so `internalSize` is all the class supplies.
-2. Add a `thumbnail.svg` next to the class so the home card shows the environment's art instead of the placeholder.
-3. Register it in the barrel `src/renderers/index.ts` (the one `main.ts` imports): `registerRenderer("<renderer-key>", YourRenderer, yourThumbnail)` with the environment metadata's `renderer` value, the class itself, and the imported SVG.
+No host or environment metadata changes are needed when the metadata already names the renderer key.
 
-Adding an environment's visuals is one frontend class plus a thumbnail and zero metadata or host changes.
+## Flappy Bird reference
 
-## The Flappy Bird renderer
+`src/renderers/flappy-bird/` is the reference implementation.
 
-`renderers/flappy-bird/` is the first renderer and the reference for the rules above. It declares an `internalSize` of `288 × 512` (a `9 / 16`-ish portrait surface, so the host seats the decision log in the column it leaves free) and draws entirely from the per-step overlay, which carries the whole truth in unnormalized screen pixels: the surface `width`/`height`, the `player` (`x`/`y` top-left, `vel_y`, `rot`), the `pipes` (`x` left edge, `gap_top`/`gap_bottom`), and `pipes_passed`. The art is original flat-color vector drawing: no sprites from the original game ship here.
+- Internal size: `288 × 512`.
+- Scene source: the per-step overlay.
+- Drawing: original vector art with PixiJS `Graphics` and `Text`.
+- Inputs: Space, ArrowUp, W, pointer, and touch map to flap.
+- Tests: pure scene computation in Vitest, canvas behavior in Playwright.
 
-It keeps the pure/retained split: `computeScene(state, config)` turns one `StepState` into a `Scene` (sky, pipes, ground, the bird, and the HUD: the big score, the pipe counter, and a paced time/tick readout), and the renderer's `update` reconciles PixiJS `Graphics` and `Text` nodes toward that scene: scrolling the existing pipe nodes, adding one as a pipe enters and removing one as it leaves, rather than rebuilding the world each frame.
-
-Input is raw device input: Space, ArrowUp, or W (auto-repeat ignored), and a pointer or touch on the stage, each map to `flap` and send `sendAction("player_0", 1)`, which the host wraps in an `input` command. Wired only for the live owner; draw-only for everyone else.
-
-## Notes for the 2D-era reader
-
-If you know the previous renderer, here is what moved:
-
-- `paint(ctx, scene)` (a 2D rasterizer) is gone; its role is now the retained reconciler inside `update`. `computeScene` and the `Scene` type are unchanged in spirit and still unit-tested.
-- `targetCanvasSize` is replaced by `internalSize` + the derived `aspectRatio`. The host reads these the same way it read `targetCanvasSize` (CSS aspect-ratio on the stage element, log beside vs. below), so the page layout logic is a rename, not a rewrite.
-- Per-renderer canvas CSS (`flappy.css`'s `width:100%; height:auto`) is now a base-class concern: the base assigns a stable class to the PixiJS canvas and owns its presentation. The end-to-end suite locates the canvas; the locator moves with it (from `canvas.flappy-canvas` to the base class's canvas class), and the watch/journey specs assert visibility against the new selector.
+Its `computeScene` describes the sky, pipes, ground, bird, score, pipe count, and time or tick display. `update` reuses pipe nodes as they move through the scene.

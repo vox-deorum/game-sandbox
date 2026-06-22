@@ -2,19 +2,36 @@
 
 ## Prerequisites
 
-- Python 3.12, managed with [uv](https://docs.astral.sh/uv/). The version is pinned in `.python-version`.
-- Node 22 LTS, with the version pinned in `.nvmrc` and enforced by the `engines` field.
+- Python 3.12, managed with [uv](https://docs.astral.sh/uv/getting-started/installation/). The version is pinned in `.python-version`.
+- Node 22, pinned in `.nvmrc` and enforced by `package.json`.
+- Git.
+- Docker Desktop when running sessions, integration tests, or browser end-to-end tests.
 
-Install uv and Node, then from the repository root:
+From the repository root:
 
+```console
+uv sync
+npm install
 ```
-uv sync          # create the Python workspace virtualenv and install dev dependencies
-npm install      # install the TypeScript workspace dependencies
+
+`uv sync` creates the Python workspace environment. `npm install` installs all npm workspaces.
+
+## First verification
+
+```console
+npm run check
+npm run test
+uv run python scripts/ci.py docs
 ```
+
+Use [Testing](test.md) to choose Docker-gated and release-workflow checks.
 
 ## Tooling at a glance
 
-The toolchain is deliberately one tool per job. On the Python side, ruff does both linting and formatting, pytest is the test runner, and pyright type-checks (basic repo-wide, strict on `harness/`, because the contracts package is where types pay for themselves). On the TypeScript side, Biome lints and formats, Vitest runs tests, and `tsc --noEmit` type-checks in strict mode.
+| Language | Format and lint | Types | Tests |
+| --- | --- | --- | --- |
+| Python | Ruff | Pyright | pytest |
+| TypeScript and Vue | Biome | `tsc` and `vue-tsc` | Vitest and Playwright |
 
 ## Dev scripts
 
@@ -24,16 +41,14 @@ Every dev script is Python under `scripts/`, run through uv, so nothing depends 
 | --- | --- |
 | Regenerate types, packaged schema, and fixtures | `uv run python scripts/generate.py` |
 | Lint and typecheck both languages | `npm run check` |
-| Run all tests | `npm run test` |
+| Run all Docker-free tests | `npm run test` |
 | Compose a template or example | `uv run python scripts/compose.py <env> [name]` |
 | Run one CI job exactly as CI does | `uv run python scripts/ci.py <job>` |
 | Run the full local suite (all three workflows) | `uv run python scripts/ci.py all` |
 | Publish the template and examples (dry-run available) | `uv run python scripts/publish_template.py --dry-run` |
 | Run the app on the e2e-built database | `npm run demo` |
 
-`npm run demo` (`scripts/demo.py`) shows the app with realistic data instead of the empty seasons created by a bare `npm start`. It reuses the database left by `frontend-e2e`, including sessions, submissions, released seasons, and replays.
-
-On each launch, the script:
+`npm run demo` shows realistic sessions, submissions, seasons, and replays. It:
 
 - Copies `frontend/e2e/.data/main/` into a fresh `demo/` directory.
 - Runs `frontend-e2e` first if the source database does not exist.
@@ -42,16 +57,14 @@ On each launch, the script:
 
 Demo play writes only to the disposable `demo/` copy, never to the `main/` fixture reused by local e2e runs.
 
-Anything generated from the schema (the TypeScript types, the packaged schema copies, and the golden fixtures) is produced by `scripts/generate.py`. Do not edit those by hand; edit the schema and regenerate. CI fails if a generated artifact is stale.
+`scripts/generate.py` owns TypeScript schema types, packaged schema copies, environment metadata, template environment copies, and golden fixtures. Edit the source, regenerate, and commit both. Do not hand-edit generated files.
 
-One build helper lives outside `scripts/` because it drives the backend's own TypeScript build path rather than a Python wrapper around Docker: `npm run build:image` (re)builds the current dependency version's session base image from its registered version-specific Dockerfile. The backend builds it lazily on the first session and then reuses the tag, so run this after changing that Dockerfile or anything it bundles (the harness, an environment, the built-in agent); see [the backend](backend.md#running-it-locally).
+`npm run build:image` runs from `backend/` and rebuilds the current session base image. Use it after changing the Dockerfile, harness, environment, or built-in agent. See [Backend](backend.md#run-and-test).
 
 ## Windows and WSL
 
-Development happens on Windows; CI is Linux-only on purpose, because session containers are Linux and the dev scripts stay cross-platform by being Python. There are two levels of local reproduction.
+The scripts are Python so Windows and Linux use the same commands. CI runs on Linux because session containers are Linux.
 
-The first level reproduces a job's contents. Because every CI job is a single `scripts/ci.py <job>` call, running that same command inside a WSL distro with uv and Node installed executes exactly what `ubuntu-latest` executes, on the same OS family. Clone the repository into the WSL filesystem rather than working through `/mnt/`, which is slow for the many small file operations that composing examples and `node_modules` involve; a Windows checkout and a WSL checkout can coexist.
+For close CI reproduction, clone into the WSL filesystem and run `scripts/ci.py` there. Avoid `/mnt/` for this repository because `node_modules` and template composition perform many small file operations.
 
-The second level reproduces the workflows themselves with [act](https://github.com/nektos/act), which runs the actual workflow YAML in Docker containers. Combined with the publish script's dry-run flag, the whole tag-to-publish path can be rehearsed locally without touching the student repository. `act` is a development convenience, not a gate; the suite of record stays GitHub Actions.
-
-Both levels, the exact commands, and the parts only GitHub can test are laid out in [Testing end to end](test.md).
+[`act`](https://github.com/nektos/act) can run workflow YAML in Docker. It is useful for checking workflow wiring, but GitHub Actions remains the suite of record. See [Testing](test.md).

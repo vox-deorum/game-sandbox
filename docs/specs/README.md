@@ -1,14 +1,23 @@
 # Game Sandbox Specification
 
-The specification is split across several files so each topic can be read on its own. Start with the overview, then jump to whatever section you need.
+The specification is the authority for product behavior and system boundaries. Contributor guides explain how the current code implements it. The [implementation plan](https://github.com/vox-deorum/game-sandbox/blob/main/plans/README.md) explains build order and status.
 
-- [overview.md](overview.md). What the project is, who it's for, goals and non-goals, future work.
-- [environment.md](environment.md). The environment framework (PettingZoo, with a compatibility wrapper for single-agent games) and the metadata layers.
-- [interaction.md](interaction.md). How a game is rendered in the browser and how human input flows back to the game.
-- [submission.md](submission.md). The agent interface, the template repos, and how participants submit.
-- [communication.md](communication.md). Optional messaging between agents and human-controlled slots: the chat hook, message limits, visibility, and recording.
-- [llm.md](llm.md). The OpenAI-compatible LLM API for agents: the gateway, one-off slot keys for each session, telemetry, budgets, and what it means for sandboxing and the leaderboard.
-- [frontend.md](frontend.md). Pages, the submission form, play and watch flows, on-demand live play, feedback, and GitHub OAuth identity.
-- [leaderboard.md](leaderboard.md). What a season is, the automated board, and the human-feedback board.
-- [execution.md](execution.md). Where the renderer, the environment, and the agents run, how the session container is sandboxed, and the implementation languages.
-- [recording.md](recording.md). State-only recordings, replays, and storage.
+Start with the [overview](overview.md), then use this map:
+
+| Topic | Defines |
+| --- | --- |
+| [Environments](environment.md) | PettingZoo interface, seeding, public metadata |
+| [Interaction](interaction.md) | Browser rendering, session stepping, human input |
+| [Submissions](submission.md) | Agent hooks, packaging, templates, validation |
+| [Communication](communication.md) | Optional agent and human messaging |
+| [LLM API](llm.md) | Gateway access, keys, budgets, telemetry |
+| [Frontend](frontend.md) | Navigation, pages, play/watch flows, ratings, identity |
+| [Leaderboards](leaderboard.md) | Seasons, automated ranking, human feedback |
+| [Execution](execution.md) | Runtime boundary, containers, drivers, sandboxing |
+| [Recording](recording.md) | State-only recordings, replay, retention |
+
+```text
+Student repository → Submission → Session container → State stream → Browser renderer
+                                      │
+                                      └──────────────→ Recording → Replay
+```
