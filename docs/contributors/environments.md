@@ -27,7 +27,9 @@ A natively single-agent `gymnasium.Env` is lifted into a one-slot AEC environmen
 
 ## The overlay
 
-The renderer never sees pixels, so the per-step `overlay` must carry everything the frontend needs to draw the frame. `overlay.py` exposes `extract_overlay(env)` returning a JSON-able dict of unnormalized display data (for Flappy Bird: the bird's position/velocity/rotation, the pipe coordinates, the score, and the screen dimensions). Reaching into a third-party package's internals is acceptable only here, inside the environment's own wrapper, against a pinned version, and **must** be covered by a test asserting every overlay field exists and is finite: so an upstream upgrade that breaks the internals fails the test before it breaks the renderer.
+The renderer never sees pixels, so the per-step `overlay` must contain everything the frontend needs to draw the frame. `overlay.py` exposes `extract_overlay(env)`, which returns JSON-compatible, unnormalized display data. For Flappy Bird, this includes the bird's position, velocity, and rotation, along with pipe coordinates, score, and screen dimensions.
+
+Only the environment wrapper may reach into a pinned third-party package's internals. A test must confirm that every overlay field exists and is finite, so an incompatible upstream change fails before it reaches the renderer.
 
 ## The registry entry
 

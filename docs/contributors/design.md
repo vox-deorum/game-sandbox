@@ -6,7 +6,7 @@ It covers the principles, the token system, type and color, the primitives, layo
 
 ## Design principles
 
-- **Clarity for data-dense views.** Sessions, replays, and the leaderboards to come are tables and counters first. Favor legibility: a clear type scale, monospace for identifiers and numbers, restrained color: over decoration.
+- **Clarity for data-dense views.** Sessions, replays, and leaderboards are tables and counters first. Favor legibility through a clear type scale, monospace identifiers and numbers, and restrained color.
 - **Accessibility is a rule, not an aspiration.** The baseline below holds for every page and every primitive. It is not a backlog item; a change that regresses it is incomplete.
 - **The game-stage spotlight.** On the session and replay pages the renderer canvas is the star and the chrome around it stays quiet. Renderers own their own visual identity (they are exempt from the token rule); the host owns the calm frame around them.
 - **Calm motion.** Motion is purposeful and short, expressed through the motion tokens so `prefers-reduced-motion` stills all of it at once. Nothing animates to draw attention to itself.
@@ -60,9 +60,26 @@ Feature components (`AppShell`, `AppSidebar`, `AccountMenu`, `ExperimentTabs`, `
 
 ## Layout and responsiveness
 
-The **app shell** is a two-tier nav frame: a collapsible left sidebar carries the cross-game sections (Games, Seasons, Documentation, My Agents) with the account block at the bottom, and on a game's routes a contextual tab strip carries that game's tasks (Overview, Leaderboards, My Submissions, and an operator-only Manage). The sidebar collapses to an icon rail on desktop and becomes an off-canvas drawer on narrow screens. The main content column is centered with a max width. Pages carry their own one-line context line (`Games / Flappy Bird / …`) rather than a breadcrumb component, because the per-page hierarchy is one level deep. (See the [frontend contributor guide](frontend.md#navigation-the-sidebar-and-the-game-tabs).)
+The **app shell** is a two-tier navigation frame:
 
-**Breakpoints** are documented constants: **480px, 768px, 1024px**: used as plain values in scoped media queries (CSS custom properties cannot parameterize media queries). The design is desktop-first in origin but must stay usable, not merely unbroken, at narrow widths: the home grid flows with `auto-fill`; the environment hub's thumbnail drops below its description; the session and replay stages stack the canvas and decision log and cap the canvas at the viewport width; the sidebar collapses to a drawer behind a mobile bar. The session and replay stages place the decision log **beside** a portrait canvas (which leaves a column free) and **below** a landscape one, driven by the renderer's declared `aspectRatio` rather than measured pixels.
+- A collapsible left sidebar contains Games, Seasons, Documentation, My Agents, and the account block.
+- Environment routes add a contextual tab strip for Overview, Leaderboards, My Submissions, and the operator-only Manage page.
+- The sidebar becomes an icon rail on desktop and an off-canvas drawer on narrow screens.
+- The main content column is centered and width-limited.
+- Pages use a one-line context label such as `Games / Flappy Bird / …` instead of a breadcrumb component.
+
+See the [frontend contributor guide](frontend.md#navigation-the-sidebar-and-the-environment-tabs).
+
+The documented **breakpoints** are **480px, 768px, and 1024px**. They are plain values in scoped media queries because CSS custom properties cannot parameterize media queries.
+
+The design began desktop-first but must remain usable at narrow widths:
+
+- The home grid flows with `auto-fill`.
+- The environment thumbnail moves below its description.
+- Session and replay pages stack the canvas and decision log and cap the canvas at the viewport width.
+- The sidebar becomes a drawer behind a mobile bar.
+
+The session and replay pages place the decision log beside a portrait canvas and below a landscape one. The renderer's declared `aspectRatio`, not measured pixels, controls that choice.
 
 ## The accessibility baseline
 

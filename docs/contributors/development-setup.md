@@ -31,7 +31,16 @@ Every dev script is Python under `scripts/`, run through uv, so nothing depends 
 | Publish the template and examples (dry-run available) | `uv run python scripts/publish_template.py --dry-run` |
 | Run the app on the e2e-built database | `npm run demo` |
 
-`npm run demo` (`scripts/demo.py`) is for showing the app off with realistic data rather than the empty seasons a bare `npm start` seeds. It reuses the rich database the `frontend-e2e` job leaves behind: sessions, submissions, released seasons, replays: instead of seeding anything: it snapshots that backend's data dir (`frontend/e2e/.data/main/`) into a fresh `demo/` copy on every launch and serves the app on `:8080`. If the e2e database does not exist yet it runs the `frontend-e2e` job first to build it (so the first run needs a Docker daemon, like the job itself). And because the flat migration is not re-run against a database that already recorded it (see [the backend](backend.md#running-it-locally)), a schema change since the e2e run leaves the copy stale; the backend then fails to start with a SQLite "no such column" error, so the demo rebuilds the e2e database from scratch and starts once more. Demo play writes only into the throwaway `demo/` copy, never the `main/` fixture that local e2e runs reuse.
+`npm run demo` (`scripts/demo.py`) shows the app with realistic data instead of the empty seasons created by a bare `npm start`. It reuses the database left by `frontend-e2e`, including sessions, submissions, released seasons, and replays.
+
+On each launch, the script:
+
+- Copies `frontend/e2e/.data/main/` into a fresh `demo/` directory.
+- Runs `frontend-e2e` first if the source database does not exist.
+- Serves the copied data on port 8080.
+- Rebuilds the e2e database if a schema change makes the copy stale.
+
+Demo play writes only to the disposable `demo/` copy, never to the `main/` fixture reused by local e2e runs.
 
 Anything generated from the schema (the TypeScript types, the packaged schema copies, and the golden fixtures) is produced by `scripts/generate.py`. Do not edit those by hand; edit the schema and regenerate. CI fails if a generated artifact is stale.
 

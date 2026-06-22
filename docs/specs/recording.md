@@ -14,7 +14,13 @@ Chat messages are part of the per-step state object, so they are recorded and re
 
 ## What gets recorded
 
-Every session is recorded automatically, leaderboard runs and live sessions alike (see [leaderboard.md](leaderboard.md) and [frontend.md](frontend.md)). Storage stays bounded through retention rather than opt-in. Leaderboard recordings are kept for as long as their season remains viewable. Live session recordings are kept for a deployment-configured window (30 days by default) under a per-user quota, evicting the oldest unpinned recordings first. A user can pin a replay to exempt it from eviction; pinned replays still count against the quota. Recordings are small by design, so the policy is generous at class scale.
+Every session is recorded automatically, including leaderboard runs and live sessions (see [leaderboard.md](leaderboard.md) and [frontend.md](frontend.md)). Storage stays bounded through retention:
+
+- Leaderboard recordings remain while their season is viewable.
+- Live-session recordings remain for a deployment-configured window, 30 days by default.
+- Each user has a recording quota.
+- The oldest unpinned recordings are evicted first.
+- Pinned recordings are protected from eviction but still count toward the quota.
 
 ## Storage
 

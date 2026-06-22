@@ -21,9 +21,24 @@ Dependencies are not chosen per repo. The template carries the authoritative dep
 
 ## Template repos and local development
 
-Before submitting, a participant can develop and test their agent against vanilla PettingZoo on their own machine. We ship a single template repository (`vox-deorum/game-agent-template`) whose branches carry the per-environment starter kits: `main` is the default environment, `templates/<env>` each other environment, and `examples/<env>/<name>` complete worked agents: each including the agent interface stubs (the optional `chat` hook included), the manifest, the pinned dependency set for the current template release (one global set shared by all environments), the environment wrappers needed for single-agent games, a local play script, a simple evaluation harness, and a minimal LLM API example. For LLM use during local development, the template instructs participants to put the class-provided key in a `.env` file; server-side, the harness swaps it for a one-off key scoped to the session and acting slot (see [llm.md](llm.md)). The goal is that an agent can be written, run end to end, and iterated on without touching our backend at all.
+Before submitting, a participant can develop and test an agent against vanilla PettingZoo on their own machine. The `vox-deorum/game-agent-template` repository provides:
 
-For developers of the sandbox itself, a submission may also come from a **local folder** on the server rather than a git URL. A local-folder submission is not pinned to a commit and is gated off in normal deployments; it exists so the validation and build pipeline can be exercised end to end: against the worked example, additional agents, and intentionally malformed repos: without going through GitHub.
+- `main` for the default environment.
+- `templates/<env>` for each additional environment.
+- `examples/<env>/<name>` for complete worked agents.
+
+Each starter kit includes:
+
+- The required agent hooks and optional `chat` hook.
+- The manifest.
+- The global pinned dependency set for the current template release.
+- Any wrapper needed for a single-agent game.
+- Local play and evaluation scripts.
+- A minimal LLM API example.
+
+For local LLM use, participants place the class-provided key in `.env`. On the server, the harness replaces it with a one-off key scoped to the session and acting slot (see [llm.md](llm.md)). Participants can therefore write and test an agent end to end without using the Game Sandbox backend.
+
+For sandbox developers, a submission may also come from a **local folder** on the server instead of a Git URL. This source is disabled in normal deployments and is not pinned to a commit. It exists to exercise the validation and build pipeline with worked examples, additional agents, and intentionally malformed repositories without going through GitHub.
 
 ## Submission flow
 

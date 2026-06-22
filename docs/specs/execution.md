@@ -18,7 +18,14 @@ The backend never talks to container infrastructure directly. It goes through a 
 
 ## From submission to image
 
-Dependencies come from the template, not from individual repos (see [submission.md](submission.md)). The template's dependency set is versioned, and the backend keeps one base image per set version, holding the harness, PettingZoo, the environments, and that version of the set. Turning submissions into a session image is then a matter of cloning each participating repo at its pinned commit into its own per-slot directory on top of the right base; no per-submission dependency installation happens. A submission may also come from a local folder during sandbox development (see [submission.md](submission.md)), which feeds the same overlay and build path with no commit to clone. Every submission in a session runs on the same set version (a season pins one, see [leaderboard.md](leaderboard.md)), so agents sharing a container cannot have conflicting dependencies, and a years-old submission can be rebuilt exactly by using the base image of the set version it was submitted against.
+Dependencies come from the template rather than individual repositories (see [submission.md](submission.md)). The backend keeps one base image per dependency-set version. Each base contains:
+
+- The harness.
+- PettingZoo.
+- The environments.
+- The exact dependency set for that version.
+
+To build a session image, the backend places each repository at its pinned commit in a separate slot directory on the correct base image. Local-folder submissions use the same overlay path without cloning a commit. Every submission in a session uses the season's dependency-set version, which prevents conflicts and keeps old submissions reproducible.
 
 Before a built image is used, the submission passes a sandboxed load check: the overlaid agent is imported and instantiated once, inside the same locked-down container profile but with no environment stepping, to confirm it loads (see the validation layers in [submission.md](submission.md)). A submission whose static validation or load check fails, or whose build fails, is reported to its owner rather than run.
 

@@ -2,7 +2,15 @@
 
 A recording is state only: a JSONL file whose first line is the header and whose following lines are one per-step state each (see the [recording spec](../specs/recording.md)). This is the same line-delimited JSON the harness streams over its transport during a live session, so the wire form and the stored form are a single format. Human input, pause and resume, and chat commands travel a separate command envelope and are not recording lines.
 
-The header also carries an optional `players` map keyed by slot id (the same keying as a step state's `agents`): each entry is `{kind: "human" | "agent", label, user?, submission_id?}`. The harness copies it verbatim from the live config the backend supplies. It keeps no opinion on meaning beyond well-formedness, so the backend is the single place that decides attribution: human to the session owner, a submitted slot to the submission owner and id, and any other built-in slot to the "Naive agent". It is additive and optional; older recordings omit it and readers tolerate its absence, exactly like the [sidecar rule](state-schema.md#the-sidecar-rule).
+The header may include a `players` map keyed by slot id, using the same keys as a step state's `agents`. Each entry has the shape `{kind: "human" | "agent", label, user?, submission_id?}`.
+
+The harness copies the map from the backend's live configuration without interpreting it. The backend assigns:
+
+- Human slots to the session owner.
+- Submitted slots to the submission owner and id.
+- Other built-in slots to the "Naive agent".
+
+The field is optional and additive. Older recordings omit it, and readers tolerate its absence just as they tolerate unknown sidecars.
 
 ## The store interface
 

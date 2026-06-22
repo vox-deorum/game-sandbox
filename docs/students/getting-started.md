@@ -1,6 +1,6 @@
 # Getting Started
 
-You write a Game Sandbox agent in Python and test it entirely on your own machine, against vanilla PettingZoo: no account, no backend, no network. When it is ready, you submit a GitHub repository link through the course website. This page gets you from zero to a running agent.
+You write a Game Sandbox agent in Python and test it entirely on your own machine against vanilla PettingZoo. You do not need an account, backend, or network connection. When the agent is ready, submit its GitHub repository through the course website.
 
 ## 1. Get the template
 
@@ -14,7 +14,7 @@ python -m venv .venv
 pip install -r requirements.txt -r requirements-dev.txt
 ```
 
-Install exactly `requirements.txt`. It is the **pinned dependency set** for this template version: the same set the server installs: so your local runs match the server's. If you need a library it lacks, ask the operator for a new template release rather than pinning it yourself; everyone in a season runs on the same set.
+Install exactly `requirements.txt`. It is the **pinned dependency set** for this template version and matches the server's installation. If you need a missing library, ask the operator for a new template release instead of pinning it yourself. Everyone in a season uses the same set.
 
 ## 2. Write your agent
 
@@ -34,7 +34,8 @@ python play.py --headless      # no window, just the score
 python evaluate.py --episodes 10
 ```
 
-`play.py` plays one episode through the same agent-environment cycle the server runs. `evaluate.py` runs several seeded episodes headless and prints the mean: the same controlled-repetition shape the leaderboard uses, so your local mean predicts your board number.
+- `play.py` runs one episode through the same agent-environment cycle as the server.
+- `evaluate.py` runs several seeded episodes without rendering and prints the mean, matching the leaderboard's controlled-repetition approach.
 
 ## 4. Run the checks
 

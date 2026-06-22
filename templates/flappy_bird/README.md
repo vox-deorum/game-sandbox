@@ -1,6 +1,6 @@
 # Game Sandbox Agent Template: Flappy Bird
 
-This is the starter kit for writing a Game Sandbox agent. You develop and test entirely on your own machine against vanilla PettingZoo: no backend, no account, no network: and submit a GitHub repository when you are ready. This template **is** the shape of a submittable repo: fill in `agent.py`, keep the manifest and the pinned dependency set, and you are done.
+This is the starter kit for writing a Game Sandbox agent. You develop and test entirely on your own machine against vanilla PettingZoo, with no backend, account, or network connection. When you are ready, submit the repository through GitHub. The template already has the required shape: fill in `agent.py`, keep the manifest and pinned dependency set, and you are done.
 
 This is the **Flappy Bird** template (the default). Other environments are published as branches of this same repository: pick `templates/<env>` from the branch dropdown for a different game's starter kit, or `examples/<env>/<name>` for a complete worked agent. Every environment shares the same pinned dependency set, so the manifest and `requirements.txt` carry over unchanged.
 

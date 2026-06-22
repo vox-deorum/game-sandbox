@@ -4,7 +4,24 @@ The frontend is organized into a small number of clearly scoped pages and a shar
 
 ## Navigation
 
-Navigation is two tiers. A persistent, collapsible **left sidebar** carries the cross-environment sections: **Environments** (the home gallery), **Seasons** (the cross-environment competition view), **Documentation**, and **My Agents** (the signed-in user's agents across environments), with the account block (**My Profile**, and a log-out affordance once OAuth lands) at the bottom. Inside an environment, a **contextual tab strip** carries that environment's tasks: **Overview**, **Leaderboards**, **My Submissions**, and an operator-only **Manage** tab. My Submissions always targets the signed-in user's agent profile for that environment, which contains the submit and resubmit form. Historical released seasons remain reachable from the Leaderboards page. Operators also see unreleased seasons in that page's season table and can open them as clearly labelled private previews.
+Navigation has two tiers.
+
+The persistent, collapsible **left sidebar** contains:
+
+- **Environments**
+- **Seasons**
+- **Documentation**
+- **My Agents**
+- The account block, including **My Profile** and a logout affordance once OAuth lands
+
+Inside an environment, the **contextual tab strip** contains:
+
+- **Overview**
+- **Leaderboards**
+- **My Submissions**
+- **Manage**, for operators
+
+**My Submissions** opens the signed-in user's profile and submission form for that environment. Historical released seasons remain available from Leaderboards. Operators can also open unreleased seasons there as clearly labelled private previews.
 
 The site uses **Environment** and **Season** as its front-facing names, matching the `environment` and `season` entity names used throughout the API and the operator console.
 

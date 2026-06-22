@@ -1,6 +1,6 @@
 # Submitting
 
-When your agent is ready, you submit it by linking a **GitHub repository**, not by uploading files. The website pins your code to one exact commit, checks it, and: if it passes: builds it into an image you can watch play. Nothing about your code runs a game during this check; validation only confirms the repo is shaped right and the agent loads.
+When your agent is ready, submit a **GitHub repository** rather than uploading files. The website pins your code to one exact commit, validates it, and builds a runnable image if it passes. Validation checks the repository structure and confirms that the agent loads, but it never runs a game.
 
 ## Before you submit
 
@@ -20,7 +20,7 @@ Open your game and go to **My Submissions**, then paste your repository URL on y
 
 ## What gets validated, in order
 
-After you submit, the form shows a per-stage timeline. Each stage runs in turn and stops at the first failure, and the reason for that failure appears on the stage that rejected: on the form and on your [agent profile](../specs/frontend.md), so you can read it later:
+After you submit, the form shows a per-stage timeline. The process stops at the first failure and shows the reason both on the form and on your [agent profile](../specs/frontend.md):
 
 1. **Resolve**: the server fetches your repo and pins the commit. Fails if the repository or ref cannot be reached, or a private repo needs credentials the deployment does not have.
 2. **Static check**: the server reads your files without running any of your code. It checks `manifest.json` (see below).

@@ -6,9 +6,21 @@ There are two leaderboards per environment per season: an automated board and a 
 
 A season is one competition. For a single environment, the operator declares a season, accepts submissions for that season (see [submission.md](submission.md)), runs the automated workflow, and collects human feedback through the website. When the next competition starts, a new season begins, both boards reset, and the previous season remains viewable as a historical board. A season can map to a class assignment, a workshop, or a round of an open competition; the unit is always the same (see [overview.md](overview.md)).
 
-A season has three independent public gates. A **submission window** (open or closed) controls whether participants can submit to that season. A **play window** (open or closed) controls whether ordinary signed-in, allowlisted users can start public watch or play sessions for that season and write or update ratings for it. A **release status** (released or unreleased) controls whether the season's results, its boards and history, are shown to ordinary users. Operators can list unreleased seasons and preview their boards through operator-gated reads on the Leaderboards page and in the admin console. The three gates are independent, and an ordinary user can see a season whenever any one of them is in effect: an open submission window, an open play window, or released results each make the season visible.
+A season has three independent public gates:
 
-Those gates intentionally answer different questions. An operator can open submissions for an unreleased season so participants can submit without exposing its boards. The operator can also keep a released season viewable as history after closing its play window, which leaves its boards readable but stops new public sessions and rating writes for that season. The operator can even open the play window on a season whose results are still unreleased, so users can watch and play it while its boards stay hidden until release. The public environment page may therefore point at different seasons at once: the open submission season for the submit form, the play-open season for watch, play, and feedback, and the current released season for the boards. If no season is play-open, public watch and play controls are disabled while released history remains readable.
+- The **submission window** controls whether participants can submit.
+- The **play window** controls whether signed-in, allowlisted users can start public watch or play sessions and write ratings.
+- The **release status** controls whether ordinary users can see the boards and history.
+
+Operators can list unreleased seasons and preview their boards through operator-gated views. Ordinary users can see a season when submissions are open, play is open, or results are released.
+
+The gates answer different questions and may point to different seasons at the same time:
+
+- The submit form targets the submission-open season.
+- Watch, play, and feedback target the play-open season.
+- The boards target the current released season.
+
+This lets an operator accept submissions without exposing boards, keep released history visible after play closes, or open play before releasing results. If no season is play-open, public watch and play controls are disabled while released history stays readable.
 
 Only one season per environment may have an open submission window at a time, and only one season per environment may have an open play window at a time. This keeps the default public submit target and the default public play target unambiguous, while still allowing the operator to accept the next round's submissions after closing the previous round's submission window. The operator can re-run the workflow on a season, which recomputes its boards in place; releasing results and play-window changes are separate, explicit steps, so a re-run can be verified before it affects what the public can see or play.
 

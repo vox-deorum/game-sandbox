@@ -20,16 +20,34 @@ The frontend is built on a design system: semantic CSS tokens plus a small set o
 | `src/renderers/` | The renderer contract (`types.ts`), the PixiJS base class (`base/`), the registry (`registry.ts`), the registration barrel (`index.ts`), and one module per environment (`flappy-bird/`). See [rendering.md](rendering.md). |
 | `src/replay/` | The dependency-free recording parser (`parse.ts`) and the replay transport controller (`transport.ts`). |
 | `src/components/ui/` | The design-system primitives, `Ui` prefix (`UiButton`, `UiCard`, `UiField`, `UiDialog`, `UiSlider`, …). See [design.md](design.md). |
-| `src/components/` | Feature components built on the primitives: the nav frame: `AppShell`, `AppSidebar`, `AccountMenu`, `ExperimentTabs`: plus `StartForm`, `RunMetadata`, `DecisionLog`, the submission set: `SubmitAgentForm`, `SubmissionStageTimeline`, `WatchAgentPicker`: and the rating set: `SessionRatings`, `AuthorPromptEditor`. |
+| `src/components/` | Feature components built on the primitives, including the navigation frame, session controls, submission flow, and rating flow. |
 | `src/composables/` | Page logic more than one page needs: `useEnvironmentMeta`, `useSessionSocket`, `useRendererMount`, `usePinning`, `useReplayTransport`, and `useSidebar` (the collapse/drawer state). |
 | `src/lib/` | Pure helpers with no reactivity: `format.ts` (`formatDate`, `slotLabel`, `formatAction`). |
 | `src/pages/` | Route components, PascalCase with a `Page` suffix: `HomePage`, `EnvironmentPage`, `SessionPage`, `ReplayPage` (the single-recording viewer), `ReplaysPage` (the environment's Replays tab: the recordings table), `AgentProfilePage`, the cross-environment `SeasonsPage` / `MyAgentsPage` / `ProfilePage` / `DocsPage`, and the dev-only `StyleguidePage`. |
 
 ## Navigation: the sidebar and the environment tabs
 
-Navigation is two tiers, matching the two levels the product actually has. The **global sidebar** (`AppSidebar.vue`) carries the cross-environment jobs: **Environments** (the gallery, `/`), **Seasons** (`/seasons`), **Documentation** (`/docs`), **My Agents** (`/my/agents`): with the account block (`AccountMenu.vue`: **My Profile** at `/my/profile` and an inert log-out seam) pinned at the bottom. It collapses to an icon rail on desktop (the choice persisted by `useSidebar`) and becomes an off-canvas drawer behind a scrim on narrow screens, toggled from a slim mobile bar.
+Navigation has two tiers that match the product's two levels.
 
-The **contextual tab strip** (`ExperimentTabs.vue`) renders only on environment routes (those carrying an `:envId`) and carries the per-environment tasks: **Overview**, **Leaderboards**, **Replays**, **My Submissions**, and an operator-only **Manage** tab (the admin console). Replays (`ReplaysPage.vue`) lists the environment's recordings as a sortable table; a replay belongs to the environment, and the table's Season column surfaces the play-open (or submission) season the producing session ran in. My Submissions always targets the signed-in user's agent profile, which hosts the submit and resubmit form. Historical released seasons are selected from the Leaderboards page rather than from the tab strip.
+The **global sidebar** (`AppSidebar.vue`) contains cross-environment destinations:
+
+- **Environments** at `/`.
+- **Seasons** at `/seasons`.
+- **Documentation** at `/docs`.
+- **My Agents** at `/my/agents`.
+- The account block at the bottom, including **My Profile** at `/my/profile` and the inactive logout seam.
+
+On desktop, the sidebar collapses to an icon rail and `useSidebar` remembers the choice. On narrow screens, it becomes an off-canvas drawer behind a scrim.
+
+The **contextual tab strip** (`ExperimentTabs.vue`) appears only on routes with an `:envId`. It contains:
+
+- **Overview**
+- **Leaderboards**
+- **Replays**
+- **My Submissions**
+- **Manage**, for operators
+
+`ReplaysPage.vue` lists the environment's recordings in a sortable table. The Season column identifies the play-open or submission season that produced each recording. **My Submissions** opens the signed-in user's agent profile and its submit or resubmit form. Historical released seasons are selected from the Leaderboards page instead of the tab strip.
 
 The state lives on `.app` (the `sidebar-collapsed` / `mobile-open` classes from `useSidebar`); the collapsed-rail and drawer rules that key off that ancestor live in `styles/app.css`, not in the scoped component blocks, because a scoped block cannot select an ancestor (and Vue's `:global()` miscompiles when followed by a descendant).
 
@@ -37,7 +55,14 @@ Front-facing copy reads **Environments** and **Seasons**, matching the `environm
 
 ## Running the dev server against a local backend
 
-`npm run dev` starts the Vite dev server. It proxies `/api` (HTTP and WebSocket, `ws: true`) to the backend on port 8080, so the browser sees one origin and the same-origin fetch and socket both reach the backend. Start the backend separately (`npm run dev` in `backend/`, which needs a Docker daemon to actually launch sessions), then open the Vite URL. `npm run check` is Biome plus `vue-tsc --noEmit` (Biome lints the `.ts` files and the SFC `<script>` blocks are excluded from Biome, so `vue-tsc` is what type-checks the templates); `npm test` runs the Vitest suite in jsdom with no canvas and no network. `npm run build` emits the production bundle to `frontend/dist/` (git-ignored), which the end-to-end suite serves through Vite preview.
+The main frontend commands are:
+
+- `npm run dev`: starts Vite and proxies HTTP and WebSocket requests under `/api` to the backend on port 8080.
+- `npm run check`: runs Biome and `vue-tsc --noEmit`. Biome checks TypeScript files, while `vue-tsc` checks Vue templates and SFC scripts.
+- `npm test`: runs Vitest in jsdom without canvas or network access.
+- `npm run build`: writes the production bundle to the ignored `frontend/dist/` directory.
+
+Start the backend separately with `npm run dev` in `backend/`, then open the Vite URL. A Docker daemon is needed only when the backend launches sessions.
 
 ## Launching the whole stack with one command
 
@@ -45,7 +70,13 @@ In production the frontend is not a separate server: the backend serves the buil
 
 ## The mock identity, and acting as another user
 
-There is one user, signed in automatically, with no login page and no logout. `identity.ts` resolves the id once: a per-browser `localStorage` override (`sandbox-user`) when set, otherwise the `VITE_SANDBOX_USER` environment override, otherwise `dev-user`, matching the backend stub's fallback. Every API request carries it as the `x-sandbox-user` header; the WebSocket API cannot set a header on its upgrade, so the socket client appends the same id as a `user` query parameter, and the backend's `resolveUserId` reads either source. This is the one place the frontend decides identity, so OAuth later replaces this module with the real session and no caller changes.
+There is one automatically signed-in user, with no login page or working logout. `identity.ts` resolves the id once, using the first available source:
+
+1. The per-browser `sandbox-user` value in `localStorage`.
+2. The `VITE_SANDBOX_USER` environment variable.
+3. The `dev-user` fallback shared with the backend.
+
+Every API request sends the id in the `x-sandbox-user` header. Browsers cannot add that header to a WebSocket upgrade, so the socket client sends the same id in the `user` query parameter. The backend's `resolveUserId` accepts either form. OAuth can later replace this module without changing its callers.
 
 To act as a different user (for example to exercise the allowlist), set `VITE_SANDBOX_USER` when starting the dev server, and add that id to the backend's `SESSION_ALLOWLIST` if it should be able to start sessions. `VITE_SANDBOX_USER` is build-time, so it cannot differ between two contexts of one bundle. When two contexts must act as different users in the same build, such as the spectator scenario where a second browser opens a session it does not own and must get no controls, set the `sandbox-user` key in that context's `localStorage` instead (the e2e spectator test does this). It is the runtime seam OAuth's per-session cookie later drops into. The app shell fetches `GET /api/me` to display the signed-in id (in the sidebar's account block) and to learn whether the user may start sessions; the Environment page hides the **Play Yourself** button (in the page header next to the title) and the per-row Watch buttons when `allowlisted` is false, but the backend's 403 is the real enforcement.
 
@@ -63,7 +94,24 @@ The first renderer, `renderers/flappy-bird/`, is the reference implementation: i
 
 ## The live-session host
 
-`pages/SessionPage.vue` is composed from small composables: `useSessionSocket` owns the socket and the chrome state it derives (connection, status, paused, end reason, final result, the pause/stop/input actions); `useRendererMount` owns the canvas; `usePinning` owns the pin toggle. The page fetches the session row, awaits identity through `me.whenSettled()`, mounts the renderer when the header arrives immediately because attach replays the buffered header, latest state, and status, and draws each state. The renderer owns the game frame; the page owns the session chrome that works for every environment: the status strip on `UiStatusBadge` and `UiButton`, the pause/resume toggle, the stop button (sent in-band as the `stop` command), the active-timeout display, the per-slot **player attribution** line (`components/PlayerAttribution.vue`, read from the recording header's `players` map and shared with the replay viewer; absent on older recordings), the decision log, the end-of-session card (`UiCard`) with the replay link and pin, and: once the session has ended: the post-session rating panel (`components/SessionRatings.vue`, covered below). The start form (`components/StartForm.vue`) opens in a `UiDialog` from the environment header's **Play Yourself** entry point and collects an optional seed and the human-slot timeout override before `POST /api/sessions`.
+`pages/SessionPage.vue` is assembled from small composables:
+
+- `useSessionSocket` owns the socket, connection and session status, pause state, end reason, final result, and pause, stop, and input actions.
+- `useRendererMount` owns the canvas.
+- `usePinning` owns the recording pin.
+
+The page fetches the session, waits for identity through `me.whenSettled()`, and mounts the renderer when the recording header arrives. Attaching to a session immediately replays the buffered header, latest state, and current status.
+
+The renderer owns the game frame. The page owns the shared session controls and information:
+
+- Status, pause or resume, and stop controls.
+- The active timeout.
+- Per-slot player attribution from the recording header.
+- The decision log.
+- The end-of-session card with its replay link and pin.
+- The post-session rating panel after the session ends.
+
+`components/StartForm.vue` opens in a `UiDialog` from **Play Yourself**. It collects an optional seed and human-slot timeout override before calling `POST /api/sessions`.
 
 Capabilities derive from identity and mode, not separate flags: the owner of a human session controls the human slots and gets a live `sendAction`; the owner of a scripted session gets controls but no input; anyone else is a spectator. Pause state is never tracked locally: the UI reflects the `pause`/`resume` echoes the backend broadcasts, so it cannot disagree with the container. The active-timeout display reads the metadata: a paced environment shows its per-step input window (50 ms / 20 steps per second for Flappy Bird), an unpaced one its move clock.
 
@@ -89,7 +137,7 @@ The rating rules are enforced by the backend and mirrored in the UI so it never 
 
 ## The replay viewer and transport
 
-`pages/ReplayPage.vue` fetches a recording's JSONL by URL and parses it in the browser with `replay/parse.ts`. The schema package's Ajv-backed `readRecording` cannot run in the bundle (it reads schema files with `node:fs`), so `parse.ts` mirrors its behavior with structural casts: the backend is authoritative and already shaped the lines: and keeps the one check that earns its keep: a header `schema_version` this viewer does not understand surfaces as the friendly "this replay needs a newer viewer" message. The supported version comes from the dependency-free `@game-sandbox/schema/version` subpath, so there is still one declaration. A `vite build` confirms the bundle pulls in neither Ajv nor `node:fs`.
+`pages/ReplayPage.vue` fetches a recording's JSONL and parses it in the browser with `replay/parse.ts`. The schema package's Ajv-backed `readRecording` cannot run in the bundle because it reads schema files through `node:fs`. Instead, `parse.ts` uses structural casts because the backend has already shaped the lines. It keeps one explicit check: an unsupported header `schema_version` produces the friendly message "this replay needs a newer viewer." The supported version comes from the dependency-free `@game-sandbox/schema/version` subpath, so there is still one declaration. A `vite build` confirms that the bundle includes neither Ajv nor `node:fs`.
 
 `replay/transport.ts` is a plain controller over the parsed state array, wrapped by the `useReplayTransport` composable, which mirrors its state into a ref and adds the keyboard map (space toggles play, the arrows step, Home and End jump). The renderer's purity rule makes every operation the same call, render state _i_, so play (advancing on the pace interval, or a fixed cadence when unpaced), pause, step, and scrub are all just moving the index and rendering the state under it. The scrubber is `UiSlider` (Reka UI, located by its `slider` role); a `?t=<tick>` deep link seeks on load. The viewer mounts the same renderer module live play uses, with no `sendAction` and no controlled slots (draw-only by construction), shares the metadata block, the player-attribution line (`components/PlayerAttribution.vue`), and pin toggle with the session page, and shows the same decision log replayed from the recorded states.
 

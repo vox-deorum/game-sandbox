@@ -37,8 +37,8 @@ Each command below runs from `backend/` unless noted. A compiled `dist/` build i
 - **`npm run start`**: runs the backend once (`tsx src/main.ts`), no watch. Same Docker requirement as `dev`.
 - **`npm run build:image`** (`build-image.ts`): rebuilds the current dependency version's session base image. The default `reuse` policy keeps the first lazily-built image forever, so run this after changing the Dockerfile or anything it bundles (the harness, an environment, the built-in agent); it drives the driver's own build path and always rebuilds the `…:deps-v1` tag. Setting `DOCKER_IMAGE_POLICY=rebuild` instead rebuilds on the next session start.
 - **`npm run demo`** (repo root): starts the app on a populated database rather than freshly-seeded empty seasons, reusing the database the `frontend-e2e` job builds (see [development setup](development-setup.md#dev-scripts)).
-- **`npm test`**: the unit suite: runs everywhere with no Docker, against a fake driver and in-memory SQLite.
-- **`npm run test:integration`**: the Docker-gated suite: launches real containers, described under [testing](test.md).
+- **`npm test`**: runs the unit suite without Docker, using a fake driver and in-memory SQLite.
+- **`npm run test:integration`**: launches real containers for the Docker-gated suite described under [testing](test.md).
 
 The unit tests under `test/` mirror the `src/` layout above so a module and its coverage sit in the same place:
 
@@ -56,7 +56,15 @@ Both `vitest.config.ts` and `vitest.integration.config.ts` select by the `test/*
 
 ## Configuration
 
-`config.ts` reads environment variables into one validated `Config` with class-scale defaults, and every consumer receives that object (or a slice of it) as a constructor argument: module-level config reads are banned, so a test can assemble a whole backend with custom settings. The parsing helpers wrap small [zod](https://zod.dev) schemas (`z.coerce.number`, `z.stringbool`, `z.enum`), the one validation library the backend standardizes on for parsing untrusted data: env vars here, the manifest contract in the static validator, and the season config document in storage. The variables:
+`config.ts` reads environment variables once into a validated `Config` with class-scale defaults. Every consumer receives that object, or the slice it needs, through its constructor. Module-level configuration reads are not allowed, which lets tests assemble a complete backend with custom settings.
+
+The parsing helpers use small [zod](https://zod.dev) schemas (`z.coerce.number`, `z.stringbool`, `z.enum`). Zod is the backend's standard validation library for:
+
+- Environment variables.
+- The manifest contract in the static validator.
+- The season configuration document in storage.
+
+The available variables are:
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
@@ -85,15 +93,40 @@ There are no config files and no secrets manager; the lone secret is the optiona
 
 ## Serving the frontend
 
-In production the backend serves the built frontend from the same origin through `@fastify/static`, so the whole stack is one process and one command: `npm start` at the repo root builds `frontend/dist/` and launches the backend serving it. Files are served at the root, and a not-found handler returns `index.html` for any non-`/api` GET, which is the SPA fallback that lets a hard refresh on a client-side route (`/environments/:id`, `/sessions/:id`, `/replays/:id`) load; everything under `/api` keeps its JSON `404`. The wiring is conditional on the bundle existing (`config.frontendDir`), so the dev server (where Vite serves the app and proxies `/api` here) and the test suites (no bundle) are untouched.
+In production, the backend serves the built frontend from the same origin through `@fastify/static`. The whole stack therefore runs as one process:
+
+- `npm start` at the repository root builds `frontend/dist/`.
+- The backend serves those files from the root path.
+- A not-found handler returns `index.html` for non-`/api` GET requests, so hard refreshes work on client-side routes such as `/environments/:id`, `/sessions/:id`, and `/replays/:id`.
+- Requests under `/api` keep their JSON `404` responses.
+
+Static serving is enabled only when `config.frontendDir` points to an existing bundle. The Vite development server and tests without a bundle are unaffected.
 
 ## Storage
 
-The relational data sits behind a narrow, domain-shaped `Storage` interface over SQLite (better-sqlite3 + Kysely). There is exactly one schema declaration, `storage/schema.ts`: the Kysely table interfaces are the schema, and every stored-data type: `Session`, the `SessionStatus` / `SessionMode` / `TerminationReason` unions: derives from them with Kysely's type-level helpers, so there is no hand-maintained parallel type set to drift. Callers see the derived domain types and the interface methods (`createSession`, `markRunning`, `markEnded`, `findActiveSessionByUser`, `getSession`, `listSessions`), never SQL.
+Relational data sits behind a narrow, domain-shaped `Storage` interface over SQLite, using better-sqlite3 and Kysely.
 
-That one implementation lives under `storage/kysely/`, not in a single file: `kysely/index.ts` is a thin `KyselyStorage` facade that holds the `Kysely<Database>` handle and delegates each interface method to a free function in the matching per-domain module: `sessions.ts`, `recordings.ts`, `seasons.ts`, `submissions.ts`, `runs.ts`, `boards.ts`, `ratings.ts`, and `retention.ts`, with the cross-cutting query helpers in `shared.ts`. The query logic lives in those modules; the facade is the table of contents binding the flat `Storage` contract to them, so a method and its test sit next to the rest of their domain rather than in one thousand-line file. Because the domain types are the row types, there is no row-mapping layer: the per-domain queries return `Session` and friends directly.
+- `storage/schema.ts` is the only schema declaration.
+- Stored types such as `Session`, `SessionStatus`, `SessionMode`, and `TerminationReason` derive from the Kysely table interfaces.
+- Callers use domain methods such as `createSession`, `markRunning`, `markEnded`, `findActiveSessionByUser`, `getSession`, and `listSessions`. They never issue SQL.
 
-Engine portability comes from Kysely itself, not a second type layer: queries go through its dialect-agnostic API, and swapping SQLite for another engine is one new wiring file constructing a different dialect against the same schema, queries, and interface. The same Biome import-isolation rule that confines Docker to the driver confines `kysely` and `better-sqlite3` to `storage/`, so the rest of the backend imports the domain types and the interface, not the database engine. The schema is applied through Kysely's `Migrator`, but the migration history is deliberately **flat**: `storage/migrations.ts` holds exactly **one** migration (`0001_initial_schema`) that builds every table and index in its final shape, and while this is a dev codebase with no deployed data to preserve we keep editing that single migration in place rather than appending `0002…`, `0003…` steps. `openSqliteStorage` runs `migrateToLatest` on startup; it applies the migration once on a fresh database and, finding it already recorded in `kysely_migration`, is a no-op on reopen (so the idempotency that `IF NOT EXISTS` gave the old bootstrap now comes from the migration ledger). The one consequence of the flat model: editing the migration does not re-run against a database that already recorded it, so to pick up a schema change locally you recreate the database (delete `DATA_DIR/sandbox.db`): the `:memory:` test databases get the latest shape every run, and deployment is still "start the process". The migration creates every table in its final shape: `sessions`; the `recordings` retention table, whose `Recording` row carries `user_id`, `env_id`, `created_at`, and `pinned`; the submission tables (below); and the Stage 6 leaderboard tables (below). The storage interface grows `createRecording`, `listRecordings`, `getRecording`, `setRecordingPinned`, `countPinnedByUser`, and `deleteRecording` alongside the session methods.
+The implementation lives under `storage/kysely/`:
+
+- `kysely/index.ts` is a thin `KyselyStorage` facade that owns the `Kysely<Database>` handle.
+- Domain queries live in `sessions.ts`, `recordings.ts`, `seasons.ts`, `submissions.ts`, `runs.ts`, `boards.ts`, `ratings.ts`, and `retention.ts`.
+- Cross-cutting query helpers live in `shared.ts`.
+- Domain types are also row types, so queries return `Session` and related types directly without a mapping layer.
+
+Kysely provides engine portability through its dialect-neutral query API. Replacing SQLite requires new dialect wiring, not a second type layer. Biome keeps `kysely` and `better-sqlite3` inside `storage/`, just as it keeps Docker imports inside the driver.
+
+Migration history is deliberately flat while the project has no deployed data to preserve:
+
+- `storage/migrations.ts` contains one migration, `0001_initial_schema`, with every table and index in its current shape.
+- Schema changes update that migration instead of appending `0002`, `0003`, and later steps.
+- `openSqliteStorage` runs `migrateToLatest` on startup. A fresh database applies the migration, while a reopened database sees it in `kysely_migration` and does nothing.
+- After editing the migration, recreate the local database by deleting `DATA_DIR/sandbox.db`. In-memory test databases always receive the latest shape.
+
+The migration creates the session, recording-retention, submission, and Stage 6 leaderboard tables. The storage interface also exposes the recording methods `createRecording`, `listRecordings`, `getRecording`, `setRecordingPinned`, `countPinnedByUser`, and `deleteRecording`.
 
 ### The submission tables
 
@@ -101,7 +134,7 @@ The four Stage 5 tables, all in the one schema declaration:
 
 - **`seasons`**: one competition per environment. A partial unique index keeps at most one submission-open season per environment, so the seed lookup is unambiguous. `seasons-seed.ts` ensures one such row per environment at startup: a play-open, submission-open, unreleased season with an empty match design; Stage 6 adds the operator admin console and API on top.
 - **`submissions`**: the pinned repository, the resolved identity, and the season. A row carries `season_id`, a denormalized `env_id`, the `user_id` (the Stage 4 identity seam, a GitHub handle once OAuth lands), the `source_kind` (`git` | `local`), the source coordinates (`repo_url`, `commit_sha`, `local_path`, `ref`: all nullable, populated per kind and after pinning), a rollup `status` (`pending` | `static_failed` | `build_failed` | `load_failed` | `ready`), the owner-visible terminal `reason`, `created_at`, and `superseded_at`. A partial unique index on `(season_id, user_id) where superseded_at is null` enforces **one active submission per participant per season** at the storage layer: resubmitting stamps `superseded_at` on the prior active row and inserts a new one in a single transaction, so history is preserved and a concurrent resubmit that loses the race raises `SubmissionConflictError` rather than creating a second active row.
-- **`submission_checks`**: the append-only per-stage validation log, one row per pipeline `stage` (`resolve` | `static` | `build` | `load`) with a `status` (`running` | `passed` | `failed` | `skipped`), a nullable owner-facing `detail` (the typed rejection reason or captured error text), `started_at`, and `ended_at`. A unique index on `(submission_id, stage)` makes a re-enqueue overwrite a stage's row rather than append a duplicate, so the log stays one row per stage across recovery. This dedicated table: rather than a JSON column on the submission: keeps the relational schema the single source of truth and gives the agent profile ordered, queryable history.
+- **`submission_checks`**: the per-stage validation log. Each pipeline stage (`resolve`, `static`, `build`, or `load`) has one row with a status, optional owner-facing detail, and start and end times. A unique index on `(submission_id, stage)` makes a re-enqueue replace the stage's earlier result instead of adding a duplicate. Keeping checks in a table rather than a JSON column preserves ordered, queryable history.
 - **`session_submissions`**: submission-to-session attribution: `(session_id, slot_id)` is the composite key, with the `submission_id` it ran and `created_at`. It is what lets the agent profile join a submission to its watch/replay recordings.
 
 The storage interface grows the matching methods: `ensureOpenSeason`/`getOpenSubmissionSeason`/`getSeason` (the Stage 5 `getOpenSeason` is renamed `getOpenSubmissionSeason` now that "open" is ambiguous across the submission and play windows); `createSubmission` (which performs the supersede-and-insert and throws `SubmissionConflictError` on the unique-index race), `getSubmission`, `findActiveSubmission`, `listPendingSubmissions`, `listSubmissionsByUser`, `listActiveSubmissionsBySeason`, `listActiveReadySubmissionIds`, and `updateSubmissionPin`/`updateSubmissionStatus`; `startSubmissionCheck`/`finishSubmissionCheck`/`listSubmissionChecks` for the log; and `recordSessionSubmission`/`listRecordingsBySubmission` for the attribution join.
@@ -110,7 +143,7 @@ The storage interface grows the matching methods: `ensureOpenSeason`/`getOpenSub
 
 The Stage 6.1 tables are the data foundation the rest of Stage 6 attaches to: the full `seasons` row and the run/result/rating tables, all still in the one schema declaration. They are Docker-free and are proven by the storage suite on in-memory SQLite.
 
-The submission window, public-play window, and release status are three **independent** gates on `seasons`: a user can reach a season when any one is in effect, and each gates a different surface: so they are separate columns, not one overloaded `status`:
+The submission window, public-play window, and release status are three **independent** gates on `seasons`. Each controls a different surface, so they use separate columns instead of one overloaded `status`:
 
 - `submission_status` (`open` | `closed`) controls whether the submission form accepts agents; its partial unique index (`env_id where submission_status = 'open'`) keeps the one-open-submission invariant.
 - `play_status` (`open` | `closed`) controls whether allowlisted users may start public watch/play sessions and write ratings; its own partial unique index keeps one play-open season per environment as the default target. Play is independent of release: the operator can open play on an `unreleased` season.
@@ -150,13 +183,13 @@ The environment registry lives in Python, and the backend serves it without runn
 
 ## The submission pipeline
 
-A submission is fetched, pinned, statically checked, built into an overlay image, and load-checked: and **never runs a game session** to validate (see the [submission spec](../specs/submission.md)). The HTTP route does none of that work inline: it writes the pending row and enqueues a job, returning immediately. `submission/` owns the rest, and the overlay build and the sandboxed load check have their own authority in [the execution boundary](execution.md#from-submission-to-overlay-image).
+A submission is fetched, pinned, statically checked, built into an overlay image, and load-checked. Validation **never runs a game session** (see the [submission spec](../specs/submission.md)). The HTTP route writes a pending row, enqueues a job, and returns immediately. `submission/` owns the remaining work. The overlay build and sandboxed load check are documented in [the execution boundary](execution.md#from-submission-to-overlay-image).
 
 ### The source seam
 
 `submission/source/` is a `SubmissionSource` with three methods: `verifyReachable` (a cheap pre-accept check that never throws), `resolve` (input → pinning facts and a commit), and `fetchTree` (a read-only checkout behind a `TreeHandle` whose `dispose` is idempotent and never deletes a developer's folder). Two sources sit behind it, chosen by `source_kind`:
 
-- The **git source** drives the host-agnostic `git` CLI for the actual pin and checkout: a default-branch head when no ref is given (`ls-remote --symref HEAD`), a named branch or tag (preferring the peeled annotated tag), or an explicit 40-hex commit pinned as-is and verified at fetch. Every invocation runs non-interactively (`GIT_TERMINAL_PROMPT=0`, no askpass) under `SUBMISSION_GIT_TIMEOUT_MS`, and stderr is classified into the closed `SourceFailureKind` set: `unreachable`, `auth_required`, `ref_not_found`, `timeout`, `invalid_input`: never echoing a tokenized URL. A `GITHUB_TOKEN` enables a cheaper GitHub REST reachability probe and basic-auth clone for private github.com repos; non-GitHub public repos use the same non-interactive git path.
+- The **git source** drives the host-agnostic `git` CLI for pinning and checkout. It accepts the default-branch head, a named branch or tag, or an explicit 40-character commit. Every invocation runs non-interactively under `SUBMISSION_GIT_TIMEOUT_MS`. Errors map to `unreachable`, `auth_required`, `ref_not_found`, `timeout`, or `invalid_input`, and tokenized URLs are never echoed. A `GITHUB_TOKEN` enables a cheaper GitHub reachability probe and private-repository authentication; other public repositories use the same non-interactive Git path.
 - The **local-folder source** is development-only, gated by `ALLOW_LOCAL_SUBMISSIONS`. With the gate off a local input is refused (`local_disabled`) before the filesystem is touched; with it on the folder is trusted input with no path constraints, and `fetchTree` hands back the folder directly with a no-op `dispose`. The gate, not sanitization, is the boundary.
 
 The `git` client is the one place `simple-git` may be imported: a single Biome override re-permits it under `backend/src/submission/source/**` (raw `child_process` stays banned even there: drive git through `simple-git`, not the CLI), and the broad backend block excludes that folder so every file still matches exactly one override. The GitHub client uses the global `fetch`, confined to the same folder by location, and CI proves no other backend source imports `child_process`.
@@ -179,7 +212,23 @@ The manifest contract is expressed as a zod `strictObject` and a parse failure i
 
 ### The validation worker
 
-`submission/worker.ts` is a bounded, in-process `ValidationWorker` with a durable pending row, so the HTTP route never waits. It processes one submission at a time through four ordered stages: **`resolve` → `static` → `build` → `load`**: writing a `running` `submission_checks` row as each stage starts and closing it `passed` or `failed`, then a rollup onto the submission `status` (`resolve`/`static` failure → `static_failed`, build → `build_failed`, load → `load_failed`, all four passing → `ready`). The per-stage row is always written before the rollup, so a poller never sees `ready` without its checks. The `TreeHandle` is disposed in a `finally`, and an unexpected throw still closes the running stage and writes a rollup, so no stage is left permanently `running`. On startup `start()` re-enqueues every active `pending` row, and because each check is keyed `(submission_id, stage)`, a re-run overwrites the prior attempt rather than appending. A successful build fires an `onOverlayBuilt` hook that triggers the overlay-image eviction sweep.
+`submission/worker.ts` is a bounded, in-process `ValidationWorker`. The HTTP route writes a durable pending row, enqueues the work, and returns without waiting.
+
+The worker processes one submission at a time:
+
+1. `resolve`
+2. `static`
+3. `build`
+4. `load`
+
+For each stage, the worker:
+
+- Writes a `running` check before doing the work.
+- Closes the check as `passed` or `failed`.
+- Updates the submission rollup only after the check is recorded.
+- Maps resolve or static failures to `static_failed`, build failures to `build_failed`, load failures to `load_failed`, and a fully successful run to `ready`.
+
+The `TreeHandle` is disposed in a `finally`. Unexpected errors still close the active check and write a rollup, so a stage cannot remain permanently `running`. At startup, `start()` re-enqueues active `pending` rows. Because checks are keyed by `(submission_id, stage)`, recovery replaces earlier attempts instead of adding duplicates. A successful build also triggers overlay-image eviction through `onOverlayBuilt`.
 
 ## The HTTP API
 
