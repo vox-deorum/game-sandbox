@@ -31,6 +31,7 @@ import {
   getMe,
   listRecordings,
   listSeasons,
+  listWatchAgents,
   startSession,
 } from '../src/api/client.js'
 import EnvironmentPage from '../src/pages/EnvironmentPage.vue'
@@ -79,6 +80,40 @@ describe('EnvironmentPage', () => {
     expect(screen.queryByRole('button', { name: 'Watch' })).toBeNull()
     // The operator-only admin entry point is hidden from a non-operator.
     expect(screen.queryByRole('link', { name: 'Admin console' })).toBeNull()
+  })
+
+  it('frames the watch section as "Rate an Agent" when there is an unrated agent', async () => {
+    vi.mocked(getMe).mockResolvedValue({
+      user_id: 'dev-user',
+      allowlisted: true,
+      is_operator: false,
+    })
+    // An unrated agent the allowlisted viewer can rate flips the section heading from watch to rate.
+    vi.mocked(listWatchAgents).mockResolvedValue([
+      { submission_id: 'sub1', anonymous_number: 1, rating_status: 'unrated' },
+    ])
+    await renderPage()
+    expect(
+      await screen.findByRole('heading', { name: 'Rate an Agent', level: 2 }),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Watch an Agent' })).toBeNull()
+  })
+
+  it('keeps the watch framing when there is nothing unrated to rate', async () => {
+    vi.mocked(getMe).mockResolvedValue({
+      user_id: 'dev-user',
+      allowlisted: true,
+      is_operator: false,
+    })
+    // Only an already-rated agent: there is something to watch but nothing to rate.
+    vi.mocked(listWatchAgents).mockResolvedValue([
+      { submission_id: 'sub1', anonymous_number: 1, rating_status: 'rated' },
+    ])
+    await renderPage()
+    expect(
+      await screen.findByRole('heading', { name: 'Watch an Agent', level: 2 }),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Rate an Agent' })).toBeNull()
   })
 
   it('disables watch and play when no season is play-open', async () => {

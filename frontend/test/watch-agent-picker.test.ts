@@ -86,7 +86,10 @@ describe('WatchAgentPicker', () => {
     await renderPicker()
     expect(await screen.findByText('Naive agent')).toBeInTheDocument()
     // The built-in row is the only one here, so its Watch button is the first (and only) one.
-    await fireEvent.click(await screen.findByRole('button', { name: 'Watch' }))
+    const watchButton = await screen.findByRole('button', { name: 'Watch' })
+    // Watching is the non-primary action: only Rate is highlighted, so this stays secondary.
+    expect(watchButton).toHaveClass('secondary')
+    await fireEvent.click(watchButton)
     expect(vi.mocked(startSession)).toHaveBeenCalledWith({
       envId: 'flappy_bird',
       mode: 'scripted',

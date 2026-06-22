@@ -196,6 +196,8 @@ describe('AgentProfilePage', () => {
     // The season link reads the season name, not the generic "View leaderboards".
     const link = screen.getByRole('link', { name: 'Spring Iteration' })
     expect(link).toHaveAttribute('href', '/environments/flappy_bird/leaderboards/iter-released')
+    // The placement's recording is reachable through a Replay link, as on the environment boards.
+    expect(screen.getByRole('link', { name: 'Replay' })).toHaveAttribute('href', '/replays/rec-1')
   })
 
   it('shows a dash for a placement with no human ratings and falls back to a season id label', async () => {
