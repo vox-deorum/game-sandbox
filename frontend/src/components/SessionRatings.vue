@@ -132,14 +132,14 @@ function errorMessage(reason: 'play_closed' | 'not_rateable' | 'not_finished' | 
     <div v-if="agents.length > 0" class="ratings-reveal" data-testid="ratings-reveal">
       <div class="ratings-reveal-inner">
         <UiCard class="ratings">
-          <h2 class="ratings-title">Rate the agents</h2>
+          <h2 class="ratings-title">Rate the Agents</h2>
           <p v-if="ratings?.read_only" class="ratings-closed">
             Rating for this round has closed. Your previous ratings are shown below.
           </p>
 
           <!-- The season instructions apply to every agent, so they show once for the panel. -->
           <p v-if="ratings?.season_prompt" class="prompt">
-            <span class="prompt-from">Season instructions:</span> {{ ratings.season_prompt }}
+            <span class="prompt-from">The instructor wants you to rate by:</span> {{ ratings.season_prompt }}
           </p>
 
           <ul class="agent-list">
@@ -169,7 +169,7 @@ function errorMessage(reason: 'play_closed' | 'not_rateable' | 'not_finished' | 
               </div>
 
               <p v-if="agent.author_prompt" class="prompt">
-                <span class="prompt-from">Agent instructions:</span> {{ agent.author_prompt }}
+                <span class="prompt-from">The author wants you to rate by:</span> {{ agent.author_prompt }}
               </p>
             </li>
           </ul>
@@ -212,14 +212,24 @@ function errorMessage(reason: 'play_closed' | 'not_rateable' | 'not_finished' | 
 }
 
 .ratings-title {
-  margin: 0 0 var(--space-3);
-  font-size: var(--text-md);
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-lg);
 }
 
 .ratings-closed {
   margin: 0 0 var(--space-3);
-  font-size: var(--text-sm);
+  font-size: var(--text-md);
   color: var(--color-text-muted);
+}
+
+.agent {
+  border-top: 1px solid;
+  border-color: var(--color-text-muted);
+  padding: var(--space-2) 0 var(--space-2) 0;
+}
+
+.agent .prompt {
+  margin: var(--space-1) 0 var(--space-1) 0;
 }
 
 .agent-list {
@@ -254,7 +264,6 @@ function errorMessage(reason: 'play_closed' | 'not_rateable' | 'not_finished' | 
 }
 
 .prompt {
-  margin: var(--space-2) 0 0;
   font-size: var(--text-sm);
   color: var(--color-text-muted);
 }
@@ -268,7 +277,7 @@ function errorMessage(reason: 'play_closed' | 'not_rateable' | 'not_finished' | 
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  margin-top: var(--space-4);
+  margin-top: var(--space-3);
 }
 
 .ratings-saved {

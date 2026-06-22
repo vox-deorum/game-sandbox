@@ -47,6 +47,7 @@ Every dev script is Python under `scripts/`, run through uv, so nothing depends 
 | Run the full local suite (all three workflows) | `uv run python scripts/ci.py all` |
 | Publish the template and examples (dry-run available) | `uv run python scripts/publish_template.py --dry-run` |
 | Run the app on the e2e-built database | `npm run demo` |
+| Run the app as an ordinary member | `npm run demo:user` |
 
 `npm run demo` shows realistic sessions, submissions, seasons, and replays. It:
 
@@ -56,6 +57,8 @@ Every dev script is Python under `scripts/`, run through uv, so nothing depends 
 - Rebuilds the e2e database if a schema change makes the copy stale.
 
 Demo play writes only to the disposable `demo/` copy, never to the `main/` fixture reused by local e2e runs.
+
+`npm run demo:user` is the same demo signed in as an ordinary member instead of the operator. It mocks `ada-lovelace` — the e2e fixture's most data-rich member (a submitted agent, an author rating prompt, watch recordings, and competition placements) — so the most member-facing features have real content. The member is allowlisted to play but is not an operator, so the admin console is locked exactly as it is for a real user.
 
 `scripts/generate.py` owns TypeScript schema types, packaged schema copies, environment metadata, template environment copies, and golden fixtures. Edit the source, regenerate, and commit both. Do not hand-edit generated files.
 

@@ -97,9 +97,7 @@ def _drop_venv(snapshot_dir: Path) -> None:
         shutil.rmtree(venv)
 
 
-def _publish_orphan_snapshot(
-    src: Path, dest: Path, *, branch: str, message: str, remote: str
-) -> None:
+def _publish_orphan_snapshot(src: Path, dest: Path, *, branch: str, message: str, remote: str) -> None:
     """Assemble ``src`` under ``dest`` and force-push it as a fresh orphan ``branch``."""
     dest.mkdir(parents=True)
     _assemble_snapshot(src, dest)
@@ -122,17 +120,13 @@ def publish(
     envs = list_envs()
     if DEFAULT_TEMPLATE_ENV not in envs:
         raise PublishError(
-            f"default environment {DEFAULT_TEMPLATE_ENV!r} has no template layer; "
-            f"found {envs or '(none)'}."
+            f"default environment {DEFAULT_TEMPLATE_ENV!r} has no template layer; found {envs or '(none)'}."
         )
     templates = {env: compose_template(env) for env in envs}
     examples = list_examples()
     composed = {(env, name): compose_example(env, name) for env, name in examples}
     print(f"composed {len(templates)} template(s): {', '.join(templates) or '(none)'}")
-    print(
-        f"composed {len(composed)} example(s): "
-        f"{', '.join(f'{e}/{n}' for e, n in composed) or '(none)'}"
-    )
+    print(f"composed {len(composed)} example(s): {', '.join(f'{e}/{n}' for e, n in composed) or '(none)'}")
 
     publish_root = BUILD_DIR / "publish"
     if publish_root.exists():
@@ -149,10 +143,7 @@ def publish(
     main_dir.mkdir()
     _assemble_snapshot(templates[DEFAULT_TEMPLATE_ENV], main_dir)
     _drop_venv(main_dir)
-    print(
-        f"prepared {DEFAULT_TEMPLATE_ENV} template snapshot for main: "
-        f"{commit_message!r}, tag v{version}"
-    )
+    print(f"prepared {DEFAULT_TEMPLATE_ENV} template snapshot for main: {commit_message!r}, tag v{version}")
 
     if dry_run:
         print(
@@ -207,9 +198,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Publish the template and examples.")
     parser.add_argument("--tag", help="template-v<N> tag string; defaults to $GITHUB_REF")
     parser.add_argument("--target-repo", default=DEFAULT_TARGET_REPO)
-    parser.add_argument(
-        "--dry-run", action="store_true", help="do everything except the network pushes"
-    )
+    parser.add_argument("--dry-run", action="store_true", help="do everything except the network pushes")
     args = parser.parse_args(argv)
 
     try:

@@ -53,12 +53,17 @@ from _paths import (
 _NPM = "npm.cmd" if sys.platform == "win32" else "npm"
 
 
-def _run(cmd: list[str], cwd: Path | None = None) -> None:
-    """Run a command, echoing it, and raise SystemExit on failure."""
+def _run(cmd: list[str], cwd: Path | None = None, env: dict[str, str] | None = None) -> None:
+    """Run a command, echoing it, and raise SystemExit on failure.
+
+    ``env`` defaults to ``None``, which inherits this process's environment unchanged; pass an
+    explicit map (typically ``os.environ`` plus overrides) to run the child with extra variables,
+    e.g. the demo's build-time ``VITE_SANDBOX_USER``.
+    """
     printable = " ".join(cmd)
     where = f" (in {cwd})" if cwd else ""
     print(f"$ {printable}{where}", flush=True)
-    result = subprocess.run(cmd, cwd=cwd or REPO_ROOT)
+    result = subprocess.run(cmd, cwd=cwd or REPO_ROOT, env=env)
     if result.returncode != 0:
         raise SystemExit(result.returncode)
 

@@ -79,8 +79,7 @@ def load_manifest(repo_root: Path | str) -> Manifest:
     unknown = sorted(set(raw) - set(_REQUIRED_FIELDS))
     if unknown:
         raise ManifestError(
-            f"{path} has unknown key(s): {', '.join(unknown)}. Allowed keys are "
-            f"{', '.join(_REQUIRED_FIELDS)}"
+            f"{path} has unknown key(s): {', '.join(unknown)}. Allowed keys are {', '.join(_REQUIRED_FIELDS)}"
         )
 
     entry_point = raw["entry_point"]

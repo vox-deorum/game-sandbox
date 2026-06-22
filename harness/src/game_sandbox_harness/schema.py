@@ -28,11 +28,7 @@ class SchemaValidationError(ValueError):
 
 
 def _load_schema(filename: str) -> dict[str, Any]:
-    data = (
-        resources.files("game_sandbox_harness.schema_data")
-        .joinpath(filename)
-        .read_text(encoding="utf-8")
-    )
+    data = resources.files("game_sandbox_harness.schema_data").joinpath(filename).read_text(encoding="utf-8")
     return json.loads(data)
 
 

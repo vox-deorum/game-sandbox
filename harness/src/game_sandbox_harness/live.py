@@ -92,9 +92,7 @@ class LiveConfig:
 def parse_config(argv: list[str]) -> LiveConfig:
     """Parse and validate the single-JSON-argument session config from ``argv``."""
     if len(argv) != 1:
-        raise LiveConfigError(
-            f"expected exactly one JSON config argument, got {len(argv)} argument(s)"
-        )
+        raise LiveConfigError(f"expected exactly one JSON config argument, got {len(argv)} argument(s)")
     try:
         raw: object = json.loads(argv[0])
     except json.JSONDecodeError as error:
@@ -193,18 +191,14 @@ def _parse_players(raw: object) -> dict[str, PlayerAttribution] | None:
         entry = cast("dict[str, Any]", raw_entry)
         kind = entry.get("kind")
         if kind not in ("human", "agent"):
-            raise LiveConfigError(
-                f"config player {slot_id!r} has kind {kind!r}; expected 'human' or 'agent'"
-            )
+            raise LiveConfigError(f"config player {slot_id!r} has kind {kind!r}; expected 'human' or 'agent'")
         label = entry.get("label")
         if not isinstance(label, str) or not label:
             raise LiveConfigError(f"config player {slot_id!r} 'label' must be a non-empty string")
         for optional in ("user", "submission_id"):
             value = entry.get(optional)
             if value is not None and not isinstance(value, str):
-                raise LiveConfigError(
-                    f"config player {slot_id!r} {optional!r} must be a string when present"
-                )
+                raise LiveConfigError(f"config player {slot_id!r} {optional!r} must be a string when present")
         players[slot_id] = cast("PlayerAttribution", entry)
     return players
 
@@ -225,9 +219,7 @@ def build_slots(
     """
     paced = not config.headless and entry.meta.pace_interval_ms is not None
     resolved_timeout = (
-        config.human_timeout_ms
-        if config.human_timeout_ms is not None
-        else entry.meta.human_timeout_ms
+        config.human_timeout_ms if config.human_timeout_ms is not None else entry.meta.human_timeout_ms
     )
     slots: dict[str, Slot] = {}
     for slot_id, binding in config.slots.items():

@@ -192,9 +192,7 @@ def test_turn_based_source_times_out_to_none_at_deadline():
         def sleep_ms(self, ms: int) -> None:
             base.advance(ms)
 
-    source = TransportSource(
-        control, clock=clock, paced=False, sleeper=AdvancingSleeper(), slice_ms=5
-    )
+    source = TransportSource(control, clock=clock, paced=False, sleeper=AdvancingSleeper(), slice_ms=5)
     # No input ever arrives; the deadline at 12ms is reached after a few slices → None.
     assert source.get_action("p", observation=None, deadline_ms=12) is None
 

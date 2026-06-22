@@ -201,9 +201,7 @@ def test_missing_field_raises(tmp_path: Path):
 
 def test_unknown_key_raises(tmp_path: Path):
     (tmp_path / "manifest.json").write_text(
-        json.dumps(
-            {"entry_point": "agent", "class_name": "Agent", "template_version": 1, "oops": 1}
-        ),
+        json.dumps({"entry_point": "agent", "class_name": "Agent", "template_version": 1, "oops": 1}),
         encoding="utf-8",
     )
     with pytest.raises(ManifestError, match="unknown key"):

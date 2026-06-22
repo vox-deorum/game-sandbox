@@ -149,10 +149,7 @@ def test_participant_stdout_cannot_spoof_the_result(tmp_path: Path):
         module,
         class_name="Agent",
         source=(
-            f"print({fake_success!r}, flush=True)\n"
-            "class Agent:\n"
-            "    def reset(self, seed):\n"
-            "        pass\n"
+            f"print({fake_success!r}, flush=True)\nclass Agent:\n    def reset(self, seed):\n        pass\n"
         ),
     )
     try:

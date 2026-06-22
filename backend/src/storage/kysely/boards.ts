@@ -198,9 +198,7 @@ export async function getHumanBoard(
   // recording per agent — keeping a single source of truth for "the agent's best game" link. The
   // caller passes the already-computed automated board so that aggregation runs only once per read.
   const aggregates = await aggregateRatingsByAgent(db, seasonId)
-  const recordings = new Map(
-    automated.map((row) => [agentRefKey(row.agent), row.recording_id]),
-  )
+  const recordings = new Map(automated.map((row) => [agentRefKey(row.agent), row.recording_id]))
   const ordered = [...aggregates].sort((a, b) => {
     if (b.mean !== a.mean) {
       return b.mean - a.mean

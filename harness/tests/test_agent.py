@@ -13,9 +13,7 @@ from game_sandbox_harness.agent import AgentBase, has_chat, has_learn, is_agent
 REPO_ROOT = Path(__file__).resolve().parents[2]
 # One agent.py stub per environment template layer (templates/<env>/agent.py); the
 # env-agnostic templates/base/ carries no agent stub. Every env stub gets the parity check.
-TEMPLATE_AGENTS = sorted(
-    p for p in (REPO_ROOT / "templates").glob("*/agent.py") if p.parent.name != "base"
-)
+TEMPLATE_AGENTS = sorted(p for p in (REPO_ROOT / "templates").glob("*/agent.py") if p.parent.name != "base")
 
 
 def test_agentbase_is_abstract():

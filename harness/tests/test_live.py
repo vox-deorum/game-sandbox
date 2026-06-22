@@ -336,9 +336,7 @@ def _run_external(
     sleeper = sleeper or AdvancingSleeper(base)
     source = TransportSource(control, clock=clock, paced=paced, sleeper=sleeper)
     slot = ExternalSlot(source, timeout_ms=human_timeout_ms)
-    with Episode(
-        entry, {"player_0": slot}, seed=1, store=store, recording_id="r", clock=clock
-    ) as episode:
+    with Episode(entry, {"player_0": slot}, seed=1, store=store, recording_id="r", clock=clock) as episode:
         run_live_loop(
             episode,
             pace_interval_ms=pace_interval_ms,

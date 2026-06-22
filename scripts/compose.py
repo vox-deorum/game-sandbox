@@ -52,9 +52,7 @@ def _requirement_name(line: str) -> str | None:
 
 def _merge_requirements(base_text: str, extra_text: str) -> str:
     """Append extra requirement lines to base, failing loudly on a conflicting pin."""
-    base_names = {
-        name for line in base_text.splitlines() if (name := _requirement_name(line)) is not None
-    }
+    base_names = {name for line in base_text.splitlines() if (name := _requirement_name(line)) is not None}
     extra_lines: list[str] = []
     for line in extra_text.splitlines():
         name = _requirement_name(line)
@@ -175,9 +173,7 @@ def compose_example(env: str, name: str) -> Path:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Compose a template or example.")
     parser.add_argument("env", nargs="?", help="environment id; omit to list envs and examples")
-    parser.add_argument(
-        "name", nargs="?", help="example name; omit to compose the bare template for <env>"
-    )
+    parser.add_argument("name", nargs="?", help="example name; omit to compose the bare template for <env>")
     args = parser.parse_args(argv)
 
     if args.env is None:
