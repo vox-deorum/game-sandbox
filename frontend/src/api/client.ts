@@ -56,6 +56,8 @@ export interface SessionRow {
   status: 'starting' | 'running' | 'ended'
   termination_reason: string | null
   recording_id: string | null
+  /** The competition season this session belongs to; null only for non-competitive legacy rows. */
+  season_id: string | null
   created_at: string
   ended_at: string | null
 }
@@ -319,22 +321,26 @@ export async function getSubmission(id: string): Promise<SubmissionDetail> {
   )) as SubmissionDetail
 }
 
-/** A submission row without its per-stage log: the shape the play-open listing returns. */
-export type SubmissionSummary = Omit<SubmissionDetail, 'checks'>
+/** One viewer-specific submitted-agent choice in the play-open season's watch/rating list. */
+export interface WatchAgentSummary {
+  submission_id: string
+  anonymous_number: number
+  rating_status: 'unrated' | 'rated' | 'own'
+  /** Operator-only identity and source fields; absent from regular-user responses. */
+  owner_id?: string
+  source_kind?: 'git' | 'local'
+  repo_url?: string | null
+  commit_sha?: string | null
+  local_path?: string | null
+  ref?: string | null
+}
 
-/**
- * The environment's active submitted agents, optionally narrowed by status. The watch picker reads
- * the `ready` set, so superseded submissions stay profile history rather than watch choices.
- */
-export async function listActiveSubmissions(
-  envId: string,
-  filter?: { status?: SubmissionStatus },
-): Promise<SubmissionSummary[]> {
-  const query = filter?.status ? `?status=${encodeURIComponent(filter.status)}` : ''
+/** The play-open season's viewer-specific watch choices, redacted for non-operators. */
+export async function listWatchAgents(envId: string): Promise<WatchAgentSummary[]> {
   return (await json(
-    await request(`/environments/${encodeURIComponent(envId)}/submissions${query}`),
-    'GET /environments/:envId/submissions',
-  )) as SubmissionSummary[]
+    await request(`/environments/${encodeURIComponent(envId)}/watch-agents`),
+    'GET /environments/:envId/watch-agents',
+  )) as WatchAgentSummary[]
 }
 
 /** One submission on the agent profile: its per-stage log plus the recent recordings it ran in. */
@@ -391,6 +397,8 @@ export type AgentRefWire = { kind: 'submission'; submission_id: string } | { kin
 /** One rateable agent in a session, as the rating read/write returns it. */
 export interface RateableAgent {
   agent: AgentRefWire
+  /** Viewer-appropriate name, anonymous while a non-operator rates a playable season. */
+  display_name: string
   /** True when the caller owns this submitted agent: the UI shows it without a rating control. */
   is_own: boolean
   /** The agent author's prompt for this season, when set (null for the ownerless Naive baseline). */

@@ -12,7 +12,14 @@ import { getSessionRatings, submitRatings } from '../src/api/client.js'
 import SessionRatings from '../src/components/SessionRatings.vue'
 
 function agent(overrides: Partial<RateableAgent> & { agent: AgentRefWire }): RateableAgent {
-  return { is_own: false, author_prompt: null, your_rating: null, ...overrides }
+  const fallback = overrides.agent.kind === 'builtin-naive' ? 'Naive baseline' : 'Submitted agent 1'
+  return {
+    display_name: fallback,
+    is_own: false,
+    author_prompt: null,
+    your_rating: null,
+    ...overrides,
+  }
 }
 
 function view(agents: RateableAgent[], overrides: Partial<Ratings> = {}): Ratings {
@@ -60,19 +67,23 @@ describe('SessionRatings', () => {
     vi.mocked(getSessionRatings).mockResolvedValue({
       ok: true,
       ratings: view([
-        agent({ agent: SUBMISSION, is_own: true }),
-        agent({ agent: { kind: 'submission', submission_id: 'sub-bob' } }),
+        agent({ agent: SUBMISSION, display_name: 'Your agent', is_own: true }),
+        agent({
+          agent: { kind: 'submission', submission_id: 'sub-bob' },
+          display_name: 'Submitted agent 2',
+        }),
         agent({ agent: NAIVE }),
       ]),
     })
     renderPanel()
 
     expect(await screen.findByText('Rate the agents')).toBeInTheDocument()
+    expect(screen.getByTestId('ratings-reveal')).toHaveClass('ratings-reveal')
     // The own agent is shown but has no rating control.
     expect(screen.getByText('Your agent')).toBeInTheDocument()
     expect(screen.getByText(/can't rate your own agent/)).toBeInTheDocument()
     // The other submitted agent and the Naive baseline each get a 1-5 radiogroup.
-    expect(screen.getByRole('radiogroup', { name: /Rate Submitted agent/ })).toBeInTheDocument()
+    expect(screen.getByRole('radiogroup', { name: /Rate Submitted agent 2/ })).toBeInTheDocument()
     expect(screen.getByRole('radiogroup', { name: /Rate Naive baseline/ })).toBeInTheDocument()
   })
 
@@ -92,6 +103,7 @@ describe('SessionRatings', () => {
     // The operator's season prompt applies to every agent, so it shows exactly once, above the list.
     await screen.findByText('Rate the agents')
     expect(screen.getAllByText('Judge overall skill.')).toHaveLength(1)
+    expect(screen.getByText('Season instructions:')).toBeInTheDocument()
 
     const list = screen.getByRole('list')
     const items = within(list).getAllByRole('listitem')
@@ -99,6 +111,7 @@ describe('SessionRatings', () => {
     const naiveItem = items[1] as HTMLElement
     // The author prompt shows only next to its own agent; the season prompt is not repeated per item.
     expect(within(submissionItem).getByText('Did it dodge cleanly?')).toBeInTheDocument()
+    expect(within(submissionItem).getByText('Agent instructions:')).toBeInTheDocument()
     expect(within(submissionItem).queryByText('Judge overall skill.')).toBeNull()
     // Naive has no author, so it carries no per-agent prompt at all.
     expect(within(naiveItem).queryByText(/From the author/)).toBeNull()

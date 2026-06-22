@@ -168,11 +168,11 @@ The local-folder field exists only when both `import.meta.env.DEV` and the backe
 1. The built-in Naive agent.
 2. Ready submissions from the play-open season.
 
-A submitted watch run passes `submissionId`; the built-in run omits it. A 409 active-session response navigates to the existing session. The renderer and session host do not care which source produced the agent.
+The picker reads `GET /api/environments/:envId/watch-agents`, a viewer-specific response. Regular users receive an anonymous number and `unrated`, `rated`, or `own` state. Operators additionally receive owner and source details. Unrated agents use the primary **Rate** action; rated and owned agents use secondary **Watch again** actions. A submitted watch run passes `submissionId`; the built-in run omits it. A 409 active-session response navigates to the existing session.
 
 ## Ratings and author prompts
 
-`SessionRatings.vue` loads the rateable agents, season prompt, author prompts, prior ratings, and read-only state in one request.
+`SessionRatings.vue` loads viewer-appropriate agent names, the season prompt, author prompts, prior ratings, and read-only state in one request. It mounts only after session termination, directly above the stage, and uses the motion tokens for its downward reveal.
 
 The UI mirrors backend rules:
 
@@ -180,6 +180,7 @@ The UI mirrors backend rules:
 - The built-in agent is rateable only in a mixed session.
 - A closed play window displays saved ratings without controls.
 - Writes are available only to allowlisted users.
+- While play is open, non-operators see anonymous submitted-agent attribution on the live session and replay surfaces. The stored recording header remains canonical, and the identified display returns when play closes.
 
 `AuthorPromptEditor.vue` is owner-only. It targets the active submission in the play-open season first, then the submission-open season. The prompt is presentation metadata and is separate from the validated submission artifact.
 

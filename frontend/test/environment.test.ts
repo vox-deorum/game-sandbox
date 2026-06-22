@@ -22,7 +22,7 @@ vi.mock('../src/api/client.js', () => ({
   listSeasons: vi.fn().mockResolvedValue([]),
   // The WatchAgentPicker lists the active ready agents; default it to empty. Submission moved off the
   // hub to the Submit / My Agent tab (the agent profile), so the hub no longer mounts the submit form.
-  listActiveSubmissions: vi.fn().mockResolvedValue([]),
+  listWatchAgents: vi.fn().mockResolvedValue([]),
 }))
 
 import {

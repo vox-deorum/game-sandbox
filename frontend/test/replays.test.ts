@@ -119,6 +119,45 @@ describe('ReplaysPage', () => {
     expect(within(row).getAllByText('—').length).toBeGreaterThanOrEqual(3)
   })
 
+  it('masks submitted-agent players and owner while their season is playable', async () => {
+    vi.mocked(getMe).mockResolvedValue({ user_id: 'viewer', allowlisted: true, is_operator: false })
+    // Mirror the backend's gate: a non-operator who asks for unreleased seasons is refused, while the
+    // default public scope still surfaces the play-open (unreleased) season the masking depends on. A
+    // regression that requested the operator-only listing here would yield no season, and no mask.
+    vi.mocked(listSeasons).mockImplementation(async (_envId, options) => {
+      if (options?.includeUnreleased === true) {
+        throw new Error('operator access required')
+      }
+      return [season()]
+    })
+    vi.mocked(listRecordings).mockResolvedValue([
+      recording({
+        id: 'flappy_bird-blind',
+        user_id: 'maya-fledgling',
+        season_id: 'season-1',
+        header: {
+          schema_version: 1,
+          environment: 'flappy_bird',
+          players: {
+            player_0: {
+              kind: 'agent',
+              label: "maya-fledgling's agent",
+              user: 'maya-fledgling',
+              submission_id: 'sub-maya',
+            },
+          },
+        },
+      }),
+    ])
+    await renderPage()
+
+    const row = (await screen.findByRole('link', { name: 'blind' })).closest('tr') as HTMLElement
+    expect(within(row).getByText(/Submitted agent/)).toBeInTheDocument()
+    expect(within(row).queryByText('maya-fledgling')).toBeNull()
+    // The page leans on the public scope (which includes play-open seasons), not the operator path.
+    expect(vi.mocked(listSeasons)).toHaveBeenCalledWith('flappy_bird', { includeUnreleased: false })
+  })
+
   it('re-sorts by owner when the Owner header is clicked', async () => {
     vi.mocked(listRecordings).mockResolvedValue([
       recording({ id: 'rec-a', user_id: 'zoe' }),

@@ -47,6 +47,7 @@ vi.mock('../src/api/client.js', () => ({
   getEnvironments: vi.fn(async () => [META]),
   getRecording: vi.fn(),
   listRecordings: vi.fn(async () => []),
+  listSeasons: vi.fn(async () => []),
   getMe: vi.fn(),
   pinRecording: vi.fn(async () => ({ ok: true })),
   unpinRecording: vi.fn(async () => ({ ok: true })),
@@ -56,7 +57,14 @@ vi.mock('../src/api/client.js', () => ({
   submitRatings: vi.fn(),
 }))
 
-import { getMe, getRecording, getSession, listRecordings } from '../src/api/client.js'
+import {
+  getMe,
+  getRecording,
+  getSession,
+  getSessionRatings,
+  listRecordings,
+  listSeasons,
+} from '../src/api/client.js'
 import SessionPage from '../src/pages/SessionPage.vue'
 
 function ownerRow() {
@@ -68,6 +76,7 @@ function ownerRow() {
     status: 'starting' as const,
     termination_reason: null,
     recording_id: 'flappy_bird-s1',
+    season_id: 'flappy_bird-iter-1',
     created_at: '2026-06-11T00:00:00.000Z',
     ended_at: null,
   }
@@ -124,6 +133,8 @@ describe('SessionPage', () => {
     drawn = []
     vi.mocked(getRecording).mockResolvedValue(sessionRecording())
     vi.mocked(listRecordings).mockResolvedValue([])
+    vi.mocked(listSeasons).mockResolvedValue([])
+    vi.mocked(getSessionRatings).mockResolvedValue({ ok: false, reason: 'not_rateable' })
   })
 
   it('mounts the renderer for the owner of a human session and wires input', async () => {
@@ -193,6 +204,126 @@ describe('SessionPage', () => {
       'href',
       '/replays/flappy_bird-s1',
     )
+  })
+
+  it('reveals the rating panel above the canvas only after the session ends', async () => {
+    vi.mocked(getMe).mockResolvedValue({
+      user_id: 'viewer',
+      allowlisted: true,
+      is_operator: false,
+    })
+    vi.mocked(getSession).mockResolvedValue(ownerRow())
+    vi.mocked(getSessionRatings).mockResolvedValue({
+      ok: true,
+      ratings: {
+        session_id: 's1',
+        season_id: 'flappy_bird-iter-1',
+        read_only: false,
+        season_prompt: 'Judge survival.',
+        agents: [
+          {
+            agent: { kind: 'submission', submission_id: 'sub-1' },
+            display_name: 'Submitted agent 1',
+            is_own: false,
+            author_prompt: 'Judge smoothness.',
+            your_rating: null,
+          },
+        ],
+      },
+    })
+    await renderSession()
+    await waitForHandlers()
+    expect(screen.queryByText('Rate the agents')).toBeNull()
+
+    handlers.onHeader(HEADER)
+    handlers.onResult?.({ ticks: 1, reason: 'stopped', scores: { player_0: 1 } })
+    handlers.onSessionStatus?.('ended', 'stopped')
+
+    const panel = await screen.findByTestId('ratings-reveal')
+    const canvasStage = document.querySelector('.stage')
+    expect(canvasStage).not.toBeNull()
+    expect(
+      panel.compareDocumentPosition(canvasStage as Node) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).not.toBe(0)
+    expect(screen.getByText('Judge survival.')).toBeInTheDocument()
+    expect(screen.getByText('Judge smoothness.')).toBeInTheDocument()
+  })
+
+  it('masks playable submitted-agent attribution for non-operators', async () => {
+    vi.mocked(getMe).mockResolvedValue({
+      user_id: 'viewer',
+      allowlisted: true,
+      is_operator: false,
+    })
+    vi.mocked(getSession).mockResolvedValue(scriptedRow())
+    vi.mocked(listSeasons).mockResolvedValue([
+      {
+        id: 'flappy_bird-iter-1',
+        env_id: 'flappy_bird',
+        submission_status: 'closed',
+        play_status: 'open',
+        release_status: 'unreleased',
+        label: 'Playground',
+        created_at: '2026-06-11T00:00:00.000Z',
+        released_at: null,
+        submission_count: 1,
+        session_count: 1,
+      },
+    ])
+    await renderSession()
+    await waitForHandlers()
+    handlers.onHeader(
+      flappyHeader({
+        players: {
+          player_0: {
+            kind: 'agent',
+            label: "maya-fledgling's agent",
+            user: 'maya-fledgling',
+            submission_id: 'sub-maya',
+          },
+        },
+      }),
+    )
+    expect(await screen.findByText('Submitted agent')).toBeInTheDocument()
+    expect(screen.queryByText("maya-fledgling's agent")).toBeNull()
+  })
+
+  it('reveals submitted-agent attribution after public play closes', async () => {
+    vi.mocked(getMe).mockResolvedValue({
+      user_id: 'viewer',
+      allowlisted: true,
+      is_operator: false,
+    })
+    vi.mocked(getSession).mockResolvedValue(scriptedRow())
+    vi.mocked(listSeasons).mockResolvedValue([
+      {
+        id: 'flappy_bird-iter-1',
+        env_id: 'flappy_bird',
+        submission_status: 'closed',
+        play_status: 'closed',
+        release_status: 'released',
+        label: 'Playground',
+        created_at: '2026-06-11T00:00:00.000Z',
+        released_at: '2026-06-12T00:00:00.000Z',
+        submission_count: 1,
+        session_count: 1,
+      },
+    ])
+    await renderSession()
+    await waitForHandlers()
+    handlers.onHeader(
+      flappyHeader({
+        players: {
+          player_0: {
+            kind: 'agent',
+            label: "maya-fledgling's agent",
+            user: 'maya-fledgling',
+            submission_id: 'sub-maya',
+          },
+        },
+      }),
+    )
+    expect(await screen.findByText("maya-fledgling's agent")).toBeInTheDocument()
   })
 
   it('returns to an ended session without opening a socket and shows recording metadata', async () => {

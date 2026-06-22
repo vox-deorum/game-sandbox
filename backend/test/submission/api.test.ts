@@ -229,7 +229,11 @@ describe('submission API', () => {
     await storage.finishSubmissionCheck(submission.id, 'resolve', 'passed')
     await storage.startSubmissionCheck(submission.id, 'static')
 
-    const res = await app.inject({ method: 'GET', url: `/api/submissions/${submission.id}` })
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/submissions/${submission.id}`,
+      headers: { 'x-sandbox-user': 'alice' },
+    })
     expect(res.statusCode).toBe(200)
     const body = res.json() as { id: string; checks: Array<{ stage: string; status: string }> }
     expect(body.id).toBe(submission.id)
@@ -245,7 +249,38 @@ describe('submission API', () => {
     expect(res.statusCode).toBe(404)
   })
 
-  it('supersedes on resubmission so the active-season lookup returns the new row', async () => {
+  it('restricts submission detail to the owner or an operator', async () => {
+    await build()
+    const season = await storage.ensureOpenSeason(ENV_ID, 1)
+    const submission = await storage.createSubmission({
+      season_id: season.id,
+      env_id: ENV_ID,
+      user_id: 'alice',
+      source_kind: 'git',
+      repo_url: 'https://example.test/private',
+      commit_sha: 'secret-sha',
+      local_path: null,
+      ref: null,
+      created_at: new Date().toISOString(),
+    })
+
+    const stranger = await app.inject({
+      method: 'GET',
+      url: `/api/submissions/${submission.id}`,
+      headers: { 'x-sandbox-user': 'bob' },
+    })
+    expect(stranger.statusCode).toBe(403)
+    expect(stranger.json()).toMatchObject({ code: 'forbidden' })
+
+    const operator = await app.inject({
+      method: 'GET',
+      url: `/api/submissions/${submission.id}`,
+    })
+    expect(operator.statusCode).toBe(200)
+    expect(operator.json()).toMatchObject({ user_id: 'alice', commit_sha: 'secret-sha' })
+  })
+
+  it('supersedes on resubmission so the watch list returns only the new row', async () => {
     await build()
     await storage.ensureOpenSeason(ENV_ID, 1)
     const first = (
@@ -264,24 +299,29 @@ describe('submission API', () => {
         payload: { env_id: ENV_ID, repo_url: 'https://example.test/two' },
       })
     ).json() as { id: string }
+    await storage.updateSubmissionStatus(second.id, 'ready')
 
     const active = await app.inject({
       method: 'GET',
-      url: `/api/environments/${ENV_ID}/submissions`,
+      url: `/api/environments/${ENV_ID}/watch-agents`,
+      headers: { 'x-sandbox-user': 'bob' },
     })
-    const rows = active.json() as Array<{ id: string }>
-    expect(rows.map((r) => r.id)).toEqual([second.id])
-    expect(rows.map((r) => r.id)).not.toContain(first.id)
+    const rows = active.json() as Array<{ submission_id: string }>
+    expect(rows.map((r) => r.submission_id)).toEqual([second.id])
+    expect(rows.map((r) => r.submission_id)).not.toContain(first.id)
   })
 
-  it('returns an empty active list for an environment with no play-open season', async () => {
+  it('returns an empty watch list for an environment with no play-open season', async () => {
     await build()
-    const res = await app.inject({ method: 'GET', url: `/api/environments/${ENV_ID}/submissions` })
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/environments/${ENV_ID}/watch-agents`,
+    })
     expect(res.statusCode).toBe(200)
     expect(res.json()).toEqual([])
   })
 
-  it('lists ready submissions from the play-open season when the submission target differs', async () => {
+  it('lists ready watch agents from the play-open season when the submission target differs', async () => {
     await build()
     const playSeason = await storage.ensureOpenSeason(ENV_ID, 1)
     const playable = await storage.createSubmission({
@@ -315,11 +355,120 @@ describe('submission API', () => {
 
     const res = await app.inject({
       method: 'GET',
-      url: `/api/environments/${ENV_ID}/submissions?status=ready`,
+      url: `/api/environments/${ENV_ID}/watch-agents`,
+      headers: { 'x-sandbox-user': 'bob' },
     })
 
     expect(res.statusCode).toBe(200)
-    expect((res.json() as Array<{ id: string }>).map((row) => row.id)).toEqual([playable.id])
+    expect(
+      (res.json() as Array<{ submission_id: string }>).map((row) => row.submission_id),
+    ).toEqual([playable.id])
+  })
+
+  it('redacts watch-agent identity for regular viewers and reports rating state', async () => {
+    await build()
+    const season = await storage.ensureOpenSeason(ENV_ID, 1)
+    const alice = await storage.createSubmission({
+      season_id: season.id,
+      env_id: ENV_ID,
+      user_id: 'alice',
+      source_kind: 'git',
+      repo_url: 'https://example.test/alice',
+      commit_sha: 'alice-sha',
+      local_path: null,
+      ref: null,
+      created_at: '2026-06-11T00:00:00.000Z',
+    })
+    await storage.updateSubmissionStatus(alice.id, 'ready')
+    const bob = await storage.createSubmission({
+      season_id: season.id,
+      env_id: ENV_ID,
+      user_id: 'bob',
+      source_kind: 'local',
+      repo_url: null,
+      commit_sha: null,
+      local_path: '/agents/bob',
+      ref: null,
+      created_at: '2026-06-11T00:01:00.000Z',
+    })
+    await storage.updateSubmissionStatus(bob.id, 'ready')
+    await storage.upsertRating({
+      season_id: season.id,
+      env_id: ENV_ID,
+      rater_user_id: 'carol',
+      agent: { kind: 'submission', submission_id: alice.id, user_id: 'alice' },
+      score: 4,
+    })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/environments/${ENV_ID}/watch-agents`,
+      headers: { 'x-sandbox-user': 'carol' },
+    })
+    expect(res.statusCode).toBe(200)
+    const rows = res.json() as Array<Record<string, unknown>>
+    expect(rows).toEqual([
+      {
+        submission_id: bob.id,
+        anonymous_number: 1,
+        rating_status: 'unrated',
+      },
+      {
+        submission_id: alice.id,
+        anonymous_number: 2,
+        rating_status: 'rated',
+      },
+    ])
+    expect(JSON.stringify(rows)).not.toContain('alice')
+    expect(JSON.stringify(rows)).not.toContain('/agents/bob')
+  })
+
+  it('marks the viewer own agent and gives operators owner and source details', async () => {
+    await build()
+    const season = await storage.ensureOpenSeason(ENV_ID, 1)
+    const submission = await storage.createSubmission({
+      season_id: season.id,
+      env_id: ENV_ID,
+      user_id: 'alice',
+      source_kind: 'git',
+      repo_url: 'https://example.test/alice',
+      commit_sha: 'alice-sha',
+      local_path: null,
+      ref: 'main',
+      created_at: new Date().toISOString(),
+    })
+    await storage.updateSubmissionStatus(submission.id, 'ready')
+
+    const own = await app.inject({
+      method: 'GET',
+      url: `/api/environments/${ENV_ID}/watch-agents`,
+      headers: { 'x-sandbox-user': 'alice' },
+    })
+    expect(own.json()).toEqual([
+      {
+        submission_id: submission.id,
+        anonymous_number: 1,
+        rating_status: 'own',
+      },
+    ])
+
+    const operator = await app.inject({
+      method: 'GET',
+      url: `/api/environments/${ENV_ID}/watch-agents`,
+    })
+    expect(operator.json()).toEqual([
+      {
+        submission_id: submission.id,
+        anonymous_number: 1,
+        rating_status: 'unrated',
+        owner_id: 'alice',
+        source_kind: 'git',
+        repo_url: 'https://example.test/alice',
+        commit_sha: 'alice-sha',
+        local_path: null,
+        ref: 'main',
+      },
+    ])
   })
 
   describe('agent profile read', () => {

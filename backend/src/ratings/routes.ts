@@ -17,7 +17,7 @@
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import { z } from 'zod'
 
-import { isAllowlisted, resolveUserId } from '../identity.js'
+import { isAllowlisted, isOperator, resolveUserId } from '../identity.js'
 import type { RecordingsStore } from '../recordings.js'
 import type { AgentRef, Season, Session, Storage } from '../storage/index.js'
 
@@ -28,6 +28,8 @@ export interface RatingDeps {
   recordings: RecordingsStore
   /** The same public-session allowlist that controls who may submit human-feedback ratings. */
   allowlist: readonly string[]
+  /** Operators retain submitted-agent identities while a public play window is open. */
+  operatorAllowlist: readonly string[]
 }
 
 /** The author's per-submission rating prompt is display-only guidance; cap it so it stays a prompt. */
@@ -53,6 +55,8 @@ const AuthorPromptBodySchema = z.strictObject({
 /** One rateable agent in the session, as returned to the UI. The wire `agent` carries no `user_id`. */
 interface RateableAgentView {
   agent: AgentWire
+  /** Viewer-appropriate label: anonymous during playable feedback, identified otherwise. */
+  display_name: string
   /** True when the caller owns this submitted agent, so the UI shows it without a rating control. */
   is_own: boolean
   /** The agent author's prompt for this season, when set (null for the ownerless Naive baseline). */
@@ -214,6 +218,14 @@ async function buildRatingView(
   callerId: string,
 ): Promise<RatingView> {
   const { session, season, agents } = context
+  const blind = season.play_status === 'open' && !isOperator(callerId, deps.operatorAllowlist)
+  const anonymousNumbers = blind
+    ? new Map(
+        (await deps.storage.listActiveSubmissionsBySeason(season.id, 'ready')).map(
+          (submission, index) => [submission.id, index + 1],
+        ),
+      )
+    : new Map<string, number>()
   const agentViews = await Promise.all(
     agents.map(async (agent): Promise<RateableAgentView> => {
       const isOwn = agent.ref.kind === 'submission' && agent.ref.user_id === callerId
@@ -223,6 +235,7 @@ async function buildRatingView(
       ])
       return {
         agent: agent.wire,
+        display_name: displayName(agent.ref, isOwn, blind, anonymousNumbers),
         is_own: isOwn,
         author_prompt: authorPrompt,
         your_rating: rating?.score ?? null,
@@ -236,6 +249,26 @@ async function buildRatingView(
     season_prompt: emptyToNull(season.rating_prompt),
     agents: agentViews,
   }
+}
+
+/** Name one agent without exposing a submission owner during a playable blind-rating round. */
+function displayName(
+  ref: AgentRef,
+  isOwn: boolean,
+  blind: boolean,
+  anonymousNumbers: ReadonlyMap<string, number>,
+): string {
+  if (ref.kind === 'builtin-naive') {
+    return 'Naive baseline'
+  }
+  if (!blind) {
+    return `${ref.user_id}'s agent`
+  }
+  if (isOwn) {
+    return 'Your agent'
+  }
+  const number = anonymousNumbers.get(ref.submission_id)
+  return number === undefined ? 'Submitted agent' : `Submitted agent ${number}`
 }
 
 /** The author's prompt for a submitted agent, resolved by the owner's identity (survives resubmission). */

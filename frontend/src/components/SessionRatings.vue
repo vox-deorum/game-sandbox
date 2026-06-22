@@ -9,10 +9,10 @@
   - The built-in Naive baseline gets a normal control (it has no owner).
   - A closed play window is read-only: prior ratings show, but no save control is offered.
 
-  The two prompts that guide the 1-5 scores arrive in the read payload, so no second request is needed.
-  The operator's season prompt applies to every agent, so it renders once above the list. The agent
-  author's own prompt applies to only that agent, so it renders next to it. The Naive baseline has no
-  author, so only the season prompt applies to it.
+  The response also carries viewer-appropriate names and both prompts, so no second request or local
+  identity reconstruction is needed. Season instructions render once above the list; an author's
+  instructions render only beside that agent. The card enters after termination with a short
+  expanding downward reveal, making the new post-session action visible above the canvas.
 -->
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
@@ -40,14 +40,6 @@ const error = ref<string | null>(null)
 /** The stable wire key for an agent, matching the backend's, so a selection maps to one agent. */
 function wireKey(agent: AgentRefWire): string {
   return agent.kind === 'submission' ? `submission:${agent.submission_id}` : 'builtin-naive'
-}
-
-/** A label for an agent in the panel. The wire form carries no display name, so keep it generic. */
-function agentLabel(agent: RateableView): string {
-  if (agent.agent.kind === 'builtin-naive') {
-    return 'Naive baseline'
-  }
-  return agent.is_own ? 'Your agent' : 'Submitted agent'
 }
 
 type RateableView = SessionRatings['agents'][number]
@@ -136,60 +128,87 @@ function errorMessage(reason: 'play_closed' | 'not_rateable' | 'not_finished' | 
 </script>
 
 <template>
-  <UiCard v-if="agents.length > 0" class="ratings">
-    <h2 class="ratings-title">Rate the agents</h2>
-    <p v-if="ratings?.read_only" class="ratings-closed">
-      Rating for this round has closed. Your previous ratings are shown below.
-    </p>
+  <Transition name="ratings-reveal">
+    <div v-if="agents.length > 0" class="ratings-reveal" data-testid="ratings-reveal">
+      <div class="ratings-reveal-inner">
+        <UiCard class="ratings">
+          <h2 class="ratings-title">Rate the agents</h2>
+          <p v-if="ratings?.read_only" class="ratings-closed">
+            Rating for this round has closed. Your previous ratings are shown below.
+          </p>
 
-    <!-- The operator's season prompt applies to every agent, so it shows once for the panel. -->
-    <p v-if="ratings?.season_prompt" class="prompt">
-      <span class="prompt-from">From the operator:</span> {{ ratings.season_prompt }}
-    </p>
+          <!-- The season instructions apply to every agent, so they show once for the panel. -->
+          <p v-if="ratings?.season_prompt" class="prompt">
+            <span class="prompt-from">Season instructions:</span> {{ ratings.season_prompt }}
+          </p>
 
-    <ul class="agent-list">
-      <li v-for="agent in agents" :key="wireKey(agent.agent)" class="agent">
-        <div class="agent-head">
-          <span class="agent-name">{{ agentLabel(agent) }}</span>
-          <!-- The caller's own agent is shown for context but carries no control (the exclusion). -->
-          <span v-if="agent.is_own" class="agent-own">You can't rate your own agent.</span>
-          <div
-            v-else
-            class="score-group"
-            role="radiogroup"
-            :aria-label="`Rate ${agentLabel(agent)} from 1 to 5`"
-          >
-            <UiButton
-              v-for="score in SCORES"
-              :key="score"
-              size="tight"
-              :variant="selectionFor(agent.agent) === score ? 'primary' : 'secondary'"
-              :disabled="ratings?.read_only"
-              :aria-pressed="selectionFor(agent.agent) === score"
-              @click="select(agent.agent, score)"
-            >
-              {{ score }}
-            </UiButton>
+          <ul class="agent-list">
+            <li v-for="agent in agents" :key="wireKey(agent.agent)" class="agent">
+              <div class="agent-head">
+                <span class="agent-name">{{ agent.display_name }}</span>
+                <!-- The caller's own agent is shown for context but carries no control. -->
+                <span v-if="agent.is_own" class="agent-own">You can't rate your own agent.</span>
+                <div
+                  v-else
+                  class="score-group"
+                  role="radiogroup"
+                  :aria-label="`Rate ${agent.display_name} from 1 to 5`"
+                >
+                  <UiButton
+                    v-for="score in SCORES"
+                    :key="score"
+                    size="tight"
+                    :variant="selectionFor(agent.agent) === score ? 'primary' : 'secondary'"
+                    :disabled="ratings?.read_only"
+                    :aria-pressed="selectionFor(agent.agent) === score"
+                    @click="select(agent.agent, score)"
+                  >
+                    {{ score }}
+                  </UiButton>
+                </div>
+              </div>
+
+              <p v-if="agent.author_prompt" class="prompt">
+                <span class="prompt-from">Agent instructions:</span> {{ agent.author_prompt }}
+              </p>
+            </li>
+          </ul>
+
+          <div v-if="!ratings?.read_only" class="ratings-actions">
+            <UiButton :loading="saving" :disabled="!hasSelection" @click="submit">Save ratings</UiButton>
+            <span v-if="saved" class="ratings-saved" role="status">Saved ✓</span>
+            <span v-if="error" class="ratings-error" role="alert">{{ error }}</span>
           </div>
-        </div>
-
-        <p v-if="agent.author_prompt" class="prompt">
-          <span class="prompt-from">From the author:</span> {{ agent.author_prompt }}
-        </p>
-      </li>
-    </ul>
-
-    <div v-if="!ratings?.read_only" class="ratings-actions">
-      <UiButton :loading="saving" :disabled="!hasSelection" @click="submit">Save ratings</UiButton>
-      <span v-if="saved" class="ratings-saved" role="status">Saved ✓</span>
-      <span v-if="error" class="ratings-error" role="alert">{{ error }}</span>
+        </UiCard>
+      </div>
     </div>
-  </UiCard>
+  </Transition>
 </template>
 
 <style scoped>
+.ratings-reveal {
+  display: grid;
+  grid-template-rows: 1fr;
+  margin-bottom: var(--space-4);
+  transition:
+    grid-template-rows var(--motion-base) var(--ease-out),
+    opacity var(--motion-base) var(--ease-out),
+    transform var(--motion-base) var(--ease-out);
+}
+
+.ratings-reveal-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.ratings-reveal-enter-from {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transform: translateY(calc(var(--space-3) * -1));
+}
+
 .ratings {
-  margin-top: var(--space-4);
+  width: 100%;
 }
 
 .ratings-title {

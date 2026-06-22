@@ -23,6 +23,7 @@ import {
   getEnvironments,
   getRecording,
   getSession,
+  listSeasons,
   listRecordings,
   type SessionRow,
 } from '../api/client.js'
@@ -52,6 +53,7 @@ const meta = ref<EnvironmentMeta | null>(null)
 const loadError = ref(false)
 const hostEl = ref<HTMLElement | null>(null)
 const decisions = ref<DecisionEntry[]>([])
+const seasonPlayable = ref(false)
 // The recording header carries per-slot attribution (`players`); retained to show who played.
 const header = ref<RecordingHeader | null>(null)
 
@@ -64,6 +66,11 @@ const controlledSlots = computed<string[]>(() =>
     : [],
 )
 const recordingId = computed(() => row.value?.recording_id ?? null)
+// Fail closed: anyone not confirmed an operator (including an unresolved identity) sees the blind
+// attribution while the season is playable.
+const blindAttribution = computed(
+  () => seasonPlayable.value && me.me?.is_operator !== true,
+)
 
 // The renderer (shared with replay) forwards the owner's live input. The socket owns the chrome state
 // and hands recording frames back here to draw and log. The two reference each other through stable
@@ -152,8 +159,14 @@ onMounted(async () => {
   if (fetched.status === 'ended') {
     endReason.value = fetched.termination_reason
   }
-  meta.value =
-    (await getEnvironments().catch(() => [])).find((e) => e.env_id === fetched.env_id) ?? null
+  const [environments, seasons] = await Promise.all([
+    getEnvironments().catch(() => []),
+    listSeasons(fetched.env_id).catch(() => []),
+  ])
+  meta.value = environments.find((e) => e.env_id === fetched.env_id) ?? null
+  seasonPlayable.value =
+    fetched.season_id !== null &&
+    seasons.some((season) => season.id === fetched.season_id && season.play_status === 'open')
   if (meta.value === null) {
     noRenderer.value = true
   }
@@ -253,7 +266,14 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
       {{ pinError }}
     </UiEmptyState>
 
-    <PlayerAttribution :players="header?.players" />
+    <PlayerAttribution
+      :players="header?.players"
+      :blind="blindAttribution"
+      :viewer-id="me.me?.user_id"
+    />
+
+    <!-- End-of-session feedback appears only after termination, immediately above the game stage. -->
+    <SessionRatings v-if="status === 'ended'" :session-id="id" />
 
     <div class="stage" :class="logBeside ? 'beside' : 'below'">
       <section class="stage-canvas" aria-label="Environment">
@@ -286,9 +306,6 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
       </details>
     </div>
 
-    <!-- End-of-session feedback: rate each agent the finished session involved. The panel reads its
-         own rateable set and renders nothing for sessions that cannot be rated. -->
-    <SessionRatings v-if="status === 'ended'" :session-id="id" />
   </section>
 </template>
 

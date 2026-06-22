@@ -10,7 +10,16 @@ import { computed } from 'vue'
 
 import { formatSlot } from '../lib/format.js'
 
-const props = defineProps<{ players?: RecordingHeader['players'] }>()
+const props = withDefaults(
+  defineProps<{
+    players?: RecordingHeader['players']
+    /** Hide submitted-agent ownership while a non-operator views a playable season. */
+    blind?: boolean
+    /** Lets a blind viewer still recognize their own submitted agent. */
+    viewerId?: string
+  }>(),
+  { players: undefined, blind: false, viewerId: undefined },
+)
 
 const items = computed(() => {
   const players = props.players
@@ -19,7 +28,14 @@ const items = computed(() => {
   }
   return Object.entries(players).map(([slot, player]) => ({
     slot,
-    text: player.kind === 'human' ? `Human: ${player.user ?? player.label}` : player.label,
+    text:
+      player.kind === 'human'
+        ? `Human: ${player.user ?? player.label}`
+        : props.blind && player.submission_id !== undefined
+          ? player.user === props.viewerId
+            ? 'Your agent'
+            : 'Submitted agent'
+          : player.label,
   }))
 })
 </script>

@@ -1,9 +1,10 @@
 <!--
   The environment's Replays tab: the readable recordings for this environment as a sortable table.
   The backend listing is open to everyone (read-only) and filtered to this environment, newest first;
-  this page resolves each replay's season label from the environment's season list and lets the viewer
-  re-sort client-side. A row links to its `/replays/:id` viewer; the viewer's own pinned recording
-  carries a text "Pinned" badge, so the pin signal is never a bare glyph (the accessibility baseline).
+  this page resolves each replay's season label and play state from the environment's season list and
+  lets the viewer re-sort client-side. Submitted-agent attribution is masked for non-operators while
+  that season remains playable. A row links to its `/replays/:id` viewer; the viewer's own pinned
+  recording carries a text "Pinned" badge, so the pin signal is never a bare glyph.
 -->
 <script setup lang="ts">
 import type { RecordingHeader } from '@game-sandbox/schema'
@@ -27,8 +28,8 @@ const me = useMe()
 const envId = computed(() => String(route.params.envId))
 
 const replays = ref<RecordingSummary[] | null>(null)
-/** season id → display label, used to render the Season column. */
-const seasonLabels = ref<Map<string, string>>(new Map())
+/** season id → public season facts, used for labels and playable-season anonymity. */
+const seasonsById = ref<Map<string, PublicSeasonView>>(new Map())
 
 /** The sortable columns and the current sort. Default newest-first, matching the backend order. */
 type SortKey = 'id' | 'owner' | 'season' | 'outcome' | 'created'
@@ -39,15 +40,23 @@ function seasonLabel(season: PublicSeasonView): string {
 }
 
 /** A compact one-line summary of who played, read from the recording header's `players` map. */
-function playersSummary(header: RecordingHeader): string {
+function playersSummary(replay: RecordingSummary): string {
+  const { header } = replay
   const players = header.players
   if (players === undefined) {
     return '—'
   }
+  const blind = isBlindReplay(replay)
   const parts = Object.entries(players).map(([slot, player]) =>
     player.kind === 'human'
       ? `${formatSlotIndex(slot)}: Human (${player.user ?? player.label})`
-      : `${formatSlotIndex(slot)}: ${player.label}`,
+      : `${formatSlotIndex(slot)}: ${
+          blind && player.submission_id !== undefined
+            ? player.user === me.me?.user_id
+              ? 'Your agent'
+              : 'Submitted agent'
+            : player.label
+        }`,
   )
   return parts.length > 0 ? parts.join(', ') : '—'
 }
@@ -60,7 +69,25 @@ function displayId(replay: RecordingSummary): string {
 }
 
 function seasonText(replay: RecordingSummary): string {
-  return replay.season_id !== null ? (seasonLabels.value.get(replay.season_id) ?? '—') : '—'
+  if (replay.season_id === null) {
+    return '—'
+  }
+  const season = seasonsById.value.get(replay.season_id)
+  return season === undefined ? '—' : seasonLabel(season)
+}
+
+function hasSubmittedAgent(replay: RecordingSummary): boolean {
+  return Object.values(replay.header.players ?? {}).some(
+    (player) => player.kind === 'agent' && player.submission_id !== undefined,
+  )
+}
+
+function isBlindReplay(replay: RecordingSummary): boolean {
+  // Fail closed: only a confirmed operator is exempt; an unresolved identity stays blind.
+  if (me.me?.is_operator === true || replay.season_id === null || !hasSubmittedAgent(replay)) {
+    return false
+  }
+  return seasonsById.value.get(replay.season_id)?.play_status === 'open'
 }
 
 /** Show a pin badge only on the viewer's own pinned recordings. */
@@ -74,7 +101,7 @@ function sortValue(replay: RecordingSummary, key: SortKey): string {
     case 'id':
       return replay.id
     case 'owner':
-      return replay.user_id ?? ''
+      return isBlindReplay(replay) ? '' : (replay.user_id ?? '')
     case 'season':
       return seasonText(replay)
     case 'outcome':
@@ -113,11 +140,14 @@ function ariaSort(key: SortKey): 'ascending' | 'descending' | 'none' {
 
 async function load(id: string): Promise<void> {
   replays.value = null
+  await me.whenSettled()
   const [recordings, seasons] = await Promise.all([
     listRecordings({ env: id }).catch(() => [] as RecordingSummary[]),
-    listSeasons(id, { includeUnreleased: true }).catch(() => [] as PublicSeasonView[]),
+    listSeasons(id, { includeUnreleased: me.me?.is_operator === true }).catch(
+      () => [] as PublicSeasonView[],
+    ),
   ])
-  seasonLabels.value = new Map(seasons.map((s) => [s.id, seasonLabel(s)]))
+  seasonsById.value = new Map(seasons.map((season) => [season.id, season]))
   replays.value = recordings
 }
 
@@ -157,8 +187,8 @@ watch(envId, (id) => void load(id), { immediate: true })
             <RouterLink class="replay-id" :to="`/replays/${replay.id}`">{{ displayId(replay) }}</RouterLink>
             <UiBadge v-if="showsPin(replay)" variant="accent">Pinned</UiBadge>
           </td>
-          <td class="replay-players">{{ playersSummary(replay.header) }}</td>
-          <td>{{ replay.user_id ?? '—' }}</td>
+          <td class="replay-players">{{ playersSummary(replay) }}</td>
+          <td>{{ isBlindReplay(replay) ? '—' : (replay.user_id ?? '—') }}</td>
           <td>{{ seasonText(replay) }}</td>
           <td>{{ reasonText(replay.termination_reason) }}</td>
           <td>{{ formatDateOnly(replay.created_at) ?? '—' }}</td>

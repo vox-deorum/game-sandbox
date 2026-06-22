@@ -25,7 +25,9 @@ The scope is deliberately the **current single-agent environment**: Flappy Bird 
 
 ## Watch Submitted Agent Flow
 
-Wire the watch flow for Flappy Bird: a picker lists the environment's active `ready` submitted agents, the viewer chooses one, the orchestrator runs it in the single slot, and the run streams to the renderer with no input controls. This is the same watch presentation Stage 4 built for the built-in agent, now sourced from a submission. The picker reads the submission list (step 5's read endpoint) filtered to active `ready` rows for the environment's open season, so superseded submissions remain profile history rather than ordinary watch choices. The existing scripted watch button can keep offering the built-in agent as a development option, but the submitted-agent path is the participant-facing one this stage proves.
+Wire the watch flow for Flappy Bird: a picker lists the environment's active `ready` submitted agents, the viewer chooses one, the orchestrator runs it in the single slot, and the run streams to the renderer with no input controls. The picker reads the viewer-specific watch-agent endpoint for the play-open season, so superseded submissions remain profile history and non-operators do not receive owner or source details. Submitted agents are numbered for regular users. An unrated agent is a primary **Rate** action; a rated agent and the viewer's own agent are secondary **Watch again** actions. Operators retain identified rows. The built-in Naive agent remains first with a normal **Watch** action.
+
+Blind feedback extends through the playable session and its replay surfaces. While `play_status` is `open`, non-operators see submitted-agent attribution as `Submitted agent` or `Your agent`; the recording header remains canonical. Once play closes, live historical sessions and replays render the stored identified attribution again. Agent profiles and released leaderboards remain identified throughout.
 
 ## Agent profile page
 

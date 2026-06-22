@@ -21,7 +21,7 @@ import type { RecordingsStore } from './recordings.js'
 import type { Retention } from './retention.js'
 import type { ClientSocket } from './session/live-session.js'
 import { type Orchestrator, OrchestratorError } from './session/orchestrator.js'
-import { type Storage, SubmissionConflictError, type SubmissionStatus } from './storage/index.js'
+import { type Storage, SubmissionConflictError } from './storage/index.js'
 import type { SourceInput, SubmissionSource } from './submission/source/index.js'
 import type { SubmissionEnqueuer } from './submission/worker.js'
 import type { WorkflowRunner } from './workflow/runner.js'
@@ -320,27 +320,62 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   )
 
   // One submission joined with its ordered per-stage validation log, so a poll is a single request.
+  // Submission ids appear in the anonymous watch-list contract, so this route must not turn one of
+  // those ids back into an owner/source lookup for an ordinary viewer.
   app.get<{ Params: { id: string } }>('/api/submissions/:id', async (request, reply) => {
     const submission = await deps.storage.getSubmission(request.params.id)
     if (submission === undefined) {
       return reply.code(404).send({ error: 'no such submission' })
     }
+    const userId = resolveUserId(request.headers)
+    if (submission.user_id !== userId && !isOperator(userId, deps.operatorAllowlist)) {
+      return reply.code(403).send({ error: 'submission access denied', code: 'forbidden' })
+    }
     const checks = await deps.storage.listSubmissionChecks(submission.id)
     return { ...submission, checks }
   })
 
-  // Active submissions for an environment's play-open season, optionally narrowed by status. The
-  // submission window may point at a different round, so it must not drive public watch choices.
-  app.get<{ Params: { envId: string }; Querystring: { status?: string } }>(
-    '/api/environments/:envId/submissions',
+  // Viewer-specific watch choices for the play-open season. Regular viewers receive only an
+  // anonymous sequence and their rating state; operators additionally receive owner/source details.
+  // The submission window may point at another round, so it never drives this list.
+  app.get<{ Params: { envId: string } }>(
+    '/api/environments/:envId/watch-agents',
     async (request) => {
       const season = await deps.storage.getPublicPlaySeason(request.params.envId)
       if (season === undefined) {
         return []
       }
-      return deps.storage.listActiveSubmissionsBySeason(
-        season.id,
-        request.query.status as SubmissionStatus | undefined,
+      const userId = resolveUserId(request.headers)
+      const operator = isOperator(userId, deps.operatorAllowlist)
+      const submissions = await deps.storage.listActiveSubmissionsBySeason(season.id, 'ready')
+      return Promise.all(
+        submissions.map(async (submission, index) => {
+          const ratingStatus =
+            submission.user_id === userId
+              ? 'own'
+              : (await deps.storage.getRating(season.id, userId, {
+                    kind: 'submission',
+                    submission_id: submission.id,
+                    user_id: submission.user_id,
+                  })) === undefined
+                ? 'unrated'
+                : 'rated'
+          return {
+            submission_id: submission.id,
+            anonymous_number: index + 1,
+            rating_status: ratingStatus,
+            ...(operator
+              ? {
+                  owner_id: submission.user_id,
+                  source_kind: submission.source_kind,
+                  repo_url: submission.repo_url,
+                  commit_sha: submission.commit_sha,
+                  local_path: submission.local_path,
+                  ref: submission.ref,
+                }
+              : {}),
+          }
+        }),
       )
     },
   )
@@ -399,6 +434,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     storage: deps.storage,
     recordings: deps.recordings,
     allowlist: deps.allowlist,
+    operatorAllowlist: deps.operatorAllowlist,
   })
 
   // Serve the built frontend from the same origin in production so the whole stack is one process.

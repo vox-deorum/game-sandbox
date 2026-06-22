@@ -20,6 +20,7 @@ import {
   getEnvironments,
   getRecording,
   listRecordings,
+  listSeasons,
   type RecordingSummary,
 } from '../api/client.js'
 import DecisionLog, { type DecisionEntry } from '../components/DecisionLog.vue'
@@ -52,6 +53,7 @@ const finalSummary = ref<RunSummary>({ score: null, ticks: null })
 const listingEntry = ref<RecordingSummary | null>(null)
 const owned = ref(false)
 const decisions = ref<DecisionEntry[]>([])
+const seasonPlayable = ref(false)
 
 const hostEl = ref<HTMLElement | null>(null)
 
@@ -61,6 +63,11 @@ const { noRenderer, aspectRatio, mount: mountRenderer, render: renderState } = u
 })
 const { state: replayState, transport, init: initTransport, onKeydown } = useReplayTransport()
 const { pinned, busy: pinBusy, error: pinError, toggle: togglePin } = usePinning(id)
+// Fail closed: anyone not confirmed an operator (including an unresolved identity) sees the blind
+// attribution while the season is playable.
+const blindAttribution = computed(
+  () => seasonPlayable.value && me.me?.is_operator !== true,
+)
 
 // The decision log sits beside a portrait canvas and below a landscape one (the same rule as live).
 const logBeside = computed(() => aspectRatio.value !== null && aspectRatio.value < 1)
@@ -87,7 +94,7 @@ const metadataItems = computed(() => [
   { label: 'Seed', value: header.value?.seed },
   { label: 'Final score', value: finalSummary.value.score },
   { label: 'Ticks', value: finalSummary.value.ticks },
-  { label: 'Owner', value: listingEntry.value?.user_id },
+  { label: 'Owner', value: blindAttribution.value ? null : listingEntry.value?.user_id },
   { label: 'Created', value: formatDate(listingEntry.value?.created_at) },
 ])
 
@@ -153,9 +160,15 @@ onMounted(async () => {
 
   // Determine ownership and the current pin state from the merged listing.
   await me.whenSettled()
-  const listing = await listRecordings({ env: parsed.header.environment }).catch(() => [])
+  const [listing, seasons] = await Promise.all([
+    listRecordings({ env: parsed.header.environment }).catch(() => []),
+    listSeasons(parsed.header.environment).catch(() => []),
+  ])
   const entry = listing.find((r) => r.id === id)
   listingEntry.value = entry ?? null
+  seasonPlayable.value =
+    entry?.season_id != null &&
+    seasons.some((season) => season.id === entry.season_id && season.play_status === 'open')
   if (entry !== undefined && me.me?.user_id !== undefined && entry.user_id === me.me.user_id) {
     owned.value = true
     pinned.value = entry.pinned
@@ -179,7 +192,11 @@ onMounted(async () => {
       </div>
     </header>
 
-    <PlayerAttribution :players="header?.players" />
+    <PlayerAttribution
+      :players="header?.players"
+      :blind="blindAttribution"
+      :viewer-id="me.me?.user_id"
+    />
 
     <div v-if="transport !== null" class="replay-controls">
       <UiButton

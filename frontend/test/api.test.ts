@@ -12,6 +12,7 @@ import {
   getSeasonLeaderboards,
   getSessionRatings,
   listSeasons,
+  listWatchAgents,
   openSubmissions,
   pinRecording,
   type SeasonConfig,
@@ -133,6 +134,19 @@ describe('api client', () => {
     vi.unstubAllGlobals()
     stubFetch(async () => jsonResponse({ code: 'session_not_rateable' }, 409))
     expect(await getSessionRatings('s1')).toEqual({ ok: false, reason: 'not_rateable' })
+  })
+
+  it('reads the viewer-specific anonymous watch-agent list', async () => {
+    const payload = [
+      {
+        submission_id: 'sub-1',
+        anonymous_number: 1,
+        rating_status: 'unrated',
+      },
+    ]
+    const fetchMock = stubFetch(async () => jsonResponse(payload))
+    expect(await listWatchAgents('flappy bird')).toEqual(payload)
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/environments/flappy%20bird/watch-agents')
   })
 
   it('posts the ratings batch and maps a play-closed conflict', async () => {

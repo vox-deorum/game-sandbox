@@ -43,6 +43,8 @@ The built-in **Naive agent** is always the first watch option. Ready submissions
 
 Replays are public and read-only. They belong to an environment, while a season column records the season associated with the producing session. Owners may pin their own recordings.
 
+Human feedback is blind while a season's play window is open. Non-operators see numbered submitted agents in the watch list, without owner profiles or source details. An unrated agent is presented as a **Rate** action; an agent the viewer already rated, or the viewer's own agent, is a **Watch again** action. Operators retain the identified view. Submitted-agent attribution stays anonymous for non-operators on the live session, post-session rating panel, replay list, and replay viewer until play closes. Released leaderboards and agent profiles remain identified.
+
 ## Submitting an agent
 
 The **My Submissions** tab shows the form when a season accepts submissions. The participant enters a repository URL and optional branch, tag, or commit.
@@ -79,7 +81,7 @@ The interface prevents:
 
 The built-in baseline may be rated in a mixed session. Ratings affect only the human-feedback board.
 
-The rating view may show the operator's season prompt and the agent author's prompt. Both guide one score. The author's prompt is profile metadata, not part of the pinned submission.
+The rating panel appears only after the session ends, immediately above the game stage. It enters with a short downward reveal that uses the shared motion tokens. The rating view may show the operator's season instructions once and the agent author's instructions beside that agent. Both guide one score. The author's prompt is profile metadata, not part of the pinned submission.
 
 ## Identity: GitHub OAuth
 

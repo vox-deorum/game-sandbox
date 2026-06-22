@@ -33,6 +33,7 @@ vi.mock('../src/api/client.js', () => ({
   getRecording: vi.fn(),
   getEnvironments: vi.fn(async () => [META]),
   listRecordings: vi.fn(async () => []),
+  listSeasons: vi.fn(async () => []),
   getMe: vi.fn(),
   pinRecording: vi.fn(async () => ({ ok: true })),
   unpinRecording: vi.fn(async () => ({ ok: true })),

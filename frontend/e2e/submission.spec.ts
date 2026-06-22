@@ -2,8 +2,20 @@ import { fileURLToPath } from 'node:url'
 
 import { expect, test } from '@playwright/test'
 
-import { submitLocal, waitForTerminal } from './support/api.js'
-import { ENV_ID, OWNERS } from './support/names.js'
+import {
+  activeWindows,
+  setAuthorPrompt,
+  setSeasonRatingPrompt,
+  submitLocal,
+  waitForTerminal,
+} from './support/api.js'
+import {
+  AUTHOR_RATING_PROMPT,
+  ENV_ID,
+  JUDGES,
+  OPERATOR_RATING_PROMPT,
+  OWNERS,
+} from './support/names.js'
 
 /**
  * The submission journey (Stage 5). It needs a Docker daemon — building an overlay and running the
@@ -21,7 +33,7 @@ import { ENV_ID, OWNERS } from './support/names.js'
  * Both submit into whichever season currently holds the open submission window (the seeded Playground).
  */
 
-const GOOD_FIXTURE = fileURLToPath(new URL('./fixtures/submission/good', import.meta.url))
+const GOOD_FIXTURE = fileURLToPath(new URL('./fixtures/submission/glider', import.meta.url))
 const BAD_CLASS_FIXTURE = fileURLToPath(new URL('./fixtures/submission/bad-class', import.meta.url))
 
 test('a submitted agent validates to ready and runs in a watch session', async ({
@@ -35,6 +47,10 @@ test('a submitted agent validates to ready and runs in a watch session', async (
   const id = await submitLocal(request, owner, GOOD_FIXTURE)
   const row = await waitForTerminal(request, id)
   expect(row.status, JSON.stringify(row.checks)).toBe('ready')
+  const windows = await activeWindows(request)
+  expect(windows.playSeasonId).not.toBeNull()
+  await setSeasonRatingPrompt(request, windows.playSeasonId as string, OPERATOR_RATING_PROMPT)
+  await setAuthorPrompt(request, windows.playSeasonId as string, owner, AUTHOR_RATING_PROMPT)
 
   // The owner's profile shows every stage of the timeline passed, the in-browser view of "ready".
   await page.goto(`/environments/${ENV_ID}/agents/${owner}`)
@@ -42,24 +58,52 @@ test('a submitted agent validates to ready and runs in a watch session', async (
     await expect(page.getByTestId(`stage-${stage}`)).toContainText('passed')
   }
 
-  // The watch picker lists the ready agent; the allowlisted dev user can watch it. Scope to the
-  // agent's row so its Watch button is not confused with the pinned built-in Naive agent's.
+  // Browse and rate as an allowlisted regular user, not the dev operator, so the playable-season
+  // anonymity contract is exercised end to end.
+  await page.addInitScript((user) => {
+    window.localStorage.setItem('sandbox-user', user)
+  }, JUDGES[1])
+
+  // The watch picker lists the ready agent anonymously and highlights that it still needs a rating.
   await page.goto(`/environments/${ENV_ID}`)
-  const row0 = page.locator('.agent-row').filter({ hasText: owner })
+  const row0 = page.locator('.agent-row').filter({ hasText: 'Submitted agent 1' })
   await expect(row0).toBeVisible()
-  await row0.getByRole('button', { name: 'Watch' }).click()
+  await expect(row0.getByText('Not rated')).toBeVisible()
+  await expect(row0.getByText(owner)).toHaveCount(0)
+  await expect(row0.locator('code')).toHaveCount(0)
+  await row0.getByRole('button', { name: 'Rate' }).click()
 
   // A real scripted session launches with the built overlay and streams into the renderer.
   await expect(page).toHaveURL(/\/sessions\//)
   await expect(page.locator('canvas.renderer-canvas')).toBeVisible()
+  await page.getByRole('button', { name: 'Pause' }).click()
+  await expect(page.locator('.overlay-banner')).toHaveText('Paused')
+  await expect(page.getByText('Rate the agents')).toHaveCount(0)
 
-  // The no-flap agent ends the game on its own; either way the session lands in its terminal state,
-  // which the bar marks by surfacing the replay link. Stop a still-running one first.
+  // Stop the paused run, then the rating panel should reveal immediately above the canvas.
   const stop = page.getByRole('button', { name: 'Stop' })
-  if (await stop.isVisible()) {
-    await stop.click({ timeout: 5000 }).catch(() => {})
-  }
+  await stop.click()
   await expect(page.getByRole('link', { name: 'Open replay' })).toBeVisible()
+  const ratingsPanel = page.locator('.ratings-reveal')
+  await expect(ratingsPanel).toBeVisible()
+  await expect(ratingsPanel).toHaveCSS('transition-property', /grid-template-rows/)
+  await expect(ratingsPanel.getByText('Submitted agent 1')).toBeVisible()
+  await expect(ratingsPanel.getByText(OPERATOR_RATING_PROMPT)).toBeVisible()
+  await expect(ratingsPanel.getByText(AUTHOR_RATING_PROMPT)).toBeVisible()
+  const panelBox = await ratingsPanel.boundingBox()
+  const canvasBox = await page.locator('canvas.renderer-canvas').boundingBox()
+  expect(panelBox).not.toBeNull()
+  expect(canvasBox).not.toBeNull()
+  expect(panelBox?.y).toBeLessThan(canvasBox?.y ?? 0)
+
+  await ratingsPanel.getByRole('button', { name: '5', exact: true }).click()
+  await ratingsPanel.getByRole('button', { name: 'Save ratings' }).click()
+  await expect(ratingsPanel.getByText('Saved ✓')).toBeVisible()
+
+  await page.goto(`/environments/${ENV_ID}`)
+  const ratedRow = page.locator('.agent-row').filter({ hasText: 'Submitted agent 1' })
+  await expect(ratedRow.getByText('Rated')).toBeVisible()
+  await expect(ratedRow.getByRole('button', { name: 'Watch again' })).toBeVisible()
 })
 
 test('an agent that passes static but fails the load check shows the failed stage on its profile', async ({

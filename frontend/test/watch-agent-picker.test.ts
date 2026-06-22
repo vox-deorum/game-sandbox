@@ -1,36 +1,26 @@
 import { fireEvent, screen } from '@testing-library/vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { SubmissionSummary } from '../src/api/client.js'
+import type { WatchAgentSummary } from '../src/api/client.js'
 import { memoryRouter, renderWithMe } from './helpers/render.js'
 
 vi.mock('../src/api/client.js', () => ({
   getMe: vi.fn(),
-  listActiveSubmissions: vi.fn(),
+  listWatchAgents: vi.fn(),
   startSession: vi.fn(),
 }))
 
-import { getMe, listActiveSubmissions, startSession } from '../src/api/client.js'
+import { getMe, listWatchAgents, startSession } from '../src/api/client.js'
 import WatchAgentPicker from '../src/components/WatchAgentPicker.vue'
 
 const SessionStub = { template: '<div>session {{ $route.params.id }}</div>' }
 const ProfileStub = { template: '<div>profile {{ $route.params.ownerId }}</div>' }
 
-function summary(overrides: Partial<SubmissionSummary> = {}): SubmissionSummary {
+function summary(overrides: Partial<WatchAgentSummary> = {}): WatchAgentSummary {
   return {
-    id: 'sub1',
-    season_id: 'flappy_bird-iter-1',
-    env_id: 'flappy_bird',
-    user_id: 'eve',
-    source_kind: 'git',
-    repo_url: 'https://example.test/agent',
-    commit_sha: 'abcdef1234567890',
-    local_path: null,
-    ref: null,
-    status: 'ready',
-    reason: null,
-    created_at: '2026-06-14T00:00:00Z',
-    superseded_at: null,
+    submission_id: 'sub1',
+    anonymous_number: 1,
+    rating_status: 'unrated',
     ...overrides,
   }
 }
@@ -56,33 +46,29 @@ describe('WatchAgentPicker', () => {
     })
   })
 
-  it('requests only the active ready submissions and lists them', async () => {
-    vi.mocked(listActiveSubmissions).mockResolvedValue([summary()])
+  it('lists an anonymous unrated agent with a highlighted Rate action', async () => {
+    vi.mocked(listWatchAgents).mockResolvedValue([summary()])
     await renderPicker()
-    expect(await screen.findByText('eve')).toBeInTheDocument()
-    // The pinned commit is shown short; the picker asked for the ready set only.
-    expect(screen.getByText('abcdef1234')).toBeInTheDocument()
-    expect(vi.mocked(listActiveSubmissions)).toHaveBeenCalledWith('flappy_bird', {
-      status: 'ready',
-    })
+    expect(await screen.findByText('Submitted agent 1')).toBeInTheDocument()
+    expect(screen.getByText('Not rated')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Rate' })).toHaveClass('primary')
+    expect(vi.mocked(listWatchAgents)).toHaveBeenCalledWith('flappy_bird')
   })
 
   it('shows an empty state when no agent is ready', async () => {
-    vi.mocked(listActiveSubmissions).mockResolvedValue([])
+    vi.mocked(listWatchAgents).mockResolvedValue([])
     await renderPicker()
     expect(await screen.findByText(/No submitted agents are ready/)).toBeInTheDocument()
   })
 
   it('starts a submitted-agent watch run and navigates to the session', async () => {
-    vi.mocked(listActiveSubmissions).mockResolvedValue([summary()])
+    vi.mocked(listWatchAgents).mockResolvedValue([summary()])
     vi.mocked(startSession).mockResolvedValue({
       ok: true,
       session: { id: 'sess-9', wsPath: '/api/sessions/sess-9/ws' },
     })
     await renderPicker()
-    // The first Watch button is the pinned built-in row; the submitted agent's is the second.
-    const watchButtons = await screen.findAllByRole('button', { name: 'Watch' })
-    await fireEvent.click(watchButtons[1] as HTMLElement)
+    await fireEvent.click(await screen.findByRole('button', { name: 'Rate' }))
     expect(vi.mocked(startSession)).toHaveBeenCalledWith({
       envId: 'flappy_bird',
       mode: 'scripted',
@@ -92,7 +78,7 @@ describe('WatchAgentPicker', () => {
   })
 
   it('pins the built-in Naive agent and watches it with no submission', async () => {
-    vi.mocked(listActiveSubmissions).mockResolvedValue([])
+    vi.mocked(listWatchAgents).mockResolvedValue([])
     vi.mocked(startSession).mockResolvedValue({
       ok: true,
       session: { id: 'sess-naive', wsPath: '/api/sessions/sess-naive/ws' },
@@ -109,19 +95,48 @@ describe('WatchAgentPicker', () => {
     expect(await screen.findByText('session sess-naive')).toBeInTheDocument()
   })
 
-  it('hides the Watch action for a non-allowlisted viewer but still lists agents', async () => {
+  it('hides actions for a non-allowlisted viewer but still lists anonymous agents', async () => {
     vi.mocked(getMe).mockResolvedValue({ user_id: 'carol', allowlisted: false, is_operator: false })
-    vi.mocked(listActiveSubmissions).mockResolvedValue([summary()])
+    vi.mocked(listWatchAgents).mockResolvedValue([summary()])
     await renderPicker()
-    expect(await screen.findByText('eve')).toBeInTheDocument()
+    expect(await screen.findByText('Submitted agent 1')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Watch' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Rate' })).toBeNull()
     expect(screen.getByText(/limited to allowlisted users/)).toBeInTheDocument()
   })
 
-  it('links each agent to its owner profile', async () => {
-    vi.mocked(listActiveSubmissions).mockResolvedValue([summary()])
+  it('shows rated and owned agents as secondary Watch again actions', async () => {
+    vi.mocked(listWatchAgents).mockResolvedValue([
+      summary({ rating_status: 'rated' }),
+      summary({ submission_id: 'sub2', anonymous_number: 2, rating_status: 'own' }),
+    ])
+    await renderPicker()
+    expect(await screen.findByText('Rated')).toBeInTheDocument()
+    expect(screen.getByText('Your agent')).toBeInTheDocument()
+    const actions = screen.getAllByRole('button', { name: 'Watch again' })
+    expect(actions).toHaveLength(2)
+    for (const action of actions) {
+      expect(action).toHaveClass('secondary')
+    }
+  })
+
+  it('shows operator-only owner and source details with a profile link', async () => {
+    vi.mocked(getMe).mockResolvedValue({
+      user_id: 'dev-user',
+      allowlisted: true,
+      is_operator: true,
+    })
+    vi.mocked(listWatchAgents).mockResolvedValue([
+      summary({
+        owner_id: 'eve',
+        source_kind: 'git',
+        commit_sha: 'abcdef1234567890',
+        repo_url: 'https://example.test/agent',
+      }),
+    ])
     await renderPicker()
     const link = await screen.findByRole('link', { name: 'eve' })
     expect(link).toHaveAttribute('href', '/environments/flappy_bird/agents/eve')
+    expect(screen.getByText('abcdef1234')).toBeInTheDocument()
   })
 })

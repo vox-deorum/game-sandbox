@@ -365,6 +365,7 @@ describe('rating API', () => {
   it('reads effective ratings and both prompts per agent, Naive showing only the season prompt', async () => {
     const season = await playOpenSeason('Rate the overall fun')
     const subId = await submissionFor(season.id, 'alice')
+    await storage.updateSubmissionStatus(subId, 'ready')
     await storage.upsertAgentRatingPrompt(season.id, 'alice', 'Judge my dodging')
     const recId = await writeRecording('flappy_bird-h', {
       player_0: { kind: 'agent', label: "alice's agent", submission_id: subId },
@@ -392,6 +393,7 @@ describe('rating API', () => {
       read_only: boolean
       agents: Array<{
         agent: { kind: string; submission_id?: string }
+        display_name: string
         is_own: boolean
         author_prompt: string | null
         your_rating: number | null
@@ -403,12 +405,17 @@ describe('rating API', () => {
     expect(body.agents).toHaveLength(2)
     const submitted = body.agents.find((a) => a.agent.kind === 'submission')
     expect(submitted).toMatchObject({
+      display_name: 'Submitted agent 1',
       author_prompt: 'Judge my dodging',
       your_rating: 4,
       is_own: false,
     })
     const naive = body.agents.find((a) => a.agent.kind === 'builtin-naive')
-    expect(naive).toMatchObject({ author_prompt: null, your_rating: null })
+    expect(naive).toMatchObject({
+      display_name: 'Naive baseline',
+      author_prompt: null,
+      your_rating: null,
+    })
   })
 
   it('shows the user own submitted agent without offering a rating control', async () => {
@@ -424,9 +431,41 @@ describe('rating API', () => {
       url: `/api/sessions/${sessionId}/ratings`,
       headers: ALICE,
     })
-    const body = res.json() as { agents: Array<{ is_own: boolean; your_rating: number | null }> }
+    const body = res.json() as {
+      agents: Array<{ display_name: string; is_own: boolean; your_rating: number | null }>
+    }
+    expect(body.agents[0]?.display_name).toBe('Your agent')
     expect(body.agents[0]?.is_own).toBe(true)
     expect(body.agents[0]?.your_rating).toBeNull()
+  })
+
+  it('reveals submitted-agent names to operators and after public play closes', async () => {
+    const season = await playOpenSeason()
+    const subId = await submissionFor(season.id, 'alice')
+    await storage.updateSubmissionStatus(subId, 'ready')
+    const recId = await writeRecording('flappy_bird-names', {
+      player_0: { kind: 'agent', label: "alice's agent", submission_id: subId },
+    })
+    const sessionId = await seedSession({ seasonId: season.id, recordingId: recId })
+
+    const operator = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${sessionId}/ratings`,
+    })
+    expect(operator.json()).toMatchObject({
+      agents: [{ display_name: "alice's agent" }],
+    })
+
+    await storage.setPlayStatus(season.id, 'closed')
+    const regular = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${sessionId}/ratings`,
+      headers: BOB,
+    })
+    expect(regular.json()).toMatchObject({
+      read_only: true,
+      agents: [{ display_name: "alice's agent" }],
+    })
   })
 
   it('returns no rateable agents for a pure Naive watch recording', async () => {
