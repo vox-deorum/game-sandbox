@@ -343,6 +343,22 @@ describe('public leaderboard API', () => {
         recording_id: 'visible-recording',
       },
     ])
+    // Two ratings (mean 4) so the profile can show the live human-rating aggregate. Raters must be
+    // someone other than the agent's owner (alice), who cannot rate their own agent.
+    await storage.upsertRating({
+      season_id: released.id,
+      env_id: ENV_ID,
+      rater_user_id: 'bob',
+      agent: agentRef(visible),
+      score: 5,
+    })
+    await storage.upsertRating({
+      season_id: released.id,
+      env_id: ENV_ID,
+      rater_user_id: 'carol',
+      agent: agentRef(visible),
+      score: 3,
+    })
 
     const res = await app.inject({
       method: 'GET',
@@ -350,13 +366,23 @@ describe('public leaderboard API', () => {
     })
     expect(res.statusCode).toBe(200)
     const body = res.json() as {
-      placements: Array<{ season_id: string; mean_score: number; recording_id: string | null }>
+      placements: Array<{
+        season_id: string
+        mean_score: number
+        recording_id: string | null
+        season_label: string | null
+        human_mean: number | null
+        human_count: number
+      }>
     }
     expect(body.placements).toEqual([
       expect.objectContaining({
         season_id: released.id,
         mean_score: 7,
         recording_id: 'visible-recording',
+        season_label: null,
+        human_mean: 4,
+        human_count: 2,
       }),
     ])
   })

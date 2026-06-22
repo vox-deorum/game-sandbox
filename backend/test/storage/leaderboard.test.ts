@@ -442,12 +442,56 @@ describe('leaderboard storage on :memory:', () => {
       })
     }
 
-    const board = await storage.getHumanBoard(season.id)
+    // No completed run, so the automated board (the replay source) is empty and every replay is null.
+    const board = await storage.getHumanBoard(season.id, await storage.getAutomatedBoard(season.id))
     expect(board).toEqual([
-      { agent: NAIVE, mean: 5, count: 3, rank: 1 },
-      { agent: ranked, mean: 4, count: 3, rank: 2 },
-      { agent: thin, mean: 5, count: 2, rank: null },
+      { agent: NAIVE, mean: 5, count: 3, rank: 1, recording_id: null },
+      { agent: ranked, mean: 4, count: 3, rank: 2, recording_id: null },
+      { agent: thin, mean: 5, count: 2, rank: null, recording_id: null },
     ])
+  })
+
+  it('getHumanBoard carries the automated board representative replay per agent', async () => {
+    const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
+    const games: ScheduledGameInput[] = [
+      { match_index: 0, game_index: 0, seed: 1, slots: [{ kind: 'builtin-naive' }] },
+      { match_index: 0, game_index: 1, seed: 2, slots: [{ kind: 'builtin-naive' }] },
+    ]
+    const run = await storage.createRunWithSchedule(season.id, 'dev-user', [], games)
+    const [g0, g1] = await storage.listRunGames(run.id)
+    await storage.attachRunGameRecording(defined(g0).id, 'rec-lo')
+    await storage.attachRunGameRecording(defined(g1).id, 'rec-hi')
+
+    const rated: AgentRef = { kind: 'submission', submission_id: 's1', user_id: 'alice' }
+    // The agent's best game (score 20) is g1, so its representative replay is rec-hi.
+    for (const [gameId, score] of [
+      [defined(g0).id, 10],
+      [defined(g1).id, 20],
+    ] as const) {
+      await storage.recordGameResult({
+        game_id: gameId,
+        slot_index: 0,
+        agent: rated,
+        episode_score: score,
+        agent_compute_ms_total: 100,
+        acted_tick_count: 10,
+        failed: false,
+      })
+    }
+    await storage.setRunStatus(run.id, 'completed')
+
+    for (const rater of ['u1', 'u2', 'u3']) {
+      await storage.upsertRating({
+        season_id: season.id,
+        env_id: ENV,
+        rater_user_id: rater,
+        agent: rated,
+        score: 4,
+      })
+    }
+
+    const board = await storage.getHumanBoard(season.id, await storage.getAutomatedBoard(season.id))
+    expect(board).toEqual([{ agent: rated, mean: 4, count: 3, rank: 1, recording_id: 'rec-hi' }])
   })
 
   // --- rating prompts ---

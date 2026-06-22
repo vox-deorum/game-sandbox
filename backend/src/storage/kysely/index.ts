@@ -311,8 +311,8 @@ export class KyselyStorage implements Storage {
   aggregateRatingsByAgent(seasonId: string): Promise<RatingAggregate[]> {
     return ratings.aggregateRatingsByAgent(this.db, seasonId)
   }
-  getHumanBoard(seasonId: string): Promise<HumanBoardRow[]> {
-    return boards.getHumanBoard(this.db, seasonId)
+  getHumanBoard(seasonId: string, automated: AutomatedBoardRow[]): Promise<HumanBoardRow[]> {
+    return boards.getHumanBoard(this.db, seasonId, automated)
   }
   upsertAgentRatingPrompt(seasonId: string, userId: string, prompt: string): Promise<void> {
     return ratings.upsertAgentRatingPrompt(this.db, seasonId, userId, prompt)

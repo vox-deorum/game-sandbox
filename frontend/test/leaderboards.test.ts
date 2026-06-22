@@ -66,8 +66,9 @@ function board(): Board {
         mean: 4.2,
         count: 5,
         rank: 1,
+        recording_id: 'rec-a',
       },
-      { agent: { kind: 'builtin-naive' }, mean: 3, count: 2, rank: null },
+      { agent: { kind: 'builtin-naive' }, mean: 3, count: 2, rank: null, recording_id: 'rec-n' },
     ],
   }
 }

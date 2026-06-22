@@ -21,10 +21,10 @@ export interface LeaderboardDeps {
 
 /** Read both boards for a released season: the automated aggregate and the human-rating aggregate. */
 async function boardsFor(storage: Storage, seasonId: string) {
-  const [automated, human] = await Promise.all([
-    storage.getAutomatedBoard(seasonId),
-    storage.getHumanBoard(seasonId),
-  ])
+  // The human board derives its replay links from the automated board, so compute that first and
+  // pass it in rather than aggregating the latest run twice.
+  const automated = await storage.getAutomatedBoard(seasonId)
+  const human = await storage.getHumanBoard(seasonId, automated)
   return { automated, human }
 }
 
@@ -126,7 +126,7 @@ export function registerLeaderboardRoutes(app: FastifyInstance, deps: Leaderboar
         deps.storage.listSeasons({ envId, scope: 'released' }),
         deps.storage.listSubmissionsByUser(ownerId, envId),
       ])
-      const releasedSeasonIds = new Set(releasedSeasons.map((season) => season.id))
+      const seasonLabels = new Map(releasedSeasons.map((season) => [season.id, season.label]))
       const placements = (
         await Promise.all(
           submissions.map((submission) =>
@@ -138,8 +138,34 @@ export function registerLeaderboardRoutes(app: FastifyInstance, deps: Leaderboar
         )
       )
         .flat()
-        .filter((placement) => releasedSeasonIds.has(placement.season_id))
-      return reply.code(200).send({ env_id: envId, owner_id: ownerId, placements })
+        .filter((placement) => seasonLabels.has(placement.season_id))
+
+      // The human-rating aggregate is computed live (it is never snapshotted into the placement
+      // row), so look it up per season and match each placement's submission to its mean and count.
+      const ratingsBySeason = new Map(
+        await Promise.all(
+          [...new Set(placements.map((placement) => placement.season_id))].map(
+            async (seasonId) =>
+              [seasonId, await deps.storage.aggregateRatingsByAgent(seasonId)] as const,
+          ),
+        ),
+      )
+      const enriched = placements.map((placement) => {
+        const aggregate = ratingsBySeason
+          .get(placement.season_id)
+          ?.find(
+            (row) =>
+              row.agent.kind === 'submission' &&
+              row.agent.submission_id === placement.agent_submission_id,
+          )
+        return {
+          ...placement,
+          season_label: seasonLabels.get(placement.season_id) ?? null,
+          human_mean: aggregate?.mean ?? null,
+          human_count: aggregate?.count ?? 0,
+        }
+      })
+      return reply.code(200).send({ env_id: envId, owner_id: ownerId, placements: enriched })
     },
   )
 }

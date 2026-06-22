@@ -242,6 +242,11 @@ export interface HumanBoardRow {
   mean: number
   count: number
   rank: number | null
+  /**
+   * The agent's representative replay link, the same best-game recording the automated board shows for
+   * it, so the human board can deep-link a replay too. Null when the agent has no recorded game.
+   */
+  recording_id: string | null
 }
 
 /**
@@ -432,9 +437,10 @@ export interface Storage {
   /**
    * The human-feedback board: the per-agent aggregates with the ranking rule applied. Agents with at
    * least three ratings are ranked (1-based, by mean then count); agents with one or two ratings follow
-   * unranked (`rank: null`), so accumulating feedback is visible without assigning a rank.
+   * unranked (`rank: null`), so accumulating feedback is visible without assigning a rank. The caller
+   * passes the season's already-computed automated board, the source of each row's representative replay.
    */
-  getHumanBoard(seasonId: string): Promise<HumanBoardRow[]>
+  getHumanBoard(seasonId: string, automated: AutomatedBoardRow[]): Promise<HumanBoardRow[]>
 
   /** Insert or overwrite the agent author's per-season rating prompt, keyed by `(season, user)`. */
   upsertAgentRatingPrompt(seasonId: string, userId: string, prompt: string): Promise<void>

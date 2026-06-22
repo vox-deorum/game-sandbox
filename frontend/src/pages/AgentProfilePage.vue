@@ -31,7 +31,7 @@ import UiBadge from '../components/ui/UiBadge.vue'
 import UiCard from '../components/ui/UiCard.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import UiStatusBadge from '../components/ui/UiStatusBadge.vue'
-import { formatComputeMs, formatDate, formatScore } from '../lib/format.js'
+import { formatComputeMs, formatDate, formatRating, formatScore } from '../lib/format.js'
 import { useMe } from '../me.js'
 
 const route = useRoute()
@@ -112,6 +112,10 @@ const promptSubmission = computed(() => {
   }
   return null
 })
+
+/** A placement's season name, falling back to a short id when the season has no label. */
+const seasonLabel = (label: string | null, id: string): string =>
+  label ?? `Season ${id.slice(0, 8)}`
 </script>
 
 <template>
@@ -184,6 +188,7 @@ const promptSubmission = computed(() => {
         <thead>
           <tr>
             <th scope="col" class="num">Rank</th>
+            <th scope="col" class="num">Human rating</th>
             <th scope="col" class="num">Mean score</th>
             <th scope="col" class="num">Agent compute</th>
             <th scope="col">Season</th>
@@ -192,6 +197,10 @@ const promptSubmission = computed(() => {
         <tbody>
           <tr v-for="placement in placements.placements" :key="placement.id">
             <td class="num">{{ placement.rank }}</td>
+            <td class="num">
+              <span v-if="placement.human_mean !== null">{{ formatRating(placement.human_mean) }}</span>
+              <span v-else class="muted" title="No ratings yet">—</span>
+            </td>
             <td class="num">{{ formatScore(placement.mean_score) }}</td>
             <td class="num">{{ formatComputeMs(placement.mean_agent_compute_ms) }}</td>
             <td>
@@ -199,7 +208,7 @@ const promptSubmission = computed(() => {
                 class="placement-link"
                 :to="`/environments/${envId}/leaderboards/${placement.season_id}`"
               >
-                View leaderboards
+                {{ seasonLabel(placement.season_label, placement.season_id) }}
               </RouterLink>
             </td>
           </tr>
@@ -305,6 +314,10 @@ const promptSubmission = computed(() => {
 .placements-table .num {
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+.placements-table .muted {
+  color: var(--color-text-muted);
 }
 
 .placement-link {

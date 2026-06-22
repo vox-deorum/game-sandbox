@@ -7,7 +7,13 @@ import { randomUUID } from 'node:crypto'
 
 import type { Kysely } from 'kysely'
 
-import type { AgentRef, AutomatedBoardRow, HumanBoardRow, PlacementInput } from '../index.js'
+import type {
+  AgentRef,
+  AutomatedBoardRow,
+  HumanBoardRow,
+  PlacementInput,
+  RatingAggregate,
+} from '../index.js'
 import type { AutomatedPlacement, Database } from '../schema.js'
 import { aggregateRatingsByAgent } from './ratings.js'
 import { getLatestCompletedRun } from './runs.js'
@@ -186,8 +192,15 @@ export async function getAutomatedBoard(
 export async function getHumanBoard(
   db: Kysely<Database>,
   seasonId: string,
+  automated: AutomatedBoardRow[],
 ): Promise<HumanBoardRow[]> {
+  // The human board carries no replay of its own, so reuse the automated board's representative
+  // recording per agent — keeping a single source of truth for "the agent's best game" link. The
+  // caller passes the already-computed automated board so that aggregation runs only once per read.
   const aggregates = await aggregateRatingsByAgent(db, seasonId)
+  const recordings = new Map(
+    automated.map((row) => [agentRefKey(row.agent), row.recording_id]),
+  )
   const ordered = [...aggregates].sort((a, b) => {
     if (b.mean !== a.mean) {
       return b.mean - a.mean
@@ -199,8 +212,10 @@ export async function getHumanBoard(
   })
   const ranked = ordered.filter((row) => row.count >= HUMAN_BOARD_MIN_RATINGS)
   const unranked = ordered.filter((row) => row.count < HUMAN_BOARD_MIN_RATINGS)
+  const recordingFor = (row: RatingAggregate): string | null =>
+    recordings.get(agentRefKey(row.agent)) ?? null
   return [
-    ...ranked.map((row, index) => ({ ...row, rank: index + 1 })),
-    ...unranked.map((row) => ({ ...row, rank: null })),
+    ...ranked.map((row, index) => ({ ...row, rank: index + 1, recording_id: recordingFor(row) })),
+    ...unranked.map((row) => ({ ...row, rank: null, recording_id: recordingFor(row) })),
   ]
 }

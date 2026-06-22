@@ -7,7 +7,8 @@
   The boards never merge into one number, mirroring the spec. The automated board shows rank, agent,
   mean normalized score, the weighted mean agent compute time as its own column, a failure indicator,
   and a per-row Replay link into the Stage 4 viewer. The human-feedback board shows rank, agent, mean
-  rating, and count; an agent under three ratings appears unranked (the backend leaves its `rank` null).
+  rating, count, and the same per-row Replay link (the agent's best automated game); an agent under
+  three ratings appears unranked (the backend leaves its `rank` null).
 -->
 <script setup lang="ts">
 import { RouterLink } from 'vue-router'
@@ -99,6 +100,7 @@ function ownerOf(agent: BoardAgentRef): string | null {
           <col class="col-agent" />
           <col />
           <col />
+          <col />
         </colgroup>
         <thead>
           <tr>
@@ -106,6 +108,7 @@ function ownerOf(agent: BoardAgentRef): string | null {
             <th scope="col">Agent</th>
             <th scope="col" class="num">Mean rating</th>
             <th scope="col" class="num">Ratings</th>
+            <th scope="col">Replay</th>
           </tr>
         </thead>
         <tbody>
@@ -132,6 +135,16 @@ function ownerOf(agent: BoardAgentRef): string | null {
             </td>
             <td class="num">{{ formatRating(row.mean) }}</td>
             <td class="num">{{ row.count }}</td>
+            <td>
+              <RouterLink
+                v-if="row.recording_id !== null"
+                class="replay-link"
+                :to="`/replays/${row.recording_id}`"
+              >
+                Replay
+              </RouterLink>
+              <span v-else class="muted">—</span>
+            </td>
           </tr>
         </tbody>
       </table>
@@ -167,7 +180,7 @@ function ownerOf(agent: BoardAgentRef): string | null {
 }
 
 /* Pin the leading columns to the same widths in both tables so the rank and
-   agent columns line up despite the human board having one fewer column. */
+   agent columns line up across both boards. */
 .board-table .col-rank {
   width: 3rem;
 }

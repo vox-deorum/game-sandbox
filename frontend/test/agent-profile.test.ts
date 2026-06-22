@@ -21,7 +21,7 @@ vi.mock('../src/api/client.js', () => ({
   getSubmissionCapabilities: vi.fn(async () => ({ local_submissions: false })),
 }))
 
-import type { AutomatedPlacement } from '../src/api/client.js'
+import type { AgentPlacementView } from '../src/api/client.js'
 import { getAgentPlacements, getAgentProfile, getAuthorPrompt, getMe } from '../src/api/client.js'
 import AgentProfilePage from '../src/pages/AgentProfilePage.vue'
 
@@ -164,8 +164,8 @@ describe('AgentProfilePage', () => {
     expect(screen.getByText(/No released placements/)).toBeInTheDocument()
   })
 
-  it('shows real placements linking to the season leaderboards (replacing the placeholder)', async () => {
-    const placement: AutomatedPlacement = {
+  it('shows real placements with human rating and a season-named leaderboard link', async () => {
+    const placement: AgentPlacementView = {
       id: 'p1',
       season_id: 'iter-released',
       env_id: 'flappy_bird',
@@ -179,6 +179,9 @@ describe('AgentProfilePage', () => {
       failure_count: 0,
       recording_id: 'rec-1',
       created_at: '2026-06-14T00:00:00Z',
+      season_label: 'Spring Iteration',
+      human_mean: 4.25,
+      human_count: 8,
     }
     vi.mocked(getAgentPlacements).mockResolvedValue({
       env_id: 'flappy_bird',
@@ -187,9 +190,47 @@ describe('AgentProfilePage', () => {
     })
     await renderProfile({ env_id: 'flappy_bird', owner_id: 'eve', submissions: [submission()] })
 
-    expect(await screen.findByText('12.50')).toBeInTheDocument()
-    const link = screen.getByRole('link', { name: 'View leaderboards' })
+    // Both the human rating (1 decimal) and the automated mean score (2 decimals) are shown.
+    expect(await screen.findByText('4.3')).toBeInTheDocument()
+    expect(screen.getByText('12.50')).toBeInTheDocument()
+    // The season link reads the season name, not the generic "View leaderboards".
+    const link = screen.getByRole('link', { name: 'Spring Iteration' })
     expect(link).toHaveAttribute('href', '/environments/flappy_bird/leaderboards/iter-released')
+  })
+
+  it('shows a dash for a placement with no human ratings and falls back to a season id label', async () => {
+    const placement: AgentPlacementView = {
+      id: 'p2',
+      season_id: 'unlabelled-season-123456',
+      env_id: 'flappy_bird',
+      run_id: 'run-2',
+      rank: 1,
+      agent_kind: 'submission',
+      agent_submission_id: 'sub1',
+      agent_user_id: 'eve',
+      mean_score: 9,
+      mean_agent_compute_ms: null,
+      failure_count: 0,
+      recording_id: null,
+      created_at: '2026-06-14T00:00:00Z',
+      season_label: null,
+      human_mean: null,
+      human_count: 0,
+    }
+    vi.mocked(getAgentPlacements).mockResolvedValue({
+      env_id: 'flappy_bird',
+      owner_id: 'eve',
+      placements: [placement],
+    })
+    await renderProfile({ env_id: 'flappy_bird', owner_id: 'eve', submissions: [submission()] })
+
+    expect(await screen.findByText('9.00')).toBeInTheDocument()
+    // No ratings → muted dash; null label → "Season <first 8 chars of id>".
+    const link = screen.getByRole('link', { name: 'Season unlabell' })
+    expect(link).toHaveAttribute(
+      'href',
+      '/environments/flappy_bird/leaderboards/unlabelled-season-123456',
+    )
   })
 
   it('hides the owner-only debug placeholder from a non-owner viewer', async () => {

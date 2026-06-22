@@ -615,6 +615,8 @@ export interface HumanBoardRow {
   mean: number
   count: number
   rank: number | null
+  /** The agent's representative replay link (its best automated game), or null. */
+  recording_id: string | null
 }
 
 /** Both boards for a season: the automated aggregate and the human-rating aggregate. */
@@ -692,11 +694,23 @@ export interface AutomatedPlacement {
   created_at: string
 }
 
+/**
+ * One placement as the profile page reads it: the stored automated row plus the two derived,
+ * read-time fields the profile shows alongside it — the season's display label and the agent's
+ * live human-rating aggregate (mean and count) for that season.
+ */
+export interface AgentPlacementView extends AutomatedPlacement {
+  season_label: string | null
+  /** Mean human rating for this agent that season, or null when it has no ratings yet. */
+  human_mean: number | null
+  human_count: number
+}
+
 /** An agent's released placements for an environment, newest first, for the profile page. */
 export interface AgentPlacements {
   env_id: string
   owner_id: string
-  placements: AutomatedPlacement[]
+  placements: AgentPlacementView[]
 }
 
 // --- Public, released-only reads -------------------------------------------------------------

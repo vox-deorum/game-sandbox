@@ -325,10 +325,9 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
         }
         const latest = await deps.storage.getLatestRun(season.id)
         const games = latest === undefined ? [] : await deps.storage.listRunGames(latest.id)
-        const [automated, human] = await Promise.all([
-          deps.storage.getAutomatedBoard(season.id),
-          deps.storage.getHumanBoard(season.id),
-        ])
+        // The human board reuses the automated board's replay links, so build it first and pass it in.
+        const automated = await deps.storage.getAutomatedBoard(season.id)
+        const human = await deps.storage.getHumanBoard(season.id, automated)
         return reply.code(200).send({
           season: seasonView(season),
           latest_run: latest === undefined ? null : runView(latest, games),
