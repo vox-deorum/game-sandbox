@@ -116,9 +116,12 @@ describe('AgentProfilePage', () => {
     expect(
       await screen.findByRole('heading', { name: "eve's Submissions", level: 1 }),
     ).toBeInTheDocument()
-    // The active (non-superseded) submission carries the Active badge; the superseded one does not.
-    expect(screen.getByText('Active')).toBeInTheDocument()
-    expect(screen.getByText('ready')).toBeInTheDocument()
+    // The active (non-superseded) submission carries the Current marker; the superseded one is tagged
+    // Superseded. Both submissions' rollup status reads from the summary row (the superseded one stays
+    // collapsed, but its summary still shows its status).
+    expect(screen.getByText('Current')).toBeInTheDocument()
+    expect(screen.getByText('Superseded')).toBeInTheDocument()
+    expect(screen.getByText('ready to compete')).toBeInTheDocument()
     expect(screen.getByText('static check failed')).toBeInTheDocument()
     // The recording links to its replay page.
     const replay = screen.getByRole('link', { name: 'flappy_bird-sess-1' })
@@ -148,7 +151,9 @@ describe('AgentProfilePage', () => {
     // The load stage row shows failed, and its detail renders inline (per-stage rejection view).
     const loadRow = screen.getByTestId('stage-load')
     expect(within(loadRow).getByText('failed')).toBeInTheDocument()
-    expect(screen.getByTestId('stage-detail-load')).toHaveTextContent("no class named 'Agent'")
+    expect(screen.getByTestId('stage-detail-load')).toHaveTextContent(
+      "Load check: no class named 'Agent'",
+    )
   })
 
   it('shows the owner-only debug placeholder only to the agent owner', async () => {

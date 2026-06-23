@@ -109,7 +109,7 @@ function ownerOf(agent: BoardAgentRef): string | null {
             <th scope="col" class="rank">#</th>
             <th scope="col">Agent</th>
             <th scope="col" class="num">Mean rating</th>
-            <th scope="col" class="num">Ratings</th>
+            <th scope="col" class="num"># Ratings</th>
             <th scope="col">Replay</th>
           </tr>
         </thead>

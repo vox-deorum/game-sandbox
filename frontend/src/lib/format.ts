@@ -93,6 +93,21 @@ export function formatRatingSpread(mean: number, std: number): string {
   return `${formatRating(mean)} ${PLUS_MINUS} ${formatRating(std)}`
 }
 
+/** A short, human-referenceable id: the leading `n` characters of a generated UUID/text id. */
+export function shortId(id: string, n = 8): string {
+  return id.slice(0, n)
+}
+
+/**
+ * A recording id humanized for display: "flappy_bird-<uuid>" → "flappy_bird · 25f548a2", trading the
+ * raw key for the environment prefix plus the uuid's first segment. Ids that are not the prefixed-uuid
+ * shape (older or test ids) fall back to themselves, so nothing is ever hidden.
+ */
+export function formatReplayLabel(id: string): string {
+  const match = id.match(/^(.*)-([0-9a-f]{8})-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
+  return match === null ? id : `${match[1]} · ${match[2]}`
+}
+
 /**
  * The decision-log cell text for one tick's agent action. The action shape is environment-specific
  * (a scalar like Flappy Bird's 0/1, or a structured object for a richer action space), so this stays

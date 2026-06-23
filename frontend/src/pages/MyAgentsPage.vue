@@ -37,7 +37,7 @@ const error = ref(false)
 
 const STATUS_LABEL: Record<SubmissionStatus, string> = {
   pending: 'pending',
-  ready: 'ready',
+  ready: 'ready to compete',
   static_failed: 'static check failed',
   build_failed: 'build failed',
   load_failed: 'load check failed',
