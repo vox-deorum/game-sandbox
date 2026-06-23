@@ -4,6 +4,9 @@
  */
 import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
 
+/** The plus-minus sign (U+00B1), the single glyph joining a mean to its spread in board cells. */
+export const PLUS_MINUS = '±'
+
 /** A medium date plus short time in the viewer's locale, or null for a missing value. */
 export function formatDate(value: string | null | undefined): string | null {
   if (value === null || value === undefined) {
@@ -50,6 +53,11 @@ export function formatScore(value: number): string {
   return value.toFixed(2)
 }
 
+/** A mean score with its spread, as "mean ± sd" (both to two decimals). */
+export function formatScoreSpread(mean: number, std: number): string {
+  return `${formatScore(mean)} ${PLUS_MINUS} ${formatScore(std)}`
+}
+
 /** A weighted-mean agent compute time in milliseconds, or an em dash when no tick contributed. */
 export function formatComputeMs(value: number | null | undefined): string {
   if (value === null || value === undefined) {
@@ -58,9 +66,31 @@ export function formatComputeMs(value: number | null | undefined): string {
   return `${value.toFixed(1)} ms`
 }
 
+/**
+ * A mean compute time with its spread, as "mean ± sd ms" (both to one decimal). An em dash when the
+ * mean is absent (no tick contributed); just the mean when the spread is somehow absent.
+ */
+export function formatComputeSpread(
+  mean: number | null | undefined,
+  std: number | null | undefined,
+): string {
+  if (mean === null || mean === undefined) {
+    return '—'
+  }
+  if (std === null || std === undefined) {
+    return formatComputeMs(mean)
+  }
+  return `${mean.toFixed(1)} ${PLUS_MINUS} ${std.toFixed(1)} ms`
+}
+
 /** A mean human rating, to one decimal (the 1-5 feedback mean). */
 export function formatRating(value: number): string {
   return value.toFixed(1)
+}
+
+/** A mean rating with its spread, as "mean ± sd" (both to one decimal). */
+export function formatRatingSpread(mean: number, std: number): string {
+  return `${formatRating(mean)} ${PLUS_MINUS} ${formatRating(std)}`
 }
 
 /**

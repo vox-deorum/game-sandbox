@@ -26,6 +26,7 @@ import {
   listSeasons,
   listRecordings,
   type SessionRow,
+  watchAgentNumbers,
 } from '../api/client.js'
 import DecisionLog, { type DecisionEntry } from '../components/DecisionLog.vue'
 import ExperimentTabs from '../components/ExperimentTabs.vue'
@@ -54,6 +55,9 @@ const loadError = ref(false)
 const hostEl = ref<HTMLElement | null>(null)
 const decisions = ref<DecisionEntry[]>([])
 const seasonPlayable = ref(false)
+// Submission id → season-wide anonymous number, so the blind attribution line reads the same
+// "Submitted agent N" the watch picker and post-session rating panel show for the same agent.
+const anonymousNumbers = ref<Record<string, number>>({})
 // The recording header carries per-slot attribution (`players`); retained to show who played.
 const header = ref<RecordingHeader | null>(null)
 
@@ -176,6 +180,12 @@ onMounted(async () => {
   // awaits it rather than polling, closing the race.
   await me.whenSettled()
 
+  // Only a blind viewer needs the anonymous numbering, and only then does it apply; an operator (or a
+  // closed season) sees real owner labels and skips the lookup.
+  if (blindAttribution.value) {
+    anonymousNumbers.value = await watchAgentNumbers(fetched.env_id).catch(() => ({}))
+  }
+
   if (fetched.status === 'ended') {
     // Historical sessions have no live socket to attach to; the recording is the source of truth.
     await hydrateRecording(fetched)
@@ -270,6 +280,7 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
       :players="header?.players"
       :blind="blindAttribution"
       :viewer-id="me.me?.user_id"
+      :anonymous-numbers="anonymousNumbers"
     />
 
     <!-- End-of-session feedback appears only after termination, immediately above the game stage. -->

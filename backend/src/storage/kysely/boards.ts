@@ -23,6 +23,7 @@ import {
   agentKey,
   agentRefFromColumns,
   agentRefKey,
+  populationStdDev,
 } from './shared.js'
 
 /**
@@ -113,8 +114,12 @@ export async function getAutomatedBoard(
   interface Acc {
     agent: AgentColumns
     scoreSum: number
+    scoreSqSum: number
     computeSum: number
     tickSum: number
+    // Each game's per-decision compute rate is weighted by its acted ticks, matching the displayed
+    // mean. The weighted square sum lets the spread use the same decision-level weighting.
+    computeRateSqWeightedSum: number
     failureCount: number
     games: number
     bestScore: number
@@ -129,8 +134,10 @@ export async function getAutomatedBoard(
       acc = {
         agent: row,
         scoreSum: 0,
+        scoreSqSum: 0,
         computeSum: 0,
         tickSum: 0,
+        computeRateSqWeightedSum: 0,
         failureCount: 0,
         games: 0,
         bestScore: Number.NEGATIVE_INFINITY,
@@ -140,8 +147,13 @@ export async function getAutomatedBoard(
       groups.set(key, acc)
     }
     acc.scoreSum += row.episode_score
+    acc.scoreSqSum += row.episode_score * row.episode_score
     acc.computeSum += row.agent_compute_ms_total
     acc.tickSum += row.acted_tick_count
+    if (row.acted_tick_count > 0) {
+      const rate = row.agent_compute_ms_total / row.acted_tick_count
+      acc.computeRateSqWeightedSum += rate * rate * row.acted_tick_count
+    }
     acc.failureCount += row.failed === 1 ? 1 : 0
     acc.games += 1
     const better =
@@ -159,7 +171,12 @@ export async function getAutomatedBoard(
       .map((acc) => ({
         agent: agentRefFromColumns(acc.agent),
         mean_score: acc.games > 0 ? acc.scoreSum / acc.games : 0,
+        score_std: populationStdDev(acc.scoreSum, acc.scoreSqSum, acc.games),
         mean_agent_compute_ms: acc.tickSum > 0 ? acc.computeSum / acc.tickSum : null,
+        compute_std:
+          acc.tickSum > 0
+            ? populationStdDev(acc.computeSum, acc.computeRateSqWeightedSum, acc.tickSum)
+            : null,
         failure_count: acc.failureCount,
         games: acc.games,
         recording_id: acc.bestRecording,

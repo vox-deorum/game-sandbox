@@ -17,9 +17,22 @@ const props = withDefaults(
     blind?: boolean
     /** Lets a blind viewer still recognize their own submitted agent. */
     viewerId?: string
+    /**
+     * Submission id → season-wide anonymous number, so a blind submitted agent reads with the same
+     * "Submitted agent N" label the watch picker and rating panel use for that agent. A missing
+     * number degrades to the bare label, matching the rating route's own fallback for an agent no
+     * longer in the active list.
+     */
+    anonymousNumbers?: Record<string, number>
   }>(),
-  { players: undefined, blind: false, viewerId: undefined },
+  { players: undefined, blind: false, viewerId: undefined, anonymousNumbers: undefined },
 )
+
+/** A blind submitted agent's label, numbered to match the watch picker and rating panel. */
+function blindAgentLabel(submissionId: string): string {
+  const number = props.anonymousNumbers?.[submissionId]
+  return number === undefined ? 'Submitted agent' : `Submitted agent ${number}`
+}
 
 const items = computed(() => {
   const players = props.players
@@ -34,7 +47,7 @@ const items = computed(() => {
         : props.blind && player.submission_id !== undefined
           ? player.user === props.viewerId
             ? 'Your agent'
-            : 'Submitted agent'
+            : blindAgentLabel(player.submission_id)
           : player.label,
   }))
 })

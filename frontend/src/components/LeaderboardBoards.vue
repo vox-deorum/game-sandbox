@@ -14,7 +14,7 @@
 import { RouterLink } from 'vue-router'
 
 import type { Board, BoardAgentRef } from '../api/client.js'
-import { formatComputeMs, formatRating, formatScore } from '../lib/format.js'
+import { formatComputeSpread, formatRatingSpread, formatScoreSpread } from '../lib/format.js'
 import UiBadge from './ui/UiBadge.vue'
 import UiEmptyState from './ui/UiEmptyState.vue'
 
@@ -73,8 +73,10 @@ function ownerOf(agent: BoardAgentRef): string | null {
                 {{ row.failure_count }} failed
               </UiBadge>
             </td>
-            <td class="num">{{ formatScore(row.mean_score) }}</td>
-            <td class="num">{{ formatComputeMs(row.mean_agent_compute_ms) }}</td>
+            <td class="num">{{ formatScoreSpread(row.mean_score, row.score_std) }}</td>
+            <td class="num">
+              {{ formatComputeSpread(row.mean_agent_compute_ms, row.compute_std) }}
+            </td>
             <td>
               <RouterLink
                 v-if="row.recording_id !== null"
@@ -133,7 +135,7 @@ function ownerOf(agent: BoardAgentRef): string | null {
                 Naive baseline <UiBadge>Built-in</UiBadge>
               </span>
             </td>
-            <td class="num">{{ formatRating(row.mean) }}</td>
+            <td class="num">{{ formatRatingSpread(row.mean, row.std) }}</td>
             <td class="num">{{ row.count }}</td>
             <td>
               <RouterLink

@@ -16,6 +16,7 @@ import {
   listSeasons,
   type PublicSeasonView,
   type RecordingSummary,
+  watchAgentNumbers,
 } from '../api/client.js'
 import UiBadge from '../components/ui/UiBadge.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
@@ -30,6 +31,9 @@ const envId = computed(() => String(route.params.envId))
 const replays = ref<RecordingSummary[] | null>(null)
 /** season id → public season facts, used for labels and playable-season anonymity. */
 const seasonsById = ref<Map<string, PublicSeasonView>>(new Map())
+// Submission id → season-wide anonymous number for the env's play-open season (the only one a blind
+// replay can belong to), so a masked row reads the same "Submitted agent N" as the rating panel.
+const anonymousNumbers = ref<Record<string, number>>({})
 
 /** The sortable columns and the current sort. Default newest-first, matching the backend order. */
 type SortKey = 'id' | 'owner' | 'season' | 'outcome' | 'created'
@@ -54,11 +58,17 @@ function playersSummary(replay: RecordingSummary): string {
           blind && player.submission_id !== undefined
             ? player.user === me.me?.user_id
               ? 'Your agent'
-              : 'Submitted agent'
+              : blindAgentLabel(player.submission_id)
             : player.label
         }`,
   )
   return parts.length > 0 ? parts.join(', ') : '—'
+}
+
+/** A blind submitted agent's label, numbered to match the watch picker and rating panel. */
+function blindAgentLabel(submissionId: string): string {
+  const number = anonymousNumbers.value[submissionId]
+  return number === undefined ? 'Submitted agent' : `Submitted agent ${number}`
 }
 
 /** The replay id with its leading `⟨environment⟩-` prefix dropped, since the page is already scoped
@@ -141,13 +151,16 @@ function ariaSort(key: SortKey): 'ascending' | 'descending' | 'none' {
 async function load(id: string): Promise<void> {
   replays.value = null
   await me.whenSettled()
-  const [recordings, seasons] = await Promise.all([
+  const [recordings, seasons, numbers] = await Promise.all([
     listRecordings({ env: id }).catch(() => [] as RecordingSummary[]),
     listSeasons(id, { includeUnreleased: me.me?.is_operator === true }).catch(
       () => [] as PublicSeasonView[],
     ),
+    // Operators see real labels and never consult this, so the lookup is harmless for them.
+    watchAgentNumbers(id).catch(() => ({}) as Record<string, number>),
   ])
   seasonsById.value = new Map(seasons.map((season) => [season.id, season]))
+  anonymousNumbers.value = numbers
   replays.value = recordings
 }
 

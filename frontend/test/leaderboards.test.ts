@@ -46,7 +46,9 @@ function board(): Board {
       {
         agent: { kind: 'submission', submission_id: 's1', user_id: 'alice' },
         mean_score: 9.5,
+        score_std: 1.5,
         mean_agent_compute_ms: 2.5,
+        compute_std: 0.5,
         failure_count: 0,
         games: 2,
         recording_id: 'rec-a',
@@ -54,7 +56,9 @@ function board(): Board {
       {
         agent: { kind: 'builtin-naive' },
         mean_score: 3,
+        score_std: 0,
         mean_agent_compute_ms: 1,
+        compute_std: 0,
         failure_count: 1,
         games: 2,
         recording_id: 'rec-n',
@@ -64,11 +68,19 @@ function board(): Board {
       {
         agent: { kind: 'submission', submission_id: 's1', user_id: 'alice' },
         mean: 4.2,
+        std: 0.8,
         count: 5,
         rank: 1,
         recording_id: 'rec-a',
       },
-      { agent: { kind: 'builtin-naive' }, mean: 3, count: 2, rank: null, recording_id: 'rec-n' },
+      {
+        agent: { kind: 'builtin-naive' },
+        mean: 3,
+        std: 0,
+        count: 2,
+        rank: null,
+        recording_id: 'rec-n',
+      },
     ],
   }
 }
@@ -110,9 +122,12 @@ describe('LeaderboardsPage', () => {
     expect(await screen.findByText('Scoreboard')).toBeInTheDocument()
     expect(screen.getByText('Human Ratings')).toBeInTheDocument()
 
-    // The automated board shows the weighted mean agent compute time as its own column.
+    // The automated board shows the weighted mean agent compute time as its own column, with the
+    // game-to-game spread beside it.
     expect(screen.getByRole('columnheader', { name: 'Agent compute' })).toBeInTheDocument()
-    expect(screen.getByText('2.5 ms')).toBeInTheDocument()
+    expect(screen.getByText('2.5 ± 0.5 ms')).toBeInTheDocument()
+    // The mean score carries its spread too, both to two decimals.
+    expect(screen.getByText('9.50 ± 1.50')).toBeInTheDocument()
 
     // The submitted agent links to its profile; the Naive baseline row is present and ownerless.
     const aliceLink = screen.getAllByRole('link', { name: 'alice' })[0] as HTMLElement
@@ -146,7 +161,7 @@ describe('LeaderboardsPage', () => {
     // Header + two agent rows. The ranked agent (5 ratings) is row 1 with rank 1 and mean 4.2; the
     // 2-rating Naive row is row 2, unranked (an em dash where its rank would be).
     expect(within(rankedRow).getByText('1')).toBeInTheDocument()
-    expect(within(rankedRow).getByText('4.2')).toBeInTheDocument()
+    expect(within(rankedRow).getByText('4.2 ± 0.8')).toBeInTheDocument()
     expect(within(unrankedRow).getByText('—')).toBeInTheDocument()
   })
 

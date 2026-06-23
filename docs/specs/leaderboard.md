@@ -42,9 +42,9 @@ Operators manage seasons through the website's admin console and an operator-onl
 
 ## Automated board
 
-The automated board ranks by mean episode score. Higher is always better for ranking, even when the environment also exposes a native lower-is-better display score.
+The automated board ranks by mean episode score. Higher is always better for ranking, even when the environment also exposes a native lower-is-better display score. The board shows the population standard deviation of episode scores beside the mean.
 
-Mean compute time per decision is shown separately and breaks only an exact score tie. It includes `act`, optional hooks, and time waiting for LLM calls. Score and efficiency are never combined.
+Mean compute time per decision is shown separately and breaks only an exact score tie. It includes `act`, optional hooks, and time waiting for LLM calls. The mean is weighted by acted ticks across games. The spread shown beside it is the population standard deviation of each game's per-decision compute rate, weighted by that game's acted ticks so it describes the same distribution as the mean. Score and efficiency are never combined.
 
 The operator-triggered workflow:
 
@@ -60,7 +60,7 @@ Each match runs in its own sandboxed session container. See [Execution](executio
 
 ## Human-feedback board
 
-The human-feedback board shows each agent's mean rating and rating count. An agent needs at least three ratings to be ranked.
+The human-feedback board shows each agent's mean rating, the population standard deviation of its ratings, and its rating count. An agent needs at least three ratings to be ranked.
 
 Ratings use a 1 to 5 scale. Two optional prompts may guide one rating:
 

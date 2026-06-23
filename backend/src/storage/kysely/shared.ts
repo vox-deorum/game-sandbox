@@ -46,6 +46,20 @@ export function agentRefKey(agent: AgentRef): string {
   return agent.kind === 'submission' ? `submission:${agent.submission_id}` : 'builtin-naive:'
 }
 
+/**
+ * Population standard deviation from running sums: √(E[x²] − E[x]²), clamped at 0. Returns 0 for an
+ * empty set or a single value. The clamp absorbs the tiny negative a float round-off can leave when
+ * every value is equal (variance should be exactly 0). Population (÷N), not sample (÷N−1): a board row
+ * summarizes the whole set of games/ratings it has, not a sample drawn from a larger population.
+ */
+export function populationStdDev(sum: number, sumOfSquares: number, count: number): number {
+  if (count <= 0) {
+    return 0
+  }
+  const mean = sum / count
+  return Math.sqrt(Math.max(0, sumOfSquares / count - mean * mean))
+}
+
 /** Whether a thrown database error is a unique-constraint violation. */
 export function isUniqueConstraintViolation(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error)

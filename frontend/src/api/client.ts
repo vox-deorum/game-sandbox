@@ -343,6 +343,17 @@ export async function listWatchAgents(envId: string): Promise<WatchAgentSummary[
   )) as WatchAgentSummary[]
 }
 
+/**
+ * The env's play-open anonymous numbering as a submission-id → number map. This is the same
+ * season-wide sequence the watch picker and the post-session rating panel show, so a blind
+ * attribution line can read "Submitted agent N" for the very agent the rater will score. Empty when
+ * the env has no play-open season.
+ */
+export async function watchAgentNumbers(envId: string): Promise<Record<string, number>> {
+  const rows = await listWatchAgents(envId)
+  return Object.fromEntries(rows.map((row) => [row.submission_id, row.anonymous_number]))
+}
+
 /** One submission on the agent profile: its per-stage log plus the recent recordings it ran in. */
 export interface AgentProfileSubmission extends SubmissionDetail {
   replays: string[]
@@ -609,8 +620,12 @@ export type PublicSeasonView = Pick<
 export interface AutomatedBoardRow {
   agent: BoardAgentRef
   mean_score: number
+  /** Population standard deviation of the per-game score, shown as the spread beside the mean. */
+  score_std: number
   /** Weighted mean per-decision agent compute time; null when no tick contributed. */
   mean_agent_compute_ms: number | null
+  /** Acted-tick-weighted spread of per-game compute rates; null exactly when the mean is. */
+  compute_std: number | null
   failure_count: number
   games: number
   /** The representative replay link (the agent's best game), or null. */
@@ -621,6 +636,8 @@ export interface AutomatedBoardRow {
 export interface HumanBoardRow {
   agent: BoardAgentRef
   mean: number
+  /** Population standard deviation of the agent's ratings, shown as the spread beside the mean. */
+  std: number
   count: number
   rank: number | null
   /** The agent's representative replay link (its best automated game), or null. */

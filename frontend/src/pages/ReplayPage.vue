@@ -22,6 +22,7 @@ import {
   listRecordings,
   listSeasons,
   type RecordingSummary,
+  watchAgentNumbers,
 } from '../api/client.js'
 import DecisionLog, { type DecisionEntry } from '../components/DecisionLog.vue'
 import ExperimentTabs from '../components/ExperimentTabs.vue'
@@ -54,6 +55,9 @@ const listingEntry = ref<RecordingSummary | null>(null)
 const owned = ref(false)
 const decisions = ref<DecisionEntry[]>([])
 const seasonPlayable = ref(false)
+// Submission id → season-wide anonymous number, so the blind attribution line reads the same
+// "Submitted agent N" the watch picker and rating panel show for the same agent.
+const anonymousNumbers = ref<Record<string, number>>({})
 
 const hostEl = ref<HTMLElement | null>(null)
 
@@ -169,6 +173,11 @@ onMounted(async () => {
   seasonPlayable.value =
     entry?.season_id != null &&
     seasons.some((season) => season.id === entry.season_id && season.play_status === 'open')
+  // Only a blind viewer needs the anonymous numbering; an operator (or a closed season) sees real
+  // owner labels and skips the lookup.
+  if (blindAttribution.value) {
+    anonymousNumbers.value = await watchAgentNumbers(parsed.header.environment).catch(() => ({}))
+  }
   if (entry !== undefined && me.me?.user_id !== undefined && entry.user_id === me.me.user_id) {
     owned.value = true
     pinned.value = entry.pinned
@@ -196,6 +205,7 @@ onMounted(async () => {
       :players="header?.players"
       :blind="blindAttribution"
       :viewer-id="me.me?.user_id"
+      :anonymous-numbers="anonymousNumbers"
     />
 
     <div v-if="transport !== null" class="replay-controls">

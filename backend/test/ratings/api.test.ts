@@ -169,6 +169,7 @@ describe('rating API', () => {
     expect(aggregate.find((row) => row.agent.kind === 'builtin-naive')).toEqual({
       agent: { kind: 'builtin-naive' },
       mean: 5,
+      std: 0,
       count: 1,
     })
   })

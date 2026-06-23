@@ -400,7 +400,8 @@ describe('leaderboard storage on :memory:', () => {
     ).toMatchObject({ ok: true })
     const agg = await storage.aggregateRatingsByAgent(season.id)
     const naiveAgg = agg.find((row) => row.agent.kind === 'builtin-naive')
-    expect(naiveAgg).toEqual({ agent: NAIVE, mean: 3, count: 2 })
+    // Ratings 4 and 2: mean 3, population std 1.
+    expect(naiveAgg).toEqual({ agent: NAIVE, mean: 3, std: 1, count: 2 })
   })
 
   it('getHumanBoard ranks agents with three ratings and lists under-threshold agents unranked', async () => {
@@ -444,11 +445,16 @@ describe('leaderboard storage on :memory:', () => {
 
     // No completed run, so the automated board (the replay source) is empty and every replay is null.
     const board = await storage.getHumanBoard(season.id, await storage.getAutomatedBoard(season.id))
-    expect(board).toEqual([
+    expect(board).toHaveLength(3)
+    expect(board).toMatchObject([
       { agent: NAIVE, mean: 5, count: 3, rank: 1, recording_id: null },
       { agent: ranked, mean: 4, count: 3, rank: 2, recording_id: null },
       { agent: thin, mean: 5, count: 2, rank: null, recording_id: null },
     ])
+    // The spread rides alongside each mean: equal ratings collapse to 0, the 3/4/5 spread is √(2/3).
+    expect(board[0]?.std).toBe(0)
+    expect(board[1]?.std).toBeCloseTo(Math.sqrt(2 / 3))
+    expect(board[2]?.std).toBe(0)
   })
 
   it('getHumanBoard carries the automated board representative replay per agent', async () => {
@@ -491,7 +497,9 @@ describe('leaderboard storage on :memory:', () => {
     }
 
     const board = await storage.getHumanBoard(season.id, await storage.getAutomatedBoard(season.id))
-    expect(board).toEqual([{ agent: rated, mean: 4, count: 3, rank: 1, recording_id: 'rec-hi' }])
+    expect(board).toEqual([
+      { agent: rated, mean: 4, std: 0, count: 3, rank: 1, recording_id: 'rec-hi' },
+    ])
   })
 
   // --- rating prompts ---
@@ -555,13 +563,13 @@ describe('leaderboard storage on :memory:', () => {
 
     const s1: AgentRef = { kind: 'submission', submission_id: 's1', user_id: 'alice' }
     const s2: AgentRef = { kind: 'submission', submission_id: 's2', user_id: 'carol' }
-    // Two submitted agents tie at mean 15 (so the agent-key tie-break decides order); Naive trails at 5
-    // and contributes no ticks, exercising the null mean-compute branch.
+    // Two submitted agents tie on score and compute (so the agent-key tie-break decides order); Naive
+    // trails at 5 and contributes no ticks, exercising the null mean-compute branch.
     const seats: Array<[AgentRef, string, number, number, number]> = [
       [s1, g0.id, 10, 100, 10],
-      [s1, g1.id, 20, 100, 10],
+      [s1, g1.id, 20, 600, 30],
       [s2, g0.id, 10, 100, 10],
-      [s2, g1.id, 20, 100, 10],
+      [s2, g1.id, 20, 600, 30],
       [NAIVE, g0.id, 5, 0, 0],
       [NAIVE, g1.id, 5, 0, 0],
     ]
@@ -582,12 +590,21 @@ describe('leaderboard storage on :memory:', () => {
     expect(board.map((row) => row.agent)).toEqual([s1, s2, NAIVE])
     expect(board[0]).toMatchObject({
       mean_score: 15,
-      mean_agent_compute_ms: 10, // (100 + 100) / (10 + 10)
+      score_std: 5, // scores 10 and 20 about mean 15
+      mean_agent_compute_ms: 17.5, // (100 + 600) / (10 + 30)
       games: 2,
       failure_count: 0,
       recording_id: 'rec1', // the agent's best game (score 20)
     })
-    expect(board[2]).toMatchObject({ mean_score: 5, mean_agent_compute_ms: null })
+    // Game rates 10 and 20 ms/decision are weighted by 10 and 30 acted ticks, matching the mean.
+    expect(board[0]?.compute_std).toBeCloseTo(Math.sqrt(18.75))
+    // The tickless Naive baseline has no per-decision rate, so its compute spread is null like its mean.
+    expect(board[2]).toMatchObject({
+      mean_score: 5,
+      score_std: 0,
+      mean_agent_compute_ms: null,
+      compute_std: null,
+    })
   })
 
   it('getAutomatedBoard breaks an exact score tie by lower mean compute, with null compute last', async () => {

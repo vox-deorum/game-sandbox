@@ -10,9 +10,16 @@ vi.mock('../src/api/client.js', () => ({
   getMe: vi.fn(),
   listRecordings: vi.fn(),
   listSeasons: vi.fn(),
+  watchAgentNumbers: vi.fn(async () => ({})),
 }))
 
-import { getEnvironments, getMe, listRecordings, listSeasons } from '../src/api/client.js'
+import {
+  getEnvironments,
+  getMe,
+  listRecordings,
+  listSeasons,
+  watchAgentNumbers,
+} from '../src/api/client.js'
 import ReplaysPage from '../src/pages/ReplaysPage.vue'
 
 function recording(overrides: Partial<RecordingSummary> = {}): RecordingSummary {
@@ -149,10 +156,12 @@ describe('ReplaysPage', () => {
         },
       }),
     ])
+    // The masked label must carry the same season-wide number the rating panel shows for this agent.
+    vi.mocked(watchAgentNumbers).mockResolvedValue({ 'sub-maya': 1 })
     await renderPage()
 
     const row = (await screen.findByRole('link', { name: 'blind' })).closest('tr') as HTMLElement
-    expect(within(row).getByText(/Submitted agent/)).toBeInTheDocument()
+    expect(within(row).getByText(/Submitted agent 1/)).toBeInTheDocument()
     expect(within(row).queryByText('maya-fledgling')).toBeNull()
     // The page leans on the public scope (which includes play-open seasons), not the operator path.
     expect(vi.mocked(listSeasons)).toHaveBeenCalledWith('flappy_bird', { includeUnreleased: false })

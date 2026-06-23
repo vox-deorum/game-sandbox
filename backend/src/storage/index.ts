@@ -225,10 +225,12 @@ export type UpsertRatingResult =
   | { ok: true; rating: Rating }
   | { ok: false; reason: 'own_agent' | 'invalid_score' }
 
-/** One aggregated rating row for the human board: the agent and its mean score and count. */
+/** One aggregated rating row for the human board: the agent and its mean score, spread, and count. */
 export interface RatingAggregate {
   agent: AgentRef
   mean: number
+  /** Population standard deviation of the agent's ratings, shown beside the mean (0 for a single rating). */
+  std: number
   count: number
 }
 
@@ -240,6 +242,8 @@ export interface RatingAggregate {
 export interface HumanBoardRow {
   agent: AgentRef
   mean: number
+  /** Population standard deviation of the agent's ratings, shown as the spread beside the mean. */
+  std: number
   count: number
   rank: number | null
   /**
@@ -257,7 +261,15 @@ export interface HumanBoardRow {
 export interface AutomatedBoardRow {
   agent: AgentRef
   mean_score: number
+  /** Population standard deviation of the per-game episode score: the spread shown beside the mean. */
+  score_std: number
   mean_agent_compute_ms: number | null
+  /**
+   * Acted-tick-weighted population standard deviation of the agent's per-game per-decision compute
+   * rate, shown beside the weighted mean. Null exactly when the mean is absent because no game
+   * contributed a tick.
+   */
+  compute_std: number | null
   failure_count: number
   /** The number of games that produced a result for this agent in the run. */
   games: number

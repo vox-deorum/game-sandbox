@@ -10,7 +10,13 @@ import type { Kysely } from 'kysely'
 import type { AgentRef, RatingAggregate, UpsertRatingInput, UpsertRatingResult } from '../index.js'
 import type { AgentRatingPrompt, Database, Rating } from '../schema.js'
 import { requireSeason } from './seasons.js'
-import { type AgentColumns, agentColumns, agentKey, agentRefFromColumns } from './shared.js'
+import {
+  type AgentColumns,
+  agentColumns,
+  agentKey,
+  agentRefFromColumns,
+  populationStdDev,
+} from './shared.js'
 
 export async function upsertRating(
   db: Kysely<Database>,
@@ -83,17 +89,22 @@ export async function aggregateRatingsByAgent(
   seasonId: string,
 ): Promise<RatingAggregate[]> {
   const ratings = await listRatingsBySeason(db, seasonId)
-  const groups = new Map<string, { agent: AgentColumns; sum: number; count: number }>()
+  const groups = new Map<
+    string,
+    { agent: AgentColumns; sum: number; sumSq: number; count: number }
+  >()
   for (const rating of ratings) {
     const key = agentKey(rating)
-    const acc = groups.get(key) ?? { agent: rating, sum: 0, count: 0 }
+    const acc = groups.get(key) ?? { agent: rating, sum: 0, sumSq: 0, count: 0 }
     acc.sum += rating.score
+    acc.sumSq += rating.score * rating.score
     acc.count += 1
     groups.set(key, acc)
   }
   return [...groups.values()].map((acc) => ({
     agent: agentRefFromColumns(acc.agent),
     mean: acc.count > 0 ? acc.sum / acc.count : 0,
+    std: populationStdDev(acc.sum, acc.sumSq, acc.count),
     count: acc.count,
   }))
 }

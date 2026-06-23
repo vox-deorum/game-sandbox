@@ -48,6 +48,7 @@ vi.mock('../src/api/client.js', () => ({
   getRecording: vi.fn(),
   listRecordings: vi.fn(async () => []),
   listSeasons: vi.fn(async () => []),
+  watchAgentNumbers: vi.fn(async () => ({})),
   getMe: vi.fn(),
   pinRecording: vi.fn(async () => ({ ok: true })),
   unpinRecording: vi.fn(async () => ({ ok: true })),
@@ -64,6 +65,7 @@ import {
   getSessionRatings,
   listRecordings,
   listSeasons,
+  watchAgentNumbers,
 } from '../src/api/client.js'
 import SessionPage from '../src/pages/SessionPage.vue'
 
@@ -270,6 +272,9 @@ describe('SessionPage', () => {
         session_count: 1,
       },
     ])
+    // The attribution must number the agent the same way the rating panel does, so a blind viewer
+    // sees one consistent "Submitted agent N" across both surfaces.
+    vi.mocked(watchAgentNumbers).mockResolvedValue({ 'sub-maya': 1 })
     await renderSession()
     await waitForHandlers()
     handlers.onHeader(
@@ -284,7 +289,7 @@ describe('SessionPage', () => {
         },
       }),
     )
-    expect(await screen.findByText('Submitted agent')).toBeInTheDocument()
+    expect(await screen.findByText('Submitted agent 1')).toBeInTheDocument()
     expect(screen.queryByText("maya-fledgling's agent")).toBeNull()
   })
 
