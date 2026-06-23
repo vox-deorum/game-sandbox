@@ -161,7 +161,7 @@ watch(requestedSeasonId, load, { immediate: true })
     </main>
 
     <section v-if="history.length > 0" class="leaderboards-history" aria-label="Seasons">
-      <h2 class="history-title">All Seasons</h2>
+      <h2>All Seasons</h2>
       <table class="history-table">
         <thead>
           <tr>
@@ -209,10 +209,6 @@ watch(requestedSeasonId, load, { immediate: true })
 
 .leaderboards-history {
   margin-top: var(--space-8);
-}
-
-.history-title {
-  margin: 0 0 var(--space-3);
 }
 
 .history-table {

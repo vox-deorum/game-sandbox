@@ -160,11 +160,7 @@ const ordered = computed(() =>
 
 <style scoped>
 .seasons-intro {
-  margin-bottom: var(--space-6);
-}
-
-.seasons-intro h1 {
-  margin: 0 0 var(--space-1);
+  margin-bottom: var(--space-4);
 }
 
 .seasons-lede {

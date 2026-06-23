@@ -22,6 +22,7 @@ h4,
 h5,
 h6 {
   font-family: var(--font-heading);
+  margin: 0 0 var(--space-3);
 }
 
 a {

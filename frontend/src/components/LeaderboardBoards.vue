@@ -93,7 +93,7 @@ function ownerOf(agent: BoardAgentRef): string | null {
     </section>
 
     <section class="board" aria-labelledby="human-board-title">
-      <h3 id="human-board-title" class="board-title">Human Ratings</h3>
+      <h3 id="human-board-title">Human Ratings</h3>
       <p v-if="props.ratingPrompt" class="board-prompt">“{{ props.ratingPrompt }}”</p>
       <UiEmptyState v-if="props.board.human.length === 0">No ratings yet.</UiEmptyState>
       <table v-else class="board-table">
@@ -159,10 +159,6 @@ function ownerOf(agent: BoardAgentRef): string | null {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: var(--space-5);
-}
-
-.board-title {
-  margin: 0 0 var(--space-3);
 }
 
 /* The season's rating prompt, shown under the human board heading so readers see what was asked. */

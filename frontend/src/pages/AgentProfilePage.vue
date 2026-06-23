@@ -122,7 +122,7 @@ const seasonLabel = (label: string | null, id: string): string =>
   <UiEmptyState v-if="failed" tone="danger">Could not load this agent profile.</UiEmptyState>
   <UiEmptyState v-else-if="profile === null">Loading…</UiEmptyState>
   <section v-else class="agent">
-    <header class="agent-header">
+    <header>
       <h1>{{ heading }}</h1>
     </header>
 
@@ -238,10 +238,6 @@ const seasonLabel = (label: string | null, id: string): string =>
 </template>
 
 <style scoped>
-.agent-header h1 {
-  margin: 0 0 var(--space-2);
-}
-
 .agent-section {
   margin-top: var(--space-6);
 }
