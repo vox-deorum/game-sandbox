@@ -98,12 +98,19 @@ test('operator leaderboard history includes unreleased seasons', async ({ page, 
  * serves (see scripts/demo.py) — so it does several real container builds plus a multi-agent run and
  * needs a wide timeout. It borrows the env's single open submission/play windows from the seeded
  * Playground season and restores them at the end so the rest of the suite still sees the default world.
+ *
+ * Before the field settles, the competitors submit a first round of entries that their final agents
+ * supersede, so several owners — including the glider owner the demo mocks under `npm run demo:user` —
+ * carry multiple submissions within the season. That richer history is verified on the agent profiles
+ * at the end. The superseded entries are inactive, so they never run, place, or change the boards.
  */
 test('a full season: submissions, an automated run, several judges rate, then release', async ({
   page,
   request,
 }) => {
-  test.setTimeout(900_000)
+  // A first round of re-submissions (each competitor replaces an earlier entry) adds real container
+  // builds beyond the bare arc, so widen the budget past the original 900s for slow runners.
+  test.setTimeout(1_200_000)
 
   // Free the env's single open-submission and open-play slots, held by the seeded Playground season.
   const original = await activeWindows(request)
@@ -125,6 +132,16 @@ test('a full season: submissions, an automated run, several judges rate, then re
       { owner: OWNERS.flapper, fixture: 'flapper', scores: [4, 3, 4, 3] },
       { owner: OWNERS.drifter, fixture: 'good', scores: [2, 2, 3, 2] },
     ]
+
+    // A first round the field later replaced: every competitor submits an earlier entry, and the glider
+    // owner (the data-rich member the demo mocks) iterates once more — so the season carries a spread of
+    // re-submissions across owners. Each owner's roster agent below supersedes their latest entry here,
+    // so these stay inactive: they never run, place, or change the boards, living only in the history.
+    await Promise.all(
+      roster.map((entry) => submitReadyAgent(request, entry.owner, fixturePath(entry.fixture))),
+    )
+    await submitReadyAgent(request, OWNERS.glider, fixturePath('glider'))
+
     const submissions = await Promise.all(
       roster.map(async (entry) => ({
         ...entry,
@@ -197,6 +214,23 @@ test('a full season: submissions, an automated run, several judges rate, then re
     // The glider has the highest mean rating, so it holds rank 1 on the Human Ratings board.
     const gliderHumanRow = humanBoard.locator('tbody tr', { hasText: OWNERS.glider })
     await expect(gliderHumanRow.locator('td').first()).toHaveText('1')
+
+    // The glider owner is the member the demo mocks, so close the arc on their agent profile: it now
+    // carries the richer history this fixture seeds — several submissions in the season, the current
+    // one plus the superseded entries it replaced.
+    await page.goto(`/environments/${ENV_ID}/agents/${OWNERS.glider}`)
+    await expect(
+      page.getByRole('heading', { name: `${OWNERS.glider}'s Submissions` }),
+    ).toBeVisible()
+    // The glider owner iterated deepest: two superseded entries (`.lifecycle-tag`) plus the current one.
+    await expect(page.locator('.submission-item')).toHaveCount(3)
+    await expect(page.locator('.lifecycle-tag')).toHaveCount(2)
+
+    // The other competitors re-submitted too, so their profiles show the same in-season iteration: one
+    // superseded entry and the current one.
+    await page.goto(`/environments/${ENV_ID}/agents/${OWNERS.flapper}`)
+    await expect(page.locator('.submission-item')).toHaveCount(2)
+    await expect(page.locator('.lifecycle-tag')).toHaveCount(1)
   } finally {
     // Restore the seeded Playground as the env's open submission+play season for the other specs.
     await closeSubmissions(request, season.id).catch(() => {})
