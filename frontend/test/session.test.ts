@@ -235,7 +235,7 @@ describe('SessionPage', () => {
     })
     await renderSession()
     await waitForHandlers()
-    expect(screen.queryByText('Rate the agents')).toBeNull()
+    expect(screen.queryByText('Rate the Agents')).toBeNull()
 
     handlers.onHeader(HEADER)
     handlers.onResult?.({ ticks: 1, reason: 'stopped', scores: { player_0: 1 } })
@@ -380,6 +380,26 @@ describe('SessionPage', () => {
     await waitFor(() => expect(screen.getByText('Live')).toBeInTheDocument())
     expect(screen.queryByRole('button', { name: 'Pause' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull()
+  })
+
+  it('shows a loading indicator until the renderer mounts, not the decision-log disclosure', async () => {
+    vi.mocked(getMe).mockResolvedValue({
+      user_id: 'dev-user',
+      allowlisted: true,
+      is_operator: false,
+    })
+    vi.mocked(getSession).mockResolvedValue(ownerRow())
+    await renderSession()
+    await waitForHandlers()
+
+    // The socket is connected but no header has arrived: the renderer has not mounted, so the stage
+    // shows the loading indicator and never the "Decision log" disclosure it has no rows for.
+    expect(await screen.findByText('Loading session…')).toBeInTheDocument()
+    expect(screen.queryByText('Decision log')).toBeNull()
+
+    // The header mounts the renderer; the loading indicator clears.
+    handlers.onHeader(HEADER)
+    await waitFor(() => expect(screen.queryByText('Loading session…')).toBeNull())
   })
 
   it('buffers a watch run through the jitter buffer and reveals game over only after it drains', async () => {

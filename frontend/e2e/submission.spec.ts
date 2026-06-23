@@ -78,7 +78,7 @@ test('a submitted agent validates to ready and runs in a watch session', async (
   await expect(page.locator('canvas.renderer-canvas')).toBeVisible()
   await page.getByRole('button', { name: 'Pause' }).click()
   await expect(page.locator('.overlay-banner')).toHaveText('Paused')
-  await expect(page.getByText('Rate the agents')).toHaveCount(0)
+  await expect(page.getByText('Rate the Agents')).toHaveCount(0)
 
   // Stop the paused run, then the rating panel should reveal immediately above the canvas.
   const stop = page.getByRole('button', { name: 'Stop' })

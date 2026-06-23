@@ -76,6 +76,10 @@ const blindAttribution = computed(
 // The decision log sits beside a portrait canvas and below a landscape one (the same rule as live).
 const logBeside = computed(() => aspectRatio.value !== null && aspectRatio.value < 1)
 
+// The recording is loaded but the renderer hasn't reported its shape yet, so the stage shows a loading
+// indicator rather than the decision log. (Stays false when no renderer is registered — its own state.)
+const stageLoading = computed(() => aspectRatio.value === null && !noRenderer.value)
+
 // The status badge mirrors the ended-session card: it names how the run ended once the listing supplies
 // the producing session's termination reason, falling back to a plain "Replay" until then (or when no
 // ended session claims the recording).
@@ -266,7 +270,11 @@ onMounted(async () => {
         <UiEmptyState v-if="noRenderer">No renderer is registered for this environment.</UiEmptyState>
       </section>
 
-      <section v-if="logBeside" class="stage-log" aria-label="Decision log">
+      <div v-if="stageLoading" class="stage-log stage-loading" role="status">
+        <span class="overlay-spinner" aria-hidden="true" />
+        <span>Loading…</span>
+      </div>
+      <section v-else-if="logBeside" class="stage-log" aria-label="Decision log">
         <div class="stage-log-body">
           <DecisionLog :entries="decisions" :current-index="replayState.index" />
         </div>
@@ -389,6 +397,39 @@ onMounted(async () => {
 .stage.beside .stage-log-body :deep(.decision-log) {
   position: absolute;
   inset: 0;
+}
+
+/* While the renderer mounts, a centered spinner stands in for the decision log it has no rows for. */
+.stage-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-6) 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-md);
+}
+
+.overlay-spinner {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  border: 3px solid var(--color-border);
+  border-top-color: var(--color-accent);
+  animation: overlay-spin 0.8s linear infinite;
+}
+
+@keyframes overlay-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .overlay-spinner {
+    animation: none;
+  }
 }
 
 .stage-log-below {

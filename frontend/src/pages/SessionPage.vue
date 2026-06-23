@@ -126,6 +126,11 @@ function toDecision(state: StepState): DecisionEntry {
 // The decision log sits beside a portrait canvas (a column is left free) and below a landscape one.
 const logBeside = computed(() => aspectRatio.value !== null && aspectRatio.value < 1)
 
+// The renderer hasn't reported its shape yet: the session row, socket, and first header are still in
+// flight, so the stage shows a loading indicator rather than the decision log it has no rows for.
+// (Stays false when no renderer is registered — that's its own empty state.)
+const stageLoading = computed(() => aspectRatio.value === null && !noRenderer.value)
+
 const statusLabel = computed(() => {
   if (status.value === 'ended') {
     return reasonText(endReason.value)
@@ -306,7 +311,11 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
         <UiEmptyState v-if="noRenderer">No renderer is registered for this environment yet.</UiEmptyState>
       </section>
 
-      <section v-if="logBeside" class="stage-log" aria-label="Decision log">
+      <div v-if="stageLoading" class="stage-log stage-loading" role="status">
+        <span class="overlay-spinner" aria-hidden="true" />
+        <span>Loading session…</span>
+      </div>
+      <section v-else-if="logBeside" class="stage-log" aria-label="Decision log">
         <div class="stage-log-body">
           <DecisionLog :entries="decisions" />
         </div>
@@ -444,6 +453,18 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
 .stage.beside .stage-log-body :deep(.decision-log) {
   position: absolute;
   inset: 0;
+}
+
+/* While the renderer mounts, a centered spinner stands in for the decision log it has no rows for. */
+.stage-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-6) 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-md);
 }
 
 .stage-log-below {

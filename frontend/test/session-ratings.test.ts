@@ -53,14 +53,14 @@ describe('SessionRatings', () => {
     renderPanel()
     // No card heading appears for an unrateable session.
     await waitFor(() => expect(vi.mocked(getSessionRatings)).toHaveBeenCalled())
-    expect(screen.queryByText('Rate the agents')).toBeNull()
+    expect(screen.queryByText('Rate the Agents')).toBeNull()
   })
 
   it('renders nothing when the backend returns no participant agents', async () => {
     vi.mocked(getSessionRatings).mockResolvedValue({ ok: true, ratings: view([]) })
     renderPanel()
     await waitFor(() => expect(vi.mocked(getSessionRatings)).toHaveBeenCalled())
-    expect(screen.queryByText('Rate the agents')).toBeNull()
+    expect(screen.queryByText('Rate the Agents')).toBeNull()
   })
 
   it('renders a control per rateable agent, including Naive and none for the own agent', async () => {
@@ -77,7 +77,7 @@ describe('SessionRatings', () => {
     })
     renderPanel()
 
-    expect(await screen.findByText('Rate the agents')).toBeInTheDocument()
+    expect(await screen.findByText('Rate the Agents')).toBeInTheDocument()
     expect(screen.getByTestId('ratings-reveal')).toHaveClass('ratings-reveal')
     // The own agent is shown but has no rating control.
     expect(screen.getByText('Your agent')).toBeInTheDocument()
@@ -101,9 +101,9 @@ describe('SessionRatings', () => {
     renderPanel()
 
     // The operator's season prompt applies to every agent, so it shows exactly once, above the list.
-    await screen.findByText('Rate the agents')
+    await screen.findByText('Rate the Agents')
     expect(screen.getAllByText('Judge overall skill.')).toHaveLength(1)
-    expect(screen.getByText('Season instructions:')).toBeInTheDocument()
+    expect(screen.getByText('The instructor wants you to rate by:')).toBeInTheDocument()
 
     const list = screen.getByRole('list')
     const items = within(list).getAllByRole('listitem')
@@ -111,7 +111,7 @@ describe('SessionRatings', () => {
     const naiveItem = items[1] as HTMLElement
     // The author prompt shows only next to its own agent; the season prompt is not repeated per item.
     expect(within(submissionItem).getByText('Did it dodge cleanly?')).toBeInTheDocument()
-    expect(within(submissionItem).getByText('Agent instructions:')).toBeInTheDocument()
+    expect(within(submissionItem).getByText('The author wants you to rate by:')).toBeInTheDocument()
     expect(within(submissionItem).queryByText('Judge overall skill.')).toBeNull()
     // Naive has no author, so it carries no per-agent prompt at all.
     expect(within(naiveItem).queryByText(/From the author/)).toBeNull()
