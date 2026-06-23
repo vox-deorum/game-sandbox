@@ -52,6 +52,8 @@ At the end of a session, immediately above the canvas, present a rating control 
 
 ## Frontend: author prompt editor
 
+> **Superseded by a later change.** The standalone `AuthorPromptEditor.vue` described in this section was removed. Authors now set the rating prompt directly in the **Submit an Agent** form (`SubmitAgentForm.vue`), saved against the submission-open season once the agent is accepted and editable only while that window stays open (it locks when submissions close, even if play is still open). The backend enforces that lifecycle on `PUT /api/seasons/:seasonId/agent-rating-prompt`. See [frontend.md](../../docs/specs/frontend.md). The text below records the original stage-6 design.
+
 On the agent profile ([frontend.md](../../docs/specs/frontend.md), Stage 5.6), the agent's **owner** gets a small editor to set or clear their per-submission rating prompt, "what should people evaluate about my agent?" It is shown only to the owner. When submission and play windows point at different seasons, it targets the owner's active submission in the play-open season; when no such submission exists, it falls back to the active submission in the submission-open season. The prompt is plain presentation metadata, kept distinct from the submission's validated artifact and build/validation status on the same page. Non-owners do not see the editor. They only see the prompt later at rating time, if they rate this agent.
 
 The human-feedback board's display (mean + population standard deviation + count, with the three-rating ranking rule) lives in the Leaderboards view built in step 7. This step provides its data (`getHumanBoard`) and the collection UI.

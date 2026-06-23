@@ -72,6 +72,7 @@ function board(): Board {
         count: 5,
         rank: 1,
         recording_id: 'rec-a',
+        author_prompt: 'Reward smooth, human-like play.',
       },
       {
         agent: { kind: 'builtin-naive' },
@@ -80,6 +81,7 @@ function board(): Board {
         count: 2,
         rank: null,
         recording_id: 'rec-n',
+        author_prompt: null,
       },
     ],
   }
@@ -163,6 +165,21 @@ describe('LeaderboardsPage', () => {
     expect(within(rankedRow).getByText('1')).toBeInTheDocument()
     expect(within(rankedRow).getByText('4.2 ± 0.8')).toBeInTheDocument()
     expect(within(unrankedRow).getByText('—')).toBeInTheDocument()
+  })
+
+  it("shows an agent's author rating prompt under its name on the human board", async () => {
+    vi.mocked(getEnvironmentLeaderboards).mockResolvedValue({
+      current: { season: season(), board: board() },
+      submission_season_id: null,
+      play_season_id: null,
+    })
+    await renderAt('/environments/flappy_bird/leaderboards')
+
+    const humanHeading = await screen.findByText('Human Ratings')
+    const humanSection = humanHeading.closest('section') as HTMLElement
+    // The ranked agent's prompt shows (full text in the title); the ownerless Naive row has none.
+    const prompt = within(humanSection).getByText(/Reward smooth, human-like play\./)
+    expect(prompt).toHaveAttribute('title', 'Reward smooth, human-like play.')
   })
 
   it('resolves a specific season by URL through the released-only read', async () => {

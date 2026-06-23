@@ -489,6 +489,7 @@ describe('rating API', () => {
   it('sets the author prompt under the caller identity and rejects a caller with no agent', async () => {
     const season = await playOpenSeason()
     await submissionFor(season.id, 'alice')
+    await storage.setSubmissionStatus(season.id, 'open')
 
     const ok = await app.inject({
       method: 'PUT',
@@ -523,6 +524,7 @@ describe('rating API', () => {
   it('clears the author prompt when given an empty value', async () => {
     const season = await playOpenSeason()
     await submissionFor(season.id, 'alice')
+    await storage.setSubmissionStatus(season.id, 'open')
     await app.inject({
       method: 'PUT',
       url: `/api/seasons/${season.id}/agent-rating-prompt`,
@@ -537,5 +539,23 @@ describe('rating API', () => {
     })
     expect(cleared.statusCode).toBe(200)
     expect((cleared.json() as { prompt: string | null }).prompt).toBeNull()
+  })
+
+  it('locks the author prompt once the season submission window is closed', async () => {
+    // Play is open and the author has an active submission, but submissions never opened — the
+    // lifecycle forbids revisions once submissions close, even while play stays open, and a direct
+    // API call must not bypass that to edit a prompt after submissions (or release).
+    const season = await playOpenSeason()
+    await submissionFor(season.id, 'alice')
+
+    const denied = await app.inject({
+      method: 'PUT',
+      url: `/api/seasons/${season.id}/agent-rating-prompt`,
+      headers: ALICE,
+      payload: { prompt: 'too late' },
+    })
+    expect(denied.statusCode).toBe(409)
+    expect((denied.json() as { code: string }).code).toBe('submissions_closed')
+    expect(await storage.getAgentRatingPrompt(season.id, 'alice')).toBeUndefined()
   })
 })

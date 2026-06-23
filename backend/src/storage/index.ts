@@ -251,6 +251,8 @@ export interface HumanBoardRow {
    * it, so the human board can deep-link a replay too. Null when the agent has no recorded game.
    */
   recording_id: string | null
+  /** The agent author's rating prompt for this season, when set (null for the ownerless Naive baseline). */
+  author_prompt: string | null
 }
 
 /**

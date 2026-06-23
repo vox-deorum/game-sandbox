@@ -27,7 +27,6 @@ import {
   getAgentProfile,
   type SubmissionStatus,
 } from '../api/client.js'
-import AuthorPromptEditor from '../components/AuthorPromptEditor.vue'
 import SubmissionStageTimeline from '../components/SubmissionStageTimeline.vue'
 import SubmitAgentForm from '../components/SubmitAgentForm.vue'
 import UiCard from '../components/ui/UiCard.vue'
@@ -211,33 +210,9 @@ const isOwner = () => me.me?.user_id === ownerId
 /** "My Submissions" on your own profile, "{owner}'s Submissions" when viewing someone else's. */
 const heading = computed(() => (isOwner() ? 'My Submissions' : `${ownerId}'s Submissions`))
 
-/**
- * The active submission whose season the author-prompt editor targets. Public play takes
- * precedence because that is the agent raters can currently encounter. When no round is play-open,
- * fall back to the submission-open round so an author can prepare its prompt before play begins.
- */
-const promptSubmission = computed(() => {
-  const data = profile.value
-  if (data === null) {
-    return null
-  }
-  for (const seasonId of [
-    data.play_season_id,
-    data.submission_season_id,
-  ]) {
-    if (seasonId === null) {
-      continue
-    }
-    const submission = data.submissions.find(
-      (candidate) =>
-        candidate.season_id === seasonId && candidate.superseded_at === null,
-    )
-    if (submission !== undefined) {
-      return submission
-    }
-  }
-  return null
-})
+/** The owner's rating prompt for a season, or null when they set none (shown per season group). */
+const authorPromptFor = (seasonId: string): string | null =>
+  profile.value?.author_prompts[seasonId] ?? null
 
 /** A placement's season name, falling back to a short id when the season has no label. */
 const seasonLabel = (label: string | null, id: string): string =>
@@ -254,7 +229,11 @@ const seasonLabel = (label: string | null, id: string): string =>
 
     <section v-if="isOwner()" class="agent-section">
       <h2>Submit an Agent</h2>
-      <SubmitAgentForm v-if="profile.submission_season_id !== null" :env-id="envId" />
+      <SubmitAgentForm
+        v-if="profile.submission_season_id !== null"
+        :env-id="envId"
+        :submission-season-id="profile.submission_season_id"
+      />
       <UiEmptyState v-else>Submissions are closed for this environment right now.</UiEmptyState>
     </section>
 
@@ -266,6 +245,9 @@ const seasonLabel = (label: string | null, id: string): string =>
       <div v-else class="season-groups">
         <div v-for="group in seasonGroups" :key="group.seasonId" class="season-group">
           <p v-if="seasonGroups.length > 1" class="season-caption">{{ seasonCaption(group.seasonId) }}</p>
+          <p v-if="authorPromptFor(group.seasonId)" class="season-prompt">
+            Rating prompt: “{{ authorPromptFor(group.seasonId) }}”
+          </p>
           <ol class="submission-list">
             <li
               v-for="{ submission, placement } in group.rows"
@@ -317,8 +299,8 @@ const seasonLabel = (label: string | null, id: string): string =>
 
                     <SubmissionStageTimeline :checks="submission.checks" :show-detail="true" />
 
+                    <hr class="submission-divider" />
                     <template v-if="placement !== null">
-                      <hr class="submission-divider" />
                       <RouterLink
                         class="submission-result"
                         :to="`/environments/${envId}/leaderboards/${placement.season_id}`"
@@ -367,11 +349,6 @@ const seasonLabel = (label: string | null, id: string): string =>
         </div>
       </div>
     </section>
-
-    <AuthorPromptEditor
-      v-if="isOwner() && promptSubmission !== null"
-      :season-id="promptSubmission.season_id"
-    />
 
     <section class="agent-section">
       <h2>Leaderboard Placements</h2>
@@ -466,6 +443,14 @@ const seasonLabel = (label: string | null, id: string): string =>
   font-size: var(--text-xs);
   letter-spacing: 0.04em;
   text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+/* The owner's rating prompt for the round, shown once per season group above its submissions. */
+.season-prompt {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-style: italic;
   color: var(--color-text-muted);
 }
 

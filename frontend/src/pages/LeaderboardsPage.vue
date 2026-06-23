@@ -192,10 +192,6 @@ watch(requestedSeasonId, load, { immediate: true })
 </template>
 
 <style scoped>
-.leaderboards-header h1 {
-  margin: 0;
-}
-
 .leaderboards-sub {
   display: flex;
   flex-wrap: wrap;

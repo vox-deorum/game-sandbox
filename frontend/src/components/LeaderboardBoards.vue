@@ -134,6 +134,9 @@ function ownerOf(agent: BoardAgentRef): string | null {
               <span v-else class="agent-naive">
                 Naive baseline <UiBadge>Built-in</UiBadge>
               </span>
+              <p v-if="row.author_prompt" class="row-prompt" :title="row.author_prompt">
+                “{{ row.author_prompt }}”
+              </p>
             </td>
             <td class="num">{{ formatRatingSpread(row.mean, row.std) }}</td>
             <td class="num">{{ row.count }}</td>
@@ -167,6 +170,19 @@ function ownerOf(agent: BoardAgentRef): string | null {
   font-size: var(--text-sm);
   font-style: italic;
   color: var(--color-text-muted);
+}
+
+/* An agent author's own rating prompt, shown under its name. Clamped to one line (full text on hover)
+   so a long prompt never balloons the row height. */
+.row-prompt {
+  margin: var(--space-1) 0 0;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: var(--text-sm);
+  font-style: italic;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .board-table {

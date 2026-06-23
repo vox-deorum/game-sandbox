@@ -222,15 +222,16 @@ test('a full season: submissions, an automated run, several judges rate, then re
     await expect(
       page.getByRole('heading', { name: `${OWNERS.glider}'s Submissions` }),
     ).toBeVisible()
-    // The glider owner iterated deepest: two superseded entries (`.lifecycle-tag`) plus the current one.
+    // The glider owner iterated deepest: two superseded entries plus the current one. Each superseded
+    // entry carries the "superseded" status badge that the profile folds the old lifecycle marker into.
     await expect(page.locator('.submission-item')).toHaveCount(3)
-    await expect(page.locator('.lifecycle-tag')).toHaveCount(2)
+    await expect(page.getByText('superseded', { exact: true })).toHaveCount(2)
 
     // The other competitors re-submitted too, so their profiles show the same in-season iteration: one
     // superseded entry and the current one.
     await page.goto(`/environments/${ENV_ID}/agents/${OWNERS.flapper}`)
     await expect(page.locator('.submission-item')).toHaveCount(2)
-    await expect(page.locator('.lifecycle-tag')).toHaveCount(1)
+    await expect(page.getByText('superseded', { exact: true })).toHaveCount(1)
   } finally {
     // Restore the seeded Playground as the env's open submission+play season for the other specs.
     await closeSubmissions(request, season.id).catch(() => {})

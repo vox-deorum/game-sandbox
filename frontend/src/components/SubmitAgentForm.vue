@@ -22,9 +22,11 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import {
   checkReachability,
+  getAuthorPrompt,
   getSubmission,
   getSubmissionCapabilities,
   type ReachabilityResult,
+  setAuthorPrompt,
   type SubmissionDetail,
   type SubmissionSourceInput,
   submitAgent,
@@ -39,6 +41,8 @@ import UiStatusBadge from './ui/UiStatusBadge.vue'
 const props = withDefaults(
   defineProps<{
     envId: string
+    /** The open submission season the new agent lands in; also the season its rating prompt is saved to. */
+    submissionSeasonId: string
     /** Poll cadence once a submission is pending; also lets tests drive the timeline deterministically. */
     pollIntervalMs?: number
     /** No-progress polls before the non-terminal "still processing" notice shows. */
@@ -50,6 +54,13 @@ const props = withDefaults(
 const repoUrl = ref('')
 const refInput = ref('')
 const localPath = ref('')
+
+// The agent author's rating prompt for this season. Prefilled from any existing value so a resubmit
+// shows it and a blank field never silently clears it; saved once the submission is accepted.
+const ratingPrompt = ref('')
+const loadedPrompt = ref('')
+const promptSaved = ref(false)
+const promptSaveError = ref(false)
 
 const capabilities = ref<{ local_submissions: boolean } | null>(null)
 const localEnabled = computed(() => import.meta.env.DEV && capabilities.value?.local_submissions === true)
@@ -76,6 +87,13 @@ onMounted(async () => {
   } catch {
     // No capabilities means the dev local-folder affordance simply stays hidden.
     capabilities.value = null
+  }
+  try {
+    const current = await getAuthorPrompt(props.submissionSeasonId)
+    ratingPrompt.value = current.prompt ?? ''
+    loadedPrompt.value = current.prompt ?? ''
+  } catch {
+    // A failed prefill just leaves the field empty; the author can still type a prompt.
   }
 })
 
@@ -142,6 +160,11 @@ async function onSubmit(): Promise<void> {
   }
   phase.value = 'polling'
   startPolling(result.id)
+  // The pending submission row now exists and the season's submission window is still open, so save
+  // the rating prompt right away rather than on the eventual `ready` poll: deferring it would silently
+  // drop the prompt if the author leaves the page while validation runs, leaving an accepted agent
+  // with none. Fire-and-forget — the save is exception-safe and independent of the polling above.
+  void saveRatingPrompt(props.submissionSeasonId)
 }
 
 function startPolling(id: string): void {
@@ -165,7 +188,8 @@ async function poll(id: string): Promise<void> {
   submission.value = detail
 
   if (detail.status !== 'pending') {
-    // Terminal: stop polling; the timeline and result banner now render the outcome.
+    // Terminal: stop polling; the timeline and result banner now render the outcome. The rating
+    // prompt was already saved when the submission was accepted (see onSubmit), so nothing to do here.
     return
   }
 
@@ -180,6 +204,30 @@ async function poll(id: string): Promise<void> {
     stalled.value = true
   }
   timer = setTimeout(() => void poll(id), props.pollIntervalMs)
+}
+
+/**
+ * Persist the author's rating prompt for the submission's season, but only when it differs from the
+ * prefilled value, so leaving the field untouched never rewrites or clears an existing prompt.
+ */
+async function saveRatingPrompt(seasonId: string): Promise<void> {
+  const trimmed = ratingPrompt.value.trim()
+  if (trimmed === loadedPrompt.value.trim()) {
+    return
+  }
+  // A failed save must never break the submit flow it runs inside, so a thrown request is caught and
+  // surfaced as the non-blocking notice rather than rejecting onSubmit.
+  try {
+    const result = await setAuthorPrompt(seasonId, trimmed === '' ? null : trimmed)
+    if (result.ok) {
+      loadedPrompt.value = result.prompt ?? ''
+      promptSaved.value = true
+    } else {
+      promptSaveError.value = true
+    }
+  } catch {
+    promptSaveError.value = true
+  }
 }
 
 const isReady = computed(() => submission.value?.status === 'ready')
@@ -223,6 +271,23 @@ const isFailed = computed(
         </template>
       </UiField>
 
+      <UiField
+        label="Rating prompt (optional)"
+        hint="Tell raters what to evaluate about your agent. Shown next to the 1-5 control after a session. You can edit it while submissions stay open."
+      >
+        <template #default="{ id, describedby }">
+          <textarea
+            :id="id"
+            v-model="ratingPrompt"
+            class="submit-prompt-input"
+            rows="3"
+            maxlength="2000"
+            placeholder="e.g. Reward smooth, human-like play over raw score."
+            :aria-describedby="describedby"
+          />
+        </template>
+      </UiField>
+
       <div class="submit-actions">
         <UiButton type="button" variant="secondary" :loading="verifying" :disabled="!hasSource" @click="verify">
           Verify reachability
@@ -247,6 +312,11 @@ const isFailed = computed(
         <template v-if="submission?.commit_sha">
           Pinned commit <code>{{ submission.commit_sha.slice(0, 10) }}</code>.
         </template>
+        <template v-if="promptSaved"> Rating prompt saved.</template>
+      </p>
+      <p v-if="isReady && promptSaveError" class="submit-result submit-result-wait" role="status">
+        Your agent was accepted, but we couldn't save the rating prompt. You can set it by resubmitting
+        while submissions stay open.
       </p>
       <p v-else-if="isFailed" class="submit-result submit-result-fail" role="alert">
         {{ submission?.reason ?? 'Validation failed.' }}
@@ -268,7 +338,6 @@ const isFailed = computed(
 }
 
 .submit-intro {
-  margin: 0;
   color: var(--color-text-muted);
   font-size: var(--text-sm);
 }
@@ -280,9 +349,24 @@ const isFailed = computed(
 }
 
 .submit-error {
-  margin: 0;
   color: var(--color-danger);
   font-size: var(--text-sm);
+}
+
+.submit-prompt-input {
+  font: inherit;
+  width: 100%;
+  resize: vertical;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text);
+  transition: border-color var(--motion-fast) var(--ease-out);
+}
+
+.submit-prompt-input:hover {
+  border-color: var(--color-border-strong);
 }
 
 .submit-progress {
@@ -296,7 +380,6 @@ const isFailed = computed(
 }
 
 .submit-result {
-  margin: 0;
   font-size: var(--text-sm);
 }
 

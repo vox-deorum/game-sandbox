@@ -8,12 +8,16 @@ vi.mock('../src/api/client.js', () => ({
   checkReachability: vi.fn(),
   submitAgent: vi.fn(),
   getSubmission: vi.fn(),
+  getAuthorPrompt: vi.fn(),
+  setAuthorPrompt: vi.fn(),
 }))
 
 import {
   checkReachability,
+  getAuthorPrompt,
   getSubmission,
   getSubmissionCapabilities,
+  setAuthorPrompt,
   submitAgent,
 } from '../src/api/client.js'
 import SubmitAgentForm from '../src/components/SubmitAgentForm.vue'
@@ -57,7 +61,12 @@ function detail(
 
 function renderForm() {
   return render(SubmitAgentForm, {
-    props: { envId: 'flappy_bird', pollIntervalMs: 5, stallAfterPolls: 2 },
+    props: {
+      envId: 'flappy_bird',
+      submissionSeasonId: 'flappy_bird-iter-1',
+      pollIntervalMs: 5,
+      stallAfterPolls: 2,
+    },
   })
 }
 
@@ -72,6 +81,8 @@ describe('SubmitAgentForm', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(getSubmissionCapabilities).mockResolvedValue({ local_submissions: false })
+    vi.mocked(getAuthorPrompt).mockResolvedValue({ season_id: 'flappy_bird-iter-1', prompt: null })
+    vi.mocked(setAuthorPrompt).mockResolvedValue({ ok: true, prompt: 'reward smooth play' })
   })
 
   it('keeps submit disabled until the repository verifies reachable', async () => {
@@ -199,5 +210,69 @@ describe('SubmitAgentForm', () => {
     renderForm()
     await vi.waitFor(() => expect(getSubmissionCapabilities).toHaveBeenCalled())
     expect(screen.queryByLabelText('Local folder path (dev only)')).toBeNull()
+  })
+
+  it('prefills the rating prompt from the existing season value', async () => {
+    vi.mocked(getAuthorPrompt).mockResolvedValue({
+      season_id: 'flappy_bird-iter-1',
+      prompt: 'reward smooth play',
+    })
+    renderForm()
+    const field = await screen.findByLabelText('Rating prompt (optional)')
+    await vi.waitFor(() => expect(field).toHaveValue('reward smooth play'))
+    expect(getAuthorPrompt).toHaveBeenCalledWith('flappy_bird-iter-1')
+  })
+
+  it('saves a changed rating prompt as soon as the submission is accepted and shows it on the ready banner', async () => {
+    vi.mocked(checkReachability).mockResolvedValue({ reachable: true })
+    vi.mocked(submitAgent).mockResolvedValue({ ok: true, id: 'sub1', status: 'pending' })
+    vi.mocked(getSubmission).mockResolvedValue(detail('ready', [['resolve', 'passed']]))
+    renderForm()
+    await verifyReachable()
+    await fireEvent.update(screen.getByLabelText('Rating prompt (optional)'), 'reward smooth play')
+    await fireEvent.click(screen.getByRole('button', { name: 'Submit agent' }))
+
+    expect(await screen.findByText(/Rating prompt saved\./)).toBeInTheDocument()
+    expect(vi.mocked(setAuthorPrompt)).toHaveBeenCalledWith(
+      'flappy_bird-iter-1',
+      'reward smooth play',
+    )
+  })
+
+  it('persists the rating prompt on acceptance even if the submission never reaches ready', async () => {
+    vi.mocked(checkReachability).mockResolvedValue({ reachable: true })
+    vi.mocked(submitAgent).mockResolvedValue({ ok: true, id: 'sub1', status: 'pending' })
+    // The submission stays pending forever, modelling an author who leaves the page mid-validation.
+    // The prompt must already be saved against the submission season, not waiting for a `ready` poll.
+    vi.mocked(getSubmission).mockResolvedValue(detail('pending', [['resolve', 'running']]))
+    renderForm()
+    // Verify first so the onMounted prefill settles before typing; otherwise it would overwrite the field.
+    await verifyReachable()
+    await fireEvent.update(screen.getByLabelText('Rating prompt (optional)'), 'reward smooth play')
+    await fireEvent.click(screen.getByRole('button', { name: 'Submit agent' }))
+
+    await vi.waitFor(() =>
+      expect(vi.mocked(setAuthorPrompt)).toHaveBeenCalledWith(
+        'flappy_bird-iter-1',
+        'reward smooth play',
+      ),
+    )
+  })
+
+  it('leaves the rating prompt untouched when the field is not edited', async () => {
+    vi.mocked(getAuthorPrompt).mockResolvedValue({
+      season_id: 'flappy_bird-iter-1',
+      prompt: 'reward smooth play',
+    })
+    vi.mocked(checkReachability).mockResolvedValue({ reachable: true })
+    vi.mocked(submitAgent).mockResolvedValue({ ok: true, id: 'sub1', status: 'pending' })
+    vi.mocked(getSubmission).mockResolvedValue(detail('ready', [['resolve', 'passed']]))
+    renderForm()
+    await screen.findByLabelText('Rating prompt (optional)')
+    await verifyReachable()
+    await fireEvent.click(screen.getByRole('button', { name: 'Submit agent' }))
+
+    await screen.findByText('Accepted.')
+    expect(vi.mocked(setAuthorPrompt)).not.toHaveBeenCalled()
   })
 })

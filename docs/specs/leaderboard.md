@@ -60,7 +60,7 @@ Each match runs in its own sandboxed session container. See [Execution](executio
 
 ## Human-feedback board
 
-The human-feedback board shows each agent's mean rating, the population standard deviation of its ratings, and its rating count. An agent needs at least three ratings to be ranked.
+The human-feedback board shows each agent's mean rating, the population standard deviation of its ratings, and its rating count. An agent needs at least three ratings to be ranked. When an agent's author has set a rating prompt, it is shown beneath the agent's name on the board (truncated, with the full text on hover).
 
 Ratings use a 1 to 5 scale. Two optional prompts may guide one rating:
 

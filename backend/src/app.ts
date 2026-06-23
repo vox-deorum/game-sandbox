@@ -403,12 +403,26 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
           ),
         })),
       )
+      // The owner's rating prompt per season they submitted into, so the profile can show what each
+      // round's raters were asked to evaluate. Keyed by the owner (not the caller), so any viewer sees
+      // it; only non-blank prompts are returned.
+      const seasonIds = [...new Set(submissions.map((submission) => submission.season_id))]
+      const author_prompts: Record<string, string> = {}
+      await Promise.all(
+        seasonIds.map(async (seasonId) => {
+          const row = await deps.storage.getAgentRatingPrompt(seasonId, request.params.ownerId)
+          if (row !== undefined && row.prompt !== '') {
+            author_prompts[seasonId] = row.prompt
+          }
+        }),
+      )
       return {
         env_id: request.params.envId,
         owner_id: request.params.ownerId,
         submission_season_id: submissionTarget?.id ?? null,
         play_season_id: playTarget?.id ?? null,
         submissions: detailed,
+        author_prompts,
       }
     },
   )

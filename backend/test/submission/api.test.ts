@@ -525,6 +525,8 @@ describe('submission API', () => {
         env_id: ENV_ID,
         created_at: new Date().toISOString(),
       })
+      // The owner's rating prompt for the season, surfaced per season on the profile.
+      await storage.upsertAgentRatingPrompt(season.id, 'eve', 'Judge my dodging')
 
       const res = await app.inject({
         method: 'GET',
@@ -536,6 +538,7 @@ describe('submission API', () => {
         owner_id: string
         submission_season_id: string | null
         play_season_id: string | null
+        author_prompts: Record<string, string>
         submissions: Array<{
           id: string
           status: string
@@ -550,6 +553,8 @@ describe('submission API', () => {
         submission_season_id: season.id,
         play_season_id: season.id,
       })
+      // The per-season author prompt is keyed by season id, resolved for the profile owner.
+      expect(body.author_prompts[season.id]).toBe('Judge my dodging')
       // Newest first: the ready submission, then the superseded failed one (history is preserved).
       expect(body.submissions.map((s) => s.id)).toEqual([second.id, first.id])
       const ready = body.submissions[0]

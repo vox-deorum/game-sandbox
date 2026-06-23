@@ -27,11 +27,12 @@ Review `git status` and add only the project files you intend to submit. Never a
 2. Go to **My Submissions**.
 3. Paste the GitHub repository URL.
 4. Optionally enter a branch, tag, or commit.
-5. Review the reachability check, then submit.
+5. Optionally write a **rating prompt**: a short note telling people what to evaluate about your agent. It appears next to the rating control after a session, beneath your agent on the human-feedback board, and on your agent profile.
+6. Review the reachability check, then submit.
 
 If you leave the branch, tag, or commit field blank, the server uses the latest commit on the repository's default branch. The submission is attached to your signed-in account, so you do not enter a username.
 
-You can have one active submission in each season. Submitting again while the window is open replaces the active submission, but the earlier one remains in your history.
+You can have one active submission in each season. Submitting again while the window is open replaces the active submission, but the earlier one remains in your history. Your rating prompt is saved per season; you can change it by resubmitting while the submission window stays open, after which it locks.
 
 ## Validation flow
 

@@ -15,7 +15,7 @@ import type {
   RatingAggregate,
 } from '../index.js'
 import type { AutomatedPlacement, Database } from '../schema.js'
-import { aggregateRatingsByAgent } from './ratings.js'
+import { aggregateRatingsByAgent, listAgentRatingPromptsBySeason } from './ratings.js'
 import { getLatestCompletedRun } from './runs.js'
 import {
   type AgentColumns,
@@ -216,6 +216,15 @@ export async function getHumanBoard(
   // caller passes the already-computed automated board so that aggregation runs only once per read.
   const aggregates = await aggregateRatingsByAgent(db, seasonId)
   const recordings = new Map(automated.map((row) => [agentRefKey(row.agent), row.recording_id]))
+  // Each author's rating prompt, keyed by owner, so a submitted-agent row can surface what its author
+  // asked raters to evaluate. A blank stored prompt reads as "none". The Naive baseline has no author.
+  const prompts = new Map(
+    (await listAgentRatingPromptsBySeason(db, seasonId)).map(
+      (row) => [row.user_id, row.prompt === '' ? null : row.prompt] as const,
+    ),
+  )
+  const promptFor = (agent: AgentRef): string | null =>
+    agent.kind === 'submission' ? (prompts.get(agent.user_id) ?? null) : null
   const ordered = [...aggregates].sort((a, b) => {
     if (b.mean !== a.mean) {
       return b.mean - a.mean
@@ -230,7 +239,17 @@ export async function getHumanBoard(
   const recordingFor = (row: RatingAggregate): string | null =>
     recordings.get(agentRefKey(row.agent)) ?? null
   return [
-    ...ranked.map((row, index) => ({ ...row, rank: index + 1, recording_id: recordingFor(row) })),
-    ...unranked.map((row) => ({ ...row, rank: null, recording_id: recordingFor(row) })),
+    ...ranked.map((row, index) => ({
+      ...row,
+      rank: index + 1,
+      recording_id: recordingFor(row),
+      author_prompt: promptFor(row.agent),
+    })),
+    ...unranked.map((row) => ({
+      ...row,
+      rank: null,
+      recording_id: recordingFor(row),
+      author_prompt: promptFor(row.agent),
+    })),
   ]
 }

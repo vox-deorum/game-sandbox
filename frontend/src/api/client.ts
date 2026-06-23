@@ -366,6 +366,8 @@ export interface AgentProfile {
   submission_season_id: string | null
   play_season_id: string | null
   submissions: AgentProfileSubmission[]
+  /** The owner's rating prompt per season they submitted into, keyed by season id (non-blank only). */
+  author_prompts: Record<string, string>
 }
 
 /** An owner's agent profile for an environment: history across seasons, newest first. */
@@ -642,6 +644,8 @@ export interface HumanBoardRow {
   rank: number | null
   /** The agent's representative replay link (its best automated game), or null. */
   recording_id: string | null
+  /** The agent author's rating prompt for this season, when set (null for the ownerless Naive baseline). */
+  author_prompt: string | null
 }
 
 /** Both boards for a season: the automated aggregate and the human-rating aggregate. */

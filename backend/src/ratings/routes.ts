@@ -348,8 +348,9 @@ export function registerRatingRoutes(app: FastifyInstance, deps: RatingDeps): vo
     },
   )
 
-  // The agent author sets or clears their per-season rating prompt. The caller must have an agent
-  // (a submission) in the season; the prompt is keyed by the caller's resolved identity.
+  // The agent author sets or clears their per-season rating prompt while the season's submission
+  // window is open. The caller must have an agent (a submission) in the season; the prompt is keyed
+  // by the caller's resolved identity.
   app.put<{ Params: { seasonId: string }; Body: unknown }>(
     '/api/seasons/:seasonId/agent-rating-prompt',
     async (request, reply) => {
@@ -367,6 +368,15 @@ export function registerRatingRoutes(app: FastifyInstance, deps: RatingDeps): vo
           code: tooLong ? 'author_prompt_too_long' : 'invalid_request',
         })
       }
+      // The prompt is editable only while submissions are open; once they close it locks, even if a
+      // play window remains open — the "no more revisions after submissions close" lifecycle the
+      // submit form presents. Enforced here so a direct API call cannot bypass it after release.
+      if (season.submission_status !== 'open') {
+        return reply.code(409).send({
+          error: 'submissions for this season are closed',
+          code: 'submissions_closed',
+        })
+      }
       const callerId = resolveUserId(request.headers)
       const submission = await deps.storage.findActiveSubmission(season.id, callerId)
       if (submission === undefined) {
@@ -381,7 +391,7 @@ export function registerRatingRoutes(app: FastifyInstance, deps: RatingDeps): vo
     },
   )
 
-  // The author reads their own prompt back to populate the editor on their agent profile.
+  // The author reads their own prompt back to prefill the rating-prompt field in the submit form.
   app.get<{ Params: { seasonId: string } }>(
     '/api/seasons/:seasonId/agent-rating-prompt',
     async (request, reply) => {

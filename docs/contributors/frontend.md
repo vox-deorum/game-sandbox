@@ -182,7 +182,7 @@ The UI mirrors backend rules:
 - Writes are available only to allowlisted users.
 - While play is open, non-operators see anonymous submitted-agent attribution on the live session and replay surfaces. The stored recording header remains canonical, and the identified display returns when play closes.
 
-`AuthorPromptEditor.vue` is owner-only. It targets the active submission in the play-open season first, then the submission-open season. The prompt is presentation metadata and is separate from the validated submission artifact.
+The author's rating prompt is set in `SubmitAgentForm.vue`. The form prefills it from any existing value and saves it against the submission-open season as soon as the submission is accepted, so leaving the page mid-validation never drops it. It is editable only while that submission window stays open; once submissions close it locks, even if play is still open. The prompt is presentation metadata, separate from the validated submission artifact, and is surfaced read-only beneath each agent on the human-feedback board and once per season in the agent profile's submission history.
 
 ## Replay viewer
 

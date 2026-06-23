@@ -498,8 +498,42 @@ describe('leaderboard storage on :memory:', () => {
 
     const board = await storage.getHumanBoard(season.id, await storage.getAutomatedBoard(season.id))
     expect(board).toEqual([
-      { agent: rated, mean: 4, std: 0, count: 3, rank: 1, recording_id: 'rec-hi' },
+      {
+        agent: rated,
+        mean: 4,
+        std: 0,
+        count: 3,
+        rank: 1,
+        recording_id: 'rec-hi',
+        author_prompt: null,
+      },
     ])
+  })
+
+  it('getHumanBoard surfaces each agent author rating prompt, none for the Naive baseline', async () => {
+    const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
+    const alice: AgentRef = { kind: 'submission', submission_id: 's-alice', user_id: 'alice' }
+    for (const agent of [alice, NAIVE]) {
+      for (const rater of ['u1', 'u2', 'u3']) {
+        await storage.upsertRating({
+          season_id: season.id,
+          env_id: ENV,
+          rater_user_id: rater,
+          agent,
+          score: 4,
+        })
+      }
+    }
+    // The author prompt is keyed by (season, owner); the baseline has no author.
+    await storage.upsertAgentRatingPrompt(season.id, 'alice', 'Judge my dodging')
+
+    const board = await storage.getHumanBoard(season.id, await storage.getAutomatedBoard(season.id))
+    const aliceRow = board.find(
+      (row) => row.agent.kind === 'submission' && row.agent.user_id === 'alice',
+    )
+    const naiveRow = board.find((row) => row.agent.kind === 'builtin-naive')
+    expect(aliceRow?.author_prompt).toBe('Judge my dodging')
+    expect(naiveRow?.author_prompt).toBeNull()
   })
 
   // --- rating prompts ---

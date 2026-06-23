@@ -13,7 +13,8 @@ vi.mock('../src/api/client.js', () => ({
     owner_id: 'eve',
     placements: [],
   })),
-  // The owner-only author-prompt editor self-fetches on mount; default it to an unset prompt.
+  // The owner-only submit form prefills the rating prompt from the submission season on mount; default
+  // it to an unset prompt. setAuthorPrompt only fires after a submission is accepted.
   getAuthorPrompt: vi.fn(async () => ({ season_id: 'flappy_bird-iter-1', prompt: null })),
   setAuthorPrompt: vi.fn(async () => ({ ok: true, prompt: null })),
   // The owner-only submit form (shown when a season is accepting submissions) probes capabilities on
@@ -56,13 +57,17 @@ function submission(overrides: Partial<AgentProfileSubmission> = {}): AgentProfi
   }
 }
 
-type ProfileFixture = Omit<AgentProfile, 'submission_season_id' | 'play_season_id'> &
-  Partial<Pick<AgentProfile, 'submission_season_id' | 'play_season_id'>>
+type ProfileFixture = Omit<
+  AgentProfile,
+  'submission_season_id' | 'play_season_id' | 'author_prompts'
+> &
+  Partial<Pick<AgentProfile, 'submission_season_id' | 'play_season_id' | 'author_prompts'>>
 
 async function renderProfile(profile: ProfileFixture) {
   vi.mocked(getAgentProfile).mockResolvedValue({
     submission_season_id: null,
     play_season_id: null,
+    author_prompts: {},
     ...profile,
   })
   const router = memoryRouter([
@@ -276,7 +281,7 @@ describe('AgentProfilePage', () => {
     expect(screen.queryByText(/LLM debug view/)).toBeNull()
   })
 
-  it('edits the play-open prompt when submissions are open for a newer round', async () => {
+  it('prefills the submit form rating prompt for the open submission season', async () => {
     vi.mocked(getMe).mockResolvedValue({ user_id: 'eve', allowlisted: true, is_operator: false })
     await renderProfile({
       env_id: 'flappy_bird',
@@ -293,7 +298,24 @@ describe('AgentProfilePage', () => {
       ],
     })
 
-    await waitFor(() => expect(vi.mocked(getAuthorPrompt)).toHaveBeenCalledWith('iter-play'))
+    // The prompt is now set from inside the submit form, keyed to the open submission season.
+    await waitFor(() => expect(vi.mocked(getAuthorPrompt)).toHaveBeenCalledWith('iter-next'))
+  })
+
+  it('shows the owner rating prompt once per season in submission history', async () => {
+    await renderProfile({
+      env_id: 'flappy_bird',
+      owner_id: 'eve',
+      author_prompts: { 'flappy_bird-iter-1': 'Reward smooth, human-like play.' },
+      submissions: [
+        submission({ id: 'a', status: 'ready' }),
+        submission({ id: 'b', status: 'ready', superseded_at: '2026-06-14T01:00:00Z' }),
+      ],
+    })
+
+    // One season group, two submissions, but the prompt line shows once for the group.
+    const prompts = await screen.findAllByText(/Reward smooth, human-like play\./)
+    expect(prompts).toHaveLength(1)
   })
 
   it('shows an empty history for an owner with no submissions', async () => {
