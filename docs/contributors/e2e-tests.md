@@ -51,6 +51,8 @@ In CI the checkout is already clean, so the wipe is a no-op there. Sibling direc
 
 `npm run demo` (`scripts/demo.py`) does **not** seed its own data — it snapshots `frontend/e2e/.data/main/` into a `demo/` copy and serves that. So the e2e run _is_ the demo's data builder: better-named, more complete e2e data is a better demo. This is why the leaderboards arc populates real agents, an automated scoreboard, human ratings, and rating prompts, and why the names are meaningful.
 
+The demo builds that database only when it is missing, so after changing a spec or the data it produces, force a rebuild with `npm run demo -- --rerun-e2e`: it discards any existing fixture and reruns the suite before launching, regardless of the prior run's result.
+
 ## Naming and shared helpers
 
 Shared identities live in `e2e/support/names.ts`; shared API flows in `e2e/support/api.ts`. Reuse them instead of re-deriving fetch-and-assert boilerplate.

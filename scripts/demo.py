@@ -10,6 +10,11 @@ frontend-e2e job first to produce it.
 A fresh copy is taken on every launch, so each demo starts from a clean snapshot of the latest
 e2e data and demo play never mutates the ``main/`` fixture that local e2e runs reuse.
 
+Forcing a rerun: the e2e job runs only when the database is missing, so a successful run is
+reused indefinitely. Pass ``--rerun-e2e`` (``npm run demo -- --rerun-e2e``) to rebuild the
+fixture from a fresh frontend-e2e run regardless of any prior result — the existing database is
+discarded and the suite is run again, picking up source changes since it was last built.
+
 Two launch modes:
 
 - ``npm run demo`` signs in as the operator ``dev-user`` (the e2e admin allowlist), so the demo
@@ -206,9 +211,26 @@ def main(argv: list[str] | None = None) -> None:
             f"`npm run demo:user`."
         ),
     )
+    parser.add_argument(
+        "--rerun-e2e",
+        action="store_true",
+        help=(
+            "Force a fresh frontend-e2e run before starting, rebuilding the fixture database "
+            "from scratch even when one already exists. By default an existing e2e database is "
+            "reused as-is; with this flag the prior database is discarded and the suite is run "
+            "again regardless of any prior result. Invoke as `npm run demo -- --rerun-e2e`."
+        ),
+    )
     args = parser.parse_args(argv)
 
-    ensure_e2e_db()
+    if args.rerun_e2e:
+        print(
+            "--rerun-e2e -> discarding any prior e2e database and rebuilding it from a fresh run",
+            flush=True,
+        )
+        rebuild_e2e_db()
+    else:
+        ensure_e2e_db()
     acting_user = _DEMO_USER if args.user else None
     build_frontend(acting_user)
     prepare_demo_data()

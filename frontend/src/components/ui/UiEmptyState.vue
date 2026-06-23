@@ -13,7 +13,6 @@ withDefaults(defineProps<{ tone?: 'muted' | 'danger' }>(), { tone: 'muted' })
 
 <style scoped>
 .ui-empty-state {
-  margin: var(--space-4) 0;
   font-size: var(--text-sm);
 }
 
