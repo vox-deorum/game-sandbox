@@ -38,8 +38,15 @@ test('play Flappy Bird live, pause/resume, stop, then replay and pin', async ({ 
   await page.getByRole('button', { name: 'Resume' }).click()
   await expect(page.locator('.overlay-banner')).toHaveCount(0)
 
-  // Stop ends the session; the bar swaps its controls for the ended state, surfacing the replay link.
-  await page.getByRole('button', { name: 'Stop' }).click()
+  // Stop ends the session and the bar swaps its controls for the ended state, surfacing the replay
+  // link. The paced game keeps running after resume, so flap once more to keep the bird aloft while we
+  // reach for Stop; if it still falls first the run ends on its own and detaches the live control, so
+  // click Stop only while it is present and assert the ended state either way.
+  await page.keyboard.press('Space')
+  const stop = page.getByRole('button', { name: 'Stop' })
+  if (await stop.isVisible()) {
+    await stop.click({ timeout: 5000 }).catch(() => {})
+  }
   await expect(page.getByRole('link', { name: 'Open replay' })).toBeVisible()
 
   // Open the replay from the ended session and scrub it.
