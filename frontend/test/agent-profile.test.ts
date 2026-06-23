@@ -116,16 +116,41 @@ describe('AgentProfilePage', () => {
     expect(
       await screen.findByRole('heading', { name: "eve's Submissions", level: 1 }),
     ).toBeInTheDocument()
-    // The active (non-superseded) submission carries the Current marker; the superseded one is tagged
-    // Superseded. Both submissions' rollup status reads from the summary row (the superseded one stays
-    // collapsed, but its summary still shows its status).
-    expect(screen.getByText('Current')).toBeInTheDocument()
-    expect(screen.getByText('Superseded')).toBeInTheDocument()
+    // The active ready submission reads "ready to compete" (the old standalone "Current" marker is
+    // folded into the status label); the superseded static-check failure keeps its own status. Both
+    // submissions' rollup status reads from the summary row (the superseded one stays collapsed, but
+    // its summary still shows its status).
     expect(screen.getByText('ready to compete')).toBeInTheDocument()
     expect(screen.getByText('static check failed')).toBeInTheDocument()
+    // The standalone "Current" badge is gone — lifecycle now rides on the status badge.
+    expect(screen.queryByText('Current')).toBeNull()
+    // Each summary row leads with its season name (single season here, so the group caption is hidden
+    // and the name shows once per row).
+    expect(screen.getAllByText('Season flappy_b')).toHaveLength(2)
     // The recording links to its replay page.
     const replay = screen.getByRole('link', { name: 'flappy_bird-sess-1' })
     expect(replay).toHaveAttribute('href', '/replays/flappy_bird-sess-1')
+  })
+
+  it('reads a superseded but still-ready submission as "superseded", not "ready to compete"', async () => {
+    await renderProfile({
+      env_id: 'flappy_bird',
+      owner_id: 'eve',
+      submissions: [
+        submission({ id: 'newer', status: 'ready' }),
+        submission({
+          id: 'older',
+          status: 'ready',
+          created_at: '2026-06-13T00:00:00Z',
+          superseded_at: '2026-06-14T00:00:00Z',
+        }),
+      ],
+    })
+
+    // The current ready submission keeps the eligibility label...
+    expect(await screen.findByText('ready to compete')).toBeInTheDocument()
+    // ...while a once-ready submission that a newer one has replaced reads "superseded".
+    expect(screen.getByText('superseded')).toBeInTheDocument()
   })
 
   it('shows the failed load stage and its captured detail (the load_failed case)', async () => {

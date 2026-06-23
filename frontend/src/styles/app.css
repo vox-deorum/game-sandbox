@@ -17,8 +17,22 @@
   --sidebar-width: 64px;
 }
 
+/*
+ * The sidebar is pinned to the viewport so its account block (profile / logout, pinned to the
+ * sidebar's bottom) stays reachable without scrolling a long page. The grid's first column is an
+ * explicit track (var(--sidebar-width)), so it stays reserved even though the fixed sidebar has left
+ * the grid flow — the body keeps its offset and page content never slides under the rail. The mobile
+ * drawer rules below re-pin it as an off-canvas drawer.
+ */
 .app-sidebar {
   grid-area: sidebar;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: var(--sidebar-width);
+  height: 100vh;
+  overflow-y: auto;
+  transition: width var(--motion-base) var(--ease-out);
 }
 
 .app-body {

@@ -30,7 +30,6 @@ import {
 import AuthorPromptEditor from '../components/AuthorPromptEditor.vue'
 import SubmissionStageTimeline from '../components/SubmissionStageTimeline.vue'
 import SubmitAgentForm from '../components/SubmitAgentForm.vue'
-import UiBadge from '../components/ui/UiBadge.vue'
 import UiCard from '../components/ui/UiCard.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import UiStatusBadge from '../components/ui/UiStatusBadge.vue'
@@ -93,6 +92,21 @@ const STATUS_TONE: Record<SubmissionStatus, 'neutral' | 'success' | 'danger' | '
 
 /** The left-edge accent stripe that lets a stack of submissions be scanned by outcome. */
 const statusAccentClass = (status: SubmissionStatus): string => `status-${STATUS_TONE[status]}`
+
+/**
+ * The single lifecycle-aware badge for a submission's summary row, folding the old standalone
+ * "Current" badge into the status label: a current ready submission reads "ready to compete", while a
+ * ready submission that has since been superseded reads "superseded" (it was eligible to play, but a
+ * newer submission has replaced it). Every other status keeps its plain label and tone.
+ */
+const statusBadge = (
+  submission: AgentProfileSubmission,
+): { label: string; tone: 'neutral' | 'success' | 'danger' | 'warning' } => {
+  if (submission.status === 'ready' && submission.superseded_at !== null) {
+    return { label: 'superseded', tone: 'neutral' }
+  }
+  return { label: STATUS_LABEL[submission.status], tone: STATUS_TONE[submission.status] }
+}
 
 /**
  * The owner's submissions grouped by season (the one-active-per-user-per-season boundary): each group
@@ -274,13 +288,9 @@ const seasonLabel = (label: string | null, id: string): string =>
                       class="summary-caret"
                       aria-hidden="true"
                     />
+                    <span class="submission-season">{{ seasonCaption(group.seasonId) }}</span>
                     <code class="submission-id">#{{ shortId(submission.id) }}</code>
-                    <UiStatusBadge
-                      :tone="STATUS_TONE[submission.status]"
-                      :label="STATUS_LABEL[submission.status]"
-                    />
-                    <UiBadge v-if="submission.superseded_at === null" variant="accent">Current</UiBadge>
-                    <span v-else class="lifecycle-tag">Superseded</span>
+                    <UiStatusBadge v-bind="statusBadge(submission)" />
                     <span class="submission-date">
                       <Clock :size="13" aria-hidden="true" />{{ formatDate(submission.created_at) }}
                     </span>
@@ -436,7 +446,7 @@ const seasonLabel = (label: string | null, id: string): string =>
 
 <style scoped>
 .agent-section {
-  margin-top: var(--space-6);
+  margin-bottom: var(--space-6);
 }
 
 .season-groups {
@@ -515,14 +525,15 @@ const seasonLabel = (label: string | null, id: string): string =>
   color: var(--color-text-muted);
 }
 
+.submission-season {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
 .submission-id {
   font-family: var(--font-mono);
   font-size: var(--text-sm);
-  color: var(--color-text-muted);
-}
-
-.lifecycle-tag {
-  font-size: var(--text-xs);
   color: var(--color-text-muted);
 }
 
