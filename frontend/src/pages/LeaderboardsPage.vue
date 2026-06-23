@@ -193,7 +193,7 @@ watch(requestedSeasonId, load, { immediate: true })
 
 <style scoped>
 .leaderboards-header h1 {
-  margin: 0 0 var(--space-1);
+  margin: 0;
 }
 
 .leaderboards-sub {
@@ -213,7 +213,6 @@ watch(requestedSeasonId, load, { immediate: true })
 
 .history-title {
   margin: 0 0 var(--space-3);
-  font-size: var(--text-md);
 }
 
 .history-table {

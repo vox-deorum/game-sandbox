@@ -163,7 +163,6 @@ function ownerOf(agent: BoardAgentRef): string | null {
 
 .board-title {
   margin: 0 0 var(--space-3);
-  font-size: var(--text-md);
 }
 
 /* The season's rating prompt, shown under the human board heading so readers see what was asked. */
