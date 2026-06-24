@@ -16,6 +16,14 @@ import type { GameStatus, RunStatus } from '../storage/schema.js'
 /** A run-level terminal status: the three states a run settles into once it stops executing. */
 export type TerminalRunStatus = Extract<RunStatus, 'completed' | 'failed' | 'cancelled'>
 
+/**
+ * The severity of a log line, set by the runner at the point it emits the line so the admin stream can
+ * colour it. Synthetic status lines carry the level that matches the transition (a finished-completed
+ * game is `success`, a watchdog kill is `warning`, an infra fault is `error`); raw container diagnostics
+ * default to `info` since the runner does not parse the agent's own output.
+ */
+export type RunLogLevel = 'info' | 'success' | 'warning' | 'error'
+
 /** One per-match container log line, as it is emitted by the running workflow. */
 export interface RunLogEvent {
   type: 'log'
@@ -23,6 +31,10 @@ export interface RunLogEvent {
   game_index: number
   /** Which `config_snapshot.matches` entry the game came from. */
   match_index: number
+  /** Epoch-ms emission time, stamped by the runner so the stream shows when the line was produced. */
+  ts: number
+  /** The line's severity, for the admin stream's level column. */
+  level: RunLogLevel
   line: string
 }
 

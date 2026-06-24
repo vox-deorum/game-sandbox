@@ -134,10 +134,15 @@ describe('RunDetailsPage', () => {
         type: 'log',
         match_index: 0,
         game_index: 0,
+        ts: Date.UTC(2026, 5, 12, 1, 2, 3),
+        level: 'warning',
         line: 'container started',
       }),
     })
     expect(await screen.findByText(/container started/)).toBeInTheDocument()
+    // The line carries its severity through to the level column. The badge passes the level verbatim
+    // (capitalization is a CSS display effect), so the DOM text stays the lowercase level code.
+    expect(screen.getByText('warning')).toBeInTheDocument()
   })
 
   it('opens no stream if it unmounts before the run loads', async () => {
@@ -163,8 +168,8 @@ describe('RunDetailsPage', () => {
       runView({ status: 'completed', ended_at: '2026-06-12T00:05:00Z' }),
     )
     await renderPage()
-    // The persisted view renders without a socket.
-    expect(await screen.findByText('Run completed')).toBeInTheDocument()
+    // The persisted view renders without a socket; the header badge shows the terminal status.
+    expect(await screen.findByText('completed')).toBeInTheDocument()
     expect(sockets.length).toBe(0)
   })
 })

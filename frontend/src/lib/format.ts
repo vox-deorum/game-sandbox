@@ -18,6 +18,16 @@ export function formatDate(value: string | null | undefined): string | null {
   }).format(new Date(value))
 }
 
+/** A clock time (HH:MM:SS, 24-hour) from an epoch-ms timestamp, for dense log rows in the viewer's locale. */
+export function formatLogTime(ts: number): string {
+  return new Intl.DateTimeFormat(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(new Date(ts))
+}
+
 /** A medium date with no time in the viewer's locale, or null for a missing value. */
 export function formatDateOnly(value: string | null | undefined): string | null {
   if (value === null || value === undefined) {

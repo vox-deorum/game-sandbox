@@ -11,7 +11,7 @@
 -->
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 
 import { cancelRun, type RunView, type SeasonView, triggerRun } from '../../api/client.js'
 import UiButton from '../ui/UiButton.vue'
@@ -106,11 +106,13 @@ async function cancel(): Promise<void> {
         Check leaderboard
       </UiButton>
       <UiButton v-else variant="secondary" disabled>Check leaderboard</UiButton>
-      <UiStatusBadge
+      <RouterLink
         v-if="latestRun !== null"
-        :tone="STATUS_TONE[latestRun.status]"
-        :label="`Run ${latestRun.status}`"
-      />
+        class="run-status-link"
+        :to="`/environments/${envId}/admin/seasons/${season.id}/runs/${latestRun.id}`"
+      >
+        <UiStatusBadge :tone="STATUS_TONE[latestRun.status]" :label="`${latestRun.status}`" />
+      </RouterLink>
     </div>
 
     <p v-if="configDirty" class="run-hint" role="status">
@@ -127,6 +129,16 @@ async function cancel(): Promise<void> {
   align-items: center;
   gap: var(--space-3);
   flex-wrap: wrap;
+}
+
+.run-status-link {
+  text-decoration: none;
+  color: inherit;
+  border-radius: var(--radius-sm);
+}
+
+.run-status-link:hover :deep(.label) {
+  text-decoration: underline;
 }
 
 .run-error {

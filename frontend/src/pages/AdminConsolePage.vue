@@ -293,7 +293,7 @@ async function saveRename(seasonId: string): Promise<void> {
             </section>
 
             <section class="admin-section">
-              <h2>Runs</h2>
+              <h2>Archived Runs</h2>
               <RunsList :runs="runs" :env-id="envId" :season-id="view.season.id" />
             </section>
           </template>

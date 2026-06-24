@@ -47,7 +47,13 @@ import type { AgentRef, SeasonRun, SeasonRunGame } from '../storage/schema.js'
 import type { SubmissionSource } from '../submission/source/index.js'
 import { ensureSubmissionImage, submissionSlotPath } from '../submission/submission-image.js'
 import { aggregateSeat } from './aggregate.js'
-import type { RunEvent, RunEventListener, TerminalRunStatus, WorkflowRunner } from './runner.js'
+import type {
+  RunEvent,
+  RunEventListener,
+  RunLogLevel,
+  TerminalRunStatus,
+  WorkflowRunner,
+} from './runner.js'
 
 /** Where the recordings volume is mounted inside every match container (lockstep with the harness). */
 const CONTAINER_RECORDINGS_DIR = '/recordings'
@@ -352,7 +358,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
     if (this.cancelRequested.has(runId)) {
       await this.deps.storage.setRunGameStatus(game.id, 'cancelled')
       this.emit(runId, { type: 'game_status', game_index: game.game_index, status: 'cancelled' })
-      this.gameLog(runId, game, `game ${game.game_index} cancelled`)
+      this.gameLog(runId, game, `game ${game.game_index} cancelled`, 'warning')
       return
     }
 
@@ -408,10 +414,13 @@ class DockerWorkflowRunner implements WorkflowRunner {
       failure.kind === 'timeout' ? 'timed_out' : failure.kind === 'crash' ? 'failed' : 'completed'
     await this.deps.storage.setRunGameStatus(game.id, status, failure.reason ?? undefined)
     this.emit(runId, { type: 'game_status', game_index: game.game_index, status })
+    const level: RunLogLevel =
+      status === 'completed' ? 'success' : status === 'timed_out' ? 'warning' : 'error'
     this.gameLog(
       runId,
       game,
       `game ${game.game_index} finished: ${status}${failure.reason ? ` (${failure.reason})` : ''}`,
+      level,
     )
   }
 
@@ -429,6 +438,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
         runId,
         game,
         `game ${game.game_index} exceeded wall-clock watchdog (${timeoutMs} ms); killing container`,
+        'warning',
       )
       void process.kill(this.killGraceMs).catch((error) => {
         this.log(`run ${runId} game ${game.game_index}: watchdog kill failed: ${String(error)}`)
@@ -530,15 +540,26 @@ class DockerWorkflowRunner implements WorkflowRunner {
     this.inFlight.delete(runId)
     await this.deps.storage.setRunGameStatus(game.id, 'failed', reason)
     this.emit(runId, { type: 'game_status', game_index: game.game_index, status: 'failed' })
-    this.gameLog(runId, game, `game ${game.game_index} failed (infrastructure): ${reason}`)
+    this.gameLog(runId, game, `game ${game.game_index} failed (infrastructure): ${reason}`, 'error')
   }
 
-  /** Emit one log event for a game, carrying its schedule and match indices for the admin stream. */
-  private gameLog(runId: string, game: SeasonRunGame, line: string): void {
+  /**
+   * Emit one log event for a game, carrying its schedule and match indices, a wall-clock timestamp, and
+   * the line's severity for the admin stream. `level` defaults to `info` — the level used for the raw
+   * container diagnostics the runner forwards verbatim.
+   */
+  private gameLog(
+    runId: string,
+    game: SeasonRunGame,
+    line: string,
+    level: RunLogLevel = 'info',
+  ): void {
     this.emit(runId, {
       type: 'log',
       game_index: game.game_index,
       match_index: game.match_index,
+      ts: Date.now(),
+      level,
       line,
     })
   }

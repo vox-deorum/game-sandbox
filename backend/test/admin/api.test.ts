@@ -794,14 +794,22 @@ describe('admin API', () => {
 
       // Wait for the route to subscribe, then drive the live stream.
       await waitFor(() => runner.subscriberCount(run.id) > 0)
-      runner.emit(run.id, { type: 'log', game_index: 0, match_index: 0, line: 'container started' })
+      const logEvent = {
+        type: 'log' as const,
+        game_index: 0,
+        match_index: 0,
+        ts: 1_700_000_000_000,
+        level: 'info' as const,
+        line: 'container started',
+      }
+      runner.emit(run.id, logEvent)
       runner.emit(run.id, { type: 'game_status', game_index: 0, status: 'running' })
       runner.emit(run.id, { type: 'terminal', status: 'completed' })
 
       await new Promise((resolve) => ws.on('close', resolve))
       const parsed = messages.map((m) => JSON.parse(m))
       expect(parsed).toEqual([
-        { type: 'log', game_index: 0, match_index: 0, line: 'container started' },
+        logEvent,
         { type: 'game_status', game_index: 0, status: 'running' },
         { type: 'terminal', status: 'completed' },
       ])

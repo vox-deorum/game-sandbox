@@ -17,11 +17,18 @@ export type TerminalRunStatus = 'completed' | 'failed' | 'cancelled'
 /** One scheduled match's lifecycle state, mirrored from the backend. */
 export type GameStatus = 'pending' | 'running' | 'completed' | 'failed' | 'timed_out' | 'cancelled'
 
+/** A log line's severity, set by the backend runner and shown in the stream's level column. */
+export type RunLogLevel = 'info' | 'success' | 'warning' | 'error'
+
 /** One per-match container log line, as the running workflow emits it. */
 export interface RunLogEvent {
   type: 'log'
   game_index: number
   match_index: number
+  /** Epoch-ms emission time, stamped by the backend runner. */
+  ts: number
+  /** The line's severity. */
+  level: RunLogLevel
   line: string
 }
 

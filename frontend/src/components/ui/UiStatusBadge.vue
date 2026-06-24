@@ -47,6 +47,18 @@ withDefaults(
 }
 
 .label {
+  /* inline-block makes the label a block container so ::first-letter applies (it doesn't on inline). */
+  display: inline-block;
   font-size: var(--text-sm);
+}
+
+/*
+  Capitalize the first letter for display only. This is purely visual: the `label` prop — and so the
+  DOM text, the accessible name, and any exact-text test query — stays exactly as the caller passed it
+  (lowercase `info`, contextual `superseded`, etc.). The badge reads as a proper noun without the
+  primitive imposing a copy policy on callers.
+*/
+.label::first-letter {
+  text-transform: uppercase;
 }
 </style>

@@ -71,6 +71,8 @@ function connect(): void {
       logLines.value.push({
         match_index: event.match_index,
         game_index: event.game_index,
+        ts: event.ts,
+        level: event.level,
         line: event.line,
       })
       if (logLines.value.length > LOG_CAP) {
@@ -154,8 +156,8 @@ onUnmounted(() => {
 
       <template v-else>
         <header class="run-header">
-          <h1>Run details</h1>
-          <UiStatusBadge :tone="STATUS_TONE[run.status]" :label="`Run ${run.status}`" />
+          <h1>Run Details</h1>
+          <UiStatusBadge :tone="STATUS_TONE[run.status]" :label="`${run.status}`" />
         </header>
 
         <dl class="run-meta">
@@ -171,7 +173,7 @@ onUnmounted(() => {
         </section>
 
         <section class="run-section">
-          <h2>Container logs</h2>
+          <h2>Container Logs</h2>
           <RunLogTable :lines="logLines" />
           <p v-if="!inProgress && logLines.length === 0" class="hint">
             No live logs (the run is not in progress).

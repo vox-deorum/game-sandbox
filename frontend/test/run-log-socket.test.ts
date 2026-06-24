@@ -66,7 +66,14 @@ describe('RunLogSocket', () => {
     )
     socket.connect()
     const ws = instances[0] as FakeWebSocket
-    ws.message({ type: 'log', match_index: 0, game_index: 2, line: 'container started' })
+    ws.message({
+      type: 'log',
+      match_index: 0,
+      game_index: 2,
+      ts: 1_700_000_000_000,
+      level: 'info',
+      line: 'container started',
+    })
     ws.message({ type: 'game_status', game_index: 2, status: 'running' })
     ws.message({ type: 'terminal', status: 'completed' })
 
