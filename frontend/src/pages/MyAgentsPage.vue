@@ -78,7 +78,7 @@ function activeSubmission(profile: AgentProfile) {
 <template>
   <section class="my-agents">
     <header class="my-agents-intro">
-      <h1>My agents</h1>
+      <h1>My Agents</h1>
       <p class="my-agents-lede">Every environment you have an agent in, and how it is doing.</p>
     </header>
 
