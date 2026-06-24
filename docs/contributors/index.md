@@ -31,6 +31,7 @@ The language split follows the container boundary: Python runs inside sessions, 
 | Task | Guide |
 | --- | --- |
 | Set up the repository | [Development setup](development-setup.md) |
+| Configure the server, allowlists, sandbox, and retention | [Configuration](configuration.md) |
 | Choose and run checks | [Testing](test.md) |
 | Write or run browser end-to-end tests | [End-to-end tests](e2e-tests.md) |
 | Change wire or recording data | [State schema](state-schema.md), then [Recordings](recordings.md) |

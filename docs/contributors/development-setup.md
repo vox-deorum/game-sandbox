@@ -26,6 +26,8 @@ uv run python scripts/ci.py docs
 
 Use [Testing](test.md) to choose Docker-gated and release-workflow checks.
 
+The defaults run the full stack locally with no environment variables set. See [Configuration](configuration.md) to tune the port, allowlists, sandbox quotas, and retention.
+
 ## Tooling at a glance
 
 | Language | Format and lint | Types | Tests |

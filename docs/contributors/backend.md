@@ -60,54 +60,9 @@ Tests mirror source domains under `test/`. Shared doubles and fixtures live unde
 
 ## Configuration
 
-`config.ts` reads environment variables once. Services receive `Config`, or the slice they need, through construction. Do not read process environment variables from feature modules.
+`config.ts` reads environment variables once. Services receive `Config`, or the slice they need, through construction. Do not read process environment variables from feature modules. Zod validates environment variables, manifests, and season configuration.
 
-Zod validates environment variables, manifests, and season configuration.
-
-### Server and session
-
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `PORT` | `8080` | HTTP and WebSocket port |
-| `DATA_DIR` | `./data` | Root containing `sandbox.db` and recording directories |
-| `SESSION_IDLE_TIMEOUT_MS` | `60000` | Lifetime with no attached socket, or no human command in human mode |
-| `SESSION_MAX_DURATION_MS` | `600000` | Wall-clock backstop |
-| `SESSION_ALLOWLIST` | `dev-user` | Comma-separated users allowed to start sessions; empty allows no one |
-| `OPERATOR_ALLOWLIST` | `dev-user` | Comma-separated users allowed to use `/api/admin` |
-| `SANDBOX_CPUS` | `1` | Session CPU quota |
-| `SANDBOX_MEMORY_MB` | `512` | Session memory quota |
-| `SANDBOX_SCRATCH_MB` | `256` | Writable scratch quota |
-
-### Execution and frontend
-
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `EXECUTION_DRIVER` | `docker` | Active driver |
-| `DOCKER_IMAGE_TAG_PREFIX` | `game-sandbox` | Image prefix |
-| `DOCKER_IMAGE_POLICY` | `reuse` | `reuse` an existing tag or `rebuild` before launch |
-| `FRONTEND_DIST` | `frontend/dist` | Built frontend directory; static serving is disabled when absent |
-
-### Recordings
-
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `RECORDING_RETENTION_DAYS` | `30` | Age limit for unpinned recordings |
-| `RECORDING_USER_QUOTA` | `100` | Per-user recording count; pinned recordings count but are not evicted |
-| `RECORDING_SWEEP_INTERVAL_MS` | `3600000` | Periodic sweep interval; sweeps also run at startup and finalization |
-
-### Submissions
-
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `GITHUB_TOKEN` | unset | Optional private-repository and reachability token; never stored with a submission |
-| `ALLOW_LOCAL_SUBMISSIONS` | `false` | Enable the trusted development-only local source |
-| `SUBMISSION_GIT_TIMEOUT_MS` | `15000` | Git operation deadline |
-| `SUBMISSION_BUILD_TIMEOUT_MS` | `120000` | Overlay build deadline |
-| `SUBMISSION_LOAD_CHECK_TIMEOUT_MS` | `30000` | Sandboxed load-check deadline |
-| `OVERLAY_IMAGE_BUDGET` | `50` | Maximum cached submission overlays; active ready images are protected and count |
-| `OVERLAY_IMAGE_SWEEP_INTERVAL_MS` | `3600000` | Overlay sweep interval; sweeps also run at startup and after builds |
-
-Keep `ALLOW_LOCAL_SUBMISSIONS` disabled in real deployments. The gate, not path sanitization, is its security boundary.
+See [Configuration](configuration.md) for the full environment-variable reference and deployment notes.
 
 ## Static frontend
 
