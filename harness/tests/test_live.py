@@ -478,7 +478,7 @@ def test_module_subprocess_keeps_stdout_clean_and_classifiable(tmp_path: Path):
     prints a banner. The banner and any stray prints must land on stderr; stdout must carry only
     classifiable protocol lines — the header and states (no top-level ``kind``) and the trailing
     ``result`` envelope. A ``stop`` on stdin ends the run promptly."""
-    pytest.importorskip("game_sandbox_environments", reason="environments package not installed")
+    pytest.importorskip("flappy_bird", reason="environments package not installed")
 
     config = {
         "env_id": "flappy_bird",

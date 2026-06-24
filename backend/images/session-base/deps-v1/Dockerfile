@@ -66,7 +66,7 @@ RUN chmod -R a+rX /opt/agents/builtin \
 
 # Fail the build, not a session, if the packages or the built-in agent cannot load: import the
 # environment (which imports PyGame) and load the built-in agent through the manifest loader.
-RUN python -c "import game_sandbox_harness, game_sandbox_environments.flappy_bird" \
+RUN python -c "import game_sandbox_harness, flappy_bird" \
     && python -c "from game_sandbox_harness.manifest import load_agent; load_agent('/opt/agents/builtin')"
 
 # The entrypoint is the live runner; the session config is appended as a single JSON argv element

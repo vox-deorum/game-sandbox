@@ -48,6 +48,10 @@ function backendEnv(
     SESSION_ALLOWLIST: allowlist,
     // A short idle window keeps a forgotten session from holding a container across the run.
     SESSION_IDLE_TIMEOUT_MS: '30000',
+    // The load check itself is a sub-second import-and-construct, but it first cold-starts a
+    // container; on a busy local Docker daemon that launch alone can approach the 30s default and
+    // flake the submission pipeline. Give it headroom (still well inside waitForTerminal's 150s poll).
+    SUBMISSION_LOAD_CHECK_TIMEOUT_MS: '90000',
     ...extra,
   }
 }

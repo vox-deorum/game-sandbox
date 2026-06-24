@@ -3,9 +3,10 @@
 No off-the-shelf converter exists in this direction — Shimmy adapts external suites *to*
 Gymnasium/PettingZoo, and PettingZoo's own conversions are AEC<->Parallel — so this small
 adapter is in-house by design. It lifts any single-agent ``gymnasium.Env`` into a one-slot
-AEC environment, so the harness only ever sees a PettingZoo interface and any future
-single-agent game comes in with zero new machinery. The single agent id is ``player_0``,
-following the PettingZoo naming convention.
+AEC environment, so the harness only ever sees a PettingZoo interface and any single-agent
+game comes in with the same small adapter. It lives inside each single-agent env package as
+a sibling of that env's modules. The single agent id is ``player_0``, following the
+PettingZoo naming convention.
 
 ``reset(seed=...)`` forwards the seed to the underlying ``gymnasium.Env.reset``, which is
 what makes the wrapped game's own RNG fully determined by the seed: two resets with the same
@@ -14,7 +15,7 @@ seed produce identical observation sequences. Everything else — ``step``, ``ob
 Conformance is checked by PettingZoo's own ``api_test`` rather than by our assumptions.
 
 This module imports only third-party packages, so it is copied verbatim into the student
-template's ``sandbox_env/`` by the generate script.
+template's ``sandbox_env/<env>/`` by the generate script.
 """
 
 from __future__ import annotations

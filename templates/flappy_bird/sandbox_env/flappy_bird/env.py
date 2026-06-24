@@ -15,7 +15,7 @@ from __future__ import annotations
 import flappy_bird_gymnasium  # noqa: F401
 import gymnasium
 
-from ..single_agent import GymnasiumToAEC
+from .single_agent import GymnasiumToAEC
 
 #: The action every Flappy Bird timeout path falls back to (idle / do nothing).
 NOOP_ACTION = 0

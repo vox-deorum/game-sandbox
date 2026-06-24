@@ -42,18 +42,20 @@ FRONTEND_DIST_DIR = REPO_ROOT / "frontend" / "dist"
 TEMPLATE_BASE_DIR = TEMPLATES_DIR / "base"
 DEFAULT_TEMPLATE_ENV = "flappy_bird"
 
-# The environments package source, and the per-env synced copies of the environment modules.
-ENVIRONMENTS_SRC = REPO_ROOT / "environments" / "src" / "game_sandbox_environments"
+# The environments source root, under which each environment is its own top-level package.
+ENVIRONMENTS_SRC = REPO_ROOT / "environments" / "src"
 
 # The registration point for environment templates: env id -> the import-self-contained
-# modules (relative + third-party imports only) copied verbatim into templates/<env>/sandbox_env/.
-# The harness-dependent flappy_bird/__init__.py is never synced; generate.py writes a minimal
-# __init__ exposing a uniform surface (make_env, ENV_ID, PLAYER_SLOT) in its place. Adding an
-# environment template means adding an entry here (plus its init text in generate.py) and a
-# templates/<env>/ layer.
+# modules (relative + third-party imports only), as paths under ENVIRONMENTS_SRC, copied
+# verbatim into templates/<env>/sandbox_env/ at the same relative path. The harness-dependent
+# flappy_bird/__init__.py is never synced; generate.py writes a minimal __init__ exposing a
+# uniform surface (make_env, ENV_ID, PLAYER_SLOT) in its place. The single-agent adapter lives
+# inside each single-agent env package, so it syncs as a sibling under sandbox_env/<env>/.
+# Adding an environment template means adding an entry here (plus its init text in generate.py)
+# and a templates/<env>/ layer.
 TEMPLATE_ENVS = {
     "flappy_bird": (
-        "single_agent.py",
+        "flappy_bird/single_agent.py",
         "flappy_bird/env.py",
         "flappy_bird/overlay.py",
     ),

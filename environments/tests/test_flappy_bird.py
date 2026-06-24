@@ -15,9 +15,9 @@ import math
 import numpy as np
 from pettingzoo.test import api_test
 
-from game_sandbox_environments.flappy_bird import ENTRY
-from game_sandbox_environments.flappy_bird.env import make_env
-from game_sandbox_environments.flappy_bird.overlay import extract_overlay
+from flappy_bird import ENTRY
+from flappy_bird.env import make_env
+from flappy_bird.overlay import extract_overlay
 
 
 def test_passes_pettingzoo_api_test():

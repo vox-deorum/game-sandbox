@@ -18,26 +18,26 @@ Read the [environment specification](../specs/environment.md) for product rules 
 
 ## Directory layout
 
-One directory per environment under `environments/src/game_sandbox_environments/`, each exporting a module-level `ENTRY`:
+Each environment is its own top-level package directly under `environments/src/`, importable by its env id (`flappy_bird`) and exporting a module-level `ENTRY`:
 
 ```text
-environments/src/game_sandbox_environments/
-  single_agent.py          # the shared Gymnasium -> AEC adapter
+environments/src/
   flappy_bird/
     __init__.py            # ENTRY: metadata + factory + hooks (imports the harness)
     env.py                 # the make_env() factory
     overlay.py             # render-data extraction
+    single_agent.py        # the Gymnasium -> AEC adapter (single-agent envs only)
 ```
 
 Discovery is automatic after registration.
 
 ## Single-agent games: the adapter
 
-A natively single-agent `gymnasium.Env` is lifted into a one-slot AEC environment by `GymnasiumToAEC` in `single_agent.py`. It forwards the seed to the underlying env on reset (the seeding contract every environment must honor) and delegates stepping, observation, and termination bookkeeping. The single slot id is `player_0`: slot ids are PettingZoo agent ids verbatim, in state objects, metadata, and the harness API alike. Your factory just wraps your `gymnasium.make(...)` in this adapter. Multi-agent games subclass `pettingzoo.AECEnv` directly and skip the adapter.
+A natively single-agent `gymnasium.Env` is lifted into a one-slot AEC environment by `GymnasiumToAEC`, which lives in a `single_agent.py` module inside each single-agent env package (a sibling of `env.py`, imported with `from .single_agent import GymnasiumToAEC`). It forwards the seed to the underlying env on reset (the seeding contract every environment must honor) and delegates stepping, observation, and termination bookkeeping. The single slot id is `player_0`: slot ids are PettingZoo agent ids verbatim, in state objects, metadata, and the harness API alike. Your factory just wraps your `gymnasium.make(...)` in this adapter — copy the stable `single_agent.py` into your env package. Multi-agent games subclass `pettingzoo.AECEnv` directly and skip the adapter.
 
 ## The factory and the default action
 
-`env.py` exposes `make_env()`, a zero-argument factory that returns a fresh AEC env; the seed arrives at `reset`, not here. It also defines the environment's **default action**: the legal move the loop applies on every timeout path (noop for Flappy Bird, but a real game might return the lowest legal card). Keep `env.py` import-self-contained (relative and third-party imports only): the generate script copies it verbatim into the student template's `sandbox_env/`, so it must not import the harness.
+`env.py` exposes `make_env()`, a zero-argument factory that returns a fresh AEC env; the seed arrives at `reset`, not here. It also defines the environment's **default action**: the legal move the loop applies on every timeout path (noop for Flappy Bird, but a real game might return the lowest legal card). Keep `env.py` import-self-contained (intra-package relative and third-party imports only): the generate script copies it verbatim into the student template's `sandbox_env/<env>/`, so it must not import the harness.
 
 ## The overlay
 
@@ -79,10 +79,10 @@ Register the entry in `environments/pyproject.toml` under the `game_sandbox.envi
 
 ```toml
 [project.entry-points."game_sandbox.environments"]
-flappy_bird = "game_sandbox_environments.flappy_bird:ENTRY"
+flappy_bird = "flappy_bird:ENTRY"
 ```
 
-The harness enumerates installed environments through `importlib.metadata` and never imports this package, keeping the dependency arrow pointing one way (environments → harness).
+Also add the env's package to the wheel build in `environments/pyproject.toml` (`[tool.hatch.build.targets.wheel] packages = ["src/flappy_bird", ...]`). The harness enumerates installed environments through `importlib.metadata` and never imports them by name, keeping the dependency arrow pointing one way (environments → harness).
 
 ## PettingZoo conformance
 

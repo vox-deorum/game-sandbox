@@ -4,26 +4,25 @@ Part of [Stage 2](../stage-02-harness-and-first-environment.md). This file desig
 
 ## Package layout
 
-`environments/` becomes the third uv workspace member, package name `game-sandbox-environments`, importable as `game_sandbox_environments`. It depends on `game-sandbox-harness` (for the metadata types below) plus `pettingzoo`, `gymnasium`, and `flappy-bird-gymnasium`.
+`environments/` becomes the third uv workspace member, distribution package name `game-sandbox-environments`. Each environment is its own top-level import package under `environments/src/`, named by its env id, for example `flappy_bird`. The distribution depends on `game-sandbox-harness` (for the metadata types below) plus `pettingzoo`, `gymnasium`, and `flappy-bird-gymnasium`.
 
 ```
 environments/
   pyproject.toml
-  src/game_sandbox_environments/
-    __init__.py
-    single_agent.py          GymnasiumToAEC adapter
+  src/
     flappy_bird/
       __init__.py            ENTRY: the registry entry (metadata + factory + hooks)
       env.py                 factory wrapping flappy-bird-gymnasium
       overlay.py             render-data extraction
+      single_agent.py        GymnasiumToAEC adapter
   tests/
 ```
 
-One directory per environment, each exporting a module-level `ENTRY`. Hearts adds a sibling directory in Stage 7 and touches nothing else.
+One top-level package per environment, each exporting a module-level `ENTRY`. The wheel build lists each package explicitly in `environments/pyproject.toml`, so adding Hearts in Stage 7 means adding `src/hearts/`, registering its entry point, and adding it to the wheel package list.
 
 ## The adapter
 
-`GymnasiumToAEC` subclasses `pettingzoo.AECEnv` and wraps any `gymnasium.Env` as a one-slot AEC environment. It is in-house and general-purpose by design. No off-the-shelf converter exists in this direction: Shimmy adapts external suites _to_ Gymnasium/PettingZoo, and PettingZoo's own conversions are AEC↔Parallel. The adapter is only ~100 lines, and owning it means any future single-agent game: classic Atari included: comes in with zero new machinery.
+`GymnasiumToAEC` subclasses `pettingzoo.AECEnv` and wraps any `gymnasium.Env` as a one-slot AEC environment. It is in-house and small by design. No off-the-shelf converter exists in this direction: Shimmy adapts external suites _to_ Gymnasium/PettingZoo, and PettingZoo's own conversions are AEC↔Parallel. The adapter is only about 100 lines. Each single-agent environment keeps a copy beside its `env.py`, so its local imports stay self-contained and the template sync can copy the same package-shaped modules students run locally.
 
 The single agent id is `player_0`, following the PettingZoo naming convention. This settles the slot id question Stage 1 deferred: **slot ids are PettingZoo agent ids, verbatim**, in state objects, metadata, and the harness API alike.
 
@@ -54,6 +53,6 @@ The types live in the harness package (`game_sandbox_harness.environment`), beca
 
 `EnvironmentEntry` is the full registration: `meta`, `make()` (a zero-argument factory returning a fresh AEC env; the seed arrives at reset), `default_action(slot_id)` (the environment-provided legal default the loop applies on every timeout path), and an optional `overlay(env)` hook returning the per-step overlay dict. The non-serializable hooks live here, outside `EnvironmentMeta`, which stays pure data.
 
-Discovery uses Python entry points: group `game_sandbox.environments`, name = env id, value = `game_sandbox_environments.flappy_bird:ENTRY`. The harness CLI and the Stage 3 container enumerate installed environments through `importlib.metadata`. The harness never imports the environments package, which keeps the dependency arrow pointing one way.
+Discovery uses Python entry points: group `game_sandbox.environments`, name = env id, value = `flappy_bird:ENTRY`. The harness CLI and the Stage 3 container enumerate installed environments through `importlib.metadata`. The harness never imports an environment package by name, which keeps the dependency arrow pointing one way.
 
 Proposed Flappy Bird values, to confirm when the stage starts: one slot (`min_slots = max_slots = 1`), `human_slots = ("player_0",)`, `pace_interval_ms = 50` (20 steps per second: flagged for tuning during Stage 4 playtesting), `human_timeout_ms = None` per the [interaction.md](../../docs/specs/interaction.md) rule that a set pace interval is itself the human deadline, `recommended_episode_ticks = 1000`, `step_limit_ms = 1000`, `episode_limit_ms = 120_000`, `messaging = False`, `llm = False`, `renderer = "flappy-bird"`.

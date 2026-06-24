@@ -167,8 +167,11 @@ test('a full season: submissions, an automated run, several judges rate, then re
     )
     await expect(page.getByTestId('log-line').first()).toBeVisible({ timeout: 120_000 })
     // Four real games (three agents + the Naive baseline); a lively agent can survive near the episode
-    // cap, so give the run a wide window before it reports completion.
-    await expect(page.getByText('Run completed')).toBeVisible({ timeout: 420_000 })
+    // cap, so give the run a wide window before its status badge settles on completed. The run-header
+    // badge is the run's own status (not a per-game cell), so it reports the whole run finishing.
+    await expect(page.locator('.run-header .ui-status-badge')).toHaveText('completed', {
+      timeout: 420_000,
+    })
 
     // Open the play window so finished sessions become rateable, then seed each agent's ratings from
     // all four judges (≥3 distinct raters is what earns an agent a rank on the Human Ratings board).
