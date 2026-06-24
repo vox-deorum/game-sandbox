@@ -175,6 +175,36 @@ export async function getLatestCompletedRun(
     .executeTakeFirst()
 }
 
+export async function listRunsBySeason(
+  db: Kysely<Database>,
+  seasonId: string,
+): Promise<SeasonRun[]> {
+  // Newest first, identical ordering to getLatestRun so the first row is always "the latest run".
+  return await db
+    .selectFrom('season_runs')
+    .selectAll()
+    .where('season_id', '=', seasonId)
+    .orderBy('started_at', 'desc')
+    .orderBy(sql`rowid`, 'desc')
+    .execute()
+}
+
+/** Game count per run for a season, keyed by run id, for the runs-list summaries (one grouped scan). */
+export async function countRunGamesBySeason(
+  db: Kysely<Database>,
+  seasonId: string,
+): Promise<Map<string, number>> {
+  const rows = await db
+    .selectFrom('season_run_games')
+    .innerJoin('season_runs', 'season_runs.id', 'season_run_games.run_id')
+    .where('season_runs.season_id', '=', seasonId)
+    .select('season_run_games.run_id as run_id')
+    .select((eb) => eb.fn.countAll<number>().as('count'))
+    .groupBy('season_run_games.run_id')
+    .execute()
+  return new Map(rows.map((row) => [row.run_id, Number(row.count)]))
+}
+
 export async function listRunGames(db: Kysely<Database>, runId: string): Promise<SeasonRunGame[]> {
   return await db
     .selectFrom('season_run_games')

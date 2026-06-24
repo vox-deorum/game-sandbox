@@ -110,6 +110,8 @@ describe('admin API', () => {
         ['POST', `/api/admin/seasons/${id}/runs`],
         ['POST', `/api/admin/seasons/${id}/runs/whatever/cancel`],
         ['GET', `/api/admin/seasons/${id}`],
+        ['GET', `/api/admin/seasons/${id}/runs`],
+        ['GET', `/api/admin/seasons/${id}/runs/whatever`],
       ]
       for (const [method, url] of routes) {
         const res = await app.inject({
@@ -670,6 +672,104 @@ describe('admin API', () => {
       const res = await app.inject({
         method: 'GET',
         url: '/api/admin/seasons/nope',
+        headers: OPERATOR,
+      })
+      expect(res.statusCode).toBe(404)
+    })
+  })
+
+  describe('runs list and detail', () => {
+    it("lists a season's runs newest first with game counts and no snapshots", async () => {
+      const id = await declare()
+      // Two runs created in order: the second (more games) must come back first.
+      await storage.createRunWithSchedule(
+        id,
+        'dev-user',
+        [],
+        [{ match_index: 0, game_index: 0, seed: 1, slots: [{ kind: 'builtin-naive' }] }],
+      )
+      const second = await storage.createRunWithSchedule(
+        id,
+        'dev-user',
+        [],
+        [
+          { match_index: 0, game_index: 0, seed: 1, slots: [{ kind: 'builtin-naive' }] },
+          { match_index: 0, game_index: 1, seed: 2, slots: [{ kind: 'builtin-naive' }] },
+        ],
+      )
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/admin/seasons/${id}/runs`,
+        headers: OPERATOR,
+      })
+      expect(res.statusCode).toBe(200)
+      const body = res.json() as Array<Record<string, unknown>>
+      expect(body).toHaveLength(2)
+      // Newest first: the second-created run heads the list (rowid breaks a shared-millisecond tie).
+      expect(body[0]).toMatchObject({ id: second.id, game_count: 2 })
+      expect(body[1]).toMatchObject({ game_count: 1 })
+      // Summaries omit the frozen snapshots.
+      expect(body[0]).not.toHaveProperty('config_snapshot')
+      expect(body[0]).not.toHaveProperty('submission_snapshot')
+    })
+
+    it("returns a single run's full view with its games", async () => {
+      const id = await declare()
+      const run = await storage.createRunWithSchedule(
+        id,
+        'dev-user',
+        [],
+        [{ match_index: 0, game_index: 0, seed: 1, slots: [{ kind: 'builtin-naive' }] }],
+      )
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/admin/seasons/${id}/runs/${run.id}`,
+        headers: OPERATOR,
+      })
+      expect(res.statusCode).toBe(200)
+      const body = res.json() as {
+        id: string
+        config_snapshot: SeasonConfig
+        games: unknown[]
+      }
+      expect(body.id).toBe(run.id)
+      expect(body.games).toHaveLength(1)
+      // The detail view carries the full run, including the frozen config snapshot.
+      expect(body.config_snapshot).toBeTruthy()
+    })
+
+    it('404s a run detail for an unknown run or one from another season', async () => {
+      const id = await declare()
+      const other = await declare()
+      const run = await storage.createRunWithSchedule(
+        id,
+        'dev-user',
+        [],
+        [{ match_index: 0, game_index: 0, seed: 1, slots: [{ kind: 'builtin-naive' }] }],
+      )
+
+      const unknown = await app.inject({
+        method: 'GET',
+        url: `/api/admin/seasons/${id}/runs/ghost`,
+        headers: OPERATOR,
+      })
+      expect(unknown.statusCode).toBe(404)
+
+      // A real run requested under a different season id is hidden, not leaked.
+      const crossSeason = await app.inject({
+        method: 'GET',
+        url: `/api/admin/seasons/${other}/runs/${run.id}`,
+        headers: OPERATOR,
+      })
+      expect(crossSeason.statusCode).toBe(404)
+    })
+
+    it('404s the runs list for an unknown season', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/admin/seasons/nope/runs',
         headers: OPERATOR,
       })
       expect(res.statusCode).toBe(404)

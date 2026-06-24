@@ -683,6 +683,18 @@ export interface RunView {
   games: RunGameView[]
 }
 
+/** A run as the runs-list reads it: identity, status, timestamps, error, and a game count (no snapshots). */
+export interface RunSummaryView {
+  id: string
+  season_id: string
+  requested_by: string
+  status: RunStatus
+  started_at: string
+  ended_at: string | null
+  error: string | null
+  game_count: number
+}
+
 /** The full admin view of one season: its config and gates, the latest run, and both boards. */
 export interface AdminSeasonView {
   season: SeasonView
@@ -820,6 +832,24 @@ export async function getAdminSeason(seasonId: string): Promise<AdminSeasonView>
     await request(`/admin/seasons/${encodeURIComponent(seasonId)}`),
     'GET /api/admin/seasons/:id',
   )) as AdminSeasonView
+}
+
+/** Every run for a season, newest first, as lightweight summaries for the console's runs list. */
+export async function listRuns(seasonId: string): Promise<RunSummaryView[]> {
+  return (await json(
+    await request(`/admin/seasons/${encodeURIComponent(seasonId)}/runs`),
+    'GET /api/admin/seasons/:id/runs',
+  )) as RunSummaryView[]
+}
+
+/** One run's full view with its scheduled games, the run-details page's primary read. */
+export async function getRun(seasonId: string, runId: string): Promise<RunView> {
+  return (await json(
+    await request(
+      `/admin/seasons/${encodeURIComponent(seasonId)}/runs/${encodeURIComponent(runId)}`,
+    ),
+    'GET /api/admin/seasons/:id/runs/:runId',
+  )) as RunView
 }
 
 /** Declare a new unreleased, submission-closed, play-closed season for the environment. */

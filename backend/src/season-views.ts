@@ -77,3 +77,18 @@ export function runView(run: SeasonRun, games: SeasonRunGame[]): RunView {
     games: games.map(runGameView),
   }
 }
+
+/**
+ * A run as the admin runs-list reads it: the run row's identity, status, timestamps, and error plus a
+ * game count, with the frozen config/roster snapshots intentionally dropped — the list does not need
+ * them, and a single run's details endpoint serves the full {@link RunView} when one is opened.
+ */
+export type RunSummaryView = Omit<SeasonRun, 'config_snapshot' | 'submission_snapshot'> & {
+  game_count: number
+}
+
+/** Strip a run's snapshots and attach its game count for the runs-list summary. */
+export function runSummaryView(run: SeasonRun, gameCount: number): RunSummaryView {
+  const { config_snapshot: _config, submission_snapshot: _submissions, ...rest } = run
+  return { ...rest, game_count: gameCount }
+}

@@ -19,15 +19,18 @@ import {
   type AdminSeasonView,
   declareSeason,
   getAdminSeason,
+  listRuns,
   listSeasons,
   type PublicSeasonView,
   renameSeason,
+  type RunSummaryView,
   type SeasonView,
 } from '../api/client.js'
 import SeasonConfigEditor from '../components/admin/SeasonConfigEditor.vue'
 import SeasonLifecycleControls from '../components/admin/SeasonLifecycleControls.vue'
 import OperatorRatingPromptEditor from '../components/admin/OperatorRatingPromptEditor.vue'
-import RunPanel from '../components/admin/RunPanel.vue'
+import RunActions from '../components/admin/RunActions.vue'
+import RunsList from '../components/admin/RunsList.vue'
 import UiButton from '../components/ui/UiButton.vue'
 import UiCard from '../components/ui/UiCard.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
@@ -46,6 +49,8 @@ const access = ref<Access>('loading')
 const seasons = ref<PublicSeasonView[]>([])
 const selectedId = ref<string | null>(null)
 const view = ref<AdminSeasonView | null>(null)
+// The selected season's runs, newest first, for the runs list. Loaded alongside the detail view.
+const runs = ref<RunSummaryView[]>([])
 const loadingDetail = ref(false)
 // A board exists to inspect only once a run has computed one; before that the link is disabled.
 const boardAvailable = computed(
@@ -95,9 +100,10 @@ async function loadDetail(): Promise<void> {
   const requestId = ++detailRequest
   loadingDetail.value = true
   try {
-    const loaded = await getAdminSeason(seasonId)
+    const [loaded, loadedRuns] = await Promise.all([getAdminSeason(seasonId), listRuns(seasonId)])
     if (requestId === detailRequest && selectedId.value === seasonId) {
       view.value = loaded
+      runs.value = loadedRuns
     }
   } finally {
     if (requestId === detailRequest) {
@@ -113,6 +119,7 @@ async function select(id: string): Promise<void> {
   selectedId.value = id
   // Hide the previous season's destructive controls (and any open rename) while the new detail loads.
   view.value = null
+  runs.value = []
   renaming.value = false
   await loadDetail()
 }
@@ -258,6 +265,15 @@ async function saveRename(seasonId: string): Promise<void> {
               </UiCard>
             </section>
 
+            <RunActions
+              :season="view.season"
+              :latest-run="view.latest_run"
+              :env-id="envId"
+              :board-available="boardAvailable"
+              :config-dirty="configDirty"
+              @changed="loadDetail"
+            />
+
             <section class="admin-section">
               <h2>Run Configuration</h2>
               <UiCard class="admin-card">
@@ -276,14 +292,10 @@ async function saveRename(seasonId: string): Promise<void> {
               </UiCard>
             </section>
 
-            <RunPanel
-              :season="view.season"
-              :latest-run="view.latest_run"
-              :env-id="envId"
-              :board-available="boardAvailable"
-              :config-dirty="configDirty"
-              @changed="loadDetail"
-            />
+            <section class="admin-section">
+              <h2>Runs</h2>
+              <RunsList :runs="runs" :env-id="envId" :season-id="view.season.id" />
+            </section>
           </template>
         </main>
       </div>

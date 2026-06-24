@@ -408,6 +408,10 @@ export interface Storage {
   listRunsByStatus(status: RunStatus): Promise<SeasonRun[]>
   /** The most recent run for a season, any status. */
   getLatestRun(seasonId: string): Promise<SeasonRun | undefined>
+  /** Every run for a season, newest first; the admin runs-list reads it. */
+  listRunsBySeason(seasonId: string): Promise<SeasonRun[]>
+  /** Game count per run for a season, keyed by run id; the runs-list summaries read it. */
+  countRunGamesBySeason(seasonId: string): Promise<Map<string, number>>
   /**
    * The most recent `completed` run for a season; what the board reads, so a later running/failed
    * re-run does not blank a good board.

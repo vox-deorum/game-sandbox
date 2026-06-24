@@ -155,12 +155,17 @@ test('a full season: submissions, an automated run, several judges rate, then re
     // One submission seat per game: the scheduler runs each ready agent and appends the Naive baseline.
     await configureMatches(request, season.id, [{ slots: ['submission'], seeds: [0], games: 1 }])
 
-    // Trigger and tail the automated run through the operator console (the live-log path).
+    // Trigger the run from the console; it hands off to the run-details page, which owns the live log
+    // stream (the redesigned live-log path).
     await page.goto(`/environments/${ENV_ID}/admin`)
     await page.getByRole('button', { name: new RegExp(SEASONS.competition) }).click()
     await expect(page.getByRole('heading', { name: `Season ${SEASONS.competition}` })).toBeVisible()
     await page.getByRole('button', { name: 'Run workflow' }).click()
-    await expect(page.getByTestId('log-view')).toBeVisible({ timeout: 120_000 })
+    // Triggering navigates to the new run's details page, where the container logs stream into a table.
+    await expect(page).toHaveURL(
+      new RegExp(`/environments/${ENV_ID}/admin/seasons/${season.id}/runs/`),
+    )
+    await expect(page.getByTestId('log-line').first()).toBeVisible({ timeout: 120_000 })
     // Four real games (three agents + the Naive baseline); a lively agent can survive near the episode
     // cap, so give the run a wide window before it reports completion.
     await expect(page.getByText('Run completed')).toBeVisible({ timeout: 420_000 })

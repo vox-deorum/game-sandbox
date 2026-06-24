@@ -22,7 +22,7 @@ import { DEPS_VERSION } from '../deps-version.js'
 import type { EnvironmentMeta, EnvironmentRegistry } from '../environments.js'
 import { isOperator, resolveUserId } from '../identity.js'
 import { buildSchedule, type SubmissionRef } from '../scheduler/build-schedule.js'
-import { runView, seasonView } from '../season-views.js'
+import { runSummaryView, runView, seasonView } from '../season-views.js'
 import type { ClientSocket } from '../session/live-session.js'
 import type { Storage } from '../storage/index.js'
 import { SeasonConfigSchema } from '../storage/season-config.js'
@@ -334,6 +334,34 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
           board: { automated, human },
         })
       })
+
+      // --- Runs list / detail ----------------------------------------------------------------
+      // The season's runs, newest first, as lightweight summaries (no frozen snapshots) for the
+      // console's runs list. A single run's full view — including its scheduled games — is served by
+      // the detail route below when the operator opens it.
+      admin.get<{ Params: { id: string } }>('/seasons/:id/runs', async (request, reply) => {
+        const season = await deps.storage.getSeason(request.params.id)
+        if (season === undefined) {
+          return reply.code(404).send({ error: 'no such season' })
+        }
+        const runs = await deps.storage.listRunsBySeason(season.id)
+        const counts = await deps.storage.countRunGamesBySeason(season.id)
+        return reply.code(200).send(runs.map((run) => runSummaryView(run, counts.get(run.id) ?? 0)))
+      })
+
+      // One run's full view with its scheduled games, the run-details page's primary read. The run
+      // must belong to the season in the path, mirroring the cancel route's cross-season guard.
+      admin.get<{ Params: { id: string; runId: string } }>(
+        '/seasons/:id/runs/:runId',
+        async (request, reply) => {
+          const run = await deps.storage.getRun(request.params.runId)
+          if (run === undefined || run.season_id !== request.params.id) {
+            return reply.code(404).send({ error: 'no such run' })
+          }
+          const games = await deps.storage.listRunGames(run.id)
+          return reply.code(200).send(runView(run, games))
+        },
+      )
 
       // --- Log stream (WebSocket) ------------------------------------------------------------
       // Relay the running workflow's per-match container log lines and game-status transitions live,

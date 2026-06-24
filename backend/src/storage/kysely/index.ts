@@ -261,6 +261,12 @@ export class KyselyStorage implements Storage {
   getLatestRun(seasonId: string): Promise<SeasonRun | undefined> {
     return runs.getLatestRun(this.db, seasonId)
   }
+  listRunsBySeason(seasonId: string): Promise<SeasonRun[]> {
+    return runs.listRunsBySeason(this.db, seasonId)
+  }
+  countRunGamesBySeason(seasonId: string): Promise<Map<string, number>> {
+    return runs.countRunGamesBySeason(this.db, seasonId)
+  }
   getLatestCompletedRun(seasonId: string): Promise<SeasonRun | undefined> {
     return runs.getLatestCompletedRun(this.db, seasonId)
   }

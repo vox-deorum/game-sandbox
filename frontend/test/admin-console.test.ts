@@ -16,6 +16,7 @@ vi.mock('../src/api/client.js', () => ({
   getEnvironments: vi.fn(),
   listSeasons: vi.fn(),
   getAdminSeason: vi.fn(),
+  listRuns: vi.fn(),
   declareSeason: vi.fn(),
   renameSeason: vi.fn(),
   configureSeason: vi.fn(),
@@ -28,8 +29,6 @@ vi.mock('../src/api/client.js', () => ({
   unreleaseSeason: vi.fn(),
   triggerRun: vi.fn(),
   cancelRun: vi.fn(),
-  runLogWsPath: (seasonId: string, runId: string) =>
-    `/api/admin/seasons/${seasonId}/runs/${runId}/logs/ws`,
 }))
 
 import {
@@ -38,6 +37,7 @@ import {
   getAdminSeason,
   getEnvironments,
   getMe,
+  listRuns,
   listSeasons,
   openPlay,
   openSubmissions,
@@ -123,10 +123,14 @@ async function renderConsole() {
     { path: '/environments/:envId/leaderboards/:seasonId?', component: { template: '<div />' } },
     { path: '/replays/:id', component: { template: '<div />' } },
     { path: '/environments/:envId/admin', component: AdminConsolePage },
+    {
+      path: '/environments/:envId/admin/seasons/:seasonId/runs/:runId',
+      component: { template: '<div />' },
+    },
   ])
   router.push('/environments/flappy_bird/admin')
   await router.isReady()
-  return renderWithMe(router)
+  return Object.assign(renderWithMe(router), { router })
 }
 
 describe('AdminConsolePage', () => {
@@ -140,6 +144,7 @@ describe('AdminConsolePage', () => {
     })
     vi.mocked(listSeasons).mockResolvedValue([pickerSeason()])
     vi.mocked(getAdminSeason).mockResolvedValue(adminView())
+    vi.mocked(listRuns).mockResolvedValue([])
   })
 
   afterEach(() => {
@@ -338,45 +343,46 @@ describe('AdminConsolePage', () => {
     expect(screen.getByText(/Save the match design before running/)).toBeInTheDocument()
   })
 
-  it('subscribes to the log stream after a trigger and renders streamed lines', async () => {
-    // A fake WebSocket capturing the instance so the test can drive incoming frames.
-    const sockets: FakeWS[] = []
-    class FakeWS {
-      onmessage: ((event: { data: string }) => void) | null = null
-      onclose: (() => void) | null = null
-      onerror: (() => void) | null = null
-      constructor(readonly url: string) {
-        sockets.push(this)
-      }
-      close(): void {
-        this.onclose?.()
-      }
-    }
-    vi.stubGlobal('WebSocket', FakeWS as unknown as typeof WebSocket)
-
-    // Before the trigger there is no run; after it, the reload returns a running run with one game.
-    vi.mocked(getAdminSeason)
-      .mockResolvedValueOnce(adminView())
-      .mockResolvedValue(adminView({ latest_run: runningRun() }))
+  it('navigates to the new run details page after a trigger', async () => {
+    // The console hands off to the run-details page (which owns the live stream) on a successful run.
     vi.mocked(triggerRun).mockResolvedValue({ ok: true, id: 'run-1', status: 'pending' })
 
-    await renderConsole()
+    const { router } = await renderConsole()
     await fireEvent.click(await screen.findByRole('button', { name: 'Run workflow' }))
 
-    // The reload moves the run in-progress, so the panel opens the live stream.
-    await waitFor(() => expect(sockets.length).toBe(1))
-    const ws = sockets[0] as FakeWS
-    expect(ws.url).toContain('/api/admin/seasons/iter-1/runs/run-1/logs/ws')
+    await waitFor(() =>
+      expect(router.currentRoute.value.fullPath).toBe(
+        '/environments/flappy_bird/admin/seasons/iter-1/runs/run-1',
+      ),
+    )
+  })
 
-    ws.onmessage?.({
-      data: JSON.stringify({
-        type: 'log',
-        match_index: 0,
-        game_index: 0,
-        line: 'container started',
-      }),
-    })
-    expect(await screen.findByText(/container started/)).toBeInTheDocument()
+  it('places the run actions above Run Configuration and lists past runs at the end', async () => {
+    vi.mocked(listRuns).mockResolvedValue([
+      {
+        id: 'run-1',
+        season_id: 'iter-1',
+        requested_by: 'dev-user',
+        status: 'completed',
+        started_at: '2026-06-12T00:00:00Z',
+        ended_at: '2026-06-12T00:05:00Z',
+        error: null,
+        game_count: 4,
+      },
+    ])
+    await renderConsole()
+
+    const actions = await screen.findByRole('button', { name: 'Run workflow' })
+    const config = screen.getByRole('heading', { name: 'Run Configuration' })
+    // The action row precedes the Run Configuration section (DOCUMENT_POSITION_FOLLOWING = 4).
+    expect(actions.compareDocumentPosition(config) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    // The past run is listed and links to its details page.
+    const link = screen.getByRole('link', { name: /2026/ })
+    expect(link).toHaveAttribute(
+      'href',
+      '/environments/flappy_bird/admin/seasons/iter-1/runs/run-1',
+    )
   })
 
   it('links to the season board once a run has computed one', async () => {
