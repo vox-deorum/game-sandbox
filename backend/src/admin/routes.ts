@@ -15,7 +15,13 @@
  * the open/close/cancel actions are modeled as path segments (`…/submissions/open`) instead — the
  * same contract, expressed in a form the router accepts.
  */
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { createGzip } from 'node:zlib'
+
 import type { FastifyInstance, FastifyReply } from 'fastify'
+import tar from 'tar-fs'
 import { z } from 'zod'
 
 import { DEPS_VERSION } from '../deps-version.js'
@@ -24,8 +30,9 @@ import { isOperator, resolveUserId } from '../identity.js'
 import { buildSchedule, type SubmissionRef } from '../scheduler/build-schedule.js'
 import { runSummaryView, runView, seasonView } from '../season-views.js'
 import type { ClientSocket } from '../session/live-session.js'
-import type { Storage } from '../storage/index.js'
+import type { Storage, Submission } from '../storage/index.js'
 import { SeasonConfigSchema } from '../storage/season-config.js'
+import { SnapshotMissingError, type SubmissionSnapshotStore } from '../submission/snapshot-store.js'
 import type { RunEvent, WorkflowRunner } from '../workflow/runner.js'
 
 /** Everything the admin routes need beyond the Fastify instance. */
@@ -40,6 +47,8 @@ export interface AdminDeps {
   depsVersion?: number
   /** Versions the deployment can actually serve with a concrete session base image. */
   knownDepsVersions: ReadonlySet<number>
+  /** The submission-snapshot store the download routes read (individual submission + whole season). */
+  snapshots: SubmissionSnapshotStore
 }
 
 /** The operator's season-wide rating prompt is display-only guidance; cap it so it stays a prompt. */
@@ -66,6 +75,177 @@ const RatingPromptBodySchema = z.strictObject({
 
 /** Whether a run is still in progress, so a re-run is refused and a cancel is meaningful. */
 const IN_PROGRESS_RUN = new Set(['pending', 'running'])
+
+/** Reduce a user id to a filesystem-safe token for an archive folder/filename (handles stay readable). */
+function sanitizeForPath(value: string): string {
+  const safe = value.replace(/[^A-Za-z0-9._-]/g, '_')
+  return safe === '' ? 'submission' : safe
+}
+
+/** The per-submission folder inside a season archive: `<user>-<id8>` (collision-free via the id suffix). */
+function submissionFolderName(submission: Submission): string {
+  return `${sanitizeForPath(submission.user_id)}-${submission.id.slice(0, 8)}`
+}
+
+/** The download filename for a single submission's snapshot. */
+function submissionArchiveName(submission: Submission): string {
+  return `${submissionFolderName(submission)}.tar.gz`
+}
+
+/** The operator-facing metadata copied into a download (never any credential; the row holds none). */
+function submissionMetadata(submission: Submission): {
+  id: string
+  user_id: string
+  source_kind: string
+  repo_url: string | null
+  commit_sha: string | null
+  ref: string | null
+  status: string
+  created_at: string
+} {
+  return {
+    id: submission.id,
+    user_id: submission.user_id,
+    source_kind: submission.source_kind,
+    repo_url: submission.repo_url,
+    commit_sha: submission.commit_sha,
+    ref: submission.ref,
+    status: submission.status,
+    created_at: submission.created_at,
+  }
+}
+
+/**
+ * Assemble a whole season's active submissions into one staging directory: each submission that has a
+ * snapshot under its own `<user>-<id8>/` folder with a `submission.json`, plus a top-level `season.json`
+ * index. A submission whose snapshot is missing is listed in `skipped` rather than failing the archive.
+ * Returns the staging path for the caller to pack and then remove. On any other error the staging dir is
+ * cleaned up before rethrowing.
+ */
+async function buildSeasonSubmissionArchive(
+  deps: AdminDeps,
+  season: { id: string; env_id: string },
+): Promise<string> {
+  const active = await deps.storage.listActiveSubmissionsBySeason(season.id)
+  const staging = await mkdtemp(join(tmpdir(), 'gs-season-'))
+  try {
+    const included: Array<{ folder: string; id: string; user_id: string; status: string }> = []
+    const skipped: string[] = []
+    for (const submission of active) {
+      const folder = submissionFolderName(submission)
+      const dest = join(staging, folder)
+      try {
+        await deps.snapshots.materializeInto(submission.id, dest)
+      } catch (error) {
+        if (error instanceof SnapshotMissingError) {
+          await rm(dest, { recursive: true, force: true }).catch(() => undefined)
+          skipped.push(submission.id)
+          continue
+        }
+        throw error
+      }
+      await writeFile(
+        join(dest, 'submission.json'),
+        JSON.stringify(submissionMetadata(submission), null, 2),
+      )
+      included.push({
+        folder,
+        id: submission.id,
+        user_id: submission.user_id,
+        status: submission.status,
+      })
+    }
+    await writeFile(
+      join(staging, 'season.json'),
+      JSON.stringify(
+        { season_id: season.id, env_id: season.env_id, submissions: included, skipped },
+        null,
+        2,
+      ),
+    )
+    return staging
+  } catch (error) {
+    await rm(staging, { recursive: true, force: true }).catch(() => undefined)
+    throw error
+  }
+}
+
+/**
+ * The operator submission routes (list + individual download + whole-season archive), registered on the
+ * already operator-gated admin instance so they share the one `onRequest` guard.
+ */
+function registerSubmissionRoutes(admin: FastifyInstance, deps: AdminDeps): void {
+  // The season's active submissions (one current attempt per participant, any status), each tagged with
+  // whether a downloadable snapshot exists so the console can disable a download that has none.
+  admin.get<{ Params: { id: string } }>('/seasons/:id/submissions', async (request, reply) => {
+    const season = await deps.storage.getSeason(request.params.id)
+    if (season === undefined) {
+      return reply.code(404).send({ error: 'no such season' })
+    }
+    const active = await deps.storage.listActiveSubmissionsBySeason(season.id)
+    const rows = await Promise.all(
+      active.map(async (submission) => ({
+        ...submissionMetadata(submission),
+        has_snapshot: await deps.snapshots.exists(submission.id),
+      })),
+    )
+    return reply.code(200).send(rows)
+  })
+
+  // Download one submission's source as the stored `.tar.gz` (the filtered checkout, no `.git`).
+  admin.get<{ Params: { submissionId: string } }>(
+    '/submissions/:submissionId/download',
+    async (request, reply) => {
+      const submission = await deps.storage.getSubmission(request.params.submissionId)
+      if (submission === undefined) {
+        return reply.code(404).send({ error: 'no such submission' })
+      }
+      if (!(await deps.snapshots.exists(submission.id))) {
+        return reply
+          .code(404)
+          .send({ error: 'no snapshot for this submission', code: 'no_snapshot' })
+      }
+      return reply
+        .type('application/gzip')
+        .header(
+          'content-disposition',
+          `attachment; filename="${submissionArchiveName(submission)}"`,
+        )
+        .send(deps.snapshots.stream(submission.id))
+    },
+  )
+
+  // Download a whole season as one streamed `.tar.gz`. The staging dir is removed once the response has
+  // finished sending (or aborted), tracked by the gzip stream's close/error.
+  admin.get<{ Params: { id: string } }>(
+    '/seasons/:id/submissions/download',
+    async (request, reply) => {
+      const season = await deps.storage.getSeason(request.params.id)
+      if (season === undefined) {
+        return reply.code(404).send({ error: 'no such season' })
+      }
+      const staging = await buildSeasonSubmissionArchive(deps, season)
+      const archive = tar.pack(staging, { sort: true }).pipe(createGzip())
+      let cleaned = false
+      const cleanup = (): void => {
+        if (cleaned) {
+          return
+        }
+        cleaned = true
+        void rm(staging, { recursive: true, force: true })
+      }
+      archive.on('close', cleanup)
+      archive.on('error', cleanup)
+      return reply
+        .type('application/gzip')
+        .header(
+          'content-disposition',
+          `attachment; filename="season-${season.id.slice(0, 8)}.tar.gz"`,
+        )
+        .send(archive)
+    },
+  )
+}
 
 /**
  * Register the admin API under `/api/admin`, gated by a single operator `onRequest` guard. Returns
@@ -155,14 +335,26 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
             }
           }
           const force = parseForce(request.query.force)
+          // A forced `deps_version` change wipes the season's submissions; capture them first so their
+          // now-orphaned snapshots can be reclaimed once the edit lands.
+          let priorSubmissionIds: string[] = []
           if (force) {
             await cancelActiveRunsForForcedEdit(deps, season.id)
+            priorSubmissionIds = (await deps.storage.listActiveSubmissionsBySeason(season.id)).map(
+              (submission) => submission.id,
+            )
           }
           const result = await deps.storage.updateSeasonConfig(request.params.id, parsed.data, {
             force,
           })
           if (!result.ok) {
             return reply.code(409).send({ error: result.conflict, code: result.conflict })
+          }
+          // Best-effort snapshot cleanup: only the rows the forced edit actually deleted (gone now).
+          for (const id of priorSubmissionIds) {
+            if ((await deps.storage.getSubmission(id)) === undefined) {
+              await deps.snapshots.delete(id).catch(() => undefined)
+            }
           }
           return reply.code(200).send(seasonView(result.season))
         },
@@ -362,6 +554,9 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
           return reply.code(200).send(runView(run, games))
         },
       )
+
+      // --- Submissions: list + downloads -----------------------------------------------------
+      registerSubmissionRoutes(admin, deps)
 
       // --- Log stream (WebSocket) ------------------------------------------------------------
       // Relay the running workflow's per-match container log lines and game-status transitions live,

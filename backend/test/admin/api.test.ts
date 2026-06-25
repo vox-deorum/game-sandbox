@@ -3,7 +3,7 @@
  * storage. These prove the gating choke point, the declare/configure/lifecycle/trigger/cancel/status
  * contract, and the live log-stream relay without touching Docker — the runner is a recording stub.
  */
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -14,9 +14,10 @@ import { buildApp } from '../../src/app.js'
 import { RecordingsStore } from '../../src/recordings.js'
 import { Retention } from '../../src/retention.js'
 import { Orchestrator } from '../../src/session/orchestrator.js'
-import type { Storage } from '../../src/storage/index.js'
+import type { Storage, Submission } from '../../src/storage/index.js'
 import type { SeasonConfig } from '../../src/storage/season-config.js'
 import { openSqliteStorage } from '../../src/storage/sqlite.js'
+import { SubmissionSnapshotStore } from '../../src/submission/snapshot-store.js'
 import { FakeDriver } from '../support/fake-driver.js'
 import { makeConfig, makeEnvironments, makeSubmissionDeps } from '../support/harness.js'
 import { StubWorkflowRunner } from '../support/stub-runner.js'
@@ -45,6 +46,7 @@ describe('admin API', () => {
   let storage: Storage
   let orchestrator: Orchestrator
   let runner: StubWorkflowRunner
+  let snapshots: SubmissionSnapshotStore
   let dir: string
 
   async function build(
@@ -58,18 +60,46 @@ describe('admin API', () => {
     orchestrator = new Orchestrator(new FakeDriver(), storage, environments, config)
     const recordings = new RecordingsStore(dir)
     runner = new StubWorkflowRunner(storage)
+    // A snapshot store the tests can pre-seed, so the download routes have real archives to serve.
+    snapshots = new SubmissionSnapshotStore(join(dir, 'submissions'))
     app = await buildApp({
       orchestrator,
       environments,
       recordings,
       retention: new Retention(storage, recordings, config),
       allowlist: ['dev-user'],
-      ...makeSubmissionDeps(storage, config),
+      ...makeSubmissionDeps(storage, config, { snapshots }),
       operatorAllowlist,
       knownDepsVersions,
       workflowRunner: runner,
     })
     await app.ready()
+  }
+
+  /** Insert a submission row directly, optionally writing it a downloadable snapshot. */
+  async function seedSubmission(
+    seasonId: string,
+    userId: string,
+    opts: { withSnapshot?: boolean } = {},
+  ): Promise<Submission> {
+    const submission = await storage.createSubmission({
+      season_id: seasonId,
+      env_id: ENV_ID,
+      user_id: userId,
+      source_kind: 'git',
+      repo_url: 'https://example.test/repo',
+      commit_sha: 'c0ffee1234',
+      local_path: null,
+      ref: null,
+      created_at: new Date().toISOString(),
+    })
+    if (opts.withSnapshot !== false) {
+      const tree = mkdtempSync(join(tmpdir(), 'gs-admin-src-'))
+      writeFileSync(join(tree, 'agent.py'), 'class Agent:\n    pass\n')
+      await snapshots.write(submission.id, tree)
+      rmSync(tree, { recursive: true, force: true })
+    }
+    return submission
   }
 
   /** Declare a season over HTTP and return its id. */
@@ -112,6 +142,9 @@ describe('admin API', () => {
         ['GET', `/api/admin/seasons/${id}`],
         ['GET', `/api/admin/seasons/${id}/runs`],
         ['GET', `/api/admin/seasons/${id}/runs/whatever`],
+        ['GET', `/api/admin/seasons/${id}/submissions`],
+        ['GET', `/api/admin/seasons/${id}/submissions/download`],
+        ['GET', `/api/admin/submissions/whatever/download`],
       ]
       for (const [method, url] of routes) {
         const res = await app.inject({
@@ -133,6 +166,78 @@ describe('admin API', () => {
         headers: OPERATOR,
       })
       expect(res.statusCode).toBe(200)
+    })
+  })
+
+  describe('submission downloads', () => {
+    it("lists a season's active submissions with their snapshot state", async () => {
+      const seasonId = await declare()
+      await seedSubmission(seasonId, 'alice', { withSnapshot: true })
+      await seedSubmission(seasonId, 'bob', { withSnapshot: false })
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/admin/seasons/${seasonId}/submissions`,
+        headers: OPERATOR,
+      })
+      expect(res.statusCode).toBe(200)
+      const rows = res.json() as Array<{ user_id: string; has_snapshot: boolean }>
+      expect(rows).toHaveLength(2)
+      expect(rows.find((r) => r.user_id === 'alice')?.has_snapshot).toBe(true)
+      expect(rows.find((r) => r.user_id === 'bob')?.has_snapshot).toBe(false)
+    })
+
+    it("streams one submission's snapshot as a gzip attachment", async () => {
+      const seasonId = await declare()
+      const submission = await seedSubmission(seasonId, 'alice', { withSnapshot: true })
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/admin/submissions/${submission.id}/download`,
+        headers: OPERATOR,
+      })
+      expect(res.statusCode).toBe(200)
+      expect(res.headers['content-type']).toContain('application/gzip')
+      expect(res.headers['content-disposition']).toContain('attachment')
+      expect(res.headers['content-disposition']).toContain('.tar.gz')
+      // gzip magic bytes confirm a real archive came back.
+      expect(res.rawPayload.subarray(0, 2)).toEqual(Buffer.from([0x1f, 0x8b]))
+    })
+
+    it('404s no_snapshot for a submission that has none, and 404s an unknown id', async () => {
+      const seasonId = await declare()
+      const submission = await seedSubmission(seasonId, 'bob', { withSnapshot: false })
+
+      const noSnapshot = await app.inject({
+        method: 'GET',
+        url: `/api/admin/submissions/${submission.id}/download`,
+        headers: OPERATOR,
+      })
+      expect(noSnapshot.statusCode).toBe(404)
+      expect(noSnapshot.json()).toMatchObject({ code: 'no_snapshot' })
+
+      const unknown = await app.inject({
+        method: 'GET',
+        url: '/api/admin/submissions/does-not-exist/download',
+        headers: OPERATOR,
+      })
+      expect(unknown.statusCode).toBe(404)
+    })
+
+    it('archives the whole season, skipping submissions without a snapshot rather than 500ing', async () => {
+      const seasonId = await declare()
+      await seedSubmission(seasonId, 'alice', { withSnapshot: true })
+      await seedSubmission(seasonId, 'bob', { withSnapshot: false })
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/admin/seasons/${seasonId}/submissions/download`,
+        headers: OPERATOR,
+      })
+      expect(res.statusCode).toBe(200)
+      expect(res.headers['content-type']).toContain('application/gzip')
+      expect(res.headers['content-disposition']).toContain(`season-${seasonId.slice(0, 8)}.tar.gz`)
+      expect(res.rawPayload.subarray(0, 2)).toEqual(Buffer.from([0x1f, 0x8b]))
     })
   })
 

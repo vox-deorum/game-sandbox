@@ -81,6 +81,25 @@ describe('loadConfig', () => {
     expect(submission.allowLocalSubmissions).toBe(false)
     expect(submission.gitTimeoutMs).toBe(15_000)
     expect(submission.githubToken).toBeUndefined()
+    // The size cap defaults to 25 MB, stored as bytes; the snapshot dir derives from the data dir.
+    expect(submission.submissionMaxSizeBytes).toBe(25 * 1024 * 1024)
+  })
+
+  it('derives the submissions snapshot dir from the data dir', () => {
+    expect(loadConfig({}).submissionsDir.endsWith('submissions')).toBe(true)
+    // Derived via path.join, so assert membership rather than a separator-specific exact string.
+    const derived = loadConfig({ DATA_DIR: '/srv/sandbox' }).submissionsDir
+    expect(derived.includes('sandbox')).toBe(true)
+    expect(derived.endsWith('submissions')).toBe(true)
+  })
+
+  it('parses SUBMISSION_MAX_SIZE_MB as megabytes and stores it as bytes', () => {
+    expect(loadConfig({ SUBMISSION_MAX_SIZE_MB: '100' }).submission.submissionMaxSizeBytes).toBe(
+      100 * 1024 * 1024,
+    )
+    // 0 is accepted (a non-negative int); it means "no tree passes", documented rather than special.
+    expect(loadConfig({ SUBMISSION_MAX_SIZE_MB: '0' }).submission.submissionMaxSizeBytes).toBe(0)
+    expect(() => loadConfig({ SUBMISSION_MAX_SIZE_MB: 'big' })).toThrow(/SUBMISSION_MAX_SIZE_MB/)
   })
 
   it('parses the submission overrides', () => {

@@ -31,6 +31,7 @@ import SeasonLifecycleControls from '../components/admin/SeasonLifecycleControls
 import OperatorRatingPromptEditor from '../components/admin/OperatorRatingPromptEditor.vue'
 import RunActions from '../components/admin/RunActions.vue'
 import RunsList from '../components/admin/RunsList.vue'
+import SeasonSubmissions from '../components/admin/SeasonSubmissions.vue'
 import UiButton from '../components/ui/UiButton.vue'
 import UiCard from '../components/ui/UiCard.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
@@ -289,6 +290,13 @@ async function saveRename(seasonId: string): Promise<void> {
               <h2>Human Rating Prompt</h2>
               <UiCard class="admin-card">
                 <OperatorRatingPromptEditor :season="view.season" @changed="refresh" />
+              </UiCard>
+            </section>
+
+            <section class="admin-section">
+              <h2>Submissions</h2>
+              <UiCard class="admin-card">
+                <SeasonSubmissions :season-id="view.season.id" />
               </UiCard>
             </section>
 

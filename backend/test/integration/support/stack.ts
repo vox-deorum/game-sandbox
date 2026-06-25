@@ -16,6 +16,7 @@ import { Retention } from '../../../src/retention.js'
 import { Orchestrator } from '../../../src/session/orchestrator.js'
 import type { Storage } from '../../../src/storage/index.js'
 import { openSqliteStorage } from '../../../src/storage/sqlite.js'
+import { SubmissionSnapshotStore } from '../../../src/submission/snapshot-store.js'
 import { createSubmissionSource } from '../../../src/submission/source/index.js'
 import { ValidationWorker } from '../../../src/submission/worker.js'
 import { createPlaceholderRunner } from '../../../src/workflow/runner.js'
@@ -37,6 +38,7 @@ export async function startStack(overrides: Partial<Config> = {}): Promise<Stack
     dataDir: recordingsDir,
     dbPath: ':memory:',
     recordingsDir,
+    submissionsDir: join(recordingsDir, 'submissions'),
     sessionIdleTimeoutMs: 60_000,
     sessionMaxDurationMs: 600_000,
     sessionAllowlist: ['dev-user', 'alice', 'bob', 'carol'],
@@ -53,7 +55,12 @@ export async function startStack(overrides: Partial<Config> = {}): Promise<Stack
       imagePolicy: 'reuse',
       overlayBuildTimeoutMs: 120_000,
     },
-    submission: { allowLocalSubmissions: false, gitTimeoutMs: 15_000, loadCheckTimeoutMs: 30_000 },
+    submission: {
+      allowLocalSubmissions: false,
+      gitTimeoutMs: 15_000,
+      loadCheckTimeoutMs: 30_000,
+      submissionMaxSizeBytes: 25 * 1024 * 1024,
+    },
     ...overrides,
   }
 
@@ -78,10 +85,13 @@ export async function startStack(overrides: Partial<Config> = {}): Promise<Stack
     },
   )
   const submissionSource = createSubmissionSource(config.submission)
+  const snapshots = new SubmissionSnapshotStore(resolve(config.submissionsDir))
   const validationWorker = new ValidationWorker({
     driver,
     storage,
     source: submissionSource,
+    snapshots,
+    submissionMaxSizeBytes: config.submission.submissionMaxSizeBytes,
     sandbox: config.sandbox,
     loadCheckTimeoutMs: config.submission.loadCheckTimeoutMs,
     knownTemplateVersions: new Set([1]),
@@ -97,6 +107,7 @@ export async function startStack(overrides: Partial<Config> = {}): Promise<Stack
     workflowRunner: createPlaceholderRunner(storage),
     storage,
     submissionSource,
+    submissionSnapshots: snapshots,
     validationWorker,
     allowLocalSubmissions: config.submission.allowLocalSubmissions,
   })

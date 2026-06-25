@@ -18,6 +18,7 @@ import type { EnvironmentMeta, EnvironmentRegistry } from '../environments.js'
 import { isAllowlisted } from '../identity.js'
 import { decodeSeasonConfig, type Storage } from '../storage/index.js'
 import type { Session, SessionMode } from '../storage/schema.js'
+import type { SubmissionSnapshotStore } from '../submission/snapshot-store.js'
 import type { SubmissionSource } from '../submission/source/index.js'
 import { ensureSubmissionImage, submissionSlotPath } from '../submission/submission-image.js'
 import { assembleSeats, type SeatBinding } from './launch-config.js'
@@ -102,11 +103,16 @@ export class Orchestrator {
      */
     private readonly onSessionFinalized: (id: string) => void = () => {},
     /**
-     * The submission-source seam, needed only to rebuild a submission's overlay when the cached image
-     * was evicted (the helper refetches the pinned tree). Optional: a deployment or test that never
-     * runs a submitted-agent watch session can omit it, and a `submissionId` run then fails cleanly.
+     * The submission-source seam, the fallback to refetch a pre-snapshot submission when rebuilding its
+     * overlay. Optional: a deployment or test that never runs a submitted-agent watch session can omit
+     * it (together with the snapshot store), and a `submissionId` run then fails cleanly.
      */
     private readonly submissionSource?: SubmissionSource,
+    /**
+     * The snapshot store an evicted overlay is rebuilt from. Paired with {@link submissionSource}:
+     * both are present for a deployment that runs submitted agents, both omitted otherwise.
+     */
+    private readonly submissionSnapshots?: SubmissionSnapshotStore,
   ) {}
 
   /**
@@ -264,7 +270,7 @@ export class Orchestrator {
         submissionBinding: null,
       }
     }
-    if (this.submissionSource === undefined) {
+    if (this.submissionSource === undefined || this.submissionSnapshots === undefined) {
       throw new OrchestratorError(500, 'submitted-agent runs are not configured on this deployment')
     }
     const submission = await this.storage.getSubmission(request.submissionId)
@@ -298,6 +304,7 @@ export class Orchestrator {
     const image = await ensureSubmissionImage(
       {
         driver: this.driver,
+        snapshots: this.submissionSnapshots,
         source: this.submissionSource,
         imagePolicy: this.config.docker.imagePolicy,
       },

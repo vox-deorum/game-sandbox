@@ -58,6 +58,13 @@ export interface SubmissionOptions {
    * near-instant, so a hang is itself a failure; kept short but clear of a cold container start.
    */
   loadCheckTimeoutMs: number
+  /**
+   * The site-default cap, in bytes, on a submission's checked-out source tree (excluding `.git` and
+   * the other ignored segments). Enforced in the static stage; a per-season `submission_max_size_mb`
+   * override takes precedence when set. Read from `SUBMISSION_MAX_SIZE_MB` (MB; stored as bytes).
+   * A value of `0` means no tree can pass, not "unlimited".
+   */
+  submissionMaxSizeBytes: number
 }
 
 export interface Config {
@@ -69,6 +76,8 @@ export interface Config {
   dbPath: string
   /** Recordings root, mounted into session containers and listed by the recordings API. */
   recordingsDir: string
+  /** Submission-snapshot root: one `<id>.tar.gz` per accepted submission, under {@link Config.dataDir}. */
+  submissionsDir: string
   /** Idle window before a session with no attached socket (or no human input) is killed. */
   sessionIdleTimeoutMs: number
   /** Wall-clock backstop catching a hung container that in-container budgets cannot. */
@@ -208,6 +217,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     dataDir,
     dbPath: join(dataDir, 'sandbox.db'),
     recordingsDir: join(dataDir, 'recordings'),
+    submissionsDir: join(dataDir, 'submissions'),
     sessionIdleTimeoutMs: intVar(env, 'SESSION_IDLE_TIMEOUT_MS', 60_000),
     sessionMaxDurationMs: intVar(env, 'SESSION_MAX_DURATION_MS', 600_000),
     sessionAllowlist: listVar(env, 'SESSION_ALLOWLIST', [DEV_USER_ID]),
@@ -240,6 +250,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       allowLocalSubmissions: boolVar(env, 'ALLOW_LOCAL_SUBMISSIONS', false),
       gitTimeoutMs: intVar(env, 'SUBMISSION_GIT_TIMEOUT_MS', 15_000),
       loadCheckTimeoutMs: intVar(env, 'SUBMISSION_LOAD_CHECK_TIMEOUT_MS', 30_000),
+      submissionMaxSizeBytes: intVar(env, 'SUBMISSION_MAX_SIZE_MB', 25) * 1024 * 1024,
     },
   }
 }

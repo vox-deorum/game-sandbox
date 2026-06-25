@@ -18,6 +18,7 @@ import tar from 'tar-fs'
 import type { Pack } from 'tar-stream'
 
 import type { ImagePolicy } from '../../config.js'
+import { submissionTarIgnore } from '../../submission/tree-filter.js'
 import type { ImageRef, OverlayImage, SubmissionOverlayImageSpec } from '../index.js'
 
 /** The Docker repository (the part before `:`) every overlay tag lives under. */
@@ -83,9 +84,16 @@ interface BuildProgress {
  * tree is namespaced under `tree/` (via the header `map`) so `COPY tree …` copies only the
  * submission's files and never the Dockerfile itself. `finalize: false` + `finish` appends the
  * Dockerfile entry after `tar-fs` has walked the tree, then finalizes the archive.
+ *
+ * The `ignore` filter and deterministic `sort` are the determinism keystone: they are the same the
+ * snapshot pack uses (`submission/tree-filter.ts`), so an overlay rebuilt from a stored snapshot copies
+ * exactly the bytes the original git-checkout build copied. Filtering also drops `.git` and build
+ * artifacts that would otherwise be shipped into every overlay for no reason.
  */
 function buildContext(sourceTreePath: string, dockerfile: string): NodeJS.ReadableStream {
   return tar.pack(sourceTreePath, {
+    ignore: submissionTarIgnore(sourceTreePath),
+    sort: true,
     map: (header) => {
       header.name = `tree/${header.name}`
       return header

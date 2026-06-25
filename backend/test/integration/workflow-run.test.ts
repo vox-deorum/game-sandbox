@@ -21,6 +21,7 @@ import { EnvironmentRegistry } from '../../src/environments.js'
 import { RecordingsStore } from '../../src/recordings.js'
 import type { AgentRef, SeasonRun, Storage } from '../../src/storage/index.js'
 import { openSqliteStorage } from '../../src/storage/sqlite.js'
+import { SubmissionSnapshotStore } from '../../src/submission/snapshot-store.js'
 import { createSubmissionSource } from '../../src/submission/source/index.js'
 import type { TerminalRunStatus, WorkflowRunner } from '../../src/workflow/runner.js'
 import { createWorkflowRunner } from '../../src/workflow/workflow-runner.js'
@@ -73,7 +74,9 @@ describe('workflow run end to end (Docker)', () => {
         allowLocalSubmissions: true,
         gitTimeoutMs: 15_000,
         loadCheckTimeoutMs: 30_000,
+        submissionMaxSizeBytes: 25 * 1024 * 1024,
       }),
+      snapshots: new SubmissionSnapshotStore(resolve(join(recordingsDir, 'submissions'))),
       sandbox: { cpus: 1, memoryMb: 512, scratchMb: 256 },
       recordingsDir: resolve(recordingsDir),
       imagePolicy: 'reuse',

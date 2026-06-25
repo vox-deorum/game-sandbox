@@ -8,12 +8,16 @@
  * and reached the right terminal state. The attributable-crash, timeout, infrastructure-fault, cancel,
  * and re-run paths each get a test. No Docker, no Python, deterministic.
  */
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import type { ExitInfo } from '../../src/driver/index.js'
 import { EnvironmentRegistry } from '../../src/environments.js'
 import type { AgentRef, ScheduledGameInput, SeasonRun, Storage } from '../../src/storage/index.js'
 import { openSqliteStorage } from '../../src/storage/sqlite.js'
+import { SubmissionSnapshotStore } from '../../src/submission/snapshot-store.js'
 import type { SubmissionSource } from '../../src/submission/source/index.js'
 import type { RunEvent, TerminalRunStatus } from '../../src/workflow/runner.js'
 import { createWorkflowRunner } from '../../src/workflow/workflow-runner.js'
@@ -47,6 +51,9 @@ function makeEnvironments(): EnvironmentRegistry {
   )
 }
 
+/** A snapshot store rooted at an unused path; the reuse path with a seeded overlay never reads it. */
+const unusedSnapshots = new SubmissionSnapshotStore(join(tmpdir(), 'gs-runner-unused-snapshots'))
+
 /** A source seam that throws if touched; the reuse path with a seeded overlay never reaches it. */
 const unusedSource: SubmissionSource = {
   verifyReachable: () => {
@@ -76,6 +83,7 @@ function makeRunner(
     storage,
     environments: makeEnvironments(),
     source: unusedSource,
+    snapshots: unusedSnapshots,
     sandbox: { cpus: 1, memoryMb: 512, scratchMb: 256 },
     recordingsDir: './data/recordings',
     imagePolicy: 'reuse',

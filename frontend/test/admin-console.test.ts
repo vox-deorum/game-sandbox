@@ -29,6 +29,11 @@ vi.mock('../src/api/client.js', () => ({
   unreleaseSeason: vi.fn(),
   triggerRun: vi.fn(),
   cancelRun: vi.fn(),
+  // The console's Submissions section mounts SeasonSubmissions, which lists submissions and builds
+  // download URLs; stub them so the section renders without a real fetch.
+  listSeasonSubmissions: vi.fn(() => Promise.resolve([])),
+  adminSeasonDownloadUrl: vi.fn(() => '#'),
+  adminSubmissionDownloadUrl: vi.fn(() => '#'),
 }))
 
 import {

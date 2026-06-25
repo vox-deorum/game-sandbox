@@ -28,7 +28,7 @@ Browser
 | `src/storage/` | Kysely schema, domain interface, SQLite implementation, migration |
 | `src/driver/` | Execution-driver interface and Docker implementation |
 | `src/session/` | Orchestrator, live relay, active-session registry |
-| `src/submission/` | Source resolution, validation, image build, worker, eviction |
+| `src/submission/` | Source resolution, validation, image build, worker, snapshots, eviction |
 | `src/admin/` | Operator-only season and workflow API |
 | `src/leaderboards/` | Public season and leaderboard reads |
 | `src/ratings/` | Session ratings and author prompts |
@@ -171,6 +171,7 @@ Static validation runs no participant code. It checks:
 
 | Code                        | Condition                             |
 | --------------------------- | ------------------------------------- |
+| (size)                      | Source tree exceeds the size cap      |
 | `manifest_missing`          | No root `manifest.json`               |
 | `manifest_invalid_json`     | Invalid JSON or non-object            |
 | `manifest_field_invalid`    | Missing or wrong-typed required field |
@@ -178,6 +179,8 @@ Static validation runs no participant code. It checks:
 | `entry_point_missing`       | Module file or package is absent      |
 | `unknown_template_version`  | No registered base image              |
 | `template_version_mismatch` | Version differs from the season       |
+
+The size check is the first static check. It measures the checked-out tree through one shared filter (`submission/tree-filter.ts`) that excludes `.git` and build artifacts, and compares it to the effective cap: the season's `overrides.submission_max_size_mb` when set, otherwise `SUBMISSION_MAX_SIZE_MB`. The same filter drives the snapshot pack and the overlay build context, so all three agree on which bytes are "the submission".
 
 The Zod manifest schema and Python harness loader are kept in sync by contract tests.
 
@@ -193,6 +196,12 @@ For each stage, the worker:
 Unexpected errors still close the active stage. Startup re-enqueues pending submissions, and the unique `(submission_id, stage)` key replaces prior attempts.
 
 Overlay building and load checking are described in [Execution boundary](execution.md#submission-overlay-images).
+
+### Snapshots
+
+Once a submission passes the size and static checks, the worker writes a compressed snapshot of its filtered source tree through `SubmissionSnapshotStore` (`submission/snapshot-store.ts`), one `<id>.tar.gz` per submission under `<DATA_DIR>/submissions`. It mirrors `RecordingsStore`: a flat per-id file, an atomic write (temp file then rename), plus `stream`, `exists`, `materialize`, and `delete`. The write is best-effort, so a failure logs and the submission still reaches `ready`.
+
+The snapshot is the durable input for an overlay rebuild: when a cached overlay was evicted, `ensureSubmissionImage` materializes the tree from the snapshot instead of re-cloning the pinned commit (falling back to the source seam only for a pre-snapshot submission). Because the snapshot and the overlay build context share the tree filter and a deterministic sort, a rebuild reproduces the original overlay. Operator download routes stream the same snapshots. A forced `deps_version` change that deletes a season's submissions also reclaims their snapshots.
 
 ## HTTP API
 
@@ -226,7 +235,10 @@ All `/api/admin` routes pass one operator guard. They support:
 - Releasing and unreleasing results.
 - Triggering and cancelling runs.
 - Reading private season, run, board, and game status.
+- Listing a season's active submissions, and downloading one submission's source snapshot or a whole season as one `.tar.gz`.
 - Streaming workflow logs over WebSocket.
+
+Downloads are native `<a download>` links, so they cannot send the identity header; identity rides the `?user=` query parameter the operator guard already accepts (the same channel the log-stream WebSocket uses).
 
 Unreleased board data is available only through operator-gated routes. Public board endpoints enforce release at the route boundary.
 

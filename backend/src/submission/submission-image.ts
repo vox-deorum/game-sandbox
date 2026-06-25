@@ -5,16 +5,22 @@
  *
  * The build stage (step 4) already produced each `ready` submission's overlay, and the eviction sweep
  * exempts active-`ready` images, so on the common watch path the overlay is still cached and this helper
- * returns it without touching the source seam at all. A rebuild is required only when the driver policy
- * forces it (`rebuild`) or the cached overlay was evicted; then, and only then, the helper refetches the
- * pinned source, rebuilds the code-only overlay through the driver, and disposes the checkout. The
- * `submission-overlay` build is deterministic in the submission's `deps_version` and id, so a rebuilt
- * image is byte-for-byte the one the validation worker built.
+ * returns it without touching disk or git at all. A rebuild is required only when the driver policy
+ * forces it (`rebuild`) or the cached overlay was evicted; then, and only then, the helper materializes
+ * the submission's tree, rebuilds the code-only overlay through the driver, and disposes the checkout.
+ *
+ * The tree comes from the on-disk snapshot the validation worker wrote, not a fresh git clone, so a
+ * rebuild no longer depends on the participant's repo still serving the pinned commit (a force-push or
+ * deleted ref used to break re-runs here). Because the snapshot was packed with the same filter and sort
+ * the overlay build context uses, a rebuild is byte-for-byte the image the worker built. For a
+ * pre-snapshot submission (or one whose snapshot write failed) the helper falls back to re-cloning the
+ * pinned source through the source seam.
  */
 import type { ImagePolicy } from '../config.js'
 import type { ExecutionDriver, ImageRef } from '../driver/index.js'
 import type { Submission } from '../storage/index.js'
-import type { SourceInput, SubmissionSource } from './source/index.js'
+import { SnapshotMissingError, type SubmissionSnapshotStore } from './snapshot-store.js'
+import type { SourceInput, SubmissionSource, TreeHandle } from './source/index.js'
 
 /** Where the base image expects each slot's repo root; lockstep with the overlay Dockerfile and harness. */
 const SUBMISSION_SLOT_BASE = '/opt/agents/submissions'
@@ -44,7 +50,9 @@ function sourceInput(submission: Submission): SourceInput {
 /** Everything the helper needs, injected so a test assembles it against the FakeDriver and a source stub. */
 export interface SubmissionImageDeps {
   driver: ExecutionDriver
-  /** The source seam, used only when a rebuild is required (to refetch the pinned tree). */
+  /** The snapshot store; a rebuild materializes the submission's tree from here, no git round trip. */
+  snapshots: SubmissionSnapshotStore
+  /** The source seam, used only as a fallback when a submission has no snapshot (pre-snapshot rows). */
   source: SubmissionSource
   /** The driver's reuse-vs-rebuild policy, so the helper can skip the refetch when reuse is allowed. */
   imagePolicy: ImagePolicy
@@ -70,9 +78,10 @@ export async function ensureSubmissionImage(
       return { ref: cached.ref }
     }
   }
-  // A rebuild is required: refetch the pinned source, build the overlay, and dispose the checkout.
-  const resolved = await deps.source.resolve(sourceInput(submission))
-  const tree = await deps.source.fetchTree(resolved)
+  // A rebuild is required: materialize the submission's tree, build the overlay, dispose the checkout.
+  // Prefer the durable snapshot; fall back to re-cloning the pinned source only for a submission that
+  // has none (a pre-snapshot row, or one whose snapshot write failed).
+  const tree = await materializeTree(deps, submission)
   try {
     return await deps.driver.ensureImage({
       kind: 'submission-overlay',
@@ -84,4 +93,21 @@ export async function ensureSubmissionImage(
   } finally {
     await tree.dispose()
   }
+}
+
+/** The submission's source tree for a rebuild: the snapshot when present, else a fresh pinned clone. */
+async function materializeTree(
+  deps: SubmissionImageDeps,
+  submission: Submission,
+): Promise<TreeHandle> {
+  try {
+    return await deps.snapshots.materialize(submission.id)
+  } catch (error) {
+    // Only a pre-snapshot submission (no snapshot on disk) falls back to re-cloning the pinned source.
+    if (!(error instanceof SnapshotMissingError)) {
+      throw error
+    }
+  }
+  const resolved = await deps.source.resolve(sourceInput(submission))
+  return await deps.source.fetchTree(resolved)
 }

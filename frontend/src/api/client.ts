@@ -11,7 +11,7 @@
 import type { RecordingHeader } from '@game-sandbox/schema'
 import { type EnvironmentMeta, isEnvironmentMeta } from '@game-sandbox/schema/environment'
 
-import { identityHeaders } from '../identity.js'
+import { currentUserId, IDENTITY_QUERY_PARAM, identityHeaders } from '../identity.js'
 
 const API_BASE = '/api'
 
@@ -569,12 +569,14 @@ export interface MatchConfig {
 }
 
 /**
- * The override block. `step_timeout_ms`/`episode_timeout_ms` take effect this stage; `messaging` and
- * `llm` are parsed-but-inert opaque objects until Stages 8/9 give them a concrete shape.
+ * The override block. `step_timeout_ms`/`episode_timeout_ms`/`submission_max_size_mb` take effect this
+ * stage; `messaging` and `llm` are parsed-but-inert opaque objects until Stages 8/9 give them a shape.
  */
 export interface SeasonOverrides {
   step_timeout_ms?: number
   episode_timeout_ms?: number
+  /** Per-season cap (MB) on a submission's checked-out source; absent uses the site default. */
+  submission_max_size_mb?: number
   messaging?: Record<string, unknown>
   llm?: Record<string, unknown>
 }
@@ -840,6 +842,44 @@ export async function listRuns(seasonId: string): Promise<RunSummaryView[]> {
     await request(`/admin/seasons/${encodeURIComponent(seasonId)}/runs`),
     'GET /api/admin/seasons/:id/runs',
   )) as RunSummaryView[]
+}
+
+/** One active submission in a season, as the admin submissions list returns it (with snapshot state). */
+export interface AdminSubmissionRow {
+  id: string
+  user_id: string
+  status: SubmissionStatus
+  source_kind: 'git' | 'local'
+  repo_url: string | null
+  commit_sha: string | null
+  ref: string | null
+  created_at: string
+  /** Whether a downloadable source snapshot exists (false for a submission that failed before snapshot). */
+  has_snapshot: boolean
+}
+
+/** A season's active submissions (one current attempt per participant), for the operator console. */
+export async function listSeasonSubmissions(seasonId: string): Promise<AdminSubmissionRow[]> {
+  return (await json(
+    await request(`/admin/seasons/${encodeURIComponent(seasonId)}/submissions`),
+    'GET /api/admin/seasons/:id/submissions',
+  )) as AdminSubmissionRow[]
+}
+
+/**
+ * The operator download URL for one submission's source snapshot. A native `<a download>` cannot send
+ * the identity header, so identity rides the `?user=` query param the admin guard already accepts (the
+ * same channel the run-log WebSocket uses). Returns a string for an anchor href, not a fetch wrapper.
+ */
+export function adminSubmissionDownloadUrl(submissionId: string): string {
+  const user = encodeURIComponent(currentUserId)
+  return `${API_BASE}/admin/submissions/${encodeURIComponent(submissionId)}/download?${IDENTITY_QUERY_PARAM}=${user}`
+}
+
+/** The operator download URL for a whole season's active submissions, as one `.tar.gz`. */
+export function adminSeasonDownloadUrl(seasonId: string): string {
+  const user = encodeURIComponent(currentUserId)
+  return `${API_BASE}/admin/seasons/${encodeURIComponent(seasonId)}/submissions/download?${IDENTITY_QUERY_PARAM}=${user}`
 }
 
 /** One run's full view with its scheduled games, the run-details page's primary read. */

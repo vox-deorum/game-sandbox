@@ -23,6 +23,7 @@ import { seedOpenSeasons } from './seasons-seed.js'
 import { Orchestrator } from './session/orchestrator.js'
 import { openSqliteStorage } from './storage/sqlite.js'
 import { OverlayEviction } from './submission/overlay-eviction.js'
+import { SubmissionSnapshotStore } from './submission/snapshot-store.js'
 import { createSubmissionSource } from './submission/source/index.js'
 import { ValidationWorker } from './submission/worker.js'
 import { reconcileInterruptedRuns } from './workflow/runner.js'
@@ -41,10 +42,13 @@ async function main(): Promise<void> {
   await seedOpenSeasons(storage, environments, DEPS_VERSION)
   const driver = await createDockerDriver(config.docker)
   const recordings = new RecordingsStore(resolve(config.recordingsDir))
+  // The durable per-submission source snapshot: written once a submission passes its size + static
+  // checks, then read to rebuild an evicted overlay and to serve operator downloads.
+  const snapshots = new SubmissionSnapshotStore(resolve(config.submissionsDir))
   const retention = new Retention(storage, recordings, config, log)
   const overlayEviction = new OverlayEviction(driver, storage, config, log)
   // The submission source seam resolves and fetches participant code. The orchestrator needs it too,
-  // to rebuild a submission's overlay when the cached image was evicted before a watch run.
+  // to rebuild a submission's overlay (from the snapshot, falling back to git) when its image was evicted.
   const submissionSource = createSubmissionSource(config.submission)
   // The sweep runs at startup, on the interval, and after each session finalize (the only moment
   // the data grows); the orchestrator triggers the finalize sweep through this callback.
@@ -58,6 +62,7 @@ async function main(): Promise<void> {
       void retention.sweep()
     },
     submissionSource,
+    snapshots,
   )
 
   // The workflow runner (Stage 6.4): the Docker-backed background engine that drives a triggered run's
@@ -70,6 +75,7 @@ async function main(): Promise<void> {
     storage,
     environments,
     source: submissionSource,
+    snapshots,
     sandbox: config.sandbox,
     recordingsDir: resolve(config.recordingsDir),
     imagePolicy: config.docker.imagePolicy,
@@ -96,6 +102,8 @@ async function main(): Promise<void> {
     driver,
     storage,
     source: submissionSource,
+    snapshots,
+    submissionMaxSizeBytes: config.submission.submissionMaxSizeBytes,
     sandbox: config.sandbox,
     loadCheckTimeoutMs: config.submission.loadCheckTimeoutMs,
     knownTemplateVersions: KNOWN_DEPS_VERSIONS,
@@ -117,6 +125,7 @@ async function main(): Promise<void> {
     frontendDir: config.frontendDir,
     storage,
     submissionSource,
+    submissionSnapshots: snapshots,
     validationWorker,
     allowLocalSubmissions: config.submission.allowLocalSubmissions,
   })

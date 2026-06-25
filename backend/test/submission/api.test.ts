@@ -18,6 +18,7 @@ import { Retention } from '../../src/retention.js'
 import { Orchestrator } from '../../src/session/orchestrator.js'
 import { type Storage, SubmissionConflictError } from '../../src/storage/index.js'
 import { openSqliteStorage } from '../../src/storage/sqlite.js'
+import { SubmissionSnapshotStore } from '../../src/submission/snapshot-store.js'
 import type {
   ReachabilityResult,
   SourceInput,
@@ -71,6 +72,7 @@ describe('submission API', () => {
       workflowRunner: new StubWorkflowRunner(storage),
       storage,
       submissionSource: source,
+      submissionSnapshots: new SubmissionSnapshotStore(join(dir, 'submissions')),
       validationWorker: { enqueue: (id) => enqueued.push(id) },
       allowLocalSubmissions: overrides.allowLocalSubmissions ?? false,
     })

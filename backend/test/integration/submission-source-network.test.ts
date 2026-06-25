@@ -21,6 +21,7 @@ describe.runIf(enabled)('git submission source against a real public repo', () =
     allowLocalSubmissions: false,
     gitTimeoutMs: 30_000,
     loadCheckTimeoutMs: 30_000,
+    submissionMaxSizeBytes: 25 * 1024 * 1024,
   })
 
   it('resolves the default-branch head and shallow-fetches exactly that tree', async () => {

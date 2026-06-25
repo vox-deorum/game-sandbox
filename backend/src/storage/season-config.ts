@@ -34,12 +34,15 @@ export type MatchConfig = z.infer<typeof MatchConfigSchema>
 
 /**
  * The optional override block. `step_timeout_ms`/`episode_timeout_ms` are effective this stage (they
- * fall back to the environment defaults when absent). `messaging` and `llm` are parsed-but-inert: any
- * object passes and is stored untouched until Stages 8/9 pin and consume their shape.
+ * fall back to the environment defaults when absent). `submission_max_size_mb` overrides the site
+ * default cap on a submission's checked-out source size for this season (absent = the site default).
+ * `messaging` and `llm` are parsed-but-inert: any object passes and is stored untouched until Stages
+ * 8/9 pin and consume their shape.
  */
 export const OverridesSchema = z.strictObject({
   step_timeout_ms: z.int().positive().optional(),
   episode_timeout_ms: z.int().positive().optional(),
+  submission_max_size_mb: z.int().positive().optional(),
   messaging: z.record(z.string(), z.unknown()).optional(),
   llm: z.record(z.string(), z.unknown()).optional(),
 })

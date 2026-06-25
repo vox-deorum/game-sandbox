@@ -8,6 +8,7 @@ import { Orchestrator, OrchestratorError } from '../../src/session/orchestrator.
 import type { Storage, Submission } from '../../src/storage/index.js'
 import type { SessionMode } from '../../src/storage/schema.js'
 import { openSqliteStorage } from '../../src/storage/sqlite.js'
+import { SubmissionSnapshotStore } from '../../src/submission/snapshot-store.js'
 import type {
   ResolvedSource,
   SourceInput,
@@ -88,6 +89,12 @@ describe('orchestrator', () => {
 
   function makeOrchestrator(idleMs = 60_000, source?: SubmissionSource): Orchestrator {
     const config = makeConfig({ recordingsDir, sessionIdleTimeoutMs: idleMs })
+    // Pair an (empty) snapshot store with the source whenever one is supplied: the rebuild path tries
+    // the snapshot first, finds none here, and falls back to the source seam exactly as before.
+    const snapshots =
+      source === undefined
+        ? undefined
+        : new SubmissionSnapshotStore(join(recordingsDir, 'submissions'))
     return new Orchestrator(
       driver,
       storage,
@@ -96,6 +103,7 @@ describe('orchestrator', () => {
       undefined,
       undefined,
       source,
+      snapshots,
     )
   }
 

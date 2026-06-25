@@ -11,18 +11,14 @@ import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
 import { onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 
-import {
-  type AgentProfile,
-  getAgentProfile,
-  getEnvironments,
-  type SubmissionStatus,
-} from '../api/client.js'
+import { type AgentProfile, getAgentProfile, getEnvironments } from '../api/client.js'
 import UiBadge from '../components/ui/UiBadge.vue'
 import UiCard from '../components/ui/UiCard.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import UiStatusBadge from '../components/ui/UiStatusBadge.vue'
 import { currentUserId } from '../identity.js'
 import { formatDate } from '../lib/format.js'
+import { submissionStatusLabel, submissionStatusTone } from '../lib/submission-status.js'
 import { useMe } from '../me.js'
 
 interface EnvironmentAgent {
@@ -35,20 +31,6 @@ const ownerId = ref(currentUserId)
 const rows = ref<EnvironmentAgent[] | null>(null)
 const error = ref(false)
 
-const STATUS_LABEL: Record<SubmissionStatus, string> = {
-  pending: 'pending',
-  ready: 'ready to compete',
-  static_failed: 'static check failed',
-  build_failed: 'build failed',
-  load_failed: 'load check failed',
-}
-const STATUS_TONE: Record<SubmissionStatus, 'neutral' | 'success' | 'danger' | 'warning'> = {
-  pending: 'warning',
-  ready: 'success',
-  static_failed: 'danger',
-  build_failed: 'danger',
-  load_failed: 'danger',
-}
 
 onMounted(async () => {
   await me.whenSettled()
@@ -94,8 +76,8 @@ function activeSubmission(profile: AgentProfile) {
             <span class="agent-game">{{ row.meta.display_name }}</span>
             <UiStatusBadge
               v-if="activeSubmission(row.profile)"
-              :tone="STATUS_TONE[activeSubmission(row.profile)!.status]"
-              :label="STATUS_LABEL[activeSubmission(row.profile)!.status]"
+              :tone="submissionStatusTone(activeSubmission(row.profile)!.status)"
+              :label="submissionStatusLabel(activeSubmission(row.profile)!.status)"
             />
           </div>
           <p class="agent-meta">

@@ -22,6 +22,7 @@ import type { Retention } from './retention.js'
 import type { ClientSocket } from './session/live-session.js'
 import { type Orchestrator, OrchestratorError } from './session/orchestrator.js'
 import { type Storage, SubmissionConflictError } from './storage/index.js'
+import type { SubmissionSnapshotStore } from './submission/snapshot-store.js'
 import type { SourceInput, SubmissionSource } from './submission/source/index.js'
 import type { SubmissionEnqueuer } from './submission/worker.js'
 import type { WorkflowRunner } from './workflow/runner.js'
@@ -44,6 +45,8 @@ export interface AppDeps {
   storage: Storage
   /** The submission-source seam, for the reachability pre-check (Stage 5.2/5.5). */
   submissionSource: SubmissionSource
+  /** The submission-snapshot store, for the operator download routes (individual + whole-season). */
+  submissionSnapshots: SubmissionSnapshotStore
   /** The bounded validation worker the submit route enqueues onto; the pipeline runs out of band. */
   validationWorker: SubmissionEnqueuer
   /** Whether the dev-only local-folder source is offered; drives capabilities and the local gate. */
@@ -437,6 +440,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     workflowRunner: deps.workflowRunner,
     operatorAllowlist: deps.operatorAllowlist,
     knownDepsVersions: deps.knownDepsVersions,
+    snapshots: deps.submissionSnapshots,
   })
   registerLeaderboardRoutes(app, {
     storage: deps.storage,

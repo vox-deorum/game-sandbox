@@ -44,6 +44,7 @@ import { assembleSeats, type SeatBinding } from '../session/launch-config.js'
 import { ensureRecordingsDir } from '../session/live-session.js'
 import { decodeSeasonConfig, type Storage } from '../storage/index.js'
 import type { AgentRef, SeasonRun, SeasonRunGame } from '../storage/schema.js'
+import type { SubmissionSnapshotStore } from '../submission/snapshot-store.js'
 import type { SubmissionSource } from '../submission/source/index.js'
 import { ensureSubmissionImage, submissionSlotPath } from '../submission/submission-image.js'
 import { aggregateSeat } from './aggregate.js'
@@ -69,8 +70,10 @@ export interface WorkflowRunnerDeps {
   driver: ExecutionDriver
   storage: Storage
   environments: EnvironmentRegistry
-  /** The submission-source seam, needed to rebuild a submission overlay when its cached image was evicted. */
+  /** The submission-source seam, the fallback to refetch a pre-snapshot submission when rebuilding its overlay. */
   source: SubmissionSource
+  /** The snapshot store an overlay rebuild materializes the submission tree from when its image was evicted. */
+  snapshots: SubmissionSnapshotStore
   /** The sandbox quotas each match container runs under, the same profile shape sessions use. */
   sandbox: SandboxDefaults
   /** The recordings volume root, mounted into each match container and read back after it exits. */
@@ -462,6 +465,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
         return ensureSubmissionImage(
           {
             driver: this.deps.driver,
+            snapshots: this.deps.snapshots,
             source: this.deps.source,
             imagePolicy: this.deps.imagePolicy,
           },

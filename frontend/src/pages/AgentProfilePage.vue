@@ -40,6 +40,11 @@ import {
   formatScore,
   shortId,
 } from '../lib/format.js'
+import {
+  type SubmissionStatusTone,
+  submissionStatusLabel,
+  submissionStatusTone,
+} from '../lib/submission-status.js'
 import { useMe } from '../me.js'
 
 const route = useRoute()
@@ -72,39 +77,22 @@ onMounted(() => {
   )
 })
 
-const STATUS_LABEL: Record<SubmissionStatus, string> = {
-  pending: 'pending',
-  // "ready" on its own reads as ambiguous ("ready for what?"); spell out that it passed validation
-  // and is eligible to play, the thing the all-green stepper is showing.
-  ready: 'ready to compete',
-  static_failed: 'static check failed',
-  build_failed: 'build failed',
-  load_failed: 'load check failed',
-}
-const STATUS_TONE: Record<SubmissionStatus, 'neutral' | 'success' | 'danger' | 'warning'> = {
-  pending: 'warning',
-  ready: 'success',
-  static_failed: 'danger',
-  build_failed: 'danger',
-  load_failed: 'danger',
-}
-
 /** The left-edge accent stripe that lets a stack of submissions be scanned by outcome. */
-const statusAccentClass = (status: SubmissionStatus): string => `status-${STATUS_TONE[status]}`
+const statusAccentClass = (status: SubmissionStatus): string => `status-${submissionStatusTone(status)}`
 
 /**
  * The single lifecycle-aware badge for a submission's summary row, folding the old standalone
  * "Current" badge into the status label: a current ready submission reads "ready to compete", while a
  * ready submission that has since been superseded reads "superseded" (it was eligible to play, but a
- * newer submission has replaced it). Every other status keeps its plain label and tone.
+ * newer submission has replaced it). Every other status keeps its shared label and tone.
  */
 const statusBadge = (
   submission: AgentProfileSubmission,
-): { label: string; tone: 'neutral' | 'success' | 'danger' | 'warning' } => {
+): { label: string; tone: SubmissionStatusTone } => {
   if (submission.status === 'ready' && submission.superseded_at !== null) {
     return { label: 'superseded', tone: 'neutral' }
   }
-  return { label: STATUS_LABEL[submission.status], tone: STATUS_TONE[submission.status] }
+  return { label: submissionStatusLabel(submission.status), tone: submissionStatusTone(submission.status) }
 }
 
 /**

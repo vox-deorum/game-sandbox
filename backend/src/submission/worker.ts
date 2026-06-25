@@ -31,8 +31,10 @@ import type {
   SubmissionStage,
 } from '../storage/index.js'
 import { decodeSeasonConfig } from '../storage/index.js'
+import type { SubmissionSnapshotStore } from './snapshot-store.js'
 import type { ResolvedSource, SourceInput, SubmissionSource, TreeHandle } from './source/index.js'
 import { SourceError } from './source/index.js'
+import { measureTreeSize } from './tree-filter.js'
 import { runLoadCheck, validateStatic } from './validate/index.js'
 
 /** The single Flappy Bird agent slot a Stage 5 submission fills; lockstep with the harness default. */
@@ -56,6 +58,10 @@ export interface ValidationWorkerDeps {
   sandbox: SandboxDefaults
   /** Wall-clock ceiling on one load check (`config.submission.loadCheckTimeoutMs`). */
   loadCheckTimeoutMs: number
+  /** The durable on-disk snapshot the static stage writes once a submission's tree passes its checks. */
+  snapshots: SubmissionSnapshotStore
+  /** The site-default cap, in bytes, on a checked-out source tree; a season override takes precedence. */
+  submissionMaxSizeBytes: number
   /** The template versions the deployment has a base image for; passed through to the static check. */
   knownTemplateVersions: ReadonlySet<number>
   log?: (message: string) => void
@@ -79,6 +85,19 @@ function rollupFor(stage: SubmissionStage): SubmissionFailureStatus {
 /** The owner-visible text for a thrown value. */
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+/** A byte count rendered as megabytes to one decimal, for owner-visible messages. */
+function asMb(bytes: number): string {
+  return (bytes / (1024 * 1024)).toFixed(1)
+}
+
+/** The owner-visible reason a submission is rejected for exceeding its size cap. */
+function sizeFailureReason(measuredBytes: number, limitBytes: number): string {
+  return (
+    `the submission's source is ${asMb(measuredBytes)} MB, over the ${asMb(limitBytes)} MB limit ` +
+    `(measured without .git history); reduce the submitted tree and resubmit`
+  )
 }
 
 /** Reconstruct the source seam's input from a stored submission row. */
@@ -165,7 +184,9 @@ export class ValidationWorker implements SubmissionEnqueuer {
       this.log(`validation worker: submission ${submissionId} has no season; skipping`)
       return
     }
-    const depsVersion = decodeSeasonConfig(season.config).deps_version
+    const seasonConfig = decodeSeasonConfig(season.config)
+    const depsVersion = seasonConfig.deps_version
+    const sizeLimitBytes = this.sizeLimitBytes(seasonConfig.overrides?.submission_max_size_mb)
 
     let tree: TreeHandle | null = null
     let runningStage: SubmissionStage | null = null
@@ -190,9 +211,17 @@ export class ValidationWorker implements SubmissionEnqueuer {
       await this.deps.storage.finishSubmissionCheck(submissionId, 'resolve', 'passed')
       runningStage = null
 
-      // Stage 2 — static: the manifest checks over the checkout (runs no participant code).
+      // Stage 2 — static: the size cap and the manifest checks over the checkout (no participant code
+      // runs). The size cap is first: it is a static property of the tree, and over-cap rolls up to
+      // `static_failed` like any other static failure. The measured size excludes `.git` and build
+      // artifacts (the same filter the snapshot and overlay use), so it bounds the submitted code.
       runningStage = 'static'
       await this.deps.storage.startSubmissionCheck(submissionId, 'static')
+      const measured = await measureTreeSize(tree.path, sizeLimitBytes)
+      if (measured > sizeLimitBytes) {
+        await this.fail(submissionId, 'static', sizeFailureReason(measured, sizeLimitBytes))
+        return
+      }
       const staticResult = await validateStatic(
         tree.path,
         depsVersion,
@@ -204,6 +233,15 @@ export class ValidationWorker implements SubmissionEnqueuer {
       }
       await this.deps.storage.finishSubmissionCheck(submissionId, 'static', 'passed')
       runningStage = null
+
+      // The tree passed the size cap and the manifest checks: write the durable snapshot now, before
+      // the build reads the same tree. Best-effort — a write failure logs and the submission proceeds;
+      // the only consequence is that a later overlay rebuild falls back to re-cloning the pinned source.
+      await this.deps.snapshots
+        .write(submissionId, tree.path)
+        .catch((error) =>
+          this.log(`validation worker: snapshotting ${submissionId} failed: ${errorText(error)}`),
+        )
 
       // Stage 3 — build: the code-only overlay image on the season's base image.
       runningStage = 'build'
@@ -289,6 +327,11 @@ export class ValidationWorker implements SubmissionEnqueuer {
   /** Confirm the row still exists before a terminal update, so stale work never publishes nothing. */
   private async exists(submissionId: string): Promise<boolean> {
     return (await this.deps.storage.getSubmission(submissionId)) !== undefined
+  }
+
+  /** The effective byte cap for this submission: the season override when set, else the site default. */
+  private sizeLimitBytes(overrideMb: number | undefined): number {
+    return overrideMb !== undefined ? overrideMb * 1024 * 1024 : this.deps.submissionMaxSizeBytes
   }
 
   private loadCheckSandbox(): SandboxProfile {

@@ -8,13 +8,14 @@
  * the heavy, irrelevant directories are excluded from the tar so only the sources the Dockerfile
  * copies are sent to the daemon.
  */
-import { dirname, join, relative, sep } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import type Docker from 'dockerode'
 import tar from 'tar-fs'
 import type { ImagePolicy } from '../../config.js'
 import { sessionBaseImageDefinition } from '../../deps-version.js'
+import { isSubmissionIgnored } from '../../submission/tree-filter.js'
 import type { ImageRef, SessionBaseImageSpec } from '../index.js'
 
 /** backend/src/driver/docker/image.ts → repo root is four directories up. */
@@ -36,21 +37,6 @@ const TRANSIENT_BUILD_ERROR = new RegExp(
   'i',
 )
 
-/** Directories and files never worth sending to the daemon as build context. */
-const IGNORED_SEGMENTS = new Set([
-  'node_modules',
-  '.git',
-  '.venv',
-  'build',
-  'data',
-  'dist',
-  '.pytest-tmp',
-  '.pytest_cache',
-  '.mypy_cache',
-  '.ruff_cache',
-  '__pycache__',
-])
-
 /** The tag for a supported session base image under a deployment prefix. */
 export function imageTag(prefix: string, spec: SessionBaseImageSpec): string {
   // Refuse to name a tag the deployment cannot build; throws for an unregistered version.
@@ -60,14 +46,8 @@ export function imageTag(prefix: string, spec: SessionBaseImageSpec): string {
 
 /** True when an outer-edge ignored directory or a compiled-Python artifact sits on this path. */
 function isIgnored(absolutePath: string): boolean {
-  const rel = relative(REPO_ROOT, absolutePath)
-  if (rel === '' || rel.startsWith('..')) {
-    return false
-  }
-  if (rel.endsWith('.pyc')) {
-    return true
-  }
-  return rel.split(sep).some((segment) => IGNORED_SEGMENTS.has(segment))
+  // The same shared exclusion set the submission snapshot and overlay use, anchored at the repo root.
+  return isSubmissionIgnored(REPO_ROOT, absolutePath)
 }
 
 async function imageExists(docker: Docker, tag: string): Promise<boolean> {

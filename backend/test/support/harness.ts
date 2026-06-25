@@ -3,11 +3,16 @@
  * environment registry, a fake browser socket, and microtask/timer helpers. No Docker, no Python —
  * everything runs against the {@link FakeDriver} and in-memory SQLite.
  */
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
 import type { Config } from '../../src/config.js'
 import type { ExecutionDriver } from '../../src/driver/index.js'
 import { EnvironmentRegistry } from '../../src/environments.js'
 import type { ClientSocket } from '../../src/session/live-session.js'
 import type { Storage } from '../../src/storage/index.js'
+import { SubmissionSnapshotStore } from '../../src/submission/snapshot-store.js'
 import {
   createSubmissionSource,
   type SubmissionSourceDeps,
@@ -24,6 +29,7 @@ export function makeConfig(overrides: Partial<Config> = {}): Config {
     dataDir: './data',
     dbPath: ':memory:',
     recordingsDir: './data/recordings',
+    submissionsDir: './data/submissions',
     sessionIdleTimeoutMs: 60_000,
     sessionMaxDurationMs: 600_000,
     // The identities the start-succeeding suites use; allowlist tests override this explicitly.
@@ -41,7 +47,12 @@ export function makeConfig(overrides: Partial<Config> = {}): Config {
       imagePolicy: 'reuse',
       overlayBuildTimeoutMs: 120_000,
     },
-    submission: { allowLocalSubmissions: false, gitTimeoutMs: 15_000, loadCheckTimeoutMs: 30_000 },
+    submission: {
+      allowLocalSubmissions: false,
+      gitTimeoutMs: 15_000,
+      loadCheckTimeoutMs: 30_000,
+      submissionMaxSizeBytes: 25 * 1024 * 1024,
+    },
     ...overrides,
   }
 }
@@ -59,10 +70,12 @@ export function makeSubmissionDeps(
     driver?: ExecutionDriver
     source?: SubmissionSourceDeps
     knownTemplateVersions?: ReadonlySet<number>
+    snapshots?: SubmissionSnapshotStore
   } = {},
 ): {
   storage: Storage
   submissionSource: ReturnType<typeof createSubmissionSource>
+  submissionSnapshots: SubmissionSnapshotStore
   validationWorker: ValidationWorker
   allowLocalSubmissions: boolean
   operatorAllowlist: readonly string[]
@@ -71,10 +84,16 @@ export function makeSubmissionDeps(
 } {
   const driver = options.driver ?? new FakeDriver()
   const submissionSource = createSubmissionSource(config.submission, options.source)
+  // A throwaway temp root per call so a suite that does drive the pipeline writes real snapshots
+  // without colliding with another suite; suites that never enqueue simply leave it empty.
+  const submissionSnapshots =
+    options.snapshots ?? new SubmissionSnapshotStore(mkdtempSync(join(tmpdir(), 'gs-snap-test-')))
   const validationWorker = new ValidationWorker({
     driver,
     storage,
     source: submissionSource,
+    snapshots: submissionSnapshots,
+    submissionMaxSizeBytes: config.submission.submissionMaxSizeBytes,
     sandbox: config.sandbox,
     loadCheckTimeoutMs: config.submission.loadCheckTimeoutMs,
     knownTemplateVersions: options.knownTemplateVersions ?? new Set([1]),
@@ -82,6 +101,7 @@ export function makeSubmissionDeps(
   return {
     storage,
     submissionSource,
+    submissionSnapshots,
     validationWorker,
     allowLocalSubmissions: config.submission.allowLocalSubmissions,
     // The non-leaderboard suites don't exercise the admin API, but buildApp now requires these; a

@@ -86,6 +86,25 @@ describe('SeasonConfig codec', () => {
     expect(() => decodeSeasonConfig('{not json')).toThrow(SeasonConfigError)
   })
 
+  it('round-trips a positive submission_max_size_mb override', () => {
+    const config = validConfig({ overrides: { submission_max_size_mb: 10 } })
+    expect(decodeSeasonConfig(encodeSeasonConfig(config)).overrides?.submission_max_size_mb).toBe(
+      10,
+    )
+  })
+
+  it('rejects a zero, negative, or non-integer submission_max_size_mb', () => {
+    expect(() =>
+      parseSeasonConfig(validConfig({ overrides: { submission_max_size_mb: 0 } })),
+    ).toThrow(SeasonConfigError)
+    expect(() =>
+      parseSeasonConfig(validConfig({ overrides: { submission_max_size_mb: -5 } })),
+    ).toThrow(SeasonConfigError)
+    expect(() =>
+      parseSeasonConfig(validConfig({ overrides: { submission_max_size_mb: 2.5 } })),
+    ).toThrow(SeasonConfigError)
+  })
+
   it('stores the inert messaging/llm override blocks untouched', () => {
     const config = validConfig({
       overrides: {

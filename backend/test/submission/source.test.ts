@@ -67,6 +67,7 @@ function config(overrides: Partial<SubmissionOptions> = {}): SubmissionOptions {
     allowLocalSubmissions: false,
     gitTimeoutMs: 15_000,
     loadCheckTimeoutMs: 30_000,
+    submissionMaxSizeBytes: 25 * 1024 * 1024,
     ...overrides,
   }
 }
