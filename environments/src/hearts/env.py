@@ -83,9 +83,7 @@ class HeartsEnv(AECEnv):
             }
         )
         self.observation_spaces = {agent: obs_space for agent in self.possible_agents}
-        self.action_spaces = {
-            agent: spaces.Discrete(rules.NUM_CARDS) for agent in self.possible_agents
-        }
+        self.action_spaces = {agent: spaces.Discrete(rules.NUM_CARDS) for agent in self.possible_agents}
 
     def observation_space(self, agent: str) -> spaces.Space:
         return self.observation_spaces[agent]

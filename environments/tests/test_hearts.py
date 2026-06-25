@@ -185,9 +185,9 @@ def test_scoring_normal_hand():
     # Hearts/Q♠ spread across seats (not all on one): no shoot-the-moon flip.
     taken = [
         [rules.QUEEN_OF_SPADES],  # 13 points
-        [39, 40, 41, 42, 43],     # 5 hearts -> 5 points
-        [44, 45, 46, 47, 48],     # 5 hearts -> 5 points
-        [49, 50, 51],             # 3 hearts -> 3 points
+        [39, 40, 41, 42, 43],  # 5 hearts -> 5 points
+        [44, 45, 46, 47, 48],  # 5 hearts -> 5 points
+        [49, 50, 51],  # 3 hearts -> 3 points
     ]
     state = rules.HeartsState(
         hands=[[], [], [], []],
@@ -204,7 +204,7 @@ def test_scoring_normal_hand():
     assert raw == [13, 5, 5, 3]
     assert sum(raw) == 26
     assert rules.final_penalties(state) == raw  # no flip
-    assert rules.penalty_scores(state) == raw   # terminal -> final
+    assert rules.penalty_scores(state) == raw  # terminal -> final
     assert rules.leaderboard_scores(state) == [-p for p in rules.penalty_scores(state)]
 
 
@@ -224,7 +224,7 @@ def test_shoot_the_moon_flip():
     )
     assert rules.points_taken(state) == [26, 0, 0, 0]
     assert rules.final_penalties(state) == [0, 26, 26, 26]  # the shooter flips to 0
-    assert rules.penalty_scores(state) == [0, 26, 26, 26]   # terminal -> final
+    assert rules.penalty_scores(state) == [0, 26, 26, 26]  # terminal -> final
     leaderboard = rules.leaderboard_scores(state)
     assert leaderboard == [0, -26, -26, -26]
     assert leaderboard[0] == max(leaderboard)  # the shooter is best off
@@ -409,9 +409,7 @@ def test_run_episode_scores_credit_every_seat():
     expected = rules.leaderboard_scores(env.state)
     env.close()
 
-    assert result.scores == {
-        f"player_{i}": float(expected[i]) for i in range(rules.NUM_PLAYERS)
-    }
+    assert result.scores == {f"player_{i}": float(expected[i]) for i in range(rules.NUM_PLAYERS)}
     # Sanity: seats are genuinely differentiated (not the all-zero mis-ranking), and the
     # leaderboard sums to the negated total penalty (-26 normal, -78 after a moon flip).
     assert sum(result.scores.values()) in (-26.0, -78.0)

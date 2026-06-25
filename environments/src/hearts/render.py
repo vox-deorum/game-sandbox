@@ -166,8 +166,8 @@ class HeartsRenderer:
         """Return the (x, y) centre of the seat badge for a clockwise slot ``0=S..3=E``."""
         anchors = {
             0: (WIDTH // 2, HEIGHT - 150),  # South (view seat)
-            1: (130, HEIGHT // 2),          # West
-            2: (WIDTH // 2, 70),            # North
+            1: (130, HEIGHT // 2),  # West
+            2: (WIDTH // 2, 70),  # North
             3: (WIDTH - 130, HEIGHT // 2),  # East
         }
         return anchors[slot]
@@ -289,11 +289,7 @@ class HeartsRenderer:
     def _draw_status(self, surface: pygame.Surface, overlay: dict) -> None:
         """Draw the top-left status line: trick number, hearts-broken, turn or game-over."""
         terminal = overlay["terminal"]
-        trick_txt = (
-            "trick done"
-            if terminal
-            else f"trick {overlay['tricks_played'] + 1}/{rules.NUM_TRICKS}"
-        )
+        trick_txt = "trick done" if terminal else f"trick {overlay['tricks_played'] + 1}/{rules.NUM_TRICKS}"
         broken = "hearts broken" if overlay["hearts_broken"] else "hearts intact"
 
         line1 = self._font.render(f"{trick_txt}   {broken}", True, WHITE)
@@ -326,8 +322,9 @@ class HeartsRenderer:
         pygame.draw.rect(surface, CARD_FACE, rect, border_radius=6)
         pygame.draw.rect(surface, BLACK_INK, rect, width=1, border_radius=6)
         if border is not None:
-            pygame.draw.rect(surface, border, rect.inflate(border_w, border_w),
-                             width=border_w, border_radius=6)
+            pygame.draw.rect(
+                surface, border, rect.inflate(border_w, border_w), width=border_w, border_radius=6
+            )
 
         suit = rules.suit_of(card)
         ink = RED_INK if suit in (rules.DIAMONDS, rules.HEARTS) else BLACK_INK

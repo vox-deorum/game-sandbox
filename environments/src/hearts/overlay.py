@@ -28,11 +28,7 @@ def extract_overlay(env: Any) -> dict[str, Any]:
     return {
         "hands": [[int(c) for c in state.hands[s]] for s in range(rules.NUM_PLAYERS)],
         "current_trick": [[int(s), int(c)] for s, c in state.current_trick],
-        "last_trick": (
-            None
-            if state.last_trick is None
-            else [[int(s), int(c)] for s, c in state.last_trick]
-        ),
+        "last_trick": (None if state.last_trick is None else [[int(s), int(c)] for s, c in state.last_trick]),
         "last_trick_winner": state.last_trick_winner,
         "turn": int(state.turn),
         "turn_slot": env.possible_agents[state.turn],
@@ -42,8 +38,6 @@ def extract_overlay(env: Any) -> dict[str, Any]:
         "tricks_played": int(state.tricks_played),
         "display_scores": rules.penalty_scores(state),
         "leaderboard_scores": rules.leaderboard_scores(state),
-        "legal_actions": (
-            [] if rules.is_terminal(state) else rules.legal_moves(state, state.turn)
-        ),
+        "legal_actions": ([] if rules.is_terminal(state) else rules.legal_moves(state, state.turn)),
         "terminal": rules.is_terminal(state),
     }

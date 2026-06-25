@@ -13,20 +13,21 @@ or take seat 0 and click your own cards against the built-in agents::
 
     uv run python -m hearts.demo --play
 
-Step 2 of the plan later formalizes this exact flow inside the template's ``play.py``, reusing
-the same renderer primitives (``card_at_pos``/``is_legal_card``) that this demo drives by hand.
+The interactive seat is driven by :func:`hearts.human.make_human_controller` — the same
+click-to-legal-card controller the generic ``scripts/play.py`` launcher uses, so the demo and
+the launcher play Hearts through one shared input path.
 """
 
 from __future__ import annotations
 
 import argparse
 import time
-from typing import Any
 
 import pygame
 
 from . import rules
 from .env import AUTO_ACTION, HeartsEnv, make_env
+from .human import make_human_controller
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -57,9 +58,9 @@ def main(argv: list[str] | None = None) -> int:
     env.reveal_all = args.reveal
     # Render once so the renderer and its window exist before the loop touches them.
     env.render()
-    renderer = env._renderer
 
     human_agent = env.possible_agents[args.seat]
+    controller = make_human_controller(env)
 
     try:
         while env.agents:
@@ -77,8 +78,8 @@ def main(argv: list[str] | None = None) -> int:
                     return 0
 
             if args.play and agent == human_agent:
-                card = _wait_for_human_card(env, renderer)
-                if card is None:  # window closed
+                card = controller.act(human_agent, _obs, blocking=True)
+                if controller.quit:  # window closed
                     env.close()
                     return 0
                 env.step(card)
@@ -102,24 +103,6 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     finally:
         env.close()
-
-
-def _wait_for_human_card(env: HeartsEnv, renderer: Any) -> int | None:
-    """Block until the human left-clicks a legal card; return it, or ``None`` if the window closed.
-
-    Illegal clicks are ignored. The window is kept live with periodic re-renders so it stays
-    responsive while we wait.
-    """
-    while True:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                return None
-            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                card = renderer.card_at_pos(event.pos)
-                if card is not None and renderer.is_legal_card(card):
-                    return card
-        env.render()
-        time.sleep(0.02)
 
 
 def _wait_for_quit(env: HeartsEnv, timeout_s: float) -> None:

@@ -22,9 +22,9 @@ from compose import (  # noqa: E402
 def test_compose_template_has_base_and_env_files():
     out = compose_template("flappy_bird")
     # A base-layer file and an env-layer file both land in the composed template.
-    assert (out / "play.py").exists()  # from templates/base/
+    assert (out / "sandbox" / "play.py").exists()  # from templates/base/
     assert (out / "agent.py").exists()  # from templates/flappy_bird/
-    assert (out / "sandbox_env" / "__init__.py").exists()  # generated env sync
+    assert (out / "sandbox" / "env" / "__init__.py").exists()  # generated env sync
 
 
 def test_env_layer_wins_over_base():

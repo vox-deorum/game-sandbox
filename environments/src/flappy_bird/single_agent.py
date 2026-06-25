@@ -15,7 +15,7 @@ seed produce identical observation sequences. Everything else — ``step``, ``ob
 Conformance is checked by PettingZoo's own ``api_test`` rather than by our assumptions.
 
 This module imports only third-party packages, so it is copied verbatim into the student
-template's ``sandbox_env/<env>/`` by the generate script.
+template's ``sandbox/env/<env>/`` by the generate script.
 """
 
 from __future__ import annotations

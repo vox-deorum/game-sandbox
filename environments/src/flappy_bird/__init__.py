@@ -4,7 +4,7 @@ public-facing metadata together.
 This is the only module in the environment that imports the harness (for the metadata
 types), so it is *not* synced into the student template — students need a steppable
 PettingZoo env, not the metadata layer or the harness. The generate script writes a minimal
-``__init__`` in its place under ``sandbox_env/flappy_bird/``.
+``__init__`` in its place under ``sandbox/env/flappy_bird/``.
 
 The metadata values below are the proposed Stage 2 set; ``pace_interval_ms`` in particular is
 flagged for tuning during Stage 4 playtesting with a real renderer, and the field is trivial

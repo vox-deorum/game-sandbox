@@ -6,7 +6,7 @@ sees a one-slot PettingZoo env. The agent sees exactly the features it will see 
 against the template, and the action space is ``Discrete(2)`` (0 = idle, 1 = flap).
 
 This module imports only third-party packages and the sibling adapter via a relative import,
-so it is copied verbatim into the student template's ``sandbox_env/`` by the generate script.
+so it is copied verbatim into the student template's ``sandbox/env/`` by the generate script.
 """
 
 from __future__ import annotations

@@ -16,6 +16,10 @@ Read the [environment specification](../specs/environment.md) for product rules 
 8. Add a template layer and at least one example.
 9. Add and register a frontend renderer.
 
+## Play test
+
+`npm run play -- <env> [mode]` opens any registered environment in a window and runs it locally, with no backend, Docker, or session — the maintainer counterpart to a student's local play. `mode` is `human` (default; you play — keyboard for realtime games like Flappy Bird, click-a-card for Hearts), `agent` (watch the bundled example agent), or `watch` (the built-in baseline). Pass `--seat` to pick a seat in a multi-slot game, or `--agent-repo <path>` to play a `manifest.json` agent repo of your own. It resolves the environment through the same entry-point registry the harness uses, so it works for every installed environment.
+
 ## Directory layout
 
 Each environment is its own top-level package directly under `environments/src/`, importable by its env id (`flappy_bird`) and exporting a module-level `ENTRY`:
@@ -37,7 +41,7 @@ A natively single-agent `gymnasium.Env` is lifted into a one-slot AEC environmen
 
 ## The factory and the default action
 
-`env.py` exposes `make_env()`, a zero-argument factory that returns a fresh AEC env; the seed arrives at `reset`, not here. It also defines the environment's **default action**: the legal move the loop applies on every timeout path (noop for Flappy Bird, but a real game might return the lowest legal card). Keep `env.py` import-self-contained (intra-package relative and third-party imports only): the generate script copies it verbatim into the student template's `sandbox_env/<env>/`, so it must not import the harness.
+`env.py` exposes `make_env()`, a zero-argument factory that returns a fresh AEC env; the seed arrives at `reset`, not here. It also defines the environment's **default action**: the legal move the loop applies on every timeout path (noop for Flappy Bird, but a real game might return the lowest legal card). Keep `env.py` import-self-contained (intra-package relative and third-party imports only): the generate script copies it verbatim into the student template's `sandbox/env/<env>/`, so it must not import the harness.
 
 ## The overlay
 
@@ -97,7 +101,7 @@ Pair it with an environment-level determinism test (two resets with the same see
 
 ## Syncing to the template
 
-Students run the environment locally without the harness. `scripts/generate.py` copies the self-contained modules into `templates/<env>/sandbox_env/`.
+Students run the environment locally without the harness. `scripts/generate.py` copies the self-contained modules into `templates/<env>/sandbox/env/`.
 
 Register the environment and module list in `scripts/_paths.py` under `TEMPLATE_ENVS`, add the generated `__init__` text in `scripts/generate.py`, then regenerate:
 
@@ -105,4 +109,4 @@ Register the environment and module list in `scripts/_paths.py` under `TEMPLATE_
 uv run python scripts/generate.py
 ```
 
-The template's top-level `sandbox_env` package exposes `make_env`, `ENV_ID`, and `PLAYER_SLOT`. Never sync harness, recording, or metadata modules. See [Examples and the template](examples-and-template.md).
+The template's top-level `sandbox.env` package exposes `make_env`, `ENV_ID`, `PLAYER_SLOT`, and `make_human_controller`. To make the game human-playable locally, add a `human.py` exposing `make_human_controller(env)` (keyboard for realtime games, mouse/click for turn-based ones) and include it in the env's `TEMPLATE_ENVS` entry so it syncs too. Never sync harness, recording, or metadata modules. See [Examples and the template](examples-and-template.md).

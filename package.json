@@ -16,6 +16,7 @@
     "start": "npm run build --workspace @game-sandbox/frontend && npm run start --workspace @game-sandbox/backend",
     "demo": "uv run python scripts/demo.py",
     "demo:user": "uv run python scripts/demo.py --user",
+    "play": "uv run python scripts/play.py",
     "build:frontend": "npm run build --workspace @game-sandbox/frontend",
     "build:image": "npm run build:image --workspace @game-sandbox/backend",
     "generate": "uv run python scripts/generate.py",

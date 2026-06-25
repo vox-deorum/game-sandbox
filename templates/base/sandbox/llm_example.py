@@ -7,7 +7,7 @@ come from two environment variables, ``OPENAI_BASE_URL`` and ``OPENAI_API_KEY``:
 - Server-side, the harness injects the same two variables per slot with a one-off key scoped
   to your session — so this code is identical on your laptop and in the container.
 
-    python llm_example.py
+    python -m sandbox.llm_example
 """
 
 from __future__ import annotations

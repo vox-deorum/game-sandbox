@@ -1,0 +1,144 @@
+"""One command to set up, run, and human-test your agent: ``python -m sandbox``.
+
+    python -m sandbox            # set up if needed, then play it yourself
+    python -m sandbox human      # play it yourself (space/up flaps)
+    python -m sandbox play       # run YOUR agent in a window
+    python -m sandbox eval       # run several seeded episodes, print the mean
+    python -m sandbox test       # run the checks
+    python -m sandbox setup      # just install dependencies into .venv
+
+The first time you run any of these from a fresh clone, it creates a local ``.venv`` and installs
+the pinned dependencies for you, then runs your command inside it — so there is no separate
+install step. Extra arguments are passed straight through, e.g. ``python -m sandbox play
+--headless --seed 7`` or ``python -m sandbox test -k manifest``.
+
+This module imports only the standard library, so it works before any dependencies exist.
+"""
+
+from __future__ import annotations
+
+import os
+import subprocess
+import sys
+import venv
+from pathlib import Path
+
+_USAGE = """\
+usage: python -m sandbox [command] [args...]
+
+commands:
+  (none)   play it yourself in a window (same as `human`)
+  human    play it yourself in a window
+  play     run YOUR agent in a window  (--headless for no window)
+  eval     run several seeded episodes and print the mean
+  test     run the checks (pytest)
+  setup    install dependencies into .venv
+
+Extra args pass straight through, e.g. `python -m sandbox play --seed 7` or
+`python -m sandbox test -k manifest`.\
+"""
+
+#: Repo root is the parent of this ``sandbox`` package, where requirements + manifest live.
+REPO_ROOT = Path(__file__).resolve().parent.parent
+#: Import lines that prove an interpreter has what a command needs. The runtime deps cover
+#: play/eval/human; ``test`` additionally needs pytest, so each command probes for its own deps —
+#: otherwise ``test`` could run under an interpreter that lacks pytest instead of bootstrapping.
+_RUNTIME_PROBE = "import pettingzoo, gymnasium"
+_TEST_PROBE = "import pettingzoo, gymnasium, pytest"
+
+
+def _venv_python() -> Path:
+    """Path to the project ``.venv`` interpreter for the current OS (may not exist yet)."""
+    bin_dir = "Scripts" if os.name == "nt" else "bin"
+    exe = "python.exe" if os.name == "nt" else "python"
+    return REPO_ROOT / ".venv" / bin_dir / exe
+
+
+def _has_runtime(python: str, probe: str) -> bool:
+    """True if ``python`` satisfies ``probe`` — the import line a command's deps must cover."""
+    result = subprocess.run(
+        [python, "-c", probe],
+        capture_output=True,
+    )
+    return result.returncode == 0
+
+
+def setup() -> str:
+    """Create ``.venv`` (if missing) and install the pinned requirements into it; return its python."""
+    venv_dir = REPO_ROOT / ".venv"
+    if not _venv_python().exists():
+        print(f"creating virtual environment in {venv_dir} ...", flush=True)
+        venv.EnvBuilder(with_pip=True).create(venv_dir)
+    python = str(_venv_python())
+    reqs = ["-r", str(REPO_ROOT / "requirements.txt")]
+    dev = REPO_ROOT / "requirements-dev.txt"
+    if dev.exists():
+        reqs += ["-r", str(dev)]
+    print("installing dependencies (first run only) ...", flush=True)
+    subprocess.run([python, "-m", "pip", "install", "--quiet", "--upgrade", "pip"], check=True)
+    subprocess.run([python, "-m", "pip", "install", "--quiet", *reqs], check=True)
+    return python
+
+
+def _runtime_python(probe: str) -> str:
+    """Return an interpreter that satisfies ``probe``, bootstrapping ``.venv`` on first use.
+
+    Prefers an existing ``.venv`` (setup installs every requirement, so it satisfies any probe);
+    otherwise uses the current interpreter if it already passes the probe (so maintainers running
+    under their own environment skip the venv); otherwise sets one up.
+    """
+    if _venv_python().exists():
+        return str(_venv_python())
+    if _has_runtime(sys.executable, probe):
+        return sys.executable
+    return setup()
+
+
+def _run(module_args: list[str], probe: str) -> int:
+    """Run ``python <module_args>`` from the repo root, under a runtime that satisfies ``probe``."""
+    python = _runtime_python(probe)
+    return subprocess.run([python, *module_args], cwd=str(REPO_ROOT)).returncode
+
+
+#: command -> (argv run under the resolved runtime, the probe that runtime must satisfy). ``setup``
+#: is special-cased in ``main`` (it builds the runtime rather than running under it), and a bare
+#: ``python -m sandbox`` — or a leading flag — maps to ``human``.
+_DISPATCH = {
+    "human": (["-m", "sandbox.play", "--human"], _RUNTIME_PROBE),
+    "play": (["-m", "sandbox.play"], _RUNTIME_PROBE),
+    "eval": (["-m", "sandbox.evaluate"], _RUNTIME_PROBE),
+    "test": (["-m", "pytest"], _TEST_PROBE),
+}
+_COMMANDS = {"setup", *_DISPATCH}
+
+
+def main(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+
+    if argv and argv[0] in ("-h", "--help"):
+        print(_USAGE)
+        return 0
+
+    # A bare `python -m sandbox` plays it yourself; a leading known command selects the action,
+    # and everything after it passes straight through to the underlying tool.
+    if not argv:
+        command, rest = "human", []
+    elif argv[0] in _COMMANDS:
+        command, rest = argv[0], argv[1:]
+    elif argv[0].startswith("-"):
+        command, rest = "human", argv  # `python -m sandbox --seed 7` -> human with flags
+    else:
+        print(f"unknown command {argv[0]!r}\n", file=sys.stderr)
+        print(_USAGE, file=sys.stderr)
+        return 2
+
+    if command == "setup":
+        setup()
+        print(f"done. dependencies installed in {REPO_ROOT / '.venv'}", flush=True)
+        return 0
+    module_args, probe = _DISPATCH[command]
+    return _run([*module_args, *rest], probe)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

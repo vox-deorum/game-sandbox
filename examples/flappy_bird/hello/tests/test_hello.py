@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import agent
-from play import play_episode
-from sandbox_env.flappy_bird.env import make_env
+from sandbox.env.flappy_bird.env import make_env
+from sandbox.play import play_episode
 
 _SEEDS = [0, 1, 2, 3, 4]
 

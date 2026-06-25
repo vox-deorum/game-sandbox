@@ -12,8 +12,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from play import load_agent, play_episode
-from sandbox_env import make_env
+from sandbox.env import make_env
+from sandbox.play import load_agent, play_episode
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 

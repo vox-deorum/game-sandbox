@@ -4,7 +4,7 @@ public-facing metadata together.
 This is the only module in the environment that imports the harness (for the metadata
 types), so it is *not* synced into the student template — students need a steppable
 PettingZoo env, not the metadata layer or the harness. The generate script writes a minimal
-``__init__`` in its place under ``sandbox_env/hearts/``.
+``__init__`` in its place under ``sandbox/env/hearts/``.
 """
 
 from __future__ import annotations

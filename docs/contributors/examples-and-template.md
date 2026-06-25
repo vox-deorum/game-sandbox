@@ -12,7 +12,7 @@ examples/<env>/<name>   (optional)
 complete runnable repository
 ```
 
-`templates/base/` contains shared manifests, dependencies, scripts, and tests. `templates/<env>/` adds the environment stub and generated local game package. An example stores only its differences from the composed template.
+`templates/base/` contains the shared manifest, dependencies, and tests, plus the provided tooling under `sandbox/` (the `sandbox.play`/`sandbox.evaluate` scripts and the `python -m sandbox` helper). `templates/<env>/` adds the environment stub (`agent.py`) and the generated local game package under `sandbox/env/`. A student edits only `agent.py` at the repository root; everything under `sandbox/` is provided. An example stores only its differences from the composed template.
 
 This keeps shared files in one place and examples small enough to review.
 
@@ -39,9 +39,9 @@ The bare template test fails until the student implements `act`. A composed exam
 ## Adding an environment template
 
 1. Add the environment to the environments package (see [Adding an environment](environments.md)).
-2. Register it in `scripts/_paths.py` `TEMPLATE_ENVS` (env id → the import-self-contained modules to sync) and add its generated `__init__` texts in `scripts/generate.py`. The top-level `sandbox_env/__init__.py` must expose the uniform surface the base scripts read: `make_env`, `ENV_ID`, and `PLAYER_SLOT`.
-3. Create the `templates/<env>/` layer: at minimum an `agent.py` stub and a `README.md`. If the base `play.py` does not fit the environment's local loop, override it whole-file in the env layer.
-4. Run `scripts/generate.py` to sync `templates/<env>/sandbox_env/`.
+2. Register it in `scripts/_paths.py` `TEMPLATE_ENVS` (env id → the import-self-contained modules to sync) and add its generated `__init__` texts in `scripts/generate.py`. The top-level `sandbox/env/__init__.py` must expose the uniform surface the provided scripts read: `make_env`, `ENV_ID`, `PLAYER_SLOT`, and `make_human_controller`. To make the environment human-playable, include its `human.py` (the `make_human_controller` factory) in the `TEMPLATE_ENVS` entry so it syncs alongside the env modules.
+3. Create the `templates/<env>/` layer: at minimum an `agent.py` stub and a `README.md`. The base `sandbox/play.py` is environment-agnostic; override it whole-file in the env layer only if the local loop does not fit.
+4. Run `scripts/generate.py` to sync `templates/<env>/sandbox/env/`.
 5. Add at least one example under `examples/<env>/<name>/`.
 
 ## Tags and publishing

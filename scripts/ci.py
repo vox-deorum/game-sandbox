@@ -117,7 +117,7 @@ def job_frontend_e2e() -> None:
 def job_generated_code_fresh() -> None:
     _run(["uv", "run", "python", "scripts/generate.py"])
     # Fail if regeneration changed anything tracked under the generated locations: the schema
-    # mirrors, plus every per-environment template sandbox_env/.
+    # mirrors, plus every per-environment template sandbox/env/.
     targets = [
         str(TS_GENERATED_DIR.relative_to(REPO_ROOT)),
         str(HARNESS_SCHEMA_DATA.relative_to(REPO_ROOT)),

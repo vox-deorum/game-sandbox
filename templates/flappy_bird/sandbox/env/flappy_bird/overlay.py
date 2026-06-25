@@ -9,7 +9,7 @@ internals is acceptable only here — inside the environment's own wrapper, agai
 exists and is finite, so an upgrade that breaks the internals fails before the renderer does.
 
 This module imports only the pinned third-party package, so it is copied verbatim into the
-student template's ``sandbox_env/`` by the generate script.
+student template's ``sandbox/env/`` by the generate script.
 """
 
 from __future__ import annotations

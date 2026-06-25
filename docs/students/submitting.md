@@ -50,7 +50,7 @@ Resolve commit → Static check → Build → Load check → Ready
 | Build | Place your code on the season's fixed dependency image without installing new packages. | The source cannot be copied or prepared. |
 | Load check | Import the module and construct the class in a sandbox. | Import error, missing class, constructor error, or missing required method. |
 
-The process stops at the first failed stage and shows its reason. Validation does not play a game. A logic bug inside `act` may pass validation, which is why `play.py`, `evaluate.py`, and `pytest` matter.
+The process stops at the first failed stage and shows its reason. Validation does not play a game. A logic bug inside `act` may pass validation, which is why `python -m sandbox play`, `eval`, and `test` matter.
 
 ## Manifest problems
 

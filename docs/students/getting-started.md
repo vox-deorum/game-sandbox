@@ -23,9 +23,17 @@ cd <your-repository-name>
 
 Replace the angle-bracket placeholders with the URL and folder name your instructor provides. See GitHub's [cloning guide](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) if you need help finding the URL.
 
-## 2. Create a Python environment
+## 2. Set up and play with one command
 
-A **virtual environment** keeps this project's Python packages separate from packages used by other projects. Create one inside the repository.
+From the repository folder, run:
+
+```console
+python -m sandbox
+```
+
+The first time, this creates a local virtual environment, installs the pinned packages, and opens the game for you to play yourself (press **space** or the **up arrow** to flap). There is no separate install step, and you can re-run it any time. The other commands in this guide (`python -m sandbox play`, `eval`, `test`) work the same way.
+
+Prefer to manage the virtual environment yourself? A **virtual environment** keeps this project's Python packages separate from packages used by other projects. Create one inside the repository.
 
 On Windows PowerShell:
 
@@ -61,17 +69,18 @@ See [Agent interface](agent-interface.md) for the complete method contract and a
 ## 4. Play and evaluate
 
 ```console
-python play.py
-python play.py --headless
-python evaluate.py --episodes 10
+python -m sandbox play
+python -m sandbox play --headless
+python -m sandbox eval --episodes 10
+python -m sandbox            # play it yourself
 ```
 
-`play.py` runs one visible game. `--headless` runs without opening a game window. `evaluate.py` runs several seeded games and reports the mean score, which is more useful than judging an agent from one lucky run.
+`play` runs one visible game with your agent. `--headless` runs without opening a game window. `eval` runs several seeded games and reports the mean score, which is more useful than judging an agent from one lucky run. With no command, `python -m sandbox` lets you play the game yourself.
 
 ## 5. Run the checks
 
 ```console
-pytest
+python -m sandbox test
 ```
 
 The template tests confirm that the manifest points to a loadable agent and that the agent can drive the environment. The unfinished template fails because `act` raises `NotImplementedError`. After you implement the method, use the test output to find any remaining problems.
@@ -98,7 +107,7 @@ Submit the repository URL through the course website. The server records one exa
 If your environment allows model calls, copy `.env.example` to `.env`, add the endpoint and key from your instructor, and run:
 
 ```console
-python llm_example.py
+python -m sandbox.llm_example
 ```
 
 Your agent reads `OPENAI_BASE_URL` and `OPENAI_API_KEY` locally and on the server. Never commit the `.env` file or an API key to GitHub. The [LLM specification](../specs/llm.md) explains server-side budgets and telemetry.

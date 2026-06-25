@@ -47,21 +47,22 @@ ENVIRONMENTS_SRC = REPO_ROOT / "environments" / "src"
 
 # The registration point for environment templates: env id -> the import-self-contained
 # modules (relative + third-party imports only), as paths under ENVIRONMENTS_SRC, copied
-# verbatim into templates/<env>/sandbox_env/ at the same relative path. The harness-dependent
+# verbatim into templates/<env>/sandbox/env/ at the same relative path. The harness-dependent
 # flappy_bird/__init__.py is never synced; generate.py writes a minimal __init__ exposing a
-# uniform surface (make_env, ENV_ID, PLAYER_SLOT) in its place. The single-agent adapter lives
-# inside each single-agent env package, so it syncs as a sibling under sandbox_env/<env>/.
-# Adding an environment template means adding an entry here (plus its init text in generate.py)
-# and a templates/<env>/ layer.
+# uniform surface (make_env, ENV_ID, PLAYER_SLOT, make_human_controller) in its place. The
+# single-agent adapter and the human-input controller live inside each single-agent env package,
+# so they sync as siblings under sandbox/env/<env>/. Adding an environment template means adding
+# an entry here (plus its init text in generate.py) and a templates/<env>/ layer.
 TEMPLATE_ENVS = {
     "flappy_bird": (
         "flappy_bird/single_agent.py",
         "flappy_bird/env.py",
         "flappy_bird/overlay.py",
+        "flappy_bird/human.py",
     ),
 }
 
 
 def template_sandbox_env(env: str) -> Path:
-    """The generated sandbox_env/ sync target inside the ``env`` template layer."""
-    return TEMPLATES_DIR / env / "sandbox_env"
+    """The generated game-package sync target (``sandbox/env/``) inside the ``env`` template layer."""
+    return TEMPLATES_DIR / env / "sandbox" / "env"

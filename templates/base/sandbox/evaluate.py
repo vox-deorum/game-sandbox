@@ -1,8 +1,8 @@
 """Evaluate your agent over several seeded episodes, headless, and print the scores.
 
-    python evaluate.py                  # default seeds
-    python evaluate.py --seeds 0 1 2 3  # pick the seeds
-    python evaluate.py --episodes 10    # seeds 0..9
+    python -m sandbox.evaluate                  # default seeds
+    python -m sandbox.evaluate --seeds 0 1 2 3  # pick the seeds
+    python -m sandbox.evaluate --episodes 10    # seeds 0..9
 
 This is the same controlled-repetition shape the leaderboard uses: every episode is seeded,
 so your local mean predicts your board number. It never renders and never touches the
@@ -15,8 +15,8 @@ import argparse
 import sys
 from pathlib import Path
 
-from play import load_agent, play_episode
-from sandbox_env import make_env
+from sandbox.env import make_env
+from sandbox.play import load_agent, play_episode
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -27,7 +27,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     seeds = args.seeds if args.seeds is not None else list(range(args.episodes))
-    repo_root = Path(__file__).resolve().parent
+    repo_root = Path(__file__).resolve().parent.parent
     agent = load_agent(repo_root)
 
     scores: list[float] = []
