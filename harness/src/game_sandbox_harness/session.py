@@ -258,7 +258,17 @@ class Episode:
 
         env.step(action)
         reward = float(env.rewards[slot_id])
-        slot.score += reward
+        # Credit every agent this step rewarded, not just the acting slot. A turn-based env
+        # (e.g. Hearts) assigns terminal rewards to all seats on the final actor's step, and
+        # those rewards live in env.rewards for this one cycle only — the AEC dead-steps that
+        # follow clear them (PettingZoo's _was_dead_step calls _clear_rewards). Reading just
+        # the acting slot would drop every non-final seat's terminal score, mis-ranking the
+        # episode. Single-agent envs are unaffected: env.rewards then holds only the actor, so
+        # this stays byte-identical to the prior loop for them (and for the determinism gate).
+        for rewarded_slot, slot_reward in env.rewards.items():
+            rewarded_state = self._state.get(rewarded_slot)
+            if rewarded_state is not None:
+                rewarded_state.score += float(slot_reward)
 
         learn_ms: float | None = None
         if isinstance(binding, AgentSlot) and has_learn(binding.agent):

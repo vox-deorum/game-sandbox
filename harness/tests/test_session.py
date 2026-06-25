@@ -253,6 +253,93 @@ def test_max_steps_coinciding_with_termination_reports_terminated():
     assert result.reason == REASON_TERMINATED
 
 
+class FakeTeamEnv:
+    """A 3-seat turn-based AEC env that pays every seat a final reward on the last actor's step.
+
+    This mirrors how Hearts settles: rewards stay 0 while seats take turns, then on the final
+    actor's step every seat is assigned its terminal reward at once and all seats terminate.
+    The non-final seats are then collected through AEC dead-steps. It exists to prove the loop
+    credits all seats' terminal rewards, not only the acting one.
+    """
+
+    def __init__(self, finals: dict[str, float]) -> None:
+        self._finals = finals
+        self.possible_agents = ["player_0", "player_1", "player_2"]
+
+    def reset(self, seed: int | None = None, options: Any = None) -> None:
+        self.agents = list(self.possible_agents)
+        self._idx = 0
+        self.agent_selection = self.agents[0]
+        self.rewards = {a: 0.0 for a in self.agents}
+        self.terminations = {a: False for a in self.agents}
+        self.truncations = {a: False for a in self.agents}
+
+    def last(self) -> tuple[Any, float, bool, bool, dict[str, Any]]:
+        a = self.agent_selection
+        return 0, self.rewards[a], self.terminations[a], self.truncations[a], {}
+
+    def observe(self, agent: str) -> Any:
+        return 0
+
+    def step(self, action: Any) -> None:
+        a = self.agent_selection
+        if self.terminations[a] or self.truncations[a]:
+            # Dead-step: collect the terminated seat (PettingZoo would also _clear_rewards here,
+            # which is exactly why a non-final seat's terminal reward must be read earlier).
+            self.agents.remove(a)
+            self.rewards = {x: 0.0 for x in self.agents}
+            if self.agents:
+                self.agent_selection = self.agents[0]
+            return
+        self._idx += 1
+        if self._idx >= len(self.possible_agents):
+            # Final actor: pay out every seat at once and terminate all of them.
+            self.rewards = dict(self._finals)
+            self.terminations = {x: True for x in self.possible_agents}
+            self.agent_selection = self.possible_agents[0]
+        else:
+            self.rewards = {x: 0.0 for x in self.possible_agents}
+            self.agent_selection = self.possible_agents[self._idx]
+
+
+def _team_entry(finals: dict[str, float]) -> EnvironmentEntry:
+    meta = EnvironmentMeta(
+        env_id="team",
+        display_name="Team",
+        description="A deterministic 3-seat fake with a terminal payout.",
+        min_slots=3,
+        max_slots=3,
+        human_slots=("player_0", "player_1", "player_2"),
+        human_timeout_ms=None,
+        recommended_episode_ticks=3,
+        pace_interval_ms=None,
+        step_limit_ms=1000,
+        episode_limit_ms=120_000,
+        messaging=False,
+        message_cap=None,
+        llm=False,
+        renderer="team",
+        seat_order_matters=True,
+    )
+    return EnvironmentEntry(
+        meta=meta,
+        make=lambda: FakeTeamEnv(finals),
+        default_action=lambda slot_id: DEFAULT_ACTION,
+        overlay=None,
+    )
+
+
+def test_terminal_rewards_credited_to_every_seat_not_just_the_actor():
+    # Only player_2 acts last, but all three seats are paid at the terminal step. A loop that
+    # read only the acting slot would leave player_0/player_1 at 0.0 and mis-rank the episode.
+    finals = {"player_0": -13.0, "player_1": -3.0, "player_2": 0.0}
+    entry = _team_entry(finals)
+    slots = {p: AgentSlot(ScriptedAgent([0])) for p in ("player_0", "player_1", "player_2")}
+    result = run_episode(entry, slots, seed=1, clock=ManualClock())
+    assert result.reason == REASON_TERMINATED
+    assert result.scores == finals
+
+
 def test_learn_hook_time_counts_against_budget():
     clock = ManualClock()
     entry = make_entry(n_steps=10, episode_limit_ms=1000)

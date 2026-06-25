@@ -18,5 +18,28 @@
     "renderer": "flappy-bird",
     "seat_order_matters": false,
     "step_limit_ms": 1000
+  },
+  {
+    "description": "Four-player trick-taking Hearts: follow suit, avoid taking hearts and the queen of spades, and keep your penalty total low \u2014 but shoot the moon by taking them all to flip the score. A custom turn-based PettingZoo AEC environment.",
+    "display_name": "Hearts",
+    "env_id": "hearts",
+    "episode_limit_ms": 120000,
+    "human_slots": [
+      "player_0",
+      "player_1",
+      "player_2",
+      "player_3"
+    ],
+    "human_timeout_ms": 60000,
+    "llm": false,
+    "max_slots": 4,
+    "message_cap": null,
+    "messaging": false,
+    "min_slots": 4,
+    "pace_interval_ms": null,
+    "recommended_episode_ticks": 52,
+    "renderer": "hearts",
+    "seat_order_matters": true,
+    "step_limit_ms": 1000
   }
 ]
