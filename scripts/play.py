@@ -1,6 +1,6 @@
 """Play a registered environment locally, with a window, bypassing the backend entirely.
 
-    npm run play -- flappy_bird          # you play; space/up flaps
+    npm run play -- flappy_bird          # you play; space/up or click flaps
     npm run play -- flappy_bird agent    # watch the bundled example agent
     npm run play -- hearts               # click your legal cards; bots play the rest
     npm run play -- hearts watch         # all seats auto-play the built-in baseline
@@ -11,12 +11,14 @@ environment through the entry-point registry (so it works for every installed en
 ``render_mode="human"``, and drives the same agent-environment cycle the server runs — with no
 Docker, no session, no network. ``mode`` is ``human`` (default), ``agent``, or ``watch``.
 
-Two loop shapes are selected by the env's ``pace_interval_ms``: a realtime env (Flappy Bird)
-runs at a fixed cadence and samples human input non-blocking each tick, while a turn-based env
-(Hearts) blocks for the human's move and gives bot moves a beat so they are followable. The only
-per-environment piece is human input (keyboard vs. mouse), discovered by convention from each
-env's ``<package>.human`` module (``make_human_controller``); an env without one simply cannot be
-played as a human.
+Every mode begins paused on the first frame: a shared, env-agnostic start gate freezes there
+until the player presses a key or clicks, so a realtime game is not already falling before they
+are ready. Two loop shapes are then selected by the env's ``pace_interval_ms``: a realtime env
+(Flappy Bird) runs at a fixed cadence and samples human input non-blocking each tick, while a
+turn-based env (Hearts) blocks for the human's move and gives bot moves a beat so they are
+followable. The only per-environment piece is human input (keyboard vs. mouse), discovered by
+convention from each env's ``<package>.human`` module (``make_human_controller``); an env without
+one simply cannot be played as a human.
 """
 
 from __future__ import annotations
@@ -45,6 +47,9 @@ MODES = ("human", "agent", "watch")
 
 #: How long a bot move lingers on screen in a turn-based env, so a human can follow it.
 _BOT_PAUSE_S = 0.6
+
+#: The banner shown over the frozen first frame until the player begins the episode.
+_START_PROMPT = "Press any key or click to start"
 
 #: env id -> (agent source file, class name) for the example agent ``agent`` mode plays. The
 #: shipped examples are compose overlays without a manifest, so they are loaded by file path.
@@ -92,6 +97,38 @@ def _quit_requested() -> bool:
     if not pygame.get_init():
         return False
     return bool(pygame.event.get(pygame.QUIT))
+
+
+def _wait_for_start(prompt: str = _START_PROMPT) -> bool:
+    """Block until the player presses a key or clicks; return ``False`` if they quit instead.
+
+    A single env-agnostic start gate for every game: it draws a shared banner over whatever the
+    env rendered into the active display surface (so it works for the Flappy Bird window and the
+    Hearts renderer alike) and freezes there until an input edge arrives. The banner is wiped by
+    the first ``render``/``step`` once play begins. A no-op (returns ``True``) when there is no
+    window, so it never blocks a headless run.
+    """
+    if not pygame.display.get_init():
+        return True
+    surface = pygame.display.get_surface()
+    if surface is None:
+        return True
+    print(prompt)
+    # Dim the frozen first frame and center the prompt over it.
+    overlay = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 110))
+    pygame.font.init()
+    label = pygame.font.Font(None, 36).render(prompt, True, (255, 255, 255))
+    overlay.blit(label, label.get_rect(center=surface.get_rect().center))
+    surface.blit(overlay, (0, 0))
+    pygame.display.flip()
+    while True:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return False
+            if event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
+                return True
+        time.sleep(0.02)
 
 
 def _play(
@@ -144,6 +181,8 @@ def _play(
     tick = 0
     try:
         env.render()  # open the window / build the renderer before the loop touches it
+        if not _wait_for_start():  # every game begins on a manual interaction, not on open
+            return scores, tick, "quit"
         while env.agents:
             agent_id = env.agent_selection
             observation, _reward, termination, truncation, _info = env.last()

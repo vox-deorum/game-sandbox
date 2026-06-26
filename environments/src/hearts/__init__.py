@@ -21,8 +21,8 @@ META = EnvironmentMeta(
     display_name="Hearts",
     description=(
         "Four-player trick-taking Hearts: follow suit, avoid taking hearts and the queen of "
-        "spades, and keep your penalty total low — but shoot the moon by taking them all to "
-        "flip the score. A custom turn-based PettingZoo AEC environment."
+        "spades, and keep your penalty total low. Or, shoot the moon by taking them all to "
+        "flip the score!"
     ),
     min_slots=4,
     max_slots=4,

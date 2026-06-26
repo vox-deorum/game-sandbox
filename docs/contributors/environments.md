@@ -18,7 +18,7 @@ Read the [environment specification](../specs/environment.md) for product rules 
 
 ## Play test
 
-`npm run play -- <env> [mode]` opens any registered environment in a window and runs it locally, with no backend, Docker, or session — the maintainer counterpart to a student's local play. `mode` is `human` (default; you play — keyboard for realtime games like Flappy Bird, click-a-card for Hearts), `agent` (watch the bundled example agent), or `watch` (the built-in baseline). Pass `--seat` to pick a seat in a multi-slot game, or `--agent-repo <path>` to play a `manifest.json` agent repo of your own. It resolves the environment through the same entry-point registry the harness uses, so it works for every installed environment.
+`npm run play -- <env> [mode]` opens any registered environment in a window and runs it locally, with no backend, Docker, or session — the maintainer counterpart to a student's local play. `mode` is `human` (default; you play — keyboard for realtime games like Flappy Bird, click-a-card for Hearts), `agent` (watch the bundled example agent), or `watch` (the built-in baseline). Every mode begins paused on the first frame until you press a key or click, so a realtime game doesn't start before you're ready. Pass `--seat` to pick a seat in a multi-slot game, or `--agent-repo <path>` to play a `manifest.json` agent repo of your own. It resolves the environment through the same entry-point registry the harness uses, so it works for every installed environment.
 
 ## Directory layout
 

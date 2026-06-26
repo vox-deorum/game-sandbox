@@ -1,7 +1,7 @@
 """One command to set up, run, and human-test your agent: ``python -m sandbox``.
 
     python -m sandbox            # set up if needed, then play it yourself
-    python -m sandbox human      # play it yourself (space/up flaps)
+    python -m sandbox human      # play it yourself (space/up or click flaps)
     python -m sandbox play       # run YOUR agent in a window
     python -m sandbox eval       # run several seeded episodes, print the mean
     python -m sandbox test       # run the checks
