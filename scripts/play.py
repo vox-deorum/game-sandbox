@@ -13,7 +13,8 @@ Docker, no session, no network. ``mode`` is ``human`` (default), ``agent``, or `
 
 Every mode begins paused on the first frame: a shared, env-agnostic start gate freezes there
 until the player presses a key or clicks, so a realtime game is not already falling before they
-are ready. Two loop shapes are then selected by the env's ``pace_interval_ms``: a realtime env
+are ready, and ends on a matching game-over banner that holds the final score until the player
+dismisses it. Two loop shapes are then selected by the env's ``pace_interval_ms``: a realtime env
 (Flappy Bird) runs at a fixed cadence and samples human input non-blocking each tick, while a
 turn-based env (Hearts) blocks for the human's move and gives bot moves a beat so they are
 followable. The only per-environment piece is human input (keyboard vs. mouse), discovered by
@@ -52,6 +53,9 @@ _BOT_PAUSE_S = 0.6
 
 #: The banner shown over the frozen first frame until the player begins the episode.
 _START_PROMPT = "Press any key or click to start"
+
+#: The dismiss hint shown under the score on the game-over banner.
+_GAME_OVER_FOOTER = "Press any key to exit"
 
 #: env id -> (agent source file, class name) for the example agent ``agent`` mode plays. The
 #: shipped examples are compose overlays without a manifest, so they are loaded by file path.
@@ -101,6 +105,73 @@ def _quit_requested() -> bool:
     return bool(pygame.event.get(pygame.QUIT))
 
 
+def _banner_scale(surface: pygame.Surface) -> float:
+    """A font scale derived from the window height, so a banner tracks the (HiDPI-upscaled) window.
+
+    Flappy Bird's window is its 512px-tall frame times an integer HiDPI factor; Hearts opens its
+    own window. Sizing fonts off the height keeps the banner proportional on both without either
+    needing to know the scale factor. Clamped so a tiny or huge window stays legible.
+    """
+    return max(0.7, min(3.0, surface.get_height() / 512.0))
+
+
+def _wrap_text(font: pygame.font.Font, text: str, max_width: int) -> list[str]:
+    """Greedily wrap ``text`` into lines no wider than ``max_width`` pixels when drawn in ``font``."""
+    lines: list[str] = []
+    current = ""
+    for word in text.split():
+        trial = f"{current} {word}".strip()
+        if current and font.size(trial)[0] > max_width:
+            lines.append(current)
+            current = word
+        else:
+            current = trial
+    if current:
+        lines.append(current)
+    return lines or [text]
+
+
+def _draw_banner(
+    surface: pygame.Surface,
+    sections: list[tuple[pygame.font.Font, tuple[int, int, int], str]],
+) -> None:
+    """Dim ``surface`` and draw centered, word-wrapped ``(font, color, text)`` sections over it.
+
+    Sections stack top-to-bottom as one vertically-centered block, and each section's text wraps to
+    the window width (less a margin) so a long prompt or score never clips on a narrow, portrait
+    screen like Flappy Bird's. The caller flips after; we leave the frame underneath intact.
+    """
+    margin = max(12, surface.get_width() // 12)
+    max_width = surface.get_width() - 2 * margin
+    rendered = [
+        font.render(line, True, color)
+        for font, color, text in sections
+        for line in _wrap_text(font, text, max_width)
+    ]
+    gap = max(4, surface.get_height() // 64)
+    total = sum(label.get_height() for label in rendered) + gap * (len(rendered) - 1)
+    overlay = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 110))
+    centre_x = surface.get_width() // 2
+    y = (surface.get_height() - total) // 2
+    for label in rendered:
+        overlay.blit(label, label.get_rect(midtop=(centre_x, y)))
+        y += label.get_height() + gap
+    surface.blit(overlay, (0, 0))
+    pygame.display.flip()
+
+
+def _wait_for_dismiss() -> bool:
+    """Block until a key/click (returns ``True``) or a window close (returns ``False``)."""
+    while True:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return False
+            if event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
+                return True
+        time.sleep(0.02)
+
+
 def _wait_for_start(prompt: str = _START_PROMPT) -> bool:
     """Block until the player presses a key or clicks; return ``False`` if they quit instead.
 
@@ -116,21 +187,50 @@ def _wait_for_start(prompt: str = _START_PROMPT) -> bool:
     if surface is None:
         return True
     print(prompt)
-    # Dim the frozen first frame and center the prompt over it.
-    overlay = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
-    overlay.fill((0, 0, 0, 110))
     pygame.font.init()
-    label = pygame.font.Font(None, 36).render(prompt, True, (255, 255, 255))
-    overlay.blit(label, label.get_rect(center=surface.get_rect().center))
-    surface.blit(overlay, (0, 0))
-    pygame.display.flip()
-    while True:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                return False
-            if event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
-                return True
-        time.sleep(0.02)
+    scale = _banner_scale(surface)
+    _draw_banner(surface, [(pygame.font.Font(None, int(34 * scale)), (255, 255, 255), prompt)])
+    return _wait_for_dismiss()
+
+
+def _game_over_lines(entry: EnvironmentEntry, env: Any, scores: dict[str, float]) -> list[str]:
+    """Return the score-summary line(s) for the game-over banner.
+
+    Prefers a game-native score read from the env's overlay (Flappy Bird's pipes passed, Hearts'
+    final per-seat penalties), so the number a player sees matches the game. Falls back to the
+    per-slot reward totals the loop accumulates for any env that ships no overlay.
+    """
+    overlay = entry.overlay(env) if entry.overlay is not None else None
+    if overlay is not None:
+        if "pipes_passed" in overlay:
+            return [f"pipes  {overlay['pipes_passed']}"]
+        if "display_scores" in overlay:
+            return ["   ".join(f"P{i}:{s}" for i, s in enumerate(overlay["display_scores"]))]
+    return [f"{slot}  {round(value, 2)}" for slot, value in scores.items()]
+
+
+def _show_game_over(entry: EnvironmentEntry, env: Any, scores: dict[str, float]) -> None:
+    """Hold on a shared, env-agnostic game-over banner over the final frame until it is dismissed.
+
+    Draws "Game Over", the game-native final score, and a dismiss hint, then blocks until the
+    player presses a key or closes the window. A no-op when headless (no display/surface), so it
+    never blocks a windowless run or one the player already quit.
+    """
+    if not pygame.display.get_init():
+        return
+    surface = pygame.display.get_surface()
+    if surface is None:
+        return
+    pygame.font.init()
+    scale = _banner_scale(surface)
+    sections: list[tuple[pygame.font.Font, tuple[int, int, int], str]] = [
+        (pygame.font.Font(None, int(48 * scale)), (255, 255, 255), "Game Over"),
+    ]
+    for line in _game_over_lines(entry, env, scores):
+        sections.append((pygame.font.Font(None, int(30 * scale)), (235, 225, 120), line))
+    sections.append((pygame.font.Font(None, int(22 * scale)), (200, 200, 200), _GAME_OVER_FOOTER))
+    _draw_banner(surface, sections)
+    _wait_for_dismiss()
 
 
 def _play(
@@ -219,6 +319,7 @@ def _play(
             present_realtime()
         if not _wait_for_start():  # every game begins on a manual interaction, not on open
             return scores, tick, "quit"
+        reason = "terminal"
         while env.agents:
             agent_id = env.agent_selection
             observation, _reward, termination, truncation, _info = env.last()
@@ -252,8 +353,13 @@ def _play(
 
             tick += 1
             if max_steps is not None and tick >= max_steps:
-                return scores, tick, "max_steps"
-        return scores, tick, "terminal"
+                reason = "max_steps"
+                break
+        # The episode ended in play (a crash, a finished hand, or the step cap) rather than by the
+        # player quitting: hold on the shared game-over banner with the final score until they
+        # dismiss it, before the window closes in ``finally``.
+        _show_game_over(entry, env, scores)
+        return scores, tick, reason
     finally:
         env.close()
 
