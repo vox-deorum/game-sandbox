@@ -119,6 +119,36 @@ def test_malformed_and_unknown_commands_are_ignored(capsys: Any):
     assert "ignoring" in capsys.readouterr().err
 
 
+def test_attach_hijack_preamble_does_not_swallow_the_first_input(capsys: Any):
+    """The Docker attach hijack prepends its options object to the first command with no newline
+    between them (docker-modem writes the attach options as the request body, and on a hijacked
+    stream those bytes head the container's stdin). The pump must still apply that first input
+    rather than drop the whole fused line, and must not spam a diagnostic for the benign preamble."""
+    control = SessionControl()
+    # The exact preamble docker-modem emits, glued to the first real input with no separator —
+    # this is the line shape from the live container log that motivated the fix.
+    preamble = '{"stream":true,"stdin":true,"stdout":true,"stderr":true,"hijack":true}'
+    command = '{"kind": "input", "slot": "player_0", "action": 1}'
+    control.handle_line(preamble + command)
+
+    # The real input survived the preamble instead of being dropped with it...
+    assert control.take("player_0") == 1
+    # ...and the benign transport preamble produced no diagnostic noise.
+    assert capsys.readouterr().err == ""
+
+
+def test_fused_control_commands_on_one_line_all_apply(capsys: Any):
+    """Beyond input, any commands fused onto one line (e.g. a preamble before a pause) each apply,
+    and the leading kind-less preamble stays quiet."""
+    base = ManualClock(start_ms=100)
+    clock = PausableClock(base)
+    control = SessionControl(clock)
+    preamble = '{"stream":true,"hijack":true}'
+    control.handle_line(preamble + '{"kind": "pause"}')
+    assert control.paused
+    assert capsys.readouterr().err == ""
+
+
 # --- TransportSource --------------------------------------------------------------------
 
 

@@ -72,6 +72,10 @@ export class DockerSessionProcess implements SessionProcess {
   static async start(container: Container): Promise<DockerSessionProcess> {
     let stdio: NodeJS.ReadWriteStream
     try {
+      // docker-modem 5.x carries a hijacked attach by JSON-serializing these options as the POST
+      // body and writing them onto the upgraded socket — which is also the only thing that flushes
+      // the request, so the body cannot simply be suppressed. Those bytes arrive at the head of the
+      // container's stdin; the harness command pump tolerates the preamble (see live_io.handle_line).
       stdio = (await container.attach({
         stream: true,
         stdin: true,

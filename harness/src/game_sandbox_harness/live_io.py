@@ -93,24 +93,55 @@ class SessionControl:
         self._clock = clock
 
     def handle_line(self, raw: str) -> None:
-        """Parse and dispatch one inbound command line; malformed/unknown lines are ignored."""
+        """Parse and dispatch the inbound command(s) on one line; malformed/unknown lines are ignored.
+
+        Normally a line is exactly one JSON command. The Docker attach hijack is the exception: it
+        prepends its options object to the very first command with no separating newline. docker-modem
+        carries a hijacked attach by writing the attach options as the request body, and that body is
+        also the only thing that flushes the upgrade — so it cannot be suppressed; on the hijacked
+        stream those bytes land at the head of the container's stdin (see ``DockerSessionProcess``).
+        A line may therefore carry more than one JSON value. Decode them all and dispatch each instead
+        of dropping the whole line — that is what stops the first real input from being lost with the
+        transport preamble. A multi-value line is, in practice, only ever that preamble fused with the
+        real command, so its leading kind-less object is skipped quietly; a lone kind-less line is a
+        client error and still earns a diagnostic.
+        """
         text = raw.strip()
         if not text:
             return
-        try:
-            parsed: object = json.loads(text)
-        except json.JSONDecodeError:
-            _diag(f"live: ignoring malformed command line: {text!r}")
-            return
+        decoder = json.JSONDecoder()
+        values: list[object] = []
+        index = 0
+        while index < len(text):
+            try:
+                parsed, end = decoder.raw_decode(text, index)
+            except json.JSONDecodeError:
+                _diag(f"live: ignoring malformed command line: {text[index:]!r}")
+                break
+            values.append(parsed)
+            index = end
+            while index < len(text) and text[index].isspace():
+                index += 1
+        # A multi-value line is the attach-hijack preamble fused with the real command; its leading
+        # kind-less object is expected transport noise, not client garbage, so do not log it.
+        quiet_missing_kind = len(values) > 1
+        for value in values:
+            self._dispatch_command(value, text, quiet_missing_kind=quiet_missing_kind)
+
+    def _dispatch_command(
+        self, parsed: object, source: str, *, quiet_missing_kind: bool = False
+    ) -> None:
+        """Apply one already-decoded command value; malformed/unknown ones are ignored."""
         if not isinstance(parsed, dict) or "kind" not in parsed:
-            _diag(f"live: ignoring command without a kind: {text!r}")
+            if not quiet_missing_kind:
+                _diag(f"live: ignoring command without a kind: {source!r}")
             return
         command = cast("dict[str, Any]", parsed)
         kind = command.get("kind")
         if kind == "input":
             slot = command.get("slot")
             if not isinstance(slot, str):
-                _diag(f"live: ignoring input command without a string slot: {text!r}")
+                _diag(f"live: ignoring input command without a string slot: {source!r}")
                 return
             with self._lock:
                 self._latched[slot] = command.get("action")
