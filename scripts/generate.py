@@ -27,9 +27,11 @@ from _paths import (
     HARNESS_SCHEMA_DATA,
     SCHEMA_DIR,
     SCHEMA_FILES,
+    TEMPLATE_BASE_MODULES,
     TEMPLATE_ENVS,
     TS_GENERATED_DIR,
     TS_GENERATED_TYPES,
+    template_sandbox_base,
     template_sandbox_env,
 )
 
@@ -170,6 +172,21 @@ def sync_template_env() -> None:
         print(f"  template sandbox/env -> {sandbox_env}")
 
 
+def sync_template_base() -> None:
+    """Copy the shared, import-self-contained sandbox helpers into templates/base/sandbox/.
+
+    These standalone modules (currently the HiDPI display shim) are reused verbatim by both the
+    student's provided local play (as ``sandbox.hidpi``) and the maintainer's ``scripts/play.py``
+    (as ``local_play.hidpi``), so there is a single source under ``environments/src/local_play/``.
+    Like the per-env sync, the staleness CI job diffs the destination, so the base copy can never
+    drift from the source.
+    """
+    sandbox = template_sandbox_base()
+    for name, relative in TEMPLATE_BASE_MODULES.items():
+        shutil.copyfile(ENVIRONMENTS_SRC / relative, sandbox / name)
+        print(f"  template sandbox -> {sandbox / name}")
+
+
 def generate_typescript() -> None:
     """Generate TypeScript declarations from each schema and concatenate into types.ts."""
     TS_GENERATED_DIR.mkdir(parents=True, exist_ok=True)
@@ -303,6 +320,7 @@ def main() -> int:
     print("Regenerating schema-derived artifacts:")
     copy_packaged_schema()
     sync_template_env()
+    sync_template_base()
     generate_typescript()
     generate_fixtures()
     generate_environments_json()

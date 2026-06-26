@@ -32,6 +32,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
+import numpy as np
 import pygame
 
 from _paths import EXAMPLES_DIR
@@ -41,6 +42,7 @@ from game_sandbox_harness.environment import (
     load_environment,
 )
 from game_sandbox_harness.manifest import load_agent
+from local_play.hidpi import display_scale, enable_hidpi
 
 #: The play modes, in CLI order: human play, watch the example agent, watch the baseline.
 MODES = ("human", "agent", "watch")
@@ -142,7 +144,13 @@ def _play(
 ) -> tuple[dict[str, float], int, str]:
     """Run one episode in a window; return ``(per-slot scores, ticks, stop reason)``."""
     make = cast("Callable[..., Any]", entry.make)
-    env = make(render_mode="human")
+    # Turn-based envs (Hearts) render their own DPI-aware "human" window. Realtime envs (Flappy
+    # Bird) come from a fixed-resolution third-party library whose window can't be enlarged without
+    # breaking game logic, so we drive them in "rgb_array" and upscale each frame into our own
+    # DPI-aware window below — the only way to make them crisp on a HiDPI screen. pace_interval_ms
+    # is None exactly for turn-based envs.
+    turn_based = entry.meta.pace_interval_ms is None
+    env = make(render_mode="human" if turn_based else "rgb_array")
 
     human_slots = entry.meta.human_slots
     human_slot = human_slots[seat] if (mode == "human" and human_slots) else None
@@ -176,11 +184,39 @@ def _play(
     if example_agent is not None and hasattr(example_agent, "reset"):
         example_agent.reset(seed)
 
-    turn_based = entry.meta.pace_interval_ms is None
     scores: dict[str, float] = {}
     tick = 0
+    # Realtime presentation state: our own window + a pacing clock. Unused for turn-based envs,
+    # which open and pace their own window via render().
+    screen: pygame.Surface | None = None
+    clock = pygame.time.Clock()
+    pace_ms = entry.meta.pace_interval_ms
+    pace_fps = round(1000.0 / pace_ms) if pace_ms is not None else 0
+
+    def present_realtime() -> None:
+        """Upscale the realtime env's rgb frame by an integer factor into our HiDPI window."""
+        nonlocal screen
+        frame = env.render()
+        if frame is None:
+            return
+        height, width = int(frame.shape[0]), int(frame.shape[1])
+        if screen is None:
+            if not pygame.get_init():
+                pygame.init()
+            factor = max(1, round(display_scale()))
+            screen = pygame.display.set_mode((width * factor, height * factor))
+            pygame.display.set_caption(entry.meta.display_name)
+        # Nearest-neighbour (not smoothscale) keeps the pixel-art sprites crisp at integer scale.
+        surf = pygame.surfarray.make_surface(np.transpose(frame, (1, 0, 2)))
+        pygame.transform.scale(surf, screen.get_size(), screen)
+        pygame.display.flip()
+
     try:
-        env.render()  # open the window / build the renderer before the loop touches it
+        # Open the window / build the renderer before the loop touches it.
+        if turn_based:
+            env.render()
+        else:
+            present_realtime()
         if not _wait_for_start():  # every game begins on a manual interaction, not on open
             return scores, tick, "quit"
         while env.agents:
@@ -206,9 +242,13 @@ def _play(
             env.step(action)
             for rewarded_slot, reward in env.rewards.items():
                 scores[rewarded_slot] = scores.get(rewarded_slot, 0.0) + float(reward)
-            # A realtime env auto-renders (and paces) inside step; a turn-based one needs a draw.
+            # Turn-based: draw the resulting frame. Realtime: upscale it into our window and pace
+            # the loop ourselves (the rgb_array env does neither inside step).
             if turn_based:
                 env.render()
+            else:
+                present_realtime()
+                clock.tick(pace_fps)
 
             tick += 1
             if max_steps is not None and tick >= max_steps:
@@ -219,6 +259,9 @@ def _play(
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Make the process DPI-aware before any window opens, so HiDPI displays render our windows at
+    # physical pixels (crisp) instead of bitmap-stretching them (blurry).
+    enable_hidpi()
     parser = argparse.ArgumentParser(
         prog="npm run play --",
         description="Play a registered environment locally, in a window, without the backend.",

@@ -27,5 +27,7 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 # Each environment is its own top-level package under src/ (importable as the env id, e.g.
 # `flappy_bird`); add a line here per new environment. The shared single-agent adapter lives
-# inside each single-agent env package, so it ships with the package walk below.
-packages = ["src/flappy_bird", "src/hearts"]
+# inside each single-agent env package, so it ships with the package walk below. `local_play`
+# is not an environment: it holds standalone local-play helpers (the HiDPI shim) shared by the
+# Hearts renderer and scripts/play.py, and synced verbatim into the student template.
+packages = ["src/flappy_bird", "src/hearts", "src/local_play"]

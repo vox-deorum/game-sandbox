@@ -62,7 +62,20 @@ TEMPLATE_ENVS = {
     ),
 }
 
+# Shared, import-self-contained sandbox helpers synced from the env source into the env-agnostic
+# base layer (templates/base/sandbox/, not per-env): destination filename under sandbox/ -> source
+# path under ENVIRONMENTS_SRC. These are reused verbatim by both the student's local play and the
+# maintainer's scripts/play.py, so there is one source of truth. (Currently the HiDPI shim.)
+TEMPLATE_BASE_MODULES = {
+    "hidpi.py": "local_play/hidpi.py",
+}
+
 
 def template_sandbox_env(env: str) -> Path:
     """The generated game-package sync target (``sandbox/env/``) inside the ``env`` template layer."""
     return TEMPLATES_DIR / env / "sandbox" / "env"
+
+
+def template_sandbox_base() -> Path:
+    """The base template's ``sandbox/`` directory, where shared sandbox helpers are synced."""
+    return TEMPLATE_BASE_DIR / "sandbox"

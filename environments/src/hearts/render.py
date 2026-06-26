@@ -21,6 +21,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pygame
 
+from local_play.hidpi import display_scale, enable_hidpi
+
 from . import rules
 from .overlay import extract_overlay
 
@@ -37,8 +39,6 @@ SMALL_W, SMALL_H = 48, 70
 
 #: Rank labels indexed by rank id ``0..12`` (``0`` is the 2, ``12`` the ace).
 RANK_LABELS = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"]
-#: Suit glyphs indexed by suit id ``0..3`` (clubs, diamonds, spades, hearts).
-SUIT_GLYPHS = ["♣", "♦", "♠", "♥"]
 
 #: Colours (RGB).
 FELT = (12, 92, 56)
@@ -68,6 +68,8 @@ class HeartsRenderer:
         """Store ``render_mode`` (``"human"`` or ``"rgb_array"``); defer pygame init to render."""
         self.render_mode = render_mode
         self._inited = False
+        #: Device-pixel scale for HiDPI native rendering; resolved in _ensure_init (1.0 headless).
+        self.scale: float = 1.0
         self._screen: pygame.Surface | None = None
         self._surface: pygame.Surface | None = None
         # Fonts are bound in _ensure_init() (run at the top of every render); declared with their
@@ -86,17 +88,27 @@ class HeartsRenderer:
         """Initialize fonts and the offscreen surface once; needs no display for rgb_array."""
         if self._inited:
             return
+        # A human window must be DPI-aware before it is created, so a HiDPI display renders it at
+        # physical pixels instead of bitmap-stretching it (blurry); we then draw natively at
+        # ``self.scale``. The headless rgb_array path stays at logical 1.0 so frames and recordings
+        # are byte-identical across machines (and the existing renderer test is unaffected).
+        enable_hidpi()
+        self.scale = display_scale() if self.render_mode == "human" else 1.0
         # Only the font module is required for the headless rgb_array path; pygame.init() is
         # heavier and reserved for the human path where a display is wanted anyway.
         if not pygame.font.get_init():
             pygame.font.init()
         if self.render_mode == "human" and not pygame.get_init():
             pygame.init()
-        self._surface = pygame.Surface((WIDTH, HEIGHT))
-        self._font = pygame.font.Font(None, 26)
-        self._font_small = pygame.font.Font(None, 22)
-        self._font_big = pygame.font.Font(None, 34)
+        self._surface = pygame.Surface((self._s(WIDTH), self._s(HEIGHT)))
+        self._font = pygame.font.Font(None, self._s(26))
+        self._font_small = pygame.font.Font(None, self._s(22))
+        self._font_big = pygame.font.Font(None, self._s(34))
         self._inited = True
+
+    def _s(self, value: float) -> int:
+        """Scale a logical pixel length to device pixels for the current HiDPI render scale."""
+        return round(value * self.scale)
 
     # -- public hit-testing helpers ------------------------------------------------------------
 
@@ -151,9 +163,10 @@ class HeartsRenderer:
             arr = pygame.surfarray.array3d(surface)
             return np.transpose(arr, (1, 0, 2)).astype(np.uint8)
 
-        # human: open the window lazily, then mirror the offscreen surface onto it.
+        # human: open the window lazily, then mirror the offscreen surface onto it. Both are sized
+        # at the device-pixel scale, so the blit is 1:1 and the frame stays crisp on a HiDPI display.
         if self._screen is None:
-            self._screen = pygame.display.set_mode((WIDTH, HEIGHT))
+            self._screen = pygame.display.set_mode((self._s(WIDTH), self._s(HEIGHT)))
             pygame.display.set_caption("Hearts")
         self._screen.blit(surface, (0, 0))
         pygame.event.pump()
@@ -165,10 +178,10 @@ class HeartsRenderer:
     def _seat_anchor(self, slot: int) -> tuple[int, int]:
         """Return the (x, y) centre of the seat badge for a clockwise slot ``0=S..3=E``."""
         anchors = {
-            0: (WIDTH // 2, HEIGHT - 150),  # South (view seat)
-            1: (130, HEIGHT // 2),  # West
-            2: (WIDTH // 2, 70),  # North
-            3: (WIDTH - 130, HEIGHT // 2),  # East
+            0: (self._s(WIDTH // 2), self._s(HEIGHT - 150)),  # South (view seat)
+            1: (self._s(130), self._s(HEIGHT // 2)),  # West
+            2: (self._s(WIDTH // 2), self._s(70)),  # North
+            3: (self._s(WIDTH - 130), self._s(HEIGHT // 2)),  # East
         }
         return anchors[slot]
 
@@ -184,27 +197,32 @@ class HeartsRenderer:
         for seat in range(rules.NUM_PLAYERS):
             slot = self._slot_of_seat(seat, view_seat)
             cx, cy = self._seat_anchor(slot)
-            badge = pygame.Rect(0, 0, 150, 52)
+            badge = pygame.Rect(0, 0, self._s(150), self._s(52))
             badge.center = (cx, cy)
             is_turn = (not terminal) and seat == turn
             if is_turn:
-                glow = badge.inflate(10, 10)
-                pygame.draw.rect(surface, TURN_GLOW, glow, border_radius=10)
-            pygame.draw.rect(surface, FELT_DARK, badge, border_radius=8)
-            pygame.draw.rect(surface, WHITE, badge, width=2, border_radius=8)
+                glow = badge.inflate(self._s(10), self._s(10))
+                pygame.draw.rect(surface, TURN_GLOW, glow, border_radius=self._s(10))
+            pygame.draw.rect(surface, FELT_DARK, badge, border_radius=self._s(8))
+            pygame.draw.rect(surface, WHITE, badge, width=max(1, self._s(2)), border_radius=self._s(8))
             you = " (you)" if seat == view_seat else ""
             label = self._font.render(f"P{seat}{you}", True, WHITE)
-            surface.blit(label, label.get_rect(center=(cx, cy - 10)))
+            surface.blit(label, label.get_rect(center=(cx, cy - self._s(10))))
             score = self._font_small.render(f"pts {scores[seat]}", True, WHITE)
-            surface.blit(score, score.get_rect(center=(cx, cy + 12)))
+            surface.blit(score, score.get_rect(center=(cx, cy + self._s(12))))
 
     def _trick_offset(self, slot: int) -> tuple[int, int]:
         """Return the centre offset (dx, dy) for a card played from screen ``slot``."""
-        return {0: (0, 80), 1: (-90, 0), 2: (0, -80), 3: (90, 0)}[slot]
+        return {
+            0: (0, self._s(80)),
+            1: (self._s(-90), 0),
+            2: (0, self._s(-80)),
+            3: (self._s(90), 0),
+        }[slot]
 
     def _draw_trick(self, surface: pygame.Surface, overlay: dict, view_seat: int) -> None:
         """Draw the in-progress trick, or the completed last trick if no trick is in progress."""
-        center = (WIDTH // 2, HEIGHT // 2)
+        center = (self._s(WIDTH // 2), self._s(HEIGHT // 2))
         trick = overlay["current_trick"]
         winner = None
         if not trick and overlay["last_trick"] is not None:
@@ -213,7 +231,7 @@ class HeartsRenderer:
         for seat, card in trick:
             slot = self._slot_of_seat(seat, view_seat)
             dx, dy = self._trick_offset(slot)
-            rect = pygame.Rect(0, 0, SMALL_W, SMALL_H)
+            rect = pygame.Rect(0, 0, self._s(SMALL_W), self._s(SMALL_H))
             rect.center = (center[0] + dx, center[1] + dy)
             highlight = WINNER_GLOW if winner is not None and seat == winner else None
             self._draw_card_face(surface, rect, card, self._font_small, border=highlight)
@@ -237,19 +255,20 @@ class HeartsRenderer:
         if count == 0:
             return
         vertical = slot in (1, 3)  # West / East sit along the side edges.
-        span = (HEIGHT if vertical else WIDTH) - 360
-        step = min(SMALL_W - 14, span // max(count, 1)) if count > 1 else 0
-        run = step * (count - 1) + SMALL_W
+        small_w, small_h = self._s(SMALL_W), self._s(SMALL_H)
+        span = self._s(HEIGHT if vertical else WIDTH) - self._s(360)
+        step = min(small_w - self._s(14), span // max(count, 1)) if count > 1 else 0
+        run = step * (count - 1) + small_w
         if vertical:
-            x = 36 if slot == 1 else WIDTH - 36 - SMALL_W
-            start = (HEIGHT - run) // 2
+            x = self._s(36) if slot == 1 else self._s(WIDTH) - self._s(36) - small_w
+            start = (self._s(HEIGHT) - run) // 2
             positions = [(x, start + i * step) for i in range(count)]
         else:
-            y = 130  # North row sits just under the top seat badge.
-            start = (WIDTH - run) // 2
+            y = self._s(130)  # North row sits just under the top seat badge.
+            start = (self._s(WIDTH) - run) // 2
             positions = [(start + i * step, y) for i in range(count)]
         for card, (x, y) in zip(hand, positions, strict=False):
-            rect = pygame.Rect(x, y, SMALL_W, SMALL_H)
+            rect = pygame.Rect(x, y, small_w, small_h)
             if reveal_all:
                 self._draw_card_face(surface, rect, card, self._font_small)
             else:
@@ -264,24 +283,25 @@ class HeartsRenderer:
         if count == 0:
             return
 
-        margin = 40
-        avail = WIDTH - 2 * margin
+        card_w, card_h = self._s(CARD_W), self._s(CARD_H)
+        margin = self._s(40)
+        avail = self._s(WIDTH) - 2 * margin
         # Overlap as needed so all cards fit within the available width.
-        step = min(CARD_W + 6, (avail - CARD_W) // (count - 1)) if count > 1 else 0
-        run = step * (count - 1) + CARD_W
-        start_x = (WIDTH - run) // 2
-        base_y = HEIGHT - CARD_H - 18
+        step = min(card_w + self._s(6), (avail - card_w) // (count - 1)) if count > 1 else 0
+        run = step * (count - 1) + card_w
+        start_x = (self._s(WIDTH) - run) // 2
+        base_y = self._s(HEIGHT) - card_h - self._s(18)
 
         for i, card in enumerate(hand):
             legal = card in self._legal_cards
             x = start_x + i * step
             # Raise legal cards a few px so they read as selectable.
-            y = base_y - (10 if legal else 0)
-            rect = pygame.Rect(x, y, CARD_W, CARD_H)
+            y = base_y - (self._s(10) if legal else 0)
+            rect = pygame.Rect(x, y, card_w, card_h)
             border = LEGAL_BORDER if legal else None
             self._draw_card_face(surface, rect, card, self._font, border=border, border_w=4)
             if not legal:
-                veil = pygame.Surface((CARD_W, CARD_H), pygame.SRCALPHA)
+                veil = pygame.Surface((card_w, card_h), pygame.SRCALPHA)
                 veil.fill(GREY_VEIL)
                 surface.blit(veil, rect.topleft)
             self._hand_rects.append((card, rect))
@@ -293,18 +313,18 @@ class HeartsRenderer:
         broken = "hearts broken" if overlay["hearts_broken"] else "hearts intact"
 
         line1 = self._font.render(f"{trick_txt}   {broken}", True, WHITE)
-        surface.blit(line1, (16, 14))
+        surface.blit(line1, (self._s(16), self._s(14)))
 
         if terminal:
             scores = overlay["display_scores"]
             summary = "  ".join(f"P{s}:{scores[s]}" for s in range(rules.NUM_PLAYERS))
             over = self._font_big.render("Game over", True, TURN_GLOW)
-            surface.blit(over, (16, 44))
+            surface.blit(over, (self._s(16), self._s(44)))
             final = self._font.render(f"final  {summary}", True, WHITE)
-            surface.blit(final, (16, 80))
+            surface.blit(final, (self._s(16), self._s(80)))
         else:
             turn_txt = self._font.render(f"turn: P{overlay['turn']}", True, WHITE)
-            surface.blit(turn_txt, (16, 44))
+            surface.blit(turn_txt, (self._s(16), self._s(44)))
 
     # -- card primitives -----------------------------------------------------------------------
 
@@ -318,33 +338,110 @@ class HeartsRenderer:
         border: tuple[int, int, int] | None = None,
         border_w: int = 3,
     ) -> None:
-        """Draw a face-up card (rank + suit glyph) into ``rect``, optionally with a glow border."""
-        pygame.draw.rect(surface, CARD_FACE, rect, border_radius=6)
-        pygame.draw.rect(surface, BLACK_INK, rect, width=1, border_radius=6)
+        """Draw a face-up card (rank + suit pip) into ``rect``, optionally with a glow border."""
+        radius = self._s(6)
+        pygame.draw.rect(surface, CARD_FACE, rect, border_radius=radius)
+        pygame.draw.rect(surface, BLACK_INK, rect, width=max(1, self._s(1)), border_radius=radius)
         if border is not None:
-            pygame.draw.rect(
-                surface, border, rect.inflate(border_w, border_w), width=border_w, border_radius=6
-            )
+            bw = max(1, self._s(border_w))
+            pygame.draw.rect(surface, border, rect.inflate(bw, bw), width=bw, border_radius=radius)
 
         suit = rules.suit_of(card)
         ink = RED_INK if suit in (rules.DIAMONDS, rules.HEARTS) else BLACK_INK
         rank_str = RANK_LABELS[rules.rank_of(card)]
-        glyph = SUIT_GLYPHS[suit]
 
         rank_img = font.render(rank_str, True, ink)
-        surface.blit(rank_img, (rect.x + 5, rect.y + 4))
-        glyph_img = font.render(glyph, True, ink)
-        surface.blit(glyph_img, glyph_img.get_rect(center=rect.center))
+        surface.blit(rank_img, (rect.x + self._s(5), rect.y + self._s(4)))
+        # The suit is drawn from primitives, not a font glyph: the default pygame font has no
+        # card-suit characters, so font.render("♥") would draw a missing-glyph box.
+        self._draw_suit(surface, suit, rect.center, round(rect.width * 0.5), ink)
         # Mirror the rank in the bottom-right corner for a card-like read.
         small = self._font_small.render(rank_str, True, ink)
-        surface.blit(small, small.get_rect(bottomright=(rect.right - 5, rect.bottom - 4)))
+        surface.blit(
+            small, small.get_rect(bottomright=(rect.right - self._s(5), rect.bottom - self._s(4)))
+        )
+
+    def _draw_suit(
+        self,
+        surface: pygame.Surface,
+        suit: int,
+        center: tuple[int, int],
+        size: int,
+        ink: tuple[int, int, int],
+    ) -> None:
+        """Draw a suit pip centred at ``center`` within a ``size``-pixel box, in colour ``ink``.
+
+        Built from pygame primitives so it needs no font glyph and scales with the card (``size``
+        is already in device pixels). Diamonds/hearts use one or two lobes plus a point; spades and
+        clubs add a small stem at the base.
+        """
+        cx, cy = int(center[0]), int(center[1])
+        half = size / 2.0
+
+        if suit == rules.DIAMONDS:
+            hw, hh = size * 0.36, size * 0.5
+            pygame.draw.polygon(
+                surface,
+                ink,
+                [(cx, int(cy - hh)), (int(cx + hw), cy), (cx, int(cy + hh)), (int(cx - hw), cy)],
+            )
+            return
+
+        if suit == rules.HEARTS:
+            r = size * 0.25
+            lobe_y = cy - size * 0.10
+            pygame.draw.circle(surface, ink, (int(cx - r), int(lobe_y)), int(r))
+            pygame.draw.circle(surface, ink, (int(cx + r), int(lobe_y)), int(r))
+            pygame.draw.polygon(
+                surface,
+                ink,
+                [(int(cx - 2 * r), int(lobe_y)), (int(cx + 2 * r), int(lobe_y)), (cx, int(cy + half))],
+            )
+            return
+
+        if suit == rules.SPADES:
+            r = size * 0.25
+            lobe_y = cy + size * 0.10
+            pygame.draw.circle(surface, ink, (int(cx - r), int(lobe_y)), int(r))
+            pygame.draw.circle(surface, ink, (int(cx + r), int(lobe_y)), int(r))
+            pygame.draw.polygon(
+                surface,
+                ink,
+                [(int(cx - 2 * r), int(lobe_y)), (int(cx + 2 * r), int(lobe_y)), (cx, int(cy - half))],
+            )
+            self._draw_suit_stem(surface, (cx, cy), size, ink)
+            return
+
+        # Clubs: a trefoil of three circles plus a stem.
+        r = size * 0.22
+        pygame.draw.circle(surface, ink, (cx, int(cy - size * 0.16)), int(r))
+        pygame.draw.circle(surface, ink, (int(cx - size * 0.22), int(cy + size * 0.10)), int(r))
+        pygame.draw.circle(surface, ink, (int(cx + size * 0.22), int(cy + size * 0.10)), int(r))
+        self._draw_suit_stem(surface, (cx, cy), size, ink)
+
+    @staticmethod
+    def _draw_suit_stem(
+        surface: pygame.Surface, center: tuple[int, int], size: float, ink: tuple[int, int, int]
+    ) -> None:
+        """Draw the little trapezoid stem shared by the spade and club pips."""
+        cx, cy = center
+        pygame.draw.polygon(
+            surface,
+            ink,
+            [
+                (int(cx - size * 0.16), int(cy + size * 0.48)),
+                (int(cx + size * 0.16), int(cy + size * 0.48)),
+                (int(cx + size * 0.06), int(cy + size * 0.10)),
+                (int(cx - size * 0.06), int(cy + size * 0.10)),
+            ],
+        )
 
     def _draw_card_back(self, surface: pygame.Surface, rect: pygame.Rect) -> None:
         """Draw a face-down card back (patterned rect) into ``rect``."""
-        pygame.draw.rect(surface, CARD_BACK, rect, border_radius=6)
-        pygame.draw.rect(surface, CARD_BACK_TRIM, rect, width=2, border_radius=6)
-        inner = rect.inflate(-12, -16)
-        pygame.draw.rect(surface, CARD_BACK_TRIM, inner, width=1, border_radius=4)
+        pygame.draw.rect(surface, CARD_BACK, rect, border_radius=self._s(6))
+        pygame.draw.rect(surface, CARD_BACK_TRIM, rect, width=max(1, self._s(2)), border_radius=self._s(6))
+        inner = rect.inflate(self._s(-12), self._s(-16))
+        pygame.draw.rect(surface, CARD_BACK_TRIM, inner, width=max(1, self._s(1)), border_radius=self._s(4))
 
     # -- teardown ------------------------------------------------------------------------------
 
