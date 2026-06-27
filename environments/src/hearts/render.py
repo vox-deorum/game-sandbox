@@ -44,6 +44,13 @@ CARD_W, CARD_H = 64, 92
 #: Smaller card-face dimensions for trick cards and revealed opponent hands.
 SMALL_W, SMALL_H = 48, 70
 
+#: Supersampling factor for suit pips: each pip is drawn this many times larger and smoothscaled
+#: back down, so pygame's non-antialiased ``draw`` primitives still yield smooth edges. 4x is the
+#: sweet spot — visibly smooth without paying for a much larger scratch surface.
+SUIT_SS = 4
+#: Padding (device px) added around a pip's scratch surface so its widest lobes never clip.
+_SUIT_PAD = 2
+
 #: Rank labels indexed by rank id ``0..12`` (``0`` is the 2, ``12`` the ace).
 RANK_LABELS = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"]
 
@@ -110,6 +117,9 @@ class HeartsRenderer:
         self._legal_cards: set[int] = set()
         #: Count of completed tricks whose win animation has already played (human mode only).
         self._animated_tricks: int = 0
+        #: Cache of antialiased suit pips keyed by (suit, size, ink); a handful of distinct sizes
+        #: and inks recur every frame, so this turns the per-pip supersample into a one-time cost.
+        self._pip_cache: dict[tuple[int, int, tuple[int, int, int]], pygame.Surface] = {}
 
     # -- lifecycle -----------------------------------------------------------------------------
 
@@ -333,7 +343,7 @@ class HeartsRenderer:
                 pulse = 1.0 if flashing else self._pulse(950)
                 glow_a = 230 if flashing else int(110 + 120 * pulse)
                 spread = self._s(7) + round(self._s(6) * pulse)
-                halo = badge.inflate(spread * 2, spread * 2)
+                halo = badge.inflate(spread * 1.1, spread * 1.1)
                 halo_surf = pygame.Surface((halo.width, halo.height), pygame.SRCALPHA)
                 pygame.draw.rect(halo_surf, (*GOLD, glow_a), halo_surf.get_rect(), border_radius=self._s(16))
                 surface.blit(halo_surf, halo.topleft)
@@ -773,11 +783,43 @@ class HeartsRenderer:
         size: int,
         ink: tuple[int, int, int],
     ) -> None:
-        """Draw a suit pip centred at ``center`` within a ``size``-pixel box, in colour ``ink``.
+        """Draw an antialiased suit pip centred at ``center`` within a ``size``-pixel box.
 
-        Built from pygame primitives so it needs no font glyph and scales with the card (``size``
-        is already in device pixels). Diamonds/hearts use one or two lobes plus a point; spades and
-        clubs add a small stem at the base.
+        pygame's plain ``draw`` primitives are not antialiased, so the curved lobes of the
+        hearts/clubs/spades and the diamond's diagonals come out jagged when drawn straight to the
+        frame. We instead render the pip at :data:`SUIT_SS`x resolution onto a throwaway surface and
+        :func:`pygame.transform.smoothscale` it down, which smooths every edge in one pass. The
+        scratch surface is pre-filled with ``ink`` at zero alpha (so only the *alpha* varies across
+        the pip), which means the downscale blends alpha alone and leaves no dark fringe around the
+        shape. ``size`` is already in device pixels, so the pip stays crisp at the current HiDPI
+        scale. Results are cached by (suit, size, ink) — only a few combinations recur per frame.
+        """
+        size = max(1, int(round(size)))
+        key = (suit, size, ink)
+        scaled = self._pip_cache.get(key)
+        if scaled is None:
+            out = size + 2 * _SUIT_PAD  # final box, with room so the widest lobes never clip
+            big = out * SUIT_SS
+            pip = pygame.Surface((big, big), pygame.SRCALPHA)
+            pip.fill((*ink, 0))
+            self._draw_suit_shapes(pip, suit, (big // 2, big // 2), size * SUIT_SS, ink)
+            scaled = pygame.transform.smoothscale(pip, (out, out))
+            self._pip_cache[key] = scaled
+        surface.blit(scaled, scaled.get_rect(center=(int(center[0]), int(center[1]))))
+
+    def _draw_suit_shapes(
+        self,
+        surface: pygame.Surface,
+        suit: int,
+        center: tuple[int, int],
+        size: float,
+        ink: tuple[int, int, int],
+    ) -> None:
+        """Draw the raw (un-antialiased) suit primitives for ``suit`` into ``surface``.
+
+        Called only by :meth:`_draw_suit` on its supersampled scratch surface — never straight to
+        the frame. Built from pygame primitives so it needs no font glyph: diamonds/hearts use one
+        or two lobes plus a point; spades and clubs add a small stem at the base.
         """
         cx, cy = int(center[0]), int(center[1])
         half = size / 2.0
