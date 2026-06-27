@@ -16,7 +16,7 @@
 
 import type { ScheduledGameInput } from '../storage/index.js'
 import type { AgentRef } from '../storage/schema.js'
-import type { MatchConfig } from '../storage/season-config.js'
+import type { MatchConfig, SlotSpec } from '../storage/season-config.js'
 
 /** The submitted-agent variant of {@link AgentRef}; the only kind a submission snapshot carries. */
 export type SubmissionRef = Extract<AgentRef, { kind: 'submission' }>
@@ -82,18 +82,7 @@ export function buildSchedule(input: BuildScheduleInput): ScheduledGameInput[] {
     if (match.seeds.length === 0) throw new ScheduleError('empty_seeds', matchIndex)
     if (match.games <= 0) throw new ScheduleError('non_positive_games', matchIndex)
 
-    const submissionSeats = match.slots.flatMap((spec, i) => (spec === 'submission' ? [i] : []))
-    const k = submissionSeats.length
-
-    // Resolve one full slots array from a seating, or the all-Naive baseline when `seating` is null.
-    const resolve = (seating: readonly SubmissionRef[] | null): AgentRef[] => {
-      let submissionIndex = 0
-      return match.slots.map((spec) => {
-        if (spec === 'builtin-naive') return NAIVE
-        const submission = seating?.[submissionIndex++]
-        return submission ?? NAIVE
-      })
-    }
+    const k = match.slots.filter((spec) => spec === 'submission').length
 
     const emit = (slots: AgentRef[]): void => {
       for (let run = 0; run < match.games; run++) {
@@ -110,13 +99,36 @@ export function buildSchedule(input: BuildScheduleInput): ScheduledGameInput[] {
     // fewer than K submissions are ready (N < K), both fall through to the baseline-only schedule.
     const seatings =
       k === 0 ? [] : seatOrderMatters ? permutations(roster, k) : combinations(roster, k)
-    for (const seating of seatings) emit(resolve(seating))
+    for (const seating of seatings) emit(resolveSlots(match.slots, seating))
 
     // The Naive baseline always runs, after the submitted rows, on the same seeds and count.
-    emit(resolve(null))
+    emit(resolveSlots(match.slots, null))
   })
 
   return schedule
+}
+
+/**
+ * Resolve one concrete `slots` assignment from a match's seat specs and a chosen seating.
+ *
+ * `builtin-naive` specs take the baseline ref. `submission` specs are filled left-to-right from
+ * `seating`; a `null` seating fills every submission seat with the baseline, which is how the
+ * always-present Naive baseline row resolves. `buildSchedule` only ever passes a full-length seating
+ * or `null`, since it enumerates distinct full seatings and emits the baseline separately.
+ *
+ * Repeated refs are intentional and never deduped or rejected: the baseline repeats `builtin-naive`
+ * across every submission seat, and a self-play seating may repeat one submission across seats. The
+ * downstream image build and harness (Stage 7.5) load an independent instance per seat.
+ */
+export function resolveSlots(
+  slots: readonly SlotSpec[],
+  seating: readonly SubmissionRef[] | null,
+): AgentRef[] {
+  let submissionIndex = 0
+  return slots.map((spec) => {
+    if (spec === 'builtin-naive') return NAIVE
+    return seating?.[submissionIndex++] ?? NAIVE
+  })
 }
 
 /** Stable string compare, independent of locale, for deterministic submission ordering. */

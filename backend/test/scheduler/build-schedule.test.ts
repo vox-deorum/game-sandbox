@@ -1,17 +1,18 @@
 /**
- * Unit coverage for the pure matchmaking scheduler (Stage 6.2 + the Stage 7 multi-seat expansion).
+ * Unit coverage for the pure matchmaking scheduler (Stage 6.2 plus the Stage 7 multi-seat expansion).
  *
- * No Docker, no DB: it pins the balancing rules directly. The single-submission-seat Flappy Bird
- * case, the always-present Naive baseline, seed round-robin, deterministic re-runs, and the typed
- * guards are the Stage 6.2 contract. The ordered-vs-unordered multi-seat expansion driven by an
- * environment's `seat_order_matters`, the `K = 1` reduction proving the multi-seat expansion is a
- * strict generalization of the single-seat path, and the `N < K` baseline-only fallthrough are the
- * Stage 7 additions.
+ * No Docker, no DB. The Stage 6.2 contract is the single-submission-seat Flappy Bird case, the
+ * always-present Naive baseline, seed round-robin, deterministic re-runs, and the typed guards. The
+ * Stage 7 additions are the `seat_order_matters` ordered-vs-unordered expansion over Hearts' real
+ * four slots, the `K = 1` reduction to the single-seat path, the `N < K` four-seat baseline-only
+ * fallthrough, multi-seat determinism, and the repeated-ref self-play property checked on
+ * `resolveSlots`.
  */
 import { describe, expect, it } from 'vitest'
 
 import {
   buildSchedule,
+  resolveSlots,
   ScheduleError,
   type SubmissionRef,
 } from '../../src/scheduler/build-schedule.js'
@@ -103,9 +104,9 @@ describe('buildSchedule - single submission seat (Flappy Bird)', () => {
 })
 
 describe('buildSchedule - multi-seat expansion', () => {
-  // Hearts shape: one fixed Naive seat, two submission seats.
+  // The agreed Hearts shape: four fixed slots, two submission seats and two fixed Naive seats.
   const hearts: MatchConfig = {
-    slots: ['submission', 'submission', 'builtin-naive'],
+    slots: ['submission', 'submission', 'builtin-naive', 'builtin-naive'],
     seeds: [7, 8],
     games: 2,
   }
@@ -122,23 +123,23 @@ describe('buildSchedule - multi-seat expansion', () => {
     // Distinct ordered seatings (ignoring the repeated-per-seed runs): 12 of them, lexicographic.
     const seatings = submitted.filter((_, i) => i % 2 === 0).map((g) => ids(g.slots))
     expect(seatings).toEqual([
-      ['s1', 's2', 'naive'],
-      ['s1', 's3', 'naive'],
-      ['s1', 's4', 'naive'],
-      ['s2', 's1', 'naive'],
-      ['s2', 's3', 'naive'],
-      ['s2', 's4', 'naive'],
-      ['s3', 's1', 'naive'],
-      ['s3', 's2', 'naive'],
-      ['s3', 's4', 'naive'],
-      ['s4', 's1', 'naive'],
-      ['s4', 's2', 'naive'],
-      ['s4', 's3', 'naive'],
+      ['s1', 's2', 'naive', 'naive'],
+      ['s1', 's3', 'naive', 'naive'],
+      ['s1', 's4', 'naive', 'naive'],
+      ['s2', 's1', 'naive', 'naive'],
+      ['s2', 's3', 'naive', 'naive'],
+      ['s2', 's4', 'naive', 'naive'],
+      ['s3', 's1', 'naive', 'naive'],
+      ['s3', 's2', 'naive', 'naive'],
+      ['s3', 's4', 'naive', 'naive'],
+      ['s4', 's1', 'naive', 'naive'],
+      ['s4', 's2', 'naive', 'naive'],
+      ['s4', 's3', 'naive', 'naive'],
     ])
-    // Baseline last: both submission seats Naive.
+    // Baseline last: every submission seat Naive, so all four slots are Naive.
     expect(schedule.slice(24).map((g) => ids(g.slots))).toEqual([
-      ['naive', 'naive', 'naive'],
-      ['naive', 'naive', 'naive'],
+      ['naive', 'naive', 'naive', 'naive'],
+      ['naive', 'naive', 'naive', 'naive'],
     ])
   })
 
@@ -155,13 +156,26 @@ describe('buildSchedule - multi-seat expansion', () => {
       .map((g) => ids(g.slots))
     // Sorted-id order within each roster; lexicographic across rosters; no mirrored pairs.
     expect(rosters).toEqual([
-      ['s1', 's2', 'naive'],
-      ['s1', 's3', 'naive'],
-      ['s1', 's4', 'naive'],
-      ['s2', 's3', 'naive'],
-      ['s2', 's4', 'naive'],
-      ['s3', 's4', 'naive'],
+      ['s1', 's2', 'naive', 'naive'],
+      ['s1', 's3', 'naive', 'naive'],
+      ['s1', 's4', 'naive', 'naive'],
+      ['s2', 's3', 'naive', 'naive'],
+      ['s2', 's4', 'naive', 'naive'],
+      ['s3', 's4', 'naive', 'naive'],
     ])
+  })
+
+  it('is deterministic for the multi-seat case regardless of snapshot order and across re-runs', () => {
+    const ordered = subs(4)
+    const shuffled = [ordered[3], ordered[1], ordered[0], ordered[2]] as SubmissionRef[]
+    const a = buildSchedule({ matches: [hearts], submissions: shuffled, seatOrderMatters: true })
+    const b = buildSchedule({ matches: [hearts], submissions: ordered, seatOrderMatters: true })
+    // Identical across re-runs and independent of the snapshot's incoming order.
+    expect(a).toEqual(b)
+    // Calling twice with the very same inputs is byte-for-byte identical too.
+    expect(
+      buildSchedule({ matches: [hearts], submissions: ordered, seatOrderMatters: true }),
+    ).toEqual(a)
   })
 
   it('reduces to the exact Stage 6 schedule for K=1 under either flag', () => {
@@ -178,18 +192,6 @@ describe('buildSchedule - multi-seat expansion', () => {
       ['s3'],
       ['naive'],
       ['naive'],
-    ])
-  })
-
-  it('emits baseline-only when fewer submissions are ready than submission seats (N < K)', () => {
-    const oneSub = buildSchedule({
-      matches: [hearts],
-      submissions: subs(1),
-      seatOrderMatters: true,
-    })
-    expect(oneSub.map((g) => ids(g.slots))).toEqual([
-      ['naive', 'naive', 'naive'],
-      ['naive', 'naive', 'naive'],
     ])
   })
 
@@ -210,6 +212,35 @@ describe('buildSchedule - multi-seat expansion', () => {
       ['s3', 's2'],
       ['naive', 'naive'],
     ])
+  })
+
+  it('emits only the all-Naive four-seat baseline when N < K (here K is the full seat count)', () => {
+    // Four submission seats, zero fixed builtin seats, and a single ready submission: N < K, so no
+    // submitted seatings are enumerated and the always-present baseline fills all four seats with
+    // Naive. One case pins both the N < K baseline-only fallthrough and the four-seat all-Naive board.
+    const board: MatchConfig = {
+      slots: ['submission', 'submission', 'submission', 'submission'],
+      seeds: [7, 8],
+      games: 2,
+    }
+    const schedule = buildSchedule({
+      matches: [board],
+      submissions: subs(1),
+      seatOrderMatters: true,
+    })
+    expect(schedule.map((g) => ids(g.slots))).toEqual([
+      ['naive', 'naive', 'naive', 'naive'],
+      ['naive', 'naive', 'naive', 'naive'],
+    ])
+  })
+})
+
+describe('resolveSlots - self-play repeated ref', () => {
+  it('seats one submission in two seats, without dedup or rejection', () => {
+    const [s1] = subs(1) as [SubmissionRef]
+    // buildSchedule only enumerates distinct seatings, so the repeated-ref self-play property is
+    // proven directly on the seat-resolution primitive: the same agent fills both seats verbatim.
+    expect(ids(resolveSlots(['submission', 'submission'], [s1, s1]))).toEqual(['s1', 's1'])
   })
 })
 

@@ -1,6 +1,6 @@
 # Stage 7.3: Multi-Seat Schedule Expansion
 
-Status: not started.
+Status: done.
 
 Part of [Stage 7](../stage-07-multi-agent.md). This is build-order step 3 and the direct continuation of [Stage 6.2](../stage-06/2-matchmaking-schedule.md). It makes the scheduler's already-implemented multi-submission-seat path live for Hearts and pins the full test matrix that Stage 6 deferred. It is a pure, deterministic function: no Docker, no DB, no I/O.
 
