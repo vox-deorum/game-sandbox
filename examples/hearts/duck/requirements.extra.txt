@@ -1,0 +1,3 @@
+# Extra pinned dependencies for the duck example. Appended to the template's
+# requirements.txt by compose. Extras extend the set; they never override a template pin.
+wcwidth==0.2.13

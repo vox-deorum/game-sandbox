@@ -233,9 +233,7 @@ def main(argv: list[str] | None = None) -> int:
                     window.present(env)
                     clock.tick(WINDOW_FPS)
 
-                score = play_episode(
-                    agent, env, seed=args.seed, max_steps=args.steps, on_frame=show_frame
-                )
+                score = play_episode(agent, env, seed=args.seed, max_steps=args.steps, on_frame=show_frame)
         finally:
             env.close()
 

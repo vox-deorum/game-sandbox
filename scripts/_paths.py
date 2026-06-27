@@ -60,6 +60,16 @@ TEMPLATE_ENVS = {
         "flappy_bird/overlay.py",
         "flappy_bird/human.py",
     ),
+    # Hearts ships its own pure-Python renderer (it does not inherit one from a wrapped Gymnasium
+    # game), so render.py syncs alongside the env modules: the template's local play opens the
+    # game through it. rules.py is the dependency-free engine env/overlay/render all import.
+    "hearts": (
+        "hearts/rules.py",
+        "hearts/env.py",
+        "hearts/overlay.py",
+        "hearts/human.py",
+        "hearts/render.py",
+    ),
 }
 
 # Shared, import-self-contained sandbox helpers synced from the env source into the env-agnostic

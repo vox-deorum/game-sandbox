@@ -128,9 +128,7 @@ class SessionControl:
         for value in values:
             self._dispatch_command(value, text, quiet_missing_kind=quiet_missing_kind)
 
-    def _dispatch_command(
-        self, parsed: object, source: str, *, quiet_missing_kind: bool = False
-    ) -> None:
+    def _dispatch_command(self, parsed: object, source: str, *, quiet_missing_kind: bool = False) -> None:
         """Apply one already-decoded command value; malformed/unknown ones are ignored."""
         if not isinstance(parsed, dict) or "kind" not in parsed:
             if not quiet_missing_kind:

@@ -1,0 +1,75 @@
+"""Example-specific tests, added on top of the inherited template tests."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import agent
+from sandbox.env import make_env
+from sandbox.play import load_agent, play_episode
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+_SEEDS = [0, 1, 2, 3, 4, 5, 6, 7]
+
+
+def test_extra_dependency_is_usable():
+    # wcwidth comes from requirements.extra.txt; a width of 4 for "duck" proves it composed in.
+    assert agent.display_width("duck") == 4
+
+
+def test_example_loads_through_loader_and_plays_a_full_game():
+    # The loader mirrors the server harness: read manifest.json, import the class, instantiate it.
+    loaded = load_agent(REPO_ROOT)
+    env = make_env(render_mode=None)
+    try:
+        score = play_episode(loaded, env, seed=0)
+        # A complete hand: every seat has been dead-stepped, so the agent list has drained.
+        assert not env.agents
+    finally:
+        env.close()
+    assert isinstance(score, float)
+
+
+def test_renderer_produces_a_headless_frame():
+    # Drives the synced local renderer in rgb_array mode (no window), which also proves its HiDPI
+    # shim import resolves in the composed template (as sandbox.hidpi).
+    env = make_env(render_mode="rgb_array")
+    try:
+        env.reset(seed=0)
+        frame = env.render()
+        assert frame is not None
+        assert frame.ndim == 3
+        assert frame.shape[2] == 3
+    finally:
+        env.close()
+
+
+class Baseline:
+    """The built-in opponent's policy: the lowest legal card (by rank, then suit)."""
+
+    def reset(self, seed: int) -> None: ...
+
+    def act(self, observation) -> int:
+        mask = observation["action_mask"]
+        legal = [card for card in range(52) if mask[card]]
+        return min(legal, key=lambda card: (card % 13, card // 13))
+
+
+def _mean_score(policy) -> float:
+    # play_episode seats `policy` against three built-in opponents and returns its leaderboard
+    # score (higher is better: the negated penalty total).
+    scores: list[float] = []
+    for seed in _SEEDS:
+        env = make_env(render_mode=None)
+        try:
+            scores.append(play_episode(policy, env, seed=seed))
+        finally:
+            env.close()
+    return sum(scores) / len(scores)
+
+
+def test_duck_takes_fewer_points_than_the_baseline():
+    # Same deals, same opponents, only seat 0 differs: the duck heuristic should out-score the
+    # lowest-legal-card baseline it replaces (a higher leaderboard score means fewer points taken).
+    assert _mean_score(agent.Agent()) > _mean_score(Baseline()) + 1.0

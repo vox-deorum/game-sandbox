@@ -80,6 +80,11 @@ _TEMPLATE_ENV_INITS = {
         default_action="NOOP_ACTION",
         inner_package="flappy_bird",
     ),
+    "hearts": _TemplateEnvInit(
+        display_name="Hearts",
+        default_action="AUTO_ACTION",
+        inner_package="hearts",
+    ),
 }
 
 

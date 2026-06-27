@@ -1,0 +1,128 @@
+# Game Sandbox Agent Template: Hearts
+
+This repository is a complete starter project for a Hearts agent. You only edit `agent.py`; everything else is provided.
+
+An **agent** is a Python class that receives an observation and returns an action. You can play and test it on your computer before submitting the GitHub repository to Game Sandbox.
+
+Hearts is a four-player trick-taking game. Your agent fills one seat; the other three seats are played by a built-in opponent while you develop locally. Other environments and complete worked agents are published as `templates/<env>` and `examples/<env>/<name>` branches of the same student repository.
+
+## Project files
+
+| Path | Purpose |
+| --- | --- |
+| `agent.py` | Your agent implementation — the only file you edit |
+| `manifest.json` | Tells Game Sandbox where the agent class lives |
+| `requirements.txt` | Exact Python package versions used by the server |
+| `requirements-dev.txt` | Test dependencies |
+| `tests/` | Checks your submission should pass |
+| `sandbox/` | Provided tooling: the local game, the play/evaluate scripts, and the `python -m sandbox` helper — do not edit |
+| `.env.example` | Example local LLM settings |
+
+Do not edit anything in `sandbox/`, `requirements.in`, or `requirements.txt`. The template pins one shared dependency set so local runs and server runs use the same packages. If the class needs another package, ask your instructor for a new template release.
+
+## Set up and play — one command
+
+From the project folder:
+
+```console
+python -m sandbox
+```
+
+The first time you run it, it creates a local `.venv`, installs the pinned packages, and then opens a window where you take a seat and play Hearts yourself — click a highlighted (legal) card on your turn. There is no separate install step. As you work, the same command gives you everything:
+
+```console
+python -m sandbox            # take a seat and play it yourself
+python -m sandbox play       # watch YOUR agent play a seat (add --headless for no window)
+python -m sandbox eval       # run several seeded games and report the mean score
+python -m sandbox test       # run the checks
+python -m sandbox setup      # just (re)install dependencies into .venv
+```
+
+Useful extra flags pass straight through, e.g. `python -m sandbox play --seed 7` or `python -m sandbox human --seat 2` to sit in a different seat.
+
+Prefer to manage the virtual environment yourself? Create and activate one, install the requirements, then use the same commands.
+
+On Windows PowerShell:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt -r requirements-dev.txt
+```
+
+On macOS or Linux:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt -r requirements-dev.txt
+```
+
+See Python's [virtual environment guide](https://docs.python.org/3/tutorial/venv.html) if this is your first time using one.
+
+## The rules in one minute
+
+- Four seats. Each is dealt 13 cards. The holder of the **2 of clubs** leads the first trick.
+- **Follow suit** if you can. If you cannot, play anything (subject to the next rule).
+- You may not **lead a heart** until hearts are "broken" (a heart has been discarded on an earlier trick).
+- No hearts or the queen of spades on the **first trick**.
+- Scoring is by penalty: each heart is **1** point, the **queen of spades is 13**, and a **lower** total is better.
+- **Shooting the moon**: take _every_ heart and the queen and your score flips to **0** while everyone else gets **26**.
+
+## Write the agent
+
+Open `agent.py` and implement:
+
+- `reset(seed)`, called once before each game.
+- `act(observation)`, called on your turn — return the card you want to play.
+
+A card is an integer `0..51` with `card = suit * 13 + rank`, where suits are `0=clubs, 1=diamonds, 2=spades, 3=hearts` and ranks run `0=2 .. 8=10, 9=J, 10=Q, 11=K, 12=A`. So the 2 of clubs is `0` and the queen of spades is `36`.
+
+The observation is a dict with two keys:
+
+- `observation["action_mask"]` — a length-52 array; `mask[c] == 1` exactly for the cards you may legally play right now. **Return a card whose mask bit is set.** The mask already encodes every rule above, so you never have to re-check legality yourself.
+- `observation["observation"]` — the table state: `hand` (length-52, 1 where you hold a card), `trick` (length-4, the card each seat has played this trick or `-1`), `led_suit` (`0..3`, or `-1` when you are leading), `hearts_broken` (0/1), `position` (your seat), `trick_leader`, and `scores` (running penalty points per seat).
+
+Two optional methods are available:
+
+- `learn(observation, action, reward, terminated)` updates a learning agent after a step.
+- `chat(inbox)` sends messages in environments that enable communication. Hearts ships with messaging off.
+
+Leave an optional method out when you do not use it.
+
+The unfinished template fails `python -m sandbox test` because `act` raises `NotImplementedError`. That failure is your signal to implement the method. Run `python -m sandbox play` to watch your agent take a seat against the built-in opponents, and `python -m sandbox` to play a seat yourself.
+
+## Save work to GitHub
+
+Git stores project history as **commits**. A typical save cycle is:
+
+```console
+git status
+git add agent.py
+git commit -m "Implement Hearts agent"
+git push
+```
+
+Review `git status` before adding files, and never add `.env` or an API key. See GitHub's [About Git guide](https://docs.github.com/en/get-started/using-git/about-git) if these commands are new.
+
+## Submit
+
+Submit the repository URL through the course website. Game Sandbox pins one exact commit, validates the repository, and prepares a runnable image.
+
+Submitting again while the season is open replaces the active submission and keeps the earlier submission in history.
+
+## Optional LLM API
+
+If your instructor enables model calls:
+
+1. Copy `.env.example` to `.env`.
+2. Add the endpoint and key provided by your instructor.
+3. Run `python -m sandbox.llm_example`.
+
+Never commit `.env` or an API key to GitHub.
+
+Your code reads `OPENAI_BASE_URL` and `OPENAI_API_KEY` both locally and on the server. During a server session, Game Sandbox supplies a temporary key scoped to that session and agent slot, so the agent code does not change.
+
+## Dependency updates
+
+The shared dependency set is controlled by the template release. Do not install or pin extra packages in a submission. Ask your instructor if the class needs a new package.
