@@ -183,7 +183,7 @@ export class Orchestrator {
     const seed = request.seed ?? randomInt(0, 2 ** 31)
 
     // Resolve the launch image from the validated submitted slots: the base image when none, a single
-    // submission's cached overlay, or a composed multi-submission session image (Stage 7.5 build).
+    // submission's cached overlay, or a composed multi-submission session image.
     const { image, submissionBindings } = await this.resolveImage(resolvedSlots, playSeason)
 
     const id = randomUUID()
@@ -353,8 +353,8 @@ export class Orchestrator {
    * With no submitted slot the base image runs, as before. A single submitted slot reuses the cached
    * per-submission overlay (the Stage 5 watch path), keeping its build-stage image warm. Two or more
    * submitted slots compose a multi-submission session image, each submission staged into its own
-   * per-slot directory; the fake driver resolves this seam now and the real Docker build lands in
-   * Stage 7.5. Every submitted slot yields one binding regardless.
+   * per-slot directory (the driver chains one single-slot overlay per slot). Every submitted slot
+   * yields one binding regardless.
    */
   private async resolveImage(
     resolvedSlots: ResolvedSlot[],

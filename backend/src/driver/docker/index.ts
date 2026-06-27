@@ -22,7 +22,12 @@ import type {
   SessionProcess,
 } from '../index.js'
 import { ensureImage, imageTag } from './image.js'
-import { ensureOverlayImage, listOverlayImages, removeImage } from './overlay.js'
+import {
+  ensureOverlayImage,
+  ensureSessionOverlayImage,
+  listOverlayImages,
+  removeImage,
+} from './overlay.js'
 import { DockerSessionProcess } from './session-process.js'
 
 /** The label every session container carries, keyed by session id, for supervision and reaping. */
@@ -54,29 +59,36 @@ export class DockerDriver implements ExecutionDriver {
 
   ensureImage(spec: ImageSpec): Promise<ImageRef> {
     const { imageTagPrefix, imagePolicy } = this.options
+    if (spec.kind === 'session-base') {
+      return ensureImage(this.docker, imageTagPrefix, imagePolicy, spec)
+    }
+    // Both overlay kinds layer onto the base image for their deps version, referenced by tag in the
+    // Dockerfile `FROM`; the caller ensures that base exists before requesting an overlay.
+    const baseTag = imageTag(imageTagPrefix, {
+      kind: 'session-base',
+      depsVersion: spec.depsVersion,
+    })
+    const { overlayBuildTimeoutMs } = this.options
     if (spec.kind === 'submission-overlay') {
-      // The overlay layers onto the base image for its deps version, referenced by tag in the
-      // Dockerfile `FROM`; the worker ensures that base exists before requesting an overlay.
-      const baseTag = imageTag(imageTagPrefix, {
-        kind: 'session-base',
-        depsVersion: spec.depsVersion,
-      })
       return ensureOverlayImage(
         this.docker,
         imageTagPrefix,
         imagePolicy,
-        this.options.overlayBuildTimeoutMs,
+        overlayBuildTimeoutMs,
         baseTag,
         spec,
       )
     }
-    if (spec.kind === 'session-overlay') {
-      // The multi-submission composed build (every submission staged into its own per-slot
-      // directory) lands in Stage 7.5. Stage 7.4 defines the orchestrator-and-driver seam and
-      // exercises it against the fake driver; the real Docker build is not wired here yet.
-      throw new Error('session-overlay images are built in Stage 7.5 (multi-submission images)')
-    }
-    return ensureImage(this.docker, imageTagPrefix, imagePolicy, spec)
+    // A composed multi-agent session image: one single-slot COPY chained per submitted slot, each
+    // into its own per-slot directory (see ensureSessionOverlayImage).
+    return ensureSessionOverlayImage(
+      this.docker,
+      imageTagPrefix,
+      imagePolicy,
+      overlayBuildTimeoutMs,
+      baseTag,
+      spec,
+    )
   }
 
   /** Enumerate the overlay images this driver manages, for the Stage 5.4 eviction sweep. */

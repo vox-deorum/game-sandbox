@@ -105,10 +105,9 @@ export interface SessionImageSlot {
  * Resolve a multi-agent session's composed image: the base image for {@link depsVersion} with every
  * submitted slot's code staged into its own per-slot directory. Each submission's tree is materialized
  * (durable snapshot first, a pinned clone only for a pre-snapshot row) and disposed in a `finally`,
- * even on failure. The image is session-scoped, not cached by submission id, so it is always
- * (re)composed; the real Docker build lands in Stage 7.5, while this resolves the seam against the
- * driver. A submission may fill more than one slot — each entry stages independently, keeping the
- * slots isolated.
+ * even on failure. The image is session-scoped: its driver tag is a content digest of the slot →
+ * submission composition, so an identical seating reuses the image while any change recomposes it. A
+ * submission may fill more than one slot; each entry stages independently, keeping the slots isolated.
  */
 export async function ensureSessionImage(
   deps: SubmissionImageDeps,

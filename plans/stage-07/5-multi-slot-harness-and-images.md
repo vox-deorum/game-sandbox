@@ -1,6 +1,6 @@
 # Stage 7.5: Multi-Slot Harness and Multi-Submission Images
 
-Status: not started.
+Status: done.
 
 Part of [Stage 7](../stage-07-multi-agent.md). This is build-order step 5. It makes the real multi-slot execution path work end to end: the harness steps every slot of a turn-based session, and a session image overlays every participating submission in isolation. It is Docker-gated, in the same lane as the Stage 5 build and load tests and the Stage 6.4 runner, so the default test run stays Docker-free. It depends on the environment from step 1 and the start contract from step 4.
 

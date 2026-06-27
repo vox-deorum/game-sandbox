@@ -74,6 +74,10 @@ export async function startStack(overrides: Partial<Config> = {}): Promise<Stack
   const driver = await createDockerDriver(config.docker)
   const recordings = new RecordingsStore(resolve(recordingsDir))
   const retention = new Retention(storage, recordings, config)
+  const submissionSource = createSubmissionSource(config.submission)
+  const snapshots = new SubmissionSnapshotStore(resolve(config.submissionsDir))
+  // Wire the submission source and snapshot store into the orchestrator, as main.ts does, so a
+  // submitted-agent (and multi-agent) session can resolve its overlay/composed image.
   const orchestrator = new Orchestrator(
     driver,
     storage,
@@ -83,9 +87,9 @@ export async function startStack(overrides: Partial<Config> = {}): Promise<Stack
     () => {
       void retention.sweep()
     },
+    submissionSource,
+    snapshots,
   )
-  const submissionSource = createSubmissionSource(config.submission)
-  const snapshots = new SubmissionSnapshotStore(resolve(config.submissionsDir))
   const validationWorker = new ValidationWorker({
     driver,
     storage,

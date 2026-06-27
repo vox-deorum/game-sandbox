@@ -57,8 +57,8 @@ export interface SubmissionOverlayImageSpec {
  * `/opt/agents/submissions`, so one container hosts several submitted agents in isolation. Unlike
  * {@link SubmissionOverlayImageSpec} it is session-scoped, not a per-submission cache entry, so it
  * sits outside the overlay-eviction pool. The same submission may fill more than one slot, each staged
- * independently. The real Docker build lands in Stage 7.5; this stage resolves the seam against the
- * fake driver.
+ * independently. The Docker driver composes it by chaining one single-slot overlay per slot onto the
+ * base; a Kubernetes driver would map the same spec to its own build.
  */
 export interface SessionOverlayImageSpec {
   kind: 'session-overlay'

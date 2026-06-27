@@ -13,16 +13,31 @@
  * This is the one place (with `image.ts`) that touches `dockerode` and `tar-fs`; everything above the
  * driver expresses the build as a driver-neutral {@link SubmissionOverlayImageSpec}.
  */
+import { createHash } from 'node:crypto'
+
 import type Docker from 'dockerode'
 import tar from 'tar-fs'
 import type { Pack } from 'tar-stream'
 
 import type { ImagePolicy } from '../../config.js'
 import { submissionTarIgnore } from '../../submission/tree-filter.js'
-import type { ImageRef, OverlayImage, SubmissionOverlayImageSpec } from '../index.js'
+import type {
+  ImageRef,
+  OverlayImage,
+  SessionOverlayImageSpec,
+  SessionOverlaySlot,
+  SubmissionOverlayImageSpec,
+} from '../index.js'
 
-/** The Docker repository (the part before `:`) every overlay tag lives under. */
+/** The Docker repository (the part before `:`) every per-submission overlay tag lives under. */
 const OVERLAY_REPO_SUFFIX = 'submission-overlay'
+/**
+ * The repository every composed multi-agent session image lives under. Deliberately distinct from
+ * {@link OVERLAY_REPO_SUFFIX}, since {@link listOverlayImages} enumerates only the per-submission
+ * overlay repo: a composed session image is session-scoped and never returned to the eviction sweep,
+ * exactly as the driver interface promises.
+ */
+const SESSION_OVERLAY_REPO_SUFFIX = 'session-overlay'
 /** Where the base image expects each slot's repo root; lockstep with the harness `validate` default. */
 const SUBMISSION_SLOT_BASE = '/opt/agents/submissions'
 
@@ -194,6 +209,76 @@ export async function ensureOverlayImage(
   const dockerfile = overlayDockerfile(baseTag, spec.slotId)
   const context = buildContext(spec.sourceTreePath, dockerfile)
   await runBuild(docker, context, tag, timeoutMs)
+  return { ref: tag }
+}
+
+/** The composed-session-image repository (prefix + suffix) a deployment's session images share. */
+function sessionOverlayRepo(prefix: string): string {
+  return `${prefix}/${SESSION_OVERLAY_REPO_SUFFIX}`
+}
+
+/**
+ * The deterministic tag for a composed session image:
+ * `<prefix>/session-overlay:deps-v<N>-<hash>`. The hash is a content digest of the slot-to-submission
+ * composition over the entries sorted by slot id, so it is independent of the order the slots were
+ * supplied. An identical seating therefore resolves to the same tag (so `reuse` policy hits the cache
+ * and a re-run of the same match reuses the image), while any change to which submission fills which
+ * slot yields a different tag. Hashing keeps the tag a fixed, registry-legal length even though a
+ * submission id is a UUID.
+ */
+export function sessionOverlayImageTag(
+  prefix: string,
+  depsVersion: number,
+  slots: readonly SessionOverlaySlot[],
+): string {
+  const composition = slots
+    .map((slot) => `${slot.slotId}=${slot.submissionId}`)
+    .sort()
+    .join('\n')
+  const hash = createHash('sha256').update(composition).digest('hex').slice(0, 32)
+  return `${sessionOverlayRepo(prefix)}:deps-v${depsVersion}-${hash}`
+}
+
+/**
+ * Resolve a {@link SessionOverlayImageSpec} to a launch-ready composed {@link ImageRef}: the base
+ * image for the deps version with every submitted slot's tree copied into its own per-slot directory
+ * under `/opt/agents/submissions`, so one container hosts several submitted agents in isolation.
+ *
+ * The image is built by chaining one single-slot overlay per slot (each a
+ * `FROM <previous> ; COPY tree /opt/agents/submissions/<slotId>`), so it reuses the *exact*
+ * deterministic single-slot build context (same ignore filter, same `sort`) that the per-submission
+ * overlay uses, and each slot's code lands only in its own directory. Slots are staged in sorted
+ * slot-id order, and re-tagging the final tag each round leaves the prior round's image as a dangling
+ * intermediate whose layers persist in the final image (Docker reclaims them on a routine prune, the
+ * same way a base-image rebuild's superseded layers are). The same submission may fill more than one
+ * slot; each slot is staged independently from its own source tree, so two seats backed by one repo
+ * are as isolated on disk as two different repos.
+ */
+export async function ensureSessionOverlayImage(
+  docker: Docker,
+  prefix: string,
+  policy: ImagePolicy,
+  timeoutMs: number,
+  baseTag: string,
+  spec: SessionOverlayImageSpec,
+): Promise<ImageRef> {
+  if (spec.slots.length === 0) {
+    throw new Error('a session-overlay image needs at least one submitted slot')
+  }
+  const tag = sessionOverlayImageTag(prefix, spec.depsVersion, spec.slots)
+  if (policy === 'reuse' && (await imageExists(docker, tag))) {
+    return { ref: tag }
+  }
+  const slots = [...spec.slots].sort((a, b) =>
+    a.slotId < b.slotId ? -1 : a.slotId > b.slotId ? 1 : 0,
+  )
+  let fromTag = baseTag
+  for (const slot of slots) {
+    const dockerfile = overlayDockerfile(fromTag, slot.slotId)
+    const context = buildContext(slot.sourceTreePath, dockerfile)
+    await runBuild(docker, context, tag, timeoutMs)
+    fromTag = tag
+  }
   return { ref: tag }
 }
 

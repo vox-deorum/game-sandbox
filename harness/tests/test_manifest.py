@@ -43,7 +43,9 @@ def _write_repo(root: Path, module: str, *, manifest: dict | str | None, source:
 
 
 def _cleanup(root: Path) -> None:
-    sys.path[:] = [p for p in sys.path if p != str(root.resolve())]
+    resolved = str(root.resolve())
+    sys.path[:] = [p for p in sys.path if p != resolved]
+    _LOADED_REPO_ROOTS.discard(root.resolve())
 
 
 def test_good_repo_loads_and_exposes_hooks(tmp_path: Path):
@@ -135,6 +137,45 @@ class Agent:
         sys.modules.pop("helper", None)
 
 
+def test_two_instances_held_at_once_keep_isolated_module_state(tmp_path: Path):
+    # The same-submission-in-two-slots path: the SAME code is copied into two per-slot directories,
+    # and a multi-slot session loads every slot up front and only then steps them. Loading the second
+    # root evicts the first's `agent` module from sys.modules, so this proves each instance keeps its
+    # own module-level state afterwards (interleaved acts must not share the module global).
+    repo_a = tmp_path / "player_0"
+    repo_b = tmp_path / "player_1"
+    repo_a.mkdir()
+    repo_b.mkdir()
+    manifest = {"entry_point": "agent", "class_name": "Agent", "template_version": 1}
+    # A module-level counter act() bumps and returns: a shared module would interleave the two seats.
+    source = """
+calls = 0
+
+class Agent:
+    def reset(self, seed):
+        pass
+    def act(self, observation):
+        global calls
+        calls += 1
+        return calls
+"""
+    _write_repo(repo_a, "agent", manifest=manifest, source=source)
+    _write_repo(repo_b, "agent", manifest=manifest, source=source)
+
+    try:
+        agent_a = load_agent(repo_a)
+        agent_b = load_agent(repo_b)  # evicts repo_a's `agent` from sys.modules
+        # Interleave the two seats: independent module state keeps each counter on its own track.
+        assert agent_a.act(None) == 1
+        assert agent_b.act(None) == 1
+        assert agent_a.act(None) == 2
+        assert agent_b.act(None) == 2
+    finally:
+        _cleanup(repo_a)
+        _cleanup(repo_b)
+        sys.modules.pop("agent", None)
+
+
 def test_helper_from_a_failed_load_does_not_leak_into_the_next_repo(tmp_path: Path):
     # repo_a's agent imports its helper at module load (caching it), then load fails because the
     # manifest names a class the module doesn't define. The next repo with a same-named helper
@@ -174,8 +215,6 @@ class Agent:
     finally:
         _cleanup(repo_a)
         _cleanup(repo_b)
-        _LOADED_REPO_ROOTS.discard(repo_a.resolve())
-        _LOADED_REPO_ROOTS.discard(repo_b.resolve())
         sys.modules.pop("agent", None)
         sys.modules.pop("helper", None)
 
