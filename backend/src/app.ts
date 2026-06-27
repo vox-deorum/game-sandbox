@@ -20,7 +20,11 @@ import { registerRatingRoutes } from './ratings/routes.js'
 import type { RecordingsStore } from './recordings.js'
 import type { Retention } from './retention.js'
 import type { ClientSocket } from './session/live-session.js'
-import { type Orchestrator, OrchestratorError } from './session/orchestrator.js'
+import {
+  type Orchestrator,
+  OrchestratorError,
+  type SlotAssignment,
+} from './session/orchestrator.js'
 import { type Storage, SubmissionConflictError } from './storage/index.js'
 import type { SubmissionSnapshotStore } from './submission/snapshot-store.js'
 import type { SourceInput, SubmissionSource } from './submission/source/index.js'
@@ -59,30 +63,71 @@ export interface AppDeps {
   frontendDir?: string
 }
 
-/** JSON-schema body for POST /api/sessions; Fastify 400s on a violation before the handler runs. */
+/**
+ * JSON-schema body for POST /api/sessions; Fastify 400s before the handler runs. The body is an
+ * explicit per-slot `slots` assignment keyed by slot id; each value names what fills the slot (human,
+ * built-in Naive, or a named submission), with `submission_id` required exactly for a `submission`
+ * slot. The orchestrator derives the mode and validates the composition. The old top-level `mode`/
+ * `submission_id` shape is rejected: `slots` is required and those fields are not permitted here.
+ */
 const START_SESSION_SCHEMA = {
   body: {
     type: 'object',
-    required: ['env_id', 'mode'],
+    required: ['env_id', 'slots'],
     additionalProperties: false,
     properties: {
       env_id: { type: 'string', minLength: 1 },
-      mode: { type: 'string', enum: ['human', 'scripted'] },
       seed: { type: 'integer', minimum: 0 },
       human_slot_timeout_ms: { type: 'integer', minimum: 0 },
-      // When present, run this submitted agent in the slot (a watch run); the orchestrator validates
-      // it is `ready` and active for the play-open season. Identity still rides the header.
-      submission_id: { type: 'string', minLength: 1 },
+      slots: {
+        type: 'object',
+        minProperties: 1,
+        propertyNames: { pattern: '^player_[0-9]+$' },
+        additionalProperties: {
+          type: 'object',
+          required: ['kind'],
+          additionalProperties: false,
+          properties: {
+            kind: { type: 'string', enum: ['human', 'builtin-agent', 'submission'] },
+            submission_id: { type: 'string', minLength: 1 },
+          },
+          // `submission_id` is present exactly for a `submission` slot — required there, forbidden
+          // elsewhere — so the orchestrator's discriminated union is honest at the trust boundary.
+          oneOf: [
+            {
+              properties: { kind: { enum: ['human', 'builtin-agent'] } },
+              not: { required: ['submission_id'] },
+            },
+            { properties: { kind: { const: 'submission' } }, required: ['submission_id'] },
+          ],
+        },
+      },
     },
   },
 } as const
 
+/** One slot's assignment on the wire: snake-case `submission_id`, mapped to the orchestrator shape. */
+interface SlotAssignmentBody {
+  kind: 'human' | 'builtin-agent' | 'submission'
+  submission_id?: string
+}
+
 interface StartBody {
   env_id: string
-  mode: 'human' | 'scripted'
   seed?: number
   human_slot_timeout_ms?: number
-  submission_id?: string
+  slots: Record<string, SlotAssignmentBody>
+}
+
+/**
+ * Map a wire slot assignment onto the orchestrator's discriminated union. The schema has already
+ * guaranteed `submission_id` is present exactly for a `submission` slot, so the boundary cast is safe.
+ */
+function toSlotAssignment(body: SlotAssignmentBody): SlotAssignment {
+  if (body.kind === 'submission') {
+    return { kind: 'submission', submissionId: body.submission_id as string }
+  }
+  return { kind: body.kind }
 }
 
 /** The source fields shared by the reachability pre-check and the submit body. */
@@ -163,10 +208,14 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         const result = await deps.orchestrator.start({
           userId: resolveUserId(request.headers),
           envId: request.body.env_id,
-          mode: request.body.mode,
           seed: request.body.seed,
           humanSlotTimeoutMs: request.body.human_slot_timeout_ms,
-          submissionId: request.body.submission_id,
+          slots: Object.fromEntries(
+            Object.entries(request.body.slots).map(([slotId, assignment]) => [
+              slotId,
+              toSlotAssignment(assignment),
+            ]),
+          ),
         })
         return reply.code(201).send({ id: result.id, ws_path: result.wsPath })
       } catch (error) {

@@ -70,6 +70,12 @@ export class DockerDriver implements ExecutionDriver {
         spec,
       )
     }
+    if (spec.kind === 'session-overlay') {
+      // The multi-submission composed build (every submission staged into its own per-slot
+      // directory) lands in Stage 7.5. Stage 7.4 defines the orchestrator-and-driver seam and
+      // exercises it against the fake driver; the real Docker build is not wired here yet.
+      throw new Error('session-overlay images are built in Stage 7.5 (multi-submission images)')
+    }
     return ensureImage(this.docker, imageTagPrefix, imagePolicy, spec)
   }
 

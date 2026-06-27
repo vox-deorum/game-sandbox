@@ -60,7 +60,7 @@ describe('HTTP API', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/sessions',
-      payload: { env_id: 'flappy_bird', mode: 'scripted' },
+      payload: { env_id: 'flappy_bird', slots: { player_0: { kind: 'builtin-agent' } } },
     })
     expect(res.statusCode).toBe(201)
     const body = res.json() as { id: string; ws_path: string }
@@ -72,33 +72,53 @@ describe('HTTP API', () => {
   })
 
   it('rejects an invalid start body with 400', async () => {
-    const noMode = await app.inject({
+    // The old single-`submission_id` shape (no `slots`) is rejected outright.
+    const noSlots = await app.inject({
       method: 'POST',
       url: '/api/sessions',
-      payload: { env_id: 'flappy_bird' },
+      payload: { env_id: 'flappy_bird', mode: 'scripted', submission_id: 'sub-1' },
     })
-    expect(noMode.statusCode).toBe(400)
+    expect(noSlots.statusCode).toBe(400)
 
-    const badMode = await app.inject({
+    const badKind = await app.inject({
       method: 'POST',
       url: '/api/sessions',
-      payload: { env_id: 'flappy_bird', mode: 'spectate' },
+      payload: { env_id: 'flappy_bird', slots: { player_0: { kind: 'spectate' } } },
     })
-    expect(badMode.statusCode).toBe(400)
+    expect(badKind.statusCode).toBe(400)
+
+    // `submission_id` is required exactly for a `submission` slot...
+    const submissionNoId = await app.inject({
+      method: 'POST',
+      url: '/api/sessions',
+      payload: { env_id: 'flappy_bird', slots: { player_0: { kind: 'submission' } } },
+    })
+    expect(submissionNoId.statusCode).toBe(400)
+
+    // ...and forbidden on any other kind.
+    const agentWithId = await app.inject({
+      method: 'POST',
+      url: '/api/sessions',
+      payload: {
+        env_id: 'flappy_bird',
+        slots: { player_0: { kind: 'builtin-agent', submission_id: 'sub-1' } },
+      },
+    })
+    expect(agentWithId.statusCode).toBe(400)
   })
 
   it('enforces one active session per user with 409 and returns the active session id', async () => {
     const first = await app.inject({
       method: 'POST',
       url: '/api/sessions',
-      payload: { env_id: 'flappy_bird', mode: 'scripted' },
+      payload: { env_id: 'flappy_bird', slots: { player_0: { kind: 'builtin-agent' } } },
     })
     expect(first.statusCode).toBe(201)
     const { id } = first.json() as { id: string }
     const second = await app.inject({
       method: 'POST',
       url: '/api/sessions',
-      payload: { env_id: 'flappy_bird', mode: 'scripted' },
+      payload: { env_id: 'flappy_bird', slots: { player_0: { kind: 'builtin-agent' } } },
     })
     expect(second.statusCode).toBe(409)
     // The rejoin path reads the active session's id from the body, keyed by the stable code.
@@ -123,13 +143,13 @@ describe('HTTP API', () => {
     })
   })
 
-  it('rejects a non-allowlisted user starting a session in either mode with 403', async () => {
-    for (const mode of ['human', 'scripted'] as const) {
+  it('rejects a non-allowlisted user starting a human or scripted session with 403', async () => {
+    for (const kind of ['human', 'builtin-agent'] as const) {
       const res = await app.inject({
         method: 'POST',
         url: '/api/sessions',
         headers: { 'x-sandbox-user': 'carol' },
-        payload: { env_id: 'flappy_bird', mode },
+        payload: { env_id: 'flappy_bird', slots: { player_0: { kind } } },
       })
       expect(res.statusCode).toBe(403)
       expect(res.json()).toMatchObject({ code: 'not_allowlisted' })
@@ -156,7 +176,7 @@ describe('HTTP API', () => {
       method: 'POST',
       url: '/api/sessions',
       headers: { 'x-sandbox-user': 'alice' },
-      payload: { env_id: 'flappy_bird', mode: 'scripted' },
+      payload: { env_id: 'flappy_bird', slots: { player_0: { kind: 'builtin-agent' } } },
     })
     const { id } = created.json() as { id: string }
 

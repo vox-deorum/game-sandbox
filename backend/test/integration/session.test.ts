@@ -33,7 +33,7 @@ async function play(
     stack,
     {
       env_id: 'flappy_bird',
-      mode: 'human',
+      slots: { player_0: { kind: 'human' } },
       seed: SEED,
       ...(opts.humanTimeoutMs ? { human_slot_timeout_ms: opts.humanTimeoutMs } : {}),
     },
@@ -121,7 +121,12 @@ describe('live session over WebSocket', () => {
   it('keeps advancing on the noop fallback under a short human-slot timeout', async () => {
     const { id, wsPath } = await startSession(
       stack,
-      { env_id: 'flappy_bird', mode: 'human', seed: SEED, human_slot_timeout_ms: 100 },
+      {
+        env_id: 'flappy_bird',
+        slots: { player_0: { kind: 'human' } },
+        seed: SEED,
+        human_slot_timeout_ms: 100,
+      },
       'carol',
     )
     const ws = await WsClient.connect(`${stack.wsBase}${wsPath}`, 'carol')

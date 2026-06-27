@@ -136,9 +136,10 @@ function meta(overrides: Record<string, unknown>): Record<string, unknown> {
 }
 
 /**
- * A controlled registry with three shapes the tests need: the paced single-human Flappy env, a
- * turn-based env with a metadata human timeout (to prove the override flows into the config), and a
- * watch-only env with no human slot (to prove human mode is rejected).
+ * A controlled registry with the shapes the tests need: the paced single-human Flappy env, a
+ * turn-based env with a metadata human timeout (to prove the override flows into the config), a
+ * watch-only env with no human slot (to prove a human assignment is rejected), and a four-slot,
+ * all-human-capable, turn-based Hearts env (the multi-slot start-validation and attribution tests).
  */
 export function makeEnvironments(): EnvironmentRegistry {
   return EnvironmentRegistry.parse(
@@ -146,6 +147,16 @@ export function makeEnvironments(): EnvironmentRegistry {
       meta({}),
       meta({ env_id: 'turn_based', pace_interval_ms: null, human_timeout_ms: 5000 }),
       meta({ env_id: 'watch_only', human_slots: [] }),
+      meta({
+        env_id: 'hearts',
+        min_slots: 4,
+        max_slots: 4,
+        human_slots: ['player_0', 'player_1', 'player_2', 'player_3'],
+        human_timeout_ms: 60000,
+        pace_interval_ms: null,
+        renderer: 'hearts',
+        seat_order_matters: true,
+      }),
     ]),
   )
 }

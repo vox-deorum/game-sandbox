@@ -95,6 +95,48 @@ export async function ensureSubmissionImage(
   }
 }
 
+/** One submission-filled slot of a composed session image: whose code goes in which slot. */
+export interface SessionImageSlot {
+  slotId: string
+  submission: Submission
+}
+
+/**
+ * Resolve a multi-agent session's composed image: the base image for {@link depsVersion} with every
+ * submitted slot's code staged into its own per-slot directory. Each submission's tree is materialized
+ * (durable snapshot first, a pinned clone only for a pre-snapshot row) and disposed in a `finally`,
+ * even on failure. The image is session-scoped, not cached by submission id, so it is always
+ * (re)composed; the real Docker build lands in Stage 7.5, while this resolves the seam against the
+ * driver. A submission may fill more than one slot — each entry stages independently, keeping the
+ * slots isolated.
+ */
+export async function ensureSessionImage(
+  deps: SubmissionImageDeps,
+  slots: readonly SessionImageSlot[],
+  depsVersion: number,
+): Promise<ImageRef> {
+  const trees: { slotId: string; submissionId: string; tree: TreeHandle }[] = []
+  try {
+    for (const { slotId, submission } of slots) {
+      const tree = await materializeTree(deps, submission)
+      trees.push({ slotId, submissionId: submission.id, tree })
+    }
+    return await deps.driver.ensureImage({
+      kind: 'session-overlay',
+      depsVersion,
+      slots: trees.map(({ slotId, submissionId, tree }) => ({
+        slotId,
+        submissionId,
+        sourceTreePath: tree.path,
+      })),
+    })
+  } finally {
+    for (const { tree } of trees) {
+      await tree.dispose()
+    }
+  }
+}
+
 /** The submission's source tree for a rebuild: the snapshot when present, else a fresh pinned clone. */
 async function materializeTree(
   deps: SubmissionImageDeps,

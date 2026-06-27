@@ -1,6 +1,6 @@
 # Stage 7.4: Session Start Slot Assignments and Validation
 
-Status: not started.
+Status: done.
 
 Part of [Stage 7](../stage-07-multi-agent.md). This is build-order step 4. It replaces the single-agent session start shape with an explicit `slots` assignment object and makes backend validation authoritative. It is Docker-free: the request shape, validation, and attribution are unit-testable against the in-memory storage with the fake driver.
 
@@ -12,9 +12,13 @@ This is a breaking replacement, not a compatibility layer. There is no need to p
 
 ## The new start payload
 
-The session start request changes from a single optional `submission_id` to an explicit `slots` assignment object. The payload is `env_id`, `mode`, optional `seed`, optional `human_slot_timeout_ms`, and `slots`, keyed by slot id. Each slot assignment has `kind: "human" | "builtin-agent" | "submission"`, plus `submission_id` only for submitted-agent slots.
+The session start request changes from a single optional `submission_id` to an explicit `slots` assignment object. The payload is `env_id`, optional `seed`, optional `human_slot_timeout_ms`, and `slots`, keyed by slot id. Each slot assignment has `kind: "human" | "builtin-agent" | "submission"`, plus `submission_id` only for submitted-agent slots.
+
+The human-versus-scripted `mode` is no longer sent: it is **derived** from the assignment (a `human` slot makes it a human session, otherwise scripted) and persisted on the session row. The explicit `slots` object is the single source of truth for what fills each seat, so a redundant `mode` field would only be a second, disagreeable source of truth.
 
 This touches `START_SESSION_SCHEMA` and `StartBody` in `backend/src/app.ts`, the `StartRequest` interface and `start()` in `backend/src/session/orchestrator.ts`, and the seat assembly in `backend/src/session/launch-config.ts`, whose `assembleSeats()` already maps seat bindings to `{ slots, players }`.
+
+It also lands the multi-submission image **composition seam** so a multi-agent start resolves a launch-ready image now rather than a placeholder: a `session-overlay` `ImageSpec` in `backend/src/driver/index.ts`, an `ensureSessionImage` helper in `backend/src/submission/submission-image.ts` that materializes each submitted slot's tree and composes them, and the orchestrator routing zero submissions to the base image, one to the existing cached per-submission overlay, and two or more to the composed image. The real Docker build of the composed image is Stage 7.5; this stage resolves the seam against the fake driver, and the Docker driver's `session-overlay` branch is a Stage 7.5 stub.
 
 ## Authoritative validation
 

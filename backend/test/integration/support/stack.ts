@@ -135,7 +135,10 @@ export async function startSession(
   stack: Stack,
   body: {
     env_id: string
-    mode: 'human' | 'scripted'
+    slots: Record<
+      string,
+      { kind: 'human' | 'builtin-agent' | 'submission'; submission_id?: string }
+    >
     seed?: number
     human_slot_timeout_ms?: number
   },

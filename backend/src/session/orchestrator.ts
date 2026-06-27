@@ -16,11 +16,16 @@ import { currentSessionBaseImageSpec } from '../deps-version.js'
 import type { ExecutionDriver, ImageRef, SandboxProfile } from '../driver/index.js'
 import type { EnvironmentMeta, EnvironmentRegistry } from '../environments.js'
 import { isAllowlisted } from '../identity.js'
-import { decodeSeasonConfig, type Storage } from '../storage/index.js'
-import type { Session, SessionMode } from '../storage/schema.js'
+import { decodeSeasonConfig, type Storage, type Submission } from '../storage/index.js'
+import type { Season, Session, SessionMode } from '../storage/schema.js'
 import type { SubmissionSnapshotStore } from '../submission/snapshot-store.js'
 import type { SubmissionSource } from '../submission/source/index.js'
-import { ensureSubmissionImage, submissionSlotPath } from '../submission/submission-image.js'
+import {
+  ensureSessionImage,
+  ensureSubmissionImage,
+  type SessionImageSlot,
+  submissionSlotPath,
+} from '../submission/submission-image.js'
 import { assembleSeats, type SeatBinding } from './launch-config.js'
 import {
   type Attachment,
@@ -36,22 +41,32 @@ const CONTAINER_RECORDINGS_DIR = '/recordings'
 const CONTAINER_SCRATCH_DIR = '/tmp'
 /** Grace given to a container to end politely before the driver hard-kills it. */
 const KILL_GRACE_MS = 5_000
-/** The single Flappy Bird agent slot a submitted-agent watch run fills; lockstep with the harness. */
-const SUBMISSION_SLOT_ID = 'player_0'
+/** This stage's single-human session-composition cap; later multi-human play relaxes it. */
+const MAX_HUMAN_SLOTS = 1
 
-/** A start request, already attributed to a user by the HTTP layer's identity resolution. */
+/**
+ * One slot's assignment in a start request: a connected human, the built-in Naive baseline, or a
+ * named submitted agent. The discriminated union carries `submissionId` only on a `submission` slot,
+ * so a human or built-in slot can never reference a submission and vice versa. The HTTP layer maps the
+ * wire `slots` object (snake-case `submission_id`) onto this shape; its JSON schema enforces the id is
+ * present exactly for a `submission` slot, so the orchestrator trusts the discriminant.
+ */
+export type SlotAssignment =
+  | { kind: 'human' | 'builtin-agent' }
+  | { kind: 'submission'; submissionId: string }
+
+/**
+ * A start request, already attributed to a user by the HTTP layer's identity resolution. The session
+ * shape is an explicit per-slot `slots` assignment (Stage 7.4): every required seat names what fills
+ * it, and the human-versus-scripted `mode` is derived from whether any slot is `human`, not sent.
+ */
 export interface StartRequest {
   userId: string
   envId: string
-  mode: SessionMode
   seed?: number
   humanSlotTimeoutMs?: number
-  /**
-   * When present, this is a submitted-agent watch run: the named submission's code fills the agent
-   * slot and the session launches from its overlay image. `submissionId` selects whose code runs, not
-   * who started the session. The run is still attributed to {@link StartRequest.userId}.
-   */
-  submissionId?: string
+  /** Per-slot assignment keyed by slot id; must cover exactly the environment's required seats. */
+  slots: Record<string, SlotAssignment>
 }
 
 /** Which submission fills which slot from which container path, threaded into the session config. */
@@ -61,9 +76,16 @@ interface SubmissionBinding {
   path: string
   /** The submission owner, attributed to the slot in the recording header. */
   userId: string
-  /** The submission's season — the competition boundary this watch session's ratings attach to. */
-  seasonId: string
 }
+
+/**
+ * A slot after validation, keyed by id. A `submission` slot carries its loaded row; human and
+ * built-in slots carry none. The discriminated union lets config assembly and image resolution read
+ * the submission without a presence check.
+ */
+type ResolvedSlot =
+  | { slotId: string; kind: 'human' | 'builtin-agent' }
+  | { slotId: string; kind: 'submission'; submission: Submission }
 
 /** What the HTTP layer returns to a client that started a session. */
 export interface StartResult {
@@ -116,8 +138,11 @@ export class Orchestrator {
   ) {}
 
   /**
-   * Start a session: enforce one per user, validate the environment and mode, resolve the seed and
-   * human-slot timeout, ensure the image, insert the `starting` row, and launch the container.
+   * Start a session from an explicit per-slot `slots` assignment. Validate the shape authoritatively
+   * (every required seat assigned, humans only in human-capable seats, at most one human this stage),
+   * derive the human-versus-scripted `mode` from it, enforce one per user, resolve the seed and
+   * human-slot timeout, ensure the image, insert the `starting` row, record one `session_submissions`
+   * row per submitted slot, and launch the container. All validation runs before any container starts.
    */
   async start(request: StartRequest): Promise<StartResult> {
     // Validate the request first (a malformed start is a 400 regardless of identity), then the
@@ -126,20 +151,8 @@ export class Orchestrator {
     if (meta === undefined) {
       throw new OrchestratorError(400, `unknown environment ${request.envId}`)
     }
-    if (request.mode !== 'human' && request.mode !== 'scripted') {
-      throw new OrchestratorError(400, `invalid mode ${String(request.mode)}`)
-    }
-    if (request.mode === 'human' && meta.human_slots.length === 0) {
-      throw new OrchestratorError(
-        400,
-        `environment ${request.envId} has no human-controllable slot`,
-      )
-    }
-    // A submitted agent fills the (single) agent slot, so its run is a non-human watch session; a
-    // human-mode submission run would contend for the same slot. Reject it as a malformed request.
-    if (request.submissionId !== undefined && request.mode !== 'scripted') {
-      throw new OrchestratorError(400, 'a submitted-agent run must be a scripted watch session')
-    }
+    const { assignments, mode } = this.validateSlotShape(meta, request.slots)
+
     // The allowlist gates starting a session in either mode, since a watch run also consumes a
     // container. Everything read-only (listing, fetching recordings, spectating) stays open.
     if (!isAllowlisted(request.userId, this.config.sessionAllowlist)) {
@@ -152,36 +165,26 @@ export class Orchestrator {
       })
     }
 
+    // Every session attaches to a play-open season — ratings hang off it, and each submitted slot must
+    // reference an active `ready` submission on it — so a play-closed environment never starts an
+    // unattributable session. Resolve and require it once, before any submission or image work.
+    const playSeason = await this.storage.getPublicPlaySeason(meta.env_id)
+    if (playSeason === undefined) {
+      throw new OrchestratorError(
+        409,
+        'no season is open for public play in this environment',
+        'no_play_open_season',
+      )
+    }
+    const resolvedSlots = await this.resolveSubmissions(assignments, meta, playSeason)
+
     const humanTimeoutMs =
       request.humanSlotTimeoutMs !== undefined ? request.humanSlotTimeoutMs : meta.human_timeout_ms
     const seed = request.seed ?? randomInt(0, 2 ** 31)
 
-    // A plain public session — human play or a Naive watch run — must target the environment's
-    // current play-open season; with none open the public launch is refused so a play-closed
-    // environment never starts an unattributable session (a submitted-agent run instead takes its
-    // submission's season, validated in resolveImage). Resolve it before any launch work so the
-    // refusal is cheap.
-    let publicPlaySeasonId: string | null = null
-    if (request.submissionId === undefined) {
-      const playSeason = await this.storage.getPublicPlaySeason(meta.env_id)
-      if (playSeason === undefined) {
-        throw new OrchestratorError(
-          409,
-          'no season is open for public play in this environment',
-          'no_play_open_season',
-        )
-      }
-      publicPlaySeasonId = playSeason.id
-    }
-
-    // For a submitted-agent run the image is the submission's overlay and the agent slot binds its
-    // path; otherwise it is the built-in scripted/human path on the base image, exactly as before.
-    const { image, submissionBinding } = await this.resolveImage(request, meta)
-
-    // The season this session competes in, the key ratings attach to. A submitted-agent watch run
-    // takes the submission's season; any other public session takes the play-open season resolved
-    // above.
-    const seasonId = submissionBinding !== null ? submissionBinding.seasonId : publicPlaySeasonId
+    // Resolve the launch image from the validated submitted slots: the base image when none, a single
+    // submission's cached overlay, or a composed multi-submission session image (Stage 7.5 build).
+    const { image, submissionBindings } = await this.resolveImage(resolvedSlots, playSeason)
 
     const id = randomUUID()
     const recordingId = `${meta.env_id}-${id}`
@@ -190,28 +193,24 @@ export class Orchestrator {
       id,
       user_id: request.userId,
       env_id: meta.env_id,
-      mode: request.mode,
+      mode,
       recording_id: recordingId,
-      season_id: seasonId,
+      season_id: playSeason.id,
       created_at: createdAt,
     })
-    if (submissionBinding !== null) {
-      // Tie the session to the submission so the agent profile can list it as a recent run.
-      await this.storage.recordSessionSubmission(
-        id,
-        submissionBinding.submissionId,
-        submissionBinding.slotId,
-      )
+    // One attribution row per submitted slot, so the agent profile can list each as a recent run.
+    // Human and built-in slots are carried only in the recording header `players`, never here.
+    for (const binding of submissionBindings) {
+      await this.storage.recordSessionSubmission(id, binding.submissionId, binding.slotId)
     }
 
     const sandbox = this.sandboxProfile()
     const sessionConfig = this.sessionConfig(
       meta,
-      request.mode,
       seed,
       humanTimeoutMs,
       recordingId,
-      submissionBinding,
+      resolvedSlots,
       request.userId,
     )
     await ensureRecordingsDir(this.recordingsHostDir())
@@ -234,7 +233,7 @@ export class Orchestrator {
       id,
       userId: request.userId,
       envId: meta.env_id,
-      mode: request.mode,
+      mode,
       recordingId,
       createdAt,
       process,
@@ -255,75 +254,151 @@ export class Orchestrator {
   }
 
   /**
-   * Resolve the image to launch. A plain run ensures the session base image, as before. A
-   * `submissionId` run resolves the submission (it must be `ready` and active for the requested
-   * environment's play-open season), ensures its overlay image through the submission-image helper,
-   * and returns the slot binding the session config threads into `player_0`.
+   * Authoritatively validate the `slots` assignment against the environment metadata and derive the
+   * session mode. Rejects (400) a payload that does not assign exactly the environment's required seats
+   * (`player_0…player_{max_slots-1}`), a human in a slot the metadata does not mark human-capable, and
+   * more than this stage's single human slot. The `submission`-id discriminant is guaranteed by the
+   * union and the wire schema, so it is not re-checked here. Returns the assignments ordered by slot
+   * index and the derived mode (`human` when a human slot is present, else `scripted`).
+   */
+  private validateSlotShape(
+    meta: EnvironmentMeta,
+    slots: Record<string, SlotAssignment>,
+  ): { assignments: { slotId: string; assignment: SlotAssignment }[]; mode: SessionMode } {
+    const requiredIds: string[] = []
+    for (let i = 0; i < meta.max_slots; i++) {
+      requiredIds.push(`player_${i}`)
+    }
+    const required = new Set(requiredIds)
+    for (const slotId of Object.keys(slots)) {
+      if (!required.has(slotId)) {
+        throw new OrchestratorError(400, `unknown slot ${slotId} for environment ${meta.env_id}`)
+      }
+    }
+
+    const humanCapable = new Set(meta.human_slots)
+    let humanCount = 0
+    const assignments = requiredIds.map((slotId) => {
+      const assignment = slots[slotId]
+      if (assignment === undefined) {
+        throw new OrchestratorError(400, `missing assignment for required slot ${slotId}`)
+      }
+      if (assignment.kind === 'human') {
+        if (!humanCapable.has(slotId)) {
+          throw new OrchestratorError(
+            400,
+            `slot ${slotId} is not human-controllable in environment ${meta.env_id}`,
+          )
+        }
+        humanCount += 1
+      }
+      return { slotId, assignment }
+    })
+    if (humanCount > MAX_HUMAN_SLOTS) {
+      throw new OrchestratorError(
+        400,
+        `at most ${MAX_HUMAN_SLOTS} human slot is allowed, got ${humanCount}`,
+      )
+    }
+    return { assignments, mode: humanCount > 0 ? 'human' : 'scripted' }
+  }
+
+  /**
+   * Load and validate the submission behind each `submission` slot (404 unknown, 400 wrong
+   * environment, 409 not `ready`, 409 not active for the play-open season), leaving human and built-in
+   * slots untouched. Returns the slots in assignment order with the loaded submission attached. The
+   * checks mirror the Stage 5 single-submission watch path, applied per submitted slot.
+   */
+  private async resolveSubmissions(
+    assignments: { slotId: string; assignment: SlotAssignment }[],
+    meta: EnvironmentMeta,
+    playSeason: Season,
+  ): Promise<ResolvedSlot[]> {
+    const resolved: ResolvedSlot[] = []
+    for (const { slotId, assignment } of assignments) {
+      if (assignment.kind !== 'submission') {
+        resolved.push({ slotId, kind: assignment.kind })
+        continue
+      }
+      const submission = await this.storage.getSubmission(assignment.submissionId)
+      if (submission === undefined) {
+        throw new OrchestratorError(404, `no such submission ${assignment.submissionId}`)
+      }
+      if (submission.env_id !== meta.env_id) {
+        throw new OrchestratorError(
+          400,
+          'submission is for a different environment',
+          'submission_env_mismatch',
+        )
+      }
+      if (submission.status !== 'ready') {
+        throw new OrchestratorError(409, 'submission is not ready to run', 'submission_not_ready')
+      }
+      // Only the play-open season's active submissions are runnable choices. The submission window may
+      // already point at the next round, while the previous round remains the public play target.
+      if (submission.season_id !== playSeason.id || submission.superseded_at !== null) {
+        throw new OrchestratorError(
+          409,
+          'submission is not active for the play-open season',
+          'submission_not_active',
+        )
+      }
+      resolved.push({ slotId, kind: 'submission', submission })
+    }
+    return resolved
+  }
+
+  /**
+   * Resolve the launch image and the per-slot submission bindings from the already-validated slots.
+   * With no submitted slot the base image runs, as before. A single submitted slot reuses the cached
+   * per-submission overlay (the Stage 5 watch path), keeping its build-stage image warm. Two or more
+   * submitted slots compose a multi-submission session image, each submission staged into its own
+   * per-slot directory; the fake driver resolves this seam now and the real Docker build lands in
+   * Stage 7.5. Every submitted slot yields one binding regardless.
    */
   private async resolveImage(
-    request: StartRequest,
-    meta: EnvironmentMeta,
-  ): Promise<{ image: ImageRef; submissionBinding: SubmissionBinding | null }> {
-    if (request.submissionId === undefined) {
+    resolvedSlots: ResolvedSlot[],
+    playSeason: Season,
+  ): Promise<{ image: ImageRef; submissionBindings: SubmissionBinding[] }> {
+    const composed: SessionImageSlot[] = []
+    const submissionBindings: SubmissionBinding[] = []
+    for (const slot of resolvedSlots) {
+      if (slot.kind !== 'submission') {
+        continue
+      }
+      composed.push({ slotId: slot.slotId, submission: slot.submission })
+      submissionBindings.push({
+        submissionId: slot.submission.id,
+        slotId: slot.slotId,
+        path: submissionSlotPath(slot.slotId),
+        userId: slot.submission.user_id,
+      })
+    }
+
+    if (composed.length === 0) {
       return {
         image: await this.driver.ensureImage(currentSessionBaseImageSpec()),
-        submissionBinding: null,
+        submissionBindings,
       }
     }
     if (this.submissionSource === undefined || this.submissionSnapshots === undefined) {
       throw new OrchestratorError(500, 'submitted-agent runs are not configured on this deployment')
     }
-    const submission = await this.storage.getSubmission(request.submissionId)
-    if (submission === undefined) {
-      throw new OrchestratorError(404, 'no such submission')
+    const imageDeps = {
+      driver: this.driver,
+      snapshots: this.submissionSnapshots,
+      source: this.submissionSource,
+      imagePolicy: this.config.docker.imagePolicy,
     }
-    if (submission.env_id !== meta.env_id) {
-      throw new OrchestratorError(
-        400,
-        'submission is for a different environment',
-        'submission_env_mismatch',
-      )
-    }
-    if (submission.status !== 'ready') {
-      throw new OrchestratorError(409, 'submission is not ready to run', 'submission_not_ready')
-    }
-    // Only the play-open season's active submissions are watch choices. The submission window may
-    // already point at the next round, while the previous round remains the public play target.
-    const season = await this.storage.getPublicPlaySeason(meta.env_id)
-    if (
-      season === undefined ||
-      submission.season_id !== season.id ||
-      submission.superseded_at !== null
-    ) {
-      throw new OrchestratorError(
-        409,
-        'submission is not active for the play-open season',
-        'submission_not_active',
-      )
-    }
-    const image = await ensureSubmissionImage(
-      {
-        driver: this.driver,
-        snapshots: this.submissionSnapshots,
-        source: this.submissionSource,
-        imagePolicy: this.config.docker.imagePolicy,
-      },
-      submission,
-      decodeSeasonConfig(season.config).deps_version,
-      SUBMISSION_SLOT_ID,
-    )
-    return {
-      image,
-      submissionBinding: {
-        submissionId: submission.id,
-        slotId: SUBMISSION_SLOT_ID,
-        path: submissionSlotPath(SUBMISSION_SLOT_ID),
-        userId: submission.user_id,
-        // Ratings attach to the submission's own season, never re-resolved from the open-submission
-        // window, since submissions and public play can be open on different rounds.
-        seasonId: submission.season_id,
-      },
-    }
+    const depsVersion = decodeSeasonConfig(playSeason.config).deps_version
+    // One submission reuses the cached per-submission overlay (the Stage 5 watch path, kept warm);
+    // two or more compose a session image, each submission staged into its own per-slot directory.
+    const [only] = composed
+    const image =
+      composed.length === 1 && only !== undefined
+        ? await ensureSubmissionImage(imageDeps, only.submission, depsVersion, only.slotId)
+        : await ensureSessionImage(imageDeps, composed, depsVersion)
+    return { image, submissionBindings }
   }
 
   /** Attach a socket to a live session, or `undefined` if no such session is running. */
@@ -386,44 +461,34 @@ export class Orchestrator {
   }
 
   /**
-   * Build the session config the container reads from argv. Human slots are driven by the transport
-   * in human mode and by the built-in agent otherwise; any non-human slot always runs the built-in
-   * agent. For a submitted-agent run, the bound slot is still a `builtin-agent` but carries the
-   * overlay path the harness loads its code from. Environment facts (pace, limits, the default human
-   * timeout) live in the in-image registry, so only the overrides travel here.
+   * Build the session config the container reads from argv from the validated slot assignments. Each
+   * slot maps to its seat: a connected human (driven by the transport), the built-in Naive baseline,
+   * or a submitted agent carrying the overlay path the harness loads its code from. The shared seam
+   * produces the `slots`/`players` wire blocks the headless workflow runner builds the same way.
+   * Environment facts (pace, limits, the default human timeout) live in the in-image registry, so only
+   * the overrides travel here.
    */
   private sessionConfig(
     meta: EnvironmentMeta,
-    mode: SessionMode,
     seed: number,
     humanTimeoutMs: number | null,
     recordingId: string,
-    submissionBinding: SubmissionBinding | null,
+    resolvedSlots: ResolvedSlot[],
     ownerLogin: string,
   ): Record<string, unknown> {
-    const slotIds = new Set<string>(meta.human_slots)
-    for (let i = 0; i < meta.max_slots; i++) {
-      slotIds.add(`player_${i}`)
-    }
-    const humanSlots = new Set(meta.human_slots)
-    // Decide what fills each slot — the submitted agent, a connected human, or the Naive baseline —
-    // then hand the assignment to the shared seam that produces the `slots`/`players` wire blocks the
-    // headless workflow runner builds the same way.
     const seats = new Map<string, SeatBinding>()
-    for (const slotId of slotIds) {
-      if (submissionBinding !== null && slotId === submissionBinding.slotId) {
-        seats.set(slotId, {
+    for (const slot of resolvedSlots) {
+      if (slot.kind === 'human') {
+        seats.set(slot.slotId, { driver: 'human', login: ownerLogin })
+      } else if (slot.kind === 'submission') {
+        seats.set(slot.slotId, {
           driver: 'submission',
-          submissionId: submissionBinding.submissionId,
-          userId: submissionBinding.userId,
-          path: submissionBinding.path,
+          submissionId: slot.submission.id,
+          userId: slot.submission.user_id,
+          path: submissionSlotPath(slot.slotId),
         })
-        continue
-      }
-      if (mode === 'human' && humanSlots.has(slotId)) {
-        seats.set(slotId, { driver: 'human', login: ownerLogin })
       } else {
-        seats.set(slotId, { driver: 'naive' })
+        seats.set(slot.slotId, { driver: 'naive' })
       }
     }
     const { slots, players } = assembleSeats(seats)

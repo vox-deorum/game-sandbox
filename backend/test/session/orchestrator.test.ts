@@ -4,9 +4,13 @@ import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { ensureRecordingsDir } from '../../src/session/live-session.js'
-import { Orchestrator, OrchestratorError } from '../../src/session/orchestrator.js'
+import {
+  Orchestrator,
+  OrchestratorError,
+  type SlotAssignment,
+  type StartRequest,
+} from '../../src/session/orchestrator.js'
 import type { Storage, Submission } from '../../src/storage/index.js'
-import type { SessionMode } from '../../src/storage/schema.js'
 import { openSqliteStorage } from '../../src/storage/sqlite.js'
 import { SubmissionSnapshotStore } from '../../src/submission/snapshot-store.js'
 import type {
@@ -19,9 +23,9 @@ import { FakeDriver, type FakeSessionProcess } from '../support/fake-driver.js'
 import { delay, flush, makeConfig, makeEnvironments } from '../support/harness.js'
 
 /**
- * A submission-source double for the submitted-agent watch path. Records the inputs it resolves and
+ * A submission-source double for the submitted-agent runs. Records the inputs it resolves and
  * fetches, and tracks whether the materialized tree was disposed, so a test can assert the overlay
- * rebuild path refetched the pinned source and cleaned up its checkout.
+ * (or composed session image) rebuild path refetched the pinned source and cleaned up its checkout.
  */
 class FakeSource implements SubmissionSource {
   readonly resolved: SourceInput[] = []
@@ -54,12 +58,16 @@ class FakeSource implements SubmissionSource {
   }
 }
 
-/** Seed a `ready` Flappy Bird submission for `userId` on the env's open season. */
-async function seedReadySubmission(storage: Storage, userId = 'eve'): Promise<Submission> {
-  const season = await storage.ensureOpenSeason('flappy_bird', 1)
+/** Seed a `ready` submission for `userId` on the env's open season. */
+async function seedReadySubmission(
+  storage: Storage,
+  userId = 'eve',
+  envId = 'flappy_bird',
+): Promise<Submission> {
+  const season = await storage.ensureOpenSeason(envId, 1)
   const submission = await storage.createSubmission({
     season_id: season.id,
-    env_id: 'flappy_bird',
+    env_id: envId,
     user_id: userId,
     source_kind: 'git',
     repo_url: 'https://example.test/agent',
@@ -70,6 +78,34 @@ async function seedReadySubmission(storage: Storage, userId = 'eve'): Promise<Su
   })
   await storage.updateSubmissionStatus(submission.id, 'ready')
   return submission
+}
+
+/** Sugar for a single-slot assignment, the shape most start tests need. */
+function slots(assignment: SlotAssignment): Record<string, SlotAssignment> {
+  return { player_0: assignment }
+}
+
+/** A four-slot Hearts assignment defaulting to built-in agents, overridable per slot. */
+function heartsSlots(
+  overrides: Record<string, SlotAssignment> = {},
+): Record<string, SlotAssignment> {
+  return {
+    player_0: { kind: 'builtin-agent' },
+    player_1: { kind: 'builtin-agent' },
+    player_2: { kind: 'builtin-agent' },
+    player_3: { kind: 'builtin-agent' },
+    ...overrides,
+  }
+}
+
+/** A full start request with class defaults (alice, flappy_bird, one built-in slot), overridable. */
+function startRequest(overrides: Partial<StartRequest> = {}): StartRequest {
+  return {
+    userId: 'alice',
+    envId: 'flappy_bird',
+    slots: slots({ kind: 'builtin-agent' }),
+    ...overrides,
+  }
 }
 
 const HEADER = '{"schema_version":1,"environment":"flappy_bird","seed":0}'
@@ -109,20 +145,9 @@ describe('orchestrator', () => {
 
   async function start(
     orch: Orchestrator,
-    overrides: Partial<{
-      userId: string
-      envId: string
-      mode: SessionMode
-      seed: number
-      humanSlotTimeoutMs: number
-    }> = {},
+    overrides: Partial<StartRequest> = {},
   ): Promise<{ id: string; process: FakeSessionProcess; config: Record<string, unknown> }> {
-    const result = await orch.start({
-      userId: 'alice',
-      envId: 'flappy_bird',
-      mode: 'scripted',
-      ...overrides,
-    })
+    const result = await orch.start(startRequest(overrides))
     const launch = driver.lastLaunch()
     if (launch === undefined) {
       throw new Error('no launch recorded')
@@ -142,6 +167,7 @@ describe('orchestrator', () => {
     // submission- and play-open); seed it for the environments the plain-session tests exercise.
     await storage.ensureOpenSeason('flappy_bird', 1)
     await storage.ensureOpenSeason('turn_based', 1)
+    await storage.ensureOpenSeason('hearts', 1)
   })
 
   afterEach(async () => {
@@ -152,13 +178,14 @@ describe('orchestrator', () => {
   describe('start', () => {
     it('inserts a starting row and launches with the sandbox profile and config argv', async () => {
       const orch = makeOrchestrator()
-      const { id, config } = await start(orch, { mode: 'human', seed: 42 })
+      const { id, config } = await start(orch, { slots: slots({ kind: 'human' }), seed: 42 })
 
       const row = await storage.getSession(id)
       expect(row).toMatchObject({
         id,
         user_id: 'alice',
         env_id: 'flappy_bird',
+        // A human slot makes the derived mode `human`.
         mode: 'human',
         status: 'starting',
         recording_id: `flappy_bird-${id}`,
@@ -192,10 +219,17 @@ describe('orchestrator', () => {
     })
 
     it('binds the built-in agent for a scripted (watch) session', async () => {
-      const { config } = await start(makeOrchestrator(), { mode: 'scripted' })
+      const { config } = await start(makeOrchestrator(), {
+        slots: slots({ kind: 'builtin-agent' }),
+      })
       expect(config.slots).toEqual({ player_0: { kind: 'builtin-agent' } })
       // A plain watch run attributes the slot to the built-in Naive agent.
       expect(config.players).toEqual({ player_0: { kind: 'agent', label: 'Naive agent' } })
+    })
+
+    it('derives scripted mode for an all-agent session', async () => {
+      const { id } = await start(makeOrchestrator())
+      expect((await storage.getSession(id))?.mode).toBe('scripted')
     })
 
     it('prepares the recording volume for the cap-dropped session container', async () => {
@@ -208,34 +242,34 @@ describe('orchestrator', () => {
 
     it('resolves the human-slot timeout: override wins, else metadata, else null', async () => {
       const orch1 = makeOrchestrator()
-      const a = await start(orch1, { envId: 'turn_based', mode: 'human', humanSlotTimeoutMs: 2000 })
+      const a = await start(orch1, {
+        envId: 'turn_based',
+        slots: slots({ kind: 'human' }),
+        humanSlotTimeoutMs: 2000,
+      })
       expect(a.config.human_timeout_ms).toBe(2000)
 
       driver = new FakeDriver()
       const orch2 = makeOrchestrator()
-      const b = await start(orch2, { envId: 'turn_based', mode: 'human' })
+      const b = await start(orch2, { envId: 'turn_based', slots: slots({ kind: 'human' }) })
       expect(b.config.human_timeout_ms).toBe(5000)
 
       driver = new FakeDriver()
       const orch3 = makeOrchestrator()
-      const c = await start(orch3, { envId: 'flappy_bird', mode: 'human' })
+      const c = await start(orch3, { envId: 'flappy_bird', slots: slots({ kind: 'human' }) })
       expect(c.config.human_timeout_ms).toBeNull()
     })
 
     it('rejects a second concurrent session for the same user with 409', async () => {
       const orch = makeOrchestrator()
       await start(orch)
-      await expect(
-        orch.start({ userId: 'alice', envId: 'flappy_bird', mode: 'scripted' }),
-      ).rejects.toMatchObject({ status: 409 })
+      await expect(orch.start(startRequest())).rejects.toMatchObject({ status: 409 })
     })
 
     it('lets a different user start concurrently', async () => {
       const orch = makeOrchestrator()
       await start(orch, { userId: 'alice' })
-      await expect(
-        orch.start({ userId: 'bob', envId: 'flappy_bird', mode: 'scripted' }),
-      ).resolves.toBeDefined()
+      await expect(orch.start(startRequest({ userId: 'bob' }))).resolves.toBeDefined()
     })
 
     it('refuses a plain public session when no season is open for public play', async () => {
@@ -243,27 +277,166 @@ describe('orchestrator', () => {
       // Close the seeded play window: a Naive watch or human play run now has no season to attach to.
       const season = await storage.getPublicPlaySeason('flappy_bird')
       await storage.setPlayStatus(season?.id ?? '', 'closed')
-      await expect(
-        orch.start({ userId: 'alice', envId: 'flappy_bird', mode: 'scripted' }),
-      ).rejects.toMatchObject({ status: 409, code: 'no_play_open_season' })
+      await expect(orch.start(startRequest())).rejects.toMatchObject({
+        status: 409,
+        code: 'no_play_open_season',
+      })
       expect(driver.launches).toHaveLength(0)
     })
 
-    it('rejects an unknown environment, an invalid mode, and human mode without a human slot', async () => {
+    it('rejects an unknown environment and a human in a non-human-capable slot', async () => {
       const orch = makeOrchestrator()
+      await expect(orch.start(startRequest({ userId: 'a', envId: 'nope' }))).rejects.toMatchObject({
+        status: 400,
+      })
+      // watch_only marks no slot human-capable, so a human assignment there is rejected.
       await expect(
-        orch.start({ userId: 'a', envId: 'nope', mode: 'scripted' }),
+        orch.start(
+          startRequest({ userId: 'c', envId: 'watch_only', slots: slots({ kind: 'human' }) }),
+        ),
       ).rejects.toMatchObject({ status: 400 })
+      expect(driver.launches).toHaveLength(0)
+    })
+  })
+
+  describe('multi-slot Hearts start', () => {
+    /** A Hearts start request: env defaulted, slots built from the four-seat defaults. */
+    function startHearts(slots: Record<string, SlotAssignment>): StartRequest {
+      return startRequest({ envId: 'hearts', slots })
+    }
+
+    it('rejects a payload missing a required seat before any container starts', async () => {
+      const orch = makeOrchestrator(60_000, new FakeSource())
       await expect(
-        orch.start({ userId: 'b', envId: 'flappy_bird', mode: 'spectate' as SessionMode }),
+        // Only three of the four required seats assigned.
+        orch.start(
+          startHearts({
+            player_0: { kind: 'builtin-agent' },
+            player_1: { kind: 'builtin-agent' },
+            player_2: { kind: 'builtin-agent' },
+          }),
+        ),
       ).rejects.toMatchObject({ status: 400 })
+      expect(driver.launches).toHaveLength(0)
+    })
+
+    it('rejects an unknown slot id', async () => {
+      const orch = makeOrchestrator(60_000, new FakeSource())
       await expect(
-        orch.start({ userId: 'c', envId: 'watch_only', mode: 'human' }),
+        orch.start(startHearts(heartsSlots({ player_9: { kind: 'builtin-agent' } }))),
       ).rejects.toMatchObject({ status: 400 })
+      expect(driver.launches).toHaveLength(0)
+    })
+
+    it("rejects more than this stage's single human slot", async () => {
+      const orch = makeOrchestrator(60_000, new FakeSource())
+      await expect(
+        orch.start(
+          startHearts(heartsSlots({ player_0: { kind: 'human' }, player_1: { kind: 'human' } })),
+        ),
+      ).rejects.toMatchObject({ status: 400 })
+      expect(driver.launches).toHaveLength(0)
+    })
+
+    it('rejects a submission for a different environment', async () => {
+      const orch = makeOrchestrator(60_000, new FakeSource())
+      // A `ready` Flappy Bird submission cannot fill a Hearts seat.
+      const foreign = await seedReadySubmission(storage, 'eve', 'flappy_bird')
+      await expect(
+        orch.start(
+          startHearts(heartsSlots({ player_0: { kind: 'submission', submissionId: foreign.id } })),
+        ),
+      ).rejects.toMatchObject({ status: 400, code: 'submission_env_mismatch' })
+      expect(driver.launches).toHaveLength(0)
+    })
+
+    it('rejects a non-ready submission before any container starts', async () => {
+      const orch = makeOrchestrator(60_000, new FakeSource())
+      const season = await storage.ensureOpenSeason('hearts', 1)
+      const pending = await storage.createSubmission({
+        season_id: season.id,
+        env_id: 'hearts',
+        user_id: 'eve',
+        source_kind: 'git',
+        repo_url: 'https://example.test/agent',
+        commit_sha: 'sha123',
+        local_path: null,
+        ref: null,
+        created_at: new Date().toISOString(),
+      })
+      await expect(
+        orch.start(
+          startHearts(heartsSlots({ player_0: { kind: 'submission', submissionId: pending.id } })),
+        ),
+      ).rejects.toMatchObject({ status: 409, code: 'submission_not_ready' })
+      expect(driver.launches).toHaveLength(0)
+    })
+
+    it('writes one session_submissions row per submitted slot, with human and built-in only in players', async () => {
+      const source = new FakeSource()
+      const orch = makeOrchestrator(60_000, source)
+      const subA = await seedReadySubmission(storage, 'eve', 'hearts')
+      const subB = await seedReadySubmission(storage, 'frank', 'hearts')
+
+      const result = await orch.start(
+        startHearts(
+          heartsSlots({
+            player_0: { kind: 'submission', submissionId: subA.id },
+            player_1: { kind: 'submission', submissionId: subB.id },
+            player_3: { kind: 'human' },
+          }),
+        ),
+      )
+
+      // A human slot present, so the derived mode is `human`, attributed to the hearts play season.
+      const heartsSeason = await storage.getPublicPlaySeason('hearts')
+      expect(await storage.getSession(result.id)).toMatchObject({
+        mode: 'human',
+        season_id: heartsSeason?.id,
+      })
+
+      // Exactly one attribution row per submitted slot; the built-in and human slots write none.
+      const links = await storage.listSessionSubmissions(result.id)
+      expect(
+        links
+          .map((l) => ({ slot_id: l.slot_id, submission_id: l.submission_id }))
+          .sort((x, y) => x.slot_id.localeCompare(y.slot_id)),
+      ).toEqual([
+        { slot_id: 'player_0', submission_id: subA.id },
+        { slot_id: 'player_1', submission_id: subB.id },
+      ])
+
+      const launch = driver.lastLaunch()
+      const config = JSON.parse(launch?.spec.argv[0] ?? '{}') as {
+        slots: Record<string, unknown>
+        players: Record<string, unknown>
+      }
+      expect(config.slots).toEqual({
+        player_0: { kind: 'builtin-agent', path: '/opt/agents/submissions/player_0' },
+        player_1: { kind: 'builtin-agent', path: '/opt/agents/submissions/player_1' },
+        player_2: { kind: 'builtin-agent' },
+        player_3: { kind: 'external' },
+      })
+      // Built-in and human slots are represented only here in `players`, never as a link row.
+      expect(config.players).toEqual({
+        player_0: { kind: 'agent', label: "eve's agent", user: 'eve', submission_id: subA.id },
+        player_1: { kind: 'agent', label: "frank's agent", user: 'frank', submission_id: subB.id },
+        player_2: { kind: 'agent', label: 'Naive agent' },
+        player_3: { kind: 'human', label: 'alice', user: 'alice' },
+      })
+      // The composed session image materialized one tree per submitted slot and disposed each.
+      expect(source.fetchCount).toBe(2)
+      expect(source.disposed).toBe(2)
+      expect(launch?.spec.image.ref).toContain('session-overlay')
     })
   })
 
   describe('submitted-agent watch run', () => {
+    /** A single-slot Flappy Bird watch of the given submission. */
+    function watch(submissionId: string): StartRequest {
+      return startRequest({ slots: slots({ kind: 'submission', submissionId }) })
+    }
+
     it('launches from the submission overlay image and binds the agent slot to its path', async () => {
       const source = new FakeSource()
       const orch = makeOrchestrator(60_000, source)
@@ -277,12 +450,7 @@ describe('orchestrator', () => {
         createdAtMs: 1,
       })
 
-      const result = await orch.start({
-        userId: 'alice',
-        envId: 'flappy_bird',
-        mode: 'scripted',
-        submissionId: submission.id,
-      })
+      const result = await orch.start(watch(submission.id))
 
       const launch = driver.lastLaunch()
       expect(launch?.spec.image.ref).toBe(overlayRef)
@@ -328,12 +496,7 @@ describe('orchestrator', () => {
       const submission = await seedReadySubmission(storage)
       // No seeded overlay image: the cache was evicted, so the run must refetch and rebuild.
 
-      await orch.start({
-        userId: 'alice',
-        envId: 'flappy_bird',
-        mode: 'scripted',
-        submissionId: submission.id,
-      })
+      await orch.start(watch(submission.id))
 
       expect(source.resolved).toHaveLength(1)
       expect(source.resolved[0]).toMatchObject({
@@ -365,14 +528,10 @@ describe('orchestrator', () => {
         created_at: new Date().toISOString(),
       })
       // Still pending (no ready rollup).
-      await expect(
-        orch.start({
-          userId: 'alice',
-          envId: 'flappy_bird',
-          mode: 'scripted',
-          submissionId: submission.id,
-        }),
-      ).rejects.toMatchObject({ status: 409, code: 'submission_not_ready' })
+      await expect(orch.start(watch(submission.id))).rejects.toMatchObject({
+        status: 409,
+        code: 'submission_not_ready',
+      })
       expect(driver.launches).toHaveLength(0)
     })
 
@@ -393,14 +552,10 @@ describe('orchestrator', () => {
         ref: null,
         created_at: new Date().toISOString(),
       })
-      await expect(
-        orch.start({
-          userId: 'alice',
-          envId: 'flappy_bird',
-          mode: 'scripted',
-          submissionId: submission.id,
-        }),
-      ).rejects.toMatchObject({ status: 409, code: 'submission_not_active' })
+      await expect(orch.start(watch(submission.id))).rejects.toMatchObject({
+        status: 409,
+        code: 'submission_not_active',
+      })
     })
 
     it('uses the play-open season when submissions are already open for the next round', async () => {
@@ -425,40 +580,14 @@ describe('orchestrator', () => {
         createdAtMs: 1,
       })
 
-      const result = await orch.start({
-        userId: 'alice',
-        envId: 'flappy_bird',
-        mode: 'scripted',
-        submissionId: submission.id,
-      })
+      const result = await orch.start(watch(submission.id))
 
       expect((await storage.getSession(result.id))?.season_id).toBe(playSeason.id)
     })
 
-    it('refuses a human-mode submission run as a malformed request', async () => {
-      const source = new FakeSource()
-      const orch = makeOrchestrator(60_000, source)
-      const submission = await seedReadySubmission(storage)
-      await expect(
-        orch.start({
-          userId: 'alice',
-          envId: 'flappy_bird',
-          mode: 'human',
-          submissionId: submission.id,
-        }),
-      ).rejects.toMatchObject({ status: 400 })
-    })
-
     it('404s an unknown submission id', async () => {
       const orch = makeOrchestrator(60_000, new FakeSource())
-      await expect(
-        orch.start({
-          userId: 'alice',
-          envId: 'flappy_bird',
-          mode: 'scripted',
-          submissionId: 'no-such-id',
-        }),
-      ).rejects.toMatchObject({ status: 404 })
+      await expect(orch.start(watch('no-such-id'))).rejects.toMatchObject({ status: 404 })
     })
   })
 
@@ -510,9 +639,7 @@ describe('orchestrator', () => {
       expect((await storage.getSession(id))?.termination_reason).toBe('idle_timeout')
       expect(process.killGraceMs.length).toBeGreaterThan(0)
       // The user is free to start again.
-      await expect(
-        orch.start({ userId: 'alice', envId: 'flappy_bird', mode: 'scripted' }),
-      ).resolves.toBeDefined()
+      await expect(orch.start(startRequest())).resolves.toBeDefined()
     })
 
     it('marks the row running when the header arrives', async () => {
@@ -553,15 +680,13 @@ describe('orchestrator', () => {
       expect(row?.status).toBe('ended')
       // Whichever claimed first won; the row ended once and the user is free.
       expect(['oom_killed', 'idle_timeout']).toContain(row?.termination_reason)
-      await expect(
-        orch.start({ userId: 'alice', envId: 'flappy_bird', mode: 'scripted' }),
-      ).resolves.toBeDefined()
+      await expect(orch.start(startRequest())).resolves.toBeDefined()
     })
   })
 
   it('exposes OrchestratorError with a status for the HTTP layer to map', async () => {
     const orch = makeOrchestrator()
-    const error = await orch.start({ userId: 'a', envId: 'nope', mode: 'scripted' }).catch((e) => e)
+    const error = await orch.start(startRequest({ envId: 'nope' })).catch((e) => e)
     expect(error).toBeInstanceOf(OrchestratorError)
     expect(error.status).toBe(400)
   })
