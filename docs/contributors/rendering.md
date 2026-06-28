@@ -41,8 +41,13 @@ interface RendererContext {
 interface RendererInstance {
   readonly internalSize: { width: number; height: number }
   readonly aspectRatio: number
-  render(state: StepState): void
+  render(state: StepState, options?: RenderOptions): void
   destroy(): void
+}
+
+interface RenderOptions {
+  snap?: boolean
+  transitionMs?: number
 }
 
 interface Renderer {
@@ -124,6 +129,14 @@ The reconciler must be idempotent:
 
 Unit-test `computeScene` under jsdom with checked-in recording states. Cover GPU reconciliation and visible canvas behavior in the browser end-to-end suite.
 
+## Animation between states
+
+A renderer may animate the transition from one state to the next instead of cutting to it. This is opt-in so it never weakens the determinism above: `computeScene` still returns the static frame a scrubber lands on, and the animation is a separate layer the retained renderer runs on top.
+
+A subclass that animates sets `animated = true` and implements `onFrame(dtMs)`, which the base drives off the PixiJS ticker. `update(state, options)` sets the new target and may begin a transition toward it; `onFrame` advances that transition (and any ambient motion) each frame and returns false once it settles, which stops the loop. A renderer that does not animate leaves `animated` false and is reconciled once per `render` and drawn, the draw-only path Flappy Bird uses.
+
+The `RenderOptions` argument is how the host controls presentation. Live play passes none, and the renderer uses its own natural transition length. The replay transport passes its cadence as `transitionMs` while playing, so an animated transition runs at replay-time scale and fits inside the cadence, and passes `snap` on any scrub, step, or seek, since jumping to an arbitrary state must not trigger a transition. A draw-only renderer ignores `RenderOptions` entirely.
+
 ## Input
 
 `inputs()` declares mappings from device gestures to environment actions. The base handles:
@@ -137,6 +150,8 @@ Unit-test `computeScene` under jsdom with checked-in recording states. Cover GPU
 Input is enabled only when `sendAction` exists and the renderer controls at least one slot. Spectators and replay viewers mount a draw-only renderer.
 
 Send meaningful actions only. The harness supplies the environment's default action when no input arrives.
+
+`inputs()` fits a fixed gesture-to-action mapping such as a flap. On-screen controls whose action depends on where the gesture lands, such as a clickable card hand or board cell, instead make the relevant display objects interactive (an `eventMode` and a hit area) and send the action for the object that was clicked. A control is wired only when the renderer controls that slot and a `sendAction` exists, so spectators and replay viewers stay draw-only. Hearts is the reference for this: a legal card on the controlled seat's turn is clickable and plays itself.
 
 ## Add a renderer
 
@@ -164,3 +179,16 @@ No host or environment metadata changes are needed when the metadata already nam
 - Tests: pure scene computation in Vitest, canvas behavior in Playwright.
 
 Its `computeScene` describes the sky, pipes, ground, bird, score, pipe count, and time or tick display. `update` reuses pipe nodes as they move through the scene.
+
+## Hearts reference
+
+`src/renderers/hearts/` is the reference for a turn-based environment with on-screen input and animation.
+
+- Internal size: `960 x 720`.
+- Scene source: the per-step overlay (hands, current trick, per-slot penalty scores, turn, legal-action mask).
+- Drawing: a port of the local pygame renderer (`environments/src/hearts/render.py`), kept in sync through the cross-references in `scene.ts`.
+- Input: a legal card on the controlled seat's turn is clickable and plays itself; illegal cards are greyed straight from the emitted mask, never a reimplementation of the rules.
+- Animation: the trick-won sweep and the active-seat glow ride the base's `onFrame` loop and replay at replay-time scale.
+- Tests: pure scene, replay, animation math, and hit-testing in Vitest; canvas behavior in the browser suite.
+
+It also draws the move clock as a deterministic budget chip on the controlled human's turn, and reveals every hand only when spectating or replaying (no controlled slots), face-down otherwise.

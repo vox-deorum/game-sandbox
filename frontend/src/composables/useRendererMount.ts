@@ -13,7 +13,7 @@ import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
 import { type MaybeRefOrGetter, onBeforeUnmount, type Ref, ref, shallowRef, toValue } from 'vue'
 
 import { getRenderer } from '../renderers/registry.js'
-import type { RendererInstance } from '../renderers/types.js'
+import type { RendererInstance, RenderOptions } from '../renderers/types.js'
 
 export interface UseRendererMountOptions {
   host: Ref<HTMLElement | null>
@@ -56,8 +56,8 @@ export function useRendererMount(options: UseRendererMountOptions) {
     instance.value = mounted
   }
 
-  function render(state: StepState): void {
-    instance.value?.render(state)
+  function render(state: StepState, options?: RenderOptions): void {
+    instance.value?.render(state, options)
   }
 
   function destroy(): void {

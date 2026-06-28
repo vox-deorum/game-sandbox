@@ -15,7 +15,9 @@ function makeTransport(paceIntervalMs: number | null = 50) {
   let last: ReplayState | null = null
   const transport = new ReplayTransport(STATES, {
     paceIntervalMs,
-    onFrame: (_s, index) => frames.push(index),
+    // The fixture's tick equals its index, so recording the rendered state's tick gives the frame
+    // sequence the assertions below expect.
+    onFrame: (s) => frames.push(s.tick),
     onChange: (s) => {
       last = s
     },

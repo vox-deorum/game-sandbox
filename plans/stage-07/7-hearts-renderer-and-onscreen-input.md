@@ -1,6 +1,6 @@
 # Stage 7.7: Hearts Renderer and On-Screen Input
 
-Status: not started.
+Status: implemented (Docker-free frontend). The jsdom scene, replay, animation, and input tests pass; the canvas draw, trick-sweep animation, and click-to-play were verified once in a real software-WebGL browser. The Docker-gated multi-agent e2e remains step 8's job, and the host wiring that narrows a live human's `controlledSlots` to their single assigned seat is step 6's (the renderer already views whatever single slot it is given).
 
 Part of [Stage 7](../stage-07-multi-agent.md). This is build-order step 7 and the last functional step. It draws Hearts and turns clicks into card plays. It is Docker-free frontend work, tested against fixtures and recordings the way the Stage 4 renderer was, separately from live session control. It depends on the environment state schema from step 1; the live human-slot wiring it drives is exercised by steps 5 and 6.
 
@@ -35,6 +35,14 @@ Vitest, jsdom, no canvas, no network, following the Stage 4 and 5 renderer test 
 - `computeScene` greys exactly the cards absent from the emitted legal-action mask, across representative led-suit, hearts-not-broken, and first-trick fixtures.
 - Per-slot penalty scores and the turn indicator render from a fixture state.
 - A recorded multi-agent Hearts fixture replays trick-by-trick with correct per-slot penalty scores.
+
+## Implementation notes
+
+The browser renderer is a deliberate port of the local pygame renderer (`environments/src/hearts/render.py`): same 960x720 table, the same N/E/S/W seat layout with the view seat at the bottom, the same fan geometry, suit pips drawn from primitives, card backs, and the same status strip and rule hints. `frontend/src/renderers/hearts/scene.ts` carries cross-references to the matching `render.py` symbols so the two stay in lockstep, and the legality greying reads the emitted mask verbatim in both. One intentional deviation: the bottom seat is tagged "(you)" and gets the move clock only when the viewer actually controls it, since a replay's bottom seat is not the viewer; the local renderer always marks its own view seat.
+
+Animation and replay. The owner asked for the trick-won sweep (and the active-seat glow) to animate in replay too, at replay-time scale, rather than being dropped to keep determinism. So the pure `computeScene` still returns the static "snapped" frame a scrubber lands on, and a thin animation layer rides on top: the shared `PixiRenderer` base gained an optional per-frame loop (an `animated` flag and an `onFrame` hook driven by the PixiJS ticker), and `RendererInstance.render` gained a `RenderOptions` argument. The replay transport now passes that cadence as a transition budget while playing and `snap` on any scrub, step, or seek, so an animated renderer fits its transitions inside the replay cadence and never animates a jump. Flappy Bird is unaffected: it leaves `animated` false and ignores the options, so it stays draw-only.
+
+Move clock. Per the owner's choice, the renderer draws a deterministic per-move budget chip (the session `human_timeout_ms` in whole seconds) on the controlled human's turn, and nothing in replay or spectator views (where there are no controlled slots). A true ticking countdown, if wanted later, is host chrome that may use the wall clock; the renderer stays a pure function of state plus mount-time config.
 
 ## Done when
 

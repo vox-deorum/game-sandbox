@@ -34,6 +34,21 @@ export interface RendererContext {
   sendAction?: (slot: string, action: unknown) => void
 }
 
+/**
+ * How a state should be presented when it is handed to the renderer. A renderer with no animation (the
+ * Flappy Bird reference) ignores this entirely. An animated renderer (Hearts) uses it to play state-to-
+ * state transitions at the right speed and to suppress them where a transition would be wrong: a replay
+ * scrub or step jumps to an arbitrary state and must `snap`, while a replay playing on its cadence
+ * passes that cadence as the `transitionMs` budget so the animation runs at replay-time scale. Live play
+ * passes neither and the renderer uses its own natural transition duration.
+ */
+export interface RenderOptions {
+  /** Jump straight to the state with no transition animation (a replay scrub, seek, or step). */
+  snap?: boolean
+  /** The time budget in ms to fit a transition into, e.g. the replay cadence; live omits it. */
+  transitionMs?: number
+}
+
 /** A mounted renderer: fed one state at a time, torn down once, and carrying its own shape. */
 export interface RendererInstance {
   /**
@@ -51,7 +66,7 @@ export interface RendererInstance {
    * something the host reverse-engineers from rendered pixels.
    */
   readonly aspectRatio: number
-  render(state: StepState): void
+  render(state: StepState, options?: RenderOptions): void
   destroy(): void
 }
 

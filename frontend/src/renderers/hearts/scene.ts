@@ -1,0 +1,723 @@
+/**
+ * The pure half of the Hearts renderer: one recorded `StepState` in, one {@link HeartsScene} out,
+ * with no canvas and no accumulated history. All the layout and rule-explanation logic lives here, so
+ * it is unit-testable in plain Vitest (jsdom has no canvas) and the contract's determinism rule is
+ * mechanically checkable: the same state (plus the mount-time config) always yields the same scene,
+ * which is the property the replay scrubber depends on.
+ *
+ * This is a deliberate, line-for-line port of the Python pygame renderer in
+ * `environments/src/hearts/render.py`. The two draw the same recorded overlay (from
+ * `environments/src/hearts/overlay.py`) so a student watching locally in pygame and a user watching in
+ * the browser see the same table. When you change the layout here, change `render.py` to match (and
+ * vice versa); the cross-references in the comments call out the matching `render.py` symbol so the two
+ * stay in sync. The constants, seat layout, fan geometry, and rule hints are copied verbatim.
+ *
+ * The animation (the trick-won sweep) is intentionally *not* in this pure module: a sweep is a function
+ * of the transition between two states, not of one state, so it would break the same-state-same-scene
+ * rule. {@link detectSweep} and {@link sweepCardAt} below are pure helpers the retained renderer drives
+ * from its own clock; `computeScene` always returns the static "snapped" frame a scrubber lands on.
+ */
+import type { StepState } from '@game-sandbox/schema'
+
+// --- Card encoding (mirrors environments/src/hearts/rules.py) ---
+// A card is an int 0..51 with `card = suit * 13 + rank`. Suits are 0=clubs, 1=diamonds, 2=spades,
+// 3=hearts; ranks run 0=2 .. 8=10, 9=J, 10=Q, 11=K, 12=A. So 2♣ == 0 and Q♠ == 36.
+export const CLUBS = 0
+export const DIAMONDS = 1
+export const SPADES = 2
+export const HEARTS = 3
+export const QUEEN_OF_SPADES = 36
+export const NUM_PLAYERS = 4
+export const NUM_TRICKS = 13
+
+export function suitOf(card: number): number {
+  return Math.floor(card / 13)
+}
+export function rankOf(card: number): number {
+  return card % 13
+}
+/** Penalty points a card is worth: 13 for Q♠, 1 per heart, else 0 (mirrors rules.card_points). */
+export function cardPoints(card: number): number {
+  if (card === QUEEN_OF_SPADES) {
+    return 13
+  }
+  return suitOf(card) === HEARTS ? 1 : 0
+}
+
+/** Rank labels indexed by rank id 0..12 (mirrors render.py RANK_LABELS). */
+export const RANK_LABELS = [
+  '2',
+  '3',
+  '4',
+  '5',
+  '6',
+  '7',
+  '8',
+  '9',
+  '10',
+  'J',
+  'Q',
+  'K',
+  'A',
+] as const
+/** Suit names for the status-line hints, by suit id (mirrors render.py SUIT_NAMES). */
+export const SUIT_NAMES: Record<number, string> = {
+  [CLUBS]: 'clubs',
+  [DIAMONDS]: 'diamonds',
+  [SPADES]: 'spades',
+  [HEARTS]: 'hearts',
+}
+/** Singular suit names for the follow-suit hint (mirrors render.py SUIT_SINGULAR). */
+export const SUIT_SINGULAR: Record<number, string> = {
+  [CLUBS]: 'club',
+  [DIAMONDS]: 'diamond',
+  [SPADES]: 'spade',
+  [HEARTS]: 'heart',
+}
+
+// --- Fixed frame and card dimensions (mirrors render.py WIDTH/HEIGHT/CARD_*/SMALL_*) ---
+export const WIDTH = 960
+export const HEIGHT = 720
+/** Card-face dimensions for the view seat's fanned hand. */
+export const CARD_W = 64
+export const CARD_H = 92
+/** Smaller card-face dimensions for trick cards and revealed opponent hands. */
+export const SMALL_W = 48
+export const SMALL_H = 70
+
+/**
+ * Flat-color palette (RGB hex), copied from render.py's color constants so the two renderers read the
+ * same. Renderer modules are the one place raw color literals are allowed (a renderer owns its game's
+ * visual identity); these are the Python `FELT_TOP`, `GOLD`, `CARD_FACE`, etc. translated to hex.
+ */
+export const COLORS = {
+  feltTop: '#14744a',
+  feltBottom: '#073c26',
+  wellRing: '#2c9666',
+  gold: '#ecc870',
+  goldDim: '#967c3c',
+  cardFace: '#f9f7f0',
+  cardEdge: '#d0ccc0',
+  cardBack: '#203a82',
+  cardBackDark: '#14265c',
+  cardBackTrim: '#ced6f0',
+  cardBackGold: '#d0b060',
+  redInk: '#c41c26',
+  blackInk: '#1a1a20',
+  white: '#f2f2f0',
+  dim: '#b2beb8',
+  hintInk: '#d2ded8',
+  badgeBg: '#0f3a27',
+  badgeBgYou: '#144c35',
+  badgeShadow: '#032015',
+  legalBorder: '#5ee284',
+  winnerGlow: '#ecc870',
+  // The grey veil over an illegal card (render.py GREY_VEIL, with its alpha kept separate).
+  greyVeil: '#26322c',
+  greyVeilAlpha: 168 / 255,
+} as const
+
+/** The center of the table, where the trick is laid out (render.py uses WIDTH//2, HEIGHT//2). */
+const TRICK_CENTER = { x: WIDTH / 2, y: HEIGHT / 2 }
+
+// --- Scene shapes the retained renderer (index.ts) reconciles toward ---
+
+/** One seat badge: its absolute seat, the screen slot it is drawn at, and what it shows. */
+export interface SceneSeat {
+  seat: number
+  /** Screen slot 0=South (view), 1=West, 2=North, 3=East (render.py _slot_of_seat). */
+  slot: number
+  x: number
+  y: number
+  label: string
+  score: number
+  /** Whose turn it is now (gold highlight); false at terminal. */
+  isTurn: boolean
+  /** The bottom (view) seat, which the user controls in live play. */
+  isYou: boolean
+}
+
+/** A face-up card in the central trick, positioned at its player's screen slot offset. */
+export interface SceneTrickCard {
+  seat: number
+  card: number
+  x: number
+  y: number
+  /** Highlighted gold when this scene shows a completed trick and this card won it. */
+  isWinner: boolean
+}
+
+/** A small card in an opponent's row: face-down in live play, face-up when revealing (spectate/replay). */
+export interface SceneCard {
+  card: number
+  x: number
+  y: number
+  w: number
+  h: number
+  faceUp: boolean
+}
+
+/** One card in the view seat's fanned hand. */
+export interface SceneHandCard {
+  card: number
+  x: number
+  y: number
+  w: number
+  h: number
+  /** In the emitted legal-action mask for the current turn: drawn lit and raised; else greyed. */
+  legal: boolean
+  /** Clickable: legal, it is the view seat's turn, and the user controls the view seat. */
+  controllable: boolean
+}
+
+/** The top status strip: trick number, hearts-broken flag, a state message, and a rule hint. */
+export interface SceneStatus {
+  trickText: string
+  heartsBroken: boolean
+  message: string
+  messageTone: 'gold' | 'white'
+  hint: string
+  /** The end-of-hand ranking line, present only at terminal. */
+  terminalSummary: string | null
+}
+
+/** The active move-clock chip: shown only on the controlled human's turn (hidden in replay/spectate). */
+export interface SceneMoveClock {
+  x: number
+  y: number
+  /** The per-move budget in whole seconds, from the session's `human_timeout_ms`. */
+  seconds: number
+}
+
+/** Everything needed to paint one static frame of the table. */
+export interface HeartsScene {
+  width: number
+  height: number
+  viewSeat: number
+  revealAll: boolean
+  terminal: boolean
+  seats: SceneSeat[]
+  trick: SceneTrickCard[]
+  opponents: SceneCard[]
+  hand: SceneHandCard[]
+  status: SceneStatus
+  moveClock: SceneMoveClock | null
+}
+
+/** Mount-time facts the scene needs beyond the state, kept out so `computeScene` stays pure. */
+export interface SceneConfig {
+  /** The slots this user controls; empty when spectating or replaying (then we reveal all hands). */
+  controlledSlots?: readonly string[]
+  /** The session's human move-clock budget in ms (meta.human_timeout_ms or its override). */
+  humanTimeoutMs?: number | null
+}
+
+/** The normalized, fully-defaulted view of the overlay this module reads (snake_case from Python). */
+interface HeartsOverlay {
+  hands: number[][]
+  currentTrick: Array<[number, number]>
+  lastTrick: Array<[number, number]> | null
+  lastTrickWinner: number | null
+  turn: number
+  turnSlot: string
+  trickLeader: number
+  ledSuit: number | null
+  heartsBroken: boolean
+  tricksPlayed: number
+  displayScores: number[]
+  legalActions: number[]
+  terminal: boolean
+}
+
+// --- Geometry helpers (pure, exported so the sweep math and the renderer share one source) ---
+
+/** Map an absolute seat to a screen slot (0=S,1=W,2=N,3=E) with the view seat at South (render.py). */
+export function slotOfSeat(seat: number, viewSeat: number): number {
+  return (((seat - viewSeat) % NUM_PLAYERS) + NUM_PLAYERS) % NUM_PLAYERS
+}
+
+/** The (x, y) center of the seat badge for a screen slot (render.py _seat_anchor). */
+export function seatAnchor(slot: number): { x: number; y: number } {
+  switch (slot) {
+    case 0:
+      return { x: WIDTH / 2, y: HEIGHT - 150 } // South (view seat)
+    case 1:
+      return { x: 130, y: HEIGHT / 2 } // West
+    case 2:
+      return { x: WIDTH / 2, y: 96 } // North (below the status strip)
+    default:
+      return { x: WIDTH - 130, y: HEIGHT / 2 } // East
+  }
+}
+
+/** The center offset (dx, dy) for a card played from a screen slot (render.py _trick_offset). */
+export function trickOffset(slot: number): { dx: number; dy: number } {
+  switch (slot) {
+    case 0:
+      return { dx: 0, dy: 80 }
+    case 1:
+      return { dx: -90, dy: 0 }
+    case 2:
+      return { dx: 0, dy: -80 }
+    default:
+      return { dx: 90, dy: 0 }
+  }
+}
+
+/** The seat index for a slot id like "player_2" (mirrors env.possible_agents ordering). */
+export function seatOfSlot(slot: string): number {
+  const match = /(\d+)$/.exec(slot)
+  return match ? Number(match[1]) : 0
+}
+
+// --- Overlay normalization ---
+
+function asPairs(value: unknown): Array<[number, number]> {
+  if (!Array.isArray(value)) {
+    return []
+  }
+  return value
+    .filter((pair): pair is [number, number] => Array.isArray(pair) && pair.length >= 2)
+    .map((pair) => [Number(pair[0]), Number(pair[1])] as [number, number])
+}
+
+function asNumberList(value: unknown): number[] {
+  return Array.isArray(value) ? value.map((v) => Number(v)) : []
+}
+
+/** Normalize the open-typed overlay into a safe, fully-defaulted shape (an absent overlay degrades). */
+function readOverlay(state: StepState): HeartsOverlay {
+  const o = (state.overlay ?? {}) as Record<string, unknown>
+  const rawHands = Array.isArray(o.hands) ? o.hands : []
+  const hands: number[][] = Array.from({ length: NUM_PLAYERS }, (_, seat) =>
+    asNumberList(rawHands[seat]),
+  )
+  const ledSuit = o.led_suit
+  return {
+    hands,
+    currentTrick: asPairs(o.current_trick),
+    lastTrick: o.last_trick == null ? null : asPairs(o.last_trick),
+    lastTrickWinner: o.last_trick_winner == null ? null : Number(o.last_trick_winner),
+    turn: Number(o.turn ?? 0),
+    turnSlot: typeof o.turn_slot === 'string' ? o.turn_slot : `player_${Number(o.turn ?? 0)}`,
+    trickLeader: Number(o.trick_leader ?? 0),
+    ledSuit: ledSuit == null ? null : Number(ledSuit),
+    heartsBroken: Boolean(o.hearts_broken),
+    tricksPlayed: Number(o.tricks_played ?? 0),
+    displayScores: padScores(asNumberList(o.display_scores)),
+    legalActions: asNumberList(o.legal_actions),
+    terminal: Boolean(o.terminal),
+  }
+}
+
+function padScores(scores: number[]): number[] {
+  return Array.from({ length: NUM_PLAYERS }, (_, i) => scores[i] ?? 0)
+}
+
+// --- View resolution (which seat sits at the bottom, and whether opponents are revealed) ---
+
+/**
+ * The resolved viewing context for one scene: which seat sits at the bottom, which seat (if any) the
+ * user actually controls, and whether to reveal every hand. The crucial split is `viewSeat` vs
+ * `controlledSeat`: layout (the bottom seat, the fanned hand) keys off `viewSeat`, but everything that
+ * speaks in the first person or accepts input — the "(you)" tag, "Your turn", the rule hint, the move
+ * clock, clickability — keys off `controlledSeat`. A spectator or replay has `controlledSeat: null`, so
+ * none of that first-person language leaks even though a seat still sits at the bottom.
+ */
+interface ViewContext {
+  viewSeat: number
+  controlledSeat: number | null
+  revealAll: boolean
+}
+
+/**
+ * Resolve the {@link ViewContext} from the mount config.
+ *
+ * The recorded overlay always carries all four hands. In live human play the user controls one slot,
+ * so that seat sits at the bottom, is the controlled seat, and the opponents are face-down (no
+ * peeking). With no controlled slots (a spectator watching, or a replay) we reveal every hand, default
+ * the view to seat 0, and leave `controlledSeat` null. This mirrors render.py's `view_seat` /
+ * `reveal_all`, except that the "(you)" marker and first-person status here follow real control rather
+ * than always tagging the bottom seat, since a replay's bottom seat is not the viewer.
+ */
+function resolveView(config: SceneConfig): ViewContext {
+  const controlled = config.controlledSlots ?? []
+  if (controlled.length === 0) {
+    return { viewSeat: 0, controlledSeat: null, revealAll: true }
+  }
+  const seat = seatOfSlot(controlled[0] as string)
+  return { viewSeat: seat, controlledSeat: seat, revealAll: false }
+}
+
+// --- The scene builder ---
+
+/**
+ * Turn one recorded state into the static table scene: the four seat badges, the central trick (the
+ * in-progress trick, or the just-completed trick with its winner highlighted), the opponents' rows,
+ * the view seat's fanned hand with legal cards lit and illegal ones greyed, the status strip, and the
+ * move-clock chip on the controlled human's turn. Pure in `state` plus `config`, so the same inputs
+ * always yield the same scene (the scrubber's same-state-same-frame rule).
+ */
+export function computeScene(state: StepState, config: SceneConfig = {}): HeartsScene {
+  const o = readOverlay(state)
+  const view = resolveView(config)
+
+  const seats = buildSeats(o, view)
+  const { trick, trickWinner } = buildTrick(o, view.viewSeat)
+  const opponents = buildOpponents(o, view.viewSeat, view.revealAll)
+  const hand = buildHand(o, view)
+  const status = buildStatus(o, view, trickWinner)
+  const moveClock = buildMoveClock(o, view, config.humanTimeoutMs)
+
+  return {
+    width: WIDTH,
+    height: HEIGHT,
+    viewSeat: view.viewSeat,
+    revealAll: view.revealAll,
+    terminal: o.terminal,
+    seats,
+    trick,
+    opponents,
+    hand,
+    status,
+    moveClock,
+  }
+}
+
+/** Build the four seat badges with scores and the active-turn highlight (render.py _draw_seats). */
+function buildSeats(o: HeartsOverlay, view: ViewContext): SceneSeat[] {
+  return Array.from({ length: NUM_PLAYERS }, (_, seat) => {
+    const slot = slotOfSeat(seat, view.viewSeat)
+    const { x, y } = seatAnchor(slot)
+    // "(you)" tags the seat the user actually controls, which is null (so never matched) when
+    // spectating or replaying even though that seat still sits at the bottom.
+    const isYou = seat === view.controlledSeat
+    return {
+      seat,
+      slot,
+      x,
+      y,
+      // The bottom seat is tagged "(you)" only when the viewer actually controls it (live play).
+      label: isYou ? `P${seat} (you)` : `P${seat}`,
+      score: o.displayScores[seat] ?? 0,
+      isTurn: !o.terminal && seat === o.turn,
+      isYou,
+    }
+  })
+}
+
+/**
+ * Build the central trick. While a trick is in progress we show its cards; between tricks we show the
+ * just-completed trick with its winner highlighted (render.py's rgb_array path), so a scrubber landing
+ * on the completion frame still sees what was played. The retained renderer animates the sweep on top.
+ */
+function buildTrick(
+  o: HeartsOverlay,
+  viewSeat: number,
+): { trick: SceneTrickCard[]; trickWinner: number | null } {
+  let pairs = o.currentTrick
+  let winner: number | null = null
+  if (pairs.length === 0) {
+    if (o.lastTrick === null) {
+      return { trick: [], trickWinner: null }
+    }
+    pairs = o.lastTrick
+    winner = o.lastTrickWinner
+  }
+  const trick = pairs.map(([seat, card]) => {
+    const { dx, dy } = trickOffset(slotOfSeat(seat, viewSeat))
+    return {
+      seat,
+      card,
+      x: TRICK_CENTER.x + dx,
+      y: TRICK_CENTER.y + dy,
+      isWinner: winner !== null && seat === winner,
+    }
+  })
+  return { trick, trickWinner: winner }
+}
+
+/** Lay out the three non-view seats' cards along their table edges (render.py _draw_opponent_row). */
+function buildOpponents(o: HeartsOverlay, viewSeat: number, revealAll: boolean): SceneCard[] {
+  const cards: SceneCard[] = []
+  for (let seat = 0; seat < NUM_PLAYERS; seat++) {
+    if (seat === viewSeat) {
+      continue
+    }
+    const slot = slotOfSeat(seat, viewSeat)
+    const hand = o.hands[seat] ?? []
+    const count = hand.length
+    if (count === 0) {
+      continue
+    }
+    const vertical = slot === 1 || slot === 3 // West / East sit along the side edges.
+    const span = (vertical ? HEIGHT : WIDTH) - 360
+    const step = count > 1 ? Math.min(SMALL_W - 14, Math.floor(span / count)) : 0
+    const run = step * (count - 1) + SMALL_W
+    for (let i = 0; i < count; i++) {
+      let x: number
+      let y: number
+      if (vertical) {
+        x = slot === 1 ? 36 : WIDTH - 36 - SMALL_W
+        y = Math.floor((HEIGHT - run) / 2) + i * step
+      } else {
+        x = Math.floor((WIDTH - run) / 2) + i * step
+        y = 150 // North row sits just under the top seat badge.
+      }
+      cards.push({ card: hand[i] as number, x, y, w: SMALL_W, h: SMALL_H, faceUp: revealAll })
+    }
+  }
+  return cards
+}
+
+/**
+ * Fan the view seat's hand across the bottom, marking each card legal (lit and raised) or illegal
+ * (greyed). Legality reads the emitted legal-action mask verbatim (render.py _draw_hand), so the
+ * browser never recomputes the rules; the mask is the current turn's, so a card lights only when it is
+ * the view seat's turn. A card is clickable when it is legal, it is the view seat's turn, and the user
+ * controls that seat.
+ */
+function buildHand(o: HeartsOverlay, view: ViewContext): SceneHandCard[] {
+  const hand = o.hands[view.viewSeat] ?? []
+  const count = hand.length
+  if (count === 0) {
+    return []
+  }
+  const legalSet = new Set(o.legalActions)
+  // Clickable only when the user controls the seat shown at the bottom and it is that seat's turn;
+  // `controlledSeat` is null (so never equals `o.turn`) when spectating or replaying, leaving the
+  // whole hand inert and draw-only.
+  const controllableTurn =
+    view.controlledSeat !== null && !o.terminal && o.turn === view.controlledSeat
+
+  const margin = 40
+  const avail = WIDTH - 2 * margin
+  // Overlap as needed so all cards fit within the available width (render.py step/run/start_x).
+  const step = count > 1 ? Math.min(CARD_W + 6, Math.floor((avail - CARD_W) / (count - 1))) : 0
+  const run = step * (count - 1) + CARD_W
+  const startX = Math.floor((WIDTH - run) / 2)
+  const baseY = HEIGHT - CARD_H - 18
+
+  return hand.map((card, i) => {
+    const legal = legalSet.has(card)
+    return {
+      card,
+      x: startX + i * step,
+      // Raise legal cards a few px so they read as selectable (render.py raises legal by 10).
+      y: baseY - (legal ? 10 : 0),
+      w: CARD_W,
+      h: CARD_H,
+      legal,
+      controllable: legal && controllableTurn,
+    }
+  })
+}
+
+/** Build the status strip text (render.py _draw_status / _status_message / _legal_hint). */
+function buildStatus(o: HeartsOverlay, view: ViewContext, trickWinner: number | null): SceneStatus {
+  const trickText = o.terminal ? 'hand complete' : `trick ${o.tricksPlayed + 1}/${NUM_TRICKS}`
+  const { message, messageTone } = statusMessage(o, view, trickWinner)
+  const hint = legalHint(o, view)
+  let terminalSummary: string | null = null
+  if (o.terminal) {
+    const ranking = [...Array(NUM_PLAYERS).keys()].sort(
+      (a, b) => (o.displayScores[a] ?? 0) - (o.displayScores[b] ?? 0),
+    )
+    terminalSummary = ranking.map((s) => `P${s}: ${o.displayScores[s] ?? 0}`).join('    ')
+  }
+  return { trickText, heartsBroken: o.heartsBroken, message, messageTone, hint, terminalSummary }
+}
+
+/**
+ * The primary-row state message and its tone (render.py _status_message). First-person ("You", "Your
+ * turn") is used only for the seat the user actually controls; a spectator or replay (controlledSeat
+ * null) never matches, so the same lines render in the third person ("P2 took the trick", "P0's turn").
+ */
+function statusMessage(
+  o: HeartsOverlay,
+  view: ViewContext,
+  trickWinner: number | null,
+): { message: string; messageTone: 'gold' | 'white' } {
+  if (o.terminal) {
+    return { message: 'Game over', messageTone: 'gold' }
+  }
+  // A just-completed trick is shown statically in the center: name who took it and the points.
+  if (o.currentTrick.length === 0 && o.lastTrick !== null && trickWinner !== null) {
+    const points = o.lastTrick.reduce((sum, [, card]) => sum + cardPoints(card), 0)
+    const who = trickWinner === view.controlledSeat ? 'You' : `P${trickWinner}`
+    const suffix = points ? ` (+${points})` : ''
+    return { message: `${who} took the trick${suffix}`, messageTone: 'gold' }
+  }
+  if (o.turn === view.controlledSeat) {
+    return { message: 'Your turn', messageTone: 'gold' }
+  }
+  return { message: `P${o.turn}'s turn`, messageTone: 'white' }
+}
+
+/**
+ * The contextual hint explaining the controlled seat's legal options (render.py _legal_hint). On the
+ * controlled seat's turn it explains why the legal set is what it is (opening 2♣, follow-suit,
+ * void/discard, or the hearts-not-broken lead restriction); otherwise — an opponent's turn, or any turn
+ * in a spectator/replay view with no controlled seat — it gives third-person table context (never a
+ * "you must..." instruction) so the row is never empty.
+ */
+function legalHint(o: HeartsOverlay, view: ViewContext): string {
+  if (o.terminal) {
+    return ''
+  }
+  const turn = o.turn
+  const led = o.ledSuit
+  if (view.controlledSeat === null || turn !== view.controlledSeat) {
+    if (led !== null) {
+      return `P${turn} to play  -  ${SUIT_NAMES[led]} were led`
+    }
+    return `Waiting for P${turn} to lead`
+  }
+
+  // It is the controlled seat's turn (which is the bottom view seat), so explain its legal options.
+  if (o.tricksPlayed === 0 && o.currentTrick.length === 0) {
+    return 'Opening lead  -  you must play the 2 of clubs'
+  }
+
+  const hand = o.hands[view.viewSeat] ?? []
+  if (led !== null) {
+    const canFollow = hand.some((card) => suitOf(card) === led)
+    if (canFollow) {
+      let hint = `Follow suit  -  you must play a ${SUIT_SINGULAR[led]}`
+      if (o.tricksPlayed === 0) {
+        hint += '; no hearts or Queen of Spades on the first trick'
+      }
+      return hint
+    }
+    if (o.tricksPlayed === 0) {
+      return `No ${SUIT_NAMES[led]}  -  discard anything except hearts or the Queen of Spades`
+    }
+    return `No ${SUIT_NAMES[led]}  -  free to discard anything`
+  }
+
+  // Leading, past the opening play.
+  const nonHearts = hand.filter((card) => suitOf(card) !== HEARTS)
+  if (!o.heartsBroken && nonHearts.length > 0) {
+    return "Your lead  -  hearts aren't broken yet, so you can't lead a heart"
+  }
+  if (nonHearts.length === 0) {
+    return 'Your lead  -  only hearts left, so you may lead them'
+  }
+  return 'Your lead  -  hearts are broken, lead any suit'
+}
+
+/**
+ * The move-clock chip, shown only when it is the turn of a slot this user controls and the hand is not
+ * over. That condition is empty in a replay or a spectator view (no controlled slots), so the clock is
+ * naturally hidden there, satisfying "show the move clock live, hide it in replay". The value is the
+ * session's per-move budget; a true ticking countdown is host chrome, not the deterministic renderer.
+ */
+function buildMoveClock(
+  o: HeartsOverlay,
+  view: ViewContext,
+  humanTimeoutMs: number | null | undefined,
+): SceneMoveClock | null {
+  if (o.terminal || humanTimeoutMs == null || humanTimeoutMs <= 0) {
+    return null
+  }
+  // Only on the controlled seat's own turn; null `controlledSeat` (spectator/replay) never matches.
+  if (view.controlledSeat === null || o.turn !== view.controlledSeat) {
+    return null
+  }
+  // Sit the chip just above the South (view) seat badge, where the active player looks.
+  const south = seatAnchor(0)
+  return { x: south.x, y: south.y - 56, seconds: Math.round(humanTimeoutMs / 1000) }
+}
+
+// --- Hit-testing (mirrors render.py card_at_pos) ---
+
+/**
+ * The hand card under a point in internal (960x720) coordinates, or null if none. Hand cards overlap,
+ * so the rects are scanned in reverse draw order (the visually front-most / right-most card first), as
+ * in render.py. Legality is ignored here; the caller decides whether to accept the click.
+ */
+export function handCardAt(
+  hand: readonly SceneHandCard[],
+  x: number,
+  y: number,
+): SceneHandCard | null {
+  for (let i = hand.length - 1; i >= 0; i--) {
+    const c = hand[i] as SceneHandCard
+    if (x >= c.x && x <= c.x + c.w && y >= c.y && y <= c.y + c.h) {
+      return c
+    }
+  }
+  return null
+}
+
+// --- The trick-won sweep animation (pure helpers the retained renderer drives from its clock) ---
+
+/** One card sliding into the winner's seat during the sweep. */
+export interface SweepCard {
+  seat: number
+  card: number
+  fromX: number
+  fromY: number
+}
+
+/** Everything the sweep needs: the four cards, the winner's anchor, who won, and the points taken. */
+export interface TrickSweep {
+  cards: SweepCard[]
+  toX: number
+  toY: number
+  winner: number
+  points: number
+}
+
+/**
+ * Detect a just-completed trick by comparing the previously rendered state to the new one: the trick
+ * count went up and the new state carries a completed `last_trick`. Returns the sweep description (the
+ * four cards at their center positions, sliding to the winner's seat) or null when nothing was swept.
+ * Pure, so the renderer can decide to animate without holding any hidden state of its own.
+ */
+export function detectSweep(
+  prev: StepState | null,
+  next: StepState,
+  viewSeat: number,
+): TrickSweep | null {
+  const n = readOverlay(next)
+  if (n.lastTrick === null || n.lastTrickWinner === null || n.currentTrick.length !== 0) {
+    return null
+  }
+  const prevPlayed = prev === null ? -1 : readOverlay(prev).tricksPlayed
+  if (n.tricksPlayed <= prevPlayed) {
+    return null
+  }
+  const winnerAnchor = seatAnchor(slotOfSeat(n.lastTrickWinner, viewSeat))
+  const cards: SweepCard[] = n.lastTrick.map(([seat, card]) => {
+    const { dx, dy } = trickOffset(slotOfSeat(seat, viewSeat))
+    return { seat, card, fromX: TRICK_CENTER.x + dx, fromY: TRICK_CENTER.y + dy }
+  })
+  const points = n.lastTrick.reduce((sum, [, card]) => sum + cardPoints(card), 0)
+  return { cards, toX: winnerAnchor.x, toY: winnerAnchor.y, winner: n.lastTrickWinner, points }
+}
+
+/** Clamp `t` to [0,1] and apply the classic smoothstep ease (render.py _smoothstep). */
+export function smoothstep(t: number): number {
+  const c = t < 0 ? 0 : t > 1 ? 1 : t
+  return c * c * (3 - 2 * c)
+}
+
+/**
+ * The position and scale of one swept card at progress `t` in [0,1]. The first `HOLD` fraction holds
+ * the cards in place (the winner's card pulses), then they slide and shrink into the winner's seat
+ * (render.py _animate_trick_won: hold = 0.34, scale = 1 - 0.7 * move).
+ */
+export const SWEEP_HOLD = 0.34
+export function sweepCardAt(
+  card: SweepCard,
+  sweep: TrickSweep,
+  t: number,
+): { x: number; y: number; scale: number } {
+  const move = t < SWEEP_HOLD ? 0 : smoothstep((t - SWEEP_HOLD) / (1 - SWEEP_HOLD))
+  return {
+    x: card.fromX + (sweep.toX - card.fromX) * move,
+    y: card.fromY + (sweep.toY - card.fromY) * move,
+    scale: 1 - 0.7 * move,
+  }
+}

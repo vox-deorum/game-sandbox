@@ -10,6 +10,7 @@
 import type { StepState } from '@game-sandbox/schema'
 import { onBeforeUnmount, ref, shallowRef } from 'vue'
 
+import type { RenderOptions } from '../renderers/types.js'
 import { type ReplayState, ReplayTransport } from '../replay/transport.js'
 
 export function useReplayTransport() {
@@ -17,14 +18,18 @@ export function useReplayTransport() {
   // shallowRef: the transport is an imperative class, not reactive data.
   const transport = shallowRef<ReplayTransport | null>(null)
 
-  /** Build the transport over the parsed states. `onFrame` draws the state at the current index. */
+  /** Build the transport over the parsed states. `onFrame` draws the state at the current index, with
+   *  the presentation options (snap or transition budget) the transport chose for that change. */
   function init(
     states: readonly StepState[],
-    options: { paceIntervalMs?: number | null; onFrame: (state: StepState) => void },
+    options: {
+      paceIntervalMs?: number | null
+      onFrame: (state: StepState, renderOptions: RenderOptions) => void
+    },
   ): ReplayTransport {
     const created = new ReplayTransport(states, {
       paceIntervalMs: options.paceIntervalMs,
-      onFrame: (frame) => options.onFrame(frame),
+      onFrame: options.onFrame,
       onChange: (next) => {
         state.value = next
       },

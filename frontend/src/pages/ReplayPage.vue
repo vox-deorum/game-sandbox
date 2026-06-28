@@ -155,7 +155,7 @@ onMounted(async () => {
 
   initTransport(parsed.states, {
     paceIntervalMs: meta.value?.pace_interval_ms ?? null,
-    onFrame: (state) => renderState(state),
+    onFrame: (state, renderOptions) => renderState(state, renderOptions),
   })
 
   // A `?t=⟨tick⟩` deep link seeks on load, so a moment inside a replay is linkable, not just the replay.

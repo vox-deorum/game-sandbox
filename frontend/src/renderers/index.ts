@@ -5,6 +5,9 @@
  */
 import { FlappyBirdRenderer } from './flappy-bird/index.js'
 import flappyBirdThumbnail from './flappy-bird/thumbnail.svg'
+import { HeartsRenderer } from './hearts/index.js'
+import heartsThumbnail from './hearts/thumbnail.svg'
 import { registerRenderer } from './registry.js'
 
 registerRenderer('flappy-bird', FlappyBirdRenderer, flappyBirdThumbnail)
+registerRenderer('hearts', HeartsRenderer, heartsThumbnail)

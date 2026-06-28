@@ -7,8 +7,15 @@
  * environment plays at a fixed default cadence, since turn timings in the recording reflect agent
  * think time, not viewing pace. The transport owns no DOM and no renderer — it calls `onFrame` with
  * the state to draw and `onChange` with its own state, so the host page stays a thin reactive shell.
+ *
+ * It also tells the renderer how to present each frame (the {@link RenderOptions}): a play step passes
+ * the cadence as the animation budget, so an animated renderer (Hearts) runs its transitions at
+ * replay-time scale, while a scrub, step, or seek snaps, since jumping to an arbitrary frame must not
+ * trigger a transition. A draw-only renderer (Flappy Bird) ignores all of this.
  */
 import type { StepState } from '@game-sandbox/schema'
+
+import type { RenderOptions } from '../renderers/types.js'
 
 /** A fixed viewing cadence for an unpaced environment (turn timings are think time, not pace). */
 const DEFAULT_CADENCE_MS = 500
@@ -23,8 +30,11 @@ export interface ReplayState {
 
 export interface ReplayTransportOptions {
   paceIntervalMs?: number | null
-  /** Draw the state at `index`. Called for every index change (play, step, scrub, seek). */
-  onFrame: (state: StepState, index: number) => void
+  /**
+   * Draw the current state. Called for every index change (play, step, scrub, seek). `options` tells
+   * an animated renderer how to present it: a budget while playing, snap for any direct jump.
+   */
+  onFrame: (state: StepState, options: RenderOptions) => void
   /** Notify the host of the transport's state so it can render controls. */
   onChange?: (state: ReplayState) => void
 }
@@ -63,7 +73,7 @@ export class ReplayTransport {
     // Restarting from the end replays from the top.
     if (this.idx >= this.total - 1) {
       this.idx = 0
-      this.render()
+      this.render({ snap: true })
     }
     this.isPlaying = true
     this.timer = setInterval(() => this.advance(), this.cadence)
@@ -95,11 +105,11 @@ export class ReplayTransport {
     this.seek(this.idx - 1)
   }
 
-  /** Jump to an index (clamped) and render the state under it — the scrubber's operation. */
+  /** Jump to an index (clamped) and render the state under it — the scrubber's operation (snaps). */
   seek(index: number): void {
     const clamped = Math.max(0, Math.min(this.total - 1, index))
     this.idx = clamped
-    this.render()
+    this.render({ snap: true })
     this.emit()
   }
 
@@ -122,9 +132,9 @@ export class ReplayTransport {
     this.seek(target)
   }
 
-  /** Render the current frame without changing the index (the initial draw after mount). */
+  /** Render the current frame without changing the index (the initial draw after mount); snaps. */
   renderCurrent(): void {
-    this.render()
+    this.render({ snap: true })
     this.emit()
   }
 
@@ -138,7 +148,9 @@ export class ReplayTransport {
       return
     }
     this.idx += 1
-    this.render()
+    // Playing forward: give an animated renderer the cadence as its transition budget, so it animates
+    // the step (a Hearts trick sweep) at replay-time scale rather than jumping.
+    this.render({ transitionMs: this.cadence })
     this.emit()
     // Stop as soon as the last frame is shown, rather than waiting one more cadence to notice.
     if (this.idx >= this.total - 1) {
@@ -146,10 +158,10 @@ export class ReplayTransport {
     }
   }
 
-  private render(): void {
+  private render(options: RenderOptions): void {
     const state = this.states[this.idx]
     if (state !== undefined) {
-      this.opts.onFrame(state, this.idx)
+      this.opts.onFrame(state, options)
     }
   }
 

@@ -14,7 +14,7 @@
 import type { StepState } from '@game-sandbox/schema'
 import { Application, Container } from 'pixi.js'
 
-import type { InternalSize, RendererContext, RendererInstance } from '../types.js'
+import type { InternalSize, RendererContext, RendererInstance, RenderOptions } from '../types.js'
 import './renderer.css'
 
 /** The class assigned to the PixiJS canvas. The end-to-end suite locates the canvas through it. */
@@ -87,6 +87,8 @@ export abstract class PixiRenderer implements RendererInstance {
   /** The current root scale (`cssWidth / internalSize.width`); see {@link textResolution}. */
   private scaleFactor = 1
   private latestState: StepState | null = null
+  /** Whether the per-frame animation loop is currently attached to the PixiJS ticker. */
+  private animating = false
   private ready = false
   private destroyed = false
   private resizeObserver: ResizeObserver | null = null
@@ -111,16 +113,24 @@ export abstract class PixiRenderer implements RendererInstance {
 
   // --- RendererInstance ---
 
-  render(state: StepState): void {
+  render(state: StepState, options?: RenderOptions): void {
     this.latestState = state
     if (this.ready && this.app !== null) {
-      this.update(state)
+      this.update(state, options)
+      // Draw the just-updated scene now, so it is visible and hit-testable this frame rather than only
+      // after the next ticker tick (which matters for click-to-play right as a hand rebuilds).
       this.app.render()
+      if (this.animated) {
+        // An animated renderer then drives its own frames off the ticker: `update` set the new target
+        // (and may have started a transition), and `onFrame` advances it until it reports idle.
+        this.startAnimating()
+      }
     }
   }
 
   destroy(): void {
     this.destroyed = true
+    this.stopAnimating()
     this.detachInput?.()
     this.detachInput = null
     if (this.resizeTimer !== null) {
@@ -140,15 +150,74 @@ export abstract class PixiRenderer implements RendererInstance {
 
   // --- Subclass hooks ---
 
+  /**
+   * Whether this renderer animates between states off the PixiJS ticker. Default false: `render`
+   * reconciles once and draws, the draw-only behavior the Flappy Bird reference and every
+   * scrubber-deterministic renderer rely on. A subclass that overrides {@link onFrame} sets this true.
+   */
+  protected readonly animated: boolean = false
+
   /** Build the persistent display objects once, parented to `root`. Called after the app is ready. */
   protected abstract setup(root: Container): void
 
-  /** Mutate the display objects so the frame matches `state`. Must be deterministic in `state`. */
-  protected abstract update(state: StepState): void
+  /**
+   * Mutate the display objects so the frame matches `state`. For a draw-only renderer this must be
+   * deterministic in `state` (the scrubber relies on it). An animated renderer sets the new target
+   * here and may begin a transition toward it; `options` says whether to snap (a scrub) or how long a
+   * budget the transition has (the replay cadence).
+   */
+  protected abstract update(state: StepState, options?: RenderOptions): void
+
+  /**
+   * Advance any in-progress animation by `dtMs` wall-clock milliseconds and reconcile the affected
+   * display objects. Return true while more frames are still needed (a transition is running, or an
+   * ambient animation is live), false when the renderer has settled. Only called on an {@link animated}
+   * renderer; the default is unused. Never invoked under jsdom, where the app is skipped entirely.
+   */
+  protected onFrame(_dtMs: number): boolean {
+    return false
+  }
 
   /** Declare the device-input intents. Renderers with no human control may leave this returning []. */
   protected inputs(): readonly InputIntent[] {
     return []
+  }
+
+  // --- Animation loop (only used by an `animated` renderer) ---
+
+  /** Attach the per-frame loop to the ticker if it is not already running. */
+  private startAnimating(): void {
+    if (this.animating || this.app === null) {
+      return
+    }
+    this.animating = true
+    this.app.ticker.add(this.onTick)
+    this.app.ticker.start()
+  }
+
+  /** Detach the per-frame loop and stop the ticker. Safe to call when not animating. */
+  private stopAnimating(): void {
+    if (!this.animating || this.app === null) {
+      this.animating = false
+      return
+    }
+    this.animating = false
+    this.app.ticker.remove(this.onTick)
+    this.app.ticker.stop()
+  }
+
+  /** The ticker callback: advance the animation and stop the loop once it settles. */
+  private readonly onTick = (): void => {
+    if (this.app === null) {
+      return
+    }
+    // No explicit render here: a PixiJS Application registers its own renderer on this ticker at
+    // UPDATE_PRIORITY.LOW, and this callback runs at the default (higher) priority, so the frame is
+    // drawn right after `onFrame` mutates the scene. Rendering again would double the GPU work.
+    const more = this.onFrame(this.app.ticker.deltaMS)
+    if (!more) {
+      this.stopAnimating()
+    }
   }
 
   // --- Lifecycle ---
@@ -190,10 +259,14 @@ export abstract class PixiRenderer implements RendererInstance {
     this.ready = true
     this.observeResize()
 
-    // Apply whatever state arrived before we were ready.
+    // Apply whatever state arrived before we were ready. The first state snaps (there is no prior
+    // state to animate a transition from); after that, live `render` calls drive any animation.
     if (this.latestState !== null) {
-      this.update(this.latestState)
+      this.update(this.latestState, { snap: true })
       app.render()
+      if (this.animated) {
+        this.startAnimating()
+      }
     }
   }
 
@@ -251,7 +324,8 @@ export abstract class PixiRenderer implements RendererInstance {
     this.app.renderer.resize(width, height)
     this.applyScale(width)
     if (this.latestState !== null) {
-      this.update(this.latestState)
+      // A resize only relays out the current state; it must not re-fire a transition, so it snaps.
+      this.update(this.latestState, { snap: true })
     }
     this.app.render()
   }
