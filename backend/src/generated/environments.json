@@ -20,7 +20,7 @@
     "step_limit_ms": 1000
   },
   {
-    "description": "Four-player trick-taking Hearts: follow suit, avoid taking hearts and the queen of spades, and keep your penalty total low. Or, shoot the moon by taking them all to flip the score!",
+    "description": "Four-player trick-taking Hearts: follow suit, avoid taking hearts and the queen of spades. Or, shoot the moon by taking them all to flip the score!",
     "display_name": "Hearts",
     "env_id": "hearts",
     "episode_limit_ms": 120000,

@@ -94,11 +94,7 @@ def main() -> int:
         )
         src = Path(tmp) / "hearts-fixture" / "recording.jsonl"
         dest = (
-            Path(__file__).resolve().parents[1]
-            / "frontend"
-            / "test"
-            / "fixtures"
-            / "hearts-recording.jsonl"
+            Path(__file__).resolve().parents[1] / "frontend" / "test" / "fixtures" / "hearts-recording.jsonl"
         )
         shutil.copyfile(src, dest)
         print(f"wrote {dest} ({result.ticks} ticks, reason={result.reason})")
