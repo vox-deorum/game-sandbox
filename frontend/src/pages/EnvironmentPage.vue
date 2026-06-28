@@ -21,11 +21,15 @@ import {
   getEnvironmentLeaderboards,
   listReleasedSeasons,
   listSeasons,
+  listWatchAgents,
   type PublicSeasonView,
   type SeasonView,
+  type StartPayload,
   startSession,
+  type WatchAgentSummary,
 } from '../api/client.js'
 import LeaderboardBoards from '../components/LeaderboardBoards.vue'
+import SeatAssignmentDialog from '../components/SeatAssignmentDialog.vue'
 import StartForm from '../components/StartForm.vue'
 import WatchAgentPicker from '../components/WatchAgentPicker.vue'
 import UiBadge from '../components/ui/UiBadge.vue'
@@ -56,9 +60,17 @@ const releasedSeasons = ref<SeasonView[]>([])
 // stays readable regardless, so the boards embed below is independent of this gate.
 const playOpen = computed(() => leaderboards.value?.play_season_id != null)
 
-// Whether the viewer has something to rate (reported by WatchAgentPicker once its list loads). When
-// true the section is framed as rating rather than watching.
-const rateable = ref(false)
+// The play-open season's active `ready` submissions, fetched once on the hub: the watch list rows, the
+// watch/play seat-dropdown options, and the rate-versus-watch framing all read from this one list.
+// Null until it settles (empty when no season is play-open).
+const watchAgents = ref<WatchAgentSummary[] | null>(null)
+// Whether the viewer has something to rate: allowlisted, with at least one unrated agent in the list.
+// When true the watch section is framed as rating rather than watching.
+const rateable = computed(
+  () =>
+    Boolean(me.me?.allowlisted) &&
+    (watchAgents.value?.some((agent) => agent.rating_status === 'unrated') ?? false),
+)
 
 // This environment's public seasons, used to name the live play-open and submission-open seasons in
 // the header (their labels aren't on the leaderboards payload, which carries only their ids).
@@ -108,6 +120,16 @@ onMounted(() => {
       // A failed read leaves the season record empty rather than breaking the hub.
     },
   )
+  listWatchAgents(envId).then(
+    (rows) => {
+      watchAgents.value = rows
+    },
+    () => {
+      // A failed read leaves an empty list: the watch section shows its empty state and a multi-seat
+      // play dialog still offers the Naive baseline for every seat.
+      watchAgents.value = []
+    },
+  )
 })
 // The play start dialog's open state. Watch starts through WatchAgentPicker, so this dialog is the
 // human-play entry point only.
@@ -115,6 +137,9 @@ const playFormOpen = ref(false)
 const canStartHumanPlay = computed(
   () => Boolean(me.me?.allowlisted && meta.value?.human_slots.length && playOpen.value),
 )
+// A multi-seat environment (Hearts) plays through the seat-assignment grid: the human claims a seat
+// and agents fill the rest. A single-slot environment (Flappy Bird) keeps the minimal start form.
+const multiSeat = computed(() => (meta.value?.max_slots ?? 1) > 1)
 
 /** Remove a consumed play deep-link without discarding unrelated query parameters. */
 function clearPlayQuery(): void {
@@ -161,17 +186,18 @@ watch(
   { immediate: true },
 )
 
-async function start(input: { seed?: number; humanSlotTimeoutMs?: number }): Promise<void> {
+/** The single-slot start form fills only the lone human seat; the backend derives the human mode. */
+function startSingleSeat(input: { seed?: number; humanSlotTimeoutMs?: number }): void {
+  void submitStart({ slots: { player_0: { kind: 'human' } }, ...input })
+}
+
+/** Start the human-play session the form (single seat) or seat grid (multi-seat) composed. */
+async function submitStart(payload: StartPayload): Promise<void> {
   if (meta.value === null || !playFormOpen.value) {
     return
   }
   startError.value = null
-  const result = await startSession({
-    envId: meta.value.env_id,
-    mode: 'human',
-    seed: input.seed,
-    humanSlotTimeoutMs: input.humanSlotTimeoutMs,
-  })
+  const result = await startSession({ envId: meta.value.env_id, ...payload })
   if (result.ok) {
     await router.push(`/sessions/${result.session.id}`)
   } else if (result.reason === 'already_active') {
@@ -225,11 +251,7 @@ async function start(input: { seed?: number; humanSlotTimeoutMs?: number }): Pro
 
     <section id="play" class="env-section">
       <h2>{{ rateable ? 'Rate an Agent' : 'Watch an Agent' }}</h2>
-      <WatchAgentPicker
-        v-if="playOpen"
-        :env-id="meta.env_id"
-        @rateable-change="rateable = $event"
-      />
+      <WatchAgentPicker v-if="playOpen" :env-id="meta.env_id" :meta="meta" :agents="watchAgents" />
       <UiEmptyState v-else>Public play is closed for this environment right now.</UiEmptyState>
     </section>
 
@@ -270,7 +292,21 @@ async function start(input: { seed?: number; humanSlotTimeoutMs?: number }): Pro
     </section>
 
     <UiDialog v-model:open="dialogOpen" :title="dialogTitle">
-      <StartForm v-if="playFormOpen" :meta="meta" @submit="start" @cancel="playFormOpen = false" />
+      <SeatAssignmentDialog
+        v-if="playFormOpen && multiSeat"
+        :meta="meta"
+        :agents="watchAgents ?? []"
+        mode="play"
+        :is-operator="me.me?.is_operator"
+        @start="submitStart"
+        @cancel="playFormOpen = false"
+      />
+      <StartForm
+        v-else-if="playFormOpen"
+        :meta="meta"
+        @submit="startSingleSeat"
+        @cancel="playFormOpen = false"
+      />
       <UiEmptyState v-if="startError !== null" tone="danger">{{ startError }}</UiEmptyState>
     </UiDialog>
   </section>

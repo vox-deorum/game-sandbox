@@ -195,7 +195,11 @@ export async function finishedScriptedSession(
 ): Promise<string> {
   const res = await request.post('/api/sessions', {
     ...asUser(watcher),
-    data: { env_id: ENV_ID, mode: 'scripted', submission_id: submissionId },
+    // The single-seat watch start as a one-slot `slots` assignment (the Stage 7.6 start contract).
+    data: {
+      env_id: ENV_ID,
+      slots: { player_0: { kind: 'submission', submission_id: submissionId } },
+    },
   })
   expect(res.status(), await res.text()).toBe(201)
   const sessionId = ((await res.json()) as { id: string }).id

@@ -26,6 +26,7 @@ describe('StyleguidePage', () => {
       'UiStatusBadge',
       'UiCard',
       'UiField and UiInput',
+      'UiSelect',
       'UiDialog',
       'UiSlider',
       'UiEmptyState',

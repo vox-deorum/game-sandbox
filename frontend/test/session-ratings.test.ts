@@ -87,6 +87,40 @@ describe('SessionRatings', () => {
     expect(screen.getByRole('radiogroup', { name: /Rate Naive baseline/ })).toBeInTheDocument()
   })
 
+  it('renders a rating control per agent in a shared multi-agent (Hearts) session', async () => {
+    // A four-seat Hearts session shared by three submitted agents and the Naive baseline. Each agent
+    // is attributed and rated independently — the new per-agent-in-a-shared-session behavior.
+    vi.mocked(getSessionRatings).mockResolvedValue({
+      ok: true,
+      ratings: view([
+        agent({
+          agent: { kind: 'submission', submission_id: 'sub-a' },
+          display_name: 'Submitted agent 1',
+        }),
+        agent({
+          agent: { kind: 'submission', submission_id: 'sub-b' },
+          display_name: 'Submitted agent 2',
+        }),
+        agent({
+          agent: { kind: 'submission', submission_id: 'sub-c' },
+          display_name: 'Your agent',
+          is_own: true,
+        }),
+        agent({ agent: NAIVE }),
+      ]),
+    })
+    renderPanel()
+
+    expect(await screen.findByText('Rate the Agents')).toBeInTheDocument()
+    // Each non-own seat gets its own 1-5 control, attributed to the right agent.
+    expect(screen.getByRole('radiogroup', { name: /Rate Submitted agent 1/ })).toBeInTheDocument()
+    expect(screen.getByRole('radiogroup', { name: /Rate Submitted agent 2/ })).toBeInTheDocument()
+    expect(screen.getByRole('radiogroup', { name: /Rate Naive baseline/ })).toBeInTheDocument()
+    // The caller's own seat in the shared session is shown but carries no rating control.
+    expect(screen.getByText('Your agent')).toBeInTheDocument()
+    expect(screen.queryByRole('radiogroup', { name: /Rate Your agent/ })).toBeNull()
+  })
+
   it('shows the season prompt once for the panel and the author prompt next to its own agent', async () => {
     vi.mocked(getSessionRatings).mockResolvedValue({
       ok: true,

@@ -17,6 +17,7 @@
 import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
 import { computed, ref } from 'vue'
 
+import { optionalNumber } from '../lib/forms.js'
 import UiButton from './ui/UiButton.vue'
 import UiField from './ui/UiField.vue'
 import UiInput from './ui/UiInput.vue'
@@ -48,18 +49,6 @@ const timeoutHint = computed(() =>
       'flies straight. Leave blank to use the default.'
     : 'How long you may take to act each turn. Leave blank for the environment default.',
 )
-
-/** A blank field is "no value"; anything else parses to a finite number or is dropped. */
-function optionalNumber(raw: string | number): number | undefined {
-  if (typeof raw === 'number') {
-    return Number.isFinite(raw) ? raw : undefined
-  }
-  if (raw.trim() === '') {
-    return undefined
-  }
-  const value = Number(raw)
-  return Number.isFinite(value) ? value : undefined
-}
 
 function onSubmit(): void {
   emit('submit', {

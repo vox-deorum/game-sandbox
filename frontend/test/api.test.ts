@@ -55,7 +55,9 @@ describe('api client', () => {
 
   it('maps a 201 to a started session', async () => {
     stubFetch(async () => jsonResponse({ id: 's1', ws_path: '/api/sessions/s1/ws' }, 201))
-    expect(await startSession({ envId: 'flappy_bird', mode: 'human' })).toEqual({
+    expect(
+      await startSession({ envId: 'flappy_bird', slots: { player_0: { kind: 'human' } } }),
+    ).toEqual({
       ok: true,
       session: { id: 's1', wsPath: '/api/sessions/s1/ws' },
     })
@@ -63,7 +65,9 @@ describe('api client', () => {
 
   it('maps a 403 to not_allowlisted', async () => {
     stubFetch(async () => jsonResponse({ error: 'no', code: 'not_allowlisted' }, 403))
-    expect(await startSession({ envId: 'flappy_bird', mode: 'human' })).toEqual({
+    expect(
+      await startSession({ envId: 'flappy_bird', slots: { player_0: { kind: 'human' } } }),
+    ).toEqual({
       ok: false,
       reason: 'not_allowlisted',
     })
@@ -73,24 +77,46 @@ describe('api client', () => {
     stubFetch(async () =>
       jsonResponse({ error: 'busy', code: 'already_active', active_session_id: 'abc' }, 409),
     )
-    expect(await startSession({ envId: 'flappy_bird', mode: 'human' })).toEqual({
+    expect(
+      await startSession({ envId: 'flappy_bird', slots: { player_0: { kind: 'human' } } }),
+    ).toEqual({
       ok: false,
       reason: 'already_active',
       activeSessionId: 'abc',
     })
   })
 
-  it('sends env_id, mode, and the human-slot timeout override in the body', async () => {
+  it('sends env_id, the slots assignment, and the human-slot timeout override in the body', async () => {
     const fetchMock = stubFetch(async () =>
       jsonResponse({ id: 's1', ws_path: '/api/sessions/s1/ws' }, 201),
     )
-    await startSession({ envId: 'flappy_bird', mode: 'human', humanSlotTimeoutMs: 2000 })
-    const init = fetchMock.mock.calls[0]?.[1] as RequestInit
-    expect(JSON.parse(init.body as string)).toMatchObject({
-      env_id: 'flappy_bird',
-      mode: 'human',
-      human_slot_timeout_ms: 2000,
+    await startSession({
+      envId: 'hearts',
+      humanSlotTimeoutMs: 2000,
+      slots: {
+        player_0: { kind: 'human' },
+        player_1: { kind: 'submission', submissionId: 'sub-1' },
+        player_2: { kind: 'builtin-agent' },
+        player_3: { kind: 'builtin-agent' },
+      },
     })
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit
+    const body = JSON.parse(init.body as string)
+    // The new start contract: an explicit per-slot `slots` object, snake-case `submission_id` only on
+    // a `submission` slot, and no derived `mode` field (the backend derives it from the assignment).
+    expect(body).toMatchObject({
+      env_id: 'hearts',
+      human_slot_timeout_ms: 2000,
+      slots: {
+        player_0: { kind: 'human' },
+        player_1: { kind: 'submission', submission_id: 'sub-1' },
+        player_2: { kind: 'builtin-agent' },
+        player_3: { kind: 'builtin-agent' },
+      },
+    })
+    expect(body).not.toHaveProperty('mode')
+    expect(body).not.toHaveProperty('submission_id')
+    expect(body.slots.player_1).not.toHaveProperty('submissionId')
   })
 
   it('fetches a recording as raw text', async () => {

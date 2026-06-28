@@ -1,0 +1,157 @@
+import { fireEvent, render, screen, within } from '@testing-library/vue'
+import { describe, expect, it } from 'vitest'
+
+import type { SlotAssignmentInput, WatchAgentSummary } from '../src/api/client.js'
+import SeatAssignmentDialog from '../src/components/SeatAssignmentDialog.vue'
+import { heartsMeta } from './helpers/fixtures.js'
+
+function agent(overrides: Partial<WatchAgentSummary> = {}): WatchAgentSummary {
+  return { submission_id: 'sub1', anonymous_number: 1, rating_status: 'unrated', ...overrides }
+}
+
+const AGENTS: WatchAgentSummary[] = [
+  agent({ submission_id: 'sub1', anonymous_number: 1 }),
+  agent({ submission_id: 'sub2', anonymous_number: 2 }),
+]
+
+interface StartPayload {
+  slots: Record<string, SlotAssignmentInput>
+  seed?: number
+  humanSlotTimeoutMs?: number
+}
+
+/** The combobox for a seat row, addressed by its visible "Seat N" label. */
+function seat(name: string): HTMLSelectElement {
+  return screen.getByRole('combobox', { name }) as HTMLSelectElement
+}
+
+/** The most recent `start` payload the dialog emitted. */
+function lastStart(emitted: () => Record<string, unknown[]>): StartPayload {
+  const calls = emitted().start as StartPayload[][] | undefined
+  if (calls === undefined || calls.length === 0) {
+    throw new Error('the dialog emitted no start event')
+  }
+  return calls[calls.length - 1]?.[0] as StartPayload
+}
+
+describe('SeatAssignmentDialog', () => {
+  it('watch: preselects the clicked agent into every seat and enables Start', async () => {
+    const { emitted } = render(SeatAssignmentDialog, {
+      props: {
+        meta: heartsMeta(),
+        agents: AGENTS,
+        mode: 'watch',
+        preselect: { kind: 'submission', submissionId: 'sub2' } satisfies SlotAssignmentInput,
+      },
+    })
+    // Every seat starts preselected to the clicked agent (prefill-all), so Start is enabled at once.
+    for (const name of ['Seat 1', 'Seat 2', 'Seat 3', 'Seat 4']) {
+      expect(seat(name).value).toBe('submission:sub2')
+    }
+    const start = screen.getByRole('button', { name: 'Start watching' })
+    expect(start).not.toBeDisabled()
+
+    await fireEvent.click(start)
+    const payload = lastStart(emitted)
+    // The payload covers exactly the environment's required seats, each a valid assignment.
+    expect(Object.keys(payload.slots).sort()).toEqual([
+      'player_0',
+      'player_1',
+      'player_2',
+      'player_3',
+    ])
+    expect(payload).toEqual({
+      slots: {
+        player_0: { kind: 'submission', submissionId: 'sub2' },
+        player_1: { kind: 'submission', submissionId: 'sub2' },
+        player_2: { kind: 'submission', submissionId: 'sub2' },
+        player_3: { kind: 'submission', submissionId: 'sub2' },
+      },
+      seed: undefined,
+      humanSlotTimeoutMs: undefined,
+    })
+  })
+
+  it('watch: changing a preselected assignment before Start is reflected in the payload', async () => {
+    const { emitted } = render(SeatAssignmentDialog, {
+      props: {
+        meta: heartsMeta(),
+        agents: AGENTS,
+        mode: 'watch',
+        preselect: { kind: 'submission', submissionId: 'sub1' } satisfies SlotAssignmentInput,
+      },
+    })
+    // Reassign seat 2 to the Naive baseline and seat 3 to the other submission; the rest stay sub1.
+    await fireEvent.update(seat('Seat 2'), 'builtin')
+    await fireEvent.update(seat('Seat 3'), 'submission:sub2')
+    await fireEvent.click(screen.getByRole('button', { name: 'Start watching' }))
+
+    expect(lastStart(emitted).slots).toEqual({
+      player_0: { kind: 'submission', submissionId: 'sub1' },
+      player_1: { kind: 'builtin-agent' },
+      player_2: { kind: 'submission', submissionId: 'sub2' },
+      player_3: { kind: 'submission', submissionId: 'sub1' },
+    })
+  })
+
+  it('play: seats the human at seat 0, fills the rest with Naive, and sends one human seat', async () => {
+    const { emitted } = render(SeatAssignmentDialog, {
+      props: { meta: heartsMeta(), agents: AGENTS, mode: 'play' },
+    })
+    // Seat 1 is the connected human (no dropdown); the other seats default to the Naive baseline.
+    expect(screen.getByText('You')).toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: 'Seat 1' })).toBeNull()
+    expect(seat('Seat 2').value).toBe('builtin')
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Start playing' }))
+    const payload = lastStart(emitted)
+    expect(payload.slots).toEqual({
+      player_0: { kind: 'human' },
+      player_1: { kind: 'builtin-agent' },
+      player_2: { kind: 'builtin-agent' },
+      player_3: { kind: 'builtin-agent' },
+    })
+    // Exactly one human seat, and the unpaced move clock is prefilled from the metadata.
+    expect(Object.values(payload.slots).filter((s) => s.kind === 'human')).toHaveLength(1)
+    expect(payload.humanSlotTimeoutMs).toBe(60_000)
+  })
+
+  it('play: "Sit here" moves the human and resets the vacated seat to the Naive baseline', async () => {
+    const { emitted } = render(SeatAssignmentDialog, {
+      props: { meta: heartsMeta(), agents: AGENTS, mode: 'play' },
+    })
+    const rows = screen.getAllByRole('listitem')
+    // Claim seat 3 for the human (rows are zero-indexed: rows[2] is "Seat 3").
+    await fireEvent.click(within(rows[2] as HTMLElement).getByRole('button', { name: 'Sit here' }))
+
+    // Seat 3 is now the human; the vacated seat 1 falls back to a Naive dropdown (never blank).
+    expect(screen.queryByRole('combobox', { name: 'Seat 3' })).toBeNull()
+    expect(seat('Seat 1').value).toBe('builtin')
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Start playing' }))
+    const payload = lastStart(emitted)
+    expect(payload.slots).toEqual({
+      player_0: { kind: 'builtin-agent' },
+      player_1: { kind: 'builtin-agent' },
+      player_2: { kind: 'human' },
+      player_3: { kind: 'builtin-agent' },
+    })
+    expect(Object.values(payload.slots).filter((s) => s.kind === 'human')).toHaveLength(1)
+  })
+
+  it('play: a submission can be assigned to a non-human seat', async () => {
+    const { emitted } = render(SeatAssignmentDialog, {
+      props: { meta: heartsMeta(), agents: AGENTS, mode: 'play' },
+    })
+    await fireEvent.update(seat('Seat 2'), 'submission:sub1')
+    await fireEvent.update(seat('Seat 3'), 'submission:sub2')
+    await fireEvent.click(screen.getByRole('button', { name: 'Start playing' }))
+
+    expect(lastStart(emitted).slots).toEqual({
+      player_0: { kind: 'human' },
+      player_1: { kind: 'submission', submissionId: 'sub1' },
+      player_2: { kind: 'submission', submissionId: 'sub2' },
+      player_3: { kind: 'builtin-agent' },
+    })
+  })
+})

@@ -1,25 +1,42 @@
 <!--
-  The submitted-agent watch/rate picker (Stage 5.6): lists the play-open season's active `ready`
-  agents and lets an allowlisted viewer stream one into the renderer. Regular users receive numbered
-  anonymous rows plus their own rating state; operators additionally receive owner/source details.
-  Choosing Rate or Watch again starts the same scripted watch run, with the post-session panel taking
-  the rating after the run. Non-allowlisted viewers can browse the list but cannot start a container.
+  The submitted-agent watch/rate picker (Stage 5.6, extended in Stage 7.6): lists the play-open
+  season's active `ready` agents and lets an allowlisted viewer stream them into the renderer. The hub
+  fetches the list once and passes it in; this component is otherwise self-contained for starting a
+  run. Regular users receive numbered anonymous rows plus their own rating state; operators
+  additionally receive owner/source details.
+
+  Clicking any row — built-in Naive or a submitted agent — opens the same watch configuration dialog
+  for a multi-seat environment, preselecting that agent into every seat (SeatAssignmentDialog), where
+  the viewer assigns an agent to each seat and a seed before starting. A single-slot environment keeps
+  the Stage 5 shape: the row starts a scripted watch run immediately, now expressed as a one-seat
+  `slots` assignment. The post-session panel takes the rating after the run. Non-allowlisted viewers
+  can browse the list but cannot start a container.
 -->
 <script setup lang="ts">
-import { computed, onMounted, ref, watchEffect } from 'vue'
+import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
+import { computed, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 
-import { listWatchAgents, startSession, type WatchAgentSummary } from '../api/client.js'
+import {
+  type SlotAssignmentInput,
+  type StartPayload,
+  startSession,
+  type WatchAgentSummary,
+} from '../api/client.js'
 import { useMe } from '../me.js'
+import SeatAssignmentDialog from './SeatAssignmentDialog.vue'
 import UiBadge from './ui/UiBadge.vue'
 import UiButton from './ui/UiButton.vue'
+import UiDialog from './ui/UiDialog.vue'
 import UiEmptyState from './ui/UiEmptyState.vue'
 
-const props = defineProps<{ envId: string }>()
-// Tells the parent hub whether this viewer actually has something to rate, so it can title the
-// section "Rate an agent" rather than "Watch an agent". True only once the list has loaded with at
-// least one unrated agent and the viewer is allowlisted (rating is allowlisted-only).
-const emit = defineEmits<{ rateableChange: [boolean] }>()
+const props = defineProps<{
+  envId: string
+  meta: EnvironmentMeta
+  /** The play-open season's active `ready` agents, fetched once by the hub; null while it loads. */
+  agents: WatchAgentSummary[] | null
+}>()
+
 const router = useRouter()
 const me = useMe()
 
@@ -27,31 +44,16 @@ const me = useMe()
 // from any real submission id.
 const BUILTIN_KEY = '__builtin__'
 
-const agents = ref<WatchAgentSummary[] | null>(null)
 const startError = ref<string | null>(null)
-// The submission a watch run is being started for, so only its button shows the loading state.
+// The submission a watch run is being started for, so only its button shows the loading state. Only
+// the single-seat immediate-start path uses it; the multi-seat path starts from the dialog instead.
 const starting = ref<string | null>(null)
 
-// Whether the viewer can rate something here: allowlisted, and at least one listed agent is unrated.
-// `me` and the list both settle asynchronously, so this is reactive and re-emitted whenever either
-// input changes — letting the parent hub retitle the section once there is something to rate.
-const rateable = computed(
-  () =>
-    Boolean(me.me?.allowlisted) &&
-    (agents.value?.some((agent) => agent.rating_status === 'unrated') ?? false),
-)
-watchEffect(() => emit('rateableChange', rateable.value))
-
-onMounted(() => {
-  listWatchAgents(props.envId).then(
-    (rows) => {
-      agents.value = rows
-    },
-    () => {
-      agents.value = []
-    },
-  )
-})
+// The watch configuration dialog's state (multi-seat environments only). It opens with the clicked
+// agent preselected into every seat, which the viewer can change before starting.
+const multiSeat = computed(() => props.meta.max_slots > 1)
+const dialogOpen = ref(false)
+const dialogPreselect = ref<SlotAssignmentInput | null>(null)
 
 /** A short, human-friendly label for a submission's pinned source. */
 function sourceLabel(agent: WatchAgentSummary): string {
@@ -59,11 +61,6 @@ function sourceLabel(agent: WatchAgentSummary): string {
     return agent.commit_sha.slice(0, 10)
   }
   return agent.source_kind === 'local' ? 'local folder' : 'git'
-}
-
-/** Watch a submitted agent: a scripted run bound to its submission. */
-function watch(agent: WatchAgentSummary): Promise<void> {
-  return startWatch(agent.submission_id, agent.submission_id)
 }
 
 function agentLabel(agent: WatchAgentSummary): string {
@@ -77,17 +74,43 @@ function actionLabel(agent: WatchAgentSummary): string {
   return agent.rating_status === 'unrated' ? 'Rate' : 'Watch again'
 }
 
-/** Watch the built-in Naive agent: a scripted run with no submission, so the harness loads the
- *  image's default built-in agent. */
-function watchBuiltin(): Promise<void> {
-  return startWatch(BUILTIN_KEY, undefined)
+/** Watch a submitted agent: open the seat dialog (multi-seat) or start a one-seat run immediately. */
+function watch(agent: WatchAgentSummary): void {
+  chooseAgent({ kind: 'submission', submissionId: agent.submission_id }, agent.submission_id)
 }
 
-async function startWatch(loadingKey: string, submissionId: string | undefined): Promise<void> {
+/** Watch the built-in Naive agent: a scripted run with no submission. */
+function watchBuiltin(): void {
+  chooseAgent({ kind: 'builtin-agent' }, BUILTIN_KEY)
+}
+
+/**
+ * A clicked agent row resolves to a seat assignment. A multi-seat environment opens the watch dialog
+ * with that agent preselected into every seat; a single-slot environment skips the dialog and starts
+ * the scripted run right away, as the Stage 5 watch flow did.
+ */
+function chooseAgent(preselect: SlotAssignmentInput, loadingKey: string): void {
+  if (multiSeat.value) {
+    dialogPreselect.value = preselect
+    startError.value = null
+    dialogOpen.value = true
+    return
+  }
+  void startRun({ slots: { player_0: preselect } }, loadingKey)
+}
+
+/**
+ * Start a watch run from a composed payload — the seat dialog's full `slots` (with its seed) for a
+ * multi-seat environment, or a one-seat assignment for a single-slot one — and navigate to it,
+ * reusing the rejoin / not-allowlisted / error handling.
+ */
+async function startRun(payload: StartPayload, loadingKey?: string): Promise<void> {
   startError.value = null
-  starting.value = loadingKey
+  if (loadingKey !== undefined) {
+    starting.value = loadingKey
+  }
   try {
-    const result = await startSession({ envId: props.envId, mode: 'scripted', submissionId })
+    const result = await startSession({ envId: props.envId, ...payload })
     if (result.ok) {
       await router.push(`/sessions/${result.session.id}`)
     } else if (result.reason === 'already_active') {
@@ -95,8 +118,10 @@ async function startWatch(loadingKey: string, submissionId: string | undefined):
       await router.push(`/sessions/${result.activeSessionId}`)
     } else if (result.reason === 'not_allowlisted') {
       startError.value = 'You are not on the session allowlist.'
+      dialogOpen.value = false
     } else {
       startError.value = result.message
+      dialogOpen.value = false
     }
   } finally {
     starting.value = null
@@ -153,6 +178,21 @@ async function startWatch(loadingKey: string, submissionId: string | undefined):
       Watching an agent is limited to allowlisted users.
     </UiEmptyState>
     <p v-if="startError !== null" class="agent-error" role="alert">{{ startError }}</p>
+
+    <!-- The watch configuration dialog for a multi-seat environment: assign an agent to every seat,
+         the clicked agent preselected, then start the scripted run from the composed `slots`. -->
+    <UiDialog v-model:open="dialogOpen" :title="`Watch ${meta.display_name}`">
+      <SeatAssignmentDialog
+        v-if="dialogOpen && dialogPreselect !== null"
+        :meta="meta"
+        :agents="agents ?? []"
+        mode="watch"
+        :preselect="dialogPreselect"
+        :is-operator="me.me?.is_operator"
+        @start="startRun"
+        @cancel="dialogOpen = false"
+      />
+    </UiDialog>
   </template>
 </template>
 

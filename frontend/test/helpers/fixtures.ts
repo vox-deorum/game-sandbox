@@ -29,6 +29,32 @@ export function flappyMeta(overrides: Partial<EnvironmentMeta> = {}): Environmen
   }
 }
 
+/**
+ * The Hearts environment metadata: four turn-based seats, every seat human-capable, positional
+ * (`seat_order_matters`), with an unpaced move clock. The multi-seat watch/play flows render from it.
+ */
+export function heartsMeta(overrides: Partial<EnvironmentMeta> = {}): EnvironmentMeta {
+  return {
+    env_id: 'hearts',
+    display_name: 'Hearts',
+    description: 'Four-player trick-taking Hearts.',
+    min_slots: 4,
+    max_slots: 4,
+    human_slots: ['player_0', 'player_1', 'player_2', 'player_3'],
+    human_timeout_ms: 60_000,
+    recommended_episode_ticks: 52,
+    pace_interval_ms: null,
+    step_limit_ms: 1000,
+    episode_limit_ms: 120_000,
+    messaging: false,
+    message_cap: null,
+    llm: false,
+    renderer: 'hearts',
+    seat_order_matters: true,
+    ...overrides,
+  }
+}
+
 /** A recording header for a Flappy Bird run (schema version 1). */
 export function flappyHeader(overrides: Partial<RecordingHeader> = {}): RecordingHeader {
   return { schema_version: 1, environment: 'flappy_bird', seed: 0, ...overrides }

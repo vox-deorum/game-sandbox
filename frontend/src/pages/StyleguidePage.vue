@@ -14,6 +14,7 @@ import UiDialog from '../components/ui/UiDialog.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import UiField from '../components/ui/UiField.vue'
 import UiInput from '../components/ui/UiInput.vue'
+import UiSelect from '../components/ui/UiSelect.vue'
 import UiSlider from '../components/ui/UiSlider.vue'
 import UiStatusBadge from '../components/ui/UiStatusBadge.vue'
 
@@ -41,6 +42,7 @@ const textTokens = ['xs', 'sm', 'md', 'lg', 'xl', '2xl']
 const dialogOpen = ref(false)
 const inputValue = ref('')
 const invalidValue = ref('not a number')
+const selectValue = ref('builtin')
 const sliderValue = ref(120)
 </script>
 
@@ -144,6 +146,28 @@ const sliderValue = ref(120)
         <UiField label="Timeout (ms)" error="Must be a positive number.">
           <template #default="{ id, describedby, invalid }">
             <UiInput :id="id" v-model="invalidValue" :aria-describedby="describedby" :invalid="invalid" />
+          </template>
+        </UiField>
+      </div>
+    </section>
+
+    <section>
+      <h2>UiSelect</h2>
+      <div class="fields">
+        <UiField label="Seat 1" hint="The agent assigned to this seat.">
+          <template #default="{ id, describedby }">
+            <UiSelect :id="id" v-model="selectValue" :aria-describedby="describedby">
+              <option value="builtin">Naive agent</option>
+              <option value="submission:sub1">Submitted agent 1</option>
+              <option value="submission:sub2">Submitted agent 2</option>
+            </UiSelect>
+          </template>
+        </UiField>
+        <UiField label="Disabled">
+          <template #default="{ id }">
+            <UiSelect :id="id" v-model="selectValue" disabled>
+              <option value="builtin">Naive agent</option>
+            </UiSelect>
           </template>
         </UiField>
       </div>

@@ -1,7 +1,7 @@
 import { fireEvent, screen } from '@testing-library/vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { flappyMeta } from './helpers/fixtures.js'
+import { flappyMeta, heartsMeta } from './helpers/fixtures.js'
 import { memoryRouter, renderWithMe } from './helpers/render.js'
 
 const META = flappyMeta()
@@ -42,7 +42,7 @@ const SessionStub = { template: '<div>{{ $route.params.id }}</div>' }
 
 // Render the environment page (renderWithMe wires the MeProvider so the allowlist gate has its one
 // /api/me fetch) on a router carrying the session route, so navigation on start lands on the stub.
-async function renderPage() {
+async function renderPage(envId = 'flappy_bird') {
   const router = memoryRouter([
     // A home stub so the hub's "Environments / …" context-line link resolves in the test router.
     { path: '/', component: { template: '<div />' } },
@@ -51,7 +51,7 @@ async function renderPage() {
     { path: '/environments/:envId/admin', component: { template: '<div />' } },
     { path: '/sessions/:id', component: SessionStub },
   ])
-  router.push('/environments/flappy_bird')
+  router.push(`/environments/${envId}`)
   await router.isReady()
   return renderWithMe(router)
 }
@@ -188,9 +188,10 @@ describe('EnvironmentPage', () => {
     await fireEvent.click(await screen.findByRole('button', { name: 'Play Yourself' }))
     await fireEvent.click(await screen.findByRole('button', { name: 'Start playing' }))
     expect(await screen.findByText('s1')).toBeInTheDocument()
+    // A single-slot environment fills only the lone human seat; the backend derives the human mode.
     expect(vi.mocked(startSession)).toHaveBeenCalledWith({
       envId: 'flappy_bird',
-      mode: 'human',
+      slots: { player_0: { kind: 'human' } },
       seed: undefined,
       humanSlotTimeoutMs: undefined,
     })
@@ -213,7 +214,7 @@ describe('EnvironmentPage', () => {
     await fireEvent.click(await screen.findByRole('button', { name: 'Start playing' }))
     expect(vi.mocked(startSession)).toHaveBeenCalledWith({
       envId: 'flappy_bird',
-      mode: 'human',
+      slots: { player_0: { kind: 'human' } },
       seed: undefined,
       humanSlotTimeoutMs: 250,
     })
@@ -234,5 +235,38 @@ describe('EnvironmentPage', () => {
     await fireEvent.click(await screen.findByRole('button', { name: 'Play Yourself' }))
     await fireEvent.click(await screen.findByRole('button', { name: 'Start playing' }))
     expect(await screen.findByText('active-9')).toBeInTheDocument()
+  })
+
+  it('opens the multi-seat play grid for Hearts and starts with one human seat', async () => {
+    vi.mocked(getMe).mockResolvedValue({
+      user_id: 'dev-user',
+      allowlisted: true,
+      is_operator: false,
+    })
+    vi.mocked(getEnvironments).mockResolvedValue([heartsMeta()])
+    // The multi-seat play dialog fetches the submitted-agent options for the non-human seats.
+    vi.mocked(listWatchAgents).mockResolvedValue([])
+    vi.mocked(startSession).mockResolvedValue({
+      ok: true,
+      session: { id: 'h1', wsPath: '/api/sessions/h1/ws' },
+    })
+    await renderPage('hearts')
+    await fireEvent.click(await screen.findByRole('button', { name: 'Play Yourself' }))
+    // The seat grid opens with the human seated and the other seats defaulting to the Naive baseline.
+    const start = await screen.findByRole('button', { name: 'Start playing' })
+    expect(screen.getByText('You')).toBeInTheDocument()
+    await fireEvent.click(start)
+    expect(vi.mocked(startSession)).toHaveBeenCalledWith({
+      envId: 'hearts',
+      slots: {
+        player_0: { kind: 'human' },
+        player_1: { kind: 'builtin-agent' },
+        player_2: { kind: 'builtin-agent' },
+        player_3: { kind: 'builtin-agent' },
+      },
+      seed: undefined,
+      humanSlotTimeoutMs: 60_000,
+    })
+    expect(await screen.findByText('h1')).toBeInTheDocument()
   })
 })

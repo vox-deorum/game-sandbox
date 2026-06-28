@@ -15,8 +15,10 @@ test('a non-allowlisted user sees no play entry points', async ({ page }) => {
 })
 
 test('a direct start request from a non-allowlisted user is rejected', async ({ request }) => {
+  // A valid `slots` assignment so the request clears schema and slot-shape validation and reaches the
+  // authoritative allowlist check (the 403), rather than failing earlier on the removed legacy shape.
   const response = await request.post('/api/sessions', {
-    data: { env_id: 'flappy_bird', mode: 'scripted' },
+    data: { env_id: 'flappy_bird', slots: { player_0: { kind: 'human' } } },
   })
   expect(response.status()).toBe(403)
   expect((await response.json()).code).toBe('not_allowlisted')

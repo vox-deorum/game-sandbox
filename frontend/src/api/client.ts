@@ -79,15 +79,36 @@ export interface RecordingSummary {
   season_id: string | null
 }
 
-/** The fields a start request resolves; the host page fills them from the environment metadata. */
+/**
+ * One slot's assignment as the start flow builds it: a connected human, the built-in Naive baseline,
+ * or a named submitted agent. The discriminated union carries `submissionId` only on a `submission`
+ * slot; {@link startSession} maps it to the wire's snake-case `submission_id`. Mirrors the backend
+ * `SlotAssignment` (Stage 7.4), so the frontend payload is honest at the trust boundary.
+ */
+export type SlotAssignmentInput =
+  | { kind: 'human' | 'builtin-agent' }
+  | { kind: 'submission'; submissionId: string }
+
+/**
+ * The fields a start request resolves; the seat-assignment flow fills them from the environment
+ * metadata. The session is an explicit per-slot `slots` assignment keyed by slot id (Stage 7.6): the
+ * backend derives the human-versus-scripted `mode` from it, so no `mode` is sent.
+ */
 export interface StartSessionInput {
   envId: string
-  mode: 'human' | 'scripted'
   seed?: number
   humanSlotTimeoutMs?: number
-  /** When set, run this submitted agent in the slot as a watch run sourced from a submission. */
-  submissionId?: string
+  /** Per-slot assignment keyed by slot id; must cover exactly the environment's required seats. */
+  slots: Record<string, SlotAssignmentInput>
 }
+
+/**
+ * A start request minus the environment it targets: what a seat-assignment dialog resolves (the
+ * `slots` assignment plus the session overrides), to be spread into {@link startSession} alongside the
+ * page's `envId`. Keeping the dialog payload and the API input the same shape removes a layer of
+ * per-flow wrapper objects.
+ */
+export type StartPayload = Omit<StartSessionInput, 'envId'>
 
 /** A started session's id and the socket path the live host attaches to. */
 export interface StartedSession {
@@ -116,6 +137,16 @@ export async function getMe(): Promise<Me> {
   return (await json(await request('/me'), 'GET /me')) as Me
 }
 
+/**
+ * Map one slot assignment onto the wire shape: snake-case `submission_id`, present only for a
+ * `submission` slot so the body matches the backend's `START_SESSION_SCHEMA` exactly.
+ */
+function toSlotBody(assignment: SlotAssignmentInput): Record<string, unknown> {
+  return assignment.kind === 'submission'
+    ? { kind: 'submission', submission_id: assignment.submissionId }
+    : { kind: assignment.kind }
+}
+
 /** Start a live session, mapping the backend's typed 403/409 onto a discriminated result. */
 export async function startSession(input: StartSessionInput): Promise<StartSessionResult> {
   const res = await request('/sessions', {
@@ -123,10 +154,11 @@ export async function startSession(input: StartSessionInput): Promise<StartSessi
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       env_id: input.envId,
-      mode: input.mode,
       seed: input.seed,
       human_slot_timeout_ms: input.humanSlotTimeoutMs,
-      submission_id: input.submissionId,
+      slots: Object.fromEntries(
+        Object.entries(input.slots).map(([slotId, assignment]) => [slotId, toSlotBody(assignment)]),
+      ),
     }),
   })
   if (res.status === 201) {
