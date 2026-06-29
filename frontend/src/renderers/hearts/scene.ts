@@ -407,24 +407,16 @@ function buildSeats(o: HeartsOverlay, view: ViewContext): SceneSeat[] {
 }
 
 /**
- * Build the central trick. While a trick is in progress we show its cards; between tricks we show the
- * just-completed trick with its winner highlighted (render.py's rgb_array path), so a scrubber landing
- * on the completion frame still sees what was played. The retained renderer animates the sweep on top.
+ * Place a list of `[seat, card]` trick pairs at their screen-slot offsets around the table center,
+ * flagging the winner (if any). Shared by {@link buildTrick} and the play fly-in's "resting" cards so
+ * the static center cards and the animated ones agree on geometry to the pixel.
  */
-function buildTrick(
-  o: HeartsOverlay,
+function placeTrickCards(
+  pairs: ReadonlyArray<[number, number]>,
   viewSeat: number,
-): { trick: SceneTrickCard[]; trickWinner: number | null } {
-  let pairs = o.currentTrick
-  let winner: number | null = null
-  if (pairs.length === 0) {
-    if (o.lastTrick === null) {
-      return { trick: [], trickWinner: null }
-    }
-    pairs = o.lastTrick
-    winner = o.lastTrickWinner
-  }
-  const trick = pairs.map(([seat, card]) => {
+  winner: number | null,
+): SceneTrickCard[] {
+  return pairs.map(([seat, card]) => {
     const { dx, dy } = trickOffset(slotOfSeat(seat, viewSeat))
     return {
       seat,
@@ -434,7 +426,27 @@ function buildTrick(
       isWinner: winner !== null && seat === winner,
     }
   })
-  return { trick, trickWinner: winner }
+}
+
+/**
+ * Build the central trick. While a trick is in progress we show its cards; between tricks we show the
+ * just-completed trick with its winner highlighted (render.py's rgb_array path), so a scrubber landing
+ * on the completion frame still sees what was played. The retained renderer animates the sweep on top.
+ */
+function buildTrick(
+  o: HeartsOverlay,
+  viewSeat: number,
+): { trick: SceneTrickCard[]; trickWinner: number | null } {
+  let pairs: ReadonlyArray<[number, number]> = o.currentTrick
+  let winner: number | null = null
+  if (pairs.length === 0) {
+    if (o.lastTrick === null) {
+      return { trick: [], trickWinner: null }
+    }
+    pairs = o.lastTrick
+    winner = o.lastTrickWinner
+  }
+  return { trick: placeTrickCards(pairs, viewSeat, winner), trickWinner: winner }
 }
 
 /** Lay out the three non-view seats' cards along their table edges (render.py _draw_opponent_row). */
@@ -719,5 +731,132 @@ export function sweepCardAt(
     x: card.fromX + (sweep.toX - card.fromX) * move,
     y: card.fromY + (sweep.toY - card.fromY) * move,
     scale: 1 - 0.7 * move,
+  }
+}
+
+// --- The card-play fly-in animation (pure helpers the retained renderer drives from its clock) ---
+
+/**
+ * One card flying from the player who just played it into its resting spot in the central trick. The
+ * source is where the card was drawn in the *previous* frame (the player's fanned hand, or an
+ * opponent's row), so the flyer leaves exactly where the eye last saw the card. `resting` is the cards
+ * already in the center before this play; `completesTrick` is true when this play was a trick's fourth
+ * card (which resolves the trick in the same step), telling the renderer to chain into the sweep.
+ */
+export interface PlayMove {
+  seat: number
+  card: number
+  fromX: number
+  fromY: number
+  fromW: number
+  fromH: number
+  toX: number
+  toY: number
+  resting: SceneTrickCard[]
+  completesTrick: boolean
+}
+
+/**
+ * Detect a single card play by comparing the previously rendered state to the new one: either one new
+ * pair was appended to the in-progress trick (cards 1–3), or the trick count went up and the new card
+ * shows only in the completed `last_trick` (the 4th card, which resolves the trick in the same step,
+ * see rules.play). Returns the fly-in description, or null when nothing was newly played (no change, a
+ * fresh deal, a backward scrub). Pure, so the renderer animates without holding hidden state.
+ */
+export function detectPlay(
+  prev: StepState | null,
+  next: StepState,
+  viewSeat: number,
+): PlayMove | null {
+  if (prev === null) {
+    return null
+  }
+  const p = readOverlay(prev)
+  const n = readOverlay(next)
+
+  let seat: number
+  let card: number
+  let completesTrick: boolean
+  if (n.tricksPlayed === p.tricksPlayed && n.currentTrick.length === p.currentTrick.length + 1) {
+    // Cards 1–3: one new pair appended to the same in-progress trick.
+    const pair = n.currentTrick[n.currentTrick.length - 1]
+    if (pair === undefined) {
+      return null
+    }
+    ;[seat, card] = pair
+    completesTrick = false
+  } else if (
+    n.currentTrick.length === 0 &&
+    n.lastTrick !== null &&
+    n.tricksPlayed === p.tricksPlayed + 1
+  ) {
+    // The 4th card resolved the trick in one step, so it only appears in last_trick now: it is the
+    // last_trick card that was not already resting in the previous in-progress trick.
+    const resting = new Set(p.currentTrick.map(([, c]) => c))
+    const pair = n.lastTrick.find(([, c]) => !resting.has(c))
+    if (pair === undefined) {
+      return null
+    }
+    ;[seat, card] = pair
+    completesTrick = true
+  } else {
+    return null
+  }
+
+  const from = playSource(p, viewSeat, seat, card)
+  const { dx, dy } = trickOffset(slotOfSeat(seat, viewSeat))
+  return {
+    seat,
+    card,
+    ...from,
+    toX: TRICK_CENTER.x + dx,
+    toY: TRICK_CENTER.y + dy,
+    // The cards already on the table before this play (no winner highlight; the trick isn't won yet).
+    resting: placeTrickCards(p.currentTrick, viewSeat, null),
+    completesTrick,
+  }
+}
+
+/**
+ * Where the played card was drawn in the previous frame: the view seat's fanned hand if the player is
+ * the view seat, otherwise the opponent row. Reuses {@link buildHand}/{@link buildOpponents} so the
+ * source matches the actual draw to the pixel. Falls back to the player's seat badge if the card can't
+ * be located (defensive; should not happen, since the card was in that hand a frame ago).
+ */
+function playSource(
+  prev: HeartsOverlay,
+  viewSeat: number,
+  seat: number,
+  card: number,
+): { fromX: number; fromY: number; fromW: number; fromH: number } {
+  if (seat === viewSeat) {
+    const hand = buildHand(prev, { viewSeat, controlledSeat: null, revealAll: true })
+    const shc = hand.find((c) => c.card === card)
+    if (shc !== undefined) {
+      return { fromX: shc.x + shc.w / 2, fromY: shc.y + shc.h / 2, fromW: shc.w, fromH: shc.h }
+    }
+  } else {
+    const sc = buildOpponents(prev, viewSeat, true).find((c) => c.card === card)
+    if (sc !== undefined) {
+      return { fromX: sc.x + sc.w / 2, fromY: sc.y + sc.h / 2, fromW: sc.w, fromH: sc.h }
+    }
+  }
+  const anchor = seatAnchor(slotOfSeat(seat, viewSeat))
+  return { fromX: anchor.x, fromY: anchor.y, fromW: SMALL_W, fromH: SMALL_H }
+}
+
+/**
+ * The position and scale of the flying card at progress `t` in [0,1]. The first `PLAY_HOLD` fraction
+ * holds it at the source (highlighted, by the renderer) so the eye registers which card was picked,
+ * then it eases to the center, shrinking from its source size down to the small trick-card size.
+ */
+export const PLAY_HOLD = 0.3
+export function playCardAt(move: PlayMove, t: number): { x: number; y: number; scale: number } {
+  const m = t < PLAY_HOLD ? 0 : smoothstep((t - PLAY_HOLD) / (1 - PLAY_HOLD))
+  const endScale = SMALL_W / move.fromW
+  return {
+    x: move.fromX + (move.toX - move.fromX) * m,
+    y: move.fromY + (move.toY - move.fromY) * m,
+    scale: 1 + (endScale - 1) * m,
   }
 }

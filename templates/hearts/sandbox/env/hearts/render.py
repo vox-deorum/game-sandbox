@@ -59,6 +59,8 @@ WIDTH, HEIGHT = 960, 720
 CARD_W, CARD_H = 64, 92
 #: Smaller card-face dimensions for trick cards and revealed opponent hands.
 SMALL_W, SMALL_H = 48, 70
+#: How far (logical px) a hovered hand card lifts, so the human sees which card is under the cursor.
+HOVER_LIFT = 8
 
 #: Supersampling factor for suit pips: each pip is drawn this many times larger and smoothscaled
 #: back down, so pygame's non-antialiased ``draw`` primitives still yield smooth edges. 4x is the
@@ -133,6 +135,12 @@ class HeartsRenderer:
         self._legal_cards: set[int] = set()
         #: Count of completed tricks whose win animation has already played (human mode only).
         self._animated_tricks: int = 0
+        #: The previously rendered overlay (human mode only), so the card fly-in knows where each card
+        #: was last drawn. The Python twin of the browser renderer's `lastState`.
+        self._prev_overlay: dict[str, Any] | None = None
+        #: The hand card to highlight on the next render (human hover feedback), or None. Stays None in
+        #: rgb_array mode, so headless frames are byte-identical.
+        self._hovered_card: int | None = None
         #: Cache of antialiased suit pips keyed by (suit, size, ink); a handful of distinct sizes
         #: and inks recur every frame, so this turns the per-pip supersample into a one-time cost.
         self._pip_cache: dict[tuple[int, int, tuple[int, int, int]], pygame.Surface] = {}
@@ -220,6 +228,15 @@ class HeartsRenderer:
         """Return whether ``card`` was legal in the most recently rendered frame."""
         return card in self._legal_cards
 
+    def set_hover(self, card: int | None) -> None:
+        """Set the hand card to highlight on the next render (human hover feedback), or ``None``.
+
+        The human controller calls this each frame with the card under the cursor (see
+        ``HeartsHumanController.act``); the browser gets the same affordance from PixiJS pointer events
+        in ``index.ts``. Hover is human-mode chrome only — it never changes the rgb_array frame.
+        """
+        self._hovered_card = card
+
     # -- rendering -----------------------------------------------------------------------------
 
     def render(self, env: HeartsEnv) -> np.ndarray | None:
@@ -229,9 +246,11 @@ class HeartsRenderer:
         is fanned and clickable. ``env.reveal_all`` (default ``False``) draws every seat's faces
         for spectating/replay; otherwise the three opponents are face-down.
 
-        In ``"human"`` mode, a just-completed trick triggers the sweep animation *before* the
-        static frame is drawn, so the static frame that follows leaves the centre clear (the cards
-        have gone to the winner).
+        In ``"human"`` mode (live play *and* spectator ``watch``, both of which open a window), the
+        move from the previously rendered overlay is animated *before* the static frame: the just-played
+        card flies from its hand into the centre, chaining into the trick-won sweep when it was a trick's
+        fourth card (which leaves the centre clear afterwards, the cards having gone to the winner). The
+        headless ``rgb_array`` path skips all animation and stays a single deterministic frame.
         """
         self._ensure_init()
         overlay = extract_overlay(env)
@@ -244,17 +263,13 @@ class HeartsRenderer:
         tricks_played = overlay["tricks_played"]
         if tricks_played < self._animated_tricks:
             self._animated_tricks = 0  # a fresh deal rewound the trick count
+            self._prev_overlay = None  # ...and there is no prior frame to animate from
 
-        newly_completed = (
-            self.render_mode == "human"
-            and not overlay["current_trick"]
-            and overlay["last_trick"] is not None
-            and tricks_played > self._animated_tricks
-        )
-        if newly_completed:
-            self._ensure_window()
-            self._animate_trick_won(overlay, view_seat, reveal_all)
-            self._animated_tricks = tricks_played
+        # Human mode: animate the transition from the previous overlay, then remember this one so the
+        # next render can diff against it (the twin of index.ts setting `lastState` each update).
+        if self.render_mode == "human":
+            self._animate_transition(overlay, view_seat, reveal_all, tricks_played)
+            self._prev_overlay = overlay
 
         self._draw_table(surface)
         self._draw_seats(surface, overlay, view_seat)
@@ -417,24 +432,43 @@ class HeartsRenderer:
             highlight = WINNER_GLOW if winner is not None and seat == winner else None
             self._draw_card_face(surface, rect, card, self._font_small, border=highlight, border_w=4)
 
-    def _draw_opponents(
-        self, surface: pygame.Surface, overlay: dict, view_seat: int, reveal_all: bool
-    ) -> None:
-        """Draw the three non-view seats: face-down backs, or small faces when ``reveal_all``."""
-        for seat in range(rules.NUM_PLAYERS):
-            if seat == view_seat:
-                continue
-            slot = self._slot_of_seat(seat, view_seat)
-            hand = overlay["hands"][seat]
-            self._draw_opponent_row(surface, slot, hand, reveal_all)
+    # -- card layout (the single source of the fan / opponent-row geometry) ---------------------
 
-    def _draw_opponent_row(
-        self, surface: pygame.Surface, slot: int, hand: list[int], reveal_all: bool
-    ) -> None:
-        """Lay an opponent's cards out along their table edge (backs unless revealing)."""
+    def _hand_layout(self, hand: list[int], legal_cards: set[int]) -> list[tuple[int, pygame.Rect]]:
+        """Resting rect of every card in the view seat's fanned hand, in draw order (no hover lift).
+
+        The one place the bottom fan's geometry is computed, reused by :meth:`_draw_hand` (drawing and
+        the ``_hand_rects`` it records for hit-testing) and :meth:`_play_source` (the fly-in origin), so
+        a card flies from exactly where it was drawn. Legal cards sit a few px higher (a selectable cue).
+        """
         count = len(hand)
         if count == 0:
-            return
+            return []
+        card_w, card_h = self._s(CARD_W), self._s(CARD_H)
+        margin = self._s(40)
+        avail = self._s(WIDTH) - 2 * margin
+        # Overlap as needed so all cards fit within the available width.
+        step = min(card_w + self._s(6), (avail - card_w) // (count - 1)) if count > 1 else 0
+        run = step * (count - 1) + card_w
+        start_x = (self._s(WIDTH) - run) // 2
+        base_y = self._s(HEIGHT) - card_h - self._s(18)
+        layout: list[tuple[int, pygame.Rect]] = []
+        for i, card in enumerate(hand):
+            x = start_x + i * step
+            # Raise legal cards a few px so they read as selectable.
+            y = base_y - (self._s(10) if card in legal_cards else 0)
+            layout.append((card, pygame.Rect(x, y, card_w, card_h)))
+        return layout
+
+    def _opponent_row_layout(self, slot: int, hand: list[int]) -> list[tuple[int, pygame.Rect]]:
+        """Rect of every card in an opponent's row along their table edge, in deal order.
+
+        The one place the opponent-row geometry is computed, reused by :meth:`_draw_opponent_row` and
+        :meth:`_play_source` so an opponent's card flies from exactly where its back/face was drawn.
+        """
+        count = len(hand)
+        if count == 0:
+            return []
         vertical = slot in (1, 3)  # West / East sit along the side edges.
         small_w, small_h = self._s(SMALL_W), self._s(SMALL_H)
         span = self._s(HEIGHT if vertical else WIDTH) - self._s(360)
@@ -448,44 +482,81 @@ class HeartsRenderer:
             y = self._s(150)  # North row sits just under the top seat badge.
             start = (self._s(WIDTH) - run) // 2
             positions = [(start + i * step, y) for i in range(count)]
-        for card, (x, y) in zip(hand, positions, strict=False):
-            rect = pygame.Rect(x, y, small_w, small_h)
+        return [
+            (card, pygame.Rect(px, py, small_w, small_h))
+            for card, (px, py) in zip(hand, positions, strict=False)
+        ]
+
+    def _draw_opponents(
+        self,
+        surface: pygame.Surface,
+        overlay: dict,
+        view_seat: int,
+        reveal_all: bool,
+        hidden_card: int | None = None,
+    ) -> None:
+        """Draw the three non-view seats: face-down backs, or small faces when ``reveal_all``.
+
+        ``hidden_card`` (set during a fly-in) is skipped so its slot stays a placeholder gap while the
+        layout keeps the full count, so the row does not re-pack while one card flies out.
+        """
+        for seat in range(rules.NUM_PLAYERS):
+            if seat == view_seat:
+                continue
+            slot = self._slot_of_seat(seat, view_seat)
+            hand = overlay["hands"][seat]
+            self._draw_opponent_row(surface, slot, hand, reveal_all, hidden_card)
+
+    def _draw_opponent_row(
+        self,
+        surface: pygame.Surface,
+        slot: int,
+        hand: list[int],
+        reveal_all: bool,
+        hidden_card: int | None = None,
+    ) -> None:
+        """Lay an opponent's cards out along their table edge (backs unless revealing)."""
+        for card, rect in self._opponent_row_layout(slot, hand):
+            if card == hidden_card:
+                continue  # placeholder gap during the fly-in (the flyer represents this card)
             if reveal_all:
                 self._draw_card_face(surface, rect, card, self._font_small)
             else:
                 self._draw_card_back(surface, rect)
 
-    def _draw_hand(self, surface: pygame.Surface, overlay: dict, view_seat: int) -> None:
-        """Fan the view seat's hand across the bottom, highlighting legal and greying illegal."""
+    def _draw_hand(
+        self,
+        surface: pygame.Surface,
+        overlay: dict,
+        view_seat: int,
+        hidden_card: int | None = None,
+    ) -> None:
+        """Fan the view seat's hand across the bottom, highlighting legal and greying illegal.
+
+        ``hidden_card`` (set during a fly-in) is skipped so its slot stays a placeholder gap while the
+        layout keeps the full count, so the fan does not re-pack while one card flies out.
+        """
         self._hand_rects = []
-        hand = list(overlay["hands"][view_seat])
         self._legal_cards = set(overlay["legal_actions"])
-        count = len(hand)
-        if count == 0:
-            return
-
-        card_w, card_h = self._s(CARD_W), self._s(CARD_H)
-        margin = self._s(40)
-        avail = self._s(WIDTH) - 2 * margin
-        # Overlap as needed so all cards fit within the available width.
-        step = min(card_w + self._s(6), (avail - card_w) // (count - 1)) if count > 1 else 0
-        run = step * (count - 1) + card_w
-        start_x = (self._s(WIDTH) - run) // 2
-        base_y = self._s(HEIGHT) - card_h - self._s(18)
-
-        for i, card in enumerate(hand):
-            legal = card in self._legal_cards
-            x = start_x + i * step
-            # Raise legal cards a few px so they read as selectable.
-            y = base_y - (self._s(10) if legal else 0)
-            rect = pygame.Rect(x, y, card_w, card_h)
-            border = LEGAL_BORDER if legal else None
-            self._draw_card_face(surface, rect, card, self._font, border=border, border_w=4)
-            if not legal:
-                veil = pygame.Surface((card_w, card_h), pygame.SRCALPHA)
-                veil.fill(GREY_VEIL)
-                surface.blit(veil, rect.topleft)
+        for card, rect in self._hand_layout(list(overlay["hands"][view_seat]), self._legal_cards):
+            if card == hidden_card:
+                continue  # placeholder gap during the fly-in (the flyer represents this card)
+            # Record the resting rect for hit-testing before any hover lift, so hover never shifts the
+            # click target (which would make the highlight flicker at a card's edge).
             self._hand_rects.append((card, rect))
+            legal = card in self._legal_cards
+            # Hover (human chrome; _hovered_card is None in rgb_array, so headless frames are unchanged):
+            # lift the hovered card and ring it gold, mirroring the browser hover ring in index.ts.
+            hovered = self._hovered_card is not None and card == self._hovered_card
+            draw_rect = rect.move(0, -self._s(HOVER_LIFT)) if hovered else rect
+            border = LEGAL_BORDER if legal else None
+            self._draw_card_face(surface, draw_rect, card, self._font, border=border, border_w=4)
+            if not legal:
+                veil = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+                veil.fill(GREY_VEIL)
+                surface.blit(veil, draw_rect.topleft)
+            if hovered:
+                self._draw_glow_border(surface, draw_rect, GOLD, 4, 1.0)
 
     # -- status line ---------------------------------------------------------------------------
 
@@ -531,15 +602,6 @@ class HeartsRenderer:
         if hint:
             h = self._font_small.render(hint, True, HINT_INK)
             surface.blit(h, (self._s(16), row1_y + t1.get_height() + self._s(6)))
-
-        if terminal:
-            scores = overlay["display_scores"]
-            ranking = sorted(range(rules.NUM_PLAYERS), key=lambda s: scores[s])
-            summary = "    ".join(f"P{s}: {scores[s]}" for s in ranking)
-            over = self._font_big.render("Game over", True, GOLD)
-            surface.blit(over, over.get_rect(center=(w // 2, self._s(HEIGHT) // 2 - self._s(34))))
-            final = self._font.render(summary, True, WHITE)
-            surface.blit(final, final.get_rect(center=(w // 2, self._s(HEIGHT) // 2 + self._s(6))))
 
     def _status_message(self, overlay: dict, view_seat: int) -> tuple[str, tuple[int, int, int]]:
         """Return the primary-row state message and its colour."""
@@ -604,7 +666,142 @@ class HeartsRenderer:
             return "Your lead  -  only hearts left, so you may lead them"
         return "Your lead  -  hearts are broken, lead any suit"
 
-    # -- trick-won animation -------------------------------------------------------------------
+    # -- card-play and trick-won animations ----------------------------------------------------
+
+    def _animate_transition(
+        self, overlay: dict, view_seat: int, reveal_all: bool, tricks_played: int
+    ) -> None:
+        """Animate the move from the previous overlay to this one (human mode), mirroring index.ts.
+
+        A card fly-in runs for the just-played card; when that play was a trick's fourth card it
+        resolves the trick in the same step (see ``rules.play``), so the fly-in chains into the
+        trick-won sweep. Either piece is a no-op when not applicable, so a fresh deal or a repeated
+        frame animates nothing.
+        """
+        play = self._detect_play(overlay)
+        newly_completed = (
+            not overlay["current_trick"]
+            and overlay["last_trick"] is not None
+            and tricks_played > self._animated_tricks
+        )
+        if play is not None:
+            self._ensure_window()
+            self._animate_card_played(overlay, view_seat, reveal_all, play)
+        if newly_completed:
+            self._ensure_window()
+            self._animate_trick_won(overlay, view_seat, reveal_all)
+            self._animated_tricks = tricks_played
+
+    def _detect_play(self, overlay: dict) -> tuple[int, int, list[tuple[int, int]]] | None:
+        """Return ``(seat, card, resting_pairs)`` for the card just played versus the previous overlay,
+        or ``None``. The pure twin of scene.ts ``detectPlay``: either one new pair was appended to the
+        in-progress trick (cards 1–3), or the trick count went up and the new card shows only in the
+        completed ``last_trick`` (the fourth card). Whether that play *completed* the trick — and so
+        chains into the sweep — is decided separately by :meth:`_animate_transition` (``newly_completed``),
+        so it is not carried here.
+        """
+        prev = self._prev_overlay
+        if prev is None:
+            return None
+        p_trick = prev["current_trick"]
+        n_trick = overlay["current_trick"]
+        p_tricks = prev["tricks_played"]
+        n_tricks = overlay["tricks_played"]
+        if n_tricks == p_tricks and len(n_trick) == len(p_trick) + 1:
+            seat, card = n_trick[-1]
+            return int(seat), int(card), [(int(s), int(c)) for s, c in p_trick]
+        if not n_trick and overlay["last_trick"] is not None and n_tricks == p_tricks + 1:
+            resting = {int(c) for _, c in p_trick}
+            played = [pair for pair in overlay["last_trick"] if int(pair[1]) not in resting]
+            if not played:
+                return None
+            seat, card = played[0]
+            return int(seat), int(card), [(int(s), int(c)) for s, c in p_trick]
+        return None
+
+    def _play_source(self, prev: dict, view_seat: int, seat: int, card: int) -> tuple[int, int, int, int]:
+        """Device-pixel centre and size ``(cx, cy, w, h)`` of ``card`` as it was drawn for ``seat`` in
+        the previous overlay: the view seat's fanned hand, or an opponent row. Reuses the shared layout
+        helpers (:meth:`_hand_layout` / :meth:`_opponent_row_layout`) so the source matches the actual
+        draw to the pixel — the twin of scene.ts ``playSource`` reusing ``buildHand``/``buildOpponents``.
+        Falls back to the seat badge if the card can't be located (defensive).
+        """
+        if seat == view_seat:
+            layout = self._hand_layout(list(prev["hands"][view_seat]), set(prev["legal_actions"]))
+        else:
+            slot = self._slot_of_seat(seat, view_seat)
+            layout = self._opponent_row_layout(slot, list(prev["hands"][seat]))
+        for drawn_card, rect in layout:
+            if drawn_card == card:
+                return rect.centerx, rect.centery, rect.width, rect.height
+        ax, ay = self._seat_anchor(self._slot_of_seat(seat, view_seat))
+        return ax, ay, self._s(SMALL_W), self._s(SMALL_H)
+
+    def _animate_card_played(
+        self,
+        overlay: dict,
+        view_seat: int,
+        reveal_all: bool,
+        play: tuple[int, int, list[tuple[int, int]]],
+    ) -> None:
+        """Play the ~0.48 s fly-in: the played card holds (gold-ringed) where it left the hand, then
+        slides into its trick spot, shrinking to trick size. The cards already in the centre sit
+        static beneath it. Human mode only; drives its own frame loop and flips, like the sweep.
+        """
+        surface = self._surface
+        screen = self._screen
+        prev = self._prev_overlay
+        if surface is None or screen is None or prev is None:
+            return
+        seat, card, resting_pairs = play
+
+        sx, sy, sw, sh = self._play_source(prev, view_seat, seat, card)
+        center = (self._s(WIDTH // 2), self._s(HEIGHT // 2))
+        dx, dy = self._trick_offset(self._slot_of_seat(seat, view_seat))
+        tx, ty = center[0] + dx, center[1] + dy
+        end_scale = self._s(SMALL_W) / sw
+
+        duration_ms = 480.0
+        hold = 0.30  # fraction spent holding + highlighting before the slide begins
+        clock = pygame.time.Clock()
+        start = pygame.time.get_ticks()
+        while True:
+            elapsed = pygame.time.get_ticks() - start
+            t = elapsed / duration_ms
+            if t >= 1.0:
+                break
+            move = 0.0 if t < hold else self._smoothstep((t - hold) / (1.0 - hold))
+
+            # Base frame, minus the in-progress trick (we draw the resting cards + the flyer ourselves).
+            # The hand and opponent rows are drawn from the *previous* overlay with the flying card
+            # hidden, so the source row holds its layout (a placeholder gap where the card was) instead
+            # of re-packing while one card flies out. Seats and status reflect the new state.
+            self._draw_table(surface)
+            self._draw_seats(surface, overlay, view_seat)
+            self._draw_opponents(surface, prev, view_seat, reveal_all, hidden_card=card)
+            self._draw_hand(surface, prev, view_seat, hidden_card=card)
+            self._draw_status(surface, overlay, view_seat)
+
+            for r_seat, r_card in resting_pairs:
+                r_dx, r_dy = self._trick_offset(self._slot_of_seat(r_seat, view_seat))
+                r_rect = pygame.Rect(0, 0, self._s(SMALL_W), self._s(SMALL_H))
+                r_rect.center = (center[0] + r_dx, center[1] + r_dy)
+                self._draw_card_face(surface, r_rect, r_card, self._font_small)
+
+            scale = 1.0 + (end_scale - 1.0) * move
+            cw = max(1, round(sw * scale))
+            ch = max(1, round(sh * scale))
+            rect = pygame.Rect(0, 0, cw, ch)
+            rect.center = (round(sx + (tx - sx) * move), round(sy + (ty - sy) * move))
+            # Held at the source the flyer wears a gold "selected" ring (distinct from the green legal
+            # border); once it slides the ring drops, so it reads as "this is the card going out".
+            border = GOLD if t < hold else None
+            self._draw_card_face(surface, rect, card, self._font_small, border=border, border_w=4)
+
+            screen.blit(surface, (0, 0))
+            pygame.event.pump()
+            pygame.display.flip()
+            clock.tick(60)
 
     def _animate_trick_won(self, overlay: dict, view_seat: int, reveal_all: bool) -> None:
         """Play the ~0.9 s sweep: the winner's card pulses gold, then the four cards slide and

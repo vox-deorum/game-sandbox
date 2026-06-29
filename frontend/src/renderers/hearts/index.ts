@@ -26,12 +26,17 @@ import {
   COLORS,
   computeScene,
   DIAMONDS,
+  detectPlay,
   detectSweep,
   HEARTS,
   HEIGHT,
   type HeartsScene,
+  PLAY_HOLD,
+  type PlayMove,
+  playCardAt,
   RANK_LABELS,
   rankOf,
+  type SceneCard,
   type SceneHandCard,
   type SceneSeat,
   type SceneTrickCard,
@@ -50,14 +55,39 @@ import {
 const SWEEP_NATURAL_MS = 700
 /** The slowest and fastest a sweep is ever allowed to run, so a long or tiny budget still reads. */
 const SWEEP_MIN_MS = 220
+/** The natural card-play fly-in length in live play (ms); a replay scales it to a slice of cadence. */
+const PLAY_NATURAL_MS = 480
+/** The slowest and fastest a fly-in is ever allowed to run, so a long or tiny budget still reads. */
+const PLAY_MIN_MS = 180
 /** The active-seat glow's breathing period (ms): a gentle pulse, the only ambient animation. */
 const PULSE_PERIOD_MS = 1100
+/** How far (px) a hovered hand card lifts, so the user sees which card is under the cursor. */
+const HOVER_LIFT = 8
 
-/** An in-progress trick-won sweep: the geometry, how long it runs, and how far it has progressed. */
-interface ActiveSweep {
+/** A card-play fly-in phase: one card sliding from its player's hand into the center. */
+interface PlayPhase {
+  kind: 'play'
+  move: PlayMove
+  elapsedMs: number
+  durationMs: number
+}
+
+/** A trick-won sweep phase: the four cards sliding into the winner. */
+interface SweepPhase {
+  kind: 'sweep'
   sweep: TrickSweep
   elapsedMs: number
   durationMs: number
+}
+
+/**
+ * The center's running transition. A play fly-in (cards 1–3) runs alone; the fourth card's fly-in
+ * carries a `nextSweep` to chain into once it lands, since playing the fourth card resolves the trick
+ * in the same step (see scene.ts `detectPlay`). A bare trick-won sweep has phase `sweep` and no chain.
+ */
+interface ActiveTransition {
+  phase: PlayPhase | SweepPhase
+  nextSweep: SweepPhase | null
 }
 
 export class HeartsRenderer extends PixiRenderer {
@@ -73,16 +103,17 @@ export class HeartsRenderer extends PixiRenderer {
   private opponentLayer!: Container
   private trickLayer!: Container
   private handLayer!: Container
+  private flyLayer!: Container
   private statusLayer!: Container
   private clockLayer!: Container
   private pointsLayer!: Container
 
   /** The scene the static layers were last reconciled to, reused by the per-frame loop. */
   private scene: HeartsScene | null = null
-  /** The previously rendered state, so {@link detectSweep} can spot a just-completed trick. */
+  /** The previously rendered state, so {@link detectSweep}/{@link detectPlay} can spot a transition. */
   private lastState: StepState | null = null
-  /** The running sweep, or null when the center shows the static trick. */
-  private active: ActiveSweep | null = null
+  /** The running center transition (a play fly-in and/or trick sweep), or null when drawn statically. */
+  private active: ActiveTransition | null = null
   /** Accumulated wall-clock time driving the ambient active-seat pulse. */
   private pulseMs = 0
   /** Cached gradient for the felt backdrop (one GPU texture, freed in destroy). */
@@ -94,6 +125,7 @@ export class HeartsRenderer extends PixiRenderer {
     this.opponentLayer = new Container()
     this.trickLayer = new Container()
     this.handLayer = new Container()
+    this.flyLayer = new Container()
     this.statusLayer = new Container()
     this.clockLayer = new Container()
     this.pointsLayer = new Container()
@@ -103,6 +135,9 @@ export class HeartsRenderer extends PixiRenderer {
       this.opponentLayer,
       this.trickLayer,
       this.handLayer,
+      // The fly-in's airborne card sits above the hand so it lifts cleanly off the fan (the static
+      // trick and resting cards stay in trickLayer below).
+      this.flyLayer,
       this.statusLayer,
       this.clockLayer,
       this.pointsLayer,
@@ -136,30 +171,63 @@ export class HeartsRenderer extends PixiRenderer {
   // so it inherits the base `inputs()` default of [].
 
   protected update(state: StepState, options?: RenderOptions): void {
-    const scene = computeScene(state, {
+    const config = {
       controlledSlots: this.ctx.controlledSlots,
       humanTimeoutMs: this.ctx.meta.human_timeout_ms,
-    })
+    }
+    const scene = computeScene(state, config)
     this.scene = scene
 
-    // Static layers: rebuilt wholesale each state. Turn-based play steps rarely, so a full rebuild is
-    // cheap; the 60fps per-frame loop below only touches the sweep and the one pulsing glow.
+    // A scrub or seek snaps, so it never animates; otherwise a newly-played card kicks off a fly-in
+    // and a newly-completed trick kicks off the sweep.
+    const snap = options?.snap === true
+    const play = snap ? null : detectPlay(this.lastState, state, scene.viewSeat)
+    const sweep = snap ? null : detectSweep(this.lastState, state, scene.viewSeat)
+
+    // Static layers: rebuilt wholesale each state. Seats, status, and clock always reflect the new
+    // state; the hand and opponent rows are held at the previous layout during a fly-in (below).
     this.reconcileSeats(scene)
-    this.reconcileOpponents(scene)
-    this.reconcileHand(scene)
     this.reconcileStatus(scene)
     this.reconcileClock(scene)
 
-    // The center trick is either owned by a running sweep (animation) or drawn statically. A scrub or
-    // seek snaps, so it never animates; otherwise a newly-completed trick kicks off the sweep.
-    const sweep = options?.snap ? null : detectSweep(this.lastState, state, scene.viewSeat)
-    if (sweep !== null) {
-      this.active = { sweep, elapsedMs: 0, durationMs: sweepDuration(options) }
-      this.renderSweep(0)
+    if (play !== null && this.lastState !== null) {
+      // Hold the source hand/row at its previous layout for the fly-in, so the other cards don't
+      // re-fan to close the gap while one card flies out: the played card's slot stays a placeholder
+      // (the flyer fills it during the hold, then leaves it empty as it slides). The held cards are
+      // made inert; the hand re-fans to the new, smaller layout once the fly-in lands (see onFrame).
+      const before = computeScene(this.lastState, config)
+      this.reconcileHand(
+        before.hand.filter((c) => c.card !== play.card).map((c) => ({ ...c, controllable: false })),
+        scene.viewSeat,
+      )
+      this.reconcileOpponents(before.opponents.filter((c) => c.card !== play.card))
+      // The fourth card resolves the trick in the same step, so its fly-in chains into the sweep;
+      // cards 1–3 have no sweep to chain to. When it chains, both phases are sized from one shared
+      // budget so the fly-in plus the sweep finish inside the replay cadence (see playPhaseDurations).
+      const chained = play.completesTrick && sweep !== null
+      const { playMs, sweepMs } = playPhaseDurations(options, chained)
+      this.active = {
+        phase: { kind: 'play', move: play, elapsedMs: 0, durationMs: playMs },
+        nextSweep: chained ? { kind: 'sweep', sweep, elapsedMs: 0, durationMs: sweepMs } : null,
+      }
+      this.renderPlay(play, 0)
     } else {
-      this.active = null
-      clear(this.pointsLayer)
-      this.reconcileTrick(scene.trick)
+      // No fly-in this state: settle the hand/opponents and clear any airborne card from a fly-in that
+      // an immediate snap/seek interrupted.
+      clear(this.flyLayer)
+      this.reconcileHand(scene.hand, scene.viewSeat)
+      this.reconcileOpponents(scene.opponents)
+      if (sweep !== null) {
+        this.active = {
+          phase: { kind: 'sweep', sweep, elapsedMs: 0, durationMs: sweepDuration(options) },
+          nextSweep: null,
+        }
+        this.renderSweep(sweep, 0)
+      } else {
+        this.active = null
+        clear(this.pointsLayer)
+        this.reconcileTrick(scene.trick)
+      }
     }
 
     this.lastState = state
@@ -171,17 +239,40 @@ export class HeartsRenderer extends PixiRenderer {
     }
     this.pulseMs += dtMs
 
-    // Drive the trick-won sweep: slide and shrink the cards into the winner, then leave the center
-    // clear (the cards are "with" the winner now), exactly as render.py's _animate_trick_won ends.
-    if (this.active !== null) {
-      this.active.elapsedMs += dtMs
-      const t = this.active.elapsedMs / this.active.durationMs
-      if (t >= 1) {
-        this.active = null
-        clear(this.trickLayer)
-        clear(this.pointsLayer)
+    const active = this.active
+    if (active !== null) {
+      const phase = active.phase
+      phase.elapsedMs += dtMs
+      const t = phase.elapsedMs / phase.durationMs
+      if (phase.kind === 'play') {
+        // Drive the fly-in: hold-then-slide the card into the center. When it lands, re-fan the held
+        // hand/row into the new layout (the placeholder closes), then chain into the queued sweep (the
+        // fourth card) or settle the card into the static trick (cards 1–3).
+        if (t >= 1) {
+          clear(this.flyLayer)
+          this.reconcileHand(this.scene.hand, this.scene.viewSeat)
+          this.reconcileOpponents(this.scene.opponents)
+          if (active.nextSweep !== null) {
+            active.phase = active.nextSweep
+            active.nextSweep = null
+            this.renderSweep(active.phase.sweep, 0)
+          } else {
+            this.active = null
+            this.reconcileTrick(this.scene.trick)
+          }
+        } else {
+          this.renderPlay(phase.move, t)
+        }
       } else {
-        this.renderSweep(t)
+        // Drive the trick-won sweep: slide and shrink the cards into the winner, then leave the center
+        // clear (the cards are "with" the winner now), exactly as render.py's _animate_trick_won ends.
+        if (t >= 1) {
+          this.active = null
+          clear(this.trickLayer)
+          clear(this.pointsLayer)
+        } else {
+          this.renderSweep(phase.sweep, t)
+        }
       }
     }
 
@@ -283,9 +374,9 @@ export class HeartsRenderer extends PixiRenderer {
 
   // --- Opponents (render.py _draw_opponents / _draw_opponent_row) ---
 
-  private reconcileOpponents(scene: HeartsScene): void {
+  private reconcileOpponents(opponents: readonly SceneCard[]): void {
     clear(this.opponentLayer)
-    for (const card of scene.opponents) {
+    for (const card of opponents) {
       const node = card.faceUp
         ? this.makeCardFace(card.card, card.w, card.h, {})
         : this.makeCardBack(card.w, card.h)
@@ -309,18 +400,43 @@ export class HeartsRenderer extends PixiRenderer {
     }
   }
 
-  /** Draw the four swept cards at progress `t`, plus the gold points pill (render.py _animate_trick_won). */
-  private renderSweep(t: number): void {
-    const active = this.active
-    if (active === null) {
-      return
-    }
+  /**
+   * Draw a card fly-in at progress `t`: the cards already in the center sit static, and the played card
+   * slides from where it left the player's hand (held and ringed gold during the hold) into its trick
+   * spot, shrinking from hand size to trick size (mirrors render.py `_animate_card_played`).
+   */
+  private renderPlay(move: PlayMove, t: number): void {
     clear(this.trickLayer)
-    for (const card of active.sweep.cards) {
-      const { x, y, scale } = sweepCardAt(card, active.sweep, t)
+    clear(this.flyLayer)
+    clear(this.pointsLayer)
+    for (const card of move.resting) {
+      const node = this.makeCardFace(card.card, SMALL_W, SMALL_H, {})
+      node.position.set(card.x - SMALL_W / 2, card.y - SMALL_H / 2)
+      this.trickLayer.addChild(node)
+    }
+    const { x, y, scale } = playCardAt(move, t)
+    const w = move.fromW * scale
+    const h = move.fromH * scale
+    const node = this.makeCardFace(move.card, w, h, {
+      // Held at the source it wears a gold "selected" ring (distinct from the green legal border); once
+      // it starts sliding the ring drops, so it reads as "this is the card going out".
+      border: t < PLAY_HOLD ? COLORS.gold : undefined,
+      borderW: 4,
+    })
+    node.position.set(x - w / 2, y - h / 2)
+    // The airborne card lives above the hand (flyLayer) so it lifts cleanly off the fan without its
+    // neighbours occluding it; the resting center cards stay in trickLayer below.
+    this.flyLayer.addChild(node)
+  }
+
+  /** Draw the four swept cards at progress `t`, plus the gold points pill (render.py _animate_trick_won). */
+  private renderSweep(sweep: TrickSweep, t: number): void {
+    clear(this.trickLayer)
+    for (const card of sweep.cards) {
+      const { x, y, scale } = sweepCardAt(card, sweep, t)
       const w = SMALL_W * scale
       const h = SMALL_H * scale
-      const isWinner = card.seat === active.sweep.winner
+      const isWinner = card.seat === sweep.winner
       const node = this.makeCardFace(card.card, w, h, {
         border: isWinner ? COLORS.winnerGlow : undefined,
         borderW: 4,
@@ -328,22 +444,21 @@ export class HeartsRenderer extends PixiRenderer {
       node.position.set(x - w / 2, y - h / 2)
       this.trickLayer.addChild(node)
     }
-    this.renderPointsPill(t)
+    this.renderPointsPill(sweep, t)
   }
 
   /** The gold "+N" pill above the winner's seat, scaling in during the hold (render.py _draw_points_pill). */
-  private renderPointsPill(t: number): void {
+  private renderPointsPill(sweep: TrickSweep, t: number): void {
     clear(this.pointsLayer)
-    const active = this.active
-    if (active === null || active.sweep.points <= 0) {
+    if (sweep.points <= 0) {
       return
     }
     // smoothstep clamps, so past the hold (t/SWEEP_HOLD >= 1) this naturally pins to 1.
     const appear = smoothstep(t / SWEEP_HOLD)
     const c = new Container()
-    c.position.set(active.sweep.toX, active.sweep.toY - 56)
+    c.position.set(sweep.toX, sweep.toY - 56)
     c.scale.set(0.6 + 0.4 * appear)
-    const label = this.text(`+${active.sweep.points}`, 30, '#201812', 'center')
+    const label = this.text(`+${sweep.points}`, 30, '#201812', 'center')
     const padX = 16
     const pillW = label.width + padX * 2
     const pillH = 36
@@ -361,10 +476,10 @@ export class HeartsRenderer extends PixiRenderer {
 
   // --- The view seat's hand (render.py _draw_hand), with click-to-play wiring ---
 
-  private reconcileHand(scene: HeartsScene): void {
+  private reconcileHand(hand: readonly SceneHandCard[], viewSeat: number): void {
     clear(this.handLayer)
-    const slot = `player_${scene.viewSeat}`
-    for (const card of scene.hand) {
+    const slot = `player_${viewSeat}`
+    for (const card of hand) {
       this.handLayer.addChild(this.makeHandCard(card, slot))
     }
   }
@@ -376,18 +491,50 @@ export class HeartsRenderer extends PixiRenderer {
       greyed: !card.legal,
     })
     node.position.set(card.x, card.y)
-    // A legal card on the controlled human's turn is clickable: send its id for the controlled slot.
-    // Spectators and replays have no sendAction, so the cards stay inert and draw-only.
-    if (card.controllable && this.ctx.sendAction !== undefined) {
-      const sendAction = this.ctx.sendAction
+    // Spectators and replays have no sendAction, so the cards stay inert and draw-only — no hover, no
+    // clicks. In live play the hand is interactive: every card highlights on hover (so the user sees
+    // which card is under the cursor), and a legal card on the controlled seat's turn is clickable.
+    const sendAction = this.ctx.sendAction
+    if (sendAction !== undefined) {
       node.eventMode = 'static'
-      node.cursor = 'pointer'
-      // An explicit rectangular hit area so the whole card face is clickable (a Container otherwise
-      // only hit-tests interactive children, and the drawn Graphics are passive).
+      // An explicit rectangular hit area so the whole card face hit-tests (a Container otherwise only
+      // hit-tests interactive children, and the drawn Graphics are passive).
       node.hitArea = new Rectangle(0, 0, card.w, card.h)
-      node.on('pointertap', () => sendAction(slot, card.card))
+
+      // Hover feedback: lift the card and ring it gold while the cursor is over it. Transient view
+      // chrome, mutated on the node directly (it is rebuilt each state, so no stale hover leaks).
+      const hoverRing = this.makeHoverRing(card.w, card.h)
+      node.addChild(hoverRing)
+      let hovered = false
+      node.on('pointerover', () => {
+        if (hovered) {
+          return
+        }
+        hovered = true
+        hoverRing.visible = true
+        node.position.set(card.x, card.y - HOVER_LIFT)
+      })
+      node.on('pointerout', () => {
+        hovered = false
+        hoverRing.visible = false
+        node.position.set(card.x, card.y)
+      })
+
+      if (card.controllable) {
+        node.cursor = 'pointer'
+        node.on('pointertap', () => sendAction(slot, card.card))
+      }
     }
     return node
+  }
+
+  /** A hidden gold outline added to a hand card, shown on hover (see {@link makeHandCard}). */
+  private makeHoverRing(w: number, h: number): Graphics {
+    const radius = Math.max(3, w * 0.11)
+    const g = new Graphics()
+    g.roundRect(0, 0, w, h, radius).stroke({ color: COLORS.gold, width: 4 })
+    g.visible = false
+    return g
   }
 
   // --- Status strip (render.py _draw_status) ---
@@ -665,4 +812,31 @@ function sweepDuration(options?: RenderOptions): number {
     return Math.max(SWEEP_MIN_MS, Math.min(SWEEP_NATURAL_MS, options.transitionMs * 0.85))
   }
   return SWEEP_NATURAL_MS
+}
+
+/**
+ * How long the fly-in runs, and the sweep that may chain after it on the fourth card. Live play (no
+ * budget) gives each phase its natural length. A replay passes its cadence as the budget: the fly-in
+ * takes ~45% of it (so the card rests in the center for most of the step) and the chained sweep ~50%
+ * (`sweepMs` is 0 when no sweep chains). The two are then scaled down together if they would still
+ * overflow the budget, so a chained fly-in + sweep always finish inside one cadence — the next snapshot
+ * never cuts the sweep short — while keeping their relative pacing.
+ */
+function playPhaseDurations(
+  options: RenderOptions | undefined,
+  chained: boolean,
+): { playMs: number; sweepMs: number } {
+  if (!options?.transitionMs || options.transitionMs <= 0) {
+    return { playMs: PLAY_NATURAL_MS, sweepMs: chained ? SWEEP_NATURAL_MS : 0 }
+  }
+  const budget = options.transitionMs
+  let playMs = Math.max(PLAY_MIN_MS, Math.min(PLAY_NATURAL_MS, budget * 0.45))
+  let sweepMs = chained ? Math.max(SWEEP_MIN_MS, Math.min(SWEEP_NATURAL_MS, budget * 0.5)) : 0
+  const cap = budget * 0.95
+  if (playMs + sweepMs > cap) {
+    const scale = cap / (playMs + sweepMs)
+    playMs *= scale
+    sweepMs *= scale
+  }
+  return { playMs, sweepMs }
 }

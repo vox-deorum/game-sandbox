@@ -36,17 +36,24 @@ class HeartsHumanController:
         pixel, and ``is_legal_card`` gates acceptance.
         """
         renderer = self.env._renderer
-        while True:
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    self.quit = True
-                    return None
-                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                    card = renderer.card_at_pos(event.pos)
-                    if card is not None and renderer.is_legal_card(card):
-                        return card
-            self.env.render()
-            time.sleep(0.02)
+        try:
+            while True:
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        self.quit = True
+                        return None
+                    if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                        card = renderer.card_at_pos(event.pos)
+                        if card is not None and renderer.is_legal_card(card):
+                            return card
+                # Highlight the card under the cursor (hover feedback) before re-rendering. The rects
+                # are recorded at rest, so the lift never moves the hit target out from under the mouse.
+                renderer.set_hover(renderer.card_at_pos(pygame.mouse.get_pos()))
+                self.env.render()
+                time.sleep(0.02)
+        finally:
+            # Clear hover so it never lingers into the opponents' turns or the next animation.
+            renderer.set_hover(None)
 
 
 def make_human_controller(env: Any) -> HeartsHumanController:

@@ -2,13 +2,19 @@ import type { StepState } from '@game-sandbox/schema'
 import { describe, expect, it } from 'vitest'
 import {
   computeScene,
+  detectPlay,
   detectSweep,
+  HEIGHT,
   type HeartsScene,
   handCardAt,
+  PLAY_HOLD,
+  playCardAt,
   SWEEP_HOLD,
   seatAnchor,
   slotOfSeat,
   sweepCardAt,
+  trickOffset,
+  WIDTH,
 } from '../src/renderers/hearts/scene.js'
 import { getRenderer } from '../src/renderers/registry.js'
 // Importing the barrel registers every renderer, including Hearts, so the registration test below can
@@ -352,6 +358,173 @@ describe('the trick-won sweep animation (pure, replay-able)', () => {
     })
     const completion = states[completionIdx] as StepState
     expect(detectSweep(completion, completion, 0)).toBeNull()
+  })
+})
+
+describe('the card-play fly-in (pure, replay-able)', () => {
+  it('detects a single play (cards 1–3) and sources it from the prev hand layout', () => {
+    // Seat 0 (the bottom view seat) plays the 3♣ as the second card of an in-progress trick.
+    const prev = mkState(
+      overlay({
+        hands: [[THREE_CLUBS, FOUR_CLUBS], [], [], []],
+        current_trick: [[3, TWO_CLUBS]],
+        led_suit: 0,
+        turn: 0,
+        tricks_played: 1,
+        legal_actions: [THREE_CLUBS, FOUR_CLUBS],
+      }),
+    )
+    const next = mkState(
+      overlay({
+        hands: [[FOUR_CLUBS], [], [], []],
+        current_trick: [
+          [3, TWO_CLUBS],
+          [0, THREE_CLUBS],
+        ],
+        led_suit: 0,
+        turn: 1,
+        turn_slot: 'player_1',
+        tricks_played: 1,
+      }),
+    )
+    const move = detectPlay(prev, next, 0)
+    expect(move).not.toBeNull()
+    if (move === null) {
+      throw new Error('no play')
+    }
+    expect(move.seat).toBe(0)
+    expect(move.card).toBe(THREE_CLUBS)
+    expect(move.completesTrick).toBe(false)
+    expect(move.resting).toHaveLength(1) // the one card already in the center (the 2♣)
+    expect(move.resting[0]?.card).toBe(TWO_CLUBS)
+
+    // The load-bearing assertion: the flyer leaves from exactly where the card was drawn last frame.
+    const drawn = computeScene(prev).hand.find((c) => c.card === THREE_CLUBS)
+    expect(drawn).toBeDefined()
+    if (drawn === undefined) {
+      throw new Error('card not in prev hand')
+    }
+    expect(move.fromX).toBe(drawn.x + drawn.w / 2)
+    expect(move.fromY).toBe(drawn.y + drawn.h / 2)
+    expect(move.fromW).toBe(drawn.w)
+
+    // The target is the card's resting trick-offset spot in the center (identical to buildTrick).
+    const { dx, dy } = trickOffset(slotOfSeat(0, 0))
+    expect(move.toX).toBe(WIDTH / 2 + dx)
+    expect(move.toY).toBe(HEIGHT / 2 + dy)
+  })
+
+  it('sources an opponent play from their revealed row', () => {
+    // Seat 2 (an opponent) leads the 2♣; the flyer comes from seat 2's row, sized SMALL.
+    const prev = mkState(
+      overlay({ hands: [[], [], [TWO_CLUBS, SEVEN_CLUBS], []], turn: 2, tricks_played: 1 }),
+    )
+    const next = mkState(
+      overlay({
+        hands: [[], [], [SEVEN_CLUBS], []],
+        current_trick: [[2, TWO_CLUBS]],
+        led_suit: 0,
+        turn: 3,
+        tricks_played: 1,
+      }),
+    )
+    const move = detectPlay(prev, next, 0)
+    expect(move?.seat).toBe(2)
+    expect(move?.card).toBe(TWO_CLUBS)
+    const sc = computeScene(prev).opponents.find((c) => c.card === TWO_CLUBS)
+    expect(sc).toBeDefined()
+    expect(move?.fromX).toBe((sc?.x ?? 0) + (sc?.w ?? 0) / 2)
+    expect(move?.fromW).toBe(sc?.w)
+  })
+
+  it('detects the 4th card from last_trick and flags it as completing the trick', () => {
+    // Seats 1,2,3 have played; seat 0 plays the 4th card, which resolves the trick in the same step
+    // (current_trick clears, last_trick is set, tricks_played increments).
+    const prev = mkState(
+      overlay({
+        hands: [[THREE_CLUBS], [], [], []],
+        current_trick: [
+          [1, TWO_CLUBS],
+          [2, FOUR_CLUBS],
+          [3, SEVEN_CLUBS],
+        ],
+        led_suit: 0,
+        turn: 0,
+        tricks_played: 0,
+        legal_actions: [THREE_CLUBS],
+      }),
+    )
+    const next = mkState(
+      overlay({
+        hands: [[], [], [], []],
+        current_trick: [],
+        last_trick: [
+          [1, TWO_CLUBS],
+          [2, FOUR_CLUBS],
+          [3, SEVEN_CLUBS],
+          [0, THREE_CLUBS],
+        ],
+        last_trick_winner: 3,
+        turn: 3,
+        tricks_played: 1,
+      }),
+    )
+    const move = detectPlay(prev, next, 0)
+    expect(move?.seat).toBe(0)
+    expect(move?.card).toBe(THREE_CLUBS)
+    expect(move?.completesTrick).toBe(true)
+    expect(move?.resting).toHaveLength(3) // the three cards already down, no winner highlight yet
+    expect(move?.resting.every((c) => !c.isWinner)).toBe(true)
+  })
+
+  it('does not fire on no change, a backward scrub, or a null prev', () => {
+    const s = mkState(
+      overlay({ hands: [[THREE_CLUBS], [], [], []], current_trick: [[3, TWO_CLUBS]], turn: 0 }),
+    )
+    expect(detectPlay(s, s, 0)).toBeNull()
+    expect(detectPlay(null, s, 0)).toBeNull()
+    // A rewound trick count (fresh deal / backward jump) is never a "play".
+    const high = mkState(overlay({ tricks_played: 5 }))
+    const low = mkState(overlay({ tricks_played: 0 }))
+    expect(detectPlay(high, low, 0)).toBeNull()
+  })
+
+  it('eases from a held source to the center, shrinking to trick size', () => {
+    const prev = mkState(
+      overlay({
+        hands: [[THREE_CLUBS, FOUR_CLUBS], [], [], []],
+        current_trick: [[3, TWO_CLUBS]],
+        led_suit: 0,
+        turn: 0,
+        tricks_played: 1,
+        legal_actions: [THREE_CLUBS, FOUR_CLUBS],
+      }),
+    )
+    const next = mkState(
+      overlay({
+        hands: [[FOUR_CLUBS], [], [], []],
+        current_trick: [
+          [3, TWO_CLUBS],
+          [0, THREE_CLUBS],
+        ],
+        turn: 1,
+        tricks_played: 1,
+      }),
+    )
+    const move = detectPlay(prev, next, 0)
+    if (move === null) {
+      throw new Error('no play')
+    }
+    const start = playCardAt(move, 0)
+    expect(start.x).toBe(move.fromX)
+    expect(start.y).toBe(move.fromY)
+    expect(start.scale).toBe(1)
+    // Through the initial hold the flyer stays put (so the eye registers which card was picked).
+    expect(playCardAt(move, PLAY_HOLD / 2).x).toBe(move.fromX)
+    const end = playCardAt(move, 1)
+    expect(end.x).toBeCloseTo(move.toX)
+    expect(end.y).toBeCloseTo(move.toY)
+    expect(end.scale).toBeCloseTo(48 / move.fromW) // shrinks from hand size down to SMALL_W=48
   })
 })
 
