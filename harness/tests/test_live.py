@@ -85,6 +85,7 @@ def make_entry(
     pace_interval_ms: int | None,
     human_timeout_ms: int | None = None,
     on_step: Any = None,
+    with_overlay: bool = False,
 ) -> EnvironmentEntry:
     meta = EnvironmentMeta(
         env_id="fake",
@@ -107,6 +108,7 @@ def make_entry(
         meta=meta,
         make=lambda: FakeEnv(n_steps, on_step=on_step),
         default_action=lambda slot_id: DEFAULT_ACTION,
+        overlay=(lambda env: {"i": env._i}) if with_overlay else None,
     )
 
 
@@ -305,6 +307,25 @@ def test_build_slots_builtin_agent_loads_through_manifest(tmp_path: Path):
     assert isinstance(slots["player_0"], AgentSlot)
 
 
+def test_build_slots_builtin_agent_without_path_resolves_per_env_default(monkeypatch):
+    # A builtin-agent slot with no explicit overlay path loads the per-environment baseline staged at
+    # /opt/agents/builtin/<env_id>. The directory is env-keyed because the Naive policy differs per
+    # environment (Hearts reads the legal-action mask; Flappy Bird reads a flat array), so a flat
+    # default would load the wrong baseline into a Hearts seat.
+    import game_sandbox_harness.live as live
+
+    captured: list[str] = []
+    monkeypatch.setattr(live, "load_agent", lambda path: captured.append(path) or object())
+    control = SessionControl()
+    clock = PausableClock(ManualClock())
+    sleeper = AdvancingSleeper(ManualClock())
+    entry = make_entry(3, pace_interval_ms=None)
+    cfg = LiveConfig("hearts", 0, {"player_0": SlotBinding("builtin-agent")}, None, "/r", None)
+    slots = build_slots(cfg, entry, control, clock, sleeper)
+    assert captured == ["/opt/agents/builtin/hearts"]
+    assert isinstance(slots["player_0"], AgentSlot)
+
+
 # --- the live loop ----------------------------------------------------------------------
 
 
@@ -318,6 +339,7 @@ def _run_external(
     base: ManualClock | None = None,
     on_step: Any = None,
     human_timeout_ms: int | None = None,
+    with_overlay: bool = False,
 ) -> tuple[Any, list[str], Path]:
     """Wire a one external slot live session over the tee store, run the loop, and emit the
     result envelope exactly as ``main`` does. Returns (result, streamed_lines, recording_path)."""
@@ -331,12 +353,16 @@ def _run_external(
     from game_sandbox_harness.live_io import build_tee_store
 
     store = build_tee_store(str(tmp_path), protocol)
-    entry = make_entry(n_steps, pace_interval_ms=pace_interval_ms, on_step=on_step)
+    entry = make_entry(n_steps, pace_interval_ms=pace_interval_ms, on_step=on_step, with_overlay=with_overlay)
     paced = pace_interval_ms is not None
     sleeper = sleeper or AdvancingSleeper(base)
     source = TransportSource(control, clock=clock, paced=paced, sleeper=sleeper)
     slot = ExternalSlot(source, timeout_ms=human_timeout_ms)
     with Episode(entry, {"player_0": slot}, seed=1, store=store, recording_id="r", clock=clock) as episode:
+        # The same opening-frame stream main does: turn-based only, streamed but never recorded.
+        opening = episode.opening_state()
+        if opening is not None:
+            protocol.emit_state(opening)
         run_live_loop(
             episode,
             pace_interval_ms=pace_interval_ms,
@@ -386,6 +412,30 @@ def test_streamed_bytes_equal_stored_bytes_and_result_is_not_recorded(tmp_path: 
     # No recording line carries a kind.
     for line in recording.read_text(encoding="utf-8").splitlines():
         assert "kind" not in json.loads(line)
+
+
+def test_turn_based_opening_frame_streams_before_the_loop_but_is_not_recorded(tmp_path: Path):
+    # A turn-based env streams a pre-action opening frame (the deal) so a human who must act first
+    # sees the table; it is streamed only, never persisted, so the recording still begins at step 0.
+    result, streamed, recording = _run_external(
+        tmp_path, n_steps=2, pace_interval_ms=None, human_timeout_ms=10, with_overlay=True
+    )
+    assert result.ticks == 2
+
+    recording_lines = recording.read_text(encoding="utf-8").splitlines()
+    streamed_lines = "".join(streamed).strip().splitlines()
+    # Recording: header + 2 step frames. Stream: header + opening + 2 step frames + result envelope.
+    assert len(recording_lines) == 3
+    assert len(streamed_lines) == len(recording_lines) + 2
+
+    # The streamed opening frame sits right after the header: the dealt overlay, with no agent acted.
+    opening = json.loads(streamed_lines[1])
+    assert opening["tick"] == 0
+    assert opening["agents"] == {}
+    assert opening["overlay"] == {"i": 0}
+    # No recorded line is an actionless opening frame: every recorded state carries its acting agent.
+    for line in recording_lines[1:]:
+        assert json.loads(line)["agents"] != {}
 
 
 def test_stop_command_ends_the_session_with_reason_stopped(tmp_path: Path):

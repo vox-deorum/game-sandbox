@@ -15,15 +15,23 @@ from __future__ import annotations
 
 import json
 import random
+from pathlib import Path
 
 import numpy as np
 import pytest
 from pettingzoo.test import api_test
 
+from game_sandbox_harness.manifest import load_agent
 from game_sandbox_harness.session import REASON_TERMINATED, AgentSlot, run_episode
 from hearts import ENTRY, rules
 from hearts.env import AUTO_ACTION, IllegalMoveError, make_env
 from hearts.overlay import extract_overlay
+
+#: The frozen v1 built-in Hearts baseline the session image stages and the harness loads for every
+#: Naive seat (``backend/images/session-base/deps-v1/builtin/hearts``), from this repo's root.
+BUILTIN_HEARTS_AGENT_DIR = (
+    Path(__file__).resolve().parents[2] / "backend/images/session-base/deps-v1/builtin/hearts"
+)
 
 
 def test_passes_pettingzoo_api_test():
@@ -365,6 +373,14 @@ class LowestLegalAgent:
         return int(np.argmax(mask))  # first (lowest-id) legal card
 
 
+def _drive_to_terminal(env, choose):
+    """Step ``env`` to the end of the hand, playing ``choose(env)`` on a live turn and the env
+    default (``None``) on a dead one. The shared rollout the terminal-state assertions below reuse."""
+    while env.agents:
+        _obs, _reward, term, trunc, _info = env.last()
+        env.step(None if (term or trunc) else choose(env))
+
+
 def test_full_game_completes_via_run_episode():
     slots = {f"player_{i}": AgentSlot(LowestLegalAgent()) for i in range(rules.NUM_PLAYERS)}
     result = run_episode(ENTRY, slots, seed=0)
@@ -374,12 +390,7 @@ def test_full_game_completes_via_run_episode():
     # Separately drive a manual rollout to inspect the terminal overlay before closing.
     env = make_env()
     env.reset(seed=0)
-    while env.agents:
-        _obs, _r, term, trunc, _i = env.last()
-        if term or trunc:
-            env.step(None)
-            continue
-        env.step(AUTO_ACTION)
+    _drive_to_terminal(env, lambda _env: AUTO_ACTION)
     ov = extract_overlay(env)
     assert ov["terminal"] is True
     assert sum(ov["display_scores"]) in (26, 78)  # 26 normal, 78 after a moon flip
@@ -398,14 +409,8 @@ def test_run_episode_scores_credit_every_seat():
 
     env = make_env()
     env.reset(seed=0)
-    while env.agents:
-        agent = env.agent_selection
-        _obs, _r, term, trunc, _i = env.last()
-        if term or trunc:
-            env.step(None)
-            continue
-        mask = env.observe(agent)["action_mask"]
-        env.step(int(np.argmax(mask)))  # the same policy LowestLegalAgent uses
+    # The same policy LowestLegalAgent uses: the first (lowest-id) set mask bit.
+    _drive_to_terminal(env, lambda e: int(np.argmax(e.observe(e.agent_selection)["action_mask"])))
     expected = rules.leaderboard_scores(env.state)
     env.close()
 
@@ -414,3 +419,27 @@ def test_run_episode_scores_credit_every_seat():
     # leaderboard sums to the negated total penalty (-26 normal, -78 after a moon flip).
     assert sum(result.scores.values()) in (-26.0, -78.0)
     assert any(score != 0.0 for score in result.scores.values())
+
+
+# -- the frozen on-disk built-in baseline ----------------------------------------------------
+
+
+def test_builtin_hearts_agent_plays_a_full_legal_game():
+    # The session image stages a per-environment Naive baseline at /opt/agents/builtin/<env_id>, and
+    # the harness loads it (through the manifest loader, as the container does) for every Naive seat.
+    # Driving four copies to a clean terminal is the regression guard for the KeyError the Flappy Bird
+    # baseline raised when loaded into Hearts seats: the per-environment baseline must exist, load, and
+    # play only legal cards to the end of the hand.
+    slots = {f"player_{i}": AgentSlot(load_agent(BUILTIN_HEARTS_AGENT_DIR)) for i in range(rules.NUM_PLAYERS)}
+    result = run_episode(ENTRY, slots, seed=0)
+    assert result.reason == REASON_TERMINATED
+    assert result.ticks == 52
+
+    # The baseline plays the env's own lowest-legal default (AUTO_ACTION / rules.lowest_legal_card),
+    # so a hand driven by that default must reach the identical deterministic terminal scores.
+    env = make_env()
+    env.reset(seed=0)
+    _drive_to_terminal(env, lambda _env: AUTO_ACTION)
+    expected = rules.leaderboard_scores(env.state)
+    env.close()
+    assert result.scores == {f"player_{i}": float(expected[i]) for i in range(rules.NUM_PLAYERS)}

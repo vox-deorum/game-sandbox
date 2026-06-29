@@ -264,8 +264,17 @@ class ProtocolStream:
 
     def emit_envelope(self, obj: Mapping[str, Any]) -> None:
         """Serialize and write one event envelope (for example the ``result`` line)."""
-        self._handle.write(json.dumps(obj, separators=(",", ":"), sort_keys=True) + "\n")
-        self._handle.flush()
+        self.emit_raw(json.dumps(obj, separators=(",", ":"), sort_keys=True))
+
+    def emit_state(self, state: Mapping[str, Any]) -> None:
+        """Serialize and write one recording-shaped state line that bypasses the recording.
+
+        Used for the live-only opening frame (see :meth:`Episode.opening_state`): it is streamed to
+        the client but never persisted, so it is serialized exactly like a recorded state line (the
+        same bytes the recording store's writer would produce), and the client parses it identically.
+        It carries no top-level ``kind``, so the classification rule routes it to the renderer as a state.
+        """
+        self.emit_raw(json.dumps(state, separators=(",", ":"), sort_keys=True))
 
 
 def build_tee_store(recordings_root: str, protocol: ProtocolStream) -> FolderRecordingStore:

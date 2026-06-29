@@ -35,6 +35,7 @@ from game_sandbox_harness.environment import EnvironmentEntry
 from game_sandbox_harness.recording import RecordingStore
 from game_sandbox_harness.state import (
     PlayerAttribution,
+    StepState,
     build_agent_step,
     build_header,
     build_step_state,
@@ -216,6 +217,30 @@ class Episode:
     def tick(self) -> int:
         """The number of steps recorded so far."""
         return self._tick
+
+    def opening_state(self) -> StepState | None:
+        """The pre-action "opening" frame: the dealt overlay with no agent having acted yet.
+
+        A turn-based environment can require the first acting slot, possibly a connected human
+        (Hearts' 2♣ leader), to act before any :meth:`step_once` has produced a frame, leaving the
+        client with an empty table and nothing to render. The live runner streams this one frame
+        right after :meth:`start`, so the table (and the human's own hand) is visible immediately and
+        the human can play. Returns ``None`` for a paced environment, which steps on its own cadence
+        and renders its first frame within an interval, or one with no overlay to draw.
+
+        This is a live-presentation aid only and is never written through the recording: recordings
+        and the headless path are byte-for-byte unchanged, so a replay still begins at the first play.
+        Valid only after :meth:`start` (the env must be reset); the live runner calls it there.
+        """
+        if self._entry.meta.pace_interval_ms is not None or self._entry.overlay is None:
+            return None
+        return build_step_state(
+            tick=0,
+            agents={},
+            started_at=self._clock.now_ms(),
+            duration_ms=0,
+            overlay=self._entry.overlay(self._env),
+        )
 
     def stop(self, reason: str = REASON_STOPPED) -> None:
         """Mark the episode finished from outside (the live ``stop`` command).

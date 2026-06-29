@@ -165,6 +165,39 @@ describe('SessionPage', () => {
     expect(sent).toContainEqual({ kind: 'input', slot: 'player_0', action: 1 })
   })
 
+  it('renders the actionless opening frame but keeps it out of the decision log', async () => {
+    vi.mocked(getMe).mockResolvedValue({
+      user_id: 'dev-user',
+      allowlisted: true,
+      is_operator: false,
+    })
+    vi.mocked(getSession).mockResolvedValue(ownerRow())
+    await renderSession()
+    await waitForHandlers()
+
+    handlers.onHeader(HEADER)
+    // The live-only opening frame: a turn-based deal with no acting agent. It draws (so the table is
+    // visible before the first move) but adds no decision-log row, which logs actions.
+    handlers.onState({
+      schema_version: 1,
+      tick: 0,
+      agents: {},
+      timing: { started_at: 0, duration_ms: 0 },
+    })
+    expect(drawn).toHaveLength(1)
+    expect(await screen.findByText('No decisions yet.')).toBeInTheDocument()
+
+    // The first real action frame draws and adds exactly one decision row.
+    handlers.onState({
+      schema_version: 1,
+      tick: 0,
+      agents: { player_0: { reward: 0, score: 0, action: 1 } },
+      timing: { started_at: 0, duration_ms: 0 },
+    })
+    expect(drawn).toHaveLength(2)
+    await waitFor(() => expect(screen.queryByText('No decisions yet.')).toBeNull())
+  })
+
   it('reflects pause/resume echoes and sends the toggle command', async () => {
     vi.mocked(getMe).mockResolvedValue({
       user_id: 'dev-user',

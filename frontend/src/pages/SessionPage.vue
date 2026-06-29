@@ -103,7 +103,11 @@ const {
     },
     onState: (state) => {
       renderState(state)
-      decisions.value.push(toDecision(state))
+      // The live-only opening frame (a turn-based deal) carries no acting agent: render it so the
+      // table shows before the first move, but keep it out of the decision log, which logs actions.
+      if (Object.keys(state.agents).length > 0) {
+        decisions.value.push(toDecision(state))
+      }
     },
   })
 const { pinned, busy: pinBusy, error: pinError, toggle: togglePin } = usePinning(recordingId)

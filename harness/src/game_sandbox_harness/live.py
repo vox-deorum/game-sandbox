@@ -44,8 +44,11 @@ from game_sandbox_harness.manifest import load_agent
 from game_sandbox_harness.session import REASON_STOPPED, AgentSlot, Episode, ExternalSlot, Slot
 from game_sandbox_harness.state import PlayerAttribution
 
-#: Where the session base image stages the built-in agent the watch-style runs load.
-DEFAULT_BUILTIN_AGENT_PATH = "/opt/agents/builtin"
+#: Where the session base image stages the built-in agents the watch-style runs load, one
+#: per-environment directory beneath this base (``/opt/agents/builtin/<env_id>``). A slot with no
+#: explicit overlay path takes the baseline for the session's own environment, since the Naive
+#: policy is environment-specific (see each baseline's ``agent.py``).
+DEFAULT_BUILTIN_AGENT_BASE = "/opt/agents/builtin"
 #: Cooperative wait granularity. Small enough that stop and resume stay responsive.
 _SLICE_MS = 5
 
@@ -227,7 +230,8 @@ def build_slots(
             source = TransportSource(control, clock=clock, paced=paced, sleeper=sleeper)
             slots[slot_id] = ExternalSlot(source, timeout_ms=resolved_timeout)
         else:  # "builtin-agent" — parse_config rejects any other kind.
-            agent = load_agent(binding.path or DEFAULT_BUILTIN_AGENT_PATH)
+            agent_path = binding.path or f"{DEFAULT_BUILTIN_AGENT_BASE}/{config.env_id}"
+            agent = load_agent(agent_path)
             slots[slot_id] = AgentSlot(agent)
     return slots
 
@@ -309,6 +313,12 @@ def main(argv: list[str] | None = None) -> int:
             episode_limit_ms=config.episode_timeout_ms,
             players=config.players,
         ) as episode:
+            # Stream the opening deal frame (turn-based envs only) so a human who must act first sees
+            # the table before the loop blocks for their move. It is streamed, never recorded.
+            if not config.headless:
+                opening = episode.opening_state()
+                if opening is not None:
+                    protocol.emit_state(opening)
             run_live_loop(
                 episode,
                 pace_interval_ms=None if config.headless else entry.meta.pace_interval_ms,

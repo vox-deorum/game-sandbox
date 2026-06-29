@@ -48,10 +48,13 @@ COPY environments ./environments
 RUN pip install --no-cache-dir ./harness \
     && pip install --no-cache-dir --no-deps ./environments
 
-# 3. The frozen v1 built-in scripted agent, placed at /opt/agents/builtin and loaded through the very
-#    manifest loader a Stage 5 submission uses. Keeping this snapshot beside the requirements avoids
-#    composing from the mutable current template, whose later full requirements could otherwise
-#    upgrade packages after the v1 set was installed.
+# 3. The frozen v1 built-in scripted agents, one per environment under /opt/agents/builtin/<env_id>,
+#    each loaded through the very manifest loader a Stage 5 submission uses. The Naive baseline is
+#    per-environment because the observation (and so the policy) differs: Flappy Bird's reads a flat
+#    array, Hearts' reads the legal-action mask. A slot with no explicit overlay path resolves to
+#    /opt/agents/builtin/<the session's env_id> (see harness `build_slots`). Keeping this snapshot
+#    beside the requirements avoids composing from the mutable current template, whose later full
+#    requirements could otherwise upgrade packages after the v1 set was installed.
 #
 #    `chmod a+rX` normalizes the tree's permissions: a session container runs as root but with
 #    CapDrop ALL, so it loses CAP_DAC_READ_SEARCH and is subject to the real mode bits. A build
@@ -59,15 +62,16 @@ RUN pip install --no-cache-dir ./harness \
 #    the copied directories without their search bit, which makes even root unable to stat the
 #    manifest inside — a session-time PermissionError that a Linux-built image never shows. `a+rX`
 #    adds read for all and execute only where it already applies (directories), so the agent loads
-#    regardless of the build host without marking data files executable.
+#    regardless of the build host without marking data files executable. Only the Flappy baseline
+#    pulls an extra dependency (wcwidth); the Hearts baseline is standard-library only.
 COPY backend/images/session-base/deps-v1/builtin /opt/agents/builtin
 RUN chmod -R a+rX /opt/agents/builtin \
-    && pip install --no-cache-dir -r /opt/agents/builtin/requirements.txt
+    && pip install --no-cache-dir -r /opt/agents/builtin/flappy_bird/requirements.txt
 
-# Fail the build, not a session, if the packages or the built-in agent cannot load: import the
-# environment (which imports PyGame) and load the built-in agent through the manifest loader.
-RUN python -c "import game_sandbox_harness, flappy_bird" \
-    && python -c "from game_sandbox_harness.manifest import load_agent; load_agent('/opt/agents/builtin')"
+# Fail the build, not a session, if the packages or a built-in agent cannot load: import each
+# environment (Flappy imports PyGame) and load every per-environment baseline through the manifest loader.
+RUN python -c "import game_sandbox_harness, flappy_bird, hearts" \
+    && python -c "from game_sandbox_harness.manifest import load_agent; load_agent('/opt/agents/builtin/flappy_bird'); load_agent('/opt/agents/builtin/hearts')"
 
 # The entrypoint is the live runner; the session config is appended as a single JSON argv element
 # by the orchestrator. The recordings volume is mounted at /recordings and named in that config.

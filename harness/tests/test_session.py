@@ -19,6 +19,7 @@ from game_sandbox_harness.session import (
     REASON_TERMINATED,
     REASON_TRUNCATED,
     AgentSlot,
+    Episode,
     ExternalSlot,
     NoopSource,
     ScriptedSource,
@@ -157,6 +158,29 @@ def test_players_attribution_lands_in_the_recording_header(tmp_path: Path):
     lines = (tmp_path / "r" / "recording.jsonl").read_text(encoding="utf-8").splitlines()
     header = json.loads(lines[0])
     assert header["players"] == {"player_0": {"kind": "agent", "label": "Naive agent"}}
+
+
+def test_opening_state_returns_the_dealt_overlay_for_a_turn_based_env():
+    # A turn-based env with an overlay yields a pre-action opening frame: the dealt overlay, no agent
+    # having acted, tick 0. The live runner streams this so a human who leads sees the table at once.
+    entry = make_entry(n_steps=3, pace_interval_ms=None, with_overlay=True)
+    with Episode(entry, {"player_0": AgentSlot(ScriptedAgent([0]))}, seed=1) as episode:
+        opening = episode.opening_state()
+    assert opening is not None
+    assert opening["tick"] == 0
+    assert opening["agents"] == {}
+    assert opening["overlay"] == {"i": 0}  # the env's overlay at reset, before any step
+
+
+def test_opening_state_is_none_for_paced_or_overlayless_envs():
+    # A paced env renders its first frame within an interval, and an env with no overlay has nothing
+    # to draw, so neither gets a streamed opening frame.
+    paced = make_entry(n_steps=2, pace_interval_ms=16, with_overlay=True)
+    with Episode(paced, {"player_0": AgentSlot(ScriptedAgent([0]))}, seed=1) as episode:
+        assert episode.opening_state() is None
+    overlayless = make_entry(n_steps=2, pace_interval_ms=None, with_overlay=False)
+    with Episode(overlayless, {"player_0": AgentSlot(ScriptedAgent([0]))}, seed=1) as episode:
+        assert episode.opening_state() is None
 
 
 def test_agent_per_step_timeout_discards_action_and_counts_overage():
