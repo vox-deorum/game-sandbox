@@ -38,3 +38,8 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+
+# Local junction so Claude Code discovers skills under .agents/skills/.
+# Source of truth is .agents/skills/; this link is machine-local (recreate with
+# `mklink /J .claude\skills .agents\skills`).
+.claude/skills/
