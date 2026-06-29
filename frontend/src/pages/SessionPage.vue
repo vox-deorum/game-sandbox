@@ -39,7 +39,9 @@ import UiStatusBadge from '../components/ui/UiStatusBadge.vue'
 import { usePinning } from '../composables/usePinning.js'
 import { useRendererMount } from '../composables/useRendererMount.js'
 import { useSessionSocket } from '../composables/useSessionSocket.js'
+import { useStageLayout } from '../composables/useStageLayout.js'
 import { formatDate } from '../lib/format.js'
+import { playbackIntervalMs } from '../lib/playback.js'
 import { useMe } from '../me.js'
 import { parseRecording } from '../replay/parse.js'
 import { reasonText } from '../replay/reason.js'
@@ -127,8 +129,9 @@ function toDecision(state: StepState): DecisionEntry {
   }
 }
 
-// The decision log sits beside a portrait canvas (a column is left free) and below a landscape one.
-const logBeside = computed(() => aspectRatio.value !== null && aspectRatio.value < 1)
+// The decision log sits beside a portrait canvas (a column is left free) and below a landscape one
+// until the viewport is wide enough to hold both (see useStageLayout).
+const { portrait, logBeside } = useStageLayout(aspectRatio)
 
 // The renderer hasn't reported its shape yet: the session row, socket, and first header are still in
 // flight, so the stage shows a loading indicator rather than the decision log it has no rows for.
@@ -204,7 +207,12 @@ onMounted(async () => {
   // A watch run (scripted) plays paced so a container that streams faster than real time still
   // animates at the environment's cadence and reveals game over only once the frames have played
   // out. A human session renders every frame on arrival, for immediate feedback to the owner's input.
-  connect({ pace: fetched.mode === 'scripted', paceMs: meta.value?.pace_interval_ms ?? null })
+  connect({
+    pace: fetched.mode === 'scripted',
+    // A realtime env paces by its step interval; a turn-based one (Hearts) declares a viewing cadence
+    // so a scripted watch plays out at a watchable speed rather than the buffer's bare default.
+    paceMs: playbackIntervalMs(meta.value),
+  })
 })
 
 async function hydrateRecording(session: SessionRow): Promise<void> {
@@ -295,12 +303,16 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
     <!-- End-of-session feedback appears only after termination, immediately above the game stage. -->
     <SessionRatings v-if="status === 'ended'" :session-id="id" />
 
-    <div class="stage" :class="logBeside ? 'beside' : 'below'">
+    <div class="stage" :class="[portrait ? 'portrait' : 'landscape', logBeside ? 'beside' : 'below']">
       <section class="stage-canvas" aria-label="Environment">
         <div
           class="renderer-host"
           ref="hostEl"
-          :style="aspectRatio !== null ? { aspectRatio: String(aspectRatio) } : undefined"
+          :style="
+            aspectRatio !== null
+              ? { aspectRatio: String(aspectRatio), '--stage-aspect': String(aspectRatio) }
+              : undefined
+          "
         >
           <div v-if="paused && status !== 'ended'" class="overlay-banner">Paused</div>
           <div
@@ -375,10 +387,29 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
   gap: var(--space-4);
 }
 
-/* Beside layout: the columns stretch to a common height so the log matches the canvas to its left. */
+/* Beside layout: the columns stretch to a common height so the log matches the canvas beside it. The
+   column ratio splits on orientation — a portrait canvas is narrow (the log takes the rest), a
+   landscape canvas dominates (a narrower log sits to its right). Explicit grid-column placement keeps
+   the canvas in column 1 and the log in column 2 regardless of orientation. */
 .stage.beside {
-  grid-template-columns: minmax(0, 22rem) minmax(0, 1fr);
   align-items: stretch;
+}
+
+.stage.beside.portrait {
+  grid-template-columns: minmax(0, 22rem) minmax(0, 1fr);
+}
+
+.stage.beside.landscape {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 16rem);
+}
+
+.stage.beside .stage-canvas {
+  grid-column: 1;
+}
+
+/* The decision log and the load-time spinner (which carries .stage-log too) take the second column. */
+.stage.beside .stage-log {
+  grid-column: 2;
 }
 
 .stage.beside .stage-canvas,
@@ -396,11 +427,23 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
 .renderer-host {
   position: relative;
   width: 100%;
-  max-width: 480px;
   margin: 0 auto;
   background: var(--color-stage-backdrop);
   border-radius: var(--radius-md);
   overflow: hidden;
+}
+
+/* Portrait (Flappy Bird) keeps its exact width cap so it never grows absurdly tall. */
+.stage.portrait .renderer-host {
+  max-width: 480px;
+}
+
+/* Landscape (Hearts) grows to fill its column, but never taller than the fold. The cap is a width, not
+   a height, derived from the fold height times the canvas aspect ratio (--stage-aspect, set inline from
+   the renderer's reported ratio): capping width preserves the 4:3 shape instead of letterboxing it, so
+   the Pixi canvas (which scales from width) is never vertically clipped on a short viewport. */
+.stage.landscape .renderer-host {
+  max-width: calc(min(70vh, 640px) * var(--stage-aspect, 1.333));
 }
 
 .overlay-banner {
@@ -474,6 +517,11 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
 .stage-log-below {
   width: 100%;
   max-width: 480px;
+}
+
+/* A landscape canvas in the stacked layout is wider than 480px, so its collapsed log matches it. */
+.stage.below.landscape .stage-log-below {
+  max-width: 100%;
 }
 
 .stage-log-below summary {

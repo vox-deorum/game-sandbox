@@ -69,6 +69,7 @@ This is the only environment module that imports the harness, which is why it is
 | `human_timeout_ms` | Human move clock; `None` when a pace interval governs the deadline. |
 | `recommended_episode_ticks` | Suggested episode length. |
 | `pace_interval_ms` | Set for realtime (the wall-clock cadence); `None` for turn-based. |
+| `view_interval_ms` | Optional watch/replay playback cadence (ms), independent of `pace_interval_ms` so a turn-based game can slow its playback without becoming realtime. `None` falls back to the frontend's default viewing cadence; it never affects live human stepping or scoring. |
 | `step_limit_ms`, `episode_limit_ms` | Default agent time limits (overridable per run). |
 | `messaging`, `message_cap` | Whether agents may message, and the length cap. |
 | `llm` | Whether the LLM API is available to agents here. |

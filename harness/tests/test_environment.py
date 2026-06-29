@@ -44,6 +44,7 @@ def test_meta_to_json_round_trips():
     assert parsed["human_timeout_ms"] is None
     assert parsed["pace_interval_ms"] == 50
     assert parsed["seat_order_matters"] is False
+    assert parsed["view_interval_ms"] is None  # defaulted, present in the serialized shape
 
 
 def test_flappy_bird_is_discoverable():

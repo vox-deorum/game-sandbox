@@ -52,6 +52,10 @@ class EnvironmentMeta:
     #: choose ordered (permutation) versus unordered (combination) seat expansion; single-slot
     #: environments leave it ``False``. Defaulted so additive declaration never breaks a caller.
     seat_order_matters: bool = False
+    #: Optional viewing cadence (ms) for watch/replay playback, independent of ``pace_interval_ms`` so a
+    #: turn-based game (Hearts) can slow its playback without becoming realtime. ``None`` falls back to
+    #: the frontend's default viewing cadence; it never affects live human stepping or scoring.
+    view_interval_ms: int | None = None
 
     def to_json(self) -> dict[str, Any]:
         """Return the snake_case JSON-serialisable dict the backend serves verbatim."""
@@ -72,6 +76,7 @@ class EnvironmentMeta:
             "llm": self.llm,
             "renderer": self.renderer,
             "seat_order_matters": self.seat_order_matters,
+            "view_interval_ms": self.view_interval_ms,
         }
 
 

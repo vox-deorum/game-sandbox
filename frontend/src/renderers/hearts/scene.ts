@@ -244,7 +244,7 @@ export function seatAnchor(slot: number): { x: number; y: number } {
     case 1:
       return { x: 130, y: HEIGHT / 2 } // West
     case 2:
-      return { x: WIDTH / 2, y: 96 } // North (below the status strip)
+      return { x: WIDTH / 2, y: 101 } // North (below the status strip)
     default:
       return { x: WIDTH - 130, y: HEIGHT / 2 } // East
   }

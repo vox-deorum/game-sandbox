@@ -35,7 +35,9 @@ import UiStatusBadge from '../components/ui/UiStatusBadge.vue'
 import { usePinning } from '../composables/usePinning.js'
 import { useRendererMount } from '../composables/useRendererMount.js'
 import { useReplayTransport } from '../composables/useReplayTransport.js'
+import { useStageLayout } from '../composables/useStageLayout.js'
 import { formatDate } from '../lib/format.js'
+import { playbackIntervalMs } from '../lib/playback.js'
 import { useMe } from '../me.js'
 import { parseRecording, UnsupportedVersionError } from '../replay/parse.js'
 import { reasonText } from '../replay/reason.js'
@@ -73,8 +75,9 @@ const blindAttribution = computed(
   () => seasonPlayable.value && me.me?.is_operator !== true,
 )
 
-// The decision log sits beside a portrait canvas and below a landscape one (the same rule as live).
-const logBeside = computed(() => aspectRatio.value !== null && aspectRatio.value < 1)
+// The decision log sits beside a portrait canvas and below a landscape one until the viewport is wide
+// enough to hold both (the same rule as live; see useStageLayout).
+const { portrait, logBeside } = useStageLayout(aspectRatio)
 
 // The recording is loaded but the renderer hasn't reported its shape yet, so the stage shows a loading
 // indicator rather than the decision log. (Stays false when no renderer is registered — its own state.)
@@ -154,7 +157,9 @@ onMounted(async () => {
   }
 
   initTransport(parsed.states, {
-    paceIntervalMs: meta.value?.pace_interval_ms ?? null,
+    // A realtime env paces by its step interval; a turn-based one (Hearts) declares a viewing cadence
+    // so the replay plays at a watchable speed rather than the transport's bare default.
+    paceIntervalMs: playbackIntervalMs(meta.value),
     onFrame: (state, renderOptions) => renderState(state, renderOptions),
   })
 
@@ -255,7 +260,7 @@ onMounted(async () => {
 
     <div
       class="stage"
-      :class="logBeside ? 'beside' : 'below'"
+      :class="[portrait ? 'portrait' : 'landscape', logBeside ? 'beside' : 'below']"
       tabindex="0"
       role="group"
       aria-label="Replay stage"
@@ -265,7 +270,11 @@ onMounted(async () => {
         <div
           class="renderer-host"
           ref="hostEl"
-          :style="aspectRatio !== null ? { aspectRatio: String(aspectRatio) } : undefined"
+          :style="
+            aspectRatio !== null
+              ? { aspectRatio: String(aspectRatio), '--stage-aspect': String(aspectRatio) }
+              : undefined
+          "
         />
         <UiEmptyState v-if="noRenderer">No renderer is registered for this environment.</UiEmptyState>
       </section>
@@ -357,10 +366,29 @@ onMounted(async () => {
   border-radius: var(--radius-md);
 }
 
-/* Beside layout: the columns stretch to a common height so the log matches the canvas to its left. */
+/* Beside layout: the columns stretch to a common height so the log matches the canvas beside it. The
+   column ratio splits on orientation — a portrait canvas is narrow (the log takes the rest), a
+   landscape canvas dominates (a narrower log sits to its right). Explicit grid-column placement keeps
+   the canvas in column 1 and the log in column 2 regardless of orientation. */
 .stage.beside {
-  grid-template-columns: minmax(0, 22rem) minmax(0, 1fr);
   align-items: stretch;
+}
+
+.stage.beside.portrait {
+  grid-template-columns: minmax(0, 22rem) minmax(0, 1fr);
+}
+
+.stage.beside.landscape {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 16rem);
+}
+
+.stage.beside .stage-canvas {
+  grid-column: 1;
+}
+
+/* The decision log and the load-time spinner (which carries .stage-log too) take the second column. */
+.stage.beside .stage-log {
+  grid-column: 2;
 }
 
 .stage.beside .stage-canvas,
@@ -378,11 +406,23 @@ onMounted(async () => {
 .renderer-host {
   position: relative;
   width: 100%;
-  max-width: 480px;
   margin: 0 auto;
   background: var(--color-stage-backdrop);
   border-radius: var(--radius-md);
   overflow: hidden;
+}
+
+/* Portrait (Flappy Bird) keeps its exact width cap so it never grows absurdly tall. */
+.stage.portrait .renderer-host {
+  max-width: 480px;
+}
+
+/* Landscape (Hearts) grows to fill its column, but never taller than the fold. The cap is a width, not
+   a height, derived from the fold height times the canvas aspect ratio (--stage-aspect, set inline from
+   the renderer's reported ratio): capping width preserves the 4:3 shape instead of letterboxing it, so
+   the Pixi canvas (which scales from width) is never vertically clipped on a short viewport. */
+.stage.landscape .renderer-host {
+  max-width: calc(min(70vh, 640px) * var(--stage-aspect, 1.333));
 }
 
 /* The log fills the height the canvas defines and scrolls within it. The body is positioned so its
@@ -435,6 +475,11 @@ onMounted(async () => {
 .stage-log-below {
   width: 100%;
   max-width: 480px;
+}
+
+/* A landscape canvas in the stacked layout is wider than 480px, so its collapsed log matches it. */
+.stage.below.landscape .stage-log-below {
+  max-width: 100%;
 }
 
 .stage-log-below summary {

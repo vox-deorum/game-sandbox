@@ -18,6 +18,8 @@ describe('EnvironmentRegistry', () => {
       expect(typeof meta.seat_order_matters).toBe('boolean')
       // pace_interval_ms and human_timeout_ms are int-or-null per the metadata contract.
       expect(meta.pace_interval_ms === null || typeof meta.pace_interval_ms === 'number').toBe(true)
+      // view_interval_ms is likewise int-or-null (optional viewing cadence).
+      expect(meta.view_interval_ms === null || typeof meta.view_interval_ms === 'number').toBe(true)
     }
   })
 

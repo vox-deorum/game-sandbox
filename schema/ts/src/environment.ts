@@ -34,6 +34,12 @@ export interface EnvironmentMeta {
    * scheduler reads this to choose ordered (permutation) versus unordered (combination) expansion.
    */
   seat_order_matters: boolean
+  /**
+   * Optional viewing cadence (ms) for watch/replay playback, independent of `pace_interval_ms` so a
+   * turn-based game can slow its playback without becoming realtime. `null` falls back to the
+   * frontend's default viewing cadence.
+   */
+  view_interval_ms: number | null
 }
 
 function isStringArray(value: unknown): value is string[] {
@@ -66,6 +72,7 @@ export function isEnvironmentMeta(value: unknown): value is EnvironmentMeta {
     isIntOrNull(m.message_cap) &&
     typeof m.llm === 'boolean' &&
     typeof m.renderer === 'string' &&
-    typeof m.seat_order_matters === 'boolean'
+    typeof m.seat_order_matters === 'boolean' &&
+    isIntOrNull(m.view_interval_ms)
   )
 }

@@ -50,6 +50,7 @@ Populate `EnvironmentMeta` (the Stage 2 type, see [environments and metadata](..
 - Four slots: `min_slots=4`, `max_slots=4`.
 - `human_slots=("player_0", "player_1", "player_2", "player_3")`: every seat is human-capable, because a positional Hearts seat is playable by a person, so the play flow can truthfully offer any seat to the connected human. The metadata bakes in no single-human-seat assumption. This stage still runs exactly one connected human, but that is a session-composition limit enforced in the play flow (step 6) and start validation (step 4), not a metadata one, so later multi-human play attaches more connected users without a metadata change.
 - `pace_interval_ms=None`: Hearts runs the turn-based path, advancing as each slot acts, with no pace interval.
+- `view_interval_ms=3000`: the watch/replay playback cadence. Independent of the (absent) pace interval, so the turn-based stepping and human deadline are untouched; it only slows how fast a spectator's watch run or a replay plays each move out, so the cards are followable. The frontend reads it after `pace_interval_ms` and falls back to its own default when both are unset.
 - `renderer="hearts"`.
 - `seat_order_matters=True`: Hearts is a positional trick-taking game, so seating agent A before B is not the same match as B before A. This is the existing boolean on `EnvironmentMeta`, serialized snake_case through `to_json()` like the other fields. The multi-seat scheduler (step 3) is its only consumer for now.
 - Messaging flag disabled. Stage 8 enables it on this same environment.

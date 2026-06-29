@@ -30,6 +30,9 @@ META = EnvironmentMeta(
     human_timeout_ms=60_000,
     recommended_episode_ticks=52,
     pace_interval_ms=None,
+    # Turn-based stepping (pace_interval_ms stays None), but watch/replay plays each move out at this
+    # cadence so a spectator can follow the cards; it does not affect live human play.
+    view_interval_ms=3_000,
     step_limit_ms=1_000,
     episode_limit_ms=120_000,
     messaging=False,

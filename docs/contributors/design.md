@@ -92,7 +92,7 @@ The design began desktop-first but must remain usable at narrow widths:
 - Session and replay pages stack the canvas and decision log and cap the canvas at the viewport width.
 - The sidebar becomes a drawer behind a mobile bar.
 
-The session and replay pages place the decision log beside a portrait canvas and below a landscape one. The renderer's declared `aspectRatio`, not measured pixels, controls that choice.
+The session and replay pages place the decision log beside a portrait canvas (a column is always left free), and beside a landscape one (Hearts) only once the viewport is wide enough to hold both the canvas at a good size and the log column, stacking it below otherwise. The renderer's declared `aspectRatio` chooses the orientation; a viewport-width media query (`useStageLayout`) decides whether a landscape canvas earns the second column. A landscape canvas grows to fill its column, capped so its height never exceeds the fold while preserving its aspect ratio.
 
 ## The accessibility baseline
 

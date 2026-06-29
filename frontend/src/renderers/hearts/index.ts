@@ -394,7 +394,7 @@ export class HeartsRenderer extends PixiRenderer {
 
   private reconcileStatus(scene: HeartsScene): void {
     clear(this.statusLayer)
-    const stripH = 60
+    const stripH = 55
     const panel = new Graphics()
     panel.rect(0, 0, WIDTH, stripH).fill({ color: '#000000', alpha: 0.41 })
     panel.moveTo(0, stripH).lineTo(WIDTH, stripH).stroke({ color: COLORS.goldDim, width: 1 })

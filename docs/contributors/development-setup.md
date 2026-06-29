@@ -37,7 +37,7 @@ The defaults run the full stack locally with no environment variables set. See [
 
 ## Dev scripts
 
-Every dev script is Python under `scripts/`, run through uv, so nothing depends on bash and the same command works on Windows and Linux.
+To run the development host locally, you will need a running Docker daemon (e.g., Docker Desktop on Windows).
 
 | Intent | Command |
 | --- | --- |

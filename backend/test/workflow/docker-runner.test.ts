@@ -46,6 +46,7 @@ function makeEnvironments(): EnvironmentRegistry {
         llm: false,
         renderer: 'flappy-bird',
         seat_order_matters: false,
+        view_interval_ms: null,
       },
     ]),
   )

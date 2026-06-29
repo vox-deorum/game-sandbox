@@ -17,7 +17,8 @@
     "recommended_episode_ticks": 1000,
     "renderer": "flappy-bird",
     "seat_order_matters": false,
-    "step_limit_ms": 1000
+    "step_limit_ms": 1000,
+    "view_interval_ms": null
   },
   {
     "description": "Four-player trick-taking Hearts: follow suit, avoid taking hearts and the queen of spades. Or, shoot the moon by taking them all to flip the score!",
@@ -40,6 +41,7 @@
     "recommended_episode_ticks": 52,
     "renderer": "hearts",
     "seat_order_matters": true,
-    "step_limit_ms": 1000
+    "step_limit_ms": 1000,
+    "view_interval_ms": 3000
   }
 ]
