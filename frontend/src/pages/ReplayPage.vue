@@ -124,6 +124,19 @@ const metadataItems = computed(() => [
   { label: 'Created', value: formatDate(listingEntry.value?.created_at) },
 ])
 
+// While the game-over card is up it owns the keyboard, so the transport stands down: a stray Space
+// shouldn't restart playback behind the card. Escape from the stage still dismisses it (the card's own
+// handler covers Escape when focus is within the card).
+function onStageKeydown(event: KeyboardEvent): void {
+  if (showGameOver.value && !gameOverDismissed.value) {
+    if (event.key === 'Escape') {
+      gameOverDismissed.value = true
+    }
+    return
+  }
+  onKeydown(event)
+}
+
 /** One decision-log row per state: the first agent's action (single-agent today). */
 function toDecision(state: StepState): DecisionEntry {
   const slot = Object.keys(state.agents)[0]
@@ -280,7 +293,7 @@ onMounted(async () => {
       tabindex="0"
       role="group"
       aria-label="Replay stage"
-      @keydown="onKeydown"
+      @keydown="onStageKeydown"
     >
       <section class="stage-canvas" aria-label="Replay">
         <div
