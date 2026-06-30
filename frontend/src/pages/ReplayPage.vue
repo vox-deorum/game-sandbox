@@ -118,7 +118,6 @@ const scrubIndex = computed({
 // carries only the run's own facts, not those echoes.
 const metadataItems = computed(() => [
   { label: 'Seed', value: header.value?.seed },
-  { label: 'Final score', value: finalSummary.value.score },
   { label: 'Ticks', value: finalSummary.value.ticks },
   { label: 'Owner', value: blindAttribution.value ? null : listingEntry.value?.user_id },
   { label: 'Created', value: formatDate(listingEntry.value?.created_at) },

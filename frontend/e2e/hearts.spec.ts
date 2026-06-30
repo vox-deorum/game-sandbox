@@ -155,6 +155,28 @@ test('a Hearts season: four example agents, a scheduled multi-seat matchup, then
       await expect(scoreboard.getByRole('link', { name: entry.owner })).toBeVisible()
     }
     await expect(humanBoard.getByText('No ratings yet.')).toBeVisible()
+
+    // The Mean score column must show real Hearts scores, not the stale zeros a per-seat capture bug
+    // once produced (only the seat acting on the final trick recorded its score; every other seat
+    // banked a best-possible 0). A Hearts leaderboard score is the negated penalty total, so each
+    // agent's mean lives in the closed range [-26, 0] — a legitimate season that took all 26 penalty
+    // points every game sits exactly at the -26 floor, which coincides with the forfeit floor, so the
+    // bound is inclusive — and the board as a whole must show points actually changing hands rather than
+    // every seat pinned at a perfect 0. The mean cell renders as "mean ± sd" — parseFloat reads the
+    // leading signed number and stops at the space, ignoring the spread.
+    const meanScores: number[] = []
+    for (const entry of ROSTER) {
+      const row = scoreboard.locator('tr', { has: page.getByRole('link', { name: entry.owner }) })
+      const meanText = await row.locator('td.num').first().innerText()
+      const mean = Number.parseFloat(meanText)
+      expect(Number.isNaN(mean), `mean for ${entry.owner} parsed from "${meanText}"`).toBe(false)
+      expect(mean, `mean score for ${entry.owner}`).toBeLessThanOrEqual(0)
+      expect(mean, `mean score for ${entry.owner}`).toBeGreaterThanOrEqual(-26)
+      meanScores.push(mean)
+    }
+    // At least one roster agent took penalty points across its games: a board where every seat reads a
+    // perfect 0 would mean scores were not captured (the bug), since the 26 points must land somewhere.
+    expect(meanScores.some((mean) => mean < 0)).toBe(true)
   } finally {
     // Restore the seeded Playground as the env's open submission+play season for any later spec.
     await closeSubmissions(request, season.id).catch(() => {})

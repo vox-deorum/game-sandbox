@@ -73,6 +73,12 @@ export interface RecordingsTable {
   created_at: string
   /** SQLite has no boolean: 0 or 1, defaulting to 0 (unpinned). */
   pinned: number
+  /**
+   * How the run that produced this recording ended, for recordings with no producing session to
+   * carry it (automated season runs). Null for a session-produced recording — the listing reads the
+   * session's reason for those — and for a non-completed automated game (it shows no final standings).
+   */
+  termination_reason: TerminationReason | null
 }
 
 /**

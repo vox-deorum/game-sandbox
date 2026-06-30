@@ -81,8 +81,6 @@ describe('ReplayPage', () => {
     expect(mountCtx?.sendAction).toBeUndefined()
     // The first frame draws on load.
     expect(drawn.at(-1)?.tick).toBe(0)
-    expect(screen.getByText('Final score')).toBeInTheDocument()
-    expect(screen.getByText('13')).toBeInTheDocument()
     expect(screen.getByText('Ticks')).toBeInTheDocument()
     expect(screen.getByText('4')).toBeInTheDocument()
     const controls = view.container.querySelector('.replay-controls')
@@ -123,6 +121,49 @@ describe('ReplayPage', () => {
     vi.mocked(getRecording).mockResolvedValue(replayRecording())
     await renderReplay('/replays/rec-1?t=2')
     await waitFor(() => expect(drawn.at(-1)?.tick).toBe(2))
+  })
+
+  it('shows the game-over card at the final frame of a completed run', async () => {
+    vi.mocked(getRecording).mockResolvedValue(replayRecording())
+    vi.mocked(listRecordings).mockResolvedValue([
+      {
+        id: 'rec-1',
+        header: { schema_version: 1, environment: 'flappy_bird' },
+        user_id: 'dev-user',
+        created_at: '2026-06-11T00:00:00.000Z',
+        pinned: false,
+        termination_reason: 'terminated',
+        season_id: null,
+      },
+    ])
+    const view = await renderReplay()
+    await screen.findByRole('button', { name: 'Play' })
+    const stage = view.container.querySelector('.stage') as HTMLElement
+    // Not at the end yet, so no final standings.
+    expect(screen.queryByRole('dialog', { name: 'Game over' })).toBeNull()
+    await fireEvent.keyDown(stage, { key: 'End' })
+    expect(await screen.findByRole('dialog', { name: 'Game over' })).toBeInTheDocument()
+  })
+
+  it('shows no game-over card at the final frame when the run did not complete', async () => {
+    vi.mocked(getRecording).mockResolvedValue(replayRecording())
+    vi.mocked(listRecordings).mockResolvedValue([
+      {
+        id: 'rec-1',
+        header: { schema_version: 1, environment: 'flappy_bird' },
+        user_id: 'dev-user',
+        created_at: '2026-06-11T00:00:00.000Z',
+        pinned: false,
+        termination_reason: null,
+        season_id: null,
+      },
+    ])
+    const view = await renderReplay()
+    await screen.findByRole('button', { name: 'Play' })
+    const stage = view.container.querySelector('.stage') as HTMLElement
+    await fireEvent.keyDown(stage, { key: 'End' })
+    expect(drawn.at(-1)?.tick).toBe(3)
+    expect(screen.queryByRole('dialog', { name: 'Game over' })).toBeNull()
   })
 
   it('shows the needs-newer-viewer message for an unknown schema version', async () => {

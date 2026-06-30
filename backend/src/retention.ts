@@ -42,9 +42,10 @@ export interface RecordingListing {
   created_at: string | null
   pinned: boolean
   /**
-   * How the session that produced this recording ended, joined from the session row, so the replay
-   * viewer can label its outcome the way the ended-session card does. Null when no ended session
-   * claims the recording (foreign debris, or a session still running when listed).
+   * How the run that produced this recording ended, so the replay viewer can label its outcome the
+   * way the ended-session card does. Joined from the producing session row when one claims the
+   * recording, falling back to the recording row's own reason for an automated run that had no
+   * session. Null when neither carries one (foreign debris, or a session still running when listed).
    */
   termination_reason: string | null
   /**
@@ -180,7 +181,8 @@ export class Retention {
     const rowById = new Map(rows.map((row) => [row.id, row]))
     // The termination reason and season live on the session, keyed back to the recording it produced.
     // Only an ended session carries a reason; a running session's recording lists with a null reason
-    // until it ends. The season is the play-open (or submission) season the session competed in.
+    // until it ends, then falls back to the recording row's own reason (set for an automated run that
+    // had no session). The season is the play-open (or submission) season the session competed in.
     const reasonByRecording = new Map<string, string | null>()
     const seasonByRecording = new Map<string, string | null>()
     for (const session of sessions) {
@@ -198,7 +200,7 @@ export class Retention {
         user_id: row?.user_id ?? null,
         created_at: row?.created_at ?? null,
         pinned: row?.pinned === 1,
-        termination_reason: reasonByRecording.get(entry.id) ?? null,
+        termination_reason: reasonByRecording.get(entry.id) ?? row?.termination_reason ?? null,
         season_id: seasonByRecording.get(entry.id) ?? null,
       }
     })

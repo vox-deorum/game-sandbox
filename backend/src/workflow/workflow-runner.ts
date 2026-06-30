@@ -6,15 +6,18 @@
  * and human-paced, this is **headless run-to-completion**: each scheduled game launches one container
  * through the shared launch-config seam ({@link assembleSeats}), the runner drains its stdout protocol
  * (the recording, tee'd live, plus the final `result` envelope) and its stderr diagnostics, waits for
- * the container to exit, then reads the per-seat outcome straight out of the recording it produced.
+ * the container to exit, then attributes each seat: the `result` envelope is authoritative for the
+ * final scores, while the recording it produced supplies the per-tick compute timing (and a score
+ * fallback for a seat the envelope omits).
  * No socket, no human timeout, no relay. The container drives itself to its episode's end and exits.
  *
  * For each game the runner: registers the produced recording (owned by the seat's natural owner) and
  * attaches its id; writes one `game_results` row per participating seat with the normalized episode
  * score plus the aggregated agent compute time and acted-tick count; and advances the game's status.
  * A single agent crash or timeout marks that game `failed`/`timed_out` and flags the seat, but never
- * aborts the remaining scheduled games. A container that never yields a readable recording header is
- * an infrastructure fault: the game is marked `failed` with no invented result row. Between games the
+ * aborts the remaining scheduled games. A container that never yields a readable recording header, or
+ * exits cleanly without a recognized `result` envelope, is an infrastructure fault: the game is marked
+ * `failed` with no invented result row. Between games the
  * runner checks a cooperative cancel flag; on cancel it stops scheduling, tears down any in-flight
  * container, and settles the run `cancelled`. Runs execute one at a time (single host), so two never
  * interleave on the box.
@@ -40,6 +43,7 @@ import type {
 } from '../driver/index.js'
 import type { EnvironmentMeta, EnvironmentRegistry } from '../environments.js'
 import { forfeitScore, normalizeEpisodeScore } from '../leaderboards/score.js'
+import { coerceResultReason } from '../result-reason.js'
 import { assembleSeats, type SeatBinding } from '../session/launch-config.js'
 import { ensureRecordingsDir } from '../session/live-session.js'
 import { decodeSeasonConfig, type Storage } from '../storage/index.js'
@@ -388,17 +392,20 @@ class DockerWorkflowRunner implements WorkflowRunner {
       return
     }
 
-    // Register the produced recording (owned by the seat's natural owner) and link it to the game.
-    const owner = recordingOwner(slots, run.requested_by)
-    await this.deps.storage
-      .createRecording({
-        id: recordingId,
-        user_id: owner,
-        env_id: envId,
-        created_at: new Date().toISOString(),
-      })
-      .catch((error) => this.log(`run ${runId}: createRecording failed: ${String(error)}`))
-    await this.deps.storage.attachRunGameRecording(game.id, recordingId)
+    // A container that exits cleanly yet never emits a recognized `result` envelope reason violated its
+    // output contract: the envelope is authoritative for the final scores, so without it there is
+    // nothing trustworthy to attribute. Treat it as an infrastructure fault rather than inventing a
+    // `terminated` ending and a standings card built from stale recording scores. A non-clean exit
+    // (crash, OOM, or watchdog kill) is classified below from the exit itself and needs no envelope.
+    const cleanExit = !watchdog.timedOut() && !exit.oomKilled && exit.code === 0
+    if (cleanExit && coerceResultReason(captured.result?.reason) === null) {
+      await this.infraFault(
+        runId,
+        game,
+        `game exited cleanly without a valid result envelope (container exit code ${exit.code})`,
+      )
+      return
+    }
 
     const failure = classifyFailure(exit, captured.result, watchdog.timedOut())
     // A failure the harness could pin to one seat (an agent crash, or a per-seat episode-budget
@@ -406,16 +413,41 @@ class DockerWorkflowRunner implements WorkflowRunner {
     // container. A container-level fault it could not attribute (a wall-clock watchdog kill, an OOM)
     // names no seat: the whole game's seats then carry it, since the culprit is genuinely unknown.
     const culpritSlot = failure.kind !== null ? (captured.result?.failedSlot ?? null) : null
+    const status =
+      failure.kind === 'timeout' ? 'timed_out' : failure.kind === 'crash' ? 'failed' : 'completed'
+
+    // Register the produced recording (owned by the seat's natural owner) and link it to the game.
+    // An automated run has no producing session, so the recording carries its own termination reason
+    // for the replay viewer's game-over card. Only a cleanly completed game gets one, taken from its
+    // recognized result-envelope reason (a clean exit lacking one was already faulted above, so we
+    // never invent a reason); a crashed or timed-out game stays reasonless so its replay shows no final
+    // standings, mirroring a live session that ended badly.
+    const owner = recordingOwner(slots, run.requested_by)
+    await this.deps.storage
+      .createRecording({
+        id: recordingId,
+        user_id: owner,
+        env_id: envId,
+        created_at: new Date().toISOString(),
+        termination_reason:
+          status === 'completed' ? coerceResultReason(captured.result?.reason) : null,
+      })
+      .catch((error) => this.log(`run ${runId}: createRecording failed: ${String(error)}`))
+    await this.deps.storage.attachRunGameRecording(game.id, recordingId)
+
     for (let slotIndex = 0; slotIndex < slots.length; slotIndex++) {
       const agent = slots[slotIndex] as AgentRef
       const slotId = `player_${slotIndex}`
       const aggregate = aggregateSeat(parsed.states, slotId)
-      // The recording the harness produced is authoritative for episode score (Stage 6's "final
-      // `score` for episode score"). The result envelope's self-reported score is only a fallback
-      // for a recording that never reported this seat's score.
+      // The result envelope is authoritative for a seat's final episode score: it reports every
+      // seat's accumulated score, whereas the recording writes only the acting seat per tick. A
+      // turn-based env that pays all seats at the end (Hearts settles its penalty on the final
+      // trick) therefore never records the non-acting seats' terminal payout, so their recording
+      // `score` reads back as a stale 0. The recording-derived score is the fallback for the rare
+      // case the envelope never reported this seat at all.
       const envelopeScore = captured.result?.scores[slotId]
       const rawScore =
-        aggregate.finalScore ?? (typeof envelopeScore === 'number' ? envelopeScore : 0)
+        typeof envelopeScore === 'number' ? envelopeScore : (aggregate.finalScore ?? 0)
       const seatFailed = failure.kind !== null && (culpritSlot === null || culpritSlot === slotId)
       // A forfeited seat takes the environment's worst-case floor, not the partial score it accrued
       // before failing. Otherwise a terminal-scored game (Hearts pays its penalty only at the final
@@ -434,8 +466,6 @@ class DockerWorkflowRunner implements WorkflowRunner {
       })
     }
 
-    const status =
-      failure.kind === 'timeout' ? 'timed_out' : failure.kind === 'crash' ? 'failed' : 'completed'
     await this.deps.storage.setRunGameStatus(game.id, status, failure.reason ?? undefined)
     this.emit(runId, { type: 'game_status', game_index: game.game_index, status })
     const level: RunLogLevel =

@@ -339,6 +339,25 @@ describe('retention', () => {
       // A rowless directory has no claiming session, so both joined fields are null.
       expect(byId.get('orphan')).toMatchObject({ termination_reason: null, season_id: null })
     })
+
+    it('falls back to the recording row’s own reason for an automated run with no session', async () => {
+      // An automated season run produces a recording with no producing session, so its row carries the
+      // termination reason itself. The listing surfaces it (no session reason exists to override it).
+      await writeRecording({
+        id: 'automated',
+        user_id: 'a',
+        env_id: 'flappy_bird',
+        created_at: ago(1),
+        termination_reason: 'terminated',
+      })
+
+      const byId = new Map((await makeRetention().list()).map((r) => [r.id, r]))
+      // No session claims it, so season stays null, but the row's own reason is surfaced.
+      expect(byId.get('automated')).toMatchObject({
+        termination_reason: 'terminated',
+        season_id: null,
+      })
+    })
   })
 
   describe('pinning', () => {

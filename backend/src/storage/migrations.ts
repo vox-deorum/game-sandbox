@@ -54,6 +54,7 @@ const initialSchema: Migration = {
       .addColumn('env_id', 'text', (col) => col.notNull())
       .addColumn('created_at', 'text', (col) => col.notNull())
       .addColumn('pinned', 'integer', (col) => col.notNull().defaultTo(0))
+      .addColumn('termination_reason', 'text')
       .execute()
     await db.schema
       .createIndex('recordings_user_created')

@@ -14,7 +14,7 @@ export async function createRecording(
   // Idempotent: a re-finalize (or a backfilled id) leaves the existing row untouched.
   await db
     .insertInto('recordings')
-    .values({ ...input, pinned: 0 })
+    .values({ ...input, pinned: 0, termination_reason: input.termination_reason ?? null })
     .onConflict((oc) => oc.column('id').doNothing())
     .execute()
 }

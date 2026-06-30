@@ -44,6 +44,8 @@ Operators manage seasons through the website's admin console and an operator-onl
 
 The automated board ranks by mean episode score. Higher is always better for ranking, even when the environment also exposes a native lower-is-better display score. The board shows the population standard deviation of episode scores beside the mean.
 
+Each game contributes one episode score per seat: that seat's final score for the game. For an environment that scores all seats only at the end (Hearts settles its penalty on the final trick), every seat's final score is taken from the game's reported result, so a seat that did not act on the final tick is scored on its true outcome rather than a stale interim value.
+
 Mean compute time per decision is shown separately and breaks only an exact score tie. It includes `act`, optional hooks, and time waiting for LLM calls. The mean is weighted by acted ticks across games. The spread shown beside it is the population standard deviation of each game's per-decision compute rate, weighted by that game's acted ticks so it describes the same distribution as the mean. Score and efficiency are never combined.
 
 The operator-triggered workflow:

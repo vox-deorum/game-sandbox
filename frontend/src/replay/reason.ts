@@ -1,11 +1,12 @@
 // The termination reasons that mean a run reached a natural conclusion — a terminal state, or the
-// episode ran to its cap — as opposed to being stopped, idled out, time-limited, killed, or crashed.
-const COMPLETED_OUTCOMES = new Set(['terminated', 'truncated', 'episode_limit'])
+// environment's own step cap (`truncated`) — as opposed to being stopped, idled out, killed, crashed,
+// or cut off for exhausting its per-episode compute budget (`episode_limit`, a timeout, not a finish).
+const COMPLETED_OUTCOMES = new Set(['terminated', 'truncated'])
 
 // True when a run finished play, so it warrants final standings. The other endings (stopped, idle,
-// time limit, OOM, error) leave a partial board that a leaderboard with medals would misrepresent.
-// Mirrors scripts/play.py, which shows the game-over leaderboard for a terminal or step-capped episode
-// but not for a quit.
+// episode/time limit, OOM, error) leave a partial board that a leaderboard with medals would
+// misrepresent. Mirrors scripts/play.py, which shows the game-over leaderboard for a terminal or
+// step-capped episode but not for a quit or a timeout.
 export function isCompletedOutcome(reason: string | null): boolean {
   return reason !== null && COMPLETED_OUTCOMES.has(reason)
 }
@@ -18,8 +19,9 @@ export function reasonText(reason: string | null): string {
     case 'terminated':
       return 'Game over'
     case 'truncated':
-    case 'episode_limit':
       return 'Episode complete'
+    case 'episode_limit':
+      return 'Timed out'
     case 'stopped':
       return 'Stopped'
     case 'idle_timeout':

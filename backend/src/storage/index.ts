@@ -105,6 +105,12 @@ export interface NewRecordingInput {
   user_id: string
   env_id: string
   created_at: string
+  /**
+   * The producing run's termination reason, for a recording with no session to carry it (an automated
+   * season run). Omit (or null) for a session-produced recording — the listing reads the session's
+   * reason — and for a non-completed automated game.
+   */
+  termination_reason?: TerminationReason | null
 }
 
 /**

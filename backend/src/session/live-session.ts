@@ -21,6 +21,7 @@ import {
   sessionEnvelope,
 } from '@game-sandbox/schema'
 import type { SessionProcess } from '../driver/index.js'
+import { coerceResultReason } from '../result-reason.js'
 import type { Storage } from '../storage/index.js'
 import type { SessionMode, TerminationReason } from '../storage/schema.js'
 
@@ -67,14 +68,6 @@ export interface LiveSessionInit {
   humanSlots: readonly string[]
   deps: LiveSessionDeps
 }
-
-/** The container-side `result` reasons; an `oomKilled`/crash exit maps to a reason in {@link finalize}. */
-const RESULT_REASONS: ReadonlySet<string> = new Set([
-  'terminated',
-  'truncated',
-  'episode_limit',
-  'stopped',
-])
 
 const STOP_LINE = serializeCommand({ kind: 'stop' })
 /** A socket whose backlog crosses this is dropped rather than letting one slow client stall the relay. */
@@ -175,9 +168,9 @@ export class LiveSession {
     }
     // Event envelope: stash the result reason for the row, then relay it like any other envelope.
     if (line.kind === RESULT_KIND) {
-      const reason = line.value.reason
-      if (typeof reason === 'string' && RESULT_REASONS.has(reason)) {
-        this.resultReason = reason as TerminationReason
+      const coerced = coerceResultReason(line.value.reason)
+      if (coerced !== null) {
+        this.resultReason = coerced
       }
     }
     this.broadcast(raw)

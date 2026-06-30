@@ -131,6 +131,9 @@ function emitRecording(
     reason?: string
     exit?: ExitInfo
     omitHeader?: boolean
+    /** Emit the recording (header + states) but skip the final `result` envelope, modelling a container
+     * that exits without fulfilling its output contract. */
+    omitResult?: boolean
     diagnostics?: string[]
     /** Per-seat scores in the result envelope, overriding the default single-seat `{ slotId: finalScore }`. */
     scores?: Record<string, number>
@@ -176,16 +179,18 @@ function emitRecording(
         }),
       )
     }
-    process.emit(
-      JSON.stringify({
-        kind: 'result',
-        ticks,
-        scores: options.scores ?? { [slotId]: finalScore },
-        reason,
-        step_timeouts: {},
-        ...(options.failedSlot !== undefined ? { failed_slot: options.failedSlot } : {}),
-      }),
-    )
+    if (options.omitResult !== true) {
+      process.emit(
+        JSON.stringify({
+          kind: 'result',
+          ticks,
+          scores: options.scores ?? { [slotId]: finalScore },
+          reason,
+          step_timeouts: {},
+          ...(options.failedSlot !== undefined ? { failed_slot: options.failedSlot } : {}),
+        }),
+      )
+    }
   }
   process.finish(options.exit ?? { code: 0, oomKilled: false })
 }
@@ -270,12 +275,38 @@ describe('Docker-backed workflow runner', () => {
       expect(result.agent_kind).toBe('builtin-naive')
     }
 
-    // The recording rows were registered (owner is the operator for a Naive game).
+    // The recording rows were registered (owner is the operator for a Naive game), each carrying the
+    // completed run's termination reason so the replay viewer shows final standings (an automated run
+    // has no producing session to supply it).
     const recordings = await storage.listRecordings()
     expect(recordings).toHaveLength(2)
     expect(recordings.every((r) => r.user_id === 'dev-user')).toBe(true)
+    expect(recordings.every((r) => r.termination_reason === 'terminated')).toBe(true)
 
     expect((await storage.getLatestCompletedRun(run.season_id))?.id).toBe(run.id)
+  })
+
+  it('records the envelope score, not a stale recording score, for a non-terminal-acting seat', async () => {
+    // A turn-based env pays its seats only at the terminal tick, and the recording writes only the
+    // acting seat per tick, so a seat that did not act last reads back a stale 0 in the recording. The
+    // result envelope carries every seat's true final score, so the runner must trust it over the
+    // recording-derived value. Here the recording reports 0 each tick but the envelope reports 42.
+    const handle = makeRunner(storage)
+    const run = await makeRun(storage, [naiveGame(0, 7)])
+    handle.driver.onLaunch = (launch: FakeLaunch): void => {
+      const config = JSON.parse(launch.spec.argv[0] ?? '{}') as { seed: number }
+      emitRecording(launch.process, config, {
+        ticks: 3,
+        finalScore: 0, // the recording's per-tick score for this seat stays 0 (it never acted last)
+        scores: { player_0: 42 }, // the envelope's authoritative final score
+      })
+    }
+
+    const { status } = await runToTerminal(handle, run.id)
+    expect(status).toBe('completed')
+    const results = await storage.listGameResultsByRun(run.id)
+    expect(results).toHaveLength(1)
+    expect(results[0]?.episode_score).toBe(42)
   })
 
   it('treats an absent learn_ms as zero in the compute total', async () => {
@@ -382,6 +413,13 @@ describe('Docker-backed workflow runner', () => {
     // The clean later game keeps its honestly-earned recorded score.
     const clean = results.find((r) => r.failed === 0)
     expect(clean?.episode_score).toBe(5)
+
+    // The crashed game's recording carries no termination reason — its replay shows no final standings
+    // even though the partial envelope still reported 'terminated' — while the clean game's does.
+    expect((await storage.getRecording(`${ENV_ID}-${games[0]?.id}`))?.termination_reason).toBe(null)
+    expect((await storage.getRecording(`${ENV_ID}-${games[1]?.id}`))?.termination_reason).toBe(
+      'terminated',
+    )
   })
 
   it('charges a multi-seat crash to the offending seat alone, not its co-seats', async () => {
@@ -456,6 +494,26 @@ describe('Docker-backed workflow runner', () => {
     expect(games[0]?.error).toMatch(/no readable recording/)
     expect(await storage.listGameResultsByRun(run.id)).toHaveLength(0)
     // No recording row is invented for an infrastructure fault.
+    expect(await storage.listRecordings()).toHaveLength(0)
+  })
+
+  it('faults a clean exit that produced a recording but no result envelope', async () => {
+    const handle = makeRunner(storage)
+    const run = await makeRun(storage, [naiveGame(0)])
+    handle.driver.onLaunch = (launch): void => {
+      const config = JSON.parse(launch.spec.argv[0] ?? '{}') as { seed: number }
+      // A readable recording, then a clean exit (code 0) with no `result` envelope: the container did
+      // not fulfil its output contract. The runner must not invent a `terminated` standings card from
+      // the (stale-prone) recording scores; it faults the game like a missing-recording infra fault.
+      emitRecording(launch.process, config, { finalScore: 3, omitResult: true })
+    }
+    const { status } = await runToTerminal(handle, run.id)
+    expect(status).toBe('completed') // one faulted game never fails the whole run
+    const games = await storage.listRunGames(run.id)
+    expect(games[0]?.status).toBe('failed')
+    expect(games[0]?.error).toMatch(/without a valid result envelope/)
+    // No invented result row and no recording row, exactly like a missing-recording infrastructure fault.
+    expect(await storage.listGameResultsByRun(run.id)).toHaveLength(0)
     expect(await storage.listRecordings()).toHaveLength(0)
   })
 
