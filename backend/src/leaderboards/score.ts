@@ -17,3 +17,32 @@ export function normalizeEpisodeScore(_envId: string, rawFinalScore: number): nu
   // Identity for every environment this stage; Flappy Bird's score is already higher-is-better.
   return rawFinalScore
 }
+
+/**
+ * The normalized leaderboard score a *forfeited* game contributes: a game a seat did not finish
+ * cleanly (its agent crashed, played an illegal move, or overran its budget; or the whole container
+ * faulted with no identifiable culprit).
+ *
+ * A forfeit must never out-score honest play, or failing becomes a strategy. A terminal-scored
+ * environment makes this acute: Hearts pays its (negative) penalty only at the final trick, so a seat
+ * that aborts early has a partial score of ~0 — the *best* possible Hearts score — and would top the
+ * board despite failing every game. So a forfeit takes the environment's worst achievable normalized
+ * score instead of its partial one, the floor below every honest outcome:
+ *
+ *   * Hearts: a single hand is worth at most 26 penalty points (all hearts + the Queen, with the
+ *     shoot-the-moon flip capping it), so the worst leaderboard score is `-26`.
+ *   * Flappy Bird: the score accrues upward from zero as pipes are passed, so honest play already
+ *     ranks an early failure near the bottom; zero (no progress) is its forfeit floor.
+ *
+ * A new environment must register its floor here, exactly as it would register a non-identity mapping
+ * in {@link normalizeEpisodeScore}; the `0` default suits an upward-accruing score but would
+ * under-penalize a forfeit in a future negative or lower-is-better environment.
+ */
+export function forfeitScore(envId: string): number {
+  switch (envId) {
+    case 'hearts':
+      return -26
+    default:
+      return 0
+  }
+}

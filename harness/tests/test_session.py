@@ -331,7 +331,7 @@ class FakeTeamEnv:
             self.agent_selection = self.possible_agents[self._idx]
 
 
-def _team_entry(finals: dict[str, float]) -> EnvironmentEntry:
+def _team_entry(finals: dict[str, float], *, make: Any = None) -> EnvironmentEntry:
     meta = EnvironmentMeta(
         env_id="team",
         display_name="Team",
@@ -352,7 +352,7 @@ def _team_entry(finals: dict[str, float]) -> EnvironmentEntry:
     )
     return EnvironmentEntry(
         meta=meta,
-        make=lambda: FakeTeamEnv(finals),
+        make=make if make is not None else (lambda: FakeTeamEnv(finals)),
         default_action=lambda slot_id: DEFAULT_ACTION,
         overlay=None,
     )
@@ -416,16 +416,23 @@ class MaskedEnv:
     Legal moves are the masked-1 indices. ``step`` raises on a masked-0 or out-of-range action — so a
     loop that skipped the action boundary would let that raise smear the failure across the table.
     ``raise_on_legal`` makes ``step`` raise on an otherwise-legal action too, to model a genuine
-    environment fault that the boundary must leave unowned.
+    environment fault that the boundary must leave unowned. ``mask_in_info`` publishes the mask in the
+    ``info`` dict instead of the observation, the way Shimmy's OpenSpiel wrapper does.
     """
 
     def __init__(
-        self, *, n: int = 4, legal: tuple[int, ...] = (0, 1), raise_on_legal: int | None = None
+        self,
+        *,
+        n: int = 4,
+        legal: tuple[int, ...] = (0, 1),
+        raise_on_legal: int | None = None,
+        mask_in_info: bool = False,
     ) -> None:
         self.possible_agents = ["player_0", "player_1"]
         self._n = n
         self._legal = set(legal)
         self._raise_on_legal = raise_on_legal
+        self._mask_in_info = mask_in_info
 
     def action_space(self, agent: str) -> _Discrete:
         return _Discrete(self._n)
@@ -443,9 +450,12 @@ class MaskedEnv:
 
     def last(self) -> tuple[Any, float, bool, bool, dict[str, Any]]:
         a = self.agent_selection
-        return self.observe(a), self.rewards[a], self.terminations[a], self.truncations[a], {}
+        info = {"action_mask": self._mask()} if self._mask_in_info else {}
+        return self.observe(a), self.rewards[a], self.terminations[a], self.truncations[a], info
 
     def observe(self, agent: str) -> dict[str, Any]:
+        if self._mask_in_info:
+            return {"observation": 0}
         return {"observation": 0, "action_mask": self._mask()}
 
     def step(self, action: Any) -> None:
@@ -509,6 +519,24 @@ def test_illegal_masked_action_is_charged_to_the_acting_seat():
     assert episode.result().failed_slot == "player_1"
 
 
+def test_illegal_action_masked_via_info_is_charged_to_the_acting_seat():
+    # Some environments (Shimmy's OpenSpiel wrapper) publish the action mask in env.last()'s `info`
+    # rather than the observation. The boundary must consult both, or an OpenSpiel illegal move slips
+    # past unattributed and marks every seat failed. Same outcome as the observation-masked case.
+    entry = _masked_entry(legal=(0, 1), mask_in_info=True)
+    slots = {
+        "player_0": AgentSlot(ScriptedAgent([0])),  # legal
+        "player_1": AgentSlot(ScriptedAgent([2])),  # illegal per the info-supplied mask
+    }
+    episode = Episode(entry, slots, seed=1, clock=ManualClock())
+    episode.start()
+    episode.step_once()  # player_0 plays a legal card
+    with pytest.raises(IllegalAgentActionError, match="legal-move mask"):
+        episode.step_once()  # player_1's illegal card is refused via the info mask
+    assert episode.failed_slot == "player_1"
+    assert episode.result().failed_slot == "player_1"
+
+
 def test_out_of_action_space_action_is_charged_to_the_acting_seat():
     # An action outside the slot's Discrete space (the agent contract is an in-space action) is the
     # agent's fault, named even when the env publishes no per-card mask reason for it.
@@ -567,6 +595,51 @@ def test_agent_reset_crash_is_charged_to_its_seat_over_a_written_recording(tmp_p
 
     episode.close()
     # The recording exists with its header, so this reads as an attributable crash, not a missing run.
+    header = json.loads((tmp_path / "r" / "recording.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    assert header["environment"] == "team"
+
+
+def test_start_failure_through_context_manager_closes_recording_and_env(tmp_path: Path):
+    # run_episode drives Episode as a context manager. When start() raises (here an agent reset crash)
+    # __enter__ propagates before the `with` body, so __exit__ never runs — start() itself must close
+    # the half-opened recording writer and the constructed env, or both leak. Proof: the env's close()
+    # is called and the recording stays readable (its header was flushed on open).
+    class ResetCrashing:
+        def reset(self, seed: int) -> None:
+            raise RuntimeError("reset boom")
+
+        def act(self, observation: Any) -> int:
+            return 0
+
+    finals = {"player_0": 0.0, "player_1": 0.0, "player_2": 0.0}
+
+    class ClosingTeamEnv(FakeTeamEnv):
+        def __init__(self) -> None:
+            super().__init__(finals)
+            self.closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+    made: list[ClosingTeamEnv] = []
+
+    def make() -> ClosingTeamEnv:
+        env = ClosingTeamEnv()
+        made.append(env)
+        return env
+
+    entry = _team_entry(finals, make=make)
+    store = FolderRecordingStore(tmp_path)
+    slots = {
+        "player_0": AgentSlot(ScriptedAgent([0])),
+        "player_1": AgentSlot(ResetCrashing()),
+        "player_2": AgentSlot(ScriptedAgent([0])),
+    }
+    with pytest.raises(RuntimeError, match="reset boom"):
+        run_episode(entry, slots, seed=1, store=store, recording_id="r", clock=ManualClock())
+
+    assert len(made) == 1
+    assert made[0].closed is True  # start() closed the env even though __exit__ never ran
     header = json.loads((tmp_path / "r" / "recording.jsonl").read_text(encoding="utf-8").splitlines()[0])
     assert header["environment"] == "team"
 

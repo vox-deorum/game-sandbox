@@ -39,7 +39,7 @@ import type {
   SessionProcess,
 } from '../driver/index.js'
 import type { EnvironmentMeta, EnvironmentRegistry } from '../environments.js'
-import { normalizeEpisodeScore } from '../leaderboards/score.js'
+import { forfeitScore, normalizeEpisodeScore } from '../leaderboards/score.js'
 import { assembleSeats, type SeatBinding } from '../session/launch-config.js'
 import { ensureRecordingsDir } from '../session/live-session.js'
 import { decodeSeasonConfig, type Storage } from '../storage/index.js'
@@ -417,11 +417,16 @@ class DockerWorkflowRunner implements WorkflowRunner {
       const rawScore =
         aggregate.finalScore ?? (typeof envelopeScore === 'number' ? envelopeScore : 0)
       const seatFailed = failure.kind !== null && (culpritSlot === null || culpritSlot === slotId)
+      // A forfeited seat takes the environment's worst-case floor, not the partial score it accrued
+      // before failing. Otherwise a terminal-scored game (Hearts pays its penalty only at the final
+      // trick) lets an agent that crashes or plays an illegal move bank a ~0 partial — the best
+      // possible score — and lead the board despite failing every game. A clean seat keeps its score.
+      const episodeScore = seatFailed ? forfeitScore(envId) : normalizeEpisodeScore(envId, rawScore)
       await this.deps.storage.recordGameResult({
         game_id: game.id,
         slot_index: slotIndex,
         agent,
-        episode_score: normalizeEpisodeScore(envId, rawScore),
+        episode_score: episodeScore,
         agent_compute_ms_total: aggregate.agentComputeMsTotal,
         acted_tick_count: aggregate.actedTickCount,
         failed: seatFailed,

@@ -24,6 +24,7 @@ or overage accounting.
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -209,31 +210,44 @@ class Episode:
         raises is attributed to that one seat (:attr:`failed_slot`) over a readable recording, rather
         than looking like an unowned infrastructure fault that yields no recording at all. A failure
         in ``env.reset`` itself, before any seat has been touched, stays unowned by design.
+
+        Any startup failure closes the half-opened recording writer and the constructed env before
+        re-raising: a context-manager caller (``run_episode``) never reaches ``__exit__`` when
+        ``__enter__`` raises, so without this the writer's file handle and the env would leak.
+        :meth:`close` is idempotent and leaves :attr:`failed_slot` intact, so the live runner's own
+        best-effort close and a charged reset crash both keep working.
         """
-        env = self._entry.make()
-        self._env = env
-        env.reset(seed=self._seed)
+        try:
+            env = self._entry.make()
+            self._env = env
+            env.reset(seed=self._seed)
 
-        if self._store is not None:
-            created_at_ms = self._clock.now_ms()
-            if self._recording_id is None:
-                self._recording_id = f"{self._entry.meta.env_id}-seed{self._seed}-{created_at_ms}"
-            header = build_header(
-                environment=self._entry.meta.env_id,
-                seed=self._seed,
-                created_at=_iso_utc(created_at_ms),
-                players=dict(self._players) if self._players is not None else None,
-            )
-            self._writer_cm = self._store.create(self._recording_id, header)
-            self._writer = self._writer_cm.__enter__()
+            if self._store is not None:
+                created_at_ms = self._clock.now_ms()
+                if self._recording_id is None:
+                    self._recording_id = f"{self._entry.meta.env_id}-seed{self._seed}-{created_at_ms}"
+                header = build_header(
+                    environment=self._entry.meta.env_id,
+                    seed=self._seed,
+                    created_at=_iso_utc(created_at_ms),
+                    players=dict(self._players) if self._players is not None else None,
+                )
+                self._writer_cm = self._store.create(self._recording_id, header)
+                self._writer = self._writer_cm.__enter__()
 
-        for slot_id, binding in self._slots.items():
-            if isinstance(binding, AgentSlot):
-                try:
-                    binding.agent.reset(self._seed)
-                except Exception:  # noqa: BLE001 - charge a reset crash to this seat, then re-raise
-                    self._failed_slot = slot_id
-                    raise
+            for slot_id, binding in self._slots.items():
+                if isinstance(binding, AgentSlot):
+                    try:
+                        binding.agent.reset(self._seed)
+                    except Exception:  # noqa: BLE001 - charge a reset crash to this seat, then re-raise
+                        self._failed_slot = slot_id
+                        raise
+        except Exception:  # noqa: BLE001 - release the half-opened recording/env, then re-raise as-is
+            # Suppress any close fault so it never masks the original startup error (which the headless
+            # caller still receives and which carries the seat attribution set just above).
+            with contextlib.suppress(Exception):
+                self.close()
+            raise
 
     @property
     def done(self) -> bool:
@@ -292,7 +306,7 @@ class Episode:
         """Advance the acting slot by exactly one PettingZoo cycle. See the class docstring."""
         env = self._env
         slot_id = env.agent_selection
-        observation, _reward, termination, truncation, _info = env.last()
+        observation, _reward, termination, truncation, info = env.last()
 
         if termination or truncation:
             self._reason = REASON_TRUNCATED if truncation else REASON_TERMINATED
@@ -322,7 +336,7 @@ class Episode:
                 # seat and refuse the action here, so a raise from env.step does not smear the failure
                 # across every competitor in the container. A move that clears this gate but still
                 # makes env.step raise is a genuine environment fault, left owned by no seat.
-                reason = _illegal_action_reason(env, slot_id, observation, action)
+                reason = _illegal_action_reason(env, slot_id, observation, info, action)
                 if reason is not None:
                     self._failed_slot = slot_id
                     raise IllegalAgentActionError(f"{slot_id} returned an illegal action: {reason}")
@@ -470,7 +484,7 @@ def run_episode(
     return episode.result()
 
 
-def _illegal_action_reason(env: Any, slot_id: str, observation: Any, action: Any) -> str | None:
+def _illegal_action_reason(env: Any, slot_id: str, observation: Any, info: Any, action: Any) -> str | None:
     """Why ``action`` is an illegal move for ``slot_id``, or ``None`` if it is acceptable.
 
     Environment-agnostic, built only on the two standard PettingZoo legality signals and never on any
@@ -478,8 +492,8 @@ def _illegal_action_reason(env: Any, slot_id: str, observation: Any, action: Any
 
     * the slot's action space decides membership — an action the space does not contain is illegal,
       since the agent contract is that ``act`` returns an action in the environment's action space; and
-    * for an environment that follows the AEC illegal-move convention, the observation's
-      ``action_mask`` decides per-action legality — an in-range index the mask flags ``0`` is illegal.
+    * for an environment that follows the AEC illegal-move convention, the ``action_mask`` decides
+      per-action legality — an in-range index the mask flags ``0`` is illegal.
 
     Anything this cannot disprove — an environment exposing no action space or publishing no mask, or
     an action that does not index the mask — is deliberately left for ``env.step`` to judge, so a
@@ -493,15 +507,32 @@ def _illegal_action_reason(env: Any, slot_id: str, observation: Any, action: Any
             contained = True
         if not contained:
             return f"action {action!r} is outside the slot's action space"
-    if isinstance(observation, Mapping):
-        mask: Any = cast("Mapping[Any, Any]", observation).get("action_mask")
+    mask = _action_mask(info, observation)
+    if mask is not None:
+        try:
+            index = int(action)
+        except (TypeError, ValueError):
+            index = None
+        if index is not None and 0 <= index < len(mask) and not mask[index]:
+            return f"action {action!r} is not in the legal-move mask"
+    return None
+
+
+def _action_mask(info: Any, observation: Any) -> Any:
+    """The per-action legality mask for this step, or ``None`` when the environment publishes none.
+
+    The AEC API permits the mask in either the ``info`` or the ``observation`` dict, by environment:
+    PettingZoo's Classic games carry it as ``observation["action_mask"]`` while Shimmy's OpenSpiel
+    wrapper carries it as ``info["action_mask"]``. The canonical AEC loop consults ``info`` first and
+    falls back to the observation, so this does the same; otherwise an OpenSpiel illegal move would slip
+    past the boundary unattributed (https://pettingzoo.farama.org/api/aec/#action-masking).
+    """
+    if isinstance(info, Mapping):
+        mask: Any = cast("Mapping[Any, Any]", info).get("action_mask")
         if mask is not None:
-            try:
-                index = int(action)
-            except (TypeError, ValueError):
-                index = None
-            if index is not None and 0 <= index < len(mask) and not mask[index]:
-                return f"action {action!r} is not in the legal-move mask"
+            return mask
+    if isinstance(observation, Mapping):
+        return cast("Mapping[Any, Any]", observation).get("action_mask")
     return None
 
 

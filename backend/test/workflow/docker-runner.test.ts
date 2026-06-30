@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import type { ExitInfo } from '../../src/driver/index.js'
 import { EnvironmentRegistry } from '../../src/environments.js'
+import { forfeitScore } from '../../src/leaderboards/score.js'
 import type { AgentRef, ScheduledGameInput, SeasonRun, Storage } from '../../src/storage/index.js'
 import { openSqliteStorage } from '../../src/storage/sqlite.js'
 import { SubmissionSnapshotStore } from '../../src/submission/snapshot-store.js'
@@ -344,14 +345,15 @@ describe('Docker-backed workflow runner', () => {
     expect(logs.some((line) => line.includes('wall-clock watchdog'))).toBe(true)
   })
 
-  it('records an attributable crash with the final recorded score without aborting later games', async () => {
+  it('scores an attributable crash at the forfeit floor without aborting later games', async () => {
     const handle = makeRunner(storage)
     const run = await makeRun(storage, [naiveGame(0), naiveGame(1)])
     let launchCount = 0
     handle.driver.onLaunch = (launch): void => {
       const config = JSON.parse(launch.spec.argv[0] ?? '{}') as { seed: number }
       if (launchCount++ === 0) {
-        // A partial recording then a non-zero exit: an attributable agent crash.
+        // A partial recording then a non-zero exit: an attributable agent crash. The partial score
+        // (17) is high, but a forfeit must not bank it — the seat takes the environment floor instead.
         emitRecording(launch.process, config, {
           ticks: 2,
           finalScore: 17,
@@ -373,8 +375,13 @@ describe('Docker-backed workflow runner', () => {
     const results = await storage.listGameResultsByRun(run.id)
     expect(results).toHaveLength(2)
     const crashed = results.find((r) => r.failed === 1)
-    expect(crashed?.episode_score).toBe(17)
+    // The forfeited seat takes Flappy Bird's floor (0), discarding its 17-point partial.
+    expect(crashed?.episode_score).toBe(forfeitScore(ENV_ID))
+    expect(crashed?.episode_score).toBe(0)
     expect(crashed?.failure_reason).toMatch(/exited with code 1/)
+    // The clean later game keeps its honestly-earned recorded score.
+    const clean = results.find((r) => r.failed === 0)
+    expect(clean?.episode_score).toBe(5)
   })
 
   it('charges a multi-seat crash to the offending seat alone, not its co-seats', async () => {
@@ -426,7 +433,8 @@ describe('Docker-backed workflow runner', () => {
     expect(games[0]?.status).toBe('timed_out')
     const [result] = await storage.listGameResultsByRun(run.id)
     expect(result?.failed).toBe(1)
-    expect(result?.episode_score).toBe(3)
+    // A budget overrun is a forfeit: the seat takes the floor (0), not its 3-point partial.
+    expect(result?.episode_score).toBe(forfeitScore(ENV_ID))
     expect(result?.failure_reason).toMatch(/episode/)
   })
 
