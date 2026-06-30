@@ -10,6 +10,31 @@
 
 export const ENV_ID = 'flappy_bird'
 
+/** The Hearts environment, exercised by the dedicated multi-seat matchup spec (hearts.spec.ts). */
+export const HEARTS_ENV_ID = 'hearts'
+
+/**
+ * The Hearts matchup season. A distinct, card-themed label (the "Black Lady" is a nickname for the
+ * queen of spades) so it never collides with the flight-themed flappy seasons in the shared database.
+ */
+export const HEARTS_SEASON = 'Black Lady Open'
+
+/**
+ * The four Hearts agent owners, one per example strategy submitted into the matchup. The owner id is
+ * the public agent identity (the scoreboard row links to it), so these read like real handles and are
+ * distinct from the flappy {@link OWNERS}. Each maps to an `examples/hearts/<name>/` agent.
+ */
+export const HEARTS_OWNERS = {
+  /** examples/hearts/duck — avoids taking points. */
+  duck: 'katherine-johnson',
+  /** examples/hearts/moonshot — tries to win every trick and shoot the moon. */
+  moonshot: 'mae-jemison',
+  /** examples/hearts/assassin — hunts and dumps the queen of spades. */
+  assassin: 'rosalind-franklin',
+  /** examples/hearts/closer — exploits the last seat in a trick. */
+  closer: 'emmy-noether',
+} as const
+
 /** Season labels — short, no year, themed on flight. One per spec/test that declares a season. */
 export const SEASONS = {
   /** The leaderboards arc: a full competition (submissions → run → ratings → release). */

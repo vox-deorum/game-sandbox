@@ -46,7 +46,12 @@ import { decodeSeasonConfig, type Storage } from '../storage/index.js'
 import type { AgentRef, SeasonRun, SeasonRunGame } from '../storage/schema.js'
 import type { SubmissionSnapshotStore } from '../submission/snapshot-store.js'
 import type { SubmissionSource } from '../submission/source/index.js'
-import { ensureSubmissionImage, submissionSlotPath } from '../submission/submission-image.js'
+import {
+  ensureSessionImage,
+  ensureSubmissionImage,
+  type SessionImageSlot,
+  submissionSlotPath,
+} from '../submission/submission-image.js'
 import { aggregateSeat } from './aggregate.js'
 import type {
   RunEvent,
@@ -453,8 +458,15 @@ class DockerWorkflowRunner implements WorkflowRunner {
     }
   }
 
-  /** Resolve the launch image: the single submission seat's overlay, or the base image otherwise. */
+  /**
+   * Resolve the launch image: the base image when no slot is a submission, a single submission's warm
+   * per-submission overlay, or a composed session image when two or more seats are submissions. This
+   * mirrors the live orchestrator's image resolution, so a multi-submission matchup game (the Hearts
+   * scheduler's ordered seatings) stages each agent into its own per-slot directory instead of baking
+   * only the first seat's overlay, which would leave the other submitted seats with no code to load.
+   */
   private async resolveImage(slots: readonly AgentRef[], depsVersion: number): Promise<ImageRef> {
+    const composed: SessionImageSlot[] = []
     for (let i = 0; i < slots.length; i++) {
       const agent = slots[i] as AgentRef
       if (agent.kind === 'submission') {
@@ -462,20 +474,22 @@ class DockerWorkflowRunner implements WorkflowRunner {
         if (submission === undefined) {
           throw new Error(`submission ${agent.submission_id} no longer exists`)
         }
-        return ensureSubmissionImage(
-          {
-            driver: this.deps.driver,
-            snapshots: this.deps.snapshots,
-            source: this.deps.source,
-            imagePolicy: this.deps.imagePolicy,
-          },
-          submission,
-          depsVersion,
-          `player_${i}`,
-        )
+        composed.push({ slotId: `player_${i}`, submission })
       }
     }
-    return this.deps.driver.ensureImage({ kind: 'session-base', depsVersion })
+    if (composed.length === 0) {
+      return this.deps.driver.ensureImage({ kind: 'session-base', depsVersion })
+    }
+    const imageDeps = {
+      driver: this.deps.driver,
+      snapshots: this.deps.snapshots,
+      source: this.deps.source,
+      imagePolicy: this.deps.imagePolicy,
+    }
+    const [only] = composed
+    return composed.length === 1 && only !== undefined
+      ? ensureSubmissionImage(imageDeps, only.submission, depsVersion, only.slotId)
+      : ensureSessionImage(imageDeps, composed, depsVersion)
   }
 
   /** Build the headless session config: every slot an agent, no human source, recording to the volume. */

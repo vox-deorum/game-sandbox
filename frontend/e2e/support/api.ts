@@ -41,9 +41,13 @@ function asUser(user: string): { headers: Record<string, string> } {
 
 // --- Seasons -------------------------------------------------------------------------------------
 
-/** Declare a fresh season (unreleased, both windows closed) for the Flappy Bird environment. */
-export async function declareSeason(request: APIRequestContext, label: string): Promise<Season> {
-  const res = await request.post(`/api/admin/environments/${ENV_ID}/seasons`, { data: { label } })
+/** Declare a fresh season (unreleased, both windows closed) for an environment (Flappy Bird by default). */
+export async function declareSeason(
+  request: APIRequestContext,
+  label: string,
+  envId: string = ENV_ID,
+): Promise<Season> {
+  const res = await request.post(`/api/admin/environments/${envId}/seasons`, { data: { label } })
   expect(res.status(), await res.text()).toBe(201)
   return (await res.json()) as Season
 }
@@ -80,8 +84,9 @@ export const release = (request: APIRequestContext, id: string): Promise<void> =
 /** The seasons that currently hold the env's open submission and play windows (the unique-per-env slots). */
 export async function activeWindows(
   request: APIRequestContext,
+  envId: string = ENV_ID,
 ): Promise<{ submissionSeasonId: string | null; playSeasonId: string | null }> {
-  const res = await request.get(`/api/environments/${ENV_ID}/leaderboards`)
+  const res = await request.get(`/api/environments/${envId}/leaderboards`)
   expect(res.ok(), await res.text()).toBe(true)
   const body = (await res.json()) as {
     submission_season_id: string | null
@@ -123,10 +128,11 @@ export async function submitLocal(
   request: APIRequestContext,
   owner: string,
   localPath: string,
+  envId: string = ENV_ID,
 ): Promise<string> {
   const res = await request.post('/api/submissions', {
     ...asUser(owner),
-    data: { env_id: ENV_ID, local_path: localPath },
+    data: { env_id: envId, local_path: localPath },
   })
   expect(res.status(), await res.text()).toBe(202)
   const body = (await res.json()) as { id: string; status: string }
@@ -162,14 +168,39 @@ export async function submitReadyAgent(
   request: APIRequestContext,
   owner: string,
   localPath: string,
+  envId: string = ENV_ID,
 ): Promise<string> {
-  const id = await submitLocal(request, owner, localPath)
+  const id = await submitLocal(request, owner, localPath, envId)
   const row = await waitForTerminal(request, id)
   expect(row.status, JSON.stringify(row.checks)).toBe('ready')
   return id
 }
 
 // --- Sessions & ratings --------------------------------------------------------------------------
+
+/** One slot's assignment on the session-start wire (snake-case `submission_id`). */
+type SlotAssignment = { kind: 'human' | 'builtin-agent' | 'submission'; submission_id?: string }
+
+/**
+ * Start a session from an explicit per-slot assignment, as `user`, and return the new session id.
+ * Does not wait for the game to finish — callers that need a rateable recording use
+ * {@link finishedScriptedSession}; the render check just needs a started session to watch. The
+ * environment must have a play-open season and `user` must be allowlisted (the orchestrator gates
+ * both before launching a container).
+ */
+export async function startSession(
+  request: APIRequestContext,
+  user: string,
+  envId: string,
+  slots: Record<string, SlotAssignment>,
+): Promise<string> {
+  const res = await request.post('/api/sessions', {
+    ...asUser(user),
+    data: { env_id: envId, slots },
+  })
+  expect(res.status(), await res.text()).toBe(201)
+  return ((await res.json()) as { id: string }).id
+}
 
 async function getSession(
   request: APIRequestContext,

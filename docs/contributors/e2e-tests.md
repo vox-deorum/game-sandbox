@@ -34,6 +34,7 @@ The suite runs serially (`workers: 1`, `fullyParallel: false`) so the real conta
 | `watch.spec.ts` | main | Watch a scripted session; a second context is a controls-less spectator. |
 | `submission.spec.ts` | main | The resolve → static → build → load pipeline; a ready agent watched, and a load failure. |
 | `leaderboards-admin.spec.ts` | main | Season cards, released history, operator preview, and the full competition arc (below). |
+| `hearts.spec.ts` | main | A four-seat Hearts render check, and a Hearts season driven through a multi-seat scheduled matchup to a released Scoreboard (below). |
 | `allowlist.spec.ts` | restricted | Hidden entry points and a rejected direct start for a non-allowlisted user. |
 
 ## A fresh database every run
@@ -73,6 +74,16 @@ The last test in `leaderboards-admin.spec.ts` drives a whole season against real
 6. Releases the season and asserts the public boards: a populated Scoreboard and a fully ranked Human Ratings board.
 
 Because it does several real builds plus a multi-agent run, it carries a wide `test.setTimeout`. If CI time becomes a problem, the cheapest lever is fewer submitted agents (two still produce a ranking).
+
+## Hearts: example agents and a scheduled matchup
+
+`hearts.spec.ts` is the suite's coverage of Hearts, the four-seat, turn-based environment. It exists alongside the flappy specs rather than replacing them: Hearts is a separate environment, so its seasons hold their own per-environment open-submission and open-play windows and never collide with the flappy Playground. The shared `support/api.ts` helpers that name an environment (`declareSeason`, `submitLocal`, `submitReadyAgent`, `activeWindows`) take an environment id that defaults to Flappy Bird, so the flappy specs are unchanged and this spec passes `hearts`.
+
+The first test is a render check: it starts a four-seat, all-Naive session (no human seat, so it runs itself) against the seeded Hearts Playground's open play window and asserts the Hearts renderer paints its `canvas.renderer-canvas`. This is the only place the live Hearts renderer is exercised in a browser; the rest of its coverage is the jsdom scene test.
+
+The second test drives a whole Hearts season, and is what enriches the demo with a populated Hearts Scoreboard. It borrows the Playground's windows (closing them, restoring them in a `finally`), declares the season, and submits the four `examples/hearts/*` reference agents, each a different strategy (`duck`, `moonshot`, `assassin`, `closer`) under its own owner. Because the example folders are diff-only overlays without their own `manifest.json`, the spec stages each agent's `agent.py` into a temp folder with a generated manifest and submits that, so the agents are submitted directly without a compose step. It then configures one match with two submission seats and two Naive seats, runs the workflow from the operator console, and asserts the released Scoreboard ranks all four agents and the Naive baseline. No human ratings are seeded, so it asserts the Human Ratings board's empty state.
+
+That match is the most expensive shape the suite runs: Hearts sets `seat_order_matters`, so two submission seats over four ready agents expand to twelve ordered seatings plus the appended Naive baseline, thirteen real four-seat container games, several of which compose a multi-submission session image first. It carries a correspondingly wide `test.setTimeout`. As with the flappy arc, the cheapest lever if CI time becomes a problem is fewer submitted agents.
 
 ## Adding a test or fixture
 

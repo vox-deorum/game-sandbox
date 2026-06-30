@@ -23,6 +23,8 @@ Fix what the single-agent stages never had to get right in this multi-slot path.
 
 Extend session image building per [execution.md](../../docs/specs/execution.md). A multi-agent session overlays every participating submission's code, each in its own per-slot directory, onto the base image for the season's pinned dependency-set version. The driver already exposes per-slot overlay paths through `submissionSlotPath(slotId)` and the `submission-overlay` image spec; this step builds one overlay per submitted slot and composes them into the session image.
 
+Both consumers of this composition share it: the live orchestrator (step 4) and the automated workflow runner (Stage 6.4). The workflow runner originally baked only the first submitted seat's overlay, which was invisible while every workflow match had a single submission seat, but silently failed a Hearts matchup whose game seats two different submissions (the other seat had no code to load). It now composes the multi-submission session image the same way the orchestrator does, so the scheduler's multi-submission seatings (Stage 7.3) actually run; the browser e2e matchup in `frontend/e2e/hearts.spec.ts` covers this end to end.
+
 Dependency conflicts cannot arise because every participant runs the same single dependency set. What this step must get right is **code isolation between checkouts**:
 
 - Import paths do not leak between slots.
