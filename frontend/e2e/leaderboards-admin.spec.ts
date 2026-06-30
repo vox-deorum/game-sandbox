@@ -40,7 +40,7 @@ test('the Seasons index shows the refreshed released-season card and navigates t
 
   const card = page.locator('li').filter({ hasText: SEASONS.releasedCard })
   await expect(card.getByRole('link', { name: 'Results released' })).toBeVisible()
-  await expect(card.getByText(/0 Submissions · 0 Sessions Played/)).toBeVisible()
+  await expect(card.getByText(/0 Submissions · 0 Games/)).toBeVisible()
   await expect(card.locator('img.season-thumb')).toBeVisible()
   await expect(card.getByText('Open now')).toHaveCount(0)
 
