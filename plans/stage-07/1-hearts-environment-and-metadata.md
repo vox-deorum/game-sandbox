@@ -1,6 +1,6 @@
 # Stage 7.1: Hearts Environment, Scoring, and Metadata
 
-Status: not started.
+Status: done. The Hearts PettingZoo AEC environment ships: a dependency-free rules engine (follow suit, hearts-not-led-until-broken, the first-trick penalty restriction, the two-of-clubs opening lead, and a single legal-move helper), native penalty scoring with the shoot-the-moon flip, the negated-penalty normalized leaderboard score, a legal-action mask carried in both the observation and the render overlay, `seat_order_matters=true` metadata with four turn-based slots and messaging disabled, an `AUTO_ACTION` `default_action` that plays the lowest legal card on a timed-out slot, and a pygame local renderer with click-to-play behind `play.py`. The Docker-free pytest suite covers the rules, scoring, moon flip, normalized score, the mask-versus-rules agreement, the `to_json()` metadata round-trip, the default action, a headless renderer frame and hit-test, determinism, and a full game; all green with no Docker or DB.
 
 Part of [Stage 7](../stage-07-multi-agent.md). This is build-order step 1, the first demonstrable slice, and the foundation every other step attaches to. It is the Hearts game itself: a custom four-player environment with its rules, its scoring, and its metadata. It is pure Python with no Docker, no backend, and no database, so it runs and tests through the existing single-session loop exactly as Flappy Bird does.
 

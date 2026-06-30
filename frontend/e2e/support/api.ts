@@ -187,21 +187,43 @@ type SlotAssignment =
   | { kind: 'submission'; submission_id: string }
 
 /**
+ * The session overrides the start contract carries alongside the seat assignment (Stage 7.4): an
+ * explicit episode `seed` (so a deal is reproducible) and a human-slot move-clock `human_slot_timeout_ms`
+ * (so a human seat's per-move budget can be tightened from the environment default). Both are optional;
+ * omitting one lets the backend pick (a random seed, the environment's `human_timeout_ms`).
+ */
+interface StartOverrides {
+  seed?: number
+  humanSlotTimeoutMs?: number
+}
+
+/**
  * Start a session from an explicit per-slot assignment, as `user`, and return the new session id.
  * Does not wait for the game to finish; callers that need a rateable recording use
  * {@link finishedScriptedSession}; the render check just needs a started session to watch. The
  * environment must have a play-open season and `user` must be allowlisted (the orchestrator gates
- * both before launching a container).
+ * both before launching a container). The optional overrides pin the episode seed (so the deal — and
+ * for Hearts the opening 2♣ leader — is reproducible) and the human-slot move clock.
  */
 export async function startSession(
   request: APIRequestContext,
   user: string,
   envId: string,
   slots: Record<string, SlotAssignment>,
+  overrides: StartOverrides = {},
 ): Promise<string> {
   const res = await request.post('/api/sessions', {
     ...asUser(user),
-    data: { env_id: envId, slots },
+    // Only send the overrides the caller set, so an omitted seed/timeout stays the backend's default
+    // rather than a literal `undefined` on the wire.
+    data: {
+      env_id: envId,
+      slots,
+      ...(overrides.seed !== undefined ? { seed: overrides.seed } : {}),
+      ...(overrides.humanSlotTimeoutMs !== undefined
+        ? { human_slot_timeout_ms: overrides.humanSlotTimeoutMs }
+        : {}),
+    },
   })
   expect(res.status(), await res.text()).toBe(201)
   return ((await res.json()) as { id: string }).id
@@ -216,6 +238,63 @@ async function getSession(
     return null
   }
   return (await res.json()) as SessionRow
+}
+
+/**
+ * Start an all-agent (scripted) multi-seat session from an explicit per-slot assignment and let it run
+ * itself to completion, returning the finalized recording id. Unlike {@link finishedScriptedSession}
+ * this never stops the session — a scripted Hearts hand ends on its own once all thirteen tricks are
+ * played, so waiting yields a complete, trick-by-trick recording the replay viewer can walk. The slots
+ * must name no human seat (a human seat would block waiting for input that never comes).
+ */
+export async function finishedSeatedSession(
+  request: APIRequestContext,
+  user: string,
+  envId: string,
+  slots: Record<string, SlotAssignment>,
+  overrides: StartOverrides = {},
+): Promise<string> {
+  const sessionId = await startSession(request, user, envId, slots, overrides)
+  let recordingId: string | null = null
+  await expect
+    .poll(
+      async () => {
+        const session = await getSession(request, sessionId)
+        if (session?.status === 'ended' && session.recording_id !== null) {
+          recordingId = session.recording_id
+          return 'ready'
+        }
+        return 'waiting'
+      },
+      // A full four-seat container hand (52 plays) takes longer than a single-agent watch, so the
+      // window is wider than finishedScriptedSession's; still well inside the spec's own test timeout.
+      { timeout: 120_000, intervals: [1000, 2000, 3000] },
+    )
+    .toBe('ready')
+  if (recordingId === null) {
+    throw new Error('session ended without a recording')
+  }
+  return recordingId
+}
+
+/**
+ * Stop a live session as `user` and wait until the backend has freed that user's single active-session
+ * slot, so an immediately following start for the same user cannot race a 409 already-active. Deletes the
+ * session, then polls until it reports `ended` (or is already gone). Mirrors {@link finishedScriptedSession}'s
+ * stop-then-wait, but returns nothing: the caller only needs the slot released, not a recording.
+ */
+export async function stopSessionAndAwaitFree(
+  request: APIRequestContext,
+  user: string,
+  sessionId: string,
+): Promise<void> {
+  await request.delete(`/api/sessions/${sessionId}`, asUser(user)).catch(() => {})
+  await expect
+    .poll(async () => (await getSession(request, sessionId))?.status ?? 'missing', {
+      timeout: 30_000,
+      intervals: [500, 1000],
+    })
+    .toMatch(/ended|missing/)
 }
 
 /**

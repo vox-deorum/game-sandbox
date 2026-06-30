@@ -33,7 +33,22 @@ export const HEARTS_OWNERS = {
   assassin: 'rosalind-franklin',
   /** examples/hearts/closer: exploits the last seat in a trick. */
   closer: 'emmy-noether',
+  /**
+   * The owner of the single submitted seat in the per-seat replay-attribution test. Kept distinct
+   * from the four matchup owners above so its `players` line in that recording is unambiguous and the
+   * agent profile it leaves behind shows exactly this one submission.
+   */
+  replay: 'annie-easley',
 } as const
+
+/**
+ * The fixed episode seed the on-screen human-seat test starts its Hearts session with. With this deal
+ * `player_0` (the seat the connected human controls, drawn at the bottom of the table) holds the 2 of
+ * clubs and so leads the very first trick, where only the 2♣ is legal and every other card is greyed —
+ * the deterministic opening the test clicks against. Computed offline from `hearts.rules.deal`, which
+ * is fully seed-driven, so it is stable across runs.
+ */
+export const HEARTS_HUMAN_LEAD_SEED = 0
 
 /** Season labels — short, no year, themed on flight. One per spec/test that declares a season. */
 export const SEASONS = {

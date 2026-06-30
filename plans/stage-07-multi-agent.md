@@ -1,6 +1,6 @@
 # Stage 7: Multi-Agent
 
-Status: not started
+Status: in progress (subplans 1-7 done; 7.8 reconciliation, docs, and CI complete, with the three new Docker-gated Hearts browser journeys pending a `frontend-e2e` run)
 
 ## Goal
 

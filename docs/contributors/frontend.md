@@ -168,7 +168,9 @@ The local-folder field exists only when both `import.meta.env.DEV` and the backe
 1. The built-in Naive agent.
 2. Ready submissions from the play-open season.
 
-The picker reads `GET /api/environments/:envId/watch-agents`, a viewer-specific response. Regular users receive an anonymous number and `unrated`, `rated`, or `own` state. Operators additionally receive owner and source details. Unrated agents use the primary **Rate** action; rated and owned agents use secondary **Watch again** actions. A submitted watch run passes `submissionId`; the built-in run omits it. A 409 active-session response navigates to the existing session.
+The picker reads `GET /api/environments/:envId/watch-agents`, a viewer-specific response. Regular users receive an anonymous number and `unrated`, `rated`, or `own` state. Operators additionally receive owner and source details. Unrated agents use the primary **Rate** action; rated and owned agents use secondary **Watch again** actions. A 409 active-session response navigates to the existing session.
+
+A watch run starts through `startSession`, whose payload is a per-slot `slots` assignment keyed by slot id, each slot naming its `kind` (`human`, `builtin-agent`, or `submission`) and a `submission_id` for submitted seats. A single-slot environment starts immediately with that one seat. A multi-seat environment opens `SeatAssignmentDialog.vue` with the clicked agent preselected into every seat: the dialog seats one agent, built-in Naive or a ready submission, in each required seat, collects the seed, and stays startable because no seat is ever empty. Play-with-agents routes through the same seat grid with seat 0 held by the human and a per-row control to move that single human seat.
 
 ## Ratings and author prompts
 

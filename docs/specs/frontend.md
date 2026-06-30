@@ -61,7 +61,7 @@ See [Submissions](submission.md).
 | Watch multi-agent | One agent per required seat, seed, supported overrides |
 | Play | Human-capable slot assignment, remaining agents, seed, human timeout, supported overrides |
 
-All required seats must be assigned before a multi-agent session starts. The session model identifies every slot even when the first interface supports only one connected human.
+Any agent row, built-in or submitted, opens the same seat-assignment view with the clicked agent preselected for its seat and every seat reassignable before starting. All required seats must be assigned before a multi-agent session starts. The session model identifies every slot even when the first interface supports only one connected human.
 
 ## On-demand live play
 

@@ -64,6 +64,8 @@ An environment may expose human-capable slots. Its renderer can accept:
 
 A renderer may use both. It maps each gesture to an action in the environment's action space and sends the action with the slot ID. Spectators and replay viewers receive no input capability.
 
+A turn-based environment marks which actions are currently legal, carried in the per-step state so the renderer presents only legal choices, for example by disabling the illegal ones, rather than re-deriving the rules in the browser. When a human slot's move clock expires, the environment supplies a default legal action so play continues.
+
 ## Chat
 
 When messaging is enabled, the renderer provides chat UI. Broadcasts and messages addressed to the connected user's slots appear there. Outgoing messages follow the same WebSocket path as input. See [Communication](communication.md).

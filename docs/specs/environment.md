@@ -38,6 +38,8 @@ A season may override the timing, messaging, and LLM defaults. See [Leaderboards
 
 The **pace interval** is the only distinction between realtime and turn-based stepping. A set interval advances on a wall-clock cadence. No interval advances when the acting slot provides an action. See [Interaction](interaction.md).
 
-## First environment
+**Seat order** records whether swapping two agents between seats yields a genuinely different game. A positional game, such as a trick-taking card game where play passes around a fixed order, sets it so that seating agent A before B is a different match than B before A. A symmetric game, where only the set of participants matters, leaves it off. The leaderboard scheduler reads this field when it expands a match design over submissions. See [Leaderboards](leaderboard.md).
 
-The first environment is a Flappy Bird style single-agent game using the compatibility wrapper. The same registry and session loop support later multi-agent environments.
+## Environments in the system
+
+The first environment is a Flappy Bird style single-agent game using the compatibility wrapper. The first native multi-agent environment is Hearts, a four-slot turn-based trick-taking card game implemented directly against PettingZoo. Both share one registry and session loop, so the same machinery runs a single paced slot and four sequential turn-based slots, including a human slot seated among agents.

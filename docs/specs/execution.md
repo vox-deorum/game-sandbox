@@ -44,7 +44,7 @@ The backend keeps one base image per template dependency version. Each base cont
 - The environments.
 - The exact dependency set for that version.
 
-A submission image adds the pinned repository to the base without installing new dependencies. Every submission in a session uses the season's dependency version.
+A single-agent submission image adds the one pinned repository to the base. A multi-agent session image instead overlays every participating submission, each isolated in its own location so repositories that happen to share a module name do not collide. No build installs new dependencies: every submission in a session uses the season's dependency version, so the shared base already carries everything they need.
 
 Before use, the image passes the sandboxed load check from [Submissions](submission.md). Failed builds and checks are reported to the owner and never run in a game.
 

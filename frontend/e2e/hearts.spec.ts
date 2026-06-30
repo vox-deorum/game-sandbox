@@ -11,13 +11,20 @@ import {
   closeSubmissions,
   configureMatches,
   declareSeason,
+  finishedSeatedSession,
   openPlay,
   openSubmissions,
   release,
   startSession,
+  stopSessionAndAwaitFree,
   submitReadyAgent,
 } from './support/api.js'
-import { HEARTS_ENV_ID, HEARTS_OWNERS, HEARTS_SEASON } from './support/names.js'
+import {
+  HEARTS_ENV_ID,
+  HEARTS_HUMAN_LEAD_SEED,
+  HEARTS_OWNERS,
+  HEARTS_SEASON,
+} from './support/names.js'
 
 /**
  * The dedicated Hearts coverage. Unlike the flappy specs, Hearts is a four-seat, turn-based game, so
@@ -190,5 +197,206 @@ test('a Hearts season: four example agents, a scheduled multi-seat matchup, then
     for (const dir of stagedDirs) {
       rmSync(dir, { recursive: true, force: true })
     }
+  }
+})
+
+test('the watch seat dialog starts a session with the chosen seed reaching the start payload', async ({
+  page,
+  request,
+}) => {
+  // Container launch plus the first rendered frame is slower than a DOM-only check.
+  test.setTimeout(120_000)
+
+  // Hearts is a four-seat environment, so the watch flow opens the multi-seat SeatAssignmentDialog
+  // (WatchAgentPicker routes a single-slot env straight to a start instead). The seeded Hearts
+  // Playground is play-open on a fresh backend, so the watch picker renders for the allowlisted user.
+  await page.goto(`/environments/${HEARTS_ENV_ID}`)
+
+  // The built-in Naive row is pinned atop the watch list; its Watch button opens the seat dialog with
+  // the Naive baseline preselected into every seat (the default, valid assignment), so Start is enabled
+  // without touching a dropdown. Clicking it covers "assign every required seat": all four seats already
+  // hold the Naive agent. (The dropdowns are exercised by the play test below.)
+  const builtinRow = page.locator('.agent-row').filter({ hasText: 'Naive agent' })
+  await builtinRow.getByRole('button', { name: 'Watch' }).click()
+  await expect(page.getByRole('heading', { name: 'Watch Hearts' })).toBeVisible()
+
+  // Confirm every seat carries an agent: the four seat dropdowns (labelled "Seat 1".."Seat 4" through
+  // their aria-labelledby) all default to the Naive baseline, so the composition is full and valid.
+  for (let seat = 1; seat <= 4; seat++) {
+    await expect(page.getByLabel(`Seat ${seat}`)).toHaveValue('builtin')
+  }
+
+  // A chosen, non-default seed entered into the dialog's seed field. The payload assertion below proves
+  // this exact value rode the POST /api/sessions body rather than being dropped or defaulted.
+  const chosenSeed = 4242
+  await page.getByLabel('Seed (optional)').fill(String(chosenSeed))
+
+  // Start, intercepting the start request so we can read the body the dialog composed. waitForRequest is
+  // armed before the click so the request can never slip past us; the request is the authoritative proof
+  // the seed reached the wire (the dialog encodes `seed` into the JSON the client POSTs).
+  const [startRequest] = await Promise.all([
+    page.waitForRequest((req) => req.url().includes('/api/sessions') && req.method() === 'POST'),
+    page.getByRole('button', { name: 'Start watching' }).click(),
+  ])
+  const body = startRequest.postDataJSON() as { env_id: string; seed?: number }
+  expect(body.env_id).toBe(HEARTS_ENV_ID)
+  expect(body.seed).toBe(chosenSeed)
+
+  // (a) The session started and its Hearts renderer paints: the dialog navigated to the live session and
+  // the canvas mounts. This is the DOM-observable consequence of a successful start.
+  await expect(page).toHaveURL(/\/sessions\//)
+  await expect(page.locator('canvas.renderer-canvas')).toBeVisible({ timeout: 60_000 })
+
+  // Free the user's single active-session slot (the scripted game also ends on its own).
+  const sessionId = page.url().split('/sessions/')[1]
+  if (sessionId !== undefined) {
+    await request.delete(`/api/sessions/${sessionId}`).catch(() => {})
+  }
+})
+
+test('an on-screen human seat plays a legal card and an illegal click does not advance the game', async ({
+  page,
+  request,
+}) => {
+  // Container launch plus driving a couple of live turns is slower than a DOM-only check.
+  test.setTimeout(120_000)
+
+  // A live human-vs-agents Hearts session: the connected user (dev-user, the auto-logged owner the
+  // browser sees) controls player_0; the other three seats are built-in agents the container drives.
+  // The fixed seed deals player_0 the 2 of clubs, so player_0 leads the very first trick — the
+  // deterministic opening where only the 2♣ is legal and every other hand card is greyed. Starting
+  // through the API (not the dialog, which the test above covers) pins that seed exactly; a generous
+  // move clock keeps the human's turn open long enough to click without the auto-play timeout firing.
+  const sessionId = await startSession(
+    request,
+    'dev-user',
+    HEARTS_ENV_ID,
+    {
+      player_0: { kind: 'human' },
+      player_1: { kind: 'builtin-agent' },
+      player_2: { kind: 'builtin-agent' },
+      player_3: { kind: 'builtin-agent' },
+    },
+    { seed: HEARTS_HUMAN_LEAD_SEED, humanSlotTimeoutMs: 60_000 },
+  )
+  await page.goto(`/sessions/${sessionId}`)
+
+  // The renderer mounts and, because dev-user owns this human session, the bottom (player_0) hand is
+  // interactive: the renderer wires a click-to-play per legal card on the controlled seat's turn.
+  const canvas = page.locator('canvas.renderer-canvas')
+  await expect(canvas).toBeVisible({ timeout: 60_000 })
+
+  // Greying lives in canvas pixels, which the suite never reads, so the assertions are DOM-observable
+  // consequences instead. The decision log records one row per acted tick (a play); the opening deal
+  // frame carries no action, so the log starts empty. Wait for the renderer to settle (its host reports
+  // an aspect ratio and the log mounts) before reading it.
+  const decisionRows = page.locator('.decision-log tbody tr')
+  await expect(page.locator('.decision-log')).toBeVisible({ timeout: 30_000 })
+  await expect(decisionRows).toHaveCount(0)
+
+  // The Hearts table is drawn at a fixed 960x720 internal space the renderer scales onto the canvas, so
+  // a click maps from internal coordinates to canvas-relative pixels by the canvas's rendered size. With
+  // a 13-card opening hand the fan is laid out left-to-right; the sorted hand puts the 2♣ leftmost, its
+  // card rect centered near internal (72, 646), and a far-right card (a clearly-illegal, greyed card)
+  // near internal (888, 656). Both centres are derived from scene.ts buildHand's geometry.
+  const box = await canvas.boundingBox()
+  expect(box, 'canvas bounding box').not.toBeNull()
+  if (box === null) {
+    throw new Error('no canvas bounding box')
+  }
+  const at = (internalX: number, internalY: number): { x: number; y: number } => ({
+    x: (internalX / 960) * box.width,
+    y: (internalY / 720) * box.height,
+  })
+  const twoOfClubs = at(72, 646)
+  const illegalCard = at(888, 656)
+
+  // An illegal click first: a greyed card is not wired clickable (the renderer only binds a play handler
+  // to a legal card on the controlled seat's turn), so clicking it sends nothing and the game does not
+  // advance. The log must still be empty a moment later — the negative control for the legal click.
+  await canvas.click({ position: illegalCard })
+  // Give any (wrongly) dispatched action time to round-trip and stream a state before asserting no-op.
+  await page.waitForTimeout(2000)
+  await expect(decisionRows).toHaveCount(0)
+
+  // The legal play: clicking the 2♣ sends its play action for player_0 (the only legal opening card).
+  // The backend applies it and the three agent seats follow, so the live stream delivers acted states
+  // and the decision log grows — the DOM-observable proof that the on-screen human play registered and
+  // advanced the hand.
+  await canvas.click({ position: twoOfClubs })
+  // The decision log growing from empty to one row is the DOM-observable proof the on-screen play
+  // registered and advanced the hand. The host renders the controlled view seat (here player_0, the
+  // seed-chosen 2♣ leader) and attributes every log row to it, so this smoke-tests the seat-0 human;
+  // a per-row seat assertion would be tautological, and narrowing controlledSlots to an arbitrary
+  // assigned seat is step 6's job. The row-count advance is the honest signal.
+  await expect(decisionRows.first()).toBeVisible({ timeout: 30_000 })
+
+  // Stop the still-running human session and wait until the backend frees this user's single active
+  // slot, so the next test's start for the same dev-user cannot race a 409 already-active.
+  await stopSessionAndAwaitFree(request, 'dev-user', sessionId)
+})
+
+test('a multi-agent Hearts recording replays with per-seat attribution and trick-by-trick playback', async ({
+  page,
+  request,
+}) => {
+  // One real overlay build plus a full four-seat container hand played to completion, slower than a
+  // DOM-only check but far cheaper than the matchup above.
+  test.setTimeout(300_000)
+
+  // Stage and submit one example Hearts agent under its own owner, so its seat carries a real owner
+  // attribution ("<owner>'s agent") in the recording header rather than the generic Naive label. It
+  // attaches to the seeded Playground, which is both submission-open and play-open on a fresh backend.
+  const stagedDir = stageHeartsAgent('duck')
+  try {
+    const submissionId = await submitReadyAgent(
+      request,
+      HEARTS_OWNERS.replay,
+      stagedDir,
+      HEARTS_ENV_ID,
+    )
+
+    // A scripted four-seat hand: the submitted agent in seat 0, the Naive baseline in the other three.
+    // No human seat, so it runs itself to completion and finalizes a trick-by-trick recording. The mixed
+    // roster gives the recording header a per-seat `players` map with one owner-attributed seat and three
+    // Naive seats — the four-seat attribution this test asserts. dev-user is the default operator, so the
+    // replay shows real owner labels (the blind-anonymization path applies only to non-operators).
+    const recordingId = await finishedSeatedSession(
+      request,
+      'dev-user',
+      HEARTS_ENV_ID,
+      {
+        player_0: { kind: 'submission', submission_id: submissionId },
+        player_1: { kind: 'builtin-agent' },
+        player_2: { kind: 'builtin-agent' },
+        player_3: { kind: 'builtin-agent' },
+      },
+      { seed: HEARTS_HUMAN_LEAD_SEED },
+    )
+
+    // Open the replay in the viewer and assert it renders the recorded table.
+    await page.goto(`/replays/${recordingId}`)
+    await expect(page.locator('canvas.renderer-canvas')).toBeVisible({ timeout: 60_000 })
+
+    // Per-seat attribution: the PlayerAttribution line carries one entry per seat, each naming the slot
+    // and who drove it. A four-seat Hearts recording shows all four seats; the submitted seat reads the
+    // owner's-agent label and the rest read the Naive agent. (Both the per-slot line and, on the final
+    // frame, the game-over leaderboard read the same header `players` map.)
+    const attribution = page.locator('.players')
+    await expect(attribution.locator('.player')).toHaveCount(4)
+    await expect(attribution.getByText(`${HEARTS_OWNERS.replay}'s agent`)).toBeVisible()
+    await expect(attribution.getByText('Naive agent').first()).toBeVisible()
+
+    // Trick-by-trick playback works: the transport's controls are present and stepping forward advances
+    // the playhead. The position readout ("tick T · I/N") starts at 1/N and steps to 2/N — the
+    // DOM-observable proof the scrubber walks the recorded states.
+    const position = page.locator('.replay-position')
+    await expect(position).toContainText('1/')
+    await page.getByRole('button', { name: 'Step forward' }).click()
+    await expect(position).toContainText('2/')
+    // The scrubber is the Reka UiSlider (a span with role=slider), present and operable.
+    await expect(page.getByRole('slider')).toBeVisible()
+  } finally {
+    rmSync(stagedDir, { recursive: true, force: true })
   }
 })

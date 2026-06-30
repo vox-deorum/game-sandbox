@@ -58,6 +58,8 @@ The operator-triggered workflow:
 - Enforces step and episode limits.
 - Aggregates LLM usage by model.
 
+When a match design fills more than one seat from submissions, the expansion respects whether seat order changes the game (see [Environments](environment.md)). It enumerates each distinct ordered seating where order matters, and each distinct unordered roster where it does not. The built-in baseline still fills every submission seat so each board keeps a comparable reference row.
+
 Each match runs in its own sandboxed session container. See [Execution](execution.md).
 
 ## Human-feedback board

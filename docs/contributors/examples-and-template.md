@@ -16,6 +16,8 @@ complete runnable repository
 
 This keeps shared files in one place and examples small enough to review.
 
+Two environment layers ship today. `flappy_bird` is the single-slot game whose base `sandbox/play.py` fits unchanged. `hearts` is the four-slot turn-based card game; because its local loop is turn-based and seats a human among agents, its layer overrides `sandbox/play.py` whole-file (the one case step 3 below allows). Hearts also carries a roster of four single-idea example agents (`examples/hearts/{duck,moonshot,assassin,closer}/`) rather than one, so its layer demonstrates several distinct strategies and gives the multi-agent leaderboard real opponents to schedule against.
+
 ## Composing
 
 `scripts/compose.py` composes in one or two steps:
