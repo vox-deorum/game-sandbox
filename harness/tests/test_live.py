@@ -560,3 +560,102 @@ def test_module_subprocess_keeps_stdout_clean_and_classifiable(tmp_path: Path):
     assert json.loads(out_lines[0])["environment"] == "flappy_bird"
     # The PyGame banner, if any, went to diagnostics — never to the protocol stream.
     assert "pygame" not in proc.stdout.lower()
+
+
+def test_module_subprocess_charges_a_crashing_agent_to_its_own_seat(tmp_path: Path):
+    """A builtin-agent slot whose ``act`` raises makes the container exit non-zero AND emit a final
+    ``result`` envelope naming the offending seat, so the orchestrator charges the crash to that seat
+    alone instead of to every competitor sharing the container."""
+    pytest.importorskip("flappy_bird", reason="environments package not installed")
+
+    agent_dir = tmp_path / "agent"
+    agent_dir.mkdir()
+    (agent_dir / "manifest.json").write_text(
+        json.dumps({"entry_point": "agent", "class_name": "A", "template_version": 1}),
+        encoding="utf-8",
+    )
+    (agent_dir / "agent.py").write_text(
+        "class A:\n"
+        "    def reset(self, seed): pass\n"
+        "    def act(self, observation):\n"
+        "        raise RuntimeError('boom')\n",
+        encoding="utf-8",
+    )
+    config = {
+        "env_id": "flappy_bird",
+        "seed": 0,
+        "slots": {"player_0": {"kind": "builtin-agent", "path": str(agent_dir)}},
+        "recording_dir": str(tmp_path),
+        "recording_id": "r",
+    }
+    proc = subprocess.run(
+        [sys.executable, "-m", "game_sandbox_harness.live", json.dumps(config)],
+        input="",
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+    # A crashing agent fails the container (non-zero exit), but still names its seat in a result line.
+    assert proc.returncode == 1, proc.stderr
+    results = [
+        obj
+        for line in proc.stdout.splitlines()
+        if line.strip()
+        for obj in [json.loads(line)]
+        if obj.get("kind") == "result"
+    ]
+    assert len(results) == 1, proc.stdout
+    assert results[0]["failed_slot"] == "player_0"
+
+
+def test_module_subprocess_charges_a_reset_crash_to_its_own_seat(tmp_path: Path):
+    """A builtin-agent slot whose ``reset`` raises (the failure happens during ``start``, before the
+    loop) must still name its seat and leave a readable recording — not look like an unowned
+    infrastructure fault with no result. The header is opened before participants reset, so the
+    container exits non-zero, emits a final ``result`` naming the seat, and persists the recording."""
+    pytest.importorskip("flappy_bird", reason="environments package not installed")
+
+    agent_dir = tmp_path / "agent"
+    agent_dir.mkdir()
+    (agent_dir / "manifest.json").write_text(
+        json.dumps({"entry_point": "agent", "class_name": "A", "template_version": 1}),
+        encoding="utf-8",
+    )
+    (agent_dir / "agent.py").write_text(
+        "class A:\n"
+        "    def reset(self, seed):\n"
+        "        raise RuntimeError('reset boom')\n"
+        "    def act(self, observation):\n"
+        "        return 0\n",
+        encoding="utf-8",
+    )
+    config = {
+        "env_id": "flappy_bird",
+        "seed": 0,
+        "slots": {"player_0": {"kind": "builtin-agent", "path": str(agent_dir)}},
+        "recording_dir": str(tmp_path),
+        "recording_id": "r",
+    }
+    proc = subprocess.run(
+        [sys.executable, "-m", "game_sandbox_harness.live", json.dumps(config)],
+        input="",
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+    assert proc.returncode == 1, proc.stderr
+    results = [
+        obj
+        for line in proc.stdout.splitlines()
+        if line.strip()
+        for obj in [json.loads(line)]
+        if obj.get("kind") == "result"
+    ]
+    assert len(results) == 1, proc.stdout
+    assert results[0]["failed_slot"] == "player_0"
+    # The recording was opened before the reset crash, so a readable header is on disk: the
+    # orchestrator sees an attributable crash, not a recording-less infrastructure fault.
+    header = json.loads((tmp_path / "r" / "recording.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    assert header["environment"] == "flappy_bird"

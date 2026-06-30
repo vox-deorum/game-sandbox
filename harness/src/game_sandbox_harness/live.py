@@ -21,6 +21,7 @@ after that redirection is in place.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import sys
@@ -298,11 +299,12 @@ def main(argv: list[str] | None = None) -> int:
     sleeper = RealSleeper()
     start_command_pump(sys.stdin, control)
 
+    episode: Episode | None = None
     try:
         entry = load_environment(config.env_id)
         slots = build_slots(config, entry, control, clock, sleeper)
         store = build_tee_store(config.recording_dir, protocol)
-        with Episode(
+        episode = Episode(
             entry,
             slots,
             seed=config.seed,
@@ -312,7 +314,8 @@ def main(argv: list[str] | None = None) -> int:
             step_limit_ms=config.step_timeout_ms,
             episode_limit_ms=config.episode_timeout_ms,
             players=config.players,
-        ) as episode:
+        )
+        with episode:
             # Stream the opening deal frame (turn-based envs only) so a human who must act first sees
             # the table before the loop blocks for their move. It is streamed, never recorded.
             if not config.headless:
@@ -329,6 +332,16 @@ def main(argv: list[str] | None = None) -> int:
         protocol.emit_envelope(result_envelope(episode.result()))
     except Exception as error:  # noqa: BLE001 - surfaced to diagnostics; the orchestrator records it
         print(f"live: session failed: {error!r}", file=sys.stderr, flush=True)
+        # Emit the partial result so the orchestrator can charge a crashing agent to its own seat
+        # (episode.failed_slot) instead of to every competitor sharing the container. Best-effort: this
+        # advisory note must never mask the original error or change the exit code. The close is
+        # idempotent belt-and-suspenders — Episode.start and the `with` already flush the recording on
+        # their own failures — and guarantees the writer is closed before result() reads it back.
+        if episode is not None:
+            with contextlib.suppress(Exception):
+                episode.close()
+            with contextlib.suppress(Exception):
+                protocol.emit_envelope(result_envelope(episode.result()))
         return 1
     return 0
 

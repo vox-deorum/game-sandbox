@@ -27,7 +27,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol, cast, runtime_checkable
 
 from game_sandbox_harness.agent import has_learn
 from game_sandbox_harness.clock import Clock, SystemClock
@@ -49,6 +49,16 @@ REASON_EPISODE_LIMIT = "episode_limit"
 #: episode reaching its own end. Only the live loop sets it (via :meth:`Episode.stop`); the
 #: headless ``run_episode`` never stops early this way.
 REASON_STOPPED = "stopped"
+
+
+class IllegalAgentActionError(RuntimeError):
+    """Raised when an agent returns an action the environment would reject as an illegal move.
+
+    The loop rejects it at the action boundary and charges the fault to the acting seat, instead of
+    letting ``env.step`` raise with no attribution — which would smear the failure across every seat
+    sharing the container. A move that passes the boundary but still makes ``env.step`` raise is a
+    genuine environment fault, owned by no seat.
+    """
 
 
 @runtime_checkable
@@ -116,6 +126,11 @@ class EpisodeResult:
     reason: str
     step_timeouts: dict[str, int]
     recording_id: str | None = None
+    #: The one seat a failure is chargeable to: the slot whose agent raised, or whose own per-episode
+    #: budget overran. ``None`` for a clean episode, or a container-level fault no single seat owns. The
+    #: orchestrator reads it to charge a crash or budget overage to that seat alone, never to every
+    #: competitor sharing the container.
+    failed_slot: str | None = None
 
 
 @dataclass
@@ -180,20 +195,24 @@ class Episode:
         self._reason = REASON_TERMINATED
         self._tick = 0
         self._stopped = False
+        self._failed_slot: str | None = None
 
     def start(self) -> None:
-        """Reset the environment and agents and open the recording.
+        """Reset the environment, open the recording, then reset the agents.
 
         The env is created here, not in ``__init__``, so a failure in ``env.reset`` or an
         agent's ``reset`` still leaves a constructed :class:`Episode` whose :meth:`close` can
         run; callers using the context-manager form get that for free.
+
+        The recording header is opened *after* the environment resets but *before* the participants
+        reset, and each participant ``reset`` is charged to its own seat. So an agent whose ``reset``
+        raises is attributed to that one seat (:attr:`failed_slot`) over a readable recording, rather
+        than looking like an unowned infrastructure fault that yields no recording at all. A failure
+        in ``env.reset`` itself, before any seat has been touched, stays unowned by design.
         """
         env = self._entry.make()
         self._env = env
         env.reset(seed=self._seed)
-        for binding in self._slots.values():
-            if isinstance(binding, AgentSlot):
-                binding.agent.reset(self._seed)
 
         if self._store is not None:
             created_at_ms = self._clock.now_ms()
@@ -208,6 +227,14 @@ class Episode:
             self._writer_cm = self._store.create(self._recording_id, header)
             self._writer = self._writer_cm.__enter__()
 
+        for slot_id, binding in self._slots.items():
+            if isinstance(binding, AgentSlot):
+                try:
+                    binding.agent.reset(self._seed)
+                except Exception:  # noqa: BLE001 - charge a reset crash to this seat, then re-raise
+                    self._failed_slot = slot_id
+                    raise
+
     @property
     def done(self) -> bool:
         """Whether the loop should stop: the env has no acting agents, or a check tripped."""
@@ -217,6 +244,16 @@ class Episode:
     def tick(self) -> int:
         """The number of steps recorded so far."""
         return self._tick
+
+    @property
+    def failed_slot(self) -> str | None:
+        """The seat at fault, or ``None``: the slot whose agent raised, or whose budget overran.
+
+        Set the instant a seat is to blame so the live runner can name it in the result envelope even
+        while a crashing agent's exception is propagating out of the loop. The orchestrator charges the
+        failure to that one seat instead of to every competitor sharing the container.
+        """
+        return self._failed_slot
 
     def opening_state(self) -> StepState | None:
         """The pre-action "opening" frame: the dealt overlay with no agent having acted yet.
@@ -269,12 +306,26 @@ class Episode:
         agent_compute_ms = 0.0
 
         if isinstance(binding, AgentSlot):
-            action = binding.agent.act(observation)
+            try:
+                action = binding.agent.act(observation)
+            except Exception:  # noqa: BLE001 - charge the crash to this seat, then re-raise unchanged
+                self._failed_slot = slot_id
+                raise
             decision_ms = self._clock.now_ms() - step_start
             agent_compute_ms += decision_ms
             slot.budget_used_ms += decision_ms
             if decision_ms > self._step_limit:
                 action = self._entry.default_action(slot_id)
+            else:
+                # The agent supplied this action itself (within budget, not a timeout default). If the
+                # environment would reject it as an illegal move, that is this seat's fault: name the
+                # seat and refuse the action here, so a raise from env.step does not smear the failure
+                # across every competitor in the container. A move that clears this gate but still
+                # makes env.step raise is a genuine environment fault, left owned by no seat.
+                reason = _illegal_action_reason(env, slot_id, observation, action)
+                if reason is not None:
+                    self._failed_slot = slot_id
+                    raise IllegalAgentActionError(f"{slot_id} returned an illegal action: {reason}")
         else:
             deadline_ms = _external_deadline(self._entry, binding, self._clock)
             action = binding.source.get_action(slot_id, observation, deadline_ms)
@@ -299,7 +350,11 @@ class Episode:
         if isinstance(binding, AgentSlot) and has_learn(binding.agent):
             terminated_now = bool(env.terminations[slot_id] or env.truncations[slot_id])
             learn_start = self._clock.now_ms()
-            binding.agent.learn(observation, action, reward, terminated_now)
+            try:
+                binding.agent.learn(observation, action, reward, terminated_now)
+            except Exception:  # noqa: BLE001 - charge the crash to this seat, then re-raise unchanged
+                self._failed_slot = slot_id
+                raise
             learn_ms = self._clock.now_ms() - learn_start
             agent_compute_ms += learn_ms
             slot.budget_used_ms += learn_ms
@@ -335,6 +390,8 @@ class Episode:
 
         if slot.budget_used_ms > self._episode_limit:
             self._reason = REASON_EPISODE_LIMIT
+            # The slot that overran owns the overage, so the orchestrator charges it to this seat alone.
+            self._failed_slot = slot_id
             self._stopped = True
             return
         if self._max_steps is not None and self._tick >= self._max_steps:
@@ -363,6 +420,7 @@ class Episode:
             reason=self._reason,
             step_timeouts={slot_id: self._state[slot_id].step_timeouts for slot_id in self._slots},
             recording_id=self._recording_id if self._store is not None else None,
+            failed_slot=self._failed_slot,
         )
 
     def __enter__(self) -> Episode:
@@ -410,6 +468,41 @@ def run_episode(
         while not episode.done:
             episode.step_once()
     return episode.result()
+
+
+def _illegal_action_reason(env: Any, slot_id: str, observation: Any, action: Any) -> str | None:
+    """Why ``action`` is an illegal move for ``slot_id``, or ``None`` if it is acceptable.
+
+    Environment-agnostic, built only on the two standard PettingZoo legality signals and never on any
+    environment-specific knowledge:
+
+    * the slot's action space decides membership — an action the space does not contain is illegal,
+      since the agent contract is that ``act`` returns an action in the environment's action space; and
+    * for an environment that follows the AEC illegal-move convention, the observation's
+      ``action_mask`` decides per-action legality — an in-range index the mask flags ``0`` is illegal.
+
+    Anything this cannot disprove — an environment exposing no action space or publishing no mask, or
+    an action that does not index the mask — is deliberately left for ``env.step`` to judge, so a
+    genuine fault on an otherwise-legal action stays owned by no seat rather than blamed on this one.
+    """
+    space_fn: Any = getattr(env, "action_space", None)
+    if space_fn is not None:
+        try:
+            contained = bool(space_fn(slot_id).contains(action))
+        except Exception:  # noqa: BLE001 - a space that cannot judge the action does not get to veto it
+            contained = True
+        if not contained:
+            return f"action {action!r} is outside the slot's action space"
+    if isinstance(observation, Mapping):
+        mask: Any = cast("Mapping[Any, Any]", observation).get("action_mask")
+        if mask is not None:
+            try:
+                index = int(action)
+            except (TypeError, ValueError):
+                index = None
+            if index is not None and 0 <= index < len(mask) and not mask[index]:
+                return f"action {action!r} is not in the legal-move mask"
+    return None
 
 
 def _external_deadline(entry: EnvironmentEntry, binding: ExternalSlot, clock: Clock) -> int | None:

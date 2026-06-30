@@ -178,12 +178,17 @@ export async function submitReadyAgent(
 
 // --- Sessions & ratings --------------------------------------------------------------------------
 
-/** One slot's assignment on the session-start wire (snake-case `submission_id`). */
-type SlotAssignment = { kind: 'human' | 'builtin-agent' | 'submission'; submission_id?: string }
+/**
+ * One slot's assignment on the session-start wire (snake-case `submission_id`). A discriminated union,
+ * so only a `submission` seat carries (and must carry) a `submission_id`; a human or builtin seat has none.
+ */
+type SlotAssignment =
+  | { kind: 'human' | 'builtin-agent' }
+  | { kind: 'submission'; submission_id: string }
 
 /**
  * Start a session from an explicit per-slot assignment, as `user`, and return the new session id.
- * Does not wait for the game to finish — callers that need a rateable recording use
+ * Does not wait for the game to finish; callers that need a rateable recording use
  * {@link finishedScriptedSession}; the render check just needs a started session to watch. The
  * environment must have a play-open season and `user` must be allowlisted (the orchestrator gates
  * both before launching a container).

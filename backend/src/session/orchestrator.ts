@@ -21,8 +21,7 @@ import type { Season, Session, SessionMode } from '../storage/schema.js'
 import type { SubmissionSnapshotStore } from '../submission/snapshot-store.js'
 import type { SubmissionSource } from '../submission/source/index.js'
 import {
-  ensureSessionImage,
-  ensureSubmissionImage,
+  resolveSubmissionLaunchImage,
   type SessionImageSlot,
   submissionSlotPath,
 } from '../submission/submission-image.js'
@@ -391,13 +390,8 @@ export class Orchestrator {
       imagePolicy: this.config.docker.imagePolicy,
     }
     const depsVersion = decodeSeasonConfig(playSeason.config).deps_version
-    // One submission reuses the cached per-submission overlay (the Stage 5 watch path, kept warm);
-    // two or more compose a session image, each submission staged into its own per-slot directory.
-    const [only] = composed
-    const image =
-      composed.length === 1 && only !== undefined
-        ? await ensureSubmissionImage(imageDeps, only.submission, depsVersion, only.slotId)
-        : await ensureSessionImage(imageDeps, composed, depsVersion)
+    // The single-versus-composed decision is shared with the workflow runner so the two cannot drift.
+    const image = await resolveSubmissionLaunchImage(imageDeps, composed, depsVersion)
     return { image, submissionBindings }
   }
 

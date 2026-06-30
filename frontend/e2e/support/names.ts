@@ -25,13 +25,13 @@ export const HEARTS_SEASON = 'Black Lady Open'
  * distinct from the flappy {@link OWNERS}. Each maps to an `examples/hearts/<name>/` agent.
  */
 export const HEARTS_OWNERS = {
-  /** examples/hearts/duck — avoids taking points. */
+  /** examples/hearts/duck: avoids taking points. */
   duck: 'katherine-johnson',
-  /** examples/hearts/moonshot — tries to win every trick and shoot the moon. */
+  /** examples/hearts/moonshot: tries to win every trick and shoot the moon. */
   moonshot: 'mae-jemison',
-  /** examples/hearts/assassin — hunts and dumps the queen of spades. */
+  /** examples/hearts/assassin: hunts and dumps the queen of spades. */
   assassin: 'rosalind-franklin',
-  /** examples/hearts/closer — exploits the last seat in a trick. */
+  /** examples/hearts/closer: exploits the last seat in a trick. */
   closer: 'emmy-noether',
 } as const
 

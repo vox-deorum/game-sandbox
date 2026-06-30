@@ -34,11 +34,17 @@ import { decodeSeasonConfig } from '../storage/index.js'
 import type { SubmissionSnapshotStore } from './snapshot-store.js'
 import type { ResolvedSource, SourceInput, SubmissionSource, TreeHandle } from './source/index.js'
 import { SourceError } from './source/index.js'
+import { CANONICAL_SUBMISSION_SLOT } from './submission-image.js'
 import { measureTreeSize } from './tree-filter.js'
 import { runLoadCheck, validateStatic } from './validate/index.js'
 
-/** The single Flappy Bird agent slot a Stage 5 submission fills; lockstep with the harness default. */
-const SLOT_ID = 'player_0'
+/**
+ * The slot the build and load stages stage a submission's code into. It must be the canonical slot the
+ * warm overlay is later reused for ({@link CANONICAL_SUBMISSION_SLOT}), since the overlay's cache
+ * identity is the submission id alone — building or load-checking a different slot would silently
+ * disagree with every later reuse of that warm image.
+ */
+const SLOT_ID = CANONICAL_SUBMISSION_SLOT
 /** The scratch mount point the load-check sandbox exposes (matches the session profile's `/tmp`). */
 const CONTAINER_SCRATCH_DIR = '/tmp'
 

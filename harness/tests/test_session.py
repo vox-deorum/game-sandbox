@@ -11,6 +11,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from game_sandbox_harness.clock import ManualClock
 from game_sandbox_harness.environment import EnvironmentEntry, EnvironmentMeta
 from game_sandbox_harness.recording.local import FolderRecordingStore
@@ -21,6 +23,7 @@ from game_sandbox_harness.session import (
     AgentSlot,
     Episode,
     ExternalSlot,
+    IllegalAgentActionError,
     NoopSource,
     ScriptedSource,
     run_episode,
@@ -219,6 +222,8 @@ def test_per_episode_budget_truncates():
     result = run_episode(entry, {"player_0": AgentSlot(agent)}, seed=1, clock=clock)
     assert result.reason == REASON_EPISODE_LIMIT
     assert result.ticks == 3  # 800*3 = 2400 > 2000, tripped on the third step
+    # The seat that overran owns the overage, so it is named for per-seat failure attribution.
+    assert result.failed_slot == "player_0"
 
 
 def test_external_scripted_source_drives_slot():
@@ -362,6 +367,208 @@ def test_terminal_rewards_credited_to_every_seat_not_just_the_actor():
     result = run_episode(entry, slots, seed=1, clock=ManualClock())
     assert result.reason == REASON_TERMINATED
     assert result.scores == finals
+    assert result.failed_slot is None  # a clean episode charges no seat
+
+
+def test_agent_crash_charges_the_failure_to_its_own_seat():
+    # In a three-seat game only player_1's agent raises. The crash must be charged to player_1 alone,
+    # so the orchestrator never marks player_0 or player_2 failed for a competitor's bug. The exception
+    # still propagates (the container exits non-zero); the loop only records which seat was at fault.
+    class Crashing:
+        def reset(self, seed: int) -> None: ...
+
+        def act(self, observation: Any) -> int:
+            raise RuntimeError("boom")
+
+    entry = _team_entry({"player_0": 0.0, "player_1": -13.0, "player_2": -3.0})
+    slots = {
+        "player_0": AgentSlot(ScriptedAgent([0])),
+        "player_1": AgentSlot(Crashing()),
+        "player_2": AgentSlot(ScriptedAgent([0])),
+    }
+    episode = Episode(entry, slots, seed=1, clock=ManualClock())
+    episode.start()
+    episode.step_once()  # player_0 acts cleanly
+    with pytest.raises(RuntimeError, match="boom"):
+        episode.step_once()  # player_1 raises on its turn
+    assert episode.failed_slot == "player_1"
+    assert episode.result().failed_slot == "player_1"
+
+
+class _Discrete:
+    """A minimal stand-in for a Gymnasium ``Discrete`` action space: membership over ``0..n-1``.
+
+    Mirrors ``Discrete.contains`` closely enough for the action boundary (an integer in range, never
+    a bool), so the loop's legality check can be exercised without depending on the Gymnasium types.
+    """
+
+    def __init__(self, n: int) -> None:
+        self.n = n
+
+    def contains(self, action: Any) -> bool:
+        return isinstance(action, int) and not isinstance(action, bool) and 0 <= action < self.n
+
+
+class MaskedEnv:
+    """A 2-seat AEC env that exposes a Discrete action space and a per-step ``action_mask``, the way
+    Hearts does, and rejects an illegal card from ``step`` (its ``IllegalMoveError`` analogue).
+
+    Legal moves are the masked-1 indices. ``step`` raises on a masked-0 or out-of-range action — so a
+    loop that skipped the action boundary would let that raise smear the failure across the table.
+    ``raise_on_legal`` makes ``step`` raise on an otherwise-legal action too, to model a genuine
+    environment fault that the boundary must leave unowned.
+    """
+
+    def __init__(
+        self, *, n: int = 4, legal: tuple[int, ...] = (0, 1), raise_on_legal: int | None = None
+    ) -> None:
+        self.possible_agents = ["player_0", "player_1"]
+        self._n = n
+        self._legal = set(legal)
+        self._raise_on_legal = raise_on_legal
+
+    def action_space(self, agent: str) -> _Discrete:
+        return _Discrete(self._n)
+
+    def reset(self, seed: int | None = None, options: Any = None) -> None:
+        self.agents = list(self.possible_agents)
+        self._idx = 0
+        self.agent_selection = self.agents[0]
+        self.rewards = {a: 0.0 for a in self.agents}
+        self.terminations = {a: False for a in self.agents}
+        self.truncations = {a: False for a in self.agents}
+
+    def _mask(self) -> list[int]:
+        return [1 if i in self._legal else 0 for i in range(self._n)]
+
+    def last(self) -> tuple[Any, float, bool, bool, dict[str, Any]]:
+        a = self.agent_selection
+        return self.observe(a), self.rewards[a], self.terminations[a], self.truncations[a], {}
+
+    def observe(self, agent: str) -> dict[str, Any]:
+        return {"observation": 0, "action_mask": self._mask()}
+
+    def step(self, action: Any) -> None:
+        a = self.agent_selection
+        if self.terminations[a] or self.truncations[a]:
+            self.agents.remove(a)
+            return
+        if action not in self._legal or action == self._raise_on_legal:
+            raise ValueError(f"env rejects illegal action {action!r}")
+        self._idx += 1
+        self.rewards = {x: 0.0 for x in self.possible_agents}
+        if self._idx >= len(self.possible_agents):
+            self.terminations = {x: True for x in self.possible_agents}
+            self.agent_selection = self.possible_agents[0]
+        else:
+            self.agent_selection = self.possible_agents[self._idx]
+
+
+def _masked_entry(**kwargs: Any) -> EnvironmentEntry:
+    meta = EnvironmentMeta(
+        env_id="masked",
+        display_name="Masked",
+        description="A 2-seat fake with an action mask and illegal-move rejection.",
+        min_slots=2,
+        max_slots=2,
+        human_slots=("player_0", "player_1"),
+        human_timeout_ms=None,
+        recommended_episode_ticks=2,
+        pace_interval_ms=None,
+        step_limit_ms=1000,
+        episode_limit_ms=120_000,
+        messaging=False,
+        message_cap=None,
+        llm=False,
+        renderer="masked",
+        seat_order_matters=True,
+    )
+    return EnvironmentEntry(
+        meta=meta,
+        make=lambda: MaskedEnv(**kwargs),
+        default_action=lambda slot_id: 0,  # a legal move on every timeout path
+        overlay=None,
+    )
+
+
+def test_illegal_masked_action_is_charged_to_the_acting_seat():
+    # player_1 returns a card the action mask flags illegal. The loop must reject it at the boundary
+    # and charge player_1 alone, so a co-seat is never marked failed for player_1's illegal move. The
+    # rejection still aborts the episode (an illegal action is a fault), it just owns the right seat.
+    entry = _masked_entry(legal=(0, 1))
+    slots = {
+        "player_0": AgentSlot(ScriptedAgent([0])),  # legal
+        "player_1": AgentSlot(ScriptedAgent([2])),  # masked illegal
+    }
+    episode = Episode(entry, slots, seed=1, clock=ManualClock())
+    episode.start()
+    episode.step_once()  # player_0 plays a legal card
+    with pytest.raises(IllegalAgentActionError, match="legal-move mask"):
+        episode.step_once()  # player_1's illegal card is refused at the boundary
+    assert episode.failed_slot == "player_1"
+    assert episode.result().failed_slot == "player_1"
+
+
+def test_out_of_action_space_action_is_charged_to_the_acting_seat():
+    # An action outside the slot's Discrete space (the agent contract is an in-space action) is the
+    # agent's fault, named even when the env publishes no per-card mask reason for it.
+    entry = _masked_entry(n=4, legal=(0, 1, 2, 3))
+    slots = {
+        "player_0": AgentSlot(ScriptedAgent([9])),  # 9 is outside Discrete(4)
+        "player_1": AgentSlot(ScriptedAgent([0])),
+    }
+    episode = Episode(entry, slots, seed=1, clock=ManualClock())
+    episode.start()
+    with pytest.raises(IllegalAgentActionError, match="action space"):
+        episode.step_once()
+    assert episode.failed_slot == "player_0"
+
+
+def test_environment_fault_on_a_legal_action_is_owned_by_no_seat():
+    # The agent returns a perfectly legal move, but the environment itself raises while applying it.
+    # That is a genuine environment fault, not the agent's: it must propagate with no seat charged,
+    # so the orchestrator falls back to the whole-game fault rather than blaming the acting seat.
+    entry = _masked_entry(legal=(0, 1), raise_on_legal=0)
+    slots = {
+        "player_0": AgentSlot(ScriptedAgent([0])),  # legal, yet the env is rigged to raise on it
+        "player_1": AgentSlot(ScriptedAgent([1])),
+    }
+    episode = Episode(entry, slots, seed=1, clock=ManualClock())
+    episode.start()
+    with pytest.raises(ValueError, match="env rejects"):
+        episode.step_once()
+    assert episode.failed_slot is None
+    assert episode.result().failed_slot is None
+
+
+def test_agent_reset_crash_is_charged_to_its_seat_over_a_written_recording(tmp_path: Path):
+    # An agent whose reset() raises must be charged to its own seat, not reported as an unowned
+    # infrastructure fault. The header is opened before the participants reset, so the crash still
+    # leaves a readable recording for the orchestrator to attribute over (instead of no result row).
+    class ResetCrashing:
+        def reset(self, seed: int) -> None:
+            raise RuntimeError("reset boom")
+
+        def act(self, observation: Any) -> int:
+            return 0
+
+    entry = _team_entry({"player_0": 0.0, "player_1": 0.0, "player_2": 0.0})
+    store = FolderRecordingStore(tmp_path)
+    slots = {
+        "player_0": AgentSlot(ScriptedAgent([0])),
+        "player_1": AgentSlot(ResetCrashing()),
+        "player_2": AgentSlot(ScriptedAgent([0])),
+    }
+    episode = Episode(entry, slots, seed=1, store=store, recording_id="r", clock=ManualClock())
+    with pytest.raises(RuntimeError, match="reset boom"):
+        episode.start()
+    assert episode.failed_slot == "player_1"
+    assert episode.result().failed_slot == "player_1"
+
+    episode.close()
+    # The recording exists with its header, so this reads as an attributable crash, not a missing run.
+    header = json.loads((tmp_path / "r" / "recording.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    assert header["environment"] == "team"
 
 
 def test_learn_hook_time_counts_against_budget():

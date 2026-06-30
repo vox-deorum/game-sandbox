@@ -274,20 +274,27 @@ def test_tee_store_streams_the_exact_bytes_it_stores(tmp_path: Path):
 def test_result_envelope_carries_episode_result_fields():
     result = EpisodeResult(
         ticks=12,
-        scores={"player_0": 3.0},
+        scores={"player_0": 3.0, "player_1": -1.0},
         reason="terminated",
         step_timeouts={"player_0": 0},
         recording_id="rec-1",
+        failed_slot="player_1",
     )
     envelope = result_envelope(result)
     assert envelope == {
         "kind": "result",
         "ticks": 12,
-        "scores": {"player_0": 3.0},
+        "scores": {"player_0": 3.0, "player_1": -1.0},
         "reason": "terminated",
         "step_timeouts": {"player_0": 0},
         "recording_id": "rec-1",
+        "failed_slot": "player_1",
     }
+
+
+def test_result_envelope_failed_slot_is_none_for_a_clean_episode():
+    result = EpisodeResult(ticks=3, scores={"player_0": 1.0}, reason="terminated", step_timeouts={})
+    assert result_envelope(result)["failed_slot"] is None
 
 
 # --- The line-classification rule, asserted against the packaged schema ------------------

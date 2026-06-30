@@ -80,8 +80,9 @@ test('a Hearts season: four example agents, a scheduled multi-seat matchup, then
   request,
 }) => {
   // Four real overlay builds plus a multi-seat schedule of real container games (P(4,2)=12 ordered
-  // seatings + the Naive baseline = 13 games), each a full 52-trick hand, so the budget is wide. If CI
-  // time becomes a problem, the cheapest lever is fewer submitted agents (see docs/contributors/e2e-tests.md).
+  // seatings + the Naive baseline = 13 games), each a full 13-trick hand (52 card plays), so the budget
+  // is wide. If CI time becomes a problem, the cheapest lever is fewer submitted agents (see
+  // docs/contributors/e2e-tests.md).
   test.setTimeout(1_800_000)
 
   // Stage the four example agents as submittable folders before touching any windows.

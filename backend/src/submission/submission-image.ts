@@ -25,6 +25,15 @@ import type { SourceInput, SubmissionSource, TreeHandle } from './source/index.j
 /** Where the base image expects each slot's repo root; lockstep with the overlay Dockerfile and harness. */
 const SUBMISSION_SLOT_BASE = '/opt/agents/submissions'
 
+/**
+ * The one slot the warm per-submission overlay is built for during validation (the build/load stages
+ * stage a submission's code into this slot alone). The overlay's cache identity is the submission id
+ * by itself, so the warm overlay is *only ever* this slot's image; reusing it for any other slot is
+ * what {@link resolveSubmissionLaunchImage} guards against. Lockstep with the validation worker's
+ * build slot — the two must name the same slot or the cache lookup and the build would disagree.
+ */
+export const CANONICAL_SUBMISSION_SLOT = 'player_0'
+
 /** The container path the overlay copies a slot's submitted code into: `/opt/agents/submissions/<slot>`. */
 export function submissionSlotPath(slotId: string): string {
   return `${SUBMISSION_SLOT_BASE}/${slotId}`
@@ -134,6 +143,43 @@ export async function ensureSessionImage(
       await tree.dispose()
     }
   }
+}
+
+/**
+ * Resolve the launch image for a non-empty set of submission-filled slots. A single submission *in the
+ * canonical slot* reuses its warm per-submission overlay (the Stage 5 watch path, kept build-stage
+ * warm). Anything else — a single submission seated in a different slot, or two or more submissions —
+ * composes a session image instead, each submission staged into its own per-slot directory.
+ *
+ * This is the one place that decision lives, so the live orchestrator and the workflow runner cannot
+ * drift on it. An earlier drift had the runner bake only the first submitted slot's overlay, leaving
+ * the other submitted seats with no code to load.
+ *
+ * The canonical-slot guard matters because the warm overlay's cache identity is the submission id
+ * alone ({@link ensureSubmissionImage} matches a cached overlay by id only), and the build stage only
+ * ever stages it into {@link CANONICAL_SUBMISSION_SLOT}. A single submission seated elsewhere — a
+ * Hearts watch with a human in seat 0, or a workflow game that rotates one submission through the
+ * other seats — would otherwise launch that seat-0 image and find no code under its own
+ * `/opt/agents/submissions/<slot>` directory. Composing a one-slot session image (whose tag is keyed
+ * by the slot-to-submission pair, not the id alone) stages the code into the right slot and avoids
+ * colliding on the id-keyed overlay tag.
+ *
+ * `slots` must be non-empty; the no-submission base image stays each caller's own concern, because
+ * they legitimately differ there (live play takes the current base, a workflow run pins the base to
+ * the season's deps version).
+ */
+export async function resolveSubmissionLaunchImage(
+  deps: SubmissionImageDeps,
+  slots: readonly SessionImageSlot[],
+  depsVersion: number,
+): Promise<ImageRef> {
+  const [first] = slots
+  if (first === undefined) {
+    throw new Error('resolveSubmissionLaunchImage requires at least one submitted slot')
+  }
+  return slots.length === 1 && first.slotId === CANONICAL_SUBMISSION_SLOT
+    ? ensureSubmissionImage(deps, first.submission, depsVersion, first.slotId)
+    : ensureSessionImage(deps, slots, depsVersion)
 }
 
 /** The submission's source tree for a rebuild: the snapshot when present, else a fresh pinned clone. */

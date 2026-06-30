@@ -131,6 +131,10 @@ function emitRecording(
     exit?: ExitInfo
     omitHeader?: boolean
     diagnostics?: string[]
+    /** Per-seat scores in the result envelope, overriding the default single-seat `{ slotId: finalScore }`. */
+    scores?: Record<string, number>
+    /** The seat the harness pins a crash or budget overage to, carried in the result envelope. */
+    failedSlot?: string
   } = {},
 ): void {
   const slotId = options.slotId ?? 'player_0'
@@ -175,9 +179,10 @@ function emitRecording(
       JSON.stringify({
         kind: 'result',
         ticks,
-        scores: { [slotId]: finalScore },
+        scores: options.scores ?? { [slotId]: finalScore },
         reason,
         step_timeouts: {},
+        ...(options.failedSlot !== undefined ? { failed_slot: options.failedSlot } : {}),
       }),
     )
   }
@@ -370,6 +375,43 @@ describe('Docker-backed workflow runner', () => {
     const crashed = results.find((r) => r.failed === 1)
     expect(crashed?.episode_score).toBe(17)
     expect(crashed?.failure_reason).toMatch(/exited with code 1/)
+  })
+
+  it('charges a multi-seat crash to the offending seat alone, not its co-seats', async () => {
+    const handle = makeRunner(storage)
+    // A two-seat game, the shape the composed multi-submission path now schedules. The harness names
+    // the seat whose agent raised (player_1); the co-seat (player_0) must not inherit a false failure,
+    // which would pollute an innocent competitor's public failure count.
+    const run = await makeRun(storage, [
+      {
+        match_index: 0,
+        game_index: 0,
+        seed: 1,
+        slots: [{ kind: 'builtin-naive' }, { kind: 'builtin-naive' }],
+      },
+    ])
+    handle.driver.onLaunch = (launch): void => {
+      const config = JSON.parse(launch.spec.argv[0] ?? '{}') as { seed: number }
+      emitRecording(launch.process, config, {
+        ticks: 2,
+        scores: { player_0: 9, player_1: 4 },
+        failedSlot: 'player_1',
+        exit: { code: 1, oomKilled: false },
+      })
+    }
+
+    const { status } = await runToTerminal(handle, run.id)
+    expect(status).toBe('completed') // one crashed game never fails the whole run
+    const games = await storage.listRunGames(run.id)
+    expect(games[0]?.status).toBe('failed')
+
+    const results = await storage.listGameResultsByRun(run.id)
+    const bySlot = new Map(results.map((r) => [r.slot_index, r]))
+    // The named seat carries the failure and its reason; its co-seat stays clean.
+    expect(bySlot.get(1)?.failed).toBe(1)
+    expect(bySlot.get(1)?.failure_reason).toMatch(/exited with code 1/)
+    expect(bySlot.get(0)?.failed).toBe(0)
+    expect(bySlot.get(0)?.failure_reason).toBeNull()
   })
 
   it('marks a timed-out agent timed_out with a failed result row', async () => {

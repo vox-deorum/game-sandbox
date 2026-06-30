@@ -47,8 +47,7 @@ import type { AgentRef, SeasonRun, SeasonRunGame } from '../storage/schema.js'
 import type { SubmissionSnapshotStore } from '../submission/snapshot-store.js'
 import type { SubmissionSource } from '../submission/source/index.js'
 import {
-  ensureSessionImage,
-  ensureSubmissionImage,
+  resolveSubmissionLaunchImage,
   type SessionImageSlot,
   submissionSlotPath,
 } from '../submission/submission-image.js'
@@ -102,6 +101,12 @@ export interface WorkflowRunnerDeps {
 interface ResultEnvelope {
   reason: string | null
   scores: Record<string, number>
+  /**
+   * The one seat a failure is chargeable to: the slot whose agent raised, or whose own per-episode
+   * budget overran. `null` for a clean episode, or a container-level fault (a wall-clock kill, an OOM)
+   * no single seat owns. The runner flags only this seat instead of every competitor in the container.
+   */
+  failedSlot: string | null
 }
 
 /** How a finished game's container fared: a clean episode, a crashed agent, or a timed-out agent. */
@@ -396,6 +401,11 @@ class DockerWorkflowRunner implements WorkflowRunner {
     await this.deps.storage.attachRunGameRecording(game.id, recordingId)
 
     const failure = classifyFailure(exit, captured.result, watchdog.timedOut())
+    // A failure the harness could pin to one seat (an agent crash, or a per-seat episode-budget
+    // overage) names that seat, so the blame lands there alone and not on every competitor sharing the
+    // container. A container-level fault it could not attribute (a wall-clock watchdog kill, an OOM)
+    // names no seat: the whole game's seats then carry it, since the culprit is genuinely unknown.
+    const culpritSlot = failure.kind !== null ? (captured.result?.failedSlot ?? null) : null
     for (let slotIndex = 0; slotIndex < slots.length; slotIndex++) {
       const agent = slots[slotIndex] as AgentRef
       const slotId = `player_${slotIndex}`
@@ -406,6 +416,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
       const envelopeScore = captured.result?.scores[slotId]
       const rawScore =
         aggregate.finalScore ?? (typeof envelopeScore === 'number' ? envelopeScore : 0)
+      const seatFailed = failure.kind !== null && (culpritSlot === null || culpritSlot === slotId)
       await this.deps.storage.recordGameResult({
         game_id: game.id,
         slot_index: slotIndex,
@@ -413,8 +424,8 @@ class DockerWorkflowRunner implements WorkflowRunner {
         episode_score: normalizeEpisodeScore(envId, rawScore),
         agent_compute_ms_total: aggregate.agentComputeMsTotal,
         acted_tick_count: aggregate.actedTickCount,
-        failed: failure.kind !== null,
-        failure_reason: failure.reason,
+        failed: seatFailed,
+        failure_reason: seatFailed ? failure.reason : null,
       })
     }
 
@@ -459,11 +470,11 @@ class DockerWorkflowRunner implements WorkflowRunner {
   }
 
   /**
-   * Resolve the launch image: the base image when no slot is a submission, a single submission's warm
-   * per-submission overlay, or a composed session image when two or more seats are submissions. This
-   * mirrors the live orchestrator's image resolution, so a multi-submission matchup game (the Hearts
-   * scheduler's ordered seatings) stages each agent into its own per-slot directory instead of baking
-   * only the first seat's overlay, which would leave the other submitted seats with no code to load.
+   * Resolve the launch image: the season-pinned base image when no slot is a submission, or, through
+   * the shared resolver, a single submission's warm overlay or a composed multi-submission session
+   * image. Sharing the single-versus-composed decision with the live orchestrator is what keeps a
+   * multi-submission matchup game (the Hearts scheduler's ordered seatings) from baking only the first
+   * seat's overlay, which would leave the other submitted seats with no code to load.
    */
   private async resolveImage(slots: readonly AgentRef[], depsVersion: number): Promise<ImageRef> {
     const composed: SessionImageSlot[] = []
@@ -480,16 +491,16 @@ class DockerWorkflowRunner implements WorkflowRunner {
     if (composed.length === 0) {
       return this.deps.driver.ensureImage({ kind: 'session-base', depsVersion })
     }
-    const imageDeps = {
-      driver: this.deps.driver,
-      snapshots: this.deps.snapshots,
-      source: this.deps.source,
-      imagePolicy: this.deps.imagePolicy,
-    }
-    const [only] = composed
-    return composed.length === 1 && only !== undefined
-      ? ensureSubmissionImage(imageDeps, only.submission, depsVersion, only.slotId)
-      : ensureSessionImage(imageDeps, composed, depsVersion)
+    return resolveSubmissionLaunchImage(
+      {
+        driver: this.deps.driver,
+        snapshots: this.deps.snapshots,
+        source: this.deps.source,
+        imagePolicy: this.deps.imagePolicy,
+      },
+      composed,
+      depsVersion,
+    )
   }
 
   /** Build the headless session config: every slot an agent, no human source, recording to the volume. */
@@ -609,6 +620,7 @@ function recordingOwner(slots: readonly AgentRef[], requestedBy: string): string
 /** Validate the harness `result` envelope into the two fields the runner reads. */
 function parseResultEnvelope(value: Record<string, unknown>): ResultEnvelope {
   const reason = typeof value.reason === 'string' ? value.reason : null
+  const failedSlot = typeof value.failed_slot === 'string' ? value.failed_slot : null
   const scores: Record<string, number> = {}
   const raw = value.scores
   if (typeof raw === 'object' && raw !== null) {
@@ -618,7 +630,7 @@ function parseResultEnvelope(value: Record<string, unknown>): ResultEnvelope {
       }
     }
   }
-  return { reason, scores }
+  return { reason, scores, failedSlot }
 }
 
 /** The wall-clock watchdog bound for one game, derived from the same effective episode timeout. */
