@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from '@testing-library/vue'
+import { fireEvent, screen, waitFor, within } from '@testing-library/vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
@@ -118,7 +118,7 @@ async function renderSession() {
   ])
   router.push('/sessions/s1')
   await router.isReady()
-  renderWithMe(router)
+  return renderWithMe(router)
 }
 
 /** Wait until the page has connected its socket and we hold its handlers. */
@@ -382,13 +382,18 @@ describe('SessionPage', () => {
         season_id: null,
       },
     ])
-    await renderSession()
+    const view = await renderSession()
 
-    expect(await screen.findByText('Game over')).toBeInTheDocument()
+    // A naturally-ended session shows the shared game-over leaderboard over the hydrated final frame;
+    // the status badge separately names the end reason. Scope the run facts to the status row so the
+    // score there isn't confused with the same score on the leaderboard card.
+    expect(await screen.findByRole('dialog', { name: 'Game over' })).toBeInTheDocument()
     expect(handlers).toBeUndefined()
+    const statusBar = view.container.querySelector('.session-status') as HTMLElement
+    expect(within(statusBar).getByText('Game over')).toBeInTheDocument()
     // Mode/owner are gone; the run facts now sit inline in the status row as Score/Ticks/Started.
-    expect(await screen.findByText('Score')).toBeInTheDocument()
-    expect(screen.getByText('22')).toBeInTheDocument()
+    expect(within(statusBar).getByText('Score')).toBeInTheDocument()
+    expect(within(statusBar).getByText('22')).toBeInTheDocument()
     // Pin state is conveyed by the button alone now, not a duplicate metadata row.
     expect(await screen.findByRole('button', { name: 'Pinned ✓' })).toBeInTheDocument()
     expect(mountCtx?.controlledSlots).toEqual([])
@@ -471,7 +476,9 @@ describe('SessionPage', () => {
       vi.advanceTimersByTime(50)
       await nextTick()
       expect(drawn).toHaveLength(3)
-      expect(screen.getByText('Game over')).toBeInTheDocument()
+      // The held end is revealed: both the status badge (reasonText) and the new game-over
+      // leaderboard card show, so disambiguate to the card and check the held result fact.
+      expect(screen.getByRole('dialog', { name: 'Game over' })).toBeInTheDocument()
       expect(screen.getByText('7')).toBeInTheDocument()
     } finally {
       vi.useRealTimers()

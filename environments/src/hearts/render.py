@@ -597,11 +597,12 @@ class HeartsRenderer:
         m = self._font.render(msg, True, msg_color)
         surface.blit(m, m.get_rect(topright=(w - self._s(16), row1_y)))
 
-        # Hint row: the contextual "why these options" line.
+        # Hint row: the contextual "why these options" line. The small +2 gap keeps it inside the
+        # 60px strip (the lockstep twin of index.ts).
         hint = self._legal_hint(overlay, view_seat)
         if hint:
             h = self._font_small.render(hint, True, HINT_INK)
-            surface.blit(h, (self._s(16), row1_y + t1.get_height() + self._s(6)))
+            surface.blit(h, (self._s(16), row1_y + t1.get_height() + self._s(2)))
 
     def _status_message(self, overlay: dict, view_seat: int) -> tuple[str, tuple[int, int, int]]:
         """Return the primary-row state message and its colour."""

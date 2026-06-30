@@ -8,6 +8,7 @@
 import type { RecordingHeader } from '@game-sandbox/schema'
 import { computed } from 'vue'
 
+import { attributionLabel } from '../lib/attribution.js'
 import { formatSlot } from '../lib/format.js'
 
 const props = withDefaults(
@@ -28,28 +29,22 @@ const props = withDefaults(
   { players: undefined, blind: false, viewerId: undefined, anonymousNumbers: undefined },
 )
 
-/** A blind submitted agent's label, numbered to match the watch picker and rating panel. */
-function blindAgentLabel(submissionId: string): string {
-  const number = props.anonymousNumbers?.[submissionId]
-  return number === undefined ? 'Submitted agent' : `Submitted agent ${number}`
-}
-
+// The shared attribution helper (also used by the end-of-game leaderboard) owns the blind policy and
+// the labels; this line keeps the "Human:" affordance that marks a human slot here.
 const items = computed(() => {
   const players = props.players
   if (players === undefined) {
     return []
   }
-  return Object.entries(players).map(([slot, player]) => ({
-    slot,
-    text:
-      player.kind === 'human'
-        ? `Human: ${player.user ?? player.label}`
-        : props.blind && player.submission_id !== undefined
-          ? player.user === props.viewerId
-            ? 'Your agent'
-            : blindAgentLabel(player.submission_id)
-          : player.label,
-  }))
+  const ctx = {
+    blind: props.blind,
+    viewerId: props.viewerId,
+    anonymousNumbers: props.anonymousNumbers,
+  }
+  return Object.entries(players).map(([slot, player]) => {
+    const label = attributionLabel(slot, player, ctx)
+    return { slot, text: player.kind === 'human' ? `Human: ${label}` : label }
+  })
 })
 </script>
 

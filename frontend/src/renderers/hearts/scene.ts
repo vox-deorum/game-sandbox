@@ -177,8 +177,6 @@ export interface SceneStatus {
   message: string
   messageTone: 'gold' | 'white'
   hint: string
-  /** The end-of-hand ranking line, present only at terminal. */
-  terminalSummary: string | null
 }
 
 /** The active move-clock chip: shown only on the controlled human's turn (hidden in replay/spectate). */
@@ -530,14 +528,9 @@ function buildStatus(o: HeartsOverlay, view: ViewContext, trickWinner: number | 
   const trickText = o.terminal ? 'hand complete' : `trick ${o.tricksPlayed + 1}/${NUM_TRICKS}`
   const { message, messageTone } = statusMessage(o, view, trickWinner)
   const hint = legalHint(o, view)
-  let terminalSummary: string | null = null
-  if (o.terminal) {
-    const ranking = [...Array(NUM_PLAYERS).keys()].sort(
-      (a, b) => (o.displayScores[a] ?? 0) - (o.displayScores[b] ?? 0),
-    )
-    terminalSummary = ranking.map((s) => `P${s}: ${o.displayScores[s] ?? 0}`).join('    ')
-  }
-  return { trickText, heartsBroken: o.heartsBroken, message, messageTone, hint, terminalSummary }
+  // The end-of-hand ranking is no longer drawn into the canvas: it lives in the host-level
+  // GameOverCard.vue (web) and scripts/play.py (Python). The strip keeps only the "Game over" message.
+  return { trickText, heartsBroken: o.heartsBroken, message, messageTone, hint }
 }
 
 /**

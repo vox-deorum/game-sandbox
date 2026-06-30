@@ -541,7 +541,9 @@ export class HeartsRenderer extends PixiRenderer {
 
   private reconcileStatus(scene: HeartsScene): void {
     clear(this.statusLayer)
-    const stripH = 55
+    // Tall enough to hold both rows; kept in lockstep with render.py `strip_h`. (A brief stint at 55
+    // clipped the hint row and diverged from the Python twin, so it is back to 60.)
+    const stripH = 60
     const panel = new Graphics()
     panel.rect(0, 0, WIDTH, stripH).fill({ color: '#000000', alpha: 0.41 })
     panel.moveTo(0, stripH).lineTo(WIDTH, stripH).stroke({ color: COLORS.goldDim, width: 1 })
@@ -578,18 +580,12 @@ export class HeartsRenderer extends PixiRenderer {
 
     if (s.hint) {
       const hint = this.text(s.hint, 18, COLORS.hintInk, 'left')
-      hint.position.set(16, 9 + trick.height + 6)
+      // Sit just under the first row; the small +2 gap keeps the hint inside the 60px panel (render.py twin).
+      hint.position.set(16, 9 + trick.height + 2)
       this.statusLayer.addChild(hint)
     }
-
-    if (s.terminalSummary !== null) {
-      const over = this.text('Game over', 34, COLORS.gold, 'center')
-      over.position.set(WIDTH / 2, HEIGHT / 2 - 34)
-      this.statusLayer.addChild(over)
-      const summary = this.text(s.terminalSummary, 22, COLORS.white, 'center')
-      summary.position.set(WIDTH / 2, HEIGHT / 2 + 6)
-      this.statusLayer.addChild(summary)
-    }
+    // The end-of-match leaderboard is host chrome now (GameOverCard.vue / scripts/play.py), not drawn
+    // into the canvas; the strip's "Game over" message (s.message) is the renderer's only terminal note.
   }
 
   // --- Move clock (the active human's per-move budget chip; hidden in replay/spectate) ---

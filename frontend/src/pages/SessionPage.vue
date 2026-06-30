@@ -16,7 +16,7 @@
 <script setup lang="ts">
 import type { RecordingHeader, StepState } from '@game-sandbox/schema'
 import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, shallowRef } from 'vue'
 import { useRoute } from 'vue-router'
 
 import {
@@ -30,6 +30,7 @@ import {
 } from '../api/client.js'
 import DecisionLog, { type DecisionEntry } from '../components/DecisionLog.vue'
 import ExperimentTabs from '../components/ExperimentTabs.vue'
+import GameOverCard from '../components/GameOverCard.vue'
 import PlayerAttribution from '../components/PlayerAttribution.vue'
 import RunMetadata from '../components/RunMetadata.vue'
 import SessionRatings from '../components/SessionRatings.vue'
@@ -44,7 +45,7 @@ import { formatDate } from '../lib/format.js'
 import { playbackIntervalMs } from '../lib/playback.js'
 import { useMe } from '../me.js'
 import { parseRecording } from '../replay/parse.js'
-import { reasonText } from '../replay/reason.js'
+import { isCompletedOutcome, reasonText } from '../replay/reason.js'
 import { summarizeStates } from '../replay/summary.js'
 
 const route = useRoute()
@@ -62,6 +63,11 @@ const seasonPlayable = ref(false)
 const anonymousNumbers = ref<Record<string, number>>({})
 // The recording header carries per-slot attribution (`players`); retained to show who played.
 const header = ref<RecordingHeader | null>(null)
+// The last frame drawn, kept so the end-of-match leaderboard can read the terminal scores/overlay.
+// shallowRef: a StepState is a large value the card reads whole, not deep-reactive data.
+const lastState = shallowRef<StepState | null>(null)
+// The viewer can dismiss the game-over leaderboard to inspect the final board underneath.
+const gameOverDismissed = ref(false)
 
 const isOwner = computed(
   () => me.me?.user_id !== undefined && row.value?.user_id === me.me.user_id,
@@ -105,6 +111,7 @@ const {
     },
     onState: (state) => {
       renderState(state)
+      lastState.value = state
       // The live-only opening frame (a turn-based deal) carries no acting agent: render it so the
       // table shows before the first move, but keep it out of the decision log, which logs actions.
       if (Object.keys(state.agents).length > 0) {
@@ -239,6 +246,9 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
     const finalState = parsed.states.at(-1)
     if (finalState !== undefined) {
       renderState(finalState)
+      // Feed the same terminal frame to the end-of-match leaderboard. A directly-opened ended session
+      // never streams through onState, so this is the only place its lastState is set.
+      lastState.value = finalState
     }
     if (finalResult.value === null) {
       finalResult.value = summarizeStates(parsed.states)
@@ -323,6 +333,23 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
             <span class="overlay-spinner" aria-hidden="true" />
             <span>Waiting…</span>
           </div>
+          <!-- The shared cross-environment game-over leaderboard, over the final frame, once a run
+               finishes play. Skipped for a run that was stopped, idled out, or crashed, whose partial
+               board no final standings should claim. -->
+          <GameOverCard
+            v-if="
+              status === 'ended' &&
+              lastState !== null &&
+              !gameOverDismissed &&
+              isCompletedOutcome(endReason)
+            "
+            :state="lastState"
+            :header="header"
+            :blind="blindAttribution"
+            :viewer-id="me.me?.user_id"
+            :anonymous-numbers="anonymousNumbers"
+            @dismiss="gameOverDismissed = true"
+          />
         </div>
         <UiEmptyState v-if="noRenderer">No renderer is registered for this environment yet.</UiEmptyState>
       </section>

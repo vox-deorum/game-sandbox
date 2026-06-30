@@ -54,8 +54,12 @@ _BOT_PAUSE_S = 0.6
 #: The banner shown over the frozen first frame until the player begins the episode.
 _START_PROMPT = "Press any key or click to start"
 
-#: The dismiss hint shown under the score on the game-over banner.
+#: The dismiss hint shown under the leaderboard on the game-over screen.
 _GAME_OVER_FOOTER = "Press any key to exit"
+
+#: The cups awarded to the top three finishers, by rank (0=gold, 1=silver, 2=bronze). RGB. Kept in
+#: step with the web's GameOverCard.vue MEDAL_COLOR.
+_CUP_COLORS: tuple[tuple[int, int, int], ...] = ((236, 200, 112), (200, 204, 210), (205, 127, 50))
 
 #: env id -> (agent source file, class name) for the example agent ``agent`` mode plays. The
 #: shipped examples are compose overlays without a manifest, so they are loaded by file path.
@@ -193,28 +197,126 @@ def _wait_for_start(prompt: str = _START_PROMPT) -> bool:
     return _wait_for_dismiss()
 
 
-def _game_over_lines(entry: EnvironmentEntry, env: Any, scores: dict[str, float]) -> list[str]:
-    """Return the score-summary line(s) for the game-over banner.
+def _slot_index(slot: str) -> int | None:
+    """``'player_3'`` -> ``3``; ``None`` when the slot id has no trailing integer index."""
+    last = slot.rsplit("_", 1)[-1]
+    return int(last) if last.isdigit() else None
 
-    Prefers a game-native score read from the env's overlay (Flappy Bird's pipes passed, Hearts'
-    final per-seat penalties), so the number a player sees matches the game. Falls back to the
-    per-slot reward totals the loop accumulates for any env that ships no overlay.
+
+def _slot_label(slot: str) -> str:
+    """``'player_3'`` -> ``'P3'`` (the compact seat label); any other slot id is shown as-is."""
+    seat = _slot_index(slot)
+    return f"P{seat}" if seat is not None else slot
+
+
+def _standings(
+    entry: EnvironmentEntry, env: Any, scores: dict[str, float]
+) -> list[tuple[str, str, int | None]]:
+    """Return the final leaderboard rows, best-first, as ``(label, value, cup_rank)``.
+
+    Ranks by the cumulative reward (higher is better at terminal for every env), so the gold cup
+    goes to the winner. The displayed ``value`` is each game's natural score, read overlay-first
+    (Hearts' per-seat penalties, Flappy Bird's pipes passed), falling back to the rounded reward
+    total for an env that ships no overlay score. ``cup_rank`` is 0/1/2 for the top three, else
+    ``None``. The Python twin of the web's ``buildStandings`` in frontend/src/lib/standings.ts —
+    same standings, but here every seat's reward is in this live ``scores`` tally, whereas a recording
+    stores only the acting agent per tick, so the web reconstructs the seats from the overlay instead.
     """
     overlay = entry.overlay(env) if entry.overlay is not None else None
-    if overlay is not None:
-        if "pipes_passed" in overlay:
-            return [f"pipes  {overlay['pipes_passed']}"]
-        if "display_scores" in overlay:
-            return ["   ".join(f"P{i}:{s}" for i, s in enumerate(overlay["display_scores"]))]
-    return [f"{slot}  {round(value, 2)}" for slot, value in scores.items()]
+    display = overlay.get("display_scores") if isinstance(overlay, dict) else None
+    pipes = overlay.get("pipes_passed") if isinstance(overlay, dict) else None
+
+    rows: list[tuple[str, str, int | None]] = []
+    for rank, (slot, reward) in enumerate(sorted(scores.items(), key=lambda kv: kv[1], reverse=True)):
+        seat = _slot_index(slot)
+        if isinstance(display, (list, tuple)) and seat is not None and seat < len(display):
+            value = f"{display[seat]}"
+        elif pipes is not None:
+            value = f"{pipes}"
+        else:
+            value = f"{round(reward, 2)}"
+        rows.append((_slot_label(slot), value, rank if rank < len(_CUP_COLORS) else None))
+    return rows
+
+
+def _draw_cup(
+    surface: pygame.Surface, center: tuple[int, int], size: int, color: tuple[int, int, int]
+) -> None:
+    """A small trophy cup (bowl + stem + base) centred at ``center``, filled ``color``."""
+    cx, cy = center
+    top = cy - size // 2
+    bowl = [
+        (cx - size // 2, top),
+        (cx + size // 2, top),
+        (cx + size // 5, top + int(size * 0.55)),
+        (cx - size // 5, top + int(size * 0.55)),
+    ]
+    pygame.draw.polygon(surface, color, bowl)
+    stem = pygame.Rect(0, 0, max(2, size // 6), int(size * 0.2))
+    stem.center = (cx, top + int(size * 0.66))
+    pygame.draw.rect(surface, color, stem)
+    base = pygame.Rect(0, 0, int(size * 0.5), max(2, size // 8))
+    base.midbottom = (cx, top + size)
+    pygame.draw.rect(surface, color, base)
+
+
+def _draw_leaderboard(surface: pygame.Surface, rows: list[tuple[str, str, int | None]], scale: float) -> None:
+    """Dim ``surface`` and draw the centred game-over leaderboard, then flip.
+
+    A "Game over" title, then one row per finisher — ``[cup] label … value`` — as a block bounded
+    by a top rule and a bottom rule only (no box), then the dismiss hint. The cup is a small trophy
+    in gold/silver/bronze for the top three. The Python twin of GameOverCard.vue.
+    """
+    overlay = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 140))  # the dimmed backdrop over the final frame
+
+    title_font = pygame.font.Font(None, int(34 * scale))
+    row_font = pygame.font.Font(None, int(26 * scale))
+    foot_font = pygame.font.Font(None, int(20 * scale))
+    gold, white, muted, rule = (236, 200, 112), (240, 240, 238), (190, 196, 204), (150, 124, 60)
+
+    cx = surface.get_width() // 2
+    pad = int(12 * scale)
+    half_w = min(int(150 * scale), surface.get_width() // 2 - pad)
+    cup = int(20 * scale)
+    row_h = int(34 * scale)
+    gap = int(12 * scale)
+
+    title = title_font.render("Game over", True, gold)
+    foot = foot_font.render(_GAME_OVER_FOOTER, True, muted)
+    total = title.get_height() + gap + len(rows) * row_h + gap + foot.get_height()
+    y = (surface.get_height() - total) // 2
+
+    overlay.blit(title, title.get_rect(midtop=(cx, y)))
+    y += title.get_height() + gap
+
+    left, right = cx - half_w, cx + half_w
+    line_w = max(1, int(scale))
+    pygame.draw.line(overlay, rule, (left, y), (right, y), line_w)
+    for i, (label, value, rank) in enumerate(rows):
+        row_cy = y + i * row_h + row_h // 2
+        if rank is not None:
+            _draw_cup(overlay, (left + pad + cup // 2, row_cy), cup, _CUP_COLORS[rank])
+        label_s = row_font.render(label, True, white if rank is not None else muted)
+        overlay.blit(label_s, label_s.get_rect(midleft=(left + pad + cup + pad, row_cy)))
+        value_s = row_font.render(value, True, white)
+        overlay.blit(value_s, value_s.get_rect(midright=(right - pad, row_cy)))
+    y += len(rows) * row_h
+    pygame.draw.line(overlay, rule, (left, y), (right, y), line_w)
+    y += gap
+
+    overlay.blit(foot, foot.get_rect(midtop=(cx, y)))
+    surface.blit(overlay, (0, 0))
+    pygame.display.flip()
 
 
 def _show_game_over(entry: EnvironmentEntry, env: Any, scores: dict[str, float]) -> None:
-    """Hold on a shared, env-agnostic game-over banner over the final frame until it is dismissed.
+    """Hold on a shared, env-agnostic game-over leaderboard over the final frame until dismissed.
 
-    Draws "Game Over", the game-native final score, and a dismiss hint, then blocks until the
-    player presses a key or closes the window. A no-op when headless (no display/surface), so it
-    never blocks a windowless run or one the player already quit.
+    Dims the final frame, then draws "Game over" and the ranked standings — each game's natural
+    score, with gold/silver/bronze cups for the top three, bounded by a top and bottom rule only —
+    and blocks until a key/click or window close. A no-op when headless (no display/surface), so it
+    never blocks a windowless run or one the player already quit. The web twin is GameOverCard.vue.
     """
     if not pygame.display.get_init():
         return
@@ -222,14 +324,7 @@ def _show_game_over(entry: EnvironmentEntry, env: Any, scores: dict[str, float])
     if surface is None:
         return
     pygame.font.init()
-    scale = _banner_scale(surface)
-    sections: list[tuple[pygame.font.Font, tuple[int, int, int], str]] = [
-        (pygame.font.Font(None, int(48 * scale)), (255, 255, 255), "Game Over"),
-    ]
-    for line in _game_over_lines(entry, env, scores):
-        sections.append((pygame.font.Font(None, int(30 * scale)), (235, 225, 120), line))
-    sections.append((pygame.font.Font(None, int(22 * scale)), (200, 200, 200), _GAME_OVER_FOOTER))
-    _draw_banner(surface, sections)
+    _draw_leaderboard(surface, _standings(entry, env, scores), _banner_scale(surface))
     _wait_for_dismiss()
 
 

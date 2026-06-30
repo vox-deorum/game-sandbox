@@ -13,7 +13,7 @@
 <script setup lang="ts">
 import type { RecordingHeader, StepState } from '@game-sandbox/schema'
 import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, shallowRef } from 'vue'
 import { useRoute } from 'vue-router'
 
 import {
@@ -26,6 +26,7 @@ import {
 } from '../api/client.js'
 import DecisionLog, { type DecisionEntry } from '../components/DecisionLog.vue'
 import ExperimentTabs from '../components/ExperimentTabs.vue'
+import GameOverCard from '../components/GameOverCard.vue'
 import PlayerAttribution from '../components/PlayerAttribution.vue'
 import RunMetadata from '../components/RunMetadata.vue'
 import UiButton from '../components/ui/UiButton.vue'
@@ -40,7 +41,7 @@ import { formatDate } from '../lib/format.js'
 import { playbackIntervalMs } from '../lib/playback.js'
 import { useMe } from '../me.js'
 import { parseRecording, UnsupportedVersionError } from '../replay/parse.js'
-import { reasonText } from '../replay/reason.js'
+import { isCompletedOutcome, reasonText } from '../replay/reason.js'
 import { type RunSummary, summarizeStates } from '../replay/summary.js'
 
 const route = useRoute()
@@ -53,6 +54,10 @@ const versionMessage = ref<string | null>(null)
 const header = ref<RecordingHeader | null>(null)
 const meta = ref<EnvironmentMeta | null>(null)
 const finalSummary = ref<RunSummary>({ score: null, ticks: null })
+// The terminal frame, kept so the end-of-match leaderboard can read its final scores/overlay. The
+// viewer can dismiss the leaderboard to inspect the final board underneath.
+const finalState = shallowRef<StepState | null>(null)
+const gameOverDismissed = ref(false)
 const listingEntry = ref<RecordingSummary | null>(null)
 const owned = ref(false)
 const decisions = ref<DecisionEntry[]>([])
@@ -68,6 +73,16 @@ const { noRenderer, aspectRatio, mount: mountRenderer, render: renderState } = u
   meta,
 })
 const { state: replayState, transport, init: initTransport, onKeydown } = useReplayTransport()
+// The leaderboard appears once the playhead reaches the final frame of a run that finished play
+// (mirrors the live page), and stays dismissable. The producing session's termination reason comes
+// with the listing; a run that was stopped or crashed shows no final standings, and an unclaimed
+// recording (no listing reason) stays conservative and shows none.
+const showGameOver = computed(
+  () =>
+    replayState.value.total > 0 &&
+    replayState.value.index >= replayState.value.total - 1 &&
+    isCompletedOutcome(listingEntry.value?.termination_reason ?? null),
+)
 const { pinned, busy: pinBusy, error: pinError, toggle: togglePin } = usePinning(id)
 // Fail closed: anyone not confirmed an operator (including an unresolved identity) sees the blind
 // attribution while the season is playable.
@@ -144,6 +159,7 @@ onMounted(async () => {
   header.value = parsed.header
   // The live result envelope is not part of the JSONL recording, so summarize the final state.
   finalSummary.value = summarizeStates(parsed.states)
+  finalState.value = parsed.states.at(-1) ?? null
   decisions.value = parsed.states.map(toDecision)
   loading.value = false
 
@@ -275,7 +291,18 @@ onMounted(async () => {
               ? { aspectRatio: String(aspectRatio), '--stage-aspect': String(aspectRatio) }
               : undefined
           "
-        />
+        >
+          <!-- The shared cross-environment game-over leaderboard, shown at the final frame. -->
+          <GameOverCard
+            v-if="finalState !== null && showGameOver && !gameOverDismissed"
+            :state="finalState"
+            :header="header"
+            :blind="blindAttribution"
+            :viewer-id="me.me?.user_id"
+            :anonymous-numbers="anonymousNumbers"
+            @dismiss="gameOverDismissed = true"
+          />
+        </div>
         <UiEmptyState v-if="noRenderer">No renderer is registered for this environment.</UiEmptyState>
       </section>
 

@@ -292,7 +292,9 @@ describe('the recorded multi-agent Hearts replay', () => {
     const scene = computeScene(terminal)
     expect(scene.terminal).toBe(true)
     expect(scene.seats.map((s) => s.score)).toEqual([2, 17, 2, 5]) // sums to 26: a normal hand
-    expect(scene.status.terminalSummary).toBe('P0: 2    P2: 2    P3: 5    P1: 17') // ranked low to high
+    // The end-of-hand ranking moved to the host-level leaderboard (see standings.test.ts); the strip
+    // now only carries the "Game over" message at terminal.
+    expect(scene.status.message).toBe('Game over')
     expect(scene.hand).toHaveLength(0) // every card has been played
   })
 
