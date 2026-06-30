@@ -7,7 +7,7 @@ description: Review Git staged changes for correctness risks and concrete mainta
 
 Review only the Git index. Treat tests as passed, remain read-only, and lead with actionable findings that improve correctness and make the code easier to understand and change safely.
 
-Throughout, *delegate* means hand the work to a **less expensive subagent** (e.g. Sonnet, GPT-5.5-medium) and reserve your own reasoning for synthesis and final judgment.
+Throughout, _delegate_ means hand the work to a **less expensive subagent** (e.g. Sonnet, GPT-5.5-medium) and reserve your own reasoning for synthesis and final judgment. Use editing-capable agents for the build; use read-only ones for reviews.
 
 ## Inspect the change
 
