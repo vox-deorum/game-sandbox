@@ -184,6 +184,37 @@ test('a Hearts season: four example agents, a scheduled multi-seat matchup, then
     // At least one roster agent took penalty points across its games: a board where every seat reads a
     // perfect 0 would mean scores were not captured (the bug), since the 26 points must land somewhere.
     expect(meanScores.some((mean) => mean < 0)).toBe(true)
+
+    // The season's activity counter reflects the automated games the run produced, not human watch
+    // sessions (a competition season runs none): a non-zero "games run" badge despite zero sessions,
+    // where the session-only counter once read 0 beside a full board.
+    await expect(page.getByText(/[1-9]\d* games run/)).toBeVisible()
+
+    // The Scoreboard carries a per-agent Games column, and every roster row shows a non-zero count —
+    // the number of games that agent's mean aggregates, surfaced from the board's own `games` field.
+    await expect(scoreboard.getByRole('columnheader', { name: 'Games' })).toBeVisible()
+    for (const entry of ROSTER) {
+      const row = scoreboard.locator('tr', { has: page.getByRole('link', { name: entry.owner }) })
+      // The three numeric cells are Mean score, Agent compute, then Games; the third is the game count.
+      const gamesText = await row.locator('td.num').nth(2).innerText()
+      expect(Number.parseInt(gamesText, 10), `games count for ${entry.owner}`).toBeGreaterThan(0)
+    }
+
+    // The public Matchups table lists every game of the run, each with its seats and its own replay
+    // link — how a reader reaches each game of a multi-seat matchup that the board's one representative
+    // replay per agent cannot show. More than one game proves the multi-seat schedule expanded.
+    const matchups = page.getByRole('region', { name: 'Matchups' })
+    await expect(matchups).toBeVisible()
+    expect(await matchups.getByTestId('game-row').count()).toBeGreaterThan(1)
+    await expect(matchups.getByRole('link', { name: 'Replay' }).first()).toBeVisible()
+
+    // The submitting owner's agent profile now lists the replays of the games it actually played: the
+    // automated competition recordings attach through the run's games (no session), so the session-only
+    // replay lookup once showed "No replays yet." here despite a full season of play.
+    await page.goto(`/environments/${HEARTS_ENV_ID}/agents/${HEARTS_OWNERS.duck}`)
+    await expect(page.locator('.submission-replays .replay-chip').first()).toBeVisible({
+      timeout: 30_000,
+    })
   } finally {
     // Restore the seeded Playground as the env's open submission+play season for any later spec.
     await closeSubmissions(request, season.id).catch(() => {})

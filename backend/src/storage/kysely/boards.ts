@@ -14,7 +14,7 @@ import type {
   PlacementInput,
   RatingAggregate,
 } from '../index.js'
-import type { AutomatedPlacement, Database } from '../schema.js'
+import type { AutomatedPlacement, Database, SeasonRun } from '../schema.js'
 import { aggregateRatingsByAgent, listAgentRatingPromptsBySeason } from './ratings.js'
 import { getLatestCompletedRun } from './runs.js'
 import {
@@ -87,9 +87,13 @@ export async function listPlacementsByAgent(
 export async function getAutomatedBoard(
   db: Kysely<Database>,
   seasonId: string,
+  run?: SeasonRun,
 ): Promise<AutomatedBoardRow[]> {
-  const run = await getLatestCompletedRun(db, seasonId)
-  if (run === undefined) {
+  // The board aggregates the season's latest completed run. A caller that has already resolved that run
+  // — to read its games beside the board, or to persist placements against it — passes it in so both
+  // describe the identical run and the lookup runs once; a standalone read omits it and we resolve here.
+  const resolved = run ?? (await getLatestCompletedRun(db, seasonId))
+  if (resolved === undefined) {
     return []
   }
   // Aggregate the run's per-seat results per agent. Joining the game gives the per-row replay link;
@@ -97,7 +101,7 @@ export async function getAutomatedBoard(
   const rows = await db
     .selectFrom('game_results')
     .innerJoin('season_run_games', 'season_run_games.id', 'game_results.game_id')
-    .where('season_run_games.run_id', '=', run.id)
+    .where('season_run_games.run_id', '=', resolved.id)
     .select([
       'game_results.agent_kind as agent_kind',
       'game_results.agent_submission_id as agent_submission_id',

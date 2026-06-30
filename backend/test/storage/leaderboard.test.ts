@@ -201,7 +201,34 @@ describe('leaderboard storage on :memory:', () => {
     const allList = await storage.listSeasons({ envId: ENV, scope: 'all' })
     expect(allList.map((s) => s.id)).toEqual([privateSeason.id, released.id])
     // Counts are always computed, regardless of scope.
-    expect(allList[0]).toMatchObject({ submission_count: 0, session_count: 0 })
+    expect(allList[0]).toMatchObject({ submission_count: 0, game_count: 0 })
+  })
+
+  it('listSeasons reports game_count from the latest completed run, ignoring earlier or failed ones', async () => {
+    const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
+    const gameCount = async (): Promise<number> => {
+      const list = await storage.listSeasons({ envId: ENV, scope: 'all' })
+      return defined(list.find((s) => s.id === season.id)).game_count
+    }
+
+    // Automated runs never create sessions, so a season with no completed run aggregates no games —
+    // the count must come from `season_run_games`, not the (empty) session count.
+    expect(await gameCount()).toBe(0)
+
+    // A completed two-game run: the count the released Scoreboard aggregates.
+    const twoGames: ScheduledGameInput[] = [
+      { match_index: 0, game_index: 0, seed: 1, slots: [NAIVE] },
+      { match_index: 0, game_index: 1, seed: 2, slots: [NAIVE] },
+    ]
+    const run = await storage.createRunWithSchedule(season.id, 'dev-user', [], twoGames)
+    await storage.setRunStatus(run.id, 'completed')
+    expect(await gameCount()).toBe(2)
+
+    // A later failed re-run does not move it: game_count tracks the latest *completed* run, matching
+    // getLatestCompletedRun (so a failed re-run never blanks the season's activity).
+    const reRun = await storage.createRunWithSchedule(season.id, 'dev-user', [], ONE_GAME)
+    await storage.setRunStatus(reRun.id, 'failed', 'boom')
+    expect(await gameCount()).toBe(2)
   })
 
   // --- session season attribution ---

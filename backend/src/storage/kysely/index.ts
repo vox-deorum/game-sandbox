@@ -299,8 +299,8 @@ export class KyselyStorage implements Storage {
   listPlacementsByAgent(agent: AgentRef, envId?: string): Promise<AutomatedPlacement[]> {
     return boards.listPlacementsByAgent(this.db, agent, envId)
   }
-  getAutomatedBoard(seasonId: string): Promise<AutomatedBoardRow[]> {
-    return boards.getAutomatedBoard(this.db, seasonId)
+  getAutomatedBoard(seasonId: string, run?: SeasonRun): Promise<AutomatedBoardRow[]> {
+    return boards.getAutomatedBoard(this.db, seasonId, run)
   }
 
   // --- Ratings & rating prompts ---

@@ -30,7 +30,7 @@ function season(overrides: Partial<PublicSeasonView> = {}): PublicSeasonView {
     created_at: '2026-06-11T00:00:00Z',
     released_at: null,
     submission_count: 0,
-    session_count: 0,
+    game_count: 0,
     ...overrides,
   }
 }
@@ -71,7 +71,7 @@ describe('SeasonsPage', () => {
         release_status: 'released',
         released_at: '2026-06-12T00:00:00Z',
         submission_count: 3,
-        session_count: 8,
+        game_count: 12,
       }),
     ])
 
@@ -97,7 +97,7 @@ describe('SeasonsPage', () => {
       '/environments/flappy_bird/leaderboards/released',
     )
     expect(card.queryByText('Open now')).not.toBeInTheDocument()
-    expect(card.getByText(/Released at .*2026.* · 3 Submissions · 8 Sessions Played/)).toBeVisible()
+    expect(card.getByText(/Released at .*2026.* · 3 Submissions · 12 Games/)).toBeVisible()
 
     const thumbnail = container.querySelector<HTMLImageElement>('.season-thumb')
     expect(thumbnail).toHaveAttribute('src', '/assets/flappy-thumb.svg')
@@ -124,7 +124,6 @@ describe('SeasonsPage', () => {
         id: 'play',
         label: 'Play round',
         play_status: 'open',
-        session_count: 4,
       }),
     ])
 
@@ -149,7 +148,7 @@ describe('SeasonsPage', () => {
     expect(submitCard.getByRole('link', { name: 'Submissions open' })).toBeVisible()
     expect(submitCard.queryByText('Play open')).not.toBeInTheDocument()
     expect(submitCard.queryByText('Results released')).not.toBeInTheDocument()
-    expect(submitCard.getByText('2 Submissions · 0 Sessions Played')).toBeVisible()
+    expect(submitCard.getByText('2 Submissions · 0 Games')).toBeVisible()
     expect(submitCard.queryByText(/Released at/)).not.toBeInTheDocument()
 
     const playRow = screen.getByText('Play round').closest('li')

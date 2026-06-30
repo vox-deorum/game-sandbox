@@ -28,7 +28,7 @@ import { DEPS_VERSION } from '../deps-version.js'
 import type { EnvironmentMeta, EnvironmentRegistry } from '../environments.js'
 import { isOperator, resolveUserId } from '../identity.js'
 import { buildSchedule, type SubmissionRef } from '../scheduler/build-schedule.js'
-import { runSummaryView, runView, seasonView } from '../season-views.js'
+import { runGameView, runSummaryView, runView, seasonView } from '../season-views.js'
 import type { ClientSocket } from '../session/live-session.js'
 import type { Storage, Submission } from '../storage/index.js'
 import { SeasonConfigSchema } from '../storage/season-config.js'
@@ -517,13 +517,22 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
         }
         const latest = await deps.storage.getLatestRun(season.id)
         const games = latest === undefined ? [] : await deps.storage.listRunGames(latest.id)
-        // The human board reuses the automated board's replay links, so build it first and pass it in.
-        const automated = await deps.storage.getAutomatedBoard(season.id)
+        // The board's matchup table mirrors the public read: the latest completed run's games (decoded),
+        // the same run the automated board aggregates. This differs from `latest` when the most recent
+        // run failed, so the preview's matchups always match the board it sits beside. Resolve that run
+        // once and feed it into the board read so both describe the identical run.
+        const completed = await deps.storage.getLatestCompletedRun(season.id)
+        const automated = await deps.storage.getAutomatedBoard(season.id, completed)
+        // The human board reuses the automated board's replay links, so build it after and pass it in.
         const human = await deps.storage.getHumanBoard(season.id, automated)
+        const boardGames =
+          completed === undefined
+            ? []
+            : (await deps.storage.listRunGames(completed.id)).map(runGameView)
         return reply.code(200).send({
           season: seasonView(season),
           latest_run: latest === undefined ? null : runView(latest, games),
-          board: { automated, human },
+          board: { automated, human, games: boardGames },
         })
       })
 

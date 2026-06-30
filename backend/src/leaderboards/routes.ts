@@ -9,7 +9,7 @@
 import type { FastifyInstance } from 'fastify'
 
 import { isOperator, resolveUserId } from '../identity.js'
-import { publicSeasonView, seasonView } from '../season-views.js'
+import { publicSeasonView, runGameView, seasonView } from '../season-views.js'
 import type { Storage } from '../storage/index.js'
 
 /** Everything the public leaderboard reads need. */
@@ -19,13 +19,22 @@ export interface LeaderboardDeps {
   operatorAllowlist: readonly string[]
 }
 
-/** Read both boards for a released season: the automated aggregate and the human-rating aggregate. */
+/**
+ * Read both boards for a released season plus the matchup table: the automated aggregate, the
+ * human-rating aggregate, and the per-game list of the latest completed run. The board shows one
+ * representative (best-game) replay per agent; `games` is how a reader reaches every game of a
+ * multi-seat matchup — each with its seats and its own replay link.
+ */
 async function boardsFor(storage: Storage, seasonId: string) {
-  // The human board derives its replay links from the automated board, so compute that first and
-  // pass it in rather than aggregating the latest run twice.
-  const automated = await storage.getAutomatedBoard(seasonId)
+  // Resolve the latest completed run once and feed it into the board read: the board aggregates that
+  // run and its games carry the per-matchup replay links, so passing the run keeps both on the
+  // identical run and avoids resolving it twice. The human board derives its replay links from the
+  // automated board, so it is computed after and passed in rather than aggregating the run again.
+  const run = await storage.getLatestCompletedRun(seasonId)
+  const automated = await storage.getAutomatedBoard(seasonId, run)
   const human = await storage.getHumanBoard(seasonId, automated)
-  return { automated, human }
+  const games = run === undefined ? [] : (await storage.listRunGames(run.id)).map(runGameView)
+  return { automated, human, games }
 }
 
 /** Register the public, released-only leaderboard and history routes. */

@@ -92,7 +92,7 @@ describe('public leaderboard API', () => {
           season.rating_prompt === undefined &&
           season.board === undefined &&
           typeof season.submission_count === 'number' &&
-          typeof season.session_count === 'number',
+          typeof season.game_count === 'number',
       ),
     ).toBe(true)
   })
@@ -142,7 +142,7 @@ describe('public leaderboard API', () => {
     expect((open.json() as Array<{ id: string }>).map((s) => s.id)).not.toContain(hidden.id)
   })
 
-  it('counts active submissions and ended attributed sessions in the public season index', async () => {
+  it('counts active submissions in the public season index, excluding superseded attempts', async () => {
     const season = await declare()
     await storage.setReleaseStatus(season.id, 'released')
 
@@ -180,43 +180,12 @@ describe('public leaderboard API', () => {
       created_at: '2026-06-11T00:02:00.000Z',
     })
 
-    await storage.createSession({
-      id: 'ended-season-session',
-      user_id: 'viewer',
-      env_id: ENV_ID,
-      mode: 'scripted',
-      recording_id: 'ended-recording',
-      season_id: season.id,
-      created_at: '2026-06-11T01:00:00.000Z',
-    })
-    await storage.markEnded('ended-season-session', 'terminated', '2026-06-11T01:01:00.000Z')
-    await storage.createSession({
-      id: 'active-season-session',
-      user_id: 'viewer-2',
-      env_id: ENV_ID,
-      mode: 'human',
-      recording_id: null,
-      season_id: season.id,
-      created_at: '2026-06-11T02:00:00.000Z',
-    })
-    await storage.createSession({
-      id: 'ended-unattributed-session',
-      user_id: 'viewer-3',
-      env_id: ENV_ID,
-      mode: 'human',
-      recording_id: 'unattributed-recording',
-      season_id: null,
-      created_at: '2026-06-11T03:00:00.000Z',
-    })
-    await storage.markEnded('ended-unattributed-session', 'terminated', '2026-06-11T03:01:00.000Z')
-
     const res = await app.inject({ method: 'GET', url: '/api/seasons' })
     expect(res.statusCode).toBe(200)
     expect(res.json()).toEqual([
       expect.objectContaining({
         id: season.id,
         submission_count: 2,
-        session_count: 1,
       }),
     ])
   })
@@ -264,10 +233,13 @@ describe('public leaderboard API', () => {
 
     const res = await app.inject({ method: 'GET', url: `/api/environments/${ENV_ID}/leaderboards` })
     const body = res.json() as {
-      current: { season: { id: string }; board: { automated: unknown[]; human: unknown[] } }
+      current: {
+        season: { id: string }
+        board: { automated: unknown[]; human: unknown[]; games: unknown[] }
+      }
     }
     expect(body.current.season.id).toBe(released.id)
-    expect(body.current.board).toEqual({ automated: [], human: [] })
+    expect(body.current.board).toEqual({ automated: [], human: [], games: [] })
   })
 
   it('serves a specific released season board and 404s an unreleased one', async () => {

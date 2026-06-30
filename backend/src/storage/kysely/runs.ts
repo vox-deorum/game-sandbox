@@ -5,7 +5,7 @@
  */
 import { randomUUID } from 'node:crypto'
 
-import type { Kysely } from 'kysely'
+import type { Kysely, SelectQueryBuilder } from 'kysely'
 import { sql } from 'kysely'
 
 import type { AgentRef, RecordGameResultInput, ScheduledGameInput } from '../index.js'
@@ -146,47 +146,52 @@ export async function listRunsByStatus(
     .execute()
 }
 
+/**
+ * Apply the canonical "newest run first" ordering to a `season_runs` query: most recent `started_at`
+ * first, with insertion order (`rowid`) breaking ties when two runs share a millisecond timestamp, so
+ * "the latest run" is deterministic and a failed re-run never blanks a good board. Every latest-run
+ * read funnels through here — {@link getLatestRun}, {@link getLatestCompletedRun},
+ * {@link listRunsBySeason}, and the season-list `game_count` subquery — so they cannot disagree on
+ * which run is "the latest" if the tie-break ever changes.
+ */
+export function orderByNewestRun<O>(
+  query: SelectQueryBuilder<Database, 'season_runs', O>,
+): SelectQueryBuilder<Database, 'season_runs', O> {
+  return query.orderBy('started_at', 'desc').orderBy(sql`rowid`, 'desc')
+}
+
 export async function getLatestRun(
   db: Kysely<Database>,
   seasonId: string,
 ): Promise<SeasonRun | undefined> {
-  return await db
-    .selectFrom('season_runs')
-    .selectAll()
-    .where('season_id', '=', seasonId)
-    .orderBy('started_at', 'desc')
-    .orderBy(sql`rowid`, 'desc')
-    .executeTakeFirst()
+  return await orderByNewestRun(
+    db.selectFrom('season_runs').selectAll().where('season_id', '=', seasonId),
+  ).executeTakeFirst()
 }
 
 export async function getLatestCompletedRun(
   db: Kysely<Database>,
   seasonId: string,
 ): Promise<SeasonRun | undefined> {
-  // `rowid` (insertion order) breaks ties when two runs share a millisecond timestamp, so the
-  // "latest completed" is deterministic and a failed re-run never blanks a good board.
-  return await db
-    .selectFrom('season_runs')
-    .selectAll()
-    .where('season_id', '=', seasonId)
-    .where('status', '=', 'completed')
-    .orderBy('started_at', 'desc')
-    .orderBy(sql`rowid`, 'desc')
-    .executeTakeFirst()
+  // The board reads the latest *completed* run, so a later running/failed re-run never blanks a good
+  // board; `orderByNewestRun` supplies the deterministic newest-first ordering and its tie-break.
+  return await orderByNewestRun(
+    db
+      .selectFrom('season_runs')
+      .selectAll()
+      .where('season_id', '=', seasonId)
+      .where('status', '=', 'completed'),
+  ).executeTakeFirst()
 }
 
 export async function listRunsBySeason(
   db: Kysely<Database>,
   seasonId: string,
 ): Promise<SeasonRun[]> {
-  // Newest first, identical ordering to getLatestRun so the first row is always "the latest run".
-  return await db
-    .selectFrom('season_runs')
-    .selectAll()
-    .where('season_id', '=', seasonId)
-    .orderBy('started_at', 'desc')
-    .orderBy(sql`rowid`, 'desc')
-    .execute()
+  // Newest first (the shared `orderByNewestRun` rule), so the first row is always "the latest run".
+  return await orderByNewestRun(
+    db.selectFrom('season_runs').selectAll().where('season_id', '=', seasonId),
+  ).execute()
 }
 
 /** Game count per run for a season, keyed by run id, for the runs-list summaries (one grouped scan). */

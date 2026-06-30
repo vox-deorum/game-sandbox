@@ -282,13 +282,26 @@ export async function listRecordingsBySubmission(
   submissionId: string,
   limit: number,
 ): Promise<string[]> {
-  const rows = await db
+  // The agent's recordings come from two sources, unioned newest-first: the watch/play sessions the
+  // submission seated, and the automated competition games it played. The latter persist through
+  // `season_run_games` (no session), so a session-only join would miss every run game — the empty
+  // "Recent replays" an automated-only season produces. UNION (not UNION ALL) de-dupes a recording
+  // that somehow appears in both.
+  const sessionRecordings = db
     .selectFrom('session_submissions')
     .innerJoin('sessions', 'sessions.id', 'session_submissions.session_id')
     .innerJoin('recordings', 'recordings.id', 'sessions.recording_id')
-    .select('recordings.id as recording_id')
+    .select(['recordings.id as recording_id', 'recordings.created_at as created_at'])
     .where('session_submissions.submission_id', '=', submissionId)
-    .orderBy('recordings.created_at', 'desc')
+  const competitionRecordings = db
+    .selectFrom('game_results')
+    .innerJoin('season_run_games', 'season_run_games.id', 'game_results.game_id')
+    .innerJoin('recordings', 'recordings.id', 'season_run_games.recording_id')
+    .select(['recordings.id as recording_id', 'recordings.created_at as created_at'])
+    .where('game_results.agent_submission_id', '=', submissionId)
+  const rows = await sessionRecordings
+    .union(competitionRecordings)
+    .orderBy('created_at', 'desc')
     .limit(limit)
     .execute()
   return rows.map((row) => row.recording_id)

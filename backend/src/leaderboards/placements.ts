@@ -77,7 +77,9 @@ export async function persistPlacementsForSeason(
   if (season === undefined) {
     return
   }
-  const board = await storage.getAutomatedBoard(seasonId)
+  // Aggregate the board over the run we already resolved, so the persisted rows and the `run.id` they
+  // are stamped with describe the same run rather than two independent "latest completed" lookups.
+  const board = await storage.getAutomatedBoard(seasonId, run)
   const rows: PlacementInput[] = board.map((row, index) => ({
     rank: index + 1,
     agent: row.agent,
@@ -98,7 +100,9 @@ async function placementSnapshotCurrent(storage: Storage, seasonId: string): Pro
     return true
   }
 
-  const board = await storage.getAutomatedBoard(seasonId)
+  // Compare the board built from the run we resolved against the persisted snapshot's run, so a
+  // freshness check never straddles two different "latest completed" reads.
+  const board = await storage.getAutomatedBoard(seasonId, run)
   if (board.length === 0) {
     return false
   }

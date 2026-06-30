@@ -648,8 +648,8 @@ export type PublicSeasonView = Pick<
 > & {
   /** Active participant submissions, excluding superseded attempts. */
   submission_count: number
-  /** Completed public watch/play sessions attributed to this season. */
-  session_count: number
+  /** Games in the season's latest completed automated run — what the released Scoreboard aggregates. */
+  game_count: number
 }
 
 /** One automated-board row: a per-agent aggregate over the latest completed run's results. */
@@ -682,10 +682,15 @@ export interface HumanBoardRow {
   author_prompt: string | null
 }
 
-/** Both boards for a season: the automated aggregate and the human-rating aggregate. */
+/**
+ * Both boards for a season plus its matchup table: the automated aggregate, the human-rating
+ * aggregate, and the per-game list of the latest completed run. `games` lets a reader reach every game
+ * of a multi-seat matchup, where the board only links one representative replay per agent.
+ */
 export interface Board {
   automated: AutomatedBoardRow[]
   human: HumanBoardRow[]
+  games: RunGameView[]
 }
 
 /** One scheduled game with its resolved seats decoded; the run panel shows per-game status. */

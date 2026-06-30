@@ -29,7 +29,7 @@ import {
   encodeSeasonConfig,
   type SeasonConfig,
 } from '../season-config.js'
-import { deleteRunsForSeason } from './runs.js'
+import { deleteRunsForSeason, orderByNewestRun } from './runs.js'
 import { isUniqueConstraintViolation } from './shared.js'
 import { deleteSubmissionsForSeason } from './submissions.js'
 
@@ -315,9 +315,9 @@ export async function listSeasons(
 ): Promise<PublicSeason[]> {
   // Seasons newest first, optionally narrowed to a single environment, with the public activity
   // counts always computed in this one listing query: active submissions exclude superseded attempts,
-  // and sessions count only completed public watch/play sessions attributed to the season. The
-  // `scope` controls which seasons are visible — `'all'` reaches fully-private unreleased seasons and
-  // is gated to operators at the route boundary.
+  // and `game_count` is the season's latest completed run's games (see below). The `scope` controls
+  // which seasons are visible — `'all'` reaches fully-private unreleased seasons and is gated to
+  // operators at the route boundary.
   const scope = options?.scope ?? 'released'
   let query = db
     .selectFrom('seasons')
@@ -329,12 +329,27 @@ export async function listSeasons(
         .whereRef('submissions.season_id', '=', 'seasons.id')
         .where('submissions.superseded_at', 'is', null)
         .as('submission_count'),
+      // The automated games behind the released Scoreboard: the count of `season_run_games` for the
+      // season's latest completed run (the same run the board aggregates). Automated runs never create
+      // `sessions`, so this is the activity the public "games run" badge reads — a session count would
+      // be zero for an automated-only season despite a full board. The inner select reuses
+      // `orderByNewestRun` so "latest completed run" is the one rule the board also reads through
+      // `getLatestCompletedRun`. No completed run → no id → count matches nothing → 0.
       eb
-        .selectFrom('sessions')
-        .select((sessions) => sessions.fn.countAll<number>().as('count'))
-        .whereRef('sessions.season_id', '=', 'seasons.id')
-        .where('sessions.status', '=', 'ended')
-        .as('session_count'),
+        .selectFrom('season_run_games')
+        .select((games) => games.fn.countAll<number>().as('count'))
+        .where(
+          'season_run_games.run_id',
+          '=',
+          orderByNewestRun(
+            eb
+              .selectFrom('season_runs')
+              .select('season_runs.id')
+              .whereRef('season_runs.season_id', '=', 'seasons.id')
+              .where('season_runs.status', '=', 'completed'),
+          ).limit(1),
+        )
+        .as('game_count'),
     ])
   if (scope === 'released') {
     query = query.where('release_status', '=', 'released')
@@ -354,7 +369,7 @@ export async function listSeasons(
   return rows.map((row) => ({
     ...row,
     submission_count: Number(row.submission_count),
-    session_count: Number(row.session_count),
+    game_count: Number(row.game_count),
   }))
 }
 

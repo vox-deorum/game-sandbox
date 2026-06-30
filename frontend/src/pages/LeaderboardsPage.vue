@@ -23,6 +23,7 @@ import {
   type PublicSeasonView,
   type SeasonView,
 } from '../api/client.js'
+import GamesTable from '../components/GamesTable.vue'
 import LeaderboardBoards from '../components/LeaderboardBoards.vue'
 import UiBadge from '../components/ui/UiBadge.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
@@ -141,7 +142,7 @@ watch(requestedSeasonId, load, { immediate: true })
         </span>
         <template v-if="currentCounts !== undefined">
           <UiBadge class="leaderboards-stat">{{ currentCounts.submission_count }} submissions</UiBadge>
-          <UiBadge class="leaderboards-stat">{{ currentCounts.session_count }} games run</UiBadge>
+          <UiBadge class="leaderboards-stat">{{ currentCounts.game_count }} games run</UiBadge>
         </template>
       </h2>
     </header>
@@ -159,6 +160,18 @@ watch(requestedSeasonId, load, { immediate: true })
         :rating-prompt="season?.rating_prompt ?? null"
       />
     </main>
+
+    <!-- The matchup table: every game of the latest completed run, so a reader can reach each game of a
+         multi-seat matchup, where the boards link only one representative replay per agent. Static (no
+         live status overlay), and only shown when the released run produced games. -->
+    <section
+      v-if="board !== null && board.games.length > 0"
+      class="leaderboards-matchups"
+      aria-label="Matchups"
+    >
+      <h2>Matchups</h2>
+      <GamesTable :games="board.games" :live-status="{}" />
+    </section>
 
     <section v-if="history.length > 0" class="leaderboards-history" aria-label="Seasons">
       <h2>All Seasons</h2>
@@ -183,7 +196,7 @@ watch(requestedSeasonId, load, { immediate: true })
             </td>
             <td>{{ entry.released_at !== null ? formatDate(entry.released_at) : '—' }}</td>
             <td class="num">{{ entry.submission_count }}</td>
-            <td class="num">{{ entry.session_count }}</td>
+            <td class="num">{{ entry.game_count }}</td>
           </tr>
         </tbody>
       </table>
@@ -201,6 +214,10 @@ watch(requestedSeasonId, load, { immediate: true })
 
 .leaderboards-stat {
   font-weight: 500;
+}
+
+.leaderboards-matchups {
+  margin-top: var(--space-8);
 }
 
 .leaderboards-history {

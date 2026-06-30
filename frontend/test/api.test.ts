@@ -244,7 +244,7 @@ describe('api client', () => {
         created_at: '2026-06-10T00:00:00Z',
         released_at: null,
         submission_count: 3,
-        session_count: 8,
+        game_count: 12,
       },
     ]
     const fetchMock = stubFetch(async () => jsonResponse(payload))

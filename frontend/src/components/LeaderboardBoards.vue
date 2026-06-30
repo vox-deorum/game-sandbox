@@ -45,6 +45,7 @@ function ownerOf(agent: BoardAgentRef): string | null {
           <col />
           <col />
           <col />
+          <col />
         </colgroup>
         <thead>
           <tr>
@@ -52,6 +53,7 @@ function ownerOf(agent: BoardAgentRef): string | null {
             <th scope="col">Agent</th>
             <th scope="col" class="num">Mean score</th>
             <th scope="col" class="num">Agent compute</th>
+            <th scope="col" class="num">Games</th>
             <th scope="col">Replay</th>
           </tr>
         </thead>
@@ -77,6 +79,7 @@ function ownerOf(agent: BoardAgentRef): string | null {
             <td class="num">
               {{ formatComputeSpread(row.mean_agent_compute_ms, row.compute_std) }}
             </td>
+            <td class="num">{{ row.games }}</td>
             <td>
               <RouterLink
                 v-if="row.recording_id !== null"

@@ -90,7 +90,7 @@ function metadataLine(season: PublicSeasonView): string {
     parts.push(`Released at ${formatDate(season.released_at)}`)
   }
   parts.push(`${season.submission_count} Submissions`)
-  parts.push(`${season.session_count} Sessions Played`)
+  parts.push(`${season.game_count} Games`)
   return parts.join(' · ')
 }
 

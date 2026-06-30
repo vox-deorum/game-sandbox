@@ -1,14 +1,18 @@
 <!--
-  One run's scheduled games as a table, on the run-details page. Each row identifies the game
-  (m{match}·g{game}·seed), names the agents in its seats, shows its status — the live overlay while the
-  run streams, else the persisted status — and links to the game's replay once a recording exists. A
-  game with no recording yet (still pending/running, or a failure that produced none) shows an em dash.
+  A run's scheduled games as a table. Each row identifies the game (m{match}·g{game}·seed), names the
+  agents in its seats, shows its status — the live overlay while a run streams, else the persisted
+  status — and links to the game's replay once a recording exists. A game with no recording yet (still
+  pending/running, or a failure that produced none) shows an em dash.
+
+  Shared chrome: the operator run-details page renders it with a live per-game status overlay, and the
+  public released-season page renders it as a static matchup table (no overlay) so a reader can reach
+  every game of a multi-seat matchup, not just the board's one representative replay per agent.
 -->
 <script setup lang="ts">
 import { RouterLink } from 'vue-router'
 
-import type { BoardAgentRef, GameStatus, RunGameView } from '../../api/client.js'
-import UiStatusBadge from '../ui/UiStatusBadge.vue'
+import type { BoardAgentRef, GameStatus, RunGameView } from '../api/client.js'
+import UiStatusBadge from './ui/UiStatusBadge.vue'
 
 const props = defineProps<{
   games: RunGameView[]

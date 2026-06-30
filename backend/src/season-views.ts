@@ -31,7 +31,7 @@ export type PublicSeasonView = Pick<
   | 'created_at'
   | 'released_at'
   | 'submission_count'
-  | 'session_count'
+  | 'game_count'
 >
 
 /**
@@ -49,7 +49,7 @@ export function publicSeasonView(season: PublicSeason): PublicSeasonView {
     created_at: season.created_at,
     released_at: season.released_at,
     submission_count: season.submission_count,
-    session_count: season.session_count,
+    game_count: season.game_count,
   }
 }
 

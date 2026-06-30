@@ -84,6 +84,7 @@ function board(): Board {
         author_prompt: null,
       },
     ],
+    games: [],
   }
 }
 
@@ -108,8 +109,16 @@ describe('LeaderboardsPage', () => {
     vi.clearAllMocks()
     vi.mocked(getEnvironments).mockResolvedValue([flappyMeta()])
     vi.mocked(listSeasons).mockResolvedValue([
-      { ...season({ id: 'iter-1', label: 'Week 1' }), submission_count: 2, session_count: 4 },
-      { ...season({ id: 'iter-0', label: 'Week 0' }), submission_count: 1, session_count: 2 },
+      {
+        ...season({ id: 'iter-1', label: 'Week 1' }),
+        submission_count: 2,
+        game_count: 12,
+      },
+      {
+        ...season({ id: 'iter-0', label: 'Week 0' }),
+        submission_count: 1,
+        game_count: 6,
+      },
     ])
   })
 
@@ -247,9 +256,13 @@ describe('LeaderboardsPage', () => {
           released_at: null,
         }),
         submission_count: 0,
-        session_count: 0,
+        game_count: 0,
       },
-      { ...season({ id: 'iter-1', label: 'Week 1' }), submission_count: 2, session_count: 4 },
+      {
+        ...season({ id: 'iter-1', label: 'Week 1' }),
+        submission_count: 2,
+        game_count: 12,
+      },
     ])
     vi.mocked(getEnvironmentLeaderboards).mockResolvedValue({
       current: { season: season(), board: board() },

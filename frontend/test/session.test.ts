@@ -302,7 +302,7 @@ describe('SessionPage', () => {
         created_at: '2026-06-11T00:00:00.000Z',
         released_at: null,
         submission_count: 1,
-        session_count: 1,
+        game_count: 0,
       },
     ])
     // The attribution must number the agent the same way the rating panel does, so a blind viewer
@@ -344,7 +344,7 @@ describe('SessionPage', () => {
         created_at: '2026-06-11T00:00:00.000Z',
         released_at: '2026-06-12T00:00:00.000Z',
         submission_count: 1,
-        session_count: 1,
+        game_count: 0,
       },
     ])
     await renderSession()

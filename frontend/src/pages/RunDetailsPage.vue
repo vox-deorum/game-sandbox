@@ -12,7 +12,7 @@ import { RouterLink, useRoute } from 'vue-router'
 
 import { getRun, type GameStatus, type RunView, runLogWsPath } from '../api/client.js'
 import { RunLogSocket } from '../api/runLogSocket.js'
-import GamesTable from '../components/admin/GamesTable.vue'
+import GamesTable from '../components/GamesTable.vue'
 import type { RunLogLine } from '../components/admin/RunLogTable.vue'
 import RunLogTable from '../components/admin/RunLogTable.vue'
 import UiButton from '../components/ui/UiButton.vue'

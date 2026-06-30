@@ -9,6 +9,7 @@ import {
   decodeSeasonConfig,
   type NewSessionInput,
   type NewSubmissionInput,
+  type ScheduledGameInput,
   type Storage,
 } from '../../src/storage/index.js'
 import { openSqliteStorage } from '../../src/storage/sqlite.js'
@@ -287,6 +288,60 @@ describe('submission storage on :memory:', () => {
 
     const recordings = await storage.listRecordingsBySubmission(sub.id, 10)
     expect(recordings).toEqual(['rec-new', 'rec-old'])
+  })
+
+  it('lists a submission’s automated competition recordings, merged with sessions newest-first', async () => {
+    const iter = await seasonId()
+    const sub = await storage.createSubmission(subInput({ season_id: iter }))
+    const agent = { kind: 'submission' as const, submission_id: sub.id, user_id: 'alice' }
+
+    // A watch session the submission seated, with its own (older) recording.
+    await storage.createSession(
+      sessionInput({
+        id: 'sess-watch',
+        recording_id: 'rec-session',
+        created_at: '2026-06-11T00:00:00.000Z',
+      }),
+    )
+    await storage.recordSessionSubmission('sess-watch', sub.id, 'player_0')
+    await storage.createRecording({
+      id: 'rec-session',
+      user_id: 'alice',
+      env_id: 'flappy_bird',
+      created_at: '2026-06-11T00:00:00.000Z',
+    })
+
+    // An automated competition game the submission played: persisted through season_run_games +
+    // game_results with no session, its (newer) recording attached via the game, not a session. A
+    // session-only join would miss it entirely — the empty "Recent replays" an automated-only season
+    // produced, the regression this guards.
+    const game: ScheduledGameInput = { match_index: 0, game_index: 0, seed: 1, slots: [agent] }
+    const run = await storage.createRunWithSchedule(iter, 'dev-user', [agent], [game])
+    const scheduled = (await storage.listRunGames(run.id))[0]
+    if (scheduled === undefined) {
+      throw new Error('expected a scheduled game')
+    }
+    await storage.createRecording({
+      id: 'rec-competition',
+      user_id: 'alice',
+      env_id: 'flappy_bird',
+      created_at: '2026-06-11T05:00:00.000Z',
+    })
+    await storage.attachRunGameRecording(scheduled.id, 'rec-competition')
+    await storage.recordGameResult({
+      game_id: scheduled.id,
+      slot_index: 0,
+      agent,
+      episode_score: 7,
+      agent_compute_ms_total: 10,
+      acted_tick_count: 5,
+      failed: false,
+    })
+    await storage.setRunStatus(run.id, 'completed')
+
+    // Both sources are returned, newest-first.
+    const recordings = await storage.listRecordingsBySubmission(sub.id, 10)
+    expect(recordings).toEqual(['rec-competition', 'rec-session'])
   })
 })
 

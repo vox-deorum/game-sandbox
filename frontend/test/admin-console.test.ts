@@ -72,11 +72,11 @@ function season(overrides: Partial<SeasonView> = {}): SeasonView {
 /** The lighter picker shape the console now lists through `listSeasons` (with activity counts). */
 function pickerSeason(overrides: Partial<SeasonView> = {}): PublicSeasonView {
   const { config: _config, rating_prompt: _ratingPrompt, ...rest } = season(overrides)
-  return { ...rest, submission_count: 0, session_count: 0 }
+  return { ...rest, submission_count: 0, game_count: 0 }
 }
 
 function emptyBoard(): Board {
-  return { automated: [], human: [] }
+  return { automated: [], human: [], games: [] }
 }
 
 function adminView(overrides: Partial<AdminSeasonView> = {}): AdminSeasonView {
@@ -405,6 +405,7 @@ describe('AdminConsolePage', () => {
         },
       ],
       human: [],
+      games: [],
     }
     vi.mocked(getAdminSeason).mockResolvedValue(adminView({ board }))
     await renderConsole()

@@ -441,11 +441,12 @@ export type Season = Selectable<SeasonsTable>
 
 /**
  * One row in the public cross-environment season index. The counters are computed by the listing
- * query, not stored on the season, so resubmissions and completed sessions are reflected immediately.
+ * query, not stored on the season, so resubmissions and new run games are reflected immediately.
  */
 export type PublicSeason = Season & {
   submission_count: number
-  session_count: number
+  /** Games in the season's latest completed automated run — the count the released Scoreboard aggregates. */
+  game_count: number
 }
 
 /**
