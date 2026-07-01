@@ -4,7 +4,13 @@ import { nextTick } from 'vue'
 
 import type { SessionSocketHandlers } from '../src/api/socket.js'
 import type { RendererContext } from '../src/renderers/types.js'
-import { flappyHeader, flappyMeta, flappyState, recordingText } from './helpers/fixtures.js'
+import {
+  flappyHeader,
+  flappyMeta,
+  flappyState,
+  heartsMeta,
+  recordingText,
+} from './helpers/fixtures.js'
 import { memoryRouter, renderWithMe } from './helpers/render.js'
 
 const META = flappyMeta({ description: '' })
@@ -27,14 +33,22 @@ vi.mock('../src/api/socket.js', () => ({
   },
 }))
 
-// A fake renderer that records what it was mounted with and the states it drew.
+// A fake renderer that records what it was mounted with, the states it drew, and the per-state render
+// options (so a test can assert the paced transition budget the live throttle passes).
 let mountCtx: RendererContext | null
 let drawn: unknown[]
+let drawnOptions: unknown[]
 vi.mock('../src/renderers/registry.js', () => ({
   getRenderer: () => ({
     mount: (ctx: RendererContext) => {
       mountCtx = ctx
-      return { render: (s: unknown) => drawn.push(s), destroy: () => {} }
+      return {
+        render: (s: unknown, o?: unknown) => {
+          drawn.push(s)
+          drawnOptions.push(o)
+        },
+        destroy: () => {},
+      }
     },
     thumbnail: '',
     internalSize: { width: 288, height: 512 },
@@ -59,6 +73,7 @@ vi.mock('../src/api/client.js', () => ({
 }))
 
 import {
+  getEnvironments,
   getMe,
   getRecording,
   getSession,
@@ -133,6 +148,10 @@ describe('SessionPage', () => {
     sent = []
     mountCtx = null
     drawn = []
+    drawnOptions = []
+    // Reset to the Flappy default each test; the live-throttle test overrides it to a turn-based env
+    // (mockResolvedValue persists across tests without a global mock reset, so re-assert the default).
+    vi.mocked(getEnvironments).mockResolvedValue([META])
     vi.mocked(getRecording).mockResolvedValue(sessionRecording())
     vi.mocked(listRecordings).mockResolvedValue([])
     vi.mocked(listSeasons).mockResolvedValue([])
@@ -515,6 +534,69 @@ describe('SessionPage', () => {
       await nextTick()
       expect(drawn).toHaveLength(4)
       expect(screen.queryByText('Waiting…')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('throttles a live human turn-based session: own move instant, opponents paced, end held until drained', async () => {
+    vi.mocked(getMe).mockResolvedValue({
+      user_id: 'dev-user',
+      allowlisted: true,
+      is_operator: false,
+    })
+    // A live human Hearts session: turn-based, owner controls a seat, env declares a 900 ms live cadence.
+    vi.mocked(getSession).mockResolvedValue({ ...ownerRow(), env_id: 'hearts' })
+    vi.mocked(getEnvironments).mockResolvedValue([heartsMeta()])
+    await renderSession()
+    await waitForHandlers()
+
+    vi.useFakeTimers()
+    try {
+      handlers.onHeader(flappyHeader({ environment: 'hearts' }))
+      handlers.onSessionStatus?.('running')
+
+      // Leading edge: the first frame after the idle gap (the deal, or the human's own move) draws at
+      // once, at the renderer's natural duration (no transition budget) — immediate input feedback.
+      handlers.onState(flappyState(0, 0))
+      await nextTick()
+      expect(drawn).toHaveLength(1)
+      expect(drawnOptions.at(-1)).toBeUndefined()
+
+      // A burst of three opponent replies arrives while the throttle window is open: they queue, and
+      // nothing new draws until the cadence ticks — the fix for "all play together".
+      handlers.onState(flappyState(1, 0))
+      handlers.onState(flappyState(2, 0))
+      handlers.onState(flappyState(3, 0))
+      await nextTick()
+      expect(drawn).toHaveLength(1)
+
+      // The stream ends mid-burst; game over stays hidden until the queued moves have played out.
+      handlers.onResult?.({ ticks: 4, reason: 'terminated', scores: { player_0: 3 } })
+      handlers.onSessionStatus?.('ended', 'terminated')
+
+      // Each cadence tick plays exactly one queued move, with the cadence as its transition budget so
+      // the renderer animates it rather than snapping.
+      vi.advanceTimersByTime(900)
+      await nextTick()
+      expect(drawn).toHaveLength(2)
+      expect(drawnOptions.at(-1)).toEqual({ transitionMs: 900 })
+      expect(screen.queryByText('Game over')).toBeNull()
+
+      vi.advanceTimersByTime(900)
+      await nextTick()
+      expect(drawn).toHaveLength(3)
+
+      // The last queued move draws; the end is still held (revealed only once the queue is empty).
+      vi.advanceTimersByTime(900)
+      await nextTick()
+      expect(drawn).toHaveLength(4)
+      expect(screen.queryByText('Game over')).toBeNull()
+
+      // The next tick finds the queue empty and reveals game over (held until the last move drew).
+      vi.advanceTimersByTime(900)
+      await nextTick()
+      expect(screen.getByRole('dialog', { name: 'Game over' })).toBeInTheDocument()
     } finally {
       vi.useRealTimers()
     }

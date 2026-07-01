@@ -15,14 +15,23 @@
  * one per cadence tick; an underrun simply holds the last frame until more arrive rather than
  * stuttering. The end facts (the `ended` status and the `result`) ride at the tail of the buffer: they
  * are held until the last buffered frame has been shown, so the animation plays out fully and only then
- * reveals game over. A human session never buffers: its owner needs every frame the instant it arrives
- * to react to their own input.
+ * reveals game over.
+ *
+ * A human session renders its owner's own move the instant it arrives — the owner needs immediate
+ * feedback to their input. But when a turn-based env declares a `live_interval_ms`, the *other* seats'
+ * moves are throttled: the backend streams the AI replies in a burst (they compute in milliseconds),
+ * which would otherwise race the renderer and snap all the cards down at once. A leading-edge throttle
+ * renders the first frame after an idle gap (the human's own move, or the opening deal) immediately,
+ * then plays the burst that follows out one frame per `live_interval_ms` — each carrying that cadence
+ * as the renderer's transition budget so the fly-in/sweep fits the pace. As in the watch buffer, the
+ * end facts ride at the tail so game over reveals only once the last move has animated.
  */
 import type { RecordingHeader, StepState } from '@game-sandbox/schema'
 import type { Command } from '@game-sandbox/schema/protocol'
 import { onBeforeUnmount, ref, shallowRef } from 'vue'
 
 import { type ConnectionState, SessionSocket } from '../api/socket.js'
+import type { RenderOptions } from '../renderers/types.js'
 import { formatScoreMap } from '../replay/summary.js'
 
 /** The viewing cadence for a paced watch run whose environment declares no pace interval. */
@@ -36,7 +45,9 @@ const JITTER_BUFFER_LEAD_MS = 150
 /** The recording frames the page wires to its renderer. */
 export interface SessionFrameHandlers {
   onHeader(header: RecordingHeader): void
-  onState(state: StepState): void
+  /** Draw one state. `options` tells an animated renderer how to present it (a paced move passes a
+   *  transition budget); the leading-edge/unbuffered frames pass none, for the natural duration. */
+  onState(state: StepState, options?: RenderOptions): void
 }
 
 /** How to drive the live stream. Paced playback is opt-in per session (watch runs only). */
@@ -45,6 +56,13 @@ export interface ConnectOptions {
   pace?: boolean
   /** The environment's pace interval; falls back to {@link DEFAULT_WATCH_CADENCE_MS} when unset. */
   paceMs?: number | null
+  /**
+   * A live human session's cadence (ms) for throttling the *other* seats' moves, so a burst of fast AI
+   * replies animates one at a time. The owner's own move still renders on arrival. Absent/`null`/`0`
+   * (a realtime env, or any env with no `live_interval_ms`) keeps the unbuffered on-arrival behaviour.
+   * Ignored when {@link pace} is set — a session is at most one of the two paced modes.
+   */
+  liveMs?: number | null
 }
 
 export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers) {
@@ -72,6 +90,9 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
   let endHeld = false
   let heldEndReason: string | null = null
   let heldResult: Record<string, unknown> | null = null
+  // The live human throttle cadence (ms); 0 disables it (the on-arrival default). Reuses frameQueue,
+  // paceTimer, and the end-hold above — a session is at most one of the two paced modes.
+  let liveMs = 0
 
   function applyResult(value: Record<string, unknown>): void {
     const scores = (value.scores ?? {}) as Record<string, number>
@@ -131,6 +152,34 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
     }
   }
 
+  /** The live human throttle. When the window is closed (an idle gap), this frame is the leading edge —
+   *  the owner's own move or the opening deal — so it draws immediately at the renderer's natural
+   *  duration and opens the window; while the window is open, a follow-up (an AI reply in the burst) is
+   *  queued for {@link drainLive} to play out at the cadence. */
+  function onLiveState(state: StepState): void {
+    if (paceTimer === null) {
+      frames.onState(state)
+      paceTimer = setInterval(drainLive, liveMs)
+    } else {
+      frameQueue.push(state)
+    }
+  }
+
+  /** Play the next throttled frame at the cadence, giving the renderer `liveMs` as its transition budget
+   *  so the move animates rather than snaps. An empty queue closes the window (the next idle→frame is a
+   *  leading edge again) and, once the stream has ended, reveals game over with the last move shown. */
+  function drainLive(): void {
+    const state = frameQueue.shift()
+    if (state !== undefined) {
+      frames.onState(state, { transitionMs: liveMs })
+      return
+    }
+    stopPacer()
+    if (endHeld) {
+      applyEnd(heldEndReason)
+    }
+  }
+
   /** Open the socket. The caller gates this on identity and metadata being resolved, and skips it
    *  entirely for an already-ended session (a historical view with no live transport). Pass
    *  `pace` for a watch run so frames play at the environment's cadence rather than as they arrive. */
@@ -141,6 +190,10 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
         ? options.paceMs
         : DEFAULT_WATCH_CADENCE_MS
     leadFrames = Math.max(1, Math.ceil(JITTER_BUFFER_LEAD_MS / cadence))
+    // The live human throttle is the alternative to watch pacing (never both); off unless the env
+    // declares a positive cadence.
+    liveMs =
+      !pacing && typeof options.liveMs === 'number' && options.liveMs > 0 ? options.liveMs : 0
     playing = false
     buffering.value = false
     const client = new SessionSocket(`/api/sessions/${sessionId}/ws`, {
@@ -149,6 +202,8 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
         if (pacing) {
           frameQueue.push(state)
           maybeStart(false)
+        } else if (liveMs > 0) {
+          onLiveState(state)
         } else {
           frames.onState(state)
         }
@@ -158,11 +213,20 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
           status.value = 'running'
           return
         }
-        // ended: hold it while frames are still draining, else reveal it now.
+        // ended: hold it while paced frames are still draining, so the result lands with the final
+        // frame rather than ahead of it; else reveal it now.
         if (pacing && frameQueue.length > 0) {
           endHeld = true
           heldEndReason = reason ?? null
           maybeStart(true)
+          return
+        }
+        // Live throttle: hold while the window is open — a burst is still queued, or the leading-edge
+        // frame (e.g. the human's own trick-completing card) is still animating — so drainLive reveals
+        // game over once the last move has played out rather than over its animation.
+        if (liveMs > 0 && paceTimer !== null) {
+          endHeld = true
+          heldEndReason = reason ?? null
           return
         }
         applyEnd(reason ?? endReason.value)
@@ -174,8 +238,9 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
         paused.value = false
       },
       onResult: (value) => {
-        // In paced mode the result is held and revealed with the last frame; otherwise apply it now.
-        if (pacing) {
+        // In either paced mode (watch buffer or live throttle) the result is held and revealed with the
+        // last frame, so the score does not surface ahead of the final animation; otherwise apply now.
+        if (pacing || liveMs > 0) {
           heldResult = value
           return
         }

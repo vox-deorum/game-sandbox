@@ -132,6 +132,7 @@ function meta(overrides: Record<string, unknown>): Record<string, unknown> {
     renderer: 'flappy-bird',
     seat_order_matters: false,
     view_interval_ms: null,
+    live_interval_ms: null,
     ...overrides,
   }
 }

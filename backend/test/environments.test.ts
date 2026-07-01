@@ -20,6 +20,8 @@ describe('EnvironmentRegistry', () => {
       expect(meta.pace_interval_ms === null || typeof meta.pace_interval_ms === 'number').toBe(true)
       // view_interval_ms is likewise int-or-null (optional viewing cadence).
       expect(meta.view_interval_ms === null || typeof meta.view_interval_ms === 'number').toBe(true)
+      // live_interval_ms is int-or-null too (optional live human throttle cadence).
+      expect(meta.live_interval_ms === null || typeof meta.live_interval_ms === 'number').toBe(true)
     }
   })
 

@@ -8,6 +8,7 @@
       "player_0"
     ],
     "human_timeout_ms": null,
+    "live_interval_ms": null,
     "llm": false,
     "max_slots": 1,
     "message_cap": null,
@@ -32,6 +33,7 @@
       "player_3"
     ],
     "human_timeout_ms": 60000,
+    "live_interval_ms": 900,
     "llm": false,
     "max_slots": 4,
     "message_cap": null,

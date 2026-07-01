@@ -26,6 +26,7 @@ export function flappyMeta(overrides: Partial<EnvironmentMeta> = {}): Environmen
     renderer: 'flappy-bird',
     seat_order_matters: false,
     view_interval_ms: null,
+    live_interval_ms: null,
     ...overrides,
   }
 }
@@ -53,6 +54,7 @@ export function heartsMeta(overrides: Partial<EnvironmentMeta> = {}): Environmen
     renderer: 'hearts',
     seat_order_matters: true,
     view_interval_ms: 3000,
+    live_interval_ms: 900,
     ...overrides,
   }
 }

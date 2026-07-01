@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { playbackIntervalMs } from '../src/lib/playback.js'
+import { liveIntervalMs, playbackIntervalMs } from '../src/lib/playback.js'
 import { flappyMeta, heartsMeta } from './helpers/fixtures.js'
 
 describe('playbackIntervalMs', () => {
@@ -19,5 +19,19 @@ describe('playbackIntervalMs', () => {
     expect(playbackIntervalMs(heartsMeta({ view_interval_ms: null }))).toBeNull()
     expect(playbackIntervalMs(null)).toBeNull()
     expect(playbackIntervalMs(undefined)).toBeNull()
+  })
+})
+
+describe('liveIntervalMs', () => {
+  it('reads the live human throttle cadence when the env declares one', () => {
+    // Hearts declares a 900 ms live cadence; it is independent of the 3000 ms spectator view interval.
+    expect(liveIntervalMs(heartsMeta())).toBe(900)
+  })
+
+  it('is null when the env declares none, so the human session stays unbuffered', () => {
+    expect(liveIntervalMs(flappyMeta())).toBeNull()
+    expect(liveIntervalMs(heartsMeta({ live_interval_ms: null }))).toBeNull()
+    expect(liveIntervalMs(null)).toBeNull()
+    expect(liveIntervalMs(undefined)).toBeNull()
   })
 })

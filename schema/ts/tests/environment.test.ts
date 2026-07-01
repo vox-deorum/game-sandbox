@@ -20,6 +20,7 @@ const VALID: EnvironmentMeta = {
   renderer: 'flappy-bird',
   seat_order_matters: false,
   view_interval_ms: null,
+  live_interval_ms: null,
 }
 
 describe('isEnvironmentMeta', () => {
@@ -34,12 +35,17 @@ describe('isEnvironmentMeta', () => {
         pace_interval_ms: null,
         human_timeout_ms: 5000,
         view_interval_ms: 2000,
+        live_interval_ms: 900,
       }),
     ).toBe(true)
   })
 
   it('rejects a non-numeric view_interval_ms', () => {
     expect(isEnvironmentMeta({ ...VALID, view_interval_ms: '2000' })).toBe(false)
+  })
+
+  it('rejects a non-numeric live_interval_ms', () => {
+    expect(isEnvironmentMeta({ ...VALID, live_interval_ms: '900' })).toBe(false)
   })
 
   it('rejects a non-object', () => {

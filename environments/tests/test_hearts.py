@@ -270,6 +270,9 @@ def test_metadata_round_trips_through_json():
     assert parsed["min_slots"] == parsed["max_slots"] == 4
     assert parsed["human_slots"] == ["player_0", "player_1", "player_2", "player_3"]
     assert parsed["pace_interval_ms"] is None
+    # Turn-based spectator/replay cadence vs. the snappier live human throttle.
+    assert parsed["view_interval_ms"] == 3000
+    assert parsed["live_interval_ms"] == 900
     assert parsed["messaging"] is False
 
 

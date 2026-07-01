@@ -42,7 +42,7 @@ import { useRendererMount } from '../composables/useRendererMount.js'
 import { useSessionSocket } from '../composables/useSessionSocket.js'
 import { useStageLayout } from '../composables/useStageLayout.js'
 import { formatDate } from '../lib/format.js'
-import { playbackIntervalMs } from '../lib/playback.js'
+import { liveIntervalMs, playbackIntervalMs } from '../lib/playback.js'
 import { useMe } from '../me.js'
 import { parseRecording } from '../replay/parse.js'
 import { isCompletedOutcome, reasonText } from '../replay/reason.js'
@@ -109,8 +109,8 @@ const {
       header.value = incoming
       mountRenderer(incoming)
     },
-    onState: (state) => {
-      renderState(state)
+    onState: (state, options) => {
+      renderState(state, options)
       lastState.value = state
       // The live-only opening frame (a turn-based deal) carries no acting agent: render it so the
       // table shows before the first move, but keep it out of the decision log, which logs actions.
@@ -213,12 +213,16 @@ onMounted(async () => {
   }
   // A watch run (scripted) plays paced so a container that streams faster than real time still
   // animates at the environment's cadence and reveals game over only once the frames have played
-  // out. A human session renders every frame on arrival, for immediate feedback to the owner's input.
+  // out. A human session renders its owner's own move on arrival for immediate feedback, but a
+  // turn-based env's `live_interval_ms` throttles the other seats' burst so it animates card-by-card.
   connect({
     pace: fetched.mode === 'scripted',
     // A realtime env paces by its step interval; a turn-based one (Hearts) declares a viewing cadence
     // so a scripted watch plays out at a watchable speed rather than the buffer's bare default.
     paceMs: playbackIntervalMs(meta.value),
+    // Live human play throttles opponents' moves at the env's live cadence; null (realtime, or an env
+    // that declares none) keeps the unbuffered on-arrival behaviour.
+    liveMs: fetched.mode === 'human' ? liveIntervalMs(meta.value) : null,
   })
 })
 

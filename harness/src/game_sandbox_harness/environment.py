@@ -56,6 +56,12 @@ class EnvironmentMeta:
     #: turn-based game (Hearts) can slow its playback without becoming realtime. ``None`` falls back to
     #: the frontend's default viewing cadence; it never affects live human stepping or scoring.
     view_interval_ms: int | None = None
+    #: Optional cadence (ms) at which a *live human* turn-based session plays out the other players'
+    #: moves, so a burst of fast AI replies animates one at a time instead of snapping together. The
+    #: human's own move still renders the instant it arrives. ``None`` (the default, and what a realtime
+    #: env like Flappy Bird keeps) means "render every frame on arrival" — today's behaviour. Distinct
+    #: from ``view_interval_ms`` (spectator/replay pace, typically slower) and never affects scoring.
+    live_interval_ms: int | None = None
 
     def to_json(self) -> dict[str, Any]:
         """Return the snake_case JSON-serialisable dict the backend serves verbatim."""
@@ -77,6 +83,7 @@ class EnvironmentMeta:
             "renderer": self.renderer,
             "seat_order_matters": self.seat_order_matters,
             "view_interval_ms": self.view_interval_ms,
+            "live_interval_ms": self.live_interval_ms,
         }
 
 

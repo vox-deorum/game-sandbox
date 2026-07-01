@@ -40,6 +40,13 @@ export interface EnvironmentMeta {
    * frontend's default viewing cadence.
    */
   view_interval_ms: number | null
+  /**
+   * Optional cadence (ms) at which a live human turn-based session plays out the *other* players'
+   * moves, so a burst of fast AI replies animates one at a time instead of snapping together (the
+   * human's own move still renders on arrival). `null` — the default and what a realtime env keeps —
+   * means "render every frame on arrival". Distinct from `view_interval_ms` (spectator/replay pace).
+   */
+  live_interval_ms: number | null
 }
 
 function isStringArray(value: unknown): value is string[] {
@@ -73,6 +80,7 @@ export function isEnvironmentMeta(value: unknown): value is EnvironmentMeta {
     typeof m.llm === 'boolean' &&
     typeof m.renderer === 'string' &&
     typeof m.seat_order_matters === 'boolean' &&
-    isIntOrNull(m.view_interval_ms)
+    isIntOrNull(m.view_interval_ms) &&
+    isIntOrNull(m.live_interval_ms)
   )
 }

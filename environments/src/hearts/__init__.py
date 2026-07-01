@@ -33,6 +33,10 @@ META = EnvironmentMeta(
     # Turn-based stepping (pace_interval_ms stays None), but watch/replay plays each move out at this
     # cadence so a spectator can follow the cards; it does not affect live human play.
     view_interval_ms=3_000,
+    # Live human play paces the *other* seats' moves at this cadence so a burst of fast AI replies
+    # animates one card at a time (the human's own move still renders instantly). Snappier than the
+    # 3s spectator pace above: ~0.9s/move, so a four-card trick resolves in ~3.6s. Tune here.
+    live_interval_ms=900,
     step_limit_ms=1_000,
     episode_limit_ms=120_000,
     messaging=False,
