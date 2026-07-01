@@ -1,6 +1,6 @@
 # Browser end-to-end tests
 
-The end-to-end suite lives under `frontend/e2e/` and runs Playwright (Chromium) against the **real** backend, which serves the **built** frontend from the same origin — the production path, one server, no proxy. Because the backend launches real session containers, the suite needs a Docker daemon, the same gate as `backend:integration`. It is wired into CI as the `frontend-e2e` job.
+The end-to-end suite lives under `frontend/e2e/` and runs Playwright (Chromium) against the **real** backend, which serves the **built** frontend from the same origin — the production path, one server, no proxy. Because the backend launches real session containers, the suite needs a Docker daemon, the same gate as `backend:integration`. It runs as the `frontend-e2e` job in its own **manually-dispatched** workflow (`.github/workflows/e2e.yml`): it is too Docker-heavy and slow to run on every push, so trigger it by hand from the Actions tab (**Run workflow**) when a UI change warrants it.
 
 For the wider verification matrix and how this job fits the pipeline, see [Testing](test.md). This page is about the suite itself: how to run it, how its data is set up, and the conventions to follow when you add to it.
 

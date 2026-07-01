@@ -1,0 +1,33 @@
+name: E2E
+
+# The browser end-to-end suite is Docker-heavy and slow: it builds the frontend, builds the session
+# base image inside Docker, installs Chromium, and drives Playwright against a real backend that
+# launches real containers (minutes per run). That is too costly to run on every push or pull request,
+# so it lives in its own workflow triggered by hand from the Actions tab (Run workflow) when a UI change
+# warrants it. Everything else stays in ci.yml, which runs on every push and pull request.
+on:
+  workflow_dispatch:
+
+# Cancel a superseded manual run on the same ref.
+concurrency:
+  group: e2e-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_LINK_MODE: copy
+
+jobs:
+  frontend-e2e:
+    # Playwright drives Chromium against the real backend serving the built frontend; starting a
+    # session launches a real container, so it needs the Docker daemon (available on ubuntu-latest).
+    # ci.py builds the frontend, builds the session base image inside Docker, installs Chromium, and
+    # runs the suite, so the host needs only Node and Docker — no Python toolchain.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: python3 scripts/ci.py frontend-e2e

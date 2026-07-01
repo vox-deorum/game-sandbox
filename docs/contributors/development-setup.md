@@ -47,7 +47,7 @@ To run the development host locally, you will need a running Docker daemon (e.g.
 | Compose a template or example | `uv run python scripts/compose.py <env> [name]` |
 | Play-test an environment locally (no backend) | `npm run play -- <env> [human\|agent\|watch]` |
 | Run one CI job exactly as CI does | `uv run python scripts/ci.py <job>` |
-| Run the full local suite (all three workflows) | `uv run python scripts/ci.py all` |
+| Run the full local suite (every non-Docker workflow job) | `uv run python scripts/ci.py all` |
 | Publish the template and examples (dry-run available) | `uv run python scripts/publish_template.py --dry-run` |
 | Run the app on the e2e-built database | `npm run demo` |
 | Run the app as an ordinary member | `npm run demo:user` |

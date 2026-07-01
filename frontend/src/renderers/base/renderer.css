@@ -1,8 +1,21 @@
 /*
  * Presentation common to every renderer's canvas, owned by the base class (it was per-renderer CSS in
  * the 2D era). PixiJS sets the canvas's pixel size and, with autoDensity, its CSS width/height inline;
- * this only makes it a block so it leaves no inline descender gap inside the host's stage element.
+ * `display: block` makes it leave no inline descender gap inside the host's stage element.
+ *
+ * The `max-*: 100%` pair pins the *displayed* size to the host regardless of the inline size PixiJS
+ * wrote. Its inline size comes from the container size measured at mount; if that measurement raced
+ * ahead of layout (a zero-size container), the base class falls back to the internal size — a canvas
+ * larger than the host, which the host's `overflow: hidden` then clips. A clipped region is painted
+ * nowhere, so a pointer over it hits the page instead of the canvas: an off-canvas click for the e2e
+ * suite, and a cut-off table for the viewer. `max-width`/`max-height` clamp the used size *below* the
+ * inline px, and because the host is laid out at the renderer's own aspect ratio (the same ratio the
+ * buffer has), both clamps land on a box of that ratio — so the canvas fills the host undistorted and
+ * every internal coordinate maps onto a visible, hit-testable pixel. In the common (correctly measured)
+ * case the canvas already equals the host, so the clamp is a no-op.
  */
 .renderer-canvas {
   display: block;
+  max-width: 100%;
+  max-height: 100%;
 }

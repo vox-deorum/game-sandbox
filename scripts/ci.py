@@ -3,21 +3,23 @@
 Every GitHub Actions job is a single call to this script after dependency setup, so the
 workflow YAML carries triggers and caching but no logic, and a developer can reproduce
 any job with the same command (under WSL for Linux parity). The jobs map one-to-one to the
-three workflows under ``.github/workflows/``:
+four workflows under ``.github/workflows/``:
 
-ci.yml:
+ci.yml (runs on every push and pull request):
 - ``python``: ruff check, ruff format --check, pyright, pytest.
 - ``typescript``: biome check, tsc --noEmit, vitest run — workspace-wide, so the backend joins
   it; the backend's biome check enforces the import-isolation rule.
 - ``backend-integration``: the Docker-gated backend Vitest project (real containers: the
   WebSocket client, sandbox guarantees, idle/orphan reaping). Needs a Docker daemon, so it is a
   job of its own and is *not* part of ``all`` (which must run without Docker).
-- ``frontend-e2e``: the Docker-gated browser suite — Playwright drives Chromium against the real
-  backend serving the built frontend (a real session launches a container). Like
-  ``backend-integration`` it needs a Docker daemon and is *not* part of ``all``.
 - ``generated-code-fresh``: regenerate, then fail if anything generated changed.
 - ``examples``: compose every example, install it into a fresh venv, run its pytest; also
   fail if any environment template layer ships no example.
+
+e2e.yml (manually dispatched from the Actions tab — too Docker-heavy and slow for every push):
+- ``frontend-e2e``: the Docker-gated browser suite — Playwright drives Chromium against the real
+  backend serving the built frontend (a real session launches a container). Like
+  ``backend-integration`` it needs a Docker daemon and is *not* part of ``all``.
 
 docs.yml:
 - ``docs``: the strict ``mkdocs build`` that gates docs pull requests.
@@ -26,10 +28,11 @@ template-publish.yml:
 - ``publish-dry-run``: compose and assemble the publish snapshots without pushing, the
   ``verify`` job being the same ``examples`` job above.
 
-``all`` runs every job above in order: the full local equivalent of all three workflows,
-which is what a contributor runs before pushing a branch or cutting a ``template-v<N>``
-tag. ``check`` and ``test`` are narrower convenience aggregates wired to ``npm run check``
-/ ``npm run test``.
+``all`` runs every non-Docker job above in order (ci.yml minus its Docker job, plus the docs
+build and the publish dry run), which is what a contributor runs before pushing a branch or
+cutting a ``template-v<N>`` tag; the Docker-gated ``backend-integration`` and ``frontend-e2e``
+suites are run separately. ``check`` and ``test`` are narrower convenience aggregates wired to
+``npm run check`` / ``npm run test``.
 """
 
 from __future__ import annotations

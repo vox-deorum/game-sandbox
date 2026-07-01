@@ -95,6 +95,8 @@ Integration tests live under `backend/test/integration/`.
 uv run python scripts/ci.py frontend-e2e
 ```
 
+This job is **not** part of the per-push CI. It is too Docker-heavy and slow to run on every push, so it lives in its own manually-dispatched workflow (`.github/workflows/e2e.yml`) — trigger it from the Actions tab (**Run workflow**), or run it locally with the command above.
+
 The Playwright journey builds the frontend and session image, starts the real backend, and drives Chromium through:
 
 - Live play, pause, resume, and stop.
