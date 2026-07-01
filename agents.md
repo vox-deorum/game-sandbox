@@ -32,6 +32,9 @@ A few defaults that will save back-and-forth:
 - Prefer editing existing files over creating new ones.
 - Keep specification documents under [docs/specs/](docs/specs/README.md). Each file should have a single clear topic and cross-link to the others rather than duplicating content.
 
+## Use Subagents Whenever Appropriate
+Always delegate less important or complicated work to subagents with less capabilities, e.g., from Claude Fable to Sonnet/Haiku. Such work may involve exploring repo structure, finding references, summarizing information, or conducting small but extensive edits.
+
 ### UI consistency
 
 The frontend has a design system; new UI joins it rather than reinventing CSS. Before any visual work, read [docs/contributors/design.md](docs/contributors/design.md), then:
