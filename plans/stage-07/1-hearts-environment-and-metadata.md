@@ -54,7 +54,7 @@ Populate `EnvironmentMeta` (the Stage 2 type, see [environments and metadata](..
 - `live_interval_ms=900`: the live human-session cadence for playing other seats' rapidly streamed moves one at a time. The human's own move still renders as soon as it arrives. This affects only browser presentation, not turn-based stepping, the human move clock, or scoring, and is intentionally quicker than the watch/replay cadence.
 - `renderer="hearts"`.
 - `seat_order_matters=True`: Hearts is a positional trick-taking game, so seating agent A before B is not the same match as B before A. This is the existing boolean on `EnvironmentMeta`, serialized snake_case through `to_json()` like the other fields. The multi-seat scheduler (step 3) is its only consumer for now.
-- Messaging flag disabled. Stage 8 enables it on this same environment.
+- Messaging flag disabled, and it stays disabled: Stage 8 builds Spades as its messaging test bed rather than enabling chat on Hearts.
 
 ### Timeout default action
 

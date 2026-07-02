@@ -1,0 +1,44 @@
+# Stage 8.6: Chat Panel, Live and Replay
+
+Status: not started.
+
+Part of [Stage 8](../stage-08-communication.md). This is build-order step 6 and the last functional step: it puts the messages on screen. A chat panel beside the renderer on the session page, the same panel on the replay page, and the send path for a human seat, all consuming contracts the earlier steps finished: step 4 validates and records every message, and step 5 filters what each attachment may see and authorizes what it may send, so this step is Docker-free frontend work with no backend changes at all. The hands-on surface is the stage's demo made fully visual: the two-browser-window comparison that step 5 could only show in devtools network frames now plays out in the panel. The controller watches the daredevil's warning, the targeted signal to its seat, and its own sends scroll past while the spectator window shows broadcasts only, and a typed reply lands in an agent's inbox next turn.
+
+## Why this is its own seam
+
+Messages are environment-agnostic, so the chat UI is **host chrome** like `DecisionLog.vue`, not renderer content: the Spades renderer (step 3) knows nothing about it, and any future messaging environment gets the panel for free (the ownership [interaction.md](../../docs/specs/interaction.md) now records). It is a pure function of the state lines the relay forwards plus the session payload, so it tests in jsdom against fixtures with no live session. And because the relay's visibility rules landed first, the panel is born secure: the first message a spectator's panel ever renders has already been filtered, and the first send a human ever types was authorized against resolved slot bindings. There is no interim where the UI outruns its security boundary.
+
+## What to build
+
+### The panel
+
+A `frontend/src/components/ChatPanel.vue` showing a scrolling list of entries `{tick, from, to, text}`. Sender labels come through the shared `attributionLabel`, so the panel honours the same blind policy as the attribution line and the decision log. Each entry is badged for what it is: a broadcast, a message "to you", or a message "from you". The last exists because step 5's sender reflection returns the controller's own sends on the recorded line. When the panel is sendable, it shows an input with a recipient selector ("Everyone" plus each other slot) and a live character counter against the effective cap, counting Unicode code points through the shared counter step 5 pinned, so an emoji costs one and the browser can never disagree with the harness about what fits. It emits `send({to, text})` and owns no transport.
+
+### The session page
+
+`frontend/src/pages/SessionPage.vue` accumulates `state.messages` (tagged with their tick) in the existing `onState` handler, so the jitter buffer paces messages with their frames for free: a message appears exactly when its state line renders, not ahead of it. Accumulation is reconnect-safe: entries are deduplicated on `(tick, from, to, text)`, because attach and reconnect replay the relay's latest state line and the panel must never show the same message twice. Live history is best-effort by design, the contract step 5 wrote into the spec: the panel shows messages from attach onward, a reconnect resumes from the current line, and anything missed while disconnected is in the replay. The recording is the archive, exactly as the decision log already behaves.
+
+A directly opened ended session never streams through `onState`, so it hydrates the way the decision log already does there: `hydrateRecording` parses the full recording to rebuild the page, and the message log is built from the same parsed states, so the panel on an ended session shows the complete exchange with no live socket. The effective messaging block that decides whether the panel mounts comes from the session payload for live and ended sessions alike, because step 5 persisted it on the session row.
+
+The panel mounts beside `DecisionLog` when the session payload's effective messaging block (resolved once by the orchestrator in step 5 from the metadata and the season override) says messaging is enabled, so a season-silenced session shows no dead panel and the counter counts down from the effective cap rather than the metadata's. Sending is enabled when the session mode is human, the connected user controls a slot, and the session is running, so an ended session's panel is read-only history; a send becomes `{kind: 'chat', slot: controlledSlots[0], to, text}` over the existing session socket, the exact shape step 5 pinned. There is no optimistic local echo: the harness records the sent message on its tick, the relay reflects it back on the recorded line, and the panel renders your own message the same way it renders everyone else's, from the recorded truth.
+
+### The replay page
+
+`frontend/src/pages/ReplayPage.vue` builds the full message log from all frames at load (recordings keep every message by design) and shows the entries whose tick is at or before the transport position, the same pattern `DecisionLog` uses with `:current-index`. Replay has no input. Targeted messages a live spectator never saw are shown here on purpose; that is the recording contract from [communication.md](../../docs/specs/communication.md).
+
+## Tests
+
+Vitest, jsdom with mocked fetch and no canvas:
+
+- The panel renders broadcast, "to you", and "from you" badges and attribution labels from fixture entries.
+- The input is absent for spectators, on replays, on ended sessions, and when the effective messaging block disables the panel, including a fixture where the metadata says messaging but the season override said no.
+- The counter counts code points: an astral-plane fixture of exactly the cap is sendable and one more disables send.
+- A send emits exactly the pinned command shape, and the session page forwards it over the socket with the controlled slot filled in.
+- Messages accumulate correctly across buffered frames and render only with their frames.
+- A re-received latest state line (the reconnect case) adds no duplicate entries, and accumulation resumes cleanly after it.
+- A directly opened ended session hydrates the full message log from the parsed recording, shows it without a socket, and offers no input.
+- The replay page shows exactly the messages at or before the transport position, including targeted messages between agents.
+
+## Done when
+
+The two-window demo is fully visual: the controlling window's panel scrolls the broadcast warning, the targeted signal to its seat, and its own sends, while the spectator window shows broadcasts only, live, and the replay of the same session shows the whole exchange at the right ticks under transport control. A human in a seat can pick a recipient, watch the code-point counter, and send a message that arrives in an agent's inbox on the next turn, round-tripped through the real command protocol, not an echo. A reconnect never duplicates a message and resumes from the current line, with the replay as the archive for anything missed. A directly reopened ended session shows the full exchange from its recording as read-only history. Spectators, replays, ended sessions, and season-silenced sessions show no input. The jsdom tests above pass with no Docker.

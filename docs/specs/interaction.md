@@ -12,7 +12,7 @@ Per-step state → environment renderer → game frame
                  live play and replay
 ```
 
-The renderer owns the game world and in-game interface, including scores, lives, turn indicators, and environment-specific controls. The host page owns shared session controls such as pause, stop, status, and replay transport.
+The renderer owns the game world and in-game interface, including scores, lives, turn indicators, and environment-specific controls. The host page owns shared session controls such as pause, stop, status, replay transport, and the chat panel when messaging is enabled.
 
 Live play and replay use the same renderer. See [Recording](recording.md).
 
@@ -68,4 +68,4 @@ A turn-based environment marks which actions are currently legal, carried in the
 
 ## Chat
 
-When messaging is enabled, the renderer provides chat UI. Broadcasts and messages addressed to the connected user's slots appear there. Outgoing messages follow the same WebSocket path as input. See [Communication](communication.md).
+When messaging is enabled, the host page provides the chat panel as shared session chrome, so every messaging environment uses the same panel and the renderer needs no knowledge of messaging. Broadcasts and messages addressed to the connected user's slots appear there. Outgoing messages follow the same WebSocket path as input. See [Communication](communication.md).

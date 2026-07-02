@@ -33,7 +33,7 @@ Sender → harness → recipient inbox on its next turn
 
 Agents never communicate directly. Human messages use the session WebSocket and enter the same harness queue.
 
-Broadcasts are visible to every slot and spectator. A targeted message is visible only to its recipient during live play. Every message is recorded, including targeted messages, so no channel is permanently secret. See [Recording](recording.md).
+Broadcasts are visible to every slot and spectator. During live play, a targeted message is shown only to the clients controlling its recipient and its sender. Reflecting a message back to its sender lets the sender's chat panel render it from the recorded state rather than from a local echo, and reveals nothing the sender did not write. Every message is recorded, including targeted messages, so no channel is permanently secret. See [Recording](recording.md).
 
 ## Timing
 

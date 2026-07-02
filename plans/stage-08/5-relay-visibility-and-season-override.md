@@ -1,0 +1,68 @@
+# Stage 8.5: Relay Visibility and the Season Messaging Override
+
+Status: not started.
+
+Part of [Stage 8](../stage-08-communication.md). This is build-order step 5 and the first backend step of the communication half. It teaches the relay everything about messages before a single one ever reaches a screen: the pinned `chat` command protocol, who may see a targeted message live, who may send one, and what the season override changes, including, per an owner decision this stage, applying season overrides to live sessions and not only workflow runs, editable in the admin console. It is Docker-free backend work (Vitest, in-memory storage, fake driver) with two narrow satellite slices: the command shape in `schema/ts` and the messaging fields in the admin season editor. The hands-on surface is honest about having no panel yet: open the same live Spades session with the chatting examples in two browser windows, one as the controlling client and one as a spectator, and watch the WebSocket frames in devtools. The targeted line arrives in one window and never in the other. Then flip the season's messaging toggle in the admin console and watch the same agents go silent, live.
+
+## Why this is its own seam
+
+The relay is the only place live visibility can be enforced. The harness records every message (the recording contract), and the frontend renders whatever it receives, so if spectators must not see targeted messages live, the backend has to stop forwarding them. Today `backend/src/session/live-session.ts` broadcasts every state line to an undifferentiated socket set, and its `latestState` stash replays verbatim to late attachers; both paths need to become audience-aware. Landing this before the chat panel (step 6) is the point of the ordering: live chat is born with its security boundary, so no client ever attaches to an unfiltered message stream, and the send path is authorized against resolved slot bindings from its first day rather than retrofitted later. Step 4 already guarantees that every message reaching this relay has been validated, capped, stamped, and recorded; this step only ever decides who may see it and who may inject one.
+
+## What to build
+
+### The chat command protocol
+
+The command protocol in `schema/ts/src/protocol.ts` gains `{kind: 'chat'; slot: string; to: string | null; text: string}`, `parseCommand` validates it, and a test pins the exact JSON both sides speak; the Python side of this frame landed in step 4. Because the harness caps text in Unicode code points (`len(text)`), the TypeScript side gets a small shared code-point counter with the same semantics: `Array.from(text).length`, where an astral-plane character like an emoji counts as one rather than the two that `"😀".length` reports. It is used by the relay's pre-gate here and by the panel's counter in step 6, and pinned by tests with astral fixtures so the two languages can never disagree about what fits under the cap.
+
+### Slot control the relay can trust
+
+`LiveSessionInit` gains `externalSlots` (the slots whose resolved binding is actually a connected human) and a `messaging: {enabled, cap}` block, both passed from `Orchestrator.start`. Today's `humanSlots: meta.human_slots` is every human-capable seat, which for Spades is all four; it says what a human _could_ control, not what this session's human _does_ control, so it cannot authorize visibility. `externalSlots` can.
+
+### The effective messaging config, resolved once and persisted
+
+The orchestrator resolves the effective messaging rules once at session start: enabled is the metadata AND the season override, and the cap is the minimum of the two. It hands the same resolved block to all three consumers: the container's session config (the `messaging_enabled` and `message_cap` keys step 4 taught `parse_config`), the relay's `LiveSessionInit`, and the session payload the frontend already fetches, so the panel in step 6 renders the real rules rather than raw environment metadata. A season-disabled session shows no input, and a tightened cap counts down from the right number. The harness still combines defensively with its own metadata, so the double application is harmless: AND and min are idempotent.
+
+The resolved block's persistent owner is the session row, following the existing `human_timeout_ms` precedent, where the row stores the session's resolved value and the payload serves it. The orchestrator writes the effective `messaging_enabled` and `message_cap` onto the row at start, so the payload answers identically for a live session and for one reopened after it ended, and a directly opened ended session still knows whether the panel belongs on the page and what cap it enforced. Without persistence the resolved block would live only in orchestrator memory and die with the session.
+
+### Outbound visibility
+
+The socket set becomes a `Map<ClientSocket, {isOwner}>` so the relay knows each attachment's audience. State lines that contain targeted messages are re-serialized per audience:
+
+- The **controller** audience (the owner of a human-mode session) receives broadcasts plus targeted messages where `to` **or `from`** is in `externalSlots`. Including `from` is the deliberate sender reflection: the panel renders the human's own sends from the recorded line with no optimistic echo, and it leaks nothing, because the owner wrote the message. The visibility sentence in [communication.md](../../docs/specs/communication.md) already records this decision; it was reconciled together with this plan.
+- The **spectator** audience (everyone else, including the owner of a scripted run) receives broadcasts only.
+
+Lines without messages pass through byte-identical, so the common path costs nothing. The `latestState` stash keeps the raw line and derives the audience variant at attach time, so a late-attaching spectator cannot receive a targeted message through the catch-up path. The stash is also all the history an attachment gets: live chat is best-effort from attach onward, a reconnecting client resumes from the current line, and the recording is the archive, the same behavior the decision log has always had. This step adds that best-effort live-history sentence to [communication.md](../../docs/specs/communication.md), the one spec edit whose behavior this step pins, keeping spec and plan moving together as the [plans README](../README.md) requires.
+
+### Inbound authorization
+
+`handleClientMessage` forwards a chat command only when the sender is the owner, the session mode is human, `command.slot` is in `externalSlots`, messaging is effectively enabled, and the text is within the effective cap counted in code points. The cap check is a pre-gate (the harness stays authoritative and validates again), but rejecting an oversized frame at the door keeps junk out of container stdin. A forwarded chat refreshes the idle timer like input. There is no weaker interim gate anywhere in the stage's history: the first version of the send path that ever runs is this one.
+
+### The season messaging override, live sessions, and the admin editor
+
+`backend/src/storage/season-config.ts` replaces the inert `overrides.messaging` record with a real codec, `z.strictObject({enabled?, message_cap?})`, and `backend/src/workflow/workflow-runner.ts::sessionConfig` spreads `messaging_enabled` and `message_cap` into the session config exactly as it already spreads `step_timeout_ms`. Because the harness combines defensively, a stored cap larger than the environment's is harmless, and an override can silence Spades but can never make Hearts talk.
+
+The owner's decision extends the reach of overrides: `Orchestrator.sessionConfig` **also applies the play-open season's overrides to live sessions**, the messaging block and the existing `step_timeout_ms` and `episode_timeout_ms` alike, mirroring the workflow runner, where today the orchestrator applies none. A season that silences or tightens its agents does so everywhere those agents run, so watching a session live never shows different rules than the season's scheduled games.
+
+The override also becomes editable where operators live: `frontend/src/components/admin/SeasonConfigEditor.vue` currently round-trips the messaging block untouched behind a note that it applies in Stage 8. This step replaces that placeholder with real fields (an enabled toggle and a cap input) following the editor's existing timeout-field pattern, while the LLM block stays preserved and inert until Stage 9. Without this the stage's own hands-on demo is impossible, since flipping the override in the console is how an operator actually exercises it.
+
+### Efficiency aggregation
+
+[communication.md](../../docs/specs/communication.md) promises that chat time "appears in efficiency measurements", and step 4 puts `chat_ms` in every recording, but `backend/src/workflow/aggregate.ts` sums only `decision_ms + learn_ms` into a seat's compute total. This step folds `chat_ms` in, treated as zero where absent exactly like `learn_ms`, and updates the `agent_compute_ms` column comment in `backend/src/storage/schema.ts` to match, so a chatting seat's board efficiency includes the time its chatter cost.
+
+## Tests
+
+Docker-free Vitest with in-memory storage and the fake driver, jsdom for the editor:
+
+- `parseCommand` accepts the chat shape and rejects malformed ones, and a pin test fixes the exact JSON both sides speak.
+- The shared code-point counter agrees with Python's `len` on astral-plane fixtures, and the relay pre-gate uses it: a message of exactly `cap` emoji passes and one more is dropped.
+- The visibility matrix: a broadcast reaches every attachment; a targeted message to a human-bound slot reaches only the controller; an agent-to-agent targeted message reaches no one live; the owner's own send is reflected back to the controller; the owner of a scripted run is a spectator; a late attacher gets the audience-filtered variant of the stashed line; and lines without messages pass byte-identical.
+- The inbound matrix: a spectator's chat frame, a frame for a slot outside `externalSlots`, a frame on a scripted session, a frame with messaging disabled, and an over-cap frame are each dropped, and the authorized frame reaches stdin.
+- The season codec round-trips `{enabled, message_cap}` and strictly rejects unknown keys.
+- Both `sessionConfig` builders (the workflow runner's and the orchestrator's) carry the messaging override keys, and the orchestrator now carries the timeout overrides from the play-open season as well.
+- The resolved effective messaging block is written to the session row at start and served by the session payload, and the payload of an ended session still carries it.
+- The aggregator folds `chat_ms` into the compute total, treats an absent `chat_ms` as zero, and a recording fixture with chat time produces the expected `agent_compute_ms`, extending the existing aggregation regression tests.
+- The season editor round-trips the messaging fields, preserves the LLM block untouched, and writes the strict shape the codec accepts.
+
+## Done when
+
+Two browser windows on the same live Spades session tell the story at the frame level: the controlling client's socket receives the broadcast, the targeted message to its seat, and its own reflected sends, while the spectator's socket receives only the broadcast, and the replay later shows everything, because recordings keep every message. A spectator's chat frame dies at the relay, a scripted run's owner is a spectator, and a late attacher leaks nothing. Setting the messaging toggle off in the admin season editor silences the same agents in scheduled games and live sessions alike, a lowered cap rejects over-cap sends at the relay and the harness with both sides counting code points identically, and the timeout overrides now reach live sessions the way they have always reached workflow runs. The effective messaging block is persisted on the session row and visible in the session payload for step 6 to consume, live or ended, chat time counts in the board's efficiency totals, and the Vitest matrices above are green with no Docker or DB.

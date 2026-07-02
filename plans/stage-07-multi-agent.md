@@ -4,7 +4,7 @@ Status: complete.
 
 ## Goal
 
-The system runs its first natively multi-agent environment end to end. Multiple submissions share a session. The watch multi-agent flow exists. Play-with-agent sessions have distinct human and agent slots. The unpaced multi-slot session loop works in practice. The environment for this stage is the card game **Hearts**. Hearts is a natural home for agent-to-agent messaging, but messaging itself lands in Stage 8. This stage ships Hearts chat-less, and Stage 8 turns chat on for it.
+The system runs its first natively multi-agent environment end to end. Multiple submissions share a session. The watch multi-agent flow exists. Play-with-agent sessions have distinct human and agent slots. The unpaced multi-slot session loop works in practice. The environment for this stage is the card game **Hearts**. Hearts would have been a natural home for agent-to-agent messaging, but messaging itself lands in Stage 8, which builds its own partnership environment (Spades) as the test bed. This stage ships Hearts chat-less, and Hearts stays chat-less.
 
 ## Scope
 
@@ -16,7 +16,7 @@ Hearts specifics to build:
 - **Seat-order metadata.** Use the existing `seat_order_matters` boolean on `EnvironmentMeta` (the Stage 2 metadata type, [environments-and-metadata.md](stage-02/environments-and-metadata.md)), serialized snake_case through `to_json()` like the other fields. It declares whether two agents swapping seats produce a genuinely different game. Hearts sets it `true`: it is a positional trick-taking game, so seating agent A before B is not the same match as B before A. A symmetric environment (for example a future simultaneous-reveal game where only the participant set matters) sets it `false`. Flappy Bird's single-slot value is irrelevant and defaults `false`. The multi-seat scheduler below is the only consumer for now.
 - **Rules to enforce in the environment.** Follow suit if able. Hearts may not be led until broken. The two of clubs leads the first trick. No hearts or queen of spades on the first trick. The first cut may use the no-pass variant of Hearts. This avoids modeling the opening three-card pass as a separate decision round. Note the pass as a follow-up if we want it, since it is itself an interesting multi-agent signaling moment.
 - **Renderer and on-screen input.** Draw the player's hand, the current trick, a turn indicator, and the running per-slot penalty scores. Clicking a card plays it. Cards that are not legal on the current turn are greyed out: wrong suit when the led suit is held, hearts before broken, and first-trick restrictions. This is the on-screen input UI from [interaction.md](../docs/specs/interaction.md), in place of raw device input. Because Hearts is a custom environment that does not inherit a renderer from a wrapped Gymnasium game, it also ships a local Python renderer (a pygame window showing the same hand, trick, turn, and scores, plus interactive click-to-play) so students can watch and play the game locally through `play.py` before submitting. The environment surfaces its legal-move set into the recorded state as a legal-action mask, and both the local Python renderer and the browser renderer grey cards from that mask rather than reimplementing the rules.
-- **Messaging stays off here.** Hearts is built with the messaging flag disabled in this stage. Stage 8 enables it (a low per-step cap, moon-shot broadcast-versus-targeted coordination) using this same environment as its test bed. Building Hearts chat-less keeps the multi-slot stepping, isolation, and turn-based work separate from the chat-routing work.
+- **Messaging stays off here.** Hearts is built with the messaging flag disabled in this stage, and it stays disabled: Stage 8 builds a new partnership environment (Spades) as its messaging test bed, where targeted partner signals and broadcast warnings differ structurally. Building Hearts chat-less keeps the multi-slot stepping, isolation, and turn-based work separate from the chat-routing work.
 - **Template layer.** Hearts lands as a second environment template on the existing two-layer machinery. It is a `templates/hearts/` layer (its `agent.py` stub, README, and generated `sandbox/env/`) over the shared `templates/base/`, registered in `TEMPLATE_ENVS`, with at least one `examples/hearts/<name>` example. It shares the single global dependency set, so no new `template-v<N>` axis is introduced. See [Examples and the template](../docs/contributors/examples-and-template.md).
 
 Exercise the harness's multi-slot path for real: sequential stepping across the non-human slots, per-slot timing and timeouts, and a human-controlled slot among agents. Fix what the single-agent stages never had to get right.
@@ -52,7 +52,7 @@ The human-slot timeout is defined and exposed before this stage (Stages 2 throug
 
 ## Depends on
 
-Stages 5 and 6 (submissions, workflow). Messaging is not required here; it arrives in Stage 8, which uses this Hearts environment as its test bed.
+Stages 5 and 6 (submissions, workflow). Messaging is not required here; it arrives in Stage 8, which builds its own Spades environment as its test bed on the multi-agent machinery this stage lands.
 
 ## Build order
 

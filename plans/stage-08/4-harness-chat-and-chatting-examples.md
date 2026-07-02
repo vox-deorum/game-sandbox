@@ -1,0 +1,68 @@
+# Stage 8.4: Harness Chat Routing and Chatting Examples
+
+Status: not started.
+
+Part of [Stage 8](../stage-08-communication.md). This is build-order step 4 and the first communication step: the harness starts calling the `chat(inbox)` hook that `harness/src/game_sandbox_harness/agent.py` has documented and detected since Stage 2 but `session.py` has never invoked. It is Docker-free Python, tested on `ManualClock` and fixture environments with a Spades episode as the integration-shaped case. The mechanism itself is infrastructure, so this step ships its own hands-on surface alongside it: the two chatting Spades examples. Running the daredevil example locally produces a hand where a nil warning is broadcast and the partner provably protects the nil, and the recording carries the whole exchange. That is behaviour you can watch change because a message arrived, with no backend involved.
+
+## Why this is its own seam
+
+Routing, validation, and timing are the correctness core of the stage, and they are environment-agnostic: every rule in [communication.md](../../docs/specs/communication.md) (one message per recipient plus one broadcast per turn, the cap, next-turn delivery, chat time charged like `act` and `learn`) is enforceable and testable in the harness alone, with no relay, no UI, and no Docker. Landing it as one seam means the relay (step 5) and the panel (step 6) consume a finished contract: by the time a message reaches a WebSocket it has already been validated, capped, stamped, and recorded, and the relay only ever decides who may see it. The chatting examples belong in the same step because they are the proof the contract is usable: the spec requires verifying the template's `chat` stub against the real harness, which is only possible once the harness calls it.
+
+## What to build
+
+### The message router
+
+A new `harness/src/game_sandbox_harness/chat.py` owns routing and validation, separate from the session loop:
+
+- `deliver` routes a targeted message to the recipient's pending inbox and a broadcast to every slot except the sender.
+- `drain(slot_id)` returns and clears a slot's inbox. Chat-less agents have their inboxes drained and discarded on their turn too, so an inbox can never grow without bound behind an agent that will never read it.
+- `validate_outgoing` enforces the outbound rules on each batch an agent (or human) returns: the recipient must be a known slot other than the sender, or null for broadcast; the text must be a `str` whose length is within the cap, where **the cap counts Unicode code points** (`len(text)`), pinned here and in the docs so both sides of every boundary agree; and a batch may contain at most one message per distinct recipient plus one broadcast. It stamps `from` with the sender slot. Every rejected message is dropped with a stderr diagnostic and never a crash, because a chatty agent's bad message must not take down the session.
+
+### Loop integration
+
+`Episode.step_once` in `session.py` gains the chat call where [communication.md](../../docs/specs/communication.md) puts it, immediately after `act` and before the environment applies the action: `act`, then `chat`, then `env.step`, then `learn`. On the acting agent's turn, if the agent defines `chat`, the harness drains its inbox, calls `chat(inbox)` under the clock, validates the returned batch, and holds the accepted messages. The agent therefore chats knowing the action it just chose but not the step's outcome: it announces intent rather than reacting to results, which for Spades costs nothing, since rewards are terminal-only and the interesting outcomes land on other seats' turns anyway. The student docs' cycle diagram currently shows `chat` at the end of the turn; this step corrects [agent-interface.md](../../docs/students/agent-interface.md) to the spec's order, the spec-and-docs-together discipline the [plans README](../README.md) requires. Inbox items carry `{"from", "to", "text", "tick"}`: the tick lives on the inbox item and in the message's placement in the step state, so no new schema field is needed. A crash inside `chat` charges `failed_slot` exactly as a crash in `act` or `learn` does.
+
+Delivery timing makes "next turn" precise: all of tick T's accepted messages (the acting agent's batch and whatever the human queue drained this tick) are delivered to pending inboxes at the end of step T, after the acting agent's inbox was drained. A message sent on tick T is therefore first seen strictly after T. And because `chat` runs before the environment steps, tick T's messages are already in hand when tick T's state line is built, flowing through the existing `build_step_state(..., messages=...)` fields that have been in the schema since Stage 1.
+
+### The human path
+
+`SessionControl._dispatch_command` in `live_io.py` learns a `kind == "chat"` command carrying `slot`, `to`, and `text`. Human chat goes into a bounded per-slot FIFO **queue**, not the input latch: inputs coalesce to the latest value, but messages must not swallow each other. The queue is bounded at sixteen messages per slot, and when it is full the incoming frame is dropped with a stderr diagnostic (the same drop-with-diagnostic rule every other rejection follows), so a client flooding the socket costs at most a fixed amount of memory. The transport exposes `take_messages(slot_id)`, detected by presence like the existing source methods. The queue is drained once per stepped tick regardless of whose turn it is, because [interaction.md](../../docs/specs/interaction.md) promises human messages are "queued for the next tick", not for the human's next turn; drained messages pass through the same `validate_outgoing` as agent messages, so there is exactly one enforcement point.
+
+### Timing and budgets
+
+Chat time is real compute, so `chat_ms` is measured like `learn_ms`, added to the slot's `budget_used_ms` and the step's `agent_compute_ms`, and covered by the existing step-timeout and episode-limit checks with no new machinery. There is no substitute action on a chat overrun: `act` already returned its action on time and `chat` cannot invalidate it, so a slow `chat` only delays when the step completes, keeps the messages already validated, and counts against the budgets exactly as a slow `learn` does. The schema change is additive: `chat_ms` joins the step-state `agent_step.timing` object without a `schema_version` bump (the `learn_ms` precedent), the `AgentTiming` TypedDict and `build_agent_step` grow the field, and the `schema/ts` types are regenerated. This step puts `chat_ms` in the recording; the season boards' efficiency totals are backend work, and step 5 extends `backend/src/workflow/aggregate.ts`, which today sums only `decision_ms` and `learn_ms`, to fold `chat_ms` into the same compute total, as [communication.md](../../docs/specs/communication.md) promises.
+
+### Effective configuration
+
+`Episode.__init__` gains `messaging` and `message_cap` parameters defaulting from `entry.meta`, the same pattern as `step_limit_ms`, and `live.py::parse_config` gains `messaging_enabled` and `message_cap` keys so the backend can pass session-level values. The combination is defensive: messaging is enabled only when the metadata **and** the config agree, and the effective cap is the minimum of the two, so an override can only disable or tighten, never enable messaging on an environment that opted out. With messaging off, no router exists, `chat` is never called, human chat frames are dropped with a diagnostic, and the loop is byte-identical to today; the existing determinism fixtures are the regression gate for that claim.
+
+### Chatting examples and the template chat surface
+
+With the hook live, the participant-facing chat surface lands, completing what step 2 deliberately deferred:
+
+- The `templates/spades/agent.py` stub gains the documented `chat` method: the inbox item shape `{"from", "to", "text", "tick"}`, the return shape `[{"to": ..., "text": ...}]` with null for broadcast, the per-turn limits and the cap, the note that your partner is the seat across, and the warning that every message is recorded and visible in replays. The interface-parity test that keeps the stub honest against the real harness now covers `chat`; this is the spec-required stub verification.
+- `examples/spades/signaler/`: partners exchange targeted signals about suit strength, and the play provably depends on them. Its test fixes a deal, asserts the exact message sent, and asserts a play that differs from what the same agent does when the message never arrives.
+- `examples/spades/daredevil/`: bids nil when the hand qualifies and **broadcasts** a warning; its partner reads the broadcast and plays to protect the nil. This is the stage's demo hand: bid, warning, cover, and a scored nil, all visible in the recording.
+- `docs/students/environments/spades.md` gains its "Messaging" section, and `docs/students/agent-interface.md` gains the `chat` section with the same concrete shapes and its cycle diagram corrected to `act → chat → environment step → learn`, composed into the template by the existing machinery.
+- [communication.md](../../docs/specs/communication.md) is reconciled with the contracts this step pins, in the same change: the order sentence sharpened to "immediately after `act`, before the environment applies the action", the inbox-tick sentence (delivery strictly after the sending tick), human messages queued per stepped tick, the cap counted in Unicode code points, and the chat-overrun economics. Spec and plan move together, per the [plans README](../README.md).
+
+Both examples remain honest single-idea agents in the `examples/` roster shape, and the step 2 counter example still works unchanged, proving the hook is optional and costs a chat-less agent nothing.
+
+## Tests
+
+Docker-free Python, on `ManualClock` and fixture environments, plus the Spades cases:
+
+- A fixture agent that records its own hook calls pins the order: `act`, then `chat`, then `learn`, with the environment stepping in between.
+- Messages route across turns with correct inbox ticks, a broadcast reaches everyone except the sender, and a message sent on tick T is never visible to its recipient on tick T.
+- The per-turn limits hold: a second message to the same recipient and a second broadcast in one batch are rejected.
+- Over-cap text (counted in code points, with an astral-plane fixture pinning that an emoji costs one), unknown recipients, and self-targeted messages are dropped with diagnostics, and the session continues.
+- A chat-less agent is never called, is charged nothing, and has its inbox discarded rather than accumulated.
+- `chat_ms` lands in the slot budget and step timing, and a chat that busts the episode limit charges the seat exactly as a slow `learn` does; a crash in `chat` sets `failed_slot`.
+- Human chat frames enter the FIFO queue (not the input latch), coalesce nothing, and drain once per stepped tick regardless of whose turn it is; the seventeenth queued message is dropped with a diagnostic while the sixteen ahead of it survive.
+- Recorded lines with messages validate against the step-state schema, and the regenerated TS types carry `chat_ms`.
+- Messaging disabled by metadata and messaging disabled by config each silence the same session, and chat-less recordings are byte-identical to pre-chat recordings.
+- A Spades episode with two chatting scripted agents produces a recording whose message lines replay the exchange, and the signaler and daredevil example tests assert their exact messages and the plays that depended on them.
+
+## Done when
+
+The harness calls `chat(inbox)` immediately after `act` on agents that define it, before the environment applies the action, enforces every outbound rule at one validation point, delivers on the next turn, records messages on the tick they were sent, and charges chat time to the same budgets as `act` and `learn`. Human messages queue per tick through `live_io` and the same validator. Messaging off, whether by metadata or by config, is byte-identical to today. A local run of the daredevil example shows a broadcast nil warning followed by the partner protecting the nil, the signaler's play provably changes because a message arrived, and both recordings carry the full exchange. The template stub documents `chat`, the parity test verifies it against the real harness, and the communication spec and student docs carry the sharpened order, cap, queue, and overrun sentences. All of the above is green with no Docker or DB.
