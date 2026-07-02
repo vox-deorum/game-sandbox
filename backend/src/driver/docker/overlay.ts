@@ -260,6 +260,11 @@ export function sessionOverlayImageTag(
  * in a `finally` (their layers persist inside the final image and are reclaimed by a routine prune,
  * exactly as the old re-tag-in-place chain's dangling intermediates were), so a mid-chain failure
  * leaks no tagged partial image either.
+ *
+ * Known limitation: two identical seating builds started concurrently will compute the same scratch
+ * tags and race on tag cleanup. One build may delete a scratch tag mid-use by another, causing that
+ * build to fail with a spurious error. This is rare (requires identical seating started concurrently)
+ * and self-healing (a retry succeeds). A future fix could add a per-build unique suffix to scratch tags.
  */
 export async function ensureSessionOverlayImage(
   docker: Docker,
@@ -301,7 +306,12 @@ export async function ensureSessionOverlayImage(
     // their layers, so this only untags; when it failed mid-chain, it removes the partial images built
     // so far. Best-effort: a cleanup failure must not mask a build failure or fail a successful build.
     for (const scratch of scratchTags) {
-      await removeImage(docker, scratch).catch(() => undefined)
+      await removeImage(docker, scratch).catch((error) => {
+        // Log but don't propagate: a failed cleanup (e.g., 409 conflict with dependent children) must
+        // not mask a successful build. A leaked scratch tag may persist in the registry but its layers
+        // are reclaimed by a routine docker image prune.
+        console.error(`failed to remove scratch tag ${scratch}:`, error)
+      })
     }
   }
   return { ref: tag }

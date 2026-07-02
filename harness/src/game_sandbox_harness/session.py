@@ -25,6 +25,7 @@ or overage accounting.
 from __future__ import annotations
 
 import contextlib
+import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -348,8 +349,14 @@ class Episode:
             # than reaching env.step and crashing the shared session. The UI only ever sends legal cards,
             # but a hand-rolled transport client could send an out-of-space or masked-out action; that
             # must not take down every other seat in the container.
-            if action is None or _illegal_action_reason(env, slot_id, observation, info, action) is not None:
+            if action is None:
+                logging.info(f"human slot {slot_id} defaulted due to no input in time")
                 action = self._entry.default_action(slot_id)
+            else:
+                illegal_reason = _illegal_action_reason(env, slot_id, observation, info, action)
+                if illegal_reason is not None:
+                    logging.info(f"human slot {slot_id} defaulted due to illegal input: {illegal_reason}")
+                    action = self._entry.default_action(slot_id)
 
         env.step(action)
         reward = float(env.rewards[slot_id])

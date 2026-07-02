@@ -10,9 +10,9 @@
 
   - Watch mode: every seat is an agent dropdown. Opening from an agent row preselects that agent into
     every seat (the parent passes it as `preselect`); the user then changes individual seats.
-  - Play mode: seat 0 is the connected human by default and the rest default to Naive. Each non-human
-    row has a "Sit here" button that moves the human to it, exactly one human at a time; the vacated
-    row falls back to the Naive default agent.
+  - Play mode: the connected human seats at the first human-capable seat by default and the rest default
+    to Naive. Each non-human row has a "Sit here" button that moves the human to it, exactly one human
+    at a time; the vacated row falls back to the Naive default agent.
 
   It is presentational: the parent owns the UiDialog, the `startSession` call, navigation, and errors.
   It emits `start` with the resolved `slots` and the supported session overrides, and `cancel`.

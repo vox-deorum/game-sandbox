@@ -90,7 +90,10 @@ const controlledSlots = computed<string[]>(() => {
       return humanSlots
     }
   }
-  return meta.value?.human_slots ?? []
+  // Before the header arrives, return [] to avoid the pre-header window where a human seated at
+  // player_2 would briefly get player_0's control affordances. Human-session recordings always
+  // carry players in the header, so the fallback only feeds the pre-mount decision log.
+  return []
 })
 const recordingId = computed(() => row.value?.recording_id ?? null)
 // Fail closed: anyone not confirmed an operator (including an unresolved identity) sees the blind

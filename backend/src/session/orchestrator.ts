@@ -177,8 +177,14 @@ export class Orchestrator {
     }
     const resolvedSlots = await this.resolveSubmissions(assignments, meta, playSeason)
 
+    // Resolve the human timeout once, accounting for mode: only a human session has one. This value
+    // is used in both the database row and the container config, so they must agree.
     const humanTimeoutMs =
-      request.humanSlotTimeoutMs !== undefined ? request.humanSlotTimeoutMs : meta.human_timeout_ms
+      mode === 'human'
+        ? request.humanSlotTimeoutMs !== undefined
+          ? request.humanSlotTimeoutMs
+          : meta.human_timeout_ms
+        : null
     const seed = request.seed ?? randomInt(0, 2 ** 31)
 
     // Resolve the launch image from the validated submitted slots: the base image when none, a single
@@ -195,10 +201,7 @@ export class Orchestrator {
       mode,
       recording_id: recordingId,
       season_id: playSeason.id,
-      // Persist the resolved human move budget so the live page's move clock reads the session's value
-      // (its override or the env default), not just the env default the renderer sees in metadata. Only
-      // a human session carries one; a scripted watch has no human seat, so store null there.
-      human_timeout_ms: mode === 'human' ? humanTimeoutMs : null,
+      human_timeout_ms: humanTimeoutMs,
       created_at: createdAt,
     })
 
@@ -232,8 +235,20 @@ export class Orchestrator {
     // The container is running: record one attribution row per submitted slot, so the agent profile
     // can list each as a recent run. Human and built-in slots are carried only in the recording header
     // `players`, never here. Done after launch so a failed launch attributes no run to anyone.
-    for (const binding of submissionBindings) {
-      await this.storage.recordSessionSubmission(id, binding.submissionId, binding.slotId)
+    try {
+      for (const binding of submissionBindings) {
+        await this.storage.recordSessionSubmission(id, binding.submissionId, binding.slotId)
+      }
+    } catch (error) {
+      // The post-launch writes (attribution rows) failed, but the container is running. Kill it and
+      // mark the session ended so it never looks active and no LiveSession will try to manage it.
+      try {
+        await process.kill(1000)
+      } catch {
+        // Best-effort kill; the process may have already exited.
+      }
+      await this.storage.markEnded(id, 'error', new Date().toISOString()).catch(() => undefined)
+      throw new OrchestratorError(500, `failed to record session attribution: ${String(error)}`)
     }
 
     const session = new LiveSession({
