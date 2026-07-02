@@ -76,9 +76,10 @@ const isOwner = computed(
 // human-capable seat: the renderer reads `controlled[0]` as the single controlled seat, so passing all
 // of `meta.human_slots` would pin control to seat 0 and lock a human seated elsewhere out of play. The
 // recording header's `players` map records which seat the human occupies (`kind: 'human'`), so we
-// narrow to that. Before the header arrives (or on an older header without attribution) we fall back to
-// the env's human-capable seats; by the time the renderer mounts (on the header) the narrowed seat is
-// known, so the fallback only ever feeds the pre-mount decision log.
+// narrow to that. Before the header arrives (or on an older header without attribution) we return []
+// rather than the env's human-capable seats, so a human seated at player_2 never briefly gets
+// player_0's control affordances; by the time the renderer mounts (on the header) the narrowed seat
+// is known.
 const controlledSlots = computed<string[]>(() => {
   if (!(isOwner.value && row.value?.mode === 'human' && status.value !== 'ended')) {
     return []
@@ -90,9 +91,7 @@ const controlledSlots = computed<string[]>(() => {
       return humanSlots
     }
   }
-  // Before the header arrives, return [] to avoid the pre-header window where a human seated at
-  // player_2 would briefly get player_0's control affordances. Human-session recordings always
-  // carry players in the header, so the fallback only feeds the pre-mount decision log.
+  // Header not yet arrived: fail closed to [] (see above).
   return []
 })
 const recordingId = computed(() => row.value?.recording_id ?? null)

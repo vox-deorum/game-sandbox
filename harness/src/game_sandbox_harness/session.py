@@ -25,7 +25,7 @@ or overage accounting.
 from __future__ import annotations
 
 import contextlib
-import logging
+import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -350,12 +350,19 @@ class Episode:
             # but a hand-rolled transport client could send an out-of-space or masked-out action; that
             # must not take down every other seat in the container.
             if action is None:
-                logging.info(f"human slot {slot_id} defaulted due to no input in time")
+                # stderr, not the logging module: the harness never configures logging, so an
+                # INFO record (below the default WARNING level) would be silently dropped, defeating
+                # the point of surfacing the substituted default in the decision stream.
+                print(f"human slot {slot_id} defaulted due to no input in time", file=sys.stderr, flush=True)
                 action = self._entry.default_action(slot_id)
             else:
                 illegal_reason = _illegal_action_reason(env, slot_id, observation, info, action)
                 if illegal_reason is not None:
-                    logging.info(f"human slot {slot_id} defaulted due to illegal input: {illegal_reason}")
+                    print(
+                        f"human slot {slot_id} defaulted due to illegal input: {illegal_reason}",
+                        file=sys.stderr,
+                        flush=True,
+                    )
                     action = self._entry.default_action(slot_id)
 
         env.step(action)

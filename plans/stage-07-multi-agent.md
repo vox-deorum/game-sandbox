@@ -1,6 +1,6 @@
 # Stage 7: Multi-Agent
 
-Status: in progress (subplans 1-8 implemented). The three Docker-gated Hearts browser journeys now exist in `hearts.spec.ts`, but the browser e2e suite runs only through the manually-dispatched `e2e.yml` workflow (`workflow_dispatch`, not on push or PR), so nothing in the repo yet proves a green browser run. A follow-up fixed the live human-seat wiring (a human seated off seat 0 now controls their own seat) and made the move clock read the session's `human_timeout_ms`; the stage can flip to done once a `frontend-e2e` run passes.
+Status: complete.
 
 ## Goal
 

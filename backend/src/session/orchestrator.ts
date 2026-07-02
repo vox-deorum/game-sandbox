@@ -243,7 +243,7 @@ export class Orchestrator {
       // The post-launch writes (attribution rows) failed, but the container is running. Kill it and
       // mark the session ended so it never looks active and no LiveSession will try to manage it.
       try {
-        await process.kill(1000)
+        await process.kill(KILL_GRACE_MS)
       } catch {
         // Best-effort kill; the process may have already exited.
       }
