@@ -7,7 +7,6 @@ convenience readers agree with the raw indices they name, so an agent can rely o
 from __future__ import annotations
 
 import pytest
-
 from sandbox.env import make_env
 from sandbox.features import (
     FLAP,
@@ -52,4 +51,4 @@ def test_feature_readers_match_the_raw_observation():
 
 def test_pipe_speed_is_screen_widths_per_step():
     # The pipes scroll 4 pixels per step across the 288-pixel-wide screen.
-    assert PIPE_SPEED == pytest.approx(4 / 288)
+    assert pytest.approx(4 / 288) == PIPE_SPEED
