@@ -46,6 +46,8 @@ Horizontal values use the screen width as a scale. `X = 0` is the left edge of t
 
 Each pipe's `X` value locates the pipe's left edge. The bird stays at about `X = 0.20`, so a pipe at `X = 0.55` is `0.35` screen widths ahead of the bird. As the pipe scrolls left, its value gets smaller. A pipe reaches the bird when its value is near `0.20`, not when it reaches `0`.
 
+Every pipe scrolls left at the same constant speed: about `0.014` screen widths per step, available as `PIPE_SPEED` in `sandbox.features`. This horizontal velocity is not part of the observation because it never changes, but it lets you predict timing. A pipe `0.35` screen widths ahead of the bird arrives in about `0.35 / 0.014 ≈ 25` steps, which is 1.25 seconds at 20 steps per second.
+
 ### Vertical positions
 
 Vertical values use the screen height as a scale, and the direction may feel backward if you are used to graphs in math class. `Y = 0` is the top of the screen, `Y = 0.5` is halfway down, and `Y = 1` is the bottom. Larger values are lower on the screen. A negative value is above the visible screen.
@@ -61,7 +63,9 @@ Velocity and rotation use scales centered on `0`:
 | `PLAYER_VELOCITY` | The bird is moving upward. A flap sets this to about `-0.9`. | The bird is not moving vertically at that instant. | The bird is falling. `1` is its maximum downward speed. |
 | `PLAYER_ROTATION` | The bird's nose points downward. `-1` is 90 degrees down. | The bird is level. | The bird's nose points upward. A flap sets this to `0.5`, or 45 degrees up. |
 
-Position and velocity are normalized differently. A velocity of `0.4` represents a downward speed of 4 pixels per step because velocity is divided by 10. It does not mean the bird moves 40 percent of the screen height in one step. On the game's 512-pixel-tall screen, 4 pixels is about `0.0078` of the screen height. Gravity changes the velocity before the next idle movement, so this conversion explains the scale but is not a complete prediction by itself.
+To work with velocity, call `player_velocity(observation)` from `sandbox.features`. It returns the bird's vertical velocity in screen heights per step, the same scale as `PLAYER_Y`. Therefore, adding the two estimates the bird's next position: with a velocity of `0.008` and `PLAYER_Y = 0.44`, the bird will be near `0.44 + 0.008 = 0.448` on the next step. Gravity adds about `0.002` to the velocity before each idle movement, so treat the sum as an estimate rather than an exact prediction. 
+
+If you read `observation[PLAYER_VELOCITY]` directly: the raw value uses a different scale, normalized by the bird's maximum fall speed, so `0.40` there means 40 percent of top speed, not 40 percent of the screen.
 
 ### Pipes that are not visible yet
 
@@ -117,7 +121,7 @@ def act(self, observation):
     return IDLE
 ```
 
-`next_gap_center(observation)` averages indices 4 and 5, the gap boundaries in the middle pipe triple, and returns a plain float. In the example snapshot above, that middle pipe is the next obstacle. `player_y(observation)` returns the top of the bird as a plain float. Because larger y values are lower, `player_y > next_gap_center` means the bird is below that target and should flap.
+`next_gap_center(observation)` averages indices 4 and 5, the gap boundaries in the middle pipe triple, and returns a plain float. In the example snapshot above, that middle pipe is the next obstacle. `player_y(observation)` returns the top of the bird as a plain float. Because larger y values are lower, `player_y > next_gap_center` means the bird is below that target and should flap. `player_velocity(observation)` returns the bird's vertical velocity converted to screen heights per step; it is the one helper that changes a value's scale instead of only naming an index, and the [Velocity and rotation](#velocity-and-rotation) section explains why the conversion exists.
 
 This small agent demonstrates how to compare vertical positions, but it ignores velocity and assumes the middle pipe is the right target. A stronger agent should first use the three `X` values to identify the approaching pipe, then account for how quickly the bird is moving.
 
@@ -126,7 +130,7 @@ This small agent demonstrates how to compare vertical positions, but it ignores 
 A good way to improve is one idea at a time:
 
 - **Add a margin.** Flapping as soon as the bird drops below the exact center can make it jitter. Try waiting until it is a little below the target, or aim for another point inside the gap.
-- **Use velocity.** Position and velocity use different scales, so do not add their observation values directly. Convert velocity back to pixels by multiplying by 10, account for gravity, then divide the predicted pixel movement by the 512-pixel screen height before adding it to `PLAYER_Y`.
+- **Use velocity.** `player_y(observation) + player_velocity(observation)` estimates where the bird will be on the next step, since the helper converts velocity to screen heights per step. Gravity adds about `0.002` on an idle step. Compare that prediction to your target instead of the current position, so the agent reacts before it overshoots.
 - **Look ahead.** When the next pipe is close to the bird, start moving the target toward the gap in the pipe after it. `NEXT_PIPE_X` tells you when the current pipe is close.
 - **Respect the edges.** Flying above the top costs reward and touching the ground ends the run, so keep targets away from both extremes.
 - **Measure changes.** Watch a run to build intuition, then compare averages over several seeded runs. One run may be unusually lucky or unlucky.

@@ -6,14 +6,19 @@ convenience readers agree with the raw indices they name, so an agent can rely o
 
 from __future__ import annotations
 
+import pytest
+
 from sandbox.env import make_env
 from sandbox.features import (
     FLAP,
     IDLE,
     NEXT_PIPE_GAP_BOTTOM,
     NEXT_PIPE_GAP_TOP,
+    PIPE_SPEED,
+    PLAYER_VELOCITY,
     PLAYER_Y,
     next_gap_center,
+    player_velocity,
     player_y,
 )
 
@@ -36,5 +41,15 @@ def test_feature_readers_match_the_raw_observation():
         assert min(top, bottom) <= next_gap_center(observation) <= max(top, bottom)
 
         assert player_y(observation) == float(observation[PLAYER_Y])
+
+        # player_velocity converts the raw value (normalized by the 10-pixel maximum fall
+        # speed) into screen heights per step (the 512-pixel screen height).
+        expected = float(observation[PLAYER_VELOCITY]) * 10 / 512
+        assert player_velocity(observation) == pytest.approx(expected)
     finally:
         env.close()
+
+
+def test_pipe_speed_is_screen_widths_per_step():
+    # The pipes scroll 4 pixels per step across the 288-pixel-wide screen.
+    assert PIPE_SPEED == pytest.approx(4 / 288)

@@ -10,9 +10,11 @@ index so your agent can read ``observation[NEXT_PIPE_GAP_TOP]`` instead of a bar
 The three pipes are the most recently passed pipe, the next pipe the bird must clear, and the one
 after that; each contributes its horizontal position and the top and bottom of its gap. The last
 three features are the bird's own vertical position, its vertical velocity, and its rotation. Every
-value is normalized, and y grows downward, so a larger y is lower on the screen. The full table of
-indices and scales, and everything else specific to Flappy Bird, is in ``environment.md``, shipped
-alongside the template.
+value is normalized, and y grows downward, so a larger y is lower on the screen. Positions use the
+screen as their scale, but the raw velocity value is normalized by the bird's maximum fall speed
+instead; ``player_velocity()`` converts it onto the position scale. The full table of indices and
+scales, and everything else specific to Flappy Bird, is in ``environment.md``, shipped alongside
+the template.
 """
 
 from __future__ import annotations
@@ -40,6 +42,15 @@ PLAYER_ROTATION = 11
 IDLE = 0
 FLAP = 1
 
+#: How fast the pipes scroll left, in screen widths per step (4 pixels per step on the
+#: 288-pixel-wide screen). Subtracting it from a pipe's X predicts where the pipe is next step.
+PIPE_SPEED = 4.0 / 288.0
+
+# Pixel quantities from the game, needed to convert velocity into screen units: the maximum
+# fall speed the raw velocity is normalized by, and the screen height that normalizes PLAYER_Y.
+_PLAYER_MAX_SPEED_PIXELS = 10.0
+_SCREEN_HEIGHT_PIXELS = 512.0
+
 
 def next_gap_center(observation: Any) -> float:
     """Return the vertical center of the next pipe's gap, the height the bird should aim for."""
@@ -49,3 +60,10 @@ def next_gap_center(observation: Any) -> float:
 def player_y(observation: Any) -> float:
     """Return the bird's vertical position. Larger is lower on the screen, since y grows downward."""
     return float(observation[PLAYER_Y])
+
+
+def player_velocity(observation: Any) -> float:
+    """Return the bird's vertical velocity in screen heights per step, the same scale as
+    player_y: the bird's next y is approximately player_y + player_velocity. Positive is
+    downward; on an idle step gravity first adds about 0.002."""
+    return float(observation[PLAYER_VELOCITY]) * _PLAYER_MAX_SPEED_PIXELS / _SCREEN_HEIGHT_PIXELS
