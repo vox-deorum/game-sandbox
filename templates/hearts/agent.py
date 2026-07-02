@@ -17,7 +17,7 @@ has been played ("hearts broken"), the 2 of clubs leads the first trick, and no 
 land on that first trick. Every heart you take is worth 1 point and the queen of spades is 13;
 a LOWER total is better. The exception is "shooting the moon", taking *every* heart and the
 queen flips your score to 0 and gives everyone else 26. The full rules, the card encoding, and
-every observation field are on the Hearts page: {{DOCS_URL}}students/environments/hearts/
+every observation field are in ``environment.md``, shipped alongside this file.
 """
 
 from __future__ import annotations

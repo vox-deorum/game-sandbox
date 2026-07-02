@@ -15,6 +15,12 @@ if a package is pinned in both, compose fails loudly. Environment layers never c
 requirements files — the dependency set is global, lives in ``templates/base/``, and is
 versioned by the single ``template-v<N>`` axis. This is the same code path CI and the publish
 workflow use, so a student's clone is byte-identical to what CI tested.
+
+Each composed template also carries an ``environment.md``: a copy of the environment's student
+docs page from ``docs/students/environments/``, with its cross-doc links rewritten to absolute
+docs-site URLs. The template's README and ``agent.py`` point at that local file, so the game's
+observation/action reference lives in exactly one source — the docs page — rather than being
+duplicated into the template.
 """
 
 from __future__ import annotations
@@ -23,9 +29,17 @@ import argparse
 import re
 import shutil
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
-from _paths import BUILD_DIR, EXAMPLES_DIR, REPO_ROOT, TEMPLATE_BASE_DIR, TEMPLATES_DIR
+from _paths import (
+    BUILD_DIR,
+    DOCS_DIR,
+    EXAMPLES_DIR,
+    REPO_ROOT,
+    TEMPLATE_BASE_DIR,
+    TEMPLATES_DIR,
+    env_docs_page,
+)
 
 _EXTRA_REQUIREMENTS = "requirements.extra.txt"
 _REQUIREMENTS = "requirements.txt"
@@ -122,6 +136,70 @@ def _substitute_docs_url(out_dir: Path) -> None:
         )
 
 
+# The environment's student docs page is shipped inside the composed template as environment.md, so
+# the README and agent.py can point at a local file instead of duplicating the observation/action
+# reference. The page is copied verbatim except for its cross-doc Markdown links (e.g.
+# ../agent-interface.md), which are rewritten to {{DOCS_URL}} links so they still resolve from a
+# student's clone; _substitute_docs_url below then turns those into real URLs. In-page (#anchor) and
+# external (http...) links are left untouched.
+_ENVIRONMENT_DOC = "environment.md"
+_MD_LINK = re.compile(r"\]\(([^)]+)\)")
+
+
+def _normalize_posix_parts(parts: tuple[str, ...]) -> list[str]:
+    """Collapse ``.`` and ``..`` segments in a POSIX path already split into parts."""
+    resolved: list[str] = []
+    for part in parts:
+        if part in ("", "."):
+            continue
+        if part == "..":
+            if resolved:
+                resolved.pop()
+            continue
+        resolved.append(part)
+    return resolved
+
+
+def _localize_docs_links(text: str, page_dir: PurePosixPath) -> str:
+    """Rewrite intra-docs relative Markdown links so a page copied out of ``docs/`` still resolves.
+
+    A link whose target is another docs page (``foo.md`` / ``../foo.md``, optionally with an
+    ``#anchor``) is resolved against ``page_dir`` (the page's directory within ``docs/``) and
+    re-emitted as a ``{{DOCS_URL}}`` link to the MkDocs directory URL for that page. External links
+    and bare in-page anchors are returned unchanged.
+    """
+
+    def rewrite(match: re.Match[str]) -> str:
+        target = match.group(1)
+        if target.startswith(("http://", "https://", "//", "mailto:", "#")):
+            return match.group(0)
+        path_part, _, anchor = target.partition("#")
+        if not path_part.endswith(".md"):
+            return match.group(0)
+        parts = _normalize_posix_parts((*page_dir.parts, *PurePosixPath(path_part).parts))
+        parts[-1] = parts[-1][: -len(".md")]  # drop the .md suffix
+        if parts[-1] == "index":  # MkDocs serves index.md as the directory root
+            parts.pop()
+        site_path = "/".join(parts)
+        anchor_suffix = f"#{anchor}" if anchor else ""
+        return f"]({_DOCS_URL_TOKEN}{site_path}/{anchor_suffix})"
+
+    return _MD_LINK.sub(rewrite, text)
+
+
+def _copy_environment_page(env: str, out_dir: Path) -> None:
+    """Copy the environment's student docs page into the composed template as ``environment.md``."""
+    page = env_docs_page(env)
+    if not page.is_file():
+        raise ComposeError(
+            f"environment {env!r} has no student docs page at {page}; the composed template ships "
+            f"it as {_ENVIRONMENT_DOC}. Add the page under docs/students/environments/."
+        )
+    page_dir = PurePosixPath(page.relative_to(DOCS_DIR).parent.as_posix())
+    localized = _localize_docs_links(page.read_text(encoding="utf-8"), page_dir)
+    (out_dir / _ENVIRONMENT_DOC).write_text(localized, encoding="utf-8", newline="\n")
+
+
 def _overlay_files(src_dir: Path, out_dir: Path, *, skip_extra: bool = False) -> None:
     """Copy every file under ``src_dir`` onto ``out_dir`` with whole-file replacement."""
     for src in sorted(p for p in src_dir.rglob("*") if p.is_file()):
@@ -184,7 +262,10 @@ def compose_template(env: str) -> Path:
     shutil.copytree(TEMPLATE_BASE_DIR, out_dir, dirs_exist_ok=True)
     # 2. The env layer overlays it, whole-file.
     _overlay_files(env_dir, out_dir)
-    # 3. Resolve the docs-site link token now that every layer is in place.
+    # 3. Ship the environment's student docs page as environment.md — the local reference the
+    #    template README and agent.py point at instead of duplicating it.
+    _copy_environment_page(env, out_dir)
+    # 4. Resolve the docs-site link token now that every layer (and environment.md) is in place.
     _substitute_docs_url(out_dir)
     return out_dir
 

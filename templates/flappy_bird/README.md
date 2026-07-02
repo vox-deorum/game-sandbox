@@ -10,18 +10,19 @@ Flappy Bird is the default template. Other environments and complete worked agen
 
 | Path | Purpose |
 | --- | --- |
-| `agent.py` | Your agent implementation — the only file you edit |
+| `agent.py` | Your agent implementation, the only file you edit |
+| `environment.md` | Full reference for this game: the observation, the actions, the `sandbox.features` helpers, a worked minimal agent, scoring, and time limits |
 | `manifest.json` | Tells Game Sandbox where the agent class lives |
 | `requirements.txt` | Exact Python package versions used by the server |
 | `requirements-dev.txt` | Test dependencies |
 | `tests/` | Checks your submission should pass |
-| `sandbox/` | Provided tooling: the local game, the play/evaluate scripts, and the `python -m sandbox` helper — do not edit |
+| `sandbox/` | Provided tooling: the local game, the play/evaluate scripts, and the `python -m sandbox` helper; do not edit |
 | `sandbox/features.py` | Provided feature helpers you may import from `agent.py` (named observation indices and actions) |
 | `.env.example` | Example local LLM settings |
 
 Do not edit anything in `sandbox/`, `requirements.in`, or `requirements.txt`. The template pins one shared dependency set so local runs and server runs use the same packages. If the class needs another package, ask your instructor for a new template release.
 
-## Set up and play — one command
+## Set up and play in one command
 
 From the project folder:
 
@@ -66,19 +67,7 @@ Open `agent.py` and implement:
 - `reset(seed)`, called once before each game.
 - `act(observation)`, called whenever the agent must choose.
 
-For Flappy Bird, the observation is a NumPy array with 12 normalized values describing the bird and the three nearest pipes. Return `0` to do nothing or `1` to flap.
-
-You do not have to remember which index is which. The provided `sandbox/features.py` module names every index and both actions, so you can import them at the top of `agent.py`:
-
-```python
-from sandbox.features import FLAP, IDLE, next_gap_center, player_y
-
-def act(self, observation):
-    # y grows downward, so a larger player_y means the bird is below the gap and should flap.
-    return FLAP if player_y(observation) > next_gap_center(observation) else IDLE
-```
-
-The [Flappy Bird environment page]({{DOCS_URL}}students/environments/flappy-bird/) lists all 12 indices with their scales.
+Everything specific to Flappy Bird is in [`environment.md`](environment.md), the reference shipped alongside this README: what the 12-value observation contains, the two action integers, the `sandbox.features` helpers that name them, a worked minimal agent, the scoring, and the time limits. Read it before you start; it is all you need to build the agent.
 
 Two optional methods are available:
 
@@ -107,18 +96,6 @@ Review `git status` before adding files, and never add `.env` or an API key. See
 Submit the repository URL through the course website. Game Sandbox pins one exact commit, validates the repository, and prepares a runnable image.
 
 Submitting again while the season is open replaces the active submission and keeps the earlier submission in history.
-
-## Optional LLM API
-
-If your instructor enables model calls:
-
-1. Copy `.env.example` to `.env`.
-2. Add the endpoint and key provided by your instructor.
-3. Run `python -m sandbox.llm_example`.
-
-Never commit `.env` or an API key to GitHub.
-
-Your code reads `OPENAI_BASE_URL` and `OPENAI_API_KEY` both locally and on the server. During a server session, Game Sandbox supplies a temporary key scoped to that session and agent slot, so the agent code does not change.
 
 ## Dependency updates
 

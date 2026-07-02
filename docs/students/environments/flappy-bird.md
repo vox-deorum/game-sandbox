@@ -1,70 +1,112 @@
 # Flappy Bird
 
-Flappy Bird is the famously unforgiving one-button game from 2013: a small bird constantly falls, a tap makes it flap upward, and the goal is to fly through the gaps in an endless series of pipes without hitting anything. If you have never seen it, the [Wikipedia article](https://en.wikipedia.org/wiki/Flappy_Bird) tells the story, but the game itself fits in one sentence — flap at the right moments, or crash.
-
-Your agent is the finger on the button. The game runs in real time, and on every step it shows your agent a snapshot of the world and asks for one of two actions: flap, or do nothing. The parts that work the same in every environment — the `reset` and `act` methods, the manifest, and how time limits are enforced — are covered in the [agent interface](../agent-interface.md); everything specific to Flappy Bird is here.
+Flappy Bird is a one-button game in which a small bird constantly falls, a flap pushes it upward, and the goal is to fly through gaps in a series of pipes without hitting anything. Your agent controls the button. The [agent interface](../agent-interface.md) explains the parts that work the same in every environment, including the `reset` and `act` methods. This page explains everything specific to Flappy Bird.
 
 ## How the game works
 
-The bird falls under gravity, and each flap gives it a small upward push. The bird never moves horizontally — it hovers at about one fifth of the screen width while the pipes scroll in from the right at a constant speed. Each pipe has a gap, and the bird must pass through the gap without touching the pipe or the ground. The game gets no harder over a run: it simply continues, pipe after pipe, until the bird crashes.
+The bird falls under gravity, and each flap gives it a small upward push. The bird never moves horizontally. It stays about one fifth of the screen width from the left while the pipes scroll in from the right at a constant speed. Each pipe has a gap, and the bird must pass through the gap without touching the pipe or the ground. The game continues until the bird crashes.
 
-## Observations
-
-The observation is a NumPy array of 12 numbers. It describes three pipes (the one the bird most recently passed, the next one it must clear, and the one after that) and then the bird itself.
-
-Remembering which index means what is a chore, so a helper module named `sandbox.features` sits next to your agent and names every index. It is plain Python with no heavy dependencies, so import what you need at the top of `agent.py`:
-
-```python
-from sandbox.features import NEXT_PIPE_GAP_TOP, PLAYER_Y
-```
-
-The table below lists all 12 indices with their names. The example column is one real snapshot taken mid-flight, so you can see how the numbers hang together.
-
-| Index | Name in `sandbox.features` | Meaning | Example |
-| --- | --- | --- | --- |
-| 0 | `LAST_PIPE_X` | Last pipe (just passed): horizontal position | `0.05` |
-| 1 | `LAST_PIPE_GAP_TOP` | Last pipe: top of the gap | `0.42` |
-| 2 | `LAST_PIPE_GAP_BOTTOM` | Last pipe: bottom of the gap | `0.61` |
-| 3 | `NEXT_PIPE_X` | Next pipe (the one to fly through): horizontal position | `0.55` |
-| 4 | `NEXT_PIPE_GAP_TOP` | Next pipe: top of the gap | `0.24` |
-| 5 | `NEXT_PIPE_GAP_BOTTOM` | Next pipe: bottom of the gap | `0.43` |
-| 6 | `NEXT_NEXT_PIPE_X` | Pipe after next: horizontal position | `1.00` |
-| 7 | `NEXT_NEXT_PIPE_GAP_TOP` | Pipe after next: top of the gap | `0.00` |
-| 8 | `NEXT_NEXT_PIPE_GAP_BOTTOM` | Pipe after next: bottom of the gap | `1.00` |
-| 9 | `PLAYER_Y` | Bird: vertical position | `0.44` |
-| 10 | `PLAYER_VELOCITY` | Bird: vertical velocity | `0.40` |
-| 11 | `PLAYER_ROTATION` | Bird: rotation | `-0.30` |
-
-A few conventions make these numbers readable:
-
-- **Everything is normalized.** Horizontal positions are fractions of the screen width and vertical positions are fractions of the screen height, so all values sit roughly between `-1` and `1`, and the pipe edges compare directly with the bird's own height.
-- **The y axis grows downward.** A _larger_ vertical value is _lower_ on the screen. This is the single easiest thing to get backwards — if your first agent flies straight into the sky, you probably compared heights the wrong way around.
-- **The bird sits at `0.2` horizontally.** Since the bird never moves sideways, a pipe's horizontal position tells you how far away it is: the next pipe at `0.55` is about a third of a screen ahead, and the number shrinks every step as the pipe scrolls closer.
-- **Velocity is positive when falling.** A flap makes it sharply negative, then gravity pulls it back up toward positive. In the snapshot the bird is falling briskly at `0.40`.
-- **Rotation is cosmetic at first.** Positive tilts the bird's nose up (right after a flap), negative tilts it down (in a dive). You can safely ignore it in your early agents.
-- **A pipe that has not scrolled onto the screen yet reads `1.00, 0.00, 1.00`** — parked at the right edge with a fully open gap. That is why the pipe after next looks that way in the snapshot.
-
-Beyond the index names, `sandbox.features` offers two small reading functions. Their examples use the same snapshot as the table:
-
-| Helper | What it gives you | Example |
-| --- | --- | --- |
-| `next_gap_center(observation)` | The vertical center of the next pipe's gap — the height the bird should aim for. | `(0.24 + 0.43) / 2`, so `0.335` |
-| `player_y(observation)` | The bird's vertical position as a plain float — remember, larger is lower. | `0.44` |
+If you have never seen the game, the [Wikipedia article about Flappy Bird](https://en.wikipedia.org/wiki/Flappy_Bird) provides some background. The rule you need to build an agent is simple: flap at the right moments or crash.
 
 ## Actions
 
-Your `act` method returns one integer each step, and there are only two to choose from. `sandbox.features` names them too:
+Your `act` method must return one integer on every step:
 
 | Action | Name in `sandbox.features` | Meaning |
 | --- | --- | --- |
-| `0` | `IDLE` | Do nothing. The bird keeps falling under gravity. |
-| `1` | `FLAP` | Flap. The bird gets an upward push. |
+| `0` | `IDLE` | Do nothing. Gravity continues to pull the bird downward. |
+| `1` | `FLAP` | Flap once. The bird gets an upward push. |
 
-Flapping every step sends the bird into the sky, and never flapping drops it to the ground, so the whole craft of a Flappy Bird agent is choosing _when_ to flap. If your agent misses a step's deadline, the environment plays `0` for that step and the bird just keeps falling.
+Here, `0` and `1` are action labels. They do not describe a direction or a screen position. Returning any other integer is invalid and the environment rejects it. If your agent misses a step's deadline, the environment uses action `0`, so the bird keeps falling.
 
-## The smallest agent
+## Observations
 
-Here is the entire decision logic of a working Flappy Bird agent. Drop it into the `act` method of the template's agent class:
+The observation is a NumPy array of 12 numbers. It describes three pipes in left-to-right order, followed by the bird. An **index** tells you where a value appears in the array. Python starts counting at `0`, so index `0` is the first number, index `1` is the second number, and index `11` is the twelfth and final number. An index is not a screen position and is not the value stored there.
+
+| Index | Name in `sandbox.features` | Meaning | Range or special value |
+| --- | --- | --- | --- |
+| 0 | `LAST_PIPE_X` | Left edge of the leftmost pipe in this observation | May be negative after leaving the screen |
+| 1 | `LAST_PIPE_GAP_TOP` | Top edge of that pipe's gap | `0` at the top of the screen, `1` at the bottom |
+| 2 | `LAST_PIPE_GAP_BOTTOM` | Bottom edge of that pipe's gap | `0` at the top of the screen, `1` at the bottom |
+| 3 | `NEXT_PIPE_X` | Left edge of the middle pipe in this observation | `0` at the left edge, `1` at the right edge |
+| 4 | `NEXT_PIPE_GAP_TOP` | Top edge of the middle pipe's gap | `0` at the top of the screen, `1` at the bottom |
+| 5 | `NEXT_PIPE_GAP_BOTTOM` | Bottom edge of the middle pipe's gap | `0` at the top of the screen, `1` at the bottom |
+| 6 | `NEXT_NEXT_PIPE_X` | Left edge of the rightmost pipe in this observation | `0` at the left edge, `1` at the right edge |
+| 7 | `NEXT_NEXT_PIPE_GAP_TOP` | Top edge of that pipe's gap | `0` at the top of the screen, `1` at the bottom |
+| 8 | `NEXT_NEXT_PIPE_GAP_BOTTOM` | Bottom edge of that pipe's gap | `0` at the top of the screen, `1` at the bottom |
+| 9 | `PLAYER_Y` | Vertical position of the top of the bird | `0` at the top of the screen, `1` at the bottom |
+| 10 | `PLAYER_VELOCITY` | Bird's vertical speed and direction | Negative is upward, `0` is stopped vertically, positive is downward |
+| 11 | `PLAYER_ROTATION` | Bird's tilt | Negative is nose-down, `0` is level, positive is nose-up |
+
+The three pipe triples are sorted by `X` on every step. The names in `sandbox.features` describe a common moment when the leftmost pipe has just passed the bird, but those roles are not permanent. Early in a run, `LAST_PIPE_X` can still be the first pipe approaching the bird. After a pipe leaves the screen and reappears on the right, the triples shift again. Use the `X` values to tell which pipes are ahead of the bird rather than relying only on `LAST`, `NEXT`, and `NEXT_NEXT` in the names.
+
+### Horizontal positions
+
+Horizontal values use the screen width as a scale. `X = 0` is the left edge of the screen, `X = 0.5` is halfway across, and `X = 1` is the right edge. Larger values are farther right. A negative value is left of the visible screen.
+
+Each pipe's `X` value locates the pipe's left edge. The bird stays at about `X = 0.20`, so a pipe at `X = 0.55` is `0.35` screen widths ahead of the bird. As the pipe scrolls left, its value gets smaller. A pipe reaches the bird when its value is near `0.20`, not when it reaches `0`.
+
+### Vertical positions
+
+Vertical values use the screen height as a scale, and the direction may feel backward if you are used to graphs in math class. `Y = 0` is the top of the screen, `Y = 0.5` is halfway down, and `Y = 1` is the bottom. Larger values are lower on the screen. A negative value is above the visible screen.
+
+The ground begins before the bottom of the screen, so the bird normally crashes before `PLAYER_Y` reaches `1`. Suppose the next gap has a top value of `0.24` and a bottom value of `0.43`. The gap starts 24 percent of the way down the screen and ends 43 percent of the way down. Its center is `(0.24 + 0.43) / 2 = 0.335`.
+
+### Velocity and rotation
+
+Velocity and rotation use scales centered on `0`:
+
+| Value | Negative | `0` | Positive |
+| --- | --- | --- | --- |
+| `PLAYER_VELOCITY` | The bird is moving upward. A flap sets this to about `-0.9`. | The bird is not moving vertically at that instant. | The bird is falling. `1` is its maximum downward speed. |
+| `PLAYER_ROTATION` | The bird's nose points downward. `-1` is 90 degrees down. | The bird is level. | The bird's nose points upward. A flap sets this to `0.5`, or 45 degrees up. |
+
+Position and velocity are normalized differently. A velocity of `0.4` represents a downward speed of 4 pixels per step because velocity is divided by 10. It does not mean the bird moves 40 percent of the screen height in one step. On the game's 512-pixel-tall screen, 4 pixels is about `0.0078` of the screen height. Gravity changes the velocity before the next idle movement, so this conversion explains the scale but is not a complete prediction by itself.
+
+### Pipes that are not visible yet
+
+A pipe that has not entered the screen appears as three values: `1.00, 0.00, 1.00`. These mean that its left edge is parked at the right edge of the screen (`X = 1`) and its temporary gap runs from the top (`Y = 0`) to the bottom (`Y = 1`). This is a placeholder, not the pipe's real gap, so it provides no useful vertical target yet.
+
+Here is one complete observation, grouped by what its values describe:
+
+```text
+# nearest pipe       next pipe            pipe after next       bird
+[0.05, 0.42, 0.61,   0.55, 0.24, 0.43,   1.00, 0.00, 1.00,     0.44, 0.40, -0.30]
+```
+
+In this particular snapshot, the leftmost pipe at `X = 0.05` has passed the bird and the middle pipe at `X = 0.55` is the next obstacle. Its gap runs from `Y = 0.24` to `Y = 0.43`. The bird is below the center of that gap because `0.44 > 0.335`. Its velocity `0.40` says it is falling, and its rotation `-0.30` means its nose points about 27 degrees downward.
+
+## Scoring and rewards
+
+The environment returns one reward after each action:
+
+| Reward | Meaning |
+| --- | --- |
+| `+0.1` | The bird stayed alive on a step when it did not pass a pipe. |
+| `+1.0` | The bird passed a pipe on this step. This replaces the usual `+0.1` for that step. |
+| `-0.5` | The bird flew above the top of the screen on this step but did not crash. |
+| `-1.0` | The bird crashed, ending the episode. |
+
+The rewards add together over a run. A higher total generally means the bird survived longer and cleared more pipes. Evaluating several seeded runs with `python -m sandbox eval` gives a more reliable result than judging an agent from one run.
+
+## Time limits
+
+Flappy Bird is paced at one step every 50 milliseconds, or 20 steps per second. This number controls how quickly the live game advances; it is not the agent's timeout. An individual call to `act` has a 1-second limit, and the agent has a 120-second limit on its total measured compute during one episode. If `act` exceeds the 1-second limit, the environment uses action `0`, `IDLE`, for that step. See [Time limits](../agent-interface.md#time-limits) for how these limits are enforced and measured.
+
+## Template helpers
+
+The template includes a plain Python module named `sandbox.features`. Import from it at the top of `agent.py`. Its constants give readable names to the 12 observation indices and the two actions, so your code does not need unexplained numbers such as `observation[4]` or `return 1`.
+
+For example, this code uses raw indices and action numbers:
+
+```python
+gap_center = (observation[4] + observation[5]) / 2
+if observation[9] > gap_center:
+    return 1
+return 0
+```
+
+The helpers express the same decision in terms of the game:
 
 ```python
 from sandbox.features import FLAP, IDLE, next_gap_center, player_y
@@ -75,26 +117,18 @@ def act(self, observation):
     return IDLE
 ```
 
-Take it line by line. `next_gap_center(observation)` is the height the bird should be at — the middle of the next gap. `player_y(observation)` is where the bird actually is. Because y grows downward, `player_y > next_gap_center` means the bird is _below_ its target, so it flaps to rise; otherwise it does nothing and lets gravity bring it down. In the snapshot from the observation table, `0.44 > 0.335`, so this agent would flap.
+`next_gap_center(observation)` averages indices 4 and 5, the gap boundaries in the middle pipe triple, and returns a plain float. In the example snapshot above, that middle pipe is the next obstacle. `player_y(observation)` returns the top of the bird as a plain float. Because larger y values are lower, `player_y > next_gap_center` means the bird is below that target and should flap.
 
-The result is a bird that sawtooths up and down around the center of each gap, and that is genuinely enough to clear pipe after pipe. Its weakness is that it is purely reactive: it compares positions but ignores velocity, so it flaps late when falling fast and keeps drifting upward after it stops flapping. Every stronger agent is a refinement of this same comparison — same inputs, better judgement about when to press the button.
+This small agent demonstrates how to compare vertical positions, but it ignores velocity and assumes the middle pipe is the right target. A stronger agent should first use the three `X` values to identify the approaching pipe, then account for how quickly the bird is moving.
 
-## Scoring and rewards
+## Ideas and examples
 
-The rewards add up step by step: `+0.1` for every step the bird stays alive, `+1.0` for every pipe it passes, `-0.5` for flying off the top of the screen, and `-1.0` for the crash that ends the episode. A higher total therefore means the bird survived longer and cleared more pipes — the goal is simply to keep flying and pass as many pipes as possible.
+A good way to improve is one idea at a time:
 
-Any single run can be lucky or unlucky, so evaluating over several seeded runs, as `python -m sandbox eval` does, gives a much steadier picture of whether a change actually helped.
+- **Add a margin.** Flapping as soon as the bird drops below the exact center can make it jitter. Try waiting until it is a little below the target, or aim for another point inside the gap.
+- **Use velocity.** Position and velocity use different scales, so do not add their observation values directly. Convert velocity back to pixels by multiplying by 10, account for gravity, then divide the predicted pixel movement by the 512-pixel screen height before adding it to `PLAYER_Y`.
+- **Look ahead.** When the next pipe is close to the bird, start moving the target toward the gap in the pipe after it. `NEXT_PIPE_X` tells you when the current pipe is close.
+- **Respect the edges.** Flying above the top costs reward and touching the ground ends the run, so keep targets away from both extremes.
+- **Measure changes.** Watch a run to build intuition, then compare averages over several seeded runs. One run may be unusually lucky or unlucky.
 
-## Time limits
-
-Flappy Bird runs in real time at a fixed pace of one step every 50 milliseconds, which is the deadline for each `act` call, within an overall step limit of 1 second and an episode limit of 120 seconds of measured compute. If your agent does not return an action in time, the environment does nothing for that step and the bird keeps falling. See [Time limits](../agent-interface.md#time-limits) for how the step and episode limits are enforced and accounted.
-
-## Ideas to try
-
-A good way to improve is one idea at a time, each building on the last:
-
-- **Add a margin.** Flapping the instant the bird dips below the exact center makes it jitter. Try flapping only once it has fallen a little _below_ the target, or aim slightly above the gap's bottom edge instead of its center.
-- **Use the velocity.** The bird keeps moving between decisions, so react to where it is _going_, not where it is: estimate its height a few steps ahead (current position plus velocity) and compare _that_ to the target. This one change stops most late flaps and overshoots.
-- **Look ahead to the pipe after next.** When the next pipe is almost reached, the gap that really matters is the following one. Blend your target from the next gap toward the one after as `NEXT_PIPE_X` shrinks, and the bird stops making panicked climbs between pipes.
-- **Respect the edges.** Flying above the top of the screen costs reward and the ground ends the run, so clamp your target height away from both extremes no matter where a gap sits.
-- **Measure, don't eyeball.** Watch a run to build intuition, but judge every change over several seeded runs and compare the averages — a single run proves nothing either way.
+The [Hello Flappy Bird agent](https://github.com/vox-deorum/game-sandbox/blob/main/examples/flappy_bird/hello/agent.py) is a complete worked example that uses `sandbox.features`.

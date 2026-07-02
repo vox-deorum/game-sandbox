@@ -28,8 +28,8 @@ class Agent:
     The observation is a length-12 NumPy array of normalized numbers describing the bird and the
     three nearest pipes; the action is ``0`` (do nothing) or ``1`` (flap). The most useful values
     for a simple policy are the next pipe's gap (indices 4 and 5) and the bird's own height
-    (index 9). The ``sandbox.features`` helpers name every index, and the Flappy Bird page lists
-    them all with their scales: {{DOCS_URL}}students/environments/flappy-bird/
+    (index 9). The ``sandbox.features`` helpers name every index, and ``environment.md`` (shipped
+    alongside this file) lists them all with their scales and everything else specific to the game.
     """
 
     def reset(self, seed: int) -> None:

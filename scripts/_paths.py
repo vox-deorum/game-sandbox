@@ -80,6 +80,15 @@ TEMPLATE_BASE_MODULES = {
     "hidpi.py": "local_play/hidpi.py",
 }
 
+# Each environment's student reference page. scripts/compose.py copies the page for the composed
+# environment into the template as environment.md (rewriting its cross-doc links to absolute
+# docs-site URLs), so the template's README, agent.py, and helper module point students at that
+# local file instead of duplicating the observation/action reference. The page id is the env id
+# with underscores turned into hyphens, matching the filenames MkDocs serves (flappy_bird ->
+# flappy-bird.md); compose fails loudly if the page is missing.
+DOCS_DIR = REPO_ROOT / "docs"
+DOCS_STUDENT_ENV_PAGES = DOCS_DIR / "students" / "environments"
+
 
 def template_sandbox_env(env: str) -> Path:
     """The generated game-package sync target (``sandbox/env/``) inside the ``env`` template layer."""
@@ -89,3 +98,8 @@ def template_sandbox_env(env: str) -> Path:
 def template_sandbox_base() -> Path:
     """The base template's ``sandbox/`` directory, where shared sandbox helpers are synced."""
     return TEMPLATE_BASE_DIR / "sandbox"
+
+
+def env_docs_page(env: str) -> Path:
+    """The student docs page copied into ``templates/<env>`` as ``environment.md`` at compose time."""
+    return DOCS_STUDENT_ENV_PAGES / f"{env.replace('_', '-')}.md"

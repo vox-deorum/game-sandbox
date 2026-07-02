@@ -8,8 +8,8 @@ it at the top of ``agent.py``, not inside a method.
 Everything here is expressed over the fixed integer card encoding: a card is an int ``0..51`` with
 ``card = suit * 13 + rank``. Suits are ``0=clubs, 1=diamonds, 2=spades, 3=hearts`` and ranks run
 ``0=2 .. 8=10, 9=J, 10=Q, 11=K, 12=A``. So the 2 of clubs is ``0`` and the queen of spades is
-``36``. The full encoding, the observation fields, and the scoring are documented on the Hearts
-page of the student docs: {{DOCS_URL}}students/environments/hearts/
+``36``. The full encoding, the observation fields, and the scoring are documented in
+``environment.md``, shipped alongside the template.
 
 The observation accessors take the whole ``observation`` dict your ``act`` method receives (the one
 with the ``"action_mask"`` and ``"observation"`` keys) and return plain Python ints and lists, so

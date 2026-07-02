@@ -10,18 +10,19 @@ Hearts is a four-player trick-taking game. Your agent fills one seat; the other 
 
 | Path | Purpose |
 | --- | --- |
-| `agent.py` | Your agent implementation — the only file you edit |
+| `agent.py` | Your agent implementation, the only file you edit |
+| `environment.md` | Full reference for this game: the rules, the card encoding, every observation field, the `sandbox.cards` helpers, a worked minimal agent, scoring, and time limits |
 | `manifest.json` | Tells Game Sandbox where the agent class lives |
 | `requirements.txt` | Exact Python package versions used by the server |
 | `requirements-dev.txt` | Test dependencies |
 | `tests/` | Checks your submission should pass |
-| `sandbox/` | Provided tooling: the local game, the play/evaluate scripts, and the `python -m sandbox` helper — do not edit |
+| `sandbox/` | Provided tooling: the local game, the play/evaluate scripts, and the `python -m sandbox` helper; do not edit |
 | `sandbox/cards.py` | Provided card helpers you may import from `agent.py` (decode cards, read the observation) |
 | `.env.example` | Example local LLM settings |
 
 Do not edit anything in `sandbox/`, `requirements.in`, or `requirements.txt`. The template pins one shared dependency set so local runs and server runs use the same packages. If the class needs another package, ask your instructor for a new template release.
 
-## Set up and play — one command
+## Set up and play in one command
 
 From the project folder:
 
@@ -29,7 +30,7 @@ From the project folder:
 python -m sandbox
 ```
 
-The first time you run it, it creates a local `.venv`, installs the pinned packages, and then opens a window where you take a seat and play Hearts yourself — click a highlighted (legal) card on your turn. There is no separate install step. As you work, the same command gives you everything:
+The first time you run it, it creates a local `.venv`, installs the pinned packages, and then opens a window where you take a seat and play Hearts yourself; click a highlighted (legal) card on your turn. There is no separate install step. As you work, the same command gives you everything:
 
 ```console
 python -m sandbox            # take a seat and play it yourself
@@ -61,42 +62,14 @@ python -m pip install -r requirements.txt -r requirements-dev.txt
 
 See Python's [virtual environment guide](https://docs.python.org/3/tutorial/venv.html) if this is your first time using one.
 
-## The rules in one minute
-
-- Four seats. Each is dealt 13 cards. The holder of the **2 of clubs** leads the first trick.
-- **Follow suit** if you can. If you cannot, play anything (subject to the next rule).
-- You may not **lead a heart** until hearts are "broken" (a heart has been discarded on an earlier trick).
-- No hearts or the queen of spades on the **first trick**.
-- Scoring is by penalty: each heart is **1** point, the **queen of spades is 13**, and a **lower** total is better.
-- **Shooting the moon**: take _every_ heart and the queen and your score flips to **0** while everyone else gets **26**.
-
 ## Write the agent
 
 Open `agent.py` and implement:
 
 - `reset(seed)`, called once before each game.
-- `act(observation)`, called on your turn — return the card you want to play.
+- `act(observation)`, called on your turn to return the card you want to play.
 
-A card is an integer `0..51` with `card = suit * 13 + rank`, where suits are `0=clubs, 1=diamonds, 2=spades, 3=hearts` and ranks run `0=2 .. 8=10, 9=J, 10=Q, 11=K, 12=A`. So the 2 of clubs is `0` and the queen of spades is `36`.
-
-The observation is a dict with two keys:
-
-- `observation["action_mask"]` — a length-52 array; `mask[c] == 1` exactly for the cards you may legally play right now. **Return a card whose mask bit is set.** The mask already encodes every rule above, so you never have to re-check legality yourself.
-- `observation["observation"]` — the table state: `hand` (length-52, 1 where you hold a card), `trick` (length-4, the card each seat has played this trick or `-1`), `led_suit` (`0..3`, or `-1` when you are leading), `hearts_broken` (0/1), `position` (your seat), `trick_leader`, and `scores` (running penalty points per seat).
-
-You do not have to decode any of this by hand. The provided `sandbox/cards.py` module has helpers you can import at the top of `agent.py`:
-
-```python
-from sandbox.cards import legal_cards, led_suit, rank_of
-
-def act(self, observation):
-    legal = legal_cards(observation)          # the cards you may play, as a list of ints
-    if led_suit(observation) is None:         # None means you are leading this trick
-        return min(legal, key=rank_of)        # lead your lowest card
-    ...
-```
-
-It also gives you `suit_of`, `card_name`, `card_points`, `current_trick`, `trick_winner_so_far`, `hand_cards`, `scores`, `hearts_broken`, and the constants `QUEEN_OF_SPADES`, `HEARTS`, and the other suits. The [Hearts environment page]({{DOCS_URL}}students/environments/hearts/) documents the encoding, every observation field, and the full helper list.
+Everything specific to Hearts is in [`environment.md`](environment.md), the reference shipped alongside this README: the rules, the card encoding, every observation field, the `sandbox.cards` helpers that decode them, a worked minimal agent, the scoring, and the time limits. Read it before you start; it is all you need to build the agent.
 
 Two optional methods are available:
 

@@ -11,8 +11,8 @@ The three pipes are the most recently passed pipe, the next pipe the bird must c
 after that; each contributes its horizontal position and the top and bottom of its gap. The last
 three features are the bird's own vertical position, its vertical velocity, and its rotation. Every
 value is normalized, and y grows downward, so a larger y is lower on the screen. The full table of
-indices and scales is on the Flappy Bird page of the student docs:
-{{DOCS_URL}}students/environments/flappy-bird/
+indices and scales, and everything else specific to Flappy Bird, is in ``environment.md``, shipped
+alongside the template.
 """
 
 from __future__ import annotations
