@@ -14,7 +14,11 @@ Read the [environment specification](../specs/environment.md) for product rules 
 6. Pass PettingZoo `api_test` and determinism tests.
 7. Sync the self-contained environment code to the student template.
 8. Add a template layer and at least one example.
-9. Add and register a frontend renderer.
+9. Add a student helper module and its pin test when raw observations or actions need decoding.
+10. Write the student environment page and add a row to the environments index.
+11. Add and register a frontend renderer.
+
+Items 9 and 10 are the [student-facing deliverables](#student-facing-deliverables): a new environment is not done when it merely runs, but when a student can find out how to play it without reading the environment source.
 
 ## Play test
 
@@ -112,3 +116,38 @@ uv run python scripts/generate.py
 ```
 
 The template's top-level `sandbox.env` package exposes `make_env`, `ENV_ID`, `PLAYER_SLOT`, and `make_human_controller`. To make the game human-playable locally, add a `human.py` exposing `make_human_controller(env)` (keyboard for realtime games, mouse/click for turn-based ones) and include it in the env's `TEMPLATE_ENVS` entry so it syncs too. Never sync harness, recording, or metadata modules. See [Examples and the template](examples-and-template.md).
+
+## Student-facing deliverables
+
+A student should be able to write an agent for a new environment from the docs and the template alone, without reading the environment source. That takes three things beyond a working environment: a helper module in the template, a student documentation page, and the template files that point a student at both. Follow the shape of the existing Hearts and Flappy Bird deliverables when adding your own.
+
+### The helper module
+
+Give the template a small helper module whenever the raw observation or action needs decoding, which is almost always: a card encoding, a set of named observation indices, an action mask. Hearts ships `sandbox/cards.py` (decode the card integer, read the observation dict) and Flappy Bird ships `sandbox/features.py` (name the twelve observation indices and the two actions). The module is student-facing template content, so hand-author it in the environment's template layer at `templates/<env>/sandbox/<name>.py`, next to the other files a student is given.
+
+Two placement rules matter. Keep the module plain Python with no heavy imports so that `from sandbox import <name>` at the top of `agent.py` stays cheap: the base `sandbox/__init__.py` deliberately imports nothing heavy, and an agent must be able to import the helper without pulling in pettingzoo or pygame. And never place it under `sandbox/env/`, because `scripts/generate.py` wipes and regenerates that directory on every sync, so a hand-authored file there is destroyed. Tell students to import the helper at the top of `agent.py` rather than inside a method, since a submission's module-top imports are the ones the harness isolates cleanly per slot.
+
+Because a helper restates facts that live in the environment source (the card encoding, the observation layout), add a pin test under `templates/<env>/tests/test_<name>.py` that asserts the helper agrees with the synced environment code, so the two cannot drift. The Hearts `test_cards.py` checks every card against the synced `sandbox.env.hearts.rules`, checks the observation accessors against a freshly stepped environment, and confirms in a subprocess that importing the helper does not load pygame. Every composed example inherits these template tests, so the CI `examples` job runs them.
+
+### The student environment page
+
+Add `docs/students/environments/<env>.md` and a row for it in `docs/students/environments/index.md`. Follow the section order the existing pages use, so a student moving between environments finds the same structure each time:
+
+1. Title and a one-paragraph summary, reusing the `EnvironmentMeta.description` wording.
+2. The game: the rules a player needs, including any variant choices your engine makes.
+3. Actions: what integer `act` returns and what every value means. Give a full table when the action space is small or enumerable (the Hearts card table, the Flappy Bird two-row table), and state the rule for when a returned action is rejected.
+4. Observations: a field-by-field table with each field's shape, range, and any sentinel values, and a note that values arrive as NumPy arrays.
+5. Scoring and rewards: how the game is scored and what the per-step and terminal rewards are.
+6. Time limits: the step and episode budgets and the pacing from `EnvironmentMeta`, what the timeout default action does, and a link to the agent interface's time-limits section.
+7. Helpers in the template: document the helper module with a short before-and-after snippet and the import-at-top rule.
+8. Ideas and examples: strategy pointers and links to the worked example agents.
+
+Links inside `docs/` are relative; links to files outside `docs/`, such as the example agents under `examples/`, use their stable GitHub URL, per the [documentation guide](../AGENTS.md).
+
+### The template files
+
+The template `agent.py` and `README.md` are where a student first meets the environment, so both must point at the deliverables above. The `agent.py` module docstring states the action encoding in brief, shows the helper import (a commented import line, since the unfinished template would otherwise trip the unused-import lint), and links to the environment page. The `README.md` lists the helper module in its project-files table, shows a short usage snippet, and links to the environment page.
+
+Both link to the page through the `{{DOCS_URL}}` token rather than a hard-coded URL: `scripts/compose.py` substitutes it with the docs site address when it composes the template, since a student's cloned template cannot resolve a link relative to the docs tree. See [Examples and the template](examples-and-template.md) for the token and its substitution.
+
+Finally, every environment layer must ship at least one worked example under `examples/<env>/<name>/`, which the CI `examples` job enforces. The example is the only green end-to-end proof of the env layer, since the bare template's own agent test is red by design. Write examples that read the observation through the helper module, so they model the style students should copy, and link to them from the environment page rather than duplicating their code into the docs.

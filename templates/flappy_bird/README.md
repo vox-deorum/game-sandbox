@@ -16,6 +16,7 @@ Flappy Bird is the default template. Other environments and complete worked agen
 | `requirements-dev.txt` | Test dependencies |
 | `tests/` | Checks your submission should pass |
 | `sandbox/` | Provided tooling: the local game, the play/evaluate scripts, and the `python -m sandbox` helper — do not edit |
+| `sandbox/features.py` | Provided feature helpers you may import from `agent.py` (named observation indices and actions) |
 | `.env.example` | Example local LLM settings |
 
 Do not edit anything in `sandbox/`, `requirements.in`, or `requirements.txt`. The template pins one shared dependency set so local runs and server runs use the same packages. If the class needs another package, ask your instructor for a new template release.
@@ -65,7 +66,19 @@ Open `agent.py` and implement:
 - `reset(seed)`, called once before each game.
 - `act(observation)`, called whenever the agent must choose.
 
-For Flappy Bird, the observation is a NumPy array with 12 normalized values describing the bird and nearby pipes. Return `0` to do nothing or `1` to flap.
+For Flappy Bird, the observation is a NumPy array with 12 normalized values describing the bird and the three nearest pipes. Return `0` to do nothing or `1` to flap.
+
+You do not have to remember which index is which. The provided `sandbox/features.py` module names every index and both actions, so you can import them at the top of `agent.py`:
+
+```python
+from sandbox.features import FLAP, IDLE, next_gap_center, player_y
+
+def act(self, observation):
+    # y grows downward, so a larger player_y means the bird is below the gap and should flap.
+    return FLAP if player_y(observation) > next_gap_center(observation) else IDLE
+```
+
+The [Flappy Bird environment page]({{DOCS_URL}}students/environments/flappy-bird/) lists all 12 indices with their scales.
 
 Two optional methods are available:
 

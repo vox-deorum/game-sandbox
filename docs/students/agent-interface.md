@@ -33,11 +33,7 @@ The harness calls `reset` once before the first action of each game. The environ
 
 ### `act(observation)`
 
-`act` receives the current observation and returns an action from the environment's action space. For Flappy Bird:
-
-- The observation is a NumPy array with 12 normalized values.
-- Action `0` does nothing.
-- Action `1` flaps.
+`act` receives the current observation and returns an action from the environment's action space. The action is always a single integer, but what the integers mean, and what the observation contains, depend on the environment. For example, Flappy Bird takes `0` to do nothing or `1` to flap, while Hearts takes an int from `0` to `51` naming the card to play. Your [environment page](environments/index.md) documents every action value and every observation field, and describes the helper module the template provides for reading them.
 
 ### `learn(...)`
 

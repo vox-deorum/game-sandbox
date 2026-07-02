@@ -1,0 +1,12 @@
+# Environments
+
+An environment is one game your agent can play. Each has its own actions, its own observation, and its own scoring, so the code you write in `act` depends on which environment you are building for. The pages here document each one in full: what integer to return and what every value means, what the observation contains, how the game is scored, the time limits, and the helper module the template provides.
+
+Start with the page for your environment, then use it alongside the [agent interface](../agent-interface.md), which covers the parts that are the same everywhere.
+
+| Environment | About | Action | Template branch |
+| --- | --- | --- | --- |
+| [Hearts](hearts.md) | Four-player trick-taking card game | An int `0..51` naming the card to play | `templates/hearts` |
+| [Flappy Bird](flappy-bird.md) | Single-player game of flying through pipes | `0` to do nothing or `1` to flap | `templates/flappy_bird` (the default) |
+
+Each environment is published as a `templates/<env>` branch of your student repository, with worked example agents on `examples/<env>/<name>` branches. Flappy Bird is the default template on the main branch.

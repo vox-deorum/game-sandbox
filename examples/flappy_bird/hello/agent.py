@@ -13,20 +13,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from sandbox.features import FLAP, IDLE, next_gap_center, player_y
 from wcwidth import wcswidth
 
 NAME = "hello-flappy"
-
-# Observation indices (12-feature, normalized): the "next" pipe the bird must clear is the
-# middle of the three reported pipes; its gap spans indices 4 (top) and 5 (bottom), and the
-# bird's own vertical position is index 9. All three share the same screen-height scale, so
-# they compare directly.
-NEXT_GAP_TOP = 4
-NEXT_GAP_BOTTOM = 5
-PLAYER_Y = 9
-
-FLAP = 1
-IDLE = 0
 
 
 class Agent:
@@ -37,9 +27,8 @@ class Agent:
         pass
 
     def act(self, observation: Any) -> int:
-        gap_center = (observation[NEXT_GAP_TOP] + observation[NEXT_GAP_BOTTOM]) / 2.0
-        # y grows downward, so "below the center" means a larger y.
-        return FLAP if observation[PLAYER_Y] > gap_center else IDLE
+        # y grows downward, so "below the center" (a larger y) means it is time to flap up.
+        return FLAP if player_y(observation) > next_gap_center(observation) else IDLE
 
 
 def display_width(text: str = NAME) -> int:

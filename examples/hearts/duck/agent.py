@@ -22,21 +22,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from sandbox.cards import HEARTS, QUEEN_OF_SPADES, current_trick, led_suit, legal_cards, rank_of, suit_of
 from wcwidth import wcswidth
 
 NAME = "duck-hearts"
-
-#: Suit ids (the high bits of the 0..51 card encoding) and the one 13-point card.
-CLUBS, DIAMONDS, SPADES, HEARTS = 0, 1, 2, 3
-QUEEN_OF_SPADES = 36
-
-
-def _suit(card: int) -> int:
-    return card // 13
-
-
-def _rank(card: int) -> int:
-    return card % 13
 
 
 class Agent:
@@ -47,34 +36,31 @@ class Agent:
         pass
 
     def act(self, observation: Any) -> int:
-        mask = observation["action_mask"]
-        legal = [card for card in range(52) if mask[card]]
-        state = observation["observation"]
-        led = int(state["led_suit"][0])
-        trick = [int(card) for card in state["trick"]]
+        legal = legal_cards(observation)
+        led = led_suit(observation)
 
         # Leading: play the lowest card so we are unlikely to win this trick.
-        if led == -1:
-            return min(legal, key=lambda card: (_rank(card), _suit(card)))
+        if led is None:
+            return min(legal, key=lambda card: (rank_of(card), suit_of(card)))
 
-        followers = [card for card in legal if _suit(card) == led]
+        followers = [card for card in legal if suit_of(card) == led]
         if followers:
-            played = [card for card in trick if card != -1 and _suit(card) == led]
-            winning_rank = max((_rank(card) for card in played), default=-1)
-            under = [card for card in followers if _rank(card) < winning_rank]
+            played = [card for _, card in current_trick(observation) if suit_of(card) == led]
+            winning_rank = max((rank_of(card) for card in played), default=-1)
+            under = [card for card in followers if rank_of(card) < winning_rank]
             if under:
                 # Stay under the current winner, shedding our highest safe card of the suit.
-                return max(under, key=_rank)
+                return max(under, key=rank_of)
             # We cannot duck — keep our lowest so a later seat can still overtake us.
-            return min(followers, key=_rank)
+            return min(followers, key=rank_of)
 
         # Void in the led suit: we cannot win this trick, so unload the most dangerous card.
         if QUEEN_OF_SPADES in legal:
             return QUEEN_OF_SPADES
-        hearts = [card for card in legal if _suit(card) == HEARTS]
+        hearts = [card for card in legal if suit_of(card) == HEARTS]
         if hearts:
-            return max(hearts, key=_rank)
-        return max(legal, key=_rank)
+            return max(hearts, key=rank_of)
+        return max(legal, key=rank_of)
 
 
 def display_width(text: str = NAME) -> int:

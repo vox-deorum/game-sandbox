@@ -16,6 +16,7 @@ Hearts is a four-player trick-taking game. Your agent fills one seat; the other 
 | `requirements-dev.txt` | Test dependencies |
 | `tests/` | Checks your submission should pass |
 | `sandbox/` | Provided tooling: the local game, the play/evaluate scripts, and the `python -m sandbox` helper — do not edit |
+| `sandbox/cards.py` | Provided card helpers you may import from `agent.py` (decode cards, read the observation) |
 | `.env.example` | Example local LLM settings |
 
 Do not edit anything in `sandbox/`, `requirements.in`, or `requirements.txt`. The template pins one shared dependency set so local runs and server runs use the same packages. If the class needs another package, ask your instructor for a new template release.
@@ -82,6 +83,20 @@ The observation is a dict with two keys:
 
 - `observation["action_mask"]` — a length-52 array; `mask[c] == 1` exactly for the cards you may legally play right now. **Return a card whose mask bit is set.** The mask already encodes every rule above, so you never have to re-check legality yourself.
 - `observation["observation"]` — the table state: `hand` (length-52, 1 where you hold a card), `trick` (length-4, the card each seat has played this trick or `-1`), `led_suit` (`0..3`, or `-1` when you are leading), `hearts_broken` (0/1), `position` (your seat), `trick_leader`, and `scores` (running penalty points per seat).
+
+You do not have to decode any of this by hand. The provided `sandbox/cards.py` module has helpers you can import at the top of `agent.py`:
+
+```python
+from sandbox.cards import legal_cards, led_suit, rank_of
+
+def act(self, observation):
+    legal = legal_cards(observation)          # the cards you may play, as a list of ints
+    if led_suit(observation) is None:         # None means you are leading this trick
+        return min(legal, key=rank_of)        # lead your lowest card
+    ...
+```
+
+It also gives you `suit_of`, `card_name`, `card_points`, `current_trick`, `trick_winner_so_far`, `hand_cards`, `scores`, `hearts_broken`, and the constants `QUEEN_OF_SPADES`, `HEARTS`, and the other suits. The [Hearts environment page]({{DOCS_URL}}students/environments/hearts/) documents the encoding, every observation field, and the full helper list.
 
 Two optional methods are available:
 

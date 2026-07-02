@@ -23,28 +23,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from sandbox.cards import card_points, current_trick, led_suit, legal_cards, rank_of, suit_of
+
 NAME = "moonshot-hearts"
-
-#: Suit ids (the high bits of the 0..51 card encoding) and the one 13-point card.
-CLUBS, DIAMONDS, SPADES, HEARTS = 0, 1, 2, 3
-QUEEN_OF_SPADES = 36
-
-
-def _suit(card: int) -> int:
-    return card // 13
-
-
-def _rank(card: int) -> int:
-    return card % 13
-
-
-def _points(card: int) -> int:
-    """Penalty points a card carries: 13 for the queen of spades, 1 per heart, else 0."""
-    if card == QUEEN_OF_SPADES:
-        return 13
-    if _suit(card) == HEARTS:
-        return 1
-    return 0
 
 
 class Agent:
@@ -55,30 +36,27 @@ class Agent:
         pass
 
     def act(self, observation: Any) -> int:
-        mask = observation["action_mask"]
-        legal = [card for card in range(52) if mask[card]]
-        state = observation["observation"]
-        led = int(state["led_suit"][0])
-        trick = [int(card) for card in state["trick"]]
+        legal = legal_cards(observation)
+        led = led_suit(observation)
 
         # Leading: open with our highest card, hard for a later seat to overtake.
-        if led == -1:
-            return max(legal, key=lambda card: (_rank(card), _suit(card)))
+        if led is None:
+            return max(legal, key=lambda card: (rank_of(card), suit_of(card)))
 
-        followers = [card for card in legal if _suit(card) == led]
+        followers = [card for card in legal if suit_of(card) == led]
         if followers:
             winning_rank = max(
-                (_rank(card) for card in trick if card != -1 and _suit(card) == led),
+                (rank_of(card) for _, card in current_trick(observation) if suit_of(card) == led),
                 default=-1,
             )
-            winners = [card for card in followers if _rank(card) > winning_rank]
+            winners = [card for card in followers if rank_of(card) > winning_rank]
             if winners:
                 # We can take the trick: play the highest card of the suit and win it.
-                return max(winners, key=_rank)
+                return max(winners, key=rank_of)
             # We cannot beat the current winner; lose cheaply and keep our high cards.
-            return min(followers, key=_rank)
+            return min(followers, key=rank_of)
 
         # Void: we cannot win this trick, so refuse to feed it points.
-        non_points = [card for card in legal if _points(card) == 0]
+        non_points = [card for card in legal if card_points(card) == 0]
         pool = non_points if non_points else legal
-        return min(pool, key=lambda card: (_rank(card), _suit(card)))
+        return min(pool, key=lambda card: (rank_of(card), suit_of(card)))

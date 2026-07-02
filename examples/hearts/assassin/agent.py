@@ -23,21 +23,23 @@ from __future__ import annotations
 
 from typing import Any
 
+from sandbox.cards import (
+    HEARTS,
+    QUEEN_OF_SPADES,
+    SPADES,
+    current_trick,
+    led_suit,
+    legal_cards,
+    make_card,
+    rank_of,
+    suit_of,
+)
+
 NAME = "assassin-hearts"
 
-#: Suit ids (the high bits of the 0..51 card encoding) and the dangerous high spades.
-CLUBS, DIAMONDS, SPADES, HEARTS = 0, 1, 2, 3
-QUEEN_OF_SPADES = 36
-KING_OF_SPADES = 37
-ACE_OF_SPADES = 38
-
-
-def _suit(card: int) -> int:
-    return card // 13
-
-
-def _rank(card: int) -> int:
-    return card % 13
+#: The two spades that can be forced to capture the queen (ranks 11 and 12 are the king and ace).
+KING_OF_SPADES = make_card(SPADES, 11)
+ACE_OF_SPADES = make_card(SPADES, 12)
 
 
 class Agent:
@@ -48,40 +50,37 @@ class Agent:
         pass
 
     def act(self, observation: Any) -> int:
-        mask = observation["action_mask"]
-        legal = [card for card in range(52) if mask[card]]
-        state = observation["observation"]
-        led = int(state["led_suit"][0])
-        trick = [int(card) for card in state["trick"]]
+        legal = legal_cards(observation)
+        led = led_suit(observation)
 
         # Leading: drag spades out so the queen must fall, but never lead the queen or a high
         # spade ourselves; if we hold no safe low spade, lead our lowest card instead.
-        if led == -1:
+        if led is None:
             low_spades = [
-                card for card in legal if _suit(card) == SPADES and _rank(card) < _rank(QUEEN_OF_SPADES)
+                card for card in legal if suit_of(card) == SPADES and rank_of(card) < rank_of(QUEEN_OF_SPADES)
             ]
             if low_spades:
-                return min(low_spades, key=_rank)
-            return min(legal, key=lambda card: (_rank(card), _suit(card)))
+                return min(low_spades, key=rank_of)
+            return min(legal, key=lambda card: (rank_of(card), suit_of(card)))
 
-        followers = [card for card in legal if _suit(card) == led]
+        followers = [card for card in legal if suit_of(card) == led]
         if followers:
             winning_rank = max(
-                (_rank(card) for card in trick if card != -1 and _suit(card) == led),
+                (rank_of(card) for _, card in current_trick(observation) if suit_of(card) == led),
                 default=-1,
             )
-            under = [card for card in followers if _rank(card) < winning_rank]
+            under = [card for card in followers if rank_of(card) < winning_rank]
             if under:
                 # Stay under the winner, shedding our highest safe card (a high spade when led).
-                return max(under, key=_rank)
+                return max(under, key=rank_of)
             # We cannot duck; keep our lowest so a later seat can still overtake us.
-            return min(followers, key=_rank)
+            return min(followers, key=rank_of)
 
         # Void: dump the most dangerous card, queen and high spades first.
         for dangerous in (QUEEN_OF_SPADES, ACE_OF_SPADES, KING_OF_SPADES):
             if dangerous in legal:
                 return dangerous
-        hearts = [card for card in legal if _suit(card) == HEARTS]
+        hearts = [card for card in legal if suit_of(card) == HEARTS]
         if hearts:
-            return max(hearts, key=_rank)
-        return max(legal, key=_rank)
+            return max(hearts, key=rank_of)
+        return max(legal, key=rank_of)

@@ -64,6 +64,8 @@ Open `agent.py`. The two required methods are:
 
 For Flappy Bird, the observation is a NumPy array of 12 normalized numbers describing the bird and nearby pipes. An action is `0` for do nothing or `1` for flap. If NumPy arrays are new to you, read the first sections of [NumPy's beginner guide](https://numpy.org/doc/stable/user/absolute_beginners.html).
 
+The meaning of each action number and each observation value is specific to your game. Your [environment page](environments/index.md) documents them in full, along with a `sandbox` helper module (`sandbox.features` for Flappy Bird, `sandbox.cards` for Hearts) that reads the observation for you so you can work with named values instead of raw array indices.
+
 See [Agent interface](agent-interface.md) for the complete method contract and a small example.
 
 ## 4. Play and evaluate

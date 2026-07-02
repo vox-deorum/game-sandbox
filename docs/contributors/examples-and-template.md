@@ -28,6 +28,8 @@ Two environment layers ship today. `flappy_bird` is the single-slot game whose b
 
 Composition uses whole-file replacement. The only special merge is `requirements.extra.txt`, whose lines append to `requirements.txt`. An extra may not override an existing pin.
 
+Compose also resolves a documentation link token. Template files that link to the docs site carry the literal `{{DOCS_URL}}`, and `compose.py` replaces it with the `site_url` from `mkdocs.yml` (with a trailing slash) in the composed Markdown and Python, then fails if the token survives anywhere in the output. The monorepo sources keep the token because there is no single site URL to hard-code into them, while every composed artifact CI tests or the publish workflow ships carries the real address. A template page at `docs/students/environments/<env>.md` is reached as `{{DOCS_URL}}students/environments/<env>/`, since MkDocs serves pages as directories.
+
 The dependency set is global and versioned as `template-v<N>`. Environment layers cannot include requirements files. File deletion during composition is not supported until a real need justifies a deletion manifest.
 
 There is no separate composition manifest. Directory conventions, whole-file overlays, and the one dependency-extension rule are the complete mechanism, which keeps a composed repository easy to inspect.
@@ -42,9 +44,10 @@ The bare template test fails until the student implements `act`. A composed exam
 
 1. Add the environment to the environments package (see [Adding an environment](environments.md)).
 2. Register it in `scripts/_paths.py` `TEMPLATE_ENVS` (env id → the import-self-contained modules to sync) and add its generated `__init__` texts in `scripts/generate.py`. The top-level `sandbox/env/__init__.py` must expose the uniform surface the provided scripts read: `make_env`, `ENV_ID`, `PLAYER_SLOT`, and `make_human_controller`. To make the environment human-playable, include its `human.py` (the `make_human_controller` factory) in the `TEMPLATE_ENVS` entry so it syncs alongside the env modules.
-3. Create the `templates/<env>/` layer: at minimum an `agent.py` stub and a `README.md`. The base `sandbox/play.py` is environment-agnostic; override it whole-file in the env layer only if the local loop does not fit.
+3. Create the `templates/<env>/` layer: at minimum an `agent.py` stub and a `README.md`, plus, when the observation or action needs decoding, a plain-Python helper module at `sandbox/<name>.py` and its pin test at `tests/test_<name>.py`. The base `sandbox/play.py` is environment-agnostic; override it whole-file in the env layer only if the local loop does not fit.
 4. Run `scripts/generate.py` to sync `templates/<env>/sandbox/env/`.
-5. Add at least one example under `examples/<env>/<name>/`.
+5. Add at least one example under `examples/<env>/<name>/`, reading the observation through the helper module so it models the intended style.
+6. Write the student documentation page `docs/students/environments/<env>.md` and add its row to the environments index. The [student-facing deliverables](environments.md#student-facing-deliverables) section lists the required page sections, the helper placement rules, and the template docstring and README standards.
 
 ## Tags and publishing
 

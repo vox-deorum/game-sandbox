@@ -20,14 +20,25 @@ workflow use, so a student's clone is byte-identical to what CI tested.
 from __future__ import annotations
 
 import argparse
+import re
 import shutil
 import sys
 from pathlib import Path
 
-from _paths import BUILD_DIR, EXAMPLES_DIR, TEMPLATE_BASE_DIR, TEMPLATES_DIR
+from _paths import BUILD_DIR, EXAMPLES_DIR, REPO_ROOT, TEMPLATE_BASE_DIR, TEMPLATES_DIR
 
 _EXTRA_REQUIREMENTS = "requirements.extra.txt"
 _REQUIREMENTS = "requirements.txt"
+
+# Templates carry the {{DOCS_URL}} token wherever they link to the docs site; compose resolves it
+# to the real address from mkdocs.yml so a student's cloned template points at the published docs.
+# The monorepo sources keep the token (there is no single site URL to hard-code into them), and
+# every composed artifact CI tests or the publish workflow ships carries the substituted URL.
+_DOCS_URL_TOKEN = "{{DOCS_URL}}"
+_MKDOCS_CONFIG = REPO_ROOT / "mkdocs.yml"
+# The token only ever appears in prose and Python, so those are the file types we rewrite. Any
+# other file carrying it is caught by the post-substitution sweep below rather than silently kept.
+_SUBSTITUTED_SUFFIXES = (".md", ".py")
 
 
 class ComposeError(Exception):
@@ -71,6 +82,44 @@ def _merge_requirements(base_text: str, extra_text: str) -> str:
         merged += "\n# --- appended from the example's requirements.extra.txt ---\n"
         merged += "\n".join(extra_lines).rstrip("\n") + "\n"
     return merged
+
+
+def _docs_url() -> str:
+    """Return the docs site URL from mkdocs.yml, with a trailing slash, for token substitution."""
+    if not _MKDOCS_CONFIG.is_file():
+        raise ComposeError(f"no mkdocs.yml at {_MKDOCS_CONFIG}; cannot resolve the {_DOCS_URL_TOKEN} token")
+    match = re.search(r"^site_url:\s*(\S+)\s*$", _MKDOCS_CONFIG.read_text(encoding="utf-8"), re.MULTILINE)
+    if match is None:
+        raise ComposeError(
+            f"mkdocs.yml has no site_url, so templates cannot resolve the {_DOCS_URL_TOKEN} token. "
+            f"Add a site_url to mkdocs.yml (a placeholder is fine until the site is public)."
+        )
+    url = match.group(1)
+    return url if url.endswith("/") else url + "/"
+
+
+def _substitute_docs_url(out_dir: Path) -> None:
+    """Replace the {{DOCS_URL}} token in a composed tree and fail loudly if any copy survives.
+
+    Prose and Python files are rewritten in place; then the tree is swept so a token left in any
+    other source file type surfaces as an error rather than shipping to a student unresolved.
+    Compiled ``__pycache__`` artifacts are ignored: a ``.pyc`` legitimately mirrors the token from
+    its source module's string constants and is regenerated from the already-substituted source.
+    """
+    url = _docs_url()
+    sources = [p for p in out_dir.rglob("*") if p.is_file() and "__pycache__" not in p.parts]
+    for path in sorted(p for p in sources if p.suffix in _SUBSTITUTED_SUFFIXES):
+        text = path.read_text(encoding="utf-8")
+        if _DOCS_URL_TOKEN in text:
+            path.write_text(text.replace(_DOCS_URL_TOKEN, url), encoding="utf-8", newline="\n")
+
+    token_bytes = _DOCS_URL_TOKEN.encode("utf-8")
+    survivors = sorted(str(p.relative_to(out_dir)) for p in sources if token_bytes in p.read_bytes())
+    if survivors:
+        raise ComposeError(
+            f"the {_DOCS_URL_TOKEN} token survived substitution in {survivors}; it is only rewritten "
+            f"in {_SUBSTITUTED_SUFFIXES} files. Move the link into a supported file type."
+        )
 
 
 def _overlay_files(src_dir: Path, out_dir: Path, *, skip_extra: bool = False) -> None:
@@ -135,6 +184,8 @@ def compose_template(env: str) -> Path:
     shutil.copytree(TEMPLATE_BASE_DIR, out_dir, dirs_exist_ok=True)
     # 2. The env layer overlays it, whole-file.
     _overlay_files(env_dir, out_dir)
+    # 3. Resolve the docs-site link token now that every layer is in place.
+    _substitute_docs_url(out_dir)
     return out_dir
 
 
@@ -167,6 +218,8 @@ def compose_example(env: str, name: str) -> Path:
             newline="\n",
         )
 
+    # 4. Resolve the docs-site link token again, in case an example overlay reintroduced it.
+    _substitute_docs_url(out_dir)
     return out_dir
 
 

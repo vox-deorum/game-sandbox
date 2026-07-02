@@ -12,6 +12,7 @@ Get template → Set up Python → Write agent → Test locally → Push to GitH
 
 1. [Getting started](getting-started.md) explains the tools and walks through the full local workflow.
 2. [Agent interface](agent-interface.md) explains the methods your Python class can implement.
-3. [Submitting](submitting.md) explains Git commits, the validation stages, and common rejection reasons.
+3. [Your environment](environments/index.md) documents the actions, observation, and scoring of each game, and the helper module its template provides.
+4. [Submitting](submitting.md) explains Git commits, the validation stages, and common rejection reasons.
 
 If Git or Python is new to you, that is fine. The guide introduces the parts you need and links to official tutorials when a topic deserves a fuller explanation.

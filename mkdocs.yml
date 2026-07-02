@@ -1,5 +1,10 @@
 site_name: Game Sandbox
 site_description: A classwise playground for Game AI.
+# Placeholder until the docs site is public (the Pages deploy in .github/workflows/docs.yml is
+# still disabled). scripts/compose.py reads this value and substitutes the {{DOCS_URL}} token in
+# composed templates, so a student's cloned template links back to the published docs. Update
+# this when the real site URL is known and the token resolves to the new address automatically.
+site_url: https://vox-deorum.github.io/game-sandbox/
 repo_url: https://github.com/vox-deorum/game-sandbox
 repo_name: vox-deorum/game-sandbox
 docs_dir: docs
