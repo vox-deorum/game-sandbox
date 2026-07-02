@@ -158,6 +158,11 @@ def play(state: HeartsState, card: int) -> None:
 
     state.hands[seat].remove(card)
     state.current_trick.append((seat, card))
+    # Variant choice: only a heart breaks hearts. Playing the Q♠ does NOT break hearts here, even
+    # though it is the highest-penalty card. Some house rules let the Q♠ break hearts too; this
+    # engine deliberately follows the more common convention where hearts alone do (test_hearts.py
+    # pins it). If that ever changes, `legal_moves`' hearts-not-led-until-broken rule follows from
+    # this flag with no other edit.
     if suit_of(card) == HEARTS:
         state.hearts_broken = True
 

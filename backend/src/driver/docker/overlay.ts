@@ -248,11 +248,18 @@ export function sessionOverlayImageTag(
  * `FROM <previous> ; COPY tree /opt/agents/submissions/<slotId>`), so it reuses the *exact*
  * deterministic single-slot build context (same ignore filter, same `sort`) that the per-submission
  * overlay uses, and each slot's code lands only in its own directory. Slots are staged in sorted
- * slot-id order, and re-tagging the final tag each round leaves the prior round's image as a dangling
- * intermediate whose layers persist in the final image (Docker reclaims them on a routine prune, the
- * same way a base-image rebuild's superseded layers are). The same submission may fill more than one
- * slot; each slot is staged independently from its own source tree, so two seats backed by one repo
- * are as isolated on disk as two different repos.
+ * slot-id order. The same submission may fill more than one slot; each slot is staged independently
+ * from its own source tree, so two seats backed by one repo are as isolated on disk as two different
+ * repos.
+ *
+ * The final (reuse-cache) tag is applied only once, by the last round, and every intermediate round
+ * builds under a distinct scratch tag. This keeps the final tag out of the failure/partial window: a
+ * failure on any round leaves the final tag unwritten, so a later identical seating under `reuse`
+ * rebuilds instead of launching a half-composed image whose later seats would die with a missing-code
+ * error, and a concurrent start never observes the final tag mid-chain. The scratch tags are removed
+ * in a `finally` (their layers persist inside the final image and are reclaimed by a routine prune,
+ * exactly as the old re-tag-in-place chain's dangling intermediates were), so a mid-chain failure
+ * leaks no tagged partial image either.
  */
 export async function ensureSessionOverlayImage(
   docker: Docker,
@@ -272,12 +279,30 @@ export async function ensureSessionOverlayImage(
   const slots = [...spec.slots].sort((a, b) =>
     a.slotId < b.slotId ? -1 : a.slotId > b.slotId ? 1 : 0,
   )
+  const scratchTags: string[] = []
   let fromTag = baseTag
-  for (const slot of slots) {
-    const dockerfile = overlayDockerfile(fromTag, slot.slotId)
-    const context = buildContext(slot.sourceTreePath, dockerfile)
-    await runBuild(docker, context, tag, timeoutMs)
-    fromTag = tag
+  try {
+    for (let i = 0; i < slots.length; i++) {
+      const slot = slots[i] as SessionOverlaySlot
+      const isLast = i === slots.length - 1
+      // Intermediate rounds build under `<tag>-stage<i>`; only the last round writes the final tag,
+      // so the final tag names a complete image or nothing at all.
+      const roundTag = isLast ? tag : `${tag}-stage${i}`
+      const dockerfile = overlayDockerfile(fromTag, slot.slotId)
+      const context = buildContext(slot.sourceTreePath, dockerfile)
+      await runBuild(docker, context, roundTag, timeoutMs)
+      if (!isLast) {
+        scratchTags.push(roundTag)
+      }
+      fromTag = roundTag
+    }
+  } finally {
+    // Drop the intermediate scratch tags. When the chain completed, the final image already references
+    // their layers, so this only untags; when it failed mid-chain, it removes the partial images built
+    // so far. Best-effort: a cleanup failure must not mask a build failure or fail a successful build.
+    for (const scratch of scratchTags) {
+      await removeImage(docker, scratch).catch(() => undefined)
+    }
   }
   return { ref: tag }
 }

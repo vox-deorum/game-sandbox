@@ -11,6 +11,20 @@ job.
 
 Every failure raises :class:`ManifestError` naming the repo, the field, and the failure,
 because in Stage 5 these messages are surfaced to the participant whose build failed.
+
+Known limitation: per-slot code isolation holds at *load* time, not at *act* time. When one
+container hosts several slots, :func:`load_agent` evicts a prior root's modules from
+``sys.modules`` before importing the next entry point, so two repos that import a same-named
+helper *at module top* each get their own (see the loader tests). But every loaded root stays on
+``sys.path`` (most-recent first) for the life of the process, and ``sys.modules`` is shared. So a
+helper a repo imports *lazily inside* ``act`` (``import helper`` in the method body rather than at
+the top of the module) resolves against the last-loaded slot's directory and is then cached under
+that bare name for every seat. Two seats that each lazily import their own ``helper`` therefore
+share whichever one imported first. Fixing this properly needs per-slot module namespacing (or a
+separate interpreter per slot), which is a larger change than the container's current in-process
+model; until then, keep the container to one slot per process, or have submissions import their
+helpers at module top, where the eviction already isolates them. ``test_manifest.py`` pins this
+boundary so the limit stays visible rather than silently surprising a later stage.
 """
 
 from __future__ import annotations

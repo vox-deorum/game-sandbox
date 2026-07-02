@@ -219,6 +219,46 @@ class Agent:
         sys.modules.pop("helper", None)
 
 
+def test_act_time_lazy_import_is_not_isolated_across_slots(tmp_path: Path):
+    # A KNOWN LIMITATION, pinned so it stays visible (see the manifest module docstring). Load-time
+    # isolation covers helpers imported at module top; a helper imported LAZILY inside act() is not
+    # isolated, because every loaded root stays on sys.path and sys.modules is shared. Two seats that
+    # each lazily `import helper` share whichever imported first. When this is ever fixed (per-slot
+    # namespacing or a subinterpreter per slot), flip this to assert "a" and "b" and drop the note.
+    repo_a = tmp_path / "player_0"
+    repo_b = tmp_path / "player_1"
+    repo_a.mkdir()
+    repo_b.mkdir()
+    manifest = {"entry_point": "agent", "class_name": "Agent", "template_version": 1}
+    # `import helper` sits inside act(), not at module top, so the loader's eviction never sees it.
+    agent_source = """
+class Agent:
+    def reset(self, seed):
+        pass
+    def act(self, observation):
+        import helper
+        return helper.VALUE
+"""
+    _write_repo(repo_a, "agent", manifest=manifest, source=agent_source)
+    _write_repo(repo_b, "agent", manifest=manifest, source=agent_source)
+    (repo_a / "helper.py").write_text('VALUE = "a"\n', encoding="utf-8")
+    (repo_b / "helper.py").write_text('VALUE = "b"\n', encoding="utf-8")
+
+    try:
+        agent_a = load_agent(repo_a)
+        agent_b = load_agent(repo_b)
+        # repo_b was loaded last, so its directory leads sys.path; the first lazy import of "helper"
+        # wins and is cached under that bare name, and both seats then read the same value.
+        first = agent_a.act(None)
+        second = agent_b.act(None)
+        assert first == second == "b"
+    finally:
+        _cleanup(repo_a)
+        _cleanup(repo_b)
+        sys.modules.pop("agent", None)
+        sys.modules.pop("helper", None)
+
+
 def test_missing_manifest_raises(tmp_path: Path):
     with pytest.raises(ManifestError, match="no manifest.json"):
         load_manifest(tmp_path)

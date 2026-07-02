@@ -146,6 +146,68 @@ def test_first_trick_penalty_escape_valve():
     assert rules.is_legal(state, 1, 39)
 
 
+def test_queen_of_spades_does_not_break_hearts():
+    # Variant pin: only a heart breaks hearts. Seat 1 follows a led spade with the Q♠ (the 13-point
+    # card); afterwards hearts stay unbroken, so a later leader still may not open with a heart. The
+    # contrast case — playing a heart — flips the flag, proving the test exercises the real transition.
+    two_of_spades = rules.SPADES * 13  # 26
+    state = rules.HeartsState(
+        hands=[[], [rules.QUEEN_OF_SPADES], [], []],
+        current_trick=[(0, two_of_spades)],
+        trick_leader=0,
+        turn=1,
+        hearts_broken=False,
+        tricks_played=3,
+        taken=[[], [], [], []],
+        last_trick=None,
+        last_trick_winner=None,
+    )
+    rules.play(state, rules.QUEEN_OF_SPADES)
+    assert state.hearts_broken is False
+
+    # A heart, by contrast, does break hearts.
+    heart = rules.HEARTS * 13  # 2♥ = 39
+    state.hands[2] = [heart]
+    state.turn = 2
+    rules.play(state, heart)
+    assert state.hearts_broken is True
+
+
+def test_observe_masks_only_the_acting_seat():
+    # The action mask belongs to the seat on turn; an off-turn seat gets an all-zero mask so it never
+    # looks like it may act. Only the acting seat's mask carries its legal cards.
+    env = make_env()
+    env.reset(seed=0)
+    acting = env.agent_selection
+    acting_mask = env.observe(acting)["action_mask"]
+    assert int(acting_mask.sum()) > 0
+    for agent in env.possible_agents:
+        if agent != acting:
+            assert int(env.observe(agent)["action_mask"].sum()) == 0
+
+
+def test_terminal_observation_scores_match_the_overlay_after_a_moon_flip():
+    # The observation's score leaf must agree with the overlay's display_scores at terminal, including
+    # the shoot-the-moon flip. A raw points_taken leaf would disagree with the flipped overlay on the
+    # last step of a moon-shot hand; penalty_scores keeps them equal.
+    taken = [list(range(39, 52)) + [rules.QUEEN_OF_SPADES], [], [], []]  # seat 0 shoots the moon
+    env = make_env()
+    env.reset(seed=0)
+    env.state = rules.HeartsState(
+        hands=[[], [], [], []],
+        current_trick=[],
+        trick_leader=0,
+        turn=0,
+        hearts_broken=True,
+        tricks_played=13,
+        taken=taken,
+        last_trick=None,
+        last_trick_winner=None,
+    )
+    observed = env.observe("player_0")["observation"]["scores"]
+    assert list(int(s) for s in observed) == extract_overlay(env)["display_scores"] == [0, 26, 26, 26]
+
+
 def test_env_rejects_illegal_move():
     env = make_env()
     env.reset(seed=0)

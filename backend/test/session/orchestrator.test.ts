@@ -429,6 +429,35 @@ describe('orchestrator', () => {
       expect(source.disposed).toBe(2)
       expect(launch?.spec.image.ref).toContain('session-overlay')
     })
+
+    it('writes no session_submissions rows when the container fails to launch', async () => {
+      const source = new FakeSource()
+      const orch = makeOrchestrator(60_000, source)
+      const subA = await seedReadySubmission(storage, 'eve', 'hearts')
+      const subB = await seedReadySubmission(storage, 'frank', 'hearts')
+      driver.onLaunch = () => {
+        throw new Error('container refused to start')
+      }
+
+      await expect(
+        orch.start(
+          startHearts(
+            heartsSlots({
+              player_0: { kind: 'submission', submissionId: subA.id },
+              player_1: { kind: 'submission', submissionId: subB.id },
+            }),
+          ),
+        ),
+      ).rejects.toThrow(/failed to launch/)
+
+      // The failed session is marked ended, and no submission attribution row was written — a launch
+      // that never started must leave no phantom "recent run" on either submitted agent.
+      const sessions = await storage.listSessions()
+      expect(sessions).toHaveLength(1)
+      const failed = sessions[0]
+      expect(failed).toMatchObject({ status: 'ended', termination_reason: 'error' })
+      expect(await storage.listSessionSubmissions(failed?.id ?? '')).toEqual([])
+    })
   })
 
   describe('submitted-agent watch run', () => {

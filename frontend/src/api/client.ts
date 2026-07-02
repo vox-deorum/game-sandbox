@@ -58,6 +58,12 @@ export interface SessionRow {
   recording_id: string | null
   /** The competition season this session belongs to; null only for non-competitive legacy rows. */
   season_id: string | null
+  /**
+   * The resolved per-move budget (ms) for the connected human seat: the session's override or the
+   * environment default. The session page shows the move clock from this rather than the env-default
+   * metadata. Null for a scripted watch (no human seat) or an env with no human timeout.
+   */
+  human_timeout_ms: number | null
   created_at: string
   ended_at: string | null
 }

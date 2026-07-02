@@ -72,11 +72,26 @@ const gameOverDismissed = ref(false)
 const isOwner = computed(
   () => me.me?.user_id !== undefined && row.value?.user_id === me.me.user_id,
 )
-const controlledSlots = computed<string[]>(() =>
-  isOwner.value && row.value?.mode === 'human' && status.value !== 'ended'
-    ? (meta.value?.human_slots ?? [])
-    : [],
-)
+// The slots this viewer actually drives. It must be the one seat the human took, not every
+// human-capable seat: the renderer reads `controlled[0]` as the single controlled seat, so passing all
+// of `meta.human_slots` would pin control to seat 0 and lock a human seated elsewhere out of play. The
+// recording header's `players` map records which seat the human occupies (`kind: 'human'`), so we
+// narrow to that. Before the header arrives (or on an older header without attribution) we fall back to
+// the env's human-capable seats; by the time the renderer mounts (on the header) the narrowed seat is
+// known, so the fallback only ever feeds the pre-mount decision log.
+const controlledSlots = computed<string[]>(() => {
+  if (!(isOwner.value && row.value?.mode === 'human' && status.value !== 'ended')) {
+    return []
+  }
+  const players = header.value?.players
+  if (players !== undefined) {
+    const humanSlots = Object.keys(players).filter((slot) => players[slot]?.kind === 'human')
+    if (humanSlots.length > 0) {
+      return humanSlots
+    }
+  }
+  return meta.value?.human_slots ?? []
+})
 const recordingId = computed(() => row.value?.recording_id ?? null)
 // Fail closed: anyone not confirmed an operator (including an unresolved identity) sees the blind
 // attribution while the season is playable.
@@ -186,7 +201,16 @@ onMounted(async () => {
     getEnvironments().catch(() => []),
     listSeasons(fetched.env_id).catch(() => []),
   ])
-  meta.value = environments.find((e) => e.env_id === fetched.env_id) ?? null
+  const environmentMeta = environments.find((e) => e.env_id === fetched.env_id) ?? null
+  // The renderer reads the move-clock budget from `meta.human_timeout_ms`, which carries only the
+  // environment default. Overlay the session's own resolved value (its override or that default) so a
+  // session started with a custom human timeout shows the right clock. A copy, so the shared env-meta
+  // object the registry hands out is not mutated. Only a session that carries one overrides; otherwise
+  // the env default stands.
+  meta.value =
+    environmentMeta !== null && fetched.human_timeout_ms !== null
+      ? { ...environmentMeta, human_timeout_ms: fetched.human_timeout_ms }
+      : environmentMeta
   seasonPlayable.value =
     fetched.season_id !== null &&
     seasons.some((season) => season.id === fetched.season_id && season.play_status === 'open')

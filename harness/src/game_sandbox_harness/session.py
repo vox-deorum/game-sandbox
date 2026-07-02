@@ -343,7 +343,12 @@ class Episode:
         else:
             deadline_ms = _external_deadline(self._entry, binding, self._clock)
             action = binding.source.get_action(slot_id, observation, deadline_ms)
-            if action is None:
+            # A human seat is never charged the way an agent is. Both no input in time (``None``) and an
+            # action the environment would reject as illegal fall back to the environment default rather
+            # than reaching env.step and crashing the shared session. The UI only ever sends legal cards,
+            # but a hand-rolled transport client could send an out-of-space or masked-out action; that
+            # must not take down every other seat in the container.
+            if action is None or _illegal_action_reason(env, slot_id, observation, info, action) is not None:
                 action = self._entry.default_action(slot_id)
 
         env.step(action)

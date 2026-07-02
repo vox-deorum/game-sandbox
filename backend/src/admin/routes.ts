@@ -461,6 +461,15 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
         }
         const config = seasonView(season).config
         const meta = deps.environments.get(season.env_id)
+        // The environment's `seat_order_matters` decides whether K submission seats expand as ordered
+        // permutations or unordered combinations, so a missing environment must fail the trigger rather
+        // than silently default to `false` and mis-schedule a seat-order-sensitive env (e.g. Hearts).
+        if (meta === undefined) {
+          return reply.code(409).send({
+            error: `environment ${season.env_id} is not registered`,
+            code: 'unknown_environment',
+          })
+        }
         const ready = await deps.storage.listActiveSubmissionsBySeason(season.id, 'ready')
         const submissions: SubmissionRef[] = ready.map((s) => ({
           kind: 'submission',
@@ -470,7 +479,7 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
         const schedule = buildSchedule({
           matches: config.matches,
           submissions,
-          seatOrderMatters: meta?.seat_order_matters ?? false,
+          seatOrderMatters: meta.seat_order_matters,
         })
         if (schedule.length === 0) {
           return reply

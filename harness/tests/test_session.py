@@ -537,6 +537,25 @@ def test_illegal_action_masked_via_info_is_charged_to_the_acting_seat():
     assert episode.result().failed_slot == "player_1"
 
 
+def test_illegal_external_action_defaults_instead_of_crashing_the_session():
+    # A human seat is not charged like an agent. An illegal action from a hand-rolled transport client
+    # (the UI only sends legal cards) must fall back to the environment default rather than reaching
+    # env.step and taking down every co-seat in the container. player_0 (external) sends a masked-out
+    # card; the loop swaps in the legal default (0) so the step lands cleanly and no seat is charged.
+    entry = _masked_entry(legal=(0, 1))
+    slots = {
+        "player_0": ExternalSlot(ScriptedSource([2])),  # 2 is masked illegal for a human seat
+        "player_1": AgentSlot(ScriptedAgent([0])),  # legal
+    }
+    episode = Episode(entry, slots, seed=1, clock=ManualClock())
+    episode.start()
+    # Without the external-path legality check this would raise the env's illegal-move error; with it,
+    # the action is defaulted and the step is applied.
+    episode.step_once()
+    assert episode.tick == 1
+    assert episode.failed_slot is None
+
+
 def test_out_of_action_space_action_is_charged_to_the_acting_seat():
     # An action outside the slot's Discrete space (the agent contract is an in-space action) is the
     # agent's fault, named even when the env publishes no per-card mask reason for it.

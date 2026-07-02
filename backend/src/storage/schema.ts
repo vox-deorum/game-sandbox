@@ -52,6 +52,14 @@ export interface SessionsTable {
    * null-season session can never be rated.
    */
   season_id: string | null
+  /**
+   * The resolved per-move budget (ms) for this session's connected human seat: the start request's
+   * override when one was given, otherwise the environment's default `human_timeout_ms`. Carried so the
+   * live session page can show the move clock using the session's own value rather than the env default,
+   * and so a spectator/replay reads the same number. Null for a session with no human seat (a scripted
+   * watch) or an environment that declares no human timeout.
+   */
+  human_timeout_ms: number | null
   /** ISO-8601 UTC timestamps. */
   created_at: string
   ended_at: string | null

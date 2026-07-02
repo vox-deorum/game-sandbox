@@ -42,6 +42,16 @@ describe('storage on :memory:', () => {
     expect(fetched).toEqual(created)
   })
 
+  it('persists the resolved human move budget and defaults it to null', async () => {
+    // The move clock reads this back through getSession, so a session started with a custom human
+    // timeout must round-trip it, and one started without carries null (the env-default case).
+    await storage.createSession(input({ id: 'timed', human_timeout_ms: 5000 }))
+    expect((await storage.getSession('timed'))?.human_timeout_ms).toBe(5000)
+
+    await storage.createSession(input({ id: 'untimed' }))
+    expect((await storage.getSession('untimed'))?.human_timeout_ms).toBeNull()
+  })
+
   it('moves a session through running and ended', async () => {
     await storage.createSession(input())
     await storage.markRunning('sess-1')

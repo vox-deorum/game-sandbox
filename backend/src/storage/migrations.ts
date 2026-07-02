@@ -37,6 +37,7 @@ const initialSchema: Migration = {
       .addColumn('termination_reason', 'text')
       .addColumn('recording_id', 'text')
       .addColumn('season_id', 'text')
+      .addColumn('human_timeout_ms', 'integer')
       .addColumn('created_at', 'text', (col) => col.notNull())
       .addColumn('ended_at', 'text')
       .execute()

@@ -63,17 +63,29 @@ function decodeAgent(value: string): SlotAssignmentInput {
 // The required seats are player_0 … player_{max_slots-1}, the same ids the backend validates against.
 const slotIds = Array.from({ length: props.meta.max_slots }, (_, i) => `player_${i}`)
 
+// The seats a connected human may occupy, per the environment metadata. Hearts marks all four; a
+// restricted environment may mark only some, so the human default and the "Sit here" affordance must
+// respect it rather than offering the human every seat.
+const humanCapable = new Set(props.meta.human_slots)
+
 // Every seat carries a concrete agent under it; the human (play only) simply overrides whichever seat
 // `humanSlot` names. Watch preselects the clicked agent into every seat; play defaults every seat to
-// the Naive baseline and seats the human at seat 0. There is never an empty seat.
+// the Naive baseline and seats the human at the first human-capable seat. There is never an empty seat.
 const defaultAgent = props.mode === 'watch' ? encodeAgent(props.preselect ?? { kind: 'builtin-agent' }) : BUILTIN
 const agentChoice = reactive<Record<string, string>>(
   Object.fromEntries(slotIds.map((slotId) => [slotId, defaultAgent])),
 )
-const humanSlot = ref<string | null>(props.mode === 'play' ? (slotIds[0] ?? null) : null)
+const humanSlot = ref<string | null>(
+  props.mode === 'play' ? (slotIds.find((slotId) => humanCapable.has(slotId)) ?? null) : null,
+)
 
 function isHuman(slotId: string): boolean {
   return humanSlot.value === slotId
+}
+
+/** Whether a "Sit here" affordance belongs on this seat: play mode, and the seat is human-capable. */
+function canSitHere(slotId: string): boolean {
+  return props.mode === 'play' && humanCapable.has(slotId)
 }
 
 // The strict index check types `agentChoice[slotId]` as `string | undefined`, but a seat always has a
@@ -195,7 +207,7 @@ function onSubmit(): void {
               </option>
             </UiSelect>
             <UiButton
-              v-if="mode === 'play'"
+              v-if="canSitHere(slotId)"
               type="button"
               variant="ghost"
               size="tight"

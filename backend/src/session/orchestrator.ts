@@ -195,13 +195,12 @@ export class Orchestrator {
       mode,
       recording_id: recordingId,
       season_id: playSeason.id,
+      // Persist the resolved human move budget so the live page's move clock reads the session's value
+      // (its override or the env default), not just the env default the renderer sees in metadata. Only
+      // a human session carries one; a scripted watch has no human seat, so store null there.
+      human_timeout_ms: mode === 'human' ? humanTimeoutMs : null,
       created_at: createdAt,
     })
-    // One attribution row per submitted slot, so the agent profile can list each as a recent run.
-    // Human and built-in slots are carried only in the recording header `players`, never here.
-    for (const binding of submissionBindings) {
-      await this.storage.recordSessionSubmission(id, binding.submissionId, binding.slotId)
-    }
 
     const sandbox = this.sandboxProfile()
     const sessionConfig = this.sessionConfig(
@@ -223,9 +222,18 @@ export class Orchestrator {
         sessionId: id,
       })
     } catch (error) {
-      // The row exists but no container does; mark it failed so it never looks active.
+      // The row exists but no container does; mark it failed so it never looks active. No
+      // session_submissions rows have been written yet (they land only after a successful launch,
+      // below), so a launch that never started leaves no phantom "recent run" on any submission.
       await this.storage.markEnded(id, 'error', new Date().toISOString()).catch(() => undefined)
       throw new OrchestratorError(500, `failed to launch session: ${String(error)}`)
+    }
+
+    // The container is running: record one attribution row per submitted slot, so the agent profile
+    // can list each as a recent run. Human and built-in slots are carried only in the recording header
+    // `players`, never here. Done after launch so a failed launch attributes no run to anyone.
+    for (const binding of submissionBindings) {
+      await this.storage.recordSessionSubmission(id, binding.submissionId, binding.slotId)
     }
 
     const session = new LiveSession({
@@ -259,6 +267,12 @@ export class Orchestrator {
    * more than this stage's single human slot. The `submission`-id discriminant is guaranteed by the
    * union and the wire schema, so it is not re-checked here. Returns the assignments ordered by slot
    * index and the derived mode (`human` when a human slot is present, else `scripted`).
+   *
+   * A live/watch session always composes the full table: exactly `max_slots` seats. `min_slots` is
+   * deliberately not consulted here — it bounds only the per-match slot count an automated season config
+   * may declare (see the admin match-config validation), where a variable-seat environment can schedule
+   * a short table. A session, by contrast, seats every player, so the required set is the full
+   * `player_0…player_{max_slots-1}` regardless of how low `min_slots` sits.
    */
   private validateSlotShape(
     meta: EnvironmentMeta,

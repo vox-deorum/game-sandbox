@@ -94,6 +94,7 @@ function ownerRow() {
     termination_reason: null,
     recording_id: 'flappy_bird-s1',
     season_id: 'flappy_bird-iter-1',
+    human_timeout_ms: null,
     created_at: '2026-06-11T00:00:00.000Z',
     ended_at: null,
   }
@@ -182,6 +183,65 @@ describe('SessionPage', () => {
     // The owner gets a live sendAction that the page forwards as an input command.
     mountCtx?.sendAction?.('player_0', 1)
     expect(sent).toContainEqual({ kind: 'input', slot: 'player_0', action: 1 })
+  })
+
+  it('controls the seat the human actually took, not always seat 0', async () => {
+    // A four-seat Hearts session where the human sits at player_2. The renderer keys first-person
+    // control off the single controlled slot, so the page must narrow to the seat the header attributes
+    // to the human rather than handing it every human-capable seat (which would pin control to seat 0).
+    vi.mocked(getEnvironments).mockResolvedValue([heartsMeta()])
+    vi.mocked(getMe).mockResolvedValue({
+      user_id: 'dev-user',
+      allowlisted: true,
+      is_operator: false,
+    })
+    vi.mocked(getSession).mockResolvedValue({
+      ...ownerRow(),
+      env_id: 'hearts',
+      recording_id: 'hearts-s1',
+    })
+    await renderSession()
+    await waitForHandlers()
+
+    handlers.onHeader({
+      schema_version: 1,
+      environment: 'hearts',
+      seed: 0,
+      players: {
+        player_0: { kind: 'agent', label: 'Naive agent' },
+        player_1: { kind: 'agent', label: 'Naive agent' },
+        player_2: { kind: 'human', label: 'dev', user: 'dev' },
+        player_3: { kind: 'agent', label: 'Naive agent' },
+      },
+    })
+
+    expect(mountCtx?.controlledSlots).toEqual(['player_2'])
+    // The forwarded input carries the human's real seat, so a click plays for player_2, not player_0.
+    mountCtx?.sendAction?.('player_2', 5)
+    expect(sent).toContainEqual({ kind: 'input', slot: 'player_2', action: 5 })
+  })
+
+  it('shows the move clock using the session timeout override, not the env default', async () => {
+    // The session was started with a 5s human budget, overriding Hearts' 60s default. The renderer reads
+    // the budget from meta.human_timeout_ms, so the page must overlay the session's value onto the meta
+    // it mounts the renderer with.
+    vi.mocked(getEnvironments).mockResolvedValue([heartsMeta()])
+    vi.mocked(getMe).mockResolvedValue({
+      user_id: 'dev-user',
+      allowlisted: true,
+      is_operator: false,
+    })
+    vi.mocked(getSession).mockResolvedValue({
+      ...ownerRow(),
+      env_id: 'hearts',
+      recording_id: 'hearts-s1',
+      human_timeout_ms: 5000,
+    })
+    await renderSession()
+    await waitForHandlers()
+    handlers.onHeader({ schema_version: 1, environment: 'hearts', seed: 0 })
+
+    expect(mountCtx?.meta.human_timeout_ms).toBe(5000)
   })
 
   it('renders the actionless opening frame but keeps it out of the decision log', async () => {

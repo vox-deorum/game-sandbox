@@ -96,6 +96,12 @@ export interface NewSessionInput {
    * ratings later attach to). Defaults to null when omitted, preserving the Stage 5 callers.
    */
   season_id?: string | null
+  /**
+   * The resolved per-move budget (ms) for the connected human seat, so the live page can show the move
+   * clock using the session's value. Null (the default when omitted) for a session with no human seat
+   * or an environment that declares no human timeout.
+   */
+  human_timeout_ms?: number | null
   created_at: string
 }
 

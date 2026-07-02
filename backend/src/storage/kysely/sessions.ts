@@ -19,6 +19,7 @@ export async function createSession(
     .values({
       ...input,
       season_id: input.season_id ?? null,
+      human_timeout_ms: input.human_timeout_ms ?? null,
       status: 'starting',
       termination_reason: null,
       ended_at: null,

@@ -126,11 +126,20 @@ class HeartsEnv(AECEnv):
         hearts_broken = np.array([1 if state.hearts_broken else 0], np.int8)
         position = np.array([seat], np.int8)
         trick_leader = np.array([state.trick_leader], np.int8)
-        scores = np.array(rules.points_taken(state), np.int8)
+        # The display score (lower is better): the running penalty during play, and the
+        # shoot-the-moon-flipped final at terminal. Using penalty_scores rather than the raw
+        # points_taken keeps this leaf in agreement with the overlay's display_scores, which the
+        # renderer draws, so the two never disagree on the last step of a moon-shot hand.
+        scores = np.array(rules.penalty_scores(state), np.int8)
 
+        # The action mask is meaningful only for the seat whose turn it is; an off-turn seat is not
+        # choosing, so it gets an all-zero mask (matching the overlay, which lists legal actions for
+        # the acting seat alone). The AEC loop reads a seat's observation through last() only on that
+        # seat's turn, where state.turn == seat, so the acting mask is always populated.
         action_mask = np.zeros(rules.NUM_CARDS, np.int8)
-        for card in rules.legal_moves(state, seat):
-            action_mask[card] = 1
+        if state.turn == seat:
+            for card in rules.legal_moves(state, seat):
+                action_mask[card] = 1
 
         return {
             "observation": {

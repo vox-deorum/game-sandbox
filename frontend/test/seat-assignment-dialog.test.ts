@@ -139,6 +139,30 @@ describe('SeatAssignmentDialog', () => {
     expect(Object.values(payload.slots).filter((s) => s.kind === 'human')).toHaveLength(1)
   })
 
+  it('play: offers "Sit here" only on human-capable seats and seats the human at the first one', async () => {
+    // A restricted environment marks only some seats human-capable. The human must default to the first
+    // such seat, and "Sit here" must appear only on the other human-capable seats — never on a seat the
+    // metadata forbids a human from taking.
+    render(SeatAssignmentDialog, {
+      props: {
+        meta: heartsMeta({ human_slots: ['player_1', 'player_2'] }),
+        agents: AGENTS,
+        mode: 'play',
+      },
+    })
+    const rows = screen.getAllByRole('listitem')
+    // The human defaults to player_1 ("Seat 2"), the first human-capable seat, not seat 1.
+    expect(within(rows[1] as HTMLElement).getByText('You')).toBeInTheDocument()
+    // Exactly one "Sit here", on the other human-capable seat (player_2 = "Seat 3"); none on the
+    // non-human-capable seats 1 and 4.
+    expect(screen.getAllByRole('button', { name: 'Sit here' })).toHaveLength(1)
+    expect(
+      within(rows[2] as HTMLElement).getByRole('button', { name: 'Sit here' }),
+    ).toBeInTheDocument()
+    expect(within(rows[0] as HTMLElement).queryByRole('button', { name: 'Sit here' })).toBeNull()
+    expect(within(rows[3] as HTMLElement).queryByRole('button', { name: 'Sit here' })).toBeNull()
+  })
+
   it('play: a submission can be assigned to a non-human seat', async () => {
     const { emitted } = render(SeatAssignmentDialog, {
       props: { meta: heartsMeta(), agents: AGENTS, mode: 'play' },

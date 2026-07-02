@@ -671,6 +671,45 @@ describe('admin API', () => {
       expect(games).toHaveLength(4)
     })
 
+    it('expands a seat-order-sensitive (Hearts) season as ordered permutations at trigger', async () => {
+      // A Hearts season (seat_order_matters=true) with a two-submission-seat match and two ready
+      // submissions must schedule the ordered permutations (AB and BA), not the single unordered
+      // roster. This proves the environment's seat_order_matters actually reaches the scheduler at
+      // trigger rather than a hardcoded false, which would silently mis-rank a positional game.
+      const declared = await app.inject({
+        method: 'POST',
+        url: '/api/admin/environments/hearts/seasons',
+        headers: OPERATOR,
+        payload: {},
+      })
+      expect(declared.statusCode).toBe(201)
+      const heartsSeason = (declared.json() as { id: string }).id
+
+      await storage.updateSeasonConfig(heartsSeason, {
+        deps_version: 1,
+        matches: [
+          {
+            slots: ['submission', 'submission', 'builtin-naive', 'builtin-naive'],
+            seeds: [1],
+            games: 1,
+          },
+        ],
+      })
+      await makeReadySubmission(storage, heartsSeason, { env: 'hearts', user: 'alice' })
+      await makeReadySubmission(storage, heartsSeason, { env: 'hearts', user: 'bob' })
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/admin/seasons/${heartsSeason}/runs`,
+        headers: OPERATOR,
+      })
+      expect(res.statusCode).toBe(201)
+      const runId = (res.json() as { id: string }).id
+      // Ordered P(2,2) = 2 submitted seatings + 1 Naive baseline = 3 games. Unordered C(2,2) = 1
+      // seating + baseline would give 2, so this count is the seat-order regression guard.
+      expect(await storage.listRunGames(runId)).toHaveLength(3)
+    })
+
     it('rejects an empty schedule with 409 empty_schedule', async () => {
       const id = await declare() // default config has no matches
       const res = await app.inject({
@@ -942,12 +981,17 @@ describe('admin API', () => {
   })
 })
 
-/** Create a `ready` submission in a season and return its row. */
-async function makeReadySubmission(storage: Storage, seasonId: string) {
+/** Create a `ready` submission in a season and return its row. Defaults to a Flappy Bird agent by
+ *  `alice`; the trigger tests override the environment and user to seed several ready agents at once. */
+async function makeReadySubmission(
+  storage: Storage,
+  seasonId: string,
+  opts: { env?: string; user?: string } = {},
+) {
   const submission = await storage.createSubmission({
     season_id: seasonId,
-    env_id: ENV_ID,
-    user_id: 'alice',
+    env_id: opts.env ?? ENV_ID,
+    user_id: opts.user ?? 'alice',
     source_kind: 'git',
     repo_url: 'https://example.test/repo',
     commit_sha: 'sha1',

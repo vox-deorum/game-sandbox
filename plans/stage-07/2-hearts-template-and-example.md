@@ -12,8 +12,8 @@ The environment (step 1) is the game; this step is the participant-facing surfac
 
 Hearts lands as a second environment template on the existing two-layer machinery, described in the [examples and template contributor guide](../../docs/contributors/examples-and-template.md).
 
-- A `templates/hearts/` layer over the shared `templates/base/`: its `agent.py` stub, a Hearts-specific `README.md`, and the generated `sandbox_env/`. It mirrors the structure of `templates/flappy_bird/`.
-- Registration in `TEMPLATE_ENVS` in `scripts/_paths.py`, so `scripts/generate.py` syncs the Hearts env modules into the generated `sandbox_env/` package.
+- A `templates/hearts/` layer over the shared `templates/base/`: its `agent.py` stub, a Hearts-specific `README.md`, and the generated `sandbox/env/`. It mirrors the structure of `templates/flappy_bird/`.
+- Registration in `TEMPLATE_ENVS` in `scripts/_paths.py`, so `scripts/generate.py` syncs the Hearts env modules into the generated `sandbox/env/` package.
 - At least one `examples/hearts/<name>` example over the template, mirroring `examples/flappy_bird/hello/`: an overriding `agent.py`, an optional `requirements.extra.txt`, and tests.
 
 Hearts shares the single global dependency set, so this introduces no new `template-v<N>` axis. The agent interface is unchanged from Flappy Bird; only the observation and action shapes differ, which the stub and README explain.
@@ -24,7 +24,7 @@ The template's local `play.py` opens the Hearts game in a render window through 
 
 Docker-free:
 
-- The template generation sync check passes for Hearts: regenerating `templates/hearts/sandbox_env/` from the environment produces no diff, the same check the build already runs for Flappy Bird.
+- The template generation sync check passes for Hearts: regenerating `templates/hearts/sandbox/env/` from the environment produces no diff, the same check the build already runs for Flappy Bird.
 - The `examples/hearts/<name>` example loads through the harness loader and plays a full local Hearts game to completion against built-in opponents, with no Docker.
 - `play.py` runs headlessly against the Hearts template (`--headless`) and reports a final score, exercising the local loop and the step 1 renderer without opening a window.
 - The example's own tests pass.
