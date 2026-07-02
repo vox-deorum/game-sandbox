@@ -63,7 +63,7 @@ Velocity and rotation use scales centered on `0`:
 | `PLAYER_VELOCITY` | The bird is moving upward. A flap sets this to about `-0.9`. | The bird is not moving vertically at that instant. | The bird is falling. `1` is its maximum downward speed. |
 | `PLAYER_ROTATION` | The bird's nose points downward. `-1` is 90 degrees down. | The bird is level. | The bird's nose points upward. A flap sets this to `0.5`, or 45 degrees up. |
 
-To work with velocity, call `player_velocity(observation)` from `sandbox.features`. It returns the bird's vertical velocity in screen heights per step, the same scale as `PLAYER_Y`. Therefore, adding the two estimates the bird's next position: with a velocity of `0.008` and `PLAYER_Y = 0.44`, the bird will be near `0.44 + 0.008 = 0.448` on the next step. Gravity adds about `0.002` to the velocity before each idle movement, so treat the sum as an estimate rather than an exact prediction. 
+To work with velocity, call `player_velocity(observation)` from `sandbox.features`. It returns the bird's vertical velocity in screen heights per step, the same scale as `PLAYER_Y`. Therefore, adding the two estimates the bird's next position: with a velocity of `0.008` and `PLAYER_Y = 0.44`, the bird will be near `0.44 + 0.008 = 0.448` on the next step. Gravity adds about `0.002` to the velocity before each idle movement, so treat the sum as an estimate rather than an exact prediction.
 
 If you read `observation[PLAYER_VELOCITY]` directly: the raw value uses a different scale, normalized by the bird's maximum fall speed, so `0.40` there means 40 percent of top speed, not 40 percent of the screen.
 
