@@ -1,34 +1,67 @@
 name: Publish Template
 
-# Run manually from the Actions tab (or `gh workflow run`), not off a tag. The tag is the
-# LAST thing this workflow does, not the trigger: a tag push as the trigger means a failed
-# run leaves a dangling template-v<N> tag that has to be deleted before you can retry. Here
-# the order is verify -> publish to the student repo -> tag this commit, so a failure at any
-# point leaves no release tag behind. Recovery is simply to fix the cause and re-run; the
-# publish step force-pushes, so a partial previous attempt is overwritten cleanly.
+# Run manually from the Actions tab (or `gh workflow run`) from the main branch, not off a tag.
+#
+# Dispatching `version=N` makes the whole release: the `verify` job bumps the repo to exactly N
+# (scripts/bump_template_version.py: base manifest, e2e fixtures, DEPS_VERSION + registry, and the
+# frozen deps-v<N> image snapshot), commits that bump locally, and runs the full CI suite on it — the
+# ONLY CI that commit ever gets, since a later GITHUB_TOKEN push to main does not trigger ci.yml.
+# N semantics: N > current bumps; N == current is a validated no-op (the retry / already-bumped path,
+# publishing the tree as-is); N < current is refused. The tag-already-exists check still applies.
+#
+# The bump commit then travels to the later jobs as a git-bundle artifact. `publish` checks it out and
+# force-pushes the composed templates and examples to the student repo, so the student-repo commit's
+# `from game-sandbox@<sha>` names the exact commit that will be tagged. Only AFTER the student repo is
+# fully updated does `push` fast-forward main to that commit and, last of all, tag it `template-v<N>`.
+# Ordering this way means a failure anywhere leaves main and tags untouched — nothing to clean up.
+# Recovery: if main moved during the run the fast-forward push fails and no tag is written, so just
+# dispatch a fresh run; the student-repo publish force-pushes, so a partial previous attempt is
+# overwritten cleanly. `dry_run: true` rehearses the whole path (bump, commit, full CI, dry-run
+# compose) while pushing nothing to the student repo, main, or tags.
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Dependency-set version N to publish as template-v<N> (e.g. 0)."
+        description: "Dependency-set version N to release as template-v<N> (e.g. 1)."
         required: true
         type: string
+      dry_run:
+        description: "Rehearse everything (bump, CI, compose) without pushing to the student repo, main, or tags."
+        required: false
+        default: false
+        type: boolean
 
+# Every run may push main, so runs must serialize across versions rather than only per-version.
 concurrency:
-  group: template-publish-${{ inputs.version }}
+  group: template-publish
   cancel-in-progress: false
+
+env:
+  UV_LINK_MODE: copy
 
 permissions:
   contents: read
 
 jobs:
-  # First: a broken or already-released state cannot publish. Reject a non-integer version
-  # or one whose tag already exists (bump N instead of re-releasing), then compose and test
-  # every example at this commit so the artifact is proven before anything is pushed.
+  # Bump the repo to N, commit it, and prove the exact release commit green. The bump commit is
+  # bundled for the later jobs so publish and push operate on byte-identical content, and a run that
+  # fails here has touched nothing on origin. `bumped` is false when N == current (nothing to commit).
   verify:
     runs-on: ubuntu-latest
+    outputs:
+      release_sha: ${{ steps.commit.outputs.release_sha }}
+      bumped: ${{ steps.commit.outputs.bumped }}
     steps:
+      - name: Require dispatch from main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::dispatch this workflow from main; the release commit's parent must be a main ancestor."
+          exit 1
       - uses: actions/checkout@v4
+        with:
+          # A full clone: the version validation reads origin's tags, and `git bundle` cannot be built
+          # from a shallow history.
+          fetch-depth: 0
       - name: Validate the version and fail fast if it is already released
         env:
           VERSION: ${{ inputs.version }}
@@ -45,23 +78,65 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
       - run: uv sync
-      - run: uv run python scripts/ci.py examples
+      - run: npm ci
+      - name: Bump the repo to version N (a no-op when already there)
+        env:
+          VERSION: ${{ inputs.version }}
+        run: uv run python scripts/bump_template_version.py --version "$VERSION"
+      - name: Commit the bump if it changed anything
+        id: commit
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if [ -n "$(git status --porcelain)" ]; then
+            git add -A
+            git commit -q -m "Bump template version to ${VERSION} for template-v${VERSION}"
+            echo "bumped=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "bumped=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "release_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      # The full non-Docker suite on the exact commit that will ship: python, typescript,
+      # generated-code-fresh (which also runs the version --check), examples, docs, and the publish
+      # dry-run. Because a later bot push to main does not trigger ci.yml, this is the release commit's
+      # only gate. Running it AFTER the commit keeps generated-code-fresh's `git diff` clean.
+      - run: uv run python scripts/ci.py all
+      - name: Bundle the bump commit for the publish and push jobs
+        if: steps.commit.outputs.bumped == 'true'
+        run: git bundle create bump.bundle "${{ github.sha }}..HEAD"
+      - uses: actions/upload-artifact@v4
+        if: steps.commit.outputs.bumped == 'true'
+        with:
+          name: bump-bundle
+          path: bump.bundle
 
-  # Then: publish the default environment's composed template to the student repo's main
-  # (with the mirrored v<N> tag), and force-push each environment's composed template to its
-  # templates/<env> branch and each composed example to its examples/<env>/<name> branch. One
-  # script, the same compose path CI uses, so the published artifact is byte-identical to what
-  # verify tested. Nothing here touches the monorepo's own tags.
+  # Publish the composed template and examples to the student repo from the exact release commit. The
+  # cross-repo token lives as a secret on this environment, so publishing is gated behind environment
+  # protection rules and the token is never exposed to any other job.
   publish:
     needs: verify
     runs-on: ubuntu-latest
-    # The cross-repo push token lives as a secret on this environment, so publishing can
-    # be gated behind environment protection rules (approvals, allowed tags) and the token
-    # is never exposed to any other job.
     environment: template-publish
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        if: needs.verify.outputs.bumped == 'true'
+        with:
+          name: bump-bundle
+      - name: Check out the bumped release commit
+        if: needs.verify.outputs.bumped == 'true'
+        run: |
+          git fetch bump.bundle HEAD
+          git checkout "${{ needs.verify.outputs.release_sha }}"
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
@@ -73,19 +148,32 @@ jobs:
       - name: Publish template and examples
         env:
           TEMPLATE_REPO_TOKEN: ${{ secrets.TEMPLATE_REPO_TOKEN }}
-        run: uv run python scripts/publish_template.py --tag "template-v${{ inputs.version }}"
+          VERSION: ${{ inputs.version }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          flags="--tag template-v${VERSION}"
+          if [ "$DRY_RUN" = "true" ]; then
+            flags="$flags --dry-run"
+          fi
+          uv run python scripts/publish_template.py $flags
 
-  # Finally: only after the student repo is fully updated, stamp this monorepo commit with
-  # the template-v<N> release tag. Because this is the last step, a failed verify or publish
-  # never creates a tag, so there is nothing to clean up before retrying.
-  tag:
-    needs: publish
+  # Only after the student repo is fully updated: fast-forward main to the release commit, then tag it.
+  # This is the only job that writes the monorepo, and the branch push strictly precedes the tag push,
+  # so a failed push leaves no tag and re-dispatching is clean.
+  push:
+    needs: [verify, publish]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - name: Tag this commit as the published release
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        if: needs.verify.outputs.bumped == 'true'
+        with:
+          name: bump-bundle
+      - name: Fail if the release tag appeared on origin during the run
         env:
           VERSION: ${{ inputs.version }}
         run: |
@@ -94,7 +182,22 @@ jobs:
             echo "::error::${tag} appeared on origin during the run; not overwriting it."
             exit 1
           fi
+      - name: Configure git identity
+        run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag "${tag}"
+      - name: Fast-forward main to the release commit
+        if: needs.verify.outputs.bumped == 'true' && inputs.dry_run != true
+        run: |
+          git fetch bump.bundle HEAD
+          # Fast-forward only: if main advanced during the run this fails, no tag is written, and the
+          # fix is to dispatch a fresh run (the student-repo publish force-pushes, so it is idempotent).
+          git push origin "${{ needs.verify.outputs.release_sha }}:refs/heads/main"
+      - name: Tag the release commit
+        if: inputs.dry_run != true
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          tag="template-v${VERSION}"
+          git tag "${tag}" "${{ needs.verify.outputs.release_sha }}"
           git push origin "${tag}"

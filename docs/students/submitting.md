@@ -54,7 +54,7 @@ The process stops at the first failed stage and shows its reason. Validation doe
 
 ## Manifest problems
 
-The template includes a valid `manifest.json`. Change it only if you rename `agent.py` or `Agent`.
+The template includes a valid `manifest.json`. Change it only if you rename `agent.py` or `Agent`. The `template_version` below is illustrative; keep whatever value the template you cloned ships, since the template sets it rather than you.
 
 ```json
 {

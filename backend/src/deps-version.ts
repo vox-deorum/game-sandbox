@@ -16,7 +16,11 @@
  */
 import type { SessionBaseImageSpec } from './driver/index.js'
 
-/** The current dependency-set version `N`, tagged `…:deps-v<N>`. This stage uses only v1. */
+/**
+ * The current dependency-set version `N`, tagged `…:deps-v<N>`. Bumped mechanically at release time by
+ * `scripts/bump_template_version.py` (the `export const DEPS_VERSION = <n>` line is its edit anchor —
+ * keep the exact shape), which appends the matching {@link SESSION_BASE_IMAGES} entry in the same pass.
+ */
 export const DEPS_VERSION = 1
 
 /** The immutable build inputs for one dependency-set version's session base image. */
@@ -28,7 +32,9 @@ export interface SessionBaseImageDefinition {
 /**
  * The dependency-set versions this checkout can actually serve. This list is deliberately explicit:
  * increasing {@link DEPS_VERSION} does not make every intervening integer valid. A release is added
- * here only together with its version-specific Dockerfile and frozen requirements snapshot.
+ * here only together with its version-specific Dockerfile and frozen requirements snapshot — which is
+ * exactly what `scripts/bump_template_version.py` appends (a new `[<n>, { dockerfile: '…deps-v<n>…' }],`
+ * line before the closing `])`) when a release is cut; keep that line shape so its anchor still matches.
  */
 const SESSION_BASE_IMAGES: ReadonlyMap<number, SessionBaseImageDefinition> = new Map([
   [1, { dockerfile: 'backend/images/session-base/deps-v1/Dockerfile' }],

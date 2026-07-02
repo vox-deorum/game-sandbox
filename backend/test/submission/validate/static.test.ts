@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
+import { DEPS_VERSION, KNOWN_DEPS_VERSIONS } from '../../../src/deps-version.js'
 import { validateStatic } from '../../../src/submission/validate/index.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -43,7 +44,9 @@ describe('static validator — accepts', () => {
     if (!existsSync(join(templateDir, 'manifest.json'))) {
       return
     }
-    const result = await validateStatic(templateDir, DEPS_V1, KNOWN_V1)
+    // The on-disk template tracks the current release, so validate it against the real current
+    // version rather than the pinned v1 the fixtures use — otherwise this fails after a bump.
+    const result = await validateStatic(templateDir, DEPS_VERSION, KNOWN_DEPS_VERSIONS)
     expect(result.ok).toBe(true)
   })
 })

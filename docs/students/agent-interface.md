@@ -86,6 +86,6 @@ Time spent in `act`, `learn`, `chat`, and LLM calls counts toward these limits. 
 | `class_name` | Class to construct from that module. |
 | `template_version` | Version of the template's shared dependency set. |
 
-Keep the template's manifest as is unless you rename your module or class.
+Keep the template's manifest as is unless you rename your module or class. The `template_version` shown above is only an example; the template you clone carries the correct current value.
 
 The [submission specification](../specs/submission.md) is the authority for this interface.

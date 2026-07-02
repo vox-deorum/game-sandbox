@@ -11,22 +11,36 @@ import {
 import { imageTag } from '../src/driver/docker/image.js'
 
 describe('dependency-set image registry', () => {
-  it('backs every accepted version with an explicit image definition', () => {
-    expect([...KNOWN_DEPS_VERSIONS]).toEqual([1])
-    expect(sessionBaseImageDefinition(1)).toEqual({
-      dockerfile: 'backend/images/session-base/deps-v1/Dockerfile',
-    })
+  it('backs every known version with an explicit image definition, keeping v1 forever', () => {
+    // A released version is never removed from the registry (old submissions still resolve to it),
+    // so v1 is always present, and the current version is always among the known ones.
+    expect(KNOWN_DEPS_VERSIONS.has(1)).toBe(true)
+    expect(KNOWN_DEPS_VERSIONS.has(DEPS_VERSION)).toBe(true)
+    for (const n of KNOWN_DEPS_VERSIONS) {
+      expect(sessionBaseImageDefinition(n)).toEqual({
+        dockerfile: `backend/images/session-base/deps-v${n}/Dockerfile`,
+      })
+    }
   })
 
-  it('builds v1 from frozen dependency and built-in-agent inputs', () => {
-    const dockerfile = readFileSync(
-      new URL('../images/session-base/deps-v1/Dockerfile', import.meta.url),
-      'utf8',
-    )
-    expect(dockerfile).toContain('backend/images/session-base/deps-v1/requirements.txt')
-    expect(dockerfile).toContain('backend/images/session-base/deps-v1/builtin')
-    expect(dockerfile).not.toContain('COPY templates/base/requirements.txt')
-    expect(dockerfile).not.toContain('scripts/compose.py')
+  it('builds each version from its own frozen dependency and built-in-agent inputs', () => {
+    for (const n of KNOWN_DEPS_VERSIONS) {
+      const dockerfile = readFileSync(
+        new URL(`../images/session-base/deps-v${n}/Dockerfile`, import.meta.url),
+        'utf8',
+      )
+      // Each versioned Dockerfile COPYs only its own deps-v<n> inputs — never the mutable template
+      // requirements or a compose step, and never another version's directory.
+      expect(dockerfile).toContain(`backend/images/session-base/deps-v${n}/requirements.txt`)
+      expect(dockerfile).toContain(`backend/images/session-base/deps-v${n}/builtin`)
+      expect(dockerfile).not.toContain('COPY templates/base/requirements.txt')
+      expect(dockerfile).not.toContain('scripts/compose.py')
+      for (const other of KNOWN_DEPS_VERSIONS) {
+        if (other !== n) {
+          expect(dockerfile).not.toContain(`deps-v${other}/`)
+        }
+      }
+    }
   })
 
   it('keeps the current version tied to a registered definition', () => {
@@ -38,9 +52,11 @@ describe('dependency-set image registry', () => {
   })
 
   it('refuses to name or build an unsupported dependency version', () => {
-    expect(() => sessionBaseImageDefinition(2)).toThrow(/unsupported dependency-set version 2/)
-    expect(() => imageTag('game-sandbox', { kind: 'session-base', depsVersion: 2 })).toThrow(
-      /unsupported dependency-set version 2/,
-    )
+    const unsupported = Math.max(...KNOWN_DEPS_VERSIONS) + 1
+    const message = new RegExp(`unsupported dependency-set version ${unsupported}`)
+    expect(() => sessionBaseImageDefinition(unsupported)).toThrow(message)
+    expect(() =>
+      imageTag('game-sandbox', { kind: 'session-base', depsVersion: unsupported }),
+    ).toThrow(message)
   })
 })

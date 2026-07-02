@@ -12,7 +12,8 @@ ci.yml (runs on every push and pull request):
 - ``backend-integration``: the Docker-gated backend Vitest project (real containers: the
   WebSocket client, sandbox guarantees, idle/orphan reaping). Needs a Docker daemon, so it is a
   job of its own and is *not* part of ``all`` (which must run without Docker).
-- ``generated-code-fresh``: regenerate, then fail if anything generated changed.
+- ``generated-code-fresh``: regenerate, then fail if anything generated changed; also runs
+  ``bump_template_version.py --check`` so the version touchpoints cannot silently drift.
 - ``examples``: compose every example, install it into a fresh venv, run its pytest; also
   fail if any environment template layer ships no example.
 
@@ -129,6 +130,10 @@ def job_generated_code_fresh() -> None:
         *(str(template_sandbox_env(env).relative_to(REPO_ROOT)) for env in TEMPLATE_ENVS),
     ]
     _run(["git", "diff", "--exit-code", "--", *targets])
+    # Not generated, but the same idea: the version touchpoints (base manifest, DEPS_VERSION, the
+    # frozen deps-v<N> snapshot, e2e fixtures) are derived state that must agree. --check fails the
+    # PR if a manual edit desynced them, before a release can inherit the drift.
+    _run(["uv", "run", "python", "scripts/bump_template_version.py", "--check"])
 
 
 def job_examples() -> None:

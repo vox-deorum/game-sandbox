@@ -42,6 +42,26 @@ FRONTEND_DIST_DIR = REPO_ROOT / "frontend" / "dist"
 TEMPLATE_BASE_DIR = TEMPLATES_DIR / "base"
 DEFAULT_TEMPLATE_ENV = "flappy_bird"
 
+# The canonical `template_version` source: every composed template and example inherits this
+# manifest, and scripts/bump_template_version.py treats its integer as the repo's current version.
+TEMPLATE_BASE_MANIFEST = TEMPLATE_BASE_DIR / "manifest.json"
+
+# The live, evolving pinned dependency set. A release freezes a snapshot of this file into
+# deps-v<N>/requirements.txt (stripping pip-compile's "# via" annotations); later PRs then evolve
+# this file freely without touching the frozen image of any past version.
+TEMPLATE_BASE_REQUIREMENTS = TEMPLATE_BASE_DIR / "requirements.txt"
+
+# The per-version frozen session-base image snapshots live here as deps-v<N>/ directories
+# (Dockerfile + frozen requirements.txt + builtin/ agents). deps-version.ts is the backend's
+# registry of which versions have such a snapshot; both are edited at release time by
+# scripts/bump_template_version.py.
+SESSION_BASE_IMAGES_DIR = REPO_ROOT / "backend" / "images" / "session-base"
+DEPS_VERSION_TS = REPO_ROOT / "backend" / "src" / "deps-version.ts"
+
+# The e2e submission fixtures are submitted against seasons the backend seeds at the current
+# DEPS_VERSION, so their manifests must track the current template version rather than pin one.
+E2E_SUBMISSION_FIXTURES_DIR = REPO_ROOT / "frontend" / "e2e" / "fixtures" / "submission"
+
 # The environments source root, under which each environment is its own top-level package.
 ENVIRONMENTS_SRC = REPO_ROOT / "environments" / "src"
 

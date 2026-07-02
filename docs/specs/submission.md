@@ -27,7 +27,7 @@ Every repository contains `manifest.json` at its root:
 }
 ```
 
-The manifest names the Python module, class, and template dependency version.
+The manifest names the Python module, class, and template dependency version. The `template_version` shown above is illustrative; the authoritative value is whatever the current template release ships.
 
 Dependencies are set by the template, not by individual submissions. Each template release pins exact package versions, and old versions remain available for reproducibility. Every agent in a season uses the same dependency version, so agents can share a session container without conflicts.
 

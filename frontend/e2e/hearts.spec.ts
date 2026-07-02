@@ -25,6 +25,7 @@ import {
   HEARTS_OWNERS,
   HEARTS_SEASON,
 } from './support/names.js'
+import { TEMPLATE_VERSION } from './support/template-version.js'
 
 /**
  * The dedicated Hearts coverage. Unlike the flappy specs, Hearts is a four-seat, turn-based game, so
@@ -36,7 +37,7 @@ import {
  */
 
 /** A submittable manifest for a staged example: the standard three fields the validator requires. */
-const MANIFEST = `${JSON.stringify({ entry_point: 'agent', class_name: 'Agent', template_version: 1 }, null, 2)}\n`
+const MANIFEST = `${JSON.stringify({ entry_point: 'agent', class_name: 'Agent', template_version: TEMPLATE_VERSION }, null, 2)}\n`
 
 /** A four-seat, all-Naive Hearts session: no human seat, so it runs itself to completion (scripted). */
 const ALL_BUILTIN_SEATS = {

@@ -11,6 +11,7 @@ import type { FastifyInstance } from 'fastify'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { buildApp } from '../../src/app.js'
+import { DEPS_VERSION } from '../../src/deps-version.js'
 import { RecordingsStore } from '../../src/recordings.js'
 import { Retention } from '../../src/retention.js'
 import { Orchestrator } from '../../src/session/orchestrator.js'
@@ -25,6 +26,13 @@ import { StubWorkflowRunner } from '../support/stub-runner.js'
 const ENV_ID = 'flappy_bird'
 const OPERATOR = { 'x-sandbox-user': 'dev-user' }
 const STRANGER = { 'x-sandbox-user': 'carol' }
+
+// The dependency versions the test app knows about, and the first version just past them. Includes
+// DEPS_VERSION so a default declare (which pins the current version) stays accepted after a release
+// bump; 1 and 2 keep the multi-version path exercised. Deriving the unsupported version instead of
+// hardcoding it keeps the "not supported" tests correct once DEPS_VERSION reaches 3 or beyond.
+const DEFAULT_KNOWN_DEPS_VERSIONS: ReadonlySet<number> = new Set([1, 2, DEPS_VERSION])
+const UNSUPPORTED_DEPS_VERSION = Math.max(...DEFAULT_KNOWN_DEPS_VERSIONS) + 1
 
 /** A valid single-submission-seat Flappy Bird config; `deps_version` overridable for the change path. */
 function flappyConfig(overrides: Partial<SeasonConfig> = {}): SeasonConfig {
@@ -51,7 +59,7 @@ describe('admin API', () => {
 
   async function build(
     operatorAllowlist: string[] = ['dev-user'],
-    knownDepsVersions: ReadonlySet<number> = new Set([1, 2]),
+    knownDepsVersions: ReadonlySet<number> = DEFAULT_KNOWN_DEPS_VERSIONS,
   ): Promise<void> {
     dir = mkdtempSync(join(tmpdir(), 'gs-admin-'))
     storage = await openSqliteStorage(':memory:')
@@ -264,7 +272,7 @@ describe('admin API', () => {
         release_status: 'unreleased',
         label: 'Week 1',
       })
-      expect(body.config).toEqual({ deps_version: 1, matches: [] })
+      expect(body.config).toEqual({ deps_version: DEPS_VERSION, matches: [] })
     })
 
     it('404s declaring against an unknown environment', async () => {
@@ -302,12 +310,12 @@ describe('admin API', () => {
         method: 'POST',
         url: `/api/admin/environments/${ENV_ID}/seasons`,
         headers: OPERATOR,
-        payload: { deps_version: 3 },
+        payload: { deps_version: UNSUPPORTED_DEPS_VERSION },
       })
       expect(res.statusCode).toBe(400)
       expect(res.json()).toMatchObject({
         code: 'invalid_season_declaration',
-        reason: expect.stringContaining('deps_version 3 is not supported'),
+        reason: expect.stringContaining(`deps_version ${UNSUPPORTED_DEPS_VERSION} is not supported`),
       })
     })
   })
@@ -375,12 +383,12 @@ describe('admin API', () => {
         method: 'PUT',
         url: `/api/admin/seasons/${id}/config`,
         headers: OPERATOR,
-        payload: flappyConfig({ deps_version: 3 }),
+        payload: flappyConfig({ deps_version: UNSUPPORTED_DEPS_VERSION }),
       })
       expect(res.statusCode).toBe(400)
       expect(res.json()).toMatchObject({
         code: 'invalid_config',
-        reason: expect.stringContaining('deps_version 3 is not supported'),
+        reason: expect.stringContaining(`deps_version ${UNSUPPORTED_DEPS_VERSION} is not supported`),
       })
     })
 

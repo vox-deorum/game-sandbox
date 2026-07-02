@@ -55,13 +55,34 @@ The bare template test fails until the student implements `act`. A composed exam
 
 Students use the separate `vox-deorum/game-agent-template` repository. Monorepo tags named `template-v<N>` identify dependency-set versions used by agent manifests.
 
-The publish workflow verifies examples, updates the student repository, then creates the monorepo tag:
+`N` is one number wearing several hats (see `backend/src/deps-version.ts`): the `template-v<N>` release tag, the `deps-v<N>` session-image tag, and the `template_version` an agent manifest targets. A release keeps them in lockstep automatically — `scripts/bump_template_version.py` performs the bump and the `template-publish` workflow runs it, so the operator no longer hand-edits any version constant. On every pull request, CI's generated-code-fresh job runs `bump_template_version.py --check`, which fails if those touchpoints ever disagree.
 
-- The **default environment's** composed template becomes the repository's `main` branch content, committed as `Template v<N> from game-sandbox@<sha>` with a mirrored tag `v<N>`, so "Use this template" instantiates a runnable kit for the default game.
-- Each environment's composed template is force-pushed to an orphan branch `templates/<env>` (a fresh snapshot per release with no shared history).
-- Each example is composed and force-pushed to an orphan branch `examples/<env>/<name>`.
+### Cutting a release
 
-Students pick an environment or example from the branch dropdown to browse or clone a complete, runnable agent repo. The publish workflow contains no composition logic of its own: it is a thin wrapper around the same `scripts/compose.py` and `scripts/publish_template.py` that developers and CI use, so the artifact a student clones is byte-identical to the one CI tested. The publish script takes a `--dry-run` flag that does everything except push, which is how the tag-to-publish path is rehearsed locally without touching the student repository.
+Dispatch the **Publish Template** workflow from `main` (Actions tab or `gh workflow run`) with the version input `N`:
+
+- `N` greater than the current version **bumps** the repo to exactly `N`: `templates/base/manifest.json`, the `frontend/e2e/fixtures/submission/*` manifests, `DEPS_VERSION` and its `SESSION_BASE_IMAGES` registry entry, and a new frozen `backend/images/session-base/deps-v<N>/` snapshot (its `requirements.txt` frozen from the current `templates/base/requirements.txt`, the previous Dockerfile with its paths and version prose rewritten, and the built-in agents with bumped manifests).
+- `N` equal to the current version **republishes the tree as-is** (the retry path after a partial failure, or a repo already bumped by hand).
+- `N` less than the current version is **refused** — publishing an older label would mislabel the release.
+
+**Escape hatch:** when the image _recipe_ itself must change (a new system library, a different base image), hand-craft `backend/images/session-base/deps-v<N>/` in an ordinary PR first. The bump script detects an existing `deps-v<N>/`, leaves it untouched, and only validates it — so the deliberate snapshot wins over the mechanical copy.
+
+### What the workflow does, in order
+
+The workflow is a thin wrapper around `bump_template_version.py`, `scripts/compose.py`, and `scripts/publish_template.py` — the same code paths developers and CI use, so a student's clone is byte-identical to what CI tested. It runs three jobs so that a failure anywhere leaves `main` and the tags untouched:
+
+1. **verify** bumps the repo, commits that bump locally, and runs the full CI suite (`scripts/ci.py all`) on the exact release commit. That commit gets no other CI — a later bot push to `main` does not trigger `ci.yml` — so this job is its only gate. The commit is bundled as a workflow artifact for the next jobs.
+2. **publish** checks out the bundled release commit and updates the student repository from it (so its `Template v<N> from game-sandbox@<sha>` message names the commit that will be tagged):
+   - The **default environment's** composed template becomes the repository's `main` branch content, with a mirrored tag `v<N>`, so "Use this template" instantiates a runnable kit for the default game.
+   - Each environment's composed template is force-pushed to an orphan branch `templates/<env>` (a fresh snapshot per release with no shared history).
+   - Each example is composed and force-pushed to an orphan branch `examples/<env>/<name>`.
+3. **push** — only after the student repo is fully updated — fast-forwards `main` to the release commit and, last of all, tags it `template-v<N>`.
+
+Students pick an environment or example from the branch dropdown to browse or clone a complete, runnable agent repo.
+
+**Recovery:** if `main` advances during a run, the fast-forward push fails and no tag is written, so the fix is to dispatch a fresh run (the student-repo publish force-pushes, so a partial attempt is overwritten cleanly). The `dry_run: true` input rehearses the entire path — bump, commit, full CI, and a dry-run compose — while pushing nothing to the student repo, `main`, or tags. The publish script's own `--dry-run` flag does the same for a local run.
+
+Note the new `deps-v<N>` image is not _built_ by this workflow (it has no Docker); its first real build happens at the next Docker-gated run, so dispatch **e2e.yml** after a release to build the image and exercise the bumped fixtures against seeded seasons.
 
 Versioning has two relevant axes:
 
