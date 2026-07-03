@@ -1,6 +1,6 @@
 # Stage 8: Agent Communication
 
-Status: not started
+Status: in progress (subplan 1 complete: the Spades environment, scoring, and metadata; subplans 2-7 not started)
 
 ## Goal
 

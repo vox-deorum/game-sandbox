@@ -19,6 +19,7 @@ dependencies = [
 [project.entry-points."game_sandbox.environments"]
 flappy_bird = "flappy_bird:ENTRY"
 hearts = "hearts:ENTRY"
+spades = "spades:ENTRY"
 
 [build-system]
 requires = ["hatchling"]
@@ -30,4 +31,4 @@ build-backend = "hatchling.build"
 # inside each single-agent env package, so it ships with the package walk below. `local_play`
 # is not an environment: it holds standalone local-play helpers (the HiDPI shim) shared by the
 # Hearts renderer and scripts/play.py, and synced verbatim into the student template.
-packages = ["src/flappy_bird", "src/hearts", "src/local_play"]
+packages = ["src/flappy_bird", "src/hearts", "src/spades", "src/local_play"]

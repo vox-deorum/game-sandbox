@@ -45,5 +45,30 @@
     "seat_order_matters": true,
     "step_limit_ms": 1000,
     "view_interval_ms": 3000
+  },
+  {
+    "description": "Four-player partnership Spades: bid the tricks you will take, then follow suit and play them out with spades trump. Make your team's contract for points, sink a nil for a hundred, or lose it trying.",
+    "display_name": "Spades",
+    "env_id": "spades",
+    "episode_limit_ms": 120000,
+    "human_slots": [
+      "player_0",
+      "player_1",
+      "player_2",
+      "player_3"
+    ],
+    "human_timeout_ms": 60000,
+    "live_interval_ms": 900,
+    "llm": false,
+    "max_slots": 4,
+    "message_cap": 120,
+    "messaging": true,
+    "min_slots": 4,
+    "pace_interval_ms": null,
+    "recommended_episode_ticks": 56,
+    "renderer": "spades",
+    "seat_order_matters": true,
+    "step_limit_ms": 1000,
+    "view_interval_ms": 3000
   }
 ]

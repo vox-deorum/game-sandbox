@@ -217,17 +217,28 @@ def _standings(
     Ranks by the cumulative reward (higher is better at terminal for every env), so the gold cup
     goes to the winner. The displayed ``value`` is each game's natural score, read overlay-first
     (Hearts' per-seat penalties, Flappy Bird's pipes passed), falling back to the rounded reward
-    total for an env that ships no overlay score. ``cup_rank`` is 0/1/2 for the top three, else
-    ``None``. The Python twin of the web's ``buildStandings`` in frontend/src/lib/standings.ts —
-    same standings, but here every seat's reward is in this live ``scores`` tally, whereas a recording
-    stores only the acting agent per tick, so the web reconstructs the seats from the overlay instead.
+    total for an env that ships no overlay score. Cups are awarded by **dense** ranking so ties
+    share: seats with equal rewards get the same ``cup_rank`` and the next distinct (lower) reward
+    takes the next rank with no gap, so a partnership game's winning pair both show gold and the
+    losing pair both silver. ``cup_rank`` is 0/1/2 for the top three dense ranks, else ``None``. The
+    Python twin of the web's ``buildStandings`` in frontend/src/lib/standings.ts: same standings,
+    but here every seat's reward is in this live ``scores`` tally, whereas a recording stores only
+    the acting agent per tick, so the web reconstructs the seats from the overlay instead.
     """
     overlay = entry.overlay(env) if entry.overlay is not None else None
     display = overlay.get("display_scores") if isinstance(overlay, dict) else None
     pipes = overlay.get("pipes_passed") if isinstance(overlay, dict) else None
 
     rows: list[tuple[str, str, int | None]] = []
-    for rank, (slot, reward) in enumerate(sorted(scores.items(), key=lambda kv: kv[1], reverse=True)):
+    dense_rank = -1
+    prev_reward: float | None = None
+    for slot, reward in sorted(scores.items(), key=lambda kv: kv[1], reverse=True):
+        # Dense ranking: a new (lower) reward advances the rank by one; an equal reward keeps it, so
+        # tied seats share a cup. Partners share a leaderboard score by construction, so this is what
+        # gives a tied partnership two matching medals instead of splitting them by row position.
+        if prev_reward is None or reward != prev_reward:
+            dense_rank += 1
+            prev_reward = reward
         seat = _slot_index(slot)
         if isinstance(display, (list, tuple)) and seat is not None and seat < len(display):
             value = f"{display[seat]}"
@@ -235,7 +246,7 @@ def _standings(
             value = f"{pipes}"
         else:
             value = f"{round(reward, 2)}"
-        rows.append((_slot_label(slot), value, rank if rank < len(_CUP_COLORS) else None))
+        rows.append((_slot_label(slot), value, dense_rank if dense_rank < len(_CUP_COLORS) else None))
     return rows
 
 
