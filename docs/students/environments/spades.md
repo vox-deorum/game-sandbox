@@ -66,10 +66,10 @@ class Agent:
         legal = legal_cards(observation)
 
         # TODO(you): this is the whole playing strategy. Low cards rarely win
-        # tricks, but a team that never wins tricks never makes its contract.
-        # Count what your hand is worth before bidding, and win tricks while
-        # your team still needs them; the "Your first improvement" section of
-        # environment.md walks you through bidding what your hand is worth.
+        # tricks, but a team that never wins tricks never makes its contract,
+        # and the flat bid above never looks at the hand at all. The "Your
+        # first improvement" section of environment.md shows you how to find
+        # a better bid.
         return min(legal, key=rank_of)
 ```
 
@@ -85,7 +85,7 @@ python -m sandbox test    # run the checks, which pass before you change anythin
 
 `eval` reports a score you can read with the [Scoring and rewards](#scoring-and-rewards) section below, and `test` is green on the fresh template because this agent is already complete.
 
-The `TODO(you)` comment inside `act` marks where you take over. Bidding a flat one and never trying to win a trick is exactly what a good agent improves on. When you are ready, the [Your first improvement](#your-first-improvement) section walks you through the first step.
+The `TODO(you)` comment inside `act` marks where you take over. Bidding a flat one and never trying to win a trick is exactly what a good agent improves on. When you are ready, the [Your first improvement](#your-first-improvement) section shows you how to find the first step yourself.
 
 ## Scoring and rewards
 
@@ -237,21 +237,14 @@ Spades is turn-based, so there is no fixed delay between moves. Each call to `ac
 
 ## Your first improvement
 
-Your starting agent bids a flat one no matter what it holds. A bid is a promise your team has to keep, so the first real upgrade is bidding what the hand is actually worth. This section works that out with hints. Try each hint before reading the next one.
+Run `python -m sandbox play` a few times and watch the bidding round, then the score at the end. Your agent promises one trick no matter what it was dealt. What does that flat bid cost it?
 
-Start by counting the tricks you are almost sure to win. Spades are always trump, so your high spades (the queen, king, and ace) win most tricks they are played to, and the ace of each other suit is the top card of its suit. Those are the tricks to count.
+> Reread [Scoring and rewards](#scoring-and-rewards) next to a finished deal: every trick promised in advance is worth ten points, and every extra trick beyond the promise is worth one.
 
-During bidding, `hand_cards(observation)` lists the 13 cards you were dealt, and `suit_of(card)` and `rank_of(card)` classify each one. Ranks count up from the two, so the queen is rank `10`, the king is `11`, and the ace is `12`, and `SPADES` names the spade suit. That is enough to count high spades and side-suit aces.
+So the bid should depend on the hand. Knowing only your 13 cards, and that spades are always trump, how many tricks could you promise, and can your agent read those cards on its bidding turn?
 
-One trap is left. A bid of `0` is nil, a promise to take no tricks at all, and you do not want to make that promise by accident on a weak hand. Floor the count at one.
+> Scan the table in [The helper module](#the-helper-module) for what a bidding turn can see.
 
-If you are stuck, extend the import at the top of `agent.py` to `from sandbox.cards import SPADES, bid_to_action, hand_cards, is_bidding, legal_cards, rank_of, suit_of`, then replace `return bid_to_action(1)` with:
+Record the mean score from `python -m sandbox eval` before the change, and again after. A bid change shows up over many deals, not one, so evaluate your agent with the mean over several games.
 
-```python
-hand = hand_cards(observation)
-high_spades = sum(1 for card in hand if suit_of(card) == SPADES and rank_of(card) >= 10)
-side_aces = sum(1 for card in hand if suit_of(card) != SPADES and rank_of(card) == 12)
-return bid_to_action(max(1, min(13, high_spades + side_aces)))
-```
-
-A bid change shows up over many deals, not one, so compare the mean score from `python -m sandbox eval` before and after rather than judging it from a single hand.
+When the bid is honest, notice what has not changed: your agent still always plays its lowest card, which is a strategy for *losing* tricks. Your team is now promising to win some. At what point in the thirteen tricks should your agent start trying to keep that promise?

@@ -43,8 +43,9 @@ class Agent:
         # TODO(you): this one line is the whole strategy. Low cards rarely win
         # tricks, and tricks are how you collect penalty points, so playing the
         # lowest-ranked legal card is a sane start. It is also exactly how the
-        # built-in opponents play. Replace it with something smarter; the "Your
-        # first improvement" section of environment.md walks you through one.
+        # built-in opponents play. Replace it with something smarter; the
+        # "Your first improvement" section of environment.md shows you how to
+        # find one.
         return min(legal, key=rank_of)
 
     # Optional: a reinforcement-learning hook called after every step with that step's

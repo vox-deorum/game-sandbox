@@ -53,8 +53,9 @@ class Agent:
         # TODO(you): this one line is the whole strategy. Low cards rarely win
         # tricks, and tricks are how you collect penalty points, so playing the
         # lowest-ranked legal card is a sane start. It is also exactly how the
-        # built-in opponents play. Replace it with something smarter; the "Your
-        # first improvement" section of environment.md walks you through one.
+        # built-in opponents play. Replace it with something smarter; the
+        # "Your first improvement" section of environment.md shows you how to
+        # find one.
         return min(legal, key=rank_of)
 ```
 
@@ -70,7 +71,7 @@ python -m sandbox test    # run the checks, which pass before you change anythin
 
 `eval` reports a score you can read with the [Scoring and rewards](#scoring-and-rewards) section below, and `test` is green on the fresh template because this agent is already complete.
 
-The `TODO(you)` comment inside `act` marks the one line where you take over. Everything above it is plumbing you can keep; the return statement is the decision to improve. When you are ready, the [Your first improvement](#your-first-improvement) section walks you through making it smarter.
+The `TODO(you)` comment inside `act` marks the one line where you take over. Everything above it is plumbing you can keep; the return statement is the decision to improve. When you are ready, the [Your first improvement](#your-first-improvement) section shows you how to find a smarter one yourself.
 
 ## Scoring and rewards
 
@@ -193,26 +194,14 @@ Hearts is turn-based, so there is no fixed delay between moves. Each call to `ac
 
 ## Your first improvement
 
-Your starting agent always plays its lowest legal card. That is a sane base, since low cards rarely win a trick, but it throws away safe chances to get rid of a dangerous high card. This section works out one upgrade, called **ducking**, with hints. Try each hint before reading the next one.
+Run `python -m sandbox play` and follow your agent through a full game. Play against it `python -m sandbox` if you like. Sooner or later it wins a trick with a high card and takes penalty points. Was that trick where the game went wrong?
 
-Look at what happens when someone else is already winning the trick. If you must follow suit, playing your lowest card keeps a high card in your hand for later, when you may be forced to win with it. Playing a high card that still loses the trick sheds that danger now, for free.
+> Usually not, the mistake happened earlier. Your agent was trigger-happy, throwing lower cards away even when it does not make sense.
 
-To find out whether you can duck, you need the cards already on the table. `led_suit(observation)` gives the suit you must follow, and `current_trick(observation)` gives the `(seat, card)` pairs played so far this trick, in order. From those you can find the highest rank of the led suit currently on the table, which is the card you have to stay under.
+You may have known this fix, **ducking**: playing a high card under one (from another player) that already beats it. Does the observation provide enough information to "duck"?
 
-Any card you could follow with that ranks below that current winner cannot take the trick, so among those the highest is the best card to shed. If every card you could follow with would win the trick, there is nothing safe to duck with, so keep your lowest and let a later seat overtake you.
+> Scan the table in [The helper module](#the-helper-module) for the rows that describe the current trick.
 
-If you are stuck, extend the import at the top of `agent.py` to `from sandbox.cards import current_trick, led_suit, legal_cards, rank_of, suit_of`, then replace the starter's final `return` with:
+Record the mean score from `python -m sandbox eval` before the change, make it, and run `eval` again. Ducking pays off a few points at a time over many deals, so you need to evaluate with the mean over more games.
 
-```python
-led = led_suit(observation)
-followers = [card for card in legal if suit_of(card) == led]
-if led is not None and followers:
-    played = [card for _, card in current_trick(observation) if suit_of(card) == led]
-    winning_rank = max((rank_of(card) for card in played), default=-1)
-    under = [card for card in followers if rank_of(card) < winning_rank]
-    if under:
-        return max(under, key=rank_of)
-return min(legal, key=rank_of)
-```
-
-Ducking shows up over many games, not one, so compare the mean score from `python -m sandbox eval` before and after the change rather than judging it from a single deal.
+One more thing to notice while you watch: ducking only exists when you must follow suit. Sooner or later you will have no card of the led suit at all, and a card from another suit can never win the trick. What is a turn you cannot possibly win actually *for*?

@@ -43,7 +43,7 @@ class Agent:
         # mid-screen, otherwise let it fall. It holds a steady height but never
         # looks at the pipes, so it crashes at the first gap that is not at the
         # middle of the screen. The "Your first improvement" section of
-        # environment.md walks you through fixing that.
+        # environment.md shows you how to find the fix yourself.
         return FLAP if below_middle else IDLE
 ```
 
@@ -59,7 +59,7 @@ python -m sandbox test    # run the checks, which pass before you change anythin
 
 `eval` reports a score you can read with the [Scoring and rewards](#scoring-and-rewards) section below, and `test` is green on the fresh template because this agent is already complete.
 
-The `TODO(you)` comment inside `act` marks the one line where you take over. This agent never looks at the pipes, so it survives only until the first gap that sits away from the middle of the screen. When you are ready, the [Your first improvement](#your-first-improvement) section walks you through fixing exactly that.
+The `TODO(you)` comment inside `act` marks the one line where you take over. This agent never looks at the pipes, so it survives only until the first gap that sits away from the middle of the screen. When you are ready, the [Your first improvement](#your-first-improvement) section shows you how to find the fix yourself.
 
 ## Scoring and rewards
 
@@ -78,7 +78,7 @@ The rewards add together over a run. A higher total generally means the bird sur
 
 Your first agent used `sandbox.features`, the template's plain Python helper module. Import what you need from it at the top of `agent.py`, never inside a method. Its functions and constants give readable names to the 12 observation numbers and the two actions, so your code never contains an unexplained `observation[4]` or `return 1`.
 
-`player_y(observation)` returns the top of the bird as a plain float. `next_gap_center(observation)` averages the top and bottom of the next pipe's gap and returns a plain float; it is the target the [Your first improvement](#your-first-improvement) section aims the bird at, because larger y values are lower, so `player_y > next_gap_center` means the bird is below the gap and should flap. `player_velocity(observation)` returns the bird's vertical velocity converted to screen heights per step; it is the one helper that changes a value's scale instead of only naming an index, and the [Velocity and rotation](#velocity-and-rotation) section explains why the conversion exists.
+`player_y(observation)` returns the top of the bird as a plain float. `next_gap_center(observation)` averages the top and bottom of the next pipe's gap and returns a plain float on the same top-to-bottom scale as `player_y`. `player_velocity(observation)` returns the bird's vertical velocity converted to screen heights per step; it is the one helper that changes a value's scale instead of only naming an index, and the [Velocity and rotation](#velocity-and-rotation) section explains why the conversion exists.
 
 The module provides these helpers and constants:
 
@@ -95,7 +95,7 @@ The module provides these helpers and constants:
 
 Your first agent never touched a raw observation number or a raw action integer; the helpers handled both. This section is the full reference for what the 12 numbers mean and what `act` returns, for when you outgrow the helpers and want to read the observation yourself.
 
-Without the helpers, the gap-center decision from [Your first improvement](#your-first-improvement) reads raw indices and action numbers:
+Without the helpers, a decision that aims the bird at the next pipe's gap reads raw indices and action numbers:
 
 ```python
 gap_center = (observation[4] + observation[5]) / 2
@@ -182,22 +182,14 @@ Flappy Bird is paced at one step every 50 milliseconds, or 20 steps per second. 
 
 ## Your first improvement
 
-Your starting agent holds the middle of the screen and never looks at the pipes, so it crashes at the first gap that is not at the middle. This section works out the fix. Try each hint before reading the next one.
+Run `python -m sandbox play` and watch your agent until it crashes. What did you find out?
 
-First, notice why mid-screen fails. `0.5` is only safe while a gap happens to sit at the middle of the screen, and every pipe places its gap somewhere different. The height the bird should aim for has to move with the pipes instead of staying fixed.
+> The bird holds the middle of the screen no matter what is in front of it, so every run ends the same way: a gap arrives that is not at the middle, and the bird makes no attempt to reach it.
 
-The height you want is the middle of the opening in the next pipe, and the [helper module](#the-helper-module) already returns exactly that: `next_gap_center(observation)`. It is on the same top-to-bottom scale as `player_y`, so you can compare the two directly.
+Now, what height *should* the bird be aiming for, do we have an answer in the observation?
 
-You only need to change the right-hand side of the comparison. The flap-when-below logic is already correct; `0.5` is simply the wrong target. Swap it for the gap center and the bird chases each gap instead of one fixed height.
+> Scan the table in [The helper module](#the-helper-module) with that question in mind.
 
-If you are stuck, add `next_gap_center` to the import at the top of `agent.py`, then replace `0.5` in the comparison with `next_gap_center(observation)`:
+Record the mean score from `python -m sandbox eval` before you touch anything, make the one change you believe in, and run `eval` again. A single run can be lucky or unlucky, so trust the mean over the seeded episodes, not one game.
 
-```python
-from sandbox.features import FLAP, IDLE, next_gap_center, player_y
-
-# inside act, the comparison becomes:
-below_gap = player_y(observation) > next_gap_center(observation)
-return FLAP if below_gap else IDLE
-```
-
-Watch the result with `python -m sandbox play`: the bird now tracks each gap instead of hovering. Then compare the mean score from `python -m sandbox eval` before and after the change, since a single run can be lucky or unlucky and the average over several seeds is what tells you the agent really improved.
+When it works, keep watching. The bird now chases every gap, and it still clips a pipe now and then, usually because it arrives at the right height moving too fast to stay there. Your agent knows more than where the bird *is*. What does it know about where the bird is about to be?

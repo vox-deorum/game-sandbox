@@ -50,10 +50,10 @@ class Agent:
         legal = legal_cards(observation)
 
         # TODO(you): this is the whole playing strategy. Low cards rarely win
-        # tricks, but a team that never wins tricks never makes its contract.
-        # Count what your hand is worth before bidding, and win tricks while
-        # your team still needs them; the "Your first improvement" section of
-        # environment.md walks you through bidding what your hand is worth.
+        # tricks, but a team that never wins tricks never makes its contract,
+        # and the flat bid above never looks at the hand at all. The "Your
+        # first improvement" section of environment.md shows you how to find
+        # a better bid.
         return min(legal, key=rank_of)
 
     # Optional: a reinforcement-learning hook called after every step with that step's

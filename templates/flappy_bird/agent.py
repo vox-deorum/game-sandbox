@@ -38,7 +38,7 @@ class Agent:
         # mid-screen, otherwise let it fall. It holds a steady height but never
         # looks at the pipes, so it crashes at the first gap that is not at the
         # middle of the screen. The "Your first improvement" section of
-        # environment.md walks you through fixing that.
+        # environment.md shows you how to find the fix yourself.
         return FLAP if below_middle else IDLE
 
     # Optional: a reinforcement-learning hook called after every step with that step's
