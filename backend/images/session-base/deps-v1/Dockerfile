@@ -70,8 +70,8 @@ RUN chmod -R a+rX /opt/agents/builtin \
 
 # Fail the build, not a session, if the packages or a built-in agent cannot load: import each
 # environment (Flappy imports PyGame) and load every per-environment baseline through the manifest loader.
-RUN python -c "import game_sandbox_harness, flappy_bird, hearts" \
-    && python -c "from game_sandbox_harness.manifest import load_agent; load_agent('/opt/agents/builtin/flappy_bird'); load_agent('/opt/agents/builtin/hearts')"
+RUN python -c "import game_sandbox_harness, flappy_bird, hearts, spades" \
+    && python -c "from game_sandbox_harness.manifest import load_agent; load_agent('/opt/agents/builtin/flappy_bird'); load_agent('/opt/agents/builtin/hearts'); load_agent('/opt/agents/builtin/spades')"
 
 # The entrypoint is the live runner; the session config is appended as a single JSON argv element
 # by the orchestrator. The recordings volume is mounted at /recordings and named in that config.

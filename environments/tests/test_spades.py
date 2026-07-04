@@ -14,6 +14,7 @@ omitted ten-bag penalty) is exercised in isolation.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import random
 from pathlib import Path
@@ -22,11 +23,18 @@ import numpy as np
 import pytest
 from pettingzoo.test import api_test
 
+from game_sandbox_harness.manifest import load_agent
 from game_sandbox_harness.session import REASON_TERMINATED, AgentSlot, run_episode
 from spades import ENTRY, rules
 from spades.env import AUTO_ACTION, IllegalMoveError, make_env
 from spades.overlay import extract_overlay
 from spades.render import HEIGHT, WIDTH
+
+#: The frozen v1 built-in Spades baseline the session image stages and the harness loads for every
+#: Naive seat (``backend/images/session-base/deps-v1/builtin/spades``), from this repo's root.
+BUILTIN_SPADES_AGENT_DIR = (
+    Path(__file__).resolve().parents[2] / "backend/images/session-base/deps-v1/builtin/spades"
+)
 
 
 def test_passes_pettingzoo_api_test():
@@ -543,3 +551,54 @@ def test_full_game_via_defaults_matches_hand_worked_scores():
     assert overlay["team_scores"] == [team0, team1]
     assert overlay["leaderboard_scores"] == [team0, team1, team0, team1]
     env.close()
+
+
+# -- the frozen on-disk built-in baseline ----------------------------------------------------
+
+
+def _load_builtin_agent_module(agent_dir: Path):
+    """Import a builtin agent module straight from its on-disk ``agent.py``.
+
+    The builtin baselines ship in a separate deployment image and import only the standard library,
+    so exec-loading one in isolation is safe and lets a test reach its module-level helpers (here the
+    vendored ``_suggested_bid``) to pin them to the rules engine they copy.
+    """
+    spec = importlib.util.spec_from_file_location(f"_builtin_{agent_dir.name}", agent_dir / "agent.py")
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_builtin_suggested_bid_matches_the_rules_engine():
+    # The builtin Naive baseline cannot import spades.rules (it lives in a separate image), so it
+    # vendors a copy of suggested_bid. Nothing else pins the copy to the source, so this does: over
+    # many dealt hands the two must agree exactly. If a future tune of rules.suggested_bid is not
+    # mirrored into the builtin, the "a Naive-filled table behaves identically to a table of timed-out
+    # seats" promise silently breaks, and this catches it.
+    builtin = _load_builtin_agent_module(BUILTIN_SPADES_AGENT_DIR)
+    for seed in range(200):
+        state = rules.deal(random.Random(seed))
+        for seat in range(rules.NUM_PLAYERS):
+            hand = list(state.hands[seat])
+            assert builtin._suggested_bid(hand) == rules.suggested_bid(hand)
+
+
+def test_builtin_spades_agent_plays_a_full_legal_game():
+    # The session image stages a per-environment Naive baseline at /opt/agents/builtin/<env_id>, and
+    # the harness loads it (through the manifest loader, as the container does) for every Naive seat.
+    # Driving four copies to a clean terminal guards that the per-environment baseline exists, loads,
+    # and plays only legal bids and cards to the end of the hand.
+    slots = {f"player_{i}": AgentSlot(load_agent(BUILTIN_SPADES_AGENT_DIR)) for i in range(rules.NUM_PLAYERS)}
+    result = run_episode(ENTRY, slots, seed=0)
+    assert result.reason == REASON_TERMINATED
+    assert result.ticks == 56  # four bids plus fifty-two plays
+
+    # The baseline plays the env's own timeout default (a never-nil suggested bid, then the lowest
+    # legal card), so a hand driven by AUTO_ACTION must reach the identical deterministic finals.
+    env = make_env()
+    env.reset(seed=0)
+    _drive_to_terminal(env, lambda _env: AUTO_ACTION)
+    expected = rules.leaderboard_scores(env.state)
+    env.close()
+    assert result.scores == {f"player_{i}": float(expected[i]) for i in range(rules.NUM_PLAYERS)}

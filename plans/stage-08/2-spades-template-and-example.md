@@ -1,6 +1,6 @@
 # Stage 8.2: Spades Template Layer and Example
 
-Status: not started.
+Status: completed.
 
 Part of [Stage 8](../stage-08-communication.md). This is build-order step 2. It packages the Spades environment from step 1 so a participant can write a Spades agent, and it ships the first worked example plus the built-in Naive opponent. It is Docker-free: template generation and example loading run locally through the harness. The hands-on surface at the end of this step is the student loop: `python play.py` from the template watches a hand, and `--human` seats the student to bid and play interactively against built-ins.
 

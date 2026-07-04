@@ -85,6 +85,11 @@ _TEMPLATE_ENV_INITS = {
         default_action="AUTO_ACTION",
         inner_package="hearts",
     ),
+    "spades": _TemplateEnvInit(
+        display_name="Spades",
+        default_action="AUTO_ACTION",
+        inner_package="spades",
+    ),
 }
 
 

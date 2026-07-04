@@ -19,9 +19,10 @@ def extract_overlay(env: Any) -> dict[str, Any]:
     """Return the per-step overlay dict from a live :class:`~hearts.env.HeartsEnv`.
 
     The returned dict is fully JSON-serializable (ints, bools, lists, ``None``): trick pairs
-    become ``[seat, card]`` lists, ``display_scores`` are penalties (lower better) and
-    ``leaderboard_scores`` are their negation (higher better). ``legal_actions`` is empty once
-    the hand is terminal.
+    become ``[seat, card]`` lists. ``display_scores`` are penalties (lower better), read by the
+    local pygame renderer and shown per seat by the browser game-over standings;
+    ``leaderboard_scores`` are their negation (higher better), which that browser standings ranks
+    seats by. ``legal_actions`` is empty once the hand is terminal.
     """
     state = env.state
 

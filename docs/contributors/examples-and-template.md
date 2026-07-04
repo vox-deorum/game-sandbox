@@ -16,7 +16,13 @@ complete runnable repository
 
 This keeps shared files in one place and examples small enough to review.
 
-Two environment layers ship today. `flappy_bird` is the single-slot game whose base `sandbox/play.py` fits unchanged. `hearts` is the four-slot turn-based card game; because its local loop is turn-based and seats a human among agents, its layer overrides `sandbox/play.py` whole-file (the one case step 3 below allows). Hearts also carries a roster of four single-idea example agents (`examples/hearts/{duck,moonshot,assassin,closer}/`) rather than one, so its layer demonstrates several distinct strategies and gives the multi-agent leaderboard real opponents to schedule against.
+Three environment layers ship today.
+
+- `flappy_bird` is the single-slot game whose base `sandbox/play.py` fits unchanged.
+
+- `hearts` is the four-slot turn-based card game; because its local loop is turn-based and seats a human among agents, its layer overrides `sandbox/play.py` whole-file (the one case step 3 below allows). It carries four single-idea example agents (`examples/hearts/{duck,moonshot,assassin,closer}/`).
+
+- `spades` is the four-slot partnership card game; like Hearts it overrides `sandbox/play.py` whole-file for its turn-based bid-then-play loop, and its `sandbox/cards.py` helper decodes the combined `Discrete(66)` bid-and-card action space so an agent works with bid numbers and card ids rather than raw arrays.
 
 ## Composing
 

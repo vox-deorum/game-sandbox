@@ -90,6 +90,15 @@ TEMPLATE_ENVS = {
         "hearts/human.py",
         "hearts/render.py",
     ),
+    # Spades mirrors Hearts: its own dependency-free rules engine plus the env/overlay/human/render
+    # modules, so the template's local play opens the bid-then-play game through the synced renderer.
+    "spades": (
+        "spades/rules.py",
+        "spades/env.py",
+        "spades/overlay.py",
+        "spades/human.py",
+        "spades/render.py",
+    ),
 }
 
 # Shared, import-self-contained sandbox helpers synced from the env source into the env-agnostic

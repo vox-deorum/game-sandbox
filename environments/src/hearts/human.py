@@ -7,8 +7,9 @@ is legal (:meth:`HeartsRenderer.is_legal_card`). Illegal clicks are ignored; the
 live with periodic re-renders while we wait. Closing the window sets :attr:`quit`, which the
 play loop checks to stop.
 
-The local play loops (the project's ``scripts/play.py`` and :mod:`hearts.demo`) discover this by
-the uniform ``make_human_controller`` factory; the demo's interactive seat is built on it too.
+The local play loops discover this by the uniform ``make_human_controller`` factory: the project's
+``scripts/play.py`` and :mod:`hearts.demo` in this repo, and the student template's ``sandbox`` play
+CLI once this module is synced there. The demo's interactive seat is built on it too.
 """
 
 from __future__ import annotations

@@ -7,6 +7,7 @@ Start with the page for your environment, then use it alongside the [agent inter
 | Environment | About | Action | Template branch |
 | --- | --- | --- | --- |
 | [Hearts](hearts.md) | Four-player trick-taking card game | An int `0..51` naming the card to play | `templates/hearts` |
+| [Spades](spades.md) | Four-player partnership bidding-and-trick card game | An int: a bid `52..65` while bidding, or a card `0..51` in play | `templates/spades` |
 | [Flappy Bird](flappy-bird.md) | Single-player game of flying through pipes | `0` to do nothing or `1` to flap | `templates/flappy_bird` (the default) |
 
 Each environment is published as a `templates/<env>` branch of your student repository, with worked example agents on `examples/<env>/<name>` branches. Flappy Bird is the default template on the main branch.
