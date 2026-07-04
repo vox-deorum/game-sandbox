@@ -180,11 +180,12 @@ def sync_template_env() -> None:
 def sync_template_base() -> None:
     """Copy the shared, import-self-contained sandbox helpers into templates/base/sandbox/.
 
-    These standalone modules (currently the HiDPI display shim) are reused verbatim by both the
-    student's provided local play (as ``sandbox.hidpi``) and the maintainer's ``scripts/play.py``
-    (as ``local_play.hidpi``), so there is a single source under ``environments/src/local_play/``.
-    Like the per-env sync, the staleness CI job diffs the destination, so the base copy can never
-    drift from the source.
+    These standalone modules (the HiDPI display shim and the two shared pygame renderers — a
+    game-agnostic base and the four-seat card table the card games subclass) are reused verbatim by
+    both the student's provided local play (as ``sandbox.hidpi`` / ``sandbox.render_base`` /
+    ``sandbox.render_cards``) and the maintainer's ``scripts/play.py`` (as ``local_play.*``), so
+    there is a single source under ``environments/src/local_play/``. Like the per-env sync, the
+    staleness CI job diffs each destination file, so the base copies can never drift from the source.
     """
     sandbox = template_sandbox_base()
     for name, relative in TEMPLATE_BASE_MODULES.items():

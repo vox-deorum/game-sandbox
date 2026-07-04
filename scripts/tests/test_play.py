@@ -9,6 +9,9 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import cast
+
+from game_sandbox_harness.environment import EnvironmentEntry
 
 # The dev scripts are run as top-level modules (scripts/ on sys.path), so mirror that here.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -17,7 +20,11 @@ import play  # noqa: E402
 
 
 class _FakeEntry:
-    """Minimal stand-in exposing only the ``overlay`` hook ``_standings`` reads."""
+    """Minimal stand-in exposing only the ``overlay`` hook ``_standings`` reads.
+
+    ``_standings`` touches nothing else on the entry, so the tests pass this (via ``cast``) where a
+    full :class:`EnvironmentEntry` is annotated rather than building one with a real meta/make.
+    """
 
     def __init__(self, display_scores: list[int]) -> None:
         self._display_scores = display_scores
@@ -31,7 +38,7 @@ def test_standings_award_dense_tie_aware_medals_to_a_partnership():
     scores = {"player_0": 52.0, "player_1": -70.0, "player_2": 52.0, "player_3": -70.0}
     display = [52, -70, 52, -70]
 
-    rows = play._standings(_FakeEntry(display), object(), scores)
+    rows = play._standings(cast(EnvironmentEntry, _FakeEntry(display)), object(), scores)
 
     labels = [label for label, _value, _cup in rows]
     cups = [cup for _label, _value, cup in rows]
@@ -51,7 +58,7 @@ def test_standings_rank_distinct_scores_without_gaps():
     scores = {"player_0": 5.0, "player_1": 3.0, "player_2": 1.0, "player_3": -2.0}
     display = [5, 3, 1, -2]
 
-    rows = play._standings(_FakeEntry(display), object(), scores)
+    rows = play._standings(cast(EnvironmentEntry, _FakeEntry(display)), object(), scores)
 
     assert [label for label, _v, _c in rows] == ["P0", "P1", "P2", "P3"]
     assert [cup for _l, _v, cup in rows] == [0, 1, 2, None]

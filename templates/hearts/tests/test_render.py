@@ -1,0 +1,34 @@
+"""Smoke test for the shared renderer in the composed template (``sandbox.*``) layout.
+
+The Hearts renderer reaches its shared base classes through a dual-name import: ``local_play.*`` in
+the monorepo, ``sandbox.*`` here in a student's composed template. Nothing else in the template
+exercises the renderer in the composed layout, so this is the only automated proof that
+``sandbox.render_cards`` / ``sandbox.render_base`` and the relative ``sandbox.hidpi`` they pull in
+resolve — and that the inherited card-table drawing and hit-testing actually run and produce a
+headless frame.
+"""
+
+from __future__ import annotations
+
+from sandbox.env import make_env
+
+
+def test_headless_render_produces_a_frame_and_hittests():
+    env = make_env("rgb_array")
+    try:
+        env.reset(seed=0)
+
+        # The frame comes back through the shared PygameRenderer._finish_frame tail.
+        frame = env.render()
+        assert frame is not None
+        assert frame.shape == (720, 960, 3)
+        assert str(frame.dtype) == "uint8"
+
+        # card_rect / card_at_pos are inherited from the shared CardTableRenderer; a round-trip
+        # proves the shared hand layout and hit-testing resolve in the sandbox.* layout.
+        card = env.state.hands[0][0]
+        rect = env._renderer.card_rect(card)
+        assert rect is not None
+        assert env._renderer.card_at_pos(rect.center) == card
+    finally:
+        env.close()

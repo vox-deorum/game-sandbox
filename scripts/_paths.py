@@ -95,9 +95,12 @@ TEMPLATE_ENVS = {
 # Shared, import-self-contained sandbox helpers synced from the env source into the env-agnostic
 # base layer (templates/base/sandbox/, not per-env): destination filename under sandbox/ -> source
 # path under ENVIRONMENTS_SRC. These are reused verbatim by both the student's local play and the
-# maintainer's scripts/play.py, so there is one source of truth. (Currently the HiDPI shim.)
+# maintainer's scripts/play.py, so there is one source of truth: the HiDPI display shim and the two
+# shared pygame renderers (a game-agnostic base and the four-seat card table the card games share).
 TEMPLATE_BASE_MODULES = {
     "hidpi.py": "local_play/hidpi.py",
+    "render_base.py": "local_play/render_base.py",
+    "render_cards.py": "local_play/render_cards.py",
 }
 
 # Each environment's student reference page. scripts/compose.py copies the page for the composed

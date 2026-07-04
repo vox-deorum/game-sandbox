@@ -49,8 +49,10 @@ from _paths import (
     FIXTURES_DIR,
     HARNESS_SCHEMA_DATA,
     REPO_ROOT,
+    TEMPLATE_BASE_MODULES,
     TEMPLATE_ENVS,
     TS_GENERATED_DIR,
+    template_sandbox_base,
     template_sandbox_env,
 )
 
@@ -121,13 +123,18 @@ def job_frontend_e2e() -> None:
 def job_generated_code_fresh() -> None:
     _run(["uv", "run", "python", "scripts/generate.py"])
     # Fail if regeneration changed anything tracked under the generated locations: the schema
-    # mirrors, plus every per-environment template sandbox/env/.
+    # mirrors, every per-environment template sandbox/env/, and the shared base-sandbox helpers
+    # synced from local_play/. The base helpers are diffed per file (not the whole
+    # templates/base/sandbox/ dir, which also holds hand-written play.py/evaluate.py/etc.) so a
+    # drift in the synced hidpi/renderer copies is caught like every other generated output.
+    base_sandbox = template_sandbox_base()
     targets = [
         str(TS_GENERATED_DIR.relative_to(REPO_ROOT)),
         str(HARNESS_SCHEMA_DATA.relative_to(REPO_ROOT)),
         str(FIXTURES_DIR.relative_to(REPO_ROOT)),
         str(BACKEND_GENERATED_DIR.relative_to(REPO_ROOT)),
         *(str(template_sandbox_env(env).relative_to(REPO_ROOT)) for env in TEMPLATE_ENVS),
+        *(str((base_sandbox / name).relative_to(REPO_ROOT)) for name in TEMPLATE_BASE_MODULES),
     ]
     _run(["git", "diff", "--exit-code", "--", *targets])
     # Not generated, but the same idea: the version touchpoints (base manifest, DEPS_VERSION, the
