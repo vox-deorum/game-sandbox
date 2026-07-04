@@ -274,6 +274,26 @@ class SpadesRenderer(CardTableRenderer):
             img = font.render(label, True, NIL_INK if is_nil else WHITE)
             surface.blit(img, img.get_rect(center=rect.center))
 
+    # -- trick-won badge (the per-game flourish above the winner during the shared sweep) -------
+
+    def _draw_trick_won_badge(
+        self,
+        surface: pygame.Surface,
+        overlay: dict,
+        winner: int,
+        anchor: tuple[int, int],
+        t: float,
+        hold: float,
+    ) -> None:
+        """Pop a compact ``won/bid`` pill (e.g. "3/4") above the winner's seat during the sweep.
+
+        ``tricks_won[winner]`` already counts the just-won trick, so it reads "now 3 of your bid 4";
+        a nil bid is ``0``, so a nil-breaker naturally shows "1/0".
+        """
+        won = overlay["tricks_won"][winner]
+        bid = overlay["bids"][winner]
+        self._draw_pill(surface, f"{won}/{bid}", anchor, t, hold)
+
     # -- status strip --------------------------------------------------------------------------
 
     def _draw_status(self, surface: pygame.Surface, overlay: dict, view_seat: int) -> None:
@@ -338,6 +358,18 @@ class SpadesRenderer(CardTableRenderer):
         """Return the primary-row state message and its colour."""
         if overlay["terminal"]:
             return "Game over", GOLD
+        # A trick that has been swept to its winner (human mode): name who took it. The last_trick
+        # guard keeps this off during the opening bid round (last_trick is None until a trick lands).
+        if (
+            self.render_mode == "human"
+            and not overlay["current_trick"]
+            and overlay["last_trick"] is not None
+            and overlay["last_trick_winner"] is not None
+            and overlay["tricks_played"] == self._animated_tricks
+        ):
+            winner = overlay["last_trick_winner"]
+            who = "You" if winner == view_seat else f"P{winner}"
+            return f"{who} took the trick", GOLD
         turn = overlay["turn"]
         verb = "to bid" if overlay["phase"] == "bidding" else "to play"
         if turn == view_seat:

@@ -21,6 +21,7 @@ syncs it verbatim into the student template as ``sandbox.render_cards``.
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 import numpy as np
@@ -71,8 +72,13 @@ class CardTableRenderer(PygameRenderer):
 
     The renderer is constructed once per environment and reused across steps. Subclasses implement
     :meth:`_extract_overlay`, :meth:`_draw_seat_content`, and :meth:`_draw_status`, and may override
-    the codec attributes, the geometry hooks, or the ``_draw_center`` / ``_legal_cards_from_overlay``
-    / ``_suppress_completed_trick`` / ``_before_draw`` hooks to add game-specific behaviour.
+    the codec attributes, the geometry hooks, ``_draw_center`` / ``_legal_cards_from_overlay``, or the
+    :meth:`_draw_trick_won_badge` hook to add game-specific behaviour.
+
+    The human-mode card fly-in and trick-won sweep animations live here too (see :meth:`_before_draw`
+    and the ``_animate_*`` helpers), so both card games share one animation engine; the only per-game
+    piece is the small pill drawn above the winner, supplied by :meth:`_draw_trick_won_badge`. In
+    ``rgb_array`` mode the animations never run, so headless frames stay deterministic.
     """
 
     # -- per-game geometry hooks (defaults are the Hearts values) ------------------------------
@@ -116,6 +122,21 @@ class CardTableRenderer(PygameRenderer):
         #: Cache of antialiased suit pips keyed by (suit, size, ink); a handful of distinct sizes
         #: and inks recur every frame, so this turns the per-pip supersample into a one-time cost.
         self._pip_cache: dict[tuple[int, int, tuple[int, int, int]], pygame.Surface] = {}
+        # Bound in _ensure_init(); declared here with its concrete type (not None) so the winner-pill
+        # draw helper sees Font, not Font | None.
+        self._font_big: pygame.font.Font
+        #: Count of completed tricks whose win animation has already played (human mode only).
+        self._animated_tricks: int = 0
+        #: The previously rendered overlay (human mode only), so the card fly-in knows where each card
+        #: was last drawn.
+        self._prev_overlay: dict[str, Any] | None = None
+
+    def _ensure_init(self) -> None:
+        """Initialize the shared fonts/surface plus the big font used by the winner pill."""
+        if self._inited:
+            return
+        super()._ensure_init()
+        self._font_big = pygame.font.Font(None, self._s(34))
 
     # -- public hit-testing helpers ------------------------------------------------------------
 
@@ -191,22 +212,48 @@ class CardTableRenderer(PygameRenderer):
         raise NotImplementedError
 
     def _before_draw(self, env: Any, overlay: dict, view_seat: int, reveal_all: bool) -> None:
-        """Hook run after overlay extraction, before the static frame is drawn. Default: no-op.
+        """Run the human-mode card/trick animations from the previous overlay before the static frame.
 
-        Hearts uses it to run its human-mode card/trick animations from the previous overlay.
+        Resets the animation state on a fresh deal, then (human mode only) animates the move from the
+        previous overlay to this one and remembers this overlay for the next diff. A card fly-in runs
+        for the just-played card, chaining into the trick-won sweep when it was a trick's fourth card.
+        The headless ``rgb_array`` path animates nothing and stays a single deterministic frame.
         """
+        tricks_played = overlay["tricks_played"]
+        if tricks_played < self._animated_tricks:
+            self._animated_tricks = 0  # a fresh deal rewound the trick count
+            self._prev_overlay = None  # ...and there is no prior frame to animate from
+        if self.render_mode == "human":
+            self._animate_transition(overlay, view_seat, reveal_all, tricks_played)
+            self._prev_overlay = overlay
 
     def _draw_center(self, surface: pygame.Surface, overlay: dict, view_seat: int) -> None:
         """Draw the centre of the table. Default: the in-progress (or completed) trick."""
         self._draw_trick(surface, overlay, view_seat)
 
     def _suppress_completed_trick(self, overlay: dict) -> bool:
-        """Whether to keep the centre clear instead of redrawing a completed trick. Default: no.
+        """Keep the centre clear once a completed trick has been swept to its winner (human mode).
 
-        Hearts overrides this so that once a completed trick has been swept to its winner by the
-        human-mode animation, the centre stays clear through the post-trick pause.
+        The cards are "with" the winner now, so the centre stays clear through the post-trick pause.
+        The headless rgb_array path never suppresses, so it always shows the completed trick.
         """
-        return False
+        return self.render_mode == "human" and overlay["tricks_played"] == self._animated_tricks
+
+    def _draw_trick_won_badge(
+        self,
+        surface: pygame.Surface,
+        overlay: dict,
+        winner: int,
+        anchor: tuple[int, int],
+        t: float,
+        hold: float,
+    ) -> None:
+        """Draw a game-specific flourish above the winner's seat during the trick-won sweep.
+
+        Called every sweep frame with the sweep's ``t`` / ``hold`` so the badge can scale itself in
+        via :meth:`_draw_pill`. Default: nothing. Hearts draws its ``+N`` points pill; Spades draws
+        its ``won/bid`` pill.
+        """
 
     def _legal_cards_from_overlay(self, overlay: dict) -> set[int]:
         """Return the card ids to treat as legal in the hand. Default: all legal actions.
@@ -491,6 +538,239 @@ class CardTableRenderer(PygameRenderer):
                 surface.blit(veil, draw_rect.topleft)
             if hovered:
                 self._draw_glow_border(surface, draw_rect, GOLD, 4, 1.0)
+
+    # -- card-play and trick-won animations (human mode only) ----------------------------------
+
+    @staticmethod
+    def _smoothstep(t: float) -> float:
+        """Clamp ``t`` to ``[0, 1]`` and apply the classic smoothstep ease."""
+        t = max(0.0, min(1.0, t))
+        return t * t * (3.0 - 2.0 * t)
+
+    def _animate_transition(
+        self, overlay: dict, view_seat: int, reveal_all: bool, tricks_played: int
+    ) -> None:
+        """Animate the move from the previous overlay to this one (human mode).
+
+        A card fly-in runs for the just-played card; when that play was a trick's fourth card it
+        resolves the trick in the same step, so the fly-in chains into the trick-won sweep. Either
+        piece is a no-op when not applicable, so a fresh deal or a repeated frame animates nothing.
+        """
+        play = self._detect_play(overlay)
+        newly_completed = (
+            not overlay["current_trick"]
+            and overlay["last_trick"] is not None
+            and tricks_played > self._animated_tricks
+        )
+        if play is not None:
+            self._ensure_window()
+            self._animate_card_played(overlay, view_seat, reveal_all, play)
+        if newly_completed:
+            self._ensure_window()
+            self._animate_trick_won(overlay, view_seat, reveal_all)
+            self._animated_tricks = tricks_played
+
+    def _detect_play(self, overlay: dict) -> tuple[int, int, list[tuple[int, int]]] | None:
+        """Return ``(seat, card, resting_pairs)`` for the card just played versus the previous
+        overlay, or ``None``. Either one new pair was appended to the in-progress trick (cards 1–3),
+        or the trick count went up and the new card shows only in the completed ``last_trick`` (the
+        fourth card). Whether that play *completed* the trick — and so chains into the sweep — is
+        decided separately by :meth:`_animate_transition` (``newly_completed``), so it is not carried
+        here.
+        """
+        prev = self._prev_overlay
+        if prev is None:
+            return None
+        p_trick = prev["current_trick"]
+        n_trick = overlay["current_trick"]
+        p_tricks = prev["tricks_played"]
+        n_tricks = overlay["tricks_played"]
+        if n_tricks == p_tricks and len(n_trick) == len(p_trick) + 1:
+            seat, card = n_trick[-1]
+            return int(seat), int(card), [(int(s), int(c)) for s, c in p_trick]
+        if not n_trick and overlay["last_trick"] is not None and n_tricks == p_tricks + 1:
+            resting = {int(c) for _, c in p_trick}
+            played = [pair for pair in overlay["last_trick"] if int(pair[1]) not in resting]
+            if not played:
+                return None
+            seat, card = played[0]
+            return int(seat), int(card), [(int(s), int(c)) for s, c in p_trick]
+        return None
+
+    def _play_source(self, prev: dict, view_seat: int, seat: int, card: int) -> tuple[int, int, int, int]:
+        """Device-pixel centre and size ``(cx, cy, w, h)`` of ``card`` as it was drawn for ``seat`` in
+        the previous overlay: the view seat's fanned hand, or an opponent row. Reuses the shared
+        layout helpers (:meth:`_hand_layout` / :meth:`_opponent_row_layout`) so the source matches the
+        actual draw to the pixel. Falls back to the seat badge if the card can't be located (defensive).
+        """
+        if seat == view_seat:
+            layout = self._hand_layout(list(prev["hands"][view_seat]), set(prev["legal_actions"]))
+        else:
+            slot = self._slot_of_seat(seat, view_seat)
+            layout = self._opponent_row_layout(slot, list(prev["hands"][seat]))
+        for drawn_card, rect in layout:
+            if drawn_card == card:
+                return rect.centerx, rect.centery, rect.width, rect.height
+        ax, ay = self._seat_anchor(self._slot_of_seat(seat, view_seat))
+        return ax, ay, self._s(SMALL_W), self._s(SMALL_H)
+
+    def _animate_card_played(
+        self,
+        overlay: dict,
+        view_seat: int,
+        reveal_all: bool,
+        play: tuple[int, int, list[tuple[int, int]]],
+    ) -> None:
+        """Play the ~0.48 s fly-in: the played card holds (gold-ringed) where it left the hand, then
+        slides into its trick spot, shrinking to trick size. The cards already in the centre sit
+        static beneath it. Human mode only; drives its own frame loop and flips, like the sweep.
+        """
+        surface = self._surface
+        screen = self._screen
+        prev = self._prev_overlay
+        if surface is None or screen is None or prev is None:
+            return
+        seat, card, resting_pairs = play
+
+        sx, sy, sw, sh = self._play_source(prev, view_seat, seat, card)
+        center = (self._s(self.WIDTH // 2), self._s(self.HEIGHT // 2))
+        dx, dy = self._trick_offset(self._slot_of_seat(seat, view_seat))
+        tx, ty = center[0] + dx, center[1] + dy
+        end_scale = self._s(SMALL_W) / sw
+
+        duration_ms = 480.0
+        hold = 0.30  # fraction spent holding + highlighting before the slide begins
+        clock = pygame.time.Clock()
+        start = pygame.time.get_ticks()
+        while True:
+            elapsed = pygame.time.get_ticks() - start
+            t = elapsed / duration_ms
+            if t >= 1.0:
+                break
+            move = 0.0 if t < hold else self._smoothstep((t - hold) / (1.0 - hold))
+
+            # Base frame, minus the in-progress trick (we draw the resting cards + the flyer ourselves).
+            # The hand and opponent rows are drawn from the *previous* overlay with the flying card
+            # hidden, so the source row holds its layout (a placeholder gap where the card was) instead
+            # of re-packing while one card flies out. Seats and status reflect the new state.
+            self._draw_table(surface)
+            self._draw_seats(surface, overlay, view_seat)
+            self._draw_opponents(surface, prev, view_seat, reveal_all, hidden_card=card)
+            self._draw_hand(surface, prev, view_seat, hidden_card=card)
+            self._draw_status(surface, overlay, view_seat)
+
+            for r_seat, r_card in resting_pairs:
+                r_dx, r_dy = self._trick_offset(self._slot_of_seat(r_seat, view_seat))
+                r_rect = pygame.Rect(0, 0, self._s(SMALL_W), self._s(SMALL_H))
+                r_rect.center = (center[0] + r_dx, center[1] + r_dy)
+                self._draw_card_face(surface, r_rect, r_card, self._font_small)
+
+            scale = 1.0 + (end_scale - 1.0) * move
+            cw = max(1, round(sw * scale))
+            ch = max(1, round(sh * scale))
+            rect = pygame.Rect(0, 0, cw, ch)
+            rect.center = (round(sx + (tx - sx) * move), round(sy + (ty - sy) * move))
+            # Held at the source the flyer wears a gold "selected" ring (distinct from the green legal
+            # border); once it slides the ring drops, so it reads as "this is the card going out".
+            border = GOLD if t < hold else None
+            self._draw_card_face(surface, rect, card, self._font_small, border=border, border_w=4)
+
+            screen.blit(surface, (0, 0))
+            pygame.event.pump()
+            pygame.display.flip()
+            clock.tick(60)
+
+    def _animate_trick_won(self, overlay: dict, view_seat: int, reveal_all: bool) -> None:
+        """Play the ~0.9 s sweep: the winner's card pulses gold, then the four cards slide and
+        shrink into the winner's seat. Human mode only; drives its own frame loop and flips.
+        """
+        surface = self._surface
+        screen = self._screen
+        if surface is None or screen is None:
+            return
+        winner = overlay["last_trick_winner"]
+        trick = overlay["last_trick"]
+        if winner is None or not trick:
+            return
+
+        center = (self._s(self.WIDTH // 2), self._s(self.HEIGHT // 2))
+        win_anchor = self._seat_anchor(self._slot_of_seat(winner, view_seat))
+        cards: list[tuple[int, int, tuple[int, int]]] = []
+        for seat, card in trick:
+            dx, dy = self._trick_offset(self._slot_of_seat(seat, view_seat))
+            cards.append((seat, card, (center[0] + dx, center[1] + dy)))
+
+        duration_ms = 900.0
+        hold = 0.34  # fraction spent holding + pulsing before the sweep begins
+        clock = pygame.time.Clock()
+        start = pygame.time.get_ticks()
+        while True:
+            elapsed = pygame.time.get_ticks() - start
+            t = elapsed / duration_ms
+            if t >= 1.0:
+                break
+
+            # Base frame, minus the static trick (we draw the moving cards ourselves).
+            self._draw_table(surface)
+            self._draw_seats(surface, overlay, view_seat, winner_flash=winner if t >= hold else None)
+            self._draw_opponents(surface, overlay, view_seat, reveal_all)
+            self._draw_hand(surface, overlay, view_seat)
+            self._draw_status(surface, overlay, view_seat)
+
+            if t < hold:
+                move = 0.0
+                shimmer = 0.5 + 0.5 * math.sin(elapsed / 150.0)
+            else:
+                move = self._smoothstep((t - hold) / (1.0 - hold))
+                shimmer = 1.0
+
+            for seat, card, (sx, sy) in cards:
+                cx = round(sx + (win_anchor[0] - sx) * move)
+                cy = round(sy + (win_anchor[1] - sy) * move)
+                scale = 1.0 - 0.7 * move
+                cw = max(1, round(self._s(SMALL_W) * scale))
+                ch = max(1, round(self._s(SMALL_H) * scale))
+                rect = pygame.Rect(0, 0, cw, ch)
+                rect.center = (cx, cy)
+                if seat == winner:
+                    self._draw_card_face(
+                        surface,
+                        rect,
+                        card,
+                        self._font_small,
+                        border=WINNER_GLOW,
+                        border_w=5,
+                        glow_intensity=0.55 + 0.7 * shimmer,
+                    )
+                else:
+                    self._draw_card_face(surface, rect, card, self._font_small)
+
+            self._draw_trick_won_badge(surface, overlay, winner, win_anchor, t, hold)
+
+            screen.blit(surface, (0, 0))
+            pygame.event.pump()
+            pygame.display.flip()
+            clock.tick(60)
+
+    def _draw_pill(
+        self, surface: pygame.Surface, text: str, anchor: tuple[int, int], t: float, hold: float
+    ) -> None:
+        """Draw a rounded gold pill showing ``text`` above the winner's seat; it scales in during the
+        hold. Shared by the games' trick-won badges (Hearts' ``+N`` points, Spades' ``won/bid``).
+        """
+        img = self._font_big.render(text, True, (32, 24, 18))
+        pad = self._s(13)
+        pill = pygame.Surface((img.get_width() + pad * 2, img.get_height() + self._s(8)), pygame.SRCALPHA)
+        rrect = pill.get_rect()
+        radius = rrect.height // 2
+        pygame.draw.rect(pill, (*GOLD, 236), rrect, border_radius=radius)
+        pygame.draw.rect(pill, (255, 244, 206), rrect, width=max(1, self._s(2)), border_radius=radius)
+        pill.blit(img, img.get_rect(center=rrect.center))
+
+        appear = self._smoothstep(t / hold) if t < hold else 1.0
+        if appear < 1.0:
+            pill = pygame.transform.rotozoom(pill, 0, 0.6 + 0.4 * appear)
+        surface.blit(pill, pill.get_rect(center=(anchor[0], anchor[1] - self._s(56))))
 
     # -- card primitives -----------------------------------------------------------------------
 
