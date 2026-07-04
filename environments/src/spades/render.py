@@ -98,6 +98,9 @@ class SpadesRenderer(CardTableRenderer):
     NORTH_BADGE_Y = 112
     OPPONENT_ROW_NORTH_Y = 166
     BADGE_W, BADGE_H = 168, 62
+    # Seat the West/East name boxes this far in from the side edges so the edge card stacks (a 36px
+    # inset, SMALL_W=48 wide) no longer overlay them; the shared default (130) sat under the cards.
+    SIDE_BADGE_INSET = 176
 
     def __init__(self, render_mode: str) -> None:
         """Store ``render_mode`` (``"human"`` or ``"rgb_array"``); defer pygame init to render."""
@@ -149,6 +152,18 @@ class SpadesRenderer(CardTableRenderer):
         return None
 
     # -- seat interior -------------------------------------------------------------------------
+
+    def _seat_anchor(self, slot: int) -> tuple[int, int]:
+        """Place the badge for a slot, insetting the side seats so the edge cards don't overlay them.
+
+        Only the West/East slots (``1``/``3``) move: they slide in from the shared 130px edge inset to
+        :attr:`SIDE_BADGE_INSET` so the "P1"/"P3" name boxes clear the side card stacks. North/South
+        keep the shared placement.
+        """
+        if slot in (1, 3):
+            inset = self.SIDE_BADGE_INSET if slot == 1 else self.WIDTH - self.SIDE_BADGE_INSET
+            return (self._s(inset), self._s(self.HEIGHT // 2))
+        return super()._seat_anchor(slot)
 
     def _draw_seat_content(
         self,
@@ -207,29 +222,42 @@ class SpadesRenderer(CardTableRenderer):
 
     # -- bid chips (bidding phase) -------------------------------------------------------------
 
-    def _draw_bid_chips(self, surface: pygame.Surface, overlay: dict, view_seat: int) -> None:
-        """Draw the clickable row of bid chips ``0..13`` in the centre well (``0`` labelled NIL).
+    #: Bid chips are laid out in this many columns; the 14 bids (NIL..13) wrap into two rows.
+    BID_CHIP_COLS = 7
 
-        The chips are the view seat's affordance during bidding; their rects are recorded for
-        hit-testing. When it is not the view seat's turn the chips still draw (so the table reads),
-        but the human controller only accepts a click on its own turn.
+    def _draw_bid_chips(self, surface: pygame.Surface, overlay: dict, view_seat: int) -> None:
+        """Draw the clickable grid of bid chips ``0..13`` in the centre well (``0`` labelled NIL).
+
+        The chips wrap into a compact ``7 x 2`` grid (``NIL..6`` on top, ``7..13`` below) so the block
+        stays clear of the side card stacks instead of running edge to edge. They are the view seat's
+        affordance during bidding; their rects are recorded for hit-testing. When it is not the view
+        seat's turn the chips still draw (so the table reads), but the human controller only accepts a
+        click on its own turn.
         """
         self._bid_rects = []
         center_y = self._s(HEIGHT // 2)
         chip_w, chip_h = self._s(50), self._s(52)
         gap = self._s(4)
+        vgap = self._s(8)
         count = rules.NUM_BIDS
-        run = count * chip_w + (count - 1) * gap
+        cols = self.BID_CHIP_COLS
+        rows = (count + cols - 1) // cols
+        run = cols * chip_w + (cols - 1) * gap
         start_x = (self._s(WIDTH) - run) // 2
+        block_h = rows * chip_h + (rows - 1) * vgap
+        start_y = center_y - block_h // 2
         view_turn = overlay["turn"] == view_seat and not overlay["terminal"]
 
         prompt = "Choose your bid" if view_turn else f"P{overlay['turn']} is bidding"
         p_img = self._font.render(prompt, True, GOLD if view_turn else WHITE)
-        surface.blit(p_img, p_img.get_rect(center=(self._s(WIDTH // 2), center_y - self._s(52))))
+        surface.blit(p_img, p_img.get_rect(center=(self._s(WIDTH // 2), start_y - self._s(26))))
 
         mouse = pygame.mouse.get_pos() if self.render_mode == "human" else (-1, -1)
         for bid in range(count):
-            rect = pygame.Rect(start_x + bid * (chip_w + gap), center_y - chip_h // 2, chip_w, chip_h)
+            col, row = bid % cols, bid // cols
+            rect = pygame.Rect(
+                start_x + col * (chip_w + gap), start_y + row * (chip_h + vgap), chip_w, chip_h
+            )
             self._bid_rects.append((bid, rect))
             hovered = view_turn and rect.collidepoint(mouse)
             pygame.draw.rect(surface, CHIP_BG_HOVER if hovered else CHIP_BG, rect, border_radius=self._s(8))
@@ -256,7 +284,7 @@ class SpadesRenderer(CardTableRenderer):
         styled by partnership. The strip is always present.
         """
         w = self._s(WIDTH)
-        strip_h = self._s(62)
+        strip_h = self._s(55)
         panel = pygame.Surface((w, strip_h), pygame.SRCALPHA)
         panel.fill((0, 0, 0, 104))
         surface.blit(panel, (0, 0))
@@ -264,7 +292,7 @@ class SpadesRenderer(CardTableRenderer):
 
         terminal = overlay["terminal"]
         bidding = overlay["phase"] == "bidding"
-        row1_y = self._s(8)
+        row1_y = self._s(7)
         if terminal:
             phase_txt = "hand complete"
         elif bidding:
@@ -289,8 +317,10 @@ class SpadesRenderer(CardTableRenderer):
         m = self._font.render(msg, True, msg_color)
         surface.blit(m, m.get_rect(topright=(w - self._s(16), row1_y)))
 
-        # Second row: the two team scores, each tinted with its partnership colour.
-        self._draw_team_scores(surface, overlay, view_seat, row1_y + t1.get_height() + self._s(2))
+        # Second row: the two team scores, each tinted with its partnership colour. The gap below the
+        # primary row is a little wider than the text stack strictly needs, so the two rows sit evenly
+        # in the trimmed strip rather than bunching at the top.
+        self._draw_team_scores(surface, overlay, view_seat, row1_y + t1.get_height() + self._s(8))
 
     def _draw_team_scores(self, surface: pygame.Surface, overlay: dict, view_seat: int, y: int) -> None:
         """Draw the two team score readouts on the status strip's second row, tinted by team."""

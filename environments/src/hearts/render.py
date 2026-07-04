@@ -184,14 +184,14 @@ class HeartsRenderer(CardTableRenderer):
         explains *why* the view seat has the legal options it has. The strip is always present.
         """
         w = self._s(WIDTH)
-        strip_h = self._s(60)
+        strip_h = self._s(55)
         panel = pygame.Surface((w, strip_h), pygame.SRCALPHA)
         panel.fill((0, 0, 0, 104))
         surface.blit(panel, (0, 0))
         pygame.draw.line(surface, GOLD_DIM, (0, strip_h), (w, strip_h), max(1, self._s(1)))
 
         terminal = overlay["terminal"]
-        row1_y = self._s(9)
+        row1_y = self._s(7)
         trick_txt = (
             "hand complete" if terminal else f"trick {overlay['tricks_played'] + 1}/{rules.NUM_TRICKS}"
         )
@@ -213,12 +213,13 @@ class HeartsRenderer(CardTableRenderer):
         m = self._font.render(msg, True, msg_color)
         surface.blit(m, m.get_rect(topright=(w - self._s(16), row1_y)))
 
-        # Hint row: the contextual "why these options" line. The small +2 gap keeps it inside the
-        # 60px strip (the lockstep twin of index.ts).
+        # Hint row: the contextual "why these options" line. It sits a little below the primary row so
+        # the two rows sit evenly in the trimmed 52px strip. (The browser index.ts strip stays taller
+        # because Pixi renders this text larger; the two are intentionally not pixel-identical.)
         hint = self._legal_hint(overlay, view_seat)
         if hint:
             h = self._font_small.render(hint, True, HINT_INK)
-            surface.blit(h, (self._s(16), row1_y + t1.get_height() + self._s(2)))
+            surface.blit(h, (self._s(16), row1_y + t1.get_height() + self._s(8)))
 
     def _status_message(self, overlay: dict, view_seat: int) -> tuple[str, tuple[int, int, int]]:
         """Return the primary-row state message and its colour."""

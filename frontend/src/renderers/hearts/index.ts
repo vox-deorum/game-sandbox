@@ -541,8 +541,9 @@ export class HeartsRenderer extends PixiRenderer {
 
   private reconcileStatus(scene: HeartsScene): void {
     clear(this.statusLayer)
-    // Tall enough to hold both rows; kept in lockstep with render.py `strip_h`. (A brief stint at 55
-    // clipped the hint row and diverged from the Python twin, so it is back to 60.)
+    // Tall enough to hold both rows. Pixi renders this text larger than pygame, so the hint fills the
+    // panel here where the Python `strip_h` (52) has room to spare — the two are intentionally not
+    // pixel-identical. (A brief stint at 55 clipped the hint row, so keep this at 60.)
     const stripH = 60
     const panel = new Graphics()
     panel.rect(0, 0, WIDTH, stripH).fill({ color: '#000000', alpha: 0.41 })
@@ -580,7 +581,8 @@ export class HeartsRenderer extends PixiRenderer {
 
     if (s.hint) {
       const hint = this.text(s.hint, 18, COLORS.hintInk, 'left')
-      // Sit just under the first row; the small +2 gap keeps the hint inside the 60px panel (render.py twin).
+      // Sit just under the first row; the small +2 gap keeps the hint inside the 60px panel. (render.py
+      // lowers its hint more within a shorter strip; Pixi's larger text already fills this panel.)
       hint.position.set(16, 9 + trick.height + 2)
       this.statusLayer.addChild(hint)
     }
