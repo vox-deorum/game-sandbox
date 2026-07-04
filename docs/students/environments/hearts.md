@@ -53,8 +53,8 @@ class Agent:
         # TODO(you): this one line is the whole strategy. Low cards rarely win
         # tricks, and tricks are how you collect penalty points, so playing the
         # lowest-ranked legal card is a sane start. It is also exactly how the
-        # built-in opponents play. Replace it with something smarter; the "Ideas
-        # and examples" section of environment.md lists good next steps.
+        # built-in opponents play. Replace it with something smarter; the "Your
+        # first improvement" section of environment.md walks you through one.
         return min(legal, key=rank_of)
 ```
 
@@ -70,7 +70,7 @@ python -m sandbox test    # run the checks, which pass before you change anythin
 
 `eval` reports a score you can read with the [Scoring and rewards](#scoring-and-rewards) section below, and `test` is green on the fresh template because this agent is already complete.
 
-The `TODO(you)` comment inside `act` marks the one line where you take over. Everything above it is plumbing you can keep; the return statement is the decision to improve. When you are ready, the [Ideas and examples](#ideas-and-examples) section lists concrete ways to make it smarter.
+The `TODO(you)` comment inside `act` marks the one line where you take over. Everything above it is plumbing you can keep; the return statement is the decision to improve. When you are ready, the [Your first improvement](#your-first-improvement) section walks you through making it smarter.
 
 ## Scoring and rewards
 
@@ -191,15 +191,28 @@ The `trick` array also uses absolute seat IDs. If it is `[15, 24, -1, -1]`, seat
 
 Hearts is turn-based, so there is no fixed delay between moves. Each call to `act` has a 1-second limit, and one game has a 120-second limit on the agent's total measured compute. If `act` returns late, the environment chooses a legal card for the agent. It selects the lowest rank, and if several legal cards have that rank, it selects the one with the lower suit ID. When a human controls a seat, the move deadline is 60 seconds. See [Time limits](../agent-interface.md#time-limits) for how these limits are enforced and measured.
 
-## Ideas and examples
+## Your first improvement
 
-Your starting agent already plays low cards, which is a useful base because low cards are less likely to win tricks. You can improve it one idea at a time:
+Your starting agent always plays its lowest legal card. That is a sane base, since low cards rarely win a trick, but it throws away safe chances to get rid of a dangerous high card. This section works out one upgrade, called **ducking**, with hints. Try each hint before reading the next one.
 
-- **Duck.** When following suit, play the highest card that still loses to the current winner. This removes a high card without taking the trick.
-- **Discard danger.** When you cannot follow suit, discard the queen of spades or a high heart instead of your lowest card.
-- **Lead low.** A low lead is less likely to win the trick. Leading from a short suit may also help you run out of that suit sooner.
-- **Use your seat.** The last player in a trick knows every card already played and can decide precisely whether to win or lose it.
-- **Remember played cards.** Track cards as they appear. Once the queen of spades has been played, high spades are much safer.
-- **Shoot the moon carefully.** Trying to collect every penalty card requires a strategy that is nearly the opposite of ordinary Hearts. Missing even one penalty card leaves you with the points you collected.
+Look at what happens when someone else is already winning the trick. If you must follow suit, playing your lowest card keeps a high card in your hand for later, when you may be forced to win with it. Playing a high card that still loses the trick sheds that danger now, for free.
 
-The repository includes complete worked agents with progressively different strategies: [Duck](https://github.com/vox-deorum/game-sandbox/blob/main/examples/hearts/duck/agent.py), [Closer](https://github.com/vox-deorum/game-sandbox/blob/main/examples/hearts/closer/agent.py), [Assassin](https://github.com/vox-deorum/game-sandbox/blob/main/examples/hearts/assassin/agent.py), and [Moonshot](https://github.com/vox-deorum/game-sandbox/blob/main/examples/hearts/moonshot/agent.py).
+To find out whether you can duck, you need the cards already on the table. `led_suit(observation)` gives the suit you must follow, and `current_trick(observation)` gives the `(seat, card)` pairs played so far this trick, in order. From those you can find the highest rank of the led suit currently on the table, which is the card you have to stay under.
+
+Any card you could follow with that ranks below that current winner cannot take the trick, so among those the highest is the best card to shed. If every card you could follow with would win the trick, there is nothing safe to duck with, so keep your lowest and let a later seat overtake you.
+
+If you are stuck, extend the import at the top of `agent.py` to `from sandbox.cards import current_trick, led_suit, legal_cards, rank_of, suit_of`, then replace the starter's final `return` with:
+
+```python
+led = led_suit(observation)
+followers = [card for card in legal if suit_of(card) == led]
+if led is not None and followers:
+    played = [card for _, card in current_trick(observation) if suit_of(card) == led]
+    winning_rank = max((rank_of(card) for card in played), default=-1)
+    under = [card for card in followers if rank_of(card) < winning_rank]
+    if under:
+        return max(under, key=rank_of)
+return min(legal, key=rank_of)
+```
+
+Ducking shows up over many games, not one, so compare the mean score from `python -m sandbox eval` before and after the change rather than judging it from a single deal.

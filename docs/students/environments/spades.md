@@ -68,8 +68,8 @@ class Agent:
         # TODO(you): this is the whole playing strategy. Low cards rarely win
         # tricks, but a team that never wins tricks never makes its contract.
         # Count what your hand is worth before bidding, and win tricks while
-        # your team still needs them; the "Ideas and examples" section of
-        # environment.md lists good next steps.
+        # your team still needs them; the "Your first improvement" section of
+        # environment.md walks you through bidding what your hand is worth.
         return min(legal, key=rank_of)
 ```
 
@@ -85,7 +85,7 @@ python -m sandbox test    # run the checks, which pass before you change anythin
 
 `eval` reports a score you can read with the [Scoring and rewards](#scoring-and-rewards) section below, and `test` is green on the fresh template because this agent is already complete.
 
-The `TODO(you)` comment inside `act` marks where you take over. Bidding a flat one and never trying to win a trick is exactly what a good agent improves on. When you are ready, the [Ideas and examples](#ideas-and-examples) section lists concrete next steps.
+The `TODO(you)` comment inside `act` marks where you take over. Bidding a flat one and never trying to win a trick is exactly what a good agent improves on. When you are ready, the [Your first improvement](#your-first-improvement) section walks you through the first step.
 
 ## Scoring and rewards
 
@@ -235,13 +235,23 @@ Suppose `position` is `[2]`. Your agent controls seat 2, so your partner is seat
 
 Spades is turn-based, so there is no fixed delay between moves. Each call to `act` has a 1-second limit, and one game has a 120-second limit on the agent's total measured compute. If `act` returns late, the environment chooses a legal action for the agent: during bidding it bids a never-nil estimate derived from the hand, and during play it plays the lowest legal card (lowest rank, ties broken by the lower suit ID). When a human controls a seat, the move deadline is 60 seconds. See [Time limits](../agent-interface.md#time-limits) for how these limits are enforced and measured.
 
-## Ideas and examples
+## Your first improvement
 
-Your starting agent bids a flat one and never tries to win a trick. A good next agent bids honestly and plays to make its bid:
+Your starting agent bids a flat one no matter what it holds. A bid is a promise your team has to keep, so the first real upgrade is bidding what the hand is actually worth. This section works that out with hints. Try each hint before reading the next one.
 
-- **Count your tricks.** High spades (the ace, king, and queen) and aces in the other suits are the tricks you are most likely to win. Bid roughly that many.
-- **Take what you need, then duck.** While your team still needs tricks to make its contract, win them; once the contract is safe, play low and avoid taking bags you did not need.
-- **Respect nil.** A nil bid is a big swing. Bid it only from a hand full of low cards, and when your partner bids nil, try to cover them by winning tricks yourself so their low cards stay safe.
-- **Watch the spades.** Once spades are broken, high spades win almost anything. Track which have been played.
+Start by counting the tricks you are almost sure to win. Spades are always trump, so your high spades (the queen, king, and ace) win most tricks they are played to, and the ace of each other suit is the top card of its suit. Those are the tricks to count.
 
-The repository includes a complete worked agent, [counter](https://github.com/vox-deorum/game-sandbox/blob/main/examples/spades/counter/agent.py): an honest bidder that counts its likely tricks, bids that number, and plays to make it.
+During bidding, `hand_cards(observation)` lists the 13 cards you were dealt, and `suit_of(card)` and `rank_of(card)` classify each one. Ranks count up from the two, so the queen is rank `10`, the king is `11`, and the ace is `12`, and `SPADES` names the spade suit. That is enough to count high spades and side-suit aces.
+
+One trap is left. A bid of `0` is nil, a promise to take no tricks at all, and you do not want to make that promise by accident on a weak hand. Floor the count at one.
+
+If you are stuck, extend the import at the top of `agent.py` to `from sandbox.cards import SPADES, bid_to_action, hand_cards, is_bidding, legal_cards, rank_of, suit_of`, then replace `return bid_to_action(1)` with:
+
+```python
+hand = hand_cards(observation)
+high_spades = sum(1 for card in hand if suit_of(card) == SPADES and rank_of(card) >= 10)
+side_aces = sum(1 for card in hand if suit_of(card) != SPADES and rank_of(card) == 12)
+return bid_to_action(max(1, min(13, high_spades + side_aces)))
+```
+
+A bid change shows up over many deals, not one, so compare the mean score from `python -m sandbox eval` before and after rather than judging it from a single hand.

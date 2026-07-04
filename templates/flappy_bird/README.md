@@ -76,7 +76,7 @@ Two optional methods are available:
 
 Leave an optional method out when you do not use it.
 
-The template already plays. `agent.py` ships a small working agent that flaps whenever the bird is below the center of the next pipe's gap, so `python -m sandbox test` passes and `python -m sandbox play` works before you change anything. The `TODO(you)` comment inside `act` marks where to start improving it.
+The template already plays. `agent.py` ships a small working agent that flaps whenever the bird is below the middle of the screen, so `python -m sandbox test` passes and `python -m sandbox play` works before you change anything. The `TODO(you)` comment inside `act` marks where to start improving it.
 
 ## Save work to GitHub
 

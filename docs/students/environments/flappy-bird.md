@@ -12,22 +12,20 @@ If you have never seen the game, the [Wikipedia article about Flappy Bird](https
 
 Your template already contains a complete, working agent, the one this section builds. It runs before you change anything, and the rest of this section explains it line by line so you can see exactly how each step is decided.
 
-On every step the harness calls `act` with an observation of the bird and the pipes, and your job is to return one action: flap or do nothing. You never read raw numbers to decide: the template's helper module gives the observation's values readable names, and this agent uses just two of them.
+On every step the harness calls `act` with an observation of the bird and the pipes, and your job is to return one action: flap or do nothing. You never read raw numbers to decide: the template's helper module gives the observation's values readable names, and this agent uses just one of them, plus the names of the two actions.
 
-`player_y(observation)` is the bird's height, measured from the top of the screen, where `0` is the very top and `1` is the bottom, so a larger value means the bird is lower.
-
-`next_gap_center(observation)` is the middle of the opening in the next pipe, on the same top-to-bottom scale. It is the height the bird wants to be at as it passes through.
+`player_y(observation)` is the bird's height, measured from the top of the screen, where `0` is the very top and `1` is the bottom, so a larger value means the bird is lower. The middle of the screen is `0.5`.
 
 `FLAP` and `IDLE` are the two actions, the readable names for `1` (flap once) and `0` (do nothing).
 
-The strategy is one comparison: if the bird is below the center of the gap, flap to climb; otherwise let gravity pull it down toward the target. Aiming for the middle of the opening keeps the bird clear of both the top and the bottom of the pipe.
+The strategy is one comparison: if the bird is below the middle of the screen (`player_y > 0.5`), flap to climb; otherwise let gravity pull it down. The bird settles around the middle of the screen and holds that height, but it pays no attention to where the gaps in the pipes actually are.
 
 ```python
-from sandbox.features import FLAP, IDLE, next_gap_center, player_y
+from sandbox.features import FLAP, IDLE, player_y
 
 
 class Agent:
-    """Flaps whenever the bird is below the center of the next pipe's gap."""
+    """Flaps whenever the bird is below the middle of the screen."""
 
     def reset(self, seed: int) -> None:
         # Called once before each episode. This agent keeps no state between
@@ -36,16 +34,17 @@ class Agent:
         pass
 
     def act(self, observation) -> int:
-        # player_y is the bird's height and next_gap_center is the middle of the
-        # next pipe's opening, both as fractions of the screen where 0 is the
-        # top and 1 is the bottom. Larger therefore means lower on the screen.
-        below_gap = player_y(observation) > next_gap_center(observation)
+        # player_y is the bird's height as a fraction of the screen, where 0 is
+        # the top and 1 is the bottom, so a larger value means lower on the
+        # screen.
+        below_middle = player_y(observation) > 0.5
 
         # TODO(you): this is the whole strategy: flap when the bird sits below
-        # the target, otherwise let it fall. It ignores how fast the bird is
-        # moving, so it tends to overshoot. The "Ideas and examples" section of
-        # environment.md lists good next steps.
-        return FLAP if below_gap else IDLE
+        # mid-screen, otherwise let it fall. It holds a steady height but never
+        # looks at the pipes, so it crashes at the first gap that is not at the
+        # middle of the screen. The "Your first improvement" section of
+        # environment.md walks you through fixing that.
+        return FLAP if below_middle else IDLE
 ```
 
 Both actions are always allowed in Flappy Bird, so this agent can never make an illegal move. There is no action mask to read; you only choose between flapping and falling.
@@ -60,7 +59,7 @@ python -m sandbox test    # run the checks, which pass before you change anythin
 
 `eval` reports a score you can read with the [Scoring and rewards](#scoring-and-rewards) section below, and `test` is green on the fresh template because this agent is already complete.
 
-The `TODO(you)` comment inside `act` marks the one line where you take over. This agent ignores how fast the bird is already moving, so it tends to overshoot the gap and jitter. When you are ready, the [Ideas and examples](#ideas-and-examples) section lists concrete ways to make it smoother and smarter.
+The `TODO(you)` comment inside `act` marks the one line where you take over. This agent never looks at the pipes, so it survives only until the first gap that sits away from the middle of the screen. When you are ready, the [Your first improvement](#your-first-improvement) section walks you through fixing exactly that.
 
 ## Scoring and rewards
 
@@ -79,7 +78,7 @@ The rewards add together over a run. A higher total generally means the bird sur
 
 Your first agent used `sandbox.features`, the template's plain Python helper module. Import what you need from it at the top of `agent.py`, never inside a method. Its functions and constants give readable names to the 12 observation numbers and the two actions, so your code never contains an unexplained `observation[4]` or `return 1`.
 
-`next_gap_center(observation)` averages the top and bottom of the next pipe's gap and returns a plain float. `player_y(observation)` returns the top of the bird as a plain float. Because larger y values are lower, `player_y > next_gap_center` means the bird is below that target and should flap. `player_velocity(observation)` returns the bird's vertical velocity converted to screen heights per step; it is the one helper that changes a value's scale instead of only naming an index, and the [Velocity and rotation](#velocity-and-rotation) section explains why the conversion exists.
+`player_y(observation)` returns the top of the bird as a plain float. `next_gap_center(observation)` averages the top and bottom of the next pipe's gap and returns a plain float; it is the target the [Your first improvement](#your-first-improvement) section aims the bird at, because larger y values are lower, so `player_y > next_gap_center` means the bird is below the gap and should flap. `player_velocity(observation)` returns the bird's vertical velocity converted to screen heights per step; it is the one helper that changes a value's scale instead of only naming an index, and the [Velocity and rotation](#velocity-and-rotation) section explains why the conversion exists.
 
 The module provides these helpers and constants:
 
@@ -96,7 +95,7 @@ The module provides these helpers and constants:
 
 Your first agent never touched a raw observation number or a raw action integer; the helpers handled both. This section is the full reference for what the 12 numbers mean and what `act` returns, for when you outgrow the helpers and want to read the observation yourself.
 
-Without the helpers, the same decision reads raw indices and action numbers:
+Without the helpers, the gap-center decision from [Your first improvement](#your-first-improvement) reads raw indices and action numbers:
 
 ```python
 gap_center = (observation[4] + observation[5]) / 2
@@ -181,14 +180,24 @@ In this particular snapshot, the leftmost pipe at `X = 0.05` has passed the bird
 
 Flappy Bird is paced at one step every 50 milliseconds, or 20 steps per second. This number controls how quickly the live game advances; it is not the agent's timeout. An individual call to `act` has a 1-second limit, and the agent has a 120-second limit on its total measured compute during one episode. If `act` exceeds the 1-second limit, the environment uses action `0`, `IDLE`, for that step. See [Time limits](../agent-interface.md#time-limits) for how these limits are enforced and measured.
 
-## Ideas and examples
+## Your first improvement
 
-Your starting agent flaps whenever the bird is below the gap center, which is a fine base. Improve it one idea at a time:
+Your starting agent holds the middle of the screen and never looks at the pipes, so it crashes at the first gap that is not at the middle. This section works out the fix. Try each hint before reading the next one.
 
-- **Add a margin.** Flapping as soon as the bird drops below the exact center can make it jitter. Try waiting until it is a little below the target, or aim for another point inside the gap.
-- **Use velocity.** `player_y(observation) + player_velocity(observation)` estimates where the bird will be on the next step, since the helper converts velocity to screen heights per step. Gravity adds about `0.002` on an idle step. Compare that prediction to your target instead of the current position, so the agent reacts before it overshoots.
-- **Look ahead.** When the next pipe is close to the bird, start moving the target toward the gap in the pipe after it. `NEXT_PIPE_X` tells you when the current pipe is close.
-- **Respect the edges.** Flying above the top costs reward and touching the ground ends the run, so keep targets away from both extremes.
-- **Measure changes.** Watch a run to build intuition, then compare averages over several seeded runs. One run may be unusually lucky or unlucky.
+First, notice why mid-screen fails. `0.5` is only safe while a gap happens to sit at the middle of the screen, and every pipe places its gap somewhere different. The height the bird should aim for has to move with the pipes instead of staying fixed.
 
-The [Hello Flappy Bird agent](https://github.com/vox-deorum/game-sandbox/blob/main/examples/flappy_bird/hello/agent.py) is a complete worked example: it is the template's starting agent plus the velocity lookahead from the **Use velocity** idea above.
+The height you want is the middle of the opening in the next pipe, and the [helper module](#the-helper-module) already returns exactly that: `next_gap_center(observation)`. It is on the same top-to-bottom scale as `player_y`, so you can compare the two directly.
+
+You only need to change the right-hand side of the comparison. The flap-when-below logic is already correct; `0.5` is simply the wrong target. Swap it for the gap center and the bird chases each gap instead of one fixed height.
+
+If you are stuck, add `next_gap_center` to the import at the top of `agent.py`, then replace `0.5` in the comparison with `next_gap_center(observation)`:
+
+```python
+from sandbox.features import FLAP, IDLE, next_gap_center, player_y
+
+# inside act, the comparison becomes:
+below_gap = player_y(observation) > next_gap_center(observation)
+return FLAP if below_gap else IDLE
+```
+
+Watch the result with `python -m sandbox play`: the bird now tracks each gap instead of hovering. Then compare the mean score from `python -m sandbox eval` before and after the change, since a single run can be lucky or unlucky and the average over several seeds is what tells you the agent really improved.

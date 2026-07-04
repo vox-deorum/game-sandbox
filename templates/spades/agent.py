@@ -52,8 +52,8 @@ class Agent:
         # TODO(you): this is the whole playing strategy. Low cards rarely win
         # tricks, but a team that never wins tricks never makes its contract.
         # Count what your hand is worth before bidding, and win tricks while
-        # your team still needs them; the "Ideas and examples" section of
-        # environment.md lists good next steps.
+        # your team still needs them; the "Your first improvement" section of
+        # environment.md walks you through bidding what your hand is worth.
         return min(legal, key=rank_of)
 
     # Optional: a reinforcement-learning hook called after every step with that step's
