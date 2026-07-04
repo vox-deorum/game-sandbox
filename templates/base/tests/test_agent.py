@@ -2,9 +2,9 @@
 
 They encode what every submittable repo should satisfy: the manifest parses and names a
 loadable, instantiable agent class with the required interface, and that agent can actually
-drive a few steps of the synced environment headlessly. (The bare template stub raises
-``NotImplementedError`` in ``act`` on purpose, so this episode check stays red until you
-implement your agent — that is the signal that you have something to do.)
+drive a few steps of the synced environment headlessly. They pass on the bare template because
+it ships a small working starting agent, so a fresh clone is green out of the box; they keep
+gating composed examples in CI and a student's own edits locally.
 """
 
 from __future__ import annotations

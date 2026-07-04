@@ -12,7 +12,7 @@ examples/<env>/<name>   (optional)
 complete runnable repository
 ```
 
-`templates/base/` contains the shared manifest, dependencies, and tests, plus the provided tooling under `sandbox/` (the `sandbox.play`/`sandbox.evaluate` scripts and the `python -m sandbox` helper). `templates/<env>/` adds the environment stub (`agent.py`) and the generated local game package under `sandbox/env/`. A student edits only `agent.py` at the repository root; everything under `sandbox/` is provided. An example stores only its differences from the composed template.
+`templates/base/` contains the shared manifest, dependencies, and tests, plus the provided tooling under `sandbox/` (the `sandbox.play`/`sandbox.evaluate` scripts and the `python -m sandbox` helper). `templates/<env>/` adds the environment's starting agent (`agent.py`) and the generated local game package under `sandbox/env/`. A student edits only `agent.py` at the repository root; everything under `sandbox/` is provided. An example stores only its differences from the composed template.
 
 This keeps shared files in one place and examples small enough to review.
 
@@ -46,13 +46,13 @@ There is no separate composition manifest. Directory conventions, whole-file ove
 
 CI composes every example from the current `templates/` on every pull request and runs the composed example's tests in a fresh virtualenv. The base layer carries a pytest `tests/` directory and a `requirements-dev.txt`, so every composed example inherits them. A base or env-layer change that breaks an example fails the pull request that made the change, not some later discovery. This is the entire reason for the overlay design.
 
-The bare template test fails until the student implements `act`. A composed example is therefore the green end-to-end proof. Every environment must ship at least one example.
+The bare template composes into a passing repo, because it ships a working starting agent. A composed example additionally proves that a worked strategy builds on the env layer. Every environment must ship at least one example, which CI composes and tests on every pull request.
 
 ## Adding an environment template
 
 1. Add the environment to the environments package (see [Adding an environment](environments.md)).
 2. Register it in `scripts/_paths.py` `TEMPLATE_ENVS` (env id → the import-self-contained modules to sync) and add its generated `__init__` texts in `scripts/generate.py`. The top-level `sandbox/env/__init__.py` must expose the uniform surface the provided scripts read: `make_env`, `ENV_ID`, `PLAYER_SLOT`, and `make_human_controller`. To make the environment human-playable, include its `human.py` (the `make_human_controller` factory) in the `TEMPLATE_ENVS` entry so it syncs alongside the env modules.
-3. Create the `templates/<env>/` layer: at minimum an `agent.py` stub and a `README.md`, plus, when the observation or action needs decoding, a plain-Python helper module at `sandbox/<name>.py` and its pin test at `tests/test_<name>.py`. The base `sandbox/play.py` is environment-agnostic; override it whole-file in the env layer only if the local loop does not fit.
+3. Create the `templates/<env>/` layer: at minimum a working starting `agent.py` (the naive agent the docs page builds) and a `README.md`, plus, when the observation or action needs decoding, a plain-Python helper module at `sandbox/<name>.py` and its pin test at `tests/test_<name>.py`. The base `sandbox/play.py` is environment-agnostic; override it whole-file in the env layer only if the local loop does not fit.
 4. Run `scripts/generate.py` to sync `templates/<env>/sandbox/env/`.
 5. Add at least one example under `examples/<env>/<name>/`, reading the observation through the helper module so it models the intended style.
 6. Write the student documentation page `docs/students/environments/<env>.md` and add its row to the environments index. Compose ships this page inside the template as `environment.md`, so it is the single source for the game's reference; the template's `README.md` and `agent.py` point at it rather than restating it. The [student-facing deliverables](environments.md#student-facing-deliverables) section lists the required page sections, the helper placement rules, and the template docstring and README standards.

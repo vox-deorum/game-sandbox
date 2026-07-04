@@ -11,7 +11,7 @@ Flappy Bird is the default template. Other environments and complete worked agen
 | Path | Purpose |
 | --- | --- |
 | `agent.py` | Your agent implementation, the only file you edit |
-| `environment.md` | Full reference for this game: the observation, the actions, the `sandbox.features` helpers, a worked minimal agent, scoring, and time limits |
+| `environment.md` | Full reference for this game: a walkthrough of the starting agent you already have, then the observation, the actions, the `sandbox.features` helpers, scoring, and time limits |
 | `manifest.json` | Tells Game Sandbox where the agent class lives |
 | `requirements.txt` | Exact Python package versions used by the server |
 | `requirements-dev.txt` | Test dependencies |
@@ -67,7 +67,7 @@ Open `agent.py` and implement:
 - `reset(seed)`, called once before each game.
 - `act(observation)`, called whenever the agent must choose.
 
-Everything specific to Flappy Bird is in [`environment.md`](environment.md), the reference shipped alongside this README: what the 12-value observation contains, the two action integers, the `sandbox.features` helpers that name them, a worked minimal agent, the scoring, and the time limits. Read it before you start; it is all you need to build the agent.
+Everything specific to Flappy Bird is in [`environment.md`](environment.md), the reference shipped alongside this README: it walks through the starting agent you already have, then covers what the 12-value observation contains, the two action integers, the `sandbox.features` helpers that name them, the scoring, and the time limits. Read it before you start; it is all you need to build the agent.
 
 Two optional methods are available:
 
@@ -76,7 +76,7 @@ Two optional methods are available:
 
 Leave an optional method out when you do not use it.
 
-The unfinished template fails `python -m sandbox test` because `act` raises `NotImplementedError`. That failure is your signal to implement the method.
+The template already plays. `agent.py` ships a small working agent that flaps whenever the bird is below the center of the next pipe's gap, so `python -m sandbox test` passes and `python -m sandbox play` works before you change anything. The `TODO(you)` comment inside `act` marks where to start improving it.
 
 ## Save work to GitHub
 

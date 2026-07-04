@@ -11,7 +11,7 @@ Spades is a four-player partnership card game. Your agent fills one seat; the se
 | Path | Purpose |
 | --- | --- |
 | `agent.py` | Your agent implementation, the only file you edit |
-| `environment.md` | Full reference for this game: the rules, the action encoding, every observation field, the `sandbox.cards` helpers, the scoring, and time limits |
+| `environment.md` | Full reference for this game: a walkthrough of the starting agent you already have, then the rules, the action encoding, every observation field, the `sandbox.cards` helpers, the scoring, and time limits |
 | `manifest.json` | Tells Game Sandbox where the agent class lives |
 | `requirements.txt` | Exact Python package versions used by the server |
 | `requirements-dev.txt` | Test dependencies |
@@ -69,7 +69,7 @@ Open `agent.py` and implement:
 - `reset(seed)`, called once before each game.
 - `act(observation)`, called on your turn. It returns a single integer: during the bidding round a **bid**, encoded as `52 + k` for a bid of `k` tricks (`0` is nil); during play a **card** to play, an integer `0..51`.
 
-Everything specific to Spades is in [`environment.md`](environment.md), the reference shipped alongside this README: the rules, the action encoding for both phases, every observation field, the `sandbox.cards` helpers that decode them, the scoring, and the time limits. Read it before you start; it is all you need to build the agent.
+Everything specific to Spades is in [`environment.md`](environment.md), the reference shipped alongside this README: it walks through the starting agent you already have, then covers the rules, the action encoding for both phases, every observation field, the `sandbox.cards` helpers that decode them, the scoring, and the time limits. Read it before you start; it is all you need to build the agent.
 
 One optional method is available:
 
@@ -77,7 +77,7 @@ One optional method is available:
 
 Leave it out when you do not use it.
 
-The unfinished template fails `python -m sandbox test` because `act` raises `NotImplementedError`. That failure is your signal to implement the method. Run `python -m sandbox play` to watch your agent take a seat against the built-in opponents, and `python -m sandbox` to play a seat yourself.
+The template already plays. `agent.py` ships a small working agent that bids one trick and then plays its lowest-ranked legal card, so `python -m sandbox test` passes and `python -m sandbox play` works before you change anything. The `TODO(you)` comment inside `act` marks where to start improving it. Run `python -m sandbox play` to watch your agent take a seat against the built-in opponents, and `python -m sandbox` to play a seat yourself.
 
 ## Save work to GitHub
 

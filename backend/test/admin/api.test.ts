@@ -315,7 +315,9 @@ describe('admin API', () => {
       expect(res.statusCode).toBe(400)
       expect(res.json()).toMatchObject({
         code: 'invalid_season_declaration',
-        reason: expect.stringContaining(`deps_version ${UNSUPPORTED_DEPS_VERSION} is not supported`),
+        reason: expect.stringContaining(
+          `deps_version ${UNSUPPORTED_DEPS_VERSION} is not supported`,
+        ),
       })
     })
   })
@@ -388,7 +390,9 @@ describe('admin API', () => {
       expect(res.statusCode).toBe(400)
       expect(res.json()).toMatchObject({
         code: 'invalid_config',
-        reason: expect.stringContaining(`deps_version ${UNSUPPORTED_DEPS_VERSION} is not supported`),
+        reason: expect.stringContaining(
+          `deps_version ${UNSUPPORTED_DEPS_VERSION} is not supported`,
+        ),
       })
     })
 

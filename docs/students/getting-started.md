@@ -55,16 +55,16 @@ When the environment is active, your terminal usually shows `(.venv)` at the sta
 
 The two requirements files list the exact package versions used by the template and its tests. Do not edit `requirements.txt` or install a different version into the project. If you need a package that is not included, ask your instructor.
 
-## 3. Write your agent
+## 3. Improve your agent
 
-Open `agent.py`. The two required methods are:
+Open `agent.py`. It already contains a small working agent, so the game runs before you change anything; your job is to make it play better. The two required methods are:
 
 - `reset(seed)`, which prepares the agent for a new game.
-- `act(observation)`, which looks at the current state and returns an action.
+- `act(observation)`, which looks at the current state and returns an action. A `TODO(you)` comment marks the line where you take over.
 
 For Flappy Bird, the observation is a NumPy array of 12 normalized numbers describing the bird and nearby pipes. An action is `0` for do nothing or `1` for flap. If NumPy arrays are new to you, read the first sections of [NumPy's beginner guide](https://numpy.org/doc/stable/user/absolute_beginners.html).
 
-The meaning of each action number and each observation value is specific to your game. Your [environment page](environments/index.md) documents them in full, along with a `sandbox` helper module (`sandbox.features` for Flappy Bird, `sandbox.cards` for Hearts) that reads the observation for you so you can work with named values instead of raw array indices.
+The meaning of each action number and each observation value is specific to your game. Your [environment page](environments/index.md) walks through that starting agent line by line, then documents each action number and observation value in full, along with a `sandbox` helper module (`sandbox.features` for Flappy Bird, `sandbox.cards` for Hearts) that reads the observation for you so you can work with named values instead of raw array indices.
 
 See [Agent interface](agent-interface.md) for the complete method contract and a small example.
 
@@ -85,7 +85,7 @@ python -m sandbox            # play it yourself
 python -m sandbox test
 ```
 
-The template tests confirm that the manifest points to a loadable agent and that the agent can drive the environment. The unfinished template fails because `act` raises `NotImplementedError`. After you implement the method, use the test output to find any remaining problems.
+The template tests confirm that the manifest points to a loadable agent and that the agent can drive the environment. They pass on the fresh template because it ships a working starting agent, so keep them passing as you change `agent.py`, and use the test output to find any problems you introduce.
 
 ## 6. Save your work on GitHub
 

@@ -1,9 +1,10 @@
 """The 'hello' example agent: a heuristic Flappy Bird player.
 
-It overrides the template's placeholder ``agent.py``. The policy is one line of intuition —
-flap whenever the bird has fallen below the center of the next gap — implemented over the
-12-feature observation. It clearly outperforms doing nothing, which the example test asserts,
-and it is the agent the harness CLI plays for the Stage 2 exit criterion.
+It overrides the template's starting ``agent.py``. It begins from that agent, flap whenever the
+bird has fallen below the center of the next gap, and adds one idea from the environment page's
+"Use velocity" tip: aim at where the bird will be on the next step, not where it is now, by adding
+its velocity before the comparison. It clearly outperforms doing nothing, which the example test
+asserts.
 
 It also uses the extra pinned dependency ``wcwidth`` (declared in ``requirements.extra.txt``)
 in a trivial display helper, so the dependency-set extension path stays exercised end to end.
@@ -13,22 +14,26 @@ from __future__ import annotations
 
 from typing import Any
 
-from sandbox.features import FLAP, IDLE, next_gap_center, player_y
+from sandbox.features import FLAP, IDLE, next_gap_center, player_velocity, player_y
 from wcwidth import wcswidth
 
 NAME = "hello-flappy"
 
 
 class Agent:
-    """Flap when the bird is below the next gap's center, otherwise fall."""
+    """Flap when the bird will be below the next gap's center next step, otherwise fall."""
 
     def reset(self, seed: int) -> None:
         # Stateless heuristic: nothing to carry between or within episodes.
         pass
 
     def act(self, observation: Any) -> int:
-        # y grows downward, so "below the center" (a larger y) means it is time to flap up.
-        return FLAP if player_y(observation) > next_gap_center(observation) else IDLE
+        # Start from the template's agent, then add one idea: react to where the bird will be, not
+        # where it is. player_velocity is in screen heights per step (the same scale as y), so
+        # y + velocity estimates the next position. y grows downward, so a larger sum means the
+        # bird is dropping below the gap center and it is time to flap up.
+        predicted_y = player_y(observation) + player_velocity(observation)
+        return FLAP if predicted_y > next_gap_center(observation) else IDLE
 
 
 def display_width(text: str = NAME) -> int:

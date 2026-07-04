@@ -151,9 +151,9 @@ def job_examples() -> None:
         print("no examples to compose")
         return
 
-    # Every environment layer must ship at least one example: the bare template's pytest is
-    # red by design (agent.py raises NotImplementedError), so a composed example is the only
-    # green proof that an env layer works end to end.
+    # Every environment layer must ship at least one example: a worked strategy that reads the
+    # observation through the helper module, and the proof its env layer composes and runs end to
+    # end in a fresh virtualenv (the bare template ships a naive starting agent, not a worked one).
     envs_with_examples = {env for env, _ in pairs}
     missing = [env for env in list_envs() if env not in envs_with_examples]
     if missing:

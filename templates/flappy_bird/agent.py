@@ -1,55 +1,53 @@
 """Your agent.
 
-Implement the two required methods. The two optional hooks (``learn`` and ``chat``) are shown
-commented out: the harness detects them *by presence*, so leaving them commented means "this
-agent does not learn / does not chat" and the harness will not spend time calling them.
-Uncomment and implement only the ones you want.
+The template starts as a working agent: it flaps whenever the bird is below the center of the next
+pipe's gap. Run ``python -m sandbox play`` to watch it and ``python -m sandbox test`` to check it;
+both work before you change anything. Your job starts at the ``TODO(you)`` comment inside ``act``.
 
-The only thing you may import from the sandbox is the ``sandbox.features`` helper module, and
-only at the top of this file (a commented import is ready below). It names the 12 observation
-indices and the two actions so ``act`` reads ``observation[NEXT_PIPE_GAP_TOP]`` instead of a
-bare ``observation[4]``. Everything else you develop against vanilla PettingZoo, and the server
-runs this exact class through the same interface. Episode state belongs in ``reset``; the
-constructor takes no arguments.
+``environment.md``, shipped alongside this file, walks through building this exact agent and then
+goes deeper into the helpers, the scoring, and the 12-number observation.
+
+The only thing you may import from the sandbox is the ``sandbox.features`` helper module, and only at
+the top of this file. It gives readable names to the 12 observation numbers and the two actions, so
+``act`` reads ``player_y(observation)`` instead of a bare ``observation[9]``. Everything else you
+develop against vanilla PettingZoo, and the server runs this exact class through the same interface.
+The optional hooks (``learn`` and ``chat``) are detected by presence, so leave them commented unless
+you use them. Episode state belongs in ``reset``; the constructor takes no arguments.
 """
 
-from __future__ import annotations
-
-from typing import Any
-
-# Uncomment to use the provided feature helpers, for example:
-#   from sandbox.features import FLAP, IDLE, next_gap_center, player_y
-# then in act: return FLAP if player_y(observation) > next_gap_center(observation) else IDLE.
+from sandbox.features import FLAP, IDLE, next_gap_center, player_y
 
 
 class Agent:
-    """A Flappy Bird agent over the 12-feature numerical observation.
-
-    The observation is a length-12 NumPy array of normalized numbers describing the bird and the
-    three nearest pipes; the action is ``0`` (do nothing) or ``1`` (flap). The most useful values
-    for a simple policy are the next pipe's gap (indices 4 and 5) and the bird's own height
-    (index 9). The ``sandbox.features`` helpers name every index, and ``environment.md`` (shipped
-    alongside this file) lists them all with their scales and everything else specific to the game.
-    """
+    """Flaps whenever the bird is below the center of the next pipe's gap."""
 
     def reset(self, seed: int) -> None:
-        """Prepare for a new episode. The same seed the environment got is passed here, so a
-        stochastic agent can be made reproducible. Called once before the first ``act``."""
-        raise NotImplementedError("implement Agent.reset")
+        # Called once before each episode. This agent keeps no state between
+        # steps, so there is nothing to prepare here; a learning agent would
+        # reset its memory in this method.
+        pass
 
-    def act(self, observation: Any) -> int:
-        """Return an action (0 = do nothing, 1 = flap) for the given observation."""
-        raise NotImplementedError("implement Agent.act")
+    def act(self, observation) -> int:
+        # player_y is the bird's height and next_gap_center is the middle of the
+        # next pipe's opening, both as fractions of the screen where 0 is the
+        # top and 1 is the bottom. Larger therefore means lower on the screen.
+        below_gap = player_y(observation) > next_gap_center(observation)
+
+        # TODO(you): this is the whole strategy: flap when the bird sits below
+        # the target, otherwise let it fall. It ignores how fast the bird is
+        # moving, so it tends to overshoot. The "Ideas and examples" section of
+        # environment.md lists good next steps.
+        return FLAP if below_gap else IDLE
 
     # Optional: a reinforcement-learning hook called after every step with that step's
     # transition. Its time counts against your timing and episode budget.
     #
-    # def learn(self, observation: Any, action: int, reward: float, terminated: bool) -> None:
+    # def learn(self, observation, action: int, reward: float, terminated: bool) -> None:
     #     ...
 
     # Optional: a messaging hook (only used in environments with messaging enabled). Called
     # on your turn with the messages addressed to your slot; return messages to send, or
     # nothing to stay silent.
     #
-    # def chat(self, inbox: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
+    # def chat(self, inbox: list[dict]) -> list[dict] | None:
     #     ...

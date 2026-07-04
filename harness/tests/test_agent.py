@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import inspect
+import sys
 from pathlib import Path
 
 import pytest
@@ -58,13 +59,29 @@ def test_missing_required_method_fails_detection():
 
 def _load_template_agent_class(path: Path) -> type:
     # Load a template agent.py under a unique module name so it never collides with a repo's
-    # own 'agent' module in sys.modules.
+    # own 'agent' module in sys.modules. The template ships a working agent whose top-level
+    # ``from sandbox.<name> import ...`` is live, and that helper lives in the env template layer
+    # under ``sandbox/`` as a namespace package (the base layer owns ``sandbox/__init__.py``, so
+    # the env layer alone has none). Put the env-layer dir on sys.path for the load so ``sandbox``
+    # resolves there, then restore sys.path and sys.modules so nothing leaks into other tests.
+    env_layer = str(path.parent)
     module_name = f"template_agent_stub_{path.parent.name}"
-    spec = importlib.util.spec_from_file_location(module_name, path)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module.Agent
+    saved_path = list(sys.path)
+    saved_sandbox = {k: v for k, v in sys.modules.items() if k == "sandbox" or k.startswith("sandbox.")}
+    for key in saved_sandbox:
+        del sys.modules[key]
+    sys.path.insert(0, env_layer)
+    try:
+        spec = importlib.util.spec_from_file_location(module_name, path)
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module.Agent
+    finally:
+        sys.path[:] = saved_path
+        for key in [k for k in sys.modules if k == "sandbox" or k.startswith("sandbox.")]:
+            del sys.modules[key]
+        sys.modules.update(saved_sandbox)
 
 
 @pytest.mark.parametrize("agent_path", TEMPLATE_AGENTS, ids=lambda p: p.parent.name)
