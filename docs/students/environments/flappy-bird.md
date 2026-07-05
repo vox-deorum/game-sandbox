@@ -186,10 +186,10 @@ Run `python -m sandbox play` and watch your agent until it crashes. What did you
 
 > The bird holds the middle of the screen no matter what is in front of it, so every run ends the same way: a gap arrives that is not at the middle, and the bird makes no attempt to reach it.
 
-Now, what height *should* the bird be aiming for, do we have an answer in the observation?
+Now, what height _should_ the bird be aiming for, do we have an answer in the observation?
 
 > Scan the table in [The helper module](#the-helper-module) with that question in mind.
 
 Record the mean score from `python -m sandbox eval` before you touch anything, make the one change you believe in, and run `eval` again. A single run can be lucky or unlucky, so trust the mean over the seeded episodes, not one game.
 
-When it works, keep watching. The bird now chases every gap, and it still clips a pipe now and then, usually because it arrives at the right height moving too fast to stay there. Your agent knows more than where the bird *is*. What does it know about where the bird is about to be?
+When it works, keep watching. The bird now chases every gap, and it still clips a pipe now and then, usually because it arrives at the right height moving too fast to stay there. Your agent knows more than where the bird _is_. What does it know about where the bird is about to be?

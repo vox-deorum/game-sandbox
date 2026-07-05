@@ -204,4 +204,4 @@ You may have known this fix, **ducking**: playing a high card under one (from an
 
 Record the mean score from `python -m sandbox eval` before the change, make it, and run `eval` again. Ducking pays off a few points at a time over many deals, so you need to evaluate with the mean over more games.
 
-One more thing to notice while you watch: ducking only exists when you must follow suit. Sooner or later you will have no card of the led suit at all, and a card from another suit can never win the trick. What is a turn you cannot possibly win actually *for*?
+One more thing to notice while you watch: ducking only exists when you must follow suit. Sooner or later you will have no card of the led suit at all, and a card from another suit can never win the trick. What is a turn you cannot possibly win actually _for_?

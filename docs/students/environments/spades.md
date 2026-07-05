@@ -247,4 +247,4 @@ So the bid should depend on the hand. Knowing only your 13 cards, and that spade
 
 Record the mean score from `python -m sandbox eval` before the change, and again after. A bid change shows up over many deals, not one, so evaluate your agent with the mean over several games.
 
-When the bid is honest, notice what has not changed: your agent still always plays its lowest card, which is a strategy for *losing* tricks. Your team is now promising to win some. At what point in the thirteen tricks should your agent start trying to keep that promise?
+When the bid is honest, notice what has not changed: your agent still always plays its lowest card, which is a strategy for _losing_ tricks. Your team is now promising to win some. At what point in the thirteen tricks should your agent start trying to keep that promise?
