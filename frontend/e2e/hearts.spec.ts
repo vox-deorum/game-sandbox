@@ -1,4 +1,4 @@
-import { copyFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -55,15 +55,30 @@ const ROSTER = [
   { owner: HEARTS_OWNERS.closer, agent: 'closer' },
 ] as const
 
+/** Prune Python bytecode caches while copying: their `.pyc` files never belong in a submission. */
+const skipPycache = (src: string): boolean => !/[\\/]__pycache__(?:[\\/]|$)/.test(src)
+
 /**
- * Stage an `examples/hearts/<name>/` agent as a submittable folder: its `agent.py` plus a generated
- * `manifest.json`. The example folders themselves stay diff-only overlays (the template supplies their
- * manifest at compose time), so staging is how the e2e submits them directly without composing. Returns
- * the temp directory's absolute path, which the local-submission source accepts as-is.
+ * Stage an `examples/hearts/<name>/` agent as a submittable folder that loads exactly like a real
+ * submission: its `agent.py`, a generated `manifest.json`, and the composed `sandbox/` helper package
+ * its `agent.py` imports (`from sandbox.cards import …`).
+ *
+ * The example folders are diff-only overlays: they carry neither their own `manifest.json` nor the
+ * `sandbox/` package, both of which the template supplies at compose time. So rather than run the full
+ * compose pipeline, staging reproduces just those two pieces — the manifest inline, and the `sandbox/`
+ * package the way `scripts/compose.py` composes it: the base layer copied first, then the hearts env
+ * layer overlaid whole-file (adding `sandbox/cards.py` and the local env). Without the package the load
+ * stage cannot import the entry point and the submission fails as `load_failed`. Returns the temp
+ * directory's absolute path, which the local-submission source accepts as-is.
  */
 function stageHeartsAgent(name: string): string {
-  const source = fileURLToPath(new URL(`../../examples/hearts/${name}/agent.py`, import.meta.url))
   const dir = mkdtempSync(join(tmpdir(), `hearts-${name}-`))
+  const baseSandbox = fileURLToPath(new URL('../../templates/base/sandbox', import.meta.url))
+  const envSandbox = fileURLToPath(new URL('../../templates/hearts/sandbox', import.meta.url))
+  cpSync(baseSandbox, join(dir, 'sandbox'), { recursive: true, filter: skipPycache })
+  cpSync(envSandbox, join(dir, 'sandbox'), { recursive: true, force: true, filter: skipPycache })
+
+  const source = fileURLToPath(new URL(`../../examples/hearts/${name}/agent.py`, import.meta.url))
   copyFileSync(source, join(dir, 'agent.py'))
   writeFileSync(join(dir, 'manifest.json'), MANIFEST)
   return dir
