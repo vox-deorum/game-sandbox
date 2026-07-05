@@ -31,6 +31,21 @@ describe('forfeitScore', () => {
     expect(forfeitScore('hearts')).toBeLessThan(abortedPartial)
   })
 
+  it('floors a forfeited Spades hand at its worst possible team score', () => {
+    // A partnership's worst single-hand team score is -260 (both partners bid 13, an unmakeable
+    // 26-trick contract set for -10 * 26). A seat is ranked by its team score, so that is the floor.
+    expect(forfeitScore('spades')).toBe(-260)
+  })
+
+  it('keeps a Spades forfeit below every honest team outcome', () => {
+    const worstHonestHand = -260 // both partners bid 13 and take nothing
+    const typicalBadHand = -30 // a modest set contract
+    const abortedPartial = 0 // what an early crash banks before scoring
+    expect(forfeitScore('spades')).toBeLessThanOrEqual(worstHonestHand)
+    expect(forfeitScore('spades')).toBeLessThan(typicalBadHand)
+    expect(forfeitScore('spades')).toBeLessThan(abortedPartial)
+  })
+
   it('floors an upward-accruing environment at zero, where a failure already sits near the bottom', () => {
     // Flappy Bird's score climbs from zero as pipes are passed, so an early failure is already low;
     // zero (no progress) is the natural forfeit floor and the default for unregistered environments.

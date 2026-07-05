@@ -16,6 +16,8 @@ import { HeartsRenderer } from '../src/renderers/hearts/index.js'
 // must yield the same values as importing them from the shared module (the single-source-of-truth rule
 // the pixel/pygame ports both rely on). Aliased so the two can be compared.
 import { HEIGHT as HEARTS_HEIGHT, WIDTH as HEARTS_WIDTH } from '../src/renderers/hearts/scene.js'
+import { SpadesRenderer } from '../src/renderers/spades/index.js'
+import { SPADES_GEOMETRY } from '../src/renderers/spades/scene.js'
 
 // The frontend twin of environments/tests/test_render_shared.py: the shared card-table layer is a single
 // source both card renderers extend, its codec agrees with the rules encoding, and the per-game geometry
@@ -26,7 +28,8 @@ describe('the shared card-table renderer layer', () => {
     // CardTableRenderer sits between the game renderers and the generic PixiRenderer base.
     expect(CardTableRenderer.prototype instanceof PixiRenderer).toBe(true)
     expect(HeartsRenderer.prototype instanceof CardTableRenderer).toBe(true)
-    // (Spades' renderer joins this chain in step 3's Part B.)
+    // Spades extends the same shared class, so both games share every table primitive.
+    expect(SpadesRenderer.prototype instanceof CardTableRenderer).toBe(true)
   })
 
   it('agrees with the card codec across all 52 cards', () => {
@@ -49,15 +52,22 @@ describe('the shared card-table renderer layer', () => {
     expect(HEARTS_HEIGHT).toBe(HEIGHT)
   })
 
-  it('keeps table geometry a per-game hook with the Hearts defaults', () => {
-    // Hearts uses the shared defaults; Spades overrides these same fields (Part B), so the values are a
-    // data hook, not hard-coded layout.
+  it('keeps table geometry a per-game hook with each game overriding the same fields', () => {
+    // Hearts uses the shared defaults; Spades overrides these same fields with taller badges and a
+    // deeper side inset, so the values are a data hook, not hard-coded layout.
     expect(DEFAULT_GEOMETRY).toEqual({
       northBadgeY: 101,
       opponentRowNorthY: 150,
       badgeW: 158,
       badgeH: 56,
       sideBadgeInset: 130,
+    })
+    expect(SPADES_GEOMETRY).toEqual({
+      northBadgeY: 117,
+      opponentRowNorthY: 166,
+      badgeW: 168,
+      badgeH: 62,
+      sideBadgeInset: 176,
     })
   })
 })

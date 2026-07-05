@@ -45,8 +45,36 @@ describe('buildStandings (cross-environment game-over leaderboard)', () => {
     // All four seats appear, ranked best-first; the -2 tie keeps its seat order (stable sort).
     expect(standings.map((s) => s.slot)).toEqual(['player_0', 'player_2', 'player_3', 'player_1'])
     expect(standings.map((s) => s.value)).toEqual([2, 2, 5, 17]) // penalty points, low (best) first
-    expect(standings.map((s) => s.medal)).toEqual(['gold', 'silver', 'bronze', null])
+    // Dense ranking: the two tied -2 seats share gold, then the next distinct scores take silver and
+    // bronze with no gap (a rank is not skipped by the tie).
+    expect(standings.map((s) => s.medal)).toEqual(['gold', 'gold', 'silver', 'bronze'])
     expect(standings.map((s) => s.label)).toEqual(['North', 'South', 'West', 'East'])
+  })
+
+  it('gives a tied partnership two matching medals (Spades dense ranking)', () => {
+    // A Spades terminal frame carries each seat's team score, so partners tie by construction: the
+    // winning pair both take gold and the losing pair both silver, not split by row position.
+    const state = stepState(
+      { player_3: 57 },
+      {
+        leaderboard_scores: [-12, 57, -12, 57],
+        display_scores: [-12, 57, -12, 57],
+        terminal: true,
+      },
+    )
+    const standings = buildStandings(state, null)
+    // Seats 1 & 3 (the 57 team) rank above seats 0 & 2 (the -12 team).
+    expect(standings.map((s) => s.slot)).toEqual(['player_1', 'player_3', 'player_0', 'player_2'])
+    expect(standings.map((s) => s.medal)).toEqual(['gold', 'gold', 'silver', 'silver'])
+  })
+
+  it('awards distinct medals with no ties (gold/silver/bronze then nothing)', () => {
+    const state = stepState(
+      { player_0: 0 },
+      { leaderboard_scores: [10, 5, 0, -5], display_scores: [10, 5, 0, -5], terminal: true },
+    )
+    const standings = buildStandings(state, null)
+    expect(standings.map((s) => s.medal)).toEqual(['gold', 'silver', 'bronze', null])
   })
 
   it('shows a single gold row for a single-player game (Flappy Bird pipes)', () => {

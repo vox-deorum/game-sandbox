@@ -8,6 +8,9 @@ import flappyBirdThumbnail from './flappy-bird/thumbnail.svg'
 import { HeartsRenderer } from './hearts/index.js'
 import heartsThumbnail from './hearts/thumbnail.svg'
 import { registerRenderer } from './registry.js'
+import { SpadesRenderer } from './spades/index.js'
+import spadesThumbnail from './spades/thumbnail.svg'
 
 registerRenderer('flappy-bird', FlappyBirdRenderer, flappyBirdThumbnail)
 registerRenderer('hearts', HeartsRenderer, heartsThumbnail)
+registerRenderer('spades', SpadesRenderer, spadesThumbnail)

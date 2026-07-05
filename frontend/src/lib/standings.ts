@@ -84,12 +84,20 @@ export function buildStandings(
   // Higher rank score wins everywhere (Hearts' leaderboard score, Flappy's reward total); a stable
   // sort keeps tied seats in seat order.
   rows.sort((a, b) => b.rankScore - a.rankScore)
-  return rows.map((row, i) => ({
-    slot: row.slot,
-    label: row.label,
-    value: row.value,
-    medal: MEDALS[i] ?? null,
-  }))
+
+  // Cups are awarded by *dense* ranking, so ties share: a new (lower) rank score advances the rank by
+  // one, an equal score keeps it, and the next distinct score takes the next rank with no gap. That is
+  // what gives a partnership game (Spades) two matching golds and two matching silvers rather than
+  // splitting a tied pair by row position. The Python twin is scripts/play.py `_standings`.
+  let denseRank = -1
+  let prevScore: number | null = null
+  return rows.map((row) => {
+    if (prevScore === null || row.rankScore !== prevScore) {
+      denseRank += 1
+      prevScore = row.rankScore
+    }
+    return { slot: row.slot, label: row.label, value: row.value, medal: MEDALS[denseRank] ?? null }
+  })
 }
 
 /** The value if it is an all-number array (a seat-indexed overlay score), else null. */

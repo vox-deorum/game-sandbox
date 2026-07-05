@@ -31,6 +31,9 @@ export function normalizeEpisodeScore(_envId: string, rawFinalScore: number): nu
  *
  *   * Hearts: a single hand is worth at most 26 penalty points (all hearts + the Queen, with the
  *     shoot-the-moon flip capping it), so the worst leaderboard score is `-26`.
+ *   * Spades: a partnership's worst single-hand score is `-260` (both partners bid 13, an unmakeable
+ *     26-trick contract set for `-10 * 26`), and a seat is ranked by its team's score, so that is the
+ *     floor below every honest team outcome.
  *   * Flappy Bird: the score accrues upward from zero as pipes are passed, so honest play already
  *     ranks an early failure near the bottom; zero (no progress) is its forfeit floor.
  *
@@ -42,6 +45,8 @@ export function forfeitScore(envId: string): number {
   switch (envId) {
     case 'hearts':
       return -26
+    case 'spades':
+      return -260
     default:
       return 0
   }

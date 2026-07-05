@@ -1,6 +1,6 @@
 # Stage 8.3: Spades Renderer and On-Screen Input
 
-Status: not started.
+Status: completed.
 
 Part of [Stage 8](../stage-08-communication.md). This is build-order step 3 and the step that completes Spades as a product before any communication work begins. It draws Spades in the browser and turns clicks into bids and card plays. It is Docker-free frontend work, tested against fixtures and recordings the way the Stage 4 and Stage 7 renderers were, plus one deliberate backend registration described below. The hands-on surface at the end of this step is the full game in the web app: watch an all-Naive Spades session through the dev stack, take a seat and bid and play on screen, and open the replay. Because the Stage 7 scheduler and boards are entirely metadata-driven, a Spades season can already be seeded and run; the forfeit floor registration is the only backend line that season needs.
 
