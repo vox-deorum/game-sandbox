@@ -31,11 +31,13 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Protocol, cast, runtime_checkable
 
-from game_sandbox_harness.agent import has_learn
+from game_sandbox_harness.agent import has_chat, has_learn
+from game_sandbox_harness.chat import ChatRouter
 from game_sandbox_harness.clock import Clock, SystemClock
 from game_sandbox_harness.environment import EnvironmentEntry
 from game_sandbox_harness.recording import RecordingStore
 from game_sandbox_harness.state import (
+    Message,
     PlayerAttribution,
     StepState,
     build_agent_step,
@@ -176,6 +178,8 @@ class Episode:
         episode_limit_ms: int | None = None,
         max_steps: int | None = None,
         players: Mapping[str, PlayerAttribution] | None = None,
+        messaging: bool | None = None,
+        message_cap: int | None = None,
     ) -> None:
         self._entry = entry
         self._slots = slots
@@ -189,6 +193,18 @@ class Episode:
             episode_limit_ms if episode_limit_ms is not None else entry.meta.episode_limit_ms
         )
         self._max_steps = max_steps
+
+        # Messaging is enabled only when the environment metadata AND the session config agree, and
+        # the effective cap is the minimum of the two, so a config override can disable or tighten but
+        # never enable messaging on an environment that opted out. Combined once here, the single
+        # authority; live.py reads the result back through ``messaging_enabled``. With messaging off no
+        # router exists and the loop is byte-identical to a pre-chat run.
+        self._messaging = entry.meta.messaging and (messaging if messaging is not None else True)
+        caps = [c for c in (entry.meta.message_cap, message_cap) if c is not None]
+        self._message_cap = min(caps) if caps else None
+        self._chat: ChatRouter | None = (
+            ChatRouter(slots.keys(), self._message_cap) if self._messaging else None
+        )
 
         self._state = {slot_id: _SlotState() for slot_id in slots}
         self._env: Any = None
@@ -269,6 +285,15 @@ class Episode:
         failure to that one seat instead of to every competitor sharing the container.
         """
         return self._failed_slot
+
+    @property
+    def messaging_enabled(self) -> bool:
+        """Whether messaging is effectively on (metadata AND config), resolved once in ``__init__``.
+
+        The live runner reuses this to gate the human chat queue, so the AND/min combination has a
+        single authority rather than being recomputed.
+        """
+        return self._messaging
 
     def opening_state(self) -> StepState | None:
         """The pre-action "opening" frame: the dealt overlay with no agent having acted yet.
@@ -365,6 +390,37 @@ class Episode:
                     )
                     action = self._entry.default_action(slot_id)
 
+        # Chat phase: immediately after ``act`` and before the environment applies the action, so the
+        # agent chats knowing its chosen action but not the step's outcome. Entirely guarded by the
+        # router's existence: with messaging off, no statement here runs and no clock is read, keeping
+        # the recording byte-identical to a pre-chat run (the determinism fixtures are the gate).
+        chat_ms: float | None = None
+        tick_messages: list[Message] = []
+        if self._chat is not None:
+            # Drain on every acting slot's turn, chat-less and external seats included, so an inbox can
+            # never accumulate behind an agent that will never read it.
+            inbox = self._chat.drain(slot_id)
+            if isinstance(binding, AgentSlot) and has_chat(binding.agent):
+                chat_start = self._clock.now_ms()
+                try:
+                    outgoing = binding.agent.chat(inbox)
+                except Exception:  # noqa: BLE001 - charge the crash to this seat, then re-raise unchanged
+                    self._failed_slot = slot_id
+                    raise
+                chat_ms = self._clock.now_ms() - chat_start
+                agent_compute_ms += chat_ms
+                slot.budget_used_ms += chat_ms
+                tick_messages.extend(self._chat.validate_outgoing(slot_id, outgoing))
+            # Human queues drain once per stepped tick regardless of whose turn it is, because a human
+            # message is queued for the next tick, not the human's next turn. Detected by presence on
+            # the external slot's transport source, like the existing action-source methods, so the
+            # loop never needs to know about SessionControl. All frames pass the same validator.
+            for other_id, other_binding in self._slots.items():
+                if isinstance(other_binding, ExternalSlot):
+                    take = getattr(other_binding.source, "take_messages", None)
+                    if callable(take):
+                        tick_messages.extend(self._chat.validate_outgoing(other_id, take(other_id)))
+
         env.step(action)
         reward = float(env.rewards[slot_id])
         # Credit every agent this step rewarded, not just the acting slot. A turn-based env
@@ -409,6 +465,7 @@ class Episode:
                 action=action,
                 decision_ms=decision_ms,
                 learn_ms=learn_ms,
+                chat_ms=chat_ms,
             )
             self._writer.write_step(
                 build_step_state(
@@ -417,8 +474,16 @@ class Episode:
                     started_at=step_start,
                     duration_ms=self._clock.now_ms() - step_start,
                     overlay=overlay,
+                    messages=tick_messages or None,
                 )
             )
+
+        # Deliver this tick's accepted messages to pending inboxes at the end of the step, after the
+        # acting agent's inbox was drained above, so a message sent on tick T is first seen strictly
+        # after T, on the recipient's next turn. Delivery happens even when nothing was recorded (no
+        # store), so a headless run routes messages identically.
+        if self._chat is not None and tick_messages:
+            self._chat.deliver(tick_messages, tick=self._tick)
         self._tick += 1
 
         if slot.budget_used_ms > self._episode_limit:
@@ -476,6 +541,8 @@ def run_episode(
     episode_limit_ms: int | None = None,
     max_steps: int | None = None,
     players: Mapping[str, PlayerAttribution] | None = None,
+    messaging: bool | None = None,
+    message_cap: int | None = None,
 ) -> EpisodeResult:
     """Play one seeded episode of ``entry`` with the given slot bindings.
 
@@ -497,6 +564,8 @@ def run_episode(
         episode_limit_ms=episode_limit_ms,
         max_steps=max_steps,
         players=players,
+        messaging=messaging,
+        message_cap=message_cap,
     ) as episode:
         while not episode.done:
             episode.step_once()

@@ -579,6 +579,14 @@ class DockerWorkflowRunner implements WorkflowRunner {
       ...(overrides?.episode_timeout_ms !== undefined
         ? { episode_timeout_ms: overrides.episode_timeout_ms }
         : {}),
+      // The messaging override, spread exactly like the timeouts. The harness combines defensively
+      // (metadata AND config; minimum cap), so a stored value can only disable or tighten.
+      ...(overrides?.messaging?.enabled !== undefined
+        ? { messaging_enabled: overrides.messaging.enabled }
+        : {}),
+      ...(overrides?.messaging?.message_cap !== undefined
+        ? { message_cap: overrides.messaging.message_cap }
+        : {}),
     }
   }
 

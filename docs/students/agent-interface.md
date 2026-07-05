@@ -41,19 +41,21 @@ A reinforcement-learning agent can implement `learn`. The harness calls it after
 
 ### `chat(inbox)`
 
-An agent can implement `chat` in an environment that supports messaging. It receives messages addressed to the agent's slot and may return messages to send. See the [communication specification](../specs/communication.md).
+An agent can implement `chat` in an environment that supports messaging. The harness calls it on your turn, immediately after `act` and before the environment applies your action, so you announce intent knowing the action you just chose but not its outcome.
+
+`inbox` is a list of the messages sent to your slot since your previous turn, each a dict `{"from": slot, "to": slot_or_None, "text": str, "tick": int}`. `"to"` is `None` for a broadcast, and `"tick"` is the tick it was sent. Return a list of messages to send, each `{"to": slot_or_None, "text": str}`, or nothing to stay silent. `"to": None` broadcasts to every other slot; a slot id sends only to that slot. You may send at most one message to each recipient plus one broadcast per turn, and the text is plain and capped at a length the environment sets, counted in Unicode code points (a season may lower the cap). A message you send this turn reaches its recipients on their next turn, never the tick you sent it. Every message is recorded and shown in replays, so nothing you send is ever secret. See the [communication specification](../specs/communication.md).
 
 ## Call order
 
 ```text
 reset(seed)
     ↓
-act(observation) → environment step → learn(...) → chat(...)
-    ↑                                      |
-    └──────────── next observation ────────┘
+act(observation) → chat(inbox) → environment step → learn(...)
+    ↑                                                    |
+    └──────────────── next observation ──────────────────┘
 ```
 
-The loop ends when the environment terminates or a limit stops the episode.
+`chat` runs only when the environment enables messaging and you define the hook. The loop ends when the environment terminates or a limit stops the episode.
 
 ## Constructor and state
 

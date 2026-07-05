@@ -187,6 +187,14 @@ export class Orchestrator {
         : null
     const seed = request.seed ?? randomInt(0, 2 ** 31)
 
+    // Resolve the play-open season's overrides once, and from them the effective messaging rules:
+    // enabled is the environment metadata AND the season override; the cap is the minimum of the two.
+    // The same resolved block is handed to all three consumers (the container config, the relay, and
+    // the session row) so live and reopened-ended payloads agree, and it is persisted on the row.
+    const overrides = decodeSeasonConfig(playSeason.config).overrides
+    const messaging = resolveMessaging(meta, overrides?.messaging)
+    const externalSlots = resolvedSlots.filter((s) => s.kind === 'human').map((s) => s.slotId)
+
     // Resolve the launch image from the validated submitted slots: the base image when none, a single
     // submission's cached overlay, or a composed multi-submission session image.
     const { image, submissionBindings } = await this.resolveImage(resolvedSlots, playSeason)
@@ -202,6 +210,8 @@ export class Orchestrator {
       recording_id: recordingId,
       season_id: playSeason.id,
       human_timeout_ms: humanTimeoutMs,
+      messaging_enabled: messaging.enabled ? 1 : 0,
+      message_cap: messaging.cap,
       created_at: createdAt,
     })
 
@@ -213,6 +223,8 @@ export class Orchestrator {
       recordingId,
       resolvedSlots,
       request.userId,
+      overrides,
+      messaging,
     )
     await ensureRecordingsDir(this.recordingsHostDir())
 
@@ -260,6 +272,8 @@ export class Orchestrator {
       createdAt,
       process,
       humanSlots: meta.human_slots,
+      externalSlots,
+      messaging,
       deps: {
         storage: this.storage,
         onEnd: (endedId) => this.registry.remove(endedId),
@@ -498,6 +512,8 @@ export class Orchestrator {
     recordingId: string,
     resolvedSlots: ResolvedSlot[],
     ownerLogin: string,
+    overrides: ReturnType<typeof decodeSeasonConfig>['overrides'],
+    messaging: { enabled: boolean; cap: number | null },
   ): Record<string, unknown> {
     const seats = new Map<string, SeatBinding>()
     for (const slot of resolvedSlots) {
@@ -523,6 +539,35 @@ export class Orchestrator {
       recording_dir: CONTAINER_RECORDINGS_DIR,
       recording_id: recordingId,
       players,
+      // Carry the resolved effective messaging block; the harness re-combines defensively, so this
+      // double application is idempotent (AND and min).
+      messaging_enabled: messaging.enabled,
+      message_cap: messaging.cap,
+      // The owner decision: the play-open season's overrides now reach live sessions too, exactly as
+      // the workflow runner already spreads them into scheduled games.
+      ...(overrides?.step_timeout_ms !== undefined
+        ? { step_timeout_ms: overrides.step_timeout_ms }
+        : {}),
+      ...(overrides?.episode_timeout_ms !== undefined
+        ? { episode_timeout_ms: overrides.episode_timeout_ms }
+        : {}),
     }
   }
+}
+
+/**
+ * Resolve the effective messaging rules for a session: enabled is the environment metadata AND the
+ * season override (default when the override omits it), and the cap is the minimum of the metadata
+ * cap and the override cap, so an override can only disable or tighten, never enable an opted-out
+ * environment or loosen its cap.
+ */
+function resolveMessaging(
+  meta: EnvironmentMeta,
+  override: { enabled?: boolean; message_cap?: number } | undefined,
+): { enabled: boolean; cap: number | null } {
+  const enabled = meta.messaging && (override?.enabled ?? true)
+  const caps = [meta.message_cap, override?.message_cap].filter(
+    (cap): cap is number => cap !== null && cap !== undefined,
+  )
+  return { enabled, cap: caps.length > 0 ? Math.min(...caps) : null }
 }

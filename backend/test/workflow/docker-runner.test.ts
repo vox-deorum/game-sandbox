@@ -128,6 +128,7 @@ function emitRecording(
     ticks?: number
     decisionMs?: number
     learnMs?: number
+    chatMs?: number
     finalScore?: number
     reason?: string
     exit?: ExitInfo
@@ -146,6 +147,7 @@ function emitRecording(
   const ticks = options.ticks ?? 3
   const decisionMs = options.decisionMs ?? 10
   const learnMs = options.learnMs
+  const chatMs = options.chatMs
   const finalScore = options.finalScore ?? ticks
   const reason = options.reason ?? 'terminated'
   for (const line of options.diagnostics ?? []) {
@@ -173,6 +175,7 @@ function emitRecording(
               timing: {
                 decision_ms: decisionMs,
                 ...(learnMs !== undefined ? { learn_ms: learnMs } : {}),
+                ...(chatMs !== undefined ? { chat_ms: chatMs } : {}),
               },
             },
           },
@@ -323,6 +326,20 @@ describe('Docker-backed workflow runner', () => {
     expect(result?.acted_tick_count).toBe(2)
   })
 
+  it('folds chat_ms into the compute total alongside decision_ms and learn_ms', async () => {
+    const handle = makeRunner(storage)
+    const run = await makeRun(storage, [naiveGame(0)])
+    handle.driver.onLaunch = (launch): void => {
+      const config = JSON.parse(launch.spec.argv[0] ?? '{}') as { seed: number }
+      // (decision 8 + learn 3 + chat 4) over 2 ticks = 30.
+      emitRecording(launch.process, config, { decisionMs: 8, learnMs: 3, chatMs: 4, ticks: 2 })
+    }
+    await runToTerminal(handle, run.id)
+    const [result] = await storage.listGameResultsByRun(run.id)
+    expect(result?.agent_compute_ms_total).toBe(30)
+    expect(result?.acted_tick_count).toBe(2)
+  })
+
   it('launches workflow containers headless and passes timeout overrides', async () => {
     const handle = makeRunner(storage)
     const run = await makeRun(storage, [naiveGame(0, 13)], {
@@ -341,6 +358,33 @@ describe('Docker-backed workflow runner', () => {
       step_timeout_ms: 250,
       episode_timeout_ms: 5_000,
     })
+  })
+
+  it('spreads the messaging override into the workflow session config', async () => {
+    const handle = makeRunner(storage)
+    const run = await makeRun(storage, [naiveGame(0, 13)], {
+      overrides: { messaging: { enabled: false, message_cap: 80 } },
+    })
+    let config: Record<string, unknown> | null = null
+    handle.driver.onLaunch = (launch): void => {
+      config = JSON.parse(launch.spec.argv[0] ?? '{}') as Record<string, unknown>
+      emitRecording(launch.process, { seed: config.seed as number })
+    }
+    await runToTerminal(handle, run.id)
+    expect(config).toMatchObject({ messaging_enabled: false, message_cap: 80 })
+  })
+
+  it('omits the messaging keys when the season sets no messaging override', async () => {
+    const handle = makeRunner(storage)
+    const run = await makeRun(storage, [naiveGame(0, 13)])
+    let config: Record<string, unknown> | null = null
+    handle.driver.onLaunch = (launch): void => {
+      config = JSON.parse(launch.spec.argv[0] ?? '{}') as Record<string, unknown>
+      emitRecording(launch.process, { seed: config.seed as number })
+    }
+    await runToTerminal(handle, run.id)
+    expect(config).not.toHaveProperty('messaging_enabled')
+    expect(config).not.toHaveProperty('message_cap')
   })
 
   it('kills a hung game at the wall-clock watchdog and continues the schedule', async () => {

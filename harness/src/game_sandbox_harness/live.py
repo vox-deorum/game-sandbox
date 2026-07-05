@@ -89,6 +89,11 @@ class LiveConfig:
     #: ``None`` takes the environment's metadata default, as a session with no override does.
     step_timeout_ms: int | None = None
     episode_timeout_ms: int | None = None
+    #: Effective session-level messaging config from the backend (metadata AND override). ``None``
+    #: leaves the environment metadata to decide; the harness combines defensively, so a value here
+    #: can only disable or tighten, never enable messaging on an environment that opted out.
+    messaging_enabled: bool | None = None
+    message_cap: int | None = None
     #: Workflow containers set this to run as fast as the agents compute, without live pacing.
     headless: bool = False
 
@@ -148,6 +153,10 @@ def parse_config(argv: list[str]) -> LiveConfig:
     players = _parse_players(config.get("players"))
     step_timeout_ms = _parse_optional_int(config, "step_timeout_ms")
     episode_timeout_ms = _parse_optional_int(config, "episode_timeout_ms")
+    message_cap = _parse_optional_int(config, "message_cap")
+    messaging_enabled = config.get("messaging_enabled")
+    if messaging_enabled is not None and not isinstance(messaging_enabled, bool):
+        raise LiveConfigError("config 'messaging_enabled' must be a boolean or null")
     headless = config.get("headless", False)
     if not isinstance(headless, bool):
         raise LiveConfigError("config 'headless' must be a boolean")
@@ -162,6 +171,8 @@ def parse_config(argv: list[str]) -> LiveConfig:
         players=players,
         step_timeout_ms=step_timeout_ms,
         episode_timeout_ms=episode_timeout_ms,
+        messaging_enabled=messaging_enabled,
+        message_cap=message_cap,
         headless=headless,
     )
 
@@ -314,7 +325,14 @@ def main(argv: list[str] | None = None) -> int:
             step_limit_ms=config.step_timeout_ms,
             episode_limit_ms=config.episode_timeout_ms,
             players=config.players,
+            messaging=config.messaging_enabled,
+            message_cap=config.message_cap,
         )
+        # The effective messaging decision (metadata AND config) is resolved once inside the episode;
+        # reuse it to gate the human chat queue, so a frame is accepted only when the loop will route
+        # it. A frame that arrives before this call (the client has not even seen the header yet) is
+        # harmlessly dropped as disabled.
+        control.configure_chat(episode.messaging_enabled)
         with episode:
             # Stream the opening deal frame (turn-based envs only) so a human who must act first sees
             # the table before the loop blocks for their move. It is streamed, never recorded.

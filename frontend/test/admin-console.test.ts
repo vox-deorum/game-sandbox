@@ -269,6 +269,30 @@ describe('AdminConsolePage', () => {
     expect(screen.getByText(/along with its existing runs and boards/)).toBeInTheDocument()
   })
 
+  it('writes the strict messaging override and preserves the inert llm block', async () => {
+    // A season carrying an llm block, so the round-trip must keep it untouched while the messaging
+    // fields are edited into the strict shape.
+    const withLlm = season({
+      config: {
+        deps_version: 1,
+        matches: [{ slots: ['submission'], seeds: [0], games: 1 }],
+        overrides: { llm: { model_allowlist: ['claude-opus-4-8'] } },
+      },
+    })
+    vi.mocked(getAdminSeason).mockResolvedValue(adminView({ season: withLlm }))
+    vi.mocked(configureSeason).mockResolvedValue({ ok: true, season: withLlm })
+    await renderConsole()
+
+    await fireEvent.update(await screen.findByLabelText('Messaging'), 'off')
+    await fireEvent.update(screen.getByLabelText('Message cap (code points)'), '80')
+    await fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }))
+
+    await waitFor(() => expect(vi.mocked(configureSeason)).toHaveBeenCalled())
+    const savedConfig = vi.mocked(configureSeason).mock.calls[0]?.[1]
+    expect(savedConfig?.overrides?.messaging).toEqual({ enabled: false, message_cap: 80 })
+    expect(savedConfig?.overrides?.llm).toEqual({ model_allowlist: ['claude-opus-4-8'] })
+  })
+
   it('discards a stale detail response after the operator selects another season', async () => {
     const second = season({ id: 'iter-2', label: 'Week 2' })
     vi.mocked(listSeasons).mockResolvedValue([

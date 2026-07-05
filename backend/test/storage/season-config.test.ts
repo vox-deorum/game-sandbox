@@ -105,16 +105,35 @@ describe('SeasonConfig codec', () => {
     ).toThrow(SeasonConfigError)
   })
 
-  it('stores the inert messaging/llm override blocks untouched', () => {
+  it('round-trips the strict messaging override and keeps the llm block inert', () => {
     const config = validConfig({
       overrides: {
-        messaging: { disabled: true, max_length: 280, future: { nested: 1 } },
+        messaging: { enabled: false, message_cap: 80 },
         llm: { model_allowlist: ['claude-opus-4-8'], token_budget: 10_000 },
       },
     })
     const decoded = decodeSeasonConfig(encodeSeasonConfig(config))
-    expect(decoded.overrides?.messaging).toEqual(config.overrides?.messaging)
+    expect(decoded.overrides?.messaging).toEqual({ enabled: false, message_cap: 80 })
+    // The llm block stays parsed-but-inert: any object round-trips untouched until Stage 9.
     expect(decoded.overrides?.llm).toEqual(config.overrides?.llm)
+  })
+
+  it('accepts either messaging field alone', () => {
+    for (const messaging of [{ enabled: true }, { message_cap: 60 }, {}]) {
+      expect(() => parseSeasonConfig(validConfig({ overrides: { messaging } }))).not.toThrow()
+    }
+  })
+
+  it('rejects an unknown key or a bad type inside the messaging override', () => {
+    expect(() =>
+      parseSeasonConfig(validConfig({ overrides: { messaging: { disabled: true } as never } })),
+    ).toThrow(SeasonConfigError)
+    expect(() =>
+      parseSeasonConfig(validConfig({ overrides: { messaging: { enabled: 'yes' } as never } })),
+    ).toThrow(SeasonConfigError)
+    expect(() =>
+      parseSeasonConfig(validConfig({ overrides: { messaging: { message_cap: -1 } } })),
+    ).toThrow(SeasonConfigError)
   })
 
   it('rejects an overrides block that is not an object', () => {

@@ -191,6 +191,9 @@ def test_parse_config_defaults_seed_and_optional_fields():
     # The Stage 6 timeout overrides default to None (take the environment metadata default).
     assert cfg.step_timeout_ms is None
     assert cfg.episode_timeout_ms is None
+    # The Stage 8 messaging keys default to None (let the environment metadata decide).
+    assert cfg.messaging_enabled is None
+    assert cfg.message_cap is None
     assert cfg.headless is False
 
 
@@ -207,6 +210,19 @@ def test_parse_config_reads_workflow_overrides():
     assert cfg.step_timeout_ms == 250
     assert cfg.episode_timeout_ms == 60_000
     assert cfg.headless is True
+
+
+def test_parse_config_reads_messaging_keys():
+    payload = {
+        "env_id": "fake",
+        "slots": {"p": {"kind": "builtin-agent"}},
+        "recording_dir": "/r",
+        "messaging_enabled": False,
+        "message_cap": 80,
+    }
+    cfg = parse_config([json.dumps(payload)])
+    assert cfg.messaging_enabled is False
+    assert cfg.message_cap == 80
 
 
 @pytest.mark.parametrize(
@@ -248,6 +264,18 @@ def test_parse_config_reads_workflow_overrides():
             "slots": {"p": {"kind": "external"}},
             "recording_dir": "/r",
             "headless": "yes",
+        },
+        {  # a non-boolean messaging_enabled is rejected
+            "env_id": "fake",
+            "slots": {"p": {"kind": "external"}},
+            "recording_dir": "/r",
+            "messaging_enabled": "on",
+        },
+        {  # a non-integer message_cap is rejected
+            "env_id": "fake",
+            "slots": {"p": {"kind": "external"}},
+            "recording_dir": "/r",
+            "message_cap": "lots",
         },
     ],
 )
@@ -518,6 +546,101 @@ def test_turn_based_blocks_for_input_then_steps(tmp_path: Path):
 
     assert episode.result().ticks == 1
     assert _recorded_actions(tmp_path / "r" / "recording.jsonl") == [5]
+
+
+# --- end-to-end human chat over the transport -------------------------------------------
+
+
+def _messaging_entry(n_steps: int, *, messaging: bool) -> EnvironmentEntry:
+    meta = EnvironmentMeta(
+        env_id="fake-chat",
+        display_name="Fake Chat",
+        description="A deterministic fake with messaging.",
+        min_slots=1,
+        max_slots=1,
+        human_slots=("player_0",),
+        human_timeout_ms=None,
+        recommended_episode_ticks=n_steps,
+        pace_interval_ms=16,
+        step_limit_ms=1000,
+        episode_limit_ms=120_000,
+        messaging=messaging,
+        message_cap=120,
+        llm=False,
+        renderer="fake",
+    )
+    return EnvironmentEntry(
+        meta=meta,
+        make=lambda: FakeEnv(n_steps),
+        default_action=lambda slot_id: DEFAULT_ACTION,
+        overlay=None,
+    )
+
+
+def _messages_in(recording_path: Path) -> list[list[dict]]:
+    out: list[list[dict]] = []
+    for line in recording_path.read_text(encoding="utf-8").splitlines()[1:]:  # skip header
+        out.append(json.loads(line).get("messages", []))
+    return out
+
+
+def test_human_chat_frame_over_transport_lands_in_the_recording(tmp_path: Path):
+    # The full wiring: parse config, build the external slot's TransportSource, configure the chat
+    # gate from the effective messaging decision, feed a chat frame on stdin, and see it recorded.
+    base = ManualClock()
+    clock = PausableClock(base)
+    control = SessionControl(clock)
+    sleeper = AdvancingSleeper(base)
+    from game_sandbox_harness.live_io import build_tee_store
+
+    streamed: list[str] = []
+    store = build_tee_store(str(tmp_path), ProtocolStream(_ListSink(streamed)))  # type: ignore[arg-type]
+    entry = _messaging_entry(2, messaging=True)
+    source = TransportSource(control, clock=clock, paced=True, sleeper=sleeper)
+    with Episode(
+        entry,
+        {"player_0": ExternalSlot(source)},
+        seed=1,
+        store=store,
+        recording_id="r",
+        clock=clock,
+        messaging=None,
+    ) as episode:
+        control.configure_chat(episode.messaging_enabled)
+        control.handle_line('{"kind":"chat","slot":"player_0","to":null,"text":"hello table"}')
+        run_live_loop(episode, pace_interval_ms=16, control=control, clock=clock, sleeper=sleeper)
+
+    # The broadcast the human queued was validated and recorded on the first stepped tick.
+    per_tick = _messages_in(tmp_path / "r" / "recording.jsonl")
+    assert per_tick[0] == [{"from": "player_0", "to": None, "text": "hello table"}]
+
+
+def test_human_chat_frame_is_dropped_when_messaging_disabled_by_config(tmp_path: Path):
+    base = ManualClock()
+    clock = PausableClock(base)
+    control = SessionControl(clock)
+    sleeper = AdvancingSleeper(base)
+    from game_sandbox_harness.live_io import build_tee_store
+
+    streamed: list[str] = []
+    store = build_tee_store(str(tmp_path), ProtocolStream(_ListSink(streamed)))  # type: ignore[arg-type]
+    entry = _messaging_entry(2, messaging=True)
+    source = TransportSource(control, clock=clock, paced=True, sleeper=sleeper)
+    with Episode(
+        entry,
+        {"player_0": ExternalSlot(source)},
+        seed=1,
+        store=store,
+        recording_id="r",
+        clock=clock,
+        messaging=False,  # config disables what the metadata allowed
+    ) as episode:
+        control.configure_chat(episode.messaging_enabled)
+        control.handle_line('{"kind":"chat","slot":"player_0","to":null,"text":"hello"}')
+        run_live_loop(episode, pace_interval_ms=16, control=control, clock=clock, sleeper=sleeper)
+
+    # Messaging off: no message line was ever written.
+    assert all(msgs == [] for msgs in _messages_in(tmp_path / "r" / "recording.jsonl"))
 
 
 # --- stdout hygiene, as a real subprocess over a real environment -----------------------

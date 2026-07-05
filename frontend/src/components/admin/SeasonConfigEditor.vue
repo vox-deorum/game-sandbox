@@ -19,6 +19,7 @@ import { computed, ref, watch } from 'vue'
 import {
   configureSeason,
   type SeasonConfig,
+  type SeasonOverrides,
   type SeasonView,
   type MatchConfig,
   type SlotSpec,
@@ -27,6 +28,7 @@ import UiButton from '../ui/UiButton.vue'
 import UiDialog from '../ui/UiDialog.vue'
 import UiField from '../ui/UiField.vue'
 import UiInput from '../ui/UiInput.vue'
+import UiSelect from '../ui/UiSelect.vue'
 
 const props = defineProps<{ season: SeasonView }>()
 const emit = defineEmits<{
@@ -48,6 +50,10 @@ const depsVersion = ref(props.season.config.deps_version)
 const matches = ref<MatchDraft[]>([])
 const stepTimeout = ref<number | ''>('')
 const episodeTimeout = ref<number | ''>('')
+// The messaging override's `enabled` is an *optional* boolean, so the toggle has three states:
+// "default" leaves the environment's own setting in force, "on"/"off" write an explicit boolean.
+const messagingEnabled = ref<'default' | 'on' | 'off'>('default')
+const messageCap = ref<number | ''>('')
 
 const saving = ref(false)
 const saved = ref(false)
@@ -71,6 +77,9 @@ function seedFromSeason(): void {
   }))
   stepTimeout.value = config.overrides?.step_timeout_ms ?? ''
   episodeTimeout.value = config.overrides?.episode_timeout_ms ?? ''
+  const messaging = config.overrides?.messaging
+  messagingEnabled.value = messaging?.enabled === undefined ? 'default' : messaging.enabled ? 'on' : 'off'
+  messageCap.value = messaging?.message_cap ?? ''
   saved.value = false
   error.value = null
 }
@@ -123,12 +132,15 @@ function buildConfig(): { config: SeasonConfig } | { error: string } {
   if (!Number.isInteger(depsVersion.value) || depsVersion.value < 1) {
     return { error: 'The dependency-set version must be a positive integer.' }
   }
-  // Preserve the inert messaging/llm override blocks untouched; only the active timeouts are edited here.
+  // The active timeout and messaging overrides are edited here; the inert llm block round-trips untouched.
   const overrides: NonNullable<SeasonConfig['overrides']> = {}
   if (stepTimeout.value !== '') overrides.step_timeout_ms = Number(stepTimeout.value)
   if (episodeTimeout.value !== '') overrides.episode_timeout_ms = Number(episodeTimeout.value)
+  const messaging: NonNullable<SeasonOverrides['messaging']> = {}
+  if (messagingEnabled.value !== 'default') messaging.enabled = messagingEnabled.value === 'on'
+  if (messageCap.value !== '') messaging.message_cap = Number(messageCap.value)
+  if (Object.keys(messaging).length > 0) overrides.messaging = messaging
   const existing = props.season.config.overrides
-  if (existing?.messaging !== undefined) overrides.messaging = existing.messaging
   if (existing?.llm !== undefined) overrides.llm = existing.llm
   const config: SeasonConfig = { deps_version: depsVersion.value, matches: built }
   if (Object.keys(overrides).length > 0) {
@@ -299,8 +311,28 @@ watch(confirmOpen, (open) => {
           />
         </template>
       </UiField>
+      <UiField
+        label="Messaging"
+        hint="Default keeps the environment's setting; Off silences it. It can never enable an opted-out environment."
+      >
+        <template #default="{ id }">
+          <UiSelect :id="id" v-model="messagingEnabled">
+            <option value="default">Environment default</option>
+            <option value="on">On</option>
+            <option value="off">Off</option>
+          </UiSelect>
+        </template>
+      </UiField>
+      <UiField
+        label="Message cap (code points)"
+        hint="Optional; only tightens. The effective cap is the smaller of this and the environment's."
+      >
+        <template #default="{ id }">
+          <UiInput :id="id" v-model.number="messageCap" type="number" min="1" placeholder="default" />
+        </template>
+      </UiField>
     </div>
-    <p class="config-note">Messaging and LLM overrides apply in Stage 8/9 and are preserved unchanged.</p>
+    <p class="config-note">The LLM override applies in Stage 9 and is preserved unchanged.</p>
 
     <div class="config-actions">
       <UiButton :loading="saving" @click="save">Save configuration</UiButton>

@@ -15,6 +15,7 @@
 import { chmod, mkdir } from 'node:fs/promises'
 import {
   classifyOutbound,
+  codePointLength,
   parseCommand,
   RESULT_KIND,
   serializeCommand,
@@ -66,6 +67,15 @@ export interface LiveSessionInit {
   createdAt: string
   process: SessionProcess
   humanSlots: readonly string[]
+  /**
+   * The slots whose resolved binding is actually a connected human this session, not every
+   * human-capable seat (that is `humanSlots`), but the ones a human really controls. Message
+   * visibility and the inbound chat gate authorize against these, so a targeted message is shown
+   * live only to the client controlling one of them.
+   */
+  externalSlots: readonly string[]
+  /** The effective messaging rules resolved once by the orchestrator (metadata AND season override). */
+  messaging: { enabled: boolean; cap: number | null }
   deps: LiveSessionDeps
 }
 
@@ -83,9 +93,12 @@ export class LiveSession {
 
   private readonly process: SessionProcess
   private readonly humanSlots: ReadonlySet<string>
+  private readonly externalSlots: ReadonlySet<string>
+  private readonly messaging: { enabled: boolean; cap: number | null }
   private readonly deps: LiveSessionDeps
 
-  private readonly sockets = new Set<ClientSocket>()
+  /** Each attached socket with its audience marker, so a targeted message is filtered per attachment. */
+  private readonly sockets = new Map<ClientSocket, { isOwner: boolean }>()
   private readonly outputDone: Promise<void>
   private status: 'starting' | 'running' | 'ended' = 'starting'
   private headerLine: string | null = null
@@ -107,6 +120,8 @@ export class LiveSession {
     this.createdAt = init.createdAt
     this.process = init.process
     this.humanSlots = new Set(init.humanSlots)
+    this.externalSlots = new Set(init.externalSlots)
+    this.messaging = init.messaging
     this.deps = init.deps
 
     this.maxTimer = setTimeout(() => {
@@ -160,10 +175,11 @@ export class LiveSession {
       if (this.headerLine === null) {
         this.headerLine = raw
         this.markRunning()
+        this.broadcast(raw) // the header carries no messages; send it verbatim to everyone
       } else {
         this.latestState = raw
+        this.broadcastState(raw, line.value)
       }
-      this.broadcast(raw)
       return
     }
     // Event envelope: stash the result reason for the row, then relay it like any other envelope.
@@ -188,11 +204,8 @@ export class LiveSession {
   }
 
   private broadcast(data: string): void {
-    for (const socket of [...this.sockets]) {
-      if (socket.bufferedAmount > BACKPRESSURE_LIMIT_BYTES) {
-        this.sockets.delete(socket)
-        this.safeClose(socket)
-        this.deps.log(`session ${this.id}: dropped a slow socket (backpressure)`)
+    for (const socket of [...this.sockets.keys()]) {
+      if (this.dropIfSlow(socket)) {
         continue
       }
       try {
@@ -203,6 +216,100 @@ export class LiveSession {
     }
   }
 
+  /**
+   * Broadcast a recording state line, re-serialized per audience when it carries targeted messages.
+   * A line with no `messages` (the common case) is sent verbatim to everyone, so the hot path costs
+   * nothing; only a line with messages is filtered, and even then a socket whose visible set equals
+   * the original still receives the byte-identical `raw`.
+   */
+  private broadcastState(raw: string, value: Record<string, unknown>): void {
+    if (!Array.isArray(value.messages)) {
+      this.broadcast(raw)
+      return
+    }
+    for (const [socket, meta] of [...this.sockets]) {
+      if (this.dropIfSlow(socket)) {
+        continue
+      }
+      try {
+        socket.send(this.filterStateForAudience(raw, value, meta.isOwner))
+      } catch {
+        this.sockets.delete(socket)
+      }
+    }
+  }
+
+  /** Drop a socket whose backlog crossed the backpressure limit; returns whether it was dropped. */
+  private dropIfSlow(socket: ClientSocket): boolean {
+    if (socket.bufferedAmount > BACKPRESSURE_LIMIT_BYTES) {
+      this.sockets.delete(socket)
+      this.safeClose(socket)
+      this.deps.log(`session ${this.id}: dropped a slow socket (backpressure)`)
+      return true
+    }
+    return false
+  }
+
+  /**
+   * Return the state line one audience may see. The **controller** (the owner of a human-mode
+   * session) sees broadcasts plus targeted messages where `to` or `from` is a human-bound slot. The
+   * `from` case is the deliberate sender reflection, letting the panel render the owner's own sends
+   * from the recorded line with no local echo. Every other attachment (a spectator, including the
+   * owner of a scripted run) sees broadcasts only. A line whose visible set equals the original is
+   * returned as the byte-identical `raw`.
+   */
+  private filterStateForAudience(
+    raw: string,
+    value: Record<string, unknown>,
+    isOwner: boolean,
+  ): string {
+    const messages = value.messages
+    if (!Array.isArray(messages)) {
+      return raw
+    }
+    const isController = isOwner && this.mode === 'human'
+    const kept = messages.filter((message) => this.messageVisible(message, isController))
+    if (kept.length === messages.length) {
+      return raw
+    }
+    const clone: Record<string, unknown> = { ...value }
+    if (kept.length === 0) {
+      delete clone.messages
+    } else {
+      clone.messages = kept
+    }
+    return JSON.stringify(clone)
+  }
+
+  /** Whether one recorded message is visible live to a controller (`true`) or spectator audience. */
+  private messageVisible(message: unknown, isController: boolean): boolean {
+    if (typeof message !== 'object' || message === null) {
+      return true // an unexpected shape is left in place; the harness never emits one
+    }
+    const { to, from } = message as { to?: unknown; from?: unknown }
+    if (to === null || to === undefined) {
+      return true // a broadcast is visible to everyone
+    }
+    if (!isController) {
+      return false // spectators never see a targeted message live
+    }
+    return (
+      (typeof to === 'string' && this.externalSlots.has(to)) ||
+      (typeof from === 'string' && this.externalSlots.has(from))
+    )
+  }
+
+  /** Derive the line a freshly attached socket receives from the stashed raw state (audience-filtered). */
+  private stateForAttach(raw: string, isOwner: boolean): string {
+    let value: Record<string, unknown>
+    try {
+      value = JSON.parse(raw) as Record<string, unknown>
+    } catch {
+      return raw
+    }
+    return this.filterStateForAudience(raw, value, isOwner)
+  }
+
   // --- attach / inbound commands: browsers → container ---
 
   /**
@@ -211,12 +318,14 @@ export class LiveSession {
    * commands are honored, and `input` only in human mode for a slot the session exposes.
    */
   attach(socket: ClientSocket, isOwner: boolean): Attachment {
-    this.sockets.add(socket)
+    this.sockets.set(socket, { isOwner })
     if (this.headerLine !== null) {
       this.trySend(socket, this.headerLine)
     }
     if (this.latestState !== null) {
-      this.trySend(socket, this.latestState)
+      // Derive the audience variant of the stashed line at catch-up time, so a late-attaching
+      // spectator can never receive a targeted message through the replay path.
+      this.trySend(socket, this.stateForAttach(this.latestState, isOwner))
     }
     if (this.status === 'running') {
       this.trySend(socket, sessionEnvelope('running'))
@@ -247,6 +356,23 @@ export class LiveSession {
     const command = parsed.command
     if (command.kind === 'input') {
       if (this.mode !== 'human' || !this.humanSlots.has(command.slot)) {
+        return
+      }
+    }
+    if (command.kind === 'chat') {
+      // Forward a human chat only from the controller of a human-mode session, for a slot it actually
+      // controls, when messaging is effectively enabled, and within the effective cap counted in code
+      // points. The pre-gate keeps junk off container stdin; the harness stays authoritative and
+      // validates again. A dropped frame is logged like every other rejection.
+      if (
+        this.mode !== 'human' ||
+        !this.externalSlots.has(command.slot) ||
+        !this.messaging.enabled
+      ) {
+        return
+      }
+      if (this.messaging.cap !== null && codePointLength(command.text) > this.messaging.cap) {
+        this.deps.log(`session ${this.id}: dropping over-cap chat from ${command.slot}`)
         return
       }
     }
@@ -345,7 +471,7 @@ export class LiveSession {
     }
 
     this.broadcast(sessionEnvelope('ended', reason))
-    for (const socket of this.sockets) {
+    for (const socket of this.sockets.keys()) {
       this.safeClose(socket)
     }
     this.sockets.clear()

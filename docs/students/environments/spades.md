@@ -235,6 +235,27 @@ Suppose `position` is `[2]`. Your agent controls seat 2, so your partner is seat
 
 Spades is turn-based, so there is no fixed delay between moves. Each call to `act` has a 1-second limit, and one game has a 120-second limit on the agent's total measured compute. If `act` returns late, the environment chooses a legal action for the agent: during bidding it bids a never-nil estimate derived from the hand, and during play it plays the lowest legal card (lowest rank, ties broken by the lower suit ID). When a human controls a seat, the move deadline is 60 seconds. See [Time limits](../agent-interface.md#time-limits) for how these limits are enforced and measured.
 
+## Messaging
+
+Spades has messaging **enabled**, so your agent may talk during a hand. Add the optional `chat` hook and the harness calls it on your turn, right after `act` and before the trick resolves:
+
+```python
+def chat(self, inbox):
+    # inbox: messages sent to you since your last turn, each
+    # {"from": slot, "to": slot_or_None, "text": str, "tick": int}.
+    for message in inbox:
+        ...  # read what your partner told you
+    # Return messages to send: {"to": slot_or_None, "text": str}.
+    # "to": None broadcasts to the whole table; a slot id is a private line.
+    return [{"to": None, "text": "spades are mine"}]
+```
+
+`chat` receives only the inbox, not the observation, so stash anything it needs (your seat, your hand) in `act`, which runs first every turn. Your partner is the seat across, `player_((your_seat + 2) % 4)`.
+
+Because you and the seat across are partners, a **targeted** message to that seat is a private signal, while a **broadcast** (`"to": None`) is heard by the whole table, two genuinely different acts. You may send at most one message to each recipient plus one broadcast per turn, and each message is plain text capped at **120 Unicode code points** (an emoji counts as one; a season may lower the cap). A message you send reaches its recipients on **their next turn**, never the tick you sent it, so `chat` announces intent rather than reacting to a result. Every message is recorded and shown in replays, so nothing you send is secret, and chat time counts against your step and episode limits like `act` and `learn`.
+
+The two worked examples show both shapes: `signaler` sends its partner a targeted suit signal and leads the suit it is told about, and `daredevil` bids nil, broadcasts a warning, and covers a partner who did the same. See the [agent interface](../agent-interface.md#chatinbox) for the full contract.
+
 ## Your first improvement
 
 Run `python -m sandbox play` a few times and watch the bidding round, then the score at the end. Your agent promises one trick no matter what it was dealt. What does that flat bid cost it?

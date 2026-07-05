@@ -102,6 +102,13 @@ export interface NewSessionInput {
    * or an environment that declares no human timeout.
    */
   human_timeout_ms?: number | null
+  /**
+   * The session's resolved effective messaging rules (metadata AND the season override), written once
+   * at start so the payload serves them live or ended. `messaging_enabled` is a SQLite 0/1; both
+   * default to off/no-cap when omitted, preserving callers that never set them.
+   */
+  messaging_enabled?: number
+  message_cap?: number | null
   created_at: string
 }
 

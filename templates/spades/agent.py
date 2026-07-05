@@ -61,3 +61,15 @@ class Agent:
     #
     # def learn(self, observation, action: int, reward: float, terminated: bool) -> None:
     #     ...
+
+    # Optional: messaging. Spades enables it, so you may talk to the table. On your turn, right
+    # after act and before the trick resolves, the harness calls chat with your inbox: a list of
+    # {"from": slot, "to": slot_or_None, "text": str, "tick": int} messages sent to you since your
+    # last turn. Return a list of {"to": slot_or_None, "text": str} to send ("to": None broadcasts
+    # to the whole table, a slot id sends only to that seat), with at most one message per recipient
+    # plus one broadcast per turn. Text is plain and capped at 120 Unicode code points. Your partner
+    # is the seat across, player_((your_seat + 2) % 4). Every message is recorded and shown in
+    # replays, so nothing you send is ever secret. Return nothing to stay silent.
+    #
+    # def chat(self, inbox: list[dict]) -> list[dict] | None:
+    #     ...

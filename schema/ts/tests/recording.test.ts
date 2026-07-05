@@ -47,6 +47,25 @@ describe('readRecording', () => {
     expect(header.sidecars?.[0]?.name).toBe('future-telemetry')
     expect(states).toHaveLength(1)
   })
+
+  it('parses a chatty recording carrying messages and chat_ms with no casts', () => {
+    const { states } = readRecording(fixture('chatty'))
+    const [first] = states
+
+    // The regenerated types carry chat_ms alongside decision_ms, so no cast below.
+    const timing = first?.agents.player_0?.timing
+    expect(timing?.decision_ms).toBe(0.5)
+    expect(timing?.chat_ms).toBe(0.25)
+
+    // The messages array: one targeted, one broadcast (to === null), typed straight through.
+    expect(first?.messages).toHaveLength(2)
+    expect(first?.messages?.[0]).toEqual({
+      from: 'player_0',
+      to: 'player_1',
+      text: 'strong:hearts',
+    })
+    expect(first?.messages?.[1]?.to).toBeNull()
+  })
 })
 
 describe('parseStepState', () => {

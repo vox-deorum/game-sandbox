@@ -43,6 +43,32 @@ def test_full_step_is_valid():
     validate_step(state)
 
 
+def test_chat_ms_is_emitted_only_when_supplied():
+    # A non-chatting agent carries no chat field, so a chat-less recording is unchanged.
+    without = build_agent_step(reward=0.0, score=0.0, decision_ms=0.5, learn_ms=0.2)
+    assert "chat_ms" not in without["timing"]
+    # A chatting tick carries chat_ms alongside decision_ms and learn_ms.
+    with_chat = build_agent_step(reward=0.0, score=0.0, decision_ms=0.5, chat_ms=0.3)
+    assert with_chat["timing"]["chat_ms"] == 0.3
+
+
+def test_step_with_messages_and_chat_ms_validates():
+    state = build_step_state(
+        tick=1,
+        agents={
+            "player_0": build_agent_step(reward=0.0, score=0.0, action=57, decision_ms=0.5, chat_ms=0.25)
+        },
+        started_at=1_700_000_000_000,
+        duration_ms=1.0,
+        messages=[
+            {"from": "player_0", "to": "player_1", "text": "strong:hearts"},
+            {"from": "player_0", "to": None, "text": "table!"},
+        ],
+    )
+    validate_step(state)
+    assert state["agents"]["player_0"]["timing"]["chat_ms"] == 0.25
+
+
 def test_header_builder_is_valid():
     validate_header(build_header(environment="flappy"))
     validate_header(build_header(environment="flappy", created_at="2026-06-10T00:00:00Z", seed=9))

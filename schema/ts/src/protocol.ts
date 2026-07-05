@@ -10,9 +10,9 @@
  * Outbound (container → backend → browser) this stage defines one envelope kind, `result`, plus the
  * backend-originated `session` status frame and the relayed `pause`/`resume` echoes. Inbound
  * (browser → backend → container) the command envelopes are `input` (with a slot and action),
- * `pause`, `resume`, and `stop`; Stage 8 adds `chat` on the same shape. The backend validates a
- * command's shape and the sender's authority, then forwards it — it never interprets an action,
- * because the container is authoritative.
+ * `pause`, `resume`, `stop`, and `chat` (a human message: a slot, a recipient `to` or null for a
+ * broadcast, and plain text). The backend validates a command's shape and the sender's authority,
+ * then forwards it, and never interprets an action, because the container is authoritative.
  *
  * This module is dependency-free on purpose: the browser imports it directly (no Node built-ins, no
  * Ajv) so the line-classification rule lives in exactly one place for both sides of the socket.
@@ -26,13 +26,18 @@ export const SESSION_KIND = 'session'
 /** A validated inbound command, ready to forward to the container or echo to clients. */
 export type Command =
   | { kind: 'input'; slot: string; action: unknown }
+  | { kind: 'chat'; slot: string; to: string | null; text: string }
   | { kind: 'pause' }
   | { kind: 'resume' }
   | { kind: 'stop' }
 
-/** The result of classifying one outbound line from the container. */
+/**
+ * The result of classifying one outbound line from the container. The `recording` variant carries
+ * the parsed object alongside the raw text so a consumer (the relay's per-audience message filter)
+ * can inspect fields like `messages` without parsing the line a second time.
+ */
 export type OutboundLine =
-  | { type: 'recording'; raw: string }
+  | { type: 'recording'; raw: string; value: Record<string, unknown> }
   | { type: 'envelope'; kind: string; raw: string; value: Record<string, unknown> }
   | { type: 'malformed'; raw: string }
 
@@ -65,7 +70,7 @@ export function classifyOutbound(raw: string): OutboundLine {
   if (typeof object.kind === 'string') {
     return { type: 'envelope', kind: object.kind, raw, value: object }
   }
-  return { type: 'recording', raw }
+  return { type: 'recording', raw, value: object }
 }
 
 /** The outcome of parsing an inbound command line from a client. */
@@ -96,6 +101,21 @@ export function parseCommand(raw: string): CommandParse {
         return { ok: false, reason: 'input command needs an action' }
       }
       return { ok: true, command: { kind: 'input', slot: object.slot, action: object.action } }
+    }
+    case 'chat': {
+      if (typeof object.slot !== 'string') {
+        return { ok: false, reason: 'chat command needs a string slot' }
+      }
+      if (object.to !== null && typeof object.to !== 'string') {
+        return { ok: false, reason: 'chat command needs a string or null to' }
+      }
+      if (typeof object.text !== 'string') {
+        return { ok: false, reason: 'chat command needs string text' }
+      }
+      return {
+        ok: true,
+        command: { kind: 'chat', slot: object.slot, to: object.to, text: object.text },
+      }
     }
     case 'pause':
     case 'resume':

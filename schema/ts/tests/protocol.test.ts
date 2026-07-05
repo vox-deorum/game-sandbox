@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
-import { classifyOutbound, parseCommand, serializeCommand, sessionEnvelope } from '../src/index.js'
+import {
+  classifyOutbound,
+  codePointLength,
+  parseCommand,
+  serializeCommand,
+  sessionEnvelope,
+} from '../src/index.js'
 
 describe('outbound line classification', () => {
   it('classifies a header line (no top-level kind) as a recording line', () => {
@@ -12,6 +18,16 @@ describe('outbound line classification', () => {
     const state =
       '{"schema_version":1,"tick":0,"agents":{},"timing":{"started_at":1,"duration_ms":1}}'
     expect(classifyOutbound(state).type).toBe('recording')
+  })
+
+  it('carries the parsed object on a recording line so the relay need not parse it again', () => {
+    const line = classifyOutbound(
+      '{"schema_version":1,"tick":2,"agents":{},"timing":{"started_at":1,"duration_ms":1},"messages":[{"from":"player_0","to":null,"text":"hi"}]}',
+    )
+    expect(line.type).toBe('recording')
+    if (line.type === 'recording') {
+      expect(line.value.messages).toEqual([{ from: 'player_0', to: null, text: 'hi' }])
+    }
   })
 
   it('classifies a line with a top-level kind as an event envelope', () => {
@@ -49,6 +65,38 @@ describe('inbound command parsing', () => {
     expect(parseCommand('{"kind":"explode"}').ok).toBe(false)
     expect(parseCommand('{"no":"kind"}').ok).toBe(false)
     expect(parseCommand('garbage').ok).toBe(false)
+  })
+
+  it('accepts a chat command with a targeted or null recipient', () => {
+    expect(parseCommand('{"kind":"chat","slot":"player_0","to":"player_2","text":"hi"}')).toEqual({
+      ok: true,
+      command: { kind: 'chat', slot: 'player_0', to: 'player_2', text: 'hi' },
+    })
+    expect(parseCommand('{"kind":"chat","slot":"player_0","to":null,"text":"table!"}')).toEqual({
+      ok: true,
+      command: { kind: 'chat', slot: 'player_0', to: null, text: 'table!' },
+    })
+  })
+
+  it('rejects a chat command with a bad slot, to, or text', () => {
+    expect(parseCommand('{"kind":"chat","to":null,"text":"hi"}').ok).toBe(false) // no slot
+    expect(parseCommand('{"kind":"chat","slot":"player_0","to":5,"text":"hi"}').ok).toBe(false)
+    expect(parseCommand('{"kind":"chat","slot":"player_0","to":null,"text":42}').ok).toBe(false)
+  })
+
+  it('pins the exact chat JSON both languages speak', () => {
+    // The same literal string the Python live_io test parses into a queued frame.
+    const line = serializeCommand({ kind: 'chat', slot: 'player_0', to: null, text: 'hi' })
+    expect(line).toBe('{"kind":"chat","slot":"player_0","to":null,"text":"hi"}')
+  })
+})
+
+describe('code-point counter', () => {
+  it('counts an astral-plane character as one, matching Python len', () => {
+    expect(codePointLength('😀')).toBe(1)
+    expect(codePointLength('a😀b')).toBe(3)
+    expect(codePointLength('')).toBe(0)
+    expect(codePointLength('hello')).toBe(5)
   })
 })
 

@@ -88,6 +88,8 @@ describe('retention', () => {
         createdAt: ago(0),
         process: new FakeSessionProcess(),
         humanSlots: ['player_0'],
+        externalSlots: ['player_0'],
+        messaging: { enabled: true, cap: 120 },
         deps: {
           storage,
           onEnd: () => {},

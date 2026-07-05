@@ -60,6 +60,15 @@ export interface SessionsTable {
    * watch) or an environment that declares no human timeout.
    */
   human_timeout_ms: number | null
+  /**
+   * The session's resolved effective messaging rules, written once at start from the environment
+   * metadata AND the play-open season's override. Persisted (following the `human_timeout_ms`
+   * precedent) so the session payload answers identically for a live session and one reopened after
+   * it ended: whether the chat panel belongs on the page (`messaging_enabled`, SQLite 0/1) and what
+   * cap it enforces (`message_cap`, null for no cap).
+   */
+  messaging_enabled: number
+  message_cap: number | null
   /** ISO-8601 UTC timestamps. */
   created_at: string
   ended_at: string | null
@@ -267,7 +276,10 @@ export interface GameResultsTable {
   agent_user_id: string | null
   /** The normalized higher-is-better leaderboard score from the recording. */
   episode_score: number
-  /** Sum of `decision_ms + learn_ms` over the seat's ticks (`learn_ms` treated as zero where absent). */
+  /**
+   * Sum of `decision_ms + learn_ms + chat_ms` over the seat's ticks (`learn_ms` and `chat_ms` treated
+   * as zero where absent).
+   */
   agent_compute_ms_total: number
   /** The number of ticks that carried this seat's timing and contributed to the total. */
   acted_tick_count: number

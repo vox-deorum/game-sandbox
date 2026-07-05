@@ -1,6 +1,6 @@
 # Stage 8: Agent Communication
 
-Status: in progress (subplan 1 complete: the Spades environment, scoring, and metadata; subplans 2-7 not started)
+Status: in progress (subplans 1-5 complete: the Spades environment, template, and renderer; the harness chat routing with the signaler and daredevil examples; and the relay visibility rules with the season messaging override. Subplans 6-7 (the chat panel and the cross-cutting testing/CI/docs companion) not started)
 
 ## Goal
 

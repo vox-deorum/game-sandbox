@@ -159,6 +159,20 @@ export function makeEnvironments(): EnvironmentRegistry {
         renderer: 'hearts',
         seat_order_matters: true,
       }),
+      // A messaging-enabled partnership env (Spades-shaped) so the messaging-resolution tests have an
+      // environment that opts in, with a metadata cap to combine against a season override.
+      meta({
+        env_id: 'chatty',
+        min_slots: 4,
+        max_slots: 4,
+        human_slots: ['player_0', 'player_1', 'player_2', 'player_3'],
+        human_timeout_ms: 60000,
+        pace_interval_ms: null,
+        messaging: true,
+        message_cap: 120,
+        renderer: 'spades',
+        seat_order_matters: true,
+      }),
     ]),
   )
 }

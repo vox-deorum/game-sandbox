@@ -168,7 +168,24 @@ describe('orchestrator', () => {
     await storage.ensureOpenSeason('flappy_bird', 1)
     await storage.ensureOpenSeason('turn_based', 1)
     await storage.ensureOpenSeason('hearts', 1)
+    await storage.ensureOpenSeason('chatty', 1)
   })
+
+  /** Set the play-open season's messaging override for a messaging env, so start() resolves it. */
+  async function setMessagingOverride(
+    envId: string,
+    messaging: { enabled?: boolean; message_cap?: number },
+  ): Promise<void> {
+    const season = await storage.getPublicPlaySeason(envId)
+    if (season === undefined) {
+      throw new Error(`no play-open season for ${envId}`)
+    }
+    await storage.updateSeasonConfig(season.id, {
+      deps_version: 1,
+      matches: [],
+      overrides: { messaging },
+    })
+  }
 
   afterEach(async () => {
     await storage.close()
@@ -718,5 +735,85 @@ describe('orchestrator', () => {
     const error = await orch.start(startRequest({ envId: 'nope' })).catch((e) => e)
     expect(error).toBeInstanceOf(OrchestratorError)
     expect(error.status).toBe(400)
+  })
+
+  describe('messaging config resolution', () => {
+    const chattyRequest = (): Partial<StartRequest> => ({
+      envId: 'chatty',
+      slots: {
+        player_0: { kind: 'human' },
+        player_1: { kind: 'builtin-agent' },
+        player_2: { kind: 'builtin-agent' },
+        player_3: { kind: 'builtin-agent' },
+      },
+    })
+
+    it('carries the metadata messaging block into the config and persists it on the row', async () => {
+      const orch = makeOrchestrator()
+      const { id, config } = await start(orch, chattyRequest())
+      expect(config).toMatchObject({ messaging_enabled: true, message_cap: 120 })
+      // Persisted (SQLite 0/1) so the payload answers identically live and after end.
+      expect(await storage.getSession(id)).toMatchObject({ messaging_enabled: 1, message_cap: 120 })
+    })
+
+    it('disables and does not cap a session on a non-messaging environment', async () => {
+      const orch = makeOrchestrator()
+      const { id, config } = await start(orch, { slots: slots({ kind: 'human' }) }) // flappy_bird
+      expect(config).toMatchObject({ messaging_enabled: false, message_cap: null })
+      expect(await storage.getSession(id)).toMatchObject({
+        messaging_enabled: 0,
+        message_cap: null,
+      })
+    })
+
+    it('lets the season override disable messaging but never enable an opted-out environment', async () => {
+      await setMessagingOverride('chatty', { enabled: false })
+      await setMessagingOverride('flappy_bird', { enabled: true }) // cannot turn on a false-metadata env
+      const orch = makeOrchestrator()
+
+      const chatty = await start(orch, chattyRequest())
+      expect(chatty.config).toMatchObject({ messaging_enabled: false })
+
+      const flappy = await start(makeOrchestrator(), { slots: slots({ kind: 'human' }) })
+      expect(flappy.config).toMatchObject({ messaging_enabled: false })
+    })
+
+    it('takes the minimum of the metadata cap and a tightening season override', async () => {
+      await setMessagingOverride('chatty', { message_cap: 80 })
+      const orch = makeOrchestrator()
+      const { config } = await start(orch, chattyRequest())
+      // min(120 metadata, 80 override) = 80; an override can only tighten.
+      expect(config).toMatchObject({ messaging_enabled: true, message_cap: 80 })
+    })
+
+    it('never loosens the cap above the metadata value', async () => {
+      await setMessagingOverride('chatty', { message_cap: 500 })
+      const orch = makeOrchestrator()
+      const { config } = await start(orch, chattyRequest())
+      expect(config).toMatchObject({ message_cap: 120 }) // min(120, 500)
+    })
+
+    it('applies the play-open season timeout overrides to live sessions too', async () => {
+      const season = await storage.getPublicPlaySeason('chatty')
+      await storage.updateSeasonConfig(season?.id ?? '', {
+        deps_version: 1,
+        matches: [],
+        overrides: { step_timeout_ms: 250, episode_timeout_ms: 60_000 },
+      })
+      const orch = makeOrchestrator()
+      const { config } = await start(orch, chattyRequest())
+      expect(config).toMatchObject({ step_timeout_ms: 250, episode_timeout_ms: 60_000 })
+    })
+
+    it('still serves the persisted messaging block after the session has ended', async () => {
+      const orch = makeOrchestrator()
+      const { id, process } = await start(orch, chattyRequest())
+      process.emit(HEADER)
+      process.emit(STATE)
+      process.finish({ code: 0, oomKilled: false })
+      await settle()
+      const row = await storage.getSession(id)
+      expect(row).toMatchObject({ status: 'ended', messaging_enabled: 1, message_cap: 120 })
+    })
   })
 })

@@ -1,0 +1,2 @@
+{"environment":"spades","players":{"player_0":{"kind":"agent","label":"Signaler"},"player_1":{"kind":"agent","label":"Naive agent"}},"schema_version":1,"seed":7}
+{"agents":{"player_0":{"action":57,"reward":0.0,"score":0.0,"timing":{"chat_ms":0.25,"decision_ms":0.5}}},"messages":[{"from":"player_0","text":"strong:hearts","to":"player_1"},{"from":"player_0","text":"good luck","to":null}],"schema_version":1,"tick":0,"timing":{"duration_ms":1.0,"started_at":1700000000000}}

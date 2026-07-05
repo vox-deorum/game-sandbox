@@ -270,7 +270,42 @@ def generate_fixtures() -> None:
         writer.write_step(step(0))
         writer.write_step(step(1))
 
-    # 2. A recording whose header declares an unknown sidecar that must load cleanly.
+    # 2. A chatty recording whose step carries a `messages` array (one targeted, one broadcast) and
+    #    a `chat_ms` timing field, so the TypeScript read-back test pins that the regenerated types
+    #    carry both without a cast. Two slots so the targeted message names a real recipient.
+    with store.create(
+        "chatty",
+        build_header(
+            environment="spades",
+            seed=7,
+            players={
+                "player_0": {"kind": "agent", "label": "Signaler"},
+                "player_1": {"kind": "agent", "label": "Naive agent"},
+            },
+        ),
+    ) as writer:
+        writer.write_step(
+            build_step_state(
+                tick=0,
+                agents={
+                    "player_0": build_agent_step(
+                        reward=0.0,
+                        score=0.0,
+                        action=57,
+                        decision_ms=0.5,
+                        chat_ms=0.25,
+                    )
+                },
+                started_at=1_700_000_000_000,
+                duration_ms=1.0,
+                messages=[
+                    {"from": "player_0", "to": "player_1", "text": "strong:hearts"},
+                    {"from": "player_0", "to": None, "text": "good luck"},
+                ],
+            )
+        )
+
+    # 3. A recording whose header declares an unknown sidecar that must load cleanly.
     with store.create(
         "unknown-sidecar",
         build_header(
@@ -281,7 +316,7 @@ def generate_fixtures() -> None:
     ) as writer:
         writer.write_step(step(0))
 
-    # 3. A bumped-version recording that must be rejected by a version-1 reader. Written
+    # 4. A bumped-version recording that must be rejected by a version-1 reader. Written
     #    raw because the store validates on write and would refuse schema_version 2.
     bumped_dir = FIXTURES_DIR / "bumped-version"
     bumped_dir.mkdir(parents=True, exist_ok=True)

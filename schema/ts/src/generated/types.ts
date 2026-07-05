@@ -60,6 +60,10 @@ export interface AgentStep {
      * Wall-clock time the agent spent in the optional learn hook this tick. Present only for learning agents. Kept separate from decision_ms so consumers can show act time separately while the leaderboard compute column can include both.
      */
     learn_ms?: number;
+    /**
+     * Wall-clock time the agent spent in the optional chat hook this tick. Present only on a tick the chat hook ran. Kept separate from decision_ms and learn_ms so consumers can show act time alone while the leaderboard compute column includes all three.
+     */
+    chat_ms?: number;
   };
 }
 export interface Message {

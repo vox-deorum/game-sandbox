@@ -29,6 +29,8 @@ export {
   serializeCommand,
   sessionEnvelope,
 } from './protocol.js'
+// The code-point counter for the messaging cap, shared by the relay pre-gate and the panel counter.
+export { codePointLength } from './text.js'
 // The schema version lives in a dependency-free module so the browser can import it without Ajv.
 export { SCHEMA_VERSION } from './version.js'
 

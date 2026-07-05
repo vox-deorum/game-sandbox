@@ -22,10 +22,12 @@ class StepTiming(TypedDict):
 
 class AgentTiming(TypedDict, total=False):
     """Per-agent timing. ``decision_ms`` is pure ``act`` time; ``learn_ms`` is the optional
-    learn-hook time, present only for learning agents. ``chat_ms`` may be added later."""
+    learn-hook time, present only for learning agents; ``chat_ms`` is the optional chat-hook time,
+    present only on a tick the chat hook ran. The leaderboard compute column sums all three."""
 
     decision_ms: float
     learn_ms: float
+    chat_ms: float
 
 
 class AgentStep(TypedDict):
@@ -97,22 +99,26 @@ def build_agent_step(
     action: Any = None,
     decision_ms: float | None = None,
     learn_ms: float | None = None,
+    chat_ms: float | None = None,
 ) -> AgentStep:
     """Build a per-agent step. ``observation``/``action`` default to absent when None.
 
-    ``learn_ms`` is emitted only when supplied, so non-learning agents carry no learn field.
+    ``learn_ms`` and ``chat_ms`` are emitted only when supplied, so a non-learning, non-chatting
+    agent carries no learn or chat field.
     """
     step: AgentStep = {"reward": reward, "score": score}
     if observation is not None:
         step["observation"] = observation
     if action is not None:
         step["action"] = action
-    if decision_ms is not None or learn_ms is not None:
+    if decision_ms is not None or learn_ms is not None or chat_ms is not None:
         timing: AgentTiming = {}
         if decision_ms is not None:
             timing["decision_ms"] = decision_ms
         if learn_ms is not None:
             timing["learn_ms"] = learn_ms
+        if chat_ms is not None:
+            timing["chat_ms"] = chat_ms
         step["timing"] = timing
     return step
 

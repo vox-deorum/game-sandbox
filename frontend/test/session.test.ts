@@ -95,6 +95,8 @@ function ownerRow() {
     recording_id: 'flappy_bird-s1',
     season_id: 'flappy_bird-iter-1',
     human_timeout_ms: null,
+    messaging_enabled: 0,
+    message_cap: null,
     created_at: '2026-06-11T00:00:00.000Z',
     ended_at: null,
   }

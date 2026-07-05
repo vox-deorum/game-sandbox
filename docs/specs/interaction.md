@@ -68,4 +68,4 @@ A turn-based environment marks which actions are currently legal, carried in the
 
 ## Chat
 
-When messaging is enabled, the host page provides the chat panel as shared session chrome, so every messaging environment uses the same panel and the renderer needs no knowledge of messaging. Broadcasts and messages addressed to the connected user's slots appear there. Outgoing messages follow the same WebSocket path as input. See [Communication](communication.md).
+When messaging is enabled, the host page provides the chat panel as shared session chrome, so every messaging environment uses the same panel and the renderer needs no knowledge of messaging. Broadcasts and messages addressed to the connected user's slots appear there. Outgoing messages follow the same WebSocket path as input, but into a bounded per-slot FIFO queue rather than the coalescing input latch, drained once per stepped tick, so a human message is queued for the next tick, not the human's next turn. See [Communication](communication.md).

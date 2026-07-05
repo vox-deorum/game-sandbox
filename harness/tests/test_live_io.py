@@ -149,6 +149,81 @@ def test_fused_control_commands_on_one_line_all_apply(capsys: Any):
     assert capsys.readouterr().err == ""
 
 
+# --- chat: the bounded per-slot FIFO queue ----------------------------------------------
+
+
+def test_chat_frames_queue_in_fifo_order_and_take_clears():
+    control = SessionControl()
+    control.configure_chat(True)
+    # The exact wire shape the TypeScript protocol pins, three in a row to prove order is preserved.
+    control.handle_line('{"kind":"chat","slot":"player_0","to":null,"text":"one"}')
+    control.handle_line('{"kind":"chat","slot":"player_0","to":"player_1","text":"two"}')
+    control.handle_line('{"kind":"chat","slot":"player_0","to":null,"text":"three"}')
+    assert control.take_chat("player_0") == [
+        {"to": None, "text": "one"},
+        {"to": "player_1", "text": "two"},
+        {"to": None, "text": "three"},
+    ]
+    # Draining clears the queue: messages are not re-delivered.
+    assert control.take_chat("player_0") == []
+
+
+def test_chat_never_touches_the_input_latch_and_vice_versa():
+    control = SessionControl()
+    control.configure_chat(True)
+    control.handle_line('{"kind":"chat","slot":"player_0","to":null,"text":"hi"}')
+    control.handle_line('{"kind":"input","slot":"player_0","action":5}')
+    # Each channel keeps its own value.
+    assert control.take("player_0") == 5
+    assert control.take_chat("player_0") == [{"to": None, "text": "hi"}]
+
+
+def test_chat_wire_pin_parses_to_the_queued_shape():
+    control = SessionControl()
+    control.configure_chat(True)
+    control.handle_line('{"kind":"chat","slot":"player_0","to":null,"text":"hi"}')
+    assert control.take_chat("player_0") == [{"to": None, "text": "hi"}]
+
+
+def test_seventeenth_chat_frame_is_dropped_and_sixteen_survive(capsys: Any):
+    control = SessionControl()
+    control.configure_chat(True)
+    for i in range(17):
+        control.handle_line(f'{{"kind":"chat","slot":"player_0","to":null,"text":"m{i}"}}')
+    queued = control.take_chat("player_0")
+    assert len(queued) == 16
+    assert [m["text"] for m in queued] == [f"m{i}" for i in range(16)]  # the first sixteen survive
+    assert "queue full" in capsys.readouterr().err
+
+
+def test_chat_is_dropped_with_a_diagnostic_when_messaging_disabled(capsys: Any):
+    control = SessionControl()  # chat defaults to disabled
+    control.handle_line('{"kind":"chat","slot":"player_0","to":null,"text":"hi"}')
+    assert control.take_chat("player_0") == []
+    assert "messaging disabled" in capsys.readouterr().err
+
+
+def test_chat_with_malformed_slot_or_text_is_dropped(capsys: Any):
+    control = SessionControl()
+    control.configure_chat(True)
+    control.handle_line('{"kind":"chat","to":null,"text":"no slot"}')
+    control.handle_line('{"kind":"chat","slot":"player_0","to":null,"text":42}')
+    assert control.take_chat("player_0") == []
+    err = capsys.readouterr().err
+    assert "without a string slot" in err
+    assert "without string text" in err
+
+
+def test_transport_source_take_messages_drains_the_control_queue():
+    control = SessionControl()
+    control.configure_chat(True)
+    clock = PausableClock(ManualClock())
+    source = TransportSource(control, clock=clock, paced=True)
+    control.handle_line('{"kind":"chat","slot":"player_0","to":null,"text":"hi"}')
+    assert source.take_messages("player_0") == [{"to": None, "text": "hi"}]
+    assert source.take_messages("player_0") == []
+
+
 # --- TransportSource --------------------------------------------------------------------
 
 

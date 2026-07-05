@@ -10,9 +10,11 @@ on a :class:`~game_sandbox_harness.clock.ManualClock`.
 The line shapes are defined in the Stage 3 transport plan. Outbound: recording lines
 (header + per-step states, never carrying a top-level ``kind``) and event envelopes (a
 top-level ``kind``; this stage emits one, ``result``). Inbound command envelopes carry a
-``kind`` and, where applicable, a ``slot`` and ``action``: ``input``, ``pause``, ``resume``,
-``stop``. Unknown kinds and malformed lines are logged and ignored — the container must never
-die because a client sent garbage.
+``kind`` and, where applicable, a ``slot`` and ``action`` or ``text``: ``input``, ``pause``,
+``resume``, ``stop``, and ``chat`` (a human message, ``slot`` + ``to`` + ``text``). Unknown
+kinds and malformed lines are logged and ignored, so the container never dies because a
+client sent garbage. Human ``chat`` frames enter a bounded per-slot FIFO queue, not the input
+latch: inputs coalesce to the latest value, but messages must not swallow each other.
 """
 
 from __future__ import annotations
@@ -31,6 +33,10 @@ from game_sandbox_harness.session import EpisodeResult
 #: The single outbound event-envelope kind this stage defines.
 RESULT_KIND = "result"
 _DEFAULT_SLICE_MS = 5
+#: The most human ``chat`` frames a single slot may have queued at once. When it is full the
+#: incoming frame is dropped with a diagnostic, so a client flooding the socket costs at most a
+#: fixed amount of memory, the same drop-with-diagnostic rule every other rejection follows.
+CHAT_QUEUE_LIMIT = 16
 
 
 def _diag(message: str) -> None:
@@ -88,9 +94,21 @@ class SessionControl:
     def __init__(self, clock: PausableClock | None = None) -> None:
         self._lock = threading.Lock()
         self._latched: dict[str, Any] = {}
+        self._chat_queues: dict[str, list[dict[str, Any]]] = {}
+        self._chat_enabled = False
         self._paused = False
         self._stopping = False
         self._clock = clock
+
+    def configure_chat(self, enabled: bool) -> None:
+        """Enable or disable acceptance of human ``chat`` frames for this session.
+
+        Called once by the live runner after the effective messaging config is known (the metadata
+        AND the session config, resolved in :class:`~game_sandbox_harness.session.Episode`). With
+        messaging off, ``chat`` frames are dropped with a diagnostic, matching every other rejection.
+        """
+        with self._lock:
+            self._chat_enabled = enabled
 
     def handle_line(self, raw: str) -> None:
         """Parse and dispatch the inbound command(s) on one line; malformed/unknown lines are ignored.
@@ -143,6 +161,8 @@ class SessionControl:
                 return
             with self._lock:
                 self._latched[slot] = command.get("action")
+        elif kind == "chat":
+            self._dispatch_chat(command, source)
         elif kind == "pause":
             self.pause()
         elif kind == "resume":
@@ -153,6 +173,32 @@ class SessionControl:
         else:
             _diag(f"live: ignoring unknown command kind {kind!r}")
 
+    def _dispatch_chat(self, command: dict[str, Any], source: str) -> None:
+        """Queue a human ``chat`` frame into its slot's bounded FIFO, or drop it with a diagnostic.
+
+        This is a cheap shape gate only: the slot and text must be strings, messaging must be enabled,
+        and the queue must have room. The outbound rules (recipient legality, the cap, the per-turn
+        limits) are enforced once at the harness validation point when the queue is drained, so there
+        is exactly one enforcement path shared with agent messages.
+        """
+        slot = command.get("slot")
+        if not isinstance(slot, str):
+            _diag(f"live: ignoring chat command without a string slot: {source!r}")
+            return
+        text = command.get("text")
+        if not isinstance(text, str):
+            _diag(f"live: ignoring chat command without string text: {source!r}")
+            return
+        with self._lock:
+            if not self._chat_enabled:
+                _diag(f"live: dropping chat command (messaging disabled): {source!r}")
+                return
+            queue = self._chat_queues.setdefault(slot, [])
+            if len(queue) >= CHAT_QUEUE_LIMIT:
+                _diag(f"live: dropping chat command (queue full for {slot!r}): {source!r}")
+                return
+            queue.append({"to": command.get("to"), "text": text})
+
     def take(self, slot: str) -> Any | None:
         """Return and clear the latest input latched for ``slot`` since the last call.
 
@@ -162,6 +208,20 @@ class SessionControl:
         """
         with self._lock:
             return self._latched.pop(slot, None)
+
+    def take_chat(self, slot: str) -> list[dict[str, Any]]:
+        """Return and clear the human ``chat`` frames queued for ``slot`` in FIFO order.
+
+        Unlike :meth:`take`, this is a queue, not a latch: every queued frame is returned in the
+        order it arrived, because messages must not swallow each other. Drained once per stepped
+        tick by the session loop and passed through the same validator as agent messages.
+        """
+        with self._lock:
+            queue = self._chat_queues.get(slot)
+            if not queue:
+                return []
+            self._chat_queues[slot] = []
+            return queue
 
     def pause(self) -> None:
         with self._lock:
@@ -244,6 +304,16 @@ class TransportSource:
             if deadline_ms is not None and self._clock.now_ms() >= deadline_ms:
                 return None
             self._sleeper.sleep_ms(self._slice_ms)
+
+    def take_messages(self, slot_id: str) -> list[dict[str, Any]]:
+        """Return the human ``chat`` frames queued for ``slot_id`` since the last drain.
+
+        Detected by presence on the source, like the action-source protocol: the session loop finds
+        this method with ``getattr`` and drains it once per stepped tick, so it never needs to know
+        about :class:`SessionControl`. Non-transport sources (noop, scripted) have no such method and
+        are skipped, so a message can only originate from a real external slot.
+        """
+        return self._control.take_chat(slot_id)
 
 
 class ProtocolStream:

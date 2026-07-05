@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import inspect
+import re
 import sys
 from pathlib import Path
 
@@ -93,3 +94,23 @@ def test_template_stub_and_agentbase_agree_method_for_method(agent_path: Path):
         assert list(base_sig.parameters) == list(stub_sig.parameters), name
     # The template stub structurally satisfies the agent interface.
     assert is_agent(template_cls())
+
+
+@pytest.mark.parametrize("agent_path", TEMPLATE_AGENTS, ids=lambda p: p.parent.name)
+def test_messaging_template_documents_the_chat_hook(agent_path: Path):
+    """A template whose environment enables messaging must document the ``chat`` hook, so the stub
+    can never drift from the shape the harness actually calls. The stub is commented out (like
+    ``learn``): declaring it live would make every derived agent register as chatting and pay a timed
+    hook call each turn. The functional half (that the documented shapes work against a real Episode)
+    lives in test_session_chat.py."""
+    load_environment = pytest.importorskip(
+        "game_sandbox_harness.environment", reason="environments not installed"
+    ).load_environment
+    meta = load_environment(agent_path.parent.name).meta
+    if not meta.messaging:
+        pytest.skip(f"{agent_path.parent.name} has messaging disabled; chat stub is optional")
+    source = agent_path.read_text(encoding="utf-8")
+    # Tolerant of the leading comment marker: the stub is documented, live or commented.
+    assert re.search(r"def chat\(self, inbox", source), (
+        f"{agent_path} enables messaging but does not document a `def chat(self, inbox` stub"
+    )

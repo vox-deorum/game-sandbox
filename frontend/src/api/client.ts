@@ -64,6 +64,14 @@ export interface SessionRow {
    * metadata. Null for a scripted watch (no human seat) or an env with no human timeout.
    */
   human_timeout_ms: number | null
+  /**
+   * The session's resolved effective messaging rules, persisted on the row so live and reopened-ended
+   * payloads agree. `messaging_enabled` is a SQLite 0/1 (treat as truthy); `message_cap` is the
+   * effective code-point cap, or null for no cap. The Stage 8 chat panel mounts when messaging is
+   * enabled and counts down from `message_cap`.
+   */
+  messaging_enabled: number
+  message_cap: number | null
   created_at: string
   ended_at: string | null
 }
@@ -606,16 +614,22 @@ export interface MatchConfig {
   games: number
 }
 
+/** The season's messaging override (Stage 8). `enabled` can only disable; `message_cap` can only tighten. */
+export interface MessagingOverride {
+  enabled?: boolean
+  message_cap?: number
+}
+
 /**
- * The override block. `step_timeout_ms`/`episode_timeout_ms`/`submission_max_size_mb` take effect this
- * stage; `messaging` and `llm` are parsed-but-inert opaque objects until Stages 8/9 give them a shape.
+ * The override block. `step_timeout_ms`/`episode_timeout_ms`/`submission_max_size_mb`/`messaging` take
+ * effect; `llm` is a parsed-but-inert opaque object until Stage 9 gives it a shape.
  */
 export interface SeasonOverrides {
   step_timeout_ms?: number
   episode_timeout_ms?: number
   /** Per-season cap (MB) on a submission's checked-out source; absent uses the site default. */
   submission_max_size_mb?: number
-  messaging?: Record<string, unknown>
+  messaging?: MessagingOverride
   llm?: Record<string, unknown>
 }
 
