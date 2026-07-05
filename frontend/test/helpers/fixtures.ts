@@ -3,7 +3,7 @@
  * Flappy Bird environment metadata appeared verbatim in six files; the recording builders in two. Each
  * factory returns a fresh object and takes overrides, so a suite tweaks only what it asserts on.
  */
-import type { AgentStep, RecordingHeader, StepState } from '@game-sandbox/schema'
+import type { AgentStep, Message, RecordingHeader, StepState } from '@game-sandbox/schema'
 import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
 
 /** The Flappy Bird environment metadata most suites use. Override per test (e.g. an empty description). */
@@ -59,9 +59,63 @@ export function heartsMeta(overrides: Partial<EnvironmentMeta> = {}): Environmen
   }
 }
 
+/**
+ * The Spades environment metadata: the stage's messaging-enabled environment. Four partnership seats,
+ * turn-based (no pace interval), a 120-code-point message cap, mirroring `environments/src/spades`.
+ * The chat panel mounts from `messaging`/`message_cap`, so the messaging suites render from it.
+ */
+export function spadesMeta(overrides: Partial<EnvironmentMeta> = {}): EnvironmentMeta {
+  return {
+    env_id: 'spades',
+    display_name: 'Spades',
+    description: 'Four-player partnership Spades.',
+    min_slots: 4,
+    max_slots: 4,
+    human_slots: ['player_0', 'player_1', 'player_2', 'player_3'],
+    human_timeout_ms: 60_000,
+    recommended_episode_ticks: 56,
+    pace_interval_ms: null,
+    step_limit_ms: 1000,
+    episode_limit_ms: 120_000,
+    messaging: true,
+    message_cap: 120,
+    llm: false,
+    renderer: 'spades',
+    seat_order_matters: true,
+    view_interval_ms: 3000,
+    live_interval_ms: 900,
+    ...overrides,
+  }
+}
+
 /** A recording header for a Flappy Bird run (schema version 1). */
 export function flappyHeader(overrides: Partial<RecordingHeader> = {}): RecordingHeader {
   return { schema_version: 1, environment: 'flappy_bird', seed: 0, ...overrides }
+}
+
+/** Four Spades seats keyed by slot id, one a connected human (default player_2), the rest agents. */
+export function spadesPlayers(
+  humanSlot: string | null = 'player_2',
+): NonNullable<RecordingHeader['players']> {
+  const players: NonNullable<RecordingHeader['players']> = {}
+  for (const slot of ['player_0', 'player_1', 'player_2', 'player_3']) {
+    players[slot] =
+      slot === humanSlot
+        ? { kind: 'human', label: 'dev', user: 'dev' }
+        : { kind: 'agent', label: 'Naive agent' }
+  }
+  return players
+}
+
+/** A Spades recording header with per-seat attribution (needed for the chat panel's sender labels). */
+export function spadesHeader(overrides: Partial<RecordingHeader> = {}): RecordingHeader {
+  return {
+    schema_version: 1,
+    environment: 'spades',
+    seed: 0,
+    players: spadesPlayers(),
+    ...overrides,
+  }
 }
 
 /** One Flappy Bird step state with a single agent and its cumulative score. */
@@ -76,17 +130,50 @@ export function flappyState(tick: number, score = 0): StepState {
 }
 
 /**
+ * One four-seat step state, optionally carrying the messages sent on this tick. The messaging suites
+ * build recordings and live frames from it; `messages` is omitted (as the wire omits it) when absent.
+ */
+export function seatState(
+  tick: number,
+  opts: { messages?: Message[]; score?: number } = {},
+): StepState {
+  const agents: Record<string, AgentStep> = {}
+  for (const slot of ['player_0', 'player_1', 'player_2', 'player_3']) {
+    agents[slot] = { reward: 0, score: opts.score ?? 0 }
+  }
+  const state: StepState = {
+    schema_version: 1,
+    tick,
+    agents,
+    timing: { started_at: tick, duration_ms: 1 },
+  }
+  if (opts.messages !== undefined) {
+    state.messages = opts.messages
+  }
+  return state
+}
+
+/**
  * A JSONL recording string: a header line then one line per state. `schemaVersion` is loose (a number)
  * so a suite can build a deliberately-unsupported version to exercise the viewer's version check.
+ * `players` seeds the header's per-slot attribution so a replay's chat panel can label senders.
  */
 export function recordingText(
   states: StepState[],
-  opts: { schemaVersion?: number; environment?: string; seed?: number } = {},
+  opts: {
+    schemaVersion?: number
+    environment?: string
+    seed?: number
+    players?: RecordingHeader['players']
+  } = {},
 ): string {
-  const header = {
+  const header: Record<string, unknown> = {
     schema_version: opts.schemaVersion ?? 1,
     environment: opts.environment ?? 'flappy_bird',
     seed: opts.seed ?? 0,
+  }
+  if (opts.players !== undefined) {
+    header.players = opts.players
   }
   return `${[JSON.stringify(header), ...states.map((s) => JSON.stringify(s))].join('\n')}\n`
 }

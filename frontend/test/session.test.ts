@@ -10,6 +10,10 @@ import {
   flappyState,
   heartsMeta,
   recordingText,
+  seatState,
+  spadesHeader,
+  spadesMeta,
+  spadesPlayers,
 } from './helpers/fixtures.js'
 import { memoryRouter, renderWithMe } from './helpers/render.js'
 
@@ -107,6 +111,17 @@ function scriptedRow() {
   return { ...ownerRow(), user_id: 'someone-else', mode: 'scripted' as const }
 }
 
+/** A live human Spades session owned by dev-user, with messaging enabled and the stage's 120 cap. */
+function spadesOwnerRow() {
+  return {
+    ...ownerRow(),
+    env_id: 'spades',
+    recording_id: 'spades-s1',
+    messaging_enabled: 1,
+    message_cap: 120,
+  }
+}
+
 function endedOwnerRow() {
   return {
     ...ownerRow(),
@@ -171,7 +186,10 @@ describe('SessionPage', () => {
     await renderSession()
     await waitForHandlers()
 
-    handlers.onHeader(HEADER)
+    // The header attributes player_0 to the connected human, so controlledSlots narrows to that seat.
+    handlers.onHeader(
+      flappyHeader({ players: { player_0: { kind: 'human', label: 'dev', user: 'dev' } } }),
+    )
     handlers.onState({
       schema_version: 1,
       tick: 0,
@@ -673,5 +691,260 @@ describe('SessionPage', () => {
     vi.mocked(getSession).mockResolvedValue(undefined)
     await renderSession()
     expect(await screen.findByText('No such session.')).toBeInTheDocument()
+  })
+
+  it('mounts the chat panel and forwards a chat command with the controlled seat', async () => {
+    vi.mocked(getMe).mockResolvedValue({
+      user_id: 'dev-user',
+      allowlisted: true,
+      is_operator: false,
+    })
+    vi.mocked(getEnvironments).mockResolvedValue([spadesMeta()])
+    vi.mocked(getSession).mockResolvedValue(spadesOwnerRow())
+    await renderSession()
+    await waitForHandlers()
+    handlers.onHeader(spadesHeader()) // seats the human at player_2
+    handlers.onSessionStatus?.('running')
+
+    const input = await screen.findByRole('textbox')
+    await fireEvent.update(screen.getByRole('combobox'), 'player_0')
+    await fireEvent.update(input, 'lead low')
+    await fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+
+    // Exactly the pinned command shape, with the seat the human actually took filled in.
+    expect(sent).toContainEqual({
+      kind: 'chat',
+      slot: 'player_2',
+      to: 'player_0',
+      text: 'lead low',
+    })
+  })
+
+  it('disables Send during a reconnect and keeps the draft until the socket returns', async () => {
+    vi.mocked(getMe).mockResolvedValue({
+      user_id: 'dev-user',
+      allowlisted: true,
+      is_operator: false,
+    })
+    vi.mocked(getEnvironments).mockResolvedValue([spadesMeta()])
+    vi.mocked(getSession).mockResolvedValue(spadesOwnerRow())
+    await renderSession()
+    await waitForHandlers()
+    handlers.onHeader(spadesHeader())
+    handlers.onSessionStatus?.('running')
+
+    const input = (await screen.findByRole('textbox')) as HTMLInputElement
+    await fireEvent.update(input, 'lead low')
+
+    // The socket drops: a send silently no-ops, so the composer must not clear the draft into one.
+    handlers.onConnectionChange?.('reconnecting')
+    await nextTick()
+    const send = screen.getByRole('button', { name: 'Send' })
+    expect(send).toBeDisabled()
+    await fireEvent.click(send)
+    expect(sent).toHaveLength(0)
+    expect(input.value).toBe('lead low')
+
+    // The connection returns: the preserved draft forwards as the pinned command.
+    handlers.onConnectionChange?.('open')
+    await nextTick()
+    expect(send).toBeEnabled()
+    await fireEvent.click(send)
+    expect(sent).toContainEqual({ kind: 'chat', slot: 'player_2', to: null, text: 'lead low' })
+  })
+
+  it('keys the character counter off the row cap, not the metadata', async () => {
+    vi.mocked(getMe).mockResolvedValue({
+      user_id: 'dev-user',
+      allowlisted: true,
+      is_operator: false,
+    })
+    // Metadata caps at 120; the row's effective block (a season override) tightened it to 5.
+    vi.mocked(getEnvironments).mockResolvedValue([spadesMeta()])
+    vi.mocked(getSession).mockResolvedValue({ ...spadesOwnerRow(), message_cap: 5 })
+    await renderSession()
+    await waitForHandlers()
+    handlers.onHeader(spadesHeader())
+    handlers.onSessionStatus?.('running')
+
+    const input = await screen.findByRole('textbox')
+    await fireEvent.update(input, 'hello') // 5 code points: exactly the row cap
+    expect(screen.getByText('5/5')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Send' })).toBeEnabled()
+    await fireEvent.update(input, 'hello!') // 6: over the row cap
+    expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
+  })
+
+  it('accumulates chat messages paced with their frames', async () => {
+    vi.mocked(getMe).mockResolvedValue({ user_id: 'viewer', allowlisted: true, is_operator: false })
+    vi.mocked(getEnvironments).mockResolvedValue([spadesMeta({ view_interval_ms: 50 })])
+    vi.mocked(getSession).mockResolvedValue({
+      ...scriptedRow(),
+      env_id: 'spades',
+      recording_id: 'spades-s1',
+      messaging_enabled: 1,
+      message_cap: 120,
+    })
+    await renderSession()
+    await waitForHandlers()
+
+    vi.useFakeTimers()
+    try {
+      handlers.onHeader(spadesHeader())
+      handlers.onState(seatState(0))
+      handlers.onState(
+        seatState(1, { messages: [{ from: 'player_0', to: null, text: 'hello table' }] }),
+      )
+      // Below the lead (150 ms / 50 ms = 3 frames): nothing has drained, so the message is not shown.
+      vi.advanceTimersByTime(200)
+      await nextTick()
+      expect(drawn).toHaveLength(0)
+      expect(screen.queryByText('hello table')).toBeNull()
+
+      // A third frame fills the lead; playout begins and the first tick drains frame 0 (no message).
+      handlers.onState(seatState(2))
+      vi.advanceTimersByTime(50)
+      await nextTick()
+      expect(drawn).toHaveLength(1)
+      expect(screen.queryByText('hello table')).toBeNull()
+
+      // The next tick drains frame 1, which carries the message: only now does it render.
+      vi.advanceTimersByTime(50)
+      await nextTick()
+      expect(drawn).toHaveLength(2)
+      expect(screen.getByText('hello table')).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not duplicate a re-received message when the latest state line replays', async () => {
+    vi.mocked(getMe).mockResolvedValue({
+      user_id: 'dev-user',
+      allowlisted: true,
+      is_operator: false,
+    })
+    // live_interval_ms null keeps the human stream unbuffered, so onState renders on arrival.
+    vi.mocked(getEnvironments).mockResolvedValue([spadesMeta({ live_interval_ms: null })])
+    vi.mocked(getSession).mockResolvedValue(spadesOwnerRow())
+    await renderSession()
+    await waitForHandlers()
+    handlers.onHeader(spadesHeader())
+    handlers.onSessionStatus?.('running')
+
+    const line = seatState(5, { messages: [{ from: 'player_0', to: null, text: 'hello table' }] })
+    handlers.onState(line)
+    handlers.onState(line) // attach/reconnect replays the relay's latest state line
+    expect(await screen.findAllByText('hello table')).toHaveLength(1)
+
+    // Accumulation resumes cleanly after the duplicate.
+    handlers.onState(seatState(6, { messages: [{ from: 'player_1', to: null, text: 'my bid' }] }))
+    expect(await screen.findByText('my bid')).toBeInTheDocument()
+    expect(screen.getAllByText('hello table')).toHaveLength(1)
+  })
+
+  it('hydrates the full chat log from the recording on a reopened ended session', async () => {
+    vi.mocked(getMe).mockResolvedValue({
+      user_id: 'dev-user',
+      allowlisted: true,
+      is_operator: false,
+    })
+    vi.mocked(getEnvironments).mockResolvedValue([spadesMeta()])
+    vi.mocked(getSession).mockResolvedValue({
+      ...endedOwnerRow(),
+      env_id: 'spades',
+      recording_id: 'spades-s1',
+      messaging_enabled: 1,
+      message_cap: 120,
+    })
+    vi.mocked(getRecording).mockResolvedValue(
+      recordingText(
+        [
+          seatState(0, { messages: [{ from: 'player_0', to: null, text: 'good luck' }] }),
+          seatState(1, { messages: [{ from: 'player_1', to: 'player_3', text: 'cover me' }] }),
+        ],
+        { environment: 'spades', players: spadesPlayers() },
+      ),
+    )
+    await renderSession()
+
+    // The full exchange renders from the parsed recording, with no live socket and no composer.
+    expect(await screen.findByText('good luck')).toBeInTheDocument()
+    expect(screen.getByText('cover me')).toBeInTheDocument()
+    expect(handlers).toBeUndefined()
+    expect(screen.queryByRole('textbox')).toBeNull()
+  })
+
+  it('keeps the viewer’s own messages badged on an ended session', async () => {
+    vi.mocked(getMe).mockResolvedValue({
+      user_id: 'dev-user',
+      allowlisted: true,
+      is_operator: false,
+    })
+    vi.mocked(getEnvironments).mockResolvedValue([spadesMeta()])
+    vi.mocked(getSession).mockResolvedValue({
+      ...endedOwnerRow(),
+      env_id: 'spades',
+      recording_id: 'spades-s1',
+      messaging_enabled: 1,
+      message_cap: 120,
+    })
+    vi.mocked(getRecording).mockResolvedValue(
+      recordingText(
+        [
+          seatState(0, { messages: [{ from: 'player_2', to: null, text: 'good luck all' }] }),
+          seatState(1, { messages: [{ from: 'player_0', to: 'player_2', text: 'nice bid' }] }),
+        ],
+        { environment: 'spades', players: spadesPlayers() }, // seats the human (this viewer) at player_2
+      ),
+    )
+    await renderSession()
+
+    // Seat identity is the viewer's role in the match, not a live-control affordance, so it survives the
+    // session ending: their own line stays "from you" and the line to them stays "to you", even though
+    // control (and the composer) are gone.
+    expect(await screen.findByText('from you')).toBeInTheDocument()
+    expect(screen.getByText('to you')).toBeInTheDocument()
+    expect(screen.queryByRole('textbox')).toBeNull()
+  })
+
+  it('shows a spectator the chat panel without a composer', async () => {
+    vi.mocked(getMe).mockResolvedValue({
+      user_id: 'someone-else',
+      allowlisted: true,
+      is_operator: false,
+    })
+    vi.mocked(getEnvironments).mockResolvedValue([spadesMeta()])
+    vi.mocked(getSession).mockResolvedValue(spadesOwnerRow()) // owned by dev-user
+    await renderSession()
+    await waitForHandlers()
+    handlers.onHeader(spadesHeader())
+    handlers.onSessionStatus?.('running')
+    handlers.onState(
+      seatState(1, { messages: [{ from: 'player_0', to: null, text: 'table talk' }] }),
+    )
+
+    expect(await screen.findByText('table talk')).toBeInTheDocument()
+    expect(screen.queryByRole('textbox')).toBeNull()
+  })
+
+  it('mounts no chat panel when the season override disabled messaging', async () => {
+    vi.mocked(getMe).mockResolvedValue({
+      user_id: 'dev-user',
+      allowlisted: true,
+      is_operator: false,
+    })
+    // The metadata enables messaging, but the row's effective block (a season override) disabled it.
+    vi.mocked(getEnvironments).mockResolvedValue([spadesMeta()])
+    vi.mocked(getSession).mockResolvedValue({ ...spadesOwnerRow(), messaging_enabled: 0 })
+    await renderSession()
+    await waitForHandlers()
+    handlers.onHeader(spadesHeader())
+    handlers.onSessionStatus?.('running')
+    handlers.onState(seatState(1, { messages: [{ from: 'player_0', to: null, text: 'silenced' }] }))
+    await nextTick()
+
+    expect(screen.queryByText('silenced')).toBeNull()
+    expect(screen.queryByRole('textbox')).toBeNull()
   })
 })

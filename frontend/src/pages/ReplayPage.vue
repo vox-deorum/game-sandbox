@@ -24,6 +24,7 @@ import {
   type RecordingSummary,
   watchAgentNumbers,
 } from '../api/client.js'
+import ChatPanel, { type ChatEntry } from '../components/ChatPanel.vue'
 import DecisionLog, { type DecisionEntry } from '../components/DecisionLog.vue'
 import ExperimentTabs from '../components/ExperimentTabs.vue'
 import GameOverCard from '../components/GameOverCard.vue'
@@ -61,6 +62,9 @@ const gameOverDismissed = ref(false)
 const listingEntry = ref<RecordingSummary | null>(null)
 const owned = ref(false)
 const decisions = ref<DecisionEntry[]>([])
+// The full message log, built once from the recording at load (recordings keep every message by
+// design). It never mutates afterward, so a shallowRef is enough.
+const chatLog = shallowRef<ChatEntry[]>([])
 const seasonPlayable = ref(false)
 // Submission id → season-wide anonymous number, so the blind attribution line reads the same
 // "Submitted agent N" the watch picker and rating panel show for the same agent.
@@ -89,6 +93,16 @@ const { pinned, busy: pinBusy, error: pinError, toggle: togglePin } = usePinning
 const blindAttribution = computed(
   () => seasonPlayable.value && me.me?.is_operator !== true,
 )
+
+// The panel mounts only for a recording that actually carries messages (a messaging session); it is
+// read-only, with no session row to consult. It shows the entries whose tick is at or before the
+// transport position — the same pattern the decision log uses with :current-index. Targeted messages a
+// live spectator never saw are shown here on purpose; that is the recording contract.
+const hasChat = computed(() => chatLog.value.length > 0)
+const visibleChat = computed<ChatEntry[]>(() => {
+  const tick = replayState.value.tick
+  return tick === null ? [] : chatLog.value.filter((entry) => entry.tick <= tick)
+})
 
 // The decision log sits beside a portrait canvas and below a landscape one until the viewport is wide
 // enough to hold both (the same rule as live; see useStageLayout).
@@ -173,6 +187,11 @@ onMounted(async () => {
   finalSummary.value = summarizeStates(parsed.states)
   finalState.value = parsed.states.at(-1) ?? null
   decisions.value = parsed.states.map(toDecision)
+  // Build the whole message log up front, tagging each message with its state's tick (the wire message
+  // carries no tick of its own). The transport position then filters what shows.
+  chatLog.value = parsed.states.flatMap((state) =>
+    (state.messages ?? []).map((message) => ({ tick: state.tick, ...message })),
+  )
   loading.value = false
 
   meta.value =
@@ -322,15 +341,40 @@ onMounted(async () => {
         <span class="overlay-spinner" aria-hidden="true" />
         <span>Loading…</span>
       </div>
-      <section v-else-if="logBeside" class="stage-log" aria-label="Decision log">
+      <section
+        v-else-if="logBeside"
+        class="stage-log"
+        :aria-label="hasChat ? 'Decision log and chat' : 'Decision log'"
+      >
         <div class="stage-log-body">
           <DecisionLog :entries="decisions" :current-index="replayState.index" />
         </div>
+        <div v-if="hasChat" class="stage-log-body">
+          <ChatPanel
+            :entries="visibleChat"
+            :players="header?.players"
+            :blind="blindAttribution"
+            :viewer-id="me.me?.user_id"
+            :anonymous-numbers="anonymousNumbers"
+          />
+        </div>
       </section>
-      <details v-else class="stage-log stage-log-below">
-        <summary>Decision log</summary>
-        <DecisionLog :entries="decisions" :current-index="replayState.index" />
-      </details>
+      <template v-else>
+        <details class="stage-log stage-log-below">
+          <summary>Decision log</summary>
+          <DecisionLog :entries="decisions" :current-index="replayState.index" />
+        </details>
+        <details v-if="hasChat" class="stage-log stage-log-below stage-chat-below">
+          <summary>Chat</summary>
+          <ChatPanel
+            :entries="visibleChat"
+            :players="header?.players"
+            :blind="blindAttribution"
+            :viewer-id="me.me?.user_id"
+            :anonymous-numbers="anonymousNumbers"
+          />
+        </details>
+      </template>
     </div>
   </section>
 </template>
@@ -437,6 +481,12 @@ onMounted(async () => {
   min-height: 0;
 }
 
+/* When the chat panel joins the decision log in the column, the two bodies split it and the gap keeps
+   them apart. */
+.stage.beside .stage-log {
+  gap: var(--space-3);
+}
+
 .stage.below {
   grid-template-columns: minmax(0, 1fr);
   justify-items: center;
@@ -473,7 +523,8 @@ onMounted(async () => {
   min-height: 0;
 }
 
-.stage.beside .stage-log-body :deep(.decision-log) {
+.stage.beside .stage-log-body :deep(.decision-log),
+.stage.beside .stage-log-body :deep(.chat-panel) {
   position: absolute;
   inset: 0;
 }
@@ -530,6 +581,11 @@ onMounted(async () => {
 
 .stage-log-below :deep(.decision-log) {
   max-height: 12rem;
+}
+
+/* The stacked chat disclosure caps its own height and scrolls the message list within it. */
+.stage-chat-below :deep(.chat-panel) {
+  max-height: 16rem;
 }
 
 @media (max-width: 768px) {

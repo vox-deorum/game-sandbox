@@ -3,7 +3,14 @@ import { fireEvent, screen, waitFor } from '@testing-library/vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { RendererContext } from '../src/renderers/types.js'
-import { flappyMeta, flappyState, recordingText } from './helpers/fixtures.js'
+import {
+  flappyMeta,
+  flappyState,
+  recordingText,
+  seatState,
+  spadesMeta,
+  spadesPlayers,
+} from './helpers/fixtures.js'
 import { memoryRouter, renderWithMe } from './helpers/render.js'
 
 const META = flappyMeta({ description: '' })
@@ -40,7 +47,13 @@ vi.mock('../src/api/client.js', () => ({
   unpinRecording: vi.fn(async () => ({ ok: true })),
 }))
 
-import { getMe, getRecording, listRecordings, pinRecording } from '../src/api/client.js'
+import {
+  getEnvironments,
+  getMe,
+  getRecording,
+  listRecordings,
+  pinRecording,
+} from '../src/api/client.js'
 import ReplayPage from '../src/pages/ReplayPage.vue'
 
 async function renderReplay(path = '/replays/rec-1'): Promise<ReturnType<typeof renderWithMe>> {
@@ -237,5 +250,42 @@ describe('ReplayPage', () => {
     await renderReplay()
     await screen.findByRole('button', { name: 'Play' })
     expect(screen.queryByRole('button', { name: /Pin/ })).toBeNull()
+  })
+
+  it('shows chat messages at or before the transport position, including targeted ones', async () => {
+    // mockResolvedValueOnce so the spades meta does not leak into later tests' flappy default.
+    vi.mocked(getEnvironments).mockResolvedValueOnce([spadesMeta()])
+    const states = [
+      seatState(0),
+      seatState(1, { messages: [{ from: 'player_0', to: null, text: 'good luck all' }] }),
+      seatState(2),
+      seatState(3, { messages: [{ from: 'player_1', to: 'player_3', text: 'cover the king' }] }),
+    ]
+    vi.mocked(getRecording).mockResolvedValue(
+      recordingText(states, { environment: 'spades', players: spadesPlayers() }),
+    )
+    const view = await renderReplay()
+    await screen.findByRole('button', { name: 'Play' })
+    const stage = view.container.querySelector('.stage') as HTMLElement
+
+    // At load (index 0, tick 0) no message is visible yet.
+    expect(screen.queryByText('good luck all')).toBeNull()
+
+    // Stepping to tick 1 reveals the broadcast, but not the later targeted line.
+    await fireEvent.keyDown(stage, { key: 'ArrowRight' })
+    expect(screen.getByText('good luck all')).toBeInTheDocument()
+    expect(screen.queryByText('cover the king')).toBeNull()
+
+    // End reveals every message, including the agent-to-agent targeted one a live spectator never saw.
+    await fireEvent.keyDown(stage, { key: 'End' })
+    expect(screen.getByText('good luck all')).toBeInTheDocument()
+    expect(screen.getByText('cover the king')).toBeInTheDocument()
+    // The targeted line names its recipient by seat, so a same-labelled roster stays unambiguous.
+    expect(screen.getByText('to Player 3')).toBeInTheDocument()
+
+    // Home empties it again, and a replay never offers a composer.
+    await fireEvent.keyDown(stage, { key: 'Home' })
+    expect(screen.queryByText('good luck all')).toBeNull()
+    expect(screen.queryByRole('textbox')).toBeNull()
   })
 })

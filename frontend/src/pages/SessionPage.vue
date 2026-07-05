@@ -28,6 +28,7 @@ import {
   type SessionRow,
   watchAgentNumbers,
 } from '../api/client.js'
+import ChatPanel, { type ChatEntry } from '../components/ChatPanel.vue'
 import DecisionLog, { type DecisionEntry } from '../components/DecisionLog.vue'
 import ExperimentTabs from '../components/ExperimentTabs.vue'
 import GameOverCard from '../components/GameOverCard.vue'
@@ -57,6 +58,12 @@ const meta = ref<EnvironmentMeta | null>(null)
 const loadError = ref(false)
 const hostEl = ref<HTMLElement | null>(null)
 const decisions = ref<DecisionEntry[]>([])
+// The messages the chat panel renders, each tagged with the tick of the state it rode in on.
+// Accumulated in onState so the jitter buffer paces them with their frames, and deduplicated on the
+// tuple the harness guarantees is unique per run, because attach and reconnect replay the relay's
+// latest state line and the panel must never show the same message twice.
+const chatLog = ref<ChatEntry[]>([])
+const seenMessages = new Set<string>()
 const seasonPlayable = ref(false)
 // Submission id → season-wide anonymous number, so the blind attribution line reads the same
 // "Submitted agent N" the watch picker and post-session rating panel show for the same agent.
@@ -72,28 +79,34 @@ const gameOverDismissed = ref(false)
 const isOwner = computed(
   () => me.me?.user_id !== undefined && row.value?.user_id === me.me.user_id,
 )
-// The slots this viewer actually drives. It must be the one seat the human took, not every
-// human-capable seat: the renderer reads `controlled[0]` as the single controlled seat, so passing all
-// of `meta.human_slots` would pin control to seat 0 and lock a human seated elsewhere out of play. The
-// recording header's `players` map records which seat the human occupies (`kind: 'human'`), so we
-// narrow to that. Before the header arrives (or on an older header without attribution) we return []
-// rather than the env's human-capable seats, so a human seated at player_2 never briefly gets
-// player_0's control affordances; by the time the renderer mounts (on the header) the narrowed seat
-// is known.
-const controlledSlots = computed<string[]>(() => {
-  if (!(isOwner.value && row.value?.mode === 'human' && status.value !== 'ended')) {
+// The seat(s) this viewer occupied as a human, from the recording header's attribution. It must be the
+// one seat the human took, not every human-capable seat: the renderer reads `controlled[0]` as the
+// single controlled seat, so passing all of `meta.human_slots` would pin control to seat 0 and lock a
+// human seated elsewhere out of play. The recording header's `players` map records which seat the human
+// occupies (`kind: 'human'`), so we narrow to that. Before the header arrives (or on an older header
+// without attribution) we return [] rather than the env's human-capable seats, so a human seated at
+// player_2 never briefly gets player_0's control affordances; by the time the renderer mounts (on the
+// header) the narrowed seat is known.
+//
+// This is independent of run status on purpose: it is the viewer's *identity* in the match, which the
+// chat panel needs to keep badging their own lines "from you"/"to you" even on an ended session's
+// read-only history. Control (below) is what drops at end, not identity.
+const viewerSeats = computed<string[]>(() => {
+  if (!(isOwner.value && row.value?.mode === 'human')) {
     return []
   }
   const players = header.value?.players
-  if (players !== undefined) {
-    const humanSlots = Object.keys(players).filter((slot) => players[slot]?.kind === 'human')
-    if (humanSlots.length > 0) {
-      return humanSlots
-    }
+  if (players === undefined) {
+    return [] // Header not yet arrived: fail closed (see above).
   }
-  // Header not yet arrived: fail closed to [] (see above).
-  return []
+  return Object.keys(players).filter((slot) => players[slot]?.kind === 'human')
 })
+// The slots this viewer actively drives: their seats, but only while the session is live. An ended
+// session is read-only history, so control affordances (renderer input, sending, the decision-log slot
+// preference) drop even though the seat identity above persists.
+const controlledSlots = computed<string[]>(() =>
+  status.value === 'ended' ? [] : viewerSeats.value,
+)
 const recordingId = computed(() => row.value?.recording_id ?? null)
 // Fail closed: anyone not confirmed an operator (including an unresolved identity) sees the blind
 // attribution while the season is playable.
@@ -129,6 +142,10 @@ const {
     onState: (state, options) => {
       renderState(state, options)
       lastState.value = state
+      // Accumulate messages before the decision-log gate: an actionless opening frame still carries
+      // any human-queued messages. onState is called at render (drain) time, so a message appears
+      // exactly when its state line renders, not ahead of it.
+      appendMessages(state)
       // The live-only opening frame (a turn-based deal) carries no acting agent: render it so the
       // table shows before the first move, but keep it out of the decision log, which logs actions.
       if (Object.keys(state.agents).length > 0) {
@@ -140,6 +157,38 @@ const { pinned, busy: pinBusy, error: pinError, toggle: togglePin } = usePinning
 
 function sendInput(slot: string, action: unknown): void {
   send({ kind: 'input', slot, action })
+}
+
+/** Append a state's messages to the chat log, skipping any already seen (attach/reconnect replays the
+ *  relay's latest state line, so the same message can arrive twice). */
+function appendMessages(state: StepState): void {
+  for (const message of state.messages ?? []) {
+    const key = JSON.stringify([state.tick, message.from, message.to, message.text])
+    if (!seenMessages.has(key)) {
+      seenMessages.add(key)
+      chatLog.value.push({ tick: state.tick, ...message })
+    }
+  }
+}
+
+// The chat panel mounts when the session's effective messaging block enables it — resolved once by the
+// orchestrator from the metadata and the season override, persisted on the row so live and reopened
+// ended payloads agree. A season-silenced session shows no dead panel.
+const messagingEnabled = computed(() => (row.value?.messaging_enabled ?? 0) !== 0)
+// Sending is enabled only for the owner of a running human session who controls a seat; an ended or
+// spectated session's panel is read-only history.
+const chatSendable = computed(
+  () => row.value?.mode === 'human' && controlledSlots.value.length > 0 && status.value === 'running',
+)
+
+/** Forward a human chat message over the session socket as the pinned command with the controlled seat
+ *  filled in. There is no optimistic echo: the harness records it and the relay reflects it back on the
+ *  recorded line, so the panel renders your own message the same way it renders everyone else's. */
+function sendChat(payload: { to: string | null; text: string }): void {
+  const slot = controlledSlots.value[0]
+  if (slot !== undefined) {
+    send({ kind: 'chat', slot, to: payload.to, text: payload.text })
+  }
 }
 
 /** The per-tick decision-log row: the primary agent's action. Prefer the controlled slot, else the
@@ -272,6 +321,9 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
     const parsed = parseRecording(text)
     header.value = parsed.header
     decisions.value = parsed.states.map(toDecision)
+    // A directly opened ended session never streams through onState, so build its message log from the
+    // same parsed states — the full exchange, read-only, with no live socket.
+    parsed.states.forEach(appendMessages)
     mountRenderer(parsed.header)
     const finalState = parsed.states.at(-1)
     if (finalState !== undefined) {
@@ -388,15 +440,50 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
         <span class="overlay-spinner" aria-hidden="true" />
         <span>Loading session…</span>
       </div>
-      <section v-else-if="logBeside" class="stage-log" aria-label="Decision log">
+      <section
+        v-else-if="logBeside"
+        class="stage-log"
+        :aria-label="messagingEnabled ? 'Decision log and chat' : 'Decision log'"
+      >
         <div class="stage-log-body">
           <DecisionLog :entries="decisions" />
         </div>
+        <div v-if="messagingEnabled" class="stage-log-body">
+          <ChatPanel
+            :entries="chatLog"
+            :players="header?.players"
+            :blind="blindAttribution"
+            :viewer-id="me.me?.user_id"
+            :anonymous-numbers="anonymousNumbers"
+            :viewer-slots="viewerSeats"
+            :sendable="chatSendable"
+            :connected="connection !== 'reconnecting'"
+            :message-cap="row?.message_cap ?? null"
+            @send="sendChat"
+          />
+        </div>
       </section>
-      <details v-else class="stage-log stage-log-below">
-        <summary>Decision log</summary>
-        <DecisionLog :entries="decisions" />
-      </details>
+      <template v-else>
+        <details class="stage-log stage-log-below">
+          <summary>Decision log</summary>
+          <DecisionLog :entries="decisions" />
+        </details>
+        <details v-if="messagingEnabled" class="stage-log stage-log-below stage-chat-below">
+          <summary>Chat</summary>
+          <ChatPanel
+            :entries="chatLog"
+            :players="header?.players"
+            :blind="blindAttribution"
+            :viewer-id="me.me?.user_id"
+            :anonymous-numbers="anonymousNumbers"
+            :viewer-slots="viewerSeats"
+            :sendable="chatSendable"
+            :connected="connection !== 'reconnecting'"
+            :message-cap="row?.message_cap ?? null"
+            @send="sendChat"
+          />
+        </details>
+      </template>
     </div>
 
   </section>
@@ -474,6 +561,12 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
   display: flex;
   flex-direction: column;
   min-height: 0;
+}
+
+/* When the chat panel joins the decision log in the column, the two bodies split it and the gap keeps
+   them apart. */
+.stage.beside .stage-log {
+  gap: var(--space-3);
 }
 
 .stage.below {
@@ -554,7 +647,8 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
   min-height: 0;
 }
 
-.stage.beside .stage-log-body :deep(.decision-log) {
+.stage.beside .stage-log-body :deep(.decision-log),
+.stage.beside .stage-log-body :deep(.chat-panel) {
   position: absolute;
   inset: 0;
 }
@@ -590,6 +684,12 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
 
 .stage-log-below :deep(.decision-log) {
   max-height: 12rem;
+}
+
+/* The stacked chat disclosure caps its own height and scrolls the message list within it, keeping the
+   composer reachable below the fold. */
+.stage-chat-below :deep(.chat-panel) {
+  max-height: 16rem;
 }
 
 /* On a narrow screen the stage stacks regardless of canvas shape. */
