@@ -13,6 +13,7 @@ import { Trophy } from '@lucide/vue'
 import { computed } from 'vue'
 
 import UiButton from './ui/UiButton.vue'
+import { formatSlotIndex } from '../lib/format.js'
 import { buildStandings, type Medal } from '../lib/standings.js'
 
 const props = withDefaults(
@@ -81,6 +82,7 @@ const MEDAL_COLOR: Record<Medal, string> = {
           <span class="cup" aria-hidden="true">
             <Trophy v-if="row.medal !== null" :size="20" :color="MEDAL_COLOR[row.medal]" />
           </span>
+          <span class="seat">P{{ formatSlotIndex(row.slot) }}</span>
           <span class="who">{{ row.label }}</span>
           <span class="value">{{ row.value }}</span>
         </li>
@@ -135,12 +137,20 @@ const MEDAL_COLOR: Record<Medal, string> = {
 
 .row {
   display: grid;
-  grid-template-columns: 1.75rem 1fr auto;
+  grid-template-columns: 1.75rem auto 1fr auto;
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-2) var(--space-3);
   font-size: var(--text-md);
   color: var(--color-text-muted);
+}
+
+/* The seat tag (P0…P3) disambiguates rows when several seats share one agent name; it stays a
+   compact, muted secondary read so the agent name remains primary. */
+.seat {
+  color: var(--color-text-muted);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Podium finishers read at full strength; the rest sit muted. */
