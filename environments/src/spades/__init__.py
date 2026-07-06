@@ -25,8 +25,7 @@ META = EnvironmentMeta(
     display_name="Spades",
     description=(
         "Four-player partnership Spades: bid the tricks you will take, then follow suit and play "
-        "them out with spades trump. Make your team's contract for points, sink a nil for a hundred, "
-        "or lose it trying."
+        "them out with spades trump. Your agent play in teams."
     ),
     min_slots=4,
     max_slots=4,
