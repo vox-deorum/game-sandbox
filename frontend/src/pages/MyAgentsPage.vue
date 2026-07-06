@@ -67,7 +67,7 @@ function activeSubmission(profile: AgentProfile) {
     <UiEmptyState v-if="error" tone="danger">Could not load your agents.</UiEmptyState>
     <UiEmptyState v-else-if="rows === null">Loading…</UiEmptyState>
     <UiEmptyState v-else-if="rows.length === 0">
-      You have not submitted an agent yet. Pick an <a href="/">environment</a> to get started.
+      You have not submitted an agent yet. Pick a <a href="/">game environment</a> to get started.
     </UiEmptyState>
     <ul v-else class="agent-list">
       <li v-for="row in rows" :key="row.meta.env_id">
