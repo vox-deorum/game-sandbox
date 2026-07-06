@@ -16,6 +16,24 @@ export interface Season {
   label: string | null
 }
 
+/** The season-wide messaging override block, mirroring the backend's `SeasonOverrides['messaging']`. */
+interface MessagingOverride {
+  enabled?: boolean
+  message_cap?: number
+}
+
+/** The season config document the admin config GET/PUT round-trips (mirrors `SeasonConfig`). */
+interface SeasonConfigDoc {
+  deps_version: number
+  matches: MatchConfig[]
+  overrides?: {
+    step_timeout_ms?: number
+    episode_timeout_ms?: number
+    messaging?: MessagingOverride
+    llm?: unknown
+  }
+}
+
 interface SubmissionRow {
   id: string
   status: 'pending' | 'ready' | 'static_failed' | 'build_failed' | 'load_failed'
@@ -67,6 +85,43 @@ export async function configureMatches(
 
 async function flipWindow(request: APIRequestContext, path: string): Promise<void> {
   const res = await request.post(path)
+  expect(res.status(), await res.text()).toBe(200)
+}
+
+/** Fetch a season's current full config document through the admin detail endpoint. */
+async function getSeasonConfig(
+  request: APIRequestContext,
+  seasonId: string,
+): Promise<SeasonConfigDoc> {
+  const res = await request.get(`/api/admin/seasons/${seasonId}`)
+  expect(res.status(), await res.text()).toBe(200)
+  const body = (await res.json()) as { season: { config: SeasonConfigDoc } }
+  return body.season.config
+}
+
+/**
+ * Set (or clear) a season's messaging-enabled override in place, preserving its existing match design
+ * and every other override. The config endpoint is a full replace (no server-side merge), so this reads
+ * the current document first and PUTs it back with only the `messaging.enabled` field touched — the
+ * same read-mutate-write a caller would do against `SeasonConfigEditor`'s save. Passing `null` clears the
+ * override back to the environment default (the shape `SeasonConfigEditor` writes for its "default"
+ * radio), which is how a test restores the season it silenced. Clearing drops only `enabled`; it may
+ * leave an empty `messaging: {}` block, which the backend's `resolveMessaging` treats identically to an
+ * absent block (`enabled ?? true`), so the effect is the environment default either way.
+ */
+export async function setMessagingOverride(
+  request: APIRequestContext,
+  seasonId: string,
+  enabled: boolean | null,
+): Promise<void> {
+  const config = await getSeasonConfig(request, seasonId)
+  const { enabled: _drop, ...restMessaging } = config.overrides?.messaging ?? {}
+  const messaging: MessagingOverride =
+    enabled === null ? restMessaging : { ...restMessaging, enabled }
+  const overrides = { ...config.overrides, messaging }
+  const res = await request.put(`/api/admin/seasons/${seasonId}/config`, {
+    data: { deps_version: config.deps_version, matches: config.matches, overrides },
+  })
   expect(res.status(), await res.text()).toBe(200)
 }
 

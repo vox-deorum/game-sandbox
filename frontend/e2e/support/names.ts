@@ -50,6 +50,29 @@ export const HEARTS_OWNERS = {
  */
 export const HEARTS_HUMAN_LEAD_SEED = 0
 
+/** The Spades environment, exercised by the browser chat journey and matchup coverage (spades.spec.ts). */
+export const SPADES_ENV_ID = 'spades'
+
+/**
+ * The Spades matchup season. A distinct, card-themed label so it never collides with the flight-themed
+ * flappy seasons or Hearts' {@link HEARTS_SEASON} in the shared database.
+ */
+export const SPADES_SEASON = 'Partnership Cup'
+
+/**
+ * The three Spades agent owners, one per example strategy submitted into the matchup. The owner id is
+ * the public agent identity (the scoreboard row links to it), so these read like real handles and are
+ * distinct from {@link OWNERS} and {@link HEARTS_OWNERS}. Each maps to an `examples/spades/<name>/` agent.
+ */
+export const SPADES_OWNERS = {
+  /** examples/spades/counter: bids its hand's honest trick count and plays to make it. */
+  counter: 'ada-byron',
+  /** examples/spades/daredevil: hunts nil bids and bags. */
+  daredevil: 'evel-knievel',
+  /** examples/spades/signaler: uses its bid and early plays to signal its hand to its partner. */
+  signaler: 'samuel-morse',
+} as const
+
 /** Season labels — short, no year, themed on flight. One per spec/test that declares a season. */
 export const SEASONS = {
   /** The leaderboards arc: a full competition (submissions → run → ratings → release). */
@@ -94,6 +117,14 @@ export const JUDGES = ['dev-user', 'jordan-skywatch', 'morgan-aileron', 'taylor-
 
 /** A second identity that watches a session it does not own; deliberately not on any allowlist. */
 export const SPECTATOR = 'noah-onlooker'
+
+/**
+ * A distinct second spectator identity, for coverage that needs two independently attached watching
+ * browsers at once (the Spades chat journey's "does a second onlooker also never see a targeted
+ * message" check). Deliberately not on any allowlist, and distinct from {@link SPECTATOR} so their
+ * sessions/localStorage identities never collide within the same test.
+ */
+export const SPECTATOR_TWO = 'olivia-lookout'
 
 /** The operator's season-wide rating guidance, shown above every agent on the rating panel. */
 export const OPERATOR_RATING_PROMPT =

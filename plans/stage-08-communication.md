@@ -1,6 +1,6 @@
 # Stage 8: Agent Communication
 
-Status: in progress (subplans 1-6 complete: the Spades environment, template, and renderer; the harness chat routing with the signaler and daredevil examples; the relay visibility rules with the season messaging override; and the chat panel for live sessions and replays. Subplan 7, the cross-cutting testing/CI/docs companion, is not started)
+Status: done (all seven subplans complete: the Spades environment, template, and renderer; the harness chat routing with the signaler and daredevil examples; the relay visibility rules with the season messaging override; the chat panel for live sessions and replays; and the cross-cutting testing/CI/docs companion — the Docker-gated Spades chat integration tests in the `backend-integration` lane, the `spades.spec.ts` browser journey and season in `e2e.yml`, and the spec and docs reconciliation, all green)
 
 ## Goal
 

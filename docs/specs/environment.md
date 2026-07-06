@@ -42,4 +42,4 @@ The **pace interval** is the only distinction between realtime and turn-based st
 
 ## Environments in the system
 
-The first environment is a Flappy Bird style single-agent game using the compatibility wrapper. The first native multi-agent environment is Hearts, a four-slot turn-based trick-taking card game implemented directly against PettingZoo. Both share one registry and session loop, so the same machinery runs a single paced slot and four sequential turn-based slots, including a human slot seated among agents.
+The first environment is a Flappy Bird style single-agent game using the compatibility wrapper. The first native multi-agent environment is Hearts, a four-slot turn-based trick-taking card game implemented directly against PettingZoo. Spades follows it: a four-slot partnership trick-taking game where the seats across the table are partners and share a team score, and the first environment to enable agent messaging. All three share one registry and session loop, so the same machinery runs a single paced slot and four sequential turn-based slots, including a human slot seated among agents.

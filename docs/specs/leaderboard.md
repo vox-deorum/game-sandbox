@@ -38,6 +38,8 @@ Each season defines:
 - Optional LLM model and budget overrides.
 - Optional season-wide rating prompt.
 
+A season's timing and messaging overrides apply not only to its automated games but also to the live watch and play sessions started against the play-open season, so a season's rules hold everywhere its agents run.
+
 Operators manage seasons through the website's admin console and an operator-only HTTP API. They can declare, configure, open, close, run, rerun, cancel, preview, and release seasons. The backend runs the workflow and streams logs to the console.
 
 ## Automated board
@@ -45,6 +47,8 @@ Operators manage seasons through the website's admin console and an operator-onl
 The automated board ranks by mean episode score. Higher is always better for ranking, even when the environment also exposes a native lower-is-better display score. The board shows the population standard deviation of episode scores beside the mean.
 
 Each game contributes one episode score per seat: that seat's final score for the game. For an environment that scores all seats only at the end (Hearts settles its penalty on the final trick), every seat's final score is taken from the game's reported result, so a seat that did not act on the final tick is scored on its true outcome rather than a stale interim value.
+
+A game a seat does not finish cleanly — its agent crashed, played an illegal move, or overran its budget, or the whole container faulted — is a forfeit. A forfeit takes the environment's worst achievable score, the floor below every honest outcome, so that failing can never out-score honest play. A terminal-scored game makes this necessary: a seat that aborts an unfinished Hearts hand would otherwise bank its interim near-zero, the best possible score. Hearts floors a forfeit at the maximum one-hand penalty; Spades, where a seat is ranked by its partnership's score, floors it below every honest team outcome; an upward-accruing score such as Flappy Bird floors at zero. Each environment registers its own floor.
 
 Mean compute time per decision is shown separately and breaks only an exact score tie. It includes `act`, optional hooks, and time waiting for LLM calls. The mean is weighted by acted ticks across games. The spread shown beside it is the population standard deviation of each game's per-decision compute rate, weighted by that game's acted ticks so it describes the same distribution as the mean. Score and efficiency are never combined.
 
