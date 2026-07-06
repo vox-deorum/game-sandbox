@@ -47,7 +47,7 @@
     "view_interval_ms": 3000
   },
   {
-    "description": "Four-player team-based Spades: bid the tricks you will take, then follow suit and play them out with spades trump. Make your team's contract for points, or lose it trying.",
+    "description": "Four-player partnership Spades: bid the tricks you will take, then follow suit and play them out with spades trump. Make your team's contract for points, sink a nil for a hundred, or lose it trying.",
     "display_name": "Spades",
     "env_id": "spades",
     "episode_limit_ms": 120000,
