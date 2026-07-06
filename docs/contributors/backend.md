@@ -212,6 +212,7 @@ Routes live under `/api`. Request bodies use Fastify JSON-schema validation, and
 | Prefix or route | Responsibility |
 | --- | --- |
 | `/api/environments` | Environment metadata |
+| `/api/config` | Public deployment branding (the site name) |
 | `/api/me` | Resolved user and capabilities |
 | `/api/sessions` | Start, read, stop, and attach to sessions |
 | `/api/recordings` | List, stream, pin, and unpin recordings |

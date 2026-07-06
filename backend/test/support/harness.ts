@@ -26,6 +26,8 @@ import { StubWorkflowRunner } from './stub-runner.js'
 export function makeConfig(overrides: Partial<Config> = {}): Config {
   return {
     port: 0,
+    siteName: 'Game Sandbox',
+    siteShortName: 'Game Sandbox',
     dataDir: './data',
     dbPath: ':memory:',
     recordingsDir: './data/recordings',

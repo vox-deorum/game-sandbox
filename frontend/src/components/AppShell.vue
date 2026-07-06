@@ -13,11 +13,14 @@ import { computed, watch } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 
 import { useSidebar } from '../composables/useSidebar.js'
+import { useSiteConfig } from '../composables/useSiteConfig.js'
 import AppSidebar from './AppSidebar.vue'
 import ExperimentTabs from './ExperimentTabs.vue'
 
 const route = useRoute()
 const { collapsed, mobileOpen, toggleMobile, closeMobile } = useSidebar()
+// The mobile bar is the tightest horizontal space, so it wears the compact short name.
+const { siteShortName } = useSiteConfig()
 
 /** The game tab strip shows only on routes scoped to one game (those carrying an :envId param). */
 const inGame = computed(() => typeof route.params.envId === 'string' && route.params.envId !== '')
@@ -32,7 +35,7 @@ watch(() => route.fullPath, () => closeMobile())
       <button class="mobile-menu" type="button" aria-label="Open menu" @click="toggleMobile">
         <Menu :size="20" />
       </button>
-      <RouterLink class="mobile-brand" to="/">Game Sandbox</RouterLink>
+      <RouterLink class="mobile-brand" to="/">{{ siteShortName }}</RouterLink>
     </header>
 
     <AppSidebar />

@@ -22,6 +22,8 @@ Zod validates every value, so a malformed setting fails fast at startup with a m
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `PORT` | `8080` | HTTP and WebSocket port |
+| `SITE_NAME` | `Game Sandbox` | Display name used for branding, such as page titles and the sidebar brand |
+| `SITE_SHORT_NAME` | value of `SITE_NAME` | Compact brand for space-sensitive contexts, such as the mobile bar; falls back to `SITE_NAME` |
 | `DATA_DIR` | `./data` | Root containing `sandbox.db` and recording directories |
 | `SESSION_IDLE_TIMEOUT_MS` | `60000` | Lifetime with no attached socket, or no human command in human mode |
 | `SESSION_MAX_DURATION_MS` | `600000` | Wall-clock backstop |

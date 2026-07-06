@@ -17,6 +17,13 @@ import { DEV_USER_ID } from './identity.js'
 // same regardless of the process's working directory (started from the repo root or from backend/).
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
+/**
+ * The site's default display name, used when `SITE_NAME` is unset. Shared with the app layer so the
+ * `/api/config` fallback and the config default cannot drift, and mirrored as the frontend's own
+ * placeholder so the brand renders before the config fetch resolves.
+ */
+export const DEFAULT_SITE_NAME = 'Game Sandbox'
+
 /** The only execution driver that exists in this stage. */
 export type ExecutionDriverKind = 'docker'
 
@@ -70,6 +77,18 @@ export interface SubmissionOptions {
 export interface Config {
   /** TCP port the HTTP/WebSocket server listens on. */
   port: number
+  /**
+   * The site's display name, used for branding (page titles, the sidebar brand, and anywhere the
+   * deployment identifies itself). Defaults to `Game Sandbox`; override with `SITE_NAME`.
+   */
+  siteName: string
+  /**
+   * A compact brand for space-sensitive or space-hostile contexts — the mobile bar, and anywhere a
+   * name with spaces is awkward. Defaults to {@link Config.siteName} (so it is `Game Sandbox` out of
+   * the box, and mirrors a customized `SITE_NAME` unless overridden); set `SITE_SHORT_NAME` for a
+   * distinct short form.
+   */
+  siteShortName: string
   /** Root directory holding the SQLite database and the recordings volume. */
   dataDir: string
   /** Absolute path to the SQLite database file inside {@link Config.dataDir}. */
@@ -212,8 +231,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   }
   const imagePolicy = imagePolicyResult.data
 
+  // The short name falls back to the resolved site name (not the raw default), so a deployment that
+  // sets only SITE_NAME gets a matching short form for free while either can be overridden alone.
+  const siteName = env.SITE_NAME && env.SITE_NAME !== '' ? env.SITE_NAME : DEFAULT_SITE_NAME
+  const siteShortName =
+    env.SITE_SHORT_NAME && env.SITE_SHORT_NAME !== '' ? env.SITE_SHORT_NAME : siteName
+
   return {
     port,
+    siteName,
+    siteShortName,
     dataDir,
     dbPath: join(dataDir, 'sandbox.db'),
     recordingsDir: join(dataDir, 'recordings'),

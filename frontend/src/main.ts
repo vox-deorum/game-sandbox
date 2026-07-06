@@ -11,6 +11,7 @@ import { createApp } from 'vue'
 import { createRouter, createWebHistory } from 'vue-router'
 
 import App from './App.vue'
+import { loadSiteConfig } from './composables/useSiteConfig.js'
 import AdminConsolePage from './pages/AdminConsolePage.vue'
 import AgentProfilePage from './pages/AgentProfilePage.vue'
 import DocsPage from './pages/DocsPage.vue'
@@ -75,4 +76,6 @@ const root = document.getElementById('app')
 if (root === null) {
   throw new Error('missing #app element')
 }
+// Fetch the deployment brand once (sidebar + document title); fire-and-forget, the default renders first.
+void loadSiteConfig()
 createApp(App).use(router).mount(root)

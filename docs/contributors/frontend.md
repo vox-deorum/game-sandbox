@@ -33,6 +33,7 @@ The app uses Vue reactivity and small explicit classes instead of a state-manage
 | `src/styles/` | Tokens, global element rules, and app-shell layout |
 | `src/identity.ts` | Development identity resolution |
 | `src/me.ts` | Shared `GET /api/me` state |
+| `src/composables/useSiteConfig.ts` | Shared `GET /api/config` site name for the brand and title |
 | `src/lib/` | Pure formatting helpers |
 
 The global styles load in this order:

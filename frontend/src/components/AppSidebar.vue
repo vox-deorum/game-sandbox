@@ -9,10 +9,11 @@
 -->
 <script setup lang="ts">
 import { Bot, BookOpen, Gamepad2, PanelLeftClose, PanelLeftOpen, Trophy, X } from '@lucide/vue'
-import type { FunctionalComponent } from 'vue'
+import { computed, type FunctionalComponent } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
 import { useSidebar } from '../composables/useSidebar.js'
+import { useSiteConfig } from '../composables/useSiteConfig.js'
 import AccountMenu from './AccountMenu.vue'
 
 interface NavItem {
@@ -32,6 +33,15 @@ const items: NavItem[] = [
 
 const route = useRoute()
 const { collapsed, toggleCollapsed, closeMobile } = useSidebar()
+const { siteName } = useSiteConfig()
+
+// The collapsed-rail monogram: the initials of the first two words of the site name (so a custom
+// SITE_NAME keeps a matching mark), falling back to its first two characters for a single-word name.
+const brandMark = computed(() => {
+  const words = siteName.value.trim().split(/\s+/).filter(Boolean)
+  const initials = words.slice(0, 2).map((word) => word[0]).join('')
+  return (initials !== '' ? initials : siteName.value.slice(0, 2)).toUpperCase()
+})
 
 function isActive(item: NavItem): boolean {
   return item.match.some((prefix) =>
@@ -43,9 +53,9 @@ function isActive(item: NavItem): boolean {
 <template>
   <aside class="app-sidebar" aria-label="Primary">
     <div class="sidebar-head">
-      <RouterLink class="brand" to="/" :title="collapsed ? 'Game Sandbox' : undefined">
-        <span class="brand-mark" aria-hidden="true">GS</span>
-        <span class="brand-name">Game Sandbox</span>
+      <RouterLink class="brand" to="/" :title="collapsed ? siteName : undefined">
+        <span class="brand-mark" aria-hidden="true">{{ brandMark }}</span>
+        <span class="brand-name">{{ siteName }}</span>
       </RouterLink>
       <button
         class="rail-toggle desktop-only"

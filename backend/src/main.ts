@@ -115,6 +115,8 @@ async function main(): Promise<void> {
 
   const app = await buildApp({
     orchestrator,
+    siteName: config.siteName,
+    siteShortName: config.siteShortName,
     environments,
     recordings,
     retention,

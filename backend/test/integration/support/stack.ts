@@ -35,6 +35,8 @@ export async function startStack(overrides: Partial<Config> = {}): Promise<Stack
   const recordingsDir = mkdtempSync(join(tmpdir(), 'gs-it-'))
   const config: Config = {
     port: 0,
+    siteName: 'Game Sandbox',
+    siteShortName: 'Game Sandbox',
     dataDir: recordingsDir,
     dbPath: ':memory:',
     recordingsDir,

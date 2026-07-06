@@ -56,6 +56,34 @@ describe('HTTP API', () => {
     expect(envs.map((e) => e.env_id)).toContain('flappy_bird')
   })
 
+  it('serves the deployment branding from GET /api/config, defaulting both names', async () => {
+    // The app under test wires no site name, so both fall back to the class-scale default.
+    const res = await app.inject({ method: 'GET', url: '/api/config' })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({ site_name: 'Game Sandbox', site_short_name: 'Game Sandbox' })
+  })
+
+  it('reflects a configured site name and short name in GET /api/config', async () => {
+    const config = makeConfig({ recordingsDir: dir, sessionAllowlist: ALLOWLIST })
+    const recordings = new RecordingsStore(dir)
+    const custom = await buildApp({
+      orchestrator,
+      siteName: 'Acme Arena',
+      siteShortName: 'Acme',
+      environments: makeEnvironments(),
+      recordings,
+      retention: new Retention(storage, recordings, config),
+      allowlist: ALLOWLIST,
+      ...makeSubmissionDeps(storage, config),
+    })
+    try {
+      const res = await custom.inject({ method: 'GET', url: '/api/config' })
+      expect(res.json()).toEqual({ site_name: 'Acme Arena', site_short_name: 'Acme' })
+    } finally {
+      await custom.close()
+    }
+  })
+
   it('starts a session and returns its id and websocket path', async () => {
     const res = await app.inject({
       method: 'POST',

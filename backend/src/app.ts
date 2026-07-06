@@ -13,6 +13,7 @@ import websocket from '@fastify/websocket'
 import Fastify, { type FastifyInstance } from 'fastify'
 
 import { registerAdminRoutes } from './admin/routes.js'
+import { DEFAULT_SITE_NAME } from './config.js'
 import type { EnvironmentRegistry } from './environments.js'
 import { isAllowlisted, isOperator, resolveUserId } from './identity.js'
 import { registerLeaderboardRoutes } from './leaderboards/routes.js'
@@ -33,6 +34,17 @@ import type { WorkflowRunner } from './workflow/runner.js'
 
 export interface AppDeps {
   orchestrator: Orchestrator
+  /**
+   * The deployment's display name, served to the SPA by `GET /api/config` so the sidebar brand and the
+   * document title reflect the operator's `SITE_NAME`. Optional here: tests and any caller that omits it
+   * fall back to {@link DEFAULT_SITE_NAME}, the same default `loadConfig` applies.
+   */
+  siteName?: string
+  /**
+   * The compact brand for space-sensitive chrome, also served by `GET /api/config`. Falls back to
+   * {@link AppDeps.siteName} (then {@link DEFAULT_SITE_NAME}) when omitted, mirroring `loadConfig`.
+   */
+  siteShortName?: string
   environments: EnvironmentRegistry
   recordings: RecordingsStore
   /** The retention service: the merged recordings listing, pinning, and the eviction sweep. */
@@ -185,6 +197,14 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(websocket)
 
   app.get('/api/environments', () => deps.environments.list())
+
+  // The public deployment branding the SPA reads once at startup, so the sidebar brand and the
+  // document title reflect the operator's `SITE_NAME` rather than a hardcoded string. Unauthenticated
+  // and read-only; extend this payload as more client-facing site config appears.
+  app.get('/api/config', () => {
+    const siteName = deps.siteName ?? DEFAULT_SITE_NAME
+    return { site_name: siteName, site_short_name: deps.siteShortName ?? siteName }
+  })
 
   // The frontend's single source for who-am-I and what-may-I-do. One mock user is auto-logged-on
   // by the browser; this reports the resolved id, session-allowlist membership, and operator status

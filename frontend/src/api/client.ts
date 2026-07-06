@@ -151,6 +151,18 @@ export async function getMe(): Promise<Me> {
   return (await json(await request('/me'), 'GET /me')) as Me
 }
 
+/** Public deployment branding, read once at startup to drive the sidebar brand and the document title. */
+export interface SiteConfig {
+  site_name: string
+  /** A compact brand for space-sensitive chrome; equals `site_name` unless `SITE_SHORT_NAME` is set. */
+  site_short_name: string
+}
+
+/** The deployment's public branding config (its `SITE_NAME`), served unauthenticated. */
+export async function getSiteConfig(): Promise<SiteConfig> {
+  return (await json(await request('/config'), 'GET /config')) as SiteConfig
+}
+
 /**
  * Map one slot assignment onto the wire shape: snake-case `submission_id`, present only for a
  * `submission` slot so the body matches the backend's `START_SESSION_SCHEMA` exactly.

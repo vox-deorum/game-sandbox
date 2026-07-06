@@ -6,6 +6,9 @@ describe('loadConfig', () => {
   it('applies class-scale defaults from an empty environment', () => {
     const config = loadConfig({})
     expect(config.port).toBe(8080)
+    expect(config.siteName).toBe('Game Sandbox')
+    // The short name defaults to the site name, so it is 'Game Sandbox' out of the box too.
+    expect(config.siteShortName).toBe('Game Sandbox')
     expect(config.executionDriver).toBe('docker')
     expect(config.docker.imagePolicy).toBe('reuse')
     expect(config.docker.imageTagPrefix).toBe('game-sandbox')
@@ -20,6 +23,25 @@ describe('loadConfig', () => {
     expect(config.recordingRetentionDays).toBe(30)
     expect(config.recordingUserQuota).toBe(100)
     expect(config.recordingSweepIntervalMs).toBe(3_600_000)
+  })
+
+  it('overrides the site name from SITE_NAME, ignoring an empty value', () => {
+    expect(loadConfig({ SITE_NAME: 'Acme Arena' }).siteName).toBe('Acme Arena')
+    // An empty value falls back to the default rather than blanking the brand.
+    expect(loadConfig({ SITE_NAME: '' }).siteName).toBe('Game Sandbox')
+  })
+
+  it('defaults the short name to the resolved site name and overrides it independently', () => {
+    // With only SITE_NAME set, the short name mirrors it for free.
+    expect(loadConfig({ SITE_NAME: 'Acme Arena' }).siteShortName).toBe('Acme Arena')
+    // SITE_SHORT_NAME overrides just the short form; the full name is unaffected.
+    const both = loadConfig({ SITE_NAME: 'Acme Arena', SITE_SHORT_NAME: 'Acme' })
+    expect(both.siteName).toBe('Acme Arena')
+    expect(both.siteShortName).toBe('Acme')
+    // An empty short name falls back to the site name, not to a blank brand.
+    expect(loadConfig({ SITE_NAME: 'Acme Arena', SITE_SHORT_NAME: '' }).siteShortName).toBe(
+      'Acme Arena',
+    )
   })
 
   it('parses the retention overrides', () => {

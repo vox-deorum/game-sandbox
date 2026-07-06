@@ -11,6 +11,7 @@ import {
   getRecording,
   getSeasonLeaderboards,
   getSessionRatings,
+  getSiteConfig,
   listSeasons,
   listWatchAgents,
   openSubmissions,
@@ -51,6 +52,14 @@ describe('api client', () => {
       jsonResponse({ user_id: 'dev-user', allowlisted: true, is_operator: true }),
     )
     expect(await getMe()).toEqual({ user_id: 'dev-user', allowlisted: true, is_operator: true })
+  })
+
+  it('reads the deployment site name and short name from /api/config', async () => {
+    const fetchMock = stubFetch(async () =>
+      jsonResponse({ site_name: 'Acme Arena', site_short_name: 'Acme' }),
+    )
+    expect(await getSiteConfig()).toEqual({ site_name: 'Acme Arena', site_short_name: 'Acme' })
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/config')
   })
 
   it('maps a 201 to a started session', async () => {
