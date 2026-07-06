@@ -44,6 +44,23 @@ describe('loadConfig', () => {
     )
   })
 
+  it('defaults the docs root to the repo docs/ and leaves the index override unset', () => {
+    const config = loadConfig({})
+    // Derived via path.join off the repo root, so assert the tail rather than a separator-specific path.
+    expect(config.docsDir.endsWith('docs')).toBe(true)
+    expect(config.docsIndexFile).toBeUndefined()
+  })
+
+  it('overrides the docs root and index file, ignoring empty values', () => {
+    const config = loadConfig({ DOCS_DIR: '/srv/docs', DOCS_INDEX_FILE: '/srv/class/home.md' })
+    expect(config.docsDir).toBe('/srv/docs')
+    expect(config.docsIndexFile).toBe('/srv/class/home.md')
+    // Empty values fall back to the default root and an unset override, not to blanks.
+    const empty = loadConfig({ DOCS_DIR: '', DOCS_INDEX_FILE: '' })
+    expect(empty.docsDir.endsWith('docs')).toBe(true)
+    expect(empty.docsIndexFile).toBeUndefined()
+  })
+
   it('parses the retention overrides', () => {
     const config = loadConfig({
       RECORDING_RETENTION_DAYS: '7',

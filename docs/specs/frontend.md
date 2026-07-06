@@ -30,8 +30,10 @@ The site uses **Environment** and **Season** as its front-facing names, matching
 | Live session | Renderer, shared controls, decision log, result, pinning, ratings |
 | Leaderboards | Automated and human-feedback boards for one environment and season |
 | Manage | Operator-only season configuration, workflow logs, preview, and release |
-| Documentation | Student guides |
+| Documentation | Student guides, rendered in-app with a section navigation |
 | My Profile | Signed-in identity and capabilities |
+
+The Documentation page renders the student guides from `docs/students/` inside the app, with a section navigation over the guides. Its landing is the students index by default, and a deployment can replace that landing with its own class home by pointing `DOCS_INDEX_FILE` at a markdown file (see [Configuration](../contributors/configuration.md)). Links to documentation the site does not serve, such as the specification or contributor guides, open their source on GitHub.
 
 The environment overview targets three potentially different seasons:
 

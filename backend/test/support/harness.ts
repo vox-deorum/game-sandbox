@@ -32,6 +32,7 @@ export function makeConfig(overrides: Partial<Config> = {}): Config {
     dbPath: ':memory:',
     recordingsDir: './data/recordings',
     submissionsDir: './data/submissions',
+    docsDir: './docs',
     sessionIdleTimeoutMs: 60_000,
     sessionMaxDurationMs: 600_000,
     // The identities the start-succeeding suites use; allowlist tests override this explicitly.
@@ -83,6 +84,7 @@ export function makeSubmissionDeps(
   operatorAllowlist: readonly string[]
   knownDepsVersions: ReadonlySet<number>
   workflowRunner: WorkflowRunner
+  docsDir: string
 } {
   const driver = options.driver ?? new FakeDriver()
   const submissionSource = createSubmissionSource(config.submission, options.source)
@@ -111,6 +113,9 @@ export function makeSubmissionDeps(
     operatorAllowlist: config.operatorAllowlist,
     knownDepsVersions: options.knownTemplateVersions ?? new Set([1]),
     workflowRunner: new StubWorkflowRunner(storage),
+    // The docs routes require a root; suites that don't exercise them get the placeholder from
+    // makeConfig, and the docs suite builds its own fixture and passes an explicit docsDir override.
+    docsDir: config.docsDir,
   }
 }
 

@@ -38,9 +38,11 @@ const router = createRouter({
   routes: [
     { path: '/', component: HomePage },
     // Global, cross-game sections in the sidebar. Seasons uses the public cross-game season index;
-    // My Agents aggregates the signed-in user's profiles; Documentation remains a placeholder.
+    // My Agents aggregates the signed-in user's profiles. Documentation renders the student guides:
+    // /docs is the landing and the catch-all carries a guide's docs-relative path (students/...).
     { path: '/seasons', component: SeasonsPage },
     { path: '/docs', component: DocsPage },
+    { path: '/docs/:docPath(.*)', component: DocsPage },
     { path: '/my/agents', component: MyAgentsPage },
     { path: '/my/profile', component: ProfilePage },
     { path: '/environments/:envId', component: EnvironmentPage },

@@ -106,6 +106,12 @@ The app shell fetches `GET /api/me` once through `me.ts`. The frontend hides act
 
 Keep protocol and environment metadata declarations in `@game-sandbox/schema`. Do not create frontend-only copies.
 
+## Documentation page
+
+`DocsPage.vue` renders the student guides in the app. The backend serves the raw markdown under `docs/students/` through `GET /api/docs/manifest`, `GET /api/docs/index`, and `GET /api/docs/pages/*`; the page fetches the navigation manifest once, then the current page, and renders it with `DocsMarkdown.vue`. The landing at `/docs` is the students index, or a deployment's `DOCS_INDEX_FILE` override (see [Configuration](configuration.md)).
+
+The guides are authored for MkDocs, so `docs/markdown.ts` reproduces two MkDocs behaviors when rendering with markdown-it: heading ids use the python-markdown slug, and relative `.md` links are rewritten relative to the page. A link to another student guide becomes an in-app route and navigates without a reload; a link to a doc the site does not serve, such as a specification page, opens its source on GitHub. Only the `students/` subtree is served; a page fetch is path-sanitized to that subtree.
+
 ## Renderer integration
 
 The registry maps environment metadata's `renderer` value to a renderer class and thumbnail. Both live play and replay call the same renderer:

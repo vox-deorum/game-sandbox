@@ -41,6 +41,7 @@ export async function startStack(overrides: Partial<Config> = {}): Promise<Stack
     dbPath: ':memory:',
     recordingsDir,
     submissionsDir: join(recordingsDir, 'submissions'),
+    docsDir: './docs',
     sessionIdleTimeoutMs: 60_000,
     sessionMaxDurationMs: 600_000,
     sessionAllowlist: ['dev-user', 'alice', 'bob', 'carol'],
@@ -116,6 +117,7 @@ export async function startStack(overrides: Partial<Config> = {}): Promise<Stack
     submissionSnapshots: snapshots,
     validationWorker,
     allowLocalSubmissions: config.submission.allowLocalSubmissions,
+    docsDir: config.docsDir,
   })
 
   const httpBase = await app.listen({ port: 0, host: '127.0.0.1' })

@@ -13,7 +13,8 @@ import websocket from '@fastify/websocket'
 import Fastify, { type FastifyInstance } from 'fastify'
 
 import { registerAdminRoutes } from './admin/routes.js'
-import { DEFAULT_SITE_NAME } from './config.js'
+import { DEFAULT_DOCS_DIR, DEFAULT_SITE_NAME } from './config.js'
+import { buildDocsManifest, DocsIndexError, readDocsIndex, readDocsPage } from './docs.js'
 import type { EnvironmentRegistry } from './environments.js'
 import { isAllowlisted, isOperator, resolveUserId } from './identity.js'
 import { registerLeaderboardRoutes } from './leaderboards/routes.js'
@@ -73,6 +74,15 @@ export interface AppDeps {
    * and proxies `/api` here) and in tests; serving is wired only when the directory actually exists.
    */
   frontendDir?: string
+  /**
+   * The documentation root the docs routes read the student guides from (its `students/` subtree). The
+   * server passes `config.docsDir` and tests pass a fixture directory; when omitted the routes fall
+   * back to {@link DEFAULT_DOCS_DIR} (the repo's `docs/`), so a caller that does not exercise the docs
+   * area can leave it unset.
+   */
+  docsDir?: string
+  /** Optional class-index override: when set, `GET /api/docs/index` serves this file's markdown. */
+  docsIndexFile?: string
 }
 
 /**
@@ -204,6 +214,31 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.get('/api/config', () => {
     const siteName = deps.siteName ?? DEFAULT_SITE_NAME
     return { site_name: siteName, site_short_name: deps.siteShortName ?? siteName }
+  })
+
+  // The in-app student guides. Read-only and unauthenticated like `/api/config`: the frontend renders
+  // the markdown and rewrites links, so these routes only serve the nav tree and raw page bytes. The
+  // landing honors the optional class-index override; a page fetch is path-sanitized to `students/`.
+  const docsDir = deps.docsDir ?? DEFAULT_DOCS_DIR
+  app.get('/api/docs/manifest', () => buildDocsManifest(docsDir))
+
+  app.get('/api/docs/index', (_request, reply) => {
+    try {
+      return readDocsIndex(docsDir, deps.docsIndexFile)
+    } catch (error) {
+      if (error instanceof DocsIndexError) {
+        return reply.code(500).send({ error: error.message })
+      }
+      throw error
+    }
+  })
+
+  app.get<{ Params: { '*': string } }>('/api/docs/pages/*', (request, reply) => {
+    const page = readDocsPage(docsDir, request.params['*'])
+    if (page === null) {
+      return reply.code(404).send({ error: 'documentation page not found' })
+    }
+    return page
   })
 
   // The frontend's single source for who-am-I and what-may-I-do. One mock user is auto-logged-on

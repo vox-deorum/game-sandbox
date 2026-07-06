@@ -75,6 +75,7 @@ describe('submission API', () => {
       submissionSnapshots: new SubmissionSnapshotStore(join(dir, 'submissions')),
       validationWorker: { enqueue: (id) => enqueued.push(id) },
       allowLocalSubmissions: overrides.allowLocalSubmissions ?? false,
+      docsDir: config.docsDir,
     })
   }
 

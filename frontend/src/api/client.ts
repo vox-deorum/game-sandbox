@@ -163,6 +163,46 @@ export async function getSiteConfig(): Promise<SiteConfig> {
   return (await json(await request('/config'), 'GET /config')) as SiteConfig
 }
 
+/** One navigation entry in the documentation area: a page, or a section carrying child pages. */
+export interface DocsNavEntry {
+  /** The docs-relative source path including `.md`, the key a page fetch and route mapping use. */
+  path: string
+  title: string
+  children?: DocsNavEntry[]
+}
+
+/** The documentation navigation tree; the landing page is served separately by {@link getDocsIndex}. */
+export interface DocsManifest {
+  pages: DocsNavEntry[]
+}
+
+/** One documentation page: its raw markdown and the docs-relative path links resolve against. */
+export interface DocsPage {
+  path: string
+  content: string
+}
+
+/** The student-guide navigation tree the Documentation page renders as its sidebar. */
+export async function getDocsManifest(): Promise<DocsManifest> {
+  return (await json(await request('/docs/manifest'), 'GET /docs/manifest')) as DocsManifest
+}
+
+/** The documentation landing page (the students index, or a deployment's class-index override). */
+export async function getDocsIndex(): Promise<DocsPage> {
+  return (await json(await request('/docs/index'), 'GET /docs/index')) as DocsPage
+}
+
+/** One documentation page's markdown by its docs-relative `path` (e.g. `students/submitting.md`). */
+export async function getDocsPage(path: string): Promise<DocsPage> {
+  // Encode each segment so a filename with a space or reserved character survives the URL; the `/`
+  // separators stay literal and Fastify decodes the wildcard back to the docs-relative path.
+  const encoded = path.split('/').map(encodeURIComponent).join('/')
+  return (await json(
+    await request(`/docs/pages/${encoded}`),
+    `GET /docs/pages/${path}`,
+  )) as DocsPage
+}
+
 /**
  * Map one slot assignment onto the wire shape: snake-case `submission_id`, present only for a
  * `submission` slot so the body matches the backend's `START_SESSION_SCHEMA` exactly.

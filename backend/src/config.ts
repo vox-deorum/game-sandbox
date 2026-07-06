@@ -24,6 +24,14 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
  */
 export const DEFAULT_SITE_NAME = 'Game Sandbox'
 
+/**
+ * The default documentation root: the repo's `docs/`, whose `students/` subtree is served in-app.
+ * Resolved off the repo root so it holds regardless of the process working directory, the same
+ * assumption `frontendDir` makes. Shared with the app layer so the `AppDeps.docsDir` fallback and the
+ * config default cannot drift; override with `DOCS_DIR` when a deployment relocates the tree.
+ */
+export const DEFAULT_DOCS_DIR = join(REPO_ROOT, 'docs')
+
 /** The only execution driver that exists in this stage. */
 export type ExecutionDriverKind = 'docker'
 
@@ -134,6 +142,20 @@ export interface Config {
    * directory is present. Defaults to `frontend/dist`; override with `FRONTEND_DIST`.
    */
   frontendDir?: string
+  /**
+   * The documentation root the backend reads the in-app student guides from at runtime. The default
+   * resolves to the repo's `docs/` regardless of the process working directory (the backend already
+   * runs from the checkout, the same assumption `frontendDir` makes); override with `DOCS_DIR` only
+   * when a deployment relocates the tree. Only `docs/students/**` is served to the website.
+   */
+  docsDir: string
+  /**
+   * An optional class-specific markdown file that replaces the documentation landing page. When set,
+   * `GET /api/docs/index` serves this file instead of `docs/students/index.md`, so a deployment can put
+   * its own course home (schedule, links, grading) at `/docs` without editing the shared guides. A path
+   * to a single markdown file; unset means the default landing. Read from `DOCS_INDEX_FILE`.
+   */
+  docsIndexFile?: string
   sandbox: SandboxDefaults
   executionDriver: ExecutionDriverKind
   docker: DockerDriverOptions
@@ -258,6 +280,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       env.FRONTEND_DIST && env.FRONTEND_DIST !== ''
         ? env.FRONTEND_DIST
         : join(REPO_ROOT, 'frontend', 'dist'),
+    docsDir: env.DOCS_DIR && env.DOCS_DIR !== '' ? env.DOCS_DIR : DEFAULT_DOCS_DIR,
+    docsIndexFile:
+      env.DOCS_INDEX_FILE && env.DOCS_INDEX_FILE !== '' ? env.DOCS_INDEX_FILE : undefined,
     sandbox: {
       cpus: numberVar(env, 'SANDBOX_CPUS', 1),
       memoryMb: intVar(env, 'SANDBOX_MEMORY_MB', 512),

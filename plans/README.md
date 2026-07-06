@@ -35,6 +35,7 @@ Stages are ordered by dependency. Each stage ends with something testable end to
 | [7. Multi-agent](stage-07-multi-agent.md) | Hearts, multi-slot sessions, multi-submission watch flow |
 | [8. Communication](stage-08-communication.md) | Spades, chat hook, routing, UI, recordings |
 | [9. LLM gateway](stage-09-llm-gateway.md) | Slot keys, telemetry, budgets, owner debug data |
+| [10. Documentation page](stage-10-documentation-page.md) | In-app student guides, configurable class landing |
 
 Communication follows multi-agent and builds its own test bed: Spades, a partnership environment where targeted partner signals and broadcast warnings genuinely differ, while Hearts stays messaging-free. The LLM gateway is independent and comes last.
 

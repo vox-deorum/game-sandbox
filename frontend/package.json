@@ -19,6 +19,9 @@
   "dependencies": {
     "@game-sandbox/schema": "*",
     "@lucide/vue": "^1.21.0",
+    "highlight.js": "^11.11.1",
+    "markdown-it": "^14.3.0",
+    "markdown-it-anchor": "^9.2.0",
     "pixi.js": "^8.19.0",
     "reka-ui": "^2.9.10",
     "vue": "^3.5.13",
@@ -28,6 +31,7 @@
     "@playwright/test": "^1.49.0",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/vue": "^8.1.0",
+    "@types/markdown-it": "^14.1.2",
     "@vitejs/plugin-vue": "^5.2.1",
     "@vue/test-utils": "^2.4.6",
     "jsdom": "^25.0.1",

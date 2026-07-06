@@ -41,6 +41,8 @@ Zod validates every value, so a malformed setting fails fast at startup with a m
 | `DOCKER_IMAGE_TAG_PREFIX` | `game-sandbox` | Image prefix |
 | `DOCKER_IMAGE_POLICY` | `reuse` | `reuse` an existing tag or `rebuild` before launch |
 | `FRONTEND_DIST` | `frontend/dist` | Built frontend directory; static serving is disabled when absent |
+| `DOCS_DIR` | `docs` | Documentation root the in-app student guides are read from; only its `students/` subtree is served |
+| `DOCS_INDEX_FILE` | unset | Optional markdown file that replaces the documentation landing page; unset serves `docs/students/index.md` |
 
 ## Recordings
 
@@ -72,6 +74,8 @@ Keep `ALLOW_LOCAL_SUBMISSIONS` disabled in real deployments. The gate, not path 
 `GITHUB_TOKEN` authenticates private-repository access and reachability checks only. It is never stored on a submission row or written to logs.
 
 Static frontend serving is wired only when `FRONTEND_DIST` points at an existing directory, so Vite development and tests without a built bundle are unaffected. See [Static frontend](backend.md#static-frontend).
+
+The Documentation page reads the student guides from `DOCS_DIR` at request time, so a guide updates without a frontend rebuild. Set `DOCS_INDEX_FILE` to give a class its own landing page, such as a schedule or grading notes, without editing the shared guides; a configured file that cannot be read fails the landing request loudly rather than silently falling back.
 
 The allowlists default to `dev-user` so the stack works in development. An empty `SESSION_ALLOWLIST` allows no one to start sessions, while read-only routes and spectating stay open. `OPERATOR_ALLOWLIST` guards every `/api/admin` route through one operator check.
 

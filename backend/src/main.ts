@@ -125,6 +125,8 @@ async function main(): Promise<void> {
     knownDepsVersions: KNOWN_DEPS_VERSIONS,
     workflowRunner,
     frontendDir: config.frontendDir,
+    docsDir: config.docsDir,
+    docsIndexFile: config.docsIndexFile,
     storage,
     submissionSource,
     submissionSnapshots: snapshots,
