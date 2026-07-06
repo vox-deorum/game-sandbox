@@ -10,8 +10,9 @@
   generically (formatAction): naming an action is the renderer's job, not the host log's.
 -->
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed } from 'vue'
 
+import { useActiveRowScroll } from '../composables/useActiveRowScroll.js'
 import { formatAction, formatSlotIndex } from '../lib/format.js'
 
 export interface DecisionEntry {
@@ -29,24 +30,14 @@ const props = withDefaults(
   { currentIndex: null },
 )
 
-const scroller = ref<HTMLElement | null>(null)
 const activeIndex = computed(() =>
   props.currentIndex ?? (props.entries.length > 0 ? props.entries.length - 1 : -1),
 )
 
 // Follow the active row: a live log tracks the latest tick, a scrubbed replay tracks the scrubber.
-// Best-effort — jsdom has no layout so this is a no-op there, but it never throws.
-watch(
-  [() => props.entries.length, activeIndex],
-  () => {
-    const el = scroller.value
-    if (el === null) {
-      return
-    }
-    const active = el.querySelector<HTMLElement>('[data-active="true"]')
-    el.scrollTop = active === null ? el.scrollHeight : active.offsetTop - el.clientHeight / 2
-  },
-  { flush: 'post' },
+const scroller = useActiveRowScroll(
+  () => props.entries.length,
+  () => activeIndex.value,
 )
 </script>
 

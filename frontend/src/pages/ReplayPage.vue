@@ -24,10 +24,10 @@ import {
   type RecordingSummary,
   watchAgentNumbers,
 } from '../api/client.js'
-import ChatPanel, { type ChatEntry } from '../components/ChatPanel.vue'
 import DecisionLog, { type DecisionEntry } from '../components/DecisionLog.vue'
 import ExperimentTabs from '../components/ExperimentTabs.vue'
 import GameOverCard from '../components/GameOverCard.vue'
+import GameThread from '../components/GameThread.vue'
 import PlayerAttribution from '../components/PlayerAttribution.vue'
 import RunMetadata from '../components/RunMetadata.vue'
 import UiButton from '../components/ui/UiButton.vue'
@@ -38,6 +38,7 @@ import { usePinning } from '../composables/usePinning.js'
 import { useRendererMount } from '../composables/useRendererMount.js'
 import { useReplayTransport } from '../composables/useReplayTransport.js'
 import { useStageLayout } from '../composables/useStageLayout.js'
+import { type ChatEntry } from '../lib/chat.js'
 import { formatDate } from '../lib/format.js'
 import { playbackIntervalMs } from '../lib/playback.js'
 import { useMe } from '../me.js'
@@ -341,38 +342,45 @@ onMounted(async () => {
         <span class="overlay-spinner" aria-hidden="true" />
         <span>Loading…</span>
       </div>
+      <!-- A replay scrubs the whole game, so the decision log and chat merge into one thread: every
+           tick's decision (the whole game, ahead-of-scrubber ticks dimmed) with its messages woven in
+           as the scrubber reveals them. Without messaging there is nothing to merge, so the decision
+           log keeps its table. -->
       <section
         v-else-if="logBeside"
         class="stage-log"
-        :aria-label="hasChat ? 'Decision log and chat' : 'Decision log'"
+        :aria-label="hasChat ? undefined : 'Decision log'"
       >
         <div class="stage-log-body">
-          <DecisionLog :entries="decisions" :current-index="replayState.index" />
-        </div>
-        <div v-if="hasChat" class="stage-log-body">
-          <ChatPanel
-            :entries="visibleChat"
+          <GameThread
+            v-if="hasChat"
+            :decisions="decisions"
+            :chat="visibleChat"
+            :current-index="replayState.index"
             :players="header?.players"
             :blind="blindAttribution"
             :viewer-id="me.me?.user_id"
             :anonymous-numbers="anonymousNumbers"
           />
+          <DecisionLog v-else :entries="decisions" :current-index="replayState.index" />
         </div>
       </section>
       <template v-else>
-        <details class="stage-log stage-log-below">
-          <summary>Decision log</summary>
-          <DecisionLog :entries="decisions" :current-index="replayState.index" />
-        </details>
-        <details v-if="hasChat" class="stage-log stage-log-below stage-chat-below">
-          <summary>Chat</summary>
-          <ChatPanel
-            :entries="visibleChat"
+        <details v-if="hasChat" class="stage-log stage-log-below stage-thread-below">
+          <summary>Game thread</summary>
+          <GameThread
+            :decisions="decisions"
+            :chat="visibleChat"
+            :current-index="replayState.index"
             :players="header?.players"
             :blind="blindAttribution"
             :viewer-id="me.me?.user_id"
             :anonymous-numbers="anonymousNumbers"
           />
+        </details>
+        <details v-else class="stage-log stage-log-below">
+          <summary>Decision log</summary>
+          <DecisionLog :entries="decisions" :current-index="replayState.index" />
         </details>
       </template>
     </div>
@@ -524,7 +532,8 @@ onMounted(async () => {
 }
 
 .stage.beside .stage-log-body :deep(.decision-log),
-.stage.beside .stage-log-body :deep(.chat-panel) {
+.stage.beside .stage-log-body :deep(.chat-panel),
+.stage.beside .stage-log-body :deep(.game-thread) {
   position: absolute;
   inset: 0;
 }
@@ -583,8 +592,8 @@ onMounted(async () => {
   max-height: 12rem;
 }
 
-/* The stacked chat disclosure caps its own height and scrolls the message list within it. */
-.stage-chat-below :deep(.chat-panel) {
+/* The stacked merged thread caps its height and scrolls within it, like the split panels did. */
+.stage-thread-below :deep(.game-thread) {
   max-height: 16rem;
 }
 

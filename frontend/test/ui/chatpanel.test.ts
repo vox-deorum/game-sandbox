@@ -1,7 +1,8 @@
 import { fireEvent, render, screen } from '@testing-library/vue'
 import { describe, expect, it } from 'vitest'
 
-import ChatPanel, { type ChatEntry } from '../../src/components/ChatPanel.vue'
+import ChatPanel from '../../src/components/ChatPanel.vue'
+import type { ChatEntry } from '../../src/lib/chat.js'
 
 // A four-seat Spades attribution map: two plain agents, the viewer's human seat, and a submitted
 // agent whose ownership a blind viewer must not see.
@@ -144,7 +145,7 @@ describe('ChatPanel', () => {
       player_2: { kind: 'human' as const, label: 'dev', user: 'dev' },
       player_3: { kind: 'agent' as const, label: 'Naive agent' },
     }
-    render(ChatPanel, {
+    const { container } = render(ChatPanel, {
       props: {
         entries: [{ tick: 1, from: 'player_0', to: null, text: 'hi' }] as ChatEntry[],
         players: roster,
@@ -154,11 +155,12 @@ describe('ChatPanel', () => {
       },
     })
 
-    // Each opponent is a distinct, seat-prefixed recipient option.
-    expect(screen.getByRole('option', { name: 'Player 0 · Naive agent' })).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: 'Player 1 · Naive agent' })).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: 'Player 3 · Naive agent' })).toBeInTheDocument()
-    // And a message line carries its sender's seat beside the shared label.
-    expect(screen.getByText('Player 0')).toBeInTheDocument()
+    // Each opponent is a distinct recipient option, told apart by its seat number alone.
+    expect(screen.getByRole('option', { name: 'Player 0' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Player 1' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Player 3' })).toBeInTheDocument()
+    // And a message line carries its sender's seat beside the shared label (queried by the seat cell,
+    // since the terse "Player 0" now also names the recipient option).
+    expect(container.querySelector('.chat-seat')?.textContent).toBe('Player 0')
   })
 })

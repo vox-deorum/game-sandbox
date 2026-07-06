@@ -28,7 +28,7 @@ import {
   type SessionRow,
   watchAgentNumbers,
 } from '../api/client.js'
-import ChatPanel, { type ChatEntry } from '../components/ChatPanel.vue'
+import ChatPanel from '../components/ChatPanel.vue'
 import DecisionLog, { type DecisionEntry } from '../components/DecisionLog.vue'
 import ExperimentTabs from '../components/ExperimentTabs.vue'
 import GameOverCard from '../components/GameOverCard.vue'
@@ -42,6 +42,7 @@ import { usePinning } from '../composables/usePinning.js'
 import { useRendererMount } from '../composables/useRendererMount.js'
 import { useSessionSocket } from '../composables/useSessionSocket.js'
 import { useStageLayout } from '../composables/useStageLayout.js'
+import { type ChatEntry, messageKey } from '../lib/chat.js'
 import { formatDate } from '../lib/format.js'
 import { liveIntervalMs, playbackIntervalMs } from '../lib/playback.js'
 import { useMe } from '../me.js'
@@ -163,10 +164,11 @@ function sendInput(slot: string, action: unknown): void {
  *  relay's latest state line, so the same message can arrive twice). */
 function appendMessages(state: StepState): void {
   for (const message of state.messages ?? []) {
-    const key = JSON.stringify([state.tick, message.from, message.to, message.text])
+    const entry: ChatEntry = { tick: state.tick, ...message }
+    const key = messageKey(entry)
     if (!seenMessages.has(key)) {
       seenMessages.add(key)
-      chatLog.value.push({ tick: state.tick, ...message })
+      chatLog.value.push(entry)
     }
   }
 }
@@ -440,29 +442,33 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
         <span class="overlay-spinner" aria-hidden="true" />
         <span>Loading session…</span>
       </div>
-      <section
-        v-else-if="logBeside"
-        class="stage-log"
-        :aria-label="messagingEnabled ? 'Decision log and chat' : 'Decision log'"
-      >
-        <div class="stage-log-body">
+      <!-- Beside layout: when messaging is on the chat takes the whole column and the decision log
+           drops below the stage as the same collapsible disclosure the narrow layout uses; without
+           messaging the decision log keeps the column. -->
+      <template v-else-if="logBeside">
+        <section class="stage-log" :aria-label="messagingEnabled ? undefined : 'Decision log'">
+          <div class="stage-log-body">
+            <ChatPanel
+              v-if="messagingEnabled"
+              :entries="chatLog"
+              :players="header?.players"
+              :blind="blindAttribution"
+              :viewer-id="me.me?.user_id"
+              :anonymous-numbers="anonymousNumbers"
+              :viewer-slots="viewerSeats"
+              :sendable="chatSendable"
+              :connected="connection !== 'reconnecting'"
+              :message-cap="row?.message_cap ?? null"
+              @send="sendChat"
+            />
+            <DecisionLog v-else :entries="decisions" />
+          </div>
+        </section>
+        <details v-if="messagingEnabled" class="stage-log-below stage-decision-below">
+          <summary>Decision log</summary>
           <DecisionLog :entries="decisions" />
-        </div>
-        <div v-if="messagingEnabled" class="stage-log-body">
-          <ChatPanel
-            :entries="chatLog"
-            :players="header?.players"
-            :blind="blindAttribution"
-            :viewer-id="me.me?.user_id"
-            :anonymous-numbers="anonymousNumbers"
-            :viewer-slots="viewerSeats"
-            :sendable="chatSendable"
-            :connected="connection !== 'reconnecting'"
-            :message-cap="row?.message_cap ?? null"
-            @send="sendChat"
-          />
-        </div>
-      </section>
+        </details>
+      </template>
       <template v-else>
         <details class="stage-log stage-log-below">
           <summary>Decision log</summary>
@@ -668,6 +674,13 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
 .stage-log-below {
   width: 100%;
   max-width: 480px;
+}
+
+/* In the beside layout the decision log drops full-width beneath the stage row (chat owns the column).
+   It reuses the stacked disclosure's look; only its grid placement and width cap differ. */
+.stage.beside .stage-decision-below {
+  grid-column: 1 / -1;
+  max-width: 100%;
 }
 
 /* A landscape canvas in the stacked layout is wider than 480px, so its collapsed log matches it. */

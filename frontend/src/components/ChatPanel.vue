@@ -17,24 +17,15 @@
 <script setup lang="ts">
 import type { RecordingHeader } from '@game-sandbox/schema'
 import { codePointLength } from '@game-sandbox/schema/text'
-import { computed, ref, watch } from 'vue'
+import { computed, ref, useId, watch } from 'vue'
 
 import { attributionLabel } from '../lib/attribution.js'
+import { type ChatEntry, messageBadge, messageKey } from '../lib/chat.js'
 import { formatSlot } from '../lib/format.js'
 import UiBadge from './ui/UiBadge.vue'
 import UiButton from './ui/UiButton.vue'
-import UiField from './ui/UiField.vue'
 import UiInput from './ui/UiInput.vue'
 import UiSelect from './ui/UiSelect.vue'
-
-/** One message as the panel renders it: the wire message plus the tick of the state it rode in on. */
-export interface ChatEntry {
-  tick: number
-  from: string
-  /** Recipient slot id, or null for a broadcast. */
-  to: string | null
-  text: string
-}
 
 const props = withDefaults(
   defineProps<{
@@ -76,51 +67,33 @@ const attributionCtx = computed(() => ({
   anonymousNumbers: props.anonymousNumbers,
 }))
 
-/** A stable, unique identity for an entry: the tuple the harness guarantees is unique within a run. */
-function keyOf(entry: ChatEntry): string {
-  return JSON.stringify([entry.tick, entry.from, entry.to, entry.text])
-}
-
 function labelFor(slot: string): string {
   return attributionLabel(slot, props.players?.[slot], attributionCtx.value)
 }
 
-/** The badge for an entry: the viewer's own send wins over the recipient's identity. A targeted line
- *  names the recipient by seat (`formatSlot`) so two seats sharing an agent label stay distinguishable,
- *  matching how the recipient options and the sender line disambiguate. */
-function badgeFor(entry: ChatEntry): { variant: 'neutral' | 'accent'; text: string } {
-  if (props.viewerSlots.includes(entry.from)) {
-    return { variant: 'accent', text: 'from you' }
-  }
-  if (entry.to !== null && props.viewerSlots.includes(entry.to)) {
-    return { variant: 'accent', text: 'to you' }
-  }
-  if (entry.to === null) {
-    return { variant: 'neutral', text: 'broadcast' }
-  }
-  return { variant: 'neutral', text: `to ${formatSlot(entry.to)}` }
-}
-
-// Decorate once so the template reads each derived field without recomputing per binding. The seat
-// (`formatSlot`) rides alongside the attribution label the same way PlayerAttribution pairs them, so a
-// roster of same-labelled agents (three "Naive agent" seats in a default Spades table) stays legible.
+// Decorate once so the template reads each derived field without recomputing per binding. Identity and
+// the badge come from the shared chat helpers, so this panel and the merged replay thread key and badge
+// a message identically. The seat (`formatSlot`) rides alongside the attribution label the same way
+// PlayerAttribution pairs them, so a roster of same-labelled agents (three "Naive agent" seats in a
+// default Spades table) stays legible.
 const rows = computed(() =>
   props.entries.map((entry) => ({
-    key: keyOf(entry),
+    key: messageKey(entry),
     tick: entry.tick,
     text: entry.text,
     seat: formatSlot(entry.from),
     sender: labelFor(entry.from),
-    badge: badgeFor(entry),
+    badge: messageBadge(entry, props.viewerSlots),
   })),
 )
 
-// The recipient options: every other seat, each prefixed with its seat so identical agent labels are
-// still tellable apart in the dropdown. "Everyone" (a broadcast) is the empty-value option in the template.
+// The recipient options: every other seat, labelled by its seat ("Player 1"). The seat number alone
+// keeps identical agent labels (three "Naive agent" seats) tellable apart, so the terse label suffices.
+// "Everyone" (a broadcast) is the empty-value option in the template.
 const recipientOptions = computed(() =>
   Object.keys(props.players ?? {})
     .filter((slot) => !props.viewerSlots.includes(slot))
-    .map((slot) => ({ value: slot, label: `${formatSlot(slot)} · ${labelFor(slot)}` })),
+    .map((slot) => ({ value: slot, label: formatSlot(slot) })),
 )
 
 const recipient = ref('') // '' is the "Everyone" broadcast option.
@@ -131,10 +104,13 @@ const overCap = computed(() => props.messageCap !== null && count.value > props.
 // reconnect (when the socket silently no-ops) both disables Send and blocks the submit path, so the
 // draft is never cleared into a dropped send.
 const canSend = computed(() => count.value > 0 && !overCap.value && props.connected)
-// The code-point count against the cap, shown under the field. Bare when uncapped.
+// The code-point count against the cap, shown on the composer's action row. Bare when uncapped.
 const counterText = computed(() =>
   props.messageCap === null ? String(count.value) : `${count.value}/${props.messageCap}`,
 )
+// A stable id so the message input can describe itself with the counter (aria-describedby) now that
+// the composer no longer wraps the input in a UiField that would wire this up.
+const counterId = useId()
 
 function submit(): void {
   if (!canSend.value) {
@@ -177,34 +153,25 @@ watch(
     </div>
 
     <form v-if="sendable" class="chat-composer" @submit.prevent="submit">
-      <UiField label="Recipient" class="chat-field">
-        <template #default="{ id, describedby }">
-          <UiSelect :id="id" v-model="recipient" :aria-describedby="describedby">
-            <option value="">Everyone</option>
-            <option v-for="opt in recipientOptions" :key="opt.value" :value="opt.value">
-              {{ opt.label }}
-            </option>
-          </UiSelect>
-        </template>
-      </UiField>
-      <UiField
-        label="Message"
-        class="chat-field chat-field--grow"
-        :hint="overCap ? undefined : counterText"
-        :error="overCap ? counterText : undefined"
-      >
-        <template #default="{ id, describedby, invalid }">
-          <UiInput
-            :id="id"
-            v-model="draft"
-            type="text"
-            autocomplete="off"
-            :invalid="invalid"
-            :aria-describedby="describedby"
-          />
-        </template>
-      </UiField>
-      <UiButton type="submit" :disabled="!canSend">Send</UiButton>
+      <UiInput
+        v-model="draft"
+        type="text"
+        autocomplete="off"
+        class="chat-input"
+        :invalid="overCap"
+        aria-label="Message"
+        :aria-describedby="counterId"
+      />
+      <div class="chat-composer-row">
+        <UiSelect v-model="recipient" class="chat-recipient" aria-label="Recipient">
+          <option value="">Everyone</option>
+          <option v-for="opt in recipientOptions" :key="opt.value" :value="opt.value">
+            {{ opt.label }}
+          </option>
+        </UiSelect>
+        <span :id="counterId" class="chat-counter" :class="{ 'chat-counter--over': overCap }">{{ counterText }}</span>
+        <UiButton type="submit" size="tight" :disabled="!canSend">Send</UiButton>
+      </div>
     </form>
   </div>
 </template>
@@ -283,24 +250,44 @@ watch(
   font-size: var(--text-xs);
 }
 
-/* The composer lays the recipient select, the message field, and Send on one row; the message field
-   grows and the button aligns to the control line. The fields and button are the shared Ui primitives,
-   so their look and accessibility wiring come from the design system, not local CSS. */
+/* The composer stacks two rows: the message input fills the top, then the recipient select, the
+   code-point counter, and Send share the action row below. Labels are dropped (the controls name
+   themselves with aria-label), so the messaging UI reads as a compact message box, not a form. */
 .chat-composer {
   display: flex;
-  align-items: end;
+  flex-direction: column;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
   border-top: 1px solid var(--color-border);
   background: var(--color-surface-raised);
 }
 
-/* min-width:0 lets the grow field shrink below its content width in the flex row. */
-.chat-field {
+.chat-input {
+  width: 100%;
+}
+
+.chat-composer-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* The recipient select takes the row's slack; min-width:0 lets it shrink in the narrow column. */
+.chat-recipient {
+  flex: 1;
   min-width: 0;
 }
 
-.chat-field--grow {
-  flex: 1;
+/* The counter rides inline on the action row, so it is never clipped by the message list's scroll
+   container the way a field's error line under the input could be. It reddens when over the cap. */
+.chat-counter {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.chat-counter--over {
+  color: var(--color-danger);
 }
 </style>

@@ -166,12 +166,14 @@ test('Spades chat is filtered live and complete in replay', async ({ page, brows
     await expect(openReplay).toBeVisible({ timeout: 60_000 })
     await openReplay.click()
 
-    const replayChat = page.getByRole('group', { name: 'Chat log' })
-    await expect(replayChat.getByText(BROADCAST)).toBeVisible()
-    await expect(replayChat.getByText(TARGETED)).toBeVisible()
-    await expect(replayChat.getByText('broadcast')).toBeVisible()
-    await expect(replayChat.getByText('to Player 2')).toBeVisible()
-    await expect(replayChat.getByRole('textbox')).toHaveCount(0)
+    // The replay merges decisions and chat into one "Game thread"; both messages rode tick 0, where the
+    // replay opens, so they show at once, interleaved with the tick's decision and still read-only.
+    const replayThread = page.getByRole('group', { name: 'Game thread' })
+    await expect(replayThread.getByText(BROADCAST)).toBeVisible()
+    await expect(replayThread.getByText(TARGETED)).toBeVisible()
+    await expect(replayThread.getByText('broadcast')).toBeVisible()
+    await expect(replayThread.getByText('to Player 2')).toBeVisible()
+    await expect(replayThread.getByRole('textbox')).toHaveCount(0)
 
     // Navigate directly to the now-ended session page (not the replay viewer above): SessionPage's
     // hydrateRecording path builds the chat log straight from the parsed recording rather than the live
@@ -216,18 +218,18 @@ test('an over-cap Spades chat draft disables Send', async ({ page, request }) =>
     const message = chat.getByLabel('Message')
     const overCapDraft = 'x'.repeat(121)
     await message.fill(overCapDraft)
-    // Over the cap the counter renders as the field's error text and Send is disabled — the functional
-    // proof the composer refuses an over-cap message. The counter is asserted by its content, not
-    // visibility: in the stacked composer layout this error line can be clipped by the panel's scroll
-    // container, but its text and the Send button's disabled state are the real, layout-independent signals.
-    await expect(chat.locator('.ui-field-error')).toHaveText('121/120')
+    // Over the cap the inline counter reddens (the .chat-counter--over modifier) and Send is disabled —
+    // the functional proof the composer refuses an over-cap message. The counter is asserted by its
+    // content, and Send's disabled state is the real, layout-independent signal.
+    await expect(chat.locator('.chat-counter')).toHaveText('121/120')
+    await expect(chat.locator('.chat-counter')).toHaveClass(/chat-counter--over/)
     await expect(chat.getByRole('button', { name: 'Send' })).toBeDisabled()
 
-    // Trimming back to exactly the cap clears the error (the counter reverts to a plain hint) and
-    // re-enables Send — the negative control proving the disablement tracked the draft length, not a
-    // stuck state.
+    // Trimming back to exactly the cap clears the over-cap state and re-enables Send — the negative
+    // control proving the disablement tracked the draft length, not a stuck state.
     await message.fill(overCapDraft.slice(0, 120))
-    await expect(chat.locator('.ui-field-hint')).toHaveText('120/120')
+    await expect(chat.locator('.chat-counter')).toHaveText('120/120')
+    await expect(chat.locator('.chat-counter')).not.toHaveClass(/chat-counter--over/)
     await expect(chat.getByRole('button', { name: 'Send' })).toBeEnabled()
   } finally {
     await stopSessionAndAwaitFree(request, 'dev-user', sessionId).catch(() => {})
@@ -260,11 +262,10 @@ test('a season-silenced Spades session mounts no chat panel', async ({ page, req
     await expect(page.locator('canvas.renderer-canvas')).toBeVisible({ timeout: 60_000 })
 
     // SessionPage.vue guards both the beside and stacked chat panels with `v-if="messagingEnabled"`
-    // (reading the session row's resolved `messaging_enabled`), and the stage-log region's aria-label
-    // drops "and chat" in the same branch. All three are the DOM-observable consequence of the override.
+    // (reading the session row's resolved `messaging_enabled`): neither the sendable "Chat" composer
+    // nor a read-only "Chat log" mounts, the DOM-observable consequence of the override.
     await expect(page.getByRole('group', { name: 'Chat', exact: true })).toHaveCount(0)
     await expect(page.getByRole('group', { name: 'Chat log' })).toHaveCount(0)
-    await expect(page.getByRole('region', { name: 'Decision log and chat' })).toHaveCount(0)
   } finally {
     if (sessionId !== null) {
       await stopSessionAndAwaitFree(request, 'dev-user', sessionId).catch(() => {})
