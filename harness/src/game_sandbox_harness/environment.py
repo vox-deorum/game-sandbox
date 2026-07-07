@@ -94,14 +94,16 @@ class EnvironmentEntry:
     - ``meta`` is the pure data above.
     - ``make`` is a zero-argument factory returning a fresh AEC env; the seed arrives at
       ``reset``, not here, so a factory can be called once per episode.
-    - ``default_action`` returns the environment-provided legal action the loop applies on
-      every timeout path for a slot (noop for Flappy Bird).
+    - ``default_action(env, slot_id)`` returns the concrete legal action, in that env's action
+      space, the loop applies on every timeout path. Passing the live env lets a provider read
+      current state (Hearts' lowest legal card, Spades' suggested bid) so the recording holds the
+      action actually played; Flappy Bird just returns its noop (idle).
     - ``overlay`` optionally extracts the per-step overlay dict from a live env instance.
     """
 
     meta: EnvironmentMeta
     make: Callable[[], Any]
-    default_action: Callable[[str], Any]
+    default_action: Callable[[Any, str], Any]
     overlay: Callable[[Any], dict[str, Any]] | None = None
 
 

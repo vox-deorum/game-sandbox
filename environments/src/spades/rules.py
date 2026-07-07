@@ -23,23 +23,52 @@ team is ``seat % 2``. One hand per episode: a bidding round (seat 0 first), then
 
 from __future__ import annotations
 
+import importlib
 import random
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
+
+
+def _shared_card_utils() -> Any:
+    """Return the shared :mod:`card_utils` under whichever name this file runs as.
+
+    One source syncs into two layouts: :mod:`local_play.card_utils` inside the environments package,
+    ``sandbox.card_utils`` in a composed template. A :class:`ModuleNotFoundError` naming the absent
+    candidate is swallowed; one naming a real dependency is re-raised. This keeps the pure engine
+    dependency-free while sharing one card encoding.
+    """
+    for candidate in ("local_play.card_utils", "sandbox.card_utils"):
+        try:
+            return importlib.import_module(candidate)
+        except ModuleNotFoundError as exc:
+            missing = exc.name or ""
+            if missing == candidate or candidate.startswith(f"{missing}."):
+                continue
+            raise
+    raise ModuleNotFoundError("no shared card_utils found (tried local_play.card_utils, sandbox.card_utils)")
+
+
+if TYPE_CHECKING:  # pyright sees the real module; this branch never executes at runtime
+    from local_play import card_utils as _cu
+else:
+    _cu = _shared_card_utils()
+
+#: Suit ids, deck size, and the suit/rank codec, re-exported from the shared codec (identical to
+#: Hearts) so both engines and every reader share one encoding, comparing on the rank *index* (``0..12``).
+NUM_CARDS = _cu.NUM_CARDS
+CLUBS = _cu.CLUBS
+DIAMONDS = _cu.DIAMONDS
+SPADES = _cu.SPADES
+HEARTS = _cu.HEARTS
+suit_of = _cu.suit_of
+rank_of = _cu.rank_of
 
 #: Number of seats at the table.
 NUM_PLAYERS = 4
-#: Number of cards in a standard deck.
-NUM_CARDS = 52
 #: Cards dealt to each seat.
 HAND_SIZE = 13
 #: Tricks played in a full hand.
 NUM_TRICKS = 13
-
-#: Suit ids (also the high bits of the card encoding).
-CLUBS = 0
-DIAMONDS = 1
-SPADES = 2
-HEARTS = 3
 
 #: Bids run 0..13 (fourteen distinct bids); a bid of 0 is nil.
 NUM_BIDS = HAND_SIZE + 1
@@ -51,16 +80,6 @@ NIL_STAKE = 100
 #: The combined action space is ``Discrete(52 + 14)``: cards 0..51, then bids as ``52 + k``.
 BID_OFFSET = NUM_CARDS
 ACTION_SPACE_SIZE = NUM_CARDS + NUM_BIDS
-
-
-def suit_of(card: int) -> int:
-    """Return the suit id (``0..3``) of ``card``."""
-    return card // 13
-
-
-def rank_of(card: int) -> int:
-    """Return the rank id (``0..12``, where ``0`` is the 2 and ``12`` the ace) of ``card``."""
-    return card % 13
 
 
 def team_of(seat: int) -> int:

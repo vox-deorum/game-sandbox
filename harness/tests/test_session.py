@@ -8,6 +8,7 @@ AEC surface ``run_episode`` actually uses is implemented.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -99,7 +100,7 @@ def make_entry(
     return EnvironmentEntry(
         meta=meta,
         make=lambda: FakeEnv(n_steps),
-        default_action=lambda slot_id: DEFAULT_ACTION,
+        default_action=lambda env, slot_id: DEFAULT_ACTION,
         overlay=overlay,
     )
 
@@ -253,6 +254,37 @@ def test_external_noop_source_falls_back_to_default(tmp_path: Path):
     assert actions == [DEFAULT_ACTION, DEFAULT_ACTION]
 
 
+def test_default_action_receives_live_env_and_slot_and_records_result(tmp_path: Path):
+    # The timeout hook is handed the *live* env and the acting slot id, so it can read the current
+    # state and return a concrete action; that returned integer is exactly what the recording stores.
+    seen: list[tuple[Any, str]] = []
+
+    def provider(env: Any, slot_id: str) -> int:
+        seen.append((env, slot_id))
+        # A value read off the live env (its step counter, 0 before the first step, 1 before the
+        # second) proves the hook truly received the live instance, and it lands in the recording.
+        return 100 + env._i
+
+    entry = replace(make_entry(n_steps=2), default_action=provider)
+    store = FolderRecordingStore(tmp_path)
+    result = run_episode(
+        entry,
+        {"player_0": ExternalSlot(NoopSource())},
+        seed=1,
+        store=store,
+        recording_id="r",
+        clock=ManualClock(),
+    )
+    assert result.step_timeouts["player_0"] == 0
+    # Called once per step with the live env instance and the acting slot id.
+    assert [slot for _env, slot in seen] == ["player_0", "player_0"]
+    assert all(env is not None and hasattr(env, "_i") for env, _slot in seen)
+    # The integer the hook returned, derived from live env state, is what the recording stored.
+    recording = store.open("r")
+    actions = [s["agents"]["player_0"]["action"] for s in recording.steps()]
+    assert actions == [100, 101]
+
+
 def test_max_steps_caps_episode():
     entry = make_entry(n_steps=100)
     result = run_episode(
@@ -353,7 +385,7 @@ def _team_entry(finals: dict[str, float], *, make: Any = None) -> EnvironmentEnt
     return EnvironmentEntry(
         meta=meta,
         make=make if make is not None else (lambda: FakeTeamEnv(finals)),
-        default_action=lambda slot_id: DEFAULT_ACTION,
+        default_action=lambda env, slot_id: DEFAULT_ACTION,
         overlay=None,
     )
 
@@ -496,7 +528,7 @@ def _masked_entry(**kwargs: Any) -> EnvironmentEntry:
     return EnvironmentEntry(
         meta=meta,
         make=lambda: MaskedEnv(**kwargs),
-        default_action=lambda slot_id: 0,  # a legal move on every timeout path
+        default_action=lambda env, slot_id: 0,  # a legal move on every timeout path
         overlay=None,
     )
 

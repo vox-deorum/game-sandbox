@@ -378,7 +378,7 @@ def _play(
         """The action for a non-human seat: the example agent if present, else the baseline."""
         if example_agent is not None:
             return example_agent.act(observation)
-        return entry.default_action(agent_id)
+        return entry.default_action(env, agent_id)
 
     env.reset(seed=seed)
     # Hearts (and any seat-aware env) shows the chosen seat at the bottom; reveal hands when no

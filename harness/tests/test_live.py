@@ -107,7 +107,7 @@ def make_entry(
     return EnvironmentEntry(
         meta=meta,
         make=lambda: FakeEnv(n_steps, on_step=on_step),
-        default_action=lambda slot_id: DEFAULT_ACTION,
+        default_action=lambda env, slot_id: DEFAULT_ACTION,
         overlay=(lambda env: {"i": env._i}) if with_overlay else None,
     )
 
@@ -572,7 +572,7 @@ def _messaging_entry(n_steps: int, *, messaging: bool) -> EnvironmentEntry:
     return EnvironmentEntry(
         meta=meta,
         make=lambda: FakeEnv(n_steps),
-        default_action=lambda slot_id: DEFAULT_ACTION,
+        default_action=lambda env, slot_id: DEFAULT_ACTION,
         overlay=None,
     )
 

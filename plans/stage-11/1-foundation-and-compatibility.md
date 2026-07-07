@@ -1,6 +1,6 @@
 # Stage 11.1: Foundation and Compatibility Proof
 
-Status: not started.
+Status: complete.
 
 Part of [Stage 11](../stage-11-semantic-contract.md). This non-breaking step proves the observation design, adds shared card modules, and changes timeout defaults to return the action actually played. Production environment observations do not change until step 2.
 

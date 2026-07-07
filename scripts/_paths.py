@@ -110,6 +110,12 @@ TEMPLATE_BASE_MODULES = {
     "hidpi.py": "local_play/hidpi.py",
     "render_base.py": "local_play/render_base.py",
     "render_cards.py": "local_play/render_cards.py",
+    # The dependency-free card codec and its Gymnasium spaces: the pure rules engines pull their
+    # encoding from card_utils, and card_spaces declares the shared CARD/HAND/TRICK observation
+    # shapes. Both sync into templates/base/sandbox/ (as sandbox.card_utils / sandbox.card_spaces)
+    # beside each template's own game-specific sandbox/cards.py, which the distinct names keep apart.
+    "card_utils.py": "local_play/card_utils.py",
+    "card_spaces.py": "local_play/card_spaces.py",
 }
 
 # Each environment's student reference page. scripts/compose.py copies the page for the composed

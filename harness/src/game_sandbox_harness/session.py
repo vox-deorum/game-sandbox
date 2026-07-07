@@ -355,7 +355,7 @@ class Episode:
             agent_compute_ms += decision_ms
             slot.budget_used_ms += decision_ms
             if decision_ms > self._step_limit:
-                action = self._entry.default_action(slot_id)
+                action = self._entry.default_action(env, slot_id)
             else:
                 # The agent supplied this action itself (within budget, not a timeout default). If the
                 # environment would reject it as an illegal move, that is this seat's fault: name the
@@ -379,7 +379,7 @@ class Episode:
                 # INFO record (below the default WARNING level) would be silently dropped, defeating
                 # the point of surfacing the substituted default in the decision stream.
                 print(f"human slot {slot_id} defaulted due to no input in time", file=sys.stderr, flush=True)
-                action = self._entry.default_action(slot_id)
+                action = self._entry.default_action(env, slot_id)
             else:
                 illegal_reason = _illegal_action_reason(env, slot_id, observation, info, action)
                 if illegal_reason is not None:
@@ -388,7 +388,7 @@ class Episode:
                         file=sys.stderr,
                         flush=True,
                     )
-                    action = self._entry.default_action(slot_id)
+                    action = self._entry.default_action(env, slot_id)
 
         # Chat phase: immediately after ``act`` and before the environment applies the action, so the
         # agent chats knowing its chosen action but not the step's outcome. Entirely guarded by the

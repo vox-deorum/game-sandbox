@@ -13,9 +13,12 @@ metadata tests pin it from the start.
 
 from __future__ import annotations
 
+from typing import Any
+
 from game_sandbox_harness.environment import EnvironmentEntry, EnvironmentMeta
 
-from .env import AUTO_ACTION, make_env
+from . import rules
+from .env import make_env
 from .overlay import extract_overlay
 
 ENV_ID = "spades"
@@ -55,14 +58,15 @@ META = EnvironmentMeta(
 )
 
 
-def _default_action(slot_id: str) -> int:
-    """The legal default applied on every timeout path.
+def _default_action(env: Any, slot_id: str) -> int:
+    """The legal default for a timed-out seat: a never-nil suggested bid, or the lowest legal card.
 
-    The hook sees only a slot id (no view of the hand or the phase), so it cannot pick a
-    state-dependent move itself. It returns the sentinel, and ``env.step`` resolves it against the
-    live state: a never-nil suggested bid during bidding, the lowest legal card during play.
+    The hook reads the live env's phase and hand and returns the concrete ``Discrete(66)`` action
+    (not a sentinel) — a never-nil suggested bid while bidding, the lowest legal card in play. It
+    mirrors ``env.step``'s own resolution, so gameplay is unchanged and the recording holds the real action.
     """
-    return AUTO_ACTION
+    seat = env.possible_agents.index(slot_id)
+    return rules.resolve_auto_action(env.state, seat)
 
 
 ENTRY = EnvironmentEntry(

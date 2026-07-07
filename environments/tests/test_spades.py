@@ -340,24 +340,51 @@ def test_display_scores_equal_leaderboard_scores():
 # -- default action --------------------------------------------------------------------------
 
 
-def test_default_action_is_sentinel_resolving_to_suggested_bid_then_lowest_card():
-    assert ENTRY.default_action("player_0") == AUTO_ACTION
-
+def test_default_action_returns_real_bid_then_lowest_card():
+    # The timeout hook now receives the live env and slot id and returns the concrete action that
+    # will be applied — a never-nil suggested bid during bidding, the lowest legal card during play
+    # — rather than the sentinel, so a timeout recording holds the real action.
     env = make_env()
     env.reset(seed=0)
-    # Bidding: the sentinel resolves to the deterministic suggested bid, which is never nil.
+
+    # Bidding: the hook returns the deterministic suggested bid (never nil) as a bid action.
     seat = env.state.turn
     expected_bid = rules.suggested_bid(env.state.hands[seat])
     assert expected_bid >= 1
+    action = ENTRY.default_action(env, env.agent_selection)
+    assert action == rules.bid_to_action(expected_bid)
+    assert action != AUTO_ACTION  # a concrete Discrete(66) action, not the compatibility sentinel
+    env.step(action)
+    assert env.state.bids[seat] == expected_bid
+
+    # Finish bidding through the hook, then play: the hook returns the lowest legal card.
+    while rules.in_bidding(env.state):
+        env.step(ENTRY.default_action(env, env.agent_selection))
+    seat = env.state.turn
+    expected_card = rules.lowest_legal_card(env.state, seat)
+    assert len(rules.legal_plays(env.state, seat)) >= 1
+    action = ENTRY.default_action(env, env.agent_selection)
+    assert action == expected_card
+    env.step(action)
+    assert expected_card not in env.state.hands[seat]
+    assert env.state.current_trick[-1] == (seat, expected_card)
+
+
+def test_auto_action_sentinel_still_accepted_by_step():
+    # AUTO_ACTION stays a compatibility alias for direct callers: env.step resolves it against the
+    # live state (a suggested bid, then the lowest legal card), even though the harness no longer
+    # supplies it.
+    env = make_env()
+    env.reset(seed=0)
+    seat = env.state.turn
+    expected_bid = rules.suggested_bid(env.state.hands[seat])
     env.step(AUTO_ACTION)
     assert env.state.bids[seat] == expected_bid
 
-    # Play: the sentinel resolves to the lowest legal card.
     while rules.in_bidding(env.state):
         env.step(AUTO_ACTION)
     seat = env.state.turn
     expected_card = rules.lowest_legal_card(env.state, seat)
-    assert len(rules.legal_plays(env.state, seat)) >= 1
     env.step(AUTO_ACTION)
     assert expected_card not in env.state.hands[seat]
     assert env.state.current_trick[-1] == (seat, expected_card)

@@ -86,4 +86,8 @@ def test_entry_metadata_round_trips_through_json():
 
 
 def test_default_action_is_noop():
-    assert ENTRY.default_action("player_0") == 0
+    # The two-argument hook takes the live env and slot id; idle (integer 0) is always legal on a
+    # live turn, so it is already the real action applied on a timeout — no sentinel resolution.
+    env = make_env()
+    env.reset(seed=0)
+    assert ENTRY.default_action(env, "player_0") == 0

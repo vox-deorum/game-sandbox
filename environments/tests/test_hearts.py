@@ -341,13 +341,9 @@ def test_metadata_round_trips_through_json():
 # -- default action --------------------------------------------------------------------------
 
 
-def test_default_action_is_sentinel_and_plays_lowest_legal():
-    assert ENTRY.default_action("player_0") == AUTO_ACTION
-
-    env = make_env()
-    env.reset(seed=0)
-    # Leading seat 0 with several legal cards (hearts broken so the lead is unrestricted).
-    state = rules.HeartsState(
+def _lead_choice_state() -> rules.HeartsState:
+    """Seat 0 leading with several legal cards (hearts broken, so the lead is unrestricted)."""
+    return rules.HeartsState(
         hands=[[8, 5, 20, 30], [], [], []],  # 10♣, 7♣, 9♦, 6♠
         current_trick=[],
         trick_leader=0,
@@ -358,14 +354,42 @@ def test_default_action_is_sentinel_and_plays_lowest_legal():
         last_trick=None,
         last_trick_winner=None,
     )
+
+
+def test_default_action_returns_real_lowest_legal_card():
+    # The timeout hook now receives the live env and slot id and returns the concrete lowest legal
+    # card (a real Discrete(52) action), not the sentinel, so a timeout recording holds the real move.
+    env = make_env()
+    env.reset(seed=0)
+    state = _lead_choice_state()
     env.state = state
     env.agent_selection = env.possible_agents[state.turn]
     seat = state.turn
     expected = rules.lowest_legal_card(state, seat)
     assert len(rules.legal_moves(state, seat)) > 1  # genuinely a choice
 
-    env.step(AUTO_ACTION)
+    action = ENTRY.default_action(env, "player_0")
+    assert action == expected
+    assert action != AUTO_ACTION  # a concrete card, not the compatibility sentinel
+
+    env.step(action)
     # The lowest legal card left the seat's hand and is the last card played this trick.
+    assert expected not in env.state.hands[seat]
+    assert env.state.current_trick[-1][1] == expected
+
+
+def test_auto_action_sentinel_still_accepted_by_step():
+    # AUTO_ACTION stays a compatibility alias for direct callers: env.step resolves it against the
+    # live state to the lowest legal card, even though the harness no longer supplies it.
+    env = make_env()
+    env.reset(seed=0)
+    state = _lead_choice_state()
+    env.state = state
+    env.agent_selection = env.possible_agents[state.turn]
+    seat = state.turn
+    expected = rules.lowest_legal_card(state, seat)
+
+    env.step(AUTO_ACTION)
     assert expected not in env.state.hands[seat]
     assert env.state.current_trick[-1][1] == expected
 

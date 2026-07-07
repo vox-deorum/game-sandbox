@@ -99,7 +99,7 @@ def make_chat_entry(
     return EnvironmentEntry(
         meta=meta,
         make=lambda: RoundRobinEnv(list(seats), n_ticks, step_log),
-        default_action=lambda slot_id: 0,
+        default_action=lambda env, slot_id: 0,
         overlay=None,
     )
 

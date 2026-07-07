@@ -66,7 +66,7 @@ def test_load_environment_unknown_id_raises():
 def test_discovery_rejects_name_envid_mismatch(monkeypatch):
     from game_sandbox_harness import environment as env_mod
 
-    entry = EnvironmentEntry(meta=_meta(), make=lambda: None, default_action=lambda s: 0)
+    entry = EnvironmentEntry(meta=_meta(), make=lambda: None, default_action=lambda env, s: 0)
 
     class _FakeEP:
         name = "mismatch"  # != meta.env_id ("demo")
