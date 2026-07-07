@@ -32,6 +32,11 @@ import './renderers/index.js'
 import './styles/tokens.css'
 import './styles/base.css'
 import './styles/app.css'
+// The highlight.js token colors for fenced code in the in-app docs. The renderer already emits
+// `hljs-*` token spans (see docs/markdown.ts); this theme is what gives them color. `github-dark`'s
+// near-black background matches the ink surface, and DocsMarkdown's scoped `pre.hljs` rule keeps the
+// app's own code-box background, so only the tokens inside pick up the theme.
+import 'highlight.js/styles/github-dark.css'
 
 const router = createRouter({
   history: createWebHistory(),
