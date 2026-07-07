@@ -37,6 +37,7 @@ Stages are ordered by dependency. Each stage ends with something testable end to
 | [9. LLM gateway](stage-09-llm-gateway.md) | Slot keys, telemetry, budgets, owner debug data |
 | [10. Documentation page](stage-10-documentation-page.md) | In-app student guides, configurable class landing |
 | [11. Semantic contract](stage-11-semantic-contract.md) | Semantic observations, helper-built actions, shared spaces, template v2 |
+| [12. User system](stage-12-user-system.md) | Better Auth sessions, GitHub sign-in, user statuses, admin roster |
 
 Communication follows multi-agent and builds its own test bed: Spades, a partnership environment where targeted partner signals and broadcast warnings genuinely differ, while Hearts stays messaging-free. The LLM gateway is independent and comes last.
 
