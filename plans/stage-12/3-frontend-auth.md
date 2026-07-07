@@ -26,6 +26,8 @@ export const authClient = createAuthClient({
 
 `request()` gains one interceptor at its single choke point, mirroring where identity headers used to be injected: a `401` whose body carries code `auth_required`, on any page other than `/login`, navigates to `/login`. This is the banned-or-expired mid-session path. Better Auth has revoked the session, so the next API call bounces the user to sign in rather than leaving them on a page whose actions all fail.
 
+Pages that intentionally support anonymous browsing do not use a protected request as an authentication probe. In particular, an ended public session mounts and fetches `SessionRatings` only when `/api/me` has a non-null user; an anonymous spectator sees a sign-in prompt in that panel and is not redirected merely because the session ended. The author-prompt read follows the same rule on signed-out submission pages. The interceptor remains the fallback for a request that began while authenticated and later receives `auth_required` because the session expired or was revoked.
+
 ## Me reshape
 
 `api/client.ts` and `me.ts` follow the backend's new shape:
@@ -43,7 +45,7 @@ export function canParticipate(me: Me | null): boolean // status normal or admin
 export function isAdmin(me: Me | null): boolean        // status admin
 ```
 
-The call sites update mechanically. `me.me?.user_id` becomes `me.me?.user?.id` in `ExperimentTabs.vue`, `MyAgentsPage.vue`, `ProfilePage.vue`, `SeasonsPage.vue`, and `AccountMenu.vue`. The `allowlisted` gates on the start, submit, and rating flows become `canParticipate`, and the `is_operator` gates on the admin navigation, the console pages, and the operator extras of `watch-agents` become `isAdmin`. The old `currentUserId` fallbacks are removed: when `me.user` is null the affordance renders its signed-out state rather than a fabricated id.
+Identity comparisons and profile-link builders update mechanically from `me.me?.user_id` to `me.me?.user?.id` in `ExperimentTabs.vue`, `MyAgentsPage.vue`, `ProfilePage.vue`, `SeasonsPage.vue`, and `AccountMenu.vue`. Visible account labels do not make that mechanical substitution: `ProfilePage.vue` and `AccountMenu.vue` render the session user's name and email, with the opaque id retained only for ownership, links, and an optional diagnostic tooltip. The `allowlisted` gates on the start, submit, and rating flows become `canParticipate`, and the `is_operator` gates on the admin navigation, the console pages, and the operator extras of `watch-agents` become `isAdmin`. The old `currentUserId` fallbacks are removed: when `me.user` is null the affordance renders its signed-out state rather than a fabricated id.
 
 ## Login page
 
@@ -80,8 +82,10 @@ Frontend Vitest under jsdom, with fetch and the `authClient` module mocked:
 - `LoginPage` submits credentials through the mocked client, renders each error state, shows the GitHub button only when `github_auth` is set, and redirects when already signed in.
 - `me.ts` parses the new shape, and `canParticipate` and `isAdmin` return the right truth table across the three statuses and the null user.
 - `AccountMenu` renders the signed-in and signed-out states, and its log-out calls the client.
+- `ProfilePage` renders the signed-in user's name, email, and status without presenting the opaque id as their account label.
 - The pending banner renders for `pending` only, and the start, submit, and rate affordances disable for `pending` and anonymous and enable for `normal`.
 - `api/client.ts` requests carry no identity header, a `401 auth_required` redirects to `/login`, `startSession` maps the start `403 not_active` onto the renamed union member, and the socket URL builders emit no `user` parameter.
+- An anonymous spectator can watch a public session through termination without a ratings request or login redirect, while a signed-in user loads the personalized rating view; signed-out author-prompt UI likewise avoids its protected read.
 - The suites that asserted the old shapes, `socket.test.ts`, `api.test.ts`, the experiment-tabs, seasons, and sidebar suites, and the session start-flow suites, follow the reshapes, and the deleted `identity.test.ts` goes with its module.
 
 ## Done when

@@ -22,6 +22,7 @@ export interface AuthOptions {
   secret: string
   publicOrigin: string
   trustedOrigins: string[]
+  insecureDevelopment: boolean
   adminEmail: string
   adminPassword: string
   adminName: string
@@ -29,15 +30,16 @@ export interface AuthOptions {
 }
 ```
 
-Every setting has a class-scale default so the backend runs out of the box, matching the configuration convention that no variable is required for local development.
+The non-sensitive settings keep class-scale defaults. A normal startup requires explicit `PUBLIC_ORIGIN`, `AUTH_SECRET`, `ADMIN_EMAIL`, and `ADMIN_PASSWORD` values. The published development values are accepted only when `AUTH_ALLOW_INSECURE_DEFAULTS=true` and `PUBLIC_ORIGIN` has hostname `localhost`, `127.0.0.1`, or `[::1]`; that mode also binds the HTTP listener to the corresponding loopback interface instead of `0.0.0.0`. The explicit opt-in and listener restriction keep accidental deployments from starting with published credentials, while a developer can choose the documented local setup without inventing secrets.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `AUTH_SECRET` | `dev-secret-do-not-deploy` | The Better Auth signing secret for cookies and tokens. Startup logs a loud warning when the default is in use. |
-| `PUBLIC_ORIGIN` | `http://localhost:<PORT>` | The public origin the site is reached at, used for cookie origin checks and OAuth callbacks. The GitHub callback URL is `<PUBLIC_ORIGIN>/api/auth/callback/github`. Startup logs a warning when the localhost default is in use, because a deployment that leaves it unset silently breaks OAuth callbacks and cross-origin cookies. |
-| `AUTH_TRUSTED_ORIGINS` | unset | Extra comma-separated origins, appended to the built-in list `[PUBLIC_ORIGIN, 'http://localhost:5173']`. The Vite dev origin is always included so dev sign-in works through the proxy without extra setup. |
-| `ADMIN_EMAIL` | `admin@example.com` | The seeded admin's email. |
-| `ADMIN_PASSWORD` | `admin-dev-password` | The seeded admin's password, re-synced on every boot. Startup warns when the default is in use. |
+| `AUTH_SECRET` | `dev-secret-do-not-deploy-32-chars` | The Better Auth signing secret for cookies and tokens. The development value satisfies Better Auth's minimum length but is public and accepted only with the explicit insecure-defaults opt-in on a loopback origin. |
+| `PUBLIC_ORIGIN` | `http://localhost:<PORT>` in insecure development only | The public origin the site is reached at, used for cookie origin checks and OAuth callbacks. A normal startup requires it explicitly. The GitHub callback URL is `<PUBLIC_ORIGIN>/api/auth/callback/github`. |
+| `AUTH_TRUSTED_ORIGINS` | unset | Extra comma-separated origins, appended to the built-in list. That list includes `http://localhost:5173` only when insecure defaults are explicitly enabled on a loopback origin; otherwise it contains only `PUBLIC_ORIGIN` plus the configured extras. |
+| `AUTH_ALLOW_INSECURE_DEFAULTS` | `false` | Allows the published development secret and bootstrap credentials, but only with a loopback `PUBLIC_ORIGIN`. Never enable it in a deployment. |
+| `ADMIN_EMAIL` | `admin@example.com` | The bootstrap admin's development email. The value is accepted only with the explicit insecure-defaults opt-in on a loopback origin; a deployment must set it explicitly. |
+| `ADMIN_PASSWORD` | `admin-dev-password` | The bootstrap admin's development password, re-synced on every boot. The value is accepted only with the explicit insecure-defaults opt-in on a loopback origin; a deployment must set it explicitly. |
 | `ADMIN_NAME` | `Admin` | The seeded admin's display name. |
 | `GITHUB_OAUTH_CLIENT_ID` / `GITHUB_OAUTH_CLIENT_SECRET` | unset | The GitHub OAuth app credentials. Both or neither: setting exactly one is a `ConfigError`. These are distinct from `GITHUB_TOKEN`, which stays a submissions-only credential. |
 
@@ -78,7 +80,7 @@ export function createAuth(sqlite: BetterSqlite3.Database, options: AuthOptions)
     trustedOrigins: options.trustedOrigins,
     emailAndPassword: { enabled: true, disableSignUp: true },
     socialProviders: options.github === undefined ? {} : { github: options.github },
-    plugins: [admin({ ac, roles, defaultRole: 'pending', adminRoles: ['admin'] })],
+    plugins: [admin({ ac, roles, defaultRole: 'pending' })],
   })
 }
 ```
@@ -87,7 +89,9 @@ The instance is constructed in `main.ts` and in the test harness, never at modul
 
 ## Roles and the standalone ban
 
-`pending` is not one of the admin plugin's built-in roles (`user`, `admin`), and Better Auth requires a custom role to be declared in an access-control config before `defaultRole` and role filtering will treat it as first-class. `backend/src/auth/permissions.ts` builds that config with `createAccessControl` over the admin plugin's default statements and exports `ac` plus a `roles` map declaring `admin`, `user`, and `pending`; `createAuth` passes both into `admin({ ac, roles, ... })`. The exact import paths (`better-auth/plugins/access` and `better-auth/plugins/admin/access`) are among the helper locations verified against the pinned version at implementation time. The app never grants fine-grained permissions off these roles — status is derived from the raw `role` in [step 2](2-identity-and-authorization.md) — so `pending` and `user` can be near-empty role definitions that exist only so the plugin accepts `defaultRole: 'pending'` and filters on the role cleanly. Ban stays orthogonal to role: it is the admin plugin's own `banned` flag, enforced by revoked sessions and blocked sign-in, not a fourth role.
+`pending` is not one of the admin plugin's built-in roles (`user`, `admin`), and Better Auth requires a custom role to be declared in an access-control config before `defaultRole` and role filtering will treat it as first-class. `backend/src/auth/permissions.ts` builds that config with `createAccessControl` over the admin plugin's default statements and exports `ac` plus a `roles` map declaring `admin`, `user`, and `pending`; `createAuth` passes both into `admin({ ac, roles, ... })`. The exact import paths (`better-auth/plugins/access` and `better-auth/plugins/admin/access`) are among the helper locations verified against the pinned version at implementation time. `pending` and `user` have no admin-plugin permissions. The `admin` role is an explicit allowlist of the roster operations this stage supports, including list, create, set-role, ban, unban, and set-password, and deliberately omits the plugin's `user:delete` permission. Consequently `POST /api/auth/admin/remove-user` is refused by the plugin even for an admin session, not merely hidden in the frontend. Status is derived from the raw `role` in [step 2](2-identity-and-authorization.md). Ban stays orthogonal to role: it is the admin plugin's own `banned` flag, enforced by revoked sessions and blocked sign-in, not a fourth role.
+
+Game Sandbox maintains a single-role invariant even though Better Auth's generic admin API accepts role arrays. Auth endpoint hooks on create-user and set-role require one scalar role from `pending`, `user`, or `admin`, rejecting arrays, comma-containing strings, and unknown values before the plugin mutates the user. A guard over every `/api/auth/admin/*` endpoint also requires the acting session user to carry exactly the singleton `admin` role before the plugin permission check runs, so an imported or corrupted composite role cannot exercise plugin administration. The defensive parser in [step 2](2-identity-and-authorization.md) handles every other noncanonical database value as pending, but no supported API creates one.
 
 ## Schema migration
 
@@ -101,17 +105,17 @@ The body-parsing problem is handled inside the plugin scope. Better Auth's handl
 
 ## Admin seed
 
-`backend/src/auth/seed-admin.ts` exposes `ensureAdminUser(auth, { email, password, name }, log)`, run by `main.ts` after `migrateAuthSchema`. It is idempotent and treats deployment configuration as the source of truth:
+`backend/src/auth/seed-admin.ts` exposes `ensureAdminUser(auth, { email, password, name }, log)`, run by `main.ts` after `migrateAuthSchema`. It owns one reserved, stable Better Auth user id, `game-sandbox-bootstrap-admin`, so changing `ADMIN_EMAIL` updates the same bootstrap account instead of creating another administrator. It is idempotent and treats deployment configuration as the source of truth:
 
-1. Look up the user by email through the auth context's internal adapter.
-2. If missing, create it server-side with role `admin` (the admin plugin's `createUser` runs without a session on the server).
-3. If present, force the role back to `admin`, clear the ban fields, and reset the password to the configured value. Two version-specific details are verified against the pinned Better Auth at implementation time: role and ban fields are updated through the auth context's internal adapter, and the password reset rewrites the credential `account` row (not the `user` row) — through the internal adapter and the context's password hasher, or by reusing the admin plugin's `setUserPassword` if it can run without a session on the server.
+1. Look up the user by the reserved id through the auth context's internal adapter.
+2. If missing, first refuse startup when another user already owns the configured email, then create the reserved-id user server-side with role `admin`.
+3. If present, first refuse startup when the configured email belongs to a different user, then update this same user's email and name, force its role back to `admin`, clear the ban fields, and reset the password to the configured value. Two version-specific details are verified against the pinned Better Auth at implementation time: supplying the reserved id on server-side creation, updating role and ban fields through the auth context's internal adapter, and rewriting the credential `account` row (not the `user` row) through the internal adapter and the context's password hasher, or by reusing the admin plugin's `setUserPassword` if it can run without a session on the server.
 
 Resyncing the password on every boot is deliberate. Rotating `ADMIN_PASSWORD` in deployment configuration and restarting rotates the credential with no manual step, and an admin account that was demoted, banned, or had its password changed heals on the next restart. A restart with unchanged configuration is a no-op apart from writing an equivalent password hash.
 
 ## Startup wiring
 
-`main.ts` orders the boot as `loadConfig`, then `openSqlite(config.dbPath)` (which builds the app schema), then `createAuth(sqlite, config.auth)`, then `migrateAuthSchema(auth)`, then `ensureAdminUser(auth, config.auth, log)`, then the rest of the existing wiring, then `buildApp` with `auth` in its deps. The seeded-default warnings for `AUTH_SECRET`, `ADMIN_PASSWORD`, and a localhost `PUBLIC_ORIGIN` go through the existing `log` callback, not a new logging concept.
+`main.ts` orders the boot as `loadConfig`, then `openSqlite(config.dbPath)` (which builds the app schema), then `createAuth(sqlite, config.auth)`, then `migrateAuthSchema(auth)`, then `ensureAdminUser(auth, config.auth, log)`, then the rest of the existing wiring, then `buildApp` with `auth` in its deps. An explicitly opted-in development setup logs warnings for the published credentials and binds Fastify to the loopback interface represented by `PUBLIC_ORIGIN`. A normal startup binds to `0.0.0.0` only after `loadConfig` has received an explicit public origin, signing secret, and bootstrap credentials.
 
 ## Test harness support
 
@@ -150,10 +154,13 @@ export class TestUsers {
 
 - After `openSqlite(':memory:')` and `makeTestAuth`, the Better Auth tables exist alongside the app schema, and running `migrateAuthSchema` a second time is a no-op.
 - Over `app.inject`, `POST /api/auth/sign-in/email` with the seeded admin returns a `set-cookie` session token, a wrong password is refused, `POST /api/auth/sign-up/email` is rejected because self-registration is disabled, and `GET /api/auth/get-session` round-trips the cookie.
-- `ensureAdminUser` creates the admin once, a second run changes nothing observable, and after demoting the account and changing the configured password a re-run restores role `admin` and only the new password signs in.
-- Config parsing enforces the both-or-neither GitHub rule, parses `AUTH_TRUSTED_ORIGINS`, and applies the documented defaults.
+- `ensureAdminUser` creates the reserved-id admin once, a second run changes nothing observable, and after demoting the account and changing the configured email and password a re-run restores the same user id and role, moves sign-in to the new email and password, and leaves no second admin. An email collision with another user refuses startup.
+- Config parsing enforces the both-or-neither GitHub rule, parses `AUTH_TRUSTED_ORIGINS`, requires an explicit public origin and credentials in normal mode, rejects the published development credentials unless both the explicit opt-in and a loopback origin are present, rejects the opt-in itself for a non-loopback origin, and includes the Vite origin automatically only in that opted-in local mode. A startup-wiring test proves insecure mode listens only on loopback while normal mode may use `0.0.0.0`.
+- Direct create-user and set-role requests reject role arrays, comma-separated roles, and unknown roles, preserving the singleton-role invariant at the plugin boundary.
+- After a test mutates an acting user's stored role to `admin,user`, both an app admin route and a direct admin-plugin endpoint refuse the session, proving noncanonical roles fail closed at both authorization boundaries.
+- An admin session can perform each supported roster operation but receives a forbidden response from `POST /api/auth/admin/remove-user`, proving deletion is absent from the server-side role rather than only the UI.
 - `TestUsers.headersFor` yields headers that `GET /api/auth/get-session` accepts, a `status: 'pending'` user carries role `pending`, and `ban()` makes a previously issued cookie stop resolving.
 
 ## Done when
 
-The backend starts with Better Auth mounted at `/api/auth/*` on the shared SQLite database, the admin account exists and re-syncs from configuration on every boot, email and password sign-in works over `app.inject` and over HTTP, self-registration is refused, and the harness can mint real signed-in users for any suite. Identity resolution everywhere else in the backend is still the untouched Stage 3 stub, so the rest of the suite is unchanged by this step.
+The backend starts with Better Auth mounted at `/api/auth/*` on the shared SQLite database, the one stable bootstrap-admin account exists and re-syncs from explicit deployment configuration on every boot, normal mode requires an explicit public origin and credentials, insecure development requires an explicit opt-in and a loopback-only listener, email and password sign-in works over `app.inject` and over HTTP, user deletion is refused server-side, self-registration is refused, and the harness can mint real signed-in users for any suite. Identity resolution everywhere else in the backend is still the untouched Stage 3 stub, so the rest of the suite is unchanged by this step.

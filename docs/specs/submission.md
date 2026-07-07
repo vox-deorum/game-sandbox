@@ -68,7 +68,7 @@ Validate and build
 
 If no branch, tag, or commit is supplied, the system pins the head of the default branch. Later pushes do not change the existing submission. Resubmitting resolves a new commit.
 
-Each participant has one active submission per season. A later submission replaces the active one and preserves history. The signed-in GitHub identity is always the submitter identity.
+Each participant has one active submission per season. A later submission replaces the active one and preserves history. The signed-in account identity is always the submitter identity.
 
 If a deployment needs to pull from private repos, the operator provides a GitHub token at deploy time. Public repos do not need this.
 

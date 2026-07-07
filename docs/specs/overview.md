@@ -28,7 +28,7 @@ Game Sandbox must:
 - Record every session as state that can be replayed.
 - Support optional agent messaging and an OpenAI-compatible LLM API.
 - Keep live sessions, agent decisions, model use, and storage bounded.
-- Attribute submissions, sessions, and feedback to one GitHub identity.
+- Attribute submissions, sessions, and feedback to one authenticated account identity.
 - Preserve historical seasons and reproducible submissions.
 - Leave room for a future Unity ML-Agents bridge without changing the frontend or leaderboard model.
 

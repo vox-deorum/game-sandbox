@@ -2,7 +2,7 @@
 
 Status: not started
 
-Part of [Stage 12](../stage-12-user-system.md). This is build-order step 4, the roster UI. User management needs no bespoke backend routes, because Better Auth's admin plugin already exposes the operations under `/api/auth/admin/*`, gated server-side by the plugin's `adminRoles: ['admin']` check from [step 1](1-better-auth-foundation.md). So this step is mostly a frontend page over the admin client from [step 3](3-frontend-auth.md), plus a small backend addition that puts human display names on the public payloads that today show raw user ids.
+Part of [Stage 12](../stage-12-user-system.md). This is build-order step 4, the roster UI. User management needs no bespoke backend routes, because Better Auth's admin plugin already exposes the supported operations under `/api/auth/admin/*`, gated server-side by the custom admin role from [step 1](1-better-auth-foundation.md). That role deliberately lacks user deletion. So this step is mostly a frontend page over the admin client from [step 3](3-frontend-auth.md), plus a small backend addition that puts human display names on every payload whose opaque Better Auth user id is shown to a person.
 
 ## Endpoints consumed
 
@@ -17,13 +17,13 @@ The page drives the admin client's methods, which call the plugin endpoints:
 | Ban or unban | `POST /api/auth/admin/ban-user` and `unban-user` | An optional `banReason`. Banning revokes the user's sessions and blocks sign-in. |
 | Reset a password | `POST /api/auth/admin/set-user-password` | The admin sets a new fixed password. |
 
-There is deliberately no remove-user action in the UI. Submissions, recordings, ratings, and placements key on the user id, so deleting a user would orphan that attribution. Ban is the retirement path.
+There is deliberately no remove-user action in the UI. Submissions, recordings, ratings, and placements key on the user id, so deleting a user would orphan that attribution. Ban is the retirement path. This is a server-side invariant as well as a UI choice: the custom admin role omits `user:delete`, and a direct `POST /api/auth/admin/remove-user` receives a forbidden response even from an admin session.
 
 ## The page
 
-`pages/UsersAdminPage.vue` at route `/admin/users` self-gates on `isAdmin(me)` the way `AdminConsolePage.vue` self-gates, with the plugin's server-side `adminRoles` check as the real authority. It builds from the design-system primitives and the semantic tokens, and any new primitive variant it needs is added to the dev-only `/styleguide` route.
+`pages/UsersAdminPage.vue` at route `/admin/users` self-gates on `isAdmin(me)` the way `AdminConsolePage.vue` self-gates, with the plugin's server-side custom-role permission check as the real authority. It builds from the design-system primitives and the semantic tokens, and any new primitive variant it needs is added to the dev-only `/styleguide` route.
 
-- Status tabs each map to one `list-users` filter, which they can because ban is standalone rather than a precedence over role: All applies no filter, Pending/Normal/Admins filter `role` (`pending`/`user`/`admin`), and Banned filters `banned = true`. A banned user therefore appears under the Banned tab and, if they still hold a role, under that role's tab too — consistent with ban being an orthogonal flag. A search box queries email or name, and a paged table of 50 rows shows the name, email, a status badge, and the created date.
+- Status tabs each map to one `list-users` filter because the auth boundary enforces one canonical role per user: All applies no filter, Pending/Normal/Admins filter `role` (`pending`/`user`/`admin`), and Banned filters `banned = true`. A banned user therefore appears under the Banned tab and under the tab for their role, consistent with ban being an orthogonal flag. The local badge helper maps the same three canonical values as `deriveStatus` and treats any noncanonical value as pending, so an imported or corrupted row fails closed in the All view. A search box queries email or name, and a paged table of 50 rows shows the name, email, a status badge, and the created date.
 - Row actions depend on the row's status: Approve for a pending user, Promote or Demote, Ban with a reason prompt or Unban, and Reset password. Actions that would target the acting admin are disabled client-side, and Better Auth also refuses a self-ban server-side.
 - A create-user dialog takes a name, email, password, and role. This is the manual-account path for a student who has no GitHub account.
 - The status badge shows the role-derived status (`pending`/`normal`/`admin`) and, independently, a banned marker when the row is banned — ban decorates rather than replaces the role, matching the standalone model — from a small helper local to the page.
@@ -43,25 +43,32 @@ export interface UserDirectory {
 export function createUserDirectory(sqlite: BetterSqlite3.Database): UserDirectory
 ```
 
-It reads display names from Better Auth's `user` table with a locally-typed raw Kysely query, rather than extending the app's `Database` schema type, because that table is library-owned (see the migration decision in [step 1](1-better-auth-foundation.md)) and the app never writes it. Threaded through `AppDeps`, and into `AdminDeps` and `LeaderboardDeps` where they are needed, it adds:
+It reads display names from Better Auth's `user` table with a locally-typed raw Kysely query, rather than extending the app's `Database` schema type, because that table is library-owned (see the migration decision in [step 1](1-better-auth-foundation.md)) and the app never writes it. Callers batch ids through `namesFor` rather than issuing a query per row. The directory is threaded through `AppDeps`, `AdminDeps`, `LeaderboardDeps`, `RatingDeps`, the orchestrator, and the workflow runner wherever a response or recording attribution crosses the UI boundary. It adds:
 
 - `owner_name` on `GET /api/environments/:envId/agents/:ownerId`.
 - `owner_name` in the operator extras of `watch-agents` and `user_name` on the admin season submissions list.
-- `agent_user_name` on the leaderboard board rows that carry an `agent_user_id`.
+- `user_name` on the submission variant of the shared `BoardAgentRef`, beside its stable `user_id`. Leaderboard rows and run-game slots both carry this nested agent shape, so one contract gives the main board and shared matchup table readable owners.
+- A resolved owner name for each submitted agent in the personalized session-rating view, so its `display_name` never formats an opaque user id as `<id>'s agent` after blind feedback closes.
+- `user_name` on recording summaries from `GET /api/recordings`, and `user_name` on `GET /api/sessions/:id`, so the replay list, replay metadata, and live-session metadata show the owner's name.
+- `requested_by_name` on admin run summaries and details. Together with the enriched `BoardAgentRef`, this covers the admin run list, admin run details, and the public released-season matchup table that uses the same game component.
 
-The frontend renders the name wherever the id shows today, on the agent profile header, the board rows, and the admin lists, keeping the id as a tooltip and fallback for a missing user.
+Recording-header attribution needs one additional path because `GET /api/recordings/:id` streams an immutable NDJSON artifact rather than a JSON payload the route can decorate. Before either a live session or a headless workflow game launches, its caller batches the human and submission-owner ids through `UserDirectory` and passes both stable ids and display names into `assembleSeats`. The header keeps each stable id in `player.user`, but its human `label` is the display name and its submitted-agent label is `<display name>'s agent`. The live header and the persisted replay therefore use readable attribution without rewriting a recording on read. A missing directory row falls back to the stable id at every boundary, and the frontend keeps that id in a tooltip wherever a separate name field is rendered.
+
+The frontend renders the name wherever the id shows today: the agent profile header, watch-agent operator details, personalized rating view, leaderboard rows, replay list and viewer metadata, live-session metadata and player attribution, admin submission and run lists, run details, and game tables. Stable ids remain the values used for ownership checks, links, keys, and tooltips, and are the visible fallback only when the directory has no matching user.
 
 ## Implementation decisions
 
 - **Drive the plugin endpoints directly with `authClient.admin.*`, not a proxy through `/api/admin`.** Proxy routes would re-implement an already-gated, already-typed API for no gain. This page is the one place `authClient.admin` is used.
 - **`UserDirectory` reads the `user` table with a locally-typed raw query.** The table is library-owned, so the app does not fold it into its own schema type, and the directory only reads it.
+- **Recording attribution snapshots a display name.** A recording must remain replayable without joining mutable auth data into its NDJSON stream. `player.user` remains the durable identity, while `player.label` captures the name in use when the game launched; other API responses resolve the current name from the directory.
 
 ## Tests
 
 - Frontend, `frontend/test/users-admin.test.ts`, with `authClient.admin` mocked: the roster renders with correct status badges, the search box and the status tabs issue the right queries, the approve, promote, ban, unban, and create flows call the right client methods and refresh the list, a non-admin sees the access notice, and self-targeting actions are disabled.
-- Backend: a `UserDirectory.namesFor` unit test, and assertions that `owner_name` and `agent_user_name` are present on the agent profile and board payloads, extending the existing suites.
+- Backend: a `UserDirectory.namesFor` unit test, plus assertions for all enriched payloads: agent profile, operator watch choices, personalized rating views, nested leaderboard `BoardAgentRef` values, recording summaries, session detail, admin submissions, run summaries and details, and run-game slots. Live-session and workflow launch-config tests prove recording headers preserve opaque ids in `player.user` while using display names in `player.label`, including the missing-user fallback.
+- Frontend: extend the existing agent, picker, leaderboard, replay list, replay viewer, live session, season submissions, run list, run details, and games-table tests to assert names are visible, ids remain available as tooltips or fallbacks, and ownership and profile links still use ids.
 - The sidebar Users entry renders only for an admin.
 
 ## Done when
 
-An admin lists, searches, and pages the roster; approves a pending GitHub sign-up; creates a fixed email and password account; bans a user with a reason and unbans them; and promotes and demotes, with every action effective immediately against the status gates from [step 2](2-identity-and-authorization.md). Public agent and board views show display names instead of raw ids.
+An admin lists, searches, and pages the roster; approves a pending GitHub sign-up; creates a fixed email and password account; bans a user with a reason and unbans them; and promotes and demotes, with every action effective immediately against the status gates from [step 2](2-identity-and-authorization.md). Direct user deletion is refused server-side. Agent, board, replay, live attribution, submission, run, and game-table views show display names instead of opaque ids while retaining ids for identity and navigation.

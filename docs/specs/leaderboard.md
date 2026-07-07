@@ -9,7 +9,7 @@ A **season** is one competition for one environment. It may represent a class as
 A season has three independent public gates:
 
 - The **submission window** controls whether participants can submit.
-- The **play window** controls whether signed-in, allowlisted users can start public watch or play sessions and write ratings.
+- The **play window** controls whether signed-in users with `normal` or `admin` status can start public watch or play sessions and write ratings.
 - The **release status** controls whether ordinary users can see the boards and history.
 
 The gates may point to different seasons:

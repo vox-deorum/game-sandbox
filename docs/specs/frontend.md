@@ -6,13 +6,14 @@ The frontend lets people discover environments, submit agents, watch or play ses
 
 Navigation has two levels:
 
-| Global sidebar | Environment tabs      |
-| -------------- | --------------------- |
-| Environments   | Overview              |
-| Seasons        | Leaderboards          |
-| Documentation  | Replays               |
-| My Agents      | My Submissions        |
-| My Profile     | Manage, for operators |
+| Global sidebar    | Environment tabs      |
+| ----------------- | --------------------- |
+| Environments      | Overview              |
+| Seasons           | Leaderboards          |
+| Documentation     | Replays               |
+| My Agents         | My Submissions        |
+| My Profile        | Manage, for operators |
+| Users, for admins |                       |
 
 The site uses **Environment** and **Season** as its front-facing names, matching the `environment` and `season` entity names used throughout the API and the operator console.
 
@@ -32,6 +33,7 @@ The site uses **Environment** and **Season** as its front-facing names, matching
 | Manage | Operator-only season configuration, workflow logs, preview, and release |
 | Documentation | Student guides, rendered in-app with a section navigation |
 | My Profile | Signed-in identity and capabilities |
+| Users | Admin-only roster management, approval, bans, roles, and password resets |
 
 The Documentation page renders the student guides from `docs/students/` inside the app, with a section navigation over the guides. Its landing is the students index by default, and a deployment can replace that landing with its own class home by pointing `DOCS_INDEX_FILE` at a markdown file (see [Configuration](../contributors/configuration.md)). Links to documentation the site does not serve, such as the specification or contributor guides, open their source on GitHub.
 
@@ -67,7 +69,7 @@ Any agent row, built-in or submitted, opens the same seat-assignment view with t
 
 ## On-demand live play
 
-Signed-in allowlisted users may start one concurrent session. Environment limits, a human timeout, an idle timeout, and a wall-clock backstop bound the session. See [Execution](execution.md).
+Signed-in users with `normal` or `admin` status may start one concurrent session. Environment limits, a human timeout, an idle timeout, and a wall-clock backstop bound the session. See [Execution](execution.md).
 
 ## Feedback
 
@@ -85,13 +87,14 @@ The built-in baseline may be rated in a mixed session. Ratings affect only the h
 
 The rating panel appears only after the session ends, immediately above the game stage. It enters with a short downward reveal that uses the shared motion tokens. The rating view may show the operator's season instructions once and the agent author's instructions beside that agent. Both guide one score. The author sets the prompt in the submit form; it is season metadata, not part of the pinned submission. The same author prompt is also surfaced beneath each agent on the human-feedback board and once per season in the agent profile's submission history.
 
-## Identity: GitHub OAuth
+## Identity and access
 
-Web users sign in with GitHub OAuth. One GitHub identity is used for:
+Visitors may browse public environments, seasons, leaderboards, recordings, agent profiles, and documentation without signing in. A user signs in through GitHub OAuth when the deployment enables it, or with an email and password for an account created by an admin. Public email and password registration does not exist.
 
-- Submissions.
-- Sessions and recordings.
-- Ratings.
-- Operator and session allowlists.
+Every signed-in user has one status. A `pending` user may browse and inspect their own account data but may not start sessions, submit agents, or rate. A `normal` user may participate in those flows. An `admin` has the same participation access and may also use the administration pages and APIs. New GitHub users begin as `pending`; admin-created accounts begin as `normal` unless the admin explicitly chooses another status.
 
-The backend derives identity from the authenticated session, never from a user ID supplied in a request body.
+A ban is separate from status. Banning a user revokes their login sessions and prevents another sign-in until an admin unbans them. Ban is the retirement path because deleting a user would orphan the submissions, recordings, ratings, and placements attributed to that identity, so user deletion is not available through either the interface or the API.
+
+The Users page lets an admin list and search the roster, create an email and password account, approve a pending user, promote or demote an admin, ban or unban a user, and reset a password. The configured bootstrap admin is a stable system identity whose email, display name, password, admin status, and ban state are restored from deployment configuration at startup.
+
+The backend derives identity and authorization from the authenticated session, never from a user ID supplied in a request body, header, or query parameter. Public payloads show a user's display name wherever attribution is presented; opaque internal user IDs remain available only where needed for links, ownership checks, and diagnostics.
