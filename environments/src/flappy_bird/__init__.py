@@ -13,11 +13,9 @@ to change.
 
 from __future__ import annotations
 
-from typing import Any
-
 from game_sandbox_harness.environment import EnvironmentEntry, EnvironmentMeta
 
-from .env import NOOP_ACTION, make_env
+from .env import default_action, make_env
 from .overlay import extract_overlay
 
 ENV_ID = "flappy_bird"
@@ -47,18 +45,9 @@ META = EnvironmentMeta(
 )
 
 
-def _default_action(env: Any, slot_id: str) -> int:
-    """The legal default on every timeout path: do nothing (idle).
-
-    Idle (integer ``0``) is always legal, so it is already a real ``Discrete(2)`` action; the env and
-    slot id are accepted only for the uniform two-argument hook.
-    """
-    return NOOP_ACTION
-
-
 ENTRY = EnvironmentEntry(
     meta=META,
     make=make_env,
-    default_action=_default_action,
+    default_action=default_action,
     overlay=extract_overlay,
 )

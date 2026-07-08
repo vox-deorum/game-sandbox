@@ -10,6 +10,7 @@ headless frame.
 
 from __future__ import annotations
 
+from sandbox.card_utils import card_to_obj
 from sandbox.env import make_env
 
 
@@ -25,8 +26,9 @@ def test_headless_render_produces_a_frame_and_hittests():
         assert str(frame.dtype) == "uint8"
 
         # card_rect / card_at_pos are inherited from the shared CardTableRenderer; a round-trip
-        # proves the shared hand layout and hit-testing resolve in the sandbox.* layout.
-        card = env.state.hands[0][0]
+        # proves the shared hand layout and hit-testing resolve in the sandbox.* layout. The
+        # renderer deals in semantic card OBJECTS, while state.hands holds engine ints.
+        card = card_to_obj(env.state.hands[0][0])
         rect = env._renderer.card_rect(card)
         assert rect is not None
         assert env._renderer.card_at_pos(rect.center) == card

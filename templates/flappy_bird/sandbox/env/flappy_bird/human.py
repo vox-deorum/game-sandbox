@@ -11,8 +11,8 @@ the play loop checks to stop.
 
 The local play loops (the project's ``scripts/play.py`` and the student template's
 ``sandbox`` CLI) discover this by the uniform ``make_human_controller`` factory. This module
-imports only ``pygame`` and the sibling ``env`` constants, so it is copied verbatim into the
-student template's ``sandbox/env/`` by the generate script.
+imports only ``pygame``, so it is copied verbatim into the student template's
+``sandbox/env/`` by the generate script.
 """
 
 from __future__ import annotations
@@ -21,10 +21,10 @@ from typing import Any
 
 import pygame
 
-from .env import NOOP_ACTION
-
 #: The flap action (the env's action space is ``Discrete(2)``: 0 = idle, 1 = flap).
 FLAP_ACTION = 1
+#: The idle action (do nothing).
+IDLE_ACTION = 0
 #: Keys that flap; either is accepted so the control is discoverable.
 _FLAP_KEYS = (pygame.K_SPACE, pygame.K_UP)
 
@@ -37,7 +37,7 @@ class FlappyHumanController:
         self.quit = False
 
     def act(self, slot_id: str, observation: Any, *, blocking: bool) -> int:
-        """Return ``FLAP_ACTION`` if a flap edge arrived this tick, else ``NOOP_ACTION``.
+        """Return ``FLAP_ACTION`` if a flap edge arrived this tick, else ``IDLE_ACTION``.
 
         ``blocking`` is accepted for a uniform controller interface but ignored: a realtime
         game samples input non-blocking and advances regardless. We flap on a flap-key
@@ -47,7 +47,7 @@ class FlappyHumanController:
         window-close be noticed promptly.
         """
         if not pygame.get_init():
-            return NOOP_ACTION
+            return IDLE_ACTION
         flap = False
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -56,7 +56,7 @@ class FlappyHumanController:
                 event.type == pygame.MOUSEBUTTONDOWN and event.button == 1
             ):
                 flap = True
-        return FLAP_ACTION if flap else NOOP_ACTION
+        return FLAP_ACTION if flap else IDLE_ACTION
 
 
 def make_human_controller(env: Any) -> FlappyHumanController:

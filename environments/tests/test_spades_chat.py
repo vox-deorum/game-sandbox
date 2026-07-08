@@ -1,15 +1,19 @@
 """Integration: the chatting Spades examples over the real harness, recording the exchange.
 
 Drives ``run_episode`` on the real Spades ``ENTRY`` with the ``examples/spades`` agents loaded by
-path (with ``templates/spades`` on ``sys.path`` so their ``sandbox.cards`` import resolves). Proves
-the signaler's targeted exchange and the daredevil's broadcast land in the recording, and that the
-daredevil's cover provably depends on the broadcast arriving.
+path (with a composed base+spades ``sandbox`` package on ``sys.path`` so their ``sandbox.cards``
+import — which itself now imports the shared ``sandbox.card_utils`` codec — resolves exactly as it
+does in a real composed template). Proves the signaler's targeted exchange and the daredevil's
+broadcast land in the recording, and that the daredevil's cover provably depends on the broadcast
+arriving.
 """
 
 from __future__ import annotations
 
 import importlib.util
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 from game_sandbox_harness.recording.local import FolderRecordingStore
@@ -17,22 +21,33 @@ from game_sandbox_harness.session import AgentSlot, run_episode
 from spades import ENTRY
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+TEMPLATE_BASE = REPO_ROOT / "templates" / "base"
 TEMPLATE_SPADES = REPO_ROOT / "templates" / "spades"
+
+# A composed template/example is templates/base/ overlaid, whole-file, by templates/<env>/ (see
+# scripts/compose.py); sandbox.cards now imports the shared sandbox.card_utils codec, which lives
+# only in the base layer. Build that composed sandbox/ once, in a session-scoped temp dir, so the
+# example agents' `from sandbox.cards import ...` resolves exactly as it does for a real student
+# template, without reaching into scripts.compose's shared build/ output directory.
+_COMPOSED_ROOT = Path(tempfile.mkdtemp(prefix="spades_chat_compose_"))
+shutil.copytree(TEMPLATE_BASE, _COMPOSED_ROOT, dirs_exist_ok=True)
+shutil.copytree(TEMPLATE_SPADES, _COMPOSED_ROOT, dirs_exist_ok=True)
 
 
 def _load_example_agent(name: str) -> type:
     """Load ``examples/spades/<name>/agent.py``'s ``Agent`` class with the template's helpers visible.
 
-    Mirrors the harness template-loader recipe: put the env template layer on ``sys.path`` so the
-    example's ``from sandbox.cards import ...`` resolves, load under a unique module name, then restore
-    ``sys.path`` and the ``sandbox`` modules so nothing leaks into other tests.
+    Mirrors the harness template-loader recipe: put the composed env template layer on ``sys.path``
+    so the example's ``from sandbox.cards import ...`` (and its own ``from sandbox.card_utils
+    import ...``) resolves, load under a unique module name, then restore ``sys.path`` and the
+    ``sandbox`` modules so nothing leaks into other tests.
     """
     path = REPO_ROOT / "examples" / "spades" / name / "agent.py"
     saved_path = list(sys.path)
     saved_sandbox = {k: v for k, v in sys.modules.items() if k == "sandbox" or k.startswith("sandbox.")}
     for key in saved_sandbox:
         del sys.modules[key]
-    sys.path.insert(0, str(TEMPLATE_SPADES))
+    sys.path.insert(0, str(_COMPOSED_ROOT))
     try:
         spec = importlib.util.spec_from_file_location(f"example_spades_{name}", path)
         assert spec is not None and spec.loader is not None

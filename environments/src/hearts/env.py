@@ -17,8 +17,9 @@ authoritative per-seat penalty/leaderboard display lives in the overlay, not in 
 
 from __future__ import annotations
 
+import importlib
 import random
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from gymnasium import spaces
@@ -26,17 +27,57 @@ from pettingzoo.utils.env import AECEnv
 
 from . import rules
 
-#: Sentinel action meaning "the player timed out": ``step`` plays ``rules.lowest_legal_card``.
-AUTO_ACTION = -1
+
+def _shared_card_modules() -> tuple[Any, Any]:
+    """Return the shared ``(card_utils, card_spaces)`` modules under whichever name this file runs as.
+
+    One source syncs into two layouts: :mod:`local_play` inside the environments package,
+    ``sandbox`` in a composed template. A :class:`ModuleNotFoundError` naming the absent candidate
+    package is swallowed; one naming a real dependency is re-raised. Mirrors
+    ``hearts.rules._shared_card_utils``.
+    """
+    for package in ("local_play", "sandbox"):
+        try:
+            card_utils = importlib.import_module(f"{package}.card_utils")
+            card_spaces = importlib.import_module(f"{package}.card_spaces")
+        except ModuleNotFoundError as exc:
+            missing = exc.name or ""
+            if missing == package or missing.startswith(f"{package}."):
+                continue
+            raise
+        else:
+            return card_utils, card_spaces
+    raise ModuleNotFoundError("no shared card_utils/card_spaces found (tried local_play, sandbox)")
+
+
+if TYPE_CHECKING:  # pyright sees the real modules; this branch never executes at runtime
+    from local_play import card_spaces as _card_spaces
+    from local_play import card_utils as _card_utils
+else:
+    _card_utils, _card_spaces = _shared_card_modules()
+
+card_to_obj = _card_utils.card_to_obj
+HAND = _card_spaces.HAND
+TRICK = _card_spaces.TRICK
 
 
 class IllegalMoveError(ValueError):
-    """Raised by :meth:`HeartsEnv.step` when a non-sentinel action is not a legal card."""
+    """Raised by :meth:`HeartsEnv.step` when an action is not a legal card."""
 
 
 def make_env(render_mode: str | None = None) -> HeartsEnv:
     """Return a fresh :class:`HeartsEnv`. The seed arrives later at :meth:`HeartsEnv.reset`."""
     return HeartsEnv(render_mode=render_mode)
+
+
+def default_action(env: HeartsEnv, slot_id: str) -> int:
+    """The legal default for a timed-out seat: its lowest legal card.
+
+    Reads the live env and returns the concrete ``Discrete(52)`` card (not a sentinel), so the
+    recording holds the real move. It matches ``env.step``'s own resolution, so gameplay is unchanged.
+    """
+    seat = env.possible_agents.index(slot_id)
+    return rules.lowest_legal_card(env.state, seat)
 
 
 class HeartsEnv(AECEnv):
@@ -63,20 +104,20 @@ class HeartsEnv(AECEnv):
         self._renderer: Any = None
 
         # Build the spaces exactly once so the accessors can return the same object every call
-        # (api_test asserts space identity). Every leaf is int8 for api_test's dtype check.
-        # The space mirrors observe()'s structure: the seven state leaves nested under
-        # "observation" alongside a top-level "action_mask", matching the AEC convention.
+        # (api_test asserts space identity). The space mirrors observe()'s structure: the semantic
+        # state leaves nested under "observation" alongside a top-level "action_mask", matching the
+        # AEC convention. Cards are semantic objects (HAND/TRICK), not integer-indexed arrays.
         obs_space = spaces.Dict(
             {
                 "observation": spaces.Dict(
                     {
-                        "hand": spaces.MultiBinary(rules.NUM_CARDS),
-                        "trick": spaces.Box(low=-1, high=51, shape=(4,), dtype=np.int8),
-                        "led_suit": spaces.Box(low=-1, high=3, shape=(1,), dtype=np.int8),
-                        "hearts_broken": spaces.Box(low=0, high=1, shape=(1,), dtype=np.int8),
-                        "position": spaces.Box(low=0, high=3, shape=(1,), dtype=np.int8),
-                        "trick_leader": spaces.Box(low=0, high=3, shape=(1,), dtype=np.int8),
-                        "scores": spaces.Box(low=0, high=26, shape=(4,), dtype=np.int8),
+                        "seat": spaces.Discrete(4),
+                        "hand": HAND,
+                        "current_trick": TRICK,
+                        "trick_leader": spaces.Discrete(4),
+                        "led_suit": spaces.Discrete(5),
+                        "hearts_broken": spaces.Discrete(2),
+                        "scores": spaces.Box(low=0, high=26, shape=(4,), dtype=np.int64),
                     }
                 ),
                 "action_mask": spaces.Box(low=0, high=1, shape=(rules.NUM_CARDS,), dtype=np.int8),
@@ -113,24 +154,20 @@ class HeartsEnv(AECEnv):
         seat = self._seat(agent)
         state = self.state
 
-        hand = np.zeros(rules.NUM_CARDS, np.int8)
-        for card in state.hands[seat]:
-            hand[card] = 1
-
-        trick = np.full(4, -1, np.int8)
-        for played_seat, card in state.current_trick:
-            trick[played_seat] = card
+        hand = tuple(card_to_obj(card) for card in state.hands[seat])
+        current_trick = tuple(
+            {"seat": int(played_seat), "card": card_to_obj(card)} for played_seat, card in state.current_trick
+        )
 
         led = rules.led_suit(state)
-        led_suit = np.array([led if led is not None else -1], np.int8)
-        hearts_broken = np.array([1 if state.hearts_broken else 0], np.int8)
-        position = np.array([seat], np.int8)
-        trick_leader = np.array([state.trick_leader], np.int8)
+        led_suit = 4 if led is None else int(led)
+        hearts_broken = int(bool(state.hearts_broken))
+        trick_leader = int(state.trick_leader)
         # The display score (lower is better): the running penalty during play, and the
         # shoot-the-moon-flipped final at terminal. Using penalty_scores rather than the raw
         # points_taken keeps this leaf in agreement with the overlay's display_scores, which the
         # renderer draws, so the two never disagree on the last step of a moon-shot hand.
-        scores = np.array(rules.penalty_scores(state), np.int8)
+        scores = np.array(rules.penalty_scores(state), dtype=np.int64)
 
         # The action mask is meaningful only for the seat whose turn it is; an off-turn seat is not
         # choosing, so it gets an all-zero mask (matching the overlay, which lists legal actions for
@@ -143,12 +180,12 @@ class HeartsEnv(AECEnv):
 
         return {
             "observation": {
+                "seat": int(seat),
                 "hand": hand,
-                "trick": trick,
+                "current_trick": current_trick,
+                "trick_leader": trick_leader,
                 "led_suit": led_suit,
                 "hearts_broken": hearts_broken,
-                "position": position,
-                "trick_leader": trick_leader,
                 "scores": scores,
             },
             "action_mask": action_mask,
@@ -159,8 +196,7 @@ class HeartsEnv(AECEnv):
             return self._was_dead_step(action)
 
         seat = self._seat(self.agent_selection)
-        # The timeout sentinel plays the lowest legal card; any other action is a literal card.
-        card = rules.lowest_legal_card(self.state, seat) if action == AUTO_ACTION else int(action)
+        card = int(action)
 
         if not rules.is_legal(self.state, seat, card):
             raise IllegalMoveError(

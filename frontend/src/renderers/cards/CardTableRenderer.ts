@@ -25,8 +25,11 @@ import { Container, FillGradient, Graphics, Rectangle, Text } from 'pixi.js'
 import { PixiRenderer } from '../base/PixiRenderer.js'
 import type { RenderOptions } from '../types.js'
 import {
+  type Card,
   type CardTableScene,
   COLORS,
+  cardKey,
+  cardToAction,
   DIAMONDS,
   detectPlay,
   detectSweep,
@@ -35,8 +38,7 @@ import {
   PLAY_HOLD,
   type PlayMove,
   playCardAt,
-  RANK_LABELS,
-  rankOf,
+  rankLabel,
   type SceneCard,
   type SceneConfig,
   type SceneHandCard,
@@ -46,7 +48,6 @@ import {
   SPADES,
   SWEEP_HOLD,
   smoothstep,
-  suitOf,
   sweepCardAt,
   type TableGeometry,
   type TrickSweep,
@@ -262,11 +263,16 @@ export abstract class CardTableRenderer<
       // (the flyer fills it during the hold, then leaves it empty as it slides). The held cards are
       // made inert; the hand re-fans to the new, smaller layout once the fly-in lands (see onFrame).
       const before = this.computeSceneFor(prev)
+      // Match the played card by stable key: Card objects are re-parsed fresh each frame, so a
+      // reference compare (c.card !== play.card) would never exclude it and the flyer would double it.
+      const playedKey = cardKey(play.card)
       this.reconcileHand(
-        before.hand.filter((c) => c.card !== play.card).map((c) => ({ ...c, controllable: false })),
+        before.hand
+          .filter((c) => cardKey(c.card) !== playedKey)
+          .map((c) => ({ ...c, controllable: false })),
         scene.viewSeat,
       )
-      this.reconcileOpponents(before.opponents.filter((c) => c.card !== play.card))
+      this.reconcileOpponents(before.opponents.filter((c) => cardKey(c.card) !== playedKey))
       // The fourth card resolves the trick in the same step, so its fly-in chains into the sweep;
       // cards 1–3 have no sweep to chain to. When it chains, both phases are sized from one shared
       // budget so the fly-in plus the sweep finish inside the replay cadence (see playPhaseDurations).
@@ -604,7 +610,7 @@ export abstract class CardTableRenderer<
 
       if (card.controllable) {
         node.cursor = 'pointer'
-        node.on('pointertap', () => sendAction(slot, card.card))
+        node.on('pointertap', () => sendAction(slot, cardToAction(card.card)))
       }
     }
     return node
@@ -660,7 +666,7 @@ export abstract class CardTableRenderer<
    * mirrored bottom-right rank, and an optional grey veil for an illegal card.
    */
   protected makeCardFace(
-    card: number,
+    card: Card,
     w: number,
     h: number,
     opts: { border?: string; borderW?: number; greyed?: boolean },
@@ -677,9 +683,9 @@ export abstract class CardTableRenderer<
     }
     c.addChild(g)
 
-    const suit = suitOf(card)
+    const suit = card.suit
     const ink = suit === DIAMONDS || suit === HEARTS ? COLORS.redInk : COLORS.blackInk
-    const rankStr = RANK_LABELS[rankOf(card)] ?? '?'
+    const rankStr = rankLabel(card)
 
     // Corner index: rank in the top-left with a small pip beneath it (render_cards.py _draw_corner_index).
     const rankSize = Math.max(12, h * 0.22)

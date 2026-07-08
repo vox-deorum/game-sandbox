@@ -1,6 +1,6 @@
-# Stage 11.2: Semantic Rollout and Template v2
+# Stage 11.2: Semantic Rollout
 
-Status: not started.
+Status: complete. The semantic contract was rolled out across every environment and consumer as one change. One deviation from the original plan: since template version 1 was never published, this stage keeps version 1 and updates the v1 built-in agents in place instead of publishing a version 2 (see the "Templates, examples, and built-ins" section below).
 
 Part of [Stage 11](../stage-11-semantic-contract.md). This is the breaking contract change. It converts every environment and every consumer in one change so observations, overlays, renderers, templates, built-in agents, fixtures, and tests never disagree about card representation or default actions.
 
@@ -94,7 +94,7 @@ Rewrite all starter agents and worked examples for the new observations: Hearts 
 
 Update template play loops to import module-level `default_action` from `sandbox.env` and call `default_action(env, slot)` for unwatched seats. Remove `AUTO_ACTION` and `NOOP_ACTION` from environments and generated exports only after all direct callers, demos, tests, examples, and built-ins have moved. There is no template `entry` object.
 
-Run `uv run python scripts/bump_template_version.py --version 2`, update the version 2 built-in snapshot, regenerate every template artifact, and run the version consistency check. Version 1 was not public, so no compatibility adapter is required. Do not add observation schemas or metadata fields; the live Gymnasium spaces remain the contract.
+Because template version 1 was never public, this stage keeps version 1 rather than publishing a version 2: it updates the frozen v1 built-in agents in place. The Hearts built-in reads only the top-level `action_mask` and needs no change; the Spades built-in decodes the object hand back to engine card ids before its vendored `suggested_bid` count; the Flappy built-in reads the player-and-pipes object. Regenerate every template artifact and run the version consistency check, which stays at version 1. No compatibility adapter is required. Do not add observation schemas or metadata fields; the live Gymnasium spaces remain the contract.
 
 ## Fixtures and contract-dependent tests
 
@@ -115,4 +115,4 @@ Coverage must include:
 
 ## Done when
 
-The repository has one semantic contract across all production code and participant artifacts. Renderers never rebuild integer card models, masks and semantic legality agree with the rules, all sentinels and consumers move together, template version 2 is internally consistent, generated files are current, and the non-Docker Python and TypeScript checks are green.
+The repository has one semantic contract across all production code and participant artifacts. Renderers never rebuild integer card models, masks and semantic legality agree with the rules, all sentinels and consumers move together, the version-1 touchpoints stay internally consistent, generated files are current, and the non-Docker Python and TypeScript checks are green.

@@ -8,7 +8,7 @@ This template targets Flappy Bird. The provided scripts read the uniform surface
 stay environment-agnostic across template layers.
 """
 
-from .flappy_bird import NOOP_ACTION, extract_overlay, make_env, make_human_controller
+from .flappy_bird import default_action, extract_overlay, make_env, make_human_controller
 
 ENV_ID = "flappy_bird"
 PLAYER_SLOT = "player_0"
@@ -17,7 +17,7 @@ __all__ = [
     "make_env",
     "make_human_controller",
     "extract_overlay",
-    "NOOP_ACTION",
+    "default_action",
     "ENV_ID",
     "PLAYER_SLOT",
 ]

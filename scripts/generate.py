@@ -68,26 +68,29 @@ class _TemplateEnvInit:
     """The per-env facts the generated ``sandbox/env/`` __init__ files are rendered from."""
 
     display_name: str  # human-facing name, e.g. "Flappy Bird"
-    default_action: str  # the env's default-action constant, e.g. "NOOP_ACTION"
+    default_action: str  # the env's default-action symbol, the module-level ``default_action`` callable
     inner_package: str  # the synced inner package directory, e.g. "flappy_bird"
     player_slot: str = "player_0"  # the single/primary slot id the provided scripts score
 
 
-# env id -> the spec its two generated __init__ files are rendered from.
+# env id -> the spec its two generated __init__ files are rendered from. Every env exposes a
+# module-level ``default_action(env, slot_id)`` callable (the timeout default that returns the real
+# action played), so the surface re-exports the same name for all three and the provided play loops
+# call ``default_action(env, slot)`` for any seat they do not drive themselves.
 _TEMPLATE_ENV_INITS = {
     "flappy_bird": _TemplateEnvInit(
         display_name="Flappy Bird",
-        default_action="NOOP_ACTION",
+        default_action="default_action",
         inner_package="flappy_bird",
     ),
     "hearts": _TemplateEnvInit(
         display_name="Hearts",
-        default_action="AUTO_ACTION",
+        default_action="default_action",
         inner_package="hearts",
     ),
     "spades": _TemplateEnvInit(
         display_name="Spades",
-        default_action="AUTO_ACTION",
+        default_action="default_action",
         inner_package="spades",
     ),
 }

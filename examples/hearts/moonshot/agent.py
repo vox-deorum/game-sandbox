@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sandbox.cards import card_points, current_trick, led_suit, legal_cards, rank_of, suit_of
+from sandbox.cards import card_points, current_trick, led_suit, legal_cards, play, rank_of, suit_of
 
 NAME = "moonshot-hearts"
 
@@ -41,7 +41,7 @@ class Agent:
 
         # Leading: open with our highest card, hard for a later seat to overtake.
         if led is None:
-            return max(legal, key=lambda card: (rank_of(card), suit_of(card)))
+            return play(max(legal, key=lambda card: (rank_of(card), suit_of(card))))
 
         followers = [card for card in legal if suit_of(card) == led]
         if followers:
@@ -52,11 +52,11 @@ class Agent:
             winners = [card for card in followers if rank_of(card) > winning_rank]
             if winners:
                 # We can take the trick: play the highest card of the suit and win it.
-                return max(winners, key=rank_of)
+                return play(max(winners, key=rank_of))
             # We cannot beat the current winner; lose cheaply and keep our high cards.
-            return min(followers, key=rank_of)
+            return play(min(followers, key=rank_of))
 
         # Void: we cannot win this trick, so refuse to feed it points.
         non_points = [card for card in legal if card_points(card) == 0]
         pool = non_points if non_points else legal
-        return min(pool, key=lambda card: (rank_of(card), suit_of(card)))
+        return play(min(pool, key=lambda card: (rank_of(card), suit_of(card))))

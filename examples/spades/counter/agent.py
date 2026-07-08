@@ -24,13 +24,14 @@ from typing import Any
 from sandbox.cards import (
     SPADES,
     beats_current_winner,
-    bid_to_action,
+    bid,
     bids,
     hand_cards,
     is_bidding,
     legal_cards,
     my_seat,
-    partner_of,
+    partner_seat,
+    play,
     rank_of,
     suit_of,
     tricks_won,
@@ -38,10 +39,10 @@ from sandbox.cards import (
 
 NAME = "counter-spades"
 
-#: A spade of this rank or higher (queen, king, ace) is a near-certain winner once spades are trump.
-HIGH_SPADE_RANK = 10
-#: The ace is the top rank in every suit.
-ACE_RANK = 12
+#: A spade of this face rank or higher (queen, king, ace) is a near-certain winner once spades are trump.
+HIGH_SPADE_RANK = 12
+#: The ace is the top face rank in every suit.
+ACE_RANK = 14
 
 
 class Agent:
@@ -54,7 +55,7 @@ class Agent:
 
     def act(self, observation: Any) -> int:
         if is_bidding(observation):
-            return bid_to_action(self._honest_bid(observation))
+            return bid(self._honest_bid(observation))
         return self._play(observation)
 
     def _honest_bid(self, observation: Any) -> int:
@@ -71,13 +72,13 @@ class Agent:
             winners = [card for card in legal if beats_current_winner(observation, card)]
             if winners:
                 # Win as cheaply as possible, so high cards are saved for tricks we still need.
-                return min(winners, key=lambda card: (rank_of(card), suit_of(card)))
-        return min(legal, key=lambda card: (rank_of(card), suit_of(card)))
+                return play(min(winners, key=lambda card: (rank_of(card), suit_of(card))))
+        return play(min(legal, key=lambda card: (rank_of(card), suit_of(card))))
 
     def _team_still_needs_tricks(self, observation: Any) -> bool:
         """True while the partnership has taken fewer tricks than its combined (non-nil) contract."""
         seat = my_seat(observation)
-        partner = partner_of(seat)
+        partner = partner_seat(observation)
         placed = bids(observation)
         contract = sum(placed[s] for s in (seat, partner) if placed[s] > 0)
         won = tricks_won(observation)

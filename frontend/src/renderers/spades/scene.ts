@@ -25,6 +25,7 @@ import {
   buildTrick,
   type CardOverlay,
   type CardTableScene,
+  cardKey,
   HEIGHT,
   NUM_PLAYERS,
   padScores,
@@ -167,6 +168,8 @@ interface SpadesOverlay extends CardOverlay {
   teamScores: number[]
   spadesBroken: boolean
   displayScores: number[]
+  /** Legal bids (0..13) during the bidding phase; empty during play or at terminal. */
+  legalBids: number[]
 }
 
 /** Pad a per-seat bids array out to all four seats, defaulting a missing entry to -1 (not yet bid). */
@@ -186,6 +189,7 @@ function readOverlay(state: StepState): SpadesOverlay {
     teamScores: [teamScores[0] ?? 0, teamScores[1] ?? 0],
     spadesBroken: Boolean(o.spades_broken),
     displayScores: padScores(asNumberList(o.display_scores)),
+    legalBids: asNumberList(o.legal_bids),
   }
 }
 
@@ -206,10 +210,10 @@ export function computeScene(state: StepState, config: SceneConfig = {}): Spades
   const seats = buildSeats(o, view)
   const { trick, trickWinner } = buildTrick(o, view.viewSeat)
   const opponents = buildOpponents(o, view.viewSeat, view.revealAll, SPADES_GEOMETRY)
-  // Spades reads the emitted legal-action mask but keeps only the card ids: during bidding the mask
-  // names bid actions (>= 52), so filtering to < 52 leaves no legal card and every hand card greys —
-  // the correct read, you cannot play a card until you have bid (render.py `_legal_cards_from_overlay`).
-  const hand = buildHand(o, view, new Set(o.legalActions.filter((a) => a < NUM_CARDS)))
+  // Spades reads the emitted legal-cards overlay verbatim: during bidding it is empty (you cannot play
+  // a card until you have bid), so every hand card greys — the correct read
+  // (render.py `_legal_cards_from_overlay`).
+  const hand = buildHand(o, view, new Set(o.legalCards.map(cardKey)))
   const status = buildStatus(o, view, trickWinner)
   const moveClock = buildMoveClock(o, view, config.humanTimeoutMs)
   const bidPanel = buildBidPanel(o, view)
@@ -302,9 +306,9 @@ function statusMessage(
  * Build the bidding-round centre panel: a `7 × 2` grid of the 14 bid chips centred on the table well,
  * with the prompt above it (mirror render.py `_draw_bid_chips`, chip 50×52, gap 4, vgap 8, prompt 26px
  * above the grid). Returns null once play begins. Every chip carries its absolute rect (for the
- * hit-test), whether it is `enabled` (in the emitted mask — verbatim, so a partial mask greys the rest),
- * and whether it is `controllable` (enabled and the controlled seat is on turn). The chips draw for
- * everyone so the table reads; only the controlled seat's own turn accepts a click.
+ * hit-test), whether it is `enabled` (in the emitted `legal_bids` overlay — verbatim, so a partial list
+ * greys the rest), and whether it is `controllable` (enabled and the controlled seat is on turn). The
+ * chips draw for everyone so the table reads; only the controlled seat's own turn accepts a click.
  */
 function buildBidPanel(o: SpadesOverlay, view: ViewContext): SceneBidPanel | null {
   if (o.phase !== 'bidding' || o.terminal) {
@@ -323,13 +327,13 @@ function buildBidPanel(o: SpadesOverlay, view: ViewContext): SceneBidPanel | nul
   const startY = Math.floor(HEIGHT / 2 - blockH / 2)
 
   const viewTurn = isViewTurn(o, view)
-  const legal = new Set(o.legalActions)
+  const legalBids = new Set(o.legalBids)
   const chips: SceneBidChip[] = []
   for (let bid = 0; bid < count; bid++) {
     const col = bid % cols
     const row = Math.floor(bid / cols)
     const action = bidToAction(bid)
-    const enabled = legal.has(action)
+    const enabled = legalBids.has(bid)
     chips.push({
       bid,
       action,

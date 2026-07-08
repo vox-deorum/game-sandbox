@@ -1,19 +1,16 @@
-"""Feature helpers for Flappy Bird agents: name the observation indices and the two actions.
+"""Feature helpers for Flappy Bird agents: name the observation fields and the two actions.
 
 You may import this module from your ``agent.py`` (``from sandbox import features``). It is the one
 piece of ``sandbox/`` you are meant to use from your agent, and importing it stays cheap: it is
 plain Python with no third-party dependencies. Import it at the top of ``agent.py``, not inside a
 method.
 
-The observation is a length-12 NumPy array of normalized numbers. The constants below name each
-index so your agent can read ``observation[NEXT_PIPE_GAP_TOP]`` instead of a bare ``observation[4]``.
-The three pipes are the most recently passed pipe, the next pipe the bird must clear, and the one
-after that; each contributes its horizontal position and the top and bottom of its gap. The last
-three features are the bird's own vertical position, its vertical velocity, and its rotation. Every
-value is normalized, and y grows downward, so a larger y is lower on the screen. Positions use the
-screen as their scale, but the raw velocity value is normalized by the bird's maximum fall speed
-instead; ``player_velocity()`` converts it onto the position scale. The full table of indices and
-scales, and everything else specific to Flappy Bird, is in ``environment.md``, shipped alongside
+The observation is an object: a ``player`` dict, a ``pipes`` tuple, a pipe count, and the screen
+size. ``player`` has ``x``, ``y``, ``vel_y``, and ``rot``. ``pipes`` holds one entry per pipe still
+ahead of the bird, each with ``x``, ``gap_top``, and ``gap_bottom``, ordered nearest-first (ascending
+``x``); it may be empty. Every value is a real screen pixel, not a normalized number, and ``vel_y``
+is already in pixels per step. ``y`` grows downward, so a larger ``y`` is lower on the screen. The
+full shape, and everything else specific to Flappy Bird, is in ``environment.md``, shipped alongside
 the template.
 """
 
@@ -21,49 +18,49 @@ from __future__ import annotations
 
 from typing import Any
 
-# The most recently passed pipe (behind the bird).
-LAST_PIPE_X = 0
-LAST_PIPE_GAP_TOP = 1
-LAST_PIPE_GAP_BOTTOM = 2
-# The next pipe, the one the bird must fly through now. Usually the useful one for a simple policy.
-NEXT_PIPE_X = 3
-NEXT_PIPE_GAP_TOP = 4
-NEXT_PIPE_GAP_BOTTOM = 5
-# The pipe after the next one.
-NEXT_NEXT_PIPE_X = 6
-NEXT_NEXT_PIPE_GAP_TOP = 7
-NEXT_NEXT_PIPE_GAP_BOTTOM = 8
-# The bird itself.
-PLAYER_Y = 9
-PLAYER_VELOCITY = 10
-PLAYER_ROTATION = 11
-
 #: The two actions: do nothing (fall under gravity) or flap (a small upward push).
 IDLE = 0
 FLAP = 1
 
-#: How fast the pipes scroll left, in screen widths per step (4 pixels per step on the
-#: 288-pixel-wide screen). Subtracting it from a pipe's X predicts where the pipe is next step.
-PIPE_SPEED = 4.0 / 288.0
 
-# Pixel quantities from the game, needed to convert velocity into screen units: the maximum
-# fall speed the raw velocity is normalized by, and the screen height that normalizes PLAYER_Y.
-_PLAYER_MAX_SPEED_PIXELS = 10.0
-_SCREEN_HEIGHT_PIXELS = 512.0
-
-
-def next_gap_center(observation: Any) -> float:
-    """Return the vertical center of the next pipe's gap, the height the bird should aim for."""
-    return (float(observation[NEXT_PIPE_GAP_TOP]) + float(observation[NEXT_PIPE_GAP_BOTTOM])) / 2.0
+def player_x(observation: Any) -> float:
+    """Return the bird's horizontal position in screen pixels."""
+    return float(observation["player"]["x"])
 
 
 def player_y(observation: Any) -> float:
-    """Return the bird's vertical position. Larger is lower on the screen, since y grows downward."""
-    return float(observation[PLAYER_Y])
+    """Return the bird's vertical position in screen pixels. Larger is lower on the screen,
+    since y grows downward."""
+    return float(observation["player"]["y"])
 
 
 def player_velocity(observation: Any) -> float:
-    """Return the bird's vertical velocity in screen heights per step, the same scale as
-    player_y: the bird's next y is approximately player_y + player_velocity. Positive is
-    downward; on an idle step gravity first adds about 0.002."""
-    return float(observation[PLAYER_VELOCITY]) * _PLAYER_MAX_SPEED_PIXELS / _SCREEN_HEIGHT_PIXELS
+    """Return the bird's vertical velocity in pixels per step. Positive is downward; the
+    bird's next y is approximately player_y + player_velocity."""
+    return float(observation["player"]["vel_y"])
+
+
+def next_pipe(observation: Any) -> dict[str, float] | None:
+    """Return the nearest pipe ahead of the bird (with x, gap_top, gap_bottom), or None if
+    there currently isn't one."""
+    pipes = observation["pipes"]
+    return pipes[0] if pipes else None
+
+
+def next_gap_center(observation: Any) -> float:
+    """Return the vertical center of the next pipe's gap, the height the bird should aim for.
+    If there is no next pipe, fall back to the vertical middle of the screen."""
+    pipe = next_pipe(observation)
+    if pipe is None:
+        return screen_height(observation) / 2.0
+    return (float(pipe["gap_top"]) + float(pipe["gap_bottom"])) / 2.0
+
+
+def screen_height(observation: Any) -> float:
+    """Return the screen height in pixels."""
+    return float(observation["height"])
+
+
+def screen_width(observation: Any) -> float:
+    """Return the screen width in pixels."""
+    return float(observation["width"])

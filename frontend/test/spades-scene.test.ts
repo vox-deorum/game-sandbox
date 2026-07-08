@@ -4,6 +4,7 @@ import { getRenderer } from '../src/renderers/registry.js'
 import {
   bidChipAt,
   bidToAction,
+  type Card,
   computeScene,
   handCardAt,
   NIL_BID,
@@ -25,17 +26,22 @@ const states: StepState[] = fixture
   .slice(1) // drop the header line
   .map((line) => JSON.parse(line) as StepState)
 
-// Card ids (card = suit * 13 + rank; rank 0 is the 2). A few named for readable fixtures.
-const TWO_CLUBS = 0
-const THREE_CLUBS = 1
-const FOUR_CLUBS = 2
-const FIVE_CLUBS = 3
-const TWO_SPADES = 26
-const THREE_SPADES = 27
-const TWO_HEARTS = 39
+// Card objects {suit, rank} (rank is the FACE value 2..14). A few named for readable fixtures.
+const TWO_CLUBS: Card = { suit: 0, rank: 2 }
+const THREE_CLUBS: Card = { suit: 0, rank: 3 }
+const FOUR_CLUBS: Card = { suit: 0, rank: 4 }
+const FIVE_CLUBS: Card = { suit: 0, rank: 5 }
+const TWO_SPADES: Card = { suit: 2, rank: 2 }
+const THREE_SPADES: Card = { suit: 2, rank: 3 }
+const TWO_HEARTS: Card = { suit: 3, rank: 2 }
 
-/** Every bid encoded as its action (52..65), the full bidding mask. */
-const ALL_BIDS = Array.from({ length: 14 }, (_, k) => bidToAction(k))
+/** Every bid 0..13, the full bidding legal-bids list. */
+const ALL_BIDS = Array.from({ length: 14 }, (_, k) => k)
+
+/** One `{seat, card}` trick entry, the shape `current_trick`/`last_trick` carry (play order). */
+function entry(seat: number, card: Card): { seat: number; card: Card } {
+  return { seat, card }
+}
 
 /** Build a minimal StepState carrying a Spades overlay, with the required envelope fields. */
 function mkState(overlay: Record<string, unknown>, tick = 0): StepState {
@@ -67,15 +73,16 @@ function overlay(over: Record<string, unknown>): Record<string, unknown> {
     team_scores: [0, 0],
     display_scores: [0, 0, 0, 0],
     leaderboard_scores: [0, 0, 0, 0],
-    legal_actions: [],
+    legal_cards: [],
+    legal_bids: [],
     terminal: false,
     ...over,
   }
 }
 
-const litCards = (scene: SpadesScene): number[] =>
+const litCards = (scene: SpadesScene): Card[] =>
   scene.hand.filter((c) => c.legal).map((c) => c.card)
-const greyCards = (scene: SpadesScene): number[] =>
+const greyCards = (scene: SpadesScene): Card[] =>
   scene.hand.filter((c) => !c.legal).map((c) => c.card)
 
 describe('the bidding round: the chip grid and the greyed hand', () => {
@@ -86,7 +93,7 @@ describe('the bidding round: the chip grid and the greyed hand', () => {
         hands: [[TWO_CLUBS, TWO_SPADES, TWO_HEARTS], [], [], []],
         bids: [-1, -1, -1, -1],
         turn: 0,
-        legal_actions: ALL_BIDS,
+        legal_bids: ALL_BIDS,
       }),
     )
     const scene = computeScene(state, { controlledSlots: ['player_0'] })
@@ -98,7 +105,7 @@ describe('the bidding round: the chip grid and the greyed hand', () => {
     // All fourteen chips present, in bid order 0..13, every one enabled by the full mask.
     expect(panel.chips.map((c) => c.bid)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13])
     expect(panel.chips.every((c) => c.enabled)).toBe(true)
-    expect(panel.chips.map((c) => c.action)).toEqual(ALL_BIDS)
+    expect(panel.chips.map((c) => c.action)).toEqual(ALL_BIDS.map(bidToAction))
     // Chip 0 is the nil chip; its action is 52 (the nil bid).
     expect(panel.chips[0]?.bid).toBe(NIL_BID)
     expect(panel.chips[0]?.action).toBe(bidToAction(NIL_BID))
@@ -116,7 +123,7 @@ describe('the bidding round: the chip grid and the greyed hand', () => {
         phase: 'bidding',
         bids: [-1, -1, -1, -1],
         turn: 0,
-        legal_actions: [bidToAction(0), bidToAction(3)],
+        legal_bids: [0, 3],
       }),
     )
     const panel = computeScene(state, { controlledSlots: ['player_0'] }).bidPanel
@@ -129,16 +136,16 @@ describe('the bidding round: the chip grid and the greyed hand', () => {
   })
 })
 
-describe('the play round: greying the hand from the legal-action mask', () => {
+describe('the play round: greying the hand from the legal-cards overlay', () => {
   it('follow suit: clubs were led, only the held clubs are legal', () => {
     const state = mkState(
       overlay({
         hands: [[THREE_CLUBS, FOUR_CLUBS, TWO_SPADES, TWO_HEARTS], [], [], []],
-        current_trick: [[3, FIVE_CLUBS]],
+        current_trick: [entry(3, FIVE_CLUBS)],
         led_suit: 0,
         turn: 0,
         tricks_played: 2,
-        legal_actions: [THREE_CLUBS, FOUR_CLUBS],
+        legal_cards: [THREE_CLUBS, FOUR_CLUBS],
       }),
     )
     const scene = computeScene(state, { controlledSlots: ['player_0'] })
@@ -155,7 +162,7 @@ describe('the play round: greying the hand from the legal-action mask', () => {
         turn: 0,
         tricks_played: 2,
         spades_broken: false,
-        legal_actions: [FIVE_CLUBS],
+        legal_cards: [FIVE_CLUBS],
       }),
     )
     const scene = computeScene(state, { controlledSlots: ['player_0'] })
@@ -167,12 +174,12 @@ describe('the play round: greying the hand from the legal-action mask', () => {
     const state = mkState(
       overlay({
         hands: [[THREE_CLUBS, FOUR_CLUBS], [FIVE_CLUBS], [], []],
-        current_trick: [[0, TWO_CLUBS]],
+        current_trick: [entry(0, TWO_CLUBS)],
         led_suit: 0,
         turn: 1,
         turn_slot: 'player_1',
         tricks_played: 1,
-        legal_actions: [FIVE_CLUBS],
+        legal_cards: [FIVE_CLUBS],
       }),
     )
     const scene = computeScene(state, { controlledSlots: ['player_0'] })
@@ -189,7 +196,7 @@ describe('seat badges: bids, the NIL marker, tricks won, and partnerships', () =
         bids: [-1, 3, 0, 5],
         tricks_won: [0, 1, 2, 3],
         turn: 0,
-        legal_actions: ALL_BIDS,
+        legal_bids: ALL_BIDS,
       }),
     )
     const scene = computeScene(state)
@@ -231,7 +238,7 @@ describe('seat badges: bids, the NIL marker, tricks won, and partnerships', () =
 describe('hit-testing (bid chips and hand cards)', () => {
   it('resolves a point in a chip to its bid action, and a miss to null', () => {
     const state = mkState(
-      overlay({ phase: 'bidding', bids: [-1, -1, -1, -1], turn: 0, legal_actions: ALL_BIDS }),
+      overlay({ phase: 'bidding', bids: [-1, -1, -1, -1], turn: 0, legal_bids: ALL_BIDS }),
     )
     const panel = computeScene(state, { controlledSlots: ['player_0'] }).bidPanel
     if (panel === null) {
@@ -255,9 +262,9 @@ describe('hit-testing (bid chips and hand cards)', () => {
         hands: [[THREE_CLUBS, FOUR_CLUBS, TWO_HEARTS], [], [], []],
         turn: 0,
         led_suit: 0,
-        current_trick: [[3, TWO_CLUBS]],
+        current_trick: [entry(3, TWO_CLUBS)],
         tricks_played: 1,
-        legal_actions: [THREE_CLUBS, FOUR_CLUBS],
+        legal_cards: [THREE_CLUBS, FOUR_CLUBS],
       }),
     )
     const scene = computeScene(state, { controlledSlots: ['player_0'] })
@@ -274,7 +281,7 @@ describe('hit-testing (bid chips and hand cards)', () => {
 describe('controllability and the move clock (live vs replay)', () => {
   it('makes chips controllable only on the controlled seat turn, and never in replay', () => {
     const bidding = (over: Record<string, unknown>): Record<string, unknown> =>
-      overlay({ phase: 'bidding', bids: [-1, -1, -1, -1], legal_actions: ALL_BIDS, ...over })
+      overlay({ phase: 'bidding', bids: [-1, -1, -1, -1], legal_bids: ALL_BIDS, ...over })
 
     // Controlled seat, its turn: every masked chip is clickable.
     const mine = computeScene(mkState(bidding({ turn: 0 })), {
@@ -300,7 +307,7 @@ describe('controllability and the move clock (live vs replay)', () => {
       phase: 'bidding',
       bids: [-1, -1, -1, -1],
       turn: 0,
-      legal_actions: ALL_BIDS,
+      legal_bids: ALL_BIDS,
     })
     expect(
       computeScene(mkState(onTurn), { controlledSlots: ['player_0'], humanTimeoutMs: 60_000 })

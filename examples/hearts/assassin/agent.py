@@ -31,15 +31,16 @@ from sandbox.cards import (
     led_suit,
     legal_cards,
     make_card,
+    play,
     rank_of,
     suit_of,
 )
 
 NAME = "assassin-hearts"
 
-#: The two spades that can be forced to capture the queen (ranks 11 and 12 are the king and ace).
-KING_OF_SPADES = make_card(SPADES, 11)
-ACE_OF_SPADES = make_card(SPADES, 12)
+#: The two spades that can be forced to capture the queen (face ranks 13 and 14 are the king and ace).
+KING_OF_SPADES = make_card(SPADES, 13)
+ACE_OF_SPADES = make_card(SPADES, 14)
 
 
 class Agent:
@@ -60,8 +61,8 @@ class Agent:
                 card for card in legal if suit_of(card) == SPADES and rank_of(card) < rank_of(QUEEN_OF_SPADES)
             ]
             if low_spades:
-                return min(low_spades, key=rank_of)
-            return min(legal, key=lambda card: (rank_of(card), suit_of(card)))
+                return play(min(low_spades, key=rank_of))
+            return play(min(legal, key=lambda card: (rank_of(card), suit_of(card))))
 
         followers = [card for card in legal if suit_of(card) == led]
         if followers:
@@ -72,15 +73,15 @@ class Agent:
             under = [card for card in followers if rank_of(card) < winning_rank]
             if under:
                 # Stay under the winner, shedding our highest safe card (a high spade when led).
-                return max(under, key=rank_of)
+                return play(max(under, key=rank_of))
             # We cannot duck; keep our lowest so a later seat can still overtake us.
-            return min(followers, key=rank_of)
+            return play(min(followers, key=rank_of))
 
         # Void: dump the most dangerous card, queen and high spades first.
         for dangerous in (QUEEN_OF_SPADES, ACE_OF_SPADES, KING_OF_SPADES):
             if dangerous in legal:
-                return dangerous
+                return play(dangerous)
         hearts = [card for card in legal if suit_of(card) == HEARTS]
         if hearts:
-            return max(hearts, key=rank_of)
-        return max(legal, key=rank_of)
+            return play(max(hearts, key=rank_of))
+        return play(max(legal, key=rank_of))

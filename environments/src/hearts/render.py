@@ -92,6 +92,20 @@ SUIT_SINGULAR = {rules.CLUBS: "club", rules.DIAMONDS: "diamond", rules.SPADES: "
 HINT_INK = (210, 222, 216)
 
 
+def _card_points(card: dict[str, int]) -> int:
+    """Return the penalty points a semantic card object is worth: 13 for Q♠, 1 per heart, else 0.
+
+    Mirrors :func:`hearts.rules.card_points`, which operates on the engine's integer encoding
+    (queen index ``10``); overlay cards are ``{"suit","rank"}`` objects (face rank, queen ``12``), so
+    this reads the object directly rather than round-tripping through ``card_from_obj``.
+    """
+    if card["suit"] == rules.SPADES and card["rank"] == 12:
+        return 13
+    if card["suit"] == rules.HEARTS:
+        return 1
+    return 0
+
+
 class HeartsRenderer(CardTableRenderer):
     """Draw a Hearts hand to an offscreen surface (and optionally a window) from the overlay.
 
@@ -188,7 +202,7 @@ class HeartsRenderer(CardTableRenderer):
             and overlay["tricks_played"] == self._animated_tricks
         ):
             winner = overlay["last_trick_winner"]
-            points = sum(rules.card_points(card) for _, card in overlay["last_trick"])
+            points = sum(_card_points(entry["card"]) for entry in overlay["last_trick"])
             who = "You" if winner == view_seat else f"P{winner}"
             suffix = f" (+{points})" if points else ""
             return f"{who} took the trick{suffix}", GOLD
@@ -220,7 +234,7 @@ class HeartsRenderer(CardTableRenderer):
 
         hand = overlay["hands"][view_seat]
         if led is not None:
-            can_follow = any(rules.suit_of(card) == led for card in hand)
+            can_follow = any(card["suit"] == led for card in hand)
             if can_follow:
                 hint = f"Follow suit  -  you must play a {SUIT_SINGULAR[led]}"
                 if tricks_played == 0:
@@ -231,7 +245,7 @@ class HeartsRenderer(CardTableRenderer):
             return f"No {SUIT_NAMES[led]}  -  free to discard anything"
 
         # Leading, past the opening play.
-        non_hearts = [card for card in hand if rules.suit_of(card) != rules.HEARTS]
+        non_hearts = [card for card in hand if card["suit"] != rules.HEARTS]
         if not overlay["hearts_broken"] and non_hearts:
             return "Your lead  -  hearts aren't broken yet, so you can't lead a heart"
         if not non_hearts:
@@ -250,6 +264,6 @@ class HeartsRenderer(CardTableRenderer):
         hold: float,
     ) -> None:
         """Pop the gold ``+N`` penalty-points pill above the winner's seat during the sweep."""
-        points = sum(rules.card_points(card) for _, card in (overlay["last_trick"] or []))
+        points = sum(_card_points(entry["card"]) for entry in (overlay["last_trick"] or []))
         if points:
             self._draw_pill(surface, f"+{points}", anchor, t, hold)

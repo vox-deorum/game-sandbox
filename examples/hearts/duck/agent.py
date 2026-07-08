@@ -22,7 +22,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from sandbox.cards import HEARTS, QUEEN_OF_SPADES, current_trick, led_suit, legal_cards, rank_of, suit_of
+from sandbox.cards import (
+    HEARTS,
+    QUEEN_OF_SPADES,
+    current_trick,
+    led_suit,
+    legal_cards,
+    play,
+    rank_of,
+    suit_of,
+)
 from wcwidth import wcswidth
 
 NAME = "duck-hearts"
@@ -41,7 +50,7 @@ class Agent:
 
         # Leading: play the lowest card so we are unlikely to win this trick.
         if led is None:
-            return min(legal, key=lambda card: (rank_of(card), suit_of(card)))
+            return play(min(legal, key=lambda card: (rank_of(card), suit_of(card))))
 
         followers = [card for card in legal if suit_of(card) == led]
         if followers:
@@ -50,17 +59,17 @@ class Agent:
             under = [card for card in followers if rank_of(card) < winning_rank]
             if under:
                 # Stay under the current winner, shedding our highest safe card of the suit.
-                return max(under, key=rank_of)
+                return play(max(under, key=rank_of))
             # We cannot duck — keep our lowest so a later seat can still overtake us.
-            return min(followers, key=rank_of)
+            return play(min(followers, key=rank_of))
 
         # Void in the led suit: we cannot win this trick, so unload the most dangerous card.
         if QUEEN_OF_SPADES in legal:
-            return QUEEN_OF_SPADES
+            return play(QUEEN_OF_SPADES)
         hearts = [card for card in legal if suit_of(card) == HEARTS]
         if hearts:
-            return max(hearts, key=rank_of)
-        return max(legal, key=rank_of)
+            return play(max(hearts, key=rank_of))
+        return play(max(legal, key=rank_of))
 
 
 def display_width(text: str = NAME) -> int:

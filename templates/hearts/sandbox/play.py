@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Any
 
 import pygame
-from sandbox.env import AUTO_ACTION, PLAYER_SLOT, make_env, make_human_controller
+from sandbox.env import PLAYER_SLOT, default_action, make_env, make_human_controller
 from sandbox.hidpi import display_scale, enable_hidpi
 
 #: The banner shown over the frozen first frame until you begin the game.
@@ -93,8 +93,8 @@ def play_episode(
             action = agent.act(observation)
             decisions += 1
         else:
-            # Built-in opponent: the sentinel makes the environment play its lowest legal card.
-            action = AUTO_ACTION
+            # Built-in opponent: the environment's own timeout default — its lowest legal card.
+            action = default_action(env, agent_id)
         env.step(action)
         score += float(env.rewards[PLAYER_SLOT])
         if on_frame is not None:
@@ -150,7 +150,7 @@ def play_table(
             env.render()
             time.sleep(BOT_PAUSE_S)
             watched = agent is not None and agent_id == your_slot
-            action = agent.act(observation) if watched else AUTO_ACTION
+            action = agent.act(observation) if watched else default_action(env, agent_id)
 
         env.step(action)
         for slot, reward in env.rewards.items():

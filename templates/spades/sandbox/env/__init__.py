@@ -8,7 +8,7 @@ This template targets Spades. The provided scripts read the uniform surface belo
 stay environment-agnostic across template layers.
 """
 
-from .spades import AUTO_ACTION, extract_overlay, make_env, make_human_controller
+from .spades import default_action, extract_overlay, make_env, make_human_controller
 
 ENV_ID = "spades"
 PLAYER_SLOT = "player_0"
@@ -17,7 +17,7 @@ __all__ = [
     "make_env",
     "make_human_controller",
     "extract_overlay",
-    "AUTO_ACTION",
+    "default_action",
     "ENV_ID",
     "PLAYER_SLOT",
 ]

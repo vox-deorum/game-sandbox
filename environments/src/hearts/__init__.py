@@ -9,12 +9,9 @@ PettingZoo env, not the metadata layer or the harness. The generate script write
 
 from __future__ import annotations
 
-from typing import Any
-
 from game_sandbox_harness.environment import EnvironmentEntry, EnvironmentMeta
 
-from . import rules
-from .env import make_env
+from .env import default_action, make_env
 from .overlay import extract_overlay
 
 ENV_ID = "hearts"
@@ -51,19 +48,9 @@ META = EnvironmentMeta(
 )
 
 
-def _default_action(env: Any, slot_id: str) -> int:
-    """The legal default for a timed-out seat: its lowest legal card.
-
-    The hook reads the live env and returns the concrete ``Discrete(52)`` card (not a sentinel), so
-    the recording holds the real move. It matches ``env.step``'s own resolution, so gameplay is unchanged.
-    """
-    seat = env.possible_agents.index(slot_id)
-    return rules.lowest_legal_card(env.state, seat)
-
-
 ENTRY = EnvironmentEntry(
     meta=META,
     make=make_env,
-    default_action=_default_action,
+    default_action=default_action,
     overlay=extract_overlay,
 )

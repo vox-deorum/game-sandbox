@@ -41,7 +41,7 @@ Stage 2 provides the harness and metadata types. Stages 7 and 8 provide Hearts a
 Stage 11 has three implementation steps. The first is a non-breaking proof and foundation. The second is the one breaking change, so it moves environments and every consumer together rather than leaving temporary mixed contracts in the repository.
 
 1. **[Foundation and compatibility proof](stage-11/1-foundation-and-compatibility.md).** Add the dependency-free card codec and shared Gymnasium spaces, establish the nested composite observation against pinned PettingZoo (tolerating the known api_test #1211 error in CI), and change the timeout hook while retaining sentinel aliases for direct callers.
-2. **[Semantic rollout and template v2](stage-11/2-semantic-rollout-and-template-v2.md).** Convert all three environments, overlays, pygame and browser renderers, fixtures, templates, examples, built-in agents, and integration-test consumers in one atomic contract change. Remove sentinels only after every caller moves.
+2. **[Semantic rollout](stage-11/2-semantic-rollout.md).** Convert all three environments, overlays, pygame and browser renderers, fixtures, templates, examples, built-in agents, and integration-test consumers in one atomic contract change. Remove sentinels only after every caller moves.
 3. **[Testing, CI, and docs](stage-11/3-testing-ci-and-docs.md).** Run the complete integration and browser journeys, revise student and contributor documentation, update the specs, and reconcile earlier stage plans.
 
 ## Done when

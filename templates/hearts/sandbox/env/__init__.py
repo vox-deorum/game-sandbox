@@ -8,7 +8,7 @@ This template targets Hearts. The provided scripts read the uniform surface belo
 stay environment-agnostic across template layers.
 """
 
-from .hearts import AUTO_ACTION, extract_overlay, make_env, make_human_controller
+from .hearts import default_action, extract_overlay, make_env, make_human_controller
 
 ENV_ID = "hearts"
 PLAYER_SLOT = "player_0"
@@ -17,7 +17,7 @@ __all__ = [
     "make_env",
     "make_human_controller",
     "extract_overlay",
-    "AUTO_ACTION",
+    "default_action",
     "ENV_ID",
     "PLAYER_SLOT",
 ]

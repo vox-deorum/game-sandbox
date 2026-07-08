@@ -26,7 +26,7 @@ import time
 import pygame
 
 from . import rules
-from .env import AUTO_ACTION, HeartsEnv, make_env
+from .env import HeartsEnv, default_action, make_env
 from .human import make_human_controller
 
 
@@ -88,7 +88,7 @@ def main(argv: list[str] | None = None) -> int:
                 # the move is followable.
                 env.render()
                 time.sleep(0.6)
-                env.step(AUTO_ACTION)
+                env.step(default_action(env, agent))
 
             env.render()
             # A just-completed trick clears current_trick (it briefly held all NUM_PLAYERS

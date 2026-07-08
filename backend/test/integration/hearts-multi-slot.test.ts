@@ -37,8 +37,8 @@ const SEED = 7
 /** Four players take thirteen cards each, so a full game is exactly fifty-two recorded plays. */
 const TOTAL_PLAYS = 52
 const PLAYS_PER_SEAT = 13
-/** The timeout sentinel the env records for an auto-played (timed-out) turn (hearts `AUTO_ACTION`). */
-const AUTO_ACTION = -1
+/** The deck size: a real card action is an integer id in [0, 52), never a sentinel. */
+const NUM_CARDS = 52
 
 /** A Hearts agent that always plays its lowest legal card (lowest index in the legal-action mask). */
 const LOWEST_AGENT = [
@@ -246,9 +246,11 @@ describe('multi-agent Hearts session (Docker)', () => {
 
     const humanActions = valuesBySeat(states, (step) => step.action).get('player_0') ?? []
     expect(humanActions).toHaveLength(PLAYS_PER_SEAT)
-    // Every human turn stalled past its window and auto-played the env default (the timeout sentinel
-    // the env resolves to the lowest legal card), so each recorded human action is that sentinel.
-    expect(humanActions.every((action) => action === AUTO_ACTION)).toBe(true)
+    // Every human turn stalled past its window and auto-played the env's default action, which is now
+    // a real card id rather than a sentinel, so each recorded human action falls in [0, 52). The clean
+    // terminal asserted above already guarantees every one of those auto-played moves was legal; that
+    // the default resolves specifically to the lowest legal card is pinned in the env unit tests.
+    expect(humanActions.every((action) => action >= 0 && action < NUM_CARDS)).toBe(true)
   })
 })
 

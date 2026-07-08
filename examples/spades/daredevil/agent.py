@@ -21,12 +21,12 @@ from sandbox.cards import (
     NIL_BID,
     SPADES,
     beats_current_winner,
-    bid_to_action,
+    bid,
     hand_cards,
     is_bidding,
     legal_cards,
-    my_seat,
-    partner_of,
+    partner_seat,
+    play,
     rank_of,
     suit_of,
 )
@@ -36,12 +36,12 @@ NAME = "daredevil-spades"
 #: The exact warning this agent broadcasts when it bids nil; its partner keys the cover off this text.
 NIL_WARNING = "nil! cover me"
 
-#: A card of this rank or higher (queen, king, ace) is too likely to win a trick to risk a nil.
-DANGER_RANK = 10
-#: The ace is the top rank in every suit.
-ACE_RANK = 12
-#: A spade of this rank or higher (9 and up) is hard to duck under, so it disqualifies a nil.
-HIGH_SPADE_RANK = 7
+#: A card of this face rank or higher (queen, king, ace) is too likely to win a trick to risk a nil.
+DANGER_RANK = 12
+#: The ace is the top face rank in every suit.
+ACE_RANK = 14
+#: A spade of this face rank or higher (9 and up) is hard to duck under, so it disqualifies a nil.
+HIGH_SPADE_RANK = 9
 #: At most this many spades in hand keeps a nil plausible.
 MAX_NIL_SPADES = 3
 
@@ -52,13 +52,13 @@ class Agent:
     def reset(self, seed: int) -> None:
         # The seat is restamped every turn from the observation so chat, which sees none, can name our
         # partner; the nil flags and whether we have warned persist across the hand.
-        self._seat: int | None = None
+        self._partner: int | None = None
         self._me_nil = False
         self._partner_nil = False
         self._warned = False
 
     def act(self, observation: Any) -> int:
-        self._seat = my_seat(observation)
+        self._partner = partner_seat(observation)
         if is_bidding(observation):
             return self._bid(observation)
         return self._play(observation)
@@ -67,7 +67,7 @@ class Agent:
         # Only our partner's broadcast tells us to cover. Opponents sit on the other side, so a nil
         # warning from them is not ours to protect; keying the cover off the sender's seat stops an
         # opponent shouting the same text from steering our play. Our partner is the seat across.
-        partner_slot = f"player_{partner_of(self._seat)}"
+        partner_slot = f"player_{self._partner}"
         for item in inbox:
             from_partner = item.get("from") == partner_slot
             if from_partner and item.get("to") is None and item.get("text") == NIL_WARNING:
@@ -81,13 +81,13 @@ class Agent:
         hand = hand_cards(observation)
         if self._qualifies_for_nil(hand):
             self._me_nil = True
-            return bid_to_action(NIL_BID)
+            return bid(NIL_BID)
         # Otherwise an honest small count: high spades plus side aces, never nil, floored at one.
         high_spades = sum(1 for c in hand if suit_of(c) == SPADES and rank_of(c) >= HIGH_SPADE_RANK)
         side_aces = sum(1 for c in hand if suit_of(c) != SPADES and rank_of(c) == ACE_RANK)
-        return bid_to_action(max(1, min(13, high_spades + side_aces)))
+        return bid(max(1, min(13, high_spades + side_aces)))
 
-    def _qualifies_for_nil(self, hand: list[int]) -> bool:
+    def _qualifies_for_nil(self, hand: list[dict[str, int]]) -> bool:
         """A hand safe to promise zero tricks: no card queen-high or above, and few, low spades."""
         if any(rank_of(c) >= DANGER_RANK for c in hand):
             return False
@@ -103,5 +103,5 @@ class Agent:
             winners = [c for c in legal if beats_current_winner(observation, c)]
             if winners:
                 # Grab the trick with the highest winner, so a low card is saved for a later cover.
-                return max(winners, key=lambda c: (rank_of(c), suit_of(c)))
-        return min(legal, key=lambda c: (rank_of(c), suit_of(c)))
+                return play(max(winners, key=lambda c: (rank_of(c), suit_of(c))))
+        return play(min(legal, key=lambda c: (rank_of(c), suit_of(c))))

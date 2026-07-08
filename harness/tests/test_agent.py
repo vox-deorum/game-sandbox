@@ -5,7 +5,9 @@ from __future__ import annotations
 import importlib.util
 import inspect
 import re
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -59,21 +61,26 @@ def test_missing_required_method_fails_detection():
 
 
 def _load_template_agent_class(path: Path) -> type:
-    # Load a template agent.py under a unique module name so it never collides with a repo's
-    # own 'agent' module in sys.modules. The template ships a working agent whose top-level
-    # ``from sandbox.<name> import ...`` is live, and that helper lives in the env template layer
-    # under ``sandbox/`` as a namespace package (the base layer owns ``sandbox/__init__.py``, so
-    # the env layer alone has none). Put the env-layer dir on sys.path for the load so ``sandbox``
-    # resolves there, then restore sys.path and sys.modules so nothing leaks into other tests.
-    env_layer = str(path.parent)
-    module_name = f"template_agent_stub_{path.parent.name}"
+    # Load a template agent.py under a unique module name so it never collides with a repo's own
+    # 'agent' module in sys.modules. The template ships a working agent whose top-level
+    # ``from sandbox.<name> import ...`` is live, and that helper (``sandbox.cards`` /
+    # ``sandbox.features``) in turn imports the shared codec ``sandbox.card_utils`` — which lives in
+    # the *base* layer, not the env layer. So the two layers are composed (base then the env overlay,
+    # whole-file, exactly like ``scripts/compose.py``) into a throwaway dir, and that dir is put on
+    # sys.path for the load so every ``sandbox.*`` import resolves against a real composed template.
+    # sys.path and sys.modules are restored afterward so nothing leaks into other tests.
+    env = path.parent.name
+    module_name = f"template_agent_stub_{env}"
     saved_path = list(sys.path)
     saved_sandbox = {k: v for k, v in sys.modules.items() if k == "sandbox" or k.startswith("sandbox.")}
     for key in saved_sandbox:
         del sys.modules[key]
-    sys.path.insert(0, env_layer)
+    composed = tempfile.mkdtemp(prefix=f"template_stub_{env}_")
     try:
-        spec = importlib.util.spec_from_file_location(module_name, path)
+        shutil.copytree(REPO_ROOT / "templates" / "base", composed, dirs_exist_ok=True)
+        shutil.copytree(REPO_ROOT / "templates" / env, composed, dirs_exist_ok=True)
+        sys.path.insert(0, composed)
+        spec = importlib.util.spec_from_file_location(module_name, Path(composed) / "agent.py")
         assert spec is not None and spec.loader is not None
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
@@ -83,6 +90,7 @@ def _load_template_agent_class(path: Path) -> type:
         for key in [k for k in sys.modules if k == "sandbox" or k.startswith("sandbox.")]:
             del sys.modules[key]
         sys.modules.update(saved_sandbox)
+        shutil.rmtree(composed, ignore_errors=True)
 
 
 @pytest.mark.parametrize("agent_path", TEMPLATE_AGENTS, ids=lambda p: p.parent.name)

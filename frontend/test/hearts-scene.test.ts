@@ -1,6 +1,8 @@
 import type { StepState } from '@game-sandbox/schema'
 import { describe, expect, it } from 'vitest'
 import {
+  type Card,
+  cardKey,
   computeScene,
   detectPlay,
   detectSweep,
@@ -32,15 +34,15 @@ const states: StepState[] = fixture
   .slice(1) // drop the header line
   .map((line) => JSON.parse(line) as StepState)
 
-// Card ids (card = suit * 13 + rank; rank 0 is the 2). A few named for readable fixtures.
-const TWO_CLUBS = 0
-const SEVEN_CLUBS = 5
-const THREE_CLUBS = 1
-const FOUR_CLUBS = 2
-const TWO_DIAMONDS = 13
-const TWO_SPADES = 26
-const TWO_HEARTS = 39
-const THREE_HEARTS = 40
+// Card objects {suit, rank} (rank is the FACE value 2..14). A few named for readable fixtures.
+const TWO_CLUBS: Card = { suit: 0, rank: 2 }
+const SEVEN_CLUBS: Card = { suit: 0, rank: 7 }
+const THREE_CLUBS: Card = { suit: 0, rank: 3 }
+const FOUR_CLUBS: Card = { suit: 0, rank: 4 }
+const TWO_DIAMONDS: Card = { suit: 1, rank: 2 }
+const TWO_SPADES: Card = { suit: 2, rank: 2 }
+const TWO_HEARTS: Card = { suit: 3, rank: 2 }
+const THREE_HEARTS: Card = { suit: 3, rank: 3 }
 
 /** Build a minimal StepState carrying a Hearts overlay, with the required envelope fields. */
 function mkState(overlay: Record<string, unknown>, tick = 0): StepState {
@@ -51,6 +53,11 @@ function mkState(overlay: Record<string, unknown>, tick = 0): StepState {
     timing: { started_at: tick, duration_ms: 1 },
     overlay,
   }
+}
+
+/** One `{seat, card}` trick entry, the shape `current_trick`/`last_trick` carry (play order). */
+function entry(seat: number, card: Card): { seat: number; card: Card } {
+  return { seat, card }
 }
 
 /** A baseline overlay; spread overrides over it for each scenario. */
@@ -68,15 +75,15 @@ function overlay(over: Record<string, unknown>): Record<string, unknown> {
     tricks_played: 0,
     display_scores: [0, 0, 0, 0],
     leaderboard_scores: [0, 0, 0, 0],
-    legal_actions: [],
+    legal_cards: [],
     terminal: false,
     ...over,
   }
 }
 
-const litCards = (scene: HeartsScene): number[] =>
+const litCards = (scene: HeartsScene): Card[] =>
   scene.hand.filter((c) => c.legal).map((c) => c.card)
-const greyCards = (scene: HeartsScene): number[] =>
+const greyCards = (scene: HeartsScene): Card[] =>
   scene.hand.filter((c) => !c.legal).map((c) => c.card)
 
 describe('computeScene greying from the legal-action mask', () => {
@@ -90,7 +97,7 @@ describe('computeScene greying from the legal-action mask', () => {
         hands: [[TWO_CLUBS, SEVEN_CLUBS, TWO_DIAMONDS, TWO_SPADES, TWO_HEARTS], [], [], []],
         turn: 0,
         tricks_played: 0,
-        legal_actions: [TWO_CLUBS],
+        legal_cards: [TWO_CLUBS],
       }),
     )
     const scene = computeScene(state, { controlledSlots: ['player_0'] })
@@ -103,11 +110,11 @@ describe('computeScene greying from the legal-action mask', () => {
     const state = mkState(
       overlay({
         hands: [[THREE_CLUBS, FOUR_CLUBS, TWO_HEARTS, THREE_HEARTS], [], [], []],
-        current_trick: [[2, SEVEN_CLUBS]],
+        current_trick: [entry(2, SEVEN_CLUBS)],
         led_suit: 0,
         turn: 0,
         tricks_played: 3,
-        legal_actions: [THREE_CLUBS, FOUR_CLUBS],
+        legal_cards: [THREE_CLUBS, FOUR_CLUBS],
       }),
     )
     const scene = computeScene(state, { controlledSlots: ['player_0'] })
@@ -124,7 +131,7 @@ describe('computeScene greying from the legal-action mask', () => {
         turn: 0,
         tricks_played: 2,
         hearts_broken: false,
-        legal_actions: [SEVEN_CLUBS],
+        legal_cards: [SEVEN_CLUBS],
       }),
     )
     const scene = computeScene(state, { controlledSlots: ['player_0'] })
@@ -136,17 +143,17 @@ describe('computeScene greying from the legal-action mask', () => {
   })
 
   it('greys the whole hand when it is not the view seat turn (the mask is the other seat)', () => {
-    // legal_actions belongs to the current turn (seat 1), whose card ids the view seat does not hold,
-    // so none of the view seat's cards light. This matches render.py: you cannot act, nothing is lit.
+    // legal_cards belongs to the current turn (seat 1), whose cards the view seat does not hold, so
+    // none of the view seat's cards light. This matches render.py: you cannot act, nothing is lit.
     const state = mkState(
       overlay({
         hands: [[THREE_CLUBS, FOUR_CLUBS], [SEVEN_CLUBS], [], []],
-        current_trick: [[0, TWO_CLUBS]],
+        current_trick: [entry(0, TWO_CLUBS)],
         led_suit: 0,
         turn: 1,
         turn_slot: 'player_1',
         tricks_played: 1,
-        legal_actions: [SEVEN_CLUBS],
+        legal_cards: [SEVEN_CLUBS],
       }),
     )
     const scene = computeScene(state, { controlledSlots: ['player_0'] })
@@ -210,10 +217,10 @@ describe('computeScene scores, seats, and the turn indicator', () => {
       overlay({
         current_trick: [],
         last_trick: [
-          [0, TWO_CLUBS],
-          [1, THREE_CLUBS],
-          [2, FOUR_CLUBS],
-          [3, SEVEN_CLUBS],
+          entry(0, TWO_CLUBS),
+          entry(1, THREE_CLUBS),
+          entry(2, FOUR_CLUBS),
+          entry(3, SEVEN_CLUBS),
         ],
         last_trick_winner: 0,
         turn: 0,
@@ -231,9 +238,9 @@ describe('on-screen input (hit-testing and clickability)', () => {
         hands: [[THREE_CLUBS, FOUR_CLUBS, TWO_HEARTS], [], [], []],
         turn: 0,
         led_suit: 0,
-        current_trick: [[3, TWO_CLUBS]],
+        current_trick: [entry(3, TWO_CLUBS)],
         tricks_played: 1,
-        legal_actions: [THREE_CLUBS, FOUR_CLUBS],
+        legal_cards: [THREE_CLUBS, FOUR_CLUBS],
       }),
     )
     const scene = computeScene(state, { controlledSlots: ['player_0'] })
@@ -253,7 +260,7 @@ describe('on-screen input (hit-testing and clickability)', () => {
 
   it('makes no card controllable in a replay (no controlled slots)', () => {
     const state = mkState(
-      overlay({ hands: [[THREE_CLUBS], [], [], []], turn: 0, legal_actions: [THREE_CLUBS] }),
+      overlay({ hands: [[THREE_CLUBS], [], [], []], turn: 0, legal_cards: [THREE_CLUBS] }),
     )
     const scene = computeScene(state)
     expect(scene.hand.every((c) => !c.controllable)).toBe(true)
@@ -369,20 +376,17 @@ describe('the card-play fly-in (pure, replay-able)', () => {
     const prev = mkState(
       overlay({
         hands: [[THREE_CLUBS, FOUR_CLUBS], [], [], []],
-        current_trick: [[3, TWO_CLUBS]],
+        current_trick: [entry(3, TWO_CLUBS)],
         led_suit: 0,
         turn: 0,
         tricks_played: 1,
-        legal_actions: [THREE_CLUBS, FOUR_CLUBS],
+        legal_cards: [THREE_CLUBS, FOUR_CLUBS],
       }),
     )
     const next = mkState(
       overlay({
         hands: [[FOUR_CLUBS], [], [], []],
-        current_trick: [
-          [3, TWO_CLUBS],
-          [0, THREE_CLUBS],
-        ],
+        current_trick: [entry(3, TWO_CLUBS), entry(0, THREE_CLUBS)],
         led_suit: 0,
         turn: 1,
         turn_slot: 'player_1',
@@ -395,13 +399,13 @@ describe('the card-play fly-in (pure, replay-able)', () => {
       throw new Error('no play')
     }
     expect(move.seat).toBe(0)
-    expect(move.card).toBe(THREE_CLUBS)
+    expect(move.card).toEqual(THREE_CLUBS)
     expect(move.completesTrick).toBe(false)
     expect(move.resting).toHaveLength(1) // the one card already in the center (the 2♣)
-    expect(move.resting[0]?.card).toBe(TWO_CLUBS)
+    expect(move.resting[0]?.card).toEqual(TWO_CLUBS)
 
     // The load-bearing assertion: the flyer leaves from exactly where the card was drawn last frame.
-    const drawn = computeScene(prev).hand.find((c) => c.card === THREE_CLUBS)
+    const drawn = computeScene(prev).hand.find((c) => cardKey(c.card) === cardKey(THREE_CLUBS))
     expect(drawn).toBeDefined()
     if (drawn === undefined) {
       throw new Error('card not in prev hand')
@@ -424,7 +428,7 @@ describe('the card-play fly-in (pure, replay-able)', () => {
     const next = mkState(
       overlay({
         hands: [[], [], [SEVEN_CLUBS], []],
-        current_trick: [[2, TWO_CLUBS]],
+        current_trick: [entry(2, TWO_CLUBS)],
         led_suit: 0,
         turn: 3,
         tricks_played: 1,
@@ -432,8 +436,8 @@ describe('the card-play fly-in (pure, replay-able)', () => {
     )
     const move = detectPlay(prev, next, 0)
     expect(move?.seat).toBe(2)
-    expect(move?.card).toBe(TWO_CLUBS)
-    const sc = computeScene(prev).opponents.find((c) => c.card === TWO_CLUBS)
+    expect(move?.card).toEqual(TWO_CLUBS)
+    const sc = computeScene(prev).opponents.find((c) => cardKey(c.card) === cardKey(TWO_CLUBS))
     expect(sc).toBeDefined()
     expect(move?.fromX).toBe((sc?.x ?? 0) + (sc?.w ?? 0) / 2)
     expect(move?.fromW).toBe(sc?.w)
@@ -445,15 +449,11 @@ describe('the card-play fly-in (pure, replay-able)', () => {
     const prev = mkState(
       overlay({
         hands: [[THREE_CLUBS], [], [], []],
-        current_trick: [
-          [1, TWO_CLUBS],
-          [2, FOUR_CLUBS],
-          [3, SEVEN_CLUBS],
-        ],
+        current_trick: [entry(1, TWO_CLUBS), entry(2, FOUR_CLUBS), entry(3, SEVEN_CLUBS)],
         led_suit: 0,
         turn: 0,
         tricks_played: 0,
-        legal_actions: [THREE_CLUBS],
+        legal_cards: [THREE_CLUBS],
       }),
     )
     const next = mkState(
@@ -461,10 +461,10 @@ describe('the card-play fly-in (pure, replay-able)', () => {
         hands: [[], [], [], []],
         current_trick: [],
         last_trick: [
-          [1, TWO_CLUBS],
-          [2, FOUR_CLUBS],
-          [3, SEVEN_CLUBS],
-          [0, THREE_CLUBS],
+          entry(1, TWO_CLUBS),
+          entry(2, FOUR_CLUBS),
+          entry(3, SEVEN_CLUBS),
+          entry(0, THREE_CLUBS),
         ],
         last_trick_winner: 3,
         turn: 3,
@@ -473,7 +473,7 @@ describe('the card-play fly-in (pure, replay-able)', () => {
     )
     const move = detectPlay(prev, next, 0)
     expect(move?.seat).toBe(0)
-    expect(move?.card).toBe(THREE_CLUBS)
+    expect(move?.card).toEqual(THREE_CLUBS)
     expect(move?.completesTrick).toBe(true)
     expect(move?.resting).toHaveLength(3) // the three cards already down, no winner highlight yet
     expect(move?.resting.every((c) => !c.isWinner)).toBe(true)
@@ -481,7 +481,11 @@ describe('the card-play fly-in (pure, replay-able)', () => {
 
   it('does not fire on no change, a backward scrub, or a null prev', () => {
     const s = mkState(
-      overlay({ hands: [[THREE_CLUBS], [], [], []], current_trick: [[3, TWO_CLUBS]], turn: 0 }),
+      overlay({
+        hands: [[THREE_CLUBS], [], [], []],
+        current_trick: [entry(3, TWO_CLUBS)],
+        turn: 0,
+      }),
     )
     expect(detectPlay(s, s, 0)).toBeNull()
     expect(detectPlay(null, s, 0)).toBeNull()
@@ -495,20 +499,17 @@ describe('the card-play fly-in (pure, replay-able)', () => {
     const prev = mkState(
       overlay({
         hands: [[THREE_CLUBS, FOUR_CLUBS], [], [], []],
-        current_trick: [[3, TWO_CLUBS]],
+        current_trick: [entry(3, TWO_CLUBS)],
         led_suit: 0,
         turn: 0,
         tricks_played: 1,
-        legal_actions: [THREE_CLUBS, FOUR_CLUBS],
+        legal_cards: [THREE_CLUBS, FOUR_CLUBS],
       }),
     )
     const next = mkState(
       overlay({
         hands: [[FOUR_CLUBS], [], [], []],
-        current_trick: [
-          [3, TWO_CLUBS],
-          [0, THREE_CLUBS],
-        ],
+        current_trick: [entry(3, TWO_CLUBS), entry(0, THREE_CLUBS)],
         turn: 1,
         tricks_played: 1,
       }),

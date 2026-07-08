@@ -114,14 +114,10 @@ class SpadesRenderer(CardTableRenderer):
         """Return the per-step Spades overlay for ``env``."""
         return extract_overlay(env)
 
-    def _legal_cards_from_overlay(self, overlay: dict) -> set[int]:
-        """Return the legal *card* ids for the hand, dropping bid actions.
-
-        ``legal_actions`` names cards only during play; during bidding it names bid actions
-        (``>= 52``), so filtering to ``< NUM_CARDS`` leaves no legal card and every hand card greys —
-        the correct read: you cannot play a card until you have bid.
-        """
-        return {a for a in overlay["legal_actions"] if a < rules.NUM_CARDS}
+    # ``_legal_cards_from_overlay`` needs no override: the overlay's ``legal_cards`` is already empty
+    # during bidding (bids live in the separate ``legal_bids`` key), so the shared base — every card
+    # in ``overlay["legal_cards"]``, keyed by :func:`card_key` — greys the whole hand while bidding,
+    # exactly as this used to filter bid actions out by hand.
 
     def _draw_center(self, surface: pygame.Surface, overlay: dict, view_seat: int) -> None:
         """Draw the centre: the clickable bid chips during bidding, else the trick."""

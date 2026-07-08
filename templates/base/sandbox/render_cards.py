@@ -27,6 +27,7 @@ from typing import Any
 import numpy as np
 import pygame
 
+from .card_utils import card_from_obj
 from .render_base import PygameRenderer
 
 #: Card-face dimensions for the view seat's fanned hand.
@@ -67,6 +68,18 @@ WINNER_GLOW = GOLD
 GREY_VEIL = (38, 50, 44, 168)
 
 
+def card_key(card: dict[str, int]) -> int:
+    """Return a stable, unique identity (``0..51`` engine id) for a semantic card object.
+
+    Cards flow as ``{"suit", "rank"}`` objects (face rank ``2..14``) through drawing, animation, and
+    hit testing; this is the one place they are collapsed to a hashable int, used only where a
+    map/set identity is needed (legal sets, matching a card across frames, hidden-card gaps) — never
+    for drawing, which reads ``suit``/``rank`` straight off the object. Delegates to the shared codec
+    so the object-to-id collapse lives in exactly one place.
+    """
+    return card_from_obj(card)
+
+
 class CardTableRenderer(PygameRenderer):
     """Draw a four-seat trick-taking table to an offscreen surface (and optionally a window).
 
@@ -94,31 +107,22 @@ class CardTableRenderer(PygameRenderer):
     NUM_PLAYERS = 4
     #: Suit ids (the high part of the ``card = suit * 13 + rank`` encoding).
     CLUBS, DIAMONDS, SPADES, HEARTS = 0, 1, 2, 3
-    #: Rank labels indexed by rank id ``0..12`` (``0`` is the 2, ``12`` the ace).
+    #: Rank labels indexed by rank id ``0..12`` (``0`` is the 2, ``12`` the ace). Cards carry the FACE
+    #: rank (``2..14``), so a lookup is ``RANK_LABELS[card["rank"] - 2]``.
     RANK_LABELS = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"]
-
-    @staticmethod
-    def suit_of(card: int) -> int:
-        """Return the suit id (``0..3``) of ``card`` under the canonical encoding."""
-        return card // 13
-
-    @staticmethod
-    def rank_of(card: int) -> int:
-        """Return the rank id (``0..12``) of ``card`` under the canonical encoding."""
-        return card % 13
 
     def __init__(self, render_mode: str) -> None:
         """Store ``render_mode`` and the shared per-frame draw state; defer pygame init to render."""
         super().__init__(render_mode)
         #: Cached opaque table background (gradient + vignette + central well); built once.
         self._bg: pygame.Surface | None = None
-        #: (card id, rect) for each drawn hand card, in draw order (left to right).
-        self._hand_rects: list[tuple[int, pygame.Rect]] = []
-        #: Legal card ids from the most recent render, for click acceptance.
+        #: (card object, rect) for each drawn hand card, in draw order (left to right).
+        self._hand_rects: list[tuple[dict[str, int], pygame.Rect]] = []
+        #: Legal card KEYS (see :func:`card_key`) from the most recent render, for click acceptance.
         self._legal_cards: set[int] = set()
-        #: The hand card to highlight on the next render (human hover feedback), or None. Stays None
-        #: in rgb_array mode, so headless frames are byte-identical.
-        self._hovered_card: int | None = None
+        #: The hand card object to highlight on the next render (human hover feedback), or None. Stays
+        #: None in rgb_array mode, so headless frames are byte-identical.
+        self._hovered_card: dict[str, int] | None = None
         #: Cache of antialiased suit pips keyed by (suit, size, ink); a handful of distinct sizes
         #: and inks recur every frame, so this turns the per-pip supersample into a one-time cost.
         self._pip_cache: dict[tuple[int, int, tuple[int, int, int]], pygame.Surface] = {}
@@ -140,8 +144,8 @@ class CardTableRenderer(PygameRenderer):
 
     # -- public hit-testing helpers ------------------------------------------------------------
 
-    def card_at_pos(self, pos: tuple[int, int]) -> int | None:
-        """Return the view-seat card under window pixel ``pos``, or ``None`` if none.
+    def card_at_pos(self, pos: tuple[int, int]) -> dict[str, int] | None:
+        """Return the view-seat card OBJECT under window pixel ``pos``, or ``None`` if none.
 
         Hand cards overlap, so the rects are scanned in reverse draw order (the visually
         front-most / right-most card first) so the card a human sees on top wins. Legality is
@@ -152,18 +156,19 @@ class CardTableRenderer(PygameRenderer):
                 return card
         return None
 
-    def card_rect(self, card: int) -> pygame.Rect | None:
+    def card_rect(self, card: dict[str, int]) -> pygame.Rect | None:
         """Return the rect drawn for ``card`` in the view seat's hand, or ``None`` if absent."""
+        key = card_key(card)
         for drawn_card, rect in self._hand_rects:
-            if drawn_card == card:
+            if card_key(drawn_card) == key:
                 return rect
         return None
 
-    def is_legal_card(self, card: int) -> bool:
+    def is_legal_card(self, card: dict[str, int]) -> bool:
         """Return whether ``card`` was legal in the most recently rendered frame."""
-        return card in self._legal_cards
+        return card_key(card) in self._legal_cards
 
-    def set_hover(self, card: int | None) -> None:
+    def set_hover(self, card: dict[str, int] | None) -> None:
         """Set the hand card to highlight on the next render (human hover feedback), or ``None``.
 
         The human controller calls this each frame with the card under the cursor; the browser gets
@@ -256,12 +261,12 @@ class CardTableRenderer(PygameRenderer):
         """
 
     def _legal_cards_from_overlay(self, overlay: dict) -> set[int]:
-        """Return the card ids to treat as legal in the hand. Default: all legal actions.
+        """Return the legal-card KEYS (see :func:`card_key`) to treat as legal in the hand.
 
-        Spades overrides this to drop bid actions (``>= NUM_CARDS``) so no hand card is legal while
-        the seat is still bidding.
+        Default: every card in ``overlay["legal_cards"]``. Spades' ``legal_cards`` is already empty
+        during bidding (bids are a separate ``legal_bids`` key), so no override is needed there.
         """
-        return set(overlay["legal_actions"])
+        return {card_key(c) for c in overlay["legal_cards"]}
 
     def _draw_seat_content(
         self,
@@ -403,7 +408,8 @@ class CardTableRenderer(PygameRenderer):
                 return
             trick = overlay["last_trick"]
             winner = overlay["last_trick_winner"]
-        for seat, card in trick:
+        for entry in trick:
+            seat, card = entry["seat"], entry["card"]
             slot = self._slot_of_seat(seat, view_seat)
             dx, dy = self._trick_offset(slot)
             rect = pygame.Rect(0, 0, self._s(SMALL_W), self._s(SMALL_H))
@@ -413,12 +419,15 @@ class CardTableRenderer(PygameRenderer):
 
     # -- card layout (the single source of the fan / opponent-row geometry) ---------------------
 
-    def _hand_layout(self, hand: list[int], legal_cards: set[int]) -> list[tuple[int, pygame.Rect]]:
+    def _hand_layout(
+        self, hand: list[dict[str, int]], legal_keys: set[int]
+    ) -> list[tuple[dict[str, int], pygame.Rect]]:
         """Resting rect of every card in the view seat's fanned hand, in draw order (no hover lift).
 
         The one place the bottom fan's geometry is computed, reused by :meth:`_draw_hand` (drawing and
         the ``_hand_rects`` it records for hit-testing) and any fly-in origin, so a card flies from
-        exactly where it was drawn. Legal cards sit a few px higher (a selectable cue).
+        exactly where it was drawn. Legal cards (matched by :func:`card_key` against ``legal_keys``)
+        sit a few px higher (a selectable cue).
         """
         count = len(hand)
         if count == 0:
@@ -431,15 +440,17 @@ class CardTableRenderer(PygameRenderer):
         run = step * (count - 1) + card_w
         start_x = (self._s(self.WIDTH) - run) // 2
         base_y = self._s(self.HEIGHT) - card_h - self._s(18)
-        layout: list[tuple[int, pygame.Rect]] = []
+        layout: list[tuple[dict[str, int], pygame.Rect]] = []
         for i, card in enumerate(hand):
             x = start_x + i * step
             # Raise legal cards a few px so they read as selectable.
-            y = base_y - (self._s(10) if card in legal_cards else 0)
+            y = base_y - (self._s(10) if card_key(card) in legal_keys else 0)
             layout.append((card, pygame.Rect(x, y, card_w, card_h)))
         return layout
 
-    def _opponent_row_layout(self, slot: int, hand: list[int]) -> list[tuple[int, pygame.Rect]]:
+    def _opponent_row_layout(
+        self, slot: int, hand: list[dict[str, int]]
+    ) -> list[tuple[dict[str, int], pygame.Rect]]:
         """Rect of every card in an opponent's row along their table edge, in deal order.
 
         The one place the opponent-row geometry is computed, reused by :meth:`_draw_opponent_row` and
@@ -472,7 +483,7 @@ class CardTableRenderer(PygameRenderer):
         overlay: dict,
         view_seat: int,
         reveal_all: bool,
-        hidden_card: int | None = None,
+        hidden_card: dict[str, int] | None = None,
     ) -> None:
         """Draw the three non-view seats: face-down backs, or small faces when ``reveal_all``.
 
@@ -490,13 +501,14 @@ class CardTableRenderer(PygameRenderer):
         self,
         surface: pygame.Surface,
         slot: int,
-        hand: list[int],
+        hand: list[dict[str, int]],
         reveal_all: bool,
-        hidden_card: int | None = None,
+        hidden_card: dict[str, int] | None = None,
     ) -> None:
         """Lay an opponent's cards out along their table edge (backs unless revealing)."""
+        hidden_key = None if hidden_card is None else card_key(hidden_card)
         for card, rect in self._opponent_row_layout(slot, hand):
-            if card == hidden_card:
+            if hidden_key is not None and card_key(card) == hidden_key:
                 continue  # placeholder gap during the fly-in (the flyer represents this card)
             if reveal_all:
                 self._draw_card_face(surface, rect, card, self._font_small)
@@ -508,7 +520,7 @@ class CardTableRenderer(PygameRenderer):
         surface: pygame.Surface,
         overlay: dict,
         view_seat: int,
-        hidden_card: int | None = None,
+        hidden_card: dict[str, int] | None = None,
     ) -> None:
         """Fan the view seat's hand across the bottom, highlighting legal and greying illegal.
 
@@ -519,16 +531,18 @@ class CardTableRenderer(PygameRenderer):
         """
         self._hand_rects = []
         self._legal_cards = self._legal_cards_from_overlay(overlay)
+        hidden_key = None if hidden_card is None else card_key(hidden_card)
         for card, rect in self._hand_layout(list(overlay["hands"][view_seat]), self._legal_cards):
-            if card == hidden_card:
+            if hidden_key is not None and card_key(card) == hidden_key:
                 continue  # placeholder gap during the fly-in (the flyer represents this card)
             # Record the resting rect for hit-testing before any hover lift, so hover never shifts the
             # click target (which would make the highlight flicker at a card's edge).
             self._hand_rects.append((card, rect))
-            legal = card in self._legal_cards
+            key = card_key(card)
+            legal = key in self._legal_cards
             # Hover (human chrome; _hovered_card is None in rgb_array, so headless frames are unchanged):
             # lift the hovered card and ring it gold, mirroring the browser hover ring.
-            hovered = self._hovered_card is not None and card == self._hovered_card
+            hovered = self._hovered_card is not None and key == card_key(self._hovered_card)
             draw_rect = rect.move(0, -self._s(HOVER_LIFT)) if hovered else rect
             border = LEGAL_BORDER if legal else None
             self._draw_card_face(surface, draw_rect, card, self._font, border=border, border_w=4)
@@ -570,7 +584,9 @@ class CardTableRenderer(PygameRenderer):
             self._animate_trick_won(overlay, view_seat, reveal_all)
             self._animated_tricks = tricks_played
 
-    def _detect_play(self, overlay: dict) -> tuple[int, int, list[tuple[int, int]]] | None:
+    def _detect_play(
+        self, overlay: dict
+    ) -> tuple[int, dict[str, int], list[tuple[int, dict[str, int]]]] | None:
         """Return ``(seat, card, resting_pairs)`` for the card just played versus the previous
         overlay, or ``None``. Either one new pair was appended to the in-progress trick (cards 1–3),
         or the trick count went up and the new card shows only in the completed ``last_trick`` (the
@@ -586,30 +602,37 @@ class CardTableRenderer(PygameRenderer):
         p_tricks = prev["tricks_played"]
         n_tricks = overlay["tricks_played"]
         if n_tricks == p_tricks and len(n_trick) == len(p_trick) + 1:
-            seat, card = n_trick[-1]
-            return int(seat), int(card), [(int(s), int(c)) for s, c in p_trick]
+            entry = n_trick[-1]
+            seat, card = entry["seat"], entry["card"]
+            resting = [(e["seat"], e["card"]) for e in p_trick]
+            return int(seat), card, resting
         if not n_trick and overlay["last_trick"] is not None and n_tricks == p_tricks + 1:
-            resting = {int(c) for _, c in p_trick}
-            played = [pair for pair in overlay["last_trick"] if int(pair[1]) not in resting]
+            resting_keys = {card_key(e["card"]) for e in p_trick}
+            played = [e for e in overlay["last_trick"] if card_key(e["card"]) not in resting_keys]
             if not played:
                 return None
-            seat, card = played[0]
-            return int(seat), int(card), [(int(s), int(c)) for s, c in p_trick]
+            entry = played[0]
+            seat, card = entry["seat"], entry["card"]
+            resting = [(e["seat"], e["card"]) for e in p_trick]
+            return int(seat), card, resting
         return None
 
-    def _play_source(self, prev: dict, view_seat: int, seat: int, card: int) -> tuple[int, int, int, int]:
+    def _play_source(
+        self, prev: dict, view_seat: int, seat: int, card: dict[str, int]
+    ) -> tuple[int, int, int, int]:
         """Device-pixel centre and size ``(cx, cy, w, h)`` of ``card`` as it was drawn for ``seat`` in
         the previous overlay: the view seat's fanned hand, or an opponent row. Reuses the shared
         layout helpers (:meth:`_hand_layout` / :meth:`_opponent_row_layout`) so the source matches the
         actual draw to the pixel. Falls back to the seat badge if the card can't be located (defensive).
         """
+        key = card_key(card)
         if seat == view_seat:
-            layout = self._hand_layout(list(prev["hands"][view_seat]), set(prev["legal_actions"]))
+            layout = self._hand_layout(list(prev["hands"][view_seat]), self._legal_cards_from_overlay(prev))
         else:
             slot = self._slot_of_seat(seat, view_seat)
             layout = self._opponent_row_layout(slot, list(prev["hands"][seat]))
         for drawn_card, rect in layout:
-            if drawn_card == card:
+            if card_key(drawn_card) == key:
                 return rect.centerx, rect.centery, rect.width, rect.height
         ax, ay = self._seat_anchor(self._slot_of_seat(seat, view_seat))
         return ax, ay, self._s(SMALL_W), self._s(SMALL_H)
@@ -619,7 +642,7 @@ class CardTableRenderer(PygameRenderer):
         overlay: dict,
         view_seat: int,
         reveal_all: bool,
-        play: tuple[int, int, list[tuple[int, int]]],
+        play: tuple[int, dict[str, int], list[tuple[int, dict[str, int]]]],
     ) -> None:
         """Play the ~0.48 s fly-in: the played card holds (gold-ringed) where it left the hand, then
         slides into its trick spot, shrinking to trick size. The cards already in the centre sit
@@ -695,8 +718,9 @@ class CardTableRenderer(PygameRenderer):
 
         center = (self._s(self.WIDTH // 2), self._s(self.HEIGHT // 2))
         win_anchor = self._seat_anchor(self._slot_of_seat(winner, view_seat))
-        cards: list[tuple[int, int, tuple[int, int]]] = []
-        for seat, card in trick:
+        cards: list[tuple[int, dict[str, int], tuple[int, int]]] = []
+        for entry in trick:
+            seat, card = entry["seat"], entry["card"]
             dx, dy = self._trick_offset(self._slot_of_seat(seat, view_seat))
             cards.append((seat, card, (center[0] + dx, center[1] + dy)))
 
@@ -817,7 +841,7 @@ class CardTableRenderer(PygameRenderer):
         self,
         surface: pygame.Surface,
         rect: pygame.Rect,
-        card: int,
+        card: dict[str, int],
         font: pygame.font.Font,
         *,
         border: tuple[int, int, int] | None = None,
@@ -834,9 +858,9 @@ class CardTableRenderer(PygameRenderer):
         if border is not None:
             self._draw_glow_border(surface, rect, border, border_w, glow_intensity)
 
-        suit = self.suit_of(card)
+        suit = card["suit"]
         ink = RED_INK if suit in (self.DIAMONDS, self.HEARTS) else BLACK_INK
-        rank_str = self.RANK_LABELS[self.rank_of(card)]
+        rank_str = self.RANK_LABELS[card["rank"] - 2]
         self._draw_corner_index(surface, rect, rank_str, suit, ink, font)
         # The suit is drawn from primitives, not a font glyph: the default pygame font has no
         # card-suit characters, so font.render("♥") would draw a missing-glyph box.

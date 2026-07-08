@@ -22,20 +22,40 @@
  */
 import type { StepState } from '@game-sandbox/schema'
 
-// --- Card encoding (mirrors environments/src/local_play/render_cards.py card codec) ---
-// A card is an int 0..51 with `card = suit * 13 + rank`. Suits are 0=clubs, 1=diamonds, 2=spades,
-// 3=hearts; ranks run 0=2 .. 8=10, 9=J, 10=Q, 11=K, 12=A. So 2♣ == 0 and Q♠ == 36.
+// --- Card encoding (mirrors environments/src/local_play/card_utils.py) ---
+// A card OBJECT is `{suit, rank}`: suits 0=clubs, 1=diamonds, 2=spades, 3=hearts; rank is the FACE
+// value 2..14 (jack 11, queen 12, king 13, ace 14) — the value printed on the card, not the engine's
+// 0-indexed rank. The engine (integer) card id 0..51 is `suit * 13 + (rank - 2)`; that encoding is used
+// ONLY at the browser's send boundary (`cardToAction`), never in scene state, drawing, or legality.
 export const CLUBS = 0
 export const DIAMONDS = 1
 export const SPADES = 2
 export const HEARTS = 3
 export const NUM_PLAYERS = 4
 
-export function suitOf(card: number): number {
-  return Math.floor(card / 13)
+/** One playing card: suit 0..3, rank the FACE value 2..14 (mirrors card_utils.card_to_obj). */
+export interface Card {
+  suit: number
+  rank: number
 }
-export function rankOf(card: number): number {
-  return card % 13
+
+/** A stable, unique string identity for a card, for Sets/Maps and animation matching across frames. */
+export function cardKey(card: Card): string {
+  return `${card.suit}:${card.rank}`
+}
+
+/** The engine's integer card id 0..51 (`suit*13 + rank_index`), the value sent to the server. This is
+ *  the ONLY place a Card becomes an int; every other reader (scene, drawing, legality) stays object. */
+export function cardToAction(card: Card): number {
+  return card.suit * 13 + (card.rank - 2)
+}
+
+/** Thin object accessors, kept for callers that prefer function form; every caller passes a Card. */
+export function suitOf(card: Card): number {
+  return card.suit
+}
+export function rankOf(card: Card): number {
+  return card.rank
 }
 
 /** Rank labels indexed by rank id 0..12 (mirrors render_cards.py RANK_LABELS). */
@@ -54,6 +74,11 @@ export const RANK_LABELS = [
   'K',
   'A',
 ] as const
+
+/** The display label for a card's face rank (e.g. 'A' for rank 14, 'J' for rank 11). */
+export function rankLabel(card: Card): string {
+  return RANK_LABELS[card.rank - 2] ?? '?'
+}
 
 // --- Fixed frame and card dimensions (mirrors render_cards.py WIDTH/HEIGHT/CARD_*/SMALL_*) ---
 export const WIDTH = 960
@@ -149,7 +174,7 @@ export interface SceneSeatBase {
 /** A face-up card in the central trick, positioned at its player's screen slot offset. */
 export interface SceneTrickCard {
   seat: number
-  card: number
+  card: Card
   x: number
   y: number
   /** Highlighted gold when this scene shows a completed trick and this card won it. */
@@ -158,7 +183,7 @@ export interface SceneTrickCard {
 
 /** A small card in an opponent's row: face-down in live play, face-up when revealing (spectate/replay). */
 export interface SceneCard {
-  card: number
+  card: Card
   x: number
   y: number
   w: number
@@ -168,12 +193,12 @@ export interface SceneCard {
 
 /** One card in the view seat's fanned hand. */
 export interface SceneHandCard {
-  card: number
+  card: Card
   x: number
   y: number
   w: number
   h: number
-  /** In the emitted legal-action mask for the current turn: drawn lit and raised; else greyed. */
+  /** In the emitted legal-cards set for the current turn: drawn lit and raised; else greyed. */
   legal: boolean
   /** Clickable: legal, it is the view seat's turn, and the user controls the view seat. */
   controllable: boolean
@@ -209,18 +234,24 @@ export interface SceneConfig {
   humanTimeoutMs?: number | null
 }
 
+/** One play in a trick: who played (seat) and what (a card object), in play order. */
+export interface TrickEntry {
+  seat: number
+  card: Card
+}
+
 /** The normalized, fully-defaulted core of the overlay every card game reads (snake_case from Python). */
 export interface CardOverlay {
-  hands: number[][]
-  currentTrick: Array<[number, number]>
-  lastTrick: Array<[number, number]> | null
+  hands: Card[][]
+  currentTrick: TrickEntry[]
+  lastTrick: TrickEntry[] | null
   lastTrickWinner: number | null
   turn: number
   turnSlot: string
   trickLeader: number
   ledSuit: number | null
   tricksPlayed: number
-  legalActions: number[]
+  legalCards: Card[]
   terminal: boolean
 }
 
@@ -273,13 +304,50 @@ export function seatOfSlot(slot: string): number {
 
 // --- Overlay normalization ---
 
-export function asPairs(value: unknown): Array<[number, number]> {
+/** Validate and normalize one raw `{"suit","rank"}` value into a Card, without re-encoding it. */
+export function asCard(value: unknown): Card | null {
+  if (value === null || typeof value !== 'object') {
+    return null
+  }
+  const v = value as Record<string, unknown>
+  if (typeof v.suit !== 'number' || typeof v.rank !== 'number') {
+    return null
+  }
+  return { suit: v.suit, rank: v.rank }
+}
+
+/** Validate and normalize a raw array of card objects into `Card[]`, dropping anything malformed. */
+export function asCards(value: unknown): Card[] {
   if (!Array.isArray(value)) {
     return []
   }
-  return value
-    .filter((pair): pair is [number, number] => Array.isArray(pair) && pair.length >= 2)
-    .map((pair) => [Number(pair[0]), Number(pair[1])] as [number, number])
+  const cards: Card[] = []
+  for (const raw of value) {
+    const card = asCard(raw)
+    if (card !== null) {
+      cards.push(card)
+    }
+  }
+  return cards
+}
+
+/** Validate and normalize a raw array of `{"seat","card"}` entries into `TrickEntry[]` (play order). */
+export function asCardEntries(value: unknown): TrickEntry[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+  const entries: TrickEntry[] = []
+  for (const raw of value) {
+    if (raw === null || typeof raw !== 'object') {
+      continue
+    }
+    const v = raw as Record<string, unknown>
+    const card = asCard(v.card)
+    if (typeof v.seat === 'number' && card !== null) {
+      entries.push({ seat: v.seat, card })
+    }
+  }
+  return entries
 }
 
 export function asNumberList(value: unknown): number[] {
@@ -299,21 +367,19 @@ export function padScores(scores: number[]): number[] {
 export function readCardOverlay(state: StepState): CardOverlay {
   const o = (state.overlay ?? {}) as Record<string, unknown>
   const rawHands = Array.isArray(o.hands) ? o.hands : []
-  const hands: number[][] = Array.from({ length: NUM_PLAYERS }, (_, seat) =>
-    asNumberList(rawHands[seat]),
-  )
+  const hands: Card[][] = Array.from({ length: NUM_PLAYERS }, (_, seat) => asCards(rawHands[seat]))
   const ledSuit = o.led_suit
   return {
     hands,
-    currentTrick: asPairs(o.current_trick),
-    lastTrick: o.last_trick == null ? null : asPairs(o.last_trick),
+    currentTrick: asCardEntries(o.current_trick),
+    lastTrick: o.last_trick == null ? null : asCardEntries(o.last_trick),
     lastTrickWinner: o.last_trick_winner == null ? null : Number(o.last_trick_winner),
     turn: Number(o.turn ?? 0),
     turnSlot: typeof o.turn_slot === 'string' ? o.turn_slot : `player_${Number(o.turn ?? 0)}`,
     trickLeader: Number(o.trick_leader ?? 0),
     ledSuit: ledSuit == null ? null : Number(ledSuit),
     tricksPlayed: Number(o.tricks_played ?? 0),
-    legalActions: asNumberList(o.legal_actions),
+    legalCards: asCards(o.legal_cards),
     terminal: Boolean(o.terminal),
   }
 }
@@ -384,16 +450,16 @@ export function buildSeatsBase(
 }
 
 /**
- * Place a list of `[seat, card]` trick pairs at their screen-slot offsets around the table center,
+ * Place a list of `{seat, card}` trick entries at their screen-slot offsets around the table center,
  * flagging the winner (if any). Shared by {@link buildTrick} and the play fly-in's "resting" cards so
  * the static center cards and the animated ones agree on geometry to the pixel.
  */
 function placeTrickCards(
-  pairs: ReadonlyArray<[number, number]>,
+  entries: ReadonlyArray<TrickEntry>,
   viewSeat: number,
   winner: number | null,
 ): SceneTrickCard[] {
-  return pairs.map(([seat, card]) => {
+  return entries.map(({ seat, card }) => {
     const { dx, dy } = trickOffset(slotOfSeat(seat, viewSeat))
     return {
       seat,
@@ -415,16 +481,16 @@ export function buildTrick(
   o: CardOverlay,
   viewSeat: number,
 ): { trick: SceneTrickCard[]; trickWinner: number | null } {
-  let pairs: ReadonlyArray<[number, number]> = o.currentTrick
+  let entries: ReadonlyArray<TrickEntry> = o.currentTrick
   let winner: number | null = null
-  if (pairs.length === 0) {
+  if (entries.length === 0) {
     if (o.lastTrick === null) {
       return { trick: [], trickWinner: null }
     }
-    pairs = o.lastTrick
+    entries = o.lastTrick
     winner = o.lastTrickWinner
   }
-  return { trick: placeTrickCards(pairs, viewSeat, winner), trickWinner: winner }
+  return { trick: placeTrickCards(entries, viewSeat, winner), trickWinner: winner }
 }
 
 /** Lay out the three non-view seats' cards along their table edges (render_cards.py _draw_opponent_row). */
@@ -459,7 +525,7 @@ export function buildOpponents(
         x = Math.floor((WIDTH - run) / 2) + i * step
         y = geom.opponentRowNorthY // North row sits just under the top seat badge.
       }
-      cards.push({ card: hand[i] as number, x, y, w: SMALL_W, h: SMALL_H, faceUp: revealAll })
+      cards.push({ card: hand[i] as Card, x, y, w: SMALL_W, h: SMALL_H, faceUp: revealAll })
     }
   }
   return cards
@@ -467,16 +533,16 @@ export function buildOpponents(
 
 /**
  * Fan the view seat's hand across the bottom, marking each card legal (lit and raised) or illegal
- * (greyed). Legality reads the passed `legalCardIds` set — which the game derives verbatim from the
- * emitted legal-action mask (render_cards.py _draw_hand / _legal_cards_from_overlay), so the browser
- * never recomputes the rules; the mask is the current turn's, so a card lights only when it is the view
- * seat's turn. A card is clickable when it is legal, it is the view seat's turn, and the user controls
- * that seat.
+ * (greyed). Legality reads the passed `legalKeys` set of {@link cardKey} identities — which the game
+ * derives verbatim from the emitted `legal_cards` overlay (render_cards.py _draw_hand /
+ * _legal_cards_from_overlay), so the browser never recomputes the rules; the set is the current turn's,
+ * so a card lights only when it is the view seat's turn. A card is clickable when it is legal, it is the
+ * view seat's turn, and the user controls that seat.
  */
 export function buildHand(
   o: CardOverlay,
   view: ViewContext,
-  legalCardIds: ReadonlySet<number>,
+  legalKeys: ReadonlySet<string>,
 ): SceneHandCard[] {
   const hand = o.hands[view.viewSeat] ?? []
   const count = hand.length
@@ -498,7 +564,7 @@ export function buildHand(
   const baseY = HEIGHT - CARD_H - 18
 
   return hand.map((card, i) => {
-    const legal = legalCardIds.has(card)
+    const legal = legalKeys.has(cardKey(card))
     return {
       card,
       x: startX + i * step,
@@ -561,7 +627,7 @@ export function handCardAt(
 /** One card sliding into the winner's seat during the sweep. */
 export interface SweepCard {
   seat: number
-  card: number
+  card: Card
   fromX: number
   fromY: number
 }
@@ -596,7 +662,7 @@ export function detectSweep(
     return null
   }
   const winnerAnchor = seatAnchor(slotOfSeat(n.lastTrickWinner, viewSeat), geom)
-  const cards: SweepCard[] = n.lastTrick.map(([seat, card]) => {
+  const cards: SweepCard[] = n.lastTrick.map(({ seat, card }) => {
     const { dx, dy } = trickOffset(slotOfSeat(seat, viewSeat))
     return { seat, card, fromX: TRICK_CENTER.x + dx, fromY: TRICK_CENTER.y + dy }
   })
@@ -639,7 +705,7 @@ export function sweepCardAt(
  */
 export interface PlayMove {
   seat: number
-  card: number
+  card: Card
   fromX: number
   fromY: number
   fromW: number
@@ -670,15 +736,15 @@ export function detectPlay(
   const n = readCardOverlay(next)
 
   let seat: number
-  let card: number
+  let card: Card
   let completesTrick: boolean
   if (n.tricksPlayed === p.tricksPlayed && n.currentTrick.length === p.currentTrick.length + 1) {
-    // Cards 1–3: one new pair appended to the same in-progress trick.
-    const pair = n.currentTrick[n.currentTrick.length - 1]
-    if (pair === undefined) {
+    // Cards 1–3: one new entry appended to the same in-progress trick.
+    const entry = n.currentTrick[n.currentTrick.length - 1]
+    if (entry === undefined) {
       return null
     }
-    ;[seat, card] = pair
+    ;({ seat, card } = entry)
     completesTrick = false
   } else if (
     n.currentTrick.length === 0 &&
@@ -687,12 +753,12 @@ export function detectPlay(
   ) {
     // The 4th card resolved the trick in one step, so it only appears in last_trick now: it is the
     // last_trick card that was not already resting in the previous in-progress trick.
-    const resting = new Set(p.currentTrick.map(([, c]) => c))
-    const pair = n.lastTrick.find(([, c]) => !resting.has(c))
-    if (pair === undefined) {
+    const resting = new Set(p.currentTrick.map((e) => cardKey(e.card)))
+    const entry = n.lastTrick.find((e) => !resting.has(cardKey(e.card)))
+    if (entry === undefined) {
       return null
     }
-    ;[seat, card] = pair
+    ;({ seat, card } = entry)
     completesTrick = true
   } else {
     return null
@@ -715,30 +781,31 @@ export function detectPlay(
 /**
  * Where the played card was drawn in the previous frame: the view seat's fanned hand if the player is
  * the view seat, otherwise the opponent row. Reuses {@link buildHand}/{@link buildOpponents} so the
- * source matches the actual draw to the pixel. During a play the emitted mask holds only card ids, so
- * `new Set(prev.legalActions)` reproduces the hand's raised/flat layout for both games. Falls back to
- * the player's seat badge if the card can't be located (defensive; should not happen, since the card was
- * in that hand a frame ago).
+ * source matches the actual draw to the pixel. During a play the emitted `legal_cards` overlay holds
+ * only card objects, so `new Set(prev.legalCards.map(cardKey))` reproduces the hand's raised/flat layout
+ * for both games. Falls back to the player's seat badge if the card can't be located (defensive; should
+ * not happen, since the card was in that hand a frame ago).
  */
 function playSource(
   prev: CardOverlay,
   viewSeat: number,
   seat: number,
-  card: number,
+  card: Card,
   geom: TableGeometry,
 ): { fromX: number; fromY: number; fromW: number; fromH: number } {
+  const key = cardKey(card)
   if (seat === viewSeat) {
     const hand = buildHand(
       prev,
       { viewSeat, controlledSeat: null, revealAll: true },
-      new Set(prev.legalActions),
+      new Set(prev.legalCards.map(cardKey)),
     )
-    const shc = hand.find((c) => c.card === card)
+    const shc = hand.find((c) => cardKey(c.card) === key)
     if (shc !== undefined) {
       return { fromX: shc.x + shc.w / 2, fromY: shc.y + shc.h / 2, fromW: shc.w, fromH: shc.h }
     }
   } else {
-    const sc = buildOpponents(prev, viewSeat, true, geom).find((c) => c.card === card)
+    const sc = buildOpponents(prev, viewSeat, true, geom).find((c) => cardKey(c.card) === key)
     if (sc !== undefined) {
       return { fromX: sc.x + sc.w / 2, fromY: sc.y + sc.h / 2, fromW: sc.w, fromH: sc.h }
     }

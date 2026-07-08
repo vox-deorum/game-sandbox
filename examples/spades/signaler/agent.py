@@ -19,23 +19,23 @@ from typing import Any
 from sandbox.cards import (
     SPADES,
     SUIT_NAMES,
-    bid_to_action,
+    bid,
     current_trick,
     hand_cards,
     is_bidding,
     legal_cards,
-    my_seat,
-    partner_of,
+    partner_seat,
+    play,
     rank_of,
     suit_of,
 )
 
 NAME = "signaler-spades"
 
-#: A spade of this rank or higher (queen, king, ace) is a near-certain winner once spades are trump.
-HIGH_SPADE_RANK = 10
-#: The ace is the top rank in every suit.
-ACE_RANK = 12
+#: A spade of this face rank or higher (queen, king, ace) is a near-certain winner once spades are trump.
+HIGH_SPADE_RANK = 12
+#: The ace is the top face rank in every suit.
+ACE_RANK = 14
 #: The prefix of the one message this agent speaks: ``strong:<suit name>``.
 SIGNAL_PREFIX = "strong:"
 
@@ -44,24 +44,24 @@ class Agent:
     """Signal your strong side suit to your partner, and lead their strong suit once you know it."""
 
     def reset(self, seed: int) -> None:
-        # Per-hand state: the seat and hand are restamped every turn from the observation (so chat,
-        # which sees no observation, can read them); the partner's signalled suit and whether we have
-        # already spoken persist across the hand.
-        self._seat: int | None = None
-        self._hand: list[int] = []
+        # Per-hand state: the partner seat and hand are restamped every turn from the observation (so
+        # chat, which sees no observation, can read them); the partner's signalled suit and whether we
+        # have already spoken persist across the hand.
+        self._partner: int | None = None
+        self._hand: list[dict[str, int]] = []
         self._partner_suit: int | None = None
         self._signalled = False
 
     def act(self, observation: Any) -> int:
-        self._seat = my_seat(observation)
+        self._partner = partner_seat(observation)
         self._hand = hand_cards(observation)
         if is_bidding(observation):
-            return bid_to_action(self._honest_bid())
+            return bid(self._honest_bid())
         return self._play(observation)
 
     def chat(self, inbox: list[dict]) -> list[dict]:
         # Read the partner's signal, if any, and remember the suit for the play phase.
-        partner_slot = f"player_{partner_of(self._seat)}"
+        partner_slot = f"player_{self._partner}"
         for item in inbox:
             if item.get("from") == partner_slot:
                 text = item.get("text", "")
@@ -97,5 +97,5 @@ class Agent:
         if leading and self._partner_suit is not None:
             suited = [c for c in legal if suit_of(c) == self._partner_suit]
             if suited:
-                return min(suited, key=rank_of)
-        return min(legal, key=lambda c: (rank_of(c), suit_of(c)))
+                return play(min(suited, key=rank_of))
+        return play(min(legal, key=lambda c: (rank_of(c), suit_of(c))))

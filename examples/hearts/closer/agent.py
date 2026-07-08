@@ -29,6 +29,7 @@ from sandbox.cards import (
     current_trick,
     led_suit,
     legal_cards,
+    play,
     rank_of,
     suit_of,
 )
@@ -36,14 +37,14 @@ from sandbox.cards import (
 NAME = "closer-hearts"
 
 
-def _dump(legal: list[int]) -> int:
+def _dump(legal: list[dict[str, int]]) -> int:
     """Unload the most dangerous legal card when we cannot win the trick: queen, then high hearts."""
     if QUEEN_OF_SPADES in legal:
-        return QUEEN_OF_SPADES
+        return play(QUEEN_OF_SPADES)
     hearts = [card for card in legal if suit_of(card) == HEARTS]
     if hearts:
-        return max(hearts, key=rank_of)
-    return max(legal, key=rank_of)
+        return play(max(hearts, key=rank_of))
+    return play(max(legal, key=rank_of))
 
 
 class Agent:
@@ -65,23 +66,23 @@ class Agent:
                 winning_rank = max(rank_of(card) for card in played if suit_of(card) == led)
                 under = [card for card in followers if rank_of(card) < winning_rank]
                 if under:
-                    return max(under, key=rank_of)
+                    return play(max(under, key=rank_of))
                 # We must win this trick. If it carries no points, winning is free: dump our
                 # highest card; otherwise take it with the lowest winning card.
                 if all(card_points(card) == 0 for card in played):
-                    return max(followers, key=rank_of)
-                return min(followers, key=rank_of)
+                    return play(max(followers, key=rank_of))
+                return play(min(followers, key=rank_of))
             # Void in the last seat: we cannot win, so unload our most dangerous card.
             return _dump(legal)
 
         # Not last: play it safe, the duck way.
         if led is None:
-            return min(legal, key=lambda card: (rank_of(card), suit_of(card)))
+            return play(min(legal, key=lambda card: (rank_of(card), suit_of(card))))
         followers = [card for card in legal if suit_of(card) == led]
         if followers:
             winning_rank = max((rank_of(card) for card in played if suit_of(card) == led), default=-1)
             under = [card for card in followers if rank_of(card) < winning_rank]
             if under:
-                return max(under, key=rank_of)
-            return min(followers, key=rank_of)
+                return play(max(under, key=rank_of))
+            return play(min(followers, key=rank_of))
         return _dump(legal)

@@ -6,17 +6,20 @@ screen, so it holds its height at mid-screen. Run ``python -m sandbox play`` to 
 ``TODO(you)`` comment inside ``act``.
 
 ``environment.md``, shipped alongside this file, walks through building this exact agent and then
-goes deeper into the helpers, the scoring, and the 12-number observation.
+goes deeper into the helpers, the scoring, and the observation.
 
 The only thing you may import from the sandbox is the ``sandbox.features`` helper module, and only at
-the top of this file. It gives readable names to the 12 observation numbers and the two actions, so
-``act`` reads ``player_y(observation)`` instead of a bare ``observation[9]``. Everything else you
-develop against vanilla PettingZoo, and the server runs this exact class through the same interface.
-The optional hooks (``learn`` and ``chat``) are detected by presence, so leave them commented unless
-you use them. Episode state belongs in ``reset``; the constructor takes no arguments.
+the top of this file. It gives readable names to the observation's fields and the two actions, so
+``act`` reads ``player_y(observation)`` instead of reaching into ``observation["player"]["y"]``
+yourself. The observation itself is an object: a ``player`` dict (x, y, vel_y, rot), a ``pipes``
+tuple (nearest pipe first, each with x, gap_top, gap_bottom; may be empty), a pipe count, and the
+screen size — all in real screen pixels, with y growing downward. Everything else you develop
+against vanilla PettingZoo, and the server runs this exact class through the same interface. The
+optional hooks (``learn`` and ``chat``) are detected by presence, so leave them commented unless you
+use them. Episode state belongs in ``reset``; the constructor takes no arguments.
 """
 
-from sandbox.features import FLAP, IDLE, player_y
+from sandbox.features import FLAP, IDLE, player_y, screen_height
 
 
 class Agent:
@@ -29,10 +32,10 @@ class Agent:
         pass
 
     def act(self, observation) -> int:
-        # player_y is the bird's height as a fraction of the screen, where 0 is
-        # the top and 1 is the bottom, so a larger value means lower on the
-        # screen.
-        below_middle = player_y(observation) > 0.5
+        # player_y is the bird's height in real screen pixels, where 0 is the
+        # top and screen_height(observation) is the bottom, so a larger value
+        # means lower on the screen.
+        below_middle = player_y(observation) > screen_height(observation) / 2
 
         # TODO(you): this is the whole strategy: flap when the bird sits below
         # mid-screen, otherwise let it fall. It holds a steady height but never

@@ -8,8 +8,10 @@ off-suit kings, floored at one so it never silently commits the partnership to a
 clings to its lowest card every turn, the weak baseline a submitted agent is expected to beat (see
 ``examples/spades/counter``).
 
-It reads the Spades observation dict's ``action_mask`` and ``hand``, so it needs no dependency beyond
-the standard library.
+It reads the Spades observation dict's ``action_mask`` and its semantic ``hand`` (a sequence of
+``{"suit", "rank"}`` card objects, rank a face value 2..14), so it needs no dependency beyond the
+standard library. The bid estimate below compares on the *engine* rank index (queen = 10), so the
+object hand is decoded back to the ``suit * 13 + (rank - 2)`` engine card id before it is counted.
 """
 
 from __future__ import annotations
@@ -41,7 +43,9 @@ class Agent:
         mask = observation["action_mask"]
         # Any legal bid action (index >= 52) means it is the bidding round; otherwise it is play.
         if any(mask[action] for action in range(_NUM_CARDS, len(mask))):
-            hand = [card for card in range(_NUM_CARDS) if observation["observation"]["hand"][card]]
+            # The observation hand is a sequence of {"suit", "rank"} objects (face-value rank); decode
+            # each back to its engine card id so _suggested_bid counts on the engine rank index.
+            hand = [c["suit"] * 13 + (c["rank"] - 2) for c in observation["observation"]["hand"]]
             return _NUM_CARDS + _suggested_bid(hand)
         # Play: the lowest legal card (lowest rank, ties broken by the lower suit id).
         return min((card for card in range(_NUM_CARDS) if mask[card]), key=lambda c: (_rank(c), _suit(c)))

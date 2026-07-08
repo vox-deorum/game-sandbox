@@ -27,7 +27,7 @@ import time
 import pygame
 
 from . import rules
-from .env import AUTO_ACTION, SpadesEnv, make_env
+from .env import SpadesEnv, default_action, make_env
 from .human import make_human_controller
 
 
@@ -80,7 +80,7 @@ def main(argv: list[str] | None = None) -> int:
                 # followable: a suggested bid during bidding, the lowest legal card during play.
                 env.render()
                 time.sleep(0.6)
-                env.step(AUTO_ACTION)
+                env.step(default_action(env, env.agent_selection))
 
             env.render()
             # A just-completed trick clears current_trick (it briefly held all NUM_PLAYERS cards);

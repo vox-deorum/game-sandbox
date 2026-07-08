@@ -17,10 +17,37 @@ CLI once this module is synced there.
 
 from __future__ import annotations
 
+import importlib
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pygame
+
+
+def _shared_card_utils() -> Any:
+    """Return the shared :mod:`card_utils` under whichever name this file runs as.
+
+    One source syncs into two layouts: :mod:`local_play.card_utils` inside the environments package,
+    ``sandbox.card_utils`` in a composed template. Mirrors the resolver in ``spades.rules`` /
+    ``spades.overlay``.
+    """
+    for candidate in ("local_play.card_utils", "sandbox.card_utils"):
+        try:
+            return importlib.import_module(candidate)
+        except ModuleNotFoundError as exc:
+            missing = exc.name or ""
+            if missing == candidate or candidate.startswith(f"{missing}."):
+                continue
+            raise
+    raise ModuleNotFoundError("no shared card_utils found (tried local_play.card_utils, sandbox.card_utils)")
+
+
+if TYPE_CHECKING:  # pyright sees the real module; this branch never executes at runtime
+    from local_play import card_utils as _cu
+else:
+    _cu = _shared_card_utils()
+
+card_from_obj = _cu.card_from_obj
 
 
 class SpadesHumanController:
@@ -54,7 +81,7 @@ class SpadesHumanController:
                             return bid_action
                         card = renderer.card_at_pos(event.pos)
                         if card is not None and renderer.is_legal_card(card):
-                            return card
+                            return card_from_obj(card)
                 # Highlight the card under the cursor (hover feedback) before re-rendering. The rects
                 # are recorded at rest, so the lift never moves the hit target out from under the mouse.
                 renderer.set_hover(renderer.card_at_pos(pygame.mouse.get_pos()))

@@ -22,8 +22,10 @@ import {
   buildOpponents,
   buildSeatsBase,
   buildTrick,
+  type Card,
   type CardOverlay,
   type CardTableScene,
+  cardKey,
   DEFAULT_GEOMETRY,
   HEARTS,
   HEIGHT,
@@ -32,7 +34,7 @@ import {
   resolveView,
   type SceneConfig,
   type SceneSeatBase,
-  suitOf,
+  SPADES,
   type ViewContext,
   WIDTH,
 } from '../cards/scene.js'
@@ -42,17 +44,20 @@ import {
 export * from '../cards/scene.js'
 
 // --- Hearts card constants (mirror environments/src/hearts/rules.py) ---
-/** The Queen of Spades, worth 13 penalty points (card = suit 2 * 13 + rank 10). */
-export const QUEEN_OF_SPADES = 36
 /** A full Hearts hand is thirteen tricks. */
 export const NUM_TRICKS = 13
 
+/** The Queen of Spades: suit 2 (spades), face rank 12 (queen). */
+export function isQueenOfSpades(card: Card): boolean {
+  return card.suit === SPADES && card.rank === 12
+}
+
 /** Penalty points a card is worth: 13 for Q♠, 1 per heart, else 0 (mirrors rules.card_points). */
-export function cardPoints(card: number): number {
-  if (card === QUEEN_OF_SPADES) {
+export function cardPoints(card: Card): number {
+  if (isQueenOfSpades(card)) {
     return 13
   }
-  return suitOf(card) === HEARTS ? 1 : 0
+  return card.suit === HEARTS ? 1 : 0
 }
 
 /** Suit names for the status-line hints, by suit id (mirrors render.py SUIT_NAMES). */
@@ -123,8 +128,8 @@ export function computeScene(state: StepState, config: SceneConfig = {}): Hearts
   const seats = buildSeats(o, view)
   const { trick, trickWinner } = buildTrick(o, view.viewSeat)
   const opponents = buildOpponents(o, view.viewSeat, view.revealAll, DEFAULT_GEOMETRY)
-  // Hearts reads the emitted legal-action mask verbatim: every legal action is a card id.
-  const hand = buildHand(o, view, new Set(o.legalActions))
+  // Hearts reads the emitted legal-cards overlay verbatim: every legal card lights by its key.
+  const hand = buildHand(o, view, new Set(o.legalCards.map(cardKey)))
   const status = buildStatus(o, view, trickWinner)
   const moveClock = buildMoveClock(o, view, config.humanTimeoutMs)
 
@@ -176,7 +181,7 @@ function statusMessage(
   }
   // A just-completed trick is shown statically in the center: name who took it and the points.
   if (o.currentTrick.length === 0 && o.lastTrick !== null && trickWinner !== null) {
-    const points = o.lastTrick.reduce((sum, [, card]) => sum + cardPoints(card), 0)
+    const points = o.lastTrick.reduce((sum, e) => sum + cardPoints(e.card), 0)
     const who = trickWinner === view.controlledSeat ? 'You' : `P${trickWinner}`
     const suffix = points ? ` (+${points})` : ''
     return { message: `${who} took the trick${suffix}`, messageTone: 'gold' }
@@ -214,7 +219,7 @@ function legalHint(o: HeartsOverlay, view: ViewContext): string {
 
   const hand = o.hands[view.viewSeat] ?? []
   if (led !== null) {
-    const canFollow = hand.some((card) => suitOf(card) === led)
+    const canFollow = hand.some((card) => card.suit === led)
     if (canFollow) {
       let hint = `Follow suit  -  you must play a ${SUIT_SINGULAR[led]}`
       if (o.tricksPlayed === 0) {
@@ -229,7 +234,7 @@ function legalHint(o: HeartsOverlay, view: ViewContext): string {
   }
 
   // Leading, past the opening play.
-  const nonHearts = hand.filter((card) => suitOf(card) !== HEARTS)
+  const nonHearts = hand.filter((card) => card.suit !== HEARTS)
   if (!o.heartsBroken && nonHearts.length > 0) {
     return "Your lead  -  hearts aren't broken yet, so you can't lead a heart"
   }

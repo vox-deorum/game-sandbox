@@ -10,26 +10,15 @@ Run from the repo root with:  uv run python scripts/gen_hearts_fixture.py
 
 from __future__ import annotations
 
-import shutil
-import tempfile
-from pathlib import Path
 from typing import Any
 
-from game_sandbox_harness.recording.local import FolderRecordingStore
-from game_sandbox_harness.session import AgentSlot, run_episode
+from _fixture_common import run_and_copy
+from game_sandbox_harness.session import AgentSlot
 from game_sandbox_harness.state import PlayerAttribution
 from hearts import ENTRY, rules
+from local_play.card_utils import HEARTS, SPADES
 
-CLUBS, DIAMONDS, SPADES, HEARTS = 0, 1, 2, 3
-QUEEN_OF_SPADES = 36
-
-
-def _suit(card: int) -> int:
-    return card // 13
-
-
-def _rank(card: int) -> int:
-    return card % 13
+QUEEN_OF_SPADES_FACE = {"suit": SPADES, "rank": 12}
 
 
 class DuckAgent:
@@ -38,6 +27,11 @@ class DuckAgent:
     Inlined here so the generator does not depend on the example package layout. It produces a
     livelier game than always-lowest-legal, so the fixture exercises hearts breaking, the queen of
     spades changing hands, and a spread of per-seat penalty scores.
+
+    Reads the NEW object observation: ``obs["observation"]["current_trick"]`` (tuple of
+    ``{"seat","card"}`` FACE objects, play order) and ``led_suit`` (int, 4=none). The action mask is
+    still indexed by engine card id 0..51, so legal moves are decoded straight from the mask; suit/
+    rank comparisons use the FACE values on the hand/trick card objects (queen face rank is 12).
     """
 
     def reset(self, seed: int) -> None:
@@ -47,31 +41,37 @@ class DuckAgent:
         mask = observation["action_mask"]
         legal = [card for card in range(52) if mask[card]]
         state = observation["observation"]
-        led = int(state["led_suit"][0])
-        trick = [int(card) for card in state["trick"]]
+        led = int(state["led_suit"])  # 4 == no card led yet
 
-        if led == -1:
-            return min(legal, key=lambda card: (_rank(card), _suit(card)))
+        def suit_of(card_id: int) -> int:
+            return card_id // 13
 
-        followers = [card for card in legal if _suit(card) == led]
+        def face_rank_of(card_id: int) -> int:
+            # FACE rank of an engine card id, so it compares directly against trick card objects.
+            return card_id % 13 + 2
+
+        if led == 4:
+            return min(legal, key=lambda card: (face_rank_of(card), suit_of(card)))
+
+        followers = [card for card in legal if suit_of(card) == led]
         if followers:
-            played = [card for card in trick if card != -1 and _suit(card) == led]
-            winning_rank = max((_rank(card) for card in played), default=-1)
-            under = [card for card in followers if _rank(card) < winning_rank]
+            played = [entry["card"] for entry in state["current_trick"] if entry["card"]["suit"] == led]
+            winning_rank = max((card["rank"] for card in played), default=1)
+            under = [card for card in followers if face_rank_of(card) < winning_rank]
             if under:
-                return max(under, key=_rank)
-            return min(followers, key=_rank)
+                return max(under, key=face_rank_of)
+            return min(followers, key=face_rank_of)
 
-        if QUEEN_OF_SPADES in legal:
-            return QUEEN_OF_SPADES
-        hearts = [card for card in legal if _suit(card) == HEARTS]
+        queen_id = QUEEN_OF_SPADES_FACE["suit"] * 13 + (QUEEN_OF_SPADES_FACE["rank"] - 2)
+        if queen_id in legal:
+            return queen_id
+        hearts = [card for card in legal if suit_of(card) == HEARTS]
         if hearts:
-            return max(hearts, key=_rank)
-        return max(legal, key=_rank)
+            return max(hearts, key=face_rank_of)
+        return max(legal, key=face_rank_of)
 
 
 def main() -> int:
-    seed = 7
     # A submitted-agent attribution per slot so the fixture header carries a `players` block like a
     # real multi-agent recording (player_0 a "human", the rest agents) without needing a live session.
     players: dict[str, PlayerAttribution] = {
@@ -81,24 +81,14 @@ def main() -> int:
         "player_3": {"kind": "agent", "label": "duck-hearts"},
     }
     slots = {f"player_{i}": AgentSlot(DuckAgent()) for i in range(rules.NUM_PLAYERS)}
-
-    with tempfile.TemporaryDirectory() as tmp:
-        store = FolderRecordingStore(tmp)
-        result = run_episode(
-            ENTRY,
-            slots,
-            seed=seed,
-            store=store,
-            recording_id="hearts-fixture",
-            players=players,
-        )
-        src = Path(tmp) / "hearts-fixture" / "recording.jsonl"
-        dest = (
-            Path(__file__).resolve().parents[1] / "frontend" / "test" / "fixtures" / "hearts-recording.jsonl"
-        )
-        shutil.copyfile(src, dest)
-        print(f"wrote {dest} ({result.ticks} ticks, reason={result.reason})")
-        print(f"final scores: {result.scores}")
+    run_and_copy(
+        ENTRY,
+        slots,
+        seed=7,
+        recording_id="hearts-fixture",
+        dest_name="hearts-recording.jsonl",
+        players=players,
+    )
     return 0
 
 

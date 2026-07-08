@@ -3,12 +3,13 @@ import { describe, expect, it } from 'vitest'
 import { PixiRenderer } from '../src/renderers/base/PixiRenderer.js'
 import { CardTableRenderer } from '../src/renderers/cards/CardTableRenderer.js'
 import {
+  cardKey,
+  cardToAction,
   DEFAULT_GEOMETRY,
   HEIGHT,
   NUM_PLAYERS,
   RANK_LABELS,
-  rankOf,
-  suitOf,
+  rankLabel,
   WIDTH,
 } from '../src/renderers/cards/scene.js'
 import { HeartsRenderer } from '../src/renderers/hearts/index.js'
@@ -33,12 +34,17 @@ describe('the shared card-table renderer layer', () => {
   })
 
   it('agrees with the card codec across all 52 cards', () => {
-    // card = suit * 13 + rank, suits 0..3, ranks 0..12 — the encoding rules.py emits.
-    for (let card = 0; card < 52; card++) {
-      expect(suitOf(card)).toBe(Math.floor(card / 13))
-      expect(rankOf(card)).toBe(card % 13)
-      // Round-trip: the two halves reconstruct the card id.
-      expect(suitOf(card) * 13 + rankOf(card)).toBe(card)
+    // engine id = suit * 13 + (rank - 2), suits 0..3, FACE ranks 2..14 — card_utils.card_to_obj's shape.
+    for (let engineId = 0; engineId < 52; engineId++) {
+      const suit = Math.floor(engineId / 13)
+      const rank = (engineId % 13) + 2
+      const card = { suit, rank }
+      // Round-trip: cardToAction reconstructs the engine id from the object.
+      expect(cardToAction(card)).toBe(engineId)
+      // cardKey is a stable, unique identity per card.
+      expect(cardKey(card)).toBe(`${suit}:${rank}`)
+      // rankLabel reads the FACE rank (2..14) into the same 0-indexed RANK_LABELS table.
+      expect(rankLabel(card)).toBe(RANK_LABELS[rank - 2])
     }
     expect(RANK_LABELS).toHaveLength(13)
     expect(NUM_PLAYERS).toBe(4)

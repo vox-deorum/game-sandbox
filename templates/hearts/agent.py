@@ -12,16 +12,19 @@ flips your score to 0 and gives everyone else 26. ``environment.md``, shipped al
 walks through building this exact agent and then goes deeper into the rules, the card encoding,
 and every observation field.
 
+A card is a semantic object ``{"suit": 0..3, "rank": 2..14}`` where the rank is the face value
+printed on the card (``11=J, 12=Q, 13=K, 14=A``). Your ``act`` method still returns an integer
+action, which you get by calling ``cards.play(card)`` on whichever card object you chose.
+
 The only thing you may import from the sandbox is the ``sandbox.cards`` helper module, and only at
-the top of this file. It is plain Python that decodes the card encoding and reads the observation
-for you, so ``act`` works with card ids and lists instead of raw NumPy arrays. Everything else you
-develop against vanilla PettingZoo, and the server runs this exact class through the same
-interface. The optional hooks (``learn`` and ``chat``) are detected by presence, so leave them
-commented unless you use them. Episode state belongs in ``reset``; the constructor takes no
-arguments.
+the top of this file. It is plain Python that reads the observation for you, so ``act`` works with
+card objects and lists instead of raw NumPy arrays. Everything else you develop against vanilla
+PettingZoo, and the server runs this exact class through the same interface. The optional hooks
+(``learn`` and ``chat``) are detected by presence, so leave them commented unless you use them.
+Episode state belongs in ``reset``; the constructor takes no arguments.
 """
 
-from sandbox.cards import legal_cards, rank_of
+from sandbox.cards import legal_cards, play
 
 
 class Agent:
@@ -34,9 +37,9 @@ class Agent:
         pass
 
     def act(self, observation) -> int:
-        # legal_cards reads the action mask for you: every card ID in this list
-        # is a card you hold and may play right now, so the rules (follow suit,
-        # hearts not broken yet, no points on the first trick) are already
+        # legal_cards reads the action mask for you: every card object in this
+        # list is a card you hold and may play right now, so the rules (follow
+        # suit, hearts not broken yet, no points on the first trick) are already
         # taken care of.
         legal = legal_cards(observation)
 
@@ -45,8 +48,9 @@ class Agent:
         # lowest-ranked legal card is a sane start. It is also exactly how the
         # built-in opponents play. Replace it with something smarter; the
         # "Your first improvement" section of environment.md shows you how to
-        # find one.
-        return min(legal, key=rank_of)
+        # find one. cards.play(card) turns your chosen card object into the
+        # integer act() must return.
+        return play(min(legal, key=lambda c: c["rank"]))
 
     # Optional: a reinforcement-learning hook called after every step with that step's
     # transition. Its time counts against your timing and episode budget.

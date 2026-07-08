@@ -1,11 +1,13 @@
 """Tests for the shared pygame renderers extracted into ``local_play``.
 
-The shared :class:`~local_play.render_cards.CardTableRenderer` bakes in the canonical card encoding
-as class defaults, so a card game inherits ``suit_of`` / ``rank_of`` and the suit ids for free.
-These pin that those defaults actually agree with *both* concrete rules engines (Hearts and Spades)
-across the whole deck, that the concrete renderers really subclass the shared base (the guarantee
-the extraction rests on), and that each game's near-identical geometry stays a class-attribute hook
-rather than a copied-and-averaged method.
+Cards flow through the shared :class:`~local_play.render_cards.CardTableRenderer` as semantic
+``{"suit", "rank"}`` objects (face rank ``2..14``); drawing reads ``suit``/``rank`` straight off the
+object, and :func:`~local_play.render_cards.card_key` is the one place a card collapses to a stable,
+hashable engine id (``0..51``), used only for map/set identity (legal sets, matching a card across
+frames). These tests pin that ``card_key`` agrees with *both* concrete rules engines' encoding
+(Hearts and Spades) across the whole deck via the shared codec, that the concrete renderers really
+subclass the shared base (the guarantee the extraction rests on), and that each game's
+near-identical geometry stays a class-attribute hook rather than a copied-and-averaged method.
 """
 
 from __future__ import annotations
@@ -14,8 +16,9 @@ import hearts.render as hearts_render
 import spades.render as spades_render
 from hearts import rules as hearts_rules
 from hearts.render import HeartsRenderer
+from local_play import card_utils
 from local_play.render_base import PygameRenderer
-from local_play.render_cards import CardTableRenderer
+from local_play.render_cards import CardTableRenderer, card_key
 from spades import rules as spades_rules
 from spades.render import SpadesRenderer
 
@@ -26,9 +29,9 @@ def test_both_renderers_subclass_the_shared_card_table():
     assert issubclass(SpadesRenderer, CardTableRenderer)
 
 
-def test_codec_defaults_match_both_rules_engines():
-    # The one encoding, restated once as the renderer's defaults; each game's rules engine is its
-    # source of truth. If a future change touched one and not the other, this catches it card by card.
+def test_card_key_recovers_the_engine_id_for_every_card_in_both_rules_engines():
+    # card_key is the renderer's one hashable card identity, built from the semantic object; it must
+    # round-trip back to the same engine id both rules engines already agree on for the whole deck.
     for rules in (hearts_rules, spades_rules):
         assert CardTableRenderer.NUM_PLAYERS == rules.NUM_PLAYERS
         assert CardTableRenderer.CLUBS == rules.CLUBS
@@ -36,8 +39,7 @@ def test_codec_defaults_match_both_rules_engines():
         assert CardTableRenderer.SPADES == rules.SPADES
         assert CardTableRenderer.HEARTS == rules.HEARTS
         for card in range(rules.NUM_CARDS):
-            assert CardTableRenderer.suit_of(card) == rules.suit_of(card)
-            assert CardTableRenderer.rank_of(card) == rules.rank_of(card)
+            assert card_key(card_utils.card_to_obj(card)) == card
 
 
 def test_rank_labels_cover_every_rank():

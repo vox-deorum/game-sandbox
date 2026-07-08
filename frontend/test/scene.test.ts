@@ -50,8 +50,8 @@ describe('computeScene', () => {
     // The bird is centered on its sprite box (overlay x/y is the top-left) and carries the rotation.
     const bird = birdOf(scene)
     expect(bird.x).toBeCloseTo(57 + 34 / 2)
-    expect(bird.y).toBeCloseTo(236 + 24 / 2)
-    expect(bird.rot).toBe(42)
+    expect(bird.y).toBeCloseTo(235 + 24 / 2)
+    expect(bird.rot).toBe(45)
 
     // Three pipes in the overlay → three top columns and three bottom columns.
     expect(pipeColumns(scene)).toHaveLength(6)

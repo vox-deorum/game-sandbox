@@ -24,8 +24,9 @@ overlay, not in the rewards.
 
 from __future__ import annotations
 
+import importlib
 import random
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from gymnasium import spaces
@@ -33,18 +34,62 @@ from pettingzoo.utils.env import AECEnv
 
 from . import rules
 
-#: Sentinel action meaning "the player timed out": ``step`` resolves it against the live state to a
-#: never-nil suggested bid during bidding, or the lowest legal card during play.
-AUTO_ACTION = -1
+
+def _shared_card_modules() -> tuple[Any, Any]:
+    """Return the shared ``(card_utils, card_spaces)`` modules under whichever name this file runs as.
+
+    One source syncs into two layouts: :mod:`local_play` inside the environments package,
+    ``sandbox`` in a composed template. A :class:`ModuleNotFoundError` naming the absent candidate
+    package is swallowed; one naming a real dependency is re-raised. Mirrors
+    ``hearts.env._shared_card_modules`` / ``spades.rules._shared_card_utils``.
+    """
+    for package in ("local_play", "sandbox"):
+        try:
+            card_utils = importlib.import_module(f"{package}.card_utils")
+            card_spaces = importlib.import_module(f"{package}.card_spaces")
+        except ModuleNotFoundError as exc:
+            missing = exc.name or ""
+            if missing == package or missing.startswith(f"{package}."):
+                continue
+            raise
+        else:
+            return card_utils, card_spaces
+    raise ModuleNotFoundError("no shared card_utils/card_spaces found (tried local_play, sandbox)")
+
+
+if TYPE_CHECKING:  # pyright sees the real modules; this branch never executes at runtime
+    from local_play import card_spaces as _card_spaces
+    from local_play import card_utils as _card_utils
+else:
+    _card_utils, _card_spaces = _shared_card_modules()
+
+card_to_obj = _card_utils.card_to_obj
+HAND = _card_spaces.HAND
+TRICK = _card_spaces.TRICK
+
+#: ``bids`` entries encode "not yet bid" as ``14`` in the semantic observation (the engine uses
+#: ``-1``); this is the single place that offset is applied.
+UNBID = 14
 
 
 class IllegalMoveError(ValueError):
-    """Raised by :meth:`SpadesEnv.step` when a non-sentinel action is not legal in the phase."""
+    """Raised by :meth:`SpadesEnv.step` when an action is not legal in the current phase."""
 
 
 def make_env(render_mode: str | None = None) -> SpadesEnv:
     """Return a fresh :class:`SpadesEnv`. The seed arrives later at :meth:`SpadesEnv.reset`."""
     return SpadesEnv(render_mode=render_mode)
+
+
+def default_action(env: SpadesEnv, slot_id: str) -> int:
+    """The legal default for a timed-out seat: a never-nil suggested bid, or the lowest legal card.
+
+    Reads the live env and returns the concrete ``Discrete(66)`` action (not a sentinel) — a
+    never-nil suggested bid while bidding, the lowest legal card in play. It mirrors
+    ``env.step``'s own resolution, so gameplay is unchanged and the recording holds the real action.
+    """
+    seat = env.possible_agents.index(slot_id)
+    return rules.resolve_auto_action(env.state, seat)
 
 
 class SpadesEnv(AECEnv):
@@ -71,25 +116,27 @@ class SpadesEnv(AECEnv):
         self._renderer: Any = None
 
         # Build the spaces exactly once so the accessors can return the same object every call
-        # (api_test asserts space identity). Every leaf is int8 for api_test's dtype check. The
-        # space mirrors observe()'s structure: the state leaves nested under "observation" alongside
-        # a top-level "action_mask", matching the AEC convention. There is no score leaf; the score
-        # lives in the overlay, not the observation.
+        # (api_test asserts space identity). The space mirrors observe()'s structure: the semantic
+        # state leaves nested under "observation" alongside a top-level "action_mask", matching the
+        # AEC convention. Cards are semantic objects (HAND/TRICK), not integer-indexed arrays. There
+        # is no score leaf beyond team_scores; the full per-seat score view lives in the overlay.
         obs_space = spaces.Dict(
             {
                 "observation": spaces.Dict(
                     {
-                        "hand": spaces.MultiBinary(rules.NUM_CARDS),
-                        "phase": spaces.Box(low=0, high=1, shape=(1,), dtype=np.int8),
-                        "bids": spaces.Box(low=-1, high=rules.HAND_SIZE, shape=(4,), dtype=np.int8),
-                        "trick": spaces.Box(low=-1, high=51, shape=(4,), dtype=np.int8),
-                        "last_trick": spaces.Box(low=-1, high=51, shape=(4,), dtype=np.int8),
-                        "last_trick_winner": spaces.Box(low=-1, high=3, shape=(1,), dtype=np.int8),
-                        "led_suit": spaces.Box(low=-1, high=3, shape=(1,), dtype=np.int8),
-                        "spades_broken": spaces.Box(low=0, high=1, shape=(1,), dtype=np.int8),
-                        "position": spaces.Box(low=0, high=3, shape=(1,), dtype=np.int8),
-                        "trick_leader": spaces.Box(low=0, high=3, shape=(1,), dtype=np.int8),
-                        "tricks_won": spaces.Box(low=0, high=rules.NUM_TRICKS, shape=(4,), dtype=np.int8),
+                        "seat": spaces.Discrete(4),
+                        "partner_seat": spaces.Discrete(4),
+                        "phase": spaces.Discrete(2),
+                        "hand": HAND,
+                        "bids": spaces.Tuple([spaces.Discrete(15)] * 4),
+                        "team_scores": spaces.Box(low=-1000, high=1000, shape=(2,), dtype=np.int64),
+                        "current_trick": TRICK,
+                        "last_trick": TRICK,
+                        "last_trick_winner": spaces.Discrete(5),
+                        "trick_leader": spaces.Discrete(4),
+                        "led_suit": spaces.Discrete(5),
+                        "spades_broken": spaces.Discrete(2),
+                        "tricks_won": spaces.Box(low=0, high=13, shape=(4,), dtype=np.int64),
                     }
                 ),
                 "action_mask": spaces.Box(low=0, high=1, shape=(rules.ACTION_SPACE_SIZE,), dtype=np.int8),
@@ -128,35 +175,23 @@ class SpadesEnv(AECEnv):
         seat = self._seat(agent)
         state = self.state
 
-        hand = np.zeros(rules.NUM_CARDS, np.int8)
-        for card in state.hands[seat]:
-            hand[card] = 1
+        hand = tuple(card_to_obj(c) for c in state.hands[seat])
+        current_trick = tuple({"seat": int(s), "card": card_to_obj(c)} for s, c in state.current_trick)
+        last_trick: tuple[dict[str, Any], ...]
+        if state.last_trick is None:
+            last_trick = ()
+        else:
+            last_trick = tuple({"seat": int(s), "card": card_to_obj(c)} for s, c in state.last_trick)
 
-        phase = np.array([0 if rules.in_bidding(state) else 1], np.int8)
-        bids = np.array(state.bids, np.int8)
+        bids = tuple(UNBID if b == -1 else int(b) for b in state.bids)
+        phase = 0 if rules.in_bidding(state) else 1
+        team_scores = np.array(rules.hand_team_scores(state), dtype=np.int64)
+        tricks_won = np.array(state.tricks_won, dtype=np.int64)
 
-        trick = np.full(4, -1, np.int8)
-        for played_seat, card in state.current_trick:
-            trick[played_seat] = card
-
-        # The immediately-preceding completed trick, indexed by seat like ``trick``. rules clears
-        # current_trick the instant a trick completes, so without this leaf a seat that led the next
-        # trick (or was off turn for the later plays) would never observe the cards played after its
-        # own move, silently losing public history it needs to count cards. Every seat is -1 until
-        # the first trick completes; last_trick_winner is -1 until then too.
-        last_trick = np.full(4, -1, np.int8)
-        if state.last_trick is not None:
-            for played_seat, card in state.last_trick:
-                last_trick[played_seat] = card
         winner = state.last_trick_winner
-        last_trick_winner = np.array([winner if winner is not None else -1], np.int8)
-
+        last_trick_winner = 4 if winner is None else int(winner)
         led = rules.led_suit(state)
-        led_suit = np.array([led if led is not None else -1], np.int8)
-        spades_broken = np.array([1 if state.spades_broken else 0], np.int8)
-        position = np.array([seat], np.int8)
-        trick_leader = np.array([state.trick_leader], np.int8)
-        tricks_won = np.array(state.tricks_won, np.int8)
+        led_suit = 4 if led is None else int(led)
 
         # The action mask is meaningful only for the seat whose turn it is; an off-turn seat is not
         # choosing, so it gets an all-zero mask (matching the overlay, which lists legal actions for
@@ -169,16 +204,18 @@ class SpadesEnv(AECEnv):
 
         return {
             "observation": {
-                "hand": hand,
+                "seat": int(seat),
+                "partner_seat": (seat + 2) % 4,
                 "phase": phase,
+                "hand": hand,
                 "bids": bids,
-                "trick": trick,
+                "team_scores": team_scores,
+                "current_trick": current_trick,
                 "last_trick": last_trick,
                 "last_trick_winner": last_trick_winner,
+                "trick_leader": int(state.trick_leader),
                 "led_suit": led_suit,
-                "spades_broken": spades_broken,
-                "position": position,
-                "trick_leader": trick_leader,
+                "spades_broken": int(bool(state.spades_broken)),
                 "tricks_won": tricks_won,
             },
             "action_mask": action_mask,
@@ -189,9 +226,7 @@ class SpadesEnv(AECEnv):
             return self._was_dead_step(action)
 
         seat = self._seat(self.agent_selection)
-        # The timeout sentinel resolves against the live state (a suggested bid or lowest card); any
-        # other action is a literal action-space integer (a card 0..51 or a bid 52 + k).
-        resolved = rules.resolve_auto_action(self.state, seat) if action == AUTO_ACTION else int(action)
+        resolved = int(action)
 
         if not rules.is_legal_action(self.state, seat, resolved):
             raise IllegalMoveError(
