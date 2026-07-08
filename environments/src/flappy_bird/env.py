@@ -81,12 +81,18 @@ class FlappyBirdEnv(GymnasiumToAEC):
         game = self.gym_env.unwrapped
         player, pipes, pipes_passed, width, height = _read_state(game)
 
+        # Each continuous leaf is a 0-d array, not a bare np.float32/np.int64 scalar, so it is the
+        # exact member type its shape=() Box publishes. gymnasium's Space.contains casts any
+        # non-ndarray and warns while doing so, so a scalar leaf here makes PettingZoo's api_test
+        # emit that cast warning on every leaf of every step. width/height stay plain ints for their
+        # Discrete spaces, which accept Python ints without casting.
         return {
-            "player": {k: np.float32(player[k]) for k in PLAYER_KEYS},
+            "player": {k: np.array(player[k], dtype=np.float32) for k in PLAYER_KEYS},
             "pipes": tuple(
-                {key: np.float32(value) for key, value in zip(PIPE_KEYS, pipe, strict=True)} for pipe in pipes
+                {key: np.array(value, dtype=np.float32) for key, value in zip(PIPE_KEYS, pipe, strict=True)}
+                for pipe in pipes
             ),
-            "pipes_passed": np.int64(pipes_passed),
+            "pipes_passed": np.array(pipes_passed, dtype=np.int64),
             "width": width,
             "height": height,
         }

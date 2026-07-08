@@ -1,10 +1,10 @@
 # Stage 11.3: Testing, CI, and Documentation
 
-Status: not started.
+Status: in-progress.
 
 Part of [Stage 11](../stage-11-semantic-contract.md). This final step verifies the atomic rollout through the live stack and updates the public explanation of the contract. Contract-dependent source changes belong in step 2; this step runs the complete system and fixes only integration or journey assumptions revealed by that verification.
 
-## Full-stack verification
+## Full-stack verification (Passed)
 
 Run the Docker-gated backend integration suite. `hearts-multi-slot.test.ts` should already expect the real timeout action from step 2. `spades-chat.test.ts` exercises the migrated examples and built-ins rather than carrying a separate observation decoder. Flappy session input remains `{kind: "input", slot: "player_0", action: 1}`.
 

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import math
+import warnings
 
 import numpy as np
 from pettingzoo.test import api_test
@@ -19,9 +20,30 @@ from flappy_bird import ENTRY
 from flappy_bird.env import default_action, make_env
 from flappy_bird.overlay import extract_overlay
 
+# PettingZoo's api_test emits two advisory UserWarnings for any non-array composite observation: it
+# recommends Box/Discrete observation spaces and flags that the observation is not a bare ndarray.
+# Both are incidental to the deliberate semantic Dict observation (the same design Hearts and Spades
+# carry) and are filtered rather than failed on. Unlike the card games, Flappy's observation is a
+# flat Dict with no inner "observation" key, so api_test's dtype recursion never descends into it and
+# Flappy never trips the PettingZoo #1211 AttributeError itself — only these two warnings. Each entry
+# is a message *prefix*: warnings.filterwarnings matches the regex against the start of the message.
+_1211_WARNINGS = (
+    "Observation is not a NumPy array",
+    "Observation space for each agent probably should be",
+)
+
+
+def _is_scalar_array(value: object, dtype: type) -> bool:
+    """A 0-d NumPy array of exactly ``dtype`` — the member a ``shape=()`` Box publishes, so
+    ``Space.contains`` accepts each leaf without casting a bare scalar (which api_test warns on)."""
+    return isinstance(value, np.ndarray) and value.shape == () and value.dtype == dtype
+
 
 def test_passes_pettingzoo_api_test():
-    api_test(make_env(), num_cycles=100)
+    with warnings.catch_warnings():
+        for message in _1211_WARNINGS:
+            warnings.filterwarnings("ignore", message=message)
+        api_test(make_env(), num_cycles=100)
 
 
 def _snapshot(observed: dict) -> dict:
@@ -78,18 +100,20 @@ def test_observation_is_flat_object_with_no_action_mask_and_nearest_first_pipes(
 
     assert set(observed) == {"player", "pipes", "pipes_passed", "width", "height"}
     assert set(observed["player"]) == {"x", "y", "vel_y", "rot"}
+    # Continuous leaves are the 0-d float32 arrays their shape=() Box spaces publish (not bare
+    # np.float32 scalars), so Space.contains accepts them without a per-leaf cast warning.
     for value in observed["player"].values():
-        assert isinstance(value, np.float32)
+        assert _is_scalar_array(value, np.float32)
     assert isinstance(observed["pipes"], tuple)
     assert observed["pipes"], "expected at least one pipe"
     for pipe in observed["pipes"]:
         assert set(pipe) == {"x", "gap_top", "gap_bottom"}
         for value in pipe.values():
-            assert isinstance(value, np.float32)
+            assert _is_scalar_array(value, np.float32)
     xs = [float(pipe["x"]) for pipe in observed["pipes"]]
     assert xs == sorted(xs)  # nearest-first: ascending x
 
-    assert isinstance(observed["pipes_passed"], np.int64)
+    assert _is_scalar_array(observed["pipes_passed"], np.int64)
     assert isinstance(observed["width"], int)
     assert isinstance(observed["height"], int)
 
