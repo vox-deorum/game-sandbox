@@ -44,11 +44,16 @@
     // restricted-import sets never have to merge. General backend code may not reach for Docker, the
     // database engine, child_process, or the git client; storage owns the database; the Docker driver
     // owns dockerode; the submission source resolver (Stage 5.2) owns the one allowed `simple-git`
-    // dependency. A Kubernetes driver is then a pure addition, and the Biome CI check enforces all of it.
+    // dependency. The auth module (Stage 12) shares the storage layer's raw better-sqlite3 handle to
+    // embed Better Auth on the same connection, so it alone among non-storage code may import
+    // `better-sqlite3` (for the constructor argument's type); it still may not import `kysely`, since
+    // Better Auth manages its own tables through its embedded adapter. A Kubernetes driver is then a
+    // pure addition, and the Biome CI check enforces all of it.
     {
       "includes": [
         "**/backend/src/**",
         "!**/backend/src/storage/**",
+        "!**/backend/src/auth/**",
         "!**/backend/src/driver/docker/**",
         "!**/backend/src/submission/source/**"
       ],
@@ -82,6 +87,27 @@
               "options": {
                 "paths": {
                   "dockerode": "Docker APIs belong only in backend/src/driver/docker/.",
+                  "child_process": "Shelling out is denied across the backend.",
+                  "node:child_process": "Shelling out is denied across the backend.",
+                  "simple-git": "The git client lives only in backend/src/submission/source/."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["**/backend/src/auth/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "dockerode": "Docker APIs belong only in backend/src/driver/docker/.",
+                  "kysely": "Better Auth manages its own tables through its embedded adapter; app queries go through the Storage interface in backend/src/storage.",
                   "child_process": "Shelling out is denied across the backend.",
                   "node:child_process": "Shelling out is denied across the backend.",
                   "simple-git": "The git client lives only in backend/src/submission/source/."

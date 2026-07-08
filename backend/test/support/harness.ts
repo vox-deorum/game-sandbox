@@ -19,6 +19,7 @@ import {
 } from '../../src/submission/source/index.js'
 import { ValidationWorker } from '../../src/submission/worker.js'
 import type { WorkflowRunner } from '../../src/workflow/runner.js'
+import { TEST_AUTH_OPTIONS } from './auth-options.js'
 import { FakeDriver } from './fake-driver.js'
 import { StubWorkflowRunner } from './stub-runner.js'
 
@@ -26,6 +27,7 @@ import { StubWorkflowRunner } from './stub-runner.js'
 export function makeConfig(overrides: Partial<Config> = {}): Config {
   return {
     port: 0,
+    listenHost: '127.0.0.1',
     siteName: 'Game Sandbox',
     siteShortName: 'Game Sandbox',
     dataDir: './data',
@@ -56,6 +58,7 @@ export function makeConfig(overrides: Partial<Config> = {}): Config {
       loadCheckTimeoutMs: 30_000,
       submissionMaxSizeBytes: 25 * 1024 * 1024,
     },
+    auth: { ...TEST_AUTH_OPTIONS },
     ...overrides,
   }
 }

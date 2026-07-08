@@ -17,6 +17,12 @@
  * statements. Kysely types migration functions `Kysely<any>` (the schema can differ from the current
  * `Database` mid-history); because this flat migration always builds exactly the current schema, the
  * `up`/`down` functions take the accurate `Kysely<Database>` and stay off `any`.
+ *
+ * Better Auth's tables (`user`, `session`, `account`, `verification`) are **not** here. They are
+ * library-owned: their exact shape follows the installed `better-auth` version and the enabled
+ * plugins, so `backend/src/auth/migrate.ts` creates them with Better Auth's own programmatic
+ * migration, on the same connection, right after this app schema is built. None of those singular
+ * names collides with this schema's plural `sessions`/`recordings`.
  */
 import { type Kysely, sql } from 'kysely'
 import { type Migration, type MigrationProvider, Migrator } from 'kysely/migration'

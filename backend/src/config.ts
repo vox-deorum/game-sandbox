@@ -82,9 +82,56 @@ export interface SubmissionOptions {
   submissionMaxSizeBytes: number
 }
 
+/** The GitHub OAuth app credentials; present only when both halves are configured. */
+export interface AuthGithubOptions {
+  clientId: string
+  clientSecret: string
+}
+
+/**
+ * Authentication settings for the embedded Better Auth server (Stage 12). Parsed once in
+ * {@link loadConfig} and handed to the auth constructor and the admin seed. A normal startup
+ * requires an explicit public origin, signing secret, and bootstrap credentials; the published
+ * development values are accepted only behind the explicit `AUTH_ALLOW_INSECURE_DEFAULTS` opt-in on
+ * a loopback origin, which also binds the listener to loopback (see {@link Config.listenHost}).
+ */
+export interface AuthOptions {
+  /** The Better Auth signing secret for cookies and tokens. */
+  secret: string
+  /** The public origin the site is reached at; cookie origin checks and the OAuth callback use it. */
+  publicOrigin: string
+  /** Origins Better Auth trusts, built from `publicOrigin` plus configured (and dev) extras. */
+  trustedOrigins: string[]
+  /** Whether the published development defaults were explicitly opted into on a loopback origin. */
+  insecureDevelopment: boolean
+  /** The bootstrap admin's email, re-synced on every boot. Stored lowercased. */
+  adminEmail: string
+  /** The bootstrap admin's password, re-synced on every boot. */
+  adminPassword: string
+  /** The bootstrap admin's display name. */
+  adminName: string
+  /** GitHub OAuth credentials, or `undefined` when the deployment configures no OAuth app. */
+  github?: AuthGithubOptions
+}
+
+/**
+ * The published development-only credentials, exported so `main.ts` can warn when they are in effect
+ * and the config tests can assert they are refused in a normal (non-insecure) startup. They are
+ * public and deliberately weak; never deploy with them.
+ */
+export const DEV_AUTH_SECRET = 'dev-secret-do-not-deploy-32-chars'
+export const DEV_ADMIN_EMAIL = 'admin@example.com'
+export const DEV_ADMIN_PASSWORD = 'admin-dev-password'
+
 export interface Config {
   /** TCP port the HTTP/WebSocket server listens on. */
   port: number
+  /**
+   * The interface the HTTP/WebSocket server binds to. `0.0.0.0` for a normal startup; the loopback
+   * interface behind `PUBLIC_ORIGIN` (`127.0.0.1` or `::1`) when insecure development defaults are
+   * explicitly enabled, so an accidental insecure deployment cannot be reached off-host.
+   */
+  listenHost: string
   /**
    * The site's display name, used for branding (page titles, the sidebar brand, and anywhere the
    * deployment identifies itself). Defaults to `Game Sandbox`; override with `SITE_NAME`.
@@ -160,6 +207,7 @@ export interface Config {
   executionDriver: ExecutionDriverKind
   docker: DockerDriverOptions
   submission: SubmissionOptions
+  auth: AuthOptions
 }
 
 class ConfigError extends Error {}
@@ -227,22 +275,64 @@ function numberVar(env: NodeJS.ProcessEnv, name: string, fallback: number): numb
 }
 
 /**
- * Build a {@link Config} from environment variables with class-scale defaults.
- *
- * The default `env` is `process.env`; tests pass an explicit map. The idle and max-duration
- * windows are deliberately conservative defaults and may be tuned during Stage 4 playtesting.
+ * Read a string env var, treating unset and empty as absent so the one `''`-vs-`undefined` rule lives
+ * in a single place. With a string fallback it always returns a string; with no fallback it returns
+ * `undefined` when the variable is absent (the shape optional settings want).
  */
-export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
-  const port = intVar(env, 'PORT', 8080)
-  const dataDir = env.DATA_DIR && env.DATA_DIR !== '' ? env.DATA_DIR : join(process.cwd(), 'data')
+function stringVar(env: NodeJS.ProcessEnv, name: string, fallback: string): string
+function stringVar(env: NodeJS.ProcessEnv, name: string, fallback?: undefined): string | undefined
+function stringVar(env: NodeJS.ProcessEnv, name: string, fallback?: string): string | undefined {
+  const raw = env[name]
+  return raw !== undefined && raw !== '' ? raw : fallback
+}
 
-  const driverResult = z.enum(['docker']).safeParse(env.EXECUTION_DRIVER ?? 'docker')
-  if (!driverResult.success) {
+/** The loopback hostnames a `PUBLIC_ORIGIN` may use under the insecure-defaults opt-in. */
+const LOOPBACK_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]'])
+
+/**
+ * Parse a public origin: a valid absolute `http(s)` URL with no path, query, or fragment. We reject
+ * anything else here rather than let `.origin` paper over it — a non-`http(s)` scheme yields the
+ * string `"null"` as its origin, and a URL with a path (`https://host/sandbox`) silently drops the
+ * path — both of which would then flow undetected into Better Auth's `baseURL`/`trustedOrigins`.
+ */
+function parseOrigin(name: string, raw: string): URL {
+  let url: URL
+  try {
+    url = new URL(raw)
+  } catch {
+    throw new ConfigError(`${name} must be a valid absolute URL, got ${raw}`)
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new ConfigError(`${name} must be an http(s) URL, got ${raw}`)
+  }
+  if (url.pathname !== '/' || url.search !== '' || url.hash !== '') {
     throw new ConfigError(
-      `EXECUTION_DRIVER must be 'docker' (the only driver in this stage), got ${env.EXECUTION_DRIVER}`,
+      `${name} must be a bare origin with no path, query, or fragment, got ${raw}`,
     )
   }
+  return url
+}
 
+/** Require a deployment-supplied value that is present and not the published development value. */
+function requireDeployedValue(name: string, raw: string | undefined, devValue: string): string {
+  if (raw === undefined || raw === '') {
+    throw new ConfigError(
+      `${name} is required (or set AUTH_ALLOW_INSECURE_DEFAULTS=true for a loopback development setup)`,
+    )
+  }
+  if (raw === devValue) {
+    throw new ConfigError(
+      `${name} is set to the published development value; set a real value, or set AUTH_ALLOW_INSECURE_DEFAULTS=true for a loopback development setup`,
+    )
+  }
+  return raw
+}
+
+/**
+ * Parse the Docker driver options. Extracted from {@link loadConfig} so `build-image.ts` can build
+ * a driver from the environment without also requiring the auth variables a full {@link Config} does.
+ */
+export function loadDockerOptions(env: NodeJS.ProcessEnv = process.env): DockerDriverOptions {
   const imagePolicyResult = z
     .enum(['reuse', 'rebuild'])
     .safeParse(env.DOCKER_IMAGE_POLICY ?? 'reuse')
@@ -251,16 +341,138 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       `DOCKER_IMAGE_POLICY must be 'reuse' or 'rebuild', got ${env.DOCKER_IMAGE_POLICY}`,
     )
   }
-  const imagePolicy = imagePolicyResult.data
+  return {
+    imageTagPrefix: stringVar(env, 'DOCKER_IMAGE_TAG_PREFIX', 'game-sandbox'),
+    imagePolicy: imagePolicyResult.data,
+    overlayBuildTimeoutMs: intVar(env, 'SUBMISSION_BUILD_TIMEOUT_MS', 120_000),
+  }
+}
+
+/**
+ * Parse the {@link AuthOptions} and the derived {@link Config.listenHost}. A normal startup requires
+ * an explicit public origin, secret, and bootstrap credentials, and binds `0.0.0.0`. The published
+ * development defaults are accepted only when `AUTH_ALLOW_INSECURE_DEFAULTS=true` **and**
+ * `PUBLIC_ORIGIN` is loopback; that mode binds the matching loopback interface instead.
+ */
+function loadAuthOptions(
+  env: NodeJS.ProcessEnv,
+  port: number,
+): { auth: AuthOptions; listenHost: string } {
+  const insecure = boolVar(env, 'AUTH_ALLOW_INSECURE_DEFAULTS', false)
+
+  // GitHub OAuth is both-or-neither: one half without the other is a misconfiguration, not a partial
+  // capability. These are distinct from GITHUB_TOKEN, which stays a submissions-only credential.
+  const githubId = stringVar(env, 'GITHUB_OAUTH_CLIENT_ID')
+  const githubSecret = stringVar(env, 'GITHUB_OAUTH_CLIENT_SECRET')
+  if ((githubId === undefined) !== (githubSecret === undefined)) {
+    throw new ConfigError(
+      'GITHUB_OAUTH_CLIENT_ID and GITHUB_OAUTH_CLIENT_SECRET must both be set or both be unset',
+    )
+  }
+  const github =
+    githubId !== undefined && githubSecret !== undefined
+      ? { clientId: githubId, clientSecret: githubSecret }
+      : undefined
+
+  const adminName = stringVar(env, 'ADMIN_NAME', 'Admin')
+  const extraOrigins = listVar(env, 'AUTH_TRUSTED_ORIGINS', [])
+  const rawOrigin = stringVar(env, 'PUBLIC_ORIGIN')
+
+  let publicOrigin: string
+  let listenHost: string
+  let secret: string
+  let adminEmail: string
+  let adminPassword: string
+
+  if (insecure) {
+    // Loopback-only: the opt-in defaults the origin to localhost and refuses any non-loopback origin,
+    // and the listener binds the corresponding loopback interface so published credentials can never
+    // answer off-host.
+    const originUrl = parseOrigin('PUBLIC_ORIGIN', rawOrigin ?? `http://localhost:${port}`)
+    if (!LOOPBACK_HOSTNAMES.has(originUrl.hostname)) {
+      throw new ConfigError(
+        `AUTH_ALLOW_INSECURE_DEFAULTS requires a loopback PUBLIC_ORIGIN (localhost, 127.0.0.1, or [::1]), got ${originUrl.hostname}`,
+      )
+    }
+    publicOrigin = originUrl.origin
+    // URL keeps IPv6 hosts bracketed ("[::1]"); Node's listener wants the bare address ("::1").
+    listenHost = originUrl.hostname === '[::1]' ? '::1' : '127.0.0.1'
+    secret = stringVar(env, 'AUTH_SECRET', DEV_AUTH_SECRET)
+    adminEmail = stringVar(env, 'ADMIN_EMAIL', DEV_ADMIN_EMAIL).toLowerCase()
+    adminPassword = stringVar(env, 'ADMIN_PASSWORD', DEV_ADMIN_PASSWORD)
+  } else {
+    if (rawOrigin === undefined) {
+      throw new ConfigError(
+        'PUBLIC_ORIGIN is required (or set AUTH_ALLOW_INSECURE_DEFAULTS=true for a loopback development setup)',
+      )
+    }
+    publicOrigin = parseOrigin('PUBLIC_ORIGIN', rawOrigin).origin
+    listenHost = '0.0.0.0'
+    secret = requireDeployedValue('AUTH_SECRET', env.AUTH_SECRET, DEV_AUTH_SECRET)
+    // Normalize before the published-value guard so a differently-cased ADMIN_EMAIL cannot slip past
+    // it and then lowercase down to the known-public dev address.
+    adminEmail = requireDeployedValue(
+      'ADMIN_EMAIL',
+      env.ADMIN_EMAIL?.toLowerCase(),
+      DEV_ADMIN_EMAIL,
+    )
+    adminPassword = requireDeployedValue('ADMIN_PASSWORD', env.ADMIN_PASSWORD, DEV_ADMIN_PASSWORD)
+  }
+
+  // Better Auth signs every session cookie with this secret and only warns (never refuses) on a weak
+  // one, so enforce the recommended floor here where every other misconfiguration already fails fast.
+  if (secret.length < 32) {
+    throw new ConfigError('AUTH_SECRET must be at least 32 characters')
+  }
+
+  // The Vite dev origin is trusted only in the opted-in local mode; otherwise the list is the public
+  // origin plus the configured extras. De-duped so a repeated origin is not sent twice.
+  const trustedOrigins = [
+    ...new Set([publicOrigin, ...(insecure ? ['http://localhost:5173'] : []), ...extraOrigins]),
+  ]
+
+  return {
+    auth: {
+      secret,
+      publicOrigin,
+      trustedOrigins,
+      insecureDevelopment: insecure,
+      adminEmail,
+      adminPassword,
+      adminName,
+      github,
+    },
+    listenHost,
+  }
+}
+
+/**
+ * Build a {@link Config} from environment variables with class-scale defaults.
+ *
+ * The default `env` is `process.env`; tests pass an explicit map. The idle and max-duration
+ * windows are deliberately conservative defaults and may be tuned during Stage 4 playtesting.
+ */
+export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
+  const port = intVar(env, 'PORT', 8080)
+  const dataDir = stringVar(env, 'DATA_DIR', join(process.cwd(), 'data'))
+
+  const driverResult = z.enum(['docker']).safeParse(env.EXECUTION_DRIVER ?? 'docker')
+  if (!driverResult.success) {
+    throw new ConfigError(
+      `EXECUTION_DRIVER must be 'docker' (the only driver in this stage), got ${env.EXECUTION_DRIVER}`,
+    )
+  }
+
+  const { auth, listenHost } = loadAuthOptions(env, port)
 
   // The short name falls back to the resolved site name (not the raw default), so a deployment that
   // sets only SITE_NAME gets a matching short form for free while either can be overridden alone.
-  const siteName = env.SITE_NAME && env.SITE_NAME !== '' ? env.SITE_NAME : DEFAULT_SITE_NAME
-  const siteShortName =
-    env.SITE_SHORT_NAME && env.SITE_SHORT_NAME !== '' ? env.SITE_SHORT_NAME : siteName
+  const siteName = stringVar(env, 'SITE_NAME', DEFAULT_SITE_NAME)
+  const siteShortName = stringVar(env, 'SITE_SHORT_NAME', siteName)
 
   return {
     port,
+    listenHost,
     siteName,
     siteShortName,
     dataDir,
@@ -276,33 +488,23 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     recordingSweepIntervalMs: intVar(env, 'RECORDING_SWEEP_INTERVAL_MS', 3_600_000),
     overlayImageBudget: intVar(env, 'OVERLAY_IMAGE_BUDGET', 50),
     overlayImageSweepIntervalMs: intVar(env, 'OVERLAY_IMAGE_SWEEP_INTERVAL_MS', 3_600_000),
-    frontendDir:
-      env.FRONTEND_DIST && env.FRONTEND_DIST !== ''
-        ? env.FRONTEND_DIST
-        : join(REPO_ROOT, 'frontend', 'dist'),
-    docsDir: env.DOCS_DIR && env.DOCS_DIR !== '' ? env.DOCS_DIR : DEFAULT_DOCS_DIR,
-    docsIndexFile:
-      env.DOCS_INDEX_FILE && env.DOCS_INDEX_FILE !== '' ? env.DOCS_INDEX_FILE : undefined,
+    frontendDir: stringVar(env, 'FRONTEND_DIST', join(REPO_ROOT, 'frontend', 'dist')),
+    docsDir: stringVar(env, 'DOCS_DIR', DEFAULT_DOCS_DIR),
+    docsIndexFile: stringVar(env, 'DOCS_INDEX_FILE'),
     sandbox: {
       cpus: numberVar(env, 'SANDBOX_CPUS', 1),
       memoryMb: intVar(env, 'SANDBOX_MEMORY_MB', 512),
       scratchMb: intVar(env, 'SANDBOX_SCRATCH_MB', 256),
     },
     executionDriver: 'docker',
-    docker: {
-      imageTagPrefix:
-        env.DOCKER_IMAGE_TAG_PREFIX && env.DOCKER_IMAGE_TAG_PREFIX !== ''
-          ? env.DOCKER_IMAGE_TAG_PREFIX
-          : 'game-sandbox',
-      imagePolicy,
-      overlayBuildTimeoutMs: intVar(env, 'SUBMISSION_BUILD_TIMEOUT_MS', 120_000),
-    },
+    docker: loadDockerOptions(env),
     submission: {
-      githubToken: env.GITHUB_TOKEN && env.GITHUB_TOKEN !== '' ? env.GITHUB_TOKEN : undefined,
+      githubToken: stringVar(env, 'GITHUB_TOKEN'),
       allowLocalSubmissions: boolVar(env, 'ALLOW_LOCAL_SUBMISSIONS', false),
       gitTimeoutMs: intVar(env, 'SUBMISSION_GIT_TIMEOUT_MS', 15_000),
       loadCheckTimeoutMs: intVar(env, 'SUBMISSION_LOAD_CHECK_TIMEOUT_MS', 30_000),
       submissionMaxSizeBytes: intVar(env, 'SUBMISSION_MAX_SIZE_MB', 25) * 1024 * 1024,
     },
+    auth,
   }
 }

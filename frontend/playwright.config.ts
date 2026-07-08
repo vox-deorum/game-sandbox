@@ -45,6 +45,12 @@ function backendEnv(
     PORT: String(port),
     FRONTEND_DIST: DIST,
     DATA_DIR: fileURLToPath(new URL(`./e2e/.data/${dataSubdir}`, import.meta.url)),
+    // The backend embeds Better Auth (Stage 12.1), which refuses to start without an explicit public
+    // origin, secret, and bootstrap credentials. These loopback e2e servers opt into the published
+    // development defaults; the loopback origin binds the listener to `127.0.0.1`, matching both the
+    // health-check URLs and the project baseURL the browser loads from.
+    AUTH_ALLOW_INSECURE_DEFAULTS: 'true',
+    PUBLIC_ORIGIN: `http://127.0.0.1:${port}`,
     SESSION_ALLOWLIST: allowlist,
     // A short idle window keeps a forgotten session from holding a container across the run.
     SESSION_IDLE_TIMEOUT_MS: '30000',

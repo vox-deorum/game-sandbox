@@ -13,6 +13,8 @@ import websocket from '@fastify/websocket'
 import Fastify, { type FastifyInstance } from 'fastify'
 
 import { registerAdminRoutes } from './admin/routes.js'
+import type { Auth } from './auth/auth.js'
+import { registerAuthRoutes } from './auth/routes.js'
 import { DEFAULT_DOCS_DIR, DEFAULT_SITE_NAME } from './config.js'
 import { buildDocsManifest, DocsIndexError, readDocsIndex, readDocsPage } from './docs.js'
 import type { EnvironmentRegistry } from './environments.js'
@@ -83,6 +85,12 @@ export interface AppDeps {
   docsDir?: string
   /** Optional class-index override: when set, `GET /api/docs/index` serves this file's markdown. */
   docsIndexFile?: string
+  /**
+   * The Better Auth instance to mount at `/api/auth/*` (Stage 12.1). Optional in this step: nothing
+   * consumes the session yet, so app-building suites that pass no `auth` are unchanged and the mount
+   * is simply skipped. Step 2 makes it required once the identity seam consumes it.
+   */
+  auth?: Auth
 }
 
 /**
@@ -558,6 +566,12 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     allowlist: deps.allowlist,
     operatorAllowlist: deps.operatorAllowlist,
   })
+
+  // Mount Better Auth at `/api/auth/*` (Stage 12.1), before the SPA fallback so the catch-all never
+  // shadows it. Optional in this step: suites that pass no `auth` skip the mount unchanged.
+  if (deps.auth !== undefined) {
+    await registerAuthRoutes(app, { auth: deps.auth })
+  }
 
   // Serve the built frontend from the same origin in production so the whole stack is one process.
   // `wildcard: false` registers a route per built file and lets unmatched paths fall to the

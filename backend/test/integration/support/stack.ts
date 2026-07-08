@@ -20,6 +20,7 @@ import { SubmissionSnapshotStore } from '../../../src/submission/snapshot-store.
 import { createSubmissionSource } from '../../../src/submission/source/index.js'
 import { ValidationWorker } from '../../../src/submission/worker.js'
 import { createPlaceholderRunner } from '../../../src/workflow/runner.js'
+import { TEST_AUTH_OPTIONS } from '../../support/auth-options.js'
 
 export interface Stack {
   httpBase: string
@@ -35,6 +36,7 @@ export async function startStack(overrides: Partial<Config> = {}): Promise<Stack
   const recordingsDir = mkdtempSync(join(tmpdir(), 'gs-it-'))
   const config: Config = {
     port: 0,
+    listenHost: '127.0.0.1',
     siteName: 'Game Sandbox',
     siteShortName: 'Game Sandbox',
     dataDir: recordingsDir,
@@ -64,6 +66,7 @@ export async function startStack(overrides: Partial<Config> = {}): Promise<Stack
       loadCheckTimeoutMs: 30_000,
       submissionMaxSizeBytes: 25 * 1024 * 1024,
     },
+    auth: { ...TEST_AUTH_OPTIONS },
     ...overrides,
   }
 

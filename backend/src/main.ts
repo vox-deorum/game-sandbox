@@ -9,7 +9,10 @@
 import { resolve } from 'node:path'
 
 import { buildApp } from './app.js'
-import { loadConfig } from './config.js'
+import { createAuth } from './auth/auth.js'
+import { migrateAuthSchema } from './auth/migrate.js'
+import { ensureAdminUser } from './auth/seed-admin.js'
+import { DEV_ADMIN_EMAIL, DEV_ADMIN_PASSWORD, DEV_AUTH_SECRET, loadConfig } from './config.js'
 import { DEPS_VERSION, KNOWN_DEPS_VERSIONS } from './deps-version.js'
 import { createDockerDriver } from './driver/docker/index.js'
 import { EnvironmentRegistry } from './environments.js'
@@ -21,7 +24,7 @@ import { RecordingsStore } from './recordings.js'
 import { Retention } from './retention.js'
 import { seedOpenSeasons } from './seasons-seed.js'
 import { Orchestrator } from './session/orchestrator.js'
-import { openSqliteStorage } from './storage/sqlite.js'
+import { openSqlite } from './storage/sqlite.js'
 import { OverlayEviction } from './submission/overlay-eviction.js'
 import { SubmissionSnapshotStore } from './submission/snapshot-store.js'
 import { createSubmissionSource } from './submission/source/index.js'
@@ -35,7 +38,21 @@ async function main(): Promise<void> {
     console.error(message)
   }
 
-  const storage = await openSqliteStorage(config.dbPath)
+  // Open the app database and hand its raw connection to Better Auth so the auth tables live on the
+  // same SQLite handle. Migrate the auth schema, then re-sync the bootstrap admin from configuration;
+  // a seed refusal (an email collision) throws out of `main` and exits non-zero.
+  const { storage, sqlite } = await openSqlite(config.dbPath)
+  const auth = createAuth(sqlite, config.auth)
+  await migrateAuthSchema(auth)
+  await ensureAdminUser(
+    auth,
+    {
+      email: config.auth.adminEmail,
+      password: config.auth.adminPassword,
+      name: config.auth.adminName,
+    },
+    log,
+  )
   const environments = EnvironmentRegistry.load()
   // Seed one open season per environment at the current dependency-set version, so submissions
   // have an identity boundary and pinned deps_version. Idempotent across restarts.
@@ -132,13 +149,31 @@ async function main(): Promise<void> {
     submissionSnapshots: snapshots,
     validationWorker,
     allowLocalSubmissions: config.submission.allowLocalSubmissions,
+    auth,
   })
   retention.start()
   overlayEviction.start()
   // Re-enqueue active pending submissions stranded by a prior restart, then accept new ones.
   await validationWorker.start()
-  await app.listen({ port: config.port, host: '0.0.0.0' })
-  log(`backend listening on :${config.port}`)
+
+  // An explicitly opted-in insecure-development startup binds a loopback interface only and runs on
+  // published credentials; warn loudly for each published value actually in effect, so it can never
+  // be mistaken for a real deployment.
+  if (config.auth.insecureDevelopment) {
+    log(`AUTH_ALLOW_INSECURE_DEFAULTS is on: listening on loopback ${config.listenHost} only`)
+    if (config.auth.secret === DEV_AUTH_SECRET) {
+      log('WARNING: using the published development AUTH_SECRET; never deploy with it')
+    }
+    if (config.auth.adminEmail === DEV_ADMIN_EMAIL) {
+      log(`WARNING: using the published development ADMIN_EMAIL ${DEV_ADMIN_EMAIL}`)
+    }
+    if (config.auth.adminPassword === DEV_ADMIN_PASSWORD) {
+      log('WARNING: using the published development ADMIN_PASSWORD; never deploy with it')
+    }
+  }
+
+  await app.listen({ port: config.port, host: config.listenHost })
+  log(`backend listening on ${config.listenHost}:${config.port}`)
 
   let stopping = false
   const shutdown = (signal: string): void => {
