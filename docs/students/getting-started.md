@@ -62,9 +62,9 @@ Open `agent.py`. It already contains a small working agent, so the game runs bef
 - `reset(seed)`, which prepares the agent for a new game.
 - `act(observation)`, which looks at the current state and returns an action. A `TODO(you)` comment marks the line where you take over.
 
-For Flappy Bird, the observation is a NumPy array of 12 normalized numbers describing the bird and nearby pipes. An action is `0` for do nothing or `1` for flap. If NumPy arrays are new to you, read the first sections of [NumPy's beginner guide](https://numpy.org/doc/stable/user/absolute_beginners.html).
+For Flappy Bird, the observation is an object describing the bird and nearby pipes in real screen pixels, and an action is `0` for do nothing or `1` for flap. For Hearts and Spades, the observation carries your hand and the table as card objects `{"suit", "rank"}` beside a legal-move mask, and an action is the integer for the card (or bid) you chose.
 
-The meaning of each action number and each observation value is specific to your game. Your [environment page](environments/index.md) walks through that starting agent line by line, then documents each action number and observation value in full, along with a `sandbox` helper module (`sandbox.features` for Flappy Bird, `sandbox.cards` for Hearts) that reads the observation for you so you can work with named values instead of raw array indices.
+The meaning of each action number and each observation field is specific to your game. Your [environment page](environments/index.md) walks through that starting agent line by line, then documents each action and observation field in full, along with a `sandbox` helper module (`sandbox.features` for Flappy Bird, `sandbox.cards` for Hearts and Spades) that reads the observation for you so you work with named values and card objects instead of raw arrays.
 
 See [Agent interface](agent-interface.md) for the complete method contract and a small example.
 

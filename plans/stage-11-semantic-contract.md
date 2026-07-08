@@ -1,6 +1,6 @@
 # Stage 11: Semantic Contract
 
-Status: not started.
+Status: complete. One deviation carried through every step: since template version 1 was never published, the stage reshapes version 1 in place rather than publishing a version 2 (see the [semantic rollout](stage-11/2-semantic-rollout.md) note). Read "version 2" below as the reshaped version 1.
 
 ## Goal
 
@@ -22,7 +22,7 @@ Shared card code is split by responsibility. A standard-library-only `environmen
 
 Timeout defaults become real actions. `EnvironmentEntry.default_action` receives `(env, slot_id)` and returns the legal integer that will be applied. Recordings therefore contain the action that was played instead of an environment-specific sentinel.
 
-The observation change breaks agents written for the prerelease template version 1. Since version 1 never shipped publicly, this stage publishes version 2 and updates templates, examples, built-in agents, fixtures, student documentation, and tests without adding a compatibility adapter.
+The observation change breaks agents written for the prerelease template version 1. Since version 1 never shipped publicly, this stage reshapes version 1 in place — updating templates, examples, built-in agents, fixtures, student documentation, and tests — rather than publishing a version 2 or adding a compatibility adapter.
 
 Rules engines remain integer-based internally. Environments convert their state to semantic objects for observations and overlays. Pygame and browser renderers use those objects directly for drawing, animation, legality, and hit testing. A selected card becomes an integer only when a human action is passed to `env.step()` or sent through the browser session channel.
 
@@ -48,4 +48,4 @@ Stage 11 has three implementation steps. The first is a non-breaking proof and f
 
 Agents for all three environments read object-shaped observations and return simple integer actions through helpers. Hearts and Spades publish masks that agree with their rules, and Flappy Bird exposes both always-legal actions without a mask. Every observation satisfies its declared space through a complete episode, and PettingZoo's pinned `api_test` passes for all three environments except for the known #1211 `dtype` access on the composite observation, which CI tolerates behind a documented guard.
 
-All three games are watchable, playable, and replayable in the browser and through local pygame play. A composed version 2 template completes a game, timeout recordings contain the real action used, generated files are current, and the complete Python, TypeScript, integration, browser, and documentation checks pass. The specs, student guides, contributor guides, and earlier stage plans describe the new contract consistently.
+All three games are watchable, playable, and replayable in the browser and through local pygame play. A composed template (the reshaped version 1) completes a game, timeout recordings contain the real action used, generated files are current, and the complete Python, TypeScript, integration, browser, and documentation checks pass. The specs, student guides, contributor guides, and earlier stage plans describe the new contract consistently.

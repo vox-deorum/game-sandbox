@@ -153,6 +153,8 @@ Send meaningful actions only. The harness supplies the environment's default act
 
 `inputs()` fits a fixed gesture-to-action mapping such as a flap. On-screen controls whose action depends on where the gesture lands, such as a clickable card hand or board cell, instead make the relevant display objects interactive (an `eventMode` and a hit area) and send the action for the object that was clicked. A control is wired only when the renderer controls that slot and a `sendAction` exists, so spectators and replay viewers stay draw-only. Hearts is the reference for this: a legal card on the controlled seat's turn is clickable and plays itself.
 
+The overlay carries semantic objects (a card is a `{"suit", "rank"}` object), so the scene draws, animates, and hit-tests them directly; encode a choice to its integer action (`cardToAction(card)`, `bidToAction(n)`, or Flappy's `1`) only at the `sendAction` boundary.
+
 ## Add a renderer
 
 1. Create `src/renderers/<env>/`.

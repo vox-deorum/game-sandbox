@@ -22,16 +22,20 @@ If you have never played, the [Wikipedia article about Hearts](https://en.wikipe
 
 Your template already contains a complete, working agent, the one this section builds. It runs before you change anything, and the rest of this section explains it line by line so you can see exactly how a turn is decided.
 
-On each of your turns the harness calls `act` with an observation of the table, and your job is to return the one card you want to play. You never touch raw numbers to do it: the template's helper module turns the observation into plain Python values, and this agent uses just two of its helpers.
+On each of your turns the harness calls `act` with an observation of the table, and your job is to return the one card you want to play. You never touch raw numbers to do it: the template's helper module turns the observation into card objects and plain Python values, and this agent uses just three of its helpers.
 
-`legal_cards(observation)` gives you the list of cards you are allowed to play this turn. It already accounts for every rule, following suit, not leading a heart before hearts are broken, and the first-trick restrictions, so every card it returns is a legal move.
+A card is a small object, `{"suit": 0..3, "rank": 2..14}`, where the rank is the face value printed on the card (`11` is the jack, `12` the queen, `13` the king, `14` the ace). So the queen of spades is `{"suit": 2, "rank": 12}`.
 
-`rank_of(card)` tells you a card's rank, from the two up to the ace, ignoring its suit. Passing it as the `key` to Python's built-in `min` picks the lowest-ranked card out of a list.
+`legal_cards(observation)` gives you the list of card objects you are allowed to play this turn. It already accounts for every rule, following suit, not leading a heart before hearts are broken, and the first-trick restrictions, so every card it returns is a legal move.
+
+`rank_of(card)` reads a card object's face-value rank, from the two up to the ace, ignoring its suit. Passing it as the `key` to Python's built-in `min` picks the lowest-ranked card out of a list.
+
+`play(card)` turns a card object into the integer your `act` method must return. You choose with card objects and convert to an action only at the very end, so you never build that integer by hand.
 
 The strategy is one idea: always play the lowest-ranked legal card. Low cards rarely win a trick, and in Hearts winning a trick is how you collect the penalty cards you want to avoid, so ducking low is a reasonable default. It is also exactly how the built-in opponents play, so any smarter idea you add is a real edge over them.
 
 ```python
-from sandbox.cards import legal_cards, rank_of
+from sandbox.cards import legal_cards, play, rank_of
 
 
 class Agent:
@@ -44,9 +48,9 @@ class Agent:
         pass
 
     def act(self, observation) -> int:
-        # legal_cards reads the action mask for you: every card ID in this list
-        # is a card you hold and may play right now, so the rules (follow suit,
-        # hearts not broken yet, no points on the first trick) are already
+        # legal_cards reads the action mask for you: every card object in this
+        # list is a card you hold and may play right now, so the rules (follow
+        # suit, hearts not broken yet, no points on the first trick) are already
         # taken care of.
         legal = legal_cards(observation)
 
@@ -55,11 +59,12 @@ class Agent:
         # lowest-ranked legal card is a sane start. It is also exactly how the
         # built-in opponents play. Replace it with something smarter; the
         # "Your first improvement" section of environment.md shows you how to
-        # find one.
-        return min(legal, key=rank_of)
+        # find one. play() turns your chosen card object into the integer act()
+        # must return.
+        return play(min(legal, key=rank_of))
 ```
 
-This agent can never make an illegal move, because it only ever returns a card that came from `legal_cards`. You never have to check the rules yourself; picking from that list is enough.
+This agent can never make an illegal move, because it only ever plays a card that came from `legal_cards`. You never have to check the rules yourself; picking from that list is enough.
 
 With the agent already in place, you can run it straight away from the template folder:
 
@@ -92,19 +97,20 @@ After a successful moon shot, the shooter receives `0.0` and each other player r
 
 ## The helper module
 
-Your first agent used `sandbox.cards`, the template's plain Python helper module. Import what you need from it at the top of `agent.py`, never inside a method. It converts the raw arrays and card IDs into ordinary Python values with readable names, so `act` works with card IDs and lists instead of NumPy arrays.
+Your first agent used `sandbox.cards`, the template's plain Python helper module. Import what you need from it at the top of `agent.py`, never inside a method. It reads the observation for you and hands back card objects, lists, and plain Python values, so `act` never touches a raw NumPy array or the action mask directly.
 
-`legal_cards(observation)` returns a list of the card IDs whose mask entry is `1`, and the list is never empty on your turn. `rank_of(card)` returns the card's rank number, so `min(legal, key=rank_of)` selects the lowest-ranked legal card. Because the choice always comes from `legal_cards`, an agent automatically follows suit and obeys the other rules.
+`legal_cards(observation)` returns a list of the card objects you may play, and the list is never empty on your turn. `rank_of(card)` returns a card's face-value rank, so `min(legal, key=rank_of)` selects the lowest-ranked legal card, and `play(card)` turns the card you chose into the integer `act` returns. Because the choice always comes from `legal_cards`, an agent automatically follows suit and obeys the other rules.
 
 The module provides these helpers and constants:
 
 | Helper or constant | Result |
 | --- | --- |
-| `legal_cards(observation)` | Legal card IDs for this turn |
-| `hand_cards(observation)` | All card IDs in your hand |
-| `suit_of(card)` | Suit ID from `0` through `3` |
-| `rank_of(card)` | Rank ID from `0` through `12` |
-| `make_card(suit, rank)` | Card ID built from a suit ID and rank ID |
+| `legal_cards(observation)` | Legal card objects for this turn |
+| `play(card)` | The integer action for a card object, the value `act` returns |
+| `hand_cards(observation)` | Every card object in your hand |
+| `suit_of(card)` | A card object's suit ID, from `0` through `3` |
+| `rank_of(card)` | A card object's face-value rank, from `2` (the two) through `14` (the ace) |
+| `make_card(suit, rank)` | A card object `{"suit": suit, "rank": rank}` from a suit ID and face-value rank |
 | `card_name(card)` | Readable text such as `"Q of spades"` |
 | `card_points(card)` | `13` for the queen of spades, `1` for a heart, or `0` otherwise |
 | `led_suit(observation)` | Led suit ID, or `None` when you are leading |
@@ -114,7 +120,7 @@ The module provides these helpers and constants:
 | `my_seat(observation)` | Your seat ID |
 | `scores(observation)` | Four running penalty scores indexed by seat |
 | `CLUBS`, `DIAMONDS`, `SPADES`, `HEARTS` | Names for suit IDs `0`, `1`, `2`, and `3` |
-| `TWO_OF_CLUBS`, `QUEEN_OF_SPADES` | Names for card IDs `0` and `36` |
+| `TWO_OF_CLUBS`, `QUEEN_OF_SPADES` | The card objects `{"suit": 0, "rank": 2}` and `{"suit": 2, "rank": 12}` |
 
 ## Under the hood
 
@@ -147,32 +153,35 @@ The encoding can also be written as `card = suit * 13 + rank`. The suit and rank
 | Suit | `0` clubs, `1` diamonds, `2` spades, `3` hearts |
 | Rank | `0` two, `1` three, through `8` ten, `9` jack, `10` queen, `11` king, `12` ace |
 
-To decode card `36`, divide by 13. The whole-number result is `2`, which means spades, and the remainder is `10`, which means queen. You usually do not need to do this arithmetic yourself because the template provides card helpers.
+To decode card `36`, divide by 13: the whole-number result `2` means spades and the remainder `10` means queen. The rank digit inside an ID runs `0`–`12`, while the card objects you read from the observation (and `rank_of`) use the printed face value `2`–`14`. You rarely need either scale: stay in card objects and let `play(card)` build the ID for you.
 
 The card you return must have a `1` in the same position of `observation["action_mask"]`. The environment rejects a card whose mask entry is `0`, including a card you do not hold or a card that breaks a game rule.
 
 ### Observations
 
-Your `act` method receives a dictionary with this structure:
+Your `act` method receives a dictionary with two keys:
 
 ```text
 observation
 ├── "action_mask"    52 entries that say which card IDs are legal
-└── "observation"    the cards, seats, trick, and scores
+└── "observation"    an object with your hand, the trick, the seats, and the scores
 ```
 
-The values are NumPy arrays. An array's **length** is the number of values it contains. For example, a length-52 array has one entry for each card ID from `0` through `51`. A field with length 1 is still an array, so you read its single value with index `[0]`.
+The top-level `action_mask` is a length-52 NumPy array indexed by card ID: `1` means you may play that card now, `0` means you may not. It is the one place indices survive, and `legal_cards` reads it for you.
 
-| Field | Array length | Values and meaning |
+Everything else lives under the `"observation"` key, and it is **semantic**: cards are objects `{"suit", "rank"}`, your hand and the trick are ordinary sequences of them, and the small numbers are plain categories. Nothing here is a 52-long bitmask.
+
+| Field | Shape | Values and meaning |
 | --- | --- | --- |
-| `action_mask` | 52 | Indexed by card ID. `1` means you may play that card now; `0` means you may not. |
-| `hand` | 52 | Indexed by card ID. `1` means the card is in your hand; `0` means it is not. Some cards in your hand may still be illegal this turn. |
-| `trick` | 4 | Indexed by seat. Each entry is the card ID that seat played in the current trick, or `-1` if that seat has not played yet. |
-| `led_suit` | 1 | `0` clubs, `1` diamonds, `2` spades, or `3` hearts. `-1` means no card has been led because you are starting the trick. |
-| `hearts_broken` | 1 | `0` means no heart has been played on an earlier trick; `1` means hearts have been broken. |
-| `position` | 1 | Your seat ID, from `0` through `3`. |
-| `trick_leader` | 1 | The seat ID of the player who led the current trick, from `0` through `3`. |
-| `scores` | 4 | Running penalty points indexed by seat. Each value is from `0` through `26`, and lower is better. |
+| `hand` | sequence of cards | The card objects you are holding, in the order dealt. Grows shorter as the hand plays out; some may still be illegal this turn. |
+| `current_trick` | sequence of `{seat, card}` | The cards played to the current trick so far, in play order (the leader first). Empty when you are leading a fresh trick. |
+| `trick_leader` | `0..3` | The seat that led the current trick. |
+| `led_suit` | `0..4` | `0` clubs, `1` diamonds, `2` spades, `3` hearts; `4` means no card has been led yet because you are starting the trick. |
+| `hearts_broken` | `0` or `1` | `0` means no heart has been played on an earlier trick; `1` means hearts have been broken. |
+| `seat` | `0..3` | Your own seat ID. |
+| `scores` | length-4 array | Running penalty points indexed by seat. Each value is from `0` through `26`, and lower is better. |
+
+Read these through `observation["observation"]`, for example `observation["observation"]["seat"]`, or let the helpers do it: `hand_cards`, `current_trick`, `led_suit`, `my_seat`, and `scores` each return one of these fields as plain Python values.
 
 #### How seat numbers work
 
@@ -184,9 +193,9 @@ Seat IDs are player labels, not fixed locations on the screen. Seat `0` controls
 
 The viewer rotates the table so that the player being viewed is at the bottom. From that player's view, the next seat in the sequence is on the left, the seat after that is at the top, and the previous seat is on the right. Therefore, seat `0` is not always the bottom, top, left, or right seat.
 
-Suppose `position` is `[2]`. Your agent controls seat 2, which the viewer places at the bottom. Seat 3 appears on the left, seat 0 at the top, and seat 1 on the right. If `scores` is `[3, 0, 5, 1]`, then seat 0 has 3 penalty points, seat 1 has 0, your seat 2 has 5, and seat 3 has 1.
+Suppose `seat` is `2`. Your agent controls seat 2, which the viewer places at the bottom. Seat 3 appears on the left, seat 0 at the top, and seat 1 on the right. If `scores` is `[3, 0, 5, 1]`, then seat 0 has 3 penalty points, seat 1 has 0, your seat 2 has 5, and seat 3 has 1.
 
-The `trick` array also uses absolute seat IDs. If it is `[15, 24, -1, -1]`, seat 0 played card `15`, the four of diamonds, and seat 1 played card `24`, the king of diamonds. Seats 2 and 3 have not played yet. Use `trick_leader` to know which of the played cards came first.
+`current_trick` carries absolute seat IDs too. If it is `[{"seat": 0, "card": {"suit": 1, "rank": 4}}, {"seat": 1, "card": {"suit": 1, "rank": 13}}]`, then seat 0 led the four of diamonds and seat 1 followed with the king of diamonds; seats 2 and 3 have not played yet. Because the list is already in play order, its first entry is the seat named by `trick_leader`.
 
 ## Time limits
 

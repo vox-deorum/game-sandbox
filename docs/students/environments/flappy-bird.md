@@ -12,16 +12,18 @@ If you have never seen the game, the [Wikipedia article about Flappy Bird](https
 
 Your template already contains a complete, working agent, the one this section builds. It runs before you change anything, and the rest of this section explains it line by line so you can see exactly how each step is decided.
 
-On every step the harness calls `act` with an observation of the bird and the pipes, and your job is to return one action: flap or do nothing. You never read raw numbers to decide: the template's helper module gives the observation's values readable names, and this agent uses just one of them, plus the names of the two actions.
+On every step the harness calls `act` with an observation of the bird and the pipes, and your job is to return one action: flap or do nothing. You never read raw numbers to decide: the template's helper module gives the observation's values readable names, and this agent uses two of them, plus the names of the two actions.
 
-`player_y(observation)` is the bird's height, measured from the top of the screen, where `0` is the very top and `1` is the bottom, so a larger value means the bird is lower. The middle of the screen is `0.5`.
+`player_y(observation)` is the bird's height in real screen pixels, measured from the top of the screen, where `0` is the very top and `screen_height(observation)` is the bottom, so a larger value means the bird is lower.
+
+`screen_height(observation)` is the height of the screen in pixels, so half of it is the middle of the screen.
 
 `FLAP` and `IDLE` are the two actions, the readable names for `1` (flap once) and `0` (do nothing).
 
-The strategy is one comparison: if the bird is below the middle of the screen (`player_y > 0.5`), flap to climb; otherwise let gravity pull it down. The bird settles around the middle of the screen and holds that height, but it pays no attention to where the gaps in the pipes actually are.
+The strategy is one comparison: if the bird is below the middle of the screen, flap to climb; otherwise let gravity pull it down. The bird settles around the middle of the screen and holds that height, but it pays no attention to where the gaps in the pipes actually are.
 
 ```python
-from sandbox.features import FLAP, IDLE, player_y
+from sandbox.features import FLAP, IDLE, player_y, screen_height
 
 
 class Agent:
@@ -34,10 +36,10 @@ class Agent:
         pass
 
     def act(self, observation) -> int:
-        # player_y is the bird's height as a fraction of the screen, where 0 is
-        # the top and 1 is the bottom, so a larger value means lower on the
-        # screen.
-        below_middle = player_y(observation) > 0.5
+        # player_y is the bird's height in real screen pixels, where 0 is the
+        # top and screen_height(observation) is the bottom, so a larger value
+        # means lower on the screen.
+        below_middle = player_y(observation) > screen_height(observation) / 2
 
         # TODO(you): this is the whole strategy: flap when the bird sits below
         # mid-screen, otherwise let it fall. It holds a steady height but never
@@ -76,31 +78,34 @@ The rewards add together over a run. A higher total generally means the bird sur
 
 ## The helper module
 
-Your first agent used `sandbox.features`, the template's plain Python helper module. Import what you need from it at the top of `agent.py`, never inside a method. Its functions and constants give readable names to the 12 observation numbers and the two actions, so your code never contains an unexplained `observation[4]` or `return 1`.
+Your first agent used `sandbox.features`, the template's plain Python helper module. Import what you need from it at the top of `agent.py`, never inside a method. Its functions and constants read the observation's fields and name the two actions, so your code never contains an unexplained `observation["player"]["y"]` or `return 1`.
 
-`player_y(observation)` returns the top of the bird as a plain float. `next_gap_center(observation)` averages the top and bottom of the next pipe's gap and returns a plain float on the same top-to-bottom scale as `player_y`. `player_velocity(observation)` returns the bird's vertical velocity converted to screen heights per step; it is the one helper that changes a value's scale instead of only naming an index, and the [Velocity and rotation](#velocity-and-rotation) section explains why the conversion exists.
+`player_y(observation)` returns the bird's height in screen pixels. `next_gap_center(observation)` averages the top and bottom of the next pipe's gap and returns the pixel height the bird should aim for, on the same scale as `player_y`; when there is no pipe ahead it falls back to the middle of the screen. `player_velocity(observation)` returns the bird's vertical velocity in pixels per step, the same scale as `player_y`, so adding the two estimates where the bird will be next step.
 
 The module provides these helpers and constants:
 
 | Helper or constant | Result |
 | --- | --- |
-| `player_y(observation)` | The top of the bird as a float, `0` at the top of the screen and `1` at the bottom |
-| `next_gap_center(observation)` | The middle of the next pipe's gap, on the same top-to-bottom scale |
-| `player_velocity(observation)` | The bird's vertical velocity in screen heights per step (negative is upward) |
+| `player_x(observation)` | The bird's horizontal position in screen pixels |
+| `player_y(observation)` | The bird's vertical position in screen pixels, `0` at the top and larger lower down |
+| `player_velocity(observation)` | The bird's vertical velocity in pixels per step (positive is downward) |
+| `next_pipe(observation)` | The nearest pipe ahead as `{x, gap_top, gap_bottom}`, or `None` if there is none |
+| `next_gap_center(observation)` | The pixel height of the next gap's center, the height to aim for |
+| `screen_width(observation)` | The screen width in pixels |
+| `screen_height(observation)` | The screen height in pixels |
 | `FLAP`, `IDLE` | The two actions, `1` (flap) and `0` (do nothing) |
-| `PIPE_SPEED` | How far a pipe scrolls left each step, about `0.014` screen widths |
-| Index constants such as `PLAYER_Y` and `NEXT_PIPE_GAP_TOP` | Named positions in the raw observation array, listed in [Under the hood](#under-the-hood) |
 
 ## Under the hood
 
-Your first agent never touched a raw observation number or a raw action integer; the helpers handled both. This section is the full reference for what the 12 numbers mean and what `act` returns, for when you outgrow the helpers and want to read the observation yourself.
+Your first agent never touched the raw observation or a raw action integer; the helpers handled both. This section is the full reference for what the observation contains and what `act` returns, for when you outgrow the helpers and want to read the observation yourself.
 
-Without the helpers, a decision that aims the bird at the next pipe's gap reads raw indices and action numbers:
+Without the helpers, a decision that aims the bird at the next pipe's gap reads the object's fields directly:
 
 ```python
-gap_center = (observation[4] + observation[5]) / 2
-if observation[9] > gap_center:
-    return 1
+pipes = observation["pipes"]
+if pipes:
+    gap_center = (pipes[0]["gap_top"] + pipes[0]["gap_bottom"]) / 2
+    return 1 if observation["player"]["y"] > gap_center else 0
 return 0
 ```
 
@@ -113,68 +118,72 @@ Your `act` method must return one integer on every step:
 | `0` | `IDLE` | Do nothing. Gravity continues to pull the bird downward. |
 | `1` | `FLAP` | Flap once. The bird gets an upward push. |
 
-Here, `0` and `1` are action labels. They do not describe a direction or a screen position. Returning any other integer is invalid and the environment rejects it. If your agent misses a step's deadline, the environment uses action `0`, so the bird keeps falling.
+Here, `0` and `1` are action labels. They do not describe a direction or a screen position. Returning any other integer is invalid and the environment rejects it. Both actions are always legal, so unlike the card games Flappy Bird carries **no action mask**. If your agent misses a step's deadline, the environment uses action `0`, so the bird keeps falling.
 
 ### Observations
 
-The observation is a NumPy array of 12 numbers. It describes three pipes in left-to-right order, followed by the bird. An **index** tells you where a value appears in the array. Python starts counting at `0`, so index `0` is the first number, index `1` is the second number, and index `11` is the twelfth and final number. An index is not a screen position and is not the value stored there.
+The observation is a single object (a Python dict) describing the bird, the pipes, and the screen. There is no `action_mask` key and no 52-long array anywhere: every value is either a real screen coordinate or a small count. It has this shape:
 
-| Index | Name in `sandbox.features` | Meaning | Range or special value |
-| --- | --- | --- | --- |
-| 0 | `LAST_PIPE_X` | Left edge of the leftmost pipe in this observation | May be negative after leaving the screen |
-| 1 | `LAST_PIPE_GAP_TOP` | Top edge of that pipe's gap | `0` at the top of the screen, `1` at the bottom |
-| 2 | `LAST_PIPE_GAP_BOTTOM` | Bottom edge of that pipe's gap | `0` at the top of the screen, `1` at the bottom |
-| 3 | `NEXT_PIPE_X` | Left edge of the middle pipe in this observation | `0` at the left edge, `1` at the right edge |
-| 4 | `NEXT_PIPE_GAP_TOP` | Top edge of the middle pipe's gap | `0` at the top of the screen, `1` at the bottom |
-| 5 | `NEXT_PIPE_GAP_BOTTOM` | Bottom edge of the middle pipe's gap | `0` at the top of the screen, `1` at the bottom |
-| 6 | `NEXT_NEXT_PIPE_X` | Left edge of the rightmost pipe in this observation | `0` at the left edge, `1` at the right edge |
-| 7 | `NEXT_NEXT_PIPE_GAP_TOP` | Top edge of that pipe's gap | `0` at the top of the screen, `1` at the bottom |
-| 8 | `NEXT_NEXT_PIPE_GAP_BOTTOM` | Bottom edge of that pipe's gap | `0` at the top of the screen, `1` at the bottom |
-| 9 | `PLAYER_Y` | Vertical position of the top of the bird | `0` at the top of the screen, `1` at the bottom |
-| 10 | `PLAYER_VELOCITY` | Bird's vertical speed and direction | Negative is upward, `0` is stopped vertically, positive is downward |
-| 11 | `PLAYER_ROTATION` | Bird's tilt | Negative is nose-down, `0` is level, positive is nose-up |
-
-The three pipe triples are sorted by `X` on every step. The names in `sandbox.features` describe a common moment when the leftmost pipe has just passed the bird, but those roles are not permanent. Early in a run, `LAST_PIPE_X` can still be the first pipe approaching the bird. After a pipe leaves the screen and reappears on the right, the triples shift again. Use the `X` values to tell which pipes are ahead of the bird rather than relying only on `LAST`, `NEXT`, and `NEXT_NEXT` in the names.
-
-#### Horizontal positions
-
-Horizontal values use the screen width as a scale. `X = 0` is the left edge of the screen, `X = 0.5` is halfway across, and `X = 1` is the right edge. Larger values are farther right. A negative value is left of the visible screen.
-
-Each pipe's `X` value locates the pipe's left edge. The bird stays at about `X = 0.20`, so a pipe at `X = 0.55` is `0.35` screen widths ahead of the bird. As the pipe scrolls left, its value gets smaller. A pipe reaches the bird when its value is near `0.20`, not when it reaches `0`.
-
-Every pipe scrolls left at the same constant speed: about `0.014` screen widths per step, available as `PIPE_SPEED` in `sandbox.features`. This horizontal velocity is not part of the observation because it never changes, but it lets you predict timing. A pipe `0.35` screen widths ahead of the bird arrives in about `0.35 / 0.014 ≈ 25` steps, which is 1.25 seconds at 20 steps per second.
-
-#### Vertical positions
-
-Vertical values use the screen height as a scale, and the direction may feel backward if you are used to graphs in math class. `Y = 0` is the top of the screen, `Y = 0.5` is halfway down, and `Y = 1` is the bottom. Larger values are lower on the screen. A negative value is above the visible screen.
-
-The ground begins before the bottom of the screen, so the bird normally crashes before `PLAYER_Y` reaches `1`. Suppose the next gap has a top value of `0.24` and a bottom value of `0.43`. The gap starts 24 percent of the way down the screen and ends 43 percent of the way down. Its center is `(0.24 + 0.43) / 2 = 0.335`.
-
-#### Velocity and rotation
-
-Velocity and rotation use scales centered on `0`:
-
-| Value | Negative | `0` | Positive |
-| --- | --- | --- | --- |
-| `PLAYER_VELOCITY` | The bird is moving upward. A flap sets this to about `-0.9`. | The bird is not moving vertically at that instant. | The bird is falling. `1` is its maximum downward speed. |
-| `PLAYER_ROTATION` | The bird's nose points downward. `-1` is 90 degrees down. | The bird is level. | The bird's nose points upward. A flap sets this to `0.5`, or 45 degrees up. |
-
-To work with velocity, call `player_velocity(observation)` from `sandbox.features`. It returns the bird's vertical velocity in screen heights per step, the same scale as `PLAYER_Y`. Therefore, adding the two estimates the bird's next position: with a velocity of `0.008` and `PLAYER_Y = 0.44`, the bird will be near `0.44 + 0.008 = 0.448` on the next step. Gravity adds about `0.002` to the velocity before each idle movement, so treat the sum as an estimate rather than an exact prediction.
-
-If you read `observation[PLAYER_VELOCITY]` directly: the raw value uses a different scale, normalized by the bird's maximum fall speed, so `0.40` there means 40 percent of top speed, not 40 percent of the screen.
-
-#### Pipes that are not visible yet
-
-A pipe that has not entered the screen appears as three values: `1.00, 0.00, 1.00`. These mean that its left edge is parked at the right edge of the screen (`X = 1`) and its temporary gap runs from the top (`Y = 0`) to the bottom (`Y = 1`). This is a placeholder, not the pipe's real gap, so it provides no useful vertical target yet.
-
-Here is one complete observation, grouped by what its values describe:
-
-```text
-# nearest pipe       next pipe            pipe after next       bird
-[0.05, 0.42, 0.61,   0.55, 0.24, 0.43,   1.00, 0.00, 1.00,     0.44, 0.40, -0.30]
+```python
+observation = {
+    "player": {"x": ..., "y": ..., "vel_y": ..., "rot": ...},
+    "pipes": (
+        {"x": ..., "gap_top": ..., "gap_bottom": ...},   # nearest pipe first
+        ...                                              # zero or more further pipes
+    ),
+    "pipes_passed": ...,   # how many pipes the bird has cleared so far
+    "width": ...,          # screen width in pixels
+    "height": ...,         # screen height in pixels
+}
 ```
 
-In this particular snapshot, the leftmost pipe at `X = 0.05` has passed the bird and the middle pipe at `X = 0.55` is the next obstacle. Its gap runs from `Y = 0.24` to `Y = 0.43`. The bird is below the center of that gap because `0.44 > 0.335`. Its velocity `0.40` says it is falling, and its rotation `-0.30` means its nose points about 27 degrees downward.
+Every coordinate is a **real screen pixel**, not a normalized fraction. There is no fixed `0..1` scale to undo: `width` and `height` tell you how large the screen is, and `player["y"]` runs from `0` at the top to `height` at the bottom.
+
+#### The player
+
+`observation["player"]` describes the bird:
+
+| Field | Meaning | Range or direction |
+| --- | --- | --- |
+| `x` | The bird's horizontal position, its left-to-right pixel on the screen. | Roughly fixed; the bird does not move horizontally. |
+| `y` | The bird's vertical position in pixels. | `0` at the top of the screen, `height` at the bottom. Larger is lower. |
+| `vel_y` | The bird's vertical velocity in pixels per step. | Positive falls, negative climbs. The bird's next `y` is about `y + vel_y`. |
+| `rot` | The bird's tilt in degrees, used to draw the sprite. | Most agents ignore it; there is no helper for it. |
+
+Read these with `player_x`, `player_y`, and `player_velocity`, or reach into `observation["player"]` yourself.
+
+#### The pipes
+
+`observation["pipes"]` is a tuple with one entry per pipe on screen, **ordered nearest-first** (ascending `x`), so `pipes[0]` is the next pipe to clear. It may be **empty** when no pipe is on screen, so guard for that (or use `next_pipe`, which returns `None` in that case) before reading `pipes[0]`.
+
+| Field | Meaning |
+| --- | --- |
+| `x` | The pipe's left-edge pixel. Larger is farther right; the pipe scrolls left a fixed amount each step, so its `x` shrinks over time. |
+| `gap_top` | The pixel `y` of the top edge of the gap (the bottom of the upper pipe). |
+| `gap_bottom` | The pixel `y` of the bottom edge of the gap (the top of the lower pipe). |
+
+Because `y` grows downward, `gap_top` is the smaller number and `gap_bottom` the larger one, and the bird clears the pipe by keeping its `y` between them. The gap's center is `(gap_top + gap_bottom) / 2`, which `next_gap_center` returns for the nearest pipe. Horizontal pipe speed is constant and is not part of the observation, but you can gauge timing from how far a pipe's `x` is ahead of `player["x"]`.
+
+#### The rest
+
+`pipes_passed` is how many pipes the bird has flown through so far this episode, a plain count. `width` and `height` are the screen size in pixels; `screen_width` and `screen_height` return them, and `height` is what turns a raw `y` into "how far down the screen."
+
+Here is one complete observation on a 288-by-512 screen:
+
+```python
+{
+    "player": {"x": 57.0, "y": 244.0, "vel_y": 4.0, "rot": -12.0},
+    "pipes": (
+        {"x": 92.0, "gap_top": 180.0, "gap_bottom": 300.0},
+        {"x": 236.0, "gap_top": 120.0, "gap_bottom": 240.0},
+    ),
+    "pipes_passed": 3,
+    "width": 288,
+    "height": 512,
+}
+```
+
+The bird sits at `x = 57`, near the left, with the nearest pipe ahead at `x = 92`. That gap runs from `y = 180` down to `y = 300`, so its center is `240`. The bird's `y` of `244` is just below that center, and its `vel_y` of `4` says it is falling, so a flap now would nudge it back up toward the gap.
 
 ## Time limits
 

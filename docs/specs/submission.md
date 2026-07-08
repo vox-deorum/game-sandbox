@@ -11,6 +11,8 @@ Participants submit Python agents through GitHub. Every accepted submission is t
 | `learn(observation, action, reward, terminated)` | No | Update after a step. |
 | `chat(inbox)` | No | Receive and send messages on the agent's turn. |
 
+`act` receives an object-shaped observation and returns an integer in the environment's flat `Discrete` action space; the template ships a helper module that reads the observation and builds the action, so an agent works with semantic game objects rather than packed arrays. See the [environment contract](environment.md) for the full convention.
+
 The interface is independent of algorithm style. Agents always run inside the server-side session container. They may also call the optional [LLM API](llm.md).
 
 Learned state may persist across episodes in one leaderboard run, but not across submissions or seasons. Time spent in optional hooks and model calls counts toward the same limits as acting.

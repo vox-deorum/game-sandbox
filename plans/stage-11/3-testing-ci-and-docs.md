@@ -1,6 +1,6 @@
 # Stage 11.3: Testing, CI, and Documentation
 
-Status: in-progress.
+Status: complete. The full-stack verification passed, and the student docs, contributor guides, specs, and earlier Stage 7/8 plans were revised to the semantic contract. Because template version 1 was never published, "version 2" throughout Stage 11 refers to the reshaped version 1 (see the [semantic rollout](2-semantic-rollout.md) deviation note); the version touchpoints stay consistent at v1.
 
 Part of [Stage 11](../stage-11-semantic-contract.md). This final step verifies the atomic rollout through the live stack and updates the public explanation of the contract. Contract-dependent source changes belong in step 2; this step runs the complete system and fixes only integration or journey assumptions revealed by that verification.
 
@@ -8,7 +8,7 @@ Part of [Stage 11](../stage-11-semantic-contract.md). This final step verifies t
 
 Run the Docker-gated backend integration suite. `hearts-multi-slot.test.ts` should already expect the real timeout action from step 2. `spades-chat.test.ts` exercises the migrated examples and built-ins rather than carrying a separate observation decoder. Flappy session input remains `{kind: "input", slot: "player_0", action: 1}`.
 
-Run the Playwright Hearts, Spades, and session journeys against the version 2 image. Verify live watch, human play, replay, card and bid input, legal-choice greying, timeouts, standings, Flappy taps, and chat. Renderers should receive only semantic game objects; session actions should remain integers.
+Run the Playwright Hearts, Spades, and session journeys against the reshaped template image (kept at version 1). Verify live watch, human play, replay, card and bid input, legal-choice greying, timeouts, standings, Flappy taps, and chat. Renderers should receive only semantic game objects; session actions should remain integers.
 
 Run the complete verification matrix:
 
@@ -19,7 +19,7 @@ Run the complete verification matrix:
 - `uv run python scripts/ci.py frontend-e2e`.
 - `uv run python scripts/ci.py docs`.
 
-Complete a manual pass with a live Flappy session, a full Hearts hand including a deliberate timeout, a Spades hand through bidding and nil with chat open, replay for all three games, and a composed version 2 template agent.
+Complete a manual pass with a live Flappy session, a full Hearts hand including a deliberate timeout, a Spades hand through bidding and nil with chat open, replay for all three games, and a composed template agent (the reshaped version 1).
 
 ## Student documentation
 
@@ -37,4 +37,4 @@ Revise the Stage 7 and Stage 8 plans wherever they present old observations or s
 
 ## Done when
 
-Every automated lane and the manual pass succeed on template version 2. All three environments pass pinned PettingZoo `api_test` through the documented #1211 guard. Live play, watch, and replay use semantic renderer state and integer session actions. Student docs, contributor guides, specs, and earlier plans describe the same current contract.
+Every automated lane and the manual pass succeed on the reshaped template (kept at version 1). All three environments pass pinned PettingZoo `api_test` through the documented #1211 guard. Live play, watch, and replay use semantic renderer state and integer session actions. Student docs, contributor guides, specs, and earlier plans describe the same current contract.

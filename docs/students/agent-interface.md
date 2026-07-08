@@ -33,7 +33,16 @@ The harness calls `reset` once before the first action of each game. The environ
 
 ### `act(observation)`
 
-`act` receives the current observation and returns an action from the environment's action space. The action is always a single integer, but what the integers mean, and what the observation contains, depend on the environment. For example, Flappy Bird takes `0` to do nothing or `1` to flap, while Hearts takes an int from `0` to `51` naming the card to play. Your [environment page](environments/index.md) documents every action value and every observation field, and describes the helper module the template provides for reading them.
+`act` receives the current observation and returns an action from the environment's action space. The action is always a single integer (a Gymnasium `Discrete` space), but what the integers mean, and what the observation contains, depend on the environment. For example, Flappy Bird takes `0` to do nothing or `1` to flap, while Hearts takes an int from `0` to `51` naming the card to play.
+
+The observation is **object-shaped**: meaningful game values rather than packed arrays. A Hearts or Spades card is an object `{"suit": 0..3, "rank": 2..14}`, a hand is a list of them, and the two card games wrap that semantic state as `{"observation": {...fields...}, "action_mask": ...}`, where `action_mask` is a binary array marking the legal actions. Flappy Bird's observation is a plain object of the bird, the pipes, and the screen, with no mask because both actions are always legal.
+
+You do not decode any of this by hand. Each template ships a helper module you import at the top of `agent.py` that reads the observation and returns the integer action:
+
+- **Hearts** and **Spades** import from `sandbox.cards`: `legal_cards(observation)` lists the card objects you may play, `play(card)` turns your chosen card into the action, and Spades adds `legal_bids(observation)` and `bid(n)` for the bidding round.
+- **Flappy Bird** imports from `sandbox.features`: the actions are the named constants `FLAP` and `IDLE`, and helpers such as `player_y(observation)` name the observation's fields.
+
+Your [environment page](environments/index.md) documents every action value and every observation field, and walks through the helper module the template provides for reading them.
 
 ### `learn(...)`
 

@@ -26,20 +26,22 @@ If you have never played, the [Wikipedia article about Spades](https://en.wikipe
 
 Your template already contains a complete, working agent, the one this section builds. It runs before you change anything, and the rest of this section explains it line by line so you can see exactly how a turn is decided.
 
-On each of your turns the harness calls `act` with an observation of the table, and your job is to return one action. Spades has two kinds of turn, though: during the bidding round you return a bid, and during play you return a card. The template's helper module turns the observation into plain Python values and tells you which kind of turn you are on, so you never handle raw numbers.
+On each of your turns the harness calls `act` with an observation of the table, and your job is to return one action. Spades has two kinds of turn, though: during the bidding round you return a bid, and during play you return a card. The template's helper module turns the observation into card objects and plain Python values and tells you which kind of turn you are on, so you never handle raw numbers.
+
+A card is a small object, `{"suit": 0..3, "rank": 2..14}`, where the rank is the face value printed on the card (`11` is the jack, `12` the queen, `13` the king, `14` the ace). So the ace of spades is `{"suit": 2, "rank": 14}`.
 
 `is_bidding(observation)` returns `True` while the table is still bidding and `False` once the cards are being played, so a single `if` sends each turn down the right path.
 
-`bid_to_action(k)` turns a bid of `k` tricks into the integer that `act` must return for it. During the bidding round this agent calls `bid_to_action(1)` to promise one trick.
+`bid(n)` turns a bid of `n` tricks into the integer that `act` must return for it. During the bidding round this agent calls `bid(1)` to promise one trick.
 
-`legal_cards(observation)` gives you the list of cards you are allowed to play this turn. It already accounts for every rule, following suit and not leading a spade before spades are broken, so every card it returns is a legal move.
+`legal_cards(observation)` gives you the list of card objects you are allowed to play this turn. It already accounts for every rule, following suit and not leading a spade before spades are broken, so every card it returns is a legal move.
 
-`rank_of(card)` tells you a card's rank, from the two up to the ace, ignoring its suit. Passing it as the `key` to Python's built-in `min` picks the lowest-ranked card out of a list.
+`rank_of(card)` reads a card object's face-value rank, from the two up to the ace, ignoring its suit. Passing it as the `key` to Python's built-in `min` picks the lowest-ranked card out of a list, and `play(card)` turns the card you chose into the integer `act` returns.
 
 The strategy is two simple ideas. When bidding, always promise exactly one trick: a bid of `0` is nil, a risky promise to take no tricks at all, so `1` is the smallest safe bid a simple agent can make. When playing, always play the lowest-ranked legal card, since low cards rarely win a trick you did not plan to take. It will not win many hands, but it is legal, complete, and a base you can build on.
 
 ```python
-from sandbox.cards import bid_to_action, is_bidding, legal_cards, rank_of
+from sandbox.cards import bid, is_bidding, legal_cards, play, rank_of
 
 
 class Agent:
@@ -57,20 +59,21 @@ class Agent:
         if is_bidding(observation):
             # Promise to take one trick. A bid of 0 is nil, a risky promise to
             # take none at all, so 1 is the smallest safe bid a simple agent
-            # can make. bid_to_action turns the bid into the integer act returns.
-            return bid_to_action(1)
+            # can make. bid(n) turns the bid into the integer act returns.
+            return bid(1)
 
-        # legal_cards reads the action mask for you: every card ID in this list
-        # is a card you hold and may play right now, so the rules (follow suit,
-        # spades not led until broken) are already taken care of.
+        # legal_cards reads the action mask for you: every card object in this
+        # list is a card you hold and may play right now, so the rules (follow
+        # suit, spades not led until broken) are already taken care of.
         legal = legal_cards(observation)
 
         # TODO(you): this is the whole playing strategy. Low cards rarely win
         # tricks, but a team that never wins tricks never makes its contract,
         # and the flat bid above never looks at the hand at all. The "Your
         # first improvement" section of environment.md shows you how to find
-        # a better bid.
-        return min(legal, key=rank_of)
+        # a better bid. play() turns your chosen card object into the integer
+        # act() must return.
+        return play(min(legal, key=rank_of))
 ```
 
 This agent can never make an illegal move. During bidding every bid from `0` to `13` is always allowed, so promising one is safe; during play it only ever returns a card that came from `legal_cards`. You never have to check the rules yourself.
@@ -110,9 +113,9 @@ The lowest possible team score is minus 260 (both partners bidding 13, a contrac
 
 ## The helper module
 
-Your first agent used `sandbox.cards`, the template's plain Python helper module. Import what you need from it at the top of `agent.py`, never inside a method. It converts the raw arrays, card IDs, and bid encoding into ordinary Python values with readable names, so `act` works with bid numbers, card IDs, and lists instead of NumPy arrays.
+Your first agent used `sandbox.cards`, the template's plain Python helper module. Import what you need from it at the top of `agent.py`, never inside a method. It reads the observation for you and hands back card objects, bid numbers, lists, and plain Python values, so `act` never touches a raw NumPy array, the action mask, or the bid encoding.
 
-`is_bidding(observation)` tells you which phase the turn belongs to, `bid_to_action(k)` and `legal_cards(observation)` give you the two kinds of action, and `partner_of(my_seat(observation))` names your teammate. The [Under the hood](#under-the-hood) section below documents the raw arrays and encodings these read from, but most agents never need them.
+`is_bidding(observation)` tells you which phase the turn belongs to, `bid(n)` and `play(card)` build the two kinds of action, `legal_bids(observation)` and `legal_cards(observation)` list your legal choices, and `partner_seat(observation)` names your teammate. The [Under the hood](#under-the-hood) section below documents the raw fields and encodings these read from, but most agents never need them.
 
 The module provides these helpers and constants:
 
@@ -120,14 +123,17 @@ The module provides these helpers and constants:
 | --- | --- |
 | `is_bidding(observation)` | `True` during the bidding round, `False` during play |
 | `legal_bids(observation)` | Bids you may make now, as numbers `0..13` (empty during play) |
-| `legal_cards(observation)` | Legal card IDs for this turn (empty during bidding) |
-| `bid_to_action(k)` | The action `52 + k` for a bid of `k` tricks |
+| `legal_cards(observation)` | Legal card objects for this turn (empty during bidding) |
+| `bid(n)` | The integer action for a bid of `n` tricks (`0..13`) |
+| `play(card)` | The integer action for a card object, the value `act` returns |
 | `action_to_bid(action)` | The bid `k` a bid action `52 + k` names |
-| `hand_cards(observation)` | All card IDs in your hand |
+| `hand_cards(observation)` | Every card object in your hand |
 | `my_seat(observation)` | Your seat ID |
-| `partner_of(seat)` | Your partner's seat, `(seat + 2) % 4` |
+| `partner_seat(observation)` | Your partner's seat, read from the observation |
+| `partner_of(seat)` | A seat's partner, `(seat + 2) % 4`, when you only have a seat number |
 | `bids(observation)` | The four seats' bids indexed by seat (`-1` before a seat bids) |
 | `tricks_won(observation)` | Tricks taken so far, indexed by seat |
+| `team_scores(observation)` | The two teams' running hand scores, `[team of 0/2, team of 1/3]` |
 | `led_suit(observation)` | Led suit ID, or `None` when you are leading |
 | `spades_broken(observation)` | `True` after spades are broken, otherwise `False` |
 | `current_trick(observation)` | `(seat, card)` pairs in the current trick, in play order |
@@ -135,8 +141,8 @@ The module provides these helpers and constants:
 | `last_trick_winner(observation)` | Seat that won the last completed trick, or `None` |
 | `trick_winner_so_far(observation)` | The `(seat, card)` currently winning the trick (spades are trump), or `None` |
 | `beats_current_winner(observation, card)` | Whether playing `card` now would take the trick |
-| `suit_of(card)` / `rank_of(card)` | Suit ID `0..3` / rank ID `0..12` |
-| `make_card(suit, rank)` | Card ID built from a suit ID and rank ID |
+| `suit_of(card)` / `rank_of(card)` | A card object's suit ID `0..3` / face-value rank `2..14` |
+| `make_card(suit, rank)` | A card object `{"suit": suit, "rank": rank}` from a suit ID and face-value rank |
 | `card_name(card)` | Readable text such as `"A of spades"` |
 | `CLUBS`, `DIAMONDS`, `SPADES`, `HEARTS` | Names for suit IDs `0`, `1`, `2`, and `3` |
 | `NIL_BID`, `BID_OFFSET` | The nil bid (`0`) and the bid action offset (`52`) |
@@ -150,7 +156,7 @@ Without the helpers, a minimal agent has to read the mask by hand and know that 
 ```python
 def act(self, observation):
     mask = observation["action_mask"]
-    if observation["observation"]["phase"][0] == 0:      # bidding
+    if observation["observation"]["phase"] == 0:          # bidding
         return 52 + 1                                     # bid one trick
     legal = [card for card in range(52) if mask[card]]
     return min(legal, key=lambda card: card % 13)         # lowest legal card
@@ -162,7 +168,7 @@ Your `act` method returns one integer from a single combined action space that c
 
 #### Bids
 
-A bid of `k` tricks is the action `52 + k`, for `k` from `0` through `13`. So a bid of three tricks is action `55`, and a nil bid (`k = 0`) is action `52`. The helper `bid_to_action(k)` builds this for you, and `legal_bids(observation)` lists the bids you may make as plain numbers `0..13`.
+A bid of `k` tricks is the action `52 + k`, for `k` from `0` through `13`. So a bid of three tricks is action `55`, and a nil bid (`k = 0`) is action `52`. The helper `bid(k)` builds this for you, and `legal_bids(observation)` lists the bids you may make as plain numbers `0..13`.
 
 #### Cards
 
@@ -184,7 +190,7 @@ The encoding can also be written as `card = suit * 13 + rank`. The suit and rank
 | Suit | `0` clubs, `1` diamonds, `2` spades, `3` hearts |
 | Rank | `0` two, `1` three, through `8` ten, `9` jack, `10` queen, `11` king, `12` ace |
 
-To decode card `38`, divide by 13. The whole-number result is `2`, which means spades, and the remainder is `12`, which means ace. You usually do not need to do this arithmetic yourself because the template provides card helpers.
+To decode card `38`, divide by 13: the whole-number result `2` means spades and the remainder `12` means ace. The rank digit inside an ID runs `0`–`12`, while the card objects you read from the observation (and `rank_of`) use the printed face value `2`–`14`. You rarely need either scale: stay in card objects and let `play(card)` build the ID for you.
 
 #### The action mask
 
@@ -192,30 +198,35 @@ The action you return must have a `1` in the same position of `observation["acti
 
 ### Observations
 
-Your `act` method receives a dictionary with this structure:
+Your `act` method receives a dictionary with two keys:
 
 ```text
 observation
 ├── "action_mask"    66 entries that say which actions are legal
-└── "observation"    your hand, the bids, the trick, and the scores
+└── "observation"    an object with your hand, the bids, the tricks, and the scores
 ```
 
-The values are NumPy arrays. An array's **length** is the number of values it contains. A field with length 1 is still an array, so you read its single value with index `[0]`.
+The top-level `action_mask` is a length-66 NumPy array indexed by action: entries `0..51` are cards, `52..65` are bids (`52 + k`), and a `1` marks a legal action. It is the one place indices survive, and `legal_cards` and `legal_bids` read it for you.
 
-| Field | Array length | Values and meaning |
+Everything else lives under the `"observation"` key, and it is **semantic**: your hand and the tricks are sequences of card objects `{"suit", "rank"}`, and the rest are plain categories. A few fields carry a raw "none yet" code — `14` for a seat that has not bid, `4` for no led suit or no completed trick — and the matching helper translates it to `None` or `-1` for you.
+
+| Field | Shape | Values and meaning |
 | --- | --- | --- |
-| `action_mask` | 66 | Indexed by action. `1` means the action is legal now. Entries `0..51` are cards, `52..65` are bids (`52 + k`). |
-| `hand` | 52 | Indexed by card ID. `1` means the card is in your hand; `0` means it is not. |
-| `phase` | 1 | `0` during the bidding round, `1` during play. |
-| `bids` | 4 | Indexed by seat. Each seat's bid (`0..13`, where `0` is nil), or `-1` if that seat has not bid yet. |
-| `trick` | 4 | Indexed by seat. The card ID that seat played in the current trick, or `-1` if it has not played yet. |
-| `last_trick` | 4 | Indexed by seat. The card each seat played in the most recently completed trick, or `-1` before any trick completes. Lets you still see a trick after it is swept away. |
-| `last_trick_winner` | 1 | The seat that won the most recently completed trick, or `-1` before any completes. |
-| `led_suit` | 1 | `0` clubs, `1` diamonds, `2` spades, or `3` hearts. `-1` means no card has been led because you are starting the trick. |
-| `spades_broken` | 1 | `0` means no spade has been played on an earlier trick; `1` means spades have been broken. |
-| `position` | 1 | Your seat ID, from `0` through `3`. |
-| `trick_leader` | 1 | The seat that led the current trick, from `0` through `3`. |
-| `tricks_won` | 4 | Tricks taken so far, indexed by seat. |
+| `hand` | sequence of cards | The card objects you are holding, in the order dealt. |
+| `phase` | `0` or `1` | `0` during the bidding round, `1` during play. `is_bidding` reads this. |
+| `bids` | 4 categories | Each seat's bid indexed by seat (`0..13`, where `0` is nil); `14` marks a seat that has not bid yet. |
+| `team_scores` | length-2 array | The two teams' running hand scores: `[team of seats 0/2, team of seats 1/3]`. |
+| `current_trick` | sequence of `{seat, card}` | The cards played to the current trick so far, in play order (the leader first). Empty when you are leading a fresh trick. |
+| `last_trick` | sequence of `{seat, card}` | The most recently completed trick, in play order, so a seat that already played still sees it after it is swept away. Empty until the first trick of the hand completes. |
+| `last_trick_winner` | `0..4` | The seat that won the most recently completed trick; `4` means none has completed yet. |
+| `led_suit` | `0..4` | `0` clubs, `1` diamonds, `2` spades, `3` hearts; `4` means no card has been led because you are starting the trick. |
+| `spades_broken` | `0` or `1` | `0` means no spade has been played on an earlier trick; `1` means spades have been broken. |
+| `seat` | `0..3` | Your own seat ID. |
+| `partner_seat` | `0..3` | Your partner's seat, `(seat + 2) % 4`, already computed for you. |
+| `trick_leader` | `0..3` | The seat that led the current trick. |
+| `tricks_won` | length-4 array | Tricks taken so far, indexed by seat. |
+
+Read these through `observation["observation"]`, or let the helpers do it: `hand_cards`, `bids`, `team_scores`, `current_trick`, `last_trick`, `my_seat`, `partner_seat`, and the rest each return one of these fields as plain Python values.
 
 #### How seat numbers and partnerships work
 
@@ -225,11 +236,11 @@ Seat IDs are player labels, not fixed locations on the screen. Seat `0` controls
 0 → 1 → 2 → 3 → 0
 ```
 
-**Partnerships are fixed by seat.** Seats `0` and `2` are one team; seats `1` and `3` are the other. Your partner is always the seat directly across the table, `(your seat + 2) % 4`, which the helper `partner_of` computes. Because a set nil's tricks still count toward the partnership, and because your team's contract combines both bids, you always read the game as two teams, not four players.
+**Partnerships are fixed by seat.** Seats `0` and `2` are one team; seats `1` and `3` are the other. Your partner is always the seat directly across the table, `(your seat + 2) % 4`, which the observation gives you directly as `partner_seat`. Because a set nil's tricks still count toward the partnership, and because your team's contract combines both bids, you always read the game as two teams, not four players.
 
 The viewer rotates the table so that the player being viewed is at the bottom, with their partner at the top and the two opponents left and right. Therefore seat `0` is not always the bottom, top, left, or right seat.
 
-Suppose `position` is `[2]`. Your agent controls seat 2, so your partner is seat 0 and your opponents are seats 1 and 3. If `bids` is `[3, 0, 4, 5]`, then seat 0 bid 3, seat 1 bid nil, your seat 2 bid 4, and seat 3 bid 5. Your team's contract is `3 + 4 = 7`. The `trick` array also uses absolute seat IDs; use `trick_leader` to know which of the played cards came first.
+Suppose `seat` is `2`. Your agent controls seat 2, so your `partner_seat` is 0 and your opponents are seats 1 and 3. If `bids` is `[3, 0, 4, 5]`, then seat 0 bid 3, seat 1 bid nil, your seat 2 bid 4, and seat 3 bid 5. Your team's contract is `3 + 4 = 7`. `current_trick` carries absolute seat IDs too; because it is already in play order, its first entry is the seat named by `trick_leader`.
 
 ## Time limits
 
