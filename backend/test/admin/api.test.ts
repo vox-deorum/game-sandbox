@@ -76,7 +76,7 @@ describe('admin API', () => {
     STRANGER = await users.headersFor('carol', { status: 'normal' })
     const config = makeConfig({ recordingsDir: dir })
     const environments = makeEnvironments()
-    orchestrator = new Orchestrator(new FakeDriver(), storage, environments, config)
+    orchestrator = new Orchestrator({ driver: new FakeDriver(), storage, environments, config })
     const recordings = new RecordingsStore(dir)
     runner = new StubWorkflowRunner(storage)
     // A snapshot store the tests can pre-seed, so the download routes have real archives to serve.

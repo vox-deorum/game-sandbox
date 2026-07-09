@@ -16,6 +16,7 @@ import type { Config } from '../config.js'
 import { currentSessionBaseImageSpec } from '../deps-version.js'
 import type { ExecutionDriver, ImageRef, SandboxProfile } from '../driver/index.js'
 import type { EnvironmentMeta, EnvironmentRegistry } from '../environments.js'
+import { optionalField } from '../optional-field.js'
 import { decodeSeasonConfig, type Storage, type Submission } from '../storage/index.js'
 import type { Season, Session, SessionMode } from '../storage/schema.js'
 import type { SubmissionSnapshotStore } from '../submission/snapshot-store.js'
@@ -108,38 +109,65 @@ export class OrchestratorError extends Error {
   }
 }
 
+/**
+ * Everything the {@link Orchestrator} depends on. An options object rather than a positional list so a
+ * new dependency is a named field a call site must acknowledge, not a trailing argument a caller can
+ * silently omit (which would compile clean and quietly degrade, e.g. recordings losing their display
+ * names). The four required seams come first; the rest are optional with sensible defaults.
+ */
+export interface OrchestratorDeps {
+  driver: ExecutionDriver
+  storage: Storage
+  environments: EnvironmentRegistry
+  config: Config
+  log?: (message: string) => void
+  /**
+   * Called after a session finalizes and its recording row is written, so retention can sweep the
+   * just-grown data. Defaults to a no-op for tests that do not exercise retention; main wires it to the
+   * retention sweep.
+   */
+  onSessionFinalized?: (id: string) => void
+  /**
+   * The submission-source seam, the fallback to refetch a pre-snapshot submission when rebuilding its
+   * overlay. Optional: a deployment or test that never runs a submitted-agent watch session can omit it
+   * (together with the snapshot store), and a `submissionId` run then fails cleanly.
+   */
+  submissionSource?: SubmissionSource
+  /**
+   * The snapshot store an evicted overlay is rebuilt from. Paired with {@link OrchestratorDeps.submissionSource}:
+   * both are present for a deployment that runs submitted agents, both omitted otherwise.
+   */
+  submissionSnapshots?: SubmissionSnapshotStore
+  /**
+   * The display-name directory the recording-header attribution snapshots names through at launch.
+   * Optional: without it (or for an id with no row) every label falls back to the stable id.
+   */
+  userDirectory?: UserDirectory
+}
+
 export class Orchestrator {
   private readonly registry = new SessionRegistry()
+  private readonly driver: ExecutionDriver
+  private readonly storage: Storage
+  private readonly environments: EnvironmentRegistry
+  private readonly config: Config
+  private readonly log: (message: string) => void
+  private readonly onSessionFinalized: (id: string) => void
+  private readonly submissionSource?: SubmissionSource
+  private readonly submissionSnapshots?: SubmissionSnapshotStore
+  private readonly userDirectory?: UserDirectory
 
-  constructor(
-    private readonly driver: ExecutionDriver,
-    private readonly storage: Storage,
-    private readonly environments: EnvironmentRegistry,
-    private readonly config: Config,
-    private readonly log: (message: string) => void = () => {},
-    /**
-     * Called after a session finalizes and its recording row is written, so retention can sweep the
-     * just-grown data. Defaults to a no-op for tests that do not exercise retention; main wires it
-     * to the retention sweep.
-     */
-    private readonly onSessionFinalized: (id: string) => void = () => {},
-    /**
-     * The submission-source seam, the fallback to refetch a pre-snapshot submission when rebuilding its
-     * overlay. Optional: a deployment or test that never runs a submitted-agent watch session can omit
-     * it (together with the snapshot store), and a `submissionId` run then fails cleanly.
-     */
-    private readonly submissionSource?: SubmissionSource,
-    /**
-     * The snapshot store an evicted overlay is rebuilt from. Paired with {@link submissionSource}:
-     * both are present for a deployment that runs submitted agents, both omitted otherwise.
-     */
-    private readonly submissionSnapshots?: SubmissionSnapshotStore,
-    /**
-     * The display-name directory the recording-header attribution snapshots names through at launch.
-     * Optional: without it (or for an id with no row) every label falls back to the stable id.
-     */
-    private readonly userDirectory?: UserDirectory,
-  ) {}
+  constructor(deps: OrchestratorDeps) {
+    this.driver = deps.driver
+    this.storage = deps.storage
+    this.environments = deps.environments
+    this.config = deps.config
+    this.log = deps.log ?? (() => {})
+    this.onSessionFinalized = deps.onSessionFinalized ?? (() => {})
+    this.submissionSource = deps.submissionSource
+    this.submissionSnapshots = deps.submissionSnapshots
+    this.userDirectory = deps.userDirectory
+  }
 
   /**
    * Start a session from an explicit per-slot `slots` assignment. Validate the shape authoritatively
@@ -516,36 +544,29 @@ export class Orchestrator {
     humanTimeoutMs: number | null,
     recordingId: string,
     resolvedSlots: ResolvedSlot[],
-    ownerLogin: string,
+    ownerUserId: string,
     overrides: ReturnType<typeof decodeSeasonConfig>['overrides'],
     messaging: { enabled: boolean; cap: number | null },
   ): Promise<Record<string, unknown>> {
     // Snapshot display names for the recording header at launch time: the human seat's user and every
-    // submission owner, one batched lookup. Without a directory (or a row) labels fall back to ids.
-    const names =
-      (await this.userDirectory?.namesFor([
-        ownerLogin,
-        ...resolvedSlots.flatMap((slot) =>
-          slot.kind === 'submission' ? [slot.submission.user_id] : [],
-        ),
-      ])) ?? new Map<string, string>()
+    // submission owner, one batched lookup. Names are cosmetic — the label falls back to the stable id —
+    // so a directory failure must never abort a launch (the row is already inserted); degrade to ids.
+    const names = await this.snapshotNames(ownerUserId, resolvedSlots)
     const seats = new Map<string, SeatBinding>()
     for (const slot of resolvedSlots) {
       if (slot.kind === 'human') {
-        const displayName = names.get(ownerLogin)
         seats.set(slot.slotId, {
           driver: 'human',
-          login: ownerLogin,
-          ...(displayName === undefined ? {} : { displayName }),
+          userId: ownerUserId,
+          ...optionalField('displayName', names.get(ownerUserId)),
         })
       } else if (slot.kind === 'submission') {
-        const ownerName = names.get(slot.submission.user_id)
         seats.set(slot.slotId, {
           driver: 'submission',
           submissionId: slot.submission.id,
           userId: slot.submission.user_id,
           path: submissionSlotPath(slot.slotId),
-          ...(ownerName === undefined ? {} : { ownerName }),
+          ...optionalField('ownerName', names.get(slot.submission.user_id)),
         })
       } else {
         seats.set(slot.slotId, { driver: 'naive' })
@@ -566,12 +587,36 @@ export class Orchestrator {
       message_cap: messaging.cap,
       // The owner decision: the play-open season's overrides now reach live sessions too, exactly as
       // the workflow runner already spreads them into scheduled games.
-      ...(overrides?.step_timeout_ms !== undefined
-        ? { step_timeout_ms: overrides.step_timeout_ms }
-        : {}),
-      ...(overrides?.episode_timeout_ms !== undefined
-        ? { episode_timeout_ms: overrides.episode_timeout_ms }
-        : {}),
+      ...optionalField('step_timeout_ms', overrides?.step_timeout_ms),
+      ...optionalField('episode_timeout_ms', overrides?.episode_timeout_ms),
+    }
+  }
+
+  /**
+   * Batch the display names for the recording header (the human owner and every submission owner) at
+   * launch. A missing directory, or a lookup that throws, degrades to no names: the header labels then
+   * fall back to the stable ids rather than failing a launch whose session row is already inserted.
+   */
+  private async snapshotNames(
+    ownerUserId: string,
+    resolvedSlots: ResolvedSlot[],
+  ): Promise<Map<string, string>> {
+    if (this.userDirectory === undefined) {
+      return new Map()
+    }
+    const ids = [
+      ownerUserId,
+      ...resolvedSlots.flatMap((slot) =>
+        slot.kind === 'submission' ? [slot.submission.user_id] : [],
+      ),
+    ]
+    try {
+      return await this.userDirectory.namesFor(ids)
+    } catch (error) {
+      this.log(
+        `orchestrator: resolving display names failed, falling back to ids: ${String(error)}`,
+      )
+      return new Map()
     }
   }
 }

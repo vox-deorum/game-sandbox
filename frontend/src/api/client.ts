@@ -11,6 +11,7 @@
  */
 
 import type { RecordingHeader } from '@game-sandbox/schema'
+import type { BoardAgentRef } from '@game-sandbox/schema/board'
 import { type EnvironmentMeta, isEnvironmentMeta } from '@game-sandbox/schema/environment'
 
 const API_BASE = '/api'
@@ -676,16 +677,9 @@ export async function setAuthorPrompt(
  * An agent identity as the boards, placements, and scheduled slots carry it. Unlike {@link AgentRefWire}
  * (the rating write shape, which omits `user_id` for the backend to resolve), a board row carries the
  * `user_id` so the UI can link a submitted-agent row to its profile. The Naive baseline has no owner.
+ * The shape is shared with the backend enrichment through the schema package, so both wire ends agree.
  */
-export type BoardAgentRef =
-  | {
-      kind: 'submission'
-      submission_id: string
-      user_id: string
-      /** The owner's display name, when the directory has one; absent falls back to `user_id`. */
-      user_name?: string
-    }
-  | { kind: 'builtin-naive' }
+export type { BoardAgentRef }
 
 /** A public gate's two-valued state, mirrored from the backend's `WindowStatus`. */
 export type WindowStatus = 'open' | 'closed'

@@ -146,17 +146,15 @@ describe('orchestrator', () => {
       source === undefined
         ? undefined
         : new SubmissionSnapshotStore(join(recordingsDir, 'submissions'))
-    return new Orchestrator(
+    return new Orchestrator({
       driver,
       storage,
-      makeEnvironments(),
+      environments: makeEnvironments(),
       config,
-      undefined,
-      undefined,
-      source,
-      snapshots,
+      submissionSource: source,
+      submissionSnapshots: snapshots,
       userDirectory,
-    )
+    })
   }
 
   async function start(

@@ -165,7 +165,12 @@ describe('docs HTTP routes', () => {
 
   async function buildDocsApp(docsIndexFile?: string): Promise<FastifyInstance> {
     const config = makeConfig({ docsDir })
-    orchestrator = new Orchestrator(new FakeDriver(), storage, makeEnvironments(), config)
+    orchestrator = new Orchestrator({
+      driver: new FakeDriver(),
+      storage,
+      environments: makeEnvironments(),
+      config,
+    })
     const recordings = new RecordingsStore(dataDir)
     return buildApp({
       orchestrator,

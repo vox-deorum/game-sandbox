@@ -38,7 +38,12 @@ describe('HTTP API', () => {
     // routes are exercised against a normal play-open environment.
     await storage.ensureOpenSeason('flappy_bird', 1)
     const config = makeConfig({ recordingsDir: dir })
-    orchestrator = new Orchestrator(new FakeDriver(), storage, makeEnvironments(), config)
+    orchestrator = new Orchestrator({
+      driver: new FakeDriver(),
+      storage,
+      environments: makeEnvironments(),
+      config,
+    })
     const recordings = new RecordingsStore(dir)
     app = await buildApp({
       orchestrator,
@@ -417,6 +422,136 @@ describe('HTTP API', () => {
       const res = await app.inject({ method: 'POST', url: '/api/recordings/flappy_bird-1/pin' })
       expect(res.statusCode).toBe(401)
       expect(res.json()).toMatchObject({ code: 'auth_required' })
+    })
+  })
+
+  describe('blind recording masking', () => {
+    const REC_ID = 'flappy_bird-blind'
+
+    type PlayerEntry = { kind: string; label: string; user?: string; submission_id?: string }
+    type BlindRow = {
+      id: string
+      user_id: string | null
+      user_name?: string
+      header: { players?: Record<string, PlayerEntry> }
+    }
+
+    // A play-open recording seating a submitted agent — the state blind rating protects. The recording
+    // is owned by the watcher (bob), the submitted seat by alice; the producing session carries the
+    // season id retention joins onto the recording so its blind state can be resolved.
+    async function seedBlindRecording(): Promise<{ ownerId: string; seatOwnerId: string }> {
+      const season = await storage.ensureOpenSeason('flappy_bird', 1)
+      await storage.setPlayStatus(season.id, 'open')
+      const seatOwnerId = users.idOf('alice')
+      const ownerId = users.idOf('bob')
+      const header = {
+        schema_version: 1,
+        environment: 'flappy_bird',
+        seed: 0,
+        players: {
+          player_0: {
+            kind: 'agent',
+            label: "alice's agent",
+            user: seatOwnerId,
+            submission_id: 'sub-a',
+          },
+        },
+      }
+      await mkdir(join(dir, REC_ID), { recursive: true })
+      await writeFile(
+        join(dir, REC_ID, 'recording.jsonl'),
+        `${JSON.stringify(header)}\n{"tick":0}\n`,
+        'utf-8',
+      )
+      await storage.createSession({
+        id: `producing-${REC_ID}`,
+        user_id: ownerId,
+        env_id: 'flappy_bird',
+        mode: 'scripted',
+        recording_id: REC_ID,
+        season_id: season.id,
+        created_at: new Date().toISOString(),
+      })
+      await storage.createRecording({
+        id: REC_ID,
+        user_id: ownerId,
+        env_id: 'flappy_bird',
+        created_at: new Date().toISOString(),
+      })
+      return { ownerId, seatOwnerId }
+    }
+
+    async function listAs(headers?: Record<string, string>): Promise<BlindRow | undefined> {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/recordings',
+        ...(headers ? { headers } : {}),
+      })
+      return (res.json() as BlindRow[]).find((row) => row.id === REC_ID)
+    }
+
+    it('masks the header attribution and owner fields for an anonymous viewer', async () => {
+      await users.headersFor('bob')
+      await seedBlindRecording()
+      const row = await listAs()
+      expect(row?.user_id).toBeNull()
+      expect(row).not.toHaveProperty('user_name')
+      expect(row?.header.players?.player_0).toEqual({
+        kind: 'agent',
+        label: 'Submitted agent',
+        submission_id: 'sub-a',
+      })
+    })
+
+    it('leaves attribution and owner fields intact for an operator', async () => {
+      await users.headersFor('bob')
+      const op = await users.headersFor('op', { status: 'admin' })
+      const { ownerId, seatOwnerId } = await seedBlindRecording()
+      const row = await listAs(op)
+      expect(row?.user_id).toBe(ownerId)
+      expect(row?.user_name).toBe('bob')
+      expect(row?.header.players?.player_0).toMatchObject({
+        label: "alice's agent",
+        user: seatOwnerId,
+        submission_id: 'sub-a',
+      })
+    })
+
+    it('keeps the owner id for the recording owner (to pin) but still masks the other seat and the name', async () => {
+      const bob = await users.headersFor('bob')
+      const { ownerId } = await seedBlindRecording()
+      const row = await listAs(bob)
+      expect(row?.user_id).toBe(ownerId)
+      expect(row).not.toHaveProperty('user_name')
+      expect(row?.header.players?.player_0?.label).toBe('Submitted agent')
+    })
+
+    it('rewrites only the stream header for an anonymous viewer, and not for an operator', async () => {
+      await users.headersFor('bob')
+      const op = await users.headersFor('op', { status: 'admin' })
+      await seedBlindRecording()
+
+      const anon = await app.inject({ method: 'GET', url: `/api/recordings/${REC_ID}` })
+      const anonLines = anon.body.split('\n')
+      expect(
+        (JSON.parse(anonLines[0] ?? '{}') as { players: Record<string, PlayerEntry> }).players
+          .player_0,
+      ).toEqual({ kind: 'agent', label: 'Submitted agent', submission_id: 'sub-a' })
+      // The state line rides through untouched.
+      expect(anonLines[1]).toBe('{"tick":0}')
+
+      const operator = await app.inject({
+        method: 'GET',
+        url: `/api/recordings/${REC_ID}`,
+        headers: op,
+      })
+      const opFirst = JSON.parse(operator.body.split('\n')[0] ?? '{}') as {
+        players: Record<string, PlayerEntry>
+      }
+      expect(opFirst.players.player_0).toMatchObject({
+        label: "alice's agent",
+        submission_id: 'sub-a',
+      })
     })
   })
 })

@@ -89,19 +89,18 @@ export async function startStack(overrides: Partial<Config> = {}): Promise<Stack
   // Wire the submission source, snapshot store, and user directory into the orchestrator, as
   // main.ts does, so a submitted-agent (and multi-agent) session can resolve its overlay/composed
   // image and its recording-header attribution can resolve owner display names.
-  const orchestrator = new Orchestrator(
+  const orchestrator = new Orchestrator({
     driver,
     storage,
     environments,
     config,
-    () => {},
-    () => {
+    onSessionFinalized: () => {
       void retention.sweep()
     },
     submissionSource,
-    snapshots,
+    submissionSnapshots: snapshots,
     userDirectory,
-  )
+  })
   const validationWorker = new ValidationWorker({
     driver,
     storage,

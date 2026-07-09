@@ -40,7 +40,7 @@ describe('public leaderboard API', () => {
     users = stack.users
     const config = makeConfig({ recordingsDir: dir })
     const environments = makeEnvironments()
-    orchestrator = new Orchestrator(new FakeDriver(), storage, environments, config)
+    orchestrator = new Orchestrator({ driver: new FakeDriver(), storage, environments, config })
     const recordings = new RecordingsStore(dir)
     app = await buildApp({
       orchestrator,

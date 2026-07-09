@@ -41,7 +41,12 @@ describe('serving the built frontend', () => {
     const stack = await openTestStack()
     storage = stack.storage
     const config = makeConfig({ recordingsDir: dataDir })
-    orchestrator = new Orchestrator(new FakeDriver(), storage, makeEnvironments(), config)
+    orchestrator = new Orchestrator({
+      driver: new FakeDriver(),
+      storage,
+      environments: makeEnvironments(),
+      config,
+    })
     const recordings = new RecordingsStore(dataDir)
     app = await buildApp({
       orchestrator,

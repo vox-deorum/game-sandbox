@@ -9,6 +9,7 @@
  * prepared statement rather than folding the table into the Kysely schema — `kysely` imports are
  * denied in `auth/` by the module boundary, while the raw handle's package is allowed here.
  */
+import type { BoardAgentRef } from '@game-sandbox/schema/board'
 import type BetterSqlite3 from 'better-sqlite3'
 
 import type { AgentRef } from '../storage/schema.js'
@@ -32,16 +33,28 @@ interface UserNameRow {
  * engine (or a remote roster) can slot in, even though better-sqlite3 itself is synchronous.
  */
 export function createUserDirectory(sqlite: BetterSqlite3.Database): UserDirectory {
+  // Prepared statements keyed by placeholder count, so the read hot path (every public session,
+  // recordings, and leaderboard response resolves at least one name) compiles each IN(...) shape once.
+  // Callers overwhelmingly pass a single id, so this is usually one cached statement for the life of
+  // the process.
+  const statements = new Map<number, BetterSqlite3.Statement>()
+  const statementFor = (count: number): BetterSqlite3.Statement => {
+    const cached = statements.get(count)
+    if (cached !== undefined) {
+      return cached
+    }
+    const placeholders = Array.from({ length: count }, () => '?').join(', ')
+    const statement = sqlite.prepare(`SELECT id, name FROM "user" WHERE id IN (${placeholders})`)
+    statements.set(count, statement)
+    return statement
+  }
   return {
     namesFor(ids: readonly string[]): Promise<Map<string, string>> {
       const names = new Map<string, string>()
       const unique = [...new Set(ids)]
       for (let offset = 0; offset < unique.length; offset += CHUNK_SIZE) {
         const chunk = unique.slice(offset, offset + CHUNK_SIZE)
-        const placeholders = chunk.map(() => '?').join(', ')
-        const rows = sqlite
-          .prepare(`SELECT id, name FROM "user" WHERE id IN (${placeholders})`)
-          .all(...chunk) as UserNameRow[]
+        const rows = statementFor(chunk.length).all(...chunk) as UserNameRow[]
         for (const row of rows) {
           // A blank name is treated as missing, so callers fall back to the stable id.
           if (row.name !== null && row.name !== '') {
@@ -54,19 +67,8 @@ export function createUserDirectory(sqlite: BetterSqlite3.Database): UserDirecto
   }
 }
 
-/**
- * An {@link AgentRef} as responses carry it: the submission variant optionally enriched with the
- * owner's display name beside the stable `user_id`. Response-side only — the stored type is untouched.
- */
-export type EnrichedAgentRef =
-  | { kind: 'submission'; submission_id: string; user_id: string; user_name?: string }
-  | { kind: 'builtin-naive' }
-
 /** Attach the owner's display name to a submission ref when the directory resolved one. */
-export function enrichAgentRef(
-  ref: AgentRef,
-  names: ReadonlyMap<string, string>,
-): EnrichedAgentRef {
+export function enrichAgentRef(ref: AgentRef, names: ReadonlyMap<string, string>): BoardAgentRef {
   if (ref.kind !== 'submission') {
     return ref
   }

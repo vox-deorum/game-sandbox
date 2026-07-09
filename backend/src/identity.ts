@@ -10,12 +10,14 @@
  * revokes a banned user's sessions and blocks their sign-in, so a banned user never carries a live
  * session; {@link RequestIdentity.resolveUser} treats one as anonymous purely as defense in depth.
  */
+import { deriveStatus, type UserStatus } from '@game-sandbox/schema/accounts'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 
 import type { Auth } from './auth/auth.js'
 
-/** The three request-time statuses. `banned` is not one: a banned user has no live session. */
-export type UserStatus = 'pending' | 'normal' | 'admin'
+// The role->status derivation is shared with the frontend roster; re-export it here so backend callers
+// (and the identity unit test) keep resolving it through the identity seam.
+export { deriveStatus, type UserStatus }
 
 /** The resolved acting user: the session user plus its derived {@link UserStatus}. */
 export interface AuthUser {
@@ -24,28 +26,6 @@ export interface AuthUser {
   email: string
   image: string | null
   status: UserStatus
-}
-
-/**
- * Derive the request-time status from Better Auth's raw `role`, which may hold a comma-separated list
- * (the admin plugin comma-splits the same string for its own permission checks). Precedence: any
- * `admin` token wins, else any `user` token is `normal`, else `pending`. An empty token, an unknown
- * value, and a missing role all fall through to `pending`, which fails the active and admin guards
- * closed. A supported operation only ever writes a single scalar role, so composite values arise only
- * from direct database tampering, and even then resolve deterministically.
- */
-export function deriveStatus(role: string | null | undefined): UserStatus {
-  if (role === null || role === undefined) {
-    return 'pending'
-  }
-  const tokens = role.split(',').map((token) => token.trim())
-  if (tokens.includes('admin')) {
-    return 'admin'
-  }
-  if (tokens.includes('user')) {
-    return 'normal'
-  }
-  return 'pending'
 }
 
 /**

@@ -79,16 +79,21 @@ export function attributionLabel(
   if (player === undefined) {
     return formatSlot(slot)
   }
-  if (player.kind === 'human') {
-    // Blind hides a human seat's identity too, not just the display name: public leaderboard payloads
-    // already pair a submitted agent's user_id with its user_name, so an opaque id here would be
-    // trivially reversible to a name. This is deliberately stricter than showing the bare id.
-    return isBlindMasked(player, ctx) ? 'Human' : (player.label ?? player.user)
+  // A viewer's own submitted agent is never hidden (so isBlindMasked is false for it) but is relabeled
+  // "Your agent" while blind, so they can still find themselves. This self-identification is the one
+  // label decision that sits outside the hide policy.
+  if (ctx.blind === true && player.kind === 'agent' && isOwnRow(player, ctx)) {
+    return 'Your agent'
   }
-  if (ctx.blind && player.submission_id !== undefined) {
-    return isOwnRow(player, ctx)
-      ? 'Your agent'
-      : blindAgentLabel(player.submission_id, ctx.anonymousNumbers)
+  // Every other "hide this identity?" case goes through isBlindMasked, the single owner of the blind
+  // policy, rather than re-deriving it here. Blind hides a human seat's identity too, not just the
+  // display name: public payloads already pair a submitted agent's user_id with its user_name, so an
+  // opaque id would be trivially reversible to a name.
+  if (isBlindMasked(player, ctx)) {
+    // isBlindMasked is true for an agent only when it carries a submission_id, so the fallback is inert.
+    return player.kind === 'human'
+      ? 'Human'
+      : blindAgentLabel(player.submission_id ?? '', ctx.anonymousNumbers)
   }
-  return player.label
+  return player.kind === 'human' ? (player.label ?? player.user) : player.label
 }

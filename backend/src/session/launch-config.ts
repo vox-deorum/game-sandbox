@@ -39,7 +39,7 @@ export interface SlotConfig {
  * directory; `player.user` always keeps the stable id, and a missing name falls back to it.
  */
 export type SeatBinding =
-  | { driver: 'human'; login: string; displayName?: string }
+  | { driver: 'human'; userId: string; displayName?: string }
   | { driver: 'naive' }
   | { driver: 'submission'; submissionId: string; userId: string; path: string; ownerName?: string }
 
@@ -64,7 +64,11 @@ export function assembleSeats(seats: ReadonlyMap<string, SeatBinding>): Assemble
     switch (seat.driver) {
       case 'human':
         slots[slotId] = { kind: 'external' }
-        players[slotId] = { kind: 'human', label: seat.displayName ?? seat.login, user: seat.login }
+        players[slotId] = {
+          kind: 'human',
+          label: seat.displayName ?? seat.userId,
+          user: seat.userId,
+        }
         break
       case 'naive':
         slots[slotId] = { kind: 'builtin-agent' }

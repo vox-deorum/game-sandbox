@@ -7,8 +7,12 @@ import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
 /** The plus-minus sign (U+00B1), the single glyph joining a mean to its spread in board cells. */
 export const PLUS_MINUS = '±'
 
-/** A medium date plus short time in the viewer's locale, or null for a missing value. */
-export function formatDate(value: string | null | undefined): string | null {
+/**
+ * A medium date plus short time in the viewer's locale, or null for a missing value. Accepts either an
+ * ISO string (the backend wire shape) or a `Date` (e.g. Better Auth's already-revived `createdAt`), so
+ * callers pass what they have rather than round-tripping a `Date` back through `String()`.
+ */
+export function formatDate(value: string | Date | null | undefined): string | null {
   if (value === null || value === undefined) {
     return null
   }

@@ -60,7 +60,12 @@ describe('submission API', () => {
     storage = stack.storage
     users = stack.users
     const config = makeConfig({ recordingsDir: dir })
-    orchestrator = new Orchestrator(new FakeDriver(), storage, makeEnvironments(), config)
+    orchestrator = new Orchestrator({
+      driver: new FakeDriver(),
+      storage,
+      environments: makeEnvironments(),
+      config,
+    })
     const recordings = new RecordingsStore(dir)
     enqueued = []
     source = new StubSource()
@@ -708,6 +713,20 @@ describe('submission API', () => {
       await build()
       await users.headersFor('alice')
       const aliceId = users.idOf('alice')
+      // The name resolves only for an owner who actually has a submission here (see the oracle test
+      // below), so give alice one first.
+      const season = await storage.ensureOpenSeason(ENV_ID, 1)
+      await storage.createSubmission({
+        season_id: season.id,
+        env_id: ENV_ID,
+        user_id: aliceId,
+        source_kind: 'git',
+        repo_url: 'https://example.test/alice',
+        commit_sha: null,
+        local_path: null,
+        ref: null,
+        created_at: new Date().toISOString(),
+      })
 
       const res = await app.inject({
         method: 'GET',
@@ -715,6 +734,22 @@ describe('submission API', () => {
       })
       expect(res.statusCode).toBe(200)
       expect(res.json()).toMatchObject({ owner_id: aliceId, owner_name: 'alice' })
+    })
+
+    it('omits owner_name for a real account with no submission here, so it is not an id-to-name oracle', async () => {
+      await build()
+      // alice is a real user with a display name, but has submitted nothing in this environment. An
+      // open, unauthenticated profile route must not resolve her name from a bare id alone.
+      await users.headersFor('alice')
+      const aliceId = users.idOf('alice')
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/environments/${ENV_ID}/agents/${aliceId}`,
+      })
+      expect(res.statusCode).toBe(200)
+      expect(res.json()).toMatchObject({ owner_id: aliceId, submissions: [] })
+      expect(res.json()).not.toHaveProperty('owner_name')
     })
   })
 })

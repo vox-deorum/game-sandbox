@@ -66,12 +66,12 @@ async function setupAuthApp(): Promise<AuthAppFixture> {
   const { auth, users } = await makeTestAuth(handle.sqlite)
   const config = makeConfig({ recordingsDir: dir })
   const recordings = new RecordingsStore(dir)
-  const orchestrator = new Orchestrator(
-    new FakeDriver(),
-    handle.storage,
-    makeEnvironments(),
+  const orchestrator = new Orchestrator({
+    driver: new FakeDriver(),
+    storage: handle.storage,
+    environments: makeEnvironments(),
     config,
-  )
+  })
   const app = await buildApp({
     orchestrator,
     environments: makeEnvironments(),

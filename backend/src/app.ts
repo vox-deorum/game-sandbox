@@ -11,6 +11,7 @@ import { existsSync } from 'node:fs'
 
 import fastifyStatic from '@fastify/static'
 import websocket from '@fastify/websocket'
+import type { RecordingHeader } from '@game-sandbox/schema'
 import Fastify, { type FastifyInstance } from 'fastify'
 
 import { registerAdminRoutes } from './admin/routes.js'
@@ -22,8 +23,10 @@ import { buildDocsManifest, DocsIndexError, readDocsIndex, readDocsPage } from '
 import type { EnvironmentRegistry } from './environments.js'
 import { createRequestIdentity } from './identity.js'
 import { registerLeaderboardRoutes } from './leaderboards/routes.js'
+import { optionalField } from './optional-field.js'
 import { registerRatingRoutes } from './ratings/routes.js'
 import type { RecordingsStore } from './recordings.js'
+import { isBlindRecording, maskPlayers, replaceHeaderLine } from './recordings-view.js'
 import type { Retention } from './retention.js'
 import type { ClientSocket } from './session/live-session.js'
 import {
@@ -324,8 +327,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     }
     // The owner's display name beside the stable id, resolved at read time (omitted when unknown).
     const names = await deps.userDirectory.namesFor([session.user_id])
-    const name = names.get(session.user_id)
-    return { ...session, ...(name === undefined ? {} : { user_name: name }) }
+    return { ...session, ...optionalField('user_name', names.get(session.user_id)) }
   })
 
   app.delete<{ Params: { id: string } }>('/api/sessions/:id', async (request, reply) => {
@@ -343,16 +345,47 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   // The merged listing: each readable recording's header plus its retention metadata (owner, age,
   // pin state), optionally narrowed to one environment with `?env=`. Open to everyone (read-only).
-  // The owner display names are attached here at the route boundary — one batched lookup over the
-  // whole listing — so retention itself stays directory-free.
+  // Owner display names are attached here at the route boundary — one batched lookup over the whole
+  // listing — so retention itself stays directory-free. Blind rating is enforced here too: a non-owner
+  // (non-operator) viewing a still-playable recording gets its header attribution masked and its owner
+  // fields stripped, so the public API never leaks what the UI hides. See recordings-view.ts.
   app.get<{ Querystring: { env?: string } }>('/api/recordings', async (request) => {
     const listings = await deps.retention.list({ env: request.query.env })
+    const caller = await identity.resolveUser(request)
     const names = await deps.userDirectory.namesFor(
       listings.flatMap((listing) => (listing.user_id === null ? [] : [listing.user_id])),
     )
+    // The play status of every season the listing references, so each recording's blind state is a
+    // map lookup rather than a per-row query.
+    const seasonIds = [
+      ...new Set(
+        listings.flatMap((listing) => (listing.season_id === null ? [] : [listing.season_id])),
+      ),
+    ]
+    const playStatuses = new Map(
+      await Promise.all(
+        seasonIds.map(async (id) => [id, (await deps.storage.getSeason(id))?.play_status] as const),
+      ),
+    )
     return listings.map((listing) => {
+      const header = listing.header as RecordingHeader
+      const playStatus =
+        listing.season_id === null ? undefined : playStatuses.get(listing.season_id)
+      if (isBlindRecording(caller, playStatus, header.players)) {
+        // Mask the seat attribution, drop the owner name, and keep the owner id only for the owner
+        // (who needs it to recognize and pin their own recording).
+        const maskedHeader =
+          header.players === undefined
+            ? header
+            : { ...header, players: maskPlayers(header.players, caller?.id) }
+        return {
+          ...listing,
+          header: maskedHeader,
+          user_id: caller?.id === listing.user_id ? listing.user_id : null,
+        }
+      }
       const name = listing.user_id === null ? undefined : names.get(listing.user_id)
-      return { ...listing, ...(name === undefined ? {} : { user_name: name }) }
+      return { ...listing, ...optionalField('user_name', name) }
     })
   })
 
@@ -360,7 +393,34 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     if (!(await deps.recordings.exists(request.params.id))) {
       return reply.code(404).send({ error: 'no such recording' })
     }
-    return reply.type('application/x-ndjson').send(deps.recordings.stream(request.params.id))
+    // The raw stream is masked the same way the listing is: resolve the caller, find the producing
+    // session's season, and if this is a blind view rewrite only the header line before streaming the
+    // (unchanged) state lines. A non-blind view streams the file untouched, the fast common path.
+    const caller = await identity.resolveUser(request)
+    const header = await deps.recordings.readHeader(request.params.id)
+    const players = header?.players
+    const session = (await deps.storage.listSessions()).find(
+      (row) => row.recording_id === request.params.id,
+    )
+    const playStatus =
+      session?.season_id == null
+        ? undefined
+        : (await deps.storage.getSeason(session.season_id))?.play_status
+    reply.type('application/x-ndjson')
+    if (
+      header === undefined ||
+      players === undefined ||
+      !isBlindRecording(caller, playStatus, players)
+    ) {
+      return reply.send(deps.recordings.stream(request.params.id))
+    }
+    const maskedHeaderLine = JSON.stringify({
+      ...header,
+      players: maskPlayers(players, caller?.id),
+    })
+    return reply.send(
+      replaceHeaderLine(deps.recordings.stream(request.params.id), maskedHeaderLine),
+    )
   })
 
   // Pin and unpin are owner-only and gate on the recording's retention row. They sit under
@@ -556,16 +616,14 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
                     })) === undefined
                   ? 'unrated'
                   : 'rated'
-          // Bound once so the presence check and the value it guards never drift apart.
-          const ownerName = ownerNames.get(submission.user_id)
           return {
             submission_id: submission.id,
             anonymous_number: index + 1,
-            ...(ratingStatus === undefined ? {} : { rating_status: ratingStatus }),
+            ...optionalField('rating_status', ratingStatus),
             ...(operator
               ? {
                   owner_id: submission.user_id,
-                  ...(ownerName === undefined ? {} : { owner_name: ownerName }),
+                  ...optionalField('owner_name', ownerNames.get(submission.user_id)),
                   source_kind: submission.source_kind,
                   repo_url: submission.repo_url,
                   commit_sha: submission.commit_sha,
@@ -615,14 +673,19 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
           }
         }),
       )
-      // The owner's display name beside the stable owner id (omitted when the directory has no row).
-      const ownerName = (await deps.userDirectory.namesFor([request.params.ownerId])).get(
-        request.params.ownerId,
-      )
+      // The owner's display name beside the stable owner id, but only for an owner who actually has a
+      // submission here — otherwise this open route would resolve a name for any id at all (pending,
+      // banned, or never-submitted accounts), an id-to-name oracle. Omitted when the directory has no row.
+      const ownerName =
+        submissions.length === 0
+          ? undefined
+          : (await deps.userDirectory.namesFor([request.params.ownerId])).get(
+              request.params.ownerId,
+            )
       return {
         env_id: request.params.envId,
         owner_id: request.params.ownerId,
-        ...(ownerName === undefined ? {} : { owner_name: ownerName }),
+        ...optionalField('owner_name', ownerName),
         submission_season_id: submissionTarget?.id ?? null,
         play_season_id: playTarget?.id ?? null,
         submissions: detailed,

@@ -28,6 +28,7 @@ import { enrichAgentRef, type UserDirectory } from '../auth/users.js'
 import { DEPS_VERSION } from '../deps-version.js'
 import type { EnvironmentMeta, EnvironmentRegistry } from '../environments.js'
 import type { RequestIdentity } from '../identity.js'
+import { optionalField } from '../optional-field.js'
 import { buildSchedule, type SubmissionRef } from '../scheduler/build-schedule.js'
 import {
   agentOwnerIds,
@@ -197,14 +198,11 @@ function registerSubmissionRoutes(admin: FastifyInstance, deps: AdminDeps): void
     // One batched name lookup for the whole listing; a missing user simply omits the field.
     const names = await deps.userDirectory.namesFor(active.map((submission) => submission.user_id))
     const rows = await Promise.all(
-      active.map(async (submission) => {
-        const name = names.get(submission.user_id)
-        return {
-          ...submissionMetadata(submission),
-          ...(name === undefined ? {} : { user_name: name }),
-          has_snapshot: await deps.snapshots.exists(submission.id),
-        }
-      }),
+      active.map(async (submission) => ({
+        ...submissionMetadata(submission),
+        ...optionalField('user_name', names.get(submission.user_id)),
+        has_snapshot: await deps.snapshots.exists(submission.id),
+      })),
     )
     return reply.code(200).send(rows)
   })

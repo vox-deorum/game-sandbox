@@ -8,12 +8,44 @@
  * configuration and rating prompts.
  */
 
-import { type EnrichedAgentRef, enrichAgentRef } from './auth/users.js'
+import type { BoardAgentRef } from '@game-sandbox/schema/board'
+
+import { enrichAgentRef } from './auth/users.js'
+import { optionalField } from './optional-field.js'
 import type { AgentRef, PublicSeason, Season, SeasonRun, SeasonRunGame } from './storage/schema.js'
 import { decodeSeasonConfig, type SeasonConfig } from './storage/season-config.js'
 
 /** No names resolved: the enrichment no-op the builders default to when a caller passes none. */
 const NO_NAMES: ReadonlyMap<string, string> = new Map()
+
+// A run's roster and each game's slots are JSON columns the routes decode twice: once to collect owner
+// ids for the batched name lookup, then again to build the view. Memoize the parse per row object (the
+// same instances flow through both passes) so the decode — the single place `AgentRef` JSON is read —
+// happens once. Entries are dropped when the row is unreferenced, so this holds no rows alive.
+const slotsCache = new WeakMap<SeasonRunGame, AgentRef[]>()
+const snapshotCache = new WeakMap<SeasonRun, AgentRef[]>()
+
+/** Decode a scheduled game's `slots` JSON once per row object. */
+function decodeSlots(game: SeasonRunGame): AgentRef[] {
+  const cached = slotsCache.get(game)
+  if (cached !== undefined) {
+    return cached
+  }
+  const slots = JSON.parse(game.slots) as AgentRef[]
+  slotsCache.set(game, slots)
+  return slots
+}
+
+/** Decode a run's frozen `submission_snapshot` JSON once per row object. */
+function decodeSnapshot(run: SeasonRun): AgentRef[] {
+  const cached = snapshotCache.get(run)
+  if (cached !== undefined) {
+    return cached
+  }
+  const snapshot = JSON.parse(run.submission_snapshot) as AgentRef[]
+  snapshotCache.set(run, snapshot)
+  return snapshot
+}
 
 /** A season row with its `config` column decoded into the structured {@link SeasonConfig}. */
 export type SeasonView = Omit<Season, 'config'> & { config: SeasonConfig }
@@ -57,16 +89,15 @@ export function publicSeasonView(season: PublicSeason): PublicSeasonView {
   }
 }
 
-/** A scheduled game with its `slots` JSON decoded into resolved {@link EnrichedAgentRef}s. */
-export type RunGameView = Omit<SeasonRunGame, 'slots'> & { slots: EnrichedAgentRef[] }
+/** A scheduled game with its `slots` JSON decoded into resolved {@link BoardAgentRef}s. */
+export type RunGameView = Omit<SeasonRunGame, 'slots'> & { slots: BoardAgentRef[] }
 
 /** Decode a scheduled game's `slots` JSON for the wire, attaching owner display names when resolved. */
 export function runGameView(
   game: SeasonRunGame,
   names: ReadonlyMap<string, string> = NO_NAMES,
 ): RunGameView {
-  const slots = JSON.parse(game.slots) as AgentRef[]
-  return { ...game, slots: slots.map((slot) => enrichAgentRef(slot, names)) }
+  return { ...game, slots: decodeSlots(game).map((slot) => enrichAgentRef(slot, names)) }
 }
 
 /** A run with its frozen snapshots decoded and its scheduled games attached, for the admin status view. */
@@ -74,7 +105,7 @@ export type RunView = Omit<SeasonRun, 'config_snapshot' | 'submission_snapshot'>
   /** The requester's display name, when the directory resolved one (omitted otherwise). */
   requested_by_name?: string
   config_snapshot: SeasonConfig
-  submission_snapshot: EnrichedAgentRef[]
+  submission_snapshot: BoardAgentRef[]
   games: RunGameView[]
 }
 
@@ -84,12 +115,11 @@ export function runView(
   games: SeasonRunGame[],
   names: ReadonlyMap<string, string> = NO_NAMES,
 ): RunView {
-  const snapshot = JSON.parse(run.submission_snapshot) as AgentRef[]
   return {
     ...run,
-    ...requestedByName(run, names),
+    ...optionalField('requested_by_name', names.get(run.requested_by)),
     config_snapshot: decodeSeasonConfig(run.config_snapshot),
-    submission_snapshot: snapshot.map((ref) => enrichAgentRef(ref, names)),
+    submission_snapshot: decodeSnapshot(run).map((ref) => enrichAgentRef(ref, names)),
     games: games.map((game) => runGameView(game, names)),
   }
 }
@@ -112,16 +142,11 @@ export function runSummaryView(
   names: ReadonlyMap<string, string> = NO_NAMES,
 ): RunSummaryView {
   const { config_snapshot: _config, submission_snapshot: _submissions, ...rest } = run
-  return { ...rest, ...requestedByName(run, names), game_count: gameCount }
-}
-
-/** The optional `requested_by_name` field, spread in only when the directory resolved a name. */
-function requestedByName(
-  run: SeasonRun,
-  names: ReadonlyMap<string, string>,
-): { requested_by_name?: string } {
-  const name = names.get(run.requested_by)
-  return name === undefined ? {} : { requested_by_name: name }
+  return {
+    ...rest,
+    ...optionalField('requested_by_name', names.get(run.requested_by)),
+    game_count: gameCount,
+  }
 }
 
 /** The submission owner ids in a list of agent refs (the Naive baseline has none). */
@@ -131,17 +156,14 @@ export function agentOwnerIds(refs: readonly AgentRef[]): string[] {
 
 /** Every submission owner id seated in a list of scheduled games (their `slots` are JSON-encoded). */
 export function gameOwnerIds(games: readonly SeasonRunGame[]): string[] {
-  return games.flatMap((game) => agentOwnerIds(JSON.parse(game.slots) as AgentRef[]))
+  return games.flatMap((game) => agentOwnerIds(decodeSlots(game)))
 }
 
 /**
  * Every submission owner id in a run's frozen roster and its scheduled games — the one call the
  * routes batch their name lookup from before handing the same `run`/`games` to {@link runView},
- * rather than each inlining its own `agentOwnerIds(JSON.parse(...)) + gameOwnerIds(...)` pair.
+ * rather than each inlining its own `agentOwnerIds(...) + gameOwnerIds(...)` pair.
  */
 export function ownerIdsForRun(run: SeasonRun, games: readonly SeasonRunGame[]): string[] {
-  return [
-    ...agentOwnerIds(JSON.parse(run.submission_snapshot) as AgentRef[]),
-    ...gameOwnerIds(games),
-  ]
+  return [...agentOwnerIds(decodeSnapshot(run)), ...gameOwnerIds(games)]
 }

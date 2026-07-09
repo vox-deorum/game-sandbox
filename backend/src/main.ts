@@ -73,19 +73,19 @@ async function main(): Promise<void> {
   const submissionSource = createSubmissionSource(config.submission)
   // The sweep runs at startup, on the interval, and after each session finalize (the only moment
   // the data grows); the orchestrator triggers the finalize sweep through this callback.
-  const orchestrator = new Orchestrator(
+  const orchestrator = new Orchestrator({
     driver,
     storage,
     environments,
     config,
     log,
-    () => {
+    onSessionFinalized: () => {
       void retention.sweep()
     },
     submissionSource,
-    snapshots,
+    submissionSnapshots: snapshots,
     userDirectory,
-  )
+  })
 
   // The workflow runner (Stage 6.4): the Docker-backed background engine that drives a triggered run's
   // schedule one container at a time. Reconcile first: any run a prior process death left non-terminal

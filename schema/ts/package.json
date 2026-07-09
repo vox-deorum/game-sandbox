@@ -10,6 +10,8 @@
     ".": "./src/index.ts",
     "./protocol": "./src/protocol.ts",
     "./environment": "./src/environment.ts",
+    "./accounts": "./src/accounts.ts",
+    "./board": "./src/board.ts",
     "./text": "./src/text.ts",
     "./version": "./src/version.ts"
   },

@@ -44,6 +44,7 @@ import type {
 } from '../driver/index.js'
 import type { EnvironmentMeta, EnvironmentRegistry } from '../environments.js'
 import { forfeitScore, normalizeEpisodeScore } from '../leaderboards/score.js'
+import { optionalField } from '../optional-field.js'
 import { coerceResultReason } from '../result-reason.js'
 import { assembleSeats, type SeatBinding } from '../session/launch-config.js'
 import { ensureRecordingsDir } from '../session/live-session.js'
@@ -553,23 +554,20 @@ class DockerWorkflowRunner implements WorkflowRunner {
     overrides: ReturnType<typeof decodeSeasonConfig>['overrides'],
   ): Promise<Record<string, unknown>> {
     // Snapshot each submission owner's display name for the recording header at launch time, one
-    // batched lookup. Without a directory (or a row) the label falls back to the stable id.
-    const names =
-      (await this.deps.userDirectory?.namesFor(
-        slots.flatMap((agent) => (agent.kind === 'submission' ? [agent.user_id] : [])),
-      )) ?? new Map<string, string>()
+    // batched lookup. Names are cosmetic — the label falls back to the stable id — so a directory
+    // failure degrades to ids rather than aborting the game.
+    const names = await this.snapshotNames(slots)
     const seats = new Map<string, SeatBinding>()
     for (let i = 0; i < slots.length; i++) {
       const agent = slots[i] as AgentRef
       const slotId = `player_${i}`
       if (agent.kind === 'submission') {
-        const ownerName = names.get(agent.user_id)
         seats.set(slotId, {
           driver: 'submission',
           submissionId: agent.submission_id,
           userId: agent.user_id,
           path: submissionSlotPath(slotId),
-          ...(ownerName === undefined ? {} : { ownerName }),
+          ...optionalField('ownerName', names.get(agent.user_id)),
         })
       } else {
         seats.set(slotId, { driver: 'naive' })
@@ -587,20 +585,33 @@ class DockerWorkflowRunner implements WorkflowRunner {
       headless: true,
       players,
       // Per-step/per-episode overrides take effect this stage; absent keys fall back to env defaults.
-      ...(overrides?.step_timeout_ms !== undefined
-        ? { step_timeout_ms: overrides.step_timeout_ms }
-        : {}),
-      ...(overrides?.episode_timeout_ms !== undefined
-        ? { episode_timeout_ms: overrides.episode_timeout_ms }
-        : {}),
+      ...optionalField('step_timeout_ms', overrides?.step_timeout_ms),
+      ...optionalField('episode_timeout_ms', overrides?.episode_timeout_ms),
       // The messaging override, spread exactly like the timeouts. The harness combines defensively
       // (metadata AND config; minimum cap), so a stored value can only disable or tighten.
-      ...(overrides?.messaging?.enabled !== undefined
-        ? { messaging_enabled: overrides.messaging.enabled }
-        : {}),
-      ...(overrides?.messaging?.message_cap !== undefined
-        ? { message_cap: overrides.messaging.message_cap }
-        : {}),
+      ...optionalField('messaging_enabled', overrides?.messaging?.enabled),
+      ...optionalField('message_cap', overrides?.messaging?.message_cap),
+    }
+  }
+
+  /**
+   * Batch the submission owners' display names for the recording header at launch. A missing directory,
+   * or a lookup that throws, degrades to no names so a headless game is never failed over a cosmetic
+   * name resolution; the labels fall back to the stable ids.
+   */
+  private async snapshotNames(slots: readonly AgentRef[]): Promise<Map<string, string>> {
+    if (this.deps.userDirectory === undefined) {
+      return new Map()
+    }
+    try {
+      return await this.deps.userDirectory.namesFor(
+        slots.flatMap((agent) => (agent.kind === 'submission' ? [agent.user_id] : [])),
+      )
+    } catch (error) {
+      this.log(
+        `workflow-runner: resolving display names failed, falling back to ids: ${String(error)}`,
+      )
+      return new Map()
     }
   }
 

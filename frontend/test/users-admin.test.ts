@@ -468,6 +468,64 @@ describe('UsersAdminPage', () => {
     expect(within(dialog).getByText(/Ban Bob\?/)).toBeInTheDocument()
   })
 
+  it("disables every row's role action while one is in flight, so a second click is a visible no-op", async () => {
+    mockRoster([
+      user({ id: 'u1', name: 'Alice', role: 'user' }),
+      user({ id: 'u2', name: 'Bob', role: 'user' }),
+    ])
+    await renderUsersPage()
+    await screen.findByText('Alice')
+    const aliceRow = screen.getByText('Alice').closest('tr') as HTMLElement
+    const bobRow = screen.getByText('Bob').closest('tr') as HTMLElement
+
+    const gate = deferred<{ data: { user: unknown }; error: null }>()
+    setRole.mockImplementationOnce(() => gate.promise as never)
+
+    await fireEvent.click(within(aliceRow).getByRole('button', { name: 'Promote' }))
+    await waitFor(() => expect(setRole).toHaveBeenCalledWith({ userId: 'u1', role: 'admin' }))
+
+    // While Alice's role change is in flight, Bob's action is disabled — the click is refused visibly
+    // rather than silently swallowed.
+    expect(within(bobRow).getByRole('button', { name: 'Promote' })).toBeDisabled()
+
+    gate.resolve({ data: { user: {} }, error: null })
+    await waitFor(() =>
+      expect(within(bobRow).getByRole('button', { name: 'Promote' })).not.toBeDisabled(),
+    )
+  })
+
+  it('reflects the in-flight ban when the dialog is reopened for the same row, firing no duplicate', async () => {
+    mockRoster([user({ id: 'u1', name: 'Alice', banned: false })])
+    await renderUsersPage()
+    await screen.findByText('Alice')
+
+    const gate = deferred<{ data: { user: unknown }; error: null }>()
+    banUser.mockImplementationOnce(() => gate.promise as never)
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Ban' }))
+    let dialog = await screen.findByRole('dialog')
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Ban' }))
+    await waitFor(() => expect(banUser).toHaveBeenCalledTimes(1))
+
+    // Cancel and reopen the dialog for the SAME row while Alice's ban is still in flight.
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await fireEvent.click(screen.getByRole('button', { name: 'Ban' }))
+    dialog = await screen.findByRole('dialog')
+
+    // The reopened dialog shows the in-flight state (its confirm is busy/disabled) rather than offering
+    // a fresh confirm, so a second click cannot fire a duplicate ban.
+    const confirm = within(dialog).getByRole('button', { name: 'Ban' })
+    expect(confirm).toBeDisabled()
+    await fireEvent.click(confirm)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(banUser).toHaveBeenCalledTimes(1)
+
+    // Once the original resolves, its success still refetches the roster.
+    gate.resolve({ data: { user: {} }, error: null })
+    await waitFor(() => expect(listUsers).toHaveBeenCalledTimes(2))
+  })
+
   it('unbans a user directly, with no dialog, then refetches', async () => {
     mockRoster([user({ banned: true })])
     await renderUsersPage()
