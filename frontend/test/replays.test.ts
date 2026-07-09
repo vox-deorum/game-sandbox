@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { PublicSeasonView, RecordingSummary } from '../src/api/client.js'
 import { flappyMeta } from './helpers/fixtures.js'
+import { signedInMe } from './helpers/me.js'
 import { memoryRouter, renderWithMe } from './helpers/render.js'
 
 vi.mock('../src/api/client.js', () => ({
@@ -78,7 +79,7 @@ describe('ReplaysPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(getEnvironments).mockResolvedValue([flappyMeta()])
-    vi.mocked(getMe).mockResolvedValue({ user_id: 'alice', allowlisted: true, is_operator: false })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('alice'))
     vi.mocked(listSeasons).mockResolvedValue([season()])
   })
 
@@ -127,7 +128,7 @@ describe('ReplaysPage', () => {
   })
 
   it('masks submitted-agent players and owner while their season is playable', async () => {
-    vi.mocked(getMe).mockResolvedValue({ user_id: 'viewer', allowlisted: true, is_operator: false })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('viewer'))
     // Mirror the backend's gate: a non-operator who asks for unreleased seasons is refused, while the
     // default public scope still surfaces the play-open (unreleased) season the masking depends on. A
     // regression that requested the operator-only listing here would yield no season, and no mask.

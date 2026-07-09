@@ -9,8 +9,7 @@ import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
 import { getEnvironments } from '../api/client.js'
-import { currentUserId } from '../identity.js'
-import { useMe } from '../me.js'
+import { isAdmin, useMe, userId } from '../me.js'
 
 // The env id normally comes from the route (the shell mounts these tabs on /environments/:envId/*),
 // but the session page (route /sessions/:id) passes it explicitly so the same strip can render there.
@@ -22,8 +21,8 @@ const me = useMe()
 const envId = computed(() => props.envId ?? String(route.params.envId))
 const gameName = ref('')
 
-/** The current user's id, used as the My Submissions tab target. */
-const ownerId = computed(() => me.me?.user_id ?? currentUserId)
+/** The signed-in user's id, used as the My Submissions tab target; null for an anonymous visitor. */
+const ownerId = computed(() => userId(me.me))
 
 function load(id: string): void {
   getEnvironments().then(
@@ -54,14 +53,17 @@ const tabs = computed(() => {
       to: `${base}/replays`,
       active: route.path.startsWith(`${base}/replays`),
     },
-    {
+  ]
+  // An anonymous visitor has no submissions of their own, so the tab is omitted until they sign in.
+  if (ownerId.value !== null) {
+    list.push({
       key: 'agent',
       label: 'My Submissions',
       to: `${base}/agents/${ownerId.value}`,
       active: route.path.startsWith(`${base}/agents`),
-    },
-  ]
-  if (me.me?.is_operator) {
+    })
+  }
+  if (isAdmin(me.me)) {
     list.push({
       key: 'manage',
       label: 'Manage',

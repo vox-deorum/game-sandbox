@@ -49,6 +49,12 @@ export interface AppDeps {
    * {@link AppDeps.siteName} (then {@link DEFAULT_SITE_NAME}) when omitted, mirroring `loadConfig`.
    */
   siteShortName?: string
+  /**
+   * Whether this deployment configured GitHub OAuth, served to the SPA by `GET /api/config` so the
+   * login page shows or hides the "Sign in with GitHub" button. `main.ts` derives it from whether
+   * `config.auth.github` is set; defaults to `false` when omitted (email-and-password sign-in only).
+   */
+  githubAuth?: boolean
   environments: EnvironmentRegistry
   recordings: RecordingsStore
   /** The retention service: the merged recordings listing, pinning, and the eviction sweep. */
@@ -222,7 +228,11 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   // and read-only; extend this payload as more client-facing site config appears.
   app.get('/api/config', () => {
     const siteName = deps.siteName ?? DEFAULT_SITE_NAME
-    return { site_name: siteName, site_short_name: deps.siteShortName ?? siteName }
+    return {
+      site_name: siteName,
+      site_short_name: deps.siteShortName ?? siteName,
+      github_auth: deps.githubAuth ?? false,
+    }
   })
 
   // The in-app student guides. Read-only and unauthenticated like `/api/config`: the frontend renders

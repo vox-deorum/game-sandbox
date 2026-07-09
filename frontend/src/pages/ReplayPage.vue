@@ -41,7 +41,7 @@ import { useStageLayout } from '../composables/useStageLayout.js'
 import { type ChatEntry } from '../lib/chat.js'
 import { formatDate } from '../lib/format.js'
 import { playbackIntervalMs } from '../lib/playback.js'
-import { useMe } from '../me.js'
+import { isAdmin, useMe, userId } from '../me.js'
 import { parseRecording, UnsupportedVersionError } from '../replay/parse.js'
 import { isCompletedOutcome, reasonText } from '../replay/reason.js'
 import { type RunSummary, summarizeStates } from '../replay/summary.js'
@@ -49,6 +49,9 @@ import { type RunSummary, summarizeStates } from '../replay/summary.js'
 const route = useRoute()
 const me = useMe()
 const id = String(route.params.id)
+// The signed-in viewer's id for the attribution components' optional `viewer-id` prop (undefined when
+// anonymous). The prop takes `string | undefined`, so the `null` sentinel maps to `undefined`.
+const viewerId = computed(() => userId(me.me) ?? undefined)
 
 const loading = ref(true)
 const loadError = ref(false)
@@ -92,7 +95,7 @@ const { pinned, busy: pinBusy, error: pinError, toggle: togglePin } = usePinning
 // Fail closed: anyone not confirmed an operator (including an unresolved identity) sees the blind
 // attribution while the season is playable.
 const blindAttribution = computed(
-  () => seasonPlayable.value && me.me?.is_operator !== true,
+  () => seasonPlayable.value && !isAdmin(me.me),
 )
 
 // The panel mounts only for a recording that actually carries messages (a messaging session); it is
@@ -235,7 +238,7 @@ onMounted(async () => {
   if (blindAttribution.value) {
     anonymousNumbers.value = await watchAgentNumbers(parsed.header.environment).catch(() => ({}))
   }
-  if (entry !== undefined && me.me?.user_id !== undefined && entry.user_id === me.me.user_id) {
+  if (entry !== undefined && viewerId.value !== undefined && entry.user_id === viewerId.value) {
     owned.value = true
     pinned.value = entry.pinned
   }
@@ -261,7 +264,7 @@ onMounted(async () => {
     <PlayerAttribution
       :players="header?.players"
       :blind="blindAttribution"
-      :viewer-id="me.me?.user_id"
+      :viewer-id="viewerId"
       :anonymous-numbers="anonymousNumbers"
     />
 
@@ -330,7 +333,7 @@ onMounted(async () => {
             :state="finalState"
             :header="header"
             :blind="blindAttribution"
-            :viewer-id="me.me?.user_id"
+            :viewer-id="viewerId"
             :anonymous-numbers="anonymousNumbers"
             @dismiss="gameOverDismissed = true"
           />
@@ -359,7 +362,7 @@ onMounted(async () => {
             :current-index="replayState.index"
             :players="header?.players"
             :blind="blindAttribution"
-            :viewer-id="me.me?.user_id"
+            :viewer-id="viewerId"
             :anonymous-numbers="anonymousNumbers"
           />
           <DecisionLog v-else :entries="decisions" :current-index="replayState.index" />
@@ -374,7 +377,7 @@ onMounted(async () => {
             :current-index="replayState.index"
             :players="header?.players"
             :blind="blindAttribution"
-            :viewer-id="me.me?.user_id"
+            :viewer-id="viewerId"
             :anonymous-numbers="anonymousNumbers"
           />
         </details>

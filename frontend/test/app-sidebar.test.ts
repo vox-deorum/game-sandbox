@@ -16,6 +16,7 @@ function makeRouter() {
       { path: '/my/agents', component: { template: '<div />' } },
       { path: '/my/profile', component: { template: '<div />' } },
       { path: '/environments/:envId', component: { template: '<div />' } },
+      { path: '/login', component: { template: '<div />' } },
     ],
   })
 }

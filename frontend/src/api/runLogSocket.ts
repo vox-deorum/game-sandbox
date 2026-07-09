@@ -1,15 +1,17 @@
 /**
  * The admin run-log WebSocket client (Stage 6.7): it owns the socket to the step-3 log-stream
  * endpoint, decodes each {@link RunEvent} frame, and hands it to typed callbacks. It reuses the
- * session socket's conventions — identity rides the `user` query parameter (a browser cannot set a
- * header on the upgrade), and the page origin and `WebSocket` impl are injectable for tests.
+ * session socket's conventions for origin and `WebSocket` injection.
  *
  * The stream is live-only by the step-3 contract: a console attaching mid-run renders progress from
  * the persisted per-game statuses (read over HTTP), then tails the live log lines from here. So this
  * client does not reconnect — a dropped socket means the live tail ended, not that history was lost,
  * and the backend sends a terminal event then closes when the run settles.
+ *
+ * The browser sends the Better Auth session cookie on the same-origin upgrade, so the admin guard
+ * authenticates the stream from the cookie; the page origin and `WebSocket` impl stay injectable for
+ * tests.
  */
-import { withIdentityParam } from '../identity.js'
 
 /** A run-level terminal status: the three states a run settles into once it stops executing. */
 export type TerminalRunStatus = 'completed' | 'failed' | 'cancelled'
@@ -57,11 +59,11 @@ export interface RunLogSocketHandlers {
   onClose?(): void
 }
 
-/** Build the absolute ws(s) URL for a run-log path, carrying the identity as the `user` parameter. */
+/** Build the absolute ws(s) URL for a run-log path; the browser sends the session cookie on upgrade. */
 export function runLogSocketUrl(wsPath: string, origin: string): string {
   const url = new URL(wsPath, origin)
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-  return withIdentityParam(url).toString()
+  return url.toString()
 }
 
 export class RunLogSocket {

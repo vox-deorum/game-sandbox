@@ -14,8 +14,6 @@
 import type { RecordingHeader, StepState } from '@game-sandbox/schema'
 import { type Command, classifyOutbound, serializeCommand } from '@game-sandbox/schema/protocol'
 
-import { withIdentityParam } from '../identity.js'
-
 /** The socket's connection lifecycle, surfaced so a host page can show a reconnecting banner. */
 export type ConnectionState = 'connecting' | 'open' | 'reconnecting' | 'closed'
 
@@ -32,11 +30,14 @@ export interface SessionSocketHandlers {
 
 const MAX_BACKOFF_MS = 5_000
 
-/** Build the absolute ws(s) URL for a session path, carrying the identity as the `user` parameter. */
+/**
+ * Build the absolute ws(s) URL for a session path. The browser sends the Better Auth session cookie
+ * on a same-origin upgrade, so identity rides the cookie and no `user` query parameter is appended.
+ */
 export function sessionSocketUrl(wsPath: string, origin: string): string {
   const url = new URL(wsPath, origin)
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-  return withIdentityParam(url).toString()
+  return url.toString()
 }
 
 export class SessionSocket {

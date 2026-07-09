@@ -16,6 +16,10 @@ export const DEFAULT_SITE_NAME = 'Game Sandbox'
 
 const siteName = ref(DEFAULT_SITE_NAME)
 const siteShortName = ref(DEFAULT_SITE_NAME)
+// Whether the deployment enabled GitHub OAuth. Defaults to false so the login page hides the GitHub
+// button until the public config read confirms it; the login page reads this the same way the chrome
+// reads the brand, since it needs the flag before any session exists.
+const githubAuth = ref(false)
 
 /**
  * Fetch the deployment branding once and apply it to the shared brand and the document title. Called
@@ -32,15 +36,21 @@ export async function loadSiteConfig(): Promise<void> {
     if (typeof config.site_short_name === 'string' && config.site_short_name !== '') {
       siteShortName.value = config.site_short_name
     }
+    githubAuth.value = config.github_auth === true
   } catch {
     // The default brand already renders; a branding fetch failure is not worth surfacing to the user.
   }
 }
 
-/** The reactive, read-only deployment brands for the chrome to render (full and compact forms). */
+/** The reactive, read-only deployment config for the chrome and login page to render. */
 export function useSiteConfig(): {
   siteName: Readonly<Ref<string>>
   siteShortName: Readonly<Ref<string>>
+  githubAuth: Readonly<Ref<boolean>>
 } {
-  return { siteName: readonly(siteName), siteShortName: readonly(siteShortName) }
+  return {
+    siteName: readonly(siteName),
+    siteShortName: readonly(siteShortName),
+    githubAuth: readonly(githubAuth),
+  }
 }

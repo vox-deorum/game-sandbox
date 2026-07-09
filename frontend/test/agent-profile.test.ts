@@ -2,6 +2,7 @@ import { screen, waitFor, within } from '@testing-library/vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AgentProfile, AgentProfileSubmission, SubmissionCheck } from '../src/api/client.js'
+import { signedInMe } from './helpers/me.js'
 import { memoryRouter, renderWithMe } from './helpers/render.js'
 
 vi.mock('../src/api/client.js', () => ({
@@ -86,11 +87,7 @@ async function renderProfile(profile: ProfileFixture) {
 describe('AgentProfilePage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'dev-user',
-      allowlisted: true,
-      is_operator: false,
-    })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
   })
 
   it('renders submission history newest-first with active marker and replays', async () => {
@@ -187,7 +184,7 @@ describe('AgentProfilePage', () => {
   })
 
   it('shows the owner-only debug placeholder only to the agent owner', async () => {
-    vi.mocked(getMe).mockResolvedValue({ user_id: 'eve', allowlisted: true, is_operator: false })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('eve', 'normal'))
     await renderProfile({ env_id: 'flappy_bird', owner_id: 'eve', submissions: [submission()] })
     // The owner sees the first-person heading rather than the possessive form.
     expect(
@@ -271,18 +268,14 @@ describe('AgentProfilePage', () => {
   })
 
   it('hides the owner-only debug placeholder from a non-owner viewer', async () => {
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'someone-else',
-      allowlisted: true,
-      is_operator: false,
-    })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('someone-else', 'normal'))
     await renderProfile({ env_id: 'flappy_bird', owner_id: 'eve', submissions: [submission()] })
     expect(await screen.findByText(/Leaderboard Placements/)).toBeInTheDocument()
     expect(screen.queryByText(/LLM debug view/)).toBeNull()
   })
 
   it('prefills the submit form rating prompt for the open submission season', async () => {
-    vi.mocked(getMe).mockResolvedValue({ user_id: 'eve', allowlisted: true, is_operator: false })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('eve', 'normal'))
     await renderProfile({
       env_id: 'flappy_bird',
       owner_id: 'eve',
@@ -316,6 +309,25 @@ describe('AgentProfilePage', () => {
     // One season group, two submissions, but the prompt line shows once for the group.
     const prompts = await screen.findAllByText(/Reward smooth, human-like play\./)
     expect(prompts).toHaveLength(1)
+  })
+
+  it('disables the submit form for a pending owner, showing the awaiting-approval notice', async () => {
+    // A pending owner may look at their own profile but not submit (submit is requireActive), so the
+    // form is replaced by the awaiting-approval message rather than an enabled control that 403s.
+    vi.mocked(getMe).mockResolvedValue(signedInMe('eve', 'pending'))
+    await renderProfile({
+      env_id: 'flappy_bird',
+      owner_id: 'eve',
+      submission_season_id: 'iter-next',
+      submissions: [submission({ id: 'next', season_id: 'iter-next' })],
+    })
+
+    expect(await screen.findByText(/awaiting approval, so you can't submit/)).toBeInTheDocument()
+    // The submit form itself is not rendered, so its repository field and submit button are absent.
+    expect(screen.queryByRole('button', { name: 'Submit agent' })).toBeNull()
+    expect(screen.queryByLabelText('Repository URL')).toBeNull()
+    // ...and the owner-only prompt prefill never fires (the form never mounted).
+    expect(vi.mocked(getAuthorPrompt)).not.toHaveBeenCalled()
   })
 
   it('shows an empty history for an owner with no submissions', async () => {

@@ -17,16 +17,15 @@ import { getEnvironments, listSeasons, type PublicSeasonView } from '../api/clie
 import UiBadge from '../components/ui/UiBadge.vue'
 import UiCard from '../components/ui/UiCard.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
-import { currentUserId } from '../identity.js'
 import { formatDate } from '../lib/format.js'
-import { useMe } from '../me.js'
+import { useMe, userId } from '../me.js'
 import { thumbnailFor } from '../renderers/registry.js'
 
 const seasons = ref<PublicSeasonView[] | null>(null)
 const environments = ref<Map<string, EnvironmentMeta>>(new Map())
 const error = ref(false)
 const me = useMe()
-const ownerId = computed(() => me.me?.user_id ?? currentUserId)
+const ownerId = computed(() => userId(me.me))
 
 onMounted(async () => {
   try {
@@ -60,6 +59,10 @@ function leaderboardLink(season: PublicSeasonView): string {
 }
 
 function submissionLink(season: PublicSeasonView): string {
+  // An anonymous visitor has no agent profile, so the "Submissions open" action sends them to sign in.
+  if (ownerId.value === null) {
+    return '/login'
+  }
   return `/environments/${season.env_id}/agents/${ownerId.value}`
 }
 

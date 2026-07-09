@@ -45,7 +45,7 @@ import {
   submissionStatusLabel,
   submissionStatusTone,
 } from '../lib/submission-status.js'
-import { useMe } from '../me.js'
+import { canParticipate, useMe, userId } from '../me.js'
 
 const route = useRoute()
 const me = useMe()
@@ -193,7 +193,7 @@ const seasonCaption = (seasonId: string): string => {
 }
 
 /** The owner viewing their own profile unlocks the owner-only affordances (the Stage 9 debug view). */
-const isOwner = () => me.me?.user_id === ownerId
+const isOwner = () => userId(me.me) === ownerId
 
 /** "My Submissions" on your own profile, "{owner}'s Submissions" when viewing someone else's. */
 const heading = computed(() => (isOwner() ? 'My Submissions' : `${ownerId}'s Submissions`))
@@ -217,12 +217,19 @@ const seasonLabel = (label: string | null, id: string): string =>
 
     <section v-if="isOwner()" class="agent-section">
       <h2>Submit an Agent</h2>
-      <SubmitAgentForm
-        v-if="profile.submission_season_id !== null"
-        :env-id="envId"
-        :submission-season-id="profile.submission_season_id"
-      />
-      <UiEmptyState v-else>Submissions are closed for this environment right now.</UiEmptyState>
+      <!-- Submitting is a participation action (requireActive on the backend), so a pending owner
+           sees why it is off rather than an enabled control that 403s. -->
+      <template v-if="canParticipate(me.me)">
+        <SubmitAgentForm
+          v-if="profile.submission_season_id !== null"
+          :env-id="envId"
+          :submission-season-id="profile.submission_season_id"
+        />
+        <UiEmptyState v-else>Submissions are closed for this environment right now.</UiEmptyState>
+      </template>
+      <UiEmptyState v-else>
+        Your account is awaiting approval, so you can't submit yet.
+      </UiEmptyState>
     </section>
 
     <section class="agent-section">

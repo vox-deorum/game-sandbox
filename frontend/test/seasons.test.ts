@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { PublicSeasonView } from '../src/api/client.js'
 import { flappyMeta } from './helpers/fixtures.js'
+import { anonymousMe, signedInMe } from './helpers/me.js'
 import { memoryRouter, renderWithMe } from './helpers/render.js'
 
 vi.mock('../src/api/client.js', () => ({
@@ -44,6 +45,7 @@ async function renderPage() {
       path: '/environments/:envId/leaderboards/:seasonId?',
       component: { template: '<div />' },
     },
+    { path: '/login', component: { template: '<div />' } },
   ])
   await router.push('/seasons')
   await router.isReady()
@@ -54,11 +56,7 @@ describe('SeasonsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(getEnvironments).mockResolvedValue([flappyMeta()])
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'alice',
-      allowlisted: true,
-      is_operator: false,
-    })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('alice', 'normal'))
   })
 
   it('renders active gate actions, the thumbnail, and the complete metadata line', async () => {
@@ -157,5 +155,29 @@ describe('SeasonsPage', () => {
     expect(playCard.getByRole('link', { name: 'Play open' })).toBeVisible()
     expect(playCard.queryByText('Submissions open')).not.toBeInTheDocument()
     expect(playCard.queryByText('Results released')).not.toBeInTheDocument()
+  })
+
+  it('points the submission action at sign-in for an anonymous visitor', async () => {
+    vi.mocked(getMe).mockResolvedValue(anonymousMe)
+    vi.mocked(listSeasons).mockResolvedValue([
+      season({
+        id: 'submit',
+        label: 'Submit round',
+        submission_status: 'open',
+        submission_count: 2,
+      }),
+    ])
+
+    await renderPage()
+
+    // With no agent profile of their own, the "Submissions open" action routes to the login page.
+    expect(await screen.findByRole('link', { name: 'Submissions open' })).toHaveAttribute(
+      'href',
+      '/login',
+    )
+    expect(screen.getByRole('link', { name: 'Open Submit round' })).toHaveAttribute(
+      'href',
+      '/login',
+    )
   })
 })

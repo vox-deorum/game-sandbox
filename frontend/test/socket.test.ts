@@ -74,7 +74,9 @@ describe('SessionSocket', () => {
     if (ws === undefined) {
       throw new Error('no socket opened')
     }
-    expect(ws.url).toContain('user=dev-user')
+    // Identity now rides the same-origin session cookie, so no `user` query param is appended.
+    expect(new URL(ws.url).searchParams.has('user')).toBe(false)
+    expect(ws.url).toContain('/api/sessions/s1/ws')
     ws.open()
     ws.message(HEADER)
     ws.message(STATE)

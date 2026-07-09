@@ -2,9 +2,9 @@
   The season's active submissions on the operator console: one current attempt per participant, with a
   per-row source download and a "download all" archive of the whole season. Downloads are native
   `<a download>` links (the browser streams the file and names it) pointing at the operator-gated admin
-  routes; identity rides the `?user=` query param the admin guard accepts, since an anchor cannot send
-  the identity header. A submission that failed before its snapshot was written has none, so its
-  download is shown disabled rather than as a dead link.
+  routes; the browser sends the Better Auth session cookie on the same-origin navigation, so the admin
+  guard authenticates the download with no query-param identity channel. A submission that failed
+  before its snapshot was written has none, so its download is shown disabled rather than as a dead link.
 -->
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'

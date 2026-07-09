@@ -5,9 +5,10 @@ import type { AdminSubmissionRow } from '../src/api/client.js'
 
 vi.mock('../src/api/client.js', () => ({
   listSeasonSubmissions: vi.fn(),
-  adminSubmissionDownloadUrl: (id: string) => `/api/admin/submissions/${id}/download?user=dev-user`,
+  // Admin downloads are now identified by the session cookie, so the URLs no longer carry `?user=`.
+  adminSubmissionDownloadUrl: (id: string) => `/api/admin/submissions/${id}/download`,
   adminSeasonDownloadUrl: (seasonId: string) =>
-    `/api/admin/seasons/${seasonId}/submissions/download?user=dev-user`,
+    `/api/admin/seasons/${seasonId}/submissions/download`,
 }))
 
 import { listSeasonSubmissions } from '../src/api/client.js'
@@ -36,13 +37,9 @@ describe('SeasonSubmissions', () => {
     render(SeasonSubmissions, { props: { seasonId: 'iter-1' } })
 
     const link = await screen.findByRole('link', { name: 'Download' })
-    expect(link.getAttribute('href')).toBe(
-      '/api/admin/submissions/sub-abcdef12/download?user=dev-user',
-    )
+    expect(link.getAttribute('href')).toBe('/api/admin/submissions/sub-abcdef12/download')
     const all = screen.getByRole('link', { name: /Download all/ })
-    expect(all.getAttribute('href')).toBe(
-      '/api/admin/seasons/iter-1/submissions/download?user=dev-user',
-    )
+    expect(all.getAttribute('href')).toBe('/api/admin/seasons/iter-1/submissions/download')
   })
 
   it('disables the download for a submission without a snapshot', async () => {

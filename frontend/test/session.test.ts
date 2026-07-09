@@ -15,6 +15,7 @@ import {
   spadesMeta,
   spadesPlayers,
 } from './helpers/fixtures.js'
+import { anonymousMe, signedInMe } from './helpers/me.js'
 import { memoryRouter, renderWithMe } from './helpers/render.js'
 
 const META = flappyMeta({ description: '' })
@@ -148,6 +149,8 @@ async function renderSession() {
     { path: '/environments/:envId/agents/:ownerId', component: { template: '<div />' } },
     { path: '/sessions/:id', component: SessionPage },
     { path: '/replays/:id', component: { template: '<div>replay</div>' } },
+    // The anonymous ended-session ratings prompt links here.
+    { path: '/login', component: { template: '<div>login</div>' } },
   ])
   router.push('/sessions/s1')
   await router.isReady()
@@ -177,11 +180,7 @@ describe('SessionPage', () => {
   })
 
   it('mounts the renderer for the owner of a human session and wires input', async () => {
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'dev-user',
-      allowlisted: true,
-      is_operator: false,
-    })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
     vi.mocked(getSession).mockResolvedValue(ownerRow())
     await renderSession()
     await waitForHandlers()
@@ -210,11 +209,7 @@ describe('SessionPage', () => {
     // control off the single controlled slot, so the page must narrow to the seat the header attributes
     // to the human rather than handing it every human-capable seat (which would pin control to seat 0).
     vi.mocked(getEnvironments).mockResolvedValue([heartsMeta()])
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'dev-user',
-      allowlisted: true,
-      is_operator: false,
-    })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
     vi.mocked(getSession).mockResolvedValue({
       ...ownerRow(),
       env_id: 'hearts',
@@ -246,11 +241,7 @@ describe('SessionPage', () => {
     // the budget from meta.human_timeout_ms, so the page must overlay the session's value onto the meta
     // it mounts the renderer with.
     vi.mocked(getEnvironments).mockResolvedValue([heartsMeta()])
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'dev-user',
-      allowlisted: true,
-      is_operator: false,
-    })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
     vi.mocked(getSession).mockResolvedValue({
       ...ownerRow(),
       env_id: 'hearts',
@@ -265,11 +256,7 @@ describe('SessionPage', () => {
   })
 
   it('renders the actionless opening frame but keeps it out of the decision log', async () => {
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'dev-user',
-      allowlisted: true,
-      is_operator: false,
-    })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
     vi.mocked(getSession).mockResolvedValue(ownerRow())
     await renderSession()
     await waitForHandlers()
@@ -298,11 +285,7 @@ describe('SessionPage', () => {
   })
 
   it('reflects pause/resume echoes and sends the toggle command', async () => {
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'dev-user',
-      allowlisted: true,
-      is_operator: false,
-    })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
     vi.mocked(getSession).mockResolvedValue(ownerRow())
     await renderSession()
     await waitForHandlers()
@@ -320,11 +303,7 @@ describe('SessionPage', () => {
   })
 
   it('shows the end card with the result facts and a replay link', async () => {
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'dev-user',
-      allowlisted: true,
-      is_operator: false,
-    })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
     vi.mocked(getSession).mockResolvedValue(ownerRow())
     await renderSession()
     await waitForHandlers()
@@ -341,11 +320,7 @@ describe('SessionPage', () => {
   })
 
   it('reveals the rating panel above the canvas only after the session ends', async () => {
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'viewer',
-      allowlisted: true,
-      is_operator: false,
-    })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('viewer'))
     vi.mocked(getSession).mockResolvedValue(ownerRow())
     vi.mocked(getSessionRatings).mockResolvedValue({
       ok: true,
@@ -383,12 +358,24 @@ describe('SessionPage', () => {
     expect(screen.getByText('Judge smoothness.')).toBeInTheDocument()
   })
 
+  it('prompts an anonymous viewer to sign in to rate an ended session, without reading ratings', async () => {
+    // A signed-out spectator may watch a public session through its end, so instead of the rating panel
+    // (or a redirect) they see a sign-in prompt. The protected ratings read must never fire for them.
+    vi.mocked(getMe).mockResolvedValue(anonymousMe)
+    vi.mocked(getSession).mockResolvedValue(endedOwnerRow())
+    await renderSession()
+
+    const prompt = await screen.findByText(/Sign in to rate the agents in this session\./)
+    expect(prompt).toBeInTheDocument()
+    const signIn = within(prompt).getByRole('link', { name: 'Sign in' })
+    expect(signIn).toHaveAttribute('href', '/login')
+    // The panel never mounts for an anonymous viewer, so its self-fetch never runs.
+    expect(screen.queryByTestId('ratings-reveal')).toBeNull()
+    expect(vi.mocked(getSessionRatings)).not.toHaveBeenCalled()
+  })
+
   it('masks playable submitted-agent attribution for non-operators', async () => {
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'viewer',
-      allowlisted: true,
-      is_operator: false,
-    })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('viewer'))
     vi.mocked(getSession).mockResolvedValue(scriptedRow())
     vi.mocked(listSeasons).mockResolvedValue([
       {
@@ -426,11 +413,7 @@ describe('SessionPage', () => {
   })
 
   it('reveals submitted-agent attribution after public play closes', async () => {
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'viewer',
-      allowlisted: true,
-      is_operator: false,
-    })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('viewer'))
     vi.mocked(getSession).mockResolvedValue(scriptedRow())
     vi.mocked(listSeasons).mockResolvedValue([
       {
@@ -464,11 +447,7 @@ describe('SessionPage', () => {
   })
 
   it('returns to an ended session without opening a socket and shows recording metadata', async () => {
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'dev-user',
-      allowlisted: true,
-      is_operator: false,
-    })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
     vi.mocked(getSession).mockResolvedValue(endedOwnerRow())
     vi.mocked(listRecordings).mockResolvedValue([
       {
@@ -501,11 +480,7 @@ describe('SessionPage', () => {
   })
 
   it('gives a spectator no controls and no input', async () => {
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'someone-else',
-      allowlisted: true,
-      is_operator: false,
-    })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('someone-else'))
     vi.mocked(getSession).mockResolvedValue(ownerRow())
     await renderSession()
     await waitForHandlers()
@@ -520,11 +495,7 @@ describe('SessionPage', () => {
   })
 
   it('shows a loading indicator until the renderer mounts, not the decision-log disclosure', async () => {
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'dev-user',
-      allowlisted: true,
-      is_operator: false,
-    })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
     vi.mocked(getSession).mockResolvedValue(ownerRow())
     await renderSession()
     await waitForHandlers()
@@ -540,7 +511,7 @@ describe('SessionPage', () => {
   })
 
   it('buffers a watch run through the jitter buffer and reveals game over only after it drains', async () => {
-    vi.mocked(getMe).mockResolvedValue({ user_id: 'viewer', allowlisted: true, is_operator: false })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('viewer'))
     vi.mocked(getSession).mockResolvedValue(scriptedRow())
     await renderSession()
     await waitForHandlers()
@@ -585,7 +556,7 @@ describe('SessionPage', () => {
   })
 
   it('shows a waiting indicator when the jitter buffer underruns, and clears it when frames resume', async () => {
-    vi.mocked(getMe).mockResolvedValue({ user_id: 'viewer', allowlisted: true, is_operator: false })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('viewer'))
     vi.mocked(getSession).mockResolvedValue(scriptedRow())
     await renderSession()
     await waitForHandlers()
@@ -620,11 +591,7 @@ describe('SessionPage', () => {
   })
 
   it('throttles a live human turn-based session: own move instant, opponents paced, end held until drained', async () => {
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'dev-user',
-      allowlisted: true,
-      is_operator: false,
-    })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
     // A live human Hearts session: turn-based, owner controls a seat, env declares a 900 ms live cadence.
     vi.mocked(getSession).mockResolvedValue({ ...ownerRow(), env_id: 'hearts' })
     vi.mocked(getEnvironments).mockResolvedValue([heartsMeta()])
@@ -683,22 +650,14 @@ describe('SessionPage', () => {
   })
 
   it('shows "No such session" when the row is missing', async () => {
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'dev-user',
-      allowlisted: true,
-      is_operator: false,
-    })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
     vi.mocked(getSession).mockResolvedValue(undefined)
     await renderSession()
     expect(await screen.findByText('No such session.')).toBeInTheDocument()
   })
 
   it('mounts the chat panel and forwards a chat command with the controlled seat', async () => {
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'dev-user',
-      allowlisted: true,
-      is_operator: false,
-    })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
     vi.mocked(getEnvironments).mockResolvedValue([spadesMeta()])
     vi.mocked(getSession).mockResolvedValue(spadesOwnerRow())
     await renderSession()
@@ -721,11 +680,7 @@ describe('SessionPage', () => {
   })
 
   it('disables Send during a reconnect and keeps the draft until the socket returns', async () => {
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'dev-user',
-      allowlisted: true,
-      is_operator: false,
-    })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
     vi.mocked(getEnvironments).mockResolvedValue([spadesMeta()])
     vi.mocked(getSession).mockResolvedValue(spadesOwnerRow())
     await renderSession()
@@ -754,11 +709,7 @@ describe('SessionPage', () => {
   })
 
   it('keys the character counter off the row cap, not the metadata', async () => {
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'dev-user',
-      allowlisted: true,
-      is_operator: false,
-    })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
     // Metadata caps at 120; the row's effective block (a season override) tightened it to 5.
     vi.mocked(getEnvironments).mockResolvedValue([spadesMeta()])
     vi.mocked(getSession).mockResolvedValue({ ...spadesOwnerRow(), message_cap: 5 })
@@ -776,7 +727,7 @@ describe('SessionPage', () => {
   })
 
   it('accumulates chat messages paced with their frames', async () => {
-    vi.mocked(getMe).mockResolvedValue({ user_id: 'viewer', allowlisted: true, is_operator: false })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('viewer'))
     vi.mocked(getEnvironments).mockResolvedValue([spadesMeta({ view_interval_ms: 50 })])
     vi.mocked(getSession).mockResolvedValue({
       ...scriptedRow(),
@@ -819,11 +770,7 @@ describe('SessionPage', () => {
   })
 
   it('does not duplicate a re-received message when the latest state line replays', async () => {
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'dev-user',
-      allowlisted: true,
-      is_operator: false,
-    })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
     // live_interval_ms null keeps the human stream unbuffered, so onState renders on arrival.
     vi.mocked(getEnvironments).mockResolvedValue([spadesMeta({ live_interval_ms: null })])
     vi.mocked(getSession).mockResolvedValue(spadesOwnerRow())
@@ -844,11 +791,7 @@ describe('SessionPage', () => {
   })
 
   it('hydrates the full chat log from the recording on a reopened ended session', async () => {
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'dev-user',
-      allowlisted: true,
-      is_operator: false,
-    })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
     vi.mocked(getEnvironments).mockResolvedValue([spadesMeta()])
     vi.mocked(getSession).mockResolvedValue({
       ...endedOwnerRow(),
@@ -876,11 +819,7 @@ describe('SessionPage', () => {
   })
 
   it('keeps the viewer’s own messages badged on an ended session', async () => {
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'dev-user',
-      allowlisted: true,
-      is_operator: false,
-    })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
     vi.mocked(getEnvironments).mockResolvedValue([spadesMeta()])
     vi.mocked(getSession).mockResolvedValue({
       ...endedOwnerRow(),
@@ -909,11 +848,7 @@ describe('SessionPage', () => {
   })
 
   it('shows a spectator the chat panel without a composer', async () => {
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'someone-else',
-      allowlisted: true,
-      is_operator: false,
-    })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('someone-else'))
     vi.mocked(getEnvironments).mockResolvedValue([spadesMeta()])
     vi.mocked(getSession).mockResolvedValue(spadesOwnerRow()) // owned by dev-user
     await renderSession()
@@ -929,11 +864,7 @@ describe('SessionPage', () => {
   })
 
   it('mounts no chat panel when the season override disabled messaging', async () => {
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'dev-user',
-      allowlisted: true,
-      is_operator: false,
-    })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
     // The metadata enables messaging, but the row's effective block (a season override) disabled it.
     vi.mocked(getEnvironments).mockResolvedValue([spadesMeta()])
     vi.mocked(getSession).mockResolvedValue({ ...spadesOwnerRow(), messaging_enabled: 0 })

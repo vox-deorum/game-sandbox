@@ -134,6 +134,7 @@ async function main(): Promise<void> {
     orchestrator,
     siteName: config.siteName,
     siteShortName: config.siteShortName,
+    githubAuth: config.auth.github !== undefined,
     environments,
     recordings,
     retention,

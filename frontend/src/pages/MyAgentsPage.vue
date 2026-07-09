@@ -16,10 +16,9 @@ import UiBadge from '../components/ui/UiBadge.vue'
 import UiCard from '../components/ui/UiCard.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import UiStatusBadge from '../components/ui/UiStatusBadge.vue'
-import { currentUserId } from '../identity.js'
 import { formatDate } from '../lib/format.js'
 import { submissionStatusLabel, submissionStatusTone } from '../lib/submission-status.js'
-import { useMe } from '../me.js'
+import { useMe, userId } from '../me.js'
 
 interface EnvironmentAgent {
   meta: EnvironmentMeta
@@ -27,20 +26,28 @@ interface EnvironmentAgent {
 }
 
 const me = useMe()
-const ownerId = ref(currentUserId)
+const ownerId = ref<string | null>(null)
 const rows = ref<EnvironmentAgent[] | null>(null)
 const error = ref(false)
+// True once identity has settled and there is no signed-in user: show the sign-in prompt, skip the fetch.
+const signedOut = ref(false)
 
 
 onMounted(async () => {
   await me.whenSettled()
-  ownerId.value = me.me?.user_id ?? currentUserId
+  const uid = userId(me.me)
+  ownerId.value = uid
+  if (uid === null) {
+    // An anonymous visitor has no agents to aggregate; prompt them to sign in instead of fetching.
+    signedOut.value = true
+    return
+  }
   try {
     const envs = await getEnvironments()
     const profiles = await Promise.all(
       envs.map(async (meta) => ({
         meta,
-        profile: await getAgentProfile(meta.env_id, ownerId.value).catch(() => null),
+        profile: await getAgentProfile(meta.env_id, uid).catch(() => null),
       })),
     )
     rows.value = profiles.filter(
@@ -64,7 +71,10 @@ function activeSubmission(profile: AgentProfile) {
       <p class="my-agents-lede">Every environment you have an agent in, and how it is doing.</p>
     </header>
 
-    <UiEmptyState v-if="error" tone="danger">Could not load your agents.</UiEmptyState>
+    <UiEmptyState v-if="signedOut">
+      Sign in to see your agents. <RouterLink to="/login">Sign in</RouterLink>
+    </UiEmptyState>
+    <UiEmptyState v-else-if="error" tone="danger">Could not load your agents.</UiEmptyState>
     <UiEmptyState v-else-if="rows === null">Loading…</UiEmptyState>
     <UiEmptyState v-else-if="rows.length === 0">
       You have not submitted an agent yet. Pick a <a href="/">game environment</a> to get started.

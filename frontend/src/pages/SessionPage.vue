@@ -17,7 +17,7 @@
 import type { RecordingHeader, StepState } from '@game-sandbox/schema'
 import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
 import { computed, onMounted, ref, shallowRef } from 'vue'
-import { useRoute } from 'vue-router'
+import { RouterLink, useRoute } from 'vue-router'
 
 import {
   getEnvironments,
@@ -45,7 +45,7 @@ import { useStageLayout } from '../composables/useStageLayout.js'
 import { type ChatEntry, messageKey } from '../lib/chat.js'
 import { formatDate } from '../lib/format.js'
 import { liveIntervalMs, playbackIntervalMs } from '../lib/playback.js'
-import { useMe } from '../me.js'
+import { isAdmin, useMe, userId } from '../me.js'
 import { parseRecording } from '../replay/parse.js'
 import { isCompletedOutcome, reasonText } from '../replay/reason.js'
 import { summarizeStates } from '../replay/summary.js'
@@ -53,6 +53,9 @@ import { summarizeStates } from '../replay/summary.js'
 const route = useRoute()
 const me = useMe()
 const id = String(route.params.id)
+// The signed-in viewer's id for the attribution components' optional `viewer-id` prop (undefined when
+// anonymous). The prop takes `string | undefined`, so the `null` sentinel maps to `undefined`.
+const viewerId = computed(() => userId(me.me) ?? undefined)
 
 const row = ref<SessionRow | null>(null)
 const meta = ref<EnvironmentMeta | null>(null)
@@ -78,7 +81,7 @@ const lastState = shallowRef<StepState | null>(null)
 const gameOverDismissed = ref(false)
 
 const isOwner = computed(
-  () => me.me?.user_id !== undefined && row.value?.user_id === me.me.user_id,
+  () => viewerId.value !== undefined && row.value?.user_id === viewerId.value,
 )
 // The seat(s) this viewer occupied as a human, from the recording header's attribution. It must be the
 // one seat the human took, not every human-capable seat: the renderer reads `controlled[0]` as the
@@ -112,7 +115,7 @@ const recordingId = computed(() => row.value?.recording_id ?? null)
 // Fail closed: anyone not confirmed an operator (including an unresolved identity) sees the blind
 // attribution while the season is playable.
 const blindAttribution = computed(
-  () => seasonPlayable.value && me.me?.is_operator !== true,
+  () => seasonPlayable.value && !isAdmin(me.me),
 )
 
 // The renderer (shared with replay) forwards the owner's live input. The socket owns the chrome state
@@ -390,12 +393,17 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
     <PlayerAttribution
       :players="header?.players"
       :blind="blindAttribution"
-      :viewer-id="me.me?.user_id"
+      :viewer-id="viewerId"
       :anonymous-numbers="anonymousNumbers"
     />
 
-    <!-- End-of-session feedback appears only after termination, immediately above the game stage. -->
-    <SessionRatings v-if="status === 'ended'" :session-id="id" />
+    <!-- End-of-session feedback appears only after termination, immediately above the game stage.
+         The ratings read is protected, so an anonymous spectator sees a sign-in prompt instead of a
+         redirect: they may watch a public session through its end without signing in. -->
+    <SessionRatings v-if="status === 'ended' && me.me?.user != null" :session-id="id" />
+    <UiEmptyState v-else-if="status === 'ended' && !me.loading">
+      Sign in to rate the agents in this session. <RouterLink to="/login">Sign in</RouterLink>
+    </UiEmptyState>
 
     <div class="stage" :class="[portrait ? 'portrait' : 'landscape', logBeside ? 'beside' : 'below']">
       <section class="stage-canvas" aria-label="Environment">
@@ -430,7 +438,7 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
             :state="lastState"
             :header="header"
             :blind="blindAttribution"
-            :viewer-id="me.me?.user_id"
+            :viewer-id="viewerId"
             :anonymous-numbers="anonymousNumbers"
             @dismiss="gameOverDismissed = true"
           />
@@ -453,7 +461,7 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
               :entries="chatLog"
               :players="header?.players"
               :blind="blindAttribution"
-              :viewer-id="me.me?.user_id"
+              :viewer-id="viewerId"
               :anonymous-numbers="anonymousNumbers"
               :viewer-slots="viewerSeats"
               :sendable="chatSendable"
@@ -480,7 +488,7 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
             :entries="chatLog"
             :players="header?.players"
             :blind="blindAttribution"
-            :viewer-id="me.me?.user_id"
+            :viewer-id="viewerId"
             :anonymous-numbers="anonymousNumbers"
             :viewer-slots="viewerSeats"
             :sendable="chatSendable"

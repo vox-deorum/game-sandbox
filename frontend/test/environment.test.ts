@@ -2,6 +2,7 @@ import { fireEvent, screen } from '@testing-library/vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { flappyMeta, heartsMeta } from './helpers/fixtures.js'
+import { signedInMe } from './helpers/me.js'
 import { memoryRouter, renderWithMe } from './helpers/render.js'
 
 const META = flappyMeta()
@@ -71,24 +72,20 @@ describe('EnvironmentPage', () => {
     })
   })
 
-  it('hides the play entry point for a non-allowlisted user', async () => {
-    vi.mocked(getMe).mockResolvedValue({ user_id: 'carol', allowlisted: false, is_operator: false })
+  it('hides the play entry point for a still-pending user', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('carol', 'pending'))
     await renderPage()
-    expect(await screen.findByText(/limited to allowlisted users/)).toBeInTheDocument()
+    expect(await screen.findByText(/awaiting approval/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Play Yourself' })).toBeNull()
-    // Watching moved to the picker, whose Watch buttons are likewise hidden when not allowlisted.
+    // Watching moved to the picker, whose Watch buttons are likewise hidden when the account cannot participate.
     expect(screen.queryByRole('button', { name: 'Watch' })).toBeNull()
     // The operator-only admin entry point is hidden from a non-operator.
     expect(screen.queryByRole('link', { name: 'Admin console' })).toBeNull()
   })
 
   it('frames the watch section as "Rate an Agent" when there is an unrated agent', async () => {
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'dev-user',
-      allowlisted: true,
-      is_operator: false,
-    })
-    // An unrated agent the allowlisted viewer can rate flips the section heading from watch to rate.
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
+    // An unrated agent a participating viewer can rate flips the section heading from watch to rate.
     vi.mocked(listWatchAgents).mockResolvedValue([
       { submission_id: 'sub1', anonymous_number: 1, rating_status: 'unrated' },
     ])
@@ -100,11 +97,7 @@ describe('EnvironmentPage', () => {
   })
 
   it('keeps the watch framing when there is nothing unrated to rate', async () => {
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'dev-user',
-      allowlisted: true,
-      is_operator: false,
-    })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
     // Only an already-rated agent: there is something to watch but nothing to rate.
     vi.mocked(listWatchAgents).mockResolvedValue([
       { submission_id: 'sub1', anonymous_number: 1, rating_status: 'rated' },
@@ -117,11 +110,7 @@ describe('EnvironmentPage', () => {
   })
 
   it('disables watch and play when no season is play-open', async () => {
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'dev-user',
-      allowlisted: true,
-      is_operator: false,
-    })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
     vi.mocked(getEnvironmentLeaderboards).mockResolvedValue({
       current: null,
       submission_season_id: 'iter-1',
@@ -133,11 +122,7 @@ describe('EnvironmentPage', () => {
   })
 
   it('opens the play flow from the play-open season badge instead of linking to its boards', async () => {
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'dev-user',
-      allowlisted: true,
-      is_operator: false,
-    })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
     vi.mocked(listSeasons).mockResolvedValue([
       {
         id: 'iter-1',
@@ -161,11 +146,7 @@ describe('EnvironmentPage', () => {
   })
 
   it('keeps the hub stable when the leaderboards read fails (play stays safe-closed)', async () => {
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'dev-user',
-      allowlisted: true,
-      is_operator: false,
-    })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
     // A transient failure must not crash the hub; the play gate stays at its safe-closed default.
     vi.mocked(getEnvironmentLeaderboards).mockRejectedValue(new Error('network blip'))
     await renderPage()
@@ -174,11 +155,7 @@ describe('EnvironmentPage', () => {
   })
 
   it('starts a session through the start form and navigates to it', async () => {
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'dev-user',
-      allowlisted: true,
-      is_operator: false,
-    })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
     vi.mocked(startSession).mockResolvedValue({
       ok: true,
       session: { id: 's1', wsPath: '/api/sessions/s1/ws' },
@@ -198,11 +175,7 @@ describe('EnvironmentPage', () => {
   })
 
   it('sends the human-slot timeout override entered in the start form', async () => {
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'dev-user',
-      allowlisted: true,
-      is_operator: false,
-    })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
     vi.mocked(startSession).mockResolvedValue({
       ok: true,
       session: { id: 's1', wsPath: '/api/sessions/s1/ws' },
@@ -221,11 +194,7 @@ describe('EnvironmentPage', () => {
   })
 
   it('navigates to the active session on an already-active start (rejoin)', async () => {
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'dev-user',
-      allowlisted: true,
-      is_operator: false,
-    })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
     vi.mocked(startSession).mockResolvedValue({
       ok: false,
       reason: 'already_active',
@@ -238,11 +207,7 @@ describe('EnvironmentPage', () => {
   })
 
   it('opens the multi-seat play grid for Hearts and starts with one human seat', async () => {
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'dev-user',
-      allowlisted: true,
-      is_operator: false,
-    })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
     vi.mocked(getEnvironments).mockResolvedValue([heartsMeta()])
     // The multi-seat play dialog fetches the submitted-agent options for the non-human seats.
     vi.mocked(listWatchAgents).mockResolvedValue([])

@@ -2,6 +2,7 @@ import { screen, waitFor } from '@testing-library/vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { RunView } from '../src/api/client.js'
+import { signedInMe } from './helpers/me.js'
 import { memoryRouter, renderWithMe } from './helpers/render.js'
 
 vi.mock('../src/api/client.js', () => ({
@@ -95,11 +96,7 @@ describe('RunDetailsPage', () => {
     vi.clearAllMocks()
     sockets = []
     vi.stubGlobal('WebSocket', FakeWS as unknown as typeof WebSocket)
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'dev-user',
-      allowlisted: true,
-      is_operator: true,
-    })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'admin'))
     vi.mocked(getRun).mockResolvedValue(runView())
   })
 
@@ -108,7 +105,7 @@ describe('RunDetailsPage', () => {
   })
 
   it('renders an access notice for a non-operator', async () => {
-    vi.mocked(getMe).mockResolvedValue({ user_id: 'carol', allowlisted: true, is_operator: false })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('carol', 'normal'))
     await renderPage()
     expect(await screen.findByText(/limited to operators/)).toBeInTheDocument()
     expect(vi.mocked(getRun)).not.toHaveBeenCalled()

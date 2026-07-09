@@ -1,12 +1,27 @@
 import { screen, waitFor, within } from '@testing-library/vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { Board, SeasonView } from '../src/api/client.js'
+import type { Board, Me, SeasonView } from '../src/api/client.js'
 import { flappyMeta } from './helpers/fixtures.js'
+import { signedInMe } from './helpers/me.js'
 import { memoryRouter, renderWithMe } from './helpers/render.js'
 
 vi.mock('../src/api/client.js', () => ({
-  getMe: vi.fn(async () => ({ user_id: 'dev-user', allowlisted: true, is_operator: false })),
+  // The factory is hoisted above imports, so it inlines the signed-in `/api/me` shape rather than
+  // calling the shared helper (a runtime value, unavailable this early). The `Promise<Me>` annotation
+  // type-checks the literal against the production shape so it cannot drift. Matches
+  // signedInMe('dev-user','normal').
+  getMe: vi.fn(
+    async (): Promise<Me> => ({
+      user: {
+        id: 'dev-user',
+        name: 'dev-user',
+        email: 'dev-user@test.local',
+        image: null,
+        status: 'normal',
+      },
+    }),
+  ),
   getEnvironments: vi.fn(),
   getEnvironmentLeaderboards: vi.fn(),
   getSeasonLeaderboards: vi.fn(),
@@ -218,11 +233,7 @@ describe('LeaderboardsPage', () => {
   })
 
   it('lets an operator preview an unreleased season board through the admin read', async () => {
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'dev-user',
-      allowlisted: true,
-      is_operator: true,
-    })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'admin'))
     vi.mocked(getSeasonLeaderboards).mockResolvedValue(undefined)
     vi.mocked(getAdminSeason).mockResolvedValue({
       season: season({
@@ -242,11 +253,7 @@ describe('LeaderboardsPage', () => {
   })
 
   it('lists unreleased seasons in the history table for an operator', async () => {
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'dev-user',
-      allowlisted: true,
-      is_operator: true,
-    })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'admin'))
     vi.mocked(listSeasons).mockResolvedValue([
       {
         ...season({
@@ -281,11 +288,7 @@ describe('LeaderboardsPage', () => {
   })
 
   it('requests only the released listing for a non-operator', async () => {
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'dev-user',
-      allowlisted: true,
-      is_operator: false,
-    })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
     vi.mocked(getEnvironmentLeaderboards).mockResolvedValue({
       current: { season: season(), board: board() },
       submission_season_id: null,

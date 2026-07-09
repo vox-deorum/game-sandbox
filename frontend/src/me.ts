@@ -1,14 +1,39 @@
 /**
  * The app-shell identity provider. The shell fetches `GET /api/me` once at startup so the header can
- * show "signed in as ⟨user⟩" and every page can learn whether the user may start sessions, without
- * each page refetching. Components read it through {@link useMe}.
+ * show the signed-in user and every page can learn what the user may do, without each page refetching.
+ * Components read it through {@link useMe} and derive capabilities with {@link canParticipate} and
+ * {@link isAdmin}.
  *
- * When OAuth lands this is the seam it drops into: the provider keeps the same shape, only its source
- * changes from the mock auto-logon to the real session.
+ * The one `/api/me` fetch is the single identity source: a sign-in or sign-out is a full-page
+ * navigation (see `LoginPage.vue` and `AccountMenu.vue`), which re-runs this fetch, rather than a
+ * reactive session propagated through a second source.
  */
 import { defineComponent, type InjectionKey, inject, provide, reactive } from 'vue'
 
 import { getMe, type Me } from './api/client.js'
+
+/** True when the user may start sessions, submit, and rate: status `normal` or `admin` (never null). */
+export function canParticipate(me: Me | null): boolean {
+  const status = me?.user?.status
+  return status === 'normal' || status === 'admin'
+}
+
+/** True when the user may see and drive the operator admin console: status `admin`. */
+export function isAdmin(me: Me | null): boolean {
+  return me?.user?.status === 'admin'
+}
+
+/** The signed-in user's id, or `null` for an anonymous visitor (or an unresolved fetch). */
+export function userId(me: Me | null): string | null {
+  return me?.user?.id ?? null
+}
+
+/**
+ * The error shown when a still-pending account tries to start a session (the backend answers the
+ * start with a `not_active` 403). Shared by the hub and the watch picker so the two cannot drift.
+ */
+export const PENDING_START_MESSAGE =
+  "Your account is awaiting approval, so you can't start sessions yet."
 
 export interface MeState {
   me: Me | null
@@ -66,7 +91,7 @@ export const MeProvider = defineComponent({
   },
 })
 
-/** The resolved identity and allowlist membership, plus its load state, for the nearest provider. */
+/** The resolved session identity and status, plus its load state, for the nearest provider. */
 export function useMe(): MeState {
   return (
     inject(ME_KEY) ??

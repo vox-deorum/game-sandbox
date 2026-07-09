@@ -11,6 +11,7 @@ import {
   spadesMeta,
   spadesPlayers,
 } from './helpers/fixtures.js'
+import { signedInMe } from './helpers/me.js'
 import { memoryRouter, renderWithMe } from './helpers/render.js'
 
 const META = flappyMeta({ description: '' })
@@ -75,11 +76,7 @@ describe('ReplayPage', () => {
     vi.clearAllMocks()
     drawn = []
     mountCtx = null
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'dev-user',
-      allowlisted: true,
-      is_operator: false,
-    })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
   })
 
   it('loads, mounts a draw-only renderer, and renders transport controls', async () => {

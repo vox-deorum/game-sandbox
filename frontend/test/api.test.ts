@@ -1,7 +1,9 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   ApiError,
+  adminSeasonDownloadUrl,
+  adminSubmissionDownloadUrl,
   configureSeason,
   declareSeason,
   getAuthorPrompt,
@@ -25,21 +27,69 @@ import {
 } from '../src/api/client.js'
 import { jsonResponse, stubFetch } from './helpers/fetchStub.js'
 import { flappyMeta } from './helpers/fixtures.js'
+import { anonymousMe, signedInMe } from './helpers/me.js'
 
 const META = flappyMeta()
 
 describe('api client', () => {
-  afterEach(() => {
-    vi.unstubAllGlobals()
+  // The one request choke point reads window.location on every call (for the 401 → /login bounce), and
+  // jsdom's real location throws on assign. Replace it with a plain double, defaulting pathname to '/'
+  // so the non-401 cases never touch the redirect branch.
+  let assignSpy: ReturnType<typeof vi.fn>
+  let originalLocation: Location
+  beforeEach(() => {
+    originalLocation = window.location
+    assignSpy = vi.fn()
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      writable: true,
+      value: {
+        pathname: '/',
+        origin: 'http://localhost',
+        href: 'http://localhost/',
+        assign: assignSpy,
+      },
+    })
   })
 
-  it('returns validated environments and carries the identity header', async () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      writable: true,
+      value: originalLocation,
+    })
+  })
+
+  it('returns validated environments and sends no identity header (same-origin cookie)', async () => {
     const fetchMock = stubFetch(async () => jsonResponse([META]))
     const envs = await getEnvironments()
     expect(envs).toEqual([META])
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(url).toBe('/api/environments')
-    expect((init.headers as Record<string, string>)['x-sandbox-user']).toBe('dev-user')
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/environments')
+    expect(
+      (init?.headers as Record<string, string> | undefined)?.['x-sandbox-user'],
+    ).toBeUndefined()
+  })
+
+  it('bounces to /login when a request 401s with code auth_required', async () => {
+    stubFetch(async () => jsonResponse({ code: 'auth_required' }, 401))
+    // The redirect fires from the request choke point; the wrapper still rejects afterwards. Either way
+    // the assertion is on assignSpy, so swallow the throw.
+    await expect(getEnvironments()).rejects.toBeInstanceOf(ApiError)
+    expect(assignSpy).toHaveBeenCalledWith('/login')
+  })
+
+  it('does not bounce on a 401 auth_required when already on /login', async () => {
+    window.location.pathname = '/login'
+    stubFetch(async () => jsonResponse({ code: 'auth_required' }, 401))
+    await expect(getEnvironments()).rejects.toBeInstanceOf(ApiError)
+    expect(assignSpy).not.toHaveBeenCalled()
+  })
+
+  it('builds the operator download URLs from the session cookie, with no ?user= param', () => {
+    expect(adminSubmissionDownloadUrl('sub-1')).toBe('/api/admin/submissions/sub-1/download')
+    expect(adminSeasonDownloadUrl('iter-1')).toBe('/api/admin/seasons/iter-1/submissions/download')
   })
 
   it('throws ApiError when the environment list has the wrong shape', async () => {
@@ -47,18 +97,25 @@ describe('api client', () => {
     await expect(getEnvironments()).rejects.toBeInstanceOf(ApiError)
   })
 
-  it('reports identity, allowlist membership, and operator status from /api/me', async () => {
-    stubFetch(async () =>
-      jsonResponse({ user_id: 'dev-user', allowlisted: true, is_operator: true }),
-    )
-    expect(await getMe()).toEqual({ user_id: 'dev-user', allowlisted: true, is_operator: true })
+  it('returns the signed-in session user and status from /api/me', async () => {
+    stubFetch(async () => jsonResponse(signedInMe('dev-user', 'admin')))
+    expect(await getMe()).toEqual(signedInMe('dev-user', 'admin'))
   })
 
-  it('reads the deployment site name and short name from /api/config', async () => {
+  it('returns { user: null } from /api/me for an anonymous visitor', async () => {
+    stubFetch(async () => jsonResponse({ user: null }))
+    expect(await getMe()).toEqual(anonymousMe)
+  })
+
+  it('reads the deployment site name, short name, and github_auth flag from /api/config', async () => {
     const fetchMock = stubFetch(async () =>
-      jsonResponse({ site_name: 'Acme Arena', site_short_name: 'Acme' }),
+      jsonResponse({ site_name: 'Acme Arena', site_short_name: 'Acme', github_auth: true }),
     )
-    expect(await getSiteConfig()).toEqual({ site_name: 'Acme Arena', site_short_name: 'Acme' })
+    expect(await getSiteConfig()).toEqual({
+      site_name: 'Acme Arena',
+      site_short_name: 'Acme',
+      github_auth: true,
+    })
     expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/config')
   })
 
@@ -72,13 +129,13 @@ describe('api client', () => {
     })
   })
 
-  it('maps a 403 to not_allowlisted', async () => {
-    stubFetch(async () => jsonResponse({ error: 'no', code: 'not_allowlisted' }, 403))
+  it('maps a 403 to not_active', async () => {
+    stubFetch(async () => jsonResponse({ error: 'no', code: 'not_active' }, 403))
     expect(
       await startSession({ envId: 'flappy_bird', slots: { player_0: { kind: 'human' } } }),
     ).toEqual({
       ok: false,
-      reason: 'not_allowlisted',
+      reason: 'not_active',
     })
   })
 

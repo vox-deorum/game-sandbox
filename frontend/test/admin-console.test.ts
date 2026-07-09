@@ -9,6 +9,7 @@ import type {
   SeasonView,
 } from '../src/api/client.js'
 import { flappyMeta } from './helpers/fixtures.js'
+import { signedInMe } from './helpers/me.js'
 import { memoryRouter, renderWithMe } from './helpers/render.js'
 
 vi.mock('../src/api/client.js', () => ({
@@ -142,11 +143,7 @@ describe('AdminConsolePage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(getEnvironments).mockResolvedValue([flappyMeta()])
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'dev-user',
-      allowlisted: true,
-      is_operator: true,
-    })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'admin'))
     vi.mocked(listSeasons).mockResolvedValue([pickerSeason()])
     vi.mocked(getAdminSeason).mockResolvedValue(adminView())
     vi.mocked(listRuns).mockResolvedValue([])
@@ -157,7 +154,7 @@ describe('AdminConsolePage', () => {
   })
 
   it('renders an access notice for a non-operator', async () => {
-    vi.mocked(getMe).mockResolvedValue({ user_id: 'carol', allowlisted: true, is_operator: false })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('carol', 'normal'))
     await renderConsole()
     expect(await screen.findByText(/limited to operators/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Declare season' })).toBeNull()

@@ -1,6 +1,7 @@
 import { fireEvent, screen } from '@testing-library/vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { signedInMe } from './helpers/me.js'
 import { memoryRouter, renderWithMe } from './helpers/render.js'
 
 vi.mock('../src/api/client.js', () => ({
@@ -39,11 +40,7 @@ async function renderDocs(path: string) {
 describe('DocsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'dev-user',
-      allowlisted: true,
-      is_operator: false,
-    })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
     vi.mocked(getDocsManifest).mockResolvedValue(MANIFEST)
     vi.mocked(getDocsIndex).mockResolvedValue({
       path: 'students/index.md',

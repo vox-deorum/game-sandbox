@@ -1,12 +1,13 @@
 <!--
   Environment hub (the Overview tab): everything about one environment in one place — the description
-  and metadata, the entry points into play and watch (gated by the allowlist), and the current released
-  season's leaderboards with a link to the full Leaderboards page and season history. Laid out as a
-  column of sections. The other per-environment surfaces live in the tab strip (ExperimentTabs.vue):
+  and metadata, the entry points into play and watch (gated by participation status), and the current
+  released season's leaderboards with a link to the full Leaderboards page and season history. Laid out
+  as a column of sections. The other per-environment surfaces live in the tab strip (ExperimentTabs.vue):
   replays in the Replays tab, submissions in My Submissions, the operator console in Manage.
 
-  The play and watch entry points are hidden when `/api/me` says the user is not allowlisted, and the
-  backend enforces the same gate, so the UI state is courtesy and the backend check is the enforcement.
+  The play and watch entry points are hidden when `/api/me` says the user cannot participate (an
+  anonymous or still-pending account), and the backend enforces the same gate, so the UI state is
+  courtesy and the backend check is the enforcement.
   Each entry point opens the start form in a modal dialog (a short interruption — seed, timeout,
   confirm — not a destination), keeping the hub stable underneath. Starting resolves to a session id
   this page navigates to; the already-active case offers rejoin by navigating to the user's existing
@@ -38,13 +39,15 @@ import UiDialog from '../components/ui/UiDialog.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import { useEnvironmentMeta } from '../composables/useEnvironmentMeta.js'
 import { formatDate, slotLabel } from '../lib/format.js'
-import { useMe } from '../me.js'
+import { canParticipate, isAdmin, PENDING_START_MESSAGE, useMe, userId } from '../me.js'
 import { thumbnailFor } from '../renderers/registry.js'
 
 const route = useRoute()
 const router = useRouter()
 const me = useMe()
 const envId = String(route.params.envId)
+// The signed-in user's id (null when anonymous), the "Submittable" badge's agent-profile target.
+const ownerId = computed(() => userId(me.me))
 
 const { meta, notFound, loading } = useEnvironmentMeta(envId)
 const startError = ref<string | null>(null)
@@ -64,11 +67,11 @@ const playOpen = computed(() => leaderboards.value?.play_season_id != null)
 // watch/play seat-dropdown options, and the rate-versus-watch framing all read from this one list.
 // Null until it settles (empty when no season is play-open).
 const watchAgents = ref<WatchAgentSummary[] | null>(null)
-// Whether the viewer has something to rate: allowlisted, with at least one unrated agent in the list.
-// When true the watch section is framed as rating rather than watching.
+// Whether the viewer has something to rate: an active participant, with at least one unrated agent in
+// the list. When true the watch section is framed as rating rather than watching.
 const rateable = computed(
   () =>
-    Boolean(me.me?.allowlisted) &&
+    canParticipate(me.me) &&
     (watchAgents.value?.some((agent) => agent.rating_status === 'unrated') ?? false),
 )
 
@@ -135,7 +138,7 @@ onMounted(() => {
 // human-play entry point only.
 const playFormOpen = ref(false)
 const canStartHumanPlay = computed(
-  () => Boolean(me.me?.allowlisted && meta.value?.human_slots.length && playOpen.value),
+  () => canParticipate(me.me) && Boolean(meta.value?.human_slots.length && playOpen.value),
 )
 // A multi-seat environment (Hearts) plays through the seat-assignment grid: the human claims a seat
 // and agents fill the rest. A single-slot environment (Flappy Bird) keeps the minimal start form.
@@ -203,8 +206,8 @@ async function submitStart(payload: StartPayload): Promise<void> {
   } else if (result.reason === 'already_active') {
     // Rejoin rather than dead-end: the user already has a session running.
     await router.push(`/sessions/${result.activeSessionId}`)
-  } else if (result.reason === 'not_allowlisted') {
-    startError.value = 'You are not on the session allowlist.'
+  } else if (result.reason === 'not_active') {
+    startError.value = PENDING_START_MESSAGE
   } else {
     startError.value = result.message
   }
@@ -237,9 +240,9 @@ async function submitStart(payload: StartPayload): Promise<void> {
             {{ seasonLabel(playableSeason) }}: Playable
           </UiBadge>
           <RouterLink
-            v-if="submittableSeason !== null && me.me != null"
+            v-if="submittableSeason !== null && ownerId !== null"
             class="env-meta-link"
-            :to="`/environments/${meta.env_id}/agents/${me.me.user_id}`"
+            :to="`/environments/${meta.env_id}/agents/${ownerId}`"
           >
             <UiBadge variant="accent">{{ seasonLabel(submittableSeason) }}: Submittable</UiBadge>
           </RouterLink>
@@ -297,7 +300,7 @@ async function submitStart(payload: StartPayload): Promise<void> {
         :meta="meta"
         :agents="watchAgents ?? []"
         mode="play"
-        :is-operator="me.me?.is_operator"
+        :is-operator="isAdmin(me.me)"
         @start="submitStart"
         @cancel="playFormOpen = false"
       />

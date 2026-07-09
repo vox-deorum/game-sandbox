@@ -38,4 +38,23 @@ describe('useSiteConfig', () => {
     expect(siteName.value).toBe(DEFAULT_SITE_NAME)
     expect(siteShortName.value).toBe(DEFAULT_SITE_NAME)
   })
+
+  it('defaults githubAuth to false before any load', async () => {
+    const { useSiteConfig } = await freshSiteConfig()
+    expect(useSiteConfig().githubAuth.value).toBe(false)
+  })
+
+  it('parses github_auth: true into githubAuth', async () => {
+    stubFetch(async () => jsonResponse({ site_name: 'X', site_short_name: 'X', github_auth: true }))
+    const { useSiteConfig, loadSiteConfig } = await freshSiteConfig()
+    await loadSiteConfig()
+    expect(useSiteConfig().githubAuth.value).toBe(true)
+  })
+
+  it('leaves githubAuth false when github_auth is absent or false', async () => {
+    stubFetch(async () => jsonResponse({ site_name: 'X', site_short_name: 'X' }))
+    const { useSiteConfig, loadSiteConfig } = await freshSiteConfig()
+    await loadSiteConfig()
+    expect(useSiteConfig().githubAuth.value).toBe(false)
+  })
 })

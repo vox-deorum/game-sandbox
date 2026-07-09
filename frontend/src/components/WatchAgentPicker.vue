@@ -1,6 +1,6 @@
 <!--
   The submitted-agent watch/rate picker (Stage 5.6, extended in Stage 7.6): lists the play-open
-  season's active `ready` agents and lets an allowlisted viewer stream them into the renderer. The hub
+  season's active `ready` agents and lets a participating viewer stream them into the renderer. The hub
   fetches the list once and passes it in; this component is otherwise self-contained for starting a
   run. Regular users receive numbered anonymous rows plus their own rating state; operators
   additionally receive owner/source details.
@@ -9,8 +9,8 @@
   for a multi-seat environment, preselecting that agent into every seat (SeatAssignmentDialog), where
   the viewer assigns an agent to each seat and a seed before starting. A single-slot environment keeps
   the Stage 5 shape: the row starts a scripted watch run immediately, now expressed as a one-seat
-  `slots` assignment. The post-session panel takes the rating after the run. Non-allowlisted viewers
-  can browse the list but cannot start a container.
+  `slots` assignment. The post-session panel takes the rating after the run. Viewers who cannot yet
+  participate (anonymous or still-pending) can browse the list but cannot start a container.
 -->
 <script setup lang="ts">
 import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
@@ -23,7 +23,7 @@ import {
   startSession,
   type WatchAgentSummary,
 } from '../api/client.js'
-import { useMe } from '../me.js'
+import { canParticipate, isAdmin, PENDING_START_MESSAGE, useMe } from '../me.js'
 import SeatAssignmentDialog from './SeatAssignmentDialog.vue'
 import UiBadge from './ui/UiBadge.vue'
 import UiButton from './ui/UiButton.vue'
@@ -54,6 +54,14 @@ const starting = ref<string | null>(null)
 const multiSeat = computed(() => props.meta.max_slots > 1)
 const dialogOpen = ref(false)
 const dialogPreselect = ref<SlotAssignmentInput | null>(null)
+
+// Why a viewer who cannot participate is blocked from starting a run: an anonymous visitor needs to
+// sign in, while a signed-in but still-pending account is awaiting an admin's approval.
+const participationNotice = computed(() =>
+  me.me?.user == null
+    ? 'Sign in to watch and rate agents.'
+    : 'Your account is awaiting approval — watching unlocks once an admin approves you.',
+)
 
 /** A short, human-friendly label for a submission's pinned source. */
 function sourceLabel(agent: WatchAgentSummary): string {
@@ -102,7 +110,7 @@ function chooseAgent(preselect: SlotAssignmentInput, loadingKey: string): void {
 /**
  * Start a watch run from a composed payload — the seat dialog's full `slots` (with its seed) for a
  * multi-seat environment, or a one-seat assignment for a single-slot one — and navigate to it,
- * reusing the rejoin / not-allowlisted / error handling.
+ * reusing the rejoin / not-active / error handling.
  */
 async function startRun(payload: StartPayload, loadingKey?: string): Promise<void> {
   startError.value = null
@@ -116,8 +124,8 @@ async function startRun(payload: StartPayload, loadingKey?: string): Promise<voi
     } else if (result.reason === 'already_active') {
       // Rejoin rather than dead-end: the viewer already has a session running.
       await router.push(`/sessions/${result.activeSessionId}`)
-    } else if (result.reason === 'not_allowlisted') {
-      startError.value = 'You are not on the session allowlist.'
+    } else if (result.reason === 'not_active') {
+      startError.value = PENDING_START_MESSAGE
       dialogOpen.value = false
     } else {
       startError.value = result.message
@@ -141,7 +149,7 @@ async function startRun(payload: StartPayload, loadingKey?: string): Promise<voi
           <UiBadge>Built-in</UiBadge>
         </div>
         <UiButton
-          v-if="me.me?.allowlisted"
+          v-if="canParticipate(me.me)"
           size="tight"
           variant="secondary"
           :loading="starting === BUILTIN_KEY"
@@ -163,7 +171,7 @@ async function startRun(payload: StartPayload, loadingKey?: string): Promise<voi
           <UiBadge v-else-if="agent.rating_status === 'rated'">Rated</UiBadge>
         </div>
         <UiButton
-          v-if="me.me?.allowlisted"
+          v-if="canParticipate(me.me)"
           size="tight"
           :variant="agent.rating_status === 'unrated' ? 'primary' : 'secondary'"
           :loading="starting === agent.submission_id"
@@ -174,8 +182,9 @@ async function startRun(payload: StartPayload, loadingKey?: string): Promise<voi
       </li>
     </ul>
     <p v-if="agents.length === 0" class="agent-subnote">No submitted agents are ready to watch yet.</p>
-    <UiEmptyState v-if="!me.me?.allowlisted">
-      Watching an agent is limited to allowlisted users.
+    <UiEmptyState v-if="!canParticipate(me.me)">
+      {{ participationNotice }}
+      <RouterLink v-if="me.me?.user == null" to="/login">Sign in</RouterLink>
     </UiEmptyState>
     <p v-if="startError !== null" class="agent-error" role="alert">{{ startError }}</p>
 
@@ -188,7 +197,7 @@ async function startRun(payload: StartPayload, loadingKey?: string): Promise<voi
         :agents="agents ?? []"
         mode="watch"
         :preselect="dialogPreselect"
-        :is-operator="me.me?.is_operator"
+        :is-operator="isAdmin(me.me)"
         @start="startRun"
         @cancel="dialogOpen = false"
       />

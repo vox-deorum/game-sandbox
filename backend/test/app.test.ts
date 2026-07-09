@@ -65,10 +65,15 @@ describe('HTTP API', () => {
   })
 
   it('serves the deployment branding from GET /api/config, defaulting both names', async () => {
-    // The app under test wires no site name, so both fall back to the class-scale default.
+    // The app under test wires no site name, so both fall back to the class-scale default. It also
+    // wires no GitHub auth, so the login-page capability flag defaults to false.
     const res = await app.inject({ method: 'GET', url: '/api/config' })
     expect(res.statusCode).toBe(200)
-    expect(res.json()).toEqual({ site_name: 'Game Sandbox', site_short_name: 'Game Sandbox' })
+    expect(res.json()).toEqual({
+      site_name: 'Game Sandbox',
+      site_short_name: 'Game Sandbox',
+      github_auth: false,
+    })
   })
 
   it('reflects a configured site name and short name in GET /api/config', async () => {
@@ -87,7 +92,33 @@ describe('HTTP API', () => {
     })
     try {
       const res = await custom.inject({ method: 'GET', url: '/api/config' })
-      expect(res.json()).toEqual({ site_name: 'Acme Arena', site_short_name: 'Acme' })
+      expect(res.json()).toEqual({
+        site_name: 'Acme Arena',
+        site_short_name: 'Acme',
+        github_auth: false,
+      })
+    } finally {
+      await custom.close()
+      await stack.storage.close()
+    }
+  })
+
+  it('reports github_auth true in GET /api/config when GitHub OAuth is configured', async () => {
+    const config = makeConfig({ recordingsDir: dir })
+    const recordings = new RecordingsStore(dir)
+    const stack = await openTestStack()
+    const custom = await buildApp({
+      orchestrator,
+      githubAuth: true,
+      environments: makeEnvironments(),
+      recordings,
+      retention: new Retention(storage, recordings, config),
+      auth: stack.auth,
+      ...makeSubmissionDeps(storage, config),
+    })
+    try {
+      const res = await custom.inject({ method: 'GET', url: '/api/config' })
+      expect((res.json() as { github_auth: boolean }).github_auth).toBe(true)
     } finally {
       await custom.close()
       await stack.storage.close()

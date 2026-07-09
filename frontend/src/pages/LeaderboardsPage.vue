@@ -29,7 +29,7 @@ import UiBadge from '../components/ui/UiBadge.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import { useEnvironmentMeta } from '../composables/useEnvironmentMeta.js'
 import { formatDate } from '../lib/format.js'
-import { useMe } from '../me.js'
+import { isAdmin, useMe } from '../me.js'
 
 const route = useRoute()
 const me = useMe()
@@ -76,7 +76,7 @@ async function load(): Promise<void> {
     // Operators see every season for the environment — including unreleased and fully-private ones —
     // so the history rail doubles as their season index; everyone else sees the released seasons only.
     await me.whenSettled()
-    history.value = me.me?.is_operator
+    history.value = isAdmin(me.me)
       ? await listSeasons(envId, { includeUnreleased: true })
       : (await listSeasons(envId)).filter((entry) => entry.release_status === 'released')
     if (requestedSeasonId.value !== undefined) {
@@ -108,7 +108,7 @@ async function load(): Promise<void> {
 // message. The admin board is the same shape the public read returns, so the rendering is unchanged.
 async function loadOperatorPreview(seasonId: string): Promise<void> {
   await me.whenSettled()
-  if (!me.me?.is_operator) {
+  if (!isAdmin(me.me)) {
     notReleased.value = true
     return
   }

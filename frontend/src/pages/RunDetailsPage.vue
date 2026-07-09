@@ -4,7 +4,7 @@
   opening a still-executing run (pending/running) attaches to the step-3 log WebSocket and tails its
   lines and per-game status transitions; opening a settled run just renders the persisted snapshot with
   no socket. On the terminal event the page reloads so the freshly persisted statuses replace the live
-  overlay. Like the console it self-gates on `me.is_operator`; the backend admin guard is the authority.
+  overlay. Like the console it self-gates on `isAdmin(me)`; the backend admin guard is the authority.
 -->
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
@@ -19,7 +19,7 @@ import UiButton from '../components/ui/UiButton.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import UiStatusBadge from '../components/ui/UiStatusBadge.vue'
 import { formatDate } from '../lib/format.js'
-import { useMe } from '../me.js'
+import { isAdmin, useMe } from '../me.js'
 
 const route = useRoute()
 const me = useMe()
@@ -123,7 +123,7 @@ onMounted(async () => {
   if (disposed) {
     return
   }
-  if (!me.me?.is_operator) {
+  if (!isAdmin(me.me)) {
     access.value = 'denied'
     return
   }

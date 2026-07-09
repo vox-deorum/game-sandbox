@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { h } from 'vue'
 
 import { flappyMeta } from './helpers/fixtures.js'
+import { anonymousMe, signedInMe } from './helpers/me.js'
 import { memoryRouter } from './helpers/render.js'
 
 vi.mock('../src/api/client.js', () => ({
@@ -41,11 +42,7 @@ describe('ExperimentTabs', () => {
   })
 
   it('shows the task tabs targeting the user, and hides Manage for a non-operator', async () => {
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'dev-user',
-      allowlisted: true,
-      is_operator: false,
-    })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
     await renderTabs()
 
     expect(await screen.findByRole('link', { name: 'Overview' })).toHaveAttribute(
@@ -68,7 +65,7 @@ describe('ExperimentTabs', () => {
   })
 
   it('targets the agent tab at the signed-in user and shows Manage for an operator', async () => {
-    vi.mocked(getMe).mockResolvedValue({ user_id: 'eve', allowlisted: true, is_operator: true })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('eve', 'admin'))
     await renderTabs()
 
     expect(await screen.findByRole('link', { name: 'My Submissions' })).toHaveAttribute(
@@ -79,5 +76,17 @@ describe('ExperimentTabs', () => {
       'href',
       '/environments/flappy_bird/admin',
     )
+  })
+
+  it('hides the My Submissions tab for an anonymous visitor', async () => {
+    vi.mocked(getMe).mockResolvedValue(anonymousMe)
+    await renderTabs()
+
+    // The task tabs still render, but with no signed-in id there is no personal agent tab.
+    expect(await screen.findByRole('link', { name: 'Overview' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Leaderboards' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Replays' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'My Submissions' })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Manage' })).toBeNull()
   })
 })

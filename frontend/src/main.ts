@@ -1,11 +1,13 @@
 /**
- * The frontend entrypoint: the client router, the Vue app, and the page routes. Identity is the mock
- * auto-logon resolved in `identity.ts`; the app shell fetches `GET /api/me` once through the `me.ts`
- * provider so the header and the pages share one answer for who-am-I and what-may-I-do.
+ * The frontend entrypoint: the client router, the Vue app, and the page routes. Identity is the Better
+ * Auth session cookie; the app shell fetches `GET /api/me` once through the `me.ts` provider so the
+ * header and the pages share one answer for who-am-I and what-may-I-do, and `/login` establishes that
+ * session. Pages self-gate on the `me` answer (as the admin console does), so there is no router guard
+ * and anonymous browsing of public pages works unchanged.
  *
- * Routing is vue-router in plain library mode: `/` (home), `/environments/:envId`, `/sessions/:id`
- * (live), and `/replays/:id` (replay). The renderer modules register themselves on import; importing
- * the registry barrel here is where future environments' renderers get pulled in.
+ * Routing is vue-router in plain library mode: `/` (home), `/login`, `/environments/:envId`,
+ * `/sessions/:id` (live), and `/replays/:id` (replay). The renderer modules register themselves on
+ * import; importing the registry barrel here is where future environments' renderers get pulled in.
  */
 import { createApp } from 'vue'
 import { createRouter, createWebHistory } from 'vue-router'
@@ -18,6 +20,7 @@ import DocsPage from './pages/DocsPage.vue'
 import EnvironmentPage from './pages/EnvironmentPage.vue'
 import HomePage from './pages/HomePage.vue'
 import LeaderboardsPage from './pages/LeaderboardsPage.vue'
+import LoginPage from './pages/LoginPage.vue'
 import MyAgentsPage from './pages/MyAgentsPage.vue'
 import ProfilePage from './pages/ProfilePage.vue'
 import ReplayPage from './pages/ReplayPage.vue'
@@ -42,6 +45,9 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/', component: HomePage },
+    // The sign-in page. Anonymous browsing is allowed everywhere, so this is a normal route rather
+    // than a guard target; the request() 401 interceptor and signed-out affordances link here.
+    { path: '/login', component: LoginPage },
     // Global, cross-game sections in the sidebar. Seasons uses the public cross-game season index;
     // My Agents aggregates the signed-in user's profiles. Documentation renders the student guides:
     // /docs is the landing and the catch-all carries a guide's docs-relative path (students/...).
@@ -57,11 +63,11 @@ const router = createRouter({
     { path: '/environments/:envId/leaderboards/:seasonId?', component: LeaderboardsPage },
     // The per-environment Replays tab: the environment's recordings as a sortable table.
     { path: '/environments/:envId/replays', component: ReplaysPage },
-    // The operator admin console. The page itself gates on `me.is_operator` (and the backend admin API
-    // is the real authority), so a non-operator who reaches the route sees an access notice.
+    // The operator admin console. The page itself gates on `isAdmin(me)` (and the backend admin API
+    // is the real authority), so a non-admin who reaches the route sees an access notice.
     { path: '/environments/:envId/admin', component: AdminConsolePage },
     // The operator run-details page: one run's games and live container-log stream, linked from the
-    // console's runs list. Like the console it self-gates on `me.is_operator`; the backend is the
+    // console's runs list. Like the console it self-gates on `isAdmin(me)`; the backend is the
     // real authority. The season and run ids drive the admin run-detail read and its log socket.
     {
       path: '/environments/:envId/admin/seasons/:seasonId/runs/:runId',

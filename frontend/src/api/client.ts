@@ -1,17 +1,17 @@
 /**
- * Typed wrappers over the backend HTTP routes. Every request carries the identity header from
- * `identity.ts`, so the backend resolves the acting user the same way for fetch and socket.
+ * Typed wrappers over the backend HTTP routes. Same-origin fetches carry the Better Auth session
+ * cookie automatically, so these wrappers send no identity header; the backend resolves the acting
+ * user from that cookie the same way for a fetch, a WebSocket upgrade, and a download navigation.
  *
- * Failures the UI must distinguish come back as typed results, not thrown strings: a non-allowlisted
- * start (403) and an already-active start (409, whose body carries the active session's id so the UI
- * can offer "rejoin"). Everything else throws {@link ApiError}, which the caller renders as a generic
- * problem. The recording fetch and pin calls join here in the replay-and-retention step.
+ * Failures the UI must distinguish come back as typed results, not thrown strings: a non-active start
+ * (403) and an already-active start (409, whose body carries the active session's id so the UI can
+ * offer "rejoin"). A 401 whose body carries code `auth_required` — a session revoked or expired
+ * mid-use — bounces the browser to `/login` from the one {@link request} choke point. Everything else
+ * throws {@link ApiError}, which the caller renders as a generic problem.
  */
 
 import type { RecordingHeader } from '@game-sandbox/schema'
 import { type EnvironmentMeta, isEnvironmentMeta } from '@game-sandbox/schema/environment'
-
-import { currentUserId, IDENTITY_QUERY_PARAM, identityHeaders } from '../identity.js'
 
 const API_BASE = '/api'
 
@@ -26,10 +26,22 @@ export class ApiError extends Error {
 }
 
 async function request(path: string, init: RequestInit = {}): Promise<Response> {
-  return fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: { ...identityHeaders(), ...init.headers },
-  })
+  const res = await fetch(`${API_BASE}${path}`, init)
+  // The one identity choke point (it used to inject the identity header): a session banned or expired
+  // mid-use comes back as a 401 carrying code `auth_required`. Bounce to sign-in so the next action
+  // does not silently fail — but never from `/login` itself, and never for a page that browses
+  // anonymously on purpose, which gates on `/api/me` before issuing any protected request and so
+  // never reaches this branch.
+  if (res.status === 401 && window.location.pathname !== '/login') {
+    const body = (await res
+      .clone()
+      .json()
+      .catch(() => ({}))) as { code?: string }
+    if (body.code === 'auth_required') {
+      window.location.assign('/login')
+    }
+  }
+  return res
 }
 
 async function json(res: Response, label: string): Promise<unknown> {
@@ -39,12 +51,24 @@ async function json(res: Response, label: string): Promise<unknown> {
   return res.json()
 }
 
-/** Who-am-I and what-may-I-do, the frontend's single source for the allowlist and operator gates. */
+/** A user's derived participation status: `pending` before approval, `normal`, or `admin`. */
+export type UserStatus = 'pending' | 'normal' | 'admin'
+
+/** The signed-in session user as `/api/me` returns it: identity, profile fields, and derived status. */
+export interface MeUser {
+  id: string
+  name: string
+  email: string
+  image: string | null
+  status: UserStatus
+}
+
+/**
+ * Who-am-I: the session user, or `null` for an anonymous visitor. Capabilities derive from `status`
+ * through {@link canParticipate} and {@link isAdmin} (in `me.ts`); the backend gate is the authority.
+ */
 export interface Me {
-  user_id: string
-  allowlisted: boolean
-  /** Whether the user may see and drive the operator admin console. The backend gate is the authority. */
-  is_operator: boolean
+  user: MeUser | null
 }
 
 /** A persisted session row, as returned by `GET /api/sessions/:id`. */
@@ -133,7 +157,7 @@ export interface StartedSession {
 /** The typed outcome of a start: success, or one of the two failures the UI must react to. */
 export type StartSessionResult =
   | { ok: true; session: StartedSession }
-  | { ok: false; reason: 'not_allowlisted' }
+  | { ok: false; reason: 'not_active' }
   | { ok: false; reason: 'already_active'; activeSessionId: string }
   | { ok: false; reason: 'failed'; status: number; message: string }
 
@@ -146,7 +170,7 @@ export async function getEnvironments(): Promise<EnvironmentMeta[]> {
   return data
 }
 
-/** The resolved identity and allowlist membership for the auto-logged-on user. */
+/** The signed-in session user and derived status, or `{ user: null }` for an anonymous visitor. */
 export async function getMe(): Promise<Me> {
   return (await json(await request('/me'), 'GET /me')) as Me
 }
@@ -156,6 +180,8 @@ export interface SiteConfig {
   site_name: string
   /** A compact brand for space-sensitive chrome; equals `site_name` unless `SITE_SHORT_NAME` is set. */
   site_short_name: string
+  /** Whether the deployment enabled GitHub OAuth, so the login page shows the GitHub sign-in button. */
+  github_auth: boolean
 }
 
 /** The deployment's public branding config (its `SITE_NAME`), served unauthenticated. */
@@ -236,8 +262,8 @@ export async function startSession(input: StartSessionInput): Promise<StartSessi
     error?: string
     active_session_id?: string
   }
-  if (res.status === 403 && body.code === 'not_allowlisted') {
-    return { ok: false, reason: 'not_allowlisted' }
+  if (res.status === 403 && body.code === 'not_active') {
+    return { ok: false, reason: 'not_active' }
   }
   if (
     res.status === 409 &&
@@ -389,7 +415,7 @@ export type SubmitAgentResult =
       message: string
     }
 
-/** Submit an agent for an environment; identity rides the request header, never the body. */
+/** Submit an agent for an environment; the session cookie carries identity, never the body. */
 export async function submitAgent(
   envId: string,
   input: SubmissionSourceInput,
@@ -976,19 +1002,17 @@ export async function listSeasonSubmissions(seasonId: string): Promise<AdminSubm
 }
 
 /**
- * The operator download URL for one submission's source snapshot. A native `<a download>` cannot send
- * the identity header, so identity rides the `?user=` query param the admin guard already accepts (the
- * same channel the run-log WebSocket uses). Returns a string for an anchor href, not a fetch wrapper.
+ * The operator download URL for one submission's source snapshot. A native `<a download>` navigation
+ * sends the Better Auth session cookie on this same-origin request, so the admin guard authenticates
+ * it with no `?user=` channel. Returns a string for an anchor href, not a fetch wrapper.
  */
 export function adminSubmissionDownloadUrl(submissionId: string): string {
-  const user = encodeURIComponent(currentUserId)
-  return `${API_BASE}/admin/submissions/${encodeURIComponent(submissionId)}/download?${IDENTITY_QUERY_PARAM}=${user}`
+  return `${API_BASE}/admin/submissions/${encodeURIComponent(submissionId)}/download`
 }
 
 /** The operator download URL for a whole season's active submissions, as one `.tar.gz`. */
 export function adminSeasonDownloadUrl(seasonId: string): string {
-  const user = encodeURIComponent(currentUserId)
-  return `${API_BASE}/admin/seasons/${encodeURIComponent(seasonId)}/submissions/download?${IDENTITY_QUERY_PARAM}=${user}`
+  return `${API_BASE}/admin/seasons/${encodeURIComponent(seasonId)}/submissions/download`
 }
 
 /** One run's full view with its scheduled games, the run-details page's primary read. */

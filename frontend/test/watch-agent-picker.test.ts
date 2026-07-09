@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { WatchAgentSummary } from '../src/api/client.js'
 import { flappyMeta, heartsMeta } from './helpers/fixtures.js'
+import { anonymousMe, signedInMe } from './helpers/me.js'
 import { memoryRouter, renderWithMe } from './helpers/render.js'
 
 vi.mock('../src/api/client.js', () => ({
@@ -38,6 +39,7 @@ async function renderPicker(
     },
     { path: '/sessions/:id', component: SessionStub },
     { path: '/environments/:envId/agents/:ownerId', component: ProfileStub },
+    { path: '/login', component: { template: '<div />' } },
   ])
   router.push(`/environments/${meta.env_id}`)
   await router.isReady()
@@ -47,11 +49,7 @@ async function renderPicker(
 describe('WatchAgentPicker', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'dev-user',
-      allowlisted: true,
-      is_operator: false,
-    })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
   })
 
   it('lists an anonymous unrated agent with a highlighted Rate action', async () => {
@@ -102,13 +100,26 @@ describe('WatchAgentPicker', () => {
     expect(await screen.findByText('session sess-naive')).toBeInTheDocument()
   })
 
-  it('hides actions for a non-allowlisted viewer but still lists anonymous agents', async () => {
-    vi.mocked(getMe).mockResolvedValue({ user_id: 'carol', allowlisted: false, is_operator: false })
+  it('hides actions for a still-pending viewer but still lists anonymous agents', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('carol', 'pending'))
     await renderPicker(flappyMeta(), [summary()])
     expect(await screen.findByText('Submitted agent 1')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Watch' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Rate' })).toBeNull()
-    expect(screen.getByText(/limited to allowlisted users/)).toBeInTheDocument()
+    // A signed-in but unapproved account sees the awaiting-approval copy, not a sign-in prompt.
+    expect(screen.getByText(/awaiting approval/)).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Sign in' })).toBeNull()
+  })
+
+  it('prompts an anonymous viewer to sign in and hides the watch actions', async () => {
+    vi.mocked(getMe).mockResolvedValue(anonymousMe)
+    await renderPicker(flappyMeta(), [summary()])
+    // The list still renders for browsing, but no run can be started without an account.
+    expect(await screen.findByText('Submitted agent 1')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Watch' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Rate' })).toBeNull()
+    expect(screen.getByText('Sign in to watch and rate agents.')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/login')
   })
 
   it('shows rated and owned agents as secondary Watch again actions', async () => {
@@ -157,11 +168,7 @@ describe('WatchAgentPicker', () => {
   })
 
   it('shows operator-only owner and source details with a profile link', async () => {
-    vi.mocked(getMe).mockResolvedValue({
-      user_id: 'dev-user',
-      allowlisted: true,
-      is_operator: true,
-    })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'admin'))
     await renderPicker(flappyMeta(), [
       summary({
         owner_id: 'eve',

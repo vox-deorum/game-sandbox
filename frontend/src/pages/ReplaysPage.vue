@@ -21,7 +21,7 @@ import {
 import UiBadge from '../components/ui/UiBadge.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import { formatDateOnly, formatSlotIndex } from '../lib/format.js'
-import { useMe } from '../me.js'
+import { isAdmin, useMe, userId } from '../me.js'
 import { reasonText } from '../replay/reason.js'
 
 const route = useRoute()
@@ -51,12 +51,13 @@ function playersSummary(replay: RecordingSummary): string {
     return '—'
   }
   const blind = isBlindReplay(replay)
+  const uid = userId(me.me)
   const parts = Object.entries(players).map(([slot, player]) =>
     player.kind === 'human'
       ? `${formatSlotIndex(slot)}: Human (${player.user ?? player.label})`
       : `${formatSlotIndex(slot)}: ${
           blind && player.submission_id !== undefined
-            ? player.user === me.me?.user_id
+            ? player.user === uid
               ? 'Your agent'
               : blindAgentLabel(player.submission_id)
             : player.label
@@ -94,7 +95,7 @@ function hasSubmittedAgent(replay: RecordingSummary): boolean {
 
 function isBlindReplay(replay: RecordingSummary): boolean {
   // Fail closed: only a confirmed operator is exempt; an unresolved identity stays blind.
-  if (me.me?.is_operator === true || replay.season_id === null || !hasSubmittedAgent(replay)) {
+  if (isAdmin(me.me) || replay.season_id === null || !hasSubmittedAgent(replay)) {
     return false
   }
   return seasonsById.value.get(replay.season_id)?.play_status === 'open'
@@ -102,7 +103,8 @@ function isBlindReplay(replay: RecordingSummary): boolean {
 
 /** Show a pin badge only on the viewer's own pinned recordings. */
 function showsPin(replay: RecordingSummary): boolean {
-  return replay.pinned && me.me?.user_id !== undefined && replay.user_id === me.me.user_id
+  const uid = userId(me.me)
+  return replay.pinned && uid != null && replay.user_id === uid
 }
 
 /** The value a column sorts on, normalized to a comparable string. */
@@ -153,7 +155,7 @@ async function load(id: string): Promise<void> {
   await me.whenSettled()
   const [recordings, seasons, numbers] = await Promise.all([
     listRecordings({ env: id }).catch(() => [] as RecordingSummary[]),
-    listSeasons(id, { includeUnreleased: me.me?.is_operator === true }).catch(
+    listSeasons(id, { includeUnreleased: isAdmin(me.me) }).catch(
       () => [] as PublicSeasonView[],
     ),
     // Operators see real labels and never consult this, so the lookup is harmless for them.

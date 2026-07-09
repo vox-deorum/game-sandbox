@@ -37,12 +37,13 @@ describe('RunLogSocket', () => {
     instances = []
   })
 
-  it('carries the identity as the user query parameter on the ws URL', () => {
+  it('carries no identity query parameter', () => {
     const socket = new RunLogSocket('/api/admin/seasons/i1/runs/r1/logs/ws', {}, deps)
     socket.connect()
     const url = new URL((instances[0] as FakeWebSocket).url)
     expect(url.protocol).toBe('ws:')
-    expect(url.searchParams.get('user')).toBe('dev-user')
+    // Identity rides the same-origin session cookie on the upgrade, not a `user` query param.
+    expect(url.searchParams.has('user')).toBe(false)
   })
 
   it('decodes log, game_status, and terminal frames to their typed callbacks', () => {

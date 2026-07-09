@@ -1,7 +1,7 @@
 <!--
   The operator admin console (Stage 6.7): the operator-only surface that drives the step-3 admin API
   for one environment. It is gated by the `me` answer — the route and its entry point render only when
-  `me.is_operator` — but the backend admin guard is the real authority; this UI gate just avoids
+  `isAdmin(me)` — but the backend admin guard is the real authority; this UI gate just avoids
   showing dead controls. A non-operator who reaches the route sees an access notice, not the console.
 
   The console lets the operator declare and configure a season's match design, set the season's
@@ -37,7 +37,7 @@ import UiCard from '../components/ui/UiCard.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import UiInput from '../components/ui/UiInput.vue'
 import { useEnvironmentMeta } from '../composables/useEnvironmentMeta.js'
-import { useMe } from '../me.js'
+import { isAdmin, useMe } from '../me.js'
 
 const route = useRoute()
 const me = useMe()
@@ -75,7 +75,7 @@ onMounted(async () => {
   // The console route is operator-only. Wait for the single /api/me answer, then gate. The backend
   // admin routes enforce the same gate, so a non-operator who forces the URL still gets nothing.
   await me.whenSettled()
-  if (!me.me?.is_operator) {
+  if (!isAdmin(me.me)) {
     access.value = 'denied'
     return
   }
