@@ -8,12 +8,13 @@
   RouterLink's prefix matching, because the "Games" root would otherwise read as active everywhere.
 -->
 <script setup lang="ts">
-import { Bot, BookOpen, Gamepad2, PanelLeftClose, PanelLeftOpen, Trophy, X } from '@lucide/vue'
+import { Bot, BookOpen, Gamepad2, PanelLeftClose, PanelLeftOpen, Trophy, Users, X } from '@lucide/vue'
 import { computed, type FunctionalComponent } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
 import { useSidebar } from '../composables/useSidebar.js'
 import { useSiteConfig } from '../composables/useSiteConfig.js'
+import { isAdmin, useMe } from '../me.js'
 import AccountMenu from './AccountMenu.vue'
 
 interface NavItem {
@@ -24,7 +25,7 @@ interface NavItem {
   match: string[]
 }
 
-const items: NavItem[] = [
+const baseItems: NavItem[] = [
   { label: 'Environments', to: '/', icon: Gamepad2, match: ['/', '/environments'] },
   { label: 'Seasons', to: '/seasons', icon: Trophy, match: ['/seasons'] },
   { label: 'Documentation', to: '/docs', icon: BookOpen, match: ['/docs'] },
@@ -32,8 +33,17 @@ const items: NavItem[] = [
 ]
 
 const route = useRoute()
+const me = useMe()
 const { collapsed, toggleCollapsed, closeMobile } = useSidebar()
 const { siteName } = useSiteConfig()
+
+// The roster page is an admin-only affordance, appended last so the student-facing order above is
+// unchanged for everyone else.
+const items = computed<NavItem[]>(() =>
+  isAdmin(me.me)
+    ? [...baseItems, { label: 'Users', to: '/admin/users', icon: Users, match: ['/admin/users'] }]
+    : baseItems,
+)
 
 // The collapsed-rail monogram: the initials of the first two words of the site name (so a custom
 // SITE_NAME keeps a matching mark), falling back to its first two characters for a single-word name.

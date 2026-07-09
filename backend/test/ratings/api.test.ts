@@ -67,6 +67,7 @@ describe('rating API', () => {
       recordings,
       retention: new Retention(storage, recordings, config),
       auth: stack.auth,
+      userDirectory: stack.userDirectory,
       ...makeSubmissionDeps(storage, config),
     })
     await app.ready()
@@ -486,8 +487,9 @@ describe('rating API', () => {
     })
     const sessionId = await seedSession({ seasonId: season.id, recordingId: recId })
 
-    // The display name is derived from the owner's id, which an admin sees even while play is open.
-    const ownerLabel = `${aliceId}'s agent`
+    // The non-blind label resolves the owner's display name (never the opaque id), which an admin
+    // sees even while play is open.
+    const ownerLabel = "alice's agent"
     const operator = await app.inject({
       method: 'GET',
       url: `/api/sessions/${sessionId}/ratings`,
@@ -506,6 +508,25 @@ describe('rating API', () => {
     expect(regular.json()).toMatchObject({
       read_only: true,
       agents: [{ display_name: ownerLabel }],
+    })
+  })
+
+  it('falls back to the stable owner id in a non-blind label when the user row is missing', async () => {
+    const season = await playOpenSeason()
+    // A submission attributed to an id with no user row (e.g. an imported roster).
+    const subId = await submissionFor(season.id, 'ghost-user')
+    const recId = await writeRecording('flappy_bird-ghost', {
+      player_0: { kind: 'agent', label: "ghost-user's agent", submission_id: subId },
+    })
+    const sessionId = await seedSession({ seasonId: season.id, recordingId: recId })
+
+    const operator = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${sessionId}/ratings`,
+      headers: OPERATOR,
+    })
+    expect(operator.json()).toMatchObject({
+      agents: [{ display_name: "ghost-user's agent" }],
     })
   })
 

@@ -48,14 +48,35 @@ vi.mock('../src/api/client.js', () => ({
   unpinRecording: vi.fn(async () => ({ ok: true })),
 }))
 
+import type { PublicSeasonView } from '../src/api/client.js'
 import {
   getEnvironments,
   getMe,
   getRecording,
   listRecordings,
+  listSeasons,
   pinRecording,
+  watchAgentNumbers,
 } from '../src/api/client.js'
 import ReplayPage from '../src/pages/ReplayPage.vue'
+
+/** A public season fixture: play-open by default, so a viewer other than an admin is blind while it
+ *  matches a listed recording's season_id. */
+function openSeason(overrides: Partial<PublicSeasonView> = {}): PublicSeasonView {
+  return {
+    id: 'season-1',
+    env_id: 'flappy_bird',
+    submission_status: 'closed',
+    play_status: 'open',
+    release_status: 'unreleased',
+    label: 'Playground',
+    created_at: '2026-06-01T00:00:00Z',
+    released_at: null,
+    submission_count: 1,
+    game_count: 0,
+    ...overrides,
+  }
+}
 
 async function renderReplay(path = '/replays/rec-1'): Promise<ReturnType<typeof renderWithMe>> {
   const router = memoryRouter([
@@ -238,6 +259,213 @@ describe('ReplayPage', () => {
         id: 'rec-1',
         header: { schema_version: 1, environment: 'flappy_bird' },
         user_id: 'someone-else',
+        created_at: '2026-06-11T00:00:00.000Z',
+        pinned: false,
+        termination_reason: null,
+        season_id: null,
+      },
+    ])
+    await renderReplay()
+    await screen.findByRole('button', { name: 'Play' })
+    expect(screen.queryByRole('button', { name: /Pin/ })).toBeNull()
+  })
+
+  it('shows the owner metadata item as the display name when the listing carries user_name', async () => {
+    vi.mocked(getRecording).mockResolvedValue(replayRecording())
+    vi.mocked(listRecordings).mockResolvedValue([
+      {
+        id: 'rec-1',
+        header: { schema_version: 1, environment: 'flappy_bird' },
+        user_id: 'someone-else',
+        user_name: 'Someone Else',
+        created_at: '2026-06-11T00:00:00.000Z',
+        pinned: false,
+        termination_reason: 'terminated',
+        season_id: null,
+      },
+    ])
+    await renderReplay()
+    const owner = await screen.findByText('Someone Else')
+    expect(screen.queryByText('someone-else')).toBeNull()
+    // The stable id still rides as the metadata item's tooltip even once the display name shows.
+    expect(owner).toHaveAttribute('title', 'someone-else')
+  })
+
+  it('falls back to the owner id in the metadata strip when the listing carries no user_name', async () => {
+    vi.mocked(getRecording).mockResolvedValue(replayRecording())
+    vi.mocked(listRecordings).mockResolvedValue([
+      {
+        id: 'rec-1',
+        header: { schema_version: 1, environment: 'flappy_bird' },
+        user_id: 'someone-else',
+        created_at: '2026-06-11T00:00:00.000Z',
+        pinned: false,
+        termination_reason: 'terminated',
+        season_id: null,
+      },
+    ])
+    await renderReplay()
+    const owner = await screen.findByText('someone-else')
+    expect(owner).toHaveAttribute('title', 'someone-else')
+  })
+
+  it('hides the Owner metadata item entirely for a blind replay carrying a submitted agent', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('viewer'))
+    vi.mocked(getRecording).mockResolvedValue(
+      recordingText([flappyState(0, 10)], {
+        players: {
+          player_0: {
+            kind: 'agent',
+            label: "maya-fledgling's agent",
+            user: 'maya-fledgling',
+            submission_id: 'sub-maya',
+          },
+        },
+      }),
+    )
+    vi.mocked(listRecordings).mockResolvedValue([
+      {
+        id: 'rec-1',
+        header: { schema_version: 1, environment: 'flappy_bird' },
+        user_id: 'someone-else',
+        user_name: 'Someone Else',
+        created_at: '2026-06-11T00:00:00.000Z',
+        pinned: false,
+        termination_reason: 'terminated',
+        season_id: 'season-1',
+      },
+    ])
+    vi.mocked(listSeasons).mockResolvedValue([openSeason()])
+    await renderReplay()
+    await screen.findByRole('button', { name: 'Play' })
+
+    // Blind masks ownership entirely: the whole metadata item vanishes, not just the name.
+    expect(screen.queryByText('Owner')).toBeNull()
+    expect(screen.queryByText('Someone Else')).toBeNull()
+  })
+
+  it('keeps the Owner metadata item visible for a playable season whose recording has no submitted agent', async () => {
+    // Mirrors ReplaysPage's isBlindReplay gate: blind ownership masking has nothing to protect when no
+    // seat is a submitted agent, so the owner still shows even while the season plays.
+    vi.mocked(getMe).mockResolvedValue(signedInMe('viewer'))
+    vi.mocked(getRecording).mockResolvedValue(replayRecording())
+    vi.mocked(listRecordings).mockResolvedValue([
+      {
+        id: 'rec-1',
+        header: { schema_version: 1, environment: 'flappy_bird' },
+        user_id: 'someone-else',
+        user_name: 'Someone Else',
+        created_at: '2026-06-11T00:00:00.000Z',
+        pinned: false,
+        termination_reason: 'terminated',
+        season_id: 'season-1',
+      },
+    ])
+    vi.mocked(listSeasons).mockResolvedValue([openSeason()])
+    await renderReplay()
+
+    const owner = await screen.findByText('Someone Else')
+    expect(owner).toHaveAttribute('title', 'someone-else')
+  })
+
+  it('shows a stable-id tooltip on a submitted-agent attribution row when not blind', async () => {
+    vi.mocked(getRecording).mockResolvedValue(
+      recordingText([flappyState(0, 10)], {
+        players: {
+          player_0: {
+            kind: 'agent',
+            label: "maya-fledgling's agent",
+            user: 'maya-fledgling',
+            submission_id: 'sub-maya',
+          },
+        },
+      }),
+    )
+    await renderReplay()
+
+    const attribution = await screen.findByText("maya-fledgling's agent")
+    expect(attribution).toHaveAttribute('title', 'maya-fledgling')
+  })
+
+  it("masks a submitted agent's attribution tooltip while blind, but keeps the viewer's own agent's", async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('maya-fledgling'))
+    vi.mocked(getRecording).mockResolvedValue(
+      recordingText([flappyState(0, 10)], {
+        players: {
+          player_0: {
+            kind: 'agent',
+            label: "maya-fledgling's agent",
+            user: 'maya-fledgling',
+            submission_id: 'sub-maya',
+          },
+        },
+      }),
+    )
+    vi.mocked(listRecordings).mockResolvedValue([
+      {
+        id: 'rec-1',
+        header: { schema_version: 1, environment: 'flappy_bird' },
+        user_id: 'someone-else',
+        created_at: '2026-06-11T00:00:00.000Z',
+        pinned: false,
+        termination_reason: null,
+        season_id: 'season-1',
+      },
+    ])
+    vi.mocked(listSeasons).mockResolvedValue([openSeason()])
+    vi.mocked(watchAgentNumbers).mockResolvedValue({ 'sub-maya': 1 })
+    await renderReplay()
+
+    // "Your agent" still names the viewer's own seat; the plan requires its id stay reachable.
+    const attribution = await screen.findByText('Your agent')
+    expect(attribution).toHaveAttribute('title', 'maya-fledgling')
+  })
+
+  it("omits the identity tooltip on a submitted agent's row masked while blind", async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('viewer'))
+    vi.mocked(getRecording).mockResolvedValue(
+      recordingText([flappyState(0, 10)], {
+        players: {
+          player_0: {
+            kind: 'agent',
+            label: "maya-fledgling's agent",
+            user: 'maya-fledgling',
+            submission_id: 'sub-maya',
+          },
+        },
+      }),
+    )
+    vi.mocked(listRecordings).mockResolvedValue([
+      {
+        id: 'rec-1',
+        header: { schema_version: 1, environment: 'flappy_bird' },
+        user_id: 'someone-else',
+        created_at: '2026-06-11T00:00:00.000Z',
+        pinned: false,
+        termination_reason: null,
+        season_id: 'season-1',
+      },
+    ])
+    vi.mocked(listSeasons).mockResolvedValue([openSeason()])
+    vi.mocked(watchAgentNumbers).mockResolvedValue({ 'sub-maya': 1 })
+    await renderReplay()
+
+    const attribution = await screen.findByText('Submitted agent 1')
+    expect(attribution).not.toHaveAttribute('title')
+    expect(screen.queryByText("maya-fledgling's agent")).toBeNull()
+  })
+
+  it('keeps pin ownership keyed on user_id even when user_name reads like the viewer', async () => {
+    // A display name that happens to match the viewer's own name must not fool the ownership check,
+    // which the plan requires stay on the stable id.
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
+    vi.mocked(getRecording).mockResolvedValue(replayRecording())
+    vi.mocked(listRecordings).mockResolvedValue([
+      {
+        id: 'rec-1',
+        header: { schema_version: 1, environment: 'flappy_bird' },
+        user_id: 'someone-else',
+        user_name: 'dev-user',
         created_at: '2026-06-11T00:00:00.000Z',
         pinned: false,
         termination_reason: null,

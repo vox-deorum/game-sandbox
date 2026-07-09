@@ -33,6 +33,7 @@ import {
   readRecording,
 } from '@game-sandbox/schema'
 
+import type { UserDirectory } from '../auth/users.js'
 import type { ImagePolicy, SandboxDefaults } from '../config.js'
 import type {
   ExecutionDriver,
@@ -92,6 +93,11 @@ export interface WorkflowRunnerDeps {
   killGraceMs?: number
   /** Extra wall-clock slack over the effective episode timeout before a game container is killed. */
   gameWatchdogGraceMs?: number
+  /**
+   * The display-name directory the recording-header attribution snapshots names through at launch.
+   * Optional: without it (or for an id with no row) every label falls back to the stable id.
+   */
+  userDirectory?: UserDirectory
   log?: (message: string) => void
   /**
    * Called once a run settles to a terminal status, so step 5 can recompute the board and retention
@@ -313,7 +319,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
     }
 
     const recordingId = `${envId}-${game.id}`
-    const sessionConfig = this.sessionConfig(envId, game.seed, slots, recordingId, overrides)
+    const sessionConfig = await this.sessionConfig(envId, game.seed, slots, recordingId, overrides)
 
     let process: SessionProcess
     try {
@@ -539,23 +545,31 @@ class DockerWorkflowRunner implements WorkflowRunner {
   }
 
   /** Build the headless session config: every slot an agent, no human source, recording to the volume. */
-  private sessionConfig(
+  private async sessionConfig(
     envId: string,
     seed: number,
     slots: readonly AgentRef[],
     recordingId: string,
     overrides: ReturnType<typeof decodeSeasonConfig>['overrides'],
-  ): Record<string, unknown> {
+  ): Promise<Record<string, unknown>> {
+    // Snapshot each submission owner's display name for the recording header at launch time, one
+    // batched lookup. Without a directory (or a row) the label falls back to the stable id.
+    const names =
+      (await this.deps.userDirectory?.namesFor(
+        slots.flatMap((agent) => (agent.kind === 'submission' ? [agent.user_id] : [])),
+      )) ?? new Map<string, string>()
     const seats = new Map<string, SeatBinding>()
     for (let i = 0; i < slots.length; i++) {
       const agent = slots[i] as AgentRef
       const slotId = `player_${i}`
       if (agent.kind === 'submission') {
+        const ownerName = names.get(agent.user_id)
         seats.set(slotId, {
           driver: 'submission',
           submissionId: agent.submission_id,
           userId: agent.user_id,
           path: submissionSlotPath(slotId),
+          ...(ownerName === undefined ? {} : { ownerName }),
         })
       } else {
         seats.set(slotId, { driver: 'naive' })

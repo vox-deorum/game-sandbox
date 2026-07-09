@@ -87,6 +87,7 @@ describe('admin API', () => {
       recordings,
       retention: new Retention(storage, recordings, config),
       auth: stack.auth,
+      userDirectory: stack.userDirectory,
       ...makeSubmissionDeps(storage, config, { snapshots }),
       knownDepsVersions,
       workflowRunner: runner,
@@ -204,9 +205,11 @@ describe('admin API', () => {
   })
 
   describe('submission downloads', () => {
-    it("lists a season's active submissions with their snapshot state", async () => {
+    it("lists a season's active submissions with their snapshot state and owner names", async () => {
       const seasonId = await declare()
-      await seedSubmission(seasonId, 'alice', { withSnapshot: true })
+      // One submission owned by a real user (carol is minted in build()), one by a rowless raw id.
+      const carolId = users.idOf('carol')
+      await seedSubmission(seasonId, carolId, { withSnapshot: true })
       await seedSubmission(seasonId, 'bob', { withSnapshot: false })
 
       const res = await app.inject({
@@ -215,10 +218,19 @@ describe('admin API', () => {
         headers: OPERATOR,
       })
       expect(res.statusCode).toBe(200)
-      const rows = res.json() as Array<{ user_id: string; has_snapshot: boolean }>
+      const rows = res.json() as Array<{
+        user_id: string
+        user_name?: string
+        has_snapshot: boolean
+      }>
       expect(rows).toHaveLength(2)
-      expect(rows.find((r) => r.user_id === 'alice')?.has_snapshot).toBe(true)
+      // The display name rides beside the stable id; a rowless owner id carries no user_name.
+      expect(rows.find((r) => r.user_id === carolId)).toMatchObject({
+        user_name: 'carol',
+        has_snapshot: true,
+      })
       expect(rows.find((r) => r.user_id === 'bob')?.has_snapshot).toBe(false)
+      expect(rows.find((r) => r.user_id === 'bob')).not.toHaveProperty('user_name')
     })
 
     it("streams one submission's snapshot as a gzip attachment", async () => {
@@ -858,12 +870,70 @@ describe('admin API', () => {
       })
       expect(res.statusCode).toBe(404)
     })
+
+    it('enriches the season view run and board rows with owner display names', async () => {
+      const id = await declare()
+      await storage.updateSeasonConfig(id, flappyConfig())
+      const carolId = users.idOf('carol')
+      const submission = await seedSubmission(id, carolId, { withSnapshot: false })
+      const ref = agentRef(submission)
+      const run = await storage.createRunWithSchedule(
+        id,
+        users.idOf('operator'),
+        [ref],
+        [{ match_index: 0, game_index: 0, seed: 1, slots: [ref] }],
+      )
+      const games = await storage.listRunGames(run.id)
+      await storage.recordGameResult({
+        game_id: first(games).id,
+        slot_index: 0,
+        agent: ref,
+        episode_score: 7,
+        agent_compute_ms_total: 4,
+        acted_tick_count: 2,
+        failed: false,
+      })
+      await storage.setRunStatus(run.id, 'completed')
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/admin/seasons/${id}`,
+        headers: OPERATOR,
+      })
+      expect(res.statusCode).toBe(200)
+      const body = res.json() as {
+        latest_run: {
+          requested_by_name?: string
+          submission_snapshot: Array<Record<string, unknown>>
+          games: Array<{ slots: Array<Record<string, unknown>> }>
+        }
+        board: {
+          automated: Array<{ agent: Record<string, unknown> }>
+          games: Array<{ slots: Array<Record<string, unknown>> }>
+        }
+      }
+      // The embedded latest run is enriched exactly like the run detail...
+      expect(body.latest_run.requested_by_name).toBe('operator')
+      expect(first(body.latest_run.submission_snapshot)).toMatchObject({
+        user_id: carolId,
+        user_name: 'carol',
+      })
+      expect(first(first(body.latest_run.games).slots)).toMatchObject({ user_name: 'carol' })
+      // ...and the board rows plus the matchup table carry the same enriched agent ref.
+      expect(first(body.board.automated).agent).toMatchObject({
+        user_id: carolId,
+        user_name: 'carol',
+      })
+      expect(first(first(body.board.games).slots)).toMatchObject({ user_name: 'carol' })
+    })
   })
 
   describe('runs list and detail', () => {
     it("lists a season's runs newest first with game counts and no snapshots", async () => {
       const id = await declare()
-      // Two runs created in order: the second (more games) must come back first.
+      // Two runs created in order: the second (more games) must come back first. The first is
+      // requested by a rowless raw id, the second by the minted operator, so the summary's
+      // requested_by_name enrichment and its id fallback are both on the wire.
       await storage.createRunWithSchedule(
         id,
         'dev-user',
@@ -872,7 +942,7 @@ describe('admin API', () => {
       )
       const second = await storage.createRunWithSchedule(
         id,
-        'dev-user',
+        users.idOf('operator'),
         [],
         [
           { match_index: 0, game_index: 0, seed: 1, slots: [{ kind: 'builtin-naive' }] },
@@ -889,8 +959,15 @@ describe('admin API', () => {
       const body = res.json() as Array<Record<string, unknown>>
       expect(body).toHaveLength(2)
       // Newest first: the second-created run heads the list (rowid breaks a shared-millisecond tie).
-      expect(body[0]).toMatchObject({ id: second.id, game_count: 2 })
-      expect(body[1]).toMatchObject({ game_count: 1 })
+      expect(body[0]).toMatchObject({
+        id: second.id,
+        game_count: 2,
+        requested_by: users.idOf('operator'),
+        requested_by_name: 'operator',
+      })
+      expect(body[1]).toMatchObject({ game_count: 1, requested_by: 'dev-user' })
+      // No user row for 'dev-user', so the summary carries no display name for it.
+      expect(body[1]).not.toHaveProperty('requested_by_name')
       // Summaries omit the frozen snapshots.
       expect(body[0]).not.toHaveProperty('config_snapshot')
       expect(body[0]).not.toHaveProperty('submission_snapshot')
@@ -920,6 +997,46 @@ describe('admin API', () => {
       expect(body.games).toHaveLength(1)
       // The detail view carries the full run, including the frozen config snapshot.
       expect(body.config_snapshot).toBeTruthy()
+      // 'dev-user' has no user row, so no display name is attached (the id is the fallback).
+      expect(body).not.toHaveProperty('requested_by_name')
+    })
+
+    it('enriches the run detail with requester, roster, and seat display names', async () => {
+      const id = await declare()
+      const carolId = users.idOf('carol')
+      const known = await seedSubmission(id, carolId, { withSnapshot: false })
+      const orphaned = await seedSubmission(id, 'ghost-user', { withSnapshot: false })
+      const knownRef = agentRef(known)
+      const orphanedRef = agentRef(orphaned)
+      const run = await storage.createRunWithSchedule(
+        id,
+        users.idOf('operator'),
+        [knownRef, orphanedRef],
+        [{ match_index: 0, game_index: 0, seed: 1, slots: [knownRef, orphanedRef] }],
+      )
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/admin/seasons/${id}/runs/${run.id}`,
+        headers: OPERATOR,
+      })
+      expect(res.statusCode).toBe(200)
+      const body = res.json() as {
+        requested_by: string
+        requested_by_name?: string
+        submission_snapshot: Array<Record<string, unknown>>
+        games: Array<{ slots: Array<Record<string, unknown>> }>
+      }
+      expect(body).toMatchObject({
+        requested_by: users.idOf('operator'),
+        requested_by_name: 'operator',
+      })
+      // Both the frozen roster and the scheduled seats carry the owner's name beside the stable id;
+      // an owner id with no user row keeps its id and simply omits user_name.
+      for (const refs of [body.submission_snapshot, first(body.games).slots]) {
+        expect(refs.find((ref) => ref.user_id === carolId)).toMatchObject({ user_name: 'carol' })
+        expect(refs.find((ref) => ref.user_id === 'ghost-user')).not.toHaveProperty('user_name')
+      }
     })
 
     it('404s a run detail for an unknown run or one from another season', async () => {

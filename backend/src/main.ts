@@ -12,6 +12,7 @@ import { buildApp } from './app.js'
 import { createAuth } from './auth/auth.js'
 import { migrateAuthSchema } from './auth/migrate.js'
 import { ensureAdminUser } from './auth/seed-admin.js'
+import { createUserDirectory } from './auth/users.js'
 import { DEV_ADMIN_EMAIL, DEV_ADMIN_PASSWORD, DEV_AUTH_SECRET, loadConfig } from './config.js'
 import { DEPS_VERSION, KNOWN_DEPS_VERSIONS } from './deps-version.js'
 import { createDockerDriver } from './driver/docker/index.js'
@@ -44,6 +45,9 @@ async function main(): Promise<void> {
   const { storage, sqlite } = await openSqlite(config.dbPath)
   const auth = createAuth(sqlite, config.auth)
   await migrateAuthSchema(auth)
+  // The display-name directory reads the library-owned `user` table on the same shared connection;
+  // routes and the two launch paths batch user ids through it wherever an id crosses to the UI.
+  const userDirectory = createUserDirectory(sqlite)
   await ensureAdminUser(
     auth,
     {
@@ -80,6 +84,7 @@ async function main(): Promise<void> {
     },
     submissionSource,
     snapshots,
+    userDirectory,
   )
 
   // The workflow runner (Stage 6.4): the Docker-backed background engine that drives a triggered run's
@@ -96,6 +101,7 @@ async function main(): Promise<void> {
     sandbox: config.sandbox,
     recordingsDir: resolve(config.recordingsDir),
     imagePolicy: config.docker.imagePolicy,
+    userDirectory,
     log,
     // A completed run is the board's new source: snapshot its ranked placements, then sweep retention
     // (the run grew the recordings and may have superseded a prior run's, freeing them). Placements
@@ -149,6 +155,7 @@ async function main(): Promise<void> {
     validationWorker,
     allowLocalSubmissions: config.submission.allowLocalSubmissions,
     auth,
+    userDirectory,
   })
   retention.start()
   overlayEviction.start()

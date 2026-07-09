@@ -29,6 +29,11 @@ function agentKey(agent: BoardAgentRef): string {
 function ownerOf(agent: BoardAgentRef): string | null {
   return agent.kind === 'submission' ? agent.user_id : null
 }
+
+/** The owner's display name for a submitted-agent row, falling back to the stable id. */
+function ownerNameOf(agent: BoardAgentRef): string | null {
+  return agent.kind === 'submission' ? (agent.user_name ?? agent.user_id) : null
+}
 </script>
 
 <template>
@@ -65,8 +70,9 @@ function ownerOf(agent: BoardAgentRef): string | null {
                 v-if="ownerOf(row.agent) !== null"
                 class="agent-link"
                 :to="`/environments/${props.envId}/agents/${ownerOf(row.agent)}`"
+                :title="ownerOf(row.agent) ?? undefined"
               >
-                {{ ownerOf(row.agent) }}
+                {{ ownerNameOf(row.agent) }}
               </RouterLink>
               <span v-else class="agent-naive">
                 Naive baseline <UiBadge>Built-in</UiBadge>
@@ -131,8 +137,9 @@ function ownerOf(agent: BoardAgentRef): string | null {
                 v-if="ownerOf(row.agent) !== null"
                 class="agent-link"
                 :to="`/environments/${props.envId}/agents/${ownerOf(row.agent)}`"
+                :title="ownerOf(row.agent) ?? undefined"
               >
-                {{ ownerOf(row.agent) }}
+                {{ ownerNameOf(row.agent) }}
               </RouterLink>
               <span v-else class="agent-naive">
                 Naive baseline <UiBadge>Built-in</UiBadge>

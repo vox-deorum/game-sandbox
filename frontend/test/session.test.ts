@@ -204,6 +204,157 @@ describe('SessionPage', () => {
     expect(sent).toContainEqual({ kind: 'input', slot: 'player_0', action: 1 })
   })
 
+  it("shows the human seat's display-name label in attribution, with the stable id as a tooltip", async () => {
+    // A header whose human label differs from the stable id it also carries, proving the attribution
+    // line prefers the display name (label) while keeping the id reachable as a tooltip — and that
+    // ownership (which stays keyed on the session row's user_id, asserted elsewhere) is unaffected.
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
+    vi.mocked(getSession).mockResolvedValue(ownerRow())
+    await renderSession()
+    await waitForHandlers()
+
+    handlers.onHeader(
+      flappyHeader({
+        players: { player_0: { kind: 'human', label: 'Dev User', user: 'dev-user' } },
+      }),
+    )
+    handlers.onState({
+      schema_version: 1,
+      tick: 0,
+      agents: {},
+      timing: { started_at: 0, duration_ms: 0 },
+    })
+
+    const attribution = await screen.findByText('Human: Dev User')
+    expect(attribution).toHaveAttribute('title', 'dev-user')
+    expect(screen.queryByText('Human: dev-user')).toBeNull()
+  })
+
+  it("keeps a blind viewer's own human seat identified, not neutralized", async () => {
+    // The blind mask exists to protect *other* players' identity; the viewer's own seat must still
+    // read by its display name (and keep the id tooltip) even while the season is playable.
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
+    vi.mocked(getSession).mockResolvedValue(ownerRow())
+    vi.mocked(listSeasons).mockResolvedValue([
+      {
+        id: 'flappy_bird-iter-1',
+        env_id: 'flappy_bird',
+        submission_status: 'closed',
+        play_status: 'open',
+        release_status: 'unreleased',
+        label: 'Playground',
+        created_at: '2026-06-11T00:00:00.000Z',
+        released_at: null,
+        submission_count: 1,
+        game_count: 0,
+      },
+    ])
+    await renderSession()
+    await waitForHandlers()
+
+    handlers.onHeader(
+      flappyHeader({
+        players: { player_0: { kind: 'human', label: 'Dev User', user: 'dev-user' } },
+      }),
+    )
+    handlers.onState({
+      schema_version: 1,
+      tick: 0,
+      agents: {},
+      timing: { started_at: 0, duration_ms: 0 },
+    })
+
+    const attribution = await screen.findByText('Human: Dev User')
+    expect(attribution).toHaveAttribute('title', 'dev-user')
+  })
+
+  it("masks a blind viewer's human seat that is not their own to the neutral label, with no tooltip", async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('viewer'))
+    vi.mocked(getSession).mockResolvedValue(scriptedRow())
+    vi.mocked(listSeasons).mockResolvedValue([
+      {
+        id: 'flappy_bird-iter-1',
+        env_id: 'flappy_bird',
+        submission_status: 'closed',
+        play_status: 'open',
+        release_status: 'unreleased',
+        label: 'Playground',
+        created_at: '2026-06-11T00:00:00.000Z',
+        released_at: null,
+        submission_count: 1,
+        game_count: 0,
+      },
+    ])
+    await renderSession()
+    await waitForHandlers()
+
+    // The header must carry a submitted agent (not just another human) for blind masking to have
+    // anything to protect — an all-human game is asserted unmasked in the test right below.
+    handlers.onHeader(
+      flappyHeader({
+        players: {
+          player_0: { kind: 'human', label: 'Alice Chen', user: 'alice-chen' },
+          player_1: {
+            kind: 'agent',
+            label: "bob's agent",
+            user: 'bob',
+            submission_id: 'sub-bob',
+          },
+        },
+      }),
+    )
+    handlers.onState({
+      schema_version: 1,
+      tick: 0,
+      agents: {},
+      timing: { started_at: 0, duration_ms: 0 },
+    })
+
+    const attribution = await screen.findByText('Human', { exact: true })
+    expect(attribution).not.toHaveAttribute('title')
+    expect(screen.queryByText(/Alice Chen/)).toBeNull()
+    expect(screen.queryByText(/Human: Human/)).toBeNull()
+  })
+
+  it('does not mask an all-human game in a play-open season (nothing for blind to protect)', async () => {
+    // Mirrors ReplayPage's isBlindReplay gate: blind ownership masking exists to protect a submitted
+    // agent's identity, so an all-human recording (no submission to protect) must show real names even
+    // to a non-operator viewing a playable season.
+    vi.mocked(getMe).mockResolvedValue(signedInMe('viewer'))
+    vi.mocked(getSession).mockResolvedValue(scriptedRow())
+    vi.mocked(listSeasons).mockResolvedValue([
+      {
+        id: 'flappy_bird-iter-1',
+        env_id: 'flappy_bird',
+        submission_status: 'closed',
+        play_status: 'open',
+        release_status: 'unreleased',
+        label: 'Playground',
+        created_at: '2026-06-11T00:00:00.000Z',
+        released_at: null,
+        submission_count: 1,
+        game_count: 0,
+      },
+    ])
+    await renderSession()
+    await waitForHandlers()
+
+    handlers.onHeader(
+      flappyHeader({
+        players: { player_0: { kind: 'human', label: 'Alice Chen', user: 'alice-chen' } },
+      }),
+    )
+    handlers.onState({
+      schema_version: 1,
+      tick: 0,
+      agents: {},
+      timing: { started_at: 0, duration_ms: 0 },
+    })
+
+    const attribution = await screen.findByText('Human: Alice Chen')
+    expect(attribution).toHaveAttribute('title', 'alice-chen')
+  })
+
   it('controls the seat the human actually took, not always seat 0', async () => {
     // A four-seat Hearts session where the human sits at player_2. The renderer keys first-person
     // control off the single controlled slot, so the page must narrow to the seat the header attributes
@@ -408,8 +559,49 @@ describe('SessionPage', () => {
         },
       }),
     )
-    expect(await screen.findByText('Submitted agent 1')).toBeInTheDocument()
+    const attribution = await screen.findByText('Submitted agent 1')
+    expect(attribution).toBeInTheDocument()
     expect(screen.queryByText("maya-fledgling's agent")).toBeNull()
+    // The masked row's identity is hidden outright, so no id tooltip rides along either.
+    expect(attribution).not.toHaveAttribute('title')
+  })
+
+  it("keeps the viewer's own masked-label submitted agent identified by an id tooltip while blind", async () => {
+    // "Your agent" still names the viewer's own seat (not the real label), but the plan requires the
+    // stable id stay reachable for the viewer's own rows even while blind masks everyone else's.
+    vi.mocked(getMe).mockResolvedValue(signedInMe('maya-fledgling'))
+    vi.mocked(getSession).mockResolvedValue(scriptedRow())
+    vi.mocked(listSeasons).mockResolvedValue([
+      {
+        id: 'flappy_bird-iter-1',
+        env_id: 'flappy_bird',
+        submission_status: 'closed',
+        play_status: 'open',
+        release_status: 'unreleased',
+        label: 'Playground',
+        created_at: '2026-06-11T00:00:00.000Z',
+        released_at: null,
+        submission_count: 1,
+        game_count: 0,
+      },
+    ])
+    vi.mocked(watchAgentNumbers).mockResolvedValue({ 'sub-maya': 1 })
+    await renderSession()
+    await waitForHandlers()
+    handlers.onHeader(
+      flappyHeader({
+        players: {
+          player_0: {
+            kind: 'agent',
+            label: "maya-fledgling's agent",
+            user: 'maya-fledgling',
+            submission_id: 'sub-maya',
+          },
+        },
+      }),
+    )
+    const attribution = await screen.findByText('Your agent')
+    expect(attribution).toHaveAttribute('title', 'maya-fledgling')
   })
 
   it('reveals submitted-agent attribution after public play closes', async () => {

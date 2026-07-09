@@ -42,6 +42,7 @@ import { usePinning } from '../composables/usePinning.js'
 import { useRendererMount } from '../composables/useRendererMount.js'
 import { useSessionSocket } from '../composables/useSessionSocket.js'
 import { useStageLayout } from '../composables/useStageLayout.js'
+import { hasSubmittedAgent } from '../lib/attribution.js'
 import { type ChatEntry, messageKey } from '../lib/chat.js'
 import { formatDate } from '../lib/format.js'
 import { liveIntervalMs, playbackIntervalMs } from '../lib/playback.js'
@@ -112,10 +113,18 @@ const controlledSlots = computed<string[]>(() =>
   status.value === 'ended' ? [] : viewerSeats.value,
 )
 const recordingId = computed(() => row.value?.recording_id ?? null)
-// Fail closed: anyone not confirmed an operator (including an unresolved identity) sees the blind
-// attribution while the season is playable.
+// Fail closed: anyone not confirmed an operator (including an unresolved identity) is treated as a
+// possibly-blind viewer while the season is playable. This coarser signal (not yet knowing whether the
+// header even carries a submitted agent) is what gates the anonymous-numbering prefetch below, because
+// a live session's header arrives asynchronously — often after that prefetch runs — so it cannot wait
+// on hasSubmittedAgent the way the render-facing gate does.
+const viewerMightBeBlind = computed(() => seasonPlayable.value && !isAdmin(me.me))
+// The render-facing blind gate additionally requires the header to confirm there is actually a
+// submitted agent to protect: blind ownership masking has nothing to hide in an all-human or
+// all-Naive session (mirrors ReplayPage's gate). Reactive on `header`, so it flips true once a live
+// session's header arrives even though it was unknown when `viewerMightBeBlind` above was checked.
 const blindAttribution = computed(
-  () => seasonPlayable.value && !isAdmin(me.me),
+  () => viewerMightBeBlind.value && hasSubmittedAgent(header.value?.players),
 )
 
 // The renderer (shared with replay) forwards the owner's live input. The socket owns the chrome state
@@ -279,9 +288,11 @@ onMounted(async () => {
   // awaits it rather than polling, closing the race.
   await me.whenSettled()
 
-  // Only a blind viewer needs the anonymous numbering, and only then does it apply; an operator (or a
-  // closed season) sees real owner labels and skips the lookup.
-  if (blindAttribution.value) {
+  // Only a possibly-blind viewer needs the anonymous numbering, and only then does it apply; an
+  // operator (or a closed season) sees real owner labels and skips the lookup. Gated on the coarser
+  // signal, not the render-facing blindAttribution: a live session's header (which hasSubmittedAgent
+  // reads) has not arrived yet at this point, so waiting on it here would skip the prefetch entirely.
+  if (viewerMightBeBlind.value) {
     anonymousNumbers.value = await watchAgentNumbers(fetched.env_id).catch(() => ({}))
   }
 

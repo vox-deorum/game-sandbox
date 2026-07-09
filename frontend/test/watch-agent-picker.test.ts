@@ -167,7 +167,7 @@ describe('WatchAgentPicker', () => {
     expect(await screen.findByText('session sess-hearts')).toBeInTheDocument()
   })
 
-  it('shows operator-only owner and source details with a profile link', async () => {
+  it('shows operator-only owner and source details with a profile link, falling back to the id', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'admin'))
     await renderPicker(flappyMeta(), [
       summary({
@@ -177,8 +177,29 @@ describe('WatchAgentPicker', () => {
         repo_url: 'https://example.test/agent',
       }),
     ])
+    // No owner_name on this row, so the link text falls back to the stable id — which is also the link
+    // target and, redundantly, its own tooltip.
     const link = await screen.findByRole('link', { name: 'eve' })
     expect(link).toHaveAttribute('href', '/environments/flappy_bird/agents/eve')
+    expect(link).toHaveAttribute('title', 'eve')
     expect(screen.getByText('abcdef1234')).toBeInTheDocument()
+  })
+
+  it('prefers owner_name over the owner id for the operator profile-link text, keeping the id for the link and tooltip', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'admin'))
+    await renderPicker(flappyMeta(), [
+      summary({
+        owner_id: 'eve',
+        owner_name: 'Eve Adler',
+        source_kind: 'git',
+        commit_sha: 'abcdef1234567890',
+        repo_url: 'https://example.test/agent',
+      }),
+    ])
+    const link = await screen.findByRole('link', { name: 'Eve Adler' })
+    // The link path and tooltip both stay keyed on the stable id, never the display name.
+    expect(link).toHaveAttribute('href', '/environments/flappy_bird/agents/eve')
+    expect(link).toHaveAttribute('title', 'eve')
+    expect(screen.queryByText('eve', { exact: true })).toBeNull()
   })
 })

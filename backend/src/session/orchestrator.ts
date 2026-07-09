@@ -11,6 +11,7 @@
 import { randomInt, randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
 
+import type { UserDirectory } from '../auth/users.js'
 import type { Config } from '../config.js'
 import { currentSessionBaseImageSpec } from '../deps-version.js'
 import type { ExecutionDriver, ImageRef, SandboxProfile } from '../driver/index.js'
@@ -133,6 +134,11 @@ export class Orchestrator {
      * both are present for a deployment that runs submitted agents, both omitted otherwise.
      */
     private readonly submissionSnapshots?: SubmissionSnapshotStore,
+    /**
+     * The display-name directory the recording-header attribution snapshots names through at launch.
+     * Optional: without it (or for an id with no row) every label falls back to the stable id.
+     */
+    private readonly userDirectory?: UserDirectory,
   ) {}
 
   /**
@@ -211,7 +217,7 @@ export class Orchestrator {
     })
 
     const sandbox = this.sandboxProfile()
-    const sessionConfig = this.sessionConfig(
+    const sessionConfig = await this.sessionConfig(
       meta,
       seed,
       humanTimeoutMs,
@@ -504,7 +510,7 @@ export class Orchestrator {
    * Environment facts (pace, limits, the default human timeout) live in the in-image registry, so only
    * the overrides travel here.
    */
-  private sessionConfig(
+  private async sessionConfig(
     meta: EnvironmentMeta,
     seed: number,
     humanTimeoutMs: number | null,
@@ -513,17 +519,33 @@ export class Orchestrator {
     ownerLogin: string,
     overrides: ReturnType<typeof decodeSeasonConfig>['overrides'],
     messaging: { enabled: boolean; cap: number | null },
-  ): Record<string, unknown> {
+  ): Promise<Record<string, unknown>> {
+    // Snapshot display names for the recording header at launch time: the human seat's user and every
+    // submission owner, one batched lookup. Without a directory (or a row) labels fall back to ids.
+    const names =
+      (await this.userDirectory?.namesFor([
+        ownerLogin,
+        ...resolvedSlots.flatMap((slot) =>
+          slot.kind === 'submission' ? [slot.submission.user_id] : [],
+        ),
+      ])) ?? new Map<string, string>()
     const seats = new Map<string, SeatBinding>()
     for (const slot of resolvedSlots) {
       if (slot.kind === 'human') {
-        seats.set(slot.slotId, { driver: 'human', login: ownerLogin })
+        const displayName = names.get(ownerLogin)
+        seats.set(slot.slotId, {
+          driver: 'human',
+          login: ownerLogin,
+          ...(displayName === undefined ? {} : { displayName }),
+        })
       } else if (slot.kind === 'submission') {
+        const ownerName = names.get(slot.submission.user_id)
         seats.set(slot.slotId, {
           driver: 'submission',
           submissionId: slot.submission.id,
           userId: slot.submission.user_id,
           path: submissionSlotPath(slot.slotId),
+          ...(ownerName === undefined ? {} : { ownerName }),
         })
       } else {
         seats.set(slot.slotId, { driver: 'naive' })

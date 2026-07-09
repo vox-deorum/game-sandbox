@@ -38,6 +38,11 @@ describe('SeasonSubmissions', () => {
 
     const link = await screen.findByRole('link', { name: 'Download' })
     expect(link.getAttribute('href')).toBe('/api/admin/submissions/sub-abcdef12/download')
+    // No user_name on this row, so the Participant cell falls back to the stable user_id, kept as its
+    // own tooltip — and the download filename stays keyed on the id either way.
+    const participant = screen.getByText('alice')
+    expect(participant).toHaveAttribute('title', 'alice')
+    expect(link.getAttribute('download')).toBe('alice-sub-abcd.tar.gz')
     const all = screen.getByRole('link', { name: /Download all/ })
     expect(all.getAttribute('href')).toBe('/api/admin/seasons/iter-1/submissions/download')
   })
@@ -52,5 +57,20 @@ describe('SeasonSubmissions', () => {
     // No per-row Download link exists; only the season-wide "Download all" link is present.
     expect(screen.queryByRole('link', { name: 'Download' })).toBeNull()
     expect(screen.getByRole('link', { name: /Download all/ })).toBeTruthy()
+  })
+
+  it('prefers user_name over user_id in the Participant column, keeping the id as a tooltip and download key', async () => {
+    vi.mocked(listSeasonSubmissions).mockResolvedValue([
+      row({ user_id: 'alice', user_name: 'Alice Nguyen' }),
+    ])
+    render(SeasonSubmissions, { props: { seasonId: 'iter-1' } })
+
+    const participant = await screen.findByText('Alice Nguyen')
+    expect(participant).toHaveAttribute('title', 'alice')
+    expect(screen.queryByText('alice', { exact: true })).toBeNull()
+    // The download filename must keep the stable id, never the display name, so attribution surviving
+    // a later name change stays legible from the archive alone.
+    const link = screen.getByRole('link', { name: 'Download' })
+    expect(link.getAttribute('download')).toBe('alice-sub-abcd.tar.gz')
   })
 })

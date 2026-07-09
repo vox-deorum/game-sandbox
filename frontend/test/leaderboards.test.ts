@@ -155,9 +155,12 @@ describe('LeaderboardsPage', () => {
     // The mean score carries its spread too, both to two decimals.
     expect(screen.getByText('9.50 ± 1.50')).toBeInTheDocument()
 
-    // The submitted agent links to its profile; the Naive baseline row is present and ownerless.
+    // The submitted agent links to its profile; the Naive baseline row is present and ownerless. No
+    // user_name on this board fixture, so the link text falls back to the stable user_id, which is also
+    // the link target and its own tooltip.
     const aliceLink = screen.getAllByRole('link', { name: 'alice' })[0] as HTMLElement
     expect(aliceLink).toHaveAttribute('href', '/environments/flappy_bird/agents/alice')
+    expect(aliceLink).toHaveAttribute('title', 'alice')
     expect(screen.getAllByText('Naive baseline').length).toBeGreaterThan(0)
 
     // The per-row replay deep-links the representative recording.
@@ -285,6 +288,77 @@ describe('LeaderboardsPage', () => {
       }),
     )
     expect(await screen.findByRole('link', { name: 'Week 2' })).toBeInTheDocument()
+  })
+
+  it('prefers a submitted agent row user_name over its user_id, keeping the id for the link and tooltip', async () => {
+    const namedBoard: Board = {
+      automated: [
+        {
+          agent: {
+            kind: 'submission',
+            submission_id: 's1',
+            user_id: 'alice',
+            user_name: 'Alice Nguyen',
+          },
+          mean_score: 9.5,
+          score_std: 1.5,
+          mean_agent_compute_ms: 2.5,
+          compute_std: 0.5,
+          failure_count: 0,
+          games: 2,
+          recording_id: 'rec-a',
+        },
+      ],
+      // No human rows, so the only 'alice'-owned row on the page is the automated one under test.
+      human: [],
+      games: [],
+    }
+    vi.mocked(getEnvironmentLeaderboards).mockResolvedValue({
+      current: { season: season(), board: namedBoard },
+      submission_season_id: null,
+      play_season_id: null,
+    })
+    await renderAt('/environments/flappy_bird/leaderboards')
+
+    const link = await screen.findByRole('link', { name: 'Alice Nguyen' })
+    expect(link).toHaveAttribute('href', '/environments/flappy_bird/agents/alice')
+    expect(link).toHaveAttribute('title', 'alice')
+    expect(screen.queryByText('alice', { exact: true })).toBeNull()
+  })
+
+  it("shows the released-season matchup table's players cell with a stable-id tooltip", async () => {
+    // The matchup table (GamesTable) never applies blind masking on a released-season payload, so its
+    // players cell carries the joined submission ids as a tooltip alongside the display text.
+    vi.mocked(getEnvironmentLeaderboards).mockResolvedValue({
+      current: {
+        season: season(),
+        board: {
+          ...board(),
+          games: [
+            {
+              id: 'g1',
+              run_id: 'run-1',
+              match_index: 0,
+              game_index: 0,
+              seed: 0,
+              slots: [{ kind: 'submission', submission_id: 's1', user_id: 'alice' }],
+              status: 'completed',
+              recording_id: 'rec-a',
+              started_at: null,
+              ended_at: null,
+              error: null,
+            },
+          ],
+        },
+      },
+      submission_season_id: null,
+      play_season_id: null,
+    })
+    await renderAt('/environments/flappy_bird/leaderboards')
+
+    const gameRow = await screen.findByTestId('game-row')
+    const playersCell = within(gameRow).getByText('alice')
+    expect(playersCell).toHaveAttribute('title', 'alice')
   })
 
   it('requests only the released listing for a non-operator', async () => {

@@ -8,8 +8,15 @@
  */
 import type { FastifyInstance } from 'fastify'
 
+import { enrichAgentRef, type UserDirectory } from '../auth/users.js'
 import type { RequestIdentity } from '../identity.js'
-import { publicSeasonView, runGameView, seasonView } from '../season-views.js'
+import {
+  agentOwnerIds,
+  gameOwnerIds,
+  publicSeasonView,
+  runGameView,
+  seasonView,
+} from '../season-views.js'
 import type { Storage } from '../storage/index.js'
 
 /** Everything the public leaderboard reads need. */
@@ -17,24 +24,35 @@ export interface LeaderboardDeps {
   storage: Storage
   /** The identity seam gating the `includeUnreleased` season listing via `requireAdmin`. */
   identity: RequestIdentity
+  /** The display-name directory; board rows and matchup seats batch owner ids through it. */
+  userDirectory: UserDirectory
 }
 
 /**
  * Read both boards for a released season plus the matchup table: the automated aggregate, the
  * human-rating aggregate, and the per-game list of the latest completed run. The board shows one
  * representative (best-game) replay per agent; `games` is how a reader reaches every game of a
- * multi-seat matchup — each with its seats and its own replay link.
+ * multi-seat matchup — each with its seats and its own replay link. Every submitted agent ref is
+ * enriched with its owner's display name (one batched lookup per read) beside the stable id.
  */
-async function boardsFor(storage: Storage, seasonId: string) {
+async function boardsFor(deps: LeaderboardDeps, seasonId: string) {
   // Resolve the latest completed run once and feed it into the board read: the board aggregates that
   // run and its games carry the per-matchup replay links, so passing the run keeps both on the
   // identical run and avoids resolving it twice. The human board derives its replay links from the
   // automated board, so it is computed after and passed in rather than aggregating the run again.
-  const run = await storage.getLatestCompletedRun(seasonId)
-  const automated = await storage.getAutomatedBoard(seasonId, run)
-  const human = await storage.getHumanBoard(seasonId, automated)
-  const games = run === undefined ? [] : (await storage.listRunGames(run.id)).map(runGameView)
-  return { automated, human, games }
+  const run = await deps.storage.getLatestCompletedRun(seasonId)
+  const automated = await deps.storage.getAutomatedBoard(seasonId, run)
+  const human = await deps.storage.getHumanBoard(seasonId, automated)
+  const rawGames = run === undefined ? [] : await deps.storage.listRunGames(run.id)
+  const names = await deps.userDirectory.namesFor([
+    ...agentOwnerIds([...automated, ...human].map((row) => row.agent)),
+    ...gameOwnerIds(rawGames),
+  ])
+  return {
+    automated: automated.map((row) => ({ ...row, agent: enrichAgentRef(row.agent, names) })),
+    human: human.map((row) => ({ ...row, agent: enrichAgentRef(row.agent, names) })),
+    games: rawGames.map((game) => runGameView(game, names)),
+  }
 }
 
 /** Register the public, released-only leaderboard and history routes. */
@@ -95,7 +113,7 @@ export function registerLeaderboardRoutes(app: FastifyInstance, deps: Leaderboar
             ? null
             : {
                 season: seasonView(released),
-                board: await boardsFor(deps.storage, released.id),
+                board: await boardsFor(deps, released.id),
               },
         submission_season_id: submissionTarget?.id ?? null,
         play_season_id: playTarget?.id ?? null,
@@ -118,7 +136,7 @@ export function registerLeaderboardRoutes(app: FastifyInstance, deps: Leaderboar
       }
       return reply.code(200).send({
         season: seasonView(season),
-        board: await boardsFor(deps.storage, season.id),
+        board: await boardsFor(deps, season.id),
       })
     },
   )

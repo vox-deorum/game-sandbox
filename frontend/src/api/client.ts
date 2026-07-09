@@ -75,6 +75,8 @@ export interface Me {
 export interface SessionRow {
   id: string
   user_id: string
+  /** The owner's display name, when the directory has one; absent falls back to `user_id`. */
+  user_name?: string
   env_id: string
   mode: 'human' | 'scripted'
   status: 'starting' | 'running' | 'ended'
@@ -109,6 +111,8 @@ export interface RecordingSummary {
   id: string
   header: RecordingHeader
   user_id: string | null
+  /** The owner's display name, when the directory has one; absent falls back to `user_id`. */
+  user_name?: string
   created_at: string | null
   pinned: boolean
   /** How the producing session ended, so the replay viewer can label its outcome; null when unknown. */
@@ -452,6 +456,8 @@ export interface WatchAgentSummary {
   rating_status: 'unrated' | 'rated' | 'own'
   /** Operator-only identity and source fields; absent from regular-user responses. */
   owner_id?: string
+  /** The owner's display name, when the directory has one; absent falls back to `owner_id`. */
+  owner_name?: string
   source_kind?: 'git' | 'local'
   repo_url?: string | null
   commit_sha?: string | null
@@ -487,6 +493,8 @@ export interface AgentProfileSubmission extends SubmissionDetail {
 export interface AgentProfile {
   env_id: string
   owner_id: string
+  /** The owner's display name, when the directory has one; absent falls back to `owner_id`. */
+  owner_name?: string
   submission_season_id: string | null
   play_season_id: string | null
   submissions: AgentProfileSubmission[]
@@ -670,7 +678,13 @@ export async function setAuthorPrompt(
  * `user_id` so the UI can link a submitted-agent row to its profile. The Naive baseline has no owner.
  */
 export type BoardAgentRef =
-  | { kind: 'submission'; submission_id: string; user_id: string }
+  | {
+      kind: 'submission'
+      submission_id: string
+      user_id: string
+      /** The owner's display name, when the directory has one; absent falls back to `user_id`. */
+      user_name?: string
+    }
   | { kind: 'builtin-naive' }
 
 /** A public gate's two-valued state, mirrored from the backend's `WindowStatus`. */
@@ -811,6 +825,8 @@ export interface RunView {
   id: string
   season_id: string
   requested_by: string
+  /** The requester's display name, when the directory has one; absent falls back to `requested_by`. */
+  requested_by_name?: string
   config_snapshot: SeasonConfig
   submission_snapshot: BoardAgentRef[]
   status: RunStatus
@@ -825,6 +841,8 @@ export interface RunSummaryView {
   id: string
   season_id: string
   requested_by: string
+  /** The requester's display name, when the directory has one; absent falls back to `requested_by`. */
+  requested_by_name?: string
   status: RunStatus
   started_at: string
   ended_at: string | null
@@ -983,6 +1001,8 @@ export async function listRuns(seasonId: string): Promise<RunSummaryView[]> {
 export interface AdminSubmissionRow {
   id: string
   user_id: string
+  /** The submitter's display name, when the directory has one; absent falls back to `user_id`. */
+  user_name?: string
   status: SubmissionStatus
   source_kind: 'git' | 'local'
   repo_url: string | null

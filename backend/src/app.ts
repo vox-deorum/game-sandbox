@@ -16,6 +16,7 @@ import Fastify, { type FastifyInstance } from 'fastify'
 import { registerAdminRoutes } from './admin/routes.js'
 import type { Auth } from './auth/auth.js'
 import { registerAuthRoutes } from './auth/routes.js'
+import type { UserDirectory } from './auth/users.js'
 import { DEFAULT_DOCS_DIR, DEFAULT_SITE_NAME } from './config.js'
 import { buildDocsManifest, DocsIndexError, readDocsIndex, readDocsPage } from './docs.js'
 import type { EnvironmentRegistry } from './environments.js'
@@ -94,6 +95,12 @@ export interface AppDeps {
    * instance, and every suite mints real sessions through the harness.
    */
   auth: Auth
+  /**
+   * The display-name directory (Stage 12.4): routes batch the Better Auth user ids they are about to
+   * return through it and attach a readable name beside each stable id. Read-only; enrichment happens
+   * only at the response boundary, never in stored rows.
+   */
+  userDirectory: UserDirectory
 }
 
 /**
@@ -315,7 +322,10 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     if (session === undefined) {
       return reply.code(404).send({ error: 'no such session' })
     }
-    return session
+    // The owner's display name beside the stable id, resolved at read time (omitted when unknown).
+    const names = await deps.userDirectory.namesFor([session.user_id])
+    const name = names.get(session.user_id)
+    return { ...session, ...(name === undefined ? {} : { user_name: name }) }
   })
 
   app.delete<{ Params: { id: string } }>('/api/sessions/:id', async (request, reply) => {
@@ -333,9 +343,18 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   // The merged listing: each readable recording's header plus its retention metadata (owner, age,
   // pin state), optionally narrowed to one environment with `?env=`. Open to everyone (read-only).
-  app.get<{ Querystring: { env?: string } }>('/api/recordings', (request) =>
-    deps.retention.list({ env: request.query.env }),
-  )
+  // The owner display names are attached here at the route boundary — one batched lookup over the
+  // whole listing — so retention itself stays directory-free.
+  app.get<{ Querystring: { env?: string } }>('/api/recordings', async (request) => {
+    const listings = await deps.retention.list({ env: request.query.env })
+    const names = await deps.userDirectory.namesFor(
+      listings.flatMap((listing) => (listing.user_id === null ? [] : [listing.user_id])),
+    )
+    return listings.map((listing) => {
+      const name = listing.user_id === null ? undefined : names.get(listing.user_id)
+      return { ...listing, ...(name === undefined ? {} : { user_name: name }) }
+    })
+  })
 
   app.get<{ Params: { id: string } }>('/api/recordings/:id', async (request, reply) => {
     if (!(await deps.recordings.exists(request.params.id))) {
@@ -518,6 +537,10 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       const user = await identity.resolveUser(request)
       const operator = user?.status === 'admin'
       const submissions = await deps.storage.listActiveSubmissionsBySeason(season.id, 'ready')
+      // Owner display names ride only in the operator extras; batch them once across the listing.
+      const ownerNames = operator
+        ? await deps.userDirectory.namesFor(submissions.map((submission) => submission.user_id))
+        : new Map<string, string>()
       return Promise.all(
         submissions.map(async (submission, index) => {
           // Personalized rating state only when a user resolves; an anonymous caller carries none.
@@ -533,6 +556,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
                     })) === undefined
                   ? 'unrated'
                   : 'rated'
+          // Bound once so the presence check and the value it guards never drift apart.
+          const ownerName = ownerNames.get(submission.user_id)
           return {
             submission_id: submission.id,
             anonymous_number: index + 1,
@@ -540,6 +565,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
             ...(operator
               ? {
                   owner_id: submission.user_id,
+                  ...(ownerName === undefined ? {} : { owner_name: ownerName }),
                   source_kind: submission.source_kind,
                   repo_url: submission.repo_url,
                   commit_sha: submission.commit_sha,
@@ -589,9 +615,14 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
           }
         }),
       )
+      // The owner's display name beside the stable owner id (omitted when the directory has no row).
+      const ownerName = (await deps.userDirectory.namesFor([request.params.ownerId])).get(
+        request.params.ownerId,
+      )
       return {
         env_id: request.params.envId,
         owner_id: request.params.ownerId,
+        ...(ownerName === undefined ? {} : { owner_name: ownerName }),
         submission_season_id: submissionTarget?.id ?? null,
         play_season_id: playTarget?.id ?? null,
         submissions: detailed,
@@ -611,10 +642,12 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     identity,
     knownDepsVersions: deps.knownDepsVersions,
     snapshots: deps.submissionSnapshots,
+    userDirectory: deps.userDirectory,
   })
   registerLeaderboardRoutes(app, {
     storage: deps.storage,
     identity,
+    userDirectory: deps.userDirectory,
   })
   // Participant ratings and the author's per-season rating prompt are attributed to the resolved
   // identity. Rating writes require an active user; reads require any signed-in user.
@@ -622,6 +655,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     storage: deps.storage,
     recordings: deps.recordings,
     identity,
+    userDirectory: deps.userDirectory,
   })
 
   // Mount Better Auth at `/api/auth/*`, before the SPA fallback so the catch-all never shadows it.

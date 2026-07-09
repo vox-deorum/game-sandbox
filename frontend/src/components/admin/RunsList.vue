@@ -51,7 +51,7 @@ function runHref(envId: string, seasonId: string, runId: string): string {
         </td>
         <td><UiStatusBadge :tone="STATUS_TONE[run.status]" :label="run.status" /></td>
         <td>{{ run.game_count }}</td>
-        <td>{{ run.requested_by }}</td>
+        <td :title="run.requested_by">{{ run.requested_by_name ?? run.requested_by }}</td>
       </tr>
     </tbody>
   </table>

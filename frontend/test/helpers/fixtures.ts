@@ -93,15 +93,20 @@ export function flappyHeader(overrides: Partial<RecordingHeader> = {}): Recordin
   return { schema_version: 1, environment: 'flappy_bird', seed: 0, ...overrides }
 }
 
-/** Four Spades seats keyed by slot id, one a connected human (default player_2), the rest agents. */
+/**
+ * Four Spades seats keyed by slot id, one a connected human (default player_2), the rest agents. The
+ * human seat's `label` defaults to the same string as `user` ('dev'); pass `humanLabel` to diverge them
+ * (the display-name label vs. the stable id) for a suite proving the label-over-id rendering preference.
+ */
 export function spadesPlayers(
   humanSlot: string | null = 'player_2',
+  humanLabel = 'dev',
 ): NonNullable<RecordingHeader['players']> {
   const players: NonNullable<RecordingHeader['players']> = {}
   for (const slot of ['player_0', 'player_1', 'player_2', 'player_3']) {
     players[slot] =
       slot === humanSlot
-        ? { kind: 'human', label: 'dev', user: 'dev' }
+        ? { kind: 'human', label: humanLabel, user: 'dev' }
         : { kind: 'agent', label: 'Naive agent' }
   }
   return players

@@ -8,7 +8,7 @@
 import type { RecordingHeader } from '@game-sandbox/schema'
 import { computed } from 'vue'
 
-import { attributionLabel } from '../lib/attribution.js'
+import { attributionLabel, isBlindMasked } from '../lib/attribution.js'
 import { formatSlot } from '../lib/format.js'
 
 const props = withDefaults(
@@ -43,7 +43,16 @@ const items = computed(() => {
   }
   return Object.entries(players).map(([slot, player]) => {
     const label = attributionLabel(slot, player, ctx)
-    return { slot, text: player.kind === 'human' ? `Human: ${label}` : label }
+    const masked = isBlindMasked(player, ctx)
+    // The stable id rides as a tooltip whenever this row's identity isn't blind-masked — on either
+    // kind now, not just human. A masked row (someone else's identity hidden while the season plays)
+    // gets no title at all; the viewer's own row (never masked) keeps it.
+    const title = masked ? undefined : player.user
+    // A masked human row already reads as the bare neutral "Human" (attributionLabel's blind branch),
+    // so adding the "Human:" prefix here would double up into "Human: Human" — only add it once the
+    // real name is showing.
+    const text = player.kind === 'human' && !masked ? `Human: ${label}` : label
+    return { slot, text, title }
   })
 })
 </script>
@@ -52,7 +61,7 @@ const items = computed(() => {
   <ul v-if="items.length > 0" class="players">
     <li v-for="item in items" :key="item.slot" class="player">
       <span class="player-slot">{{ formatSlot(item.slot) }}</span>
-      <span class="player-who">{{ item.text }}</span>
+      <span class="player-who" :title="item.title">{{ item.text }}</span>
     </li>
   </ul>
 </template>

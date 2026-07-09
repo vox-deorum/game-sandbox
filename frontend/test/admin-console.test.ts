@@ -409,6 +409,31 @@ describe('AdminConsolePage', () => {
       'href',
       '/environments/flappy_bird/admin/seasons/iter-1/runs/run-1',
     )
+    // No requested_by_name on this summary, so the Requested by cell falls back to the stable id, kept
+    // as its own tooltip.
+    const requester = screen.getByText('dev-user')
+    expect(requester).toHaveAttribute('title', 'dev-user')
+  })
+
+  it('prefers requested_by_name over the requester id in the runs list, keeping the id as a tooltip', async () => {
+    vi.mocked(listRuns).mockResolvedValue([
+      {
+        id: 'run-1',
+        season_id: 'iter-1',
+        requested_by: 'dev-user',
+        requested_by_name: 'Dev User',
+        status: 'completed',
+        started_at: '2026-06-12T00:00:00Z',
+        ended_at: '2026-06-12T00:05:00Z',
+        error: null,
+        game_count: 4,
+      },
+    ])
+    await renderConsole()
+
+    const requester = await screen.findByText('Dev User')
+    expect(requester).toHaveAttribute('title', 'dev-user')
+    expect(screen.queryByText('dev-user', { exact: true })).toBeNull()
   })
 
   it('links to the season board once a run has computed one', async () => {

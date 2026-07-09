@@ -7,6 +7,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { buildApp } from '../../../src/app.js'
+import { createUserDirectory } from '../../../src/auth/users.js'
 import type { Config } from '../../../src/config.js'
 import { KNOWN_DEPS_VERSIONS } from '../../../src/deps-version.js'
 import { createDockerDriver } from '../../../src/driver/docker/index.js'
@@ -84,8 +85,10 @@ export async function startStack(overrides: Partial<Config> = {}): Promise<Stack
   const retention = new Retention(storage, recordings, config)
   const submissionSource = createSubmissionSource(config.submission)
   const snapshots = new SubmissionSnapshotStore(resolve(config.submissionsDir))
-  // Wire the submission source and snapshot store into the orchestrator, as main.ts does, so a
-  // submitted-agent (and multi-agent) session can resolve its overlay/composed image.
+  const userDirectory = createUserDirectory(sqlite)
+  // Wire the submission source, snapshot store, and user directory into the orchestrator, as
+  // main.ts does, so a submitted-agent (and multi-agent) session can resolve its overlay/composed
+  // image and its recording-header attribution can resolve owner display names.
   const orchestrator = new Orchestrator(
     driver,
     storage,
@@ -97,6 +100,7 @@ export async function startStack(overrides: Partial<Config> = {}): Promise<Stack
     },
     submissionSource,
     snapshots,
+    userDirectory,
   )
   const validationWorker = new ValidationWorker({
     driver,
@@ -114,6 +118,7 @@ export async function startStack(overrides: Partial<Config> = {}): Promise<Stack
     recordings,
     retention,
     auth,
+    userDirectory,
     knownDepsVersions: KNOWN_DEPS_VERSIONS,
     workflowRunner: createPlaceholderRunner(storage),
     storage,

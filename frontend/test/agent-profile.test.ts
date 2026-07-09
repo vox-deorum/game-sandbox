@@ -115,9 +115,11 @@ describe('AgentProfilePage', () => {
     })
 
     // A non-owner (dev-user) viewing eve's profile sees a possessive heading, not "My Submissions".
-    expect(
-      await screen.findByRole('heading', { name: "eve's Submissions", level: 1 }),
-    ).toBeInTheDocument()
+    // No owner_name on this fixture, so the heading falls back to the stable owner id — and that id
+    // stays available as the heading's tooltip either way.
+    const heading = await screen.findByRole('heading', { name: "eve's Submissions", level: 1 })
+    expect(heading).toBeInTheDocument()
+    expect(heading).toHaveAttribute('title', 'eve')
     // The active ready submission reads "ready to compete" (the old standalone "Current" marker is
     // folded into the status label); the superseded static-check failure keeps its own status. Both
     // submissions' rollup status reads from the summary row (the superseded one stays collapsed, but
@@ -333,5 +335,24 @@ describe('AgentProfilePage', () => {
   it('shows an empty history for an owner with no submissions', async () => {
     await renderProfile({ env_id: 'flappy_bird', owner_id: 'newbie', submissions: [] })
     expect(await screen.findByText(/has not submitted an agent/)).toBeInTheDocument()
+  })
+
+  it('prefers the profile owner_name over the owner id in the heading and empty state, once loaded', async () => {
+    await renderProfile({
+      env_id: 'flappy_bird',
+      owner_id: 'eve',
+      owner_name: 'Eve Adler',
+      submissions: [],
+    })
+    // The heading shows the display name, but the stable route-param id remains reachable as a tooltip
+    // (and stays the value profile links and ownership checks use, per isOwner()).
+    const heading = await screen.findByRole('heading', {
+      name: "Eve Adler's Submissions",
+      level: 1,
+    })
+    expect(heading).toHaveAttribute('title', 'eve')
+    // Same preference in the empty-history copy, with the id kept as its own tooltip.
+    expect(screen.getByText('Eve Adler')).toHaveAttribute('title', 'eve')
+    expect(screen.queryByText('eve', { exact: true })).toBeNull()
   })
 })

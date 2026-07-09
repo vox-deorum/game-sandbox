@@ -49,6 +49,7 @@ describe('serving the built frontend', () => {
       recordings,
       retention: new Retention(storage, recordings, config),
       auth: stack.auth,
+      userDirectory: stack.userDirectory,
       frontendDir,
       ...makeSubmissionDeps(storage, config),
     })

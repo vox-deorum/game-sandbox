@@ -8,8 +8,12 @@
  * configuration and rating prompts.
  */
 
+import { type EnrichedAgentRef, enrichAgentRef } from './auth/users.js'
 import type { AgentRef, PublicSeason, Season, SeasonRun, SeasonRunGame } from './storage/schema.js'
 import { decodeSeasonConfig, type SeasonConfig } from './storage/season-config.js'
+
+/** No names resolved: the enrichment no-op the builders default to when a caller passes none. */
+const NO_NAMES: ReadonlyMap<string, string> = new Map()
 
 /** A season row with its `config` column decoded into the structured {@link SeasonConfig}. */
 export type SeasonView = Omit<Season, 'config'> & { config: SeasonConfig }
@@ -53,28 +57,40 @@ export function publicSeasonView(season: PublicSeason): PublicSeasonView {
   }
 }
 
-/** A scheduled game with its `slots` JSON decoded into resolved {@link AgentRef}s. */
-export type RunGameView = Omit<SeasonRunGame, 'slots'> & { slots: AgentRef[] }
+/** A scheduled game with its `slots` JSON decoded into resolved {@link EnrichedAgentRef}s. */
+export type RunGameView = Omit<SeasonRunGame, 'slots'> & { slots: EnrichedAgentRef[] }
 
-/** Decode a scheduled game's `slots` JSON for the wire. */
-export function runGameView(game: SeasonRunGame): RunGameView {
-  return { ...game, slots: JSON.parse(game.slots) as AgentRef[] }
+/** Decode a scheduled game's `slots` JSON for the wire, attaching owner display names when resolved. */
+export function runGameView(
+  game: SeasonRunGame,
+  names: ReadonlyMap<string, string> = NO_NAMES,
+): RunGameView {
+  const slots = JSON.parse(game.slots) as AgentRef[]
+  return { ...game, slots: slots.map((slot) => enrichAgentRef(slot, names)) }
 }
 
 /** A run with its frozen snapshots decoded and its scheduled games attached, for the admin status view. */
 export type RunView = Omit<SeasonRun, 'config_snapshot' | 'submission_snapshot'> & {
+  /** The requester's display name, when the directory resolved one (omitted otherwise). */
+  requested_by_name?: string
   config_snapshot: SeasonConfig
-  submission_snapshot: AgentRef[]
+  submission_snapshot: EnrichedAgentRef[]
   games: RunGameView[]
 }
 
 /** Decode a run's snapshots and attach its (already-ordered) scheduled games. */
-export function runView(run: SeasonRun, games: SeasonRunGame[]): RunView {
+export function runView(
+  run: SeasonRun,
+  games: SeasonRunGame[],
+  names: ReadonlyMap<string, string> = NO_NAMES,
+): RunView {
+  const snapshot = JSON.parse(run.submission_snapshot) as AgentRef[]
   return {
     ...run,
+    ...requestedByName(run, names),
     config_snapshot: decodeSeasonConfig(run.config_snapshot),
-    submission_snapshot: JSON.parse(run.submission_snapshot) as AgentRef[],
-    games: games.map(runGameView),
+    submission_snapshot: snapshot.map((ref) => enrichAgentRef(ref, names)),
+    games: games.map((game) => runGameView(game, names)),
   }
 }
 
@@ -84,11 +100,48 @@ export function runView(run: SeasonRun, games: SeasonRunGame[]): RunView {
  * them, and a single run's details endpoint serves the full {@link RunView} when one is opened.
  */
 export type RunSummaryView = Omit<SeasonRun, 'config_snapshot' | 'submission_snapshot'> & {
+  /** The requester's display name, when the directory resolved one (omitted otherwise). */
+  requested_by_name?: string
   game_count: number
 }
 
 /** Strip a run's snapshots and attach its game count for the runs-list summary. */
-export function runSummaryView(run: SeasonRun, gameCount: number): RunSummaryView {
+export function runSummaryView(
+  run: SeasonRun,
+  gameCount: number,
+  names: ReadonlyMap<string, string> = NO_NAMES,
+): RunSummaryView {
   const { config_snapshot: _config, submission_snapshot: _submissions, ...rest } = run
-  return { ...rest, game_count: gameCount }
+  return { ...rest, ...requestedByName(run, names), game_count: gameCount }
+}
+
+/** The optional `requested_by_name` field, spread in only when the directory resolved a name. */
+function requestedByName(
+  run: SeasonRun,
+  names: ReadonlyMap<string, string>,
+): { requested_by_name?: string } {
+  const name = names.get(run.requested_by)
+  return name === undefined ? {} : { requested_by_name: name }
+}
+
+/** The submission owner ids in a list of agent refs (the Naive baseline has none). */
+export function agentOwnerIds(refs: readonly AgentRef[]): string[] {
+  return refs.flatMap((ref) => (ref.kind === 'submission' ? [ref.user_id] : []))
+}
+
+/** Every submission owner id seated in a list of scheduled games (their `slots` are JSON-encoded). */
+export function gameOwnerIds(games: readonly SeasonRunGame[]): string[] {
+  return games.flatMap((game) => agentOwnerIds(JSON.parse(game.slots) as AgentRef[]))
+}
+
+/**
+ * Every submission owner id in a run's frozen roster and its scheduled games — the one call the
+ * routes batch their name lookup from before handing the same `run`/`games` to {@link runView},
+ * rather than each inlining its own `agentOwnerIds(JSON.parse(...)) + gameOwnerIds(...)` pair.
+ */
+export function ownerIdsForRun(run: SeasonRun, games: readonly SeasonRunGame[]): string[] {
+  return [
+    ...agentOwnerIds(JSON.parse(run.submission_snapshot) as AgentRef[]),
+    ...gameOwnerIds(games),
+  ]
 }

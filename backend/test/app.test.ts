@@ -46,6 +46,7 @@ describe('HTTP API', () => {
       recordings,
       retention: new Retention(storage, recordings, config),
       auth: stack.auth,
+      userDirectory: stack.userDirectory,
       ...makeSubmissionDeps(storage, config),
     })
   })
@@ -88,6 +89,7 @@ describe('HTTP API', () => {
       recordings,
       retention: new Retention(storage, recordings, config),
       auth: stack.auth,
+      userDirectory: stack.userDirectory,
       ...makeSubmissionDeps(storage, config),
     })
     try {
@@ -114,6 +116,7 @@ describe('HTTP API', () => {
       recordings,
       retention: new Retention(storage, recordings, config),
       auth: stack.auth,
+      userDirectory: stack.userDirectory,
       ...makeSubmissionDeps(storage, config),
     })
     try {
@@ -138,9 +141,31 @@ describe('HTTP API', () => {
 
     const row = await app.inject({ method: 'GET', url: `/api/sessions/${body.id}` })
     expect(row.statusCode).toBe(200)
-    expect(row.json()).toMatchObject({ id: body.id, env_id: 'flappy_bird', status: 'starting' })
+    // The detail carries the stable owner id plus the resolved display name beside it.
+    expect(row.json()).toMatchObject({
+      id: body.id,
+      env_id: 'flappy_bird',
+      status: 'starting',
+      user_id: users.idOf('alice'),
+      user_name: 'alice',
+    })
     // Attribution carries the Better Auth id, not a fabricated dev identity.
     expect((await storage.getSession(body.id))?.user_id).toBe(users.idOf('alice'))
+  })
+
+  it('omits the session detail user_name when the owner id has no user row', async () => {
+    await storage.createSession({
+      id: 'sess-ghost',
+      user_id: 'ghost-user',
+      env_id: 'flappy_bird',
+      mode: 'scripted',
+      recording_id: null,
+      created_at: new Date().toISOString(),
+    })
+    const res = await app.inject({ method: 'GET', url: '/api/sessions/sess-ghost' })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({ user_id: 'ghost-user' })
+    expect(res.json()).not.toHaveProperty('user_name')
   })
 
   it('rejects an invalid start body with 400', async () => {
@@ -328,18 +353,24 @@ describe('HTTP API', () => {
     it('merges retention metadata into the listing and filters on ?env=', async () => {
       const ownerId = users.idOf('alice')
       await seedRecording('flappy_bird-1', 'flappy_bird', ownerId)
-      await seedRecording('other-1', 'other_env', ownerId)
+      // A recording whose owner id has no user row: the id stays, no user_name appears.
+      await seedRecording('other-1', 'other_env', 'ghost-user')
 
       const all = (await app.inject({ method: 'GET', url: '/api/recordings' })).json() as Array<{
         id: string
         user_id: string
+        user_name?: string
         pinned: boolean
       }>
       expect(all.map((r) => r.id).sort()).toEqual(['flappy_bird-1', 'other-1'])
+      // The owner's display name rides beside the stable id.
       expect(all.find((r) => r.id === 'flappy_bird-1')).toMatchObject({
         user_id: ownerId,
+        user_name: 'alice',
         pinned: false,
       })
+      expect(all.find((r) => r.id === 'other-1')).toMatchObject({ user_id: 'ghost-user' })
+      expect(all.find((r) => r.id === 'other-1')).not.toHaveProperty('user_name')
 
       const filtered = (
         await app.inject({ method: 'GET', url: '/api/recordings?env=flappy_bird' })

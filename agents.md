@@ -2,6 +2,10 @@
 
 This file is for AI coding agents working on the Game Sandbox repository. It captures the writing style we want and gives a quick orientation to the project. Humans are welcome to read it too.
 
+## Use Subagents Whenever Appropriate
+
+Always delegate less critical/lower-level work to subagents with less capabilities, e.g., from Claude Fable to Sonnet/Haiku. Specify which agent you used. Such work may involve exploring repo structure, finding references, summarizing information, or conducting small but extensive edits.
+
 ## About this repo
 
 Game Sandbox is a classwise playground for Game AI. Participants submit agents through GitHub, and everyone can watch those agents, play with or against them, rate them, and see them ranked on per-environment leaderboards. The system is built on PettingZoo, with Shimmy wrapping single-agent games so the rest of the codebase only sees a PettingZoo interface. Web users authenticate with GitHub OAuth, submissions are repo links pinned to a commit and tagged with a season, and there are two leaderboards per environment per season (automated and human feedback). Unity ML-Agents support is planned for later but not in scope today.
@@ -32,10 +36,6 @@ A few defaults that will save back-and-forth:
 - Prefer editing existing files over creating new ones.
 - Keep specification documents under [docs/specs/](docs/specs/README.md). Each file should have a single clear topic and cross-link to the others rather than duplicating content.
 - Python code is linted and formatted with Ruff, configured in the root [pyproject.toml](pyproject.toml) (target `py312`, line length 110, rule sets `E`, `F`, `I`, `UP`, `B`, `SIM`). After any Python change, auto-fix and reformat in place with `uv run ruff check --fix .` and `uv run ruff format .` before committing. CI runs the same rules in check-only mode (`uv run ruff check .` and `uv run ruff format --check .`, part of `uv run python scripts/ci.py python`, which also runs pyright and pytest), so a change that is not fixed and formatted locally will fail there.
-
-## Use Subagents Whenever Appropriate
-
-Always delegate less important or complicated work to subagents with less capabilities, e.g., from Claude Fable to Sonnet/Haiku. Such work may involve exploring repo structure, finding references, summarizing information, or conducting small but extensive edits.
 
 ### UI consistency
 

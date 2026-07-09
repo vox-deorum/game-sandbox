@@ -28,6 +28,7 @@ import ReplaysPage from './pages/ReplaysPage.vue'
 import RunDetailsPage from './pages/RunDetailsPage.vue'
 import SeasonsPage from './pages/SeasonsPage.vue'
 import SessionPage from './pages/SessionPage.vue'
+import UsersAdminPage from './pages/UsersAdminPage.vue'
 import './renderers/index.js'
 // Style layers in order: tokens, reset, then the app shell layout. Component styling lives in scoped
 // component CSS on the tokens (see plans/stage-04.5/design-foundation.md); the global sheet carries
@@ -56,6 +57,10 @@ const router = createRouter({
     { path: '/docs/:docPath(.*)', component: DocsPage },
     { path: '/my/agents', component: MyAgentsPage },
     { path: '/my/profile', component: ProfilePage },
+    // The operator roster page: lists, searches, and pages every account through the Better Auth
+    // admin plugin. Like the admin console it self-gates on `isAdmin(me)`; the backend admin API
+    // (the plugin's custom-role permission check) is the real authority.
+    { path: '/admin/users', component: UsersAdminPage },
     { path: '/environments/:envId', component: EnvironmentPage },
     { path: '/environments/:envId/agents/:ownerId', component: AgentProfilePage },
     // The per-environment, per-season Leaderboards page; the season id is optional and defaults

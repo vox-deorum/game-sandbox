@@ -6,6 +6,7 @@ import type { FastifyInstance } from 'fastify'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { buildApp } from '../src/app.js'
 import type { Auth } from '../src/auth/auth.js'
+import type { UserDirectory } from '../src/auth/users.js'
 import { buildDocsManifest, DocsIndexError, readDocsIndex, readDocsPage } from '../src/docs.js'
 import { RecordingsStore } from '../src/recordings.js'
 import { Retention } from '../src/retention.js'
@@ -157,6 +158,7 @@ describe('docs HTTP routes', () => {
   let app: FastifyInstance
   let storage: Storage
   let auth: Auth
+  let userDirectory: UserDirectory
   let orchestrator: Orchestrator
   let docsDir: string
   let dataDir: string
@@ -171,6 +173,7 @@ describe('docs HTTP routes', () => {
       recordings,
       retention: new Retention(storage, recordings, config),
       auth,
+      userDirectory,
       docsIndexFile,
       ...makeSubmissionDeps(storage, config),
     })
@@ -182,6 +185,7 @@ describe('docs HTTP routes', () => {
     const stack = await openTestStack()
     storage = stack.storage
     auth = stack.auth
+    userDirectory = stack.userDirectory
     app = await buildDocsApp()
   })
 

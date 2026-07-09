@@ -161,7 +161,10 @@ onUnmounted(() => {
         </header>
 
         <dl class="run-meta">
-          <div><dt>Requested by</dt><dd>{{ run.requested_by }}</dd></div>
+          <div>
+            <dt>Requested by</dt>
+            <dd :title="run.requested_by">{{ run.requested_by_name ?? run.requested_by }}</dd>
+          </div>
           <div><dt>Started</dt><dd>{{ formatDate(run.started_at) ?? '—' }}</dd></div>
           <div><dt>Ended</dt><dd>{{ formatDate(run.ended_at) ?? '—' }}</dd></div>
         </dl>

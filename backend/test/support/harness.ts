@@ -7,7 +7,10 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import type BetterSqlite3 from 'better-sqlite3'
+
 import type { Auth } from '../../src/auth/auth.js'
+import { createUserDirectory, type UserDirectory } from '../../src/auth/users.js'
 import type { Config } from '../../src/config.js'
 import type { ExecutionDriver } from '../../src/driver/index.js'
 import { EnvironmentRegistry } from '../../src/environments.js'
@@ -29,8 +32,12 @@ import { StubWorkflowRunner } from './stub-runner.js'
 /** An in-memory storage plus the real Better Auth instance and user-minting harness on one handle. */
 export interface TestStack {
   storage: Storage
+  /** The raw shared connection, for suites that read the auth tables directly. */
+  sqlite: BetterSqlite3.Database
   auth: Auth
   users: TestUsers
+  /** The display-name directory over the same connection, for the `userDirectory` every `buildApp` needs. */
+  userDirectory: UserDirectory
 }
 
 /**
@@ -41,7 +48,7 @@ export interface TestStack {
 export async function openTestStack(): Promise<TestStack> {
   const { storage, sqlite } = await openSqlite(':memory:')
   const { auth, users } = await makeTestAuth(sqlite)
-  return { storage, auth, users }
+  return { storage, sqlite, auth, users, userDirectory: createUserDirectory(sqlite) }
 }
 
 /** A config with class-scale defaults overridable per test (e.g. a tiny idle window). */

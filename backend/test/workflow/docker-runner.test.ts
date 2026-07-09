@@ -13,10 +13,17 @@ import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
+import type { UserDirectory } from '../../src/auth/users.js'
 import type { ExitInfo } from '../../src/driver/index.js'
 import { EnvironmentRegistry } from '../../src/environments.js'
 import { forfeitScore } from '../../src/leaderboards/score.js'
-import type { AgentRef, ScheduledGameInput, SeasonRun, Storage } from '../../src/storage/index.js'
+import type {
+  AgentRef,
+  ScheduledGameInput,
+  SeasonRun,
+  Storage,
+  Submission,
+} from '../../src/storage/index.js'
 import { openSqliteStorage } from '../../src/storage/sqlite.js'
 import { SubmissionSnapshotStore } from '../../src/submission/snapshot-store.js'
 import type { SubmissionSource } from '../../src/submission/source/index.js'
@@ -79,7 +86,11 @@ interface RunnerHandle {
 function makeRunner(
   storage: Storage,
   driver = new FakeDriver(),
-  options: { killGraceMs?: number; gameWatchdogGraceMs?: number } = {},
+  options: {
+    killGraceMs?: number
+    gameWatchdogGraceMs?: number
+    userDirectory?: UserDirectory
+  } = {},
 ): RunnerHandle {
   const runner = createWorkflowRunner({
     driver,
@@ -672,5 +683,85 @@ describe('Docker-backed workflow runner', () => {
     // The recording is owned by the submission's owner, not the operator.
     const recordings = await storage.listRecordings()
     expect(recordings[0]?.user_id).toBe('alice')
+  })
+
+  it('snapshots owner display names into headless header labels while keeping stable ids', async () => {
+    const driver = new FakeDriver()
+    // Two single-seat games: one owner the directory knows, one with no row (the fallback).
+    const submissions: Submission[] = []
+    for (const owner of ['alice', 'ghost-user']) {
+      const submission = await storage.createSubmission({
+        season_id: 'placeholder',
+        env_id: ENV_ID,
+        user_id: owner,
+        source_kind: 'git',
+        repo_url: 'https://example.com/a.git',
+        commit_sha: 'abc123',
+        local_path: null,
+        ref: null,
+        created_at: '2026-06-16T00:00:00.000Z',
+      })
+      driver.overlayImages.set(`overlay-${owner}`, {
+        ref: `overlay-${owner}`,
+        submissionId: submission.id,
+        createdAtMs: 1,
+      })
+      submissions.push(submission)
+    }
+    const refs: AgentRef[] = submissions.map((submission) => ({
+      kind: 'submission',
+      submission_id: submission.id,
+      user_id: submission.user_id,
+    }))
+    const handle = makeRunner(storage, driver, {
+      userDirectory: {
+        namesFor: (ids) =>
+          Promise.resolve(
+            new Map<string, string>(ids.includes('alice') ? [['alice', 'Alice Chen']] : []),
+          ),
+      },
+    })
+    const run = await makeRun(
+      storage,
+      refs.map((ref, index) => ({
+        match_index: 0,
+        game_index: index,
+        seed: index + 1,
+        slots: [ref],
+      })),
+      { submissions: refs },
+    )
+    const players: Array<Record<string, unknown>> = []
+    handle.driver.onLaunch = (launch): void => {
+      const config = JSON.parse(launch.spec.argv[0] ?? '{}') as {
+        seed: number
+        players: Record<string, unknown>
+      }
+      players.push(config.players)
+      emitRecording(launch.process, config)
+    }
+
+    const { status } = await runToTerminal(handle, run.id)
+    expect(status).toBe('completed')
+    // `user` keeps the stable id in both headers; the label carries the resolved display name and
+    // falls back to the id where the directory has no row.
+    expect(players).toEqual([
+      {
+        player_0: {
+          kind: 'agent',
+          label: "Alice Chen's agent",
+          user: 'alice',
+          submission_id: submissions[0]?.id,
+        },
+      },
+      {
+        player_0: {
+          kind: 'agent',
+          label: "ghost-user's agent",
+          user: 'ghost-user',
+          submission_id: submissions[1]?.id,
+        },
+      },
+    ])
   })
 })

@@ -195,8 +195,18 @@ const seasonCaption = (seasonId: string): string => {
 /** The owner viewing their own profile unlocks the owner-only affordances (the Stage 9 debug view). */
 const isOwner = () => userId(me.me) === ownerId
 
-/** "My Submissions" on your own profile, "{owner}'s Submissions" when viewing someone else's. */
-const heading = computed(() => (isOwner() ? 'My Submissions' : `${ownerId}'s Submissions`))
+/**
+ * "My Submissions" on your own profile, "{owner}'s Submissions" when viewing someone else's. Prefers
+ * the profile's resolved display name once it loads; the route-param id is the pre-load fallback (and
+ * remains the value shown in the heading's tooltip).
+ */
+const heading = computed(() => {
+  if (isOwner()) {
+    return 'My Submissions'
+  }
+  const name = profile.value?.owner_name ?? ownerId
+  return `${name}'s Submissions`
+})
 
 /** The owner's rating prompt for a season, or null when they set none (shown per season group). */
 const authorPromptFor = (seasonId: string): string | null =>
@@ -212,7 +222,7 @@ const seasonLabel = (label: string | null, id: string): string =>
   <UiEmptyState v-else-if="profile === null">Loading…</UiEmptyState>
   <section v-else class="agent">
     <header>
-      <h1>{{ heading }}</h1>
+      <h1 :title="ownerId">{{ heading }}</h1>
     </header>
 
     <section v-if="isOwner()" class="agent-section">
@@ -235,7 +245,8 @@ const seasonLabel = (label: string | null, id: string): string =>
     <section class="agent-section">
       <h2>Submission History</h2>
       <UiEmptyState v-if="profile.submissions.length === 0">
-        {{ ownerId }} has not submitted an agent for this environment yet.
+        <span :title="ownerId">{{ profile.owner_name ?? ownerId }}</span> has not submitted an agent
+        for this environment yet.
       </UiEmptyState>
       <div v-else class="season-groups">
         <div v-for="group in seasonGroups" :key="group.seasonId" class="season-group">

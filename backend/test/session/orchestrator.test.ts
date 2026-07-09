@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import type { UserDirectory } from '../../src/auth/users.js'
 import { ensureRecordingsDir } from '../../src/session/live-session.js'
 import {
   Orchestrator,
@@ -85,6 +86,16 @@ function slots(assignment: SlotAssignment): Record<string, SlotAssignment> {
   return { player_0: assignment }
 }
 
+/** A canned {@link UserDirectory} over a fixed id → display-name map; unmapped ids stay absent. */
+function stubDirectory(names: Record<string, string>): UserDirectory {
+  return {
+    namesFor: (ids) =>
+      Promise.resolve(
+        new Map(ids.flatMap((id) => (names[id] === undefined ? [] : [[id, names[id]] as const]))),
+      ),
+  }
+}
+
 /** A four-slot Hearts assignment defaulting to built-in agents, overridable per slot. */
 function heartsSlots(
   overrides: Record<string, SlotAssignment> = {},
@@ -123,7 +134,11 @@ describe('orchestrator', () => {
   let driver: FakeDriver
   let recordingsDir: string
 
-  function makeOrchestrator(idleMs = 60_000, source?: SubmissionSource): Orchestrator {
+  function makeOrchestrator(
+    idleMs = 60_000,
+    source?: SubmissionSource,
+    userDirectory?: UserDirectory,
+  ): Orchestrator {
     const config = makeConfig({ recordingsDir, sessionIdleTimeoutMs: idleMs })
     // Pair an (empty) snapshot store with the source whenever one is supplied: the rebuild path tries
     // the snapshot first, finds none here, and falls back to the source seam exactly as before.
@@ -140,6 +155,7 @@ describe('orchestrator', () => {
       undefined,
       source,
       snapshots,
+      userDirectory,
     )
   }
 
@@ -445,6 +461,40 @@ describe('orchestrator', () => {
       expect(source.fetchCount).toBe(2)
       expect(source.disposed).toBe(2)
       expect(launch?.spec.image.ref).toContain('session-overlay')
+    })
+
+    it('snapshots display names into the header labels while keeping stable ids', async () => {
+      const source = new FakeSource()
+      // The directory knows the human (alice) and one owner (eve); frank has no row.
+      const orch = makeOrchestrator(
+        60_000,
+        source,
+        stubDirectory({ alice: 'Alice Chen', eve: 'Eve Vee' }),
+      )
+      const subA = await seedReadySubmission(storage, 'eve', 'hearts')
+      const subB = await seedReadySubmission(storage, 'frank', 'hearts')
+
+      await orch.start(
+        startHearts(
+          heartsSlots({
+            player_0: { kind: 'submission', submissionId: subA.id },
+            player_1: { kind: 'submission', submissionId: subB.id },
+            player_3: { kind: 'human' },
+          }),
+        ),
+      )
+
+      const config = JSON.parse(driver.lastLaunch()?.spec.argv[0] ?? '{}') as {
+        players: Record<string, unknown>
+      }
+      // `user` keeps the stable id everywhere; `label` carries the launch-time display name and
+      // falls back to the id exactly where the directory has no row (frank).
+      expect(config.players).toEqual({
+        player_0: { kind: 'agent', label: "Eve Vee's agent", user: 'eve', submission_id: subA.id },
+        player_1: { kind: 'agent', label: "frank's agent", user: 'frank', submission_id: subB.id },
+        player_2: { kind: 'agent', label: 'Naive agent' },
+        player_3: { kind: 'human', label: 'Alice Chen', user: 'alice' },
+      })
     })
 
     it('writes no session_submissions rows when the container fails to launch', async () => {

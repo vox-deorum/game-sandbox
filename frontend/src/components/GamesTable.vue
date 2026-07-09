@@ -34,14 +34,22 @@ function gameStatus(gameIndex: number, persisted: GameStatus): GameStatus {
   return props.liveStatus[gameIndex] ?? persisted
 }
 
-/** A seat's agent label: the owner for a submission, "Naive" for the builtin baseline. */
+/** A seat's agent label: the owner's display name (or id) for a submission, "Naive" for the builtin baseline. */
 function slotLabel(slot: BoardAgentRef): string {
-  return slot.kind === 'submission' ? slot.user_id : 'Naive'
+  return slot.kind === 'submission' ? (slot.user_name ?? slot.user_id) : 'Naive'
 }
 
 /** A compact one-line summary of the agents in a game's seats, in seat order. */
 function playersSummary(slots: BoardAgentRef[]): string {
   return slots.length === 0 ? '—' : slots.map(slotLabel).join(' · ')
+}
+
+/** The stable ids behind a game's submission seats, joined for a tooltip. Blind masking never
+ *  applies to GamesTable's payloads (admin run games and released-season matchup tables), so plain
+ *  ids are fine; undefined when no seat is a submission (an all-Naive game). */
+function playersTitle(slots: BoardAgentRef[]): string | undefined {
+  const ids = slots.filter((slot) => slot.kind === 'submission').map((slot) => slot.user_id)
+  return ids.length > 0 ? ids.join(' · ') : undefined
 }
 </script>
 
@@ -58,7 +66,7 @@ function playersSummary(slots: BoardAgentRef[]): string {
     <tbody>
       <tr v-for="game in games" :key="game.id" data-testid="game-row">
         <td class="game-id">m{{ game.match_index }} · g{{ game.game_index }} · seed {{ game.seed }}</td>
-        <td>{{ playersSummary(game.slots) }}</td>
+        <td :title="playersTitle(game.slots)">{{ playersSummary(game.slots) }}</td>
         <td>
           <UiStatusBadge
             :tone="STATUS_TONE[gameStatus(game.game_index, game.status)]"

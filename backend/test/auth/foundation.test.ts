@@ -18,6 +18,7 @@ import { buildApp } from '../../src/app.js'
 import type { Auth } from '../../src/auth/auth.js'
 import { migrateAuthSchema } from '../../src/auth/migrate.js'
 import { BOOTSTRAP_ADMIN_ID, ensureAdminUser } from '../../src/auth/seed-admin.js'
+import { createUserDirectory } from '../../src/auth/users.js'
 import {
   DEV_ADMIN_EMAIL,
   DEV_ADMIN_PASSWORD,
@@ -77,6 +78,7 @@ async function setupAuthApp(): Promise<AuthAppFixture> {
     recordings,
     retention: new Retention(handle.storage, recordings, config),
     auth,
+    userDirectory: createUserDirectory(handle.sqlite),
     ...makeSubmissionDeps(handle.storage, config),
   })
   return { handle, auth, users, app, orchestrator, dir }
@@ -502,6 +504,48 @@ describe('admin roster endpoints', () => {
       headers: admin,
     })
     expect(list.statusCode).toBe(200)
+  })
+
+  it('filters the roster by ban state, role, and email substring through list-users', async () => {
+    const admin = await users.headersFor('boss', { status: 'admin' })
+    await users.headersFor('outcast')
+    await users.headersFor('pat', { status: 'pending' })
+    await users.ban('outcast')
+
+    // The Banned tab's query: `filterValue=true` arrives as the string "true" on the query string;
+    // Better Auth's adapter coerces it for the boolean `banned` field (0/1 in SQLite), so exactly
+    // the banned user matches.
+    const banned = await app.inject({
+      method: 'GET',
+      url: '/api/auth/admin/list-users?filterField=banned&filterValue=true&filterOperator=eq',
+      headers: admin,
+    })
+    expect(banned.statusCode).toBe(200)
+    const bannedUsers = banned.json().users as Array<{ id: string; banned: boolean }>
+    expect(bannedUsers.map((user) => user.id)).toEqual([users.idOf('outcast')])
+    expect(bannedUsers[0]?.banned).toBe(true)
+
+    // The Pending tab's query: a plain string equality on the role column.
+    const pending = await app.inject({
+      method: 'GET',
+      url: '/api/auth/admin/list-users?filterField=role&filterValue=pending&filterOperator=eq',
+      headers: admin,
+    })
+    expect(pending.statusCode).toBe(200)
+    expect((pending.json().users as Array<{ id: string }>).map((user) => user.id)).toEqual([
+      users.idOf('pat'),
+    ])
+
+    // The search box's query: a contains match over the email column.
+    const search = await app.inject({
+      method: 'GET',
+      url: '/api/auth/admin/list-users?searchField=email&searchOperator=contains&searchValue=outcast',
+      headers: admin,
+    })
+    expect(search.statusCode).toBe(200)
+    expect((search.json().users as Array<{ id: string }>).map((user) => user.id)).toEqual([
+      users.idOf('outcast'),
+    ])
   })
 
   it('refuses user deletion server-side, even for an admin session', async () => {

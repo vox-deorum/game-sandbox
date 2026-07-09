@@ -70,6 +70,7 @@ describe('submission API', () => {
       recordings,
       retention: new Retention(storage, recordings, config),
       auth: stack.auth,
+      userDirectory: stack.userDirectory,
       knownDepsVersions: new Set([1]),
       workflowRunner: new StubWorkflowRunner(storage),
       storage,
@@ -501,8 +502,9 @@ describe('submission API', () => {
         rating_status: 'rated',
       },
     ])
-    // No owner id or source path leaks to a non-admin viewer.
+    // No owner id, owner name, or source path leaks to a non-admin viewer.
     expect(JSON.stringify(rows)).not.toContain(aliceId)
+    expect(JSON.stringify(rows)).not.toContain('owner_name')
     expect(JSON.stringify(rows)).not.toContain('/agents/bob')
   })
 
@@ -520,10 +522,25 @@ describe('submission API', () => {
       commit_sha: 'alice-sha',
       local_path: null,
       ref: 'main',
-      created_at: new Date().toISOString(),
+      created_at: '2026-06-11T00:00:00.000Z',
     })
     await storage.updateSubmissionStatus(submission.id, 'ready')
+    // A submission whose owner id has no user row: the operator extras keep the stable id but carry
+    // no owner_name for it.
+    const orphaned = await storage.createSubmission({
+      season_id: season.id,
+      env_id: ENV_ID,
+      user_id: 'ghost-user',
+      source_kind: 'git',
+      repo_url: 'https://example.test/ghost',
+      commit_sha: 'ghost-sha',
+      local_path: null,
+      ref: null,
+      created_at: '2026-06-11T00:01:00.000Z',
+    })
+    await storage.updateSubmissionStatus(orphaned.id, 'ready')
 
+    // Newest first: the orphaned submission (created later) leads the sequence.
     const own = await app.inject({
       method: 'GET',
       url: `/api/environments/${ENV_ID}/watch-agents`,
@@ -531,8 +548,13 @@ describe('submission API', () => {
     })
     expect(own.json()).toEqual([
       {
-        submission_id: submission.id,
+        submission_id: orphaned.id,
         anonymous_number: 1,
+        rating_status: 'unrated',
+      },
+      {
+        submission_id: submission.id,
+        anonymous_number: 2,
         rating_status: 'own',
       },
     ])
@@ -544,10 +566,23 @@ describe('submission API', () => {
     })
     expect(operator.json()).toEqual([
       {
-        submission_id: submission.id,
+        // No user row for the owner id, so `owner_name` is absent and the id is the fallback.
+        submission_id: orphaned.id,
         anonymous_number: 1,
         rating_status: 'unrated',
+        owner_id: 'ghost-user',
+        source_kind: 'git',
+        repo_url: 'https://example.test/ghost',
+        commit_sha: 'ghost-sha',
+        local_path: null,
+        ref: null,
+      },
+      {
+        submission_id: submission.id,
+        anonymous_number: 2,
+        rating_status: 'unrated',
         owner_id: aliceId,
+        owner_name: 'alice',
         source_kind: 'git',
         repo_url: 'https://example.test/alice',
         commit_sha: 'alice-sha',
@@ -639,6 +674,8 @@ describe('submission API', () => {
         submission_season_id: season.id,
         play_season_id: season.id,
       })
+      // 'eve' is a raw id with no user row, so the profile carries no owner_name (id fallback).
+      expect(body).not.toHaveProperty('owner_name')
       // The per-season author prompt is keyed by season id, resolved for the profile owner.
       expect(body.author_prompts[season.id]).toBe('Judge my dodging')
       // Newest first: the ready submission, then the superseded failed one (history is preserved).
@@ -664,6 +701,20 @@ describe('submission API', () => {
       })
       expect(res.statusCode).toBe(200)
       expect(res.json()).toMatchObject({ env_id: ENV_ID, owner_id: 'nobody', submissions: [] })
+      expect(res.json()).not.toHaveProperty('owner_name')
+    })
+
+    it("resolves a real owner's display name beside the stable owner id", async () => {
+      await build()
+      await users.headersFor('alice')
+      const aliceId = users.idOf('alice')
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/environments/${ENV_ID}/agents/${aliceId}`,
+      })
+      expect(res.statusCode).toBe(200)
+      expect(res.json()).toMatchObject({ owner_id: aliceId, owner_name: 'alice' })
     })
   })
 })

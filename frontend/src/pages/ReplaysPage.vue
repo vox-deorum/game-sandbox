@@ -20,6 +20,7 @@ import {
 } from '../api/client.js'
 import UiBadge from '../components/ui/UiBadge.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
+import { type AttributionContext, attributionLabel, hasSubmittedAgent, isBlindMasked } from '../lib/attribution.js'
 import { formatDateOnly, formatSlotIndex } from '../lib/format.js'
 import { isAdmin, useMe, userId } from '../me.js'
 import { reasonText } from '../replay/reason.js'
@@ -43,33 +44,47 @@ function seasonLabel(season: PublicSeasonView): string {
   return season.label ?? `Season ${season.id.slice(0, 8)}`
 }
 
+/** This page's attribution context for `replay`, shared by the summary text and its tooltip so both
+ *  honour the exact same blind test. */
+function attributionCtx(replay: RecordingSummary): AttributionContext {
+  return {
+    blind: isBlindReplay(replay),
+    viewerId: userId(me.me) ?? undefined,
+    anonymousNumbers: anonymousNumbers.value,
+  }
+}
+
 /** A compact one-line summary of who played, read from the recording header's `players` map. */
 function playersSummary(replay: RecordingSummary): string {
-  const { header } = replay
-  const players = header.players
+  const players = replay.header.players
   if (players === undefined) {
     return '—'
   }
-  const blind = isBlindReplay(replay)
-  const uid = userId(me.me)
-  const parts = Object.entries(players).map(([slot, player]) =>
-    player.kind === 'human'
-      ? `${formatSlotIndex(slot)}: Human (${player.user ?? player.label})`
-      : `${formatSlotIndex(slot)}: ${
-          blind && player.submission_id !== undefined
-            ? player.user === uid
-              ? 'Your agent'
-              : blindAgentLabel(player.submission_id)
-            : player.label
-        }`,
-  )
+  const ctx = attributionCtx(replay)
+  const parts = Object.entries(players).map(([slot, player]) => {
+    const label = attributionLabel(slot, player, ctx)
+    // A masked human already reads as the bare neutral "Human" (attributionLabel's blind branch); the
+    // "Human (name)" parenthetical only applies once the real name is showing.
+    const text = player.kind === 'human' && !isBlindMasked(player, ctx) ? `Human (${label})` : label
+    return `${formatSlotIndex(slot)}: ${text}`
+  })
   return parts.length > 0 ? parts.join(', ') : '—'
 }
 
-/** A blind submitted agent's label, numbered to match the watch picker and rating panel. */
-function blindAgentLabel(submissionId: string): string {
-  const number = anonymousNumbers.value[submissionId]
-  return number === undefined ? 'Submitted agent' : `Submitted agent ${number}`
+/** The stable ids behind `replay`'s seats, joined for a tooltip — omitted entirely for a blind replay,
+ *  whose whole row hides identity, not just the display name. */
+function playersTitle(replay: RecordingSummary): string | undefined {
+  if (isBlindReplay(replay)) {
+    return undefined
+  }
+  const players = replay.header.players
+  if (players === undefined) {
+    return undefined
+  }
+  const ids = Object.values(players)
+    .map((player) => player.user)
+    .filter((id): id is string => id !== undefined)
+  return ids.length > 0 ? ids.join(', ') : undefined
 }
 
 /** The replay id with its leading `⟨environment⟩-` prefix dropped, since the page is already scoped
@@ -87,15 +102,9 @@ function seasonText(replay: RecordingSummary): string {
   return season === undefined ? '—' : seasonLabel(season)
 }
 
-function hasSubmittedAgent(replay: RecordingSummary): boolean {
-  return Object.values(replay.header.players ?? {}).some(
-    (player) => player.kind === 'agent' && player.submission_id !== undefined,
-  )
-}
-
 function isBlindReplay(replay: RecordingSummary): boolean {
   // Fail closed: only a confirmed operator is exempt; an unresolved identity stays blind.
-  if (isAdmin(me.me) || replay.season_id === null || !hasSubmittedAgent(replay)) {
+  if (isAdmin(me.me) || replay.season_id === null || !hasSubmittedAgent(replay.header.players)) {
     return false
   }
   return seasonsById.value.get(replay.season_id)?.play_status === 'open'
@@ -202,8 +211,10 @@ watch(envId, (id) => void load(id), { immediate: true })
             <RouterLink class="replay-id" :to="`/replays/${replay.id}`">{{ displayId(replay) }}</RouterLink>
             <UiBadge v-if="showsPin(replay)" variant="accent">Pinned</UiBadge>
           </td>
-          <td class="replay-players">{{ playersSummary(replay) }}</td>
-          <td>{{ isBlindReplay(replay) ? '—' : (replay.user_id ?? '—') }}</td>
+          <td class="replay-players" :title="playersTitle(replay)">{{ playersSummary(replay) }}</td>
+          <td :title="isBlindReplay(replay) ? undefined : (replay.user_id ?? undefined)">
+            {{ isBlindReplay(replay) ? '—' : (replay.user_name ?? replay.user_id ?? '—') }}
+          </td>
           <td>{{ seasonText(replay) }}</td>
           <td>{{ reasonText(replay.termination_reason) }}</td>
           <td>{{ formatDateOnly(replay.created_at) ?? '—' }}</td>

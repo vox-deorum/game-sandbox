@@ -38,6 +38,7 @@ import { usePinning } from '../composables/usePinning.js'
 import { useRendererMount } from '../composables/useRendererMount.js'
 import { useReplayTransport } from '../composables/useReplayTransport.js'
 import { useStageLayout } from '../composables/useStageLayout.js'
+import { hasSubmittedAgent } from '../lib/attribution.js'
 import { type ChatEntry } from '../lib/chat.js'
 import { formatDate } from '../lib/format.js'
 import { playbackIntervalMs } from '../lib/playback.js'
@@ -93,9 +94,11 @@ const showGameOver = computed(
 )
 const { pinned, busy: pinBusy, error: pinError, toggle: togglePin } = usePinning(id)
 // Fail closed: anyone not confirmed an operator (including an unresolved identity) sees the blind
-// attribution while the season is playable.
+// attribution while the season is playable — but only when the recording actually carries a
+// submitted agent to protect; blind ownership masking has nothing to hide in an all-human or
+// all-Naive recording (mirrors ReplaysPage's isBlindReplay gate).
 const blindAttribution = computed(
-  () => seasonPlayable.value && !isAdmin(me.me),
+  () => seasonPlayable.value && !isAdmin(me.me) && hasSubmittedAgent(header.value?.players),
 )
 
 // The panel mounts only for a recording that actually carries messages (a messaging session); it is
@@ -137,7 +140,15 @@ const scrubIndex = computed({
 const metadataItems = computed(() => [
   { label: 'Seed', value: header.value?.seed },
   { label: 'Ticks', value: finalSummary.value.ticks },
-  { label: 'Owner', value: blindAttribution.value ? null : listingEntry.value?.user_id },
+  {
+    label: 'Owner',
+    value: blindAttribution.value
+      ? null
+      : (listingEntry.value?.user_name ?? listingEntry.value?.user_id),
+    // The stable id rides as a tooltip whenever the owner is actually shown; the item itself vanishes
+    // (via the null value above) rather than showing a masked placeholder when blind.
+    title: blindAttribution.value ? undefined : (listingEntry.value?.user_id ?? undefined),
+  },
   { label: 'Created', value: formatDate(listingEntry.value?.created_at) },
 ])
 

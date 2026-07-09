@@ -17,6 +17,7 @@
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import { z } from 'zod'
 
+import type { UserDirectory } from '../auth/users.js'
 import type { AuthUser, RequestIdentity } from '../identity.js'
 import type { RecordingsStore } from '../recordings.js'
 import type { AgentRef, Season, Session, Storage } from '../storage/index.js'
@@ -28,6 +29,8 @@ export interface RatingDeps {
   recordings: RecordingsStore
   /** The identity seam: `requireUser` for reads, `requireActive` for writes; admins see identities. */
   identity: RequestIdentity
+  /** The display-name directory; non-blind display names resolve the owner's name through it. */
+  userDirectory: UserDirectory
 }
 
 /** The author's per-submission rating prompt is display-only guidance; cap it so it stays a prompt. */
@@ -226,6 +229,13 @@ async function buildRatingView(
         ),
       )
     : new Map<string, number>()
+  // Owner display names for the non-blind labels, batched once across the session's agents. Skipped
+  // while blind: the anonymized labels never name an owner, so no lookup is needed.
+  const names = blind
+    ? new Map<string, string>()
+    : await deps.userDirectory.namesFor(
+        agents.flatMap((agent) => (agent.ref.kind === 'submission' ? [agent.ref.user_id] : [])),
+      )
   const agentViews = await Promise.all(
     agents.map(async (agent): Promise<RateableAgentView> => {
       const isOwn = agent.ref.kind === 'submission' && agent.ref.user_id === caller.id
@@ -237,7 +247,7 @@ async function buildRatingView(
       ])
       return {
         agent: agent.wire,
-        display_name: displayName(agent.ref, isOwn, blind, anonymousNumbers),
+        display_name: displayName(agent.ref, isOwn, blind, anonymousNumbers, names),
         is_own: isOwn,
         author_prompt: authorPrompt,
         your_rating: rating?.score ?? null,
@@ -259,12 +269,14 @@ function displayName(
   isOwn: boolean,
   blind: boolean,
   anonymousNumbers: ReadonlyMap<string, number>,
+  names: ReadonlyMap<string, string>,
 ): string {
   if (ref.kind === 'builtin-naive') {
     return 'Naive baseline'
   }
   if (!blind) {
-    return `${ref.user_id}'s agent`
+    // The owner's display name when the directory has one; the stable id is the visible fallback.
+    return `${names.get(ref.user_id) ?? ref.user_id}'s agent`
   }
   if (isOwn) {
     return 'Your agent'

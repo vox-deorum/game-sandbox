@@ -24,11 +24,20 @@ import type { FastifyInstance, FastifyReply } from 'fastify'
 import tar from 'tar-fs'
 import { z } from 'zod'
 
+import { enrichAgentRef, type UserDirectory } from '../auth/users.js'
 import { DEPS_VERSION } from '../deps-version.js'
 import type { EnvironmentMeta, EnvironmentRegistry } from '../environments.js'
 import type { RequestIdentity } from '../identity.js'
 import { buildSchedule, type SubmissionRef } from '../scheduler/build-schedule.js'
-import { runGameView, runSummaryView, runView, seasonView } from '../season-views.js'
+import {
+  agentOwnerIds,
+  gameOwnerIds,
+  ownerIdsForRun,
+  runGameView,
+  runSummaryView,
+  runView,
+  seasonView,
+} from '../season-views.js'
 import type { ClientSocket } from '../session/live-session.js'
 import type { Storage, Submission } from '../storage/index.js'
 import { SeasonConfigSchema } from '../storage/season-config.js'
@@ -49,6 +58,8 @@ export interface AdminDeps {
   knownDepsVersions: ReadonlySet<number>
   /** The submission-snapshot store the download routes read (individual submission + whole season). */
   snapshots: SubmissionSnapshotStore
+  /** The display-name directory; run/board/submission views batch their user ids through it. */
+  userDirectory: UserDirectory
 }
 
 /** The operator's season-wide rating prompt is display-only guidance; cap it so it stays a prompt. */
@@ -183,11 +194,17 @@ function registerSubmissionRoutes(admin: FastifyInstance, deps: AdminDeps): void
       return reply.code(404).send({ error: 'no such season' })
     }
     const active = await deps.storage.listActiveSubmissionsBySeason(season.id)
+    // One batched name lookup for the whole listing; a missing user simply omits the field.
+    const names = await deps.userDirectory.namesFor(active.map((submission) => submission.user_id))
     const rows = await Promise.all(
-      active.map(async (submission) => ({
-        ...submissionMetadata(submission),
-        has_snapshot: await deps.snapshots.exists(submission.id),
-      })),
+      active.map(async (submission) => {
+        const name = names.get(submission.user_id)
+        return {
+          ...submissionMetadata(submission),
+          ...(name === undefined ? {} : { user_name: name }),
+          has_snapshot: await deps.snapshots.exists(submission.id),
+        }
+      }),
     )
     return reply.code(200).send(rows)
   })
@@ -539,14 +556,26 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
         const automated = await deps.storage.getAutomatedBoard(season.id, completed)
         // The human board reuses the automated board's replay links, so build it after and pass it in.
         const human = await deps.storage.getHumanBoard(season.id, automated)
-        const boardGames =
-          completed === undefined
-            ? []
-            : (await deps.storage.listRunGames(completed.id)).map(runGameView)
+        const completedGames =
+          completed === undefined ? [] : await deps.storage.listRunGames(completed.id)
+        // One batched name lookup covering everything this view attributes: the latest run's
+        // requester, its frozen roster and scheduled seats, and both boards with their matchup table.
+        const names = await deps.userDirectory.namesFor([
+          ...(latest === undefined ? [] : [latest.requested_by, ...ownerIdsForRun(latest, games)]),
+          ...agentOwnerIds([...automated, ...human].map((row) => row.agent)),
+          ...gameOwnerIds(completedGames),
+        ])
         return reply.code(200).send({
           season: seasonView(season),
-          latest_run: latest === undefined ? null : runView(latest, games),
-          board: { automated, human, games: boardGames },
+          latest_run: latest === undefined ? null : runView(latest, games, names),
+          board: {
+            automated: automated.map((row) => ({
+              ...row,
+              agent: enrichAgentRef(row.agent, names),
+            })),
+            human: human.map((row) => ({ ...row, agent: enrichAgentRef(row.agent, names) })),
+            games: completedGames.map((game) => runGameView(game, names)),
+          },
         })
       })
 
@@ -561,7 +590,10 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
         }
         const runs = await deps.storage.listRunsBySeason(season.id)
         const counts = await deps.storage.countRunGamesBySeason(season.id)
-        return reply.code(200).send(runs.map((run) => runSummaryView(run, counts.get(run.id) ?? 0)))
+        const names = await deps.userDirectory.namesFor(runs.map((run) => run.requested_by))
+        return reply
+          .code(200)
+          .send(runs.map((run) => runSummaryView(run, counts.get(run.id) ?? 0, names)))
       })
 
       // One run's full view with its scheduled games, the run-details page's primary read. The run
@@ -574,7 +606,12 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
             return reply.code(404).send({ error: 'no such run' })
           }
           const games = await deps.storage.listRunGames(run.id)
-          return reply.code(200).send(runView(run, games))
+          // Batch the requester plus every roster and seated owner id in one lookup.
+          const names = await deps.userDirectory.namesFor([
+            run.requested_by,
+            ...ownerIdsForRun(run, games),
+          ])
+          return reply.code(200).send(runView(run, games, names))
         },
       )
 

@@ -6,6 +6,8 @@ export interface RunMetadataItem {
   label: string
   value: string | number | null | undefined
   code?: boolean
+  /** An optional tooltip for the value — e.g. the stable id behind a display-name value. */
+  title?: string
 }
 
 const props = defineProps<{ items: RunMetadataItem[] }>()
@@ -22,7 +24,7 @@ const shown = computed(() =>
   <dl class="run-metadata">
     <div v-for="item in shown" :key="item.label" class="run-metadata-item">
       <dt>{{ item.label }}</dt>
-      <dd>
+      <dd :title="item.title">
         <code v-if="item.code">{{ item.value }}</code>
         <template v-else>{{ item.value }}</template>
       </dd>

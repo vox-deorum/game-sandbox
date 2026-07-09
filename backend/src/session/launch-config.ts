@@ -35,11 +35,13 @@ export interface SlotConfig {
 /**
  * What fills one slot, in caller-neutral terms: a connected human, the built-in Naive baseline, or a
  * submitted agent (which carries the overlay path its code was staged into and its owner attribution).
+ * The optional display names are a launch-time snapshot resolved by the caller through the user
+ * directory; `player.user` always keeps the stable id, and a missing name falls back to it.
  */
 export type SeatBinding =
-  | { driver: 'human'; login: string }
+  | { driver: 'human'; login: string; displayName?: string }
   | { driver: 'naive' }
-  | { driver: 'submission'; submissionId: string; userId: string; path: string }
+  | { driver: 'submission'; submissionId: string; userId: string; path: string; ownerName?: string }
 
 /** The two session-config blocks derived from a seat assignment, keyed by slot id. */
 export interface AssembledSeats {
@@ -51,7 +53,9 @@ export interface AssembledSeats {
  * Map a slot-id → seat assignment onto the `slots` and `players` blocks of the session config. A
  * human slot is driven by the transport (`external`); a Naive or submitted slot is a `builtin-agent`,
  * the submitted one carrying the overlay path its code loads from. The attribution mirrors the seat:
- * the human's handle, the generic "Naive agent", or "<owner>'s agent" tagged with the submission.
+ * the human's display name, the generic "Naive agent", or "<owner>'s agent" tagged with the
+ * submission. `user` always carries the stable id; the label falls back to it when the caller
+ * resolved no display name, so a recording stays attributable without joining mutable auth data.
  */
 export function assembleSeats(seats: ReadonlyMap<string, SeatBinding>): AssembledSeats {
   const slots: Record<string, SlotConfig> = {}
@@ -60,7 +64,7 @@ export function assembleSeats(seats: ReadonlyMap<string, SeatBinding>): Assemble
     switch (seat.driver) {
       case 'human':
         slots[slotId] = { kind: 'external' }
-        players[slotId] = { kind: 'human', label: seat.login, user: seat.login }
+        players[slotId] = { kind: 'human', label: seat.displayName ?? seat.login, user: seat.login }
         break
       case 'naive':
         slots[slotId] = { kind: 'builtin-agent' }
@@ -70,7 +74,7 @@ export function assembleSeats(seats: ReadonlyMap<string, SeatBinding>): Assemble
         slots[slotId] = { kind: 'builtin-agent', path: seat.path }
         players[slotId] = {
           kind: 'agent',
-          label: `${seat.userId}'s agent`,
+          label: `${seat.ownerName ?? seat.userId}'s agent`,
           user: seat.userId,
           submission_id: seat.submissionId,
         }

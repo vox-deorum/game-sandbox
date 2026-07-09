@@ -118,6 +118,60 @@ describe('RunDetailsPage', () => {
     const replay = screen.getByRole('link', { name: 'Replay' })
     expect(replay).toHaveAttribute('href', '/replays/rec-9')
     expect(screen.getAllByRole('link', { name: 'Replay' })).toHaveLength(1)
+    // No user_name on either game's slots, so the players summary falls back to the stable id (the
+    // second game's lone slot is the ownerless Naive baseline, in its own row).
+    const playersCell = screen.getByText('alice')
+    expect(playersCell).toBeInTheDocument()
+    // GamesTable never applies blind masking (admin run games), so the cell also carries the
+    // submission's stable id as a tooltip.
+    expect(playersCell).toHaveAttribute('title', 'alice')
+    const naiveCell = screen.getByText('Naive')
+    expect(naiveCell).toBeInTheDocument()
+    // An all-Naive seat list has no submission id to show, so its cell carries no tooltip.
+    expect(naiveCell).not.toHaveAttribute('title')
+    // The requester metadata falls back to the stable id too, kept as a tooltip.
+    const requester = screen.getByText('dev-user')
+    expect(requester).toHaveAttribute('title', 'dev-user')
+  })
+
+  it('prefers user_name over the stable id in the games table and the requester metadata', async () => {
+    vi.mocked(getRun).mockResolvedValue(
+      runView({
+        requested_by: 'dev-user',
+        requested_by_name: 'Dev User',
+        games: [
+          {
+            id: 'g1',
+            run_id: 'run-1',
+            match_index: 0,
+            game_index: 0,
+            seed: 0,
+            slots: [
+              {
+                kind: 'submission',
+                submission_id: 's1',
+                user_id: 'alice',
+                user_name: 'Alice Nguyen',
+              },
+            ],
+            status: 'running',
+            recording_id: 'rec-9',
+            started_at: null,
+            ended_at: null,
+            error: null,
+          },
+        ],
+      }),
+    )
+    await renderPage()
+
+    const playersCell = await screen.findByText('Alice Nguyen')
+    expect(screen.queryByText('alice', { exact: true })).toBeNull()
+    // The display name shows, but the stable id still rides as the cell's tooltip.
+    expect(playersCell).toHaveAttribute('title', 'alice')
+    const requester = screen.getByText('Dev User')
+    expect(requester).toHaveAttribute('title', 'dev-user')
+    expect(screen.queryByText('dev-user', { exact: true })).toBeNull()
   })
 
   it('opens the live stream for an in-progress run and renders streamed lines', async () => {

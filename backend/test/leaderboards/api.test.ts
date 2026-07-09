@@ -48,6 +48,7 @@ describe('public leaderboard API', () => {
       recordings,
       retention: new Retention(storage, recordings, config),
       auth: stack.auth,
+      userDirectory: stack.userDirectory,
       ...makeSubmissionDeps(storage, config),
     })
   })
@@ -258,6 +259,80 @@ describe('public leaderboard API', () => {
     }
     expect(body.current.season.id).toBe(released.id)
     expect(body.current.board).toEqual({ automated: [], human: [], games: [] })
+  })
+
+  it('enriches board rows and matchup seats with owner display names beside stable ids', async () => {
+    await users.headersFor('alice')
+    await users.headersFor('bob')
+    const aliceId = users.idOf('alice')
+    const season = await declare()
+    await storage.setReleaseStatus(season.id, 'released')
+
+    // Two submitted agents on the completed run: one owned by a real user, one by an id with no
+    // user row (the fallback case).
+    const known = await makeSubmission(storage, season.id, aliceId)
+    const orphaned = await makeSubmission(storage, season.id, 'ghost-user')
+    const run = await storage.createRunWithSchedule(
+      season.id,
+      'dev-user',
+      [agentRef(known), agentRef(orphaned)],
+      [
+        { match_index: 0, game_index: 0, seed: 1, slots: [agentRef(known)] },
+        { match_index: 0, game_index: 1, seed: 2, slots: [agentRef(orphaned)] },
+      ],
+    )
+    const games = await storage.listRunGames(run.id)
+    for (const [index, submission] of [known, orphaned].entries()) {
+      const game = games[index]
+      if (game === undefined) {
+        throw new Error('expected a scheduled game per submission')
+      }
+      await storage.recordGameResult({
+        game_id: game.id,
+        slot_index: 0,
+        agent: agentRef(submission),
+        episode_score: 5 - index,
+        agent_compute_ms_total: 10,
+        acted_tick_count: 2,
+        failed: false,
+      })
+    }
+    await storage.setRunStatus(run.id, 'completed')
+    // One human rating gives the human board an (unranked) row carrying the same enriched ref.
+    await storage.upsertRating({
+      season_id: season.id,
+      env_id: ENV_ID,
+      rater_user_id: users.idOf('bob'),
+      agent: agentRef(known),
+      score: 4,
+    })
+
+    const res = await app.inject({ method: 'GET', url: `/api/environments/${ENV_ID}/leaderboards` })
+    expect(res.statusCode).toBe(200)
+    const board = (
+      res.json() as {
+        current: {
+          board: {
+            automated: Array<{ agent: Record<string, unknown> }>
+            human: Array<{ agent: Record<string, unknown> }>
+            games: Array<{ slots: Array<Record<string, unknown>> }>
+          }
+        }
+      }
+    ).current.board
+
+    const automatedKnown = board.automated.find((row) => row.agent.user_id === aliceId)
+    expect(automatedKnown?.agent).toMatchObject({ user_id: aliceId, user_name: 'alice' })
+    // No user row for the owner id: the stable id stays and no user_name appears.
+    const automatedOrphan = board.automated.find((row) => row.agent.user_id === 'ghost-user')
+    expect(automatedOrphan?.agent.user_name).toBeUndefined()
+
+    expect(board.human[0]?.agent).toMatchObject({ user_id: aliceId, user_name: 'alice' })
+
+    const seat = (slots: Array<Record<string, unknown>> | undefined) => slots?.[0]
+    const gameSeats = board.games.map((game) => seat(game.slots))
+    expect(gameSeats.find((s) => s?.user_id === aliceId)).toMatchObject({ user_name: 'alice' })
+    expect(gameSeats.find((s) => s?.user_id === 'ghost-user')?.user_name).toBeUndefined()
   })
 
   it('serves a specific released season board and 404s an unreleased one', async () => {

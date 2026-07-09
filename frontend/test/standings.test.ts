@@ -92,13 +92,13 @@ describe('buildStandings (cross-environment game-over leaderboard)', () => {
     expect(standings.map((s) => s.value)).toEqual([9, 4]) // rounded
   })
 
-  it('labels a human seat by its name and respects the blind policy for submitted agents', () => {
+  it('labels a human seat by its name and respects the blind policy for submitted agents and other humans', () => {
     const state = stepState(
       { player_1: -3 },
       { leaderboard_scores: [0, -3], display_scores: [0, 3] },
     )
     const players: NonNullable<RecordingHeader['players']> = {
-      player_0: { kind: 'human', label: 'you' },
+      player_0: { kind: 'human', label: 'you', user: 'viewer' },
       player_1: { kind: 'agent', label: "maya's agent", user: 'maya', submission_id: 'sub-maya' },
     }
 
@@ -106,13 +106,42 @@ describe('buildStandings (cross-environment game-over leaderboard)', () => {
     const open = buildStandings(state, header(players))
     expect(open.map((s) => s.label)).toEqual(['you', "maya's agent"])
 
-    // A non-operator viewing a playable season sees the submitted agent anonymized; the human is
-    // unaffected.
+    // A non-operator viewing a playable season sees the submitted agent anonymized; the human seat is
+    // the viewer's own, so it keeps its display name.
     const blind = buildStandings(state, header(players), {
       blind: true,
       viewerId: 'viewer',
       anonymousNumbers: { 'sub-maya': 1 },
     })
     expect(blind.map((s) => s.label)).toEqual(['you', 'Submitted agent 1'])
+
+    // A different (non-owning) viewer sees the human seat masked to the bare neutral label too: public
+    // leaderboard payloads already pair a submitted agent's user_id with its user_name, so an opaque id
+    // would be trivially reversible — the mask must hide the identity outright, not just the name.
+    const blindOther = buildStandings(state, header(players), {
+      blind: true,
+      viewerId: 'someone-else',
+      anonymousNumbers: { 'sub-maya': 1 },
+    })
+    expect(blindOther.map((s) => s.label)).toEqual(['Human', 'Submitted agent 1'])
+  })
+
+  it('fails closed the "own row" exemption for an anonymous viewer against a header entry with no user id', () => {
+    // Both the human-seat exemption and the "Your agent" branch key off `player.user === ctx.viewerId`.
+    // An anonymous viewer has `viewerId === undefined`, and a header entry can likewise carry no `user`
+    // (schema-optional). Without requiring both ids to be defined, `undefined === undefined` would wrongly
+    // grant an anonymous viewer the "this is my own row" exemption: the human's real name would leak and
+    // the ownerless agent would misread as "Your agent" instead of the neutral blind label.
+    const state = stepState(
+      { player_1: -3 },
+      { leaderboard_scores: [0, -3], display_scores: [0, 3] },
+    )
+    const players: NonNullable<RecordingHeader['players']> = {
+      player_0: { kind: 'human', label: 'Some Human' }, // no `user` on this older/anonymous entry
+      player_1: { kind: 'agent', label: "someone's agent", submission_id: 'sub-x' }, // no `user` either
+    }
+
+    const blind = buildStandings(state, header(players), { blind: true, viewerId: undefined })
+    expect(blind.map((s) => s.label)).toEqual(['Human', 'Submitted agent'])
   })
 })

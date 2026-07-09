@@ -107,8 +107,91 @@ describe('ReplaysPage', () => {
     const row = link.closest('tr') as HTMLElement
     expect(within(row).getByText('Week 1')).toBeInTheDocument() // season label, not the raw id
     expect(within(row).getByText('Game over')).toBeInTheDocument() // termination reason via reasonText
-    expect(within(row).getByText('alice')).toBeInTheDocument()
+    // No user_name on this fixture, so the Owner cell falls back to the stable user_id, kept as its
+    // own tooltip.
+    const ownerCell = within(row).getByText('alice')
+    expect(ownerCell).toHaveAttribute('title', 'alice')
     expect(within(row).getByText(/Naive agent/)).toBeInTheDocument()
+  })
+
+  it('prefers the recording user_name over user_id in the Owner column, keeping the id as a tooltip', async () => {
+    vi.mocked(listRecordings).mockResolvedValue([
+      recording({
+        id: 'flappy_bird-1',
+        user_id: 'alice',
+        user_name: 'Alice Nguyen',
+        season_id: null,
+      }),
+    ])
+    await renderPage()
+
+    const link = await screen.findByRole('link', { name: '1' })
+    const row = link.closest('tr') as HTMLElement
+    const ownerCell = within(row).getByText('Alice Nguyen')
+    expect(ownerCell).toHaveAttribute('title', 'alice')
+    expect(within(row).queryByText('alice', { exact: true })).toBeNull()
+  })
+
+  it('shows the human label (name) rather than the stable user id in the players summary, with the id as a tooltip', async () => {
+    vi.mocked(listRecordings).mockResolvedValue([
+      recording({
+        id: 'flappy_bird-1',
+        season_id: null,
+        header: {
+          schema_version: 1,
+          environment: 'flappy_bird',
+          players: { player_0: { kind: 'human', label: 'Alice Nguyen', user: 'alice' } },
+        },
+      }),
+    ])
+    await renderPage()
+
+    const playersCell = await screen.findByText(/Human \(Alice Nguyen\)/)
+    expect(playersCell).toBeInTheDocument()
+    expect(screen.queryByText(/Human \(alice\)/)).toBeNull()
+    // Not blind (no season), so the stable id still rides as the cell's tooltip.
+    expect(playersCell).toHaveAttribute('title', 'alice')
+  })
+
+  it("masks a blind replay's human player to the neutral label, with no name and no tooltip", async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('viewer'))
+    vi.mocked(listSeasons).mockImplementation(async (_envId, options) => {
+      if (options?.includeUnreleased === true) {
+        throw new Error('operator access required')
+      }
+      return [season()]
+    })
+    vi.mocked(listRecordings).mockResolvedValue([
+      recording({
+        id: 'flappy_bird-blind-human',
+        user_id: 'alice-chen',
+        season_id: 'season-1',
+        header: {
+          schema_version: 1,
+          environment: 'flappy_bird',
+          players: {
+            player_0: { kind: 'human', label: 'Alice Chen', user: 'alice-chen' },
+            player_1: {
+              kind: 'agent',
+              label: "maya-fledgling's agent",
+              user: 'maya-fledgling',
+              submission_id: 'sub-maya',
+            },
+          },
+        },
+      }),
+    ])
+    vi.mocked(watchAgentNumbers).mockResolvedValue({ 'sub-maya': 1 })
+    await renderPage()
+
+    const row = (await screen.findByRole('link', { name: 'blind-human' })).closest(
+      'tr',
+    ) as HTMLElement
+    const playersCell = within(row).getByText(/: Human,/)
+    expect(playersCell.textContent).not.toContain('Alice Chen')
+    expect(playersCell.textContent).not.toContain('alice-chen')
+    expect(playersCell.textContent).not.toMatch(/Human \(/) // no parenthetical under blind
+    expect(playersCell).not.toHaveAttribute('title')
   })
 
   it('shows an em dash for a replay with no season, owner, or players', async () => {
@@ -162,8 +245,11 @@ describe('ReplaysPage', () => {
     await renderPage()
 
     const row = (await screen.findByRole('link', { name: 'blind' })).closest('tr') as HTMLElement
-    expect(within(row).getByText(/Submitted agent 1/)).toBeInTheDocument()
+    const playersCell = within(row).getByText(/Submitted agent 1/)
+    expect(playersCell).toBeInTheDocument()
     expect(within(row).queryByText('maya-fledgling')).toBeNull()
+    // The masked row's identity is hidden outright, so the cell carries no id tooltip either.
+    expect(playersCell).not.toHaveAttribute('title')
     // The page leans on the public scope (which includes play-open seasons), not the operator path.
     expect(vi.mocked(listSeasons)).toHaveBeenCalledWith('flappy_bird', { includeUnreleased: false })
   })

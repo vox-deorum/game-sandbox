@@ -1,6 +1,6 @@
 # Stage 12.4: Admin Users page
 
-Status: not started
+Status: complete. Two notes. `UserDirectory.namesFor` reads the `user` table with a locally-typed raw better-sqlite3 prepared statement rather than a raw Kysely query: the module boundary from step 1 deliberately denies `kysely` imports in `auth/**` while admitting `better-sqlite3` there, and the substantive intent — no extension of the app's `Database` schema type — is unchanged. Blind attribution got stricter than the pre-stage status quo: because public leaderboard payloads now pair `user_id` with `user_name`, an opaque id is trivially reversible, so a blind viewer sees a human seat as a neutral "Human" (no name, no id, no tooltip) rather than the opaque id, the viewer's own seat excepted; live-session and replay surfaces share one `hasSubmittedAgent` gate so an all-human game is never masked.
 
 Part of [Stage 12](../stage-12-user-system.md). This is build-order step 4, the roster UI. User management needs no bespoke backend routes, because Better Auth's admin plugin already exposes the supported operations under `/api/auth/admin/*`, gated server-side by the custom admin role from [step 1](1-better-auth-foundation.md). That role deliberately lacks user deletion. So this step is mostly a frontend page over the admin client from [step 3](3-frontend-auth.md), plus a small backend addition that puts human display names on every payload whose opaque Better Auth user id is shown to a person.
 

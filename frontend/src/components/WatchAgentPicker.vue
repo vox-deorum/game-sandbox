@@ -161,8 +161,12 @@ async function startRun(payload: StartPayload, loadingKey?: string): Promise<voi
       <li v-for="agent in agents" :key="agent.submission_id" class="agent-row">
         <div class="agent-id">
           <template v-if="agent.owner_id !== undefined">
-            <RouterLink class="agent-owner" :to="`/environments/${envId}/agents/${agent.owner_id}`">
-              {{ agent.owner_id }}
+            <RouterLink
+              class="agent-owner"
+              :to="`/environments/${envId}/agents/${agent.owner_id}`"
+              :title="agent.owner_id"
+            >
+              {{ agent.owner_name ?? agent.owner_id }}
             </RouterLink>
             <code class="agent-source">{{ sourceLabel(agent) }}</code>
           </template>

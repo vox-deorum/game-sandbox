@@ -17,6 +17,7 @@ import UiInput from '../components/ui/UiInput.vue'
 import UiSelect from '../components/ui/UiSelect.vue'
 import UiSlider from '../components/ui/UiSlider.vue'
 import UiStatusBadge from '../components/ui/UiStatusBadge.vue'
+import UiTabs from '../components/ui/UiTabs.vue'
 
 // The semantic color tokens, named so the swatch grid stays in sync with tokens.css by review.
 const colorTokens = [
@@ -44,6 +45,7 @@ const inputValue = ref('')
 const invalidValue = ref('not a number')
 const selectValue = ref('builtin')
 const sliderValue = ref(120)
+const tabsValue = ref('all')
 </script>
 
 <template>
@@ -171,6 +173,19 @@ const sliderValue = ref(120)
           </template>
         </UiField>
       </div>
+    </section>
+
+    <section>
+      <h2>UiTabs</h2>
+      <UiTabs
+        v-model="tabsValue"
+        :tabs="[
+          { key: 'all', label: 'All' },
+          { key: 'pending', label: 'Pending' },
+          { key: 'banned', label: 'Banned' },
+        ]"
+      />
+      <p class="slider-readout">selected: {{ tabsValue }}</p>
     </section>
 
     <section>

@@ -79,7 +79,7 @@ watch(
       </thead>
       <tbody>
         <tr v-for="row in rows" :key="row.id" data-testid="submission-row">
-          <td>{{ row.user_id }}</td>
+          <td :title="row.user_id">{{ row.user_name ?? row.user_id }}</td>
           <td>
             <UiStatusBadge
               :tone="submissionStatusTone(row.status)"
