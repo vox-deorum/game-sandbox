@@ -15,7 +15,7 @@ Zod validates every value, so a malformed setting fails fast at startup with a m
 - Integer settings must be non-negative whole numbers. Floats, `NaN`, and negatives are rejected.
 - Quotas that allow fractions, such as `SANDBOX_CPUS`, must be positive finite numbers.
 - Booleans accept `true`, `1`, or `yes` for true, and `false`, `0`, or `no` for false.
-- Allowlists are comma-separated. Entries are trimmed and blank entries are dropped.
+- Comma-separated lists, such as `AUTH_TRUSTED_ORIGINS`, are trimmed and drop blank entries.
 
 ## Server and session
 
@@ -27,11 +27,22 @@ Zod validates every value, so a malformed setting fails fast at startup with a m
 | `DATA_DIR` | `./data` | Root containing `sandbox.db` and recording directories |
 | `SESSION_IDLE_TIMEOUT_MS` | `60000` | Lifetime with no attached socket, or no human command in human mode |
 | `SESSION_MAX_DURATION_MS` | `600000` | Wall-clock backstop |
-| `SESSION_ALLOWLIST` | `dev-user` | Comma-separated users allowed to start sessions; empty allows no one |
-| `OPERATOR_ALLOWLIST` | `dev-user` | Comma-separated users allowed to use `/api/admin` |
 | `SANDBOX_CPUS` | `1` | Session CPU quota |
 | `SANDBOX_MEMORY_MB` | `512` | Session memory quota |
 | `SANDBOX_SCRATCH_MB` | `256` | Writable scratch quota |
+
+## Authentication
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `AUTH_SECRET` | `dev-secret-do-not-deploy-32-chars` | Better Auth signing secret for cookies and tokens. The development value meets the length minimum but is public and accepted only with the explicit insecure-defaults opt-in on a loopback origin. |
+| `PUBLIC_ORIGIN` | `http://localhost:<PORT>` in insecure development only | The public origin the site is reached at, for cookie origin checks and OAuth callbacks. A normal startup requires it explicitly. The GitHub callback URL is `<PUBLIC_ORIGIN>/api/auth/callback/github`. |
+| `AUTH_TRUSTED_ORIGINS` | unset | Extra comma-separated origins appended to the built-in list, which is `PUBLIC_ORIGIN` plus these (and `http://localhost:5173` only under the loopback insecure-defaults opt-in). |
+| `AUTH_ALLOW_INSECURE_DEFAULTS` | `false` | Allows the published development secret and bootstrap credentials, but only with a loopback `PUBLIC_ORIGIN`. Never enable it in a deployment. |
+| `ADMIN_EMAIL` | `admin@example.com` | Bootstrap admin's development email. Accepted only with the insecure-defaults opt-in on a loopback origin; a deployment must set it explicitly. |
+| `ADMIN_PASSWORD` | `admin-dev-password` | Bootstrap admin's development password, re-synced on every boot. Accepted only with the insecure-defaults opt-in on a loopback origin; a deployment must set it explicitly. |
+| `ADMIN_NAME` | `Admin` | Seeded admin's display name. |
+| `GITHUB_OAUTH_CLIENT_ID` / `GITHUB_OAUTH_CLIENT_SECRET` | unset | GitHub OAuth app credentials. Both or neither: setting exactly one is a `ConfigError`. Distinct from `GITHUB_TOKEN`, which stays a submissions-only credential. |
 
 ## Execution and frontend
 
@@ -77,7 +88,7 @@ Static frontend serving is wired only when `FRONTEND_DIST` points at an existing
 
 The Documentation page reads the student guides from `DOCS_DIR` at request time, so a guide updates without a frontend rebuild. Set `DOCS_INDEX_FILE` to give a class its own landing page, such as a schedule or grading notes, without editing the shared guides; a configured file that cannot be read fails the landing request loudly rather than silently falling back.
 
-The allowlists default to `dev-user` so the stack works in development. An empty `SESSION_ALLOWLIST` allows no one to start sessions, while read-only routes and spectating stay open. `OPERATOR_ALLOWLIST` guards every `/api/admin` route through one operator check.
+Set `AUTH_SECRET` and the bootstrap `ADMIN_EMAIL`/`ADMIN_PASSWORD` explicitly. A normal startup refuses to run without an explicit `PUBLIC_ORIGIN`, signing secret, and bootstrap credentials, so there is no accidental fallback to the published development values. Never enable `AUTH_ALLOW_INSECURE_DEFAULTS` outside loopback development; besides accepting those published values, it also restricts the HTTP listener to loopback. When GitHub OAuth is configured, register the callback URL `<PUBLIC_ORIGIN>/api/auth/callback/github` with the OAuth app. `GITHUB_TOKEN` stays a submissions-only credential, distinct from the OAuth app's client ID and secret. `sandbox.db` now also holds the Better Auth tables (`user`, `session`, `account`, `verification`), created by a separate programmatic migration rather than the app's own schema.
 
 ## See also
 

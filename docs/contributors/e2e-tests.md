@@ -19,14 +19,12 @@ cd frontend && npx playwright test leaderboards-admin.spec.ts
 
 The suite runs serially (`workers: 1`, `fullyParallel: false`) so the real containers and the shared database never contend.
 
-## Two backends
+## One backend, real accounts
 
-`playwright.config.ts` starts two backends from the same built bundle, so the allowlist case has a context where the auto-logged user is _not_ allowlisted:
+`playwright.config.ts` starts a single `main` backend on port 8090, with `AUTH_ALLOW_INSECURE_DEFAULTS` and local submissions enabled. Identity is a Better Auth session cookie, minted by the suite's own fixtures rather than varied per server:
 
-| Project | Port | Data dir | Allowlist | Local submissions |
-| --- | --- | --- | --- | --- |
-| `main` | 8090 | `frontend/e2e/.data/main` | `dev-user` + the rating judges | enabled |
-| `restricted` | 8091 | `frontend/e2e/.data/restricted` | nobody | disabled |
+- The bootstrap admin (`admin@example.com` / `admin-dev-password`) is the operator. `e2e/support/auth.ts` holds these credentials, and the `admin` fixture in `e2e/support/fixtures.ts` signs in as this account.
+- Member personas — owners, judges, spectators — are created as real accounts by the fixtures, not varied server configuration. The `as(handle)` factory in `e2e/support/fixtures.ts` creates a member account (through the admin roster endpoint) on first use and returns a context signed in as it, so a spec composes flows by choosing which signed-in context to act through.
 
 | Spec | Project | What it covers |
 | --- | --- | --- |
@@ -35,7 +33,7 @@ The suite runs serially (`workers: 1`, `fullyParallel: false`) so the real conta
 | `submission.spec.ts` | main | The resolve → static → build → load pipeline; a ready agent watched, and a load failure. |
 | `leaderboards-admin.spec.ts` | main | Season cards, released history, operator preview, and the full competition arc (below). |
 | `hearts.spec.ts` | main | A four-seat render check, a scheduled multi-seat matchup to a released Scoreboard, the watch seat dialog, an on-screen human seat, and per-seat replay attribution (below). |
-| `allowlist.spec.ts` | restricted | Hidden entry points and a rejected direct start for a non-allowlisted user. |
+| `auth.spec.ts` | main | Three authentication journeys: the admin signs in, sees the admin navigation, and signs out; the admin creates a user who then signs in and participates; a pending user is gated, an admin approves them on the Users page, and the controls unlock. |
 
 ## A fresh database every run
 
@@ -50,7 +48,7 @@ In CI the checkout is already clean, so the wipe is a no-op there. Sibling direc
 
 ## This data is the demo's fixture
 
-`npm run demo` (`scripts/demo.py`) does **not** seed its own data — it snapshots `frontend/e2e/.data/main/` into a `demo/` copy and serves that. So the e2e run _is_ the demo's data builder: better-named, more complete e2e data is a better demo. This is why the leaderboards arc populates real agents, an automated scoreboard, human ratings, and rating prompts, and why the names are meaningful.
+`npm run demo` (`scripts/demo.py`) does **not** seed its own data — it snapshots `frontend/e2e/.data/main/` into a `demo/` copy and serves that. So the e2e run _is_ the demo's data builder: better-named, more complete e2e data is a better demo. This is why the leaderboards arc populates real agents, an automated scoreboard, human ratings, and rating prompts, and why the names are meaningful. The copied database includes the Better Auth accounts the fixtures created, so the demo reaches its personas through a real `/login` sign-in rather than a mocked identity; the bootstrap admin and `ada-lovelace` are real accounts the fixtures create.
 
 The demo builds that database only when it is missing, so after changing a spec or the data it produces, force a rebuild with `npm run demo -- --rerun-e2e`: it discards any existing fixture and reruns the suite before launching, regardless of the prior run's result.
 
@@ -60,7 +58,7 @@ Shared identities live in `e2e/support/names.ts`; shared API flows in `e2e/suppo
 
 - **Seasons** are short, themed, year-free labels (`Updraft Open`, `Thermals Cup`, …). Give each test that declares a season a **distinct** label — the suite shares one database within a run, so a duplicate label makes a label-based assertion ambiguous.
 - **Agents** are identified by their **owner id**, which is the public handle the leaderboard links to and the `/agents/<owner>` profile is keyed on. Use real-looking handles (`ada-lovelace`, `grace-hopper`, …). Keep a given owner to one test's purpose so its profile stays unambiguous.
-- **Raters** must be on the `main` backend's session allowlist (set in `playwright.config.ts`). An agent needs **≥3 distinct raters** before the Human Ratings board assigns it a rank.
+- **Raters** are created as active (`normal`) member accounts by the `as` fixture. An agent needs **≥3 distinct raters** before the Human Ratings board assigns it a rank.
 
 ## The competition arc
 
@@ -87,9 +85,9 @@ That match is the most expensive shape the suite runs: Hearts sets `seat_order_m
 
 The third test drives the multi-seat watch flow through the browser to prove a chosen seed reaches the start payload. It opens the Hearts overview, clicks the Naive row's Watch button to open the seat-assignment dialog (a multi-seat environment opens the dialog rather than starting immediately), checks that all four seat dropdowns default to the Naive baseline, types a chosen seed, and starts. It intercepts the `POST /api/sessions` request and asserts the request body's `seed` equals the chosen value, then asserts the live session's renderer canvas paints. The intercepted request is the authoritative proof the seed rode the wire rather than being defaulted.
 
-The fourth test covers an on-screen human seat. It starts a live human-versus-agents session through the API (the connected `dev-user` controls `player_0`, three Naive agents fill the rest) with a fixed seed whose deal gives `player_0` the 2 of clubs, so the human leads the opening trick where only the 2♣ is legal and every other card is greyed. Because greying is canvas pixels, the assertions are DOM-observable consequences instead: the decision log starts empty, a click on a greyed card (which the renderer never wires clickable) leaves it empty, and a click on the legal 2♣ grows it. The live log attributes every row to the controlled view seat, so the honest signal is the row-count advance rather than a per-row seat label; the human sits at `player_0`, the seed's opening leader and the seat the current host renders as controlled. The clicks map the renderer's fixed 960x720 internal card geometry onto the canvas through its rendered bounding box, so they target real card positions rather than guessing.
+The fourth test covers an on-screen human seat. It starts a live human-versus-agents session through the API (the connected admin controls `player_0`, three Naive agents fill the rest) with a fixed seed whose deal gives `player_0` the 2 of clubs, so the human leads the opening trick where only the 2♣ is legal and every other card is greyed. Because greying is canvas pixels, the assertions are DOM-observable consequences instead: the decision log starts empty, a click on a greyed card (which the renderer never wires clickable) leaves it empty, and a click on the legal 2♣ grows it. The live log attributes every row to the controlled view seat, so the honest signal is the row-count advance rather than a per-row seat label; the human sits at `player_0`, the seed's opening leader and the seat the current host renders as controlled. The clicks map the renderer's fixed 960x720 internal card geometry onto the canvas through its rendered bounding box, so they target real card positions rather than guessing.
 
-The fifth test covers per-seat replay attribution. It submits one example agent under its own owner, plays a scripted four-seat hand (the submitted agent in seat 0, Naive in the rest) to completion through the API, then opens the finalized recording in the replay viewer. It asserts the per-slot attribution line shows all four seats (one reading the owner's-agent label, the rest the Naive agent) and that trick-by-trick playback works, stepping the transport forward and watching the position readout advance. `dev-user` is the default operator, so the replay shows real owner labels rather than the blind-anonymized form a non-operator sees on a playable season.
+The fifth test covers per-seat replay attribution. It submits one example agent under its own owner, plays a scripted four-seat hand (the submitted agent in seat 0, Naive in the rest) to completion through the API, then opens the finalized recording in the replay viewer. It asserts the per-slot attribution line shows all four seats (one reading the owner's-agent label, the rest the Naive agent) and that trick-by-trick playback works, stepping the transport forward and watching the position readout advance. The admin is the operator, so the replay shows real owner labels rather than the blind-anonymized form a non-operator sees on a playable season.
 
 ## Adding a test or fixture
 

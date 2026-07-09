@@ -3,12 +3,16 @@ import { type APIRequestContext, expect } from '@playwright/test'
 import { ENV_ID } from './names.js'
 
 /**
- * Thin wrappers over the real backend endpoints the specs drive through Playwright's `request`
- * fixture, so each spec composes a flow instead of re-declaring the same fetch-and-assert boilerplate.
- * Every wrapper asserts the status it expects (with the response text on failure, so a broken call
- * reports the server's reason), and operator/identity-scoped calls carry the actor as the
- * `x-sandbox-user` header — the same seam the mock auto-logon uses. A bare call (no header) resolves
- * to `dev-user`, who is the default operator on the e2e backends.
+ * Thin wrappers over the real backend endpoints the specs drive through Playwright's API contexts,
+ * so each spec composes a flow instead of re-declaring the same fetch-and-assert boilerplate. Every
+ * wrapper asserts the status it expects (with the response text on failure, so a broken call reports
+ * the server's reason).
+ *
+ * Identity is a Better Auth session cookie, not a header: each wrapper takes the `actor` context it
+ * runs through, whose jar already holds a signed-in session (see the `admin` / `as` fixtures in
+ * `fixtures.ts`). Administration and season-setup calls take the `admin` context; owner submissions,
+ * ratings, author prompts, and session starts take the acting member's `as(handle)` context; public
+ * reads accept any context.
  */
 
 export interface Season {
@@ -53,47 +57,43 @@ export interface MatchConfig {
   games: number
 }
 
-function asUser(user: string): { headers: Record<string, string> } {
-  return { headers: { 'x-sandbox-user': user } }
-}
-
 // --- Seasons -------------------------------------------------------------------------------------
 
 /** Declare a fresh season (unreleased, both windows closed) for an environment (Flappy Bird by default). */
 export async function declareSeason(
-  request: APIRequestContext,
+  admin: APIRequestContext,
   label: string,
   envId: string = ENV_ID,
 ): Promise<Season> {
-  const res = await request.post(`/api/admin/environments/${envId}/seasons`, { data: { label } })
+  const res = await admin.post(`/api/admin/environments/${envId}/seasons`, { data: { label } })
   expect(res.status(), await res.text()).toBe(201)
   return (await res.json()) as Season
 }
 
 /** Replace a season's whole match design through the typed config endpoint. */
 export async function configureMatches(
-  request: APIRequestContext,
+  admin: APIRequestContext,
   seasonId: string,
   matches: MatchConfig[],
   depsVersion = 1,
 ): Promise<void> {
-  const res = await request.put(`/api/admin/seasons/${seasonId}/config`, {
+  const res = await admin.put(`/api/admin/seasons/${seasonId}/config`, {
     data: { deps_version: depsVersion, matches },
   })
   expect(res.status(), await res.text()).toBe(200)
 }
 
-async function flipWindow(request: APIRequestContext, path: string): Promise<void> {
-  const res = await request.post(path)
+async function flipWindow(admin: APIRequestContext, path: string): Promise<void> {
+  const res = await admin.post(path)
   expect(res.status(), await res.text()).toBe(200)
 }
 
 /** Fetch a season's current full config document through the admin detail endpoint. */
 async function getSeasonConfig(
-  request: APIRequestContext,
+  admin: APIRequestContext,
   seasonId: string,
 ): Promise<SeasonConfigDoc> {
-  const res = await request.get(`/api/admin/seasons/${seasonId}`)
+  const res = await admin.get(`/api/admin/seasons/${seasonId}`)
   expect(res.status(), await res.text()).toBe(200)
   const body = (await res.json()) as { season: { config: SeasonConfigDoc } }
   return body.season.config
@@ -110,38 +110,38 @@ async function getSeasonConfig(
  * absent block (`enabled ?? true`), so the effect is the environment default either way.
  */
 export async function setMessagingOverride(
-  request: APIRequestContext,
+  admin: APIRequestContext,
   seasonId: string,
   enabled: boolean | null,
 ): Promise<void> {
-  const config = await getSeasonConfig(request, seasonId)
+  const config = await getSeasonConfig(admin, seasonId)
   const { enabled: _drop, ...restMessaging } = config.overrides?.messaging ?? {}
   const messaging: MessagingOverride =
     enabled === null ? restMessaging : { ...restMessaging, enabled }
   const overrides = { ...config.overrides, messaging }
-  const res = await request.put(`/api/admin/seasons/${seasonId}/config`, {
+  const res = await admin.put(`/api/admin/seasons/${seasonId}/config`, {
     data: { deps_version: config.deps_version, matches: config.matches, overrides },
   })
   expect(res.status(), await res.text()).toBe(200)
 }
 
-export const openSubmissions = (request: APIRequestContext, id: string): Promise<void> =>
-  flipWindow(request, `/api/admin/seasons/${id}/submissions/open`)
-export const closeSubmissions = (request: APIRequestContext, id: string): Promise<void> =>
-  flipWindow(request, `/api/admin/seasons/${id}/submissions/close`)
-export const openPlay = (request: APIRequestContext, id: string): Promise<void> =>
-  flipWindow(request, `/api/admin/seasons/${id}/play/open`)
-export const closePlay = (request: APIRequestContext, id: string): Promise<void> =>
-  flipWindow(request, `/api/admin/seasons/${id}/play/close`)
-export const release = (request: APIRequestContext, id: string): Promise<void> =>
-  flipWindow(request, `/api/admin/seasons/${id}/release`)
+export const openSubmissions = (admin: APIRequestContext, id: string): Promise<void> =>
+  flipWindow(admin, `/api/admin/seasons/${id}/submissions/open`)
+export const closeSubmissions = (admin: APIRequestContext, id: string): Promise<void> =>
+  flipWindow(admin, `/api/admin/seasons/${id}/submissions/close`)
+export const openPlay = (admin: APIRequestContext, id: string): Promise<void> =>
+  flipWindow(admin, `/api/admin/seasons/${id}/play/open`)
+export const closePlay = (admin: APIRequestContext, id: string): Promise<void> =>
+  flipWindow(admin, `/api/admin/seasons/${id}/play/close`)
+export const release = (admin: APIRequestContext, id: string): Promise<void> =>
+  flipWindow(admin, `/api/admin/seasons/${id}/release`)
 
 /** The seasons that currently hold the env's open submission and play windows (the unique-per-env slots). */
 export async function activeWindows(
-  request: APIRequestContext,
+  actor: APIRequestContext,
   envId: string = ENV_ID,
 ): Promise<{ submissionSeasonId: string | null; playSeasonId: string | null }> {
-  const res = await request.get(`/api/environments/${envId}/leaderboards`)
+  const res = await actor.get(`/api/environments/${envId}/leaderboards`)
   expect(res.ok(), await res.text()).toBe(true)
   const body = (await res.json()) as {
     submission_season_id: string | null
@@ -152,25 +152,26 @@ export async function activeWindows(
 
 /** Set the operator's season-wide rating prompt (display-only guidance shown to every rater). */
 export async function setSeasonRatingPrompt(
-  request: APIRequestContext,
+  admin: APIRequestContext,
   seasonId: string,
   prompt: string,
 ): Promise<void> {
-  const res = await request.put(`/api/admin/seasons/${seasonId}/rating-prompt`, {
+  const res = await admin.put(`/api/admin/seasons/${seasonId}/rating-prompt`, {
     data: { prompt },
   })
   expect(res.status(), await res.text()).toBe(200)
 }
 
-/** Set an agent author's own rating prompt; the author must have an active submission in the season. */
+/**
+ * Set an agent author's own rating prompt. The `owner` context must be the agent's author with an
+ * active submission in the season, since the write is gated by `requireActive` and the ownership check.
+ */
 export async function setAuthorPrompt(
-  request: APIRequestContext,
+  owner: APIRequestContext,
   seasonId: string,
-  owner: string,
   prompt: string,
 ): Promise<void> {
-  const res = await request.put(`/api/seasons/${seasonId}/agent-rating-prompt`, {
-    ...asUser(owner),
+  const res = await owner.put(`/api/seasons/${seasonId}/agent-rating-prompt`, {
     data: { prompt },
   })
   expect(res.status(), await res.text()).toBe(200)
@@ -178,15 +179,13 @@ export async function setAuthorPrompt(
 
 // --- Submissions ---------------------------------------------------------------------------------
 
-/** Submit a local-folder agent under a given owner; returns the pending submission id. */
+/** Submit a local-folder agent as the `owner` context; returns the pending submission id. */
 export async function submitLocal(
-  request: APIRequestContext,
-  owner: string,
+  owner: APIRequestContext,
   localPath: string,
   envId: string = ENV_ID,
 ): Promise<string> {
-  const res = await request.post('/api/submissions', {
-    ...asUser(owner),
+  const res = await owner.post('/api/submissions', {
     data: { env_id: envId, local_path: localPath },
   })
   expect(res.status(), await res.text()).toBe(202)
@@ -195,16 +194,20 @@ export async function submitLocal(
   return body.id
 }
 
-/** Poll the real validate-and-build pipeline to a terminal status (build and load run containers). */
+/**
+ * Poll the real validate-and-build pipeline to a terminal status (build and load run containers).
+ * The `owner` context must own the submission (or be an admin), since the detail read is gated by
+ * `requireUser` plus the ownership/operator check.
+ */
 export async function waitForTerminal(
-  request: APIRequestContext,
+  owner: APIRequestContext,
   id: string,
 ): Promise<SubmissionRow> {
   let row: SubmissionRow | undefined
   await expect
     .poll(
       async () => {
-        const res = await request.get(`/api/submissions/${id}`)
+        const res = await owner.get(`/api/submissions/${id}`)
         expect(res.ok()).toBe(true)
         row = (await res.json()) as SubmissionRow
         return row.status
@@ -218,15 +221,14 @@ export async function waitForTerminal(
   return row
 }
 
-/** Submit a fixture and wait for it to validate to `ready`; returns the ready submission id. */
+/** Submit a fixture as the `owner` context and wait for it to validate to `ready`; returns the id. */
 export async function submitReadyAgent(
-  request: APIRequestContext,
-  owner: string,
+  owner: APIRequestContext,
   localPath: string,
   envId: string = ENV_ID,
 ): Promise<string> {
-  const id = await submitLocal(request, owner, localPath, envId)
-  const row = await waitForTerminal(request, id)
+  const id = await submitLocal(owner, localPath, envId)
+  const row = await waitForTerminal(owner, id)
   expect(row.status, JSON.stringify(row.checks)).toBe('ready')
   return id
 }
@@ -253,22 +255,20 @@ interface StartOverrides {
 }
 
 /**
- * Start a session from an explicit per-slot assignment, as `user`, and return the new session id.
- * Does not wait for the game to finish; callers that need a rateable recording use
+ * Start a session from an explicit per-slot assignment, as the `actor` context, and return the new
+ * session id. Does not wait for the game to finish; callers that need a rateable recording use
  * {@link finishedScriptedSession}; the render check just needs a started session to watch. The
- * environment must have a play-open season and `user` must be allowlisted (the orchestrator gates
- * both before launching a container). The optional overrides pin the episode seed (so the deal — and
- * for Hearts the opening 2♣ leader — is reproducible) and the human-slot move clock.
+ * environment must have a play-open season and the actor must be active (`requireActive` gates the
+ * start). The optional overrides pin the episode seed (so the deal — and for Hearts the opening 2♣
+ * leader — is reproducible) and the human-slot move clock.
  */
 export async function startSession(
-  request: APIRequestContext,
-  user: string,
+  actor: APIRequestContext,
   envId: string,
   slots: Record<string, SlotAssignment>,
   overrides: StartOverrides = {},
 ): Promise<string> {
-  const res = await request.post('/api/sessions', {
-    ...asUser(user),
+  const res = await actor.post('/api/sessions', {
     // Only send the overrides the caller set, so an omitted seed/timeout stays the backend's default
     // rather than a literal `undefined` on the wire.
     data: {
@@ -284,11 +284,8 @@ export async function startSession(
   return ((await res.json()) as { id: string }).id
 }
 
-async function getSession(
-  request: APIRequestContext,
-  sessionId: string,
-): Promise<SessionRow | null> {
-  const res = await request.get(`/api/sessions/${sessionId}`)
+async function getSession(actor: APIRequestContext, sessionId: string): Promise<SessionRow | null> {
+  const res = await actor.get(`/api/sessions/${sessionId}`)
   if (!res.ok()) {
     return null
   }
@@ -303,18 +300,17 @@ async function getSession(
  * must name no human seat (a human seat would block waiting for input that never comes).
  */
 export async function finishedSeatedSession(
-  request: APIRequestContext,
-  user: string,
+  actor: APIRequestContext,
   envId: string,
   slots: Record<string, SlotAssignment>,
   overrides: StartOverrides = {},
 ): Promise<string> {
-  const sessionId = await startSession(request, user, envId, slots, overrides)
+  const sessionId = await startSession(actor, envId, slots, overrides)
   let recordingId: string | null = null
   await expect
     .poll(
       async () => {
-        const session = await getSession(request, sessionId)
+        const session = await getSession(actor, sessionId)
         if (session?.status === 'ended' && session.recording_id !== null) {
           recordingId = session.recording_id
           return 'ready'
@@ -333,19 +329,19 @@ export async function finishedSeatedSession(
 }
 
 /**
- * Stop a live session as `user` and wait until the backend has freed that user's single active-session
- * slot, so an immediately following start for the same user cannot race a 409 already-active. Deletes the
- * session, then polls until it reports `ended` (or is already gone). Mirrors {@link finishedScriptedSession}'s
- * stop-then-wait, but returns nothing: the caller only needs the slot released, not a recording.
+ * Stop a live session as the `owner` context and wait until the backend has freed that user's single
+ * active-session slot, so an immediately following start for the same user cannot race a 409 already-active.
+ * Deletes the session, then polls until it reports `ended` (or is already gone). Mirrors
+ * {@link finishedScriptedSession}'s stop-then-wait, but returns nothing: the caller only needs the slot
+ * released, not a recording.
  */
 export async function stopSessionAndAwaitFree(
-  request: APIRequestContext,
-  user: string,
+  owner: APIRequestContext,
   sessionId: string,
 ): Promise<void> {
-  await request.delete(`/api/sessions/${sessionId}`, asUser(user)).catch(() => {})
+  await owner.delete(`/api/sessions/${sessionId}`).catch(() => {})
   await expect
-    .poll(async () => (await getSession(request, sessionId))?.status ?? 'missing', {
+    .poll(async () => (await getSession(owner, sessionId))?.status ?? 'missing', {
       timeout: 30_000,
       intervals: [500, 1000],
     })
@@ -354,17 +350,15 @@ export async function stopSessionAndAwaitFree(
 
 /**
  * Run a submitted agent in a scripted watch session and drive it to a finalized recording: start it as
- * `watcher`, let it come up, stop it (the agent may also end the game on its own first), then wait for
- * the ended state with a recording. The returned session id is rateable. Used to seed the agents'
- * post-session ratings without going through the browser for each.
+ * the `watcher` context, let it come up, stop it (the agent may also end the game on its own first),
+ * then wait for the ended state with a recording. The returned session id is rateable. Used to seed the
+ * agents' post-session ratings without going through the browser for each.
  */
 export async function finishedScriptedSession(
-  request: APIRequestContext,
-  watcher: string,
+  watcher: APIRequestContext,
   submissionId: string,
 ): Promise<string> {
-  const res = await request.post('/api/sessions', {
-    ...asUser(watcher),
+  const res = await watcher.post('/api/sessions', {
     // The single-seat watch start as a one-slot `slots` assignment (the Stage 7.6 start contract).
     data: {
       env_id: ENV_ID,
@@ -377,17 +371,17 @@ export async function finishedScriptedSession(
   // Wait until it is past `starting` so a stop is accepted, then stop it (ignoring the case where the
   // game already ended on its own — the ended-state poll below is the real gate either way).
   await expect
-    .poll(async () => (await getSession(request, sessionId))?.status ?? 'missing', {
+    .poll(async () => (await getSession(watcher, sessionId))?.status ?? 'missing', {
       timeout: 30_000,
       intervals: [500, 1000],
     })
     .not.toBe('starting')
-  await request.delete(`/api/sessions/${sessionId}`, asUser(watcher)).catch(() => {})
+  await watcher.delete(`/api/sessions/${sessionId}`).catch(() => {})
 
   await expect
     .poll(
       async () => {
-        const session = await getSession(request, sessionId)
+        const session = await getSession(watcher, sessionId)
         return session?.status === 'ended' && session.recording_id !== null ? 'ready' : 'waiting'
       },
       { timeout: 60_000, intervals: [500, 1000, 1000] },
@@ -396,16 +390,14 @@ export async function finishedScriptedSession(
   return sessionId
 }
 
-/** Post one rater's 1-5 score for a submitted agent on a finished, rateable session. */
+/** Post one rater's 1-5 score for a submitted agent on a finished, rateable session, as `judge`. */
 export async function rateSession(
-  request: APIRequestContext,
-  judge: string,
+  judge: APIRequestContext,
   sessionId: string,
   submissionId: string,
   score: number,
 ): Promise<void> {
-  const res = await request.post(`/api/sessions/${sessionId}/ratings`, {
-    ...asUser(judge),
+  const res = await judge.post(`/api/sessions/${sessionId}/ratings`, {
     data: { ratings: [{ agent: { kind: 'submission', submission_id: submissionId }, score }] },
   })
   expect(res.status(), await res.text()).toBe(200)

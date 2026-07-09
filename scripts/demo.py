@@ -15,16 +15,22 @@ reused indefinitely. Pass ``--rerun-e2e`` (``npm run demo -- --rerun-e2e``) to r
 fixture from a fresh frontend-e2e run regardless of any prior result — the existing database is
 discarded and the suite is run again, picking up source changes since it was last built.
 
-Two launch modes:
+Sign-in, not a baked identity: the backend embeds Better Auth (Stage 12), so there is no more
+mock request header or session/operator allowlist to fabricate a user with. Both launch modes run
+the backend with the exact same loopback auth config as the e2e "main" backend (see
+frontend/playwright.config.ts): ``AUTH_ALLOW_INSECURE_DEFAULTS=true`` plus a loopback
+``PUBLIC_ORIGIN``. That re-syncs the copied database's bootstrap admin to the published dev
+defaults on startup, and every persona is reached the same way a real user would: by signing in
+at /login. The two modes differ only in which persona's credentials the command prints:
 
-- ``npm run demo`` signs in as the operator ``dev-user`` (the e2e admin allowlist), so the demo
-  shows the full surface including the admin console.
-- ``npm run demo:user`` (``--user``) mocks an *ordinary* user instead: it signs in as a fixed
-  member from the e2e fixture (``ada-lovelace``, the glider owner — the most data-rich member: a
-  submitted agent, an author rating prompt, watch recordings, and competition placements). It bakes
-  that identity into the frontend bundle via ``VITE_SANDBOX_USER`` and allowlists them for sessions
-  while keeping them off the operator allowlist, so the result is the member experience with real
-  data behind every page and the admin console correctly locked.
+- ``npm run demo`` prints the bootstrap admin's credentials (``admin@example.com`` /
+  ``admin-dev-password``), so signing in at /login shows the full surface including the admin
+  console.
+- ``npm run demo:user`` (``--user``) prints a fixed ordinary member's credentials instead: the e2e
+  fixture's ``ada-lovelace`` (the glider owner — the most data-rich member: a submitted agent, an
+  author rating prompt, watch recordings, and competition placements). Signing in as them shows
+  the member experience with real data behind every page, and the admin console stays correctly
+  locked — their Better Auth role is ``user``, never promoted to ``admin``.
 
 Schema drift: the backend keeps a single flat migration that is *not* re-run against a database
 that already recorded it (see backend/src/storage/migrations.ts). So if the schema has advanced
@@ -39,6 +45,7 @@ from __future__ import annotations
 import argparse
 import os
 import shutil
+import sqlite3
 import subprocess
 import sys
 
@@ -46,22 +53,27 @@ from _paths import (
     DEMO_DATA_DIR,
     E2E_MAIN_DATA_DIR,
     E2E_MAIN_DB,
-    E2E_RESTRICTED_DATA_DIR,
     FRONTEND_DIST_DIR,
     REPO_ROOT,
 )
 from ci import _NPM, _run, job_frontend_e2e
 
-# The Stage 3 identity stub's fallback id and the e2e operator (see backend/src/identity.ts).
-# `npm run demo` acts as this user, and it stays the lone operator under `demo:user` so the mock
-# member below is never an operator.
-_DEV_USER = "dev-user"
+# The bootstrap admin the backend seeds under AUTH_ALLOW_INSECURE_DEFAULTS — the published
+# development defaults (DEV_ADMIN_EMAIL / DEV_ADMIN_PASSWORD in backend/src/config.ts). Must match
+# frontend/e2e/support/auth.ts's ADMIN_EMAIL / ADMIN_PASSWORD, which the e2e suite's bootstrap
+# admin signs in with as well.
+_ADMIN_EMAIL = "admin@example.com"
+_ADMIN_PASSWORD = "admin-dev-password"
 
-# The ordinary user `demo:user` mocks: a fixed member from the e2e fixture, chosen as the most
-# data-rich non-operator so the most member-facing features have real content. `ada-lovelace` is
-# the glider owner in frontend/e2e/support/names.ts — a submitted agent (My Agents / agent
-# profile), an author rating prompt, watch recordings, and competition placements all attach to it.
-_DEMO_USER = "ada-lovelace"
+# ada-lovelace, the ordinary member `demo:user` signs in as: a fixed e2e fixture account chosen as
+# the most data-rich non-admin so the most member-facing features have real content — a submitted
+# agent (My Agents / agent profile), an author rating prompt, watch recordings, and competition
+# placements all attach to it (see frontend/e2e/support/names.ts). The e2e suite's fixtures create
+# this as a real Better Auth account with role `user`, never promoted to `admin`, so it stays an
+# ordinary member here too. Must match frontend/e2e/support/auth.ts's `emailFor('ada-lovelace')`
+# and `MEMBER_PASSWORD`.
+_MEMBER_EMAIL = "ada-lovelace@e2e.local"
+_MEMBER_PASSWORD = "e2e-member-password"
 
 # The backend logs this once startup succeeds and it is accepting connections.
 _LISTENING_MARKER = "backend listening on"
@@ -85,43 +97,64 @@ def ensure_e2e_db() -> None:
         raise SystemExit("e2e run did not produce frontend/e2e/.data/main/sandbox.db")
 
 
+def _member_account_present() -> bool:
+    """Whether the e2e database holds the ``demo:user`` member account.
+
+    The bootstrap admin is reseeded on every backend boot (ensureAdminUser), so the default demo is
+    always reachable, but ``ada-lovelace`` exists only if the frontend-e2e run that built the database
+    included the spec that creates her (leaderboards-admin.spec.ts). A partial run — a single unrelated
+    spec left behind under ``.data/main/`` — leaves a schema-valid database with no member to sign in
+    as, which ``run_backend``'s stale-schema retry cannot detect, so ``demo:user`` would print her
+    credentials and then fail the real /login for no visible reason. Probe the Better Auth ``user``
+    table up front so that case fails fast with an explanation instead.
+    """
+    if not E2E_MAIN_DB.exists():
+        return False
+    try:
+        with sqlite3.connect(f"file:{E2E_MAIN_DB}?mode=ro", uri=True) as conn:
+            row = conn.execute("SELECT 1 FROM user WHERE email = ? LIMIT 1", (_MEMBER_EMAIL,)).fetchone()
+        return row is not None
+    except sqlite3.Error:
+        # No `user` table (a corrupt or pre-Better-Auth database) counts as the member being absent.
+        return False
+
+
 def rebuild_e2e_db() -> None:
     """Recreate the e2e database from scratch with the current schema.
 
-    Deletes both e2e backends' data dirs first: the flat migration only builds the latest schema
-    on a *fresh* database, and a stale restricted DB would fail the e2e run the same way. The next
-    frontend-e2e run then rebuilds them with the current schema and repopulates the data.
+    Deletes the e2e main data dir first: the flat migration only builds the latest schema on a
+    *fresh* database. The next frontend-e2e run then rebuilds it with the current schema and
+    repopulates the data, including the Better Auth accounts (the bootstrap admin and the member
+    fixtures such as ada-lovelace) the demo signs in as.
     """
-    for data_dir in (E2E_MAIN_DATA_DIR, E2E_RESTRICTED_DATA_DIR):
-        if data_dir.exists():
-            shutil.rmtree(data_dir)
+    if E2E_MAIN_DATA_DIR.exists():
+        shutil.rmtree(E2E_MAIN_DATA_DIR)
     job_frontend_e2e()
     if not E2E_MAIN_DB.exists():
         raise SystemExit("e2e rebuild did not produce frontend/e2e/.data/main/sandbox.db")
 
 
-def build_frontend(acting_user: str | None = None) -> None:
+def build_frontend() -> None:
     """Rebuild the SPA bundle the backend serves from FRONTEND_DIST.
 
     Always rebuilt, not reused: there is no dev watcher here, so a cached dist would silently
     serve a stale frontend and hide local source edits. The backend itself runs from TypeScript
     source (``tsx src/main.ts``), so it needs no build step and always reflects current code.
 
-    When ``acting_user`` is set (``demo:user``), it is baked into the bundle as ``VITE_SANDBOX_USER``
-    so every browser context auto-signs-in as that member — the frontend resolves identity at build
-    time (see frontend/src/identity.ts), so this is the seam that makes the demo run as a chosen user.
+    Both launch modes build the identical bundle: identity now comes from a real Better Auth
+    sign-in at /login rather than a build-time baked user, so there is nothing left to vary
+    per mode here.
     """
-    env = os.environ.copy()
-    if acting_user is not None:
-        env["VITE_SANDBOX_USER"] = acting_user
-    _run([_NPM, "run", "build:frontend"], env=env)
+    _run([_NPM, "run", "build:frontend"])
 
 
 def prepare_demo_data() -> None:
     """Discard any prior demo data, then snapshot main/ into demo/.
 
     No backend is writing main/ here (e2e has exited), so the WAL is quiescent; copy the db
-    together with its -wal/-shm siblings so SQLite replays a consistent state on open.
+    together with its -wal/-shm siblings so SQLite replays a consistent state on open. The Better
+    Auth tables (accounts, sessions, etc.) live in this same sandbox.db, so the copy already
+    carries them — no separate step is needed to bring the personas along.
     """
     if DEMO_DATA_DIR.exists():
         shutil.rmtree(DEMO_DATA_DIR)
@@ -135,23 +168,54 @@ def prepare_demo_data() -> None:
         shutil.copytree(recordings, DEMO_DATA_DIR / "recordings", dirs_exist_ok=True)
 
 
-def _demo_env(acting_user: str | None = None) -> dict[str, str]:
-    """Backend env for the demo: mirrors the e2e "main" backend the data was written under
-    (dev-user allowlist, local submissions on), widening the idle timeout and operator access
-    for a usable demo, on port 8080 so a lingering e2e server on 8090 does not clash.
+def _credentials(acting_user: bool) -> tuple[str, str]:
+    """The (email, password) pair to sign in with: the bootstrap admin by default, or Ada's
+    ordinary-member account when ``acting_user`` is True (``demo:user``)."""
+    if acting_user:
+        return _MEMBER_EMAIL, _MEMBER_PASSWORD
+    return _ADMIN_EMAIL, _ADMIN_PASSWORD
 
-    With ``acting_user`` set (``demo:user``), the session allowlist becomes that member so they can
-    start sessions, while the operator allowlist stays ``dev-user`` only — so the mock member is a
-    genuine ordinary user (``is_operator`` false), and the admin console is locked exactly as it is
-    for a real member. The default operator demo (``acting_user`` None) keeps both lists at
-    ``dev-user``."""
+
+def _print_credentials(acting_user: bool) -> None:
+    """Print the persona's credentials prominently before the backend starts serving.
+
+    Recreating the demo database on every launch (see prepare_demo_data) invalidates any Better
+    Auth session cookie from a previous run — the session row it pointed at is gone — so a real
+    sign-in through the login page is required every time, not just the first.
+    """
+    email, password = _credentials(acting_user)
+    persona = "the ordinary member ada-lovelace" if acting_user else "the bootstrap admin"
+    print(
+        "\n"
+        "==========================================================================\n"
+        f"  Open http://localhost:8080/, go to /login, and sign in as {persona}:\n"
+        f"      email:    {email}\n"
+        f"      password: {password}\n"
+        "  This demo database was just (re)created, so any cookie from a previous\n"
+        "  run is no longer valid — a real sign-in is required.\n"
+        "==========================================================================\n",
+        flush=True,
+    )
+
+
+def _demo_env() -> dict[str, str]:
+    """Backend env for the demo: the same loopback Better Auth config as the e2e "main" backend
+    the data was written under (see frontend/playwright.config.ts), widening the idle timeout for
+    a usable demo, on port 8080 so a lingering e2e server on 8090 does not clash.
+
+    Both launch modes run this exact env — there is no per-mode allowlist or baked identity left
+    to vary. ``AUTH_ALLOW_INSECURE_DEFAULTS`` opts into the published development defaults, so the
+    copied database's bootstrap admin re-syncs to ``_ADMIN_EMAIL``/``_ADMIN_PASSWORD`` on startup,
+    and every persona (the bootstrap admin or a member fixture like ada-lovelace) is reached by
+    signing in for real at /login.
+    """
     env = os.environ.copy()
     env.update(
         {
             "DATA_DIR": str(DEMO_DATA_DIR),
             "FRONTEND_DIST": str(FRONTEND_DIST_DIR),
-            "SESSION_ALLOWLIST": acting_user if acting_user is not None else _DEV_USER,
-            "OPERATOR_ALLOWLIST": _DEV_USER,
+            "AUTH_ALLOW_INSECURE_DEFAULTS": "true",
+            "PUBLIC_ORIGIN": "http://localhost:8080",
             "ALLOW_LOCAL_SUBMISSIONS": "true",
             "SESSION_IDLE_TIMEOUT_MS": "600000",
             "PORT": "8080",
@@ -160,13 +224,12 @@ def _demo_env(acting_user: str | None = None) -> dict[str, str]:
     return env
 
 
-def run_backend(acting_user: str | None = None) -> tuple[int, bool]:
+def run_backend() -> tuple[int, bool]:
     """Run the backend against the demo copy, streaming its output.
 
     Returns ``(returncode, schema_drift)`` where ``schema_drift`` is True only when the process
     exited having logged a stale-schema SQLite error before it started listening — the signal to
-    rebuild the e2e database and retry. ``acting_user`` selects the ordinary-user allowlist (see
-    {@link _demo_env}); None runs the default operator demo.
+    rebuild the e2e database and retry.
     """
     cmd = [_NPM, "run", "start", "--workspace", "@game-sandbox/backend"]
     print(f"$ {' '.join(cmd)}  (PORT=8080 DATA_DIR={DEMO_DATA_DIR})", flush=True)
@@ -175,7 +238,7 @@ def run_backend(acting_user: str | None = None) -> tuple[int, bool]:
     proc = subprocess.Popen(
         cmd,
         cwd=REPO_ROOT,
-        env=_demo_env(acting_user),
+        env=_demo_env(),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -206,9 +269,9 @@ def main(argv: list[str] | None = None) -> None:
         "--user",
         action="store_true",
         help=(
-            f"Mock an ordinary user instead of the operator: sign in as the e2e member "
-            f"'{_DEMO_USER}', allowlisted to play but with no admin console. Wired to "
-            f"`npm run demo:user`."
+            "Sign in as the ordinary member ada-lovelace (the e2e fixture's most data-rich "
+            "non-admin) instead of the bootstrap admin, via the real login page. Wired to "
+            "`npm run demo:user`."
         ),
     )
     parser.add_argument(
@@ -231,21 +294,36 @@ def main(argv: list[str] | None = None) -> None:
         rebuild_e2e_db()
     else:
         ensure_e2e_db()
-    acting_user = _DEMO_USER if args.user else None
-    build_frontend(acting_user)
+
+    # `demo:user` signs in as a persisted fixture account, so a reused-but-incomplete database (built
+    # by a single spec that never created ada-lovelace) would fail the sign-in with no visible cause.
+    # Fail fast with the fix instead. The default admin demo needs no such check — the admin is
+    # reseeded on every boot regardless of which specs ran.
+    if args.user and not _member_account_present():
+        raise SystemExit(
+            f"demo:user signs in as {_MEMBER_EMAIL}, but the reused e2e database at {E2E_MAIN_DB} "
+            f"has no such account — it was likely built by a partial run without "
+            f"leaderboards-admin.spec.ts. Rebuild it with `npm run demo:user -- --rerun-e2e`, which "
+            f"runs the full frontend-e2e suite and recreates the member fixtures."
+        )
+
+    build_frontend()
     prepare_demo_data()
 
-    returncode, schema_drift = run_backend(acting_user)
+    _print_credentials(args.user)
+    returncode, schema_drift = run_backend()
     if schema_drift:
         print(
             "demo backend hit a stale-schema SQLite error -> rebuilding the e2e DB from scratch",
             flush=True,
         )
-        # The frontend bundle is independent of the database (the acting user is fixed, not derived
-        # from the data), so the build above still stands; only the e2e data needs recreating.
+        # The frontend bundle is independent of the database (identity comes from a real sign-in,
+        # not anything baked in), so the build above still stands; only the e2e data needs
+        # recreating.
         rebuild_e2e_db()
         prepare_demo_data()
-        returncode, _ = run_backend(acting_user)
+        _print_credentials(args.user)
+        returncode, _ = run_backend()
 
     raise SystemExit(returncode)
 

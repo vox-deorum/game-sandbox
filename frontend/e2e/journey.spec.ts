@@ -1,15 +1,20 @@
-import { expect, test } from '@playwright/test'
+import { authenticateBrowser } from './support/auth.js'
+import { expect, test } from './support/fixtures.js'
 
 /**
- * The main journey, the executable form of the stage's experiential criteria: the auto-logged mock
- * user lands on home, opens Flappy Bird, plays a live session, sees the canvas and the per-step input
- * window, pauses and resumes, stops, and from the end card opens the replay, scrubs it, and pins it.
+ * The main journey, the executable form of the stage's experiential criteria: the browser signs in as
+ * the operator (the seeded bootstrap admin), lands on home, opens Flappy Bird, plays a live session,
+ * sees the canvas and the per-step input window, pauses and resumes, stops, and from the end card opens
+ * the replay, scrubs it, and pins it.
  *
  * Pixel-level assertions stay out — the suite asserts the canvas is painted and the DOM facts around
  * it (controls, banners, the per-step window), not screenshots, so it does not flake on font or GPU
  * differences across runners. This suite needs a Docker daemon (it launches a real session).
  */
-test('play Flappy Bird live, pause/resume, stop, then replay and pin', async ({ page }) => {
+test('play Flappy Bird live, pause/resume, stop, then replay and pin', async ({ page, admin }) => {
+  // Browse as the operator, so Play Yourself starts a session owned by the identity the browser holds.
+  await authenticateBrowser(page.context(), admin)
+
   // Home → the Flappy Bird card → the environment page.
   await page.goto('/')
   await page.getByRole('link', { name: /Flappy Bird/ }).click()

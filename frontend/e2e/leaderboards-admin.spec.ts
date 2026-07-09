@@ -1,7 +1,4 @@
 import { fileURLToPath } from 'node:url'
-
-import { expect, test } from '@playwright/test'
-
 import {
   activeWindows,
   closePlay,
@@ -17,6 +14,8 @@ import {
   setSeasonRatingPrompt,
   submitReadyAgent,
 } from './support/api.js'
+import { authenticateBrowser, userIdOf } from './support/auth.js'
+import { expect, test } from './support/fixtures.js'
 import {
   AUTHOR_RATING_PROMPT,
   ENV_ID,
@@ -31,11 +30,13 @@ const fixturePath = (name: string): string =>
 
 test('the Seasons index shows the refreshed released-season card and navigates to its boards', async ({
   page,
-  request,
+  admin,
 }) => {
-  const season = await declareSeason(request, SEASONS.releasedCard)
-  await release(request, season.id)
+  const season = await declareSeason(admin, SEASONS.releasedCard)
+  await release(admin, season.id)
 
+  // The browser browses as the bootstrap admin, the operator throughout this spec.
+  await authenticateBrowser(page.context(), admin)
   await page.goto('/seasons')
 
   const card = page.locator('li').filter({ hasText: SEASONS.releasedCard })
@@ -50,13 +51,15 @@ test('the Seasons index shows the refreshed released-season card and navigates t
 
 test('released leaderboard history is visible and navigates by season URL', async ({
   page,
-  request,
+  admin,
 }) => {
-  const older = await declareSeason(request, SEASONS.historyOlder)
-  await release(request, older.id)
-  const newer = await declareSeason(request, SEASONS.historyNewer)
-  await release(request, newer.id)
+  const older = await declareSeason(admin, SEASONS.historyOlder)
+  await release(admin, older.id)
+  const newer = await declareSeason(admin, SEASONS.historyNewer)
+  await release(admin, newer.id)
 
+  // The browser browses as the bootstrap admin, the operator throughout this spec.
+  await authenticateBrowser(page.context(), admin)
   await page.goto(`/environments/${ENV_ID}/leaderboards`)
 
   await expect(page.locator('.leaderboards-sub')).toContainText(SEASONS.historyNewer)
@@ -76,9 +79,12 @@ test('released leaderboard history is visible and navigates by season URL', asyn
   await expect(page.locator('.leaderboards-sub')).toContainText(SEASONS.historyOlder)
 })
 
-test('operator leaderboard history includes unreleased seasons', async ({ page, request }) => {
-  const season = await declareSeason(request, SEASONS.operatorPreview)
+test('operator leaderboard history includes unreleased seasons', async ({ page, admin }) => {
+  const season = await declareSeason(admin, SEASONS.operatorPreview)
 
+  // This test depends on the browser being the operator: only the operator's history lists an
+  // unreleased season, so the browser authenticates as the bootstrap admin before browsing.
+  await authenticateBrowser(page.context(), admin)
   await page.goto(`/environments/${ENV_ID}/leaderboards`)
 
   const link = page.getByRole('link', { name: SEASONS.operatorPreview })
@@ -106,25 +112,30 @@ test('operator leaderboard history includes unreleased seasons', async ({ page, 
  */
 test('a full season: submissions, an automated run, several judges rate, then release', async ({
   page,
-  request,
+  admin,
+  as,
 }) => {
   // A first round of re-submissions (each competitor replaces an earlier entry) adds real container
   // builds beyond the bare arc, so widen the budget past the original 900s for slow runners.
   test.setTimeout(1_200_000)
 
+  // The browser drives the admin console and rates one agent as the bootstrap admin, the operator
+  // throughout this spec.
+  await authenticateBrowser(page.context(), admin)
+
   // Free the env's single open-submission and open-play slots, held by the seeded Playground season.
-  const original = await activeWindows(request)
+  const original = await activeWindows(admin)
   if (original.submissionSeasonId !== null) {
-    await closeSubmissions(request, original.submissionSeasonId)
+    await closeSubmissions(admin, original.submissionSeasonId)
   }
   if (original.playSeasonId !== null) {
-    await closePlay(request, original.playSeasonId)
+    await closePlay(admin, original.playSeasonId)
   }
 
-  const season = await declareSeason(request, SEASONS.competition)
+  const season = await declareSeason(admin, SEASONS.competition)
   try {
-    await openSubmissions(request, season.id)
-    await setSeasonRatingPrompt(request, season.id, OPERATOR_RATING_PROMPT)
+    await openSubmissions(admin, season.id)
+    await setSeasonRatingPrompt(admin, season.id, OPERATOR_RATING_PROMPT)
 
     // Three owners submit agents with distinct flight behaviours, so the boards span a real range.
     const roster = [
@@ -138,22 +149,24 @@ test('a full season: submissions, an automated run, several judges rate, then re
     // re-submissions across owners. Each owner's roster agent below supersedes their latest entry here,
     // so these stay inactive: they never run, place, or change the boards, living only in the history.
     await Promise.all(
-      roster.map((entry) => submitReadyAgent(request, entry.owner, fixturePath(entry.fixture))),
+      roster.map(async (entry) =>
+        submitReadyAgent(await as(entry.owner), fixturePath(entry.fixture)),
+      ),
     )
-    await submitReadyAgent(request, OWNERS.glider, fixturePath('glider'))
+    await submitReadyAgent(await as(OWNERS.glider), fixturePath('glider'))
 
     const submissions = await Promise.all(
       roster.map(async (entry) => ({
         ...entry,
-        id: await submitReadyAgent(request, entry.owner, fixturePath(entry.fixture)),
+        id: await submitReadyAgent(await as(entry.owner), fixturePath(entry.fixture)),
       })),
     )
 
     // The glider's author leaves their own rating guidance (needs an active submission, just created).
-    await setAuthorPrompt(request, season.id, OWNERS.glider, AUTHOR_RATING_PROMPT)
+    await setAuthorPrompt(await as(OWNERS.glider), season.id, AUTHOR_RATING_PROMPT)
 
     // One submission seat per game: the scheduler runs each ready agent and appends the Naive baseline.
-    await configureMatches(request, season.id, [{ slots: ['submission'], seeds: [0], games: 1 }])
+    await configureMatches(admin, season.id, [{ slots: ['submission'], seeds: [0], games: 1 }])
 
     // Trigger the run from the console; it hands off to the run-details page, which owns the live log
     // stream (the redesigned live-log path).
@@ -175,21 +188,24 @@ test('a full season: submissions, an automated run, several judges rate, then re
 
     // Open the play window so finished sessions become rateable, then seed each agent's ratings from
     // all four judges (≥3 distinct raters is what earns an agent a rank on the Human Ratings board).
-    await openPlay(request, season.id)
+    await openPlay(admin, season.id)
     for (const submission of submissions) {
-      const sessionId = await finishedScriptedSession(request, JUDGES[0], submission.id)
+      const sessionId = await finishedScriptedSession(await as(JUDGES[0]), submission.id)
       await Promise.all(
-        JUDGES.map((judge, index) =>
-          rateSession(request, judge, sessionId, submission.id, submission.scores[index] ?? 3),
+        JUDGES.map(async (judge, index) =>
+          rateSession(await as(judge), sessionId, submission.id, submission.scores[index] ?? 3),
         ),
       )
     }
 
-    // One rating through the browser, exercising the post-session panel and both rating prompts.
+    // One rating through the browser, exercising the post-session panel and both rating prompts. The
+    // operator has not rated the glider (the four API judges did), so its row action reads "Rate"; a
+    // previously-rated agent would read "Watch again". Either way it starts the same scripted watch run,
+    // so match the row's single action button by either label.
     await page.goto(`/environments/${ENV_ID}`)
     const gliderRow = page.locator('.agent-row').filter({ hasText: OWNERS.glider })
     await expect(gliderRow).toBeVisible()
-    await gliderRow.getByRole('button', { name: 'Watch' }).click()
+    await gliderRow.getByRole('button', { name: /Rate|Watch/ }).click()
     await expect(page).toHaveURL(/\/sessions\//)
     await expect(page.locator('canvas.renderer-canvas')).toBeVisible()
     const stop = page.getByRole('button', { name: 'Stop' })
@@ -207,7 +223,7 @@ test('a full season: submissions, an automated run, several judges rate, then re
 
     // Release, then verify the public boards the demo serves: a populated Scoreboard and a fully
     // ranked Human Ratings board with the glider on top (its mean rating is the highest).
-    await release(request, season.id)
+    await release(admin, season.id)
     await page.goto(`/environments/${ENV_ID}/leaderboards/${season.id}`)
 
     const scoreboard = page.locator('section.board', { hasText: 'Scoreboard' })
@@ -225,8 +241,9 @@ test('a full season: submissions, an automated run, several judges rate, then re
 
     // The glider owner is the member the demo mocks, so close the arc on their agent profile: it now
     // carries the richer history this fixture seeds — several submissions in the season, the current
-    // one plus the superseded entries it replaced.
-    await page.goto(`/environments/${ENV_ID}/agents/${OWNERS.glider}`)
+    // one plus the superseded entries it replaced. The profile is keyed on the owner's Better Auth id
+    // (the handle is only the display name), and the heading resolves that id back to the display name.
+    await page.goto(`/environments/${ENV_ID}/agents/${await userIdOf(await as(OWNERS.glider))}`)
     await expect(
       page.getByRole('heading', { name: `${OWNERS.glider}'s Submissions` }),
     ).toBeVisible()
@@ -237,18 +254,18 @@ test('a full season: submissions, an automated run, several judges rate, then re
 
     // The other competitors re-submitted too, so their profiles show the same in-season iteration: one
     // superseded entry and the current one.
-    await page.goto(`/environments/${ENV_ID}/agents/${OWNERS.flapper}`)
+    await page.goto(`/environments/${ENV_ID}/agents/${await userIdOf(await as(OWNERS.flapper))}`)
     await expect(page.locator('.submission-item')).toHaveCount(2)
     await expect(page.getByText('superseded', { exact: true })).toHaveCount(1)
   } finally {
     // Restore the seeded Playground as the env's open submission+play season for the other specs.
-    await closeSubmissions(request, season.id).catch(() => {})
-    await closePlay(request, season.id).catch(() => {})
+    await closeSubmissions(admin, season.id).catch(() => {})
+    await closePlay(admin, season.id).catch(() => {})
     if (original.submissionSeasonId !== null) {
-      await openSubmissions(request, original.submissionSeasonId).catch(() => {})
+      await openSubmissions(admin, original.submissionSeasonId).catch(() => {})
     }
     if (original.playSeasonId !== null) {
-      await openPlay(request, original.playSeasonId).catch(() => {})
+      await openPlay(admin, original.playSeasonId).catch(() => {})
     }
   }
 })

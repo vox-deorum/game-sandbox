@@ -31,7 +31,7 @@ The app uses Vue reactivity and small explicit classes instead of a state-manage
 | `src/renderers/` | Renderer contract, registry, PixiJS base, environment modules |
 | `src/replay/` | Browser-safe recording parser and replay transport |
 | `src/styles/` | Tokens, global element rules, and app-shell layout |
-| `src/identity.ts` | Development identity resolution |
+| `src/auth.ts` | The Better Auth Vue client |
 | `src/me.ts` | Shared `GET /api/me` state |
 | `src/composables/useSiteConfig.ts` | Shared `GET /api/config` site name for the brand and title |
 | `src/lib/` | Pure formatting helpers |
@@ -81,19 +81,13 @@ uv run python scripts/ci.py frontend-e2e
 
 Use the product terms **Environment** and **Season** in visible copy. They match route and API entity names.
 
-## Development identity
+## Identity and session
 
-Until OAuth replaces it, `identity.ts` resolves one mock user in this order:
+The app carries the Better Auth session cookie automatically on same-origin requests; no request sends an identity header or query parameter.
 
-1. `localStorage["sandbox-user"]`
-2. `VITE_SANDBOX_USER`
-3. `dev-user`
+A `/login` page offers email and password sign-in and, when the deployment configures GitHub OAuth, a "Sign in with GitHub" button. Sign-out goes through the account menu.
 
-HTTP requests send `x-sandbox-user`. WebSocket upgrades cannot add that header, so the socket uses the `user` query parameter. The backend resolves both through one function.
-
-To test another user, set `VITE_SANDBOX_USER` before starting Vite. To test two users in the same build, set `sandbox-user` separately in each browser context. Add any user that should start sessions to the backend's `SESSION_ALLOWLIST`.
-
-The app shell fetches `GET /api/me` once through `me.ts`. The frontend hides actions the user cannot take, but backend authorization remains the enforcement.
+`me.ts` fetches `GET /api/me` once at load into `{ user | null }`, with a derived `status`. The `canParticipate` and `isAdmin` helpers gate the UI from that status. The frontend hides actions the user cannot take, but backend authorization remains the enforcement.
 
 ## Typed API boundaries
 
@@ -188,7 +182,7 @@ The UI mirrors backend rules:
 - The user's own agent is visible but cannot be rated.
 - The built-in agent is rateable only in a mixed session.
 - A closed play window displays saved ratings without controls.
-- Writes are available only to allowlisted users.
+- Writes are available only to active (`normal` or `admin`) users.
 - While play is open, non-operators see anonymous submitted-agent attribution on the live session and replay surfaces. The stored recording header remains canonical, and the identified display returns when play closes.
 
 The author's rating prompt is set in `SubmitAgentForm.vue`. The form prefills it from any existing value and saves it against the submission-open season as soon as the submission is accepted, so leaving the page mid-validation never drops it. It is editable only while that submission window stays open; once submissions close it locks, even if play is still open. The prompt is presentation metadata, separate from the validated submission artifact, and is surfaced read-only beneath each agent on the human-feedback board and once per season in the agent profile's submission history.

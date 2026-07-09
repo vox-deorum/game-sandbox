@@ -1,6 +1,6 @@
 # Stage 12.3: Frontend sign-in and session
 
-Status: not started
+Status: complete
 
 Part of [Stage 12](../stage-12-user-system.md). This is build-order step 3: the single-page app stops inventing an identity and starts carrying the Better Auth session cookie. A login page appears, sign-out becomes real, the pending notice lands, and `frontend/src/identity.ts` is deleted. It builds on the backend from [step 2](2-identity-and-authorization.md), which now serves the new `/api/me` shape and enforces status on every mutating route.
 

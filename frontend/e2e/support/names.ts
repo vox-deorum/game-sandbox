@@ -87,9 +87,10 @@ export const SEASONS = {
 } as const
 
 /**
- * Agent owners. The owner id *is* the agent's public identity — the leaderboard row links to it and
- * the profile lives at `/environments/<env>/agents/<owner>` — so these read like real handles. Owners
- * need not be allowlisted: submitting an agent does not gate on the session allowlist.
+ * Agent owners. The owner handle *is* the agent's public identity — the leaderboard row links to it
+ * and the profile lives at `/environments/<env>/agents/<owner>` — so these read like real handles.
+ * Each is created as an active (`normal`) Better Auth member on first use through the `as(handle)`
+ * fixture, so it can submit and its display name matches its handle.
  */
 export const OWNERS = {
   /** Glides on a long flap cadence; tuned for a steady, high-rated run in the leaderboards arc. */
@@ -108,21 +109,29 @@ export const OWNERS = {
 } as const
 
 /**
- * The raters who score agents after a session. They must be on the `main` backend's session allowlist
- * (set in playwright.config.ts); four raters give an agent enough ratings to clear the ≥3 threshold the
- * Human Ratings board needs before it assigns a rank. None of them owns an agent, so none is ever
- * refused for rating its own.
+ * The raters who score agents after a session. Each is created as an active (`normal`) member through
+ * the `as(handle)` fixture, so its rating write clears `requireActive`; four raters give an agent
+ * enough ratings to clear the ≥3 threshold the Human Ratings board needs before it assigns a rank.
+ * None owns an agent, so none is ever refused for rating its own.
  */
-export const JUDGES = ['dev-user', 'jordan-skywatch', 'morgan-aileron', 'taylor-gust'] as const
+export const JUDGES = [
+  'devon-headwind',
+  'jordan-skywatch',
+  'morgan-aileron',
+  'taylor-gust',
+] as const
 
-/** A second identity that watches a session it does not own; deliberately not on any allowlist. */
+/**
+ * A second member who watches a session they do not own. Created through `as(SPECTATOR)` and signed
+ * into a separate browser context, so the spectator page attaches as a genuine non-owner: it sees the
+ * read-only chat log and no owner controls, but never the human seat.
+ */
 export const SPECTATOR = 'noah-onlooker'
 
 /**
- * A distinct second spectator identity, for coverage that needs two independently attached watching
- * browsers at once (the Spades chat journey's "does a second onlooker also never see a targeted
- * message" check). Deliberately not on any allowlist, and distinct from {@link SPECTATOR} so their
- * sessions/localStorage identities never collide within the same test.
+ * A distinct second spectator, for coverage that needs two independently attached watchers at once
+ * (the Spades chat journey's "does a second onlooker also never see a targeted message" check). Kept
+ * distinct from {@link SPECTATOR} so their two browser sessions never collide within one test.
  */
 export const SPECTATOR_TWO = 'olivia-lookout'
 

@@ -3,8 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { type BrowserContext, expect, type Locator, test } from '@playwright/test'
-
+import type { BrowserContext, Locator } from '@playwright/test'
 import {
   activeWindows,
   closePlay,
@@ -19,6 +18,8 @@ import {
   stopSessionAndAwaitFree,
   submitReadyAgent,
 } from './support/api.js'
+import { authenticateBrowser } from './support/auth.js'
+import { expect, test } from './support/fixtures.js'
 import {
   SPADES_ENV_ID,
   SPADES_OWNERS,
@@ -59,7 +60,12 @@ async function bidOne(canvas: Locator): Promise<void> {
   })
 }
 
-test('Spades chat is filtered live and complete in replay', async ({ page, browser, request }) => {
+test('Spades chat is filtered live and complete in replay', async ({
+  page,
+  browser,
+  admin,
+  as,
+}) => {
   // A live container session plus three browser contexts (controller + two spectators) and a reopened
   // ended-session revisit needs more room than a DOM-only check.
   test.setTimeout(150_000)
@@ -69,13 +75,16 @@ test('Spades chat is filtered live and complete in replay', async ({ page, brows
   let spectatorTwoContext: BrowserContext | null = null
   try {
     // Player 0 opens every Spades hand. Making it the human seat keeps the first tick pending until both
-    // browsers have attached and the controller has queued the two messages this journey compares.
-    sessionId = await startSession(request, 'dev-user', SPADES_ENV_ID, {
+    // browsers have attached and the controller has queued the two messages this journey compares. The
+    // browser authenticates as the same admin actor that starts the session, so it owns and controls the
+    // human seat (the composer and Stop).
+    sessionId = await startSession(admin, SPADES_ENV_ID, {
       player_0: { kind: 'human' },
       player_1: { kind: 'builtin-agent' },
       player_2: { kind: 'builtin-agent' },
       player_3: { kind: 'builtin-agent' },
     })
+    await authenticateBrowser(page.context(), admin)
     await page.goto(`/sessions/${sessionId}`)
     const canvas = page.locator('canvas.renderer-canvas')
     await expect(canvas).toBeVisible({ timeout: 60_000 })
@@ -87,9 +96,7 @@ test('Spades chat is filtered live and complete in replay', async ({ page, brows
     // either — the plan's journey explicitly calls for a *second* spectator page, since one relay
     // fan-out bug could plausibly single out one particular viewer rather than the whole spectator set.
     spectatorContext = await browser.newContext()
-    await spectatorContext.addInitScript((user) => {
-      window.localStorage.setItem('sandbox-user', user)
-    }, SPECTATOR)
+    await authenticateBrowser(spectatorContext, await as(SPECTATOR))
     const spectator = await spectatorContext.newPage()
     await spectator.goto(page.url())
     // The panel shell exists before the socket delivers its header. The mounted renderer proves the
@@ -100,9 +107,7 @@ test('Spades chat is filtered live and complete in replay', async ({ page, brows
     await expect(spectatorChat.getByRole('textbox')).toHaveCount(0)
 
     spectatorTwoContext = await browser.newContext()
-    await spectatorTwoContext.addInitScript((user) => {
-      window.localStorage.setItem('sandbox-user', user)
-    }, SPECTATOR_TWO)
+    await authenticateBrowser(spectatorTwoContext, await as(SPECTATOR_TWO))
     const spectatorTwo = await spectatorTwoContext.newPage()
     await spectatorTwo.goto(page.url())
     await expect(spectatorTwo.locator('canvas.renderer-canvas')).toBeVisible({ timeout: 60_000 })
@@ -191,22 +196,25 @@ test('Spades chat is filtered live and complete in replay', async ({ page, brows
     await spectatorContext?.close().catch(() => {})
     await spectatorTwoContext?.close().catch(() => {})
     if (sessionId !== null) {
-      await stopSessionAndAwaitFree(request, 'dev-user', sessionId).catch(() => {})
+      await stopSessionAndAwaitFree(admin, sessionId).catch(() => {})
     }
   }
 })
 
-test('an over-cap Spades chat draft disables Send', async ({ page, request }) => {
+test('an over-cap Spades chat draft disables Send', async ({ page, admin }) => {
   // Container launch for a single-composer DOM check.
   test.setTimeout(120_000)
 
-  const sessionId = await startSession(request, 'dev-user', SPADES_ENV_ID, {
+  // The browser authenticates as the same admin actor that starts the session, so it owns and controls
+  // the human seat's composer.
+  const sessionId = await startSession(admin, SPADES_ENV_ID, {
     player_0: { kind: 'human' },
     player_1: { kind: 'builtin-agent' },
     player_2: { kind: 'builtin-agent' },
     player_3: { kind: 'builtin-agent' },
   })
   try {
+    await authenticateBrowser(page.context(), admin)
     await page.goto(`/sessions/${sessionId}`)
     await expect(page.locator('canvas.renderer-canvas')).toBeVisible({ timeout: 60_000 })
     const chat = page.getByRole('group', { name: 'Chat', exact: true })
@@ -232,32 +240,33 @@ test('an over-cap Spades chat draft disables Send', async ({ page, request }) =>
     await expect(chat.locator('.chat-counter')).not.toHaveClass(/chat-counter--over/)
     await expect(chat.getByRole('button', { name: 'Send' })).toBeEnabled()
   } finally {
-    await stopSessionAndAwaitFree(request, 'dev-user', sessionId).catch(() => {})
+    await stopSessionAndAwaitFree(admin, sessionId).catch(() => {})
   }
 })
 
-test('a season-silenced Spades session mounts no chat panel', async ({ page, request }) => {
+test('a season-silenced Spades session mounts no chat panel', async ({ page, admin }) => {
   // Container launch for a single-DOM-absence check.
   test.setTimeout(120_000)
 
   // The seeded Spades Playground is play-open on a fresh backend; silence its messaging override so the
   // live session it serves mounts no chat, then restore it in `finally` for any later spec.
-  const { playSeasonId } = await activeWindows(request, SPADES_ENV_ID)
+  const { playSeasonId } = await activeWindows(admin, SPADES_ENV_ID)
   expect(playSeasonId, 'Spades env has an open play season').not.toBeNull()
   const seasonId = playSeasonId
   if (seasonId === null) {
     throw new Error('no open Spades play season to silence')
   }
 
-  await setMessagingOverride(request, seasonId, false)
+  await setMessagingOverride(admin, seasonId, false)
   let sessionId: string | null = null
   try {
-    sessionId = await startSession(request, 'dev-user', SPADES_ENV_ID, {
+    sessionId = await startSession(admin, SPADES_ENV_ID, {
       player_0: { kind: 'human' },
       player_1: { kind: 'builtin-agent' },
       player_2: { kind: 'builtin-agent' },
       player_3: { kind: 'builtin-agent' },
     })
+    await authenticateBrowser(page.context(), admin)
     await page.goto(`/sessions/${sessionId}`)
     await expect(page.locator('canvas.renderer-canvas')).toBeVisible({ timeout: 60_000 })
 
@@ -268,9 +277,9 @@ test('a season-silenced Spades session mounts no chat panel', async ({ page, req
     await expect(page.getByRole('group', { name: 'Chat log' })).toHaveCount(0)
   } finally {
     if (sessionId !== null) {
-      await stopSessionAndAwaitFree(request, 'dev-user', sessionId).catch(() => {})
+      await stopSessionAndAwaitFree(admin, sessionId).catch(() => {})
     }
-    await setMessagingOverride(request, seasonId, null).catch(() => {})
+    await setMessagingOverride(admin, seasonId, null).catch(() => {})
   }
 })
 
@@ -310,7 +319,8 @@ function stageSpadesAgent(name: string): string {
 
 test('a Spades season: three example agents, a scheduled partnership matchup, then release', async ({
   page,
-  request,
+  admin,
+  as,
 }) => {
   // Three real overlay builds plus a multi-seat schedule of real container games. The matchup below
   // fills the two submission seats with the three ready submissions: with `seat_order_matters=true`
@@ -318,6 +328,9 @@ test('a Spades season: three example agents, a scheduled partnership matchup, th
   // all-Naive baseline game = 7 full four-seat hands (bid phase + 13 tricks each). That is comparable to
   // Hearts' 13-game schedule, so the budget mirrors hearts.spec.ts's wide window.
   test.setTimeout(1_800_000)
+
+  // The browser drives the admin console as the bootstrap admin, the operator throughout this spec.
+  await authenticateBrowser(page.context(), admin)
 
   // Stage the three example agents as submittable folders before touching any windows.
   const stagedDirs: string[] = []
@@ -329,23 +342,23 @@ test('a Spades season: three example agents, a scheduled partnership matchup, th
   }
 
   // Free the Spades env's single open-submission and open-play slots, held by the seeded Playground.
-  const original = await activeWindows(request, SPADES_ENV_ID)
+  const original = await activeWindows(admin, SPADES_ENV_ID)
   if (original.submissionSeasonId !== null) {
-    await closeSubmissions(request, original.submissionSeasonId)
+    await closeSubmissions(admin, original.submissionSeasonId)
   }
   if (original.playSeasonId !== null) {
-    await closePlay(request, original.playSeasonId)
+    await closePlay(admin, original.playSeasonId)
   }
 
-  const season = await declareSeason(request, SPADES_SEASON, SPADES_ENV_ID)
+  const season = await declareSeason(admin, SPADES_SEASON, SPADES_ENV_ID)
   try {
-    await openSubmissions(request, season.id)
+    await openSubmissions(admin, season.id)
 
     // Each owner submits one example strategy; submissions attach to this now-open season. Building runs
     // a real container per agent.
     await Promise.all(
-      ROSTER.map((entry) =>
-        submitReadyAgent(request, entry.owner, staged[entry.agent], SPADES_ENV_ID),
+      ROSTER.map(async (entry) =>
+        submitReadyAgent(await as(entry.owner), staged[entry.agent], SPADES_ENV_ID),
       ),
     )
 
@@ -357,7 +370,7 @@ test('a Spades season: three example agents, a scheduled partnership matchup, th
     // Seed 0 is used throughout: which seat opens the bidding is a property of the deal (seat 0 always
     // opens, independent of who is seated there), so the choice of seed does not affect determinism here
     // — it is kept at 0 to match hearts.spec.ts's convention.
-    await configureMatches(request, season.id, [
+    await configureMatches(admin, season.id, [
       {
         slots: ['submission', 'builtin-naive', 'submission', 'builtin-naive'],
         seeds: [0],
@@ -384,7 +397,7 @@ test('a Spades season: three example agents, a scheduled partnership matchup, th
     // Release, then verify the public board the demo serves: a Scoreboard ranking all three agents and
     // the Naive baseline. No ratings were seeded, so the Human Ratings board shows its intentional empty
     // state.
-    await release(request, season.id)
+    await release(admin, season.id)
     await page.goto(`/environments/${SPADES_ENV_ID}/leaderboards/${season.id}`)
 
     const scoreboard = page.locator('section.board', { hasText: 'Scoreboard' })
@@ -443,13 +456,13 @@ test('a Spades season: three example agents, a scheduled partnership matchup, th
     expect(p2Value, 'partner seats P0 and P2 share their team score').toBe(p0Value)
   } finally {
     // Restore the seeded Playground as the env's open submission+play season for any later spec.
-    await closeSubmissions(request, season.id).catch(() => {})
-    await closePlay(request, season.id).catch(() => {})
+    await closeSubmissions(admin, season.id).catch(() => {})
+    await closePlay(admin, season.id).catch(() => {})
     if (original.submissionSeasonId !== null) {
-      await openSubmissions(request, original.submissionSeasonId).catch(() => {})
+      await openSubmissions(admin, original.submissionSeasonId).catch(() => {})
     }
     if (original.playSeasonId !== null) {
-      await openPlay(request, original.playSeasonId).catch(() => {})
+      await openPlay(admin, original.playSeasonId).catch(() => {})
     }
     for (const dir of stagedDirs) {
       rmSync(dir, { recursive: true, force: true })

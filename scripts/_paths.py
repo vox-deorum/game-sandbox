@@ -31,7 +31,6 @@ BUILD_DIR = REPO_ROOT / "build"
 # .data/ tree is gitignored.
 E2E_DATA_DIR = REPO_ROOT / "frontend" / "e2e" / ".data"
 E2E_MAIN_DATA_DIR = E2E_DATA_DIR / "main"
-E2E_RESTRICTED_DATA_DIR = E2E_DATA_DIR / "restricted"
 E2E_MAIN_DB = E2E_MAIN_DATA_DIR / "sandbox.db"
 DEMO_DATA_DIR = E2E_DATA_DIR / "demo"
 FRONTEND_DIST_DIR = REPO_ROOT / "frontend" / "dist"

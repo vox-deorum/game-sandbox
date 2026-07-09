@@ -1,6 +1,6 @@
 # Stage 12: User system
 
-Status: not started
+Status: complete. All five build-order steps are implemented and verified end to end: Better Auth cookie sessions on the shared SQLite database, the identity seam and status authorization, the frontend sign-in and session, the admin Users page, and this testing/CI/docs closeout. The `SESSION_ALLOWLIST`, `OPERATOR_ALLOWLIST`, `VITE_SANDBOX_USER`, `x-sandbox-user`, and `not_allowlisted` names appear nowhere in code, tests, docs, or CI.
 
 ## Goal
 

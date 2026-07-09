@@ -9,8 +9,9 @@ import { defineConfig, devices } from '@playwright/test'
  * — and is wired into CI as the `frontend-e2e` job (see scripts/ci.py). The `frontend-e2e` job builds
  * the frontend and the session base image before invoking this config.
  *
- * Two servers run so the allowlist variation has a context where the auto-logged user is not on the
- * list: `main` allows `dev-user`, `restricted` allows no one. Both serve the same built bundle.
+ * One server serves the built bundle. Identity is a Better Auth session cookie (Stage 12): the suite's
+ * fixtures sign in as the seeded bootstrap admin and create member accounts through the roster endpoint
+ * (see e2e/support/fixtures.ts), so there is no allowlist to vary across servers.
  */
 const DIST = fileURLToPath(new URL('./dist', import.meta.url))
 const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url))
@@ -20,7 +21,6 @@ const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url))
 const FRESH_BACKEND = `node ${JSON.stringify(fileURLToPath(new URL('./e2e/fresh-backend.mjs', import.meta.url)))}`
 
 const MAIN_PORT = 8090
-const RESTRICTED_PORT = 8091
 
 /**
  * The renderer needs a WebGL context (PixiJS skips its app entirely without one — see
@@ -37,7 +37,6 @@ const SOFTWARE_WEBGL_ARGS = [
 
 function backendEnv(
   port: number,
-  allowlist: string,
   dataSubdir: string,
   extra: Record<string, string> = {},
 ): Record<string, string> {
@@ -46,12 +45,12 @@ function backendEnv(
     FRONTEND_DIST: DIST,
     DATA_DIR: fileURLToPath(new URL(`./e2e/.data/${dataSubdir}`, import.meta.url)),
     // The backend embeds Better Auth (Stage 12.1), which refuses to start without an explicit public
-    // origin, secret, and bootstrap credentials. These loopback e2e servers opt into the published
-    // development defaults; the loopback origin binds the listener to `127.0.0.1`, matching both the
-    // health-check URLs and the project baseURL the browser loads from.
+    // origin, secret, and bootstrap credentials. This loopback e2e server opts into the published
+    // development defaults, so the bootstrap admin is `admin@example.com` / `admin-dev-password` (see
+    // e2e/support/auth.ts); the loopback origin binds the listener to `127.0.0.1`, matching both the
+    // health-check URL and the project baseURL the browser loads from.
     AUTH_ALLOW_INSECURE_DEFAULTS: 'true',
     PUBLIC_ORIGIN: `http://127.0.0.1:${port}`,
-    SESSION_ALLOWLIST: allowlist,
     // A short idle window keeps a forgotten session from holding a container across the run.
     SESSION_IDLE_TIMEOUT_MS: '30000',
     // The load check itself is a sub-second import-and-construct, but it first cold-starts a
@@ -74,24 +73,14 @@ export default defineConfig({
     {
       command: FRESH_BACKEND,
       cwd: REPO_ROOT,
-      // The main backend also enables the dev-only local-folder submission source so submission.spec
-      // can drive the real validate-and-build pipeline from a checked-in fixture, with no network.
-      // The allowlist names the rating judges alongside dev-user so the leaderboards arc can post the
-      // several ratings an agent needs to earn a ranked Human Ratings row (see e2e/support/names.ts).
-      env: backendEnv(MAIN_PORT, 'dev-user,jordan-skywatch,morgan-aileron,taylor-gust', 'main', {
+      // The backend also enables the dev-only local-folder submission source so submission.spec can
+      // drive the real validate-and-build pipeline from a checked-in fixture, with no network.
+      env: backendEnv(MAIN_PORT, 'main', {
         ALLOW_LOCAL_SUBMISSIONS: 'true',
       }),
       url: `http://127.0.0.1:${MAIN_PORT}/api/me`,
       // Never reattach to a leftover backend: the launcher just wiped the database for a fresh run, so
       // a fresh DB requires a fresh server. Playwright shuts down the servers it starts.
-      reuseExistingServer: false,
-      timeout: 120_000,
-    },
-    {
-      command: FRESH_BACKEND,
-      cwd: REPO_ROOT,
-      env: backendEnv(RESTRICTED_PORT, 'nobody', 'restricted'),
-      url: `http://127.0.0.1:${RESTRICTED_PORT}/api/me`,
       reuseExistingServer: false,
       timeout: 120_000,
     },
@@ -104,16 +93,6 @@ export default defineConfig({
         baseURL: `http://127.0.0.1:${MAIN_PORT}`,
         launchOptions: { args: SOFTWARE_WEBGL_ARGS },
       },
-      testIgnore: /allowlist\.spec\.ts/,
-    },
-    {
-      name: 'restricted',
-      use: {
-        ...devices['Desktop Chrome'],
-        baseURL: `http://127.0.0.1:${RESTRICTED_PORT}`,
-        launchOptions: { args: SOFTWARE_WEBGL_ARGS },
-      },
-      testMatch: /allowlist\.spec\.ts/,
     },
   ],
 })

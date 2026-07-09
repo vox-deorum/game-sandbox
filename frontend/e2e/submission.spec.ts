@@ -1,7 +1,5 @@
 import { fileURLToPath } from 'node:url'
 
-import { expect, test } from '@playwright/test'
-
 import {
   activeWindows,
   setAuthorPrompt,
@@ -9,6 +7,8 @@ import {
   submitLocal,
   waitForTerminal,
 } from './support/api.js'
+import { authenticateBrowser, userIdOf } from './support/auth.js'
+import { expect, test } from './support/fixtures.js'
 import {
   AUTHOR_RATING_PROMPT,
   ENV_ID,
@@ -38,31 +38,36 @@ const BAD_CLASS_FIXTURE = fileURLToPath(new URL('./fixtures/submission/bad-class
 
 test('a submitted agent validates to ready and runs in a watch session', async ({
   page,
-  request,
+  admin,
+  as,
 }) => {
   // The overlay build plus load check plus a real scripted session is well past the default timeout.
   test.setTimeout(240_000)
   const owner = OWNERS.pipeline
+  const ownerCtx = await as(owner)
 
-  const id = await submitLocal(request, owner, GOOD_FIXTURE)
-  const row = await waitForTerminal(request, id)
+  const id = await submitLocal(ownerCtx, GOOD_FIXTURE)
+  const row = await waitForTerminal(ownerCtx, id)
   expect(row.status, JSON.stringify(row.checks)).toBe('ready')
-  const windows = await activeWindows(request)
+  const windows = await activeWindows(admin)
   expect(windows.playSeasonId).not.toBeNull()
-  await setSeasonRatingPrompt(request, windows.playSeasonId as string, OPERATOR_RATING_PROMPT)
-  await setAuthorPrompt(request, windows.playSeasonId as string, owner, AUTHOR_RATING_PROMPT)
+  await setSeasonRatingPrompt(admin, windows.playSeasonId as string, OPERATOR_RATING_PROMPT)
+  await setAuthorPrompt(ownerCtx, windows.playSeasonId as string, AUTHOR_RATING_PROMPT)
 
-  // The owner's profile shows every stage of the timeline passed, the in-browser view of "ready".
-  await page.goto(`/environments/${ENV_ID}/agents/${owner}`)
+  // Browse as the operator, so the owner's profile view below sees the real (non-anonymized) data.
+  await authenticateBrowser(page.context(), admin)
+
+  // The owner's profile shows every stage of the timeline passed, the in-browser view of "ready". The
+  // profile is keyed on the owner's Better Auth id (the handle is only the display name now).
+  const ownerId = await userIdOf(ownerCtx)
+  await page.goto(`/environments/${ENV_ID}/agents/${ownerId}`)
   for (const stage of ['resolve', 'static', 'build', 'load']) {
     await expect(page.getByTestId(`stage-${stage}`)).toContainText('passed')
   }
 
-  // Browse and rate as an allowlisted regular user, not the dev operator, so the playable-season
-  // anonymity contract is exercised end to end.
-  await page.addInitScript((user) => {
-    window.localStorage.setItem('sandbox-user', user)
-  }, JUDGES[1])
+  // Browse and rate as a regular member, not the operator, so the playable-season anonymity contract
+  // is exercised end to end.
+  await authenticateBrowser(page.context(), await as(JUDGES[1]))
 
   // The watch picker lists the ready agent anonymously and highlights that it still needs a rating.
   await page.goto(`/environments/${ENV_ID}`)
@@ -108,18 +113,24 @@ test('a submitted agent validates to ready and runs in a watch session', async (
 
 test('an agent that passes static but fails the load check shows the failed stage on its profile', async ({
   page,
-  request,
+  admin,
+  as,
 }) => {
   test.setTimeout(180_000)
   const owner = OWNERS.faulty
+  const ownerCtx = await as(owner)
 
   // The manifest names a class the module does not define: static and build pass, the load check
   // rejects with class_not_found.
-  const id = await submitLocal(request, owner, BAD_CLASS_FIXTURE)
-  const row = await waitForTerminal(request, id)
+  const id = await submitLocal(ownerCtx, BAD_CLASS_FIXTURE)
+  const row = await waitForTerminal(ownerCtx, id)
   expect(row.status, JSON.stringify(row.checks)).toBe('load_failed')
 
-  await page.goto(`/environments/${ENV_ID}/agents/${owner}`)
+  // Browse as the operator, so the owner's profile view below sees the real (non-anonymized) data.
+  // The profile is keyed on the owner's Better Auth id (the handle is only the display name now).
+  await authenticateBrowser(page.context(), admin)
+  const ownerId = await userIdOf(ownerCtx)
+  await page.goto(`/environments/${ENV_ID}/agents/${ownerId}`)
 
   // The rollup is visible, the static stage passed, and the load stage failed with the captured
   // Python reason naming the missing class — the same per-stage log the owner would see on the form.

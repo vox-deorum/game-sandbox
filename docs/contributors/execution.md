@@ -156,16 +156,15 @@ Only the session owner can issue commands. Input also requires human mode and a 
 
 ## Orchestrator lifecycle
 
-`session/orchestrator.ts` starts a session in this order:
+`session/orchestrator.ts` starts a session in this order. Authorization — that the acting user is active — is enforced by the route's `requireActive` guard before the orchestrator is called, so the orchestrator does not re-check it:
 
 1. Validate environment and mode.
-2. Check the session allowlist.
-3. Enforce one active session per user.
-4. Resolve seed and human timeout.
-5. Resolve base or submission image.
-6. Insert the `starting` storage row.
-7. Launch the container.
-8. Relay output through `LiveSession`.
+2. Enforce one active session per user.
+3. Resolve seed and human timeout.
+4. Resolve base or submission image.
+5. Insert the `starting` storage row.
+6. Launch the container.
+7. Relay output through `LiveSession`.
 
 The session configuration includes a `players` map for recording attribution. Human slots name the session owner, submitted slots name the submission and owner, and remaining agent slots name the built-in agent.
 

@@ -64,7 +64,7 @@ def _run(cmd: list[str], cwd: Path | None = None, env: dict[str, str] | None = N
 
     ``env`` defaults to ``None``, which inherits this process's environment unchanged; pass an
     explicit map (typically ``os.environ`` plus overrides) to run the child with extra variables,
-    e.g. the demo's build-time ``VITE_SANDBOX_USER``.
+    e.g. the demo's loopback ``AUTH_ALLOW_INSECURE_DEFAULTS``.
     """
     printable = " ".join(cmd)
     where = f" (in {cwd})" if cwd else ""

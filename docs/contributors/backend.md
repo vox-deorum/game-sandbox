@@ -1,6 +1,6 @@
 # Backend
 
-The backend is the Node and TypeScript service outside the session container. It serves the HTTP API and built frontend, resolves development identity, stores relational data, supervises sessions and leaderboard workflows, and relays WebSocket traffic.
+The backend is the Node and TypeScript service outside the session container. It serves the HTTP API and built frontend, authenticates and authorizes users, stores relational data, supervises sessions and leaderboard workflows, and relays WebSocket traffic.
 
 It never steps an environment or runs participant Python. The session container is authoritative for game state.
 
@@ -23,7 +23,7 @@ Browser
 | `src/main.ts` | Load configuration, open storage, reconcile work, assemble services, listen, handle signals |
 | `src/app.ts` | Fastify application, HTTP routes, WebSocket endpoints, static frontend |
 | `src/config.ts` | Parse environment variables into one typed `Config` |
-| `src/identity.ts` | Resolve development identity and apply allowlists |
+| `src/identity.ts` | Resolve the authenticated session, derive status, and expose the guard trio (`requireUser`/`requireActive`/`requireAdmin`) |
 | `src/environments.ts` | Load generated environment metadata |
 | `src/storage/` | Kysely schema, domain interface, SQLite implementation, migration |
 | `src/driver/` | Execution-driver interface and Docker implementation |
@@ -123,19 +123,30 @@ Pinned recordings count toward quota but are never evicted. A user at the pinned
 
 Deletion tolerates a missing row or directory so an interrupted sweep can recover on its next pass.
 
-## Development identity and authorization
+## Identity and authorization
 
-`identity.ts` resolves a user in this order:
+Identity is a Better Auth session cookie, resolved once per request from the cookie by `identity.ts`'s `createRequestIdentity(auth)`; the lookup is memoized per request, so a route that both guards and personalizes resolves the session only once.
 
-1. `x-sandbox-user` request header.
-2. `user` query parameter for WebSocket upgrades.
-3. `dev-user`.
+`deriveStatus(role)` maps the comma-split Better Auth `role` to one of three statuses: `pending`, `normal`, or `admin`. Admin beats user beats pending, and an unknown, empty, or missing role resolves to `pending`, failing closed.
 
-All attribution and authorization use that resolved value. OAuth can replace this function with cookie-backed identity without changing callers.
+Every route states its requirement against the guard trio:
 
-`SESSION_ALLOWLIST` controls session starts. Read-only routes and spectating remain open.
+- `requireUser` — any signed-in user; `401 auth_required` when anonymous.
+- `requireActive` — an active (`normal` or `admin`) user; `403 not_active` for a pending user.
+- `requireAdmin` — an `admin` user; `403 not_operator` otherwise. The `/api/admin` plugin still gates through one `onRequest` guard sharing this code, now backed by `status === 'admin'`.
 
-`OPERATOR_ALLOWLIST` controls the `/api/admin` plugin through one `onRequest` guard. Non-operators receive `403 not_operator`.
+Public reads stay open to anonymous visitors. Ban is a standalone Better Auth flag: banning revokes sessions and blocks sign-in, so a banned user never reaches the guards at all.
+
+| Requirement | Applies to |
+| --- | --- |
+| Public (no guard) | Environment metadata, public config, public season and leaderboard reads |
+| `requireUser` | Owner-scoped reads and pins |
+| `requireActive` | Session start, submit, rate, and author-prompt writes |
+| `requireAdmin` | `/api/admin/*`, unreleased seasons, and admin downloads |
+
+`GET /api/me` returns `{ user: { id, name, email, image, status } | null }`.
+
+Cookies ride HTTP fetches, WebSocket upgrades, and native download navigations on the same origin, so no route needs a header or query-parameter fallback for identity.
 
 ## Environment metadata
 
@@ -238,8 +249,6 @@ All `/api/admin` routes pass one operator guard. They support:
 - Reading private season, run, board, and game status.
 - Listing a season's active submissions, and downloading one submission's source snapshot or a whole season as one `.tar.gz`.
 - Streaming workflow logs over WebSocket.
-
-Downloads are native `<a download>` links, so they cannot send the identity header; identity rides the `?user=` query parameter the operator guard already accepts (the same channel the log-stream WebSocket uses).
 
 Unreleased board data is available only through operator-gated routes. Public board endpoints enforce release at the route boundary.
 

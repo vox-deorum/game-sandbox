@@ -2,9 +2,6 @@ import { copyFileSync, cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:f
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-
-import { expect, test } from '@playwright/test'
-
 import {
   activeWindows,
   closePlay,
@@ -19,6 +16,8 @@ import {
   stopSessionAndAwaitFree,
   submitReadyAgent,
 } from './support/api.js'
+import { authenticateBrowser, userIdOf } from './support/auth.js'
+import { expect, test } from './support/fixtures.js'
 import {
   HEARTS_ENV_ID,
   HEARTS_HUMAN_LEAD_SEED,
@@ -84,29 +83,36 @@ function stageHeartsAgent(name: string): string {
   return dir
 }
 
-test('a four-seat Hearts session renders in the browser', async ({ page, request }) => {
+test('a four-seat Hearts session renders in the browser', async ({ page, admin }) => {
   // Container launch plus the first rendered frame for a four-seat game is slower than a DOM-only check.
   test.setTimeout(120_000)
 
+  // The browser watches as the bootstrap admin, the operator throughout this spec.
+  await authenticateBrowser(page.context(), admin)
+
   // The seeded Hearts Playground is play-open on a fresh backend, which is all an all-builtin session
   // needs (no submission seats to attach). Watch it render, the one live-DOM check of the Hearts renderer.
-  const sessionId = await startSession(request, 'dev-user', HEARTS_ENV_ID, ALL_BUILTIN_SEATS)
+  const sessionId = await startSession(admin, HEARTS_ENV_ID, ALL_BUILTIN_SEATS)
   await page.goto(`/sessions/${sessionId}`)
   await expect(page.locator('canvas.renderer-canvas')).toBeVisible({ timeout: 60_000 })
 
   // Free the user's single active-session slot (the scripted game also ends on its own).
-  await request.delete(`/api/sessions/${sessionId}`).catch(() => {})
+  await admin.delete(`/api/sessions/${sessionId}`).catch(() => {})
 })
 
 test('a Hearts season: four example agents, a scheduled multi-seat matchup, then release', async ({
   page,
-  request,
+  admin,
+  as,
 }) => {
   // Four real overlay builds plus a multi-seat schedule of real container games (P(4,2)=12 ordered
   // seatings + the Naive baseline = 13 games), each a full 13-trick hand (52 card plays), so the budget
   // is wide. If CI time becomes a problem, the cheapest lever is fewer submitted agents (see
   // docs/contributors/e2e-tests.md).
   test.setTimeout(1_800_000)
+
+  // The browser drives the admin console as the bootstrap admin, the operator throughout this spec.
+  await authenticateBrowser(page.context(), admin)
 
   // Stage the four example agents as submittable folders before touching any windows.
   const stagedDirs: string[] = []
@@ -118,30 +124,30 @@ test('a Hearts season: four example agents, a scheduled multi-seat matchup, then
   }
 
   // Free the Hearts env's single open-submission and open-play slots, held by the seeded Playground.
-  const original = await activeWindows(request, HEARTS_ENV_ID)
+  const original = await activeWindows(admin, HEARTS_ENV_ID)
   if (original.submissionSeasonId !== null) {
-    await closeSubmissions(request, original.submissionSeasonId)
+    await closeSubmissions(admin, original.submissionSeasonId)
   }
   if (original.playSeasonId !== null) {
-    await closePlay(request, original.playSeasonId)
+    await closePlay(admin, original.playSeasonId)
   }
 
-  const season = await declareSeason(request, HEARTS_SEASON, HEARTS_ENV_ID)
+  const season = await declareSeason(admin, HEARTS_SEASON, HEARTS_ENV_ID)
   try {
-    await openSubmissions(request, season.id)
+    await openSubmissions(admin, season.id)
 
     // Each owner submits one example strategy; submissions attach to this now-open season. Building runs
     // a real container per agent (duck's load also proves the base image carries its wcwidth dependency).
     await Promise.all(
-      ROSTER.map((entry) =>
-        submitReadyAgent(request, entry.owner, staged[entry.agent], HEARTS_ENV_ID),
+      ROSTER.map(async (entry) =>
+        submitReadyAgent(await as(entry.owner), staged[entry.agent], HEARTS_ENV_ID),
       ),
     )
 
     // The matchup: two submission seats and two Naive seats. Hearts is a four-seat env, so the config
     // must name exactly four slots; `seat_order_matters` makes the scheduler emit one game per ordered
     // pairing of the ready submissions across the two submission seats, plus the appended Naive baseline.
-    await configureMatches(request, season.id, [
+    await configureMatches(admin, season.id, [
       {
         slots: ['submission', 'submission', 'builtin-naive', 'builtin-naive'],
         seeds: [0],
@@ -168,7 +174,7 @@ test('a Hearts season: four example agents, a scheduled multi-seat matchup, then
 
     // Release, then verify the public board the demo serves: a Scoreboard ranking all four agents and the
     // Naive baseline. No ratings were seeded, so the Human Ratings board shows its intentional empty state.
-    await release(request, season.id)
+    await release(admin, season.id)
     await page.goto(`/environments/${HEARTS_ENV_ID}/leaderboards/${season.id}`)
 
     const scoreboard = page.locator('section.board', { hasText: 'Scoreboard' })
@@ -227,19 +233,21 @@ test('a Hearts season: four example agents, a scheduled multi-seat matchup, then
     // The submitting owner's agent profile now lists the replays of the games it actually played: the
     // automated competition recordings attach through the run's games (no session), so the session-only
     // replay lookup once showed "No replays yet." here despite a full season of play.
-    await page.goto(`/environments/${HEARTS_ENV_ID}/agents/${HEARTS_OWNERS.duck}`)
+    await page.goto(
+      `/environments/${HEARTS_ENV_ID}/agents/${await userIdOf(await as(HEARTS_OWNERS.duck))}`,
+    )
     await expect(page.locator('.submission-replays .replay-chip').first()).toBeVisible({
       timeout: 30_000,
     })
   } finally {
     // Restore the seeded Playground as the env's open submission+play season for any later spec.
-    await closeSubmissions(request, season.id).catch(() => {})
-    await closePlay(request, season.id).catch(() => {})
+    await closeSubmissions(admin, season.id).catch(() => {})
+    await closePlay(admin, season.id).catch(() => {})
     if (original.submissionSeasonId !== null) {
-      await openSubmissions(request, original.submissionSeasonId).catch(() => {})
+      await openSubmissions(admin, original.submissionSeasonId).catch(() => {})
     }
     if (original.playSeasonId !== null) {
-      await openPlay(request, original.playSeasonId).catch(() => {})
+      await openPlay(admin, original.playSeasonId).catch(() => {})
     }
     for (const dir of stagedDirs) {
       rmSync(dir, { recursive: true, force: true })
@@ -249,14 +257,17 @@ test('a Hearts season: four example agents, a scheduled multi-seat matchup, then
 
 test('the watch seat dialog starts a session with the chosen seed reaching the start payload', async ({
   page,
-  request,
+  admin,
 }) => {
   // Container launch plus the first rendered frame is slower than a DOM-only check.
   test.setTimeout(120_000)
 
+  // The browser attaches as the bootstrap admin, the operator throughout this spec.
+  await authenticateBrowser(page.context(), admin)
+
   // Hearts is a four-seat environment, so the watch flow opens the multi-seat SeatAssignmentDialog
   // (WatchAgentPicker routes a single-slot env straight to a start instead). The seeded Hearts
-  // Playground is play-open on a fresh backend, so the watch picker renders for the allowlisted user.
+  // Playground is play-open on a fresh backend, so the watch picker renders for the signed-in admin.
   await page.goto(`/environments/${HEARTS_ENV_ID}`)
 
   // The built-in Naive row is pinned atop the watch list; its Watch button opens the seat dialog with
@@ -297,26 +308,27 @@ test('the watch seat dialog starts a session with the chosen seed reaching the s
   // Free the user's single active-session slot (the scripted game also ends on its own).
   const sessionId = page.url().split('/sessions/')[1]
   if (sessionId !== undefined) {
-    await request.delete(`/api/sessions/${sessionId}`).catch(() => {})
+    await admin.delete(`/api/sessions/${sessionId}`).catch(() => {})
   }
 })
 
 test('an on-screen human seat plays a legal card and an illegal click does not advance the game', async ({
   page,
-  request,
+  admin,
 }) => {
   // Container launch plus driving a couple of live turns is slower than a DOM-only check.
   test.setTimeout(120_000)
 
-  // A live human-vs-agents Hearts session: the connected user (dev-user, the auto-logged owner the
-  // browser sees) controls player_0; the other three seats are built-in agents the container drives.
+  // A live human-vs-agents Hearts session: the connected user (the admin, the operator the browser is
+  // authenticated as) controls player_0; the other three seats are built-in agents the container drives.
   // The fixed seed deals player_0 the 2 of clubs, so player_0 leads the very first trick — the
   // deterministic opening where only the 2♣ is legal and every other hand card is greyed. Starting
   // through the API (not the dialog, which the test above covers) pins that seed exactly; a generous
   // move clock keeps the human's turn open long enough to click without the auto-play timeout firing.
+  // The browser must authenticate as the same actor that starts the session, so it owns and controls
+  // the human seat.
   const sessionId = await startSession(
-    request,
-    'dev-user',
+    admin,
     HEARTS_ENV_ID,
     {
       player_0: { kind: 'human' },
@@ -326,9 +338,10 @@ test('an on-screen human seat plays a legal card and an illegal click does not a
     },
     { seed: HEARTS_HUMAN_LEAD_SEED, humanSlotTimeoutMs: 60_000 },
   )
+  await authenticateBrowser(page.context(), admin)
   await page.goto(`/sessions/${sessionId}`)
 
-  // The renderer mounts and, because dev-user owns this human session, the bottom (player_0) hand is
+  // The renderer mounts and, because the admin owns this human session, the bottom (player_0) hand is
   // interactive: the renderer wires a click-to-play per legal card on the controlled seat's turn.
   const canvas = page.locator('canvas.renderer-canvas')
   await expect(canvas).toBeVisible({ timeout: 60_000 })
@@ -379,17 +392,21 @@ test('an on-screen human seat plays a legal card and an illegal click does not a
   await expect(decisionRows.first()).toBeVisible({ timeout: 30_000 })
 
   // Stop the still-running human session and wait until the backend frees this user's single active
-  // slot, so the next test's start for the same dev-user cannot race a 409 already-active.
-  await stopSessionAndAwaitFree(request, 'dev-user', sessionId)
+  // slot, so the next test's start for the same admin cannot race a 409 already-active.
+  await stopSessionAndAwaitFree(admin, sessionId)
 })
 
 test('a multi-agent Hearts recording replays with per-seat attribution and trick-by-trick playback', async ({
   page,
-  request,
+  admin,
+  as,
 }) => {
   // One real overlay build plus a full four-seat container hand played to completion, slower than a
   // DOM-only check but far cheaper than the matchup above.
   test.setTimeout(300_000)
+
+  // The browser views the replay as the bootstrap admin, the operator throughout this spec.
+  await authenticateBrowser(page.context(), admin)
 
   // Stage and submit one example Hearts agent under its own owner, so its seat carries a real owner
   // attribution ("<owner>'s agent") in the recording header rather than the generic Naive label. It
@@ -397,8 +414,7 @@ test('a multi-agent Hearts recording replays with per-seat attribution and trick
   const stagedDir = stageHeartsAgent('duck')
   try {
     const submissionId = await submitReadyAgent(
-      request,
-      HEARTS_OWNERS.replay,
+      await as(HEARTS_OWNERS.replay),
       stagedDir,
       HEARTS_ENV_ID,
     )
@@ -406,11 +422,10 @@ test('a multi-agent Hearts recording replays with per-seat attribution and trick
     // A scripted four-seat hand: the submitted agent in seat 0, the Naive baseline in the other three.
     // No human seat, so it runs itself to completion and finalizes a trick-by-trick recording. The mixed
     // roster gives the recording header a per-seat `players` map with one owner-attributed seat and three
-    // Naive seats — the four-seat attribution this test asserts. dev-user is the default operator, so the
+    // Naive seats — the four-seat attribution this test asserts. The admin is the operator, so the
     // replay shows real owner labels (the blind-anonymization path applies only to non-operators).
     const recordingId = await finishedSeatedSession(
-      request,
-      'dev-user',
+      admin,
       HEARTS_ENV_ID,
       {
         player_0: { kind: 'submission', submission_id: submissionId },

@@ -67,9 +67,9 @@ describe('api client', () => {
     expect(envs).toEqual([META])
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined
     expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/environments')
-    expect(
-      (init?.headers as Record<string, string> | undefined)?.['x-sandbox-user'],
-    ).toBeUndefined()
+    // Same-origin requests carry the Better Auth session cookie automatically, so the client sends no
+    // custom identity header — this GET carries no headers at all.
+    expect(init?.headers).toBeUndefined()
   })
 
   it('bounces to /login when a request 401s with code auth_required', async () => {

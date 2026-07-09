@@ -101,7 +101,7 @@ The Playwright journey builds the frontend and session image, starts the real ba
 
 - Live play, pause, resume, and stop.
 - Replay opening, scrubbing, and pinning.
-- Watch, spectator, and allowlist cases.
+- Watch, spectator, and authorization/status cases.
 - Submission stages from resolve through load.
 - A ready example launched from the watch picker.
 - A load failure caused by a missing class.

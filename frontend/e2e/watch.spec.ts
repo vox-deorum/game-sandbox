@@ -1,5 +1,5 @@
-import { expect, test } from '@playwright/test'
-
+import { authenticateBrowser } from './support/auth.js'
+import { expect, test } from './support/fixtures.js'
 import { SPECTATOR } from './support/names.js'
 
 /**
@@ -8,7 +8,15 @@ import { SPECTATOR } from './support/names.js'
  * session URL is a spectator: it sees the states stream but has no controls, mirroring the protocol's
  * owner-only authority rule. Needs a Docker daemon (a real scripted session runs).
  */
-test('watch a scripted session, and a spectator gets no controls', async ({ page, browser }) => {
+test('watch a scripted session, and a spectator gets no controls', async ({
+  page,
+  browser,
+  admin,
+  as,
+}) => {
+  // Browse as the operator, so this session's owner controls (Stop/Pause) are the browser's own.
+  await authenticateBrowser(page.context(), admin)
+
   await page.goto('/environments/flappy_bird')
   // The built-in Naive agent is pinned atop the watch list; its Watch button starts a scripted run.
   const builtinRow = page.locator('.agent-row').filter({ hasText: 'Naive agent' })
@@ -27,12 +35,10 @@ test('watch a scripted session, and a spectator gets no controls', async ({ page
   await expect(page.locator('.overlay-banner')).toHaveText('Paused')
 
   // A second context opening the same URL is a spectator: the renderer draws, but no controls appear.
-  // It must act as a different user, or it would share the owner's mock identity and get the owner's
-  // controls; the localStorage override (the seam OAuth's per-session cookie drops into) gives it one.
+  // It must act as a different user, or it would share the owner's session cookie and get the owner's
+  // controls; signing it in as a separate member (created on first use) gives it one.
   const spectatorContext = await browser.newContext()
-  await spectatorContext.addInitScript((user) => {
-    window.localStorage.setItem('sandbox-user', user)
-  }, SPECTATOR)
+  await authenticateBrowser(spectatorContext, await as(SPECTATOR))
   const spectator = await spectatorContext.newPage()
   await spectator.goto(sessionUrl)
   await expect(spectator.locator('canvas.renderer-canvas')).toBeVisible()
