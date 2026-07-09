@@ -39,7 +39,10 @@ async function play(
     },
     opts.user,
   )
-  const ws = await WsClient.connect(`${stack.wsBase}${wsPath}`, opts.user)
+  const ws = await WsClient.connect(
+    `${stack.wsBase}${wsPath}`,
+    (await stack.users.headersFor(opts.user)).cookie,
+  )
   await ws.waitFor(() => ws.envelopes('session').some((e) => e.status === 'running'), 30_000)
 
   const flapTimer = opts.flap
@@ -129,7 +132,10 @@ describe('live session over WebSocket', () => {
       },
       'carol',
     )
-    const ws = await WsClient.connect(`${stack.wsBase}${wsPath}`, 'carol')
+    const ws = await WsClient.connect(
+      `${stack.wsBase}${wsPath}`,
+      (await stack.users.headersFor('carol')).cookie,
+    )
     await ws.waitFor(() => ws.envelopes('session').some((e) => e.status === 'running'), 30_000)
 
     // No input is ever sent; the session must keep stepping rather than stall.

@@ -76,7 +76,6 @@ async function setupAuthApp(): Promise<AuthAppFixture> {
     environments: makeEnvironments(),
     recordings,
     retention: new Retention(handle.storage, recordings, config),
-    allowlist: config.sessionAllowlist,
     auth,
     ...makeSubmissionDeps(handle.storage, config),
   })

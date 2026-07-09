@@ -15,7 +15,6 @@ import type { Config } from '../config.js'
 import { currentSessionBaseImageSpec } from '../deps-version.js'
 import type { ExecutionDriver, ImageRef, SandboxProfile } from '../driver/index.js'
 import type { EnvironmentMeta, EnvironmentRegistry } from '../environments.js'
-import { isAllowlisted } from '../identity.js'
 import { decodeSeasonConfig, type Storage, type Submission } from '../storage/index.js'
 import type { Season, Session, SessionMode } from '../storage/schema.js'
 import type { SubmissionSnapshotStore } from '../submission/snapshot-store.js'
@@ -94,8 +93,8 @@ export interface StartResult {
 
 /**
  * A start/stop failure carrying the HTTP status the route should map it to, an optional stable
- * machine code the frontend branches on (`not_allowlisted`, `already_active`), and optional details
- * merged into the error body (the active session id for the rejoin path).
+ * machine code the frontend branches on (e.g. `already_active`), and optional details merged into the
+ * error body (the active session id for the rejoin path).
  */
 export class OrchestratorError extends Error {
   constructor(
@@ -145,18 +144,14 @@ export class Orchestrator {
    */
   async start(request: StartRequest): Promise<StartResult> {
     // Validate the request first (a malformed start is a 400 regardless of identity), then the
-    // allowlist (403), then the one-per-user rule (409).
+    // one-per-user rule (409). Authorization (an active user) is enforced by the route guard before
+    // the orchestrator is called, so there is no allowlist check here.
     const meta = this.environments.get(request.envId)
     if (meta === undefined) {
       throw new OrchestratorError(400, `unknown environment ${request.envId}`)
     }
     const { assignments, mode } = this.validateSlotShape(meta, request.slots)
 
-    // The allowlist gates starting a session in either mode, since a watch run also consumes a
-    // container. Everything read-only (listing, fetching recordings, spectating) stays open.
-    if (!isAllowlisted(request.userId, this.config.sessionAllowlist)) {
-      throw new OrchestratorError(403, 'user is not on the session allowlist', 'not_allowlisted')
-    }
     const activeId = this.registry.activeIdForUser(request.userId)
     if (activeId !== undefined) {
       throw new OrchestratorError(409, 'user already has an active session', 'already_active', {
@@ -438,13 +433,17 @@ export class Orchestrator {
     return { image, submissionBindings }
   }
 
-  /** Attach a socket to a live session, or `undefined` if no such session is running. */
-  attach(sessionId: string, socket: ClientSocket, userId: string): Attachment | undefined {
+  /**
+   * Attach a socket to a live session, or `undefined` if no such session is running. `userId` is the
+   * spectator's resolved id, or `null` for an anonymous socket; only a non-null id matching the
+   * session owner attaches with controls, so an anonymous socket always spectates.
+   */
+  attach(sessionId: string, socket: ClientSocket, userId: string | null): Attachment | undefined {
     const session = this.registry.get(sessionId)
     if (session === undefined) {
       return undefined
     }
-    return session.attach(socket, session.userId === userId)
+    return session.attach(socket, userId !== null && session.userId === userId)
   }
 
   /** Owner-only graceful stop. 404 when unknown, 403 when not the owner; a no-op once ended. */

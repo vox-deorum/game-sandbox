@@ -137,8 +137,6 @@ async function main(): Promise<void> {
     environments,
     recordings,
     retention,
-    allowlist: config.sessionAllowlist,
-    operatorAllowlist: config.operatorAllowlist,
     knownDepsVersions: KNOWN_DEPS_VERSIONS,
     workflowRunner,
     frontendDir: config.frontendDir,

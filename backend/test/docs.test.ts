@@ -4,16 +4,20 @@ import { join } from 'node:path'
 
 import type { FastifyInstance } from 'fastify'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-
 import { buildApp } from '../src/app.js'
+import type { Auth } from '../src/auth/auth.js'
 import { buildDocsManifest, DocsIndexError, readDocsIndex, readDocsPage } from '../src/docs.js'
 import { RecordingsStore } from '../src/recordings.js'
 import { Retention } from '../src/retention.js'
 import { Orchestrator } from '../src/session/orchestrator.js'
 import type { Storage } from '../src/storage/index.js'
-import { openSqliteStorage } from '../src/storage/sqlite.js'
 import { FakeDriver } from './support/fake-driver.js'
-import { makeConfig, makeEnvironments, makeSubmissionDeps } from './support/harness.js'
+import {
+  makeConfig,
+  makeEnvironments,
+  makeSubmissionDeps,
+  openTestStack,
+} from './support/harness.js'
 
 // A miniature docs/ tree: the students subtree the website serves, plus an out-of-scope contributors
 // file to prove it is never reachable. `fenced-only.md` has no real H1 and a `#` only inside a fence,
@@ -152,6 +156,7 @@ describe('docs module', () => {
 describe('docs HTTP routes', () => {
   let app: FastifyInstance
   let storage: Storage
+  let auth: Auth
   let orchestrator: Orchestrator
   let docsDir: string
   let dataDir: string
@@ -165,7 +170,7 @@ describe('docs HTTP routes', () => {
       environments: makeEnvironments(),
       recordings,
       retention: new Retention(storage, recordings, config),
-      allowlist: ['dev-user'],
+      auth,
       docsIndexFile,
       ...makeSubmissionDeps(storage, config),
     })
@@ -174,7 +179,9 @@ describe('docs HTTP routes', () => {
   beforeEach(async () => {
     docsDir = writeFixtureDocs()
     dataDir = mkdtempSync(join(tmpdir(), 'gs-docs-data-'))
-    storage = await openSqliteStorage(':memory:')
+    const stack = await openTestStack()
+    storage = stack.storage
+    auth = stack.auth
     app = await buildDocsApp()
   })
 

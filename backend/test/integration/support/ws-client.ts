@@ -42,9 +42,14 @@ export class WsClient {
     })
   }
 
-  static connect(url: string, user = 'dev-user'): Promise<WsClient> {
+  /**
+   * Connect a spectator/owner socket. `cookie` is the Better Auth session cookie header value
+   * (from `stack.users.headersFor(name).cookie`); omit it for an anonymous spectator. The cookie
+   * rides the upgrade on the same origin, exactly as a browser sends it.
+   */
+  static connect(url: string, cookie?: string): Promise<WsClient> {
     return new Promise((resolve, reject) => {
-      const socket = new WebSocket(url, { headers: { 'x-sandbox-user': user } })
+      const socket = new WebSocket(url, cookie === undefined ? undefined : { headers: { cookie } })
       const client = new WsClient(socket)
       socket.once('open', () => resolve(client))
       socket.once('error', reject)

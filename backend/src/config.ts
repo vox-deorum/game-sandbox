@@ -11,8 +11,6 @@ import { fileURLToPath } from 'node:url'
 
 import { z } from 'zod'
 
-import { DEV_USER_ID } from './identity.js'
-
 // The repo root sits two levels above backend/src, so the default frontend bundle path resolves the
 // same regardless of the process's working directory (started from the repo root or from backend/).
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
@@ -156,18 +154,6 @@ export interface Config {
   sessionIdleTimeoutMs: number
   /** Wall-clock backstop catching a hung container that in-container budgets cannot. */
   sessionMaxDurationMs: number
-  /**
-   * The operator-configured allowlist of user ids that may start live sessions. Keyed on the
-   * Stage 3 identity stub until OAuth brings real handles; everything read-only stays open.
-   */
-  sessionAllowlist: string[]
-  /**
-   * The operator allowlist of user ids that may reach the Stage 6 admin console and API (declaring
-   * seasons, configuring them, opening/closing the gates, triggering runs). Read from
-   * `OPERATOR_ALLOWLIST`, defaulting to `[DEV_USER_ID]` exactly as {@link Config.sessionAllowlist}
-   * does, so the console works out of the box in dev; `isOperator` is the single predicate over it.
-   */
-  operatorAllowlist: string[]
   /** Retention window in days: an unpinned recording older than this is swept. */
   recordingRetentionDays: number
   /** Per-user recording quota; oldest-unpinned-first eviction brings a user back within it. */
@@ -481,8 +467,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     submissionsDir: join(dataDir, 'submissions'),
     sessionIdleTimeoutMs: intVar(env, 'SESSION_IDLE_TIMEOUT_MS', 60_000),
     sessionMaxDurationMs: intVar(env, 'SESSION_MAX_DURATION_MS', 600_000),
-    sessionAllowlist: listVar(env, 'SESSION_ALLOWLIST', [DEV_USER_ID]),
-    operatorAllowlist: listVar(env, 'OPERATOR_ALLOWLIST', [DEV_USER_ID]),
     recordingRetentionDays: intVar(env, 'RECORDING_RETENTION_DAYS', 30),
     recordingUserQuota: intVar(env, 'RECORDING_USER_QUOTA', 100),
     recordingSweepIntervalMs: intVar(env, 'RECORDING_SWEEP_INTERVAL_MS', 3_600_000),

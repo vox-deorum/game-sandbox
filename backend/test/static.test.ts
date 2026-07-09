@@ -10,9 +10,13 @@ import { RecordingsStore } from '../src/recordings.js'
 import { Retention } from '../src/retention.js'
 import { Orchestrator } from '../src/session/orchestrator.js'
 import type { Storage } from '../src/storage/index.js'
-import { openSqliteStorage } from '../src/storage/sqlite.js'
 import { FakeDriver } from './support/fake-driver.js'
-import { makeConfig, makeEnvironments, makeSubmissionDeps } from './support/harness.js'
+import {
+  makeConfig,
+  makeEnvironments,
+  makeSubmissionDeps,
+  openTestStack,
+} from './support/harness.js'
 
 // A built bundle is a tiny stand-in for `frontend/dist`: an index.html and one hashed asset, enough
 // to prove the backend serves files, falls back to index.html for client routes, and leaves /api alone.
@@ -34,7 +38,8 @@ describe('serving the built frontend', () => {
     mkdirSync(join(frontendDir, 'assets'))
     writeFileSync(join(frontendDir, 'assets', 'app.js'), ASSET_JS)
 
-    storage = await openSqliteStorage(':memory:')
+    const stack = await openTestStack()
+    storage = stack.storage
     const config = makeConfig({ recordingsDir: dataDir })
     orchestrator = new Orchestrator(new FakeDriver(), storage, makeEnvironments(), config)
     const recordings = new RecordingsStore(dataDir)
@@ -43,7 +48,7 @@ describe('serving the built frontend', () => {
       environments: makeEnvironments(),
       recordings,
       retention: new Retention(storage, recordings, config),
-      allowlist: ['dev-user'],
+      auth: stack.auth,
       frontendDir,
       ...makeSubmissionDeps(storage, config),
     })

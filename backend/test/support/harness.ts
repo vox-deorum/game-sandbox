@@ -7,11 +7,13 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import type { Auth } from '../../src/auth/auth.js'
 import type { Config } from '../../src/config.js'
 import type { ExecutionDriver } from '../../src/driver/index.js'
 import { EnvironmentRegistry } from '../../src/environments.js'
 import type { ClientSocket } from '../../src/session/live-session.js'
 import type { Storage } from '../../src/storage/index.js'
+import { openSqlite } from '../../src/storage/sqlite.js'
 import { SubmissionSnapshotStore } from '../../src/submission/snapshot-store.js'
 import {
   createSubmissionSource,
@@ -19,9 +21,28 @@ import {
 } from '../../src/submission/source/index.js'
 import { ValidationWorker } from '../../src/submission/worker.js'
 import type { WorkflowRunner } from '../../src/workflow/runner.js'
+import { makeTestAuth, type TestUsers } from './auth.js'
 import { TEST_AUTH_OPTIONS } from './auth-options.js'
 import { FakeDriver } from './fake-driver.js'
 import { StubWorkflowRunner } from './stub-runner.js'
+
+/** An in-memory storage plus the real Better Auth instance and user-minting harness on one handle. */
+export interface TestStack {
+  storage: Storage
+  auth: Auth
+  users: TestUsers
+}
+
+/**
+ * Open a fresh `:memory:` database and build a Better Auth instance and {@link TestUsers} harness on
+ * its raw connection, so a suite can mint real signed-in users and pass the `auth` every `buildApp`
+ * now requires. Close the returned `storage` last in teardown (it owns the shared connection).
+ */
+export async function openTestStack(): Promise<TestStack> {
+  const { storage, sqlite } = await openSqlite(':memory:')
+  const { auth, users } = await makeTestAuth(sqlite)
+  return { storage, auth, users }
+}
 
 /** A config with class-scale defaults overridable per test (e.g. a tiny idle window). */
 export function makeConfig(overrides: Partial<Config> = {}): Config {
@@ -37,9 +58,6 @@ export function makeConfig(overrides: Partial<Config> = {}): Config {
     docsDir: './docs',
     sessionIdleTimeoutMs: 60_000,
     sessionMaxDurationMs: 600_000,
-    // The identities the start-succeeding suites use; allowlist tests override this explicitly.
-    sessionAllowlist: ['dev-user', 'alice', 'bob'],
-    operatorAllowlist: ['dev-user'],
     recordingRetentionDays: 30,
     recordingUserQuota: 100,
     recordingSweepIntervalMs: 3_600_000,
@@ -84,7 +102,6 @@ export function makeSubmissionDeps(
   submissionSnapshots: SubmissionSnapshotStore
   validationWorker: ValidationWorker
   allowLocalSubmissions: boolean
-  operatorAllowlist: readonly string[]
   knownDepsVersions: ReadonlySet<number>
   workflowRunner: WorkflowRunner
   docsDir: string
@@ -111,9 +128,8 @@ export function makeSubmissionDeps(
     submissionSnapshots,
     validationWorker,
     allowLocalSubmissions: config.submission.allowLocalSubmissions,
-    // The non-leaderboard suites don't exercise the admin API, but buildApp now requires these; a
-    // stub runner and the config's operator allowlist complete the deps without Docker.
-    operatorAllowlist: config.operatorAllowlist,
+    // The non-leaderboard suites don't exercise the admin API, but buildApp still requires a runner;
+    // a stub runner completes the deps without Docker.
     knownDepsVersions: options.knownTemplateVersions ?? new Set([1]),
     workflowRunner: new StubWorkflowRunner(storage),
     // The docs routes require a root; suites that don't exercise them get the placeholder from

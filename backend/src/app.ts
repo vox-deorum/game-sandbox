@@ -2,9 +2,10 @@
  * The Fastify application: the minimal HTTP surface the Stage 4 frontend needs, plus the WebSocket
  * attach point for a live session.
  *
- * Routes are thin — they resolve the acting user through the identity stub, call the orchestrator or
- * the recordings store, and map an {@link OrchestratorError} onto its HTTP status. The orchestrator
- * is the only thing that knows about sessions; this layer never touches the driver or the container.
+ * Routes are thin — they resolve the acting user through the identity seam (a Better Auth session
+ * cookie), call the orchestrator or the recordings store, and map an {@link OrchestratorError} onto
+ * its HTTP status. The orchestrator is the only thing that knows about sessions; this layer never
+ * touches the driver or the container.
  */
 import { existsSync } from 'node:fs'
 
@@ -18,7 +19,7 @@ import { registerAuthRoutes } from './auth/routes.js'
 import { DEFAULT_DOCS_DIR, DEFAULT_SITE_NAME } from './config.js'
 import { buildDocsManifest, DocsIndexError, readDocsIndex, readDocsPage } from './docs.js'
 import type { EnvironmentRegistry } from './environments.js'
-import { isAllowlisted, isOperator, resolveUserId } from './identity.js'
+import { createRequestIdentity } from './identity.js'
 import { registerLeaderboardRoutes } from './leaderboards/routes.js'
 import { registerRatingRoutes } from './ratings/routes.js'
 import type { RecordingsStore } from './recordings.js'
@@ -52,10 +53,6 @@ export interface AppDeps {
   recordings: RecordingsStore
   /** The retention service: the merged recordings listing, pinning, and the eviction sweep. */
   retention: Retention
-  /** The operator-configured session allowlist, so `/api/me` can report what the user may do. */
-  allowlist: readonly string[]
-  /** The operator allowlist gating the Stage 6 admin API; the `isOperator` predicate consults it. */
-  operatorAllowlist: readonly string[]
   /** Dependency-set versions backed by concrete base-image definitions on this deployment. */
   knownDepsVersions: ReadonlySet<number>
   /** The background workflow execution seam the admin trigger enqueues onto and the log stream relays. */
@@ -86,11 +83,11 @@ export interface AppDeps {
   /** Optional class-index override: when set, `GET /api/docs/index` serves this file's markdown. */
   docsIndexFile?: string
   /**
-   * The Better Auth instance to mount at `/api/auth/*` (Stage 12.1). Optional in this step: nothing
-   * consumes the session yet, so app-building suites that pass no `auth` are unchanged and the mount
-   * is simply skipped. Step 2 makes it required once the identity seam consumes it.
+   * The Better Auth instance mounted at `/api/auth/*` and consumed by the identity seam (Stage 12.2).
+   * Required: every request resolves its acting user by looking up the session cookie against this
+   * instance, and every suite mints real sessions through the harness.
    */
-  auth?: Auth
+  auth: Auth
 }
 
 /**
@@ -214,6 +211,10 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const app = Fastify({ logger: false })
   await app.register(websocket)
 
+  // The one place a request is turned into an acting user: a Better Auth session-cookie lookup,
+  // memoized per request, with the three status guards routes gate on. Public routes never call it.
+  const identity = createRequestIdentity(deps.auth)
+
   app.get('/api/environments', () => deps.environments.list())
 
   // The public deployment branding the SPA reads once at startup, so the sidebar brand and the
@@ -249,17 +250,25 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     return page
   })
 
-  // The frontend's single source for who-am-I and what-may-I-do. One mock user is auto-logged-on
-  // by the browser; this reports the resolved id, session-allowlist membership, and operator status
-  // (the Stage 6 admin console gates its route and nav entry on the last). The backend admin guard is
-  // the real authority; `is_operator` only lets the UI avoid showing dead controls. The OAuth
-  // replacement has one obvious place to land.
-  app.get('/api/me', (request) => {
-    const userId = resolveUserId(request.headers)
+  // The frontend's single source for who-am-I and what-may-I-do: the session user and its derived
+  // status, or a null user for an anonymous request. Anonymous is a 200 (not a 401), so the app shell
+  // renders its signed-out state from a successful fetch. The frontend derives its capabilities from
+  // `status`; the backend guards below are the real authority.
+  app.get('/api/me', async (request) => {
+    const user = await identity.resolveUser(request)
+    if (user === null) {
+      return { user: null }
+    }
     return {
-      user_id: userId,
-      allowlisted: isAllowlisted(userId, deps.allowlist),
-      is_operator: isOperator(userId, deps.operatorAllowlist),
+      // An explicit wire projection, not `return { user }`: the client contract is exactly these
+      // fields, so a field later added to AuthUser for backend use is never auto-exposed here.
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        image: user.image,
+        status: user.status,
+      },
     }
   })
 
@@ -267,9 +276,13 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     '/api/sessions',
     { schema: START_SESSION_SCHEMA },
     async (request, reply) => {
+      const user = await identity.requireActive(request, reply)
+      if (user === undefined) {
+        return
+      }
       try {
         const result = await deps.orchestrator.start({
-          userId: resolveUserId(request.headers),
+          userId: user.id,
           envId: request.body.env_id,
           seed: request.body.seed,
           humanSlotTimeoutMs: request.body.human_slot_timeout_ms,
@@ -296,8 +309,12 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   })
 
   app.delete<{ Params: { id: string } }>('/api/sessions/:id', async (request, reply) => {
+    const user = await identity.requireActive(request, reply)
+    if (user === undefined) {
+      return
+    }
     try {
-      await deps.orchestrator.stop(request.params.id, resolveUserId(request.headers))
+      await deps.orchestrator.stop(request.params.id, user.id)
       return reply.code(204).send()
     } catch (error) {
       return replyError(reply, error)
@@ -317,23 +334,35 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     return reply.type('application/x-ndjson').send(deps.recordings.stream(request.params.id))
   })
 
-  // Pin and unpin are owner-only and gate on the recording's retention row. Pinning is refused
-  // with `pinned_quota` once the user is at their pinned cap, so the per-user quota stays a hard
-  // bound on storage even though pinned recordings are exempt from eviction.
-  app.post<{ Params: { id: string } }>('/api/recordings/:id/pin', (request, reply) =>
-    replyPin(reply, deps.retention.pin(request.params.id, resolveUserId(request.headers))),
-  )
-  app.delete<{ Params: { id: string } }>('/api/recordings/:id/pin', (request, reply) =>
-    replyPin(reply, deps.retention.unpin(request.params.id, resolveUserId(request.headers))),
-  )
+  // Pin and unpin are owner-only and gate on the recording's retention row. They sit under
+  // `requireUser` (not `requireActive`) because they are an owner's own-library actions already scoped
+  // by the ownership check below; a pending user is admitted but owns no recordings to pin (they
+  // cannot start sessions), so the looser gate is inert today. Pinning is refused with `pinned_quota`
+  // once the user is at their pinned cap, so the per-user quota stays a hard bound on storage even
+  // though pinned recordings are exempt from eviction.
+  app.post<{ Params: { id: string } }>('/api/recordings/:id/pin', async (request, reply) => {
+    const user = await identity.requireUser(request, reply)
+    if (user === undefined) {
+      return
+    }
+    return replyPin(reply, deps.retention.pin(request.params.id, user.id))
+  })
+  app.delete<{ Params: { id: string } }>('/api/recordings/:id/pin', async (request, reply) => {
+    const user = await identity.requireUser(request, reply)
+    if (user === undefined) {
+      return
+    }
+    return replyPin(reply, deps.retention.unpin(request.params.id, user.id))
+  })
 
   app.get<{ Params: { id: string } }>(
     '/api/sessions/:id/ws',
     { websocket: true },
-    (socket, request) => {
-      // A browser cannot set a header on a WebSocket upgrade, so the socket client carries the
-      // identity as the `user` query parameter; resolveUserId reads it when the header is absent.
-      const userId = resolveUserId(request.headers, request.query as Record<string, string>)
+    async (socket, request) => {
+      // The session cookie rides the WebSocket upgrade on the same origin, so spectating is public and
+      // ownership is decided by the resolved user. An anonymous socket attaches with a null user and
+      // can never be the owner or hold the human seat.
+      const user = await identity.resolveUser(request)
       const client: ClientSocket = {
         send: (data) => socket.send(data),
         close: () => socket.close(),
@@ -341,7 +370,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
           return socket.bufferedAmount
         },
       }
-      const attachment = deps.orchestrator.attach(request.params.id, client, userId)
+      const attachment = deps.orchestrator.attach(request.params.id, client, user?.id ?? null)
       if (attachment === undefined) {
         socket.close(1008, 'no such session')
         return
@@ -365,6 +394,10 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     '/api/submissions/reachability',
     { schema: REACHABILITY_SCHEMA },
     async (request, reply) => {
+      const user = await identity.requireActive(request, reply)
+      if (user === undefined) {
+        return
+      }
       const input = sourceInputFromBody(request.body)
       if (input === null) {
         return reply
@@ -387,6 +420,10 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     '/api/submissions',
     { schema: SUBMIT_SCHEMA },
     async (request, reply) => {
+      const user = await identity.requireActive(request, reply)
+      if (user === undefined) {
+        return
+      }
       const input = sourceInputFromBody(request.body)
       if (input === null) {
         return reply
@@ -408,7 +445,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         const submission = await deps.storage.createSubmission({
           season_id: season.id,
           env_id: request.body.env_id,
-          user_id: resolveUserId(request.headers),
+          user_id: user.id,
           source_kind: input.kind,
           repo_url: input.kind === 'git' ? input.repoUrl : null,
           commit_sha: null,
@@ -430,29 +467,37 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   // The current user's submissions (including superseded history), newest first, optionally one
   // environment. The agent profile (step 6) reads this; the form reads the single submission below.
-  app.get<{ Querystring: { env?: string } }>('/api/submissions', (request) =>
-    deps.storage.listSubmissionsByUser(resolveUserId(request.headers), request.query.env),
-  )
+  app.get<{ Querystring: { env?: string } }>('/api/submissions', async (request, reply) => {
+    const user = await identity.requireUser(request, reply)
+    if (user === undefined) {
+      return
+    }
+    return deps.storage.listSubmissionsByUser(user.id, request.query.env)
+  })
 
   // One submission joined with its ordered per-stage validation log, so a poll is a single request.
   // Submission ids appear in the anonymous watch-list contract, so this route must not turn one of
   // those ids back into an owner/source lookup for an ordinary viewer.
   app.get<{ Params: { id: string } }>('/api/submissions/:id', async (request, reply) => {
+    const user = await identity.requireUser(request, reply)
+    if (user === undefined) {
+      return
+    }
     const submission = await deps.storage.getSubmission(request.params.id)
     if (submission === undefined) {
       return reply.code(404).send({ error: 'no such submission' })
     }
-    const userId = resolveUserId(request.headers)
-    if (submission.user_id !== userId && !isOperator(userId, deps.operatorAllowlist)) {
+    if (submission.user_id !== user.id && user.status !== 'admin') {
       return reply.code(403).send({ error: 'submission access denied', code: 'forbidden' })
     }
     const checks = await deps.storage.listSubmissionChecks(submission.id)
     return { ...submission, checks }
   })
 
-  // Viewer-specific watch choices for the play-open season. Regular viewers receive only an
-  // anonymous sequence and their rating state; operators additionally receive owner/source details.
-  // The submission window may point at another round, so it never drives this list.
+  // Viewer-specific watch choices for the play-open season. Public, but personalized only when a user
+  // resolves: an anonymous caller gets the unpersonalized sequence with no rating status and no
+  // operator extras; a signed-in viewer receives their rating state; an admin additionally receives
+  // owner/source details. The submission window may point at another round, so it never drives this list.
   app.get<{ Params: { envId: string } }>(
     '/api/environments/:envId/watch-agents',
     async (request) => {
@@ -460,25 +505,28 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       if (season === undefined) {
         return []
       }
-      const userId = resolveUserId(request.headers)
-      const operator = isOperator(userId, deps.operatorAllowlist)
+      const user = await identity.resolveUser(request)
+      const operator = user?.status === 'admin'
       const submissions = await deps.storage.listActiveSubmissionsBySeason(season.id, 'ready')
       return Promise.all(
         submissions.map(async (submission, index) => {
+          // Personalized rating state only when a user resolves; an anonymous caller carries none.
           const ratingStatus =
-            submission.user_id === userId
-              ? 'own'
-              : (await deps.storage.getRating(season.id, userId, {
-                    kind: 'submission',
-                    submission_id: submission.id,
-                    user_id: submission.user_id,
-                  })) === undefined
-                ? 'unrated'
-                : 'rated'
+            user === null
+              ? undefined
+              : submission.user_id === user.id
+                ? 'own'
+                : (await deps.storage.getRating(season.id, user.id, {
+                      kind: 'submission',
+                      submission_id: submission.id,
+                      user_id: submission.user_id,
+                    })) === undefined
+                  ? 'unrated'
+                  : 'rated'
           return {
             submission_id: submission.id,
             anonymous_number: index + 1,
-            rating_status: ratingStatus,
+            ...(ratingStatus === undefined ? {} : { rating_status: ratingStatus }),
             ...(operator
               ? {
                   owner_id: submission.user_id,
@@ -550,28 +598,24 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     storage: deps.storage,
     environments: deps.environments,
     workflowRunner: deps.workflowRunner,
-    operatorAllowlist: deps.operatorAllowlist,
+    identity,
     knownDepsVersions: deps.knownDepsVersions,
     snapshots: deps.submissionSnapshots,
   })
   registerLeaderboardRoutes(app, {
     storage: deps.storage,
-    operatorAllowlist: deps.operatorAllowlist,
+    identity,
   })
   // Participant ratings and the author's per-season rating prompt are attributed to the resolved
-  // identity. Rating writes also use the public-session allowlist.
+  // identity. Rating writes require an active user; reads require any signed-in user.
   registerRatingRoutes(app, {
     storage: deps.storage,
     recordings: deps.recordings,
-    allowlist: deps.allowlist,
-    operatorAllowlist: deps.operatorAllowlist,
+    identity,
   })
 
-  // Mount Better Auth at `/api/auth/*` (Stage 12.1), before the SPA fallback so the catch-all never
-  // shadows it. Optional in this step: suites that pass no `auth` skip the mount unchanged.
-  if (deps.auth !== undefined) {
-    await registerAuthRoutes(app, { auth: deps.auth })
-  }
+  // Mount Better Auth at `/api/auth/*`, before the SPA fallback so the catch-all never shadows it.
+  await registerAuthRoutes(app, { auth: deps.auth })
 
   // Serve the built frontend from the same origin in production so the whole stack is one process.
   // `wildcard: false` registers a route per built file and lets unmatched paths fall to the

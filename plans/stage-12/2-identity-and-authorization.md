@@ -1,6 +1,6 @@
 # Stage 12.2: Identity seam and status authorization
 
-Status: not started
+Status: complete. Two notes. Watch-agents omits the `rating_status` field entirely for an anonymous caller (rather than sending a neutral value), keeping the unpersonalized view literally free of rating state. Rating-view display names for submitted agents are derived from the owner's Better Auth id (the pre-existing Stage-3 behavior, now an id rather than a handle); step 3's frontend maps ids to names.
 
 Part of [Stage 12](../stage-12-user-system.md). This is build-order step 2, the identity seam swap and the one breaking step of the stage. The synchronous `resolveUserId(headers, query)` from Stage 3 becomes an asynchronous cookie-session lookup, the single derived status replaces both environment-variable allowlists, and every route's authorization is stated explicitly against the status model. After this step the `x-sandbox-user` header does nothing, the `?user=` channel is gone, and every backend test authenticates with a real session minted by [step 1](1-better-auth-foundation.md)'s harness.
 

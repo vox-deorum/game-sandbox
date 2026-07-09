@@ -26,7 +26,7 @@ import { z } from 'zod'
 
 import { DEPS_VERSION } from '../deps-version.js'
 import type { EnvironmentMeta, EnvironmentRegistry } from '../environments.js'
-import { isOperator, resolveUserId } from '../identity.js'
+import type { RequestIdentity } from '../identity.js'
 import { buildSchedule, type SubmissionRef } from '../scheduler/build-schedule.js'
 import { runGameView, runSummaryView, runView, seasonView } from '../season-views.js'
 import type { ClientSocket } from '../session/live-session.js'
@@ -41,8 +41,8 @@ export interface AdminDeps {
   environments: EnvironmentRegistry
   /** The background execution seam; the trigger enqueues onto it and the log stream subscribes to it. */
   workflowRunner: WorkflowRunner
-  /** The operator allowlist `isOperator` consults; the single authorization predicate for this prefix. */
-  operatorAllowlist: readonly string[]
+  /** The identity seam; the single `requireAdmin` guard for this prefix consults it. */
+  identity: RequestIdentity
   /** The dependency-set version a freshly declared season pins by default. */
   depsVersion?: number
   /** Versions the deployment can actually serve with a concrete session base image. */
@@ -256,14 +256,14 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
 
   await app.register(
     async (admin) => {
-      // The single authorization choke point for the whole prefix. Identity rides the header on a
-      // normal request and the `user` query parameter on a WebSocket upgrade (a browser cannot set a
-      // header on the upgrade), resolved by the one identity function. A non-operator is rejected here
-      // before any handler — including the log-stream upgrade — runs.
+      // The single authorization choke point for the whole prefix. The session cookie rides both a
+      // normal request and the log-stream WebSocket upgrade on the same origin, so one `requireAdmin`
+      // guard serves both; a non-admin is rejected here before any handler runs. Returning the reply
+      // signals Fastify the response is already sent.
       admin.addHook('onRequest', async (request, reply) => {
-        const userId = resolveUserId(request.headers, request.query as Record<string, string>)
-        if (!isOperator(userId, deps.operatorAllowlist)) {
-          return reply.code(403).send({ error: 'operator access required', code: 'not_operator' })
+        const user = await deps.identity.requireAdmin(request, reply)
+        if (user === undefined) {
+          return reply
         }
       })
 
@@ -486,10 +486,15 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
             .code(409)
             .send({ error: 'the season resolves to an empty schedule', code: 'empty_schedule' })
         }
-        const requestedBy = resolveUserId(request.headers)
+        // Non-null under the `requireAdmin` guard; the lookup is memoized, so this is not a second
+        // query. The null branch is unreachable but keeps the attribution id honestly typed.
+        const requestedBy = await deps.identity.resolveUser(request)
+        if (requestedBy === null) {
+          return reply.code(401).send({ error: 'authentication required', code: 'auth_required' })
+        }
         const run = await deps.storage.createRunWithSchedule(
           season.id,
-          requestedBy,
+          requestedBy.id,
           submissions,
           schedule,
         )

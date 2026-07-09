@@ -11,25 +11,33 @@ import { RecordingsStore } from '../src/recordings.js'
 import { Retention } from '../src/retention.js'
 import { Orchestrator } from '../src/session/orchestrator.js'
 import type { Storage } from '../src/storage/index.js'
-import { openSqliteStorage } from '../src/storage/sqlite.js'
+import type { TestUsers } from './support/auth.js'
 import { FakeDriver } from './support/fake-driver.js'
-import { makeConfig, makeEnvironments, makeSubmissionDeps } from './support/harness.js'
-
-const ALLOWLIST = ['dev-user', 'alice', 'bob']
+import {
+  makeConfig,
+  makeEnvironments,
+  makeSubmissionDeps,
+  openTestStack,
+} from './support/harness.js'
 
 describe('HTTP API', () => {
   let app: FastifyInstance
   let storage: Storage
+  let users: TestUsers
   let orchestrator: Orchestrator
   let dir: string
+  let alice: Record<string, string>
 
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'gs-http-'))
-    storage = await openSqliteStorage(':memory:')
+    const stack = await openTestStack()
+    storage = stack.storage
+    users = stack.users
+    alice = await users.headersFor('alice')
     // Plain public sessions attach to the environment's play-open season; seed it so the start
     // routes are exercised against a normal play-open environment.
     await storage.ensureOpenSeason('flappy_bird', 1)
-    const config = makeConfig({ recordingsDir: dir, sessionAllowlist: ALLOWLIST })
+    const config = makeConfig({ recordingsDir: dir })
     orchestrator = new Orchestrator(new FakeDriver(), storage, makeEnvironments(), config)
     const recordings = new RecordingsStore(dir)
     app = await buildApp({
@@ -37,7 +45,7 @@ describe('HTTP API', () => {
       environments: makeEnvironments(),
       recordings,
       retention: new Retention(storage, recordings, config),
-      allowlist: ALLOWLIST,
+      auth: stack.auth,
       ...makeSubmissionDeps(storage, config),
     })
   })
@@ -64,8 +72,9 @@ describe('HTTP API', () => {
   })
 
   it('reflects a configured site name and short name in GET /api/config', async () => {
-    const config = makeConfig({ recordingsDir: dir, sessionAllowlist: ALLOWLIST })
+    const config = makeConfig({ recordingsDir: dir })
     const recordings = new RecordingsStore(dir)
+    const stack = await openTestStack()
     const custom = await buildApp({
       orchestrator,
       siteName: 'Acme Arena',
@@ -73,7 +82,7 @@ describe('HTTP API', () => {
       environments: makeEnvironments(),
       recordings,
       retention: new Retention(storage, recordings, config),
-      allowlist: ALLOWLIST,
+      auth: stack.auth,
       ...makeSubmissionDeps(storage, config),
     })
     try {
@@ -81,6 +90,7 @@ describe('HTTP API', () => {
       expect(res.json()).toEqual({ site_name: 'Acme Arena', site_short_name: 'Acme' })
     } finally {
       await custom.close()
+      await stack.storage.close()
     }
   })
 
@@ -88,6 +98,7 @@ describe('HTTP API', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/sessions',
+      headers: alice,
       payload: { env_id: 'flappy_bird', slots: { player_0: { kind: 'builtin-agent' } } },
     })
     expect(res.statusCode).toBe(201)
@@ -97,6 +108,8 @@ describe('HTTP API', () => {
     const row = await app.inject({ method: 'GET', url: `/api/sessions/${body.id}` })
     expect(row.statusCode).toBe(200)
     expect(row.json()).toMatchObject({ id: body.id, env_id: 'flappy_bird', status: 'starting' })
+    // Attribution carries the Better Auth id, not a fabricated dev identity.
+    expect((await storage.getSession(body.id))?.user_id).toBe(users.idOf('alice'))
   })
 
   it('rejects an invalid start body with 400', async () => {
@@ -104,6 +117,7 @@ describe('HTTP API', () => {
     const noSlots = await app.inject({
       method: 'POST',
       url: '/api/sessions',
+      headers: alice,
       payload: { env_id: 'flappy_bird', mode: 'scripted', submission_id: 'sub-1' },
     })
     expect(noSlots.statusCode).toBe(400)
@@ -111,6 +125,7 @@ describe('HTTP API', () => {
     const badKind = await app.inject({
       method: 'POST',
       url: '/api/sessions',
+      headers: alice,
       payload: { env_id: 'flappy_bird', slots: { player_0: { kind: 'spectate' } } },
     })
     expect(badKind.statusCode).toBe(400)
@@ -119,6 +134,7 @@ describe('HTTP API', () => {
     const submissionNoId = await app.inject({
       method: 'POST',
       url: '/api/sessions',
+      headers: alice,
       payload: { env_id: 'flappy_bird', slots: { player_0: { kind: 'submission' } } },
     })
     expect(submissionNoId.statusCode).toBe(400)
@@ -127,6 +143,7 @@ describe('HTTP API', () => {
     const agentWithId = await app.inject({
       method: 'POST',
       url: '/api/sessions',
+      headers: alice,
       payload: {
         env_id: 'flappy_bird',
         slots: { player_0: { kind: 'builtin-agent', submission_id: 'sub-1' } },
@@ -139,6 +156,7 @@ describe('HTTP API', () => {
     const first = await app.inject({
       method: 'POST',
       url: '/api/sessions',
+      headers: alice,
       payload: { env_id: 'flappy_bird', slots: { player_0: { kind: 'builtin-agent' } } },
     })
     expect(first.statusCode).toBe(201)
@@ -146,6 +164,7 @@ describe('HTTP API', () => {
     const second = await app.inject({
       method: 'POST',
       url: '/api/sessions',
+      headers: alice,
       payload: { env_id: 'flappy_bird', slots: { player_0: { kind: 'builtin-agent' } } },
     })
     expect(second.statusCode).toBe(409)
@@ -153,45 +172,77 @@ describe('HTTP API', () => {
     expect(second.json()).toMatchObject({ code: 'already_active', active_session_id: id })
   })
 
-  it('reports identity and allowlist membership at GET /api/me', async () => {
-    const mine = await app.inject({ method: 'GET', url: '/api/me' })
-    expect(mine.statusCode).toBe(200)
-    // The dev mock user is in the default operator allowlist, so it reports as an operator too.
-    expect(mine.json()).toEqual({ user_id: 'dev-user', allowlisted: true, is_operator: true })
+  it('serves the session user and its status at GET /api/me, or a null user when anonymous', async () => {
+    const anon = await app.inject({ method: 'GET', url: '/api/me' })
+    expect(anon.statusCode).toBe(200)
+    expect(anon.json()).toEqual({ user: null })
 
-    const stranger = await app.inject({
-      method: 'GET',
-      url: '/api/me',
-      headers: { 'x-sandbox-user': 'carol' },
-    })
-    expect(stranger.json()).toEqual({
-      user_id: 'carol',
-      allowlisted: false,
-      is_operator: false,
+    const mine = await app.inject({ method: 'GET', url: '/api/me', headers: alice })
+    expect(mine.statusCode).toBe(200)
+    expect(mine.json()).toEqual({
+      user: {
+        id: users.idOf('alice'),
+        name: 'alice',
+        email: 'alice@test.local',
+        image: null,
+        status: 'normal',
+      },
     })
   })
 
-  it('rejects a non-allowlisted user starting a human or scripted session with 403', async () => {
+  it('round-trips each status at GET /api/me and reports a banned user as anonymous', async () => {
+    const pending = await app.inject({
+      method: 'GET',
+      url: '/api/me',
+      headers: await users.headersFor('newcomer', { status: 'pending' }),
+    })
+    expect((pending.json() as { user: { status: string } }).user.status).toBe('pending')
+
+    const admin = await app.inject({
+      method: 'GET',
+      url: '/api/me',
+      headers: await users.headersFor('boss', { status: 'admin' }),
+    })
+    expect((admin.json() as { user: { status: string } }).user.status).toBe('admin')
+
+    // A user banned after their cookie was issued resolves to a null user (revocation proven).
+    const doomed = await users.headersFor('doomed')
+    expect(
+      (await app.inject({ method: 'GET', url: '/api/me', headers: doomed })).json(),
+    ).toMatchObject({ user: { status: 'normal' } })
+    await users.ban('doomed')
+    expect((await app.inject({ method: 'GET', url: '/api/me', headers: doomed })).json()).toEqual({
+      user: null,
+    })
+  })
+
+  it('rejects a pending user starting a session with 403 not_active', async () => {
+    const pending = await users.headersFor('newcomer', { status: 'pending' })
     for (const kind of ['human', 'builtin-agent'] as const) {
       const res = await app.inject({
         method: 'POST',
         url: '/api/sessions',
-        headers: { 'x-sandbox-user': 'carol' },
+        headers: pending,
         payload: { env_id: 'flappy_bird', slots: { player_0: { kind } } },
       })
       expect(res.statusCode).toBe(403)
-      expect(res.json()).toMatchObject({ code: 'not_allowlisted' })
+      expect(res.json()).toMatchObject({ code: 'not_active' })
     }
   })
 
-  it('keeps read-only routes open to a non-allowlisted user', async () => {
-    const headers = { 'x-sandbox-user': 'carol' }
-    expect(
-      (await app.inject({ method: 'GET', url: '/api/environments', headers })).statusCode,
-    ).toBe(200)
-    expect((await app.inject({ method: 'GET', url: '/api/recordings', headers })).statusCode).toBe(
-      200,
-    )
+  it('rejects an anonymous session start with 401 auth_required', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/sessions',
+      payload: { env_id: 'flappy_bird', slots: { player_0: { kind: 'builtin-agent' } } },
+    })
+    expect(res.statusCode).toBe(401)
+    expect(res.json()).toMatchObject({ code: 'auth_required' })
+  })
+
+  it('keeps read-only routes open to an anonymous visitor', async () => {
+    expect((await app.inject({ method: 'GET', url: '/api/environments' })).statusCode).toBe(200)
+    expect((await app.inject({ method: 'GET', url: '/api/recordings' })).statusCode).toBe(200)
   })
 
   it('404s an unknown session and an unknown recording', async () => {
@@ -203,7 +254,7 @@ describe('HTTP API', () => {
     const created = await app.inject({
       method: 'POST',
       url: '/api/sessions',
-      headers: { 'x-sandbox-user': 'alice' },
+      headers: alice,
       payload: { env_id: 'flappy_bird', slots: { player_0: { kind: 'builtin-agent' } } },
     })
     const { id } = created.json() as { id: string }
@@ -211,14 +262,14 @@ describe('HTTP API', () => {
     const stranger = await app.inject({
       method: 'DELETE',
       url: `/api/sessions/${id}`,
-      headers: { 'x-sandbox-user': 'mallory' },
+      headers: await users.headersFor('mallory'),
     })
     expect(stranger.statusCode).toBe(403)
 
     const owner = await app.inject({
       method: 'DELETE',
       url: `/api/sessions/${id}`,
-      headers: { 'x-sandbox-user': 'alice' },
+      headers: alice,
     })
     expect(owner.statusCode).toBe(204)
   })
@@ -244,8 +295,9 @@ describe('HTTP API', () => {
     }
 
     it('merges retention metadata into the listing and filters on ?env=', async () => {
-      await seedRecording('flappy_bird-1', 'flappy_bird', 'alice')
-      await seedRecording('other-1', 'other_env', 'alice')
+      const ownerId = users.idOf('alice')
+      await seedRecording('flappy_bird-1', 'flappy_bird', ownerId)
+      await seedRecording('other-1', 'other_env', ownerId)
 
       const all = (await app.inject({ method: 'GET', url: '/api/recordings' })).json() as Array<{
         id: string
@@ -254,7 +306,7 @@ describe('HTTP API', () => {
       }>
       expect(all.map((r) => r.id).sort()).toEqual(['flappy_bird-1', 'other-1'])
       expect(all.find((r) => r.id === 'flappy_bird-1')).toMatchObject({
-        user_id: 'alice',
+        user_id: ownerId,
         pinned: false,
       })
 
@@ -265,19 +317,19 @@ describe('HTTP API', () => {
     })
 
     it('pins and unpins owner-only and 404s an unknown recording', async () => {
-      await seedRecording('flappy_bird-1', 'flappy_bird', 'alice')
+      await seedRecording('flappy_bird-1', 'flappy_bird', users.idOf('alice'))
 
       const stranger = await app.inject({
         method: 'POST',
         url: '/api/recordings/flappy_bird-1/pin',
-        headers: { 'x-sandbox-user': 'mallory' },
+        headers: await users.headersFor('mallory'),
       })
       expect(stranger.statusCode).toBe(403)
 
       const owner = await app.inject({
         method: 'POST',
         url: '/api/recordings/flappy_bird-1/pin',
-        headers: { 'x-sandbox-user': 'alice' },
+        headers: alice,
       })
       expect(owner.statusCode).toBe(204)
       expect((await storage.getRecording('flappy_bird-1'))?.pinned).toBe(1)
@@ -285,7 +337,7 @@ describe('HTTP API', () => {
       const unpin = await app.inject({
         method: 'DELETE',
         url: '/api/recordings/flappy_bird-1/pin',
-        headers: { 'x-sandbox-user': 'alice' },
+        headers: alice,
       })
       expect(unpin.statusCode).toBe(204)
       expect((await storage.getRecording('flappy_bird-1'))?.pinned).toBe(0)
@@ -293,9 +345,16 @@ describe('HTTP API', () => {
       const missing = await app.inject({
         method: 'POST',
         url: '/api/recordings/nope/pin',
-        headers: { 'x-sandbox-user': 'alice' },
+        headers: alice,
       })
       expect(missing.statusCode).toBe(404)
+    })
+
+    it('requires a signed-in user to pin', async () => {
+      await seedRecording('flappy_bird-1', 'flappy_bird', users.idOf('alice'))
+      const res = await app.inject({ method: 'POST', url: '/api/recordings/flappy_bird-1/pin' })
+      expect(res.statusCode).toBe(401)
+      expect(res.json()).toMatchObject({ code: 'auth_required' })
     })
   })
 })

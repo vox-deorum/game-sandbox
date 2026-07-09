@@ -15,21 +15,29 @@ import { RecordingsStore } from '../../src/recordings.js'
 import { Retention } from '../../src/retention.js'
 import { Orchestrator } from '../../src/session/orchestrator.js'
 import type { Season, Storage } from '../../src/storage/index.js'
-import { openSqliteStorage } from '../../src/storage/sqlite.js'
+import type { TestUsers } from '../support/auth.js'
 import { FakeDriver } from '../support/fake-driver.js'
-import { makeConfig, makeEnvironments, makeSubmissionDeps } from '../support/harness.js'
+import {
+  makeConfig,
+  makeEnvironments,
+  makeSubmissionDeps,
+  openTestStack,
+} from '../support/harness.js'
 
 const ENV_ID = 'flappy_bird'
 
 describe('public leaderboard API', () => {
   let app: FastifyInstance
   let storage: Storage
+  let users: TestUsers
   let orchestrator: Orchestrator
   let dir: string
 
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'gs-lb-'))
-    storage = await openSqliteStorage(':memory:')
+    const stack = await openTestStack()
+    storage = stack.storage
+    users = stack.users
     const config = makeConfig({ recordingsDir: dir })
     const environments = makeEnvironments()
     orchestrator = new Orchestrator(new FakeDriver(), storage, environments, config)
@@ -39,7 +47,7 @@ describe('public leaderboard API', () => {
       environments,
       recordings,
       retention: new Retention(storage, recordings, config),
-      allowlist: ['dev-user'],
+      auth: stack.auth,
       ...makeSubmissionDeps(storage, config),
     })
   })
@@ -102,10 +110,11 @@ describe('public leaderboard API', () => {
     await storage.setReleaseStatus(released.id, 'released')
     const hidden = await declare() // closed and unreleased — never public
 
-    // The default mock user (`dev-user`) is an operator, so an unauthenticated inject is one here.
+    // An admin session may see unreleased seasons; the flag is gated by `requireAdmin`.
     const res = await app.inject({
       method: 'GET',
       url: `/api/seasons?envId=${ENV_ID}&includeUnreleased=true`,
+      headers: await users.headersFor('op', { status: 'admin' }),
     })
     expect(res.statusCode).toBe(200)
     const body = res.json() as Array<Record<string, unknown> & { id: string }>
@@ -123,20 +132,29 @@ describe('public leaderboard API', () => {
 
   it('refuses ?includeUnreleased=true for a non-operator with 403 not_operator', async () => {
     const hidden = await declare()
+    const carol = await users.headersFor('carol')
 
     const res = await app.inject({
       method: 'GET',
       url: `/api/seasons?envId=${ENV_ID}&includeUnreleased=true`,
-      headers: { 'x-sandbox-user': 'carol' },
+      headers: carol,
     })
     expect(res.statusCode).toBe(403)
     expect(res.json()).toMatchObject({ code: 'not_operator' })
+
+    // Anonymous is refused with 401 rather than the non-operator 403.
+    const anon = await app.inject({
+      method: 'GET',
+      url: `/api/seasons?envId=${ENV_ID}&includeUnreleased=true`,
+    })
+    expect(anon.statusCode).toBe(401)
+    expect(anon.json()).toMatchObject({ code: 'auth_required' })
 
     // The flagless public list stays open to everyone and still hides the fully-private season.
     const open = await app.inject({
       method: 'GET',
       url: `/api/seasons?envId=${ENV_ID}`,
-      headers: { 'x-sandbox-user': 'carol' },
+      headers: carol,
     })
     expect(open.statusCode).toBe(200)
     expect((open.json() as Array<{ id: string }>).map((s) => s.id)).not.toContain(hidden.id)

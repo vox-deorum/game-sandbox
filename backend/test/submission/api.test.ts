@@ -17,15 +17,15 @@ import { RecordingsStore } from '../../src/recordings.js'
 import { Retention } from '../../src/retention.js'
 import { Orchestrator } from '../../src/session/orchestrator.js'
 import { type Storage, SubmissionConflictError } from '../../src/storage/index.js'
-import { openSqliteStorage } from '../../src/storage/sqlite.js'
 import { SubmissionSnapshotStore } from '../../src/submission/snapshot-store.js'
 import type {
   ReachabilityResult,
   SourceInput,
   SubmissionSource,
 } from '../../src/submission/source/index.js'
+import type { TestUsers } from '../support/auth.js'
 import { FakeDriver } from '../support/fake-driver.js'
-import { makeConfig, makeEnvironments } from '../support/harness.js'
+import { makeConfig, makeEnvironments, openTestStack } from '../support/harness.js'
 import { StubWorkflowRunner } from '../support/stub-runner.js'
 
 const ENV_ID = 'flappy_bird'
@@ -48,6 +48,7 @@ class StubSource implements SubmissionSource {
 describe('submission API', () => {
   let app: FastifyInstance
   let storage: Storage
+  let users: TestUsers
   let orchestrator: Orchestrator
   let dir: string
   let enqueued: string[]
@@ -55,7 +56,9 @@ describe('submission API', () => {
 
   async function build(overrides: { allowLocalSubmissions?: boolean } = {}): Promise<void> {
     dir = mkdtempSync(join(tmpdir(), 'gs-sub-'))
-    storage = await openSqliteStorage(':memory:')
+    const stack = await openTestStack()
+    storage = stack.storage
+    users = stack.users
     const config = makeConfig({ recordingsDir: dir })
     orchestrator = new Orchestrator(new FakeDriver(), storage, makeEnvironments(), config)
     const recordings = new RecordingsStore(dir)
@@ -66,8 +69,7 @@ describe('submission API', () => {
       environments: makeEnvironments(),
       recordings,
       retention: new Retention(storage, recordings, config),
-      allowlist: ['dev-user'],
-      operatorAllowlist: ['dev-user'],
+      auth: stack.auth,
       knownDepsVersions: new Set([1]),
       workflowRunner: new StubWorkflowRunner(storage),
       storage,
@@ -95,10 +97,12 @@ describe('submission API', () => {
 
   it('returns the reachability verdict without writing a row', async () => {
     await build()
+    const alice = await users.headersFor('alice')
     source.verdict = { reachable: false, failure: 'ref_not_found', detail: 'no such ref' }
     const res = await app.inject({
       method: 'POST',
       url: '/api/submissions/reachability',
+      headers: alice,
       payload: { repo_url: 'https://example.test/repo', ref: 'nope' },
     })
     expect(res.statusCode).toBe(200)
@@ -110,7 +114,7 @@ describe('submission API', () => {
     const mine = await app.inject({
       method: 'GET',
       url: '/api/submissions',
-      headers: { 'x-sandbox-user': 'alice' },
+      headers: alice,
     })
     expect(mine.json()).toEqual([])
   })
@@ -120,19 +124,46 @@ describe('submission API', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/submissions/reachability',
+      headers: await users.headersFor('alice'),
       payload: { local_path: '/srv/agent' },
     })
     expect(res.statusCode).toBe(403)
     expect(res.json()).toMatchObject({ code: 'local_disabled' })
   })
 
+  it('requires an active user for the reachability check and the submit route', async () => {
+    await build()
+    await storage.ensureOpenSeason(ENV_ID, 1)
+    // Anonymous is refused before any source work.
+    const anon = await app.inject({
+      method: 'POST',
+      url: '/api/submissions/reachability',
+      payload: { repo_url: 'https://example.test/repo' },
+    })
+    expect(anon.statusCode).toBe(401)
+    expect(anon.json()).toMatchObject({ code: 'auth_required' })
+
+    // A pending user is signed in but not yet active, so submitting is refused with not_active.
+    const pending = await users.headersFor('newcomer', { status: 'pending' })
+    const submit = await app.inject({
+      method: 'POST',
+      url: '/api/submissions',
+      headers: pending,
+      payload: { env_id: ENV_ID, repo_url: 'https://example.test/repo' },
+    })
+    expect(submit.statusCode).toBe(403)
+    expect(submit.json()).toMatchObject({ code: 'not_active' })
+    expect(enqueued).toEqual([])
+  })
+
   it('creates a pending submission under the resolved identity without running the pipeline', async () => {
     await build()
     await storage.ensureOpenSeason(ENV_ID, 1)
+    const alice = await users.headersFor('alice')
     const res = await app.inject({
       method: 'POST',
       url: '/api/submissions',
-      headers: { 'x-sandbox-user': 'alice' },
+      headers: alice,
       payload: { env_id: ENV_ID, repo_url: 'https://example.test/repo' },
     })
     expect(res.statusCode).toBe(202)
@@ -141,7 +172,7 @@ describe('submission API', () => {
     // The job was enqueued, not run inline: no commit pinned, no checks recorded yet.
     expect(enqueued).toEqual([body.id])
     const row = await storage.getSubmission(body.id)
-    expect(row?.user_id).toBe('alice')
+    expect(row?.user_id).toBe(users.idOf('alice'))
     expect(row?.commit_sha).toBeNull()
     expect(await storage.listSubmissionChecks(body.id)).toEqual([])
   })
@@ -152,7 +183,7 @@ describe('submission API', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/submissions',
-      headers: { 'x-sandbox-user': 'alice' },
+      headers: await users.headersFor('alice'),
       // A stray user_id in the body is ignored (additionalProperties:false would also reject it).
       payload: { env_id: ENV_ID, repo_url: 'https://example.test/repo' },
     })
@@ -160,19 +191,20 @@ describe('submission API', () => {
     const bobList = await app.inject({
       method: 'GET',
       url: '/api/submissions',
-      headers: { 'x-sandbox-user': 'bob' },
+      headers: await users.headersFor('bob'),
     })
     expect(bobList.json()).toEqual([])
-    expect((await storage.getSubmission(body.id))?.user_id).toBe('alice')
+    expect((await storage.getSubmission(body.id))?.user_id).toBe(users.idOf('alice'))
   })
 
   it('refuses a submit when the environment has no open season, writing no row', async () => {
     await build()
+    const alice = await users.headersFor('alice')
     // No ensureOpenSeason: the environment has no open season.
     const res = await app.inject({
       method: 'POST',
       url: '/api/submissions',
-      headers: { 'x-sandbox-user': 'alice' },
+      headers: alice,
       payload: { env_id: ENV_ID, repo_url: 'https://example.test/repo' },
     })
     expect(res.statusCode).toBe(409)
@@ -181,7 +213,7 @@ describe('submission API', () => {
     const mine = await app.inject({
       method: 'GET',
       url: '/api/submissions',
-      headers: { 'x-sandbox-user': 'alice' },
+      headers: alice,
     })
     expect(mine.json()).toEqual([])
   })
@@ -192,7 +224,7 @@ describe('submission API', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/submissions',
-      headers: { 'x-sandbox-user': 'alice' },
+      headers: await users.headersFor('alice'),
       payload: { env_id: ENV_ID, local_path: '/srv/agent' },
     })
     expect(res.statusCode).toBe(403)
@@ -207,7 +239,7 @@ describe('submission API', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/submissions',
-      headers: { 'x-sandbox-user': 'alice' },
+      headers: await users.headersFor('alice'),
       payload: { env_id: ENV_ID, repo_url: 'https://example.test/repo' },
     })
     expect(res.statusCode).toBe(409)
@@ -216,11 +248,12 @@ describe('submission API', () => {
 
   it('returns a submission joined with its ordered validation log', async () => {
     await build()
+    const alice = await users.headersFor('alice')
     const season = await storage.ensureOpenSeason(ENV_ID, 1)
     const submission = await storage.createSubmission({
       season_id: season.id,
       env_id: ENV_ID,
-      user_id: 'alice',
+      user_id: users.idOf('alice'),
       source_kind: 'git',
       repo_url: 'https://example.test/repo',
       commit_sha: null,
@@ -235,7 +268,7 @@ describe('submission API', () => {
     const res = await app.inject({
       method: 'GET',
       url: `/api/submissions/${submission.id}`,
-      headers: { 'x-sandbox-user': 'alice' },
+      headers: alice,
     })
     expect(res.statusCode).toBe(200)
     const body = res.json() as { id: string; checks: Array<{ stage: string; status: string }> }
@@ -246,19 +279,26 @@ describe('submission API', () => {
     ])
   })
 
-  it('404s an unknown submission id', async () => {
+  it('401s an unknown submission id for an anonymous caller and 404s for a signed-in one', async () => {
     await build()
-    const res = await app.inject({ method: 'GET', url: '/api/submissions/nope' })
+    const anon = await app.inject({ method: 'GET', url: '/api/submissions/nope' })
+    expect(anon.statusCode).toBe(401)
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/submissions/nope',
+      headers: await users.headersFor('alice'),
+    })
     expect(res.statusCode).toBe(404)
   })
 
-  it('restricts submission detail to the owner or an operator', async () => {
+  it('restricts submission detail to the owner or an admin', async () => {
     await build()
+    const alice = await users.headersFor('alice')
     const season = await storage.ensureOpenSeason(ENV_ID, 1)
     const submission = await storage.createSubmission({
       season_id: season.id,
       env_id: ENV_ID,
-      user_id: 'alice',
+      user_id: users.idOf('alice'),
       source_kind: 'git',
       repo_url: 'https://example.test/private',
       commit_sha: 'secret-sha',
@@ -270,27 +310,36 @@ describe('submission API', () => {
     const stranger = await app.inject({
       method: 'GET',
       url: `/api/submissions/${submission.id}`,
-      headers: { 'x-sandbox-user': 'bob' },
+      headers: await users.headersFor('bob'),
     })
     expect(stranger.statusCode).toBe(403)
     expect(stranger.json()).toMatchObject({ code: 'forbidden' })
 
-    const operator = await app.inject({
+    const owner = await app.inject({
       method: 'GET',
       url: `/api/submissions/${submission.id}`,
+      headers: alice,
     })
-    expect(operator.statusCode).toBe(200)
-    expect(operator.json()).toMatchObject({ user_id: 'alice', commit_sha: 'secret-sha' })
+    expect(owner.statusCode).toBe(200)
+
+    const admin = await app.inject({
+      method: 'GET',
+      url: `/api/submissions/${submission.id}`,
+      headers: await users.headersFor('op', { status: 'admin' }),
+    })
+    expect(admin.statusCode).toBe(200)
+    expect(admin.json()).toMatchObject({ user_id: users.idOf('alice'), commit_sha: 'secret-sha' })
   })
 
   it('supersedes on resubmission so the watch list returns only the new row', async () => {
     await build()
     await storage.ensureOpenSeason(ENV_ID, 1)
+    const alice = await users.headersFor('alice')
     const first = (
       await app.inject({
         method: 'POST',
         url: '/api/submissions',
-        headers: { 'x-sandbox-user': 'alice' },
+        headers: alice,
         payload: { env_id: ENV_ID, repo_url: 'https://example.test/one' },
       })
     ).json() as { id: string }
@@ -298,7 +347,7 @@ describe('submission API', () => {
       await app.inject({
         method: 'POST',
         url: '/api/submissions',
-        headers: { 'x-sandbox-user': 'alice' },
+        headers: alice,
         payload: { env_id: ENV_ID, repo_url: 'https://example.test/two' },
       })
     ).json() as { id: string }
@@ -307,7 +356,7 @@ describe('submission API', () => {
     const active = await app.inject({
       method: 'GET',
       url: `/api/environments/${ENV_ID}/watch-agents`,
-      headers: { 'x-sandbox-user': 'bob' },
+      headers: await users.headersFor('bob'),
     })
     const rows = active.json() as Array<{ submission_id: string }>
     expect(rows.map((r) => r.submission_id)).toEqual([second.id])
@@ -359,7 +408,7 @@ describe('submission API', () => {
     const res = await app.inject({
       method: 'GET',
       url: `/api/environments/${ENV_ID}/watch-agents`,
-      headers: { 'x-sandbox-user': 'bob' },
+      headers: await users.headersFor('bob'),
     })
 
     expect(res.statusCode).toBe(200)
@@ -368,13 +417,43 @@ describe('submission API', () => {
     ).toEqual([playable.id])
   })
 
+  it('serves an unpersonalized watch list to an anonymous caller (no rating status)', async () => {
+    await build()
+    await users.headersFor('alice')
+    const season = await storage.ensureOpenSeason(ENV_ID, 1)
+    const sub = await storage.createSubmission({
+      season_id: season.id,
+      env_id: ENV_ID,
+      user_id: users.idOf('alice'),
+      source_kind: 'git',
+      repo_url: 'https://example.test/alice',
+      commit_sha: 'alice-sha',
+      local_path: null,
+      ref: null,
+      created_at: new Date().toISOString(),
+    })
+    await storage.updateSubmissionStatus(sub.id, 'ready')
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/environments/${ENV_ID}/watch-agents`,
+    })
+    expect(res.statusCode).toBe(200)
+    // Anonymous: the entry carries the sequence but no rating status and no operator extras.
+    expect(res.json()).toEqual([{ submission_id: sub.id, anonymous_number: 1 }])
+  })
+
   it('redacts watch-agent identity for regular viewers and reports rating state', async () => {
     await build()
+    const carol = await users.headersFor('carol')
+    await users.headersFor('alice')
+    await users.headersFor('bob')
+    const aliceId = users.idOf('alice')
     const season = await storage.ensureOpenSeason(ENV_ID, 1)
     const alice = await storage.createSubmission({
       season_id: season.id,
       env_id: ENV_ID,
-      user_id: 'alice',
+      user_id: aliceId,
       source_kind: 'git',
       repo_url: 'https://example.test/alice',
       commit_sha: 'alice-sha',
@@ -386,7 +465,7 @@ describe('submission API', () => {
     const bob = await storage.createSubmission({
       season_id: season.id,
       env_id: ENV_ID,
-      user_id: 'bob',
+      user_id: users.idOf('bob'),
       source_kind: 'local',
       repo_url: null,
       commit_sha: null,
@@ -398,15 +477,15 @@ describe('submission API', () => {
     await storage.upsertRating({
       season_id: season.id,
       env_id: ENV_ID,
-      rater_user_id: 'carol',
-      agent: { kind: 'submission', submission_id: alice.id, user_id: 'alice' },
+      rater_user_id: users.idOf('carol'),
+      agent: { kind: 'submission', submission_id: alice.id, user_id: aliceId },
       score: 4,
     })
 
     const res = await app.inject({
       method: 'GET',
       url: `/api/environments/${ENV_ID}/watch-agents`,
-      headers: { 'x-sandbox-user': 'carol' },
+      headers: carol,
     })
     expect(res.statusCode).toBe(200)
     const rows = res.json() as Array<Record<string, unknown>>
@@ -422,17 +501,20 @@ describe('submission API', () => {
         rating_status: 'rated',
       },
     ])
-    expect(JSON.stringify(rows)).not.toContain('alice')
+    // No owner id or source path leaks to a non-admin viewer.
+    expect(JSON.stringify(rows)).not.toContain(aliceId)
     expect(JSON.stringify(rows)).not.toContain('/agents/bob')
   })
 
-  it('marks the viewer own agent and gives operators owner and source details', async () => {
+  it('marks the viewer own agent and gives admins owner and source details', async () => {
     await build()
+    const alice = await users.headersFor('alice')
+    const aliceId = users.idOf('alice')
     const season = await storage.ensureOpenSeason(ENV_ID, 1)
     const submission = await storage.createSubmission({
       season_id: season.id,
       env_id: ENV_ID,
-      user_id: 'alice',
+      user_id: aliceId,
       source_kind: 'git',
       repo_url: 'https://example.test/alice',
       commit_sha: 'alice-sha',
@@ -445,7 +527,7 @@ describe('submission API', () => {
     const own = await app.inject({
       method: 'GET',
       url: `/api/environments/${ENV_ID}/watch-agents`,
-      headers: { 'x-sandbox-user': 'alice' },
+      headers: alice,
     })
     expect(own.json()).toEqual([
       {
@@ -458,13 +540,14 @@ describe('submission API', () => {
     const operator = await app.inject({
       method: 'GET',
       url: `/api/environments/${ENV_ID}/watch-agents`,
+      headers: await users.headersFor('op', { status: 'admin' }),
     })
     expect(operator.json()).toEqual([
       {
         submission_id: submission.id,
         anonymous_number: 1,
         rating_status: 'unrated',
-        owner_id: 'alice',
+        owner_id: aliceId,
         source_kind: 'git',
         repo_url: 'https://example.test/alice',
         commit_sha: 'alice-sha',

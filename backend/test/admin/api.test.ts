@@ -17,15 +17,21 @@ import { Retention } from '../../src/retention.js'
 import { Orchestrator } from '../../src/session/orchestrator.js'
 import type { Storage, Submission } from '../../src/storage/index.js'
 import type { SeasonConfig } from '../../src/storage/season-config.js'
-import { openSqliteStorage } from '../../src/storage/sqlite.js'
 import { SubmissionSnapshotStore } from '../../src/submission/snapshot-store.js'
+import type { TestUsers } from '../support/auth.js'
 import { FakeDriver } from '../support/fake-driver.js'
-import { makeConfig, makeEnvironments, makeSubmissionDeps } from '../support/harness.js'
+import {
+  makeConfig,
+  makeEnvironments,
+  makeSubmissionDeps,
+  openTestStack,
+} from '../support/harness.js'
 import { StubWorkflowRunner } from '../support/stub-runner.js'
 
 const ENV_ID = 'flappy_bird'
-const OPERATOR = { 'x-sandbox-user': 'dev-user' }
-const STRANGER = { 'x-sandbox-user': 'carol' }
+/** Cookie headers for an admin session and a non-admin (normal) session, minted per test in `build`. */
+let OPERATOR: Record<string, string>
+let STRANGER: Record<string, string>
 
 // The dependency versions the test app knows about, and the first version just past them. Includes
 // DEPS_VERSION so a default declare (which pins the current version) stays accepted after a release
@@ -52,17 +58,22 @@ async function waitFor(predicate: () => boolean): Promise<void> {
 describe('admin API', () => {
   let app: FastifyInstance
   let storage: Storage
+  let users: TestUsers
   let orchestrator: Orchestrator
   let runner: StubWorkflowRunner
   let snapshots: SubmissionSnapshotStore
   let dir: string
 
   async function build(
-    operatorAllowlist: string[] = ['dev-user'],
     knownDepsVersions: ReadonlySet<number> = DEFAULT_KNOWN_DEPS_VERSIONS,
   ): Promise<void> {
     dir = mkdtempSync(join(tmpdir(), 'gs-admin-'))
-    storage = await openSqliteStorage(':memory:')
+    const stack = await openTestStack()
+    storage = stack.storage
+    users = stack.users
+    // An admin session gates the whole prefix; a normal (non-admin) session is the rejected stranger.
+    OPERATOR = await users.headersFor('operator', { status: 'admin' })
+    STRANGER = await users.headersFor('carol', { status: 'normal' })
     const config = makeConfig({ recordingsDir: dir })
     const environments = makeEnvironments()
     orchestrator = new Orchestrator(new FakeDriver(), storage, environments, config)
@@ -75,9 +86,8 @@ describe('admin API', () => {
       environments,
       recordings,
       retention: new Retention(storage, recordings, config),
-      allowlist: ['dev-user'],
+      auth: stack.auth,
       ...makeSubmissionDeps(storage, config, { snapshots }),
-      operatorAllowlist,
       knownDepsVersions,
       workflowRunner: runner,
     })
@@ -166,7 +176,23 @@ describe('admin API', () => {
       }
     })
 
-    it('proceeds for an operator (the dev mock user is one out of the box)', async () => {
+    it('rejects an anonymous request with 401 auth_required', async () => {
+      const id = await declare()
+      const res = await app.inject({ method: 'GET', url: `/api/admin/seasons/${id}` })
+      expect(res.statusCode).toBe(401)
+      expect(res.json()).toMatchObject({ code: 'auth_required' })
+    })
+
+    it('rejects the log-stream WebSocket upgrade for a non-operator and an anonymous client', async () => {
+      const id = await declare()
+      // The prefix `requireAdmin` hook runs on the upgrade before any handler, so the gate holds even
+      // for a bogus run id; a rejected upgrade surfaces as a failed connection rather than a socket.
+      const url = `/api/admin/seasons/${id}/runs/whatever/logs/ws`
+      await expect(app.injectWS(url, { headers: STRANGER })).rejects.toThrow()
+      await expect(app.injectWS(url)).rejects.toThrow()
+    })
+
+    it('proceeds for an admin session', async () => {
       const id = await declare()
       const res = await app.inject({
         method: 'GET',
@@ -676,7 +702,7 @@ describe('admin API', () => {
       // The runner only recorded the enqueue — nothing ran inline.
       expect(runner.enqueued).toEqual([runId])
       const run = defined(await storage.getRun(runId))
-      expect(run.requested_by).toBe('dev-user')
+      expect(run.requested_by).toBe(users.idOf('operator'))
       expect(JSON.parse(run.submission_snapshot)).toEqual([agentRef(ready)])
       // The concrete schedule was persisted before enqueue: two submitted games + two Naive games.
       const games = await storage.listRunGames(runId)
@@ -944,7 +970,9 @@ describe('admin API', () => {
         })
       ).json() as { id: string }
 
-      const ws = await app.injectWS(`/api/admin/seasons/${id}/runs/${run.id}/logs/ws?user=dev-user`)
+      const ws = await app.injectWS(`/api/admin/seasons/${id}/runs/${run.id}/logs/ws`, {
+        headers: OPERATOR,
+      })
       const messages: string[] = []
       ws.on('message', (data: Buffer) => messages.push(data.toString()))
 
@@ -982,7 +1010,9 @@ describe('admin API', () => {
       )
       await storage.setRunStatus(run.id, 'completed')
 
-      const ws = await app.injectWS(`/api/admin/seasons/${id}/runs/${run.id}/logs/ws?user=dev-user`)
+      const ws = await app.injectWS(`/api/admin/seasons/${id}/runs/${run.id}/logs/ws`, {
+        headers: OPERATOR,
+      })
       const messages: string[] = []
       ws.on('message', (data: Buffer) => messages.push(data.toString()))
       await new Promise((resolve) => ws.on('close', resolve))

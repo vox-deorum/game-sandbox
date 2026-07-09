@@ -8,15 +8,15 @@
  */
 import type { FastifyInstance } from 'fastify'
 
-import { isOperator, resolveUserId } from '../identity.js'
+import type { RequestIdentity } from '../identity.js'
 import { publicSeasonView, runGameView, seasonView } from '../season-views.js'
 import type { Storage } from '../storage/index.js'
 
 /** Everything the public leaderboard reads need. */
 export interface LeaderboardDeps {
   storage: Storage
-  /** The operator allowlist gating the `includeUnreleased` season listing; `isOperator` consults it. */
-  operatorAllowlist: readonly string[]
+  /** The identity seam gating the `includeUnreleased` season listing via `requireAdmin`. */
+  identity: RequestIdentity
 }
 
 /**
@@ -51,9 +51,9 @@ export function registerLeaderboardRoutes(app: FastifyInstance, deps: Leaderboar
     async (request, reply) => {
       const includeUnreleased = request.query.includeUnreleased === 'true'
       if (includeUnreleased) {
-        const userId = resolveUserId(request.headers, request.query as Record<string, string>)
-        if (!isOperator(userId, deps.operatorAllowlist)) {
-          return reply.code(403).send({ error: 'operator access required', code: 'not_operator' })
+        const user = await deps.identity.requireAdmin(request, reply)
+        if (user === undefined) {
+          return reply
         }
       }
       const seasons = await deps.storage.listSeasons({

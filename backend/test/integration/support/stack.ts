@@ -15,11 +15,12 @@ import { RecordingsStore } from '../../../src/recordings.js'
 import { Retention } from '../../../src/retention.js'
 import { Orchestrator } from '../../../src/session/orchestrator.js'
 import type { Storage } from '../../../src/storage/index.js'
-import { openSqliteStorage } from '../../../src/storage/sqlite.js'
+import { openSqlite } from '../../../src/storage/sqlite.js'
 import { SubmissionSnapshotStore } from '../../../src/submission/snapshot-store.js'
 import { createSubmissionSource } from '../../../src/submission/source/index.js'
 import { ValidationWorker } from '../../../src/submission/worker.js'
 import { createPlaceholderRunner } from '../../../src/workflow/runner.js'
+import { makeTestAuth, type TestUsers } from '../../support/auth.js'
 import { TEST_AUTH_OPTIONS } from '../../support/auth-options.js'
 
 export interface Stack {
@@ -29,6 +30,8 @@ export interface Stack {
   storage: Storage
   recordings: RecordingsStore
   recordingsDir: string
+  /** Mints real signed-in users; `startSession`/`stopSession` send their session cookie. */
+  users: TestUsers
   close(): Promise<void>
 }
 
@@ -46,8 +49,6 @@ export async function startStack(overrides: Partial<Config> = {}): Promise<Stack
     docsDir: './docs',
     sessionIdleTimeoutMs: 60_000,
     sessionMaxDurationMs: 600_000,
-    sessionAllowlist: ['dev-user', 'alice', 'bob', 'carol'],
-    operatorAllowlist: ['dev-user'],
     recordingRetentionDays: 30,
     recordingUserQuota: 100,
     recordingSweepIntervalMs: 3_600_000,
@@ -70,7 +71,8 @@ export async function startStack(overrides: Partial<Config> = {}): Promise<Stack
     ...overrides,
   }
 
-  const storage = await openSqliteStorage(':memory:')
+  const { storage, sqlite } = await openSqlite(':memory:')
+  const { auth, users } = await makeTestAuth(sqlite)
   const environments = EnvironmentRegistry.load()
   // A plain public session attaches to its environment's play-open season; seed one per environment
   // (the seed season is both submission- and play-open) so the start routes behave as in production.
@@ -111,8 +113,7 @@ export async function startStack(overrides: Partial<Config> = {}): Promise<Stack
     environments,
     recordings,
     retention,
-    allowlist: config.sessionAllowlist,
-    operatorAllowlist: config.operatorAllowlist,
+    auth,
     knownDepsVersions: KNOWN_DEPS_VERSIONS,
     workflowRunner: createPlaceholderRunner(storage),
     storage,
@@ -132,6 +133,7 @@ export async function startStack(overrides: Partial<Config> = {}): Promise<Stack
     storage,
     recordings,
     recordingsDir,
+    users,
     async close(): Promise<void> {
       await orchestrator.shutdown()
       await app.close()
@@ -155,9 +157,10 @@ export async function startSession(
   },
   user = 'dev-user',
 ): Promise<{ id: string; wsPath: string }> {
+  const auth = await stack.users.headersFor(user)
   const response = await fetch(`${stack.httpBase}/api/sessions`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-sandbox-user': user },
+    headers: { 'content-type': 'application/json', ...auth },
     body: JSON.stringify(body),
   })
   if (response.status !== 201) {
@@ -182,9 +185,10 @@ export async function getSessionRow(stack: Stack, id: string): Promise<SessionRo
 
 /** Owner DELETE; resolves once the request is accepted. */
 export async function stopSession(stack: Stack, id: string, user = 'dev-user'): Promise<void> {
+  const auth = await stack.users.headersFor(user)
   await fetch(`${stack.httpBase}/api/sessions/${id}`, {
     method: 'DELETE',
-    headers: { 'x-sandbox-user': user },
+    headers: auth,
   })
 }
 

@@ -17,7 +17,7 @@
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import { z } from 'zod'
 
-import { isAllowlisted, isOperator, resolveUserId } from '../identity.js'
+import type { AuthUser, RequestIdentity } from '../identity.js'
 import type { RecordingsStore } from '../recordings.js'
 import type { AgentRef, Season, Session, Storage } from '../storage/index.js'
 
@@ -26,10 +26,8 @@ export interface RatingDeps {
   storage: Storage
   /** The recordings volume, read for the finished session's `players` attribution. */
   recordings: RecordingsStore
-  /** The same public-session allowlist that controls who may submit human-feedback ratings. */
-  allowlist: readonly string[]
-  /** Operators retain submitted-agent identities while a public play window is open. */
-  operatorAllowlist: readonly string[]
+  /** The identity seam: `requireUser` for reads, `requireActive` for writes; admins see identities. */
+  identity: RequestIdentity
 }
 
 /** The author's per-submission rating prompt is display-only guidance; cap it so it stays a prompt. */
@@ -215,10 +213,12 @@ async function resolveRateableAgents(deps: RatingDeps, session: Session): Promis
 async function buildRatingView(
   deps: RatingDeps,
   context: RatingContext,
-  callerId: string,
+  caller: AuthUser,
 ): Promise<RatingView> {
   const { session, season, agents } = context
-  const blind = season.play_status === 'open' && !isOperator(callerId, deps.operatorAllowlist)
+  // An admin retains submitted-agent identities while a public play window is open; everyone else
+  // sees the blind anonymized numbering.
+  const blind = season.play_status === 'open' && caller.status !== 'admin'
   const anonymousNumbers = blind
     ? new Map(
         (await deps.storage.listActiveSubmissionsBySeason(season.id, 'ready')).map(
@@ -228,10 +228,12 @@ async function buildRatingView(
     : new Map<string, number>()
   const agentViews = await Promise.all(
     agents.map(async (agent): Promise<RateableAgentView> => {
-      const isOwn = agent.ref.kind === 'submission' && agent.ref.user_id === callerId
+      const isOwn = agent.ref.kind === 'submission' && agent.ref.user_id === caller.id
       const [authorPrompt, rating] = await Promise.all([
         resolveAuthorPrompt(deps, season.id, agent.ref),
-        isOwn ? Promise.resolve(undefined) : deps.storage.getRating(season.id, callerId, agent.ref),
+        isOwn
+          ? Promise.resolve(undefined)
+          : deps.storage.getRating(season.id, caller.id, agent.ref),
       ])
       return {
         agent: agent.wire,
@@ -296,12 +298,15 @@ export function registerRatingRoutes(app: FastifyInstance, deps: RatingDeps): vo
   app.get<{ Params: { sessionId: string } }>(
     '/api/sessions/:sessionId/ratings',
     async (request, reply) => {
+      const user = await deps.identity.requireUser(request, reply)
+      if (user === undefined) {
+        return
+      }
       const resolved = await resolveContext(deps, request.params.sessionId)
       if (!resolved.ok) {
         return sendFailure(reply, resolved.failure)
       }
-      const callerId = resolveUserId(request.headers)
-      return reply.code(200).send(await buildRatingView(deps, resolved.context, callerId))
+      return reply.code(200).send(await buildRatingView(deps, resolved.context, user))
     },
   )
 
@@ -310,16 +315,15 @@ export function registerRatingRoutes(app: FastifyInstance, deps: RatingDeps): vo
   app.post<{ Params: { sessionId: string }; Body: unknown }>(
     '/api/sessions/:sessionId/ratings',
     async (request, reply) => {
+      const user = await deps.identity.requireActive(request, reply)
+      if (user === undefined) {
+        return
+      }
       const parsed = RateBodySchema.safeParse(request.body)
       if (!parsed.success) {
         return reply.code(400).send({ error: 'invalid ratings payload', code: 'invalid_request' })
       }
-      const callerId = resolveUserId(request.headers)
-      if (!isAllowlisted(callerId, deps.allowlist)) {
-        return reply
-          .code(403)
-          .send({ error: 'user is not on the session allowlist', code: 'not_allowlisted' })
-      }
+      const callerId = user.id
       const resolved = await resolveContext(deps, request.params.sessionId)
       if (!resolved.ok) {
         return sendFailure(reply, resolved.failure)
@@ -344,7 +348,7 @@ export function registerRatingRoutes(app: FastifyInstance, deps: RatingDeps): vo
           score: validated.scores.get(wireKey(toWire(accepted))) ?? 0,
         })
       }
-      return reply.code(200).send(await buildRatingView(deps, context, callerId))
+      return reply.code(200).send(await buildRatingView(deps, context, user))
     },
   )
 
@@ -354,6 +358,10 @@ export function registerRatingRoutes(app: FastifyInstance, deps: RatingDeps): vo
   app.put<{ Params: { seasonId: string }; Body: unknown }>(
     '/api/seasons/:seasonId/agent-rating-prompt',
     async (request, reply) => {
+      const user = await deps.identity.requireActive(request, reply)
+      if (user === undefined) {
+        return
+      }
       const season = await deps.storage.getSeason(request.params.seasonId)
       if (season === undefined) {
         return reply.code(404).send({ error: 'no such season' })
@@ -377,7 +385,7 @@ export function registerRatingRoutes(app: FastifyInstance, deps: RatingDeps): vo
           code: 'submissions_closed',
         })
       }
-      const callerId = resolveUserId(request.headers)
+      const callerId = user.id
       const submission = await deps.storage.findActiveSubmission(season.id, callerId)
       if (submission === undefined) {
         return reply.code(409).send({
@@ -395,7 +403,11 @@ export function registerRatingRoutes(app: FastifyInstance, deps: RatingDeps): vo
   app.get<{ Params: { seasonId: string } }>(
     '/api/seasons/:seasonId/agent-rating-prompt',
     async (request, reply) => {
-      const callerId = resolveUserId(request.headers)
+      const user = await deps.identity.requireUser(request, reply)
+      if (user === undefined) {
+        return
+      }
+      const callerId = user.id
       const row = await deps.storage.getAgentRatingPrompt(request.params.seasonId, callerId)
       return reply.code(200).send({
         season_id: request.params.seasonId,

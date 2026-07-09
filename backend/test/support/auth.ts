@@ -1,8 +1,8 @@
 /**
  * Real signed-in users for any suite, on the suite's own `:memory:` database. The minimal-churn
- * replacement for the old `{ 'x-sandbox-user': 'alice' }` dev header: {@link TestUsers.headersFor}
- * returns headers carrying a genuine Better Auth session cookie, so a suite exercises the shipped
- * trust boundary rather than a test-only shortcut.
+ * replacement for the old dev-identity header: {@link TestUsers.headersFor} returns headers carrying
+ * a genuine Better Auth session cookie, so a suite exercises the shipped trust boundary rather than a
+ * test-only shortcut.
  *
  * `makeTestAuth` builds an auth instance on the suite's raw connection and runs its schema migration;
  * it does not seed the bootstrap admin (the seed suite calls `ensureAdminUser` explicitly).

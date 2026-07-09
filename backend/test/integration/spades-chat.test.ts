@@ -175,7 +175,10 @@ describe('Spades chat (Docker)', () => {
     // A spectator connects before the game finishes, so its streamed lines carry the broadcast
     // (spectators see broadcasts; a targeted message is withheld from a spectator's stream but is
     // still in the recording, per the relay's visibility rule).
-    const spectator = await WsClient.connect(`${stack.wsBase}${wsPath}`, 'alice')
+    const spectator = await WsClient.connect(
+      `${stack.wsBase}${wsPath}`,
+      (await stack.users.headersFor('alice')).cookie,
+    )
     try {
       const row = await waitForEnded(stack, id, 180_000)
       expect(row.termination_reason).toBe('terminated')
@@ -225,7 +228,10 @@ describe('Spades chat (Docker)', () => {
       'dev-user',
     )
 
-    const owner = await WsClient.connect(`${stack.wsBase}${wsPath}`, 'dev-user')
+    const owner = await WsClient.connect(
+      `${stack.wsBase}${wsPath}`,
+      (await stack.users.headersFor('dev-user')).cookie,
+    )
     try {
       // Wait for the session to actually be running (at least one state streamed) before sending,
       // so the container's stdin reader is up.

@@ -20,7 +20,7 @@ import type {
   TreeHandle,
 } from '../../src/submission/source/index.js'
 import { FakeDriver, type FakeSessionProcess } from '../support/fake-driver.js'
-import { delay, flush, makeConfig, makeEnvironments } from '../support/harness.js'
+import { delay, FakeSocket, flush, makeConfig, makeEnvironments } from '../support/harness.js'
 
 /**
  * A submission-source double for the submitted-agent runs. Records the inputs it resolves and
@@ -694,6 +694,29 @@ describe('orchestrator', () => {
       process.emit(HEADER)
       await flush()
       expect((await storage.getSession(id))?.status).toBe('running')
+    })
+  })
+
+  describe('attach', () => {
+    it('gives only the owner controls; a stranger and an anonymous socket spectate', async () => {
+      const orch = makeOrchestrator()
+      // A human-mode session so an owner `input` command is forwarded to the container; the owner is
+      // 'alice' (the startRequest default).
+      const { id, process } = await start(orch, { slots: slots({ kind: 'human' }) })
+      const input = JSON.stringify({ kind: 'input', slot: 'player_0', action: 1 })
+
+      // The same input from the owner, a signed-in stranger, and an anonymous (null) socket.
+      orch.attach(id, new FakeSocket(), 'alice')?.handleMessage(input)
+      orch.attach(id, new FakeSocket(), 'bob')?.handleMessage(input)
+      orch.attach(id, new FakeSocket(), null)?.handleMessage(input)
+
+      // Only the owner drives the session; the stranger's and the anonymous socket's commands drop,
+      // so exactly one command crossed into the container.
+      expect(process.sent).toHaveLength(1)
+    })
+
+    it('returns undefined attaching to an unknown session', () => {
+      expect(makeOrchestrator().attach('no-such-id', new FakeSocket(), 'alice')).toBeUndefined()
     })
   })
 
