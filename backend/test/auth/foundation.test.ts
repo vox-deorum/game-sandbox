@@ -409,6 +409,24 @@ describe('auth configuration', () => {
     )
   })
 
+  it('trusts every loopback spelling of the public origin port in the opt-in local mode', () => {
+    // Better Auth matches the Origin header exactly, so trusting only the `localhost` spelling 403s a
+    // sign-in reached at the equivalent `127.0.0.1`/`[::1]` loopback (e.g. the `npm run demo` flow when
+    // `localhost` resolves to a stack the listener is not on) with "Invalid origin". The opt-in trusts
+    // all three spellings of the same port so login works however the local machine is reached.
+    const { auth } = loadConfig({
+      AUTH_ALLOW_INSECURE_DEFAULTS: 'true',
+      PUBLIC_ORIGIN: 'http://localhost:8080',
+    })
+    expect(auth.trustedOrigins).toContain('http://localhost:8080')
+    expect(auth.trustedOrigins).toContain('http://127.0.0.1:8080')
+    expect(auth.trustedOrigins).toContain('http://[::1]:8080')
+    // The public origin is one of those spellings, so it must not appear twice.
+    expect(auth.trustedOrigins.filter((o) => o === 'http://localhost:8080')).toHaveLength(1)
+    // Normal mode grants no such loopback trust.
+    expect(loadConfig(NORMAL).auth.trustedOrigins).not.toContain('http://127.0.0.1:8080')
+  })
+
   it('appends AUTH_TRUSTED_ORIGINS to the public origin', () => {
     const { auth } = loadConfig({
       ...NORMAL,

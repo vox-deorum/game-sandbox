@@ -369,6 +369,9 @@ function loadAuthOptions(
   let secret: string
   let adminEmail: string
   let adminPassword: string
+  // Trusted origins added only in the loopback opt-in, on top of the public origin and the
+  // configured extras (see the trustedOrigins assembly below).
+  let devTrustedOrigins: string[] = []
 
   if (insecure) {
     // Loopback-only: the opt-in defaults the origin to localhost and refuses any non-loopback origin,
@@ -386,6 +389,16 @@ function loadAuthOptions(
     secret = stringVar(env, 'AUTH_SECRET', DEV_AUTH_SECRET)
     adminEmail = stringVar(env, 'ADMIN_EMAIL', DEV_ADMIN_EMAIL).toLowerCase()
     adminPassword = stringVar(env, 'ADMIN_PASSWORD', DEV_ADMIN_PASSWORD)
+    // Better Auth matches the request's `Origin` header against trustedOrigins exactly, so trusting
+    // only the `localhost` spelling rejects a sign-in reached at the equivalent `127.0.0.1`/`[::1]`
+    // loopback (a common Windows fallback when `localhost` resolves to a stack the listener is not on)
+    // with "Invalid origin". All loopback hosts are the same local machine in this opt-in dev mode, so
+    // trust every spelling of the public origin's port, plus the Vite dev-server origin.
+    const suffix = originUrl.port === '' ? '' : `:${originUrl.port}`
+    const loopbackOrigins = [...LOOPBACK_HOSTNAMES].map(
+      (h) => `${originUrl.protocol}//${h}${suffix}`,
+    )
+    devTrustedOrigins = [...loopbackOrigins, 'http://localhost:5173']
   } else {
     if (rawOrigin === undefined) {
       throw new ConfigError(
@@ -411,11 +424,11 @@ function loadAuthOptions(
     throw new ConfigError('AUTH_SECRET must be at least 32 characters')
   }
 
-  // The Vite dev origin is trusted only in the opted-in local mode; otherwise the list is the public
-  // origin plus the configured extras. De-duped so a repeated origin is not sent twice.
-  const trustedOrigins = [
-    ...new Set([publicOrigin, ...(insecure ? ['http://localhost:5173'] : []), ...extraOrigins]),
-  ]
+  // The loopback and Vite dev origins are trusted only in the opted-in local mode (devTrustedOrigins
+  // is empty otherwise); the list is the public origin plus those plus the configured extras. De-duped
+  // so a repeated origin (e.g. the public origin, which is itself one of the loopback spellings) is not
+  // sent twice.
+  const trustedOrigins = [...new Set([publicOrigin, ...devTrustedOrigins, ...extraOrigins])]
 
   return {
     auth: {
