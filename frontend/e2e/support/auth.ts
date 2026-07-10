@@ -20,7 +20,7 @@ export const ADMIN_EMAIL = 'admin@example.com'
 export const ADMIN_PASSWORD = 'admin-dev-password'
 
 /**
- * The shared password every member account this suite creates signs in with. `npm run demo:user`
+ * The shared password every member account this suite creates signs in with. `npm run demo`
  * prints this alongside `ada-lovelace`'s email, so scripts/demo.py must keep the value in sync
  * (`_MEMBER_PASSWORD` there).
  */

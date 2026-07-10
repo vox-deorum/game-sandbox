@@ -106,8 +106,8 @@ test('operator leaderboard history includes unreleased seasons', async ({ page, 
  * Playground season and restores them at the end so the rest of the suite still sees the default world.
  *
  * Before the field settles, the competitors submit a first round of entries that their final agents
- * supersede, so several owners — including the glider owner the demo mocks under `npm run demo:user` —
- * carry multiple submissions within the season. That richer history is verified on the agent profiles
+ * supersede, so several owners — including the glider owner whose account `npm run demo` prints for
+ * sign-in — carry multiple submissions within the season. That richer history is verified on the agent profiles
  * at the end. The superseded entries are inactive, so they never run, place, or change the boards.
  */
 test('a full season: submissions, an automated run, several judges rate, then release', async ({

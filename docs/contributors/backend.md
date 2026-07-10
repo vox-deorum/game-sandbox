@@ -50,8 +50,7 @@ Run these commands from `backend/` unless noted:
 | `npm run build:image` | Rebuild the current session base image |
 | `npm test` | Run Docker-free unit tests |
 | `npm run test:integration` | Run real-container integration tests |
-| `npm run demo` | From the repo root, launch the app with populated e2e data (as the operator) |
-| `npm run demo:user` | The same demo signed in as an ordinary member (`ada-lovelace`), no admin console |
+| `npm run demo` | From the repo root, launch the app with populated e2e data; prints both the admin and an ordinary-member (`ada-lovelace`) sign-in |
 | `npm run demo -- --rerun-e2e` | The same demo, forcing a fresh e2e run first (discards any existing fixture database) |
 
 Starting a session requires Docker. Unit tests use an in-memory SQLite database and fake driver.

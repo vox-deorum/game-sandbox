@@ -16,21 +16,20 @@ fixture from a fresh frontend-e2e run regardless of any prior result — the exi
 discarded and the suite is run again, picking up source changes since it was last built.
 
 Sign-in, not a baked identity: the backend embeds Better Auth (Stage 12), so there is no more
-mock request header or session/operator allowlist to fabricate a user with. Both launch modes run
-the backend with the exact same loopback auth config as the e2e "main" backend (see
-frontend/playwright.config.ts): ``AUTH_ALLOW_INSECURE_DEFAULTS=true`` plus a loopback
-``PUBLIC_ORIGIN``. That re-syncs the copied database's bootstrap admin to the published dev
-defaults on startup, and every persona is reached the same way a real user would: by signing in
-at /login. The two modes differ only in which persona's credentials the command prints:
+mock request header or session/operator allowlist to fabricate a user with. The backend runs with
+the exact same loopback auth config as the e2e "main" backend (see frontend/playwright.config.ts):
+``AUTH_ALLOW_INSECURE_DEFAULTS=true`` plus a loopback ``PUBLIC_ORIGIN``. That re-syncs the copied
+database's bootstrap admin to the published dev defaults on startup, and every persona is reached
+the same way a real user would: by signing in at /login. On launch the command prints the
+credentials for two example accounts to sign in with:
 
-- ``npm run demo`` prints the bootstrap admin's credentials (``admin@example.com`` /
-  ``admin-dev-password``), so signing in at /login shows the full surface including the admin
-  console.
-- ``npm run demo:user`` (``--user``) prints a fixed ordinary member's credentials instead: the e2e
-  fixture's ``ada-lovelace`` (the glider owner — the most data-rich member: a submitted agent, an
-  author rating prompt, watch recordings, and competition placements). Signing in as them shows
-  the member experience with real data behind every page, and the admin console stays correctly
-  locked — their Better Auth role is ``user``, never promoted to ``admin``.
+- The bootstrap admin (``admin@example.com`` / ``admin-dev-password``), so signing in at /login
+  shows the full surface including the admin console.
+- A fixed ordinary member (the "student" view): the e2e fixture's ``ada-lovelace`` (the glider
+  owner — the most data-rich member: a submitted agent, an author rating prompt, watch recordings,
+  and competition placements). Signing in as them shows the member experience with real data behind
+  every page, and the admin console stays correctly locked — their Better Auth role is ``user``,
+  never promoted to ``admin``.
 
 Schema drift: the backend keeps a single flat migration that is *not* re-run against a database
 that already recorded it (see backend/src/storage/migrations.ts). So if the schema has advanced
@@ -65,13 +64,13 @@ from ci import _NPM, _run, job_frontend_e2e
 _ADMIN_EMAIL = "admin@example.com"
 _ADMIN_PASSWORD = "admin-dev-password"
 
-# ada-lovelace, the ordinary member `demo:user` signs in as: a fixed e2e fixture account chosen as
-# the most data-rich non-admin so the most member-facing features have real content — a submitted
-# agent (My Agents / agent profile), an author rating prompt, watch recordings, and competition
-# placements all attach to it (see frontend/e2e/support/names.ts). The e2e suite's fixtures create
-# this as a real Better Auth account with role `user`, never promoted to `admin`, so it stays an
-# ordinary member here too. Must match frontend/e2e/support/auth.ts's `emailFor('ada-lovelace')`
-# and `MEMBER_PASSWORD`.
+# ada-lovelace, the ordinary member (the "student" view) whose credentials the demo prints
+# alongside the admin's: a fixed e2e fixture account chosen as the most data-rich non-admin so the
+# most member-facing features have real content — a submitted agent (My Agents / agent profile), an
+# author rating prompt, watch recordings, and competition placements all attach to it (see
+# frontend/e2e/support/names.ts). The e2e suite's fixtures create this as a real Better Auth account
+# with role `user`, never promoted to `admin`, so it stays an ordinary member here too. Must match
+# frontend/e2e/support/auth.ts's `emailFor('ada-lovelace')` and `MEMBER_PASSWORD`.
 _MEMBER_EMAIL = "ada-lovelace@e2e.local"
 _MEMBER_PASSWORD = "e2e-member-password"
 
@@ -98,15 +97,15 @@ def ensure_e2e_db() -> None:
 
 
 def _member_account_present() -> bool:
-    """Whether the e2e database holds the ``demo:user`` member account.
+    """Whether the e2e database holds the ordinary-member ("student") account.
 
-    The bootstrap admin is reseeded on every backend boot (ensureAdminUser), so the default demo is
-    always reachable, but ``ada-lovelace`` exists only if the frontend-e2e run that built the database
+    The bootstrap admin is reseeded on every backend boot (ensureAdminUser), so it is always
+    reachable, but ``ada-lovelace`` exists only if the frontend-e2e run that built the database
     included the spec that creates her (leaderboards-admin.spec.ts). A partial run — a single unrelated
     spec left behind under ``.data/main/`` — leaves a schema-valid database with no member to sign in
-    as, which ``run_backend``'s stale-schema retry cannot detect, so ``demo:user`` would print her
-    credentials and then fail the real /login for no visible reason. Probe the Better Auth ``user``
-    table up front so that case fails fast with an explanation instead.
+    as, which ``run_backend``'s stale-schema retry cannot detect, so her printed credentials would
+    fail the real /login for no visible reason. Probe the Better Auth ``user`` table up front so the
+    printout can flag that case with an explanation instead.
     """
     if not E2E_MAIN_DB.exists():
         return False
@@ -141,9 +140,8 @@ def build_frontend() -> None:
     serve a stale frontend and hide local source edits. The backend itself runs from TypeScript
     source (``tsx src/main.ts``), so it needs no build step and always reflects current code.
 
-    Both launch modes build the identical bundle: identity now comes from a real Better Auth
-    sign-in at /login rather than a build-time baked user, so there is nothing left to vary
-    per mode here.
+    The bundle is identity-agnostic: identity now comes from a real Better Auth sign-in at /login
+    rather than a build-time baked user, so nothing about it varies with which account is used.
     """
     _run([_NPM, "run", "build:frontend"])
 
@@ -168,29 +166,46 @@ def prepare_demo_data() -> None:
         shutil.copytree(recordings, DEMO_DATA_DIR / "recordings", dirs_exist_ok=True)
 
 
-def _credentials(acting_user: bool) -> tuple[str, str]:
-    """The (email, password) pair to sign in with: the bootstrap admin by default, or Ada's
-    ordinary-member account when ``acting_user`` is True (``demo:user``)."""
-    if acting_user:
-        return _MEMBER_EMAIL, _MEMBER_PASSWORD
-    return _ADMIN_EMAIL, _ADMIN_PASSWORD
+def _print_credentials() -> None:
+    """Print both example accounts' credentials prominently before the backend starts serving.
 
-
-def _print_credentials(acting_user: bool) -> None:
-    """Print the persona's credentials prominently before the backend starts serving.
+    The demo seeds no identity of its own: the bootstrap admin is re-synced to the published dev
+    defaults on every boot (ensureAdminUser), and the ordinary member ada-lovelace rides along in
+    the copied e2e fixture database. Both are reached by a real sign-in at /login, and both are
+    printed so the demo can be explored from either the admin or the member ("student") side without
+    a second launch.
 
     Recreating the demo database on every launch (see prepare_demo_data) invalidates any Better
     Auth session cookie from a previous run — the session row it pointed at is gone — so a real
     sign-in through the login page is required every time, not just the first.
+
+    The member only exists when the frontend-e2e run that built the reused database created her (a
+    partial run may not); when she is absent her credentials are still printed but flagged, since the
+    admin demo is unaffected and hard-failing the whole launch over the member would be heavy-handed.
     """
-    email, password = _credentials(acting_user)
-    persona = "the ordinary member ada-lovelace" if acting_user else "the bootstrap admin"
+    member_missing = not _member_account_present()
+    member_note = (
+        "\n"
+        "        (not found in the reused e2e database — likely a partial run; recreate the\n"
+        "         member fixtures with `npm run demo -- --rerun-e2e`)"
+        if member_missing
+        else ""
+    )
     print(
         "\n"
         "==========================================================================\n"
-        f"  Open http://localhost:8080/, go to /login, and sign in as {persona}:\n"
-        f"      email:    {email}\n"
-        f"      password: {password}\n"
+        "  Open http://localhost:8080/, go to /login, and sign in with either\n"
+        "  example account:\n"
+        "\n"
+        "    admin — the full surface, including the admin console:\n"
+        f"        email:    {_ADMIN_EMAIL}\n"
+        f"        password: {_ADMIN_PASSWORD}\n"
+        "\n"
+        "    student — an ordinary member (ada-lovelace, the data-rich non-admin):\n"
+        f"        email:    {_MEMBER_EMAIL}\n"
+        f"        password: {_MEMBER_PASSWORD}"
+        f"{member_note}\n"
+        "\n"
         "  This demo database was just (re)created, so any cookie from a previous\n"
         "  run is no longer valid — a real sign-in is required.\n"
         "==========================================================================\n",
@@ -203,11 +218,10 @@ def _demo_env() -> dict[str, str]:
     the data was written under (see frontend/playwright.config.ts), widening the idle timeout for
     a usable demo, on port 8080 so a lingering e2e server on 8090 does not clash.
 
-    Both launch modes run this exact env — there is no per-mode allowlist or baked identity left
-    to vary. ``AUTH_ALLOW_INSECURE_DEFAULTS`` opts into the published development defaults, so the
-    copied database's bootstrap admin re-syncs to ``_ADMIN_EMAIL``/``_ADMIN_PASSWORD`` on startup,
-    and every persona (the bootstrap admin or a member fixture like ada-lovelace) is reached by
-    signing in for real at /login.
+    There is no per-mode allowlist or baked identity left to vary. ``AUTH_ALLOW_INSECURE_DEFAULTS``
+    opts into the published development defaults, so the copied database's bootstrap admin re-syncs
+    to ``_ADMIN_EMAIL``/``_ADMIN_PASSWORD`` on startup, and every persona (the bootstrap admin or a
+    member fixture like ada-lovelace) is reached by signing in for real at /login.
     """
     env = os.environ.copy()
     env.update(
@@ -266,15 +280,6 @@ def run_backend() -> tuple[int, bool]:
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Run the app on the e2e fixture database.")
     parser.add_argument(
-        "--user",
-        action="store_true",
-        help=(
-            "Sign in as the ordinary member ada-lovelace (the e2e fixture's most data-rich "
-            "non-admin) instead of the bootstrap admin, via the real login page. Wired to "
-            "`npm run demo:user`."
-        ),
-    )
-    parser.add_argument(
         "--rerun-e2e",
         action="store_true",
         help=(
@@ -295,22 +300,10 @@ def main(argv: list[str] | None = None) -> None:
     else:
         ensure_e2e_db()
 
-    # `demo:user` signs in as a persisted fixture account, so a reused-but-incomplete database (built
-    # by a single spec that never created ada-lovelace) would fail the sign-in with no visible cause.
-    # Fail fast with the fix instead. The default admin demo needs no such check — the admin is
-    # reseeded on every boot regardless of which specs ran.
-    if args.user and not _member_account_present():
-        raise SystemExit(
-            f"demo:user signs in as {_MEMBER_EMAIL}, but the reused e2e database at {E2E_MAIN_DB} "
-            f"has no such account — it was likely built by a partial run without "
-            f"leaderboards-admin.spec.ts. Rebuild it with `npm run demo:user -- --rerun-e2e`, which "
-            f"runs the full frontend-e2e suite and recreates the member fixtures."
-        )
-
     build_frontend()
     prepare_demo_data()
 
-    _print_credentials(args.user)
+    _print_credentials()
     returncode, schema_drift = run_backend()
     if schema_drift:
         print(
@@ -322,7 +315,7 @@ def main(argv: list[str] | None = None) -> None:
         # recreating.
         rebuild_e2e_db()
         prepare_demo_data()
-        _print_credentials(args.user)
+        _print_credentials()
         returncode, _ = run_backend()
 
     raise SystemExit(returncode)

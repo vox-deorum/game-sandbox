@@ -1,9 +1,9 @@
-"""The demo launch modes: the default operator demo vs. the ``demo:user`` ordinary-member mock.
+"""The demo launch: one backend, both example accounts printed for a real /login sign-in.
 
-Better Auth model: the backend no longer takes a mock identity header or an allowlist, so both
-launch modes run the backend with the identical loopback auth env (mirroring the e2e "main"
-backend in frontend/playwright.config.ts) and differ only in which persona's real Better Auth
-credentials the command prints for the user to sign in with at /login.
+Better Auth model: the backend no longer takes a mock identity header or an allowlist, so the
+demo runs the backend with a loopback auth env (mirroring the e2e "main" backend in
+frontend/playwright.config.ts) and, on launch, prints the real Better Auth credentials for both
+the bootstrap admin and the ordinary member ("student") so either can be signed in with at /login.
 """
 
 from __future__ import annotations
@@ -36,20 +36,34 @@ def test_backend_env_opts_into_loopback_auth_defaults():
     assert env["PUBLIC_ORIGIN"].startswith(("http://localhost", "http://127.0.0.1"))
 
 
-def test_default_mode_selects_the_bootstrap_admin():
-    # No --user: the printed/selected persona is the bootstrap admin the backend seeds under
-    # AUTH_ALLOW_INSECURE_DEFAULTS (role admin), reached by a real sign-in at /login.
-    assert demo._credentials(acting_user=False) == (demo._ADMIN_EMAIL, demo._ADMIN_PASSWORD)
+def test_launch_prints_both_example_accounts(capsys, monkeypatch):
+    # The single demo launch prints both the bootstrap admin (role admin) and the ordinary member
+    # ada-lovelace ("student", role user) so either can be signed in with at /login — there is no
+    # separate member-only mode anymore. Pretend the member fixture is present so no "missing" note
+    # is added and the check does not touch the filesystem.
+    monkeypatch.setattr(demo, "_member_account_present", lambda: True)
+    demo._print_credentials()
+    out = capsys.readouterr().out
+    assert demo._ADMIN_EMAIL in out
+    assert demo._ADMIN_PASSWORD in out
+    assert demo._MEMBER_EMAIL in out
+    assert demo._MEMBER_PASSWORD in out
 
 
-def test_user_mode_selects_adas_member_account():
-    # --user selects the ordinary e2e member ada-lovelace instead (role user), never the admin.
-    assert demo._credentials(acting_user=True) == (demo._MEMBER_EMAIL, demo._MEMBER_PASSWORD)
+def test_launch_flags_a_missing_member_without_failing(capsys, monkeypatch):
+    # When the reused e2e database lacks the member fixture (a partial run), her credentials are
+    # still printed but flagged with the rebuild hint; the launch does not abort, since the admin
+    # demo is unaffected.
+    monkeypatch.setattr(demo, "_member_account_present", lambda: False)
+    demo._print_credentials()
+    out = capsys.readouterr().out
+    assert demo._MEMBER_EMAIL in out
+    assert "--rerun-e2e" in out
 
 
 def test_member_credentials_match_the_e2e_fixture():
-    # The credentials --user names must be a real account the e2e fixtures create, with the exact
-    # email/password the e2e suite signs in with (frontend/e2e/support/auth.ts): emailFor(
+    # The member credentials the demo prints must name a real account the e2e fixtures create, with
+    # the exact email/password the e2e suite signs in with (frontend/e2e/support/auth.ts): emailFor(
     # 'ada-lovelace') and MEMBER_PASSWORD. Keeping these constants in sync is what makes a real
     # /login sign-in succeed against the copied fixture database.
     assert demo._MEMBER_EMAIL == "ada-lovelace@e2e.local"
