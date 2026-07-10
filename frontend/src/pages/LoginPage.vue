@@ -121,8 +121,7 @@ async function signInWithGithub(): Promise<void> {
       </template>
 
       <p class="login-note">
-        Accounts come from GitHub sign-in, the seeded administrator, or an admin creating one — there
-        is no self-registration.
+        Reach out to the site administrator to register.
       </p>
     </UiCard>
   </section>
