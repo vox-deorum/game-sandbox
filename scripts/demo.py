@@ -42,6 +42,7 @@ recreate it) and start once more.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import os
 import shutil
 import sqlite3
@@ -110,7 +111,11 @@ def _member_account_present() -> bool:
     if not E2E_MAIN_DB.exists():
         return False
     try:
-        with sqlite3.connect(f"file:{E2E_MAIN_DB}?mode=ro", uri=True) as conn:
+        # contextlib.closing, not a bare `with conn`: sqlite3's context manager only scopes a
+        # transaction and never closes the connection, and the leaked handle would pin the e2e
+        # database for the demo's whole lifetime — on Windows that blocks the e2e launcher's wipe
+        # of frontend/e2e/.data/main/ (EBUSY) while a demo is running.
+        with contextlib.closing(sqlite3.connect(f"file:{E2E_MAIN_DB}?mode=ro", uri=True)) as conn:
             row = conn.execute("SELECT 1 FROM user WHERE email = ? LIMIT 1", (_MEMBER_EMAIL,)).fetchone()
         return row is not None
     except sqlite3.Error:

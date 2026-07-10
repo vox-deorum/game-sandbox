@@ -1,9 +1,10 @@
 <!--
   The roster table (Stage 12.4): one row per account with its derived status, ban badge, created date,
-  and the inline actions (approve / promote / demote, ban / unban, reset password), plus the pager. It
-  is presentational — every action is emitted for the page to run — but owns the row-level busy display
-  so a click on one row's action disables that action across every row while it is in flight, rather
-  than silently swallowing a second click.
+  and the row actions (approve, promote / demote, ban / unban, reset password), plus the pager. It is
+  presentational — every action is emitted for the page to run. Approve and unban run inline, so the
+  table owns their row-level busy display: a click on one row's action disables that action across
+  every row while it is in flight, rather than silently swallowing a second click. Promote, demote,
+  ban, and reset password only open a confirmation dialog, whose busy state the dialog itself owns.
 -->
 <script setup lang="ts">
 import { deriveStatus, type UserStatus } from '@game-sandbox/schema/accounts'
@@ -20,15 +21,17 @@ const props = defineProps<{
   offset: number
   pageSize: number
   loading: boolean
-  /** The id of the row whose role/unban action is in flight, so its button shows a spinner. */
-  roleBusyId: string | null
+  /** The id of the row whose approve/unban action is in flight, so its button shows a spinner. */
+  approveBusyId: string | null
   unbanBusyId: string | null
   /** The signed-in operator's own id, so self-targeting actions are disabled. */
   selfId: string | null
 }>()
 
 const emit = defineEmits<{
-  roleAction: [row: RosterUser, role: 'user' | 'admin']
+  approve: [row: RosterUser]
+  /** Promote (`admin`) or demote (`user`); the page confirms through RoleChangeDialog before acting. */
+  changeRole: [row: RosterUser, role: 'user' | 'admin']
   unban: [row: RosterUser]
   ban: [row: RosterUser]
   reset: [row: RosterUser]
@@ -82,9 +85,9 @@ function createdText(row: RosterUser): string {
             v-if="statusOf(row) === 'pending'"
             size="tight"
             variant="secondary"
-            :disabled="isSelf(row) || roleBusyId !== null"
-            :loading="roleBusyId === row.id"
-            @click="emit('roleAction', row, 'user')"
+            :disabled="isSelf(row) || approveBusyId !== null"
+            :loading="approveBusyId === row.id"
+            @click="emit('approve', row)"
           >
             Approve
           </UiButton>
@@ -92,9 +95,8 @@ function createdText(row: RosterUser): string {
             v-else-if="statusOf(row) === 'normal'"
             size="tight"
             variant="secondary"
-            :disabled="isSelf(row) || roleBusyId !== null"
-            :loading="roleBusyId === row.id"
-            @click="emit('roleAction', row, 'admin')"
+            :disabled="isSelf(row)"
+            @click="emit('changeRole', row, 'admin')"
           >
             Promote
           </UiButton>
@@ -102,9 +104,8 @@ function createdText(row: RosterUser): string {
             v-else
             size="tight"
             variant="secondary"
-            :disabled="isSelf(row) || roleBusyId !== null"
-            :loading="roleBusyId === row.id"
-            @click="emit('roleAction', row, 'user')"
+            :disabled="isSelf(row)"
+            @click="emit('changeRole', row, 'user')"
           >
             Demote
           </UiButton>

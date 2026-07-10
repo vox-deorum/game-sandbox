@@ -6,8 +6,8 @@
 
   This page drives `authClient.admin.*` directly rather than a typed wrapper in api/client.ts: the
   plugin already exposes a gated, typed API, so a proxy route would just re-implement it. It owns the
-  list state (tabs, search, paging) and the two direct row actions (role change, unban); the ban,
-  reset-password, and create flows live in their own self-contained dialogs. Status tabs and the search
+  list state (tabs, search, paging) and the two direct row actions (approve, unban); the promote/demote
+  confirmation, ban, reset-password, and create flows live in their own self-contained dialogs. Status tabs and the search
   box are independent list-users params, so both can be sent together. There is deliberately no delete
   action: ban is the retirement path, because submissions, recordings, ratings, and placements key on
   the user id and a removed user would orphan that attribution.
@@ -19,6 +19,7 @@ import { authClient } from '../auth.js'
 import BanUserDialog from '../components/admin/BanUserDialog.vue'
 import CreateUserDialog from '../components/admin/CreateUserDialog.vue'
 import ResetPasswordDialog from '../components/admin/ResetPasswordDialog.vue'
+import RoleChangeDialog from '../components/admin/RoleChangeDialog.vue'
 import UsersTable from '../components/admin/UsersTable.vue'
 import UiButton from '../components/ui/UiButton.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
@@ -53,7 +54,7 @@ const rows = ref<RosterUser[]>([])
 const total = ref(0)
 const loading = ref(false)
 const listError = ref<string | null>(null)
-// A row action's failure (approve/promote/unban), shown near the table without disturbing the roster
+// A direct row action's failure (approve/unban), shown near the table without disturbing the roster
 // already on screen.
 const actionError = ref<string | null>(null)
 
@@ -181,28 +182,29 @@ function nextPage(): void {
   void load()
 }
 
-// ---- Direct row actions: approve / promote / demote / unban call straight through, then refetch the
-// current page. The table disables every row's action while one is in flight, so a second click can't
-// be silently dropped.
+// ---- Direct row actions: approve / unban call straight through, then refetch the current page. The
+// table disables every row's action while one is in flight, so a second click can't be silently
+// dropped. Promote/demote are not direct: granting or revoking operator access is confirmed through
+// RoleChangeDialog first.
 
-const roleBusyId = ref<string | null>(null)
+const approveBusyId = ref<string | null>(null)
 const unbanBusyId = ref<string | null>(null)
 
-async function runRoleAction(row: RosterUser, role: 'user' | 'admin'): Promise<void> {
-  if (isSelf(row) || roleBusyId.value !== null) {
+async function runApprove(row: RosterUser): Promise<void> {
+  if (isSelf(row) || approveBusyId.value !== null) {
     return
   }
-  roleBusyId.value = row.id
+  approveBusyId.value = row.id
   actionError.value = null
   try {
-    const { error } = await authClient.admin.setRole({ userId: row.id, role })
+    const { error } = await authClient.admin.setRole({ userId: row.id, role: 'user' })
     if (error) {
       actionError.value = error.message ?? 'Could not update that role.'
       return
     }
     await load()
   } finally {
-    roleBusyId.value = null
+    approveBusyId.value = null
   }
 }
 
@@ -227,11 +229,20 @@ async function runUnban(row: RosterUser): Promise<void> {
 // ---- Dialog-backed actions: the page holds only which row a dialog targets and whether it is open;
 // each dialog owns its form, request, and re-entrancy guard, and emits `done` so the page refetches.
 
+const roleTarget = ref<RosterUser | null>(null)
+const roleDialogRole = ref<'user' | 'admin'>('admin')
+const roleDialogOpen = ref(false)
 const banTarget = ref<RosterUser | null>(null)
 const banDialogOpen = ref(false)
 const resetTarget = ref<RosterUser | null>(null)
 const resetDialogOpen = ref(false)
 const createDialogOpen = ref(false)
+
+function openRoleDialog(row: RosterUser, role: 'user' | 'admin'): void {
+  roleTarget.value = row
+  roleDialogRole.value = role
+  roleDialogOpen.value = true
+}
 
 function openBanDialog(row: RosterUser): void {
   banTarget.value = row
@@ -303,10 +314,11 @@ onMounted(async () => {
           :offset="offset"
           :page-size="PAGE_SIZE"
           :loading="loading"
-          :role-busy-id="roleBusyId"
+          :approve-busy-id="approveBusyId"
           :unban-busy-id="unbanBusyId"
           :self-id="userId(me.me)"
-          @role-action="runRoleAction"
+          @approve="runApprove"
+          @change-role="openRoleDialog"
           @unban="runUnban"
           @ban="openBanDialog"
           @reset="openResetDialog"
@@ -316,6 +328,12 @@ onMounted(async () => {
       </template>
     </template>
 
+    <RoleChangeDialog
+      v-model:open="roleDialogOpen"
+      :target="roleTarget"
+      :role="roleDialogRole"
+      @done="load"
+    />
     <BanUserDialog v-model:open="banDialogOpen" :target="banTarget" @done="load" />
     <ResetPasswordDialog v-model:open="resetDialogOpen" :target="resetTarget" @done="load" />
     <CreateUserDialog v-model:open="createDialogOpen" @done="onCreated" />

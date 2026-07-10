@@ -9,12 +9,13 @@ import { expect, signInThroughUi, test } from './support/fixtures.js'
 import { ENV_ID } from './support/names.js'
 
 /**
- * The three authentication journeys (Stage 12.5), the executable form of the stage's experiential
- * criteria for the Better Auth foundation: an operator's sign-in/sign-out round trip and the admin-only
- * nav it gates, the admin roster creating an account a newcomer then signs into and plays with, and the
- * pending-account gate that only lifts once an admin approves it. Journeys 1 and 3 never start a
- * session; journey 2 does (a real container), so this file rides the Docker-gated `frontend-e2e` job
- * with the rest of the suite.
+ * The authentication journeys (Stage 12.5), the executable form of the stage's experiential criteria
+ * for the Better Auth foundation: an operator's sign-in/sign-out round trip and the admin-only nav it
+ * gates, the admin roster creating an account a newcomer then signs into and plays with, the
+ * pending-account gate that only lifts once an admin approves it, and the ban lifecycle — banning a
+ * member revokes their live session and refuses their sign-in until an admin unbans them. Only
+ * journey 2 starts a session (a real container), so this file rides the Docker-gated `frontend-e2e`
+ * job with the rest of the suite.
  */
 
 test('an admin signs in, sees the admin nav, and signs out', async ({ page }) => {
@@ -120,5 +121,67 @@ test('a pending user is gated until an admin approves them', async ({
     await expect(pendingPage.getByRole('button', { name: 'Play Yourself' })).toBeVisible()
   } finally {
     await pendingContext.close()
+  }
+})
+
+test('a banned member loses their session and cannot sign back in until unbanned', async ({
+  page,
+  browser,
+  admin,
+  as,
+}) => {
+  // Deliberately reuse the account journey 2 created rather than adding another persona to the shared
+  // roster; the `as` fixture creates it if this test runs alone. The signed-in context it returns is
+  // itself a live session the ban must revoke.
+  const handle = 'journey-newcomer'
+  const memberEmail = emailFor(handle)
+  const member = await as(handle)
+
+  const memberContext = await browser.newContext()
+  const memberPage = await memberContext.newPage()
+  try {
+    // The member browses signed in — the session the ban is about to end.
+    await authenticateBrowser(memberContext, member)
+    await memberPage.goto('/')
+    await expect(memberPage.getByRole('button', { name: 'Log out' })).toBeVisible()
+
+    // The admin bans them through the roster's ban dialog, with a reason.
+    await authenticateBrowser(page.context(), admin)
+    await page.goto('/admin/users')
+    await page.getByLabel('Search users').fill(memberEmail)
+    const row = page.getByRole('row').filter({ hasText: memberEmail })
+    await expect(row).toBeVisible()
+    await row.getByRole('button', { name: 'Ban' }).click()
+    const dialog = page.getByRole('dialog')
+    await dialog.getByLabel('Reason (optional)').fill('Conduct review')
+    await dialog.getByRole('button', { name: 'Ban' }).click()
+    await expect(dialog).toHaveCount(0)
+    await expect(row.getByText('Banned')).toBeVisible()
+
+    // The Banned status tab's filter also finds them (the search box still narrows to this account).
+    await page.getByRole('tab', { name: 'Banned' }).click()
+    await expect(row).toBeVisible()
+
+    // Better Auth revoked the member's sessions with the ban, so their next load renders signed out.
+    await memberPage.reload()
+    await expect(memberPage.getByRole('link', { name: 'Sign in' })).toBeVisible()
+
+    // Signing back in is refused with the ban message, not a generic credential error.
+    await memberPage.goto('/login')
+    await memberPage.getByLabel('Email').fill(memberEmail)
+    await memberPage.getByLabel('Password').fill(MEMBER_PASSWORD)
+    await memberPage.getByRole('button', { name: 'Sign in' }).click()
+    await expect(memberPage.getByRole('alert')).toContainText(/banned/i)
+
+    // Unban from the Banned tab: the row leaves the banned filter...
+    await row.getByRole('button', { name: 'Unban' }).click()
+    await expect(row).toHaveCount(0)
+
+    // ...and the member can sign in again. This also restores the shared roster for later specs and
+    // the demo fixture, which serve this same database.
+    await signInThroughUi(memberPage, memberEmail, MEMBER_PASSWORD)
+    await expect(memberPage.getByRole('button', { name: 'Log out' })).toBeVisible()
+  } finally {
+    await memberContext.close()
   }
 })

@@ -356,34 +356,62 @@ describe('UsersAdminPage', () => {
     await screen.findByText('Riley')
   })
 
-  it('approves a pending user through set-role and refetches', async () => {
+  it('approves a pending user through set-role directly, with no confirmation dialog', async () => {
     mockRoster([user({ role: 'pending' })])
     await renderUsersPage()
     await screen.findByText('Pat')
 
     await fireEvent.click(screen.getByRole('button', { name: 'Approve' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
     await waitFor(() => expect(setRole).toHaveBeenCalledWith({ userId: 'u1', role: 'user' }))
     await waitFor(() => expect(listUsers).toHaveBeenCalledTimes(2))
   })
 
-  it('promotes a normal user to admin', async () => {
+  it('promotes a normal user to admin only after the confirmation dialog', async () => {
     mockRoster([user({ role: 'user' })])
     await renderUsersPage()
     await screen.findByText('Pat')
 
     await fireEvent.click(screen.getByRole('button', { name: 'Promote' }))
+    // The row click only opens the confirmation; no request until the dialog confirms.
+    expect(setRole).not.toHaveBeenCalled()
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(/Promote Pat to admin\?/)).toBeInTheDocument()
+
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Promote' }))
     await waitFor(() => expect(setRole).toHaveBeenCalledWith({ userId: 'u1', role: 'admin' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     await waitFor(() => expect(listUsers).toHaveBeenCalledTimes(2))
   })
 
-  it('demotes an admin to a normal user', async () => {
+  it('demotes an admin to a normal user only after the confirmation dialog', async () => {
     mockRoster([user({ role: 'admin' })])
     await renderUsersPage()
     await screen.findByText('Pat')
 
     await fireEvent.click(screen.getByRole('button', { name: 'Demote' }))
+    expect(setRole).not.toHaveBeenCalled()
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(/Demote Pat to a normal member\?/)).toBeInTheDocument()
+
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Demote' }))
     await waitFor(() => expect(setRole).toHaveBeenCalledWith({ userId: 'u1', role: 'user' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     await waitFor(() => expect(listUsers).toHaveBeenCalledTimes(2))
+  })
+
+  it('cancelling the role confirmation fires no role change', async () => {
+    mockRoster([user({ role: 'admin' })])
+    await renderUsersPage()
+    await screen.findByText('Pat')
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Demote' }))
+    const dialog = await screen.findByRole('dialog')
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(setRole).not.toHaveBeenCalled()
+    expect(listUsers).toHaveBeenCalledTimes(1)
   })
 
   it('bans a user with a reason through the ban dialog, then refetches', async () => {
@@ -468,10 +496,10 @@ describe('UsersAdminPage', () => {
     expect(within(dialog).getByText(/Ban Bob\?/)).toBeInTheDocument()
   })
 
-  it("disables every row's role action while one is in flight, so a second click is a visible no-op", async () => {
+  it("disables every row's approve while one is in flight, so a second click is a visible no-op", async () => {
     mockRoster([
-      user({ id: 'u1', name: 'Alice', role: 'user' }),
-      user({ id: 'u2', name: 'Bob', role: 'user' }),
+      user({ id: 'u1', name: 'Alice', role: 'pending' }),
+      user({ id: 'u2', name: 'Bob', role: 'pending' }),
     ])
     await renderUsersPage()
     await screen.findByText('Alice')
@@ -481,16 +509,16 @@ describe('UsersAdminPage', () => {
     const gate = deferred<{ data: { user: unknown }; error: null }>()
     setRole.mockImplementationOnce(() => gate.promise as never)
 
-    await fireEvent.click(within(aliceRow).getByRole('button', { name: 'Promote' }))
-    await waitFor(() => expect(setRole).toHaveBeenCalledWith({ userId: 'u1', role: 'admin' }))
+    await fireEvent.click(within(aliceRow).getByRole('button', { name: 'Approve' }))
+    await waitFor(() => expect(setRole).toHaveBeenCalledWith({ userId: 'u1', role: 'user' }))
 
-    // While Alice's role change is in flight, Bob's action is disabled — the click is refused visibly
+    // While Alice's approval is in flight, Bob's action is disabled — the click is refused visibly
     // rather than silently swallowed.
-    expect(within(bobRow).getByRole('button', { name: 'Promote' })).toBeDisabled()
+    expect(within(bobRow).getByRole('button', { name: 'Approve' })).toBeDisabled()
 
     gate.resolve({ data: { user: {} }, error: null })
     await waitFor(() =>
-      expect(within(bobRow).getByRole('button', { name: 'Promote' })).not.toBeDisabled(),
+      expect(within(bobRow).getByRole('button', { name: 'Approve' })).not.toBeDisabled(),
     )
   })
 
