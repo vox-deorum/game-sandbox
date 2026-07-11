@@ -5,9 +5,10 @@
   as a column of sections. The other per-environment surfaces live in the tab strip (ExperimentTabs.vue):
   replays in the Replays tab, submissions in My Submissions, the operator console in Manage.
 
-  The play and watch entry points are hidden when `/api/me` says the user cannot participate (an
-  anonymous or still-pending account), and the backend enforces the same gate, so the UI state is
-  courtesy and the backend check is the enforcement.
+  The play and watch entry points stay visible for an anonymous visitor and route to the sign-in
+  page when clicked; only a signed-in but still-pending account has them hidden. The backend
+  enforces the participation gate either way, so the UI state is courtesy and the backend check is
+  the enforcement.
   Each entry point opens the start form in a modal dialog (a short interruption — seed, timeout,
   confirm — not a destination), keeping the hub stable underneath. Starting resolves to a session id
   this page navigates to; the already-active case offers rejoin by navigating to the user's existing
@@ -85,8 +86,14 @@ const submittableSeason = computed(
   () => publicSeasons.value.find((s) => s.submission_status === 'open') ?? null,
 )
 
-// The last released season — the one whose boards are embedded below, named in the section header.
+// The last released season — the one whose boards are embedded below, named in the section heading
+// ("Leaderboard: <season>"); with nothing released the heading stays the plain plural.
 const releasedSeason = computed(() => leaderboards.value?.current?.season ?? null)
+const boardsHeading = computed(() =>
+  releasedSeason.value === null
+    ? 'Leaderboards'
+    : `Leaderboard: ${seasonLabel(releasedSeason.value)}`,
+)
 function seasonLabel(season: Pick<SeasonView, 'id' | 'label'>): string {
   return season.label ?? `Season ${season.id.slice(0, 8)}`
 }
@@ -140,6 +147,13 @@ const playFormOpen = ref(false)
 const canStartHumanPlay = computed(
   () => canParticipate(me.me) && Boolean(meta.value?.human_slots.length && playOpen.value),
 )
+// The header button also renders for an anonymous visitor, as the entry point into signing in:
+// open() routes them to /login instead of opening the start dialog.
+const showHumanPlay = computed(
+  () =>
+    (canParticipate(me.me) || me.me?.user == null) &&
+    Boolean(meta.value?.human_slots.length && playOpen.value),
+)
 // A multi-seat environment (Hearts) plays through the seat-assignment grid: the human claims a seat
 // and agents fill the rest. A single-slot environment (Flappy Bird) keeps the minimal start form.
 const multiSeat = computed(() => (meta.value?.max_slots ?? 1) > 1)
@@ -173,6 +187,10 @@ const paceLabel = computed(() => {
 })
 
 function open(): void {
+  if (me.me?.user == null) {
+    void router.push('/login')
+    return
+  }
   startError.value = null
   playFormOpen.value = true
 }
@@ -222,7 +240,7 @@ async function submitStart(payload: StartPayload): Promise<void> {
       <div class="env-headline">
         <div class="env-title-row">
           <h1>{{ meta.display_name }}</h1>
-          <UiButton v-if="canStartHumanPlay" size="lg" @click="open()">
+          <UiButton v-if="showHumanPlay" size="lg" @click="open()">
             Play Yourself
           </UiButton>
         </div>
@@ -261,12 +279,9 @@ async function submitStart(payload: StartPayload): Promise<void> {
     <section class="env-section">
       <div class="env-section-head">
         <div class="env-section-title">
-          <h2>Leaderboards</h2>
-          <span v-if="releasedSeason !== null" class="env-section-season">
-            {{ seasonLabel(releasedSeason) }}
-            <span v-if="releasedSeason.released_at !== null">
-              · released {{ formatDate(releasedSeason.released_at) }}
-            </span>
+          <h2>{{ boardsHeading }}</h2>
+          <span v-if="releasedSeason?.released_at != null" class="env-section-season">
+            released {{ formatDate(releasedSeason.released_at) }}
           </span>
         </div>
         <RouterLink class="env-section-link" :to="`/environments/${meta.env_id}/leaderboards`">

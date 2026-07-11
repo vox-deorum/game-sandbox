@@ -9,8 +9,9 @@
   for a multi-seat environment, preselecting that agent into every seat (SeatAssignmentDialog), where
   the viewer assigns an agent to each seat and a seed before starting. A single-slot environment keeps
   the Stage 5 shape: the row starts a scripted watch run immediately, now expressed as a one-seat
-  `slots` assignment. The post-session panel takes the rating after the run. Viewers who cannot yet
-  participate (anonymous or still-pending) can browse the list but cannot start a container.
+  `slots` assignment. The post-session panel takes the rating after the run. An anonymous visitor sees
+  the same actions, but clicking one routes to the sign-in page instead of starting a run; a signed-in
+  but still-pending account browses without actions and sees the awaiting-approval notice.
 -->
 <script setup lang="ts">
 import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
@@ -55,13 +56,10 @@ const multiSeat = computed(() => props.meta.max_slots > 1)
 const dialogOpen = ref(false)
 const dialogPreselect = ref<SlotAssignmentInput | null>(null)
 
-// Why a viewer who cannot participate is blocked from starting a run: an anonymous visitor needs to
-// sign in, while a signed-in but still-pending account is awaiting an admin's approval.
-const participationNotice = computed(() =>
-  me.me?.user == null
-    ? 'Sign in to watch and rate agents.'
-    : 'Your account is awaiting approval — watching unlocks once an admin approves you.',
-)
+// An anonymous visitor keeps the watch/rate actions as the entry point into signing in: clicking
+// one routes to /login instead of starting a run (which the backend would refuse anyway). Only a
+// signed-in but still-pending account loses the actions, behind the awaiting-approval notice.
+const anonymous = computed(() => me.me?.user == null)
 
 /** A short, human-friendly label for a submission's pinned source. */
 function sourceLabel(agent: WatchAgentSummary): string {
@@ -98,6 +96,10 @@ function watchBuiltin(): void {
  * the scripted run right away, as the Stage 5 watch flow did.
  */
 function chooseAgent(preselect: SlotAssignmentInput, loadingKey: string): void {
+  if (anonymous.value) {
+    void router.push('/login')
+    return
+  }
   if (multiSeat.value) {
     dialogPreselect.value = preselect
     startError.value = null
@@ -149,7 +151,7 @@ async function startRun(payload: StartPayload, loadingKey?: string): Promise<voi
           <UiBadge>Built-in</UiBadge>
         </div>
         <UiButton
-          v-if="canParticipate(me.me)"
+          v-if="anonymous || canParticipate(me.me)"
           size="tight"
           variant="secondary"
           :loading="starting === BUILTIN_KEY"
@@ -175,7 +177,7 @@ async function startRun(payload: StartPayload, loadingKey?: string): Promise<voi
           <UiBadge v-else-if="agent.rating_status === 'rated'">Rated</UiBadge>
         </div>
         <UiButton
-          v-if="canParticipate(me.me)"
+          v-if="anonymous || canParticipate(me.me)"
           size="tight"
           :variant="agent.rating_status === 'unrated' ? 'primary' : 'secondary'"
           :loading="starting === agent.submission_id"
@@ -186,9 +188,8 @@ async function startRun(payload: StartPayload, loadingKey?: string): Promise<voi
       </li>
     </ul>
     <p v-if="agents.length === 0" class="agent-subnote">No submitted agents are ready to watch yet.</p>
-    <UiEmptyState v-if="!canParticipate(me.me)">
-      {{ participationNotice }}
-      <RouterLink v-if="me.me?.user == null" to="/login">Sign in</RouterLink>
+    <UiEmptyState v-if="!anonymous && !canParticipate(me.me)">
+      Your account is awaiting approval — watching unlocks once an admin approves you.
     </UiEmptyState>
     <p v-if="startError !== null" class="agent-error" role="alert">{{ startError }}</p>
 

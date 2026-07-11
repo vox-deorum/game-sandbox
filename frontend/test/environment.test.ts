@@ -2,7 +2,7 @@ import { fireEvent, screen } from '@testing-library/vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { flappyMeta, heartsMeta } from './helpers/fixtures.js'
-import { signedInMe } from './helpers/me.js'
+import { anonymousMe, signedInMe } from './helpers/me.js'
 import { memoryRouter, renderWithMe } from './helpers/render.js'
 
 const META = flappyMeta()
@@ -50,6 +50,7 @@ async function renderPage(envId = 'flappy_bird') {
     { path: '/environments/:envId', component: EnvironmentPage },
     { path: '/environments/:envId/leaderboards/:seasonId?', component: { template: '<div />' } },
     { path: '/environments/:envId/admin', component: { template: '<div />' } },
+    { path: '/login', component: { template: '<div>login page</div>' } },
     { path: '/sessions/:id', component: SessionStub },
   ])
   router.push(`/environments/${envId}`)
@@ -81,6 +82,50 @@ describe('EnvironmentPage', () => {
     expect(screen.queryByRole('button', { name: 'Watch' })).toBeNull()
     // The operator-only admin entry point is hidden from a non-operator.
     expect(screen.queryByRole('link', { name: 'Admin console' })).toBeNull()
+  })
+
+  it('keeps the play and watch entry points for an anonymous visitor and routes a click to sign-in', async () => {
+    vi.mocked(getMe).mockResolvedValue(anonymousMe)
+    vi.mocked(listWatchAgents).mockResolvedValue([
+      { submission_id: 'sub1', anonymous_number: 1, rating_status: 'unrated' },
+    ])
+    await renderPage()
+    // Both entry points render signed-out; there is no separate sign-in prompt in the watch section.
+    expect(await screen.findByRole('button', { name: 'Play Yourself' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Rate' })).toBeInTheDocument()
+    expect(screen.queryByText('Sign in to watch and rate agents.')).toBeNull()
+    // Clicking one lands on the sign-in page instead of opening the start dialog.
+    await fireEvent.click(screen.getByRole('button', { name: 'Play Yourself' }))
+    expect(vi.mocked(startSession)).not.toHaveBeenCalled()
+    expect(await screen.findByText('login page')).toBeInTheDocument()
+  })
+
+  it('names the released season in the boards heading with its release date beside it', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
+    vi.mocked(getEnvironmentLeaderboards).mockResolvedValue({
+      current: {
+        season: {
+          id: 'iter-1',
+          env_id: 'flappy_bird',
+          submission_status: 'closed',
+          play_status: 'closed',
+          release_status: 'released',
+          label: 'Partnership Cup',
+          config: { deps_version: 1, matches: [] },
+          rating_prompt: null,
+          created_at: '2026-06-10T00:00:00Z',
+          released_at: '2026-06-12T00:00:00Z',
+        },
+        board: { automated: [], human: [], games: [] },
+      },
+      submission_season_id: 'iter-1',
+      play_season_id: 'iter-1',
+    })
+    await renderPage()
+    expect(
+      await screen.findByRole('heading', { name: 'Leaderboard: Partnership Cup', level: 2 }),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/^released /)).toBeInTheDocument()
   })
 
   it('frames the watch section as "Rate an Agent" when there is an unrated agent', async () => {

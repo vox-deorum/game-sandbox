@@ -39,7 +39,7 @@ async function renderPicker(
     },
     { path: '/sessions/:id', component: SessionStub },
     { path: '/environments/:envId/agents/:ownerId', component: ProfileStub },
-    { path: '/login', component: { template: '<div />' } },
+    { path: '/login', component: { template: '<div>login page</div>' } },
   ])
   router.push(`/environments/${meta.env_id}`)
   await router.isReady()
@@ -111,15 +111,17 @@ describe('WatchAgentPicker', () => {
     expect(screen.queryByRole('link', { name: 'Sign in' })).toBeNull()
   })
 
-  it('prompts an anonymous viewer to sign in and hides the watch actions', async () => {
+  it('keeps the watch actions for an anonymous viewer and routes a click to the sign-in page', async () => {
     vi.mocked(getMe).mockResolvedValue(anonymousMe)
     await renderPicker(flappyMeta(), [summary()])
-    // The list still renders for browsing, but no run can be started without an account.
+    // The list renders with its actions and no separate sign-in prompt; the actions themselves are
+    // the entry point into signing in.
     expect(await screen.findByText('Submitted agent 1')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Watch' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Rate' })).toBeNull()
-    expect(screen.getByText('Sign in to watch and rate agents.')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/login')
+    expect(screen.queryByText('Sign in to watch and rate agents.')).toBeNull()
+    await fireEvent.click(screen.getByRole('button', { name: 'Rate' }))
+    // No run starts without an account: the click lands on the sign-in page instead.
+    expect(vi.mocked(startSession)).not.toHaveBeenCalled()
+    expect(await screen.findByText('login page')).toBeInTheDocument()
   })
 
   it('shows rated and owned agents as secondary Watch again actions', async () => {
