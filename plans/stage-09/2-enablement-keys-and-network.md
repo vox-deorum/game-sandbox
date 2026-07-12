@@ -29,16 +29,16 @@ In `backend/src/storage/season-config.ts`, replace the parsed-but-inert `llm: z.
 ```ts
 llm?: {
   enabled?: boolean            // default false: a season must opt in
-  models?: string[]            // subset of the deployment allowlist
+  models?: string[]            // subset of the deployment's configured tiers
   session_token_budget?: number; session_call_budget?: number   // per slot per session
-  run_token_budget?: number;   run_call_budget?: number         // per submission per run (consumed in step 5)
+  run_token_budget?: number;   run_call_budget?: number         // per submission per run (consumed in step 4)
   rate_limit_rpm?: number
 }
 ```
 
-- `PUT /api/admin/seasons/:id/config` (`backend/src/admin/routes.ts`) validates `models` against the deployment's `LLM_MODELS` allowlist and rejects unknown names with the existing `invalid_config` shape naming the offender.
-- Budget and rate values replace the deployment defaults from step 1. These are operator-set numbers on an operator-only surface, so there is no tighten-only rule the way messaging needed; the one non-negotiable is that `models` cannot escape the deployment allowlist.
-- The admin console's `SeasonConfigEditor.vue` replaces its preserved-untouched `llm` block with a real section beside the messaging fields: an enable toggle, a free-text model list (the server validates against the allowlist; no new API surface for the list itself), and the budget and rate fields.
+- `PUT /api/admin/seasons/:id/config` (`backend/src/admin/routes.ts`) validates `models` against the deployment's configured tiers (the `LLM_MODEL_*` mapping from step 1) and rejects unknown names with the existing `invalid_config` shape naming the offender.
+- Budget and rate values replace the deployment defaults from step 1. These are operator-set numbers on an operator-only surface, so there is no tighten-only rule the way messaging needed; the one non-negotiable is that `models` cannot escape the deployment's configured tiers.
+- The admin console's `SeasonConfigEditor.vue` replaces its preserved-untouched `llm` block with a real section beside the messaging fields: an enable toggle, a free-text tier list (the server validates against the configured tiers; no new API surface for the list itself), and the budget and rate fields.
 
 ### Resolution and both launch paths
 
@@ -46,7 +46,7 @@ llm?: {
 - Live sessions resolve against the play-open season (the Stage 8 orchestrator-applies-overrides precedent); the workflow runner resolves against the run's frozen `config_snapshot`.
 - The resolved flag persists on the session row (`llm_enabled` beside `messaging_enabled` in `SessionsTable`, plus a migration), so a reopened ended session and the later frontend read the same truth the container ran under.
 
-At launch the orchestrator calls `KeyRegistry.issue` for every **agent** slot — built-ins included (an unused key costs nothing, and a future built-in that consults the model just works); external human slots run no code in the container and get no key — and threads the result into the session config argv, the channel every other per-session flag rides:
+At launch the orchestrator calls `KeyRegistry.issue` for every **agent** slot — built-ins included (an unused key costs nothing, and a future built-in that consults the model just works); external human slots run no code in the container and get no key — and threads the result into the session config argv, the channel every other per-session flag rides. Issuance names the telemetry scope — the session id here, the run id on the workflow-runner path — so every call lands in the right `data/llm` file from the first request:
 
 ```jsonc
 "llm": { "base_url": "http://llm-gateway:<port>/v1", "keys": { "player_0": "sk-sandbox-…", … } }
