@@ -16,6 +16,7 @@ Extend the backend integration and Playwright harnesses with one OpenAI-compatib
 - A configured sequence of retryable responses followed by success.
 - A non-retryable 4xx response.
 - Retryable responses through the configured retry limit.
+- A successful response with missing or malformed usage for tiktoken fallback.
 - A delayed response for timeout and timing checks.
 
 The stub records upstream attempts, arrival times, model names, and authorization headers. Assertions verify exponential intervals, alias mapping, and that the backend credential reaches the upstream while participant and slot keys do not.
@@ -32,7 +33,11 @@ Run an LLM-enabled session with the Hearts oracle and a mix of upstream outcomes
 - A retryable sequence followed by success produces one successful response, one call charge, and one SQLite row whose latency includes attempts and waits.
 - A non-retryable error makes one upstream attempt and produces no charge or SQLite row.
 - Exhausted retries make the configured number of attempts and produce no charge or SQLite row.
+- Failed logical requests remain in the rate window even though they consume no call or token allowance, and backend retries do not add rate events.
+- Requests using either supported completion-limit field reserve and forward the enforced output maximum, while omitted limits receive the configured default.
+- Missing or malformed upstream usage produces explicitly marked tiktoken estimates in one successful row.
 - Successful SQLite rows carry the acting slot and tick.
+- A forced exit during a delayed upstream call blocks new admission, aborts or drains the active request, settles its reservation, and only then aggregates or deletes telemetry.
 - The saved slot key returns 401 after exit, and teardown removes the session network and relay attachment.
 
 ### Development access
@@ -41,14 +46,14 @@ Create two active participants and two LLM-enabled seasons. Request and use deve
 
 - Each `(participant, season)` pair has an independent call, token, and rate allowance.
 - Rotating one key invalidates its previous secret without resetting usage.
-- A successful request creates one private ledger row with full bodies and retry-inclusive latency.
+- A successful request creates one private ledger row with full bodies, retry-inclusive latency, and an accurate estimated-usage marker.
 - A non-retryable error and exhausted retry sequence create no usage and no ledger row.
 - Development calls create no official execution-scope row, game result, placement, or board usage.
 - Official calls do not change development totals.
 
 ### Leaderboard run
 
-Run two workflow matches under a small per-submission run allowance. Confirm successful usage carries across matches for one submission, remains independent for another submission, and produces exact run-SQLite, game-result, board, and placement aggregates. The first over-budget request is rejected without an upstream attempt or telemetry row, and the agent completes the game without forfeiting.
+Run two workflow matches under a small per-submission run allowance. Confirm successful usage carries across matches for one submission, remains independent for another submission, and produces exact run-SQLite, game-result, board, and placement aggregates, including estimated-call counts. The first over-budget request is rejected without an upstream attempt or telemetry row, and the agent completes the game without forfeiting.
 
 ### Disabled sessions
 
@@ -64,7 +69,7 @@ Add `frontend/e2e/llm.spec.ts` using the same stub upstream:
 4. Another participant cannot read the ledger, while the operator can inspect it from season management.
 5. An official oracle session produces replay model-call metadata and owner debug bodies.
 6. A logged-out caller sees replay metadata but receives no request or completion bodies from the raw API.
-7. The automated board shows successful calls, tokens, and model-call latency by alias.
+7. The automated board shows successful calls, tokens, estimated-usage status, and model-call latency by alias.
 8. No surface renders an error row for unsuccessful logical requests.
 
 Use the existing authenticated-persona fixtures and UI primitives. Update locators and component tests in the same change as the new surfaces.
@@ -74,8 +79,8 @@ Use the existing authenticated-persona fixtures and UI primitives. Update locato
 Update these documents to match the implementation:
 
 - `docs/specs/llm.md`, `execution.md`, `leaderboard.md`, `submission.md`, and `recording.md` describe the final behavior and data boundaries.
-- `docs/contributors/configuration.md` documents every `LLM_*` setting, including one upstream URL and key, model aliases, per-attempt timeout, maximum retries after the initial attempt, initial retry interval, official defaults, and development defaults.
-- `docs/contributors/backend.md` describes the shared proxy handler, internal listener, public development route, grant authentication, retry loop, successful-call meters, execution-scope SQLite, recording-to-scope resolution, visibility, retention, and the development ledger.
+- `docs/contributors/configuration.md` documents every `LLM_*` setting, including one upstream URL and key, model aliases, tiktoken encoding, default and hard output maxima, per-attempt timeout, maximum retries after the initial attempt, initial retry interval, official defaults, and development defaults.
+- `docs/contributors/backend.md` describes the shared proxy handler, internal listener, public development route, grant authentication, admitted-request rate windows, retry loop, successful-call meters, tiktoken fallback, execution-scope SQLite, teardown barriers, recording-to-scope resolution, visibility, retention, and the development ledger.
 - `docs/contributors/execution.md` describes the per-session internal network and backend-proxy relay.
 - `docs/contributors/recordings.md` explains the durable recording association to external LLM telemetry. The recording schema remains unchanged.
 - `docs/contributors/index.md` lists LLM proxy code under the backend and contains no standalone gateway component.
@@ -92,7 +97,7 @@ Keep the stub upstream local to the test process so CI requires no external prov
 
 ## Done when
 
-- Docker-free tests cover every retry class, compatible error path, reservation release, successful-only record sink, authorization boundary, and UI state.
+- Docker-free tests cover every retry class, compatible error path, rate-event retention, completion-limit normalization, tiktoken fallback, reservation release, meter failure circuit breaking, successful-only record sink, authorization boundary, and UI state.
 - Docker integration proves official and development flows against one stub upstream, including network isolation and exact cross-artifact accounting.
 - Playwright proves participant, owner, public, and operator visibility at both UI and raw-API boundaries.
 - Disabled-session fixtures remain deterministic and byte-identical.

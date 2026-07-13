@@ -18,7 +18,7 @@ The hands-on check obtains a student key for one season, makes a successful loca
 2. The environment sets `llm: true`.
 3. The season sets `llm.enabled: true`.
 
-The season model list must be a non-empty subset of the deployment's configured aliases. Live sessions resolve the play-open season. Workflow matches resolve the run's frozen `config_snapshot`. Development keys resolve their named season on every request. Submission, play, and release gates do not change development-key validity; the season's LLM configuration is the authority.
+When `llm.models` is absent, the season inherits every alias configured by the deployment. When it is present, it must be a non-empty subset of those aliases. Empty lists, duplicate aliases, and aliases unavailable on the deployment are rejected. Live sessions resolve the play-open season. Workflow matches resolve the run's frozen `config_snapshot`. Development keys resolve their named season on every request. Submission, play, and release gates do not change development-key validity; the season's LLM configuration is the authority.
 
 Persist the resolved official flag on the session row as `llm_enabled`. Session payloads and recording views read that stored value after execution.
 
@@ -48,7 +48,7 @@ llm?: {
 }
 ```
 
-Unset values inherit deployment defaults. Official and development blocks resolve independently. Admin season updates reject unknown fields, non-positive limits, duplicate model aliases, and aliases unavailable on the deployment.
+Unset limits inherit deployment defaults, and an unset model list inherits every configured deployment alias. Official and development blocks resolve independently. Admin season updates reject unknown fields, non-positive limits, empty model lists, duplicate aliases, and aliases unavailable on the deployment.
 
 `SeasonConfigEditor.vue` exposes enablement, allowed aliases, official session and run limits, and development limits as separate field groups built from existing UI primitives. The styleguide and admin-editor unit tests cover every new control and validation state.
 
@@ -64,6 +64,7 @@ The orchestrator and workflow runner issue one official key for every agent slot
 {
   "llm": {
     "base_url": "http://llm-proxy:<port>/v1",
+    "tick_url": "http://llm-proxy:<port>/internal/tick",
     "keys": {
       "player_0": "sk-sandbox-..."
     }
@@ -71,9 +72,11 @@ The orchestrator and workflow runner issue one official key for every agent slot
 }
 ```
 
-The session and workflow launch paths share this shape. Step 3 adds the matching harness parser.
+The session and workflow launch paths share this shape. The explicit tick URL keeps the internal marker route independent from the OpenAI base path, so the harness never derives one URL from the other. Step 3 adds the matching harness parser.
 
-Key issuance is enclosed by a teardown owner. Image, network, configuration, and driver-launch failures revoke issued keys before returning. Normal exit, crash exit, explicit stop, live-session finalization, and workflow-game completion call idempotent `revokeSession`. Step 5 owns telemetry file cleanup for scopes that produce no recording and for retained recordings that are deleted later.
+Key issuance is enclosed by a teardown owner. Image, network, configuration, and driver-launch failures await grant teardown before returning. Normal exit, crash exit, explicit stop, live-session finalization, and workflow-game completion await idempotent `revokeSession`.
+
+`revokeSession` first closes every session grant to new admission. It then aborts active upstream requests where cancellation remains safe, drains requests that have passed that boundary, and awaits every reservation finalizer. Only after this barrier resolves may a caller aggregate usage, close or delete telemetry, or report lifecycle completion. Step 5 owns telemetry file cleanup for scopes that produce no recording and for retained recordings that are deleted later.
 
 ## Student development key API
 
@@ -83,13 +86,14 @@ Add a persistent `llm_development_keys` table to the application database:
 type LlmDevelopmentKeyRow = {
   season_id: string
   user_id: string
+  key_id: string
   secret_hash: string
   created_at: string
   rotated_at: string | null
 }
 ```
 
-The `(season_id, user_id)` pair is the primary key. Only a hash of the secret is stored. Development secrets use an `sk-sandbox-dev-` prefix and sufficient cryptographic randomness.
+The `(season_id, user_id)` pair is the primary key, and `key_id` has a unique index. A bearer credential uses the format `sk-sandbox-dev-<key_id>.<secret>`, where the public key ID selects one row and only a hash of the cryptographically random secret is stored. Authentication parses the key ID, performs one indexed lookup, and verifies the secret hash in constant time.
 
 `POST /api/seasons/:seasonId/llm-development-key` requires an authenticated `normal` or `admin` user and effective LLM access for the named season. It rotates the pair's key and returns the plaintext once:
 
@@ -97,7 +101,7 @@ The `(season_id, user_id)` pair is the primary key. Only a hash of the secret is
 {
   "season_id": "season-id",
   "base_url": "https://sandbox.example/api/llm/v1",
-  "api_key": "sk-sandbox-dev-...",
+  "api_key": "sk-sandbox-dev-<key-id>.<secret>",
   "models": ["small", "medium"],
   "limits": {
     "token_budget": 100000,
@@ -107,9 +111,9 @@ The `(season_id, user_id)` pair is the primary key. Only a hash of the secret is
 }
 ```
 
-The public base URL is derived from `PUBLIC_ORIGIN`. Rotation invalidates the previous secret immediately and leaves accumulated development usage unchanged.
+The public base URL is derived from `PUBLIC_ORIGIN`. Rotation atomically replaces both the key ID and secret hash, invalidating the previous credential immediately while leaving accumulated development usage unchanged.
 
-Mount the shared Step 1 handler at `POST /api/llm/v1/chat/completions`. Development-key authentication resolves `{kind: 'development', seasonId, userId}` from the stored hash. It also checks the participant's current account status and the season's current effective LLM configuration, so a ban, status restriction, disabled season, or unavailable upstream stops authorization without rotating the key.
+Mount the shared Step 1 handler at `POST /api/llm/v1/chat/completions`. Development-key authentication resolves `{kind: 'development', seasonId, userId}` through the indexed key ID lookup and constant-time secret verification. It also checks the participant's current account status and the season's current effective LLM configuration, so a ban, status restriction, disabled season, or unavailable upstream stops authorization without rotating the key.
 
 ## Development meter and ledger
 
@@ -125,6 +129,7 @@ CREATE TABLE calls (
   input_tokens     INTEGER NOT NULL,
   reasoning_tokens INTEGER NOT NULL,
   output_tokens    INTEGER NOT NULL,
+  usage_estimated  INTEGER NOT NULL,
   latency_ms       INTEGER NOT NULL,
   created_at       TEXT NOT NULL
 );
@@ -133,7 +138,7 @@ CREATE INDEX calls_user ON calls (user_id, id);
 
 The development store uses `PRAGMA user_version`, explicit migrations, prepared statements, and the same validated scope-path rules as official telemetry.
 
-The development meter sums successful rows for `(seasonId, userId)` and combines them with temporary in-flight reservations. A successful logical request writes one full row and consumes one call using actual upstream usage. Every unsuccessful path releases its reservation and leaves the ledger unchanged.
+The development meter sums successful rows for `(seasonId, userId)` and combines them with temporary in-flight reservations. A successful logical request writes one full row and consumes one call using upstream usage when it is valid or the Step 1 fallback estimate otherwise. `usage_estimated` records which source produced the stored token counts so read APIs and user interfaces can identify estimates. Every unsuccessful path releases its reservation and leaves the ledger unchanged.
 
 Official telemetry files, game results, placements, and leaderboards never read or write the development ledger. Development requests never use execution scope IDs, recording IDs, session IDs, slots, ticks, or run subjects.
 
@@ -145,21 +150,21 @@ Step 5 adds participant and operator read APIs over this ledger. Ledger retentio
 
 The Docker implementation creates one internal network per session. A long-lived `alpine/socat` relay joins that network under the alias `llm-proxy` and forwards only to `host.docker.internal:<LLM_INTERNAL_PORT>`. The relay uses `host-gateway` mapping on Linux and Docker Desktop. The session container joins only its internal network.
 
-Teardown disconnects the relay and deletes the per-session network. Driver orphan reaping covers labeled LLM networks and relay attachments. The driver-neutral profile maps to an equivalent single-destination policy in other drivers.
+Teardown closes grants to admission, aborts or drains active requests, and awaits reservation finalizers before disconnecting the relay and deleting the per-session network. Driver orphan reaping covers labeled LLM networks and relay attachments. The driver-neutral profile maps to an equivalent single-destination policy in other drivers.
 
 ## Tests
 
 Docker-free backend and frontend tests cover:
 
-- The strict season schema, independent fallback of official and development limits, alias validation, and admin-editor round trips.
+- The strict season schema, inheritance of every configured alias when models are absent, rejection of empty, duplicate, and unavailable model lists, independent fallback of official and development limits, and admin-editor round trips.
 - The effective configuration matrix across deployment, environment, and season inputs.
 - Live sessions using the play-open season and workflow matches using the frozen run configuration.
 - One key per agent slot, no key for human slots, live grants using the session scope, workflow grants using the run scope, the exact launch-config shape, and no LLM block for a disabled session.
-- Revocation after every launch failure and teardown path.
-- Development-key authentication, one-time plaintext return, hash persistence, rotation, backend restart, account status checks, and season scoping.
+- Admission closure, active-request abort or drain, and reservation finalization after every launch failure and teardown path, with no write or aggregate query racing the completed barrier.
+- Development-key authentication through one indexed key ID lookup and constant-time secret verification, one-time plaintext return, hash persistence, rotation of both identifier and secret, backend restart, account status checks, and season scoping.
 - Independent development totals for two users in one season and one user in two seasons.
 - Immediate application of changed season models and limits to an existing development key.
-- Successful development calls writing one row and every rejection or terminal upstream failure writing none.
+- Successful development calls writing one row with the correct `usage_estimated` value and every rejection or terminal upstream failure writing none.
 - Complete isolation between official meters and development meters.
 - Recording migrations preserve null associations for existing rows, and live LLM recording registration stores the session scope and session filter IDs.
 
@@ -167,14 +172,14 @@ Docker integration covers:
 
 - A container request succeeds through `llm-proxy`, while a request to the public internet has no route.
 - A non-LLM container uses `NetworkMode: none`.
-- Teardown revokes the saved slot key, removes the network, and detaches the relay.
+- Teardown blocks the saved slot key, settles active requests and reservations, then removes the network and detaches the relay without a late telemetry write.
 - Orphan reaping removes a deliberately abandoned LLM network and attachment.
 
 ## Done when
 
 - Deployment, environment, and season inputs resolve one effective model and limit configuration for both launch paths.
-- Official sessions receive scoped slot keys and a single-destination internal network, and every teardown path revokes those keys.
-- An active participant can rotate one key for a season and call the public backend proxy with the returned base URL and secret.
+- Official sessions receive scoped slot keys, an explicit OpenAI base URL and tick URL, and a single-destination internal network. Every teardown path blocks admission and settles active work before aggregation or deletion.
+- An active participant can rotate one indexed key ID and secret for a season and call the public backend proxy with the returned base URL and credential.
 - Development usage is metered per participant and season under season-specific limits and remains isolated from every official artifact.
-- Successful development calls create full private ledger rows. Unsuccessful calls create no row and consume no call or token budget.
+- Successful development calls create full private ledger rows that identify estimated token usage. Unsuccessful calls create no row and consume no call or token budget.
 - Docker-free and Docker-gated tests prove the authorization, isolation, lifecycle, and network contracts.

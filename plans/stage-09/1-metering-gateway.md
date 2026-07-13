@@ -55,20 +55,24 @@ Official keys remain in memory because a backend restart reaps the containers th
 
 ## Successful-call admission and metering
 
-`LlmLimits` contains token, call, and successful-requests-per-minute limits. The official meter queries committed successful usage from the scope's SQLite file and combines it with temporary in-memory reservations.
+`LlmLimits` contains token, call, and logical-requests-per-minute limits. Call and token accounting queries committed successful usage from the scope's SQLite file and combines it with temporary in-memory reservations. Rate accounting uses an in-memory sliding window keyed by the same session and optional run subject scopes.
 
 Admission runs in this order:
 
 1. Authenticate the key.
 2. Validate the model alias.
 3. Reject streaming.
-4. Check the successful-request rate window plus in-flight reservations.
-5. Check committed call and token usage plus in-flight reservations.
-6. Reserve one logical call and its estimated input and maximum output usage.
+4. Reject a request that supplies both `max_tokens` and `max_completion_tokens`, or a maximum above the deployment hard ceiling.
+5. Check the scope circuit breaker and committed call and token usage plus in-flight reservations.
+6. Atomically reserve one logical call and its estimated input and enforced maximum output usage, check the sliding rate window, and append one rate event when admission succeeds.
 
-Input reservation uses request size at four bytes per token. Output reservation uses `max_tokens` when provided and one quarter of estimated input otherwise. Reservations protect concurrent requests and are never reported as usage.
+Input reservation uses the configured tiktoken encoding over the accepted request. Output reservation recognizes either `max_tokens` or `max_completion_tokens`. The two fields are mutually exclusive. An explicit value must not exceed `LLM_MAX_OUTPUT_TOKENS`; when both are absent, the proxy uses `LLM_DEFAULT_MAX_OUTPUT_TOKENS`. The proxy forwards exactly one maximum-output field carrying the enforced value, and admission rejects the request with `budget_exceeded` when estimated input plus that value does not fit every applicable token allowance. This makes the configured maximum, rather than an input-size heuristic or an upstream default, the bound on completion overshoot.
 
-An eventual success converts the reservation into one committed call using the upstream response's actual input, reasoning, and output token counts. Actual usage is committed in full even when tokenizer estimation causes it to cross the reserved amount; subsequent requests see the updated total, and the successful response is never discarded. A local rejection, non-retryable upstream response, timeout sequence, connection-failure sequence, or exhausted retry sequence releases the reservation and commits nothing. Budget rejection returns `400 budget_exceeded`; rate rejection returns 429.
+Each admitted logical inbound request appends one event to every applicable in-memory rate window before the upstream call. Its backend retry attempts append no events. Event retention does not depend on the upstream outcome, so a non-retryable error or exhausted retry sequence still occupies one request-per-minute slot. Local authentication, model, streaming, malformed-maximum, circuit-breaker, rate, and budget rejections never reach the upstream and do not append an admitted-request event. A rate rejection returns 429.
+
+An eventual success first validates the upstream usage object. Valid counts commit with `usage_estimated = 0`. When usage is absent or malformed, the proxy estimates input tokens from the accepted request and output tokens from the successful completion with the configured tiktoken encoding, preserves an independently exposed non-negative reasoning-token count or uses zero, and commits with `usage_estimated = 1`. Both cases consume one successful call and their committed token counts in full. Subsequent requests see the committed total, and the successful response is never discarded merely because actual usage crosses the reservation through tokenizer variance. A local rejection, non-retryable upstream response, timeout sequence, connection-failure sequence, or exhausted retry sequence releases its call and token reservation and commits nothing. Budget rejection returns `400 budget_exceeded`.
+
+The telemetry transaction must commit before the proxy returns a successful completion. If usage validation or estimation succeeds but the SQLite transaction fails, the proxy keeps the conservative call and token reservation as in-memory charged debt, trips a circuit breaker for every accounting scope that request used, and returns `503 meter_unavailable` instead of the completion. Requests rejected by that breaker never reach the upstream. The breaker remains open until storage recovery has been verified and the operator or recovery path explicitly resets it; a backend restart reopens a scope only after its telemetry file migrates and passes a write-health check. The failure is logged without request bodies or secrets. This exceptional path may lack a telemetry row, but it cannot be retried into repeated unaccounted provider calls.
 
 ## Upstream retries and errors
 
@@ -101,6 +105,7 @@ CREATE TABLE calls (
   input_tokens     INTEGER NOT NULL,
   reasoning_tokens INTEGER NOT NULL,
   output_tokens    INTEGER NOT NULL,
+  usage_estimated  INTEGER NOT NULL,
   latency_ms       INTEGER NOT NULL,
   created_at       TEXT NOT NULL
 );
@@ -109,7 +114,7 @@ CREATE INDEX calls_subject ON calls (subject_id);
 CREATE INDEX calls_created_at ON calls (created_at);
 ```
 
-The proxy stores the full accepted request and full successful completion. Rows contain no failure status or error field. The successful insert is a transaction that commits before the proxy returns the response. Session limits query by `(session_id, slot)`. Run limits query by `subject_id` within the run-scoped file. Successful-request rate windows query `created_at` with the same filters.
+The proxy stores the full accepted request and full successful completion. Rows contain no failure status or error field. `usage_estimated` is 0 for validated upstream usage and 1 for tokenizer fallback, and row codecs and aggregates preserve that distinction. The successful insert is a transaction that commits before the proxy returns the response. Session limits query by `(session_id, slot)`. Run limits query by `subject_id` within the run-scoped file. Rate windows remain in memory and never infer admitted requests from successful telemetry rows.
 
 Scope IDs are validated opaque identifiers and never interpolated into SQL. `PRAGMA user_version` versions the file schema, and startup applies explicit migrations before queries run. The store manages file creation, prepared statements, connection reuse, and closure. It closes a cached handle before retention deletes the file. Step 5 connects file retention to the session, run, and recording lifecycle and removes orphan files during startup.
 
@@ -129,6 +134,9 @@ Add these deployment settings in `backend/src/config.ts`:
 | `LLM_UPSTREAM_TIMEOUT_MS` | Timeout for each upstream attempt |
 | `LLM_UPSTREAM_MAX_RETRIES` | Retry attempts after the initial request |
 | `LLM_UPSTREAM_RETRY_INTERVAL_MS` | Initial exponential-backoff interval |
+| `LLM_TIKTOKEN_ENCODING` | Encoding used for admission and fallback token estimates |
+| `LLM_DEFAULT_MAX_OUTPUT_TOKENS` | Enforced output maximum when a request supplies neither supported maximum field |
+| `LLM_MAX_OUTPUT_TOKENS` | Hard ceiling for every explicit or default output maximum |
 | `LLM_SESSION_TOKEN_BUDGET`, `LLM_SESSION_CALL_BUDGET`, `LLM_SESSION_RATE_LIMIT_RPM` | Official per-slot session defaults |
 | `LLM_RUN_TOKEN_BUDGET`, `LLM_RUN_CALL_BUDGET`, `LLM_RUN_RATE_LIMIT_RPM` | Official per-submission run defaults |
 
@@ -141,21 +149,27 @@ Docker-free backend tests use fake timers and a stub OpenAI-compatible upstream:
 - Missing, malformed, unknown, and revoked keys return 401 without reaching the upstream.
 - Model aliases map in both directions, and disallowed aliases return `model_not_allowed`.
 - Streaming, rate, and budget rejections use the pinned OpenAI-compatible envelope and create no SQLite row.
-- First-attempt success commits one call with actual usage and one durable SQLite row.
+- Each admitted logical request adds one event to its session and run rate windows whether the upstream succeeds, returns a non-retryable error, or exhausts retries; retry attempts add no events, and the next request at the boundary returns 429.
+- `max_tokens` and `max_completion_tokens` each reserve and forward their enforced value, supplying both is rejected, an absent value injects the configured default, a value over the hard ceiling is rejected, and no request whose enforced input-plus-output reservation exceeds remaining budget reaches the upstream.
+- First-attempt success with valid usage commits one call with `usage_estimated = 0` and one durable SQLite row.
+- A successful response with missing, negative, non-integer, or otherwise malformed usage commits tiktoken input and output estimates, exposed reasoning or zero, and `usage_estimated = 1` without changing the returned completion.
 - Retryable failures followed by success use the exact exponential intervals, commit once, and include retry waits in latency.
 - A non-retryable upstream 4xx makes one attempt, returns immediately, releases its reservation, and records nothing.
 - Exhausted connection, timeout, 408, 409, 429, and 5xx sequences make the configured number of attempts, return the final error, release the reservation, and record nothing.
 - Concurrent reservations prevent the successful-call and token limits from being crossed by simultaneous requests.
 - Tick markers are isolated per grant and stamp setup calls with null and acted calls with their current tick.
-- Session, run-subject, rate-window, and model aggregation queries return exact sums from successful rows.
+- Session, run-subject, and model aggregation queries return exact sums from successful rows and exact counts of estimated rows.
 - File creation sets the current `user_version`, migrations advance older fixtures, and retention closes cached handles before deletion.
 - Full request and completion bodies round-trip through the SQLite row codec.
+- A forced telemetry transaction failure retains the conservative in-memory charge, returns `meter_unavailable`, opens every affected scope breaker, and prevents a repeated request from reaching the upstream until an explicit successful recovery reset.
 
 ## Done when
 
 - One backend handler forwards non-streaming requests to one configured OpenAI-compatible upstream.
 - The explicit retry loop follows the configured attempt count and exponential intervals.
-- Successful logical requests consume one call and write one official SQLite row. Every unsuccessful path consumes no call or token budget and writes no row.
+- Every admitted logical request consumes one rate-window event independent of outcome, while backend retries consume none. Successful logical requests consume one call and write one official SQLite row. Every unsuccessful upstream path consumes no call or token budget and writes no row.
 - Official grants enforce model, session, run, and rate boundaries and can be revoked by session.
-- SQLite rows contain full successful request and completion bodies and authoritative session, slot, subject, tick, model, token, and latency fields.
+- Explicit and default output maxima are normalized, hard-capped, forwarded, and included in admission so they cannot bypass remaining token allowance.
+- SQLite rows contain full successful request and completion bodies and authoritative session, slot, subject, tick, model, token, estimated-usage, and latency fields.
+- Missing or malformed upstream usage is estimated with tiktoken and surfaced as estimated, while a telemetry commit failure retains a conservative charge and opens a scope circuit breaker before returning an error.
 - Docker-free tests cover every retry class, reservation release, compatible error shape, and successful-only accounting rule.

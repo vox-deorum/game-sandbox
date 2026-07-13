@@ -28,7 +28,7 @@ Streaming requests are rejected with `400 streaming_unsupported`. Authentication
 
 The backend classifies connection failures, timeouts, upstream 408, 409, 429, and 5xx responses as retryable. It retries them with exponential backoff from `LLM_UPSTREAM_RETRY_INTERVAL_MS` for at most `LLM_UPSTREAM_MAX_RETRIES` attempts after the initial request. Other upstream 4xx responses are returned immediately. An exhausted retry sequence returns its final error.
 
-One client call is one logical request across every upstream attempt. Admission creates a temporary reservation against the relevant rate, call, and token limits. A successful upstream response commits one call and its actual usage, writes one record, and reports latency across all attempts and backoff waits. A rejected request or terminal upstream failure releases its reservation, consumes no call or token budget, and writes no telemetry or development-ledger row.
+Each admitted inbound request is one logical request across every upstream attempt and consumes one event in the applicable in-memory rate windows regardless of its terminal outcome. Admission also creates temporary call and token reservations using a tiktoken input estimate and an enforced output maximum. A successful upstream response commits one call and either validated upstream usage or explicitly marked tiktoken estimates, writes one record, and reports latency across all attempts and backoff waits. A rejected request or terminal upstream failure releases its call and token reservations, consumes no call or token budget, and writes no telemetry or development-ledger row. Backend retry attempts do not consume additional rate events.
 
 Official limits apply per slot per live session and per submission per leaderboard run. Student development limits apply per participant per season. Deployment defaults exist for both groups, and a season may override them independently.
 
@@ -36,15 +36,15 @@ Official limits apply per slot per live session and per submission per leaderboa
 
 Effective official access requires a configured upstream, an environment with LLM support, and a season with LLM enabled. Live sessions use the play-open season. Workflow matches use the run's frozen season configuration.
 
-Each agent slot receives a temporary key scoped to its session, slot, telemetry scope, allowed models, and official limits. Live sessions use their session ID as the telemetry scope. Workflow matches use the leaderboard run ID, so every match in one run shares one SQLite file. Keys are revoked on session teardown and on every failed launch path. A per-session internal network exposes only the backend proxy relay to the session container.
+Each agent slot receives a temporary key scoped to its session, slot, telemetry scope, allowed models, and official limits. Live sessions use their session ID as the telemetry scope. Workflow matches use the leaderboard run ID, so every match in one run shares one SQLite file. Teardown first closes the session's keys to new admission, then aborts or drains authenticated requests and awaits their reservation finalizers before aggregation, telemetry cleanup, or lifecycle completion. A per-session internal network exposes only the backend proxy relay to the session container.
 
 An active participant requests a development key from `POST /api/seasons/:seasonId/llm-development-key`. The key is scoped to that participant and season, and rotation invalidates the previous key. The response supplies the public `OPENAI_BASE_URL`, the key, allowed model aliases, and resolved development limits.
 
 ## Records and surfaces
 
-Official telemetry files live at `data/llm/<scopeId>.sqlite`. Every successful official call inserts one row containing session, tick, slot, model alias, full request and completion, actual input, reasoning, and output token counts, and end-to-end latency. Tick markers sent by the harness attribute calls made during each participant hook. Durable scope and session IDs on recording metadata resolve a recording to its rows after producing session or workflow data is pruned.
+Official telemetry files live at `data/llm/<scopeId>.sqlite`. Every successful official call inserts one row containing session, tick, slot, model alias, full request and completion, input, reasoning, and output token counts, whether those counts were estimated, and end-to-end latency. Tick markers sent by the harness attribute calls made during each participant hook. Durable scope and session IDs on recording metadata resolve a recording to its rows after producing session or workflow data is pruned.
 
-Each season has a development ledger keyed by participant. Every successful development call records participant, model alias, full request and completion, actual token counts, and end-to-end latency. Participants can read only their own usage and rows. Operators can inspect every participant's rows for the season.
+Each season has a development ledger keyed by participant. Every successful development call records participant, model alias, full request and completion, token counts, whether those counts were estimated, and end-to-end latency. Participants can read only their own usage and rows. Operators can inspect every participant's rows for the season.
 
 The replay API returns public official metadata for every successful call and includes bodies only for the controlling submission's owner and operators. The automated board aggregates successful official usage by model alias. The participant profile exposes development-key rotation, remaining development allowance, and the participant's private development ledger.
 
@@ -70,9 +70,9 @@ Stage 3 provides orchestration and driver networking. Stage 5 provides submissio
 ## Done when
 
 - The backend calls exactly one configured OpenAI-compatible upstream and exposes no provider-routing service.
-- Retryable failures follow the configured exponential schedule. Non-retryable errors return immediately. Only an eventual success consumes limits and creates one record.
+- Retryable failures follow the configured exponential schedule. Non-retryable errors return immediately. Every admitted logical request consumes one rate event, while only an eventual success consumes call and token limits and creates one record.
 - A student obtains a season-scoped development key, sees a private per-season meter and ledger, and does not consume official limits.
 - The template LLM example runs unchanged with development credentials in `.env` and injected slot credentials in a session.
-- Session containers reach only the backend LLM proxy, and temporary slot keys stop authorizing after teardown.
+- Session containers reach only the backend LLM proxy, and teardown drains or aborts authenticated work before temporary slot keys and telemetry scopes are retired.
 - Replays, owner debug views, and automated boards derive their data from successful official SQLite rows with the required visibility boundaries.
 - LLM-disabled sessions execute the unchanged non-LLM path and preserve deterministic recording fixtures.

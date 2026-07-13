@@ -18,6 +18,7 @@ The hands-on check runs the Hearts oracle locally with a requested development k
 @dataclass(frozen=True)
 class LlmConfig:
     base_url: str
+    tick_url: str
     keys: dict[str, str]
 ```
 
@@ -38,7 +39,7 @@ When `LiveConfig.llm` is `None`, the harness performs no credential or marker op
 
 ## Tick markers and telemetry attribution
 
-Send `POST /internal/tick` with the slot's bearer key at the same ownership boundaries as the credential helper:
+Send a `POST` request to `LlmConfig.tick_url` with the slot's bearer key at the same ownership boundaries as the credential helper. The harness uses the configured URL directly and does not derive it from the OpenAI base URL.
 
 - `{"phase":"setup"}` before module load, construction, and reset.
 - `{"tick":N}` before the acting slot's hooks for tick `N`.
@@ -98,7 +99,7 @@ Docker-free Python tests cover:
 
 - A two-agent fixture sees its own key at import, construction, reset, act, chat, and learn, including a client captured during construction.
 - Acting keys alternate correctly across a multi-agent episode.
-- Setup and per-tick markers use the matching slot key and precede the participant hooks they describe.
+- Setup and per-tick markers use the explicit tick URL and matching slot key, and precede the participant hooks they describe.
 - A failed marker request emits a diagnostic and does not stop the episode.
 - Setup calls persist with null ticks, and per-turn calls persist with the marked tick.
 - Backend retry time inside an agent call contributes to decision, step, and episode timing.
