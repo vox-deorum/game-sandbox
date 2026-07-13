@@ -1,44 +1,100 @@
-# Stage 9.6: Testing, CI, and Docs
+# Stage 9.6: Testing, CI, and Documentation
 
 Status: not started.
 
-Part of [Stage 9](../stage-09-llm-gateway.md), build-order step 6: the cross-cutting companion every stage since 2 has shipped — the whole-stage journeys no single step can own, the CI wiring that keeps them running, and the final reconciliation sweep across specs and student docs. Per-step tests live in each subplan; this step tests the seams _between_ them.
+Part of [Stage 9](../stage-09-llm-gateway.md), build-order step 6.
 
-## Why this is its own seam
+## Outcome
 
-- The stage's "done when" sentences are cross-step by construction: "the template's example runs unmodified in both places" spans steps 1–3, "prompts visible only to the owner" spans 1 and 5, "a revoked key stops authorizing" spans 1–2.
-- Those journeys need the full stack, Docker, and a browser — exactly the machinery the `backend-integration` and `e2e.yml` lanes already own. Bundling them with the docs sweep mirrors stages 5–8 and keeps every earlier step lean.
+Full-stack integration and browser journeys verify retries, successful-only accounting, official and development meter isolation, key lifecycle, network isolation, telemetry privacy, and disabled-session regressions. Contributor and student documentation describe the delivered API and configuration directly.
 
-## What to build
+## Stub upstream
 
-### The whole-stage integration journey
+Extend the backend integration and Playwright harnesses with one OpenAI-compatible stub upstream. A request fixture selects deterministic behavior without changing the proxy contract:
 
-In the Docker-gated `backend-integration` lane, against a stub OpenAI upstream (an in-process HTTP server — the gateway requires only "an OpenAI-compatible endpoint," and the stub pins that contract):
+- Immediate success with known model and usage fields.
+- A configured sequence of retryable responses followed by success.
+- A non-retryable 4xx response.
+- Retryable responses through the configured retry limit.
+- A delayed response for timeout and timing checks.
 
-- **End-to-end session**: a season configured with LLM enabled, a tier list, and small budgets; a session with the step 3 oracle runs end to end. Inside the container the gateway answers and the internet does not; the session's telemetry file under `data/llm/` holds a row per call, failures included, tick-matched to the acting slot's recorded steps; the saved slot key is dead after exit; the network and relay attachment are gone.
-- **Run budget**: a two-match mini-run under a tiny per-submission run budget reproduces the step 4 journey across sessions — exhaustion in match two, a caught error, an honest finish, no forfeit, and board rows with token usage by tier.
-- **Regression gates**: a messaging-era Spades session and a plain Flappy Bird session re-run byte-identical to their pre-stage recordings, proving the LLM path adds nothing when disabled.
+The stub records upstream attempts, arrival times, model names, and authorization headers. Assertions verify exponential intervals, alias mapping, and that the backend credential reaches the upstream while participant and slot keys do not.
 
-### The browser journey
+## Docker integration journeys
 
-`llm.spec.ts` joins `e2e.yml` beside `spades.spec.ts`, on the same stub upstream:
+Add these journeys to the Docker-gated `backend-integration` lane:
 
-- An operator enables LLM on a season in the admin console's new fields; a watch session with the oracle runs.
-- The replay shows the Model-calls panel ticking under the scrubber, with the run-cost summary.
-- The owner's profile debug view shows full prompts while a logged-out context shows none — asserted at both the UI and the raw-API level, since the endpoint is the boundary.
-- The board renders the token column.
+### Official session
 
-### Docs and spec reconciliation
+Run an LLM-enabled session with the Hearts oracle and a mix of upstream outcomes. Confirm that:
 
-The sweep that closes the stage, each item finishing what its step began:
+- The container reaches the backend proxy and cannot reach the public internet.
+- A retryable sequence followed by success produces one successful response, one call charge, and one SQLite row whose latency includes attempts and waits.
+- A non-retryable error makes one upstream attempt and produces no charge or SQLite row.
+- Exhausted retries make the configured number of attempts and produce no charge or SQLite row.
+- Successful SQLite rows carry the acting slot and tick.
+- The saved slot key returns 401 after exit, and teardown removes the session network and relay attachment.
 
-- [llm.md](../../docs/specs/llm.md) reads as one coherent document of the built system: the backend-embedded gateway calling one OpenAI-compatible endpoint through the official `openai` SDK, the `large`/`medium`/`small` tier vocabulary, season-only enablement, per-slot session and per-submission run budgets, the error-code contract, no streaming, marker-based tick attribution, per-scope telemetry files, and the visibility rules.
-- [execution.md](../../docs/specs/execution.md) (languages table with the separate-service row gone, sandboxing section), [environment.md](../../docs/specs/environment.md) and [submission.md](../../docs/specs/submission.md) (flag removal, `.env` flow) are consistent with the steps that touched them.
-- `docs/contributors/configuration.md` documents every `LLM_*` variable with defaults, the tier mapping, and the operator guidance: choosing a provider, or pointing `LLM_UPSTREAM_URL` at a router the deployment operates (OpenRouter, a self-hosted LiteLLM) when one provider is not enough.
-- `docs/students/llm.md` and the template README are verified against the shipped behavior: the tiers are fixed and the deployment decides what stands behind them, errors are catchable, prompts are visible to you and operators, metadata is public.
-- Stage and subplan statuses are updated per the [plans README](../README.md).
+### Development access
+
+Create two active participants and two LLM-enabled seasons. Request and use development keys to prove that:
+
+- Each `(participant, season)` pair has an independent call, token, and rate allowance.
+- Rotating one key invalidates its previous secret without resetting usage.
+- A successful request creates one private ledger row with full bodies and retry-inclusive latency.
+- A non-retryable error and exhausted retry sequence create no usage and no ledger row.
+- Development calls create no official execution-scope row, game result, placement, or board usage.
+- Official calls do not change development totals.
+
+### Leaderboard run
+
+Run two workflow matches under a small per-submission run allowance. Confirm successful usage carries across matches for one submission, remains independent for another submission, and produces exact run-SQLite, game-result, board, and placement aggregates. The first over-budget request is rejected without an upstream attempt or telemetry row, and the agent completes the game without forfeiting.
+
+### Disabled sessions
+
+Run the existing deterministic Spades and Flappy Bird fixtures with effective LLM access disabled. Their launch configs, network mode, environment variables, hook order, and recording bytes remain unchanged.
+
+## Browser journeys
+
+Add `frontend/e2e/llm.spec.ts` using the same stub upstream:
+
+1. An operator configures allowed aliases and separate official and development limits for a season.
+2. A participant opens My Profile, creates a development key, and sees the one-time credential dialog.
+3. A successful development request updates only that participant's selected-season allowance and private ledger.
+4. Another participant cannot read the ledger, while the operator can inspect it from season management.
+5. An official oracle session produces replay model-call metadata and owner debug bodies.
+6. A logged-out caller sees replay metadata but receives no request or completion bodies from the raw API.
+7. The automated board shows successful calls, tokens, and model-call latency by alias.
+8. No surface renders an error row for unsuccessful logical requests.
+
+Use the existing authenticated-persona fixtures and UI primitives. Update locators and component tests in the same change as the new surfaces.
+
+## Documentation
+
+Update these documents to match the implementation:
+
+- `docs/specs/llm.md`, `execution.md`, `leaderboard.md`, `submission.md`, and `recording.md` describe the final behavior and data boundaries.
+- `docs/contributors/configuration.md` documents every `LLM_*` setting, including one upstream URL and key, model aliases, per-attempt timeout, maximum retries after the initial attempt, initial retry interval, official defaults, and development defaults.
+- `docs/contributors/backend.md` describes the shared proxy handler, internal listener, public development route, grant authentication, retry loop, successful-call meters, execution-scope SQLite, recording-to-scope resolution, visibility, retention, and the development ledger.
+- `docs/contributors/execution.md` describes the per-session internal network and backend-proxy relay.
+- `docs/contributors/recordings.md` explains the durable recording association to external LLM telemetry. The recording schema remains unchanged.
+- `docs/contributors/index.md` lists LLM proxy code under the backend and contains no standalone gateway component.
+- `docs/students/llm.md` documents season key creation, `.env`, model aliases, development limits, backend retries, terminal error handling, successful-only accounting, and privacy.
+- The template README points to the student guide and `python -m sandbox llm`.
+
+Run the strict docs build and link checks. Update the Stage 9 overview and all subplan statuses when the implementation and verification gates pass.
+
+## CI gates
+
+The Docker-free default lane runs backend proxy, retry, meter, schema, storage, harness, template, and frontend unit tests. The Docker integration lane runs network and end-to-end official and development journeys. The Playwright lane runs the browser visibility and key-management journey.
+
+Keep the stub upstream local to the test process so CI requires no external provider credential or network service.
 
 ## Done when
 
-- Both CI lanes are green with the new journeys: the integration lane proves the container-to-board pipeline against the stub upstream, byte-identical regression gates included; the e2e lane proves the operator-to-owner story in a real browser with the visibility boundary asserted at the API.
-- Every spec and student doc the stage touched describes the system as built, and the stage file records done.
+- Docker-free tests cover every retry class, compatible error path, reservation release, successful-only record sink, authorization boundary, and UI state.
+- Docker integration proves official and development flows against one stub upstream, including network isolation and exact cross-artifact accounting.
+- Playwright proves participant, owner, public, and operator visibility at both UI and raw-API boundaries.
+- Disabled-session fixtures remain deterministic and byte-identical.
+- Contributor and student documentation matches the delivered routes, settings, limits, retry behavior, and privacy model.
+- `uv run python scripts/ci.py docs`, the standard CI lanes, the Docker integration lane, and the frontend end-to-end lane pass.

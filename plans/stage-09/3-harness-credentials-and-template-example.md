@@ -1,66 +1,117 @@
-# Stage 9.3: Harness Credentials and the Template LLM Example
+# Stage 9.3: Harness Credentials and the Student LLM Example
 
 Status: not started.
 
-Part of [Stage 9](../stage-09-llm-gateway.md), build-order step 3: the participant-facing payoff. The harness starts setting `OPENAI_BASE_URL`, swapping the acting slot's `OPENAI_API_KEY`, and posting the tick marker that stamps telemetry rows, and the template grows a worked example agent that consults the model. Almost entirely Python — the backend work of steps 1 and 2 is consumed, not extended.
+Part of [Stage 9](../stage-09-llm-gateway.md), build-order step 3.
 
-**Hands-on result:** the stage's headline "done when" — the same student code runs unmodified locally against the instructor's class key in `.env` and inside a session against the gateway, because both places present the identical two environment variables.
+## Outcome
 
-## Why this is its own seam
+The harness supplies the correct slot key whenever participant code runs and marks the tick used by each successful official call. The template and student guide use season-scoped development credentials locally and the same two OpenAI environment variables used in official sessions.
 
-- The credential swap is the one piece of the stage inside the per-turn loop, where correctness rules are strict and already pinned: byte-identical recordings when a capability is off (the Stage 8 chat precedent), failures charged to the right seat, wall-clock timing as the single budget basis. A Docker-free step keeps those invariants testable on `ManualClock` and fixture agents.
-- The example agent belongs in the same step because it proves the contract is usable — and [submission.md](../../docs/specs/submission.md) promises every starter kit "a minimal LLM API example," which is only honest once the in-session half actually works.
+The hands-on check runs the Hearts oracle locally with a requested development key and runs the same agent in an LLM-enabled session with injected slot credentials.
 
-## What to build
+## Harness configuration
 
-### Config plumbing
+`live.py::parse_config` accepts the launch block produced by Step 2:
 
-`live.py::parse_config` learns the `llm` block step 2 already emits: `base_url` and a per-slot `keys` map onto `LiveConfig.llm`, absent meaning disabled. The lockstep note with `backend/src/session/launch-config.ts` covers the new shape.
+```py
+@dataclass(frozen=True)
+class LlmConfig:
+    base_url: str
+    keys: dict[str, str]
+```
 
-### The credential swap
+`LiveConfig.llm` is `None` for a non-LLM session. Validation requires one key for every configured agent slot, rejects keys for unknown slots, and keeps the backend and Python launch-config fixtures in lockstep.
 
-A small helper (e.g. `set_slot_credentials(llm, slot_id)`) owns the only two `os.environ` writes in the harness: `OPENAI_BASE_URL` set once at startup, and `OPENAI_API_KEY` swapped to the acting slot's key at each point where participant code is about to run:
+## Slot credentials
 
-- Around `load_agent` in `live.py::build_slots` — an agent that constructs its `OpenAI()` client at import or `__init__` time captures its own slot's key, because module import happens inside `load_agent` with that slot's credentials in place.
-- Around each slot's `reset` in `Episode.start`.
-- At the top of the acting-slot branch of `Episode.step_once` — one set per step covers `act`, `chat`, and `learn`, since all three hooks belong to the same slot.
+A helper owns the harness environment changes:
 
-Constraints and non-goals:
+- Set `OPENAI_BASE_URL` from `LlmConfig.base_url` before loading participant modules.
+- Set `OPENAI_API_KEY` to a slot's key immediately before importing and constructing that slot's agent.
+- Set the slot key before its `reset` hook.
+- Set the acting slot's key at the start of its turn, covering `act`, `chat`, and `learn`.
 
-- Agents run sequentially in one process (the documented Stage 2 assumption in `manifest.py`), so a single mutable env var attributes every call correctly.
-- The keys are telemetry and budget attribution, not an intra-container security boundary — [execution.md](../../docs/specs/execution.md) already accepts that agents sharing a container can interfere; nothing here claims otherwise.
-- With no `llm` block, no statement of any of this runs — the same guarded-by-existence pattern as the chat router — and the existing determinism fixtures are the regression gate that recordings stay byte-identical.
-- No new timing machinery: an LLM call blocks inside `act`, so its wall-clock time already lands in `decision_ms`, the slot's `budget_used_ms`, and the step and episode limits. This step pins that with a test, making [llm.md](../../docs/specs/llm.md)'s "time waiting for a model counts toward the agent's limits" a tested sentence.
+Agents execute sequentially in one process, so these changes give module-level clients and hook-level clients the correct grant. A session key provides attribution inside the container trust boundary; it is not an isolation boundary between agents sharing that container.
 
-### The tick marker
+When `LiveConfig.llm` is `None`, the harness performs no credential or marker operations. Existing deterministic fixtures pin the non-LLM path.
 
-The same points drive tick attribution — the gateway half (per-grant markers stamping telemetry rows) landed in step 1; this step sends the POSTs. Once per slot before `load`/`reset`, the harness POSTs `/internal/tick` with `{"phase": "setup"}`, and at the top of the acting-slot branch with `{"tick": N}`, each authenticated with that slot's key so rows stamp per grant:
+## Tick markers and telemetry attribution
 
-- Mechanics: stdlib `urllib` with a short fixed timeout, wrapped so a failure prints a stderr diagnostic and never raises — a telemetry hiccup must not crash a session — and guarded by the `llm` block's existence like the credential swap, so disabled sessions run zero new statements.
-- The synchronous wait for the marker's 204 is a few local-network milliseconds per stepped tick, invisible next to model calls measured in seconds.
+Send `POST /internal/tick` with the slot's bearer key at the same ownership boundaries as the credential helper:
 
-### The template surface
+- `{"phase":"setup"}` before module load, construction, and reset.
+- `{"tick":N}` before the acting slot's hooks for tick `N`.
 
-- **Smoke command**: `templates/base/sandbox/llm_example.py` stops hardcoding `gpt-4o-mini`: inside a session the tier vocabulary is universal, so the example defaults to `small`, and `OPENAI_MODEL` overrides it for local runs against a real provider whose model names the template cannot know. `templates/base/.env.example` gains the `OPENAI_MODEL` line, and `python -m sandbox llm` joins the `__main__.py` dispatch so the smoke test is one command instead of a module path.
-- **Worked example**: `examples/hearts/oracle/` — each turn it builds a compact prompt from the observation via the existing cards helper, asks the model which legal card to play, parses the answer, and falls back to the lowest legal card on **any** failure, malformed replies and API errors alike. Hearts because it is unpaced (multi-second latency fits under a season's raised step limits) and simpler than Spades. The fallback is the pedagogical core: working code demonstrating the exact contract the spec promises — an over-budget or failed call is an ordinary catchable error and the episode continues.
-- **Student docs**: a new `docs/students/llm.md` ("Using the LLM API") covering the two env vars and the `.env` flow, the three model tiers (`large`/`medium`/`small`) and that the deployment decides what stands behind each, the error-handling pattern, no streaming, and the visibility warning — call metadata is public on replays; full prompts are visible to you and to operators. Linked from `agent-interface.md` and the getting-started flow, composed into templates by the existing docs machinery.
+Use a small synchronous standard-library HTTP helper with a bounded local timeout. A marker failure writes a concise stderr diagnostic and allows the episode to continue. The model request still follows the agent's normal error handling.
+
+Calls made during setup carry a null tick in execution-scope SQLite. Calls made during a turn carry the marked tick. Durable scope and session IDs on recording metadata associate those rows with replays.
+
+Time spent in the backend proxy, including upstream attempts and exponential waits, remains inside the blocking participant hook. The existing wall-clock measurement therefore includes it in decision time, step limits, and episode limits.
+
+## Template command and environment file
+
+`templates/base/.env.example` contains:
+
+```dotenv
+OPENAI_BASE_URL=
+OPENAI_API_KEY=
+OPENAI_MODEL=small
+```
+
+Students copy the `base_url` and `api_key` returned by `POST /api/seasons/:seasonId/llm-development-key`. `OPENAI_MODEL` selects an alias allowed by that season.
+
+`templates/base/sandbox/llm_example.py` makes one non-streaming chat-completion request with the stock Python `openai` client. `python -m sandbox llm` runs it through the existing template command dispatcher and reports model alias and successful token usage without printing the key.
+
+## Hearts oracle example
+
+Add `examples/hearts/oracle/`. On each turn it:
+
+1. Reads semantic card data through the template's cards helper.
+2. Sends a compact prompt listing the legal cards and relevant trick state.
+3. Parses one legal-card choice from the completion.
+4. Uses the lowest legal card when the API returns a terminal error, the completion is malformed, or the selected card is illegal.
+
+The fallback keeps the game valid after budget exhaustion, a non-retryable upstream error, or exhausted backend retries. Retryable failures that recover inside the backend produce a normal successful result to the agent.
+
+## Student documentation
+
+Add `docs/students/llm.md` and link it from the student index, getting-started flow, and agent-interface guide. Compose it into every template.
+
+The guide covers:
+
+- Requesting or rotating a development key for one season.
+- Setting `OPENAI_BASE_URL`, `OPENAI_API_KEY`, and an allowed model alias in `.env`.
+- Keeping the key outside Git and rotating it after exposure.
+- The separate per-participant, per-season development allowance.
+- Successful-only metering and recording.
+- Backend retries and the terminal errors agent fallback code must handle.
+- Public official metadata, owner and operator access to official prompt bodies, and participant and operator access to development prompt bodies.
+- The rule that development calls never enter recordings or leaderboards.
+- The unsupported streaming mode.
+
+The template README points to this guide and the smoke command.
 
 ## Tests
 
-Docker-free Python on fixture agents and stub servers:
+Docker-free Python tests cover:
 
-- A fixture agent that records `os.environ` at import, `__init__`, `reset`, `act`, `chat`, and `learn` sees its own slot's key at every point, in a two-agent episode where the acting key visibly alternates.
-- A client constructed at `__init__` and used at `act` keeps working across other slots' turns (the captured-at-construction case the swap is designed around).
-- With no `llm` config, the environment is untouched and recordings are byte-identical to pre-stage fixtures.
-- A slow fake LLM call inside `act` charges `decision_ms` and the episode budget, and can trip the step and episode limits — the timing pin.
-- Marker ordering against a fake gateway: a setup marker precedes `load` and `reset`, a `{"tick": N}` marker precedes the acting slot's hooks each step with the posting key alternating in a two-agent episode; a failed marker POST prints a stderr diagnostic, never raises, and the episode continues.
-- The oracle example, pointed at a local stub OpenAI server: plays the suggested card on a well-formed reply; falls back to lowest-legal on a malformed reply, on a `budget_exceeded`-shaped 400, and on a connection error, finishing the episode in all cases; the stock `openai` client maps the step 1 error envelope to `BadRequestError` (the cross-language contract test).
-- `python -m sandbox llm` and the example's tests pass through the composed-template machinery like every other example.
+- A two-agent fixture sees its own key at import, construction, reset, act, chat, and learn, including a client captured during construction.
+- Acting keys alternate correctly across a multi-agent episode.
+- Setup and per-tick markers use the matching slot key and precede the participant hooks they describe.
+- A failed marker request emits a diagnostic and does not stop the episode.
+- Setup calls persist with null ticks, and per-turn calls persist with the marked tick.
+- Backend retry time inside an agent call contributes to decision, step, and episode timing.
+- The oracle follows a valid completion and uses its legal fallback for malformed output, `budget_exceeded`, a non-retryable API error, and an exhausted-retry error.
+- A retryable upstream failure followed by backend success reaches the oracle as one successful response.
+- `python -m sandbox llm`, the oracle tests, and the `.env.example` contract pass through template composition.
+- The non-LLM harness path preserves the deterministic recording fixtures.
 
 ## Done when
 
-- A student copies `.env.example`, fills in the class key, and `python -m sandbox llm` answers; the oracle example plays a full local Hearts hand through `play.py`, consulting the model each turn.
-- The same oracle, submitted and watched in a session against an LLM-enabled season, plays through the gateway with no code change — from the agent's point of view nothing distinguishes the two beyond the values of two environment variables.
-- Every slot's calls carry its own key and stamp onto the tick they served; LLM wait time lands in the recorded timing; sessions without the capability are byte-identical to today.
-- The student docs teach the env vars, the fallback pattern, and the visibility rules.
-- All green Docker-free; the in-session run is the step's hands-on check against a locally running stack.
+- Every participant hook runs with the correct slot's base URL and key.
+- Every successful official SQLite row has the correct session, slot, and setup or tick attribution.
+- LLM wait time, including backend retries, is included in the existing timing limits.
+- A student runs the smoke command and Hearts oracle with a season development key stored in `.env`.
+- The same oracle runs in an official session with injected credentials and unchanged agent code.
+- The guide explains key handling, separate development limits, successful-only accounting, retry behavior, visibility, and fallback errors.

@@ -1,69 +1,114 @@
-# Stage 9.5: Replay Metadata, the Owner Debug View, and Board Tokens
+# Stage 9.5: LLM Usage Surfaces
 
 Status: not started.
 
-Part of [Stage 9](../stage-09-llm-gateway.md), build-order step 5: everything the stage built becomes visible, at exactly the visibility the spec draws — per-tick tier, token, and latency metadata public wherever the replay is public; full prompts and completions only in the owner's debug view on the agent profile (and to operators); the token-usage-by-tier column on the automated board next to timing.
+Part of [Stage 9](../stage-09-llm-gateway.md), build-order step 5.
 
-**Hands-on result:** the whole story in a browser — scrub a replay and watch the model calls tick by, open your agent's profile and read the exact prompts it sent, open the same profile logged out and see none of them, and find the token column on the board.
+## Outcome
 
-## Why this is its own seam
+Public replays and automated boards show successful official-call metadata. Submission owners and operators can inspect full official prompts and completions. Participants can rotate a development key and inspect their private season meter and successful-call ledger. Operators can inspect development usage for any participant in a season.
 
-- The three surfaces share one data source — the per-scope telemetry files under `data/llm/` — and one authorization question: who may read prompt bodies. Answering it once, server-side, in one endpoint, then building the three views against it, is the shape `recordings-view.ts` established for blind attribution.
-- Masking that matters "cannot live only in the browser": the recordings API is public, and a caller bypassing the UI would otherwise read exactly what the rule is meant to hide. The frontend's `isOwner()` checks are display conveniences; the endpoint is the boundary.
+The hands-on check compares anonymous, submission-owner, participant, and operator views in the browser and through the raw APIs.
 
-## What to build
+## Recording telemetry API
 
-### The telemetry endpoint, masked per slot
+Add `GET /api/recordings/:id/llm`. The recording row supplies its durable `llm_scope_id` and `llm_session_id`. The backend opens `data/llm/<llm_scope_id>.sqlite` and returns successful rows matching `llm_session_id`, ordered by insertion ID. A missing association, scope file, or matching row returns 404.
 
-`GET /api/recordings/:id/llm` in `backend/src/app.ts`, public like the recording stream:
+Every returned row includes these public fields:
 
-- The backend resolves the recording to its telemetry scope — the run behind a workflow recording, the session behind a live one — and reads `data/llm/<scopeId>.sqlite` filtered to that recording's session, in insertion order. 404 when the recording has no scope file or no rows for its session (a non-LLM session); an in-flight session serves its rows so far, since telemetry is written through with no finalize gate.
-- This resolver is also where the step 1 lifecycle rule gets its hook: deleting a recording deletes the scope's file once no surviving recording references it — a live session's file dies with its one recording, a run's file with the last of the run's recordings — with step 1's startup sweep covering orphans.
-- Every row always carries the public fields — tick, slot, tier, token counts, latency, status, error code.
-- The `request` and `response` bodies are included **per row** only when the caller is an operator or owns the submission controlling that row's slot. Identity comes from the session via `identity.ts`, never a query parameter; ownership is resolved server-side by one resolver anchored on the recording header's player attribution joined to authoritative submission ownership in storage.
-- The header is the anchor because it is the one attribution source both kinds of recording share — an automated season run has no producing session row, so the sessions table cannot be it; the same resolver must serve live and workflow recordings alike.
-- In a multi-agent session an owner therefore sees their own seat's prompts and only metadata for everyone else's — ownership is per slot, not per recording. Blind-season handling needs no new rule: prompts identify no one, the metadata was always public, and the existing attribution masking already governs names.
+- Tick and slot.
+- Model alias.
+- Input, reasoning, and output token counts.
+- End-to-end latency, including backend retries.
 
-### The replay viewer panel
+The response includes `request` and `completion` for a row only when the caller is an operator or owns the submission controlling that row's slot. Ownership is resolved from the recording header's player attribution and authoritative submission ownership. In a multi-submission recording, an owner receives bodies for their own slots and metadata for the other slots.
 
-- `ReplayPage.vue` fetches the endpoint alongside the recording; a 404 simply means no panel — the recording format itself carries no LLM trace, so the fetch is the discovery mechanism.
-- A new "Model calls" panel joins the `.stage-log` region beside `DecisionLog`/`GameThread`, following the chat pattern exactly: rows accumulate into a tick-keyed list, a `visibleLlm` computed filters by `replayState.tick`, and the current tick highlights as the scrubber moves.
-- Each row renders compactly — slot, tier, input/output tokens, latency, an error badge for failed calls.
-- The panel is deliberately metadata-only for every viewer, owners included: the stage puts prompt reading on the profile, and a uniform panel means no viewer-dependent layout shifts on a public page.
-- `RunMetadata` gains a whole-run summary item (total calls and tokens) so a replay's cost is visible without scrubbing.
+Identity comes from the authenticated session. Query parameters and request bodies never supply caller identity. Blind-season attribution continues to use the existing recording-view rules.
 
-### The owner debug view on the agent profile
+Recording retention reads `llm_scope_id` before deleting a recording row. It deletes the scope file when no surviving recording row references that scope. A live scope normally has one recording. A run scope remains while any recording from that run survives. Cached SQLite handles close before unlinking a file.
 
-- `AgentProfilePage.vue` replaces its Stage 5 placeholder — the `isOwner()`-gated "Your agent's LLM debug view arrives in a later stage" paragraph — with the real thing: within the existing submission history, each recording chip whose recording has telemetry (the same fetch decides) opens a debug panel against the same endpoint.
-- The panel renders this agent's calls grouped by tick, with the full prompt messages and completion text expandable per call, token and latency badges, and truncation and error markers.
-- Operators see the same view on any profile (the spec's "owner and operators"). The client gate mirrors the server's; the note in `app.ts` that the profile is public stays true because the sensitive payload never leaves the masked endpoint.
+Live-session teardown deletes an empty scope file or a scope file whose session produced no recording. A terminal workflow run deletes its scope file when the run produced no retained recording. Files referenced by retained recordings follow the recording-deletion rules above.
 
-### The board column
+A startup sweep runs after active session and workflow recovery. It removes official `data/llm/*.sqlite` files with no surviving recording row whose `llm_scope_id` names that file. It never descends into `data/llm/development/`, whose season ledgers follow their own retention. The recording endpoint has no dependency on development ledgers.
 
-- `AutomatedBoardRow` in `frontend/src/api/client.ts` gains `token_usage_by_model` (step 4 already serves it), and the automated table in `LeaderboardBoards.vue` gains a "Tokens" column beside Agent compute: per tier, a compact `in/out` figure (reasoning folded into a tooltip), an em-dash for agents that made no calls, and the Naive baseline naturally blank.
-- The human-feedback board is untouched — tokens are an automated-board fact. The live session page deliberately gains nothing in this stage: the surfaces the spec names are replay, profile, and board.
+## Replay panel
+
+`ReplayPage.vue` fetches recording telemetry alongside the recording. A new Model calls panel groups successful rows by tick and follows the replay transport position. Each compact row shows slot, model alias, input and output tokens, reasoning tokens in accessible detail text, and latency.
+
+`RunMetadata` shows whole-recording successful call count, token totals, and model-call latency. The replay panel remains metadata-only for every viewer, including owners. Prompt inspection lives on the agent profile.
+
+The panel renders no failure status because unsuccessful logical requests have no telemetry row.
+
+## Submission-owner debug view
+
+`AgentProfilePage.vue` lists recordings with successful LLM calls under each submission history entry. Opening a recording shows that submission's calls grouped by tick, with expandable full request messages and completion bodies plus model, token, and latency details.
+
+Operators receive the same body fields on every agent profile. A non-owner receives no prompt or completion bytes from the API. Server-side response filtering is the authorization boundary, and client-side display conditions control presentation only.
+
+## Automated-board model usage
+
+`AutomatedBoardRow` carries `llm_usage_by_model` from Step 4. `LeaderboardBoards.vue` adds a Model usage column beside agent compute. Each model alias shows successful call count, input, reasoning, and output tokens, and total model-call latency. Agents with no successful calls show the standard empty value.
+
+The human-feedback board has no model-usage column. Model usage remains informational and does not affect rank.
+
+## Participant development API
+
+Add two active-user routes:
+
+| Route | Response |
+| --- | --- |
+| `GET /api/seasons/:seasonId/llm-development` | Effective aliases and limits, successful usage totals, remaining call and token allowance, and whether a key exists |
+| `GET /api/seasons/:seasonId/llm-development/calls?cursor=<id>&limit=<n>` | The authenticated participant's successful ledger rows in reverse chronological order |
+
+The calls response includes full request and completion bodies because the development ledger is private to that participant and operators. Pagination has a bounded default and maximum. Another participant cannot select a user ID or retrieve the ledger.
+
+Add operator routes under `/api/admin/seasons/:seasonId/llm-development` to list participant totals and page one participant's successful rows. Operator routes use the existing admin guard and accept an explicit target user only after authorization.
+
+## Participant and operator UI
+
+Add a Development LLM section to `MyProfilePage.vue` using existing cards, fields, buttons, dialogs, tables, and status components. It provides:
+
+- A season selector for seasons with effective LLM access.
+- Allowed model aliases and resolved development limits.
+- Successful calls, token totals, and remaining allowance.
+- A Create key or Rotate key action that calls the Step 2 endpoint.
+- A one-time credential dialog showing `OPENAI_BASE_URL` and `OPENAI_API_KEY` with a warning that the secret cannot be retrieved again.
+- A paginated ledger of successful calls with expandable full request and completion bodies.
+
+The season-management view adds a Development usage panel for operators. It lists participant totals for the selected season and opens a participant's private ledger.
+
+No new visual primitive or variant is required. If implementation introduces one, it must be added to `/styleguide` in the same change.
 
 ## Tests
 
-Backend (vitest):
+Backend tests cover:
 
-- The masking matrix — anonymous, a signed-in non-owner, the owner of one slot in a multi-agent recording, and an admin each get exactly their rows' bodies and everyone's metadata.
-- The same matrix over a multi-submission **workflow** recording with no session row resolves every owner correctly, reading the run's shared file filtered to the game's session.
-- 404 for a recording without telemetry; identity is never read from the query.
-- Deleting a live recording removes its scope file; deleting one of a run's recordings keeps the run's file until the last one goes.
+- Anonymous, non-owner, one-slot owner, multi-slot owner, and operator responses from the recording endpoint.
+- SQLite row decoding, insertion ordering, null setup ticks, durable recording-association lookup, and 404 behavior.
+- Telemetry lookup continuing after producing session or workflow rows are pruned.
+- Deleting a live recording removing its scope file, deleting one run recording preserving the shared file, and deleting the last run recording removing it.
+- Live and terminal workflow scopes with no recording being deleted at their lifecycle boundary.
+- Startup orphan cleanup leaving season development ledgers untouched.
+- Participant development summaries and pagination scoped from authenticated identity.
+- Anonymous, pending, banned, and cross-participant development-ledger access rejection.
+- Operator list and detail access.
+- Development totals matching successful ledger rows and remaining independent from official execution-scope SQLite and board data.
 
-Frontend (vitest, component):
+Frontend unit tests cover:
 
-- The Model-calls panel renders fixture rows, filters by transport tick, shows the error badge, and mounts only when the endpoint returns rows.
-- The debug view renders prompts for an owner fixture and never renders body fields absent from the response (the masked case).
-- The board column formats multi-tier usage and the em-dash case.
+- Replay filtering and metadata rendering for successful rows.
+- Owner debug rendering when bodies exist and body absence for masked responses.
+- Model-usage formatting for multiple aliases and empty usage.
+- Development season selection, successful totals, remaining allowance, pagination, key creation and rotation, one-time secret handling, and API errors.
+- Operator participant totals and ledger detail.
 
-The browser journey that ties all three together is step 6's e2e.
+Playwright coverage in Step 6 ties the surfaces to the full backend.
 
 ## Done when
 
-- A public replay of an LLM session shows every model call at its tick — tier, tokens, latency, failures flagged — to any visitor, with a run-cost summary in the metadata strip, and shows prompt text to no one.
-- The agent's owner opens their profile and reads every prompt and completion their agent exchanged in that session; an operator can do the same; any other caller hitting the API directly gets metadata only.
-- The automated board shows token use by tier next to compute time without affecting rank.
-- Telemetry files are deleted exactly when the recordings referencing them are gone.
-- All component and masking tests are green Docker-free.
+- Public replay responses expose only successful-call model, token, tick, slot, and latency metadata.
+- Submission owners and operators can inspect full successful official prompts and completions, while every other caller receives no bodies.
+- Automated boards report successful calls, tokens, and model-call latency by alias without changing rank.
+- Participants can create or rotate a season key, see their remaining development allowance, and inspect only their own successful development rows.
+- Operators can inspect every participant's development totals and rows for a season.
+- Backend authorization tests, frontend unit tests, and accessibility checks pass.

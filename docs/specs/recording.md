@@ -23,7 +23,7 @@ Replays are linkable by URL.
 
 At the final frame of a run that finished play, the replay shows the same final-standings card a live session shows when it ends, ranked by each seat's score. Whether a run finished play comes from its termination reason: a session-produced recording reads it from the producing session, while an automated season run has no session and so carries the reason on the recording itself. A run that was stopped, timed out, or crashed shows no final standings.
 
-Chat is stored in per-step state. Successful agent-call LLM telemetry is a sidecar keyed by tick and slot. Student development calls are metered separately and never appear in a recording. See [Communication](communication.md) and [LLM API](llm.md).
+Chat is stored in per-step state. Successful agent-call LLM telemetry is stored in backend-managed SQLite keyed by execution scope, tick, and slot. A recording's producing session or leaderboard run associates it with the relevant telemetry rows. Recording JSONL remains limited to its header and state lines. Student development calls are metered separately and never appear in recording telemetry. See [Communication](communication.md) and [LLM API](llm.md).
 
 ## Retention
 

@@ -34,12 +34,12 @@ Stages are ordered by dependency. Each stage ends with something testable end to
 | [6. Seasons and leaderboards](stage-06-leaderboards.md) | Admin console, scheduler, workflow, automated and human boards |
 | [7. Multi-agent](stage-07-multi-agent.md) | Hearts, multi-slot sessions, multi-submission watch flow |
 | [8. Communication](stage-08-communication.md) | Spades, chat hook, routing, UI, recordings |
-| [9. LLM gateway](stage-09-llm-gateway.md) | Slot keys, telemetry, budgets, owner debug data |
+| [9. LLM API](stage-09-llm-gateway.md) | Backend proxy, retries, official and development meters, telemetry |
 | [10. Documentation page](stage-10-documentation-page.md) | In-app student guides, configurable class landing |
 | [11. Semantic contract](stage-11-semantic-contract.md) | Semantic observations, helper-built actions, shared spaces, template v2 |
 | [12. User system](stage-12-user-system.md) | Better Auth sessions, GitHub sign-in, user statuses, admin roster |
 
-Communication follows multi-agent and builds its own test bed: Spades, a partnership environment where targeted partner signals and broadcast warnings genuinely differ, while Hearts stays messaging-free. The LLM gateway is independent and comes last.
+Communication follows multi-agent and builds its own test bed: Spades, a partnership environment where targeted partner signals and broadcast warnings genuinely differ, while Hearts stays messaging-free. The LLM API is independent and comes last.
 
 ## Conventions for stage files
 

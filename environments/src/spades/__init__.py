@@ -47,7 +47,7 @@ META = EnvironmentMeta(
     # The flag stays inert until the chat hook is wired in a later step.
     messaging=True,
     message_cap=120,
-    llm=False,
+    llm=True,
     renderer="spades",
     # Partnership assignment and lead position both depend on seating, so seating A before B is not
     # the same match as B before A: the scheduler enumerates ordered seatings.

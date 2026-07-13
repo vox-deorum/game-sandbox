@@ -28,23 +28,29 @@ The backend handles upstream reliability. It retries retryable failures with exp
 
 ## Successful-call accounting
 
-Only a request that receives a successful upstream response is metered or recorded. Rejected requests, non-retryable upstream errors, and retry sequences that never succeed consume no token or call budget and create no LLM telemetry record. Retries belong to the original request, so a request that eventually succeeds is counted and recorded once using the successful response's usage.
+Only a request that receives a successful upstream response consumes call or token budget and creates LLM telemetry. Rejected requests, non-retryable upstream errors, and retry sequences that never succeed consume no call or token budget and create no LLM telemetry record. Retries belong to the original request, so a request that eventually succeeds is counted and recorded once.
+
+The backend uses the successful response's token usage when it is valid. If an otherwise successful OpenAI-compatible response omits valid usage, the backend estimates input and output tokens with its configured tokenizer, uses an exposed reasoning-token count when one exists and zero otherwise, and marks the telemetry and every derived aggregate as estimated. Estimated usage still consumes the applicable call and token budgets.
+
+The backend commits successful-call accounting before returning the completion. If durable accounting fails after the upstream succeeds, the backend retains the request's conservative in-memory charge, returns a service error instead of the completion, and blocks further model requests for the affected accounting scope until storage recovers. This prevents a storage fault from becoming a way to make repeated unaccounted provider calls.
 
 For each successful agent call, the backend records:
 
 - Session, tick, and slot.
 - Model.
 - Full prompt and completion.
-- Input, reasoning, and output token counts.
+- Input, reasoning, and output token counts, with an indication when the backend estimated them.
 - End-to-end latency, including retries.
 
-Agent-call telemetry is stored beside the recording as a versioned sidecar. Public replay views show model, token, and latency summaries. Full prompts and completions are visible only to the agent owner and operators. See [Recording](recording.md) and [Frontend](frontend.md).
+Agent-call telemetry is stored in backend-managed SQLite files keyed by execution scope. A live session has one telemetry file, while every match session in one leaderboard run shares the run's telemetry file. Recordings retain the session and run associations needed to query their successful calls. Public replay views show model, token, latency, and estimated-usage summaries. Full prompts and completions are visible only to the agent owner and operators. See [Recording](recording.md) and [Frontend](frontend.md).
 
 ## Budgets and limits
 
-Official execution and student development have separate meters. Each live session and leaderboard run has token, call, and rate limits. The deployment provides defaults, and a season may override the official and development limits independently. A call over budget returns a normal, non-retryable API error that the agent can handle, and the game continues.
+Official execution and student development have separate meters. Each live session and leaderboard run has token, call, and rate limits. The deployment provides defaults, and a season may override the official and development limits independently. Every authenticated logical request admitted for upstream processing counts once in an in-memory sliding rate window, whether it succeeds or fails. Backend retry attempts do not add rate events. Call and token limits remain successful-only.
 
-The backend also exposes an authenticated OpenAI-compatible endpoint for student development. A participant requests a development key scoped to one season, and calls made with that key are charged only to that season's development meter for that participant. Successful development calls are recorded in a season-keyed development ledger with the participant, model, token counts, latency, full prompt, and completion. That ledger is visible only to the participant and operators. Development calls are never attached to a session recording or included in leaderboard usage.
+The proxy accepts either `max_tokens` or `max_completion_tokens`, but not both. It applies a deployment-configured default when neither is present, rejects a requested maximum above the deployment's hard ceiling, and forwards the resulting maximum to the upstream. Admission reserves that enforced output maximum together with estimated input usage, so an explicit or default completion limit cannot bypass the remaining token allowance. A request that does not fit returns a normal, non-retryable budget error that the agent can handle, and the game continues.
+
+The backend also exposes an authenticated OpenAI-compatible endpoint for student development. A participant requests a development key scoped to one season, and calls made with that key are charged only to that season's development meter for that participant. Successful development calls are recorded in a season-keyed SQLite ledger with the participant, model, token counts and their source, latency, full prompt, and completion. That ledger is visible only to the participant and operators. Development calls are never attached to a session recording or included in leaderboard usage.
 
 ## Determinism and timing
 

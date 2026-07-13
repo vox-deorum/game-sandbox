@@ -1,78 +1,78 @@
-# Stage 9: LLM Gateway
+# Stage 9: LLM API
 
 Status: not started (build order planned under [stage-09/](stage-09/)).
 
 ## Goal
 
-Agents call an OpenAI-compatible LLM API from inside the sandbox with the stock `openai` client. Every call is metered and logged, budgets bound the bill, owners can inspect their agents' prompts, and the public sees only usage metadata.
+Agents and students call an OpenAI-compatible API owned by the backend. The backend forwards each logical request to one configured OpenAI-compatible upstream, handles retries and terminal errors, enforces separate official and development limits, and meters and records only successful requests.
+
+Agent telemetry is stored in backend-managed SQLite files keyed by execution scope. Public replay views expose model, token, and latency metadata. Prompt and completion bodies are visible only to the controlling submission's owner and operators. Student development calls use a private season-keyed SQLite ledger and never contribute to recording telemetry or leaderboards.
 
 ## Architecture
 
-The stage-start evaluation ended with LiteLLM removed from the design entirely. As the whole gateway it measured the wrong things — its virtual keys meter dollars rather than the spec's tokens and calls, and its key management requires Postgres in a one-SQLite-file deployment — and keeping it as a demoted router still meant shipping and operating a second service for multi-provider routing the sandbox does not need. What remains is one service and one artifact:
+```text
+Session agent ── internal network ──┐
+                                    ├→ backend LLM proxy → one OpenAI-compatible upstream
+Student client ── public API ───────┘          │
+                                               ├→ official execution-scope SQLite
+                                               └→ development season SQLite
+```
 
-- **The gateway** — key auth, token/call/rate budgets, the model tiers, telemetry, tick attribution — is a thin service embedded in the backend process (`backend/src/gateway/`, its own Fastify listener on a dedicated port), where session, season, and run state already live. It calls the provider itself through the official `openai` SDK pointed at `LLM_UPSTREAM_URL`: any OpenAI-compatible endpoint works, and a deployment that wants several providers at once points the URL at a router it operates (OpenRouter, a self-hosted LiteLLM) rather than one the sandbox ships. The TypeScript-outside-rule exception in [execution.md](../docs/specs/execution.md) disappears — every line of the gateway is backend TypeScript.
-- **Models are tiers, not provider names.** Agents request `large`, `medium`, or `small`; the deployment maps each tier it configures to a real model (`LLM_MODEL_LARGE` and friends), and the gateway translates on the way out and rewrites the response's `model` back to the tier on the way in. Telemetry and boards record tiers, so "tokens spent on `large`" reads the same on every deployment and no provider name reaches an agent or a public surface.
-- **Telemetry is one SQLite file per execution scope** — `data/llm/<runId>.sqlite` for a leaderboard run, shared by all its sessions; `data/llm/<sessionId>.sqlite` for a live session — written through as each call completes, failures included. The file is the single usage record: budget admission sums it, board aggregation groups it, the owner debug view reads it. Plain rows, no OpenTelemetry — this is a product artifact (owner-visible prompts, tick attribution, board totals), not ops instrumentation — and the recording format is untouched: no sidecar, no header change, [recording.md](../docs/specs/recording.md) keeps its placeholder.
+The backend implements authentication, model aliases, limits, retries, error translation, metering, and telemetry. The configured upstream may be a provider endpoint or an operator-managed gateway. Game Sandbox implements no provider routing, provider failover, or separate gateway service.
 
-Two contract decisions hold everywhere:
+Agents request the stable model aliases `large`, `medium`, and `small`. Deployment configuration maps each enabled alias to one upstream model name. Season configuration selects a subset of those aliases and independently overrides official and development limits.
 
-- Streaming (`stream=true`) is rejected with a clear API error: turn-based agents gain nothing from it, and rejecting it keeps forwarding and usage extraction trivial.
-- Budget exhaustion answers a non-retryable 400 (`budget_exceeded`) the agent can catch; rate limiting answers 429.
+Streaming requests are rejected with `400 streaming_unsupported`. Authentication, model, rate, and budget failures use OpenAI-compatible error bodies. Budget exhaustion uses the non-retryable `400 budget_exceeded` code so agent fallback logic can continue the episode.
 
-## Scope
+## Reliability and accounting
 
-- **Enablement — season-controlled only.**
-  - The never-consumed `EnvironmentMeta.llm` flag is removed.
-  - The inert `overrides.llm` season block from Stage 6 becomes a strict codec: enabled (default false), a tier list bounded by the deployment's configured tiers, budget and rate overrides.
-  - The play-open season's override governs live watch and play sessions (the Stage 8 messaging precedent); workflow runs read their frozen config snapshot; nothing turns on unless the deployment also configures an upstream.
-- **Keys — issued per agent slot at container launch.**
-  - The orchestrator or workflow runner issues an in-memory one-off key per agent slot, scoped to that session and slot, carried to the harness in the session config argv. Issuance names the telemetry scope — the run id on the workflow path, the session id on the live path — so every call lands in the right `data/llm` file from the first request.
-  - The harness sets `OPENAI_BASE_URL` once and swaps the acting slot's `OPENAI_API_KEY` around load, reset, and the per-tick hooks, so ordinary use of the stock `openai` client is attributed correctly even though agents run sequentially in one process.
-  - Slot keys are telemetry and budget attribution, not a security boundary between agents in one container — the accepted class-scale tradeoff in [execution.md](../docs/specs/execution.md).
-  - Every key is revoked at the teardown convergence points when the container exits, and immediately when a launch fails after issuance.
-- **Network — gateway-only, per session.**
-  - LLM sessions attach to a per-session internal Docker network whose single reachable endpoint is a dual-homed relay container forwarding to the backend's gateway port (via `host.docker.internal:host-gateway`, so Docker Desktop development and Linux CI behave identically).
-  - The future Kubernetes driver expresses the same profile as a network policy. Sessions without LLM keep no network at all.
-- **Telemetry — every call, failures included, written through to the scope's SQLite file.**
-  - Each row carries session, slot (from the key), tier, full prompt and completion (truncation-capped per call), input/reasoning/output token counts, latency, and status.
-  - Rows land as calls complete, so a crashed session keeps its telemetry and finalize has nothing to drain; the same file's sums are the budget record and the board's numbers — there is no second counter to reconcile.
-  - Tick attribution uses a marker: before running the acting slot, the harness posts the current tick to the gateway's internal endpoint, and rows are stamped per key by arrival order — exact under sequential stepping, isolated per slot, and immune to both `PausableClock` drift and Docker Desktop VM clock skew, which rule out a timestamp join.
-- **Budgets — enforced at the gateway's admission gate, as sums over the telemetry file.**
-  - The gate admits a call only if the scope's recorded usage plus in-flight reservations plus the call's estimate (read tokens from the request size; write tokens at the request's `max_tokens` or a quarter of the read estimate) fits the budget; rows record actual upstream usage, so overshoot is bounded by estimation error.
-  - Token and call budgets apply per slot per session and per submission per leaderboard run — one hungry agent starves neither its opponents in a match nor its competitors in a run — plus a per-key rate limit.
-  - All have deployment defaults and Stage 6 season overrides.
-  - An over-budget call fails with an ordinary catchable API error, the run continues, and budget exhaustion is never a forfeit.
-- **Surfacing — public metadata, owner-only prompts.**
-  - The replay viewer shows per-tick tier, token, and latency metadata wherever the replay is public, fed by a server-side endpoint over the telemetry file that masks prompt bodies per slot: only the slot's owner and operators receive them, read in the owner's debug view on the agent profile.
-  - The automated board shows aggregated token usage per tier next to timing, flowing from the same telemetry file through `game_results` to the board and persisted placements.
-  - Wall-clock time waiting on the model already counts against the step limits through harness timing; the stage pins that with a test rather than new machinery.
+The backend classifies connection failures, timeouts, upstream 408, 409, 429, and 5xx responses as retryable. It retries them with exponential backoff from `LLM_UPSTREAM_RETRY_INTERVAL_MS` for at most `LLM_UPSTREAM_MAX_RETRIES` attempts after the initial request. Other upstream 4xx responses are returned immediately. An exhausted retry sequence returns its final error.
+
+One client call is one logical request across every upstream attempt. Admission creates a temporary reservation against the relevant rate, call, and token limits. A successful upstream response commits one call and its actual usage, writes one record, and reports latency across all attempts and backoff waits. A rejected request or terminal upstream failure releases its reservation, consumes no call or token budget, and writes no telemetry or development-ledger row.
+
+Official limits apply per slot per live session and per submission per leaderboard run. Student development limits apply per participant per season. Deployment defaults exist for both groups, and a season may override them independently.
+
+## Access and isolation
+
+Effective official access requires a configured upstream, an environment with LLM support, and a season with LLM enabled. Live sessions use the play-open season. Workflow matches use the run's frozen season configuration.
+
+Each agent slot receives a temporary key scoped to its session, slot, telemetry scope, allowed models, and official limits. Live sessions use their session ID as the telemetry scope. Workflow matches use the leaderboard run ID, so every match in one run shares one SQLite file. Keys are revoked on session teardown and on every failed launch path. A per-session internal network exposes only the backend proxy relay to the session container.
+
+An active participant requests a development key from `POST /api/seasons/:seasonId/llm-development-key`. The key is scoped to that participant and season, and rotation invalidates the previous key. The response supplies the public `OPENAI_BASE_URL`, the key, allowed model aliases, and resolved development limits.
+
+## Records and surfaces
+
+Official telemetry files live at `data/llm/<scopeId>.sqlite`. Every successful official call inserts one row containing session, tick, slot, model alias, full request and completion, actual input, reasoning, and output token counts, and end-to-end latency. Tick markers sent by the harness attribute calls made during each participant hook. Durable scope and session IDs on recording metadata resolve a recording to its rows after producing session or workflow data is pruned.
+
+Each season has a development ledger keyed by participant. Every successful development call records participant, model alias, full request and completion, actual token counts, and end-to-end latency. Participants can read only their own usage and rows. Operators can inspect every participant's rows for the season.
+
+The replay API returns public official metadata for every successful call and includes bodies only for the controlling submission's owner and operators. The automated board aggregates successful official usage by model alias. The participant profile exposes development-key rotation, remaining development allowance, and the participant's private development ledger.
 
 ## Spec references
 
-[llm.md](../docs/specs/llm.md), [execution.md](../docs/specs/execution.md) (network sandbox, languages table), [leaderboard.md](../docs/specs/leaderboard.md) (overrides, token columns), [frontend.md](../docs/specs/frontend.md) (debug view), [submission.md](../docs/specs/submission.md) (template `.env` flow).
+[LLM API](../docs/specs/llm.md), [Execution](../docs/specs/execution.md), [Leaderboards](../docs/specs/leaderboard.md), [Frontend](../docs/specs/frontend.md), [Submissions](../docs/specs/submission.md), and [Recording](../docs/specs/recording.md).
 
 ## Depends on
 
-Stage 3 (orchestrator, networks), Stage 5 (agent profile), Stage 6 (season overrides, board). Independent of Stage 8 (communication).
+Stage 3 provides orchestration and driver networking. Stage 5 provides submissions, profiles, and recording ownership. Stage 6 provides season configuration, workflows, boards, and the admin editor. Stage 8 is not a dependency.
 
 ## Build order
 
-Each step is its own subplan under [stage-09/](stage-09/). The gateway lands first and Docker-free, orchestration and network second, and every step ends with something you can put hands on.
-
-| # | Subplan | Builds | Hands-on |
+| # | Subplan | Builds | Hands-on result |
 | --- | --- | --- | --- |
-| 1 | [Metering gateway](stage-09/1-metering-gateway.md) | Backend-embedded gateway listener: slot-key auth, the `large`/`medium`/`small` tier vocabulary, rate limit, token/call budgets enforced as sums over the per-scope telemetry SQLite under `data/llm/`, write-through call rows, the tick-stamping marker endpoint, `openai`-SDK forwarding with the pinned OpenAI error contract, streaming rejection, the admin scratch-key route | Curl the gateway with an issued key; watch the same key die at its budget; read the rows in `data/llm/` |
-| 2 | [Season enablement, slot keys, and the internal network](stage-09/2-enablement-keys-and-network.md) | Strict `overrides.llm` codec and admin editor fields, `resolveLlm` on both launch paths, `EnvironmentMeta.llm` removal, per-slot key issuance (naming the telemetry scope) and teardown revocation, the `'llm'` sandbox network | From inside a container the gateway answers and the internet does not; the key dies on exit |
-| 3 | [Harness credentials and the template LLM example](stage-09/3-harness-credentials-and-template-example.md) | Per-slot credential swap (byte-identical when disabled), tick-marker POSTs around the same hooks, wall-clock timing pin, small-tier template example with `python -m sandbox llm`, the `examples/hearts/oracle` fallback agent, the student LLM guide | The same code runs locally on the class key and in a session against the gateway |
-| 4 | [Run budgets and token aggregation](stage-09/4-run-budgets-and-token-aggregation.md) | Per-submission-per-run budget as a subject-keyed sum over the run's telemetry file, workflow-runner run scope, token-by-tier totals through `game_results` into the board and persisted placements, the over-budget-but-honest journey, llm.md budget semantics | A tiny-budget season run where exhaustion is caught, finished, and visible in the board |
-| 5 | [Replay metadata, owner debug view, and board tokens](stage-09/5-frontend-surfacing.md) | Per-slot-masked telemetry endpoint over the scope DB, public per-tick Model-calls replay panel, owner/operator prompt browser replacing the Stage 5 profile placeholder, token column on the automated board | The whole visibility story in a browser |
-| 6 | [Testing, CI, and docs](stage-09/6-testing-ci-and-docs.md) | Whole-stage integration journey and byte-identical regression gates in the Docker lane, `llm.spec.ts` browser journey, spec/configuration/student-docs sweep | Both CI lanes green |
+| 1 | [Backend LLM proxy](stage-09/1-metering-gateway.md) | Shared proxy handler, model aliases, grant registry, successful-only execution-scope SQLite telemetry, retry and error policy | A test grant calls a stub upstream; retryable failures recover once and terminal failures leave no usage row |
+| 2 | [Season access, development keys, and session network](stage-09/2-enablement-keys-and-network.md) | Effective environment and season resolution, independent limit blocks, slot-key lifecycle, student key API, development ledger, internal network | A student key works only for its participant and season; a container reaches the proxy but not the internet |
+| 3 | [Harness credentials and student example](stage-09/3-harness-credentials-and-template-example.md) | Slot credential changes, tick markers, template command, Hearts example, student guide | The same agent code runs with a season development key and with an injected session key |
+| 4 | [Run budgets and successful usage aggregation](stage-09/4-run-budgets-and-token-aggregation.md) | Per-submission run meter over the run SQLite file, successful usage aggregation, board and placement storage | A tiny run budget produces a catchable error while completed calls appear on the board |
+| 5 | [LLM usage surfaces](stage-09/5-frontend-surfacing.md) | Replay metadata, owner debug view, board tokens, participant development-key and ledger view, operator ledger view | Browser checks prove public, owner, participant, and operator visibility boundaries |
+| 6 | [Testing, CI, and documentation](stage-09/6-testing-ci-and-docs.md) | Full-stack retry, accounting, isolation, privacy, regression, and documentation gates | Docker integration and browser suites pass against one stub OpenAI-compatible upstream |
 
 ## Done when
 
-- The template repo's LLM example runs unmodified in both places: locally with the class key in `.env`, and inside a session against the gateway.
-- From inside a container, the gateway answers and the open internet does not.
-- A replayed session shows per-tick call metadata attributed to the correct slot; prompts are visible only to the owner and operators; the board shows token usage by tier.
-- A test agent that exceeds its session or run budget receives a catchable API error and finishes its episode without forfeiting.
-- A revoked slot key stops authorizing after the container exits.
-- Sessions of seasons that never enabled the capability remain byte-identical to today.
+- The backend calls exactly one configured OpenAI-compatible upstream and exposes no provider-routing service.
+- Retryable failures follow the configured exponential schedule. Non-retryable errors return immediately. Only an eventual success consumes limits and creates one record.
+- A student obtains a season-scoped development key, sees a private per-season meter and ledger, and does not consume official limits.
+- The template LLM example runs unchanged with development credentials in `.env` and injected slot credentials in a session.
+- Session containers reach only the backend LLM proxy, and temporary slot keys stop authorizing after teardown.
+- Replays, owner debug views, and automated boards derive their data from successful official SQLite rows with the required visibility boundaries.
+- LLM-disabled sessions execute the unchanged non-LLM path and preserve deterministic recording fixtures.

@@ -41,7 +41,7 @@ META = EnvironmentMeta(
     episode_limit_ms=120_000,
     messaging=False,
     message_cap=None,
-    llm=False,
+    llm=True,
     renderer="hearts",
     # Positional trick-taking game: seating A before B is not the same match as B before A.
     seat_order_matters=True,

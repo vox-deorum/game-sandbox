@@ -2,9 +2,11 @@
 
 This file is for AI coding agents working on the Game Sandbox repository. It captures the writing style we want and gives a quick orientation to the project. Humans are welcome to read it too.
 
+NEVER STAGE CHANGES UNLESS EXPLICITLY ASKED!
+
 ## Use Subagents Whenever Appropriate
 
-Always delegate less critical/lower-level work to subagents with less capabilities, e.g., from Claude Fable to Sonnet/Haiku. Specify which agent you used. Such work may involve exploring repo structure, finding references, summarizing information, or conducting small but extensive edits.
+ALWAYS delegate less critical/lower-level work to subagents with less capabilities, e.g., from Claude Fable to Sonnet/Haiku, or from GPT Sol to Terra/Luna. Report which agent you spawned in response text. Such work may involve exploring repo structure, finding references, summarizing information, or conducting small but extensive edits.
 
 ## About this repo
 

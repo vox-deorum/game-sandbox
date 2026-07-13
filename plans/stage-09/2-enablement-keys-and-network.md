@@ -1,94 +1,180 @@
-# Stage 9.2: Season Enablement, Slot Keys, and the Internal Network
+# Stage 9.2: Season Access, Development Keys, and the Session Network
 
 Status: not started.
 
-Part of [Stage 9](../stage-09-llm-gateway.md), build-order step 2: the orchestration half of the gateway. Step 1's gateway meters whoever holds a key; this step decides who gets keys and how a container reaches the gateway at all. By owner decision, enablement is **season-controlled only**: the inert `overrides.llm` block from Stage 6 becomes a strict codec whose `enabled` defaults to false, the play-open season's override governs live sessions exactly as the Stage 8 messaging override does, and the never-consumed `EnvironmentMeta.llm` flag is removed rather than kept as a third voter.
+Part of [Stage 9](../stage-09-llm-gateway.md), build-order step 2.
 
-**Hands-on result:** `docker exec` into an LLM-enabled session, curl the gateway and get an answer, curl the open internet and get nothing, then watch the session's key stop authorizing the moment the container exits.
+## Outcome
 
-## Why this is its own seam
+Environment metadata and season configuration resolve the allowed model aliases and separate official and development limits. Official launches receive temporary slot keys and an isolated route to the backend proxy. Active participants can request a durable development key scoped to one season and use a private per-participant meter and ledger.
 
-- Key issuance, revocation, and the network profile are one correctness story: a slot key is only meaningful if the container can reach the gateway, and the gateway-only network is only safe if the keys it carries die with the session.
-- All of it is backend orchestration — testable with a fake driver Docker-free, plus one Docker-gated lane for the real network posture.
-- Landing it before the harness work means step 3 changes only Python: by the time the harness sets `OPENAI_API_KEY`, the key already exists, already reaches a live gateway, and already dies on exit.
+The hands-on check obtains a student key for one season, makes a successful local request, and confirms that another participant and season have independent usage. A session container reaches the backend proxy and cannot reach the public internet. Its slot key stops authorizing at teardown.
 
-## What to build
+## Effective LLM configuration
 
-### Remove the environment flag
+`EnvironmentMeta.llm` remains the environment capability flag. `resolveLlm(deployment, environment, season)` enables LLM access only when all three conditions hold:
 
-`EnvironmentMeta.llm` was scaffolded ahead of this stage and never consumed; season-only control makes it dead weight. Remove it everywhere in one change:
+1. The deployment configures an upstream and at least one model alias.
+2. The environment sets `llm: true`.
+3. The season sets `llm.enabled: true`.
 
-- The field and its `to_json` line in `harness/src/game_sandbox_harness/environment.py`; the `llm=False` arguments in all three `environments/src/*/__init__.py` entries.
-- The field in `schema/ts/src/environment.ts` and its `isEnvironmentMeta` check; the regenerated `backend/src/generated/environments.json`; any test pinning it.
-- Spec and plan move together per the [plans README](../README.md): [llm.md](../../docs/specs/llm.md)'s "may be disabled by the environment or season" becomes "enabled per season, on deployments that configure a provider"; the Stage 2 [environments-and-metadata](../stage-02/environments-and-metadata.md) subplan and [environment.md](../../docs/specs/environment.md) drop the flag from their metadata listings.
+The season model list must be a non-empty subset of the deployment's configured aliases. Live sessions resolve the play-open season. Workflow matches resolve the run's frozen `config_snapshot`. Development keys resolve their named season on every request. Submission, play, and release gates do not change development-key validity; the season's LLM configuration is the authority.
 
-### The season override, made real
+Persist the resolved official flag on the session row as `llm_enabled`. Session payloads and recording views read that stored value after execution.
 
-In `backend/src/storage/season-config.ts`, replace the parsed-but-inert `llm: z.record(z.string(), z.unknown())` with a strict `LlmOverrideSchema`, following `MessagingOverrideSchema`:
+Add nullable `llm_scope_id` and `llm_session_id` columns to the backend recordings table and its creation input. A live LLM recording stores its session ID in both columns. Recordings without official LLM telemetry store null, and existing rows migrate as null. These durable fields remain available when session or workflow rows are pruned.
+
+## Season schema and admin editor
+
+Define a strict `LlmOverrideSchema` in `backend/src/storage/season-config.ts`:
 
 ```ts
 llm?: {
-  enabled?: boolean            // default false: a season must opt in
-  models?: string[]            // subset of the deployment's configured tiers
-  session_token_budget?: number; session_call_budget?: number   // per slot per session
-  run_token_budget?: number;   run_call_budget?: number         // per submission per run (consumed in step 4)
-  rate_limit_rpm?: number
+  enabled?: boolean
+  models?: Array<'large' | 'medium' | 'small'>
+  official?: {
+    session_token_budget?: number
+    session_call_budget?: number
+    session_rate_limit_rpm?: number
+    run_token_budget?: number
+    run_call_budget?: number
+    run_rate_limit_rpm?: number
+  }
+  development?: {
+    token_budget?: number
+    call_budget?: number
+    rate_limit_rpm?: number
+  }
 }
 ```
 
-- `PUT /api/admin/seasons/:id/config` (`backend/src/admin/routes.ts`) validates `models` against the deployment's configured tiers (the `LLM_MODEL_*` mapping from step 1) and rejects unknown names with the existing `invalid_config` shape naming the offender.
-- Budget and rate values replace the deployment defaults from step 1. These are operator-set numbers on an operator-only surface, so there is no tighten-only rule the way messaging needed; the one non-negotiable is that `models` cannot escape the deployment's configured tiers.
-- The admin console's `SeasonConfigEditor.vue` replaces its preserved-untouched `llm` block with a real section beside the messaging fields: an enable toggle, a free-text tier list (the server validates against the configured tiers; no new API surface for the list itself), and the budget and rate fields.
+Unset values inherit deployment defaults. Official and development blocks resolve independently. Admin season updates reject unknown fields, non-positive limits, duplicate model aliases, and aliases unavailable on the deployment.
 
-### Resolution and both launch paths
+`SeasonConfigEditor.vue` exposes enablement, allowed aliases, official session and run limits, and development limits as separate field groups built from existing UI primitives. The styleguide and admin-editor unit tests cover every new control and validation state.
 
-- `resolveLlm(config, override)` lands beside `resolveMessaging` in `backend/src/session/orchestrator.ts`: enabled if and only if the deployment configured an upstream **and** the season override says `enabled: true`; effective models, budgets, and rate fall back from override to deployment defaults.
-- Live sessions resolve against the play-open season (the Stage 8 orchestrator-applies-overrides precedent); the workflow runner resolves against the run's frozen `config_snapshot`.
-- The resolved flag persists on the session row (`llm_enabled` beside `messaging_enabled` in `SessionsTable`, plus a migration), so a reopened ended session and the later frontend read the same truth the container ran under.
+Add deployment defaults `LLM_DEVELOPMENT_TOKEN_BUDGET`, `LLM_DEVELOPMENT_CALL_BUDGET`, and `LLM_DEVELOPMENT_RATE_LIMIT_RPM`.
 
-At launch the orchestrator calls `KeyRegistry.issue` for every **agent** slot — built-ins included (an unused key costs nothing, and a future built-in that consults the model just works); external human slots run no code in the container and get no key — and threads the result into the session config argv, the channel every other per-session flag rides. Issuance names the telemetry scope — the session id here, the run id on the workflow-runner path — so every call lands in the right `data/llm` file from the first request:
+## Official slot keys and launch config
 
-```jsonc
-"llm": { "base_url": "http://llm-gateway:<port>/v1", "keys": { "player_0": "sk-sandbox-…", … } }
+The orchestrator and workflow runner issue one official key for every agent slot when effective LLM access is enabled. Human slots receive no key. Each grant includes telemetry scope, session, slot, allowed models, resolved session limits, and optional run subject and limits. Live grants use the session ID as their scope. Workflow grants use the run ID.
+
+`backend/src/session/launch-config.ts` emits:
+
+```json
+{
+  "llm": {
+    "base_url": "http://llm-proxy:<port>/v1",
+    "keys": {
+      "player_0": "sk-sandbox-..."
+    }
+  }
+}
 ```
 
-- `backend/src/session/launch-config.ts` (`assembleSeats`) stays the shared seam for the orchestrator and `workflow-runner.ts`; its lockstep note with `live.py::parse_config` extends to the new block. Step 3 makes the harness consume it; until then the block is inert in the container.
-- Revocation converges where teardown already converges: `LiveSession.finalize` and its constructor's `process.exited` handler for live sessions; `runGame` after `await process.exited` in the workflow runner. `revokeSession` is idempotent, so double revocation on the crash paths is harmless.
-- Issuance is guaranteed-revoked: keys are minted before the driver launches, the span from `issue` to a registered teardown owner is wrapped (try/finally in `start()` and `runGame`), and any failure inside it — image ensure, network setup, `driver.launch`, config assembly — revokes on the spot. A key must never outlive a session that never started.
+The session and workflow launch paths share this shape. Step 3 adds the matching harness parser.
 
-### The internal network
+Key issuance is enclosed by a teardown owner. Image, network, configuration, and driver-launch failures revoke issued keys before returning. Normal exit, crash exit, explicit stop, live-session finalization, and workflow-game completion call idempotent `revokeSession`. Step 5 owns telemetry file cleanup for scopes that produce no recording and for retained recordings that are deleted later.
 
-`SandboxNetwork` in `backend/src/driver/index.ts` grows the member its comment has promised since Stage 3: `'none' | 'llm'`, driver-neutral (the future Kubernetes driver expresses `'llm'` as a NetworkPolicy). Sessions resolve to `'llm'` only when LLM is enabled; everything else keeps `'none'` bit-for-bit.
+## Student development key API
 
-On the Docker driver, `'llm'` means:
+Add a persistent `llm_development_keys` table to the application database:
 
-- **A per-session internal network** `game-sandbox-llm-<sessionId>` (`Internal: true`, labeled like containers with `game-sandbox.session` and `game-sandbox.owner-pid`). Per-session rather than shared because the stage promises a network "whose single reachable endpoint is the gateway": on a shared network, concurrent sessions' containers could reach each other — a cross-session channel nothing in [execution.md](../../docs/specs/execution.md) accepts.
-- **A single long-lived gateway relay container** (`alpine/socat`, ensured on first use, labeled, restart-on-failure) as the one dual-homed party: it forwards its listen port to `host.docker.internal:<LLM_GATEWAY_PORT>`, launched with `--add-host=host.docker.internal:host-gateway` so the same image and config work on Docker Desktop (Windows dev) and native Linux (CI, deployment). The backend's gateway listener is a host process, and internal networks have no route to the host on Docker Desktop — the relay is what makes "embedded in the backend" reachable from inside the sandbox on every platform.
-- **Lifecycle**: at session launch the driver connects the relay to the session's network under the alias `llm-gateway`, then starts the session container with `NetworkMode` set to that network; at teardown it disconnects the relay and removes the network. `reapOrphans` extends to labeled relays and networks so a crashed backend leaves nothing behind.
+```ts
+type LlmDevelopmentKeyRow = {
+  season_id: string
+  user_id: string
+  secret_hash: string
+  created_at: string
+  rotated_at: string | null
+}
+```
 
-The container-visible base URL is therefore always `http://llm-gateway:<port>/v1`, independent of platform. If per-session connect/disconnect churn proves flaky in practice, the recorded fallback is one shared internal network with the cross-session-reachability tradeoff documented in execution.md — but per-session is the default because it matches the spec sentence as written.
+The `(season_id, user_id)` pair is the primary key. Only a hash of the secret is stored. Development secrets use an `sk-sandbox-dev-` prefix and sufficient cryptographic randomness.
+
+`POST /api/seasons/:seasonId/llm-development-key` requires an authenticated `normal` or `admin` user and effective LLM access for the named season. It rotates the pair's key and returns the plaintext once:
+
+```json
+{
+  "season_id": "season-id",
+  "base_url": "https://sandbox.example/api/llm/v1",
+  "api_key": "sk-sandbox-dev-...",
+  "models": ["small", "medium"],
+  "limits": {
+    "token_budget": 100000,
+    "call_budget": 1000,
+    "rate_limit_rpm": 30
+  }
+}
+```
+
+The public base URL is derived from `PUBLIC_ORIGIN`. Rotation invalidates the previous secret immediately and leaves accumulated development usage unchanged.
+
+Mount the shared Step 1 handler at `POST /api/llm/v1/chat/completions`. Development-key authentication resolves `{kind: 'development', seasonId, userId}` from the stored hash. It also checks the participant's current account status and the season's current effective LLM configuration, so a ban, status restriction, disabled season, or unavailable upstream stops authorization without rotating the key.
+
+## Development meter and ledger
+
+Store development calls in `data/llm/development/<seasonId>.sqlite`. The ledger is keyed by season at the file level and by participant within the table:
+
+```sql
+CREATE TABLE calls (
+  id               INTEGER PRIMARY KEY,
+  user_id          TEXT NOT NULL,
+  model            TEXT NOT NULL,
+  request_json     TEXT NOT NULL,
+  completion_json  TEXT NOT NULL,
+  input_tokens     INTEGER NOT NULL,
+  reasoning_tokens INTEGER NOT NULL,
+  output_tokens    INTEGER NOT NULL,
+  latency_ms       INTEGER NOT NULL,
+  created_at       TEXT NOT NULL
+);
+CREATE INDEX calls_user ON calls (user_id, id);
+```
+
+The development store uses `PRAGMA user_version`, explicit migrations, prepared statements, and the same validated scope-path rules as official telemetry.
+
+The development meter sums successful rows for `(seasonId, userId)` and combines them with temporary in-flight reservations. A successful logical request writes one full row and consumes one call using actual upstream usage. Every unsuccessful path releases its reservation and leaves the ledger unchanged.
+
+Official telemetry files, game results, placements, and leaderboards never read or write the development ledger. Development requests never use execution scope IDs, recording IDs, session IDs, slots, ticks, or run subjects.
+
+Step 5 adds participant and operator read APIs over this ledger. Ledger retention follows season retention and is independent of recording deletion.
+
+## Internal session network
+
+`SandboxNetwork` supports `'none' | 'llm'`. Effective LLM sessions use `'llm'`; every other session uses `'none'`.
+
+The Docker implementation creates one internal network per session. A long-lived `alpine/socat` relay joins that network under the alias `llm-proxy` and forwards only to `host.docker.internal:<LLM_INTERNAL_PORT>`. The relay uses `host-gateway` mapping on Linux and Docker Desktop. The session container joins only its internal network.
+
+Teardown disconnects the relay and deletes the per-session network. Driver orphan reaping covers labeled LLM networks and relay attachments. The driver-neutral profile maps to an equivalent single-destination policy in other drivers.
 
 ## Tests
 
-Docker-free (fake driver and registry):
+Docker-free backend and frontend tests cover:
 
-- `LlmOverrideSchema` accepts the full shape, rejects unknown fields and out-of-allowlist models with `invalid_config`, and round-trips through the season editor payloads.
-- The `resolveLlm` matrix: unset override, `enabled: false`, `enabled: true` without a configured upstream, and `enabled: true` with one — only the last enables; models, budgets, and rate fall back correctly.
-- An enabled launch issues one key per agent slot and none for external slots; the session config carries the base URL and the exact key map; a disabled launch carries no `llm` block, `network: 'none'`, and issues nothing.
-- `finalize`, container exit, and workflow `runGame` completion each revoke the session's keys exactly once; revoked keys fail `authenticate`.
-- A launch that fails after issuance leaves no live keys: a fake driver that throws at each stage — image ensure, network setup, `launch` itself — exercises every pre-teardown failure path.
-- The migration adds `llm_enabled` and existing rows read as disabled.
+- The strict season schema, independent fallback of official and development limits, alias validation, and admin-editor round trips.
+- The effective configuration matrix across deployment, environment, and season inputs.
+- Live sessions using the play-open season and workflow matches using the frozen run configuration.
+- One key per agent slot, no key for human slots, live grants using the session scope, workflow grants using the run scope, the exact launch-config shape, and no LLM block for a disabled session.
+- Revocation after every launch failure and teardown path.
+- Development-key authentication, one-time plaintext return, hash persistence, rotation, backend restart, account status checks, and season scoping.
+- Independent development totals for two users in one season and one user in two seasons.
+- Immediate application of changed season models and limits to an existing development key.
+- Successful development calls writing one row and every rejection or terminal upstream failure writing none.
+- Complete isolation between official meters and development meters.
+- Recording migrations preserve null associations for existing rows, and live LLM recording registration stores the session scope and session filter IDs.
 
-Docker-gated, in the existing `backend-integration` lane:
+Docker integration covers:
 
-- From inside an LLM-enabled session container, the gateway answers through the relay alias, and a request to the open internet fails (no route, not a timeout-that-eventually-succeeds).
-- A session without LLM has `NetworkMode: none` exactly as today.
-- After the container exits, its saved slot key gets 401 from the gateway, and the session's network and relay attachment are gone; `reapOrphans` removes a deliberately orphaned network.
+- A container request succeeds through `llm-proxy`, while a request to the public internet has no route.
+- A non-LLM container uses `NetworkMode: none`.
+- Teardown revokes the saved slot key, removes the network, and detaches the relay.
+- Orphan reaping removes a deliberately abandoned LLM network and attachment.
 
 ## Done when
 
-- An operator flips `enabled: true` with a model list and budgets in a season's LLM override through the admin console, and every session launched against that season — live watch/play and workflow matches alike — starts with per-slot keys issued, an internal network whose only reachable endpoint is the gateway relay, and the resolved flag persisted on the session row.
-- From inside such a container the gateway answers and the internet does not; after exit the keys are dead and the network is gone.
-- Sessions of seasons that never opted in are byte-identical to today.
-- `EnvironmentMeta.llm` no longer exists anywhere in the tree, and llm.md, environment.md, and the Stage 2 subplan describe the season-only model.
-- All Docker-free tests pass without Docker; the network truths are pinned in the Docker-gated lane.
+- Deployment, environment, and season inputs resolve one effective model and limit configuration for both launch paths.
+- Official sessions receive scoped slot keys and a single-destination internal network, and every teardown path revokes those keys.
+- An active participant can rotate one key for a season and call the public backend proxy with the returned base URL and secret.
+- Development usage is metered per participant and season under season-specific limits and remains isolated from every official artifact.
+- Successful development calls create full private ledger rows. Unsuccessful calls create no row and consume no call or token budget.
+- Docker-free and Docker-gated tests prove the authorization, isolation, lifecycle, and network contracts.
