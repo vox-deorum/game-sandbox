@@ -52,7 +52,7 @@ Each starter kit includes:
 - Local play and evaluation scripts.
 - A minimal LLM API example.
 
-Local LLM credentials go in `.env`. The server replaces them with a temporary session-and-slot key. Participants do not need the Game Sandbox backend to write or test an agent.
+For local LLM use, a participant requests a development key for the relevant season from the backend and places the returned credentials in `.env`. Development usage has its own per-season meter. In an official session, the backend replaces those credentials with a temporary session-and-slot key. Participants do not need the backend to write an agent or run it without LLM calls. See [LLM API](llm.md).
 
 Developers may enable a local-folder source to test the validation pipeline without GitHub. It is disabled in normal deployments and is not a participant feature.
 

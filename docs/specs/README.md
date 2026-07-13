@@ -10,7 +10,7 @@ Start with the [overview](overview.md), then use this map:
 | [Interaction](interaction.md) | Browser rendering, session stepping, human input |
 | [Submissions](submission.md) | Agent hooks, packaging, templates, validation |
 | [Communication](communication.md) | Optional agent and human messaging |
-| [LLM API](llm.md) | Gateway access, keys, budgets, telemetry |
+| [LLM API](llm.md) | Backend proxy access, keys, budgets, retries, telemetry |
 | [Frontend](frontend.md) | Navigation, pages, play/watch flows, ratings, identity |
 | [Leaderboards](leaderboard.md) | Seasons, automated ranking, human feedback |
 | [Execution](execution.md) | Runtime boundary, containers, drivers, sandboxing |

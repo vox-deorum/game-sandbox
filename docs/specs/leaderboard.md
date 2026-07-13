@@ -35,10 +35,10 @@ Each season defines:
 - Template dependency version.
 - Optional step and episode limit overrides.
 - Optional messaging overrides.
-- Optional LLM model and budget overrides.
+- Optional LLM model, official budget, and student development budget overrides of deployment defaults.
 - Optional season-wide rating prompt.
 
-A season's timing and messaging overrides apply not only to its automated games but also to the live watch and play sessions started against the play-open season, so a season's rules hold everywhere its agents run.
+A season's timing, messaging, and official LLM overrides apply not only to its automated games but also to the live watch and play sessions started against the play-open season, so a season's rules hold everywhere its agents run. Student development LLM limits use their own meter keyed to the season and do not consume or contribute to official run budgets.
 
 Operators manage seasons through the website's admin console and an operator-only HTTP API. They can declare, configure, open, close, run, rerun, cancel, preview, and release seasons. The backend runs the workflow and streams logs to the console.
 
@@ -60,7 +60,7 @@ The operator-triggered workflow:
 - Runs matches sequentially on the same host for comparable timing.
 - Records every match.
 - Enforces step and episode limits.
-- Aggregates LLM usage by model.
+- Aggregates successful LLM usage by model.
 
 When a match design fills more than one seat from submissions, the expansion respects whether seat order changes the game (see [Environments](environment.md)). It enumerates each distinct ordered seating where order matters, and each distinct unordered roster where it does not. The built-in baseline still fills every submission seat so each board keeps a comparable reference row.
 

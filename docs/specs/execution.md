@@ -56,9 +56,9 @@ Session containers have:
 - A read-only root filesystem.
 - A bounded writable scratch directory.
 - No general internet access.
-- Access only to the internal LLM gateway when enabled.
+- Access only to the backend's internal LLM proxy when enabled.
 
-General network access stays blocked so an agent cannot secretly outsource decisions or contact an unmetered service. Model use through the gateway is an explicit exception because it is shared, budgeted, and logged.
+General network access stays blocked so an agent cannot secretly outsource decisions or contact an unmetered service. Model use through the backend proxy is an explicit exception because successful calls are shared, budgeted, and logged.
 
 Agents in a multi-agent session share one container and could interfere with one another. This class-scale tradeoff is accepted because submissions are pinned and reviewable, and every official run is recorded.
 
@@ -71,8 +71,7 @@ Contributors run the full stack locally. Participants use the template and do no
 | Side | Language | Responsibilities |
 | --- | --- | --- |
 | Inside container | Python | Harness, PettingZoo environments, participant agents |
-| Outside container | TypeScript on Node | Identity, submissions, storage, orchestration, WebSocket relay, browser app |
-| Separate service | Implementation-defined | OpenAI-compatible LLM gateway |
+| Outside container | TypeScript on Node | Identity, submissions, storage, orchestration, WebSocket relay, browser app, LLM forwarding, retries, error handling, metering, and telemetry |
 
 The state contract is a versioned JSON Schema. Python validates emitted payloads, while TypeScript types are generated from the same source.
 
