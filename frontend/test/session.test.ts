@@ -484,7 +484,7 @@ describe('SessionPage', () => {
         agents: [
           {
             agent: { kind: 'submission', submission_id: 'sub-1' },
-            display_name: 'Submitted agent 1',
+            display_name: 'Agent 1',
             is_own: false,
             author_prompt: 'Judge smoothness.',
             your_rating: null,
@@ -544,7 +544,7 @@ describe('SessionPage', () => {
       },
     ])
     // The attribution must number the agent the same way the rating panel does, so a blind viewer
-    // sees one consistent "Submitted agent N" across both surfaces.
+    // sees one consistent "Agent N" across both surfaces.
     vi.mocked(watchAgentNumbers).mockResolvedValue({ 'sub-maya': 1 })
     await renderSession()
     await waitForHandlers()
@@ -560,7 +560,7 @@ describe('SessionPage', () => {
         },
       }),
     )
-    const attribution = await screen.findByText('Submitted agent 1')
+    const attribution = await screen.findByText('Agent 1')
     expect(attribution).toBeInTheDocument()
     expect(screen.queryByText("maya-fledgling's agent")).toBeNull()
     // The masked row's identity is hidden outright, so no id tooltip rides along either.
