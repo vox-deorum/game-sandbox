@@ -12,7 +12,7 @@ import { getSessionRatings, submitRatings } from '../src/api/client.js'
 import SessionRatings from '../src/components/SessionRatings.vue'
 
 function agent(overrides: Partial<RateableAgent> & { agent: AgentRefWire }): RateableAgent {
-  const fallback = overrides.agent.kind === 'builtin-naive' ? 'Naive baseline' : 'Submitted agent 1'
+  const fallback = overrides.agent.kind === 'builtin-naive' ? 'Naive baseline' : 'Agent 1'
   return {
     display_name: fallback,
     is_own: false,
@@ -70,7 +70,7 @@ describe('SessionRatings', () => {
         agent({ agent: SUBMISSION, display_name: 'Your agent', is_own: true }),
         agent({
           agent: { kind: 'submission', submission_id: 'sub-bob' },
-          display_name: 'Submitted agent 2',
+          display_name: 'Agent 2',
         }),
         agent({ agent: NAIVE }),
       ]),
@@ -83,7 +83,7 @@ describe('SessionRatings', () => {
     expect(screen.getByText('Your agent')).toBeInTheDocument()
     expect(screen.getByText(/can't rate your own agent/)).toBeInTheDocument()
     // The other submitted agent and the Naive baseline each get a 1-5 radiogroup.
-    expect(screen.getByRole('radiogroup', { name: /Rate Submitted agent 2/ })).toBeInTheDocument()
+    expect(screen.getByRole('radiogroup', { name: /Rate Agent 2/ })).toBeInTheDocument()
     expect(screen.getByRole('radiogroup', { name: /Rate Naive baseline/ })).toBeInTheDocument()
   })
 
@@ -95,11 +95,11 @@ describe('SessionRatings', () => {
       ratings: view([
         agent({
           agent: { kind: 'submission', submission_id: 'sub-a' },
-          display_name: 'Submitted agent 1',
+          display_name: 'Agent 1',
         }),
         agent({
           agent: { kind: 'submission', submission_id: 'sub-b' },
-          display_name: 'Submitted agent 2',
+          display_name: 'Agent 2',
         }),
         agent({
           agent: { kind: 'submission', submission_id: 'sub-c' },
@@ -113,8 +113,8 @@ describe('SessionRatings', () => {
 
     expect(await screen.findByText('Rate the Agents')).toBeInTheDocument()
     // Each non-own seat gets its own 1-5 control, attributed to the right agent.
-    expect(screen.getByRole('radiogroup', { name: /Rate Submitted agent 1/ })).toBeInTheDocument()
-    expect(screen.getByRole('radiogroup', { name: /Rate Submitted agent 2/ })).toBeInTheDocument()
+    expect(screen.getByRole('radiogroup', { name: /Rate Agent 1/ })).toBeInTheDocument()
+    expect(screen.getByRole('radiogroup', { name: /Rate Agent 2/ })).toBeInTheDocument()
     expect(screen.getByRole('radiogroup', { name: /Rate Naive baseline/ })).toBeInTheDocument()
     // The caller's own seat in the shared session is shown but carries no rating control.
     expect(screen.getByText('Your agent')).toBeInTheDocument()

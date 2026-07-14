@@ -444,7 +444,7 @@ describe('rating API', () => {
     expect(body.agents).toHaveLength(2)
     const submitted = body.agents.find((a) => a.agent.kind === 'submission')
     expect(submitted).toMatchObject({
-      display_name: 'Submitted agent 1',
+      display_name: 'Agent 1',
       author_prompt: 'Judge my dodging',
       your_rating: 4,
       is_own: false,

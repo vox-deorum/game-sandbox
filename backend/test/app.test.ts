@@ -447,7 +447,7 @@ describe('HTTP API', () => {
       expect(row).not.toHaveProperty('user_name')
       expect(row?.header.players?.player_0).toEqual({
         kind: 'agent',
-        label: 'Submitted agent',
+        label: 'Agent',
         submission_id: 'sub-a',
       })
     })
@@ -472,7 +472,7 @@ describe('HTTP API', () => {
       const row = await listAs(bob)
       expect(row?.user_id).toBe(ownerId)
       expect(row).not.toHaveProperty('user_name')
-      expect(row?.header.players?.player_0?.label).toBe('Submitted agent')
+      expect(row?.header.players?.player_0?.label).toBe('Agent')
     })
 
     it('rewrites only the stream header for an anonymous viewer, and not for an operator', async () => {
@@ -485,7 +485,7 @@ describe('HTTP API', () => {
       expect(
         (JSON.parse(anonLines[0] ?? '{}') as { players: Record<string, PlayerEntry> }).players
           .player_0,
-      ).toEqual({ kind: 'agent', label: 'Submitted agent', submission_id: 'sub-a' })
+      ).toEqual({ kind: 'agent', label: 'Agent', submission_id: 'sub-a' })
       // The state line rides through untouched.
       expect(anonLines[1]).toBe('{"tick":0}')
 

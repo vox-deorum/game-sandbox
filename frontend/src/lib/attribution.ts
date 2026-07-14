@@ -2,7 +2,7 @@
  * The one place a slot's attribution label is decided, so every surface that names "who or what drove
  * a slot" — the per-slot attribution line, the end-of-game leaderboard — reads identically and honours
  * the same blind policy. A human slot names the user; an agent slot shows its label, unless a non-
- * operator is viewing a playable season, when a submitted agent is anonymized to "Submitted agent N"
+ * operator is viewing a playable season, when a submitted agent is anonymized to "Agent N"
  * (the viewer's own agent reads "Your agent" so they can still find themselves).
  */
 import type { RecordingHeader } from '@game-sandbox/schema'
@@ -22,10 +22,14 @@ export interface AttributionContext {
   anonymousNumbers?: Record<string, number>
 }
 
+/** A masked submission's compact pseudonym, shared by every frontend surface that names one. */
+export function maskedSubmissionLabel(number?: number): string {
+  return number === undefined ? 'Agent' : `Agent ${number}`
+}
+
 /** A blind submitted agent's label, numbered to match the watch picker and rating panel. */
 function blindAgentLabel(submissionId: string, anonymousNumbers?: Record<string, number>): string {
-  const number = anonymousNumbers?.[submissionId]
-  return number === undefined ? 'Submitted agent' : `Submitted agent ${number}`
+  return maskedSubmissionLabel(anonymousNumbers?.[submissionId])
 }
 
 /**

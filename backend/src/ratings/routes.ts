@@ -295,7 +295,7 @@ function displayName(
     return 'Your agent'
   }
   const number = anonymousNumbers.get(ref.submission_id)
-  return number === undefined ? 'Submitted agent' : `Submitted agent ${number}`
+  return number === undefined ? 'Agent' : `Agent ${number}`
 }
 
 /** Treat a null, undefined, or blank string as "no prompt", so an empty stored value reads as none. */

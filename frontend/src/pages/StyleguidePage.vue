@@ -160,8 +160,8 @@ const tabsValue = ref('all')
           <template #default="{ id, describedby }">
             <UiSelect :id="id" v-model="selectValue" :aria-describedby="describedby">
               <option value="builtin">Naive agent</option>
-              <option value="submission:sub1">Submitted agent 1</option>
-              <option value="submission:sub2">Submitted agent 2</option>
+              <option value="submission:sub1">Agent 1</option>
+              <option value="submission:sub2">Agent 2</option>
             </UiSelect>
           </template>
         </UiField>

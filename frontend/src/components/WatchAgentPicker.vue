@@ -24,6 +24,7 @@ import {
   startSession,
   type WatchAgentSummary,
 } from '../api/client.js'
+import { maskedSubmissionLabel } from '../lib/attribution.js'
 import { handleSessionStartResult } from '../lib/session-start.js'
 import { canParticipate, isAdmin, useMe } from '../me.js'
 import SeatAssignmentDialog from './SeatAssignmentDialog.vue'
@@ -74,7 +75,7 @@ function agentLabel(agent: WatchAgentSummary): string {
   if (agent.rating_status === 'own') {
     return 'Your agent'
   }
-  return `Submitted agent ${agent.anonymous_number}`
+  return maskedSubmissionLabel(agent.anonymous_number)
 }
 
 function actionLabel(agent: WatchAgentSummary): string {

@@ -22,6 +22,7 @@ import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
 import { computed, reactive, ref } from 'vue'
 
 import type { SlotAssignmentInput, StartPayload, WatchAgentSummary } from '../api/client.js'
+import { maskedSubmissionLabel } from '../lib/attribution.js'
 import { optionalNumber } from '../lib/forms.js'
 import UiButton from './ui/UiButton.vue'
 import UiField from './ui/UiField.vue'
@@ -120,9 +121,9 @@ function agentOptionLabel(agent: WatchAgentSummary): string {
     return 'Your agent'
   }
   if (props.isOperator === true && agent.owner_id !== undefined) {
-    return `${agent.owner_id} · ${sourceLabel(agent)}`
+    return `${agent.owner_name ?? agent.owner_id} · ${sourceLabel(agent)}`
   }
-  return `Submitted agent ${agent.anonymous_number}`
+  return maskedSubmissionLabel(agent.anonymous_number)
 }
 
 // The agent options every seat dropdown offers: the always-available Naive baseline, then each ready

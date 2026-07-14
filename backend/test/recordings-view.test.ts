@@ -60,7 +60,7 @@ describe('maskPlayers', () => {
     const masked = maskPlayers(submittedPlayers, 'someone-else')
     expect(masked.player_0).toEqual({
       kind: 'agent',
-      label: 'Submitted agent',
+      label: 'Agent',
       submission_id: 'sub-a',
     })
     expect(masked.player_0).not.toHaveProperty('user')

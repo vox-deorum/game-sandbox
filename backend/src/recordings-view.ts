@@ -11,7 +11,7 @@
  * the same result.
  *
  * The masking keeps each seat's `submission_id` (an opaque token with no public owner mapping while the
- * season is open, and the same value the frontend already carries to number "Submitted agent N") but
+ * season is open, and the same value the frontend already carries to number "Agent N") but
  * strips the reversible `user` id and replaces the display `label`. The viewer's own seat is never
  * masked, so a participant can still find themselves.
  */
@@ -68,7 +68,7 @@ export function maskPlayers(players: Players, callerId: string | undefined): Pla
     } else if (player.submission_id !== undefined) {
       masked[slot] = {
         kind: 'agent',
-        label: 'Submitted agent',
+        label: 'Agent',
         submission_id: player.submission_id,
       }
     } else {
