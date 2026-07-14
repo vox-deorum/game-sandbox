@@ -42,7 +42,7 @@ Caching is **driver configuration, not policy hardcoded above it**. The Docker d
 
 ## The load check against the built overlay
 
-After a successful build, the driver launches the overlay image running the harness `validate` command under the **same locked-down profile** real sessions use: no network, read-only filesystem except scratch, and fixed CPU/memory quotas (the sandbox profile from [execution.md](../../docs/specs/execution.md)). It runs with a **short timeout**, since import-and-construct should be near-instant and a hang is itself a failure. The command validates the repo root at `/opt/agents/submissions/player_0` for this single-slot stage. The driver tears the container down regardless of outcome.
+After a successful build, the driver launches the overlay image running the harness `validate` command under the **same locked-down profile** real sessions use: no network, read-only filesystem except bounded `/tmp` scratch, and fixed CPU/memory quotas (the sandbox profile from [execution.md](../../docs/specs/execution.md)). The worker builds this through the same `driver/sandbox.ts` helper used by live sessions and workflow games, supplying no mounts for the load check. It runs with a **short timeout**, since import-and-construct should be near-instant and a hang is itself a failure. The command validates the repo root at `/opt/agents/submissions/player_0` for this single-slot stage. The driver tears the container down regardless of outcome.
 
 ## Overlay-image eviction
 

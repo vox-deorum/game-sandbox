@@ -48,6 +48,7 @@ vi.mock('../src/renderers/registry.js', () => ({
     mount: (ctx: RendererContext) => {
       mountCtx = ctx
       return {
+        aspectRatio: 288 / 512,
         render: (s: unknown, o?: unknown) => {
           drawn.push(s)
           drawnOptions.push(o)

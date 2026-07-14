@@ -14,11 +14,10 @@ import type {
   PlacementInput,
   RatingAggregate,
 } from '../index.js'
-import type { AutomatedPlacement, Database, SeasonRun } from '../schema.js'
+import type { AgentColumns, AutomatedPlacement, Database, SeasonRun } from '../schema.js'
 import { aggregateRatingsByAgent, listAgentRatingPromptsBySeason } from './ratings.js'
 import { getLatestCompletedRun } from './runs.js'
 import {
-  type AgentColumns,
   agentColumns,
   agentKey,
   agentRefFromColumns,

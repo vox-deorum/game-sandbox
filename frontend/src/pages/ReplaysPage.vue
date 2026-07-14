@@ -21,7 +21,8 @@ import {
 import UiBadge from '../components/ui/UiBadge.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import { type AttributionContext, attributionLabel, hasSubmittedAgent, isBlindMasked } from '../lib/attribution.js'
-import { formatDateOnly, formatSlotIndex } from '../lib/format.js'
+import { anonymityState, presentsMasked } from '../lib/anonymity.js'
+import { formatDateOnly, formatSeasonName, formatSlotIndex } from '../lib/format.js'
 import { isAdmin, useMe, userId } from '../me.js'
 import { reasonText } from '../replay/reason.js'
 
@@ -39,10 +40,6 @@ const anonymousNumbers = ref<Record<string, number>>({})
 /** The sortable columns and the current sort. Default newest-first, matching the backend order. */
 type SortKey = 'id' | 'owner' | 'season' | 'outcome' | 'created'
 const sort = ref<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'created', dir: 'desc' })
-
-function seasonLabel(season: PublicSeasonView): string {
-  return season.label ?? `Season ${season.id.slice(0, 8)}`
-}
 
 /** This page's attribution context for `replay`, shared by the summary text and its tooltip so both
  *  honour the exact same blind test. */
@@ -99,15 +96,22 @@ function seasonText(replay: RecordingSummary): string {
     return '—'
   }
   const season = seasonsById.value.get(replay.season_id)
-  return season === undefined ? '—' : seasonLabel(season)
+  return season === undefined ? '—' : formatSeasonName(season)
+}
+
+function replayAnonymityState(replay: RecordingSummary) {
+  const season = replay.season_id === null ? undefined : seasonsById.value.get(replay.season_id)
+  return anonymityState({
+    identityResolved: !me.loading,
+    operator: isAdmin(me.me),
+    seasonPlayable:
+      replay.season_id === null ? false : season === undefined ? null : season.play_status === 'open',
+    hasSubmittedAgent: hasSubmittedAgent(replay.header.players),
+  })
 }
 
 function isBlindReplay(replay: RecordingSummary): boolean {
-  // Fail closed: only a confirmed operator is exempt; an unresolved identity stays blind.
-  if (isAdmin(me.me) || replay.season_id === null || !hasSubmittedAgent(replay.header.players)) {
-    return false
-  }
-  return seasonsById.value.get(replay.season_id)?.play_status === 'open'
+  return presentsMasked(replayAnonymityState(replay))
 }
 
 /** Show a pin badge only on the viewer's own pinned recordings. */
@@ -162,16 +166,17 @@ function ariaSort(key: SortKey): 'ascending' | 'descending' | 'none' {
 async function load(id: string): Promise<void> {
   replays.value = null
   await me.whenSettled()
-  const [recordings, seasons, numbers] = await Promise.all([
+  const [recordings, seasons] = await Promise.all([
     listRecordings({ env: id }).catch(() => [] as RecordingSummary[]),
     listSeasons(id, { includeUnreleased: isAdmin(me.me) }).catch(
       () => [] as PublicSeasonView[],
     ),
-    // Operators see real labels and never consult this, so the lookup is harmless for them.
-    watchAgentNumbers(id).catch(() => ({}) as Record<string, number>),
   ])
   seasonsById.value = new Map(seasons.map((season) => [season.id, season]))
-  anonymousNumbers.value = numbers
+  anonymousNumbers.value = {}
+  if (recordings.some((replay) => replayAnonymityState(replay) === 'masked')) {
+    anonymousNumbers.value = await watchAgentNumbers(id).catch(() => ({}))
+  }
   replays.value = recordings
 }
 

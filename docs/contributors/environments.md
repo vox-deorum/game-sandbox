@@ -111,13 +111,13 @@ Pair this with an environment-level determinism test (two resets with the same s
 
 Students run the environment locally without the harness. `scripts/generate.py` copies the self-contained modules into `templates/<env>/sandbox/env/`.
 
-Register the environment and module list in `scripts/_paths.py` under `TEMPLATE_ENVS`, add the generated `__init__` text in `scripts/generate.py`, then regenerate:
+Add one `TemplateEnvironmentSpec` to the static `TEMPLATE_ENVIRONMENTS` catalog in `scripts/_paths.py`, then regenerate. The spec keeps the display name, inner package, module-copy list, default-action export, and player slot together. Generation and composition both read this catalog and do not discover environment directories at runtime, so an unregistered directory cannot silently become a student template.
 
 ```console
 uv run python scripts/generate.py
 ```
 
-The template's top-level `sandbox.env` package exposes `make_env`, `ENV_ID`, `PLAYER_SLOT`, and `make_human_controller`. To make the game human-playable locally, add a `human.py` exposing `make_human_controller(env)` (keyboard for realtime games, mouse/click for turn-based ones) and include it in the env's `TEMPLATE_ENVS` entry so it syncs too. Never sync harness, recording, or metadata modules. See [Examples and the template](examples-and-template.md).
+The template's top-level `sandbox.env` package exposes `make_env`, `ENV_ID`, `PLAYER_SLOT`, and `make_human_controller`. To make the game human-playable locally, add a `human.py` exposing `make_human_controller(env)` (keyboard for realtime games, mouse or click for turn-based ones) and include it in the spec's module list so it syncs too. Never sync harness, recording, or metadata modules. See [Examples and the template](examples-and-template.md).
 
 ## Student-facing deliverables
 
@@ -130,6 +130,8 @@ Give the template a small helper module whenever the object-shaped observation o
 Two placement rules matter. Keep the module plain Python with no heavy imports so that `from sandbox import <name>` at the top of `agent.py` stays cheap: the base `sandbox/__init__.py` deliberately imports nothing heavy, and an agent must be able to import the helper without pulling in pettingzoo or pygame. And never place it under `sandbox/env/`, because `scripts/generate.py` wipes and regenerates that directory on every sync, so a hand-authored file there is destroyed. Tell students to import the helper at the top of `agent.py` rather than inside a method, since a submission's module-top imports are the ones the harness isolates cleanly per slot.
 
 Because a helper restates facts that live in the environment source (the card encoding, the observation layout), add a pin test under `templates/<env>/tests/test_<name>.py` that asserts the helper agrees with the synced environment code, so the two cannot drift. The Hearts `test_cards.py` checks every card against the synced `sandbox.env.hearts.rules`, checks the observation accessors against a freshly stepped environment, and confirms in a subprocess that importing the helper does not load pygame. Every composed example inherits these template tests, so the CI `examples` job runs them.
+
+Hearts and Spades share only the game-independent semantic-card operations from the dependency-free base `sandbox.semantic_cards` module. Each environment's `sandbox.cards` imports and re-exports those established names, then keeps its own legality, scoring, bidding, partnership, and observation helpers locally. Preserve those `sandbox.cards` exports when adding common card operations so existing student agents do not need to change imports.
 
 ### The student environment page
 

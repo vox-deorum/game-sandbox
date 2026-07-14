@@ -3,14 +3,7 @@
  * mapping (used wherever an {@link AgentRef} is stored or grouped — results, placements, ratings)
  * and the unique-constraint detector the idempotent/one-open invariants lean on.
  */
-import type { AgentKind, AgentRef } from '../schema.js'
-
-/** The concrete agent-identity columns derived from an {@link AgentRef}. */
-export interface AgentColumns {
-  agent_kind: AgentKind
-  agent_submission_id: string | null
-  agent_user_id: string | null
-}
+import type { AgentColumns, AgentRef } from '../schema.js'
 
 /** Flatten an {@link AgentRef} to its three stored columns; null ids for the Naive baseline. */
 export function agentColumns(agent: AgentRef): AgentColumns {

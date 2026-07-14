@@ -7,6 +7,7 @@ Status: implemented as described. The relay and the idempotent finalize live in 
 - The kill grace is a fixed `KILL_GRACE_MS`; the driver escalates a polite stop to a hard kill over it.
 - The session config's slot set is derived from the environment metadata. Each `human_slot` is `external` in human mode and `builtin-agent` in scripted mode, and any non-human slot is always the built-in agent.
 - The idle timer is suppressed while a scripted watch session has a socket attached. A human session's window instead resets on each attach and inbound command.
+- The orchestrator builds its launch profile through `driver/sandbox.ts`, the shared backend helper that fixes a read-only root, disabled networking, and bounded `/tmp` scratch while accepting only resource limits and caller-specific mounts.
 
 ## Starting a session
 
@@ -20,7 +21,7 @@ The start flow in `session/orchestrator.ts` runs these steps:
 - Call `ensureImage({kind: 'session-base', depsVersion: 1})` (the current set version; Stage 5 resolves it per submission).
 - Allocate the recording id (`<env>-<session id>`).
 - Insert the sessions row as `starting`.
-- Call `launch` with the session-config argv and the sandbox profile from config defaults: fixed CPU and memory quotas, read-only root, the scratch tmpfs, `network: 'none'`, and the recordings volume mounted at `/recordings`.
+- Call `launch` with the session-config argv and the shared hardened sandbox profile: fixed CPU and memory quotas from config, read-only root, bounded `/tmp` scratch, `network: 'none'`, and the recordings volume mounted at `/recordings`.
 
 When the container's header line arrives, the session is `running`.
 

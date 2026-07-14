@@ -369,6 +369,14 @@ describe('Docker-backed workflow runner', () => {
       step_timeout_ms: 250,
       episode_timeout_ms: 5_000,
     })
+    expect(handle.driver.lastLaunch()?.spec.sandbox).toEqual({
+      cpus: 1,
+      memoryMb: 512,
+      readOnlyRoot: true,
+      scratch: { containerPath: '/tmp', sizeMb: 256 },
+      network: 'none',
+      mounts: [{ hostPath: './data/recordings', containerPath: '/recordings', readOnly: false }],
+    })
   })
 
   it('spreads the messaging override into the workflow session config', async () => {

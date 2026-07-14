@@ -2,13 +2,9 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import agent
 from sandbox.env import make_env
-from sandbox.play import load_agent, play_episode
-
-REPO_ROOT = Path(__file__).resolve().parent.parent
+from sandbox.play import play_episode
 
 _SEEDS = [0, 1, 2, 3, 4, 5, 6, 7]
 
@@ -16,19 +12,6 @@ _SEEDS = [0, 1, 2, 3, 4, 5, 6, 7]
 def test_extra_dependency_is_usable():
     # wcwidth comes from requirements.extra.txt; a width of 4 for "duck" proves it composed in.
     assert agent.display_width("duck") == 4
-
-
-def test_example_loads_through_loader_and_plays_a_full_game():
-    # The loader mirrors the server harness: read manifest.json, import the class, instantiate it.
-    loaded = load_agent(REPO_ROOT)
-    env = make_env(render_mode=None)
-    try:
-        score = play_episode(loaded, env, seed=0)
-        # A complete hand: every seat has been dead-stepped, so the agent list has drained.
-        assert not env.agents
-    finally:
-        env.close()
-    assert isinstance(score, float)
 
 
 def test_renderer_produces_a_headless_frame():

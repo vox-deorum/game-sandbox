@@ -473,6 +473,8 @@ export interface Storage {
   getRating(seasonId: string, raterUserId: string, agent: AgentRef): Promise<Rating | undefined>
   /** Every rating in a season. */
   listRatingsBySeason(seasonId: string): Promise<Rating[]>
+  /** One rater's ratings in a season, for bounded request assembly. */
+  listRatingsByRater(seasonId: string, raterUserId: string): Promise<Rating[]>
   /** Mean score and count per agent for a season's human board. */
   aggregateRatingsByAgent(seasonId: string): Promise<RatingAggregate[]>
   /**
@@ -489,6 +491,11 @@ export interface Storage {
   getAgentRatingPrompt(seasonId: string, userId: string): Promise<AgentRatingPrompt | undefined>
   /** Every agent-author prompt in a season (one per author), for the rating read. */
   listAgentRatingPromptsBySeason(seasonId: string): Promise<AgentRatingPrompt[]>
+  /** Agent-author prompts for a bounded set of users in one season. */
+  listAgentRatingPromptsByUsers(
+    seasonId: string,
+    userIds: readonly string[],
+  ): Promise<AgentRatingPrompt[]>
 
   /**
    * The recording ids referenced by the latest completed run of every viewable season (released,
@@ -533,6 +540,11 @@ export interface Storage {
 
   /** One submission by id. */
   getSubmission(id: string): Promise<Submission | undefined>
+  /**
+   * Existing submissions from a bounded id set, for request assembly that would otherwise issue one
+   * query per recorded slot. Duplicate ids are collapsed; callers assemble their own response order.
+   */
+  getSubmissionsByIds(ids: readonly string[]): Promise<Submission[]>
   /** The user's active (`superseded_at IS NULL`) submission in a season, regardless of status. */
   findActiveSubmission(seasonId: string, userId: string): Promise<Submission | undefined>
   /** Active pending submissions, newest first, for the validation worker's startup re-enqueue. */

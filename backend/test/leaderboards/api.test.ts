@@ -3,61 +3,30 @@
  * guarantee: board/history reads return only `released` seasons, while an open submission or play
  * window is still reported as a public target without exposing the season's boards.
  */
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-
 import type { FastifyInstance } from 'fastify'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { buildApp } from '../../src/app.js'
-import { RecordingsStore } from '../../src/recordings.js'
-import { Retention } from '../../src/retention.js'
-import { Orchestrator } from '../../src/session/orchestrator.js'
 import type { Season, Storage } from '../../src/storage/index.js'
 import type { TestUsers } from '../support/auth.js'
-import { FakeDriver } from '../support/fake-driver.js'
-import {
-  makeConfig,
-  makeEnvironments,
-  makeSubmissionDeps,
-  openTestStack,
-} from '../support/harness.js'
+import { openTestApp, type TestApp } from '../support/harness.js'
 
 const ENV_ID = 'flappy_bird'
 
 describe('public leaderboard API', () => {
   let app: FastifyInstance
+  let fixture: TestApp
   let storage: Storage
   let users: TestUsers
-  let orchestrator: Orchestrator
-  let dir: string
 
   beforeEach(async () => {
-    dir = mkdtempSync(join(tmpdir(), 'gs-lb-'))
-    const stack = await openTestStack()
-    storage = stack.storage
-    users = stack.users
-    const config = makeConfig({ recordingsDir: dir })
-    const environments = makeEnvironments()
-    orchestrator = new Orchestrator({ driver: new FakeDriver(), storage, environments, config })
-    const recordings = new RecordingsStore(dir)
-    app = await buildApp({
-      orchestrator,
-      environments,
-      recordings,
-      retention: new Retention(storage, recordings, config),
-      auth: stack.auth,
-      userDirectory: stack.userDirectory,
-      ...makeSubmissionDeps(storage, config),
-    })
+    fixture = await openTestApp()
+    app = fixture.app
+    storage = fixture.storage
+    users = fixture.users
   })
 
   afterEach(async () => {
-    await orchestrator.shutdown()
-    await app.close()
-    await storage.close()
-    rmSync(dir, { recursive: true, force: true })
+    await fixture.close()
   })
 
   /** Declare a season directly in storage and return its row. */

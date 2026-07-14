@@ -8,7 +8,7 @@
 import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
-import { getEnvironments } from '../api/client.js'
+import { environmentMeta } from '../environmentCatalog.js'
 import { isAdmin, useMe, userId } from '../me.js'
 
 // The env id normally comes from the route (the shell mounts these tabs on /environments/:envId/*),
@@ -25,9 +25,9 @@ const gameName = ref('')
 const ownerId = computed(() => userId(me.me))
 
 function load(id: string): void {
-  getEnvironments().then(
-    (envs) => {
-      gameName.value = envs.find((e) => e.env_id === id)?.display_name ?? id
+  environmentMeta(id).then(
+    (meta) => {
+      gameName.value = meta?.display_name ?? id
     },
     () => {
       gameName.value = id

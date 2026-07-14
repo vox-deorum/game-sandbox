@@ -30,12 +30,59 @@ from __future__ import annotations
 from typing import Any
 
 from sandbox.card_utils import card_from_obj, card_to_obj
+from sandbox.semantic_cards import (
+    CLUBS,
+    DIAMONDS,
+    HEARTS,
+    RANK_NAMES,
+    SPADES,
+    SUIT_NAMES,
+    card_name,
+    make_card,
+    rank_of,
+    suit_of,
+)
 
-#: Suit ids, which are also the ``"suit"`` field of a card object.
-CLUBS = 0
-DIAMONDS = 1
-SPADES = 2
-HEARTS = 3
+__all__ = [
+    "BID_OFFSET",
+    "CLUBS",
+    "DIAMONDS",
+    "HEARTS",
+    "NIL_BID",
+    "NUM_BIDS",
+    "NUM_CARDS",
+    "RANK_NAMES",
+    "SPADES",
+    "SUIT_NAMES",
+    "action_is_bid",
+    "action_to_bid",
+    "beats_current_winner",
+    "bid",
+    "bid_to_action",
+    "bids",
+    "card_from_obj",
+    "card_name",
+    "card_to_obj",
+    "current_trick",
+    "hand_cards",
+    "is_bidding",
+    "last_trick",
+    "last_trick_winner",
+    "led_suit",
+    "legal_bids",
+    "legal_cards",
+    "make_card",
+    "my_seat",
+    "partner_of",
+    "partner_seat",
+    "play",
+    "rank_of",
+    "spades_broken",
+    "suit_of",
+    "team_scores",
+    "trick_winner_so_far",
+    "tricks_won",
+]
 
 #: Number of cards in the deck, so bids start at this offset in the combined action space.
 NUM_CARDS = 52
@@ -46,50 +93,7 @@ BID_OFFSET = NUM_CARDS
 #: The bid meaning "I will take zero tricks", worth plus/minus one hundred to the bidder.
 NIL_BID = 0
 
-#: Suit names indexed by suit id, and rank names indexed by face value (index 0/1 are unused
-#: placeholders so ``RANK_NAMES[rank]`` lines up directly with the face value). Used by
-#: :func:`card_name`.
-SUIT_NAMES: tuple[str, ...] = ("clubs", "diamonds", "spades", "hearts")
-RANK_NAMES: tuple[str, ...] = (
-    "",
-    "",
-    "2",
-    "3",
-    "4",
-    "5",
-    "6",
-    "7",
-    "8",
-    "9",
-    "10",
-    "J",
-    "Q",
-    "K",
-    "A",
-)
-
-
 # -- the card encoding ------------------------------------------------------------------------
-
-
-def suit_of(card: dict[str, int]) -> int:
-    """Return the suit id (``0..3``) of a card object."""
-    return card["suit"]
-
-
-def rank_of(card: dict[str, int]) -> int:
-    """Return the face-value rank (``2..14``, where ``11=J, 12=Q, 13=K, 14=A``) of a card object."""
-    return card["rank"]
-
-
-def make_card(suit: int, rank: int) -> dict[str, int]:
-    """Return the card object for a ``suit`` (``0..3``) and face-value ``rank`` (``2..14``)."""
-    return {"suit": suit, "rank": rank}
-
-
-def card_name(card: dict[str, int]) -> str:
-    """Return a readable ASCII name for ``card``, for example ``"A of spades"`` or ``"2 of clubs"``."""
-    return f"{RANK_NAMES[rank_of(card)]} of {SUIT_NAMES[suit_of(card)]}"
 
 
 # -- actions: cards and bids -------------------------------------------------------------------

@@ -1,21 +1,14 @@
 """Example-specific tests: the exact signal sent, and a play that provably depends on it.
 
 These call ``chat`` and ``act`` directly with synthetic observations, so the behavioural dependence
-on a message is pinned without a live harness. The full-game smoke test (inherited pattern) proves
-the agent composes and plays a complete hand.
+on a message is pinned without a live harness.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import agent
 from sandbox.cards import make_card
 from sandbox.cards import play as encode_play
-from sandbox.env import make_env
-from sandbox.play import load_agent, play_episode
-
-REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # Cards under the object encoding (face-value ranks: jack 11, queen 12, king 13, ace 14).
 TWO_OF_CLUBS = make_card(0, 2)
@@ -69,17 +62,6 @@ def _leading_observation(hand: list[dict[str, int]], legal: list[dict[str, int]]
             "tricks_won": [0, 0, 0, 0],
         },
     }
-
-
-def test_example_loads_through_loader_and_plays_a_full_game():
-    loaded = load_agent(REPO_ROOT)
-    env = make_env(render_mode=None)
-    try:
-        score = play_episode(loaded, env, seed=0)
-        assert not env.agents  # a complete hand: every seat has been dead-stepped
-    finally:
-        env.close()
-    assert isinstance(score, float)
 
 
 def test_signals_its_strong_side_suit_to_its_partner():

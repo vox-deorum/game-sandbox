@@ -16,11 +16,10 @@
 <script setup lang="ts">
 import type { RecordingHeader, StepState } from '@game-sandbox/schema'
 import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
-import { computed, onMounted, ref, shallowRef } from 'vue'
+import { computed, onMounted, ref, shallowRef, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
 import {
-  getEnvironments,
   getRecording,
   getSession,
   listSeasons,
@@ -35,6 +34,7 @@ import GameOverCard from '../components/GameOverCard.vue'
 import PlayerAttribution from '../components/PlayerAttribution.vue'
 import RunMetadata from '../components/RunMetadata.vue'
 import SessionRatings from '../components/SessionRatings.vue'
+import StageFrame from '../components/StageFrame.vue'
 import UiButton from '../components/ui/UiButton.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import UiStatusBadge from '../components/ui/UiStatusBadge.vue'
@@ -42,6 +42,8 @@ import { usePinning } from '../composables/usePinning.js'
 import { useRendererMount } from '../composables/useRendererMount.js'
 import { useSessionSocket } from '../composables/useSessionSocket.js'
 import { useStageLayout } from '../composables/useStageLayout.js'
+import { environmentMeta } from '../environmentCatalog.js'
+import { anonymityState, presentsMasked } from '../lib/anonymity.js'
 import { hasSubmittedAgent } from '../lib/attribution.js'
 import { type ChatEntry, messageKey } from '../lib/chat.js'
 import { formatDate } from '../lib/format.js'
@@ -69,7 +71,7 @@ const decisions = ref<DecisionEntry[]>([])
 // latest state line and the panel must never show the same message twice.
 const chatLog = ref<ChatEntry[]>([])
 const seenMessages = new Set<string>()
-const seasonPlayable = ref(false)
+const seasonPlayable = ref<boolean | null>(null)
 // Submission id → season-wide anonymous number, so the blind attribution line reads the same
 // "Submitted agent N" the watch picker and post-session rating panel show for the same agent.
 const anonymousNumbers = ref<Record<string, number>>({})
@@ -118,14 +120,24 @@ const recordingId = computed(() => row.value?.recording_id ?? null)
 // header even carries a submitted agent) is what gates the anonymous-numbering prefetch below, because
 // a live session's header arrives asynchronously — often after that prefetch runs — so it cannot wait
 // on hasSubmittedAgent the way the render-facing gate does.
-const viewerMightBeBlind = computed(() => seasonPlayable.value && !isAdmin(me.me))
-// The render-facing blind gate additionally requires the header to confirm there is actually a
-// submitted agent to protect: blind ownership masking has nothing to hide in an all-human or
-// all-Naive session (mirrors ReplayPage's gate). Reactive on `header`, so it flips true once a live
-// session's header arrives even though it was unknown when `viewerMightBeBlind` above was checked.
-const blindAttribution = computed(
-  () => viewerMightBeBlind.value && hasSubmittedAgent(header.value?.players),
+const attributionState = computed(() =>
+  anonymityState({
+    identityResolved: !me.loading,
+    operator: isAdmin(me.me),
+    seasonPlayable: seasonPlayable.value,
+    hasSubmittedAgent: header.value === null ? null : hasSubmittedAgent(header.value.players),
+  }),
 )
+const blindAttribution = computed(() => presentsMasked(attributionState.value))
+let anonymousNumbersRequested = false
+watch(attributionState, (state) => {
+  if (state !== 'masked' || anonymousNumbersRequested || row.value === null) return
+  anonymousNumbersRequested = true
+  void watchAgentNumbers(row.value.env_id).then(
+    (numbers) => { anonymousNumbers.value = numbers },
+    () => { anonymousNumbers.value = {} },
+  )
+})
 
 // The renderer (shared with replay) forwards the owner's live input. The socket owns the chrome state
 // and hands recording frames back here to draw and log. The two reference each other through stable
@@ -218,7 +230,7 @@ function toDecision(state: StepState): DecisionEntry {
 
 // The decision log sits beside a portrait canvas (a column is left free) and below a landscape one
 // until the viewport is wide enough to hold both (see useStageLayout).
-const { portrait, logBeside } = useStageLayout(aspectRatio)
+const { logBeside } = useStageLayout(aspectRatio)
 
 // The renderer hasn't reported its shape yet: the session row, socket, and first header are still in
 // flight, so the stage shows a loading indicator rather than the decision log it has no rows for.
@@ -262,23 +274,25 @@ onMounted(async () => {
   if (fetched.status === 'ended') {
     endReason.value = fetched.termination_reason
   }
-  const [environments, seasons] = await Promise.all([
-    getEnvironments().catch(() => []),
-    listSeasons(fetched.env_id).catch(() => []),
+  const [environment, seasons] = await Promise.all([
+    environmentMeta(fetched.env_id).catch(() => null),
+    listSeasons(fetched.env_id).catch(() => null),
   ])
-  const environmentMeta = environments.find((e) => e.env_id === fetched.env_id) ?? null
   // The renderer reads the move-clock budget from `meta.human_timeout_ms`, which carries only the
   // environment default. Overlay the session's own resolved value (its override or that default) so a
   // session started with a custom human timeout shows the right clock. A copy, so the shared env-meta
   // object the registry hands out is not mutated. Only a session that carries one overrides; otherwise
   // the env default stands.
   meta.value =
-    environmentMeta !== null && fetched.human_timeout_ms !== null
-      ? { ...environmentMeta, human_timeout_ms: fetched.human_timeout_ms }
-      : environmentMeta
+    environment !== null && fetched.human_timeout_ms !== null
+      ? { ...environment, human_timeout_ms: fetched.human_timeout_ms }
+      : environment
   seasonPlayable.value =
-    fetched.season_id !== null &&
-    seasons.some((season) => season.id === fetched.season_id && season.play_status === 'open')
+    fetched.season_id === null
+      ? false
+      : seasons === null
+        ? null
+        : seasons.some((season) => season.id === fetched.season_id && season.play_status === 'open')
   if (meta.value === null) {
     noRenderer.value = true
   }
@@ -292,10 +306,6 @@ onMounted(async () => {
   // operator (or a closed season) sees real owner labels and skips the lookup. Gated on the coarser
   // signal, not the render-facing blindAttribution: a live session's header (which hasSubmittedAgent
   // reads) has not arrived yet at this point, so waiting on it here would skip the prefetch entirely.
-  if (viewerMightBeBlind.value) {
-    anonymousNumbers.value = await watchAgentNumbers(fetched.env_id).catch(() => ({}))
-  }
-
   if (fetched.status === 'ended') {
     // Historical sessions have no live socket to attach to; the recording is the source of truth.
     await hydrateRecording(fetched)
@@ -416,17 +426,16 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
       Sign in to rate the agents in this session. <RouterLink to="/login">Sign in</RouterLink>
     </UiEmptyState>
 
-    <div class="stage" :class="[portrait ? 'portrait' : 'landscape', logBeside ? 'beside' : 'below']">
-      <section class="stage-canvas" aria-label="Environment">
-        <div
-          class="renderer-host"
-          ref="hostEl"
-          :style="
-            aspectRatio !== null
-              ? { aspectRatio: String(aspectRatio), '--stage-aspect': String(aspectRatio) }
-              : undefined
-          "
-        >
+    <StageFrame
+      :aspect-ratio="aspectRatio"
+      :log-beside="logBeside"
+      :loading="stageLoading"
+      loading-label="Loading session…"
+      canvas-label="Environment"
+      :beside-log-label="messagingEnabled ? undefined : 'Decision log'"
+      @renderer-host="hostEl = $event"
+    >
+      <template #overlay>
           <div v-if="paused && status !== 'ended'" class="overlay-banner">Paused</div>
           <div
             v-else-if="buffering && status !== 'ended'"
@@ -453,20 +462,14 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
             :anonymous-numbers="anonymousNumbers"
             @dismiss="gameOverDismissed = true"
           />
-        </div>
+      </template>
+      <template #renderer-status>
         <UiEmptyState v-if="noRenderer">No renderer is registered for this environment yet.</UiEmptyState>
-      </section>
-
-      <div v-if="stageLoading" class="stage-log stage-loading" role="status">
-        <span class="overlay-spinner" aria-hidden="true" />
-        <span>Loading session…</span>
-      </div>
+      </template>
       <!-- Beside layout: when messaging is on the chat takes the whole column and the decision log
            drops below the stage as the same collapsible disclosure the narrow layout uses; without
            messaging the decision log keeps the column. -->
-      <template v-else-if="logBeside">
-        <section class="stage-log" :aria-label="messagingEnabled ? undefined : 'Decision log'">
-          <div class="stage-log-body">
+      <template #beside-log>
             <ChatPanel
               v-if="messagingEnabled"
               :entries="chatLog"
@@ -481,19 +484,17 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
               @send="sendChat"
             />
             <DecisionLog v-else :entries="decisions" />
-          </div>
-        </section>
-        <details v-if="messagingEnabled" class="stage-log-below stage-decision-below">
-          <summary>Decision log</summary>
-          <DecisionLog :entries="decisions" />
-        </details>
       </template>
-      <template v-else>
-        <details class="stage-log stage-log-below">
+      <template #below-log>
+        <details v-if="logBeside && messagingEnabled" class="stage-log-below stage-decision-below">
           <summary>Decision log</summary>
           <DecisionLog :entries="decisions" />
         </details>
-        <details v-if="messagingEnabled" class="stage-log stage-log-below stage-chat-below">
+        <details v-if="!logBeside" class="stage-log-below">
+          <summary>Decision log</summary>
+          <DecisionLog :entries="decisions" />
+        </details>
+        <details v-if="!logBeside && messagingEnabled" class="stage-log-below stage-chat-below">
           <summary>Chat</summary>
           <ChatPanel
             :entries="chatLog"
@@ -509,7 +510,7 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
           />
         </details>
       </template>
-    </div>
+    </StageFrame>
 
   </section>
 </template>
@@ -550,77 +551,6 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
   gap: var(--space-1);
 }
 
-/* The stage centers the canvas as the star; the log takes only the room the canvas leaves. */
-.stage {
-  display: grid;
-  gap: var(--space-4);
-}
-
-/* Beside layout: the columns stretch to a common height so the log matches the canvas beside it. The
-   column ratio splits on orientation — a portrait canvas is narrow (the log takes the rest), a
-   landscape canvas dominates (a narrower log sits to its right). Explicit grid-column placement keeps
-   the canvas in column 1 and the log in column 2 regardless of orientation. */
-.stage.beside {
-  align-items: stretch;
-}
-
-.stage.beside.portrait {
-  grid-template-columns: minmax(0, 22rem) minmax(0, 1fr);
-}
-
-.stage.beside.landscape {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 16rem);
-}
-
-.stage.beside .stage-canvas {
-  grid-column: 1;
-}
-
-/* The decision log and the load-time spinner (which carries .stage-log too) take the second column. */
-.stage.beside .stage-log {
-  grid-column: 2;
-}
-
-.stage.beside .stage-canvas,
-.stage.beside .stage-log {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-/* When the chat panel joins the decision log in the column, the two bodies split it and the gap keeps
-   them apart. */
-.stage.beside .stage-log {
-  gap: var(--space-3);
-}
-
-.stage.below {
-  grid-template-columns: minmax(0, 1fr);
-  justify-items: center;
-}
-
-.renderer-host {
-  position: relative;
-  width: 100%;
-  margin: 0 auto;
-  background: var(--color-stage-backdrop);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-}
-
-/* Portrait (Flappy Bird) keeps its exact width cap so it never grows absurdly tall. */
-.stage.portrait .renderer-host {
-  max-width: 480px;
-}
-
-/* Landscape (Hearts) grows to fill its column, but never taller than the fold. The cap is a width, not
-   a height, derived from the fold height times the canvas aspect ratio (--stage-aspect, set inline from
-   the renderer's reported ratio): capping width preserves the 4:3 shape instead of letterboxing it, so
-   the Pixi canvas (which scales from width) is never vertically clipped on a short viewport. */
-.stage.landscape .renderer-host {
-  max-width: calc(min(70vh, 640px) * var(--stage-aspect, 1.333));
-}
-
 .overlay-banner {
   position: absolute;
   inset: 0;
@@ -648,7 +578,7 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
   border-radius: 50%;
   border: 3px solid var(--color-border);
   border-top-color: var(--color-accent);
-  animation: overlay-spin 0.8s linear infinite;
+  animation: overlay-spin var(--motion-spinner) linear infinite;
 }
 
 @keyframes overlay-spin {
@@ -657,78 +587,4 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .overlay-spinner {
-    animation: none;
-  }
-}
-
-/* The log fills the height the canvas defines and scrolls within it. The body is positioned so its
-   table never contributes to the row height — otherwise a long log would stretch the row past the
-   canvas; instead the canvas defines the height and the log scrolls inside it. */
-.stage.beside .stage-log-body {
-  position: relative;
-  flex: 1;
-  min-height: 0;
-}
-
-.stage.beside .stage-log-body :deep(.decision-log),
-.stage.beside .stage-log-body :deep(.chat-panel) {
-  position: absolute;
-  inset: 0;
-}
-
-/* While the renderer mounts, a centered spinner stands in for the decision log it has no rows for. */
-.stage-loading {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-3);
-  padding: var(--space-6) 0;
-  color: var(--color-text-muted);
-  font-size: var(--text-md);
-}
-
-.stage-log-below {
-  width: 100%;
-  max-width: 480px;
-}
-
-/* In the beside layout the decision log drops full-width beneath the stage row (chat owns the column).
-   It reuses the stacked disclosure's look; only its grid placement and width cap differ. */
-.stage.beside .stage-decision-below {
-  grid-column: 1 / -1;
-  max-width: 100%;
-}
-
-/* A landscape canvas in the stacked layout is wider than 480px, so its collapsed log matches it. */
-.stage.below.landscape .stage-log-below {
-  max-width: 100%;
-}
-
-.stage-log-below summary {
-  cursor: pointer;
-  padding: var(--space-2) 0;
-  font-family: var(--font-heading);
-  font-size: var(--text-md);
-}
-
-.stage-log-below :deep(.decision-log) {
-  max-height: 12rem;
-}
-
-/* The stacked chat disclosure caps its own height and scrolls the message list within it, keeping the
-   composer reachable below the fold. */
-.stage-chat-below :deep(.chat-panel) {
-  max-height: 16rem;
-}
-
-/* On a narrow screen the stage stacks regardless of canvas shape. */
-@media (max-width: 768px) {
-  .stage.beside {
-    grid-template-columns: minmax(0, 1fr);
-    justify-items: center;
-  }
-}
 </style>

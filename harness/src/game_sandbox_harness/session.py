@@ -27,7 +27,7 @@ from __future__ import annotations
 import contextlib
 import sys
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Protocol, cast, runtime_checkable
 
@@ -77,6 +77,13 @@ class ActionSource(Protocol):
     def get_action(self, slot_id: str, observation: Any, deadline_ms: int | None) -> Any: ...
 
 
+@runtime_checkable
+class MessageSource(Protocol):
+    """A source of queued outgoing messages for an external slot."""
+
+    def take_messages(self, slot_id: str) -> list[dict[str, Any]]: ...
+
+
 class NoopSource:
     """An :class:`ActionSource` that never supplies input; the loop always defaults."""
 
@@ -111,11 +118,14 @@ class ExternalSlot:
     """A slot fed from outside the harness — the "human" slot.
 
     ``timeout_ms`` defaults to the environment's ``human_timeout_ms``; when the environment
-    has a pace interval, the interval is the deadline instead.
+    has a pace interval, the interval is the deadline instead. ``message_source`` is explicit
+    and optional so an action transport is not implicitly treated as a chat transport merely
+    because it happens to expose a similarly named method.
     """
 
     source: ActionSource
     timeout_ms: int | None = None
+    message_source: MessageSource | None = None
 
 
 Slot = AgentSlot | ExternalSlot
@@ -144,6 +154,26 @@ class _SlotState:
     score: float = 0.0
     budget_used_ms: float = 0.0
     step_timeouts: int = 0
+
+
+@dataclass
+class _StepContext:
+    """Mutable values carried through one ordered :meth:`Episode.step_once` cycle."""
+
+    env: Any
+    slot_id: str
+    observation: Any
+    info: Any
+    binding: Slot
+    slot: _SlotState
+    started_at: int
+    action: Any = None
+    decision_ms: float | None = None
+    agent_compute_ms: float = 0.0
+    chat_ms: float | None = None
+    messages: list[Message] = field(default_factory=list[Message])
+    reward: float = 0.0
+    learn_ms: float | None = None
 
 
 def _iso_utc(ms: int) -> str:
@@ -339,164 +369,178 @@ class Episode:
             env.step(None)
             return
 
-        binding = self._slots[slot_id]
-        slot = self._state[slot_id]
-        step_start = self._clock.now_ms()
-        decision_ms: float | None = None
-        agent_compute_ms = 0.0
+        context = _StepContext(
+            env=env,
+            slot_id=slot_id,
+            observation=observation,
+            info=info,
+            binding=self._slots[slot_id],
+            slot=self._state[slot_id],
+            started_at=self._clock.now_ms(),
+        )
+        self._select_action(context)
 
+        self._collect_messages(context)
+        self._apply_environment_step(context)
+        self._run_learning(context)
+
+        self._record_step(context)
+        self._deliver_messages(context)
+        self._finish_step(context)
+
+    def _select_action(self, context: _StepContext) -> None:
+        """Obtain and validate the action, applying defaults under the existing timeout rules."""
+        binding = context.binding
         if isinstance(binding, AgentSlot):
             try:
-                action = binding.agent.act(observation)
+                context.action = binding.agent.act(context.observation)
             except Exception:  # noqa: BLE001 - charge the crash to this seat, then re-raise unchanged
-                self._failed_slot = slot_id
+                self._failed_slot = context.slot_id
                 raise
-            decision_ms = self._clock.now_ms() - step_start
-            agent_compute_ms += decision_ms
-            slot.budget_used_ms += decision_ms
-            if decision_ms > self._step_limit:
-                action = self._entry.default_action(env, slot_id)
-            else:
-                # The agent supplied this action itself (within budget, not a timeout default). If the
-                # environment would reject it as an illegal move, that is this seat's fault: name the
-                # seat and refuse the action here, so a raise from env.step does not smear the failure
-                # across every competitor in the container. A move that clears this gate but still
-                # makes env.step raise is a genuine environment fault, left owned by no seat.
-                reason = _illegal_action_reason(env, slot_id, observation, info, action)
-                if reason is not None:
-                    self._failed_slot = slot_id
-                    raise IllegalAgentActionError(f"{slot_id} returned an illegal action: {reason}")
-        else:
-            deadline_ms = _external_deadline(self._entry, binding, self._clock)
-            action = binding.source.get_action(slot_id, observation, deadline_ms)
-            # A human seat is never charged the way an agent is. Both no input in time (``None``) and an
-            # action the environment would reject as illegal fall back to the environment default rather
-            # than reaching env.step and crashing the shared session. The UI only ever sends legal cards,
-            # but a hand-rolled transport client could send an out-of-space or masked-out action; that
-            # must not take down every other seat in the container.
-            if action is None:
-                # stderr, not the logging module: the harness never configures logging, so an
-                # INFO record (below the default WARNING level) would be silently dropped, defeating
-                # the point of surfacing the substituted default in the decision stream.
-                print(f"human slot {slot_id} defaulted due to no input in time", file=sys.stderr, flush=True)
-                action = self._entry.default_action(env, slot_id)
-            else:
-                illegal_reason = _illegal_action_reason(env, slot_id, observation, info, action)
-                if illegal_reason is not None:
-                    print(
-                        f"human slot {slot_id} defaulted due to illegal input: {illegal_reason}",
-                        file=sys.stderr,
-                        flush=True,
-                    )
-                    action = self._entry.default_action(env, slot_id)
+            context.decision_ms = self._clock.now_ms() - context.started_at
+            context.agent_compute_ms += context.decision_ms
+            context.slot.budget_used_ms += context.decision_ms
+            if context.decision_ms > self._step_limit:
+                context.action = self._entry.default_action(context.env, context.slot_id)
+                return
+            reason = _illegal_action_reason(
+                context.env,
+                context.slot_id,
+                context.observation,
+                context.info,
+                context.action,
+            )
+            if reason is not None:
+                self._failed_slot = context.slot_id
+                raise IllegalAgentActionError(f"{context.slot_id} returned an illegal action: {reason}")
+            return
 
-        # Chat phase: immediately after ``act`` and before the environment applies the action, so the
-        # agent chats knowing its chosen action but not the step's outcome. Entirely guarded by the
-        # router's existence: with messaging off, no statement here runs and no clock is read, keeping
-        # the recording byte-identical to a pre-chat run (the determinism fixtures are the gate).
-        chat_ms: float | None = None
-        tick_messages: list[Message] = []
-        if self._chat is not None:
-            # Drain on every acting slot's turn, chat-less and external seats included, so an inbox can
-            # never accumulate behind an agent that will never read it.
-            inbox = self._chat.drain(slot_id)
-            if isinstance(binding, AgentSlot) and has_chat(binding.agent):
-                chat_start = self._clock.now_ms()
-                try:
-                    outgoing = binding.agent.chat(inbox)
-                except Exception:  # noqa: BLE001 - charge the crash to this seat, then re-raise unchanged
-                    self._failed_slot = slot_id
-                    raise
-                chat_ms = self._clock.now_ms() - chat_start
-                agent_compute_ms += chat_ms
-                slot.budget_used_ms += chat_ms
-                tick_messages.extend(self._chat.validate_outgoing(slot_id, outgoing))
-            # Human queues drain once per stepped tick regardless of whose turn it is, because a human
-            # message is queued for the next tick, not the human's next turn. Detected by presence on
-            # the external slot's transport source, like the existing action-source methods, so the
-            # loop never needs to know about SessionControl. All frames pass the same validator.
-            for other_id, other_binding in self._slots.items():
-                if isinstance(other_binding, ExternalSlot):
-                    take = getattr(other_binding.source, "take_messages", None)
-                    if callable(take):
-                        tick_messages.extend(self._chat.validate_outgoing(other_id, take(other_id)))
+        deadline_ms = _external_deadline(self._entry, binding, self._clock)
+        context.action = binding.source.get_action(context.slot_id, context.observation, deadline_ms)
+        if context.action is None:
+            print(
+                f"human slot {context.slot_id} defaulted due to no input in time",
+                file=sys.stderr,
+                flush=True,
+            )
+            context.action = self._entry.default_action(context.env, context.slot_id)
+            return
+        illegal_reason = _illegal_action_reason(
+            context.env,
+            context.slot_id,
+            context.observation,
+            context.info,
+            context.action,
+        )
+        if illegal_reason is not None:
+            print(
+                f"human slot {context.slot_id} defaulted due to illegal input: {illegal_reason}",
+                file=sys.stderr,
+                flush=True,
+            )
+            context.action = self._entry.default_action(context.env, context.slot_id)
 
-        env.step(action)
-        reward = float(env.rewards[slot_id])
-        # Credit every agent this step rewarded, not just the acting slot. A turn-based env
-        # (e.g. Hearts) assigns terminal rewards to all seats on the final actor's step, and
-        # those rewards live in env.rewards for this one cycle only — the AEC dead-steps that
-        # follow clear them (PettingZoo's _was_dead_step calls _clear_rewards). Reading just
-        # the acting slot would drop every non-final seat's terminal score, mis-ranking the
-        # episode. Single-agent envs are unaffected: env.rewards then holds only the actor, so
-        # this stays byte-identical to the prior loop for them (and for the determinism gate).
-        for rewarded_slot, slot_reward in env.rewards.items():
+    def _collect_messages(self, context: _StepContext) -> None:
+        """Drain and validate chat after action selection but before the environment step."""
+        if self._chat is None:
+            return
+        inbox = self._chat.drain(context.slot_id)
+        binding = context.binding
+        if isinstance(binding, AgentSlot) and has_chat(binding.agent):
+            chat_start = self._clock.now_ms()
+            try:
+                outgoing = binding.agent.chat(inbox)
+            except Exception:  # noqa: BLE001 - charge the crash to this seat, then re-raise unchanged
+                self._failed_slot = context.slot_id
+                raise
+            context.chat_ms = self._clock.now_ms() - chat_start
+            context.agent_compute_ms += context.chat_ms
+            context.slot.budget_used_ms += context.chat_ms
+            context.messages.extend(self._chat.validate_outgoing(context.slot_id, outgoing))
+
+        for other_id, other_binding in self._slots.items():
+            if isinstance(other_binding, ExternalSlot) and other_binding.message_source is not None:
+                outgoing = other_binding.message_source.take_messages(other_id)
+                context.messages.extend(self._chat.validate_outgoing(other_id, outgoing))
+
+    def _apply_environment_step(self, context: _StepContext) -> None:
+        """Apply the selected action and credit every reward published for the cycle."""
+        context.env.step(context.action)
+        context.reward = float(context.env.rewards[context.slot_id])
+        # Terminal rewards in an AEC environment can be published for every seat on the final
+        # actor's step and then cleared by dead steps, so credit the entire reward mapping here.
+        for rewarded_slot, slot_reward in context.env.rewards.items():
             rewarded_state = self._state.get(rewarded_slot)
             if rewarded_state is not None:
                 rewarded_state.score += float(slot_reward)
 
-        learn_ms: float | None = None
+    def _run_learning(self, context: _StepContext) -> None:
+        """Run the post-step learning hook and finish per-step compute accounting."""
+        binding = context.binding
         if isinstance(binding, AgentSlot) and has_learn(binding.agent):
-            terminated_now = bool(env.terminations[slot_id] or env.truncations[slot_id])
+            terminated_now = bool(
+                context.env.terminations[context.slot_id] or context.env.truncations[context.slot_id]
+            )
             learn_start = self._clock.now_ms()
             try:
-                binding.agent.learn(observation, action, reward, terminated_now)
-            except Exception:  # noqa: BLE001 - charge the crash to this seat, then re-raise unchanged
-                self._failed_slot = slot_id
-                raise
-            learn_ms = self._clock.now_ms() - learn_start
-            agent_compute_ms += learn_ms
-            slot.budget_used_ms += learn_ms
-
-        if isinstance(binding, AgentSlot) and agent_compute_ms > self._step_limit:
-            slot.step_timeouts += 1
-
-        if self._writer is not None:
-            overlay = self._entry.overlay(env) if self._entry.overlay is not None else None
-            # The display `observation` is intentionally not recorded: Flappy Bird's
-            # renderer reconstructs frames from the overlay, so the (large, per-step)
-            # observation array would only bloat recordings. build_agent_step and the
-            # schema both already support an `observation` field — if a future
-            # environment needs the renderer to see the raw observation, supply it here
-            # (likely via a new EnvironmentEntry hook) rather than re-deriving it.
-            agent_step = build_agent_step(
-                reward=reward,
-                score=slot.score,
-                action=action,
-                decision_ms=decision_ms,
-                learn_ms=learn_ms,
-                chat_ms=chat_ms,
-            )
-            self._writer.write_step(
-                build_step_state(
-                    tick=self._tick,
-                    agents={slot_id: agent_step},
-                    started_at=step_start,
-                    duration_ms=self._clock.now_ms() - step_start,
-                    overlay=overlay,
-                    messages=tick_messages or None,
+                binding.agent.learn(
+                    context.observation,
+                    context.action,
+                    context.reward,
+                    terminated_now,
                 )
+            except Exception:  # noqa: BLE001 - charge the crash to this seat, then re-raise unchanged
+                self._failed_slot = context.slot_id
+                raise
+            context.learn_ms = self._clock.now_ms() - learn_start
+            context.agent_compute_ms += context.learn_ms
+            context.slot.budget_used_ms += context.learn_ms
+
+        if isinstance(binding, AgentSlot) and context.agent_compute_ms > self._step_limit:
+            context.slot.step_timeouts += 1
+
+    def _record_step(self, context: _StepContext) -> None:
+        """Persist the completed cycle before accepted messages mutate recipient inboxes."""
+        if self._writer is None:
+            return
+        overlay = self._entry.overlay(context.env) if self._entry.overlay is not None else None
+        agent_step = build_agent_step(
+            reward=context.reward,
+            score=context.slot.score,
+            action=context.action,
+            decision_ms=context.decision_ms,
+            learn_ms=context.learn_ms,
+            chat_ms=context.chat_ms,
+        )
+        self._writer.write_step(
+            build_step_state(
+                tick=self._tick,
+                agents={context.slot_id: agent_step},
+                started_at=context.started_at,
+                duration_ms=self._clock.now_ms() - context.started_at,
+                overlay=overlay,
+                messages=context.messages or None,
             )
+        )
 
-        # Deliver this tick's accepted messages to pending inboxes at the end of the step, after the
-        # acting agent's inbox was drained above, so a message sent on tick T is first seen strictly
-        # after T, on the recipient's next turn. Delivery happens even when nothing was recorded (no
-        # store), so a headless run routes messages identically.
-        if self._chat is not None and tick_messages:
-            self._chat.deliver(tick_messages, tick=self._tick)
+    def _deliver_messages(self, context: _StepContext) -> None:
+        """Deliver this tick's accepted messages strictly after the environment step."""
+        if self._chat is not None and context.messages:
+            self._chat.deliver(context.messages, tick=self._tick)
+
+    def _finish_step(self, context: _StepContext) -> None:
+        """Advance the tick and apply episode-budget and step-cap checks last."""
         self._tick += 1
-
-        if slot.budget_used_ms > self._episode_limit:
+        if context.slot.budget_used_ms > self._episode_limit:
             self._reason = REASON_EPISODE_LIMIT
-            # The slot that overran owns the overage, so the orchestrator charges it to this seat alone.
-            self._failed_slot = slot_id
+            self._failed_slot = context.slot_id
             self._stopped = True
             return
         if self._max_steps is not None and self._tick >= self._max_steps:
-            # A natural termination/truncation can land on the very tick the cap is hit; the
-            # next cycle would have labeled it, but we are cutting the loop short. Preserve
-            # that outcome rather than masking it as a cap truncation.
-            self._reason = REASON_TERMINATED if env.terminations[slot_id] else REASON_TRUNCATED
+            # Preserve a natural terminal outcome when it lands on the tick that reaches the cap.
+            self._reason = (
+                REASON_TERMINATED if context.env.terminations[context.slot_id] else REASON_TRUNCATED
+            )
             self._stopped = True
 
     def close(self) -> None:

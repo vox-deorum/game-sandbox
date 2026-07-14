@@ -5,8 +5,11 @@ import '@testing-library/jest-dom/vitest'
 import { cleanup } from '@testing-library/vue'
 import { afterEach } from 'vitest'
 
-afterEach(() => {
+afterEach(async () => {
   cleanup()
+  // Import lazily so a suite's hoisted API mock is installed before the catalog captures its client.
+  const { resetEnvironmentCatalog } = await import('../src/environmentCatalog.js')
+  resetEnvironmentCatalog()
 })
 
 // jsdom has no ResizeObserver; Reka UI components (the dialog and slider primitives wrap them)

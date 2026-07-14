@@ -13,11 +13,12 @@ import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 
-import { getEnvironments, listSeasons, type PublicSeasonView } from '../api/client.js'
+import { listSeasons, type PublicSeasonView } from '../api/client.js'
 import UiBadge from '../components/ui/UiBadge.vue'
 import UiCard from '../components/ui/UiCard.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
-import { formatDate } from '../lib/format.js'
+import { loadEnvironmentCatalog } from '../environmentCatalog.js'
+import { formatDate, formatSeasonName } from '../lib/format.js'
 import { useMe, userId } from '../me.js'
 import { thumbnailFor } from '../renderers/registry.js'
 
@@ -29,17 +30,13 @@ const ownerId = computed(() => userId(me.me))
 
 onMounted(async () => {
   try {
-    const [envs, publicSeasons] = await Promise.all([getEnvironments(), listSeasons()])
+    const [envs, publicSeasons] = await Promise.all([loadEnvironmentCatalog(), listSeasons()])
     environments.value = new Map(envs.map((meta: EnvironmentMeta) => [meta.env_id, meta]))
     seasons.value = publicSeasons
   } catch {
     error.value = true
   }
 })
-
-function seasonLabel(season: PublicSeasonView): string {
-  return season.label ?? `Season ${season.id.slice(0, 8)}`
-}
 
 function envName(season: PublicSeasonView): string {
   return environments.value.get(season.env_id)?.display_name ?? season.env_id
@@ -122,11 +119,11 @@ const ordered = computed(() =>
             v-if="seasonLink(season) !== null"
             class="season-card-link"
             :to="seasonLink(season) ?? ''"
-            :aria-label="`Open ${seasonLabel(season)}`"
+            :aria-label="`Open ${formatSeasonName(season)}`"
           />
           <div class="season-body">
             <div class="season-head">
-              <span class="season-name">{{ seasonLabel(season) }}</span>
+              <span class="season-name">{{ formatSeasonName(season) }}</span>
               <div class="season-actions">
                 <RouterLink
                   v-if="season.submission_status === 'open'"

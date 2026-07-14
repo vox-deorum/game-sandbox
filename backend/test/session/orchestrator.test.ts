@@ -232,10 +232,13 @@ describe('orchestrator', () => {
         network: 'none',
         scratch: { containerPath: '/tmp', sizeMb: 256 },
       })
-      expect(launch?.spec.sandbox.mounts[0]).toMatchObject({
-        containerPath: '/recordings',
-        readOnly: false,
-      })
+      expect(launch?.spec.sandbox.mounts).toEqual([
+        {
+          hostPath: recordingsDir,
+          containerPath: '/recordings',
+          readOnly: false,
+        },
+      ])
       expect(config).toMatchObject({
         env_id: 'flappy_bird',
         seed: 42,

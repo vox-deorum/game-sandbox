@@ -26,8 +26,6 @@ exact stepping with timeouts, recording, and the move clock for the human seat.
 from __future__ import annotations
 
 import argparse
-import importlib
-import json
 import sys
 import time
 from collections.abc import Callable
@@ -37,6 +35,8 @@ from typing import Any
 import pygame
 from sandbox.env import PLAYER_SLOT, default_action, extract_overlay, make_env, make_human_controller
 from sandbox.hidpi import display_scale, enable_hidpi
+from sandbox.multiseat_play import load_agent
+from sandbox.multiseat_play import play_episode as _play_episode
 
 #: The banner shown over the frozen first frame until you begin the game.
 START_PROMPT = "Press any key or click to start"
@@ -46,20 +46,6 @@ BOT_PAUSE_S = 0.6
 
 #: The repository root (this file is ``sandbox/play.py``), where ``manifest.json`` lives.
 REPO_ROOT = Path(__file__).resolve().parent.parent
-
-
-def load_agent(repo_root: Path) -> Any:
-    """Load and instantiate the agent named by ``manifest.json`` (a local mini-loader).
-
-    Mirrors what the server's harness does: read the manifest, put the repo root on the path,
-    import the entry-point module, and construct the named class with no arguments.
-    """
-    manifest = json.loads((repo_root / "manifest.json").read_text(encoding="utf-8"))
-    root_str = str(repo_root)
-    if root_str not in sys.path:
-        sys.path.insert(0, root_str)
-    module = importlib.import_module(manifest["entry_point"])
-    return getattr(module, manifest["class_name"])()
 
 
 def play_episode(
@@ -82,30 +68,15 @@ def play_episode(
     template's "drive a few steps" contract — so the bare template, whose ``act`` raises until you
     implement it, still fails here, and a partial run still exercises your agent.
     """
-    env.reset(seed=seed)
-    agent.reset(seed)
-    score = 0.0
-    decisions = 0
-    while env.agents:
-        agent_id = env.agent_selection
-        observation, _reward, termination, truncation, _info = env.last()
-        if termination or truncation:
-            env.step(None)
-            continue
-        if agent_id == PLAYER_SLOT:
-            action = agent.act(observation)
-            decisions += 1
-        else:
-            # Built-in opponent: the environment's own timeout default (a suggested bid during
-            # bidding, the lowest legal card during play).
-            action = default_action(env, agent_id)
-        env.step(action)
-        score += float(env.rewards[PLAYER_SLOT])
-        if on_frame is not None:
-            on_frame()
-        if max_steps is not None and decisions >= max_steps:
-            break
-    return score
+    return _play_episode(
+        agent,
+        env,
+        seed=seed,
+        player_slot=PLAYER_SLOT,
+        default_action=default_action,
+        max_steps=max_steps,
+        on_frame=on_frame,
+    )
 
 
 def play_table(

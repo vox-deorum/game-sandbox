@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -64,39 +65,54 @@ E2E_SUBMISSION_FIXTURES_DIR = REPO_ROOT / "frontend" / "e2e" / "fixtures" / "sub
 # The environments source root, under which each environment is its own top-level package.
 ENVIRONMENTS_SRC = REPO_ROOT / "environments" / "src"
 
-# The registration point for environment templates: env id -> the import-self-contained
-# modules (relative + third-party imports only), as paths under ENVIRONMENTS_SRC, copied
-# verbatim into templates/<env>/sandbox/env/ at the same relative path. The harness-dependent
-# flappy_bird/__init__.py is never synced; generate.py writes a minimal __init__ exposing a
-# uniform surface (make_env, ENV_ID, PLAYER_SLOT, make_human_controller) in its place. The
-# single-agent adapter and the human-input controller live inside each single-agent env package,
-# so they sync as siblings under sandbox/env/<env>/. Adding an environment template means adding
-# an entry here (plus its init text in generate.py) and a templates/<env>/ layer.
-TEMPLATE_ENVS = {
-    "flappy_bird": (
-        "flappy_bird/single_agent.py",
-        "flappy_bird/env.py",
-        "flappy_bird/overlay.py",
-        "flappy_bird/human.py",
+
+@dataclass(frozen=True)
+class TemplateEnvironmentSpec:
+    """Static facts needed to generate and compose one student environment template."""
+
+    display_name: str
+    inner_package: str
+    modules: tuple[str, ...]
+    default_action: str = "default_action"
+    player_slot: str = "player_0"
+
+
+# This static catalog is the single registration point for student templates. Generation and
+# composition deliberately do not discover template directories at runtime, so an unregistered
+# directory cannot silently become a publishable environment and the generated init facts cannot
+# drift from the module-copy list.
+TEMPLATE_ENVIRONMENTS: dict[str, TemplateEnvironmentSpec] = {
+    "flappy_bird": TemplateEnvironmentSpec(
+        display_name="Flappy Bird",
+        inner_package="flappy_bird",
+        modules=(
+            "flappy_bird/single_agent.py",
+            "flappy_bird/env.py",
+            "flappy_bird/overlay.py",
+            "flappy_bird/human.py",
+        ),
     ),
-    # Hearts ships its own pure-Python renderer (it does not inherit one from a wrapped Gymnasium
-    # game), so render.py syncs alongside the env modules: the template's local play opens the
-    # game through it. rules.py is the dependency-free engine env/overlay/render all import.
-    "hearts": (
-        "hearts/rules.py",
-        "hearts/env.py",
-        "hearts/overlay.py",
-        "hearts/human.py",
-        "hearts/render.py",
+    "hearts": TemplateEnvironmentSpec(
+        display_name="Hearts",
+        inner_package="hearts",
+        modules=(
+            "hearts/rules.py",
+            "hearts/env.py",
+            "hearts/overlay.py",
+            "hearts/human.py",
+            "hearts/render.py",
+        ),
     ),
-    # Spades mirrors Hearts: its own dependency-free rules engine plus the env/overlay/human/render
-    # modules, so the template's local play opens the bid-then-play game through the synced renderer.
-    "spades": (
-        "spades/rules.py",
-        "spades/env.py",
-        "spades/overlay.py",
-        "spades/human.py",
-        "spades/render.py",
+    "spades": TemplateEnvironmentSpec(
+        display_name="Spades",
+        inner_package="spades",
+        modules=(
+            "spades/rules.py",
+            "spades/env.py",
+            "spades/overlay.py",
+            "spades/human.py",
+            "spades/render.py",
+        ),
     ),
 }
 
@@ -115,6 +131,8 @@ TEMPLATE_BASE_MODULES = {
     # beside each template's own game-specific sandbox/cards.py, which the distinct names keep apart.
     "card_utils.py": "local_play/card_utils.py",
     "card_spaces.py": "local_play/card_spaces.py",
+    "semantic_cards.py": "local_play/semantic_cards.py",
+    "multiseat_play.py": "local_play/multiseat_play.py",
 }
 
 # Each environment's student reference page. scripts/compose.py copies the page for the composed

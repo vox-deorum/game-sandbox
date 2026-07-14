@@ -13,10 +13,10 @@ import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
 import { onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 
-import { getEnvironments } from '../api/client.js'
 import UiBadge from '../components/ui/UiBadge.vue'
 import UiCard from '../components/ui/UiCard.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
+import { loadEnvironmentCatalog } from '../environmentCatalog.js'
 import { slotLabel } from '../lib/format.js'
 import { thumbnailFor } from '../renderers/registry.js'
 
@@ -24,7 +24,7 @@ const environments = ref<EnvironmentMeta[] | null>(null)
 const error = ref(false)
 
 onMounted(() => {
-  getEnvironments().then(
+  loadEnvironmentCatalog().then(
     (envs) => {
       environments.value = envs
     },

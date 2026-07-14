@@ -240,7 +240,11 @@ def build_slots(
     for slot_id, binding in config.slots.items():
         if binding.kind == "external":
             source = TransportSource(control, clock=clock, paced=paced, sleeper=sleeper)
-            slots[slot_id] = ExternalSlot(source, timeout_ms=resolved_timeout)
+            slots[slot_id] = ExternalSlot(
+                source,
+                timeout_ms=resolved_timeout,
+                message_source=source,
+            )
         else:  # "builtin-agent" — parse_config rejects any other kind.
             agent_path = binding.path or f"{DEFAULT_BUILTIN_AGENT_BASE}/{config.env_id}"
             agent = load_agent(agent_path)

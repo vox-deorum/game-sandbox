@@ -14,7 +14,8 @@ import { resolve } from 'node:path'
 import type { UserDirectory } from '../auth/users.js'
 import type { Config } from '../config.js'
 import { currentSessionBaseImageSpec } from '../deps-version.js'
-import type { ExecutionDriver, ImageRef, SandboxProfile } from '../driver/index.js'
+import type { ExecutionDriver, ImageRef } from '../driver/index.js'
+import { buildSandboxProfile } from '../driver/sandbox.js'
 import type { EnvironmentMeta, EnvironmentRegistry } from '../environments.js'
 import { optionalField } from '../optional-field.js'
 import { decodeSeasonConfig, type Storage, type Submission } from '../storage/index.js'
@@ -37,8 +38,6 @@ import { SessionRegistry } from './registry.js'
 
 /** Where the recordings volume is mounted inside every session container. */
 const CONTAINER_RECORDINGS_DIR = '/recordings'
-/** The writable scratch tmpfs mount point; matplotlib's cache and any temp files land here. */
-const CONTAINER_SCRATCH_DIR = '/tmp'
 /** Grace given to a container to end politely before the driver hard-kills it. */
 const KILL_GRACE_MS = 5_000
 /** This stage's single-human session-composition cap; later multi-human play relaxes it. */
@@ -244,7 +243,13 @@ export class Orchestrator {
       created_at: createdAt,
     })
 
-    const sandbox = this.sandboxProfile()
+    const sandbox = buildSandboxProfile(this.config.sandbox, [
+      {
+        hostPath: this.recordingsHostDir(),
+        containerPath: CONTAINER_RECORDINGS_DIR,
+        readOnly: false,
+      },
+    ])
     const sessionConfig = await this.sessionConfig(
       meta,
       seed,
@@ -511,23 +516,6 @@ export class Orchestrator {
 
   private recordingsHostDir(): string {
     return resolve(this.config.recordingsDir)
-  }
-
-  private sandboxProfile(): SandboxProfile {
-    return {
-      cpus: this.config.sandbox.cpus,
-      memoryMb: this.config.sandbox.memoryMb,
-      readOnlyRoot: true,
-      scratch: { containerPath: CONTAINER_SCRATCH_DIR, sizeMb: this.config.sandbox.scratchMb },
-      network: 'none',
-      mounts: [
-        {
-          hostPath: this.recordingsHostDir(),
-          containerPath: CONTAINER_RECORDINGS_DIR,
-          readOnly: false,
-        },
-      ],
-    }
   }
 
   /**

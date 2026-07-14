@@ -1,20 +1,13 @@
 """Example-specific tests: the nil bid and its broadcast, and a cover that depends on the warning.
 
-Direct ``chat``/``act`` calls on synthetic observations pin the behaviour without a live harness; the
-full-game smoke test proves the agent composes and plays a complete hand.
+Direct ``chat``/``act`` calls on synthetic observations pin the behaviour without a live harness.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import agent
 from sandbox.cards import make_card
 from sandbox.cards import play as encode_play
-from sandbox.env import make_env
-from sandbox.play import load_agent, play_episode
-
-REPO_ROOT = Path(__file__).resolve().parent.parent
 
 NIL_ACTION = 52  # bid(0)
 
@@ -108,17 +101,6 @@ def _following_observation(
             "tricks_won": [0, 0, 0, 0],
         },
     }
-
-
-def test_example_loads_through_loader_and_plays_a_full_game():
-    loaded = load_agent(REPO_ROOT)
-    env = make_env(render_mode=None)
-    try:
-        score = play_episode(loaded, env, seed=1236)
-        assert not env.agents
-    finally:
-        env.close()
-    assert isinstance(score, float)
 
 
 def test_bids_nil_and_broadcasts_the_warning_on_a_qualifying_hand():

@@ -29,7 +29,11 @@ vi.mock('../src/renderers/registry.js', () => ({
   getRenderer: () => ({
     mount: (ctx: RendererContext) => {
       mountCtx = ctx
-      return { render: (s: StepState) => drawn.push(s), destroy: () => {} }
+      return {
+        aspectRatio: 288 / 512,
+        render: (s: StepState) => drawn.push(s),
+        destroy: () => {},
+      }
     },
     thumbnail: '',
     internalSize: { width: 288, height: 512 },
@@ -98,6 +102,9 @@ describe('ReplayPage', () => {
     drawn = []
     mountCtx = null
     vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
+    vi.mocked(listRecordings).mockResolvedValue([])
+    vi.mocked(listSeasons).mockResolvedValue([])
+    vi.mocked(watchAgentNumbers).mockResolvedValue({})
   })
 
   it('loads, mounts a draw-only renderer, and renders transport controls', async () => {
@@ -381,9 +388,23 @@ describe('ReplayPage', () => {
         },
       }),
     )
+    vi.mocked(listRecordings).mockResolvedValue([
+      {
+        id: 'rec-1',
+        header: { schema_version: 1, environment: 'flappy_bird' },
+        user_id: 'maya-fledgling',
+        created_at: '2026-06-11T00:00:00.000Z',
+        pinned: false,
+        termination_reason: 'terminated',
+        season_id: null,
+      },
+    ])
     await renderReplay()
 
-    const attribution = await screen.findByText("maya-fledgling's agent")
+    const attribution = (await screen.findAllByText("maya-fledgling's agent")).find(
+      (element) => element.getAttribute('title') === 'maya-fledgling',
+    )
+    expect(attribution).toBeDefined()
     expect(attribution).toHaveAttribute('title', 'maya-fledgling')
   })
 

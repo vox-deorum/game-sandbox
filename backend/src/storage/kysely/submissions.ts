@@ -32,6 +32,9 @@ const STAGE_ORDER: Record<SubmissionStage, number> = {
   load: 3,
 }
 
+/** Defensive ceiling for request-driven submission lookups; current environments use at most four. */
+const SUBMISSION_BATCH_LIMIT = 100
+
 /** Delete a season's submissions and their checks; same executor-passing rationale as runs. */
 export async function deleteSubmissionsForSeason(
   db: Kysely<Database>,
@@ -190,6 +193,20 @@ export async function getSubmission(
   id: string,
 ): Promise<Submission | undefined> {
   return await db.selectFrom('submissions').selectAll().where('id', '=', id).executeTakeFirst()
+}
+
+export async function getSubmissionsByIds(
+  db: Kysely<Database>,
+  ids: readonly string[],
+): Promise<Submission[]> {
+  const uniqueIds = [...new Set(ids)]
+  if (uniqueIds.length === 0) {
+    return []
+  }
+  if (uniqueIds.length > SUBMISSION_BATCH_LIMIT) {
+    throw new RangeError(`submission lookup exceeds the ${SUBMISSION_BATCH_LIMIT}-id limit`)
+  }
+  return await db.selectFrom('submissions').selectAll().where('id', 'in', uniqueIds).execute()
 }
 
 export async function listSessionSubmissions(

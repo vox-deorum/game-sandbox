@@ -11,11 +11,12 @@ import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
 import { onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 
-import { type AgentProfile, getAgentProfile, getEnvironments } from '../api/client.js'
+import { type AgentProfile, getAgentProfile } from '../api/client.js'
 import UiBadge from '../components/ui/UiBadge.vue'
 import UiCard from '../components/ui/UiCard.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import UiStatusBadge from '../components/ui/UiStatusBadge.vue'
+import { loadEnvironmentCatalog } from '../environmentCatalog.js'
 import { formatDate } from '../lib/format.js'
 import { submissionStatusLabel, submissionStatusTone } from '../lib/submission-status.js'
 import { useMe, userId } from '../me.js'
@@ -43,7 +44,7 @@ onMounted(async () => {
     return
   }
   try {
-    const envs = await getEnvironments()
+    const envs = await loadEnvironmentCatalog()
     const profiles = await Promise.all(
       envs.map(async (meta) => ({
         meta,

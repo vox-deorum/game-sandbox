@@ -8,15 +8,9 @@ import { randomUUID } from 'node:crypto'
 import type { Kysely } from 'kysely'
 
 import type { AgentRef, RatingAggregate, UpsertRatingInput, UpsertRatingResult } from '../index.js'
-import type { AgentRatingPrompt, Database, Rating } from '../schema.js'
+import type { AgentColumns, AgentRatingPrompt, Database, Rating } from '../schema.js'
 import { requireSeason } from './seasons.js'
-import {
-  type AgentColumns,
-  agentColumns,
-  agentKey,
-  agentRefFromColumns,
-  populationStdDev,
-} from './shared.js'
+import { agentColumns, agentKey, agentRefFromColumns, populationStdDev } from './shared.js'
 
 export async function upsertRating(
   db: Kysely<Database>,
@@ -82,6 +76,19 @@ export async function listRatingsBySeason(
   seasonId: string,
 ): Promise<Rating[]> {
   return await db.selectFrom('ratings').selectAll().where('season_id', '=', seasonId).execute()
+}
+
+export async function listRatingsByRater(
+  db: Kysely<Database>,
+  seasonId: string,
+  raterUserId: string,
+): Promise<Rating[]> {
+  return await db
+    .selectFrom('ratings')
+    .selectAll()
+    .where('season_id', '=', seasonId)
+    .where('rater_user_id', '=', raterUserId)
+    .execute()
 }
 
 export async function aggregateRatingsByAgent(
@@ -153,5 +160,25 @@ export async function listAgentRatingPromptsBySeason(
     .selectFrom('agent_rating_prompts')
     .selectAll()
     .where('season_id', '=', seasonId)
+    .execute()
+}
+
+export async function listAgentRatingPromptsByUsers(
+  db: Kysely<Database>,
+  seasonId: string,
+  userIds: readonly string[],
+): Promise<AgentRatingPrompt[]> {
+  const uniqueUserIds = [...new Set(userIds)]
+  if (uniqueUserIds.length === 0) {
+    return []
+  }
+  if (uniqueUserIds.length > 100) {
+    throw new RangeError('agent rating prompt lookup exceeds the 100-user limit')
+  }
+  return await db
+    .selectFrom('agent_rating_prompts')
+    .selectAll()
+    .where('season_id', '=', seasonId)
+    .where('user_id', 'in', uniqueUserIds)
     .execute()
 }

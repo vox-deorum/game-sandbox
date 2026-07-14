@@ -54,6 +54,7 @@ def test_env_layer_with_requirements_file_raises(tmp_path: Path, monkeypatch: py
     monkeypatch.setattr(compose_mod, "TEMPLATES_DIR", tmp_path / "templates")
     monkeypatch.setattr(compose_mod, "TEMPLATE_BASE_DIR", base)
     monkeypatch.setattr(compose_mod, "BUILD_DIR", tmp_path / "build")
+    monkeypatch.setattr(compose_mod, "TEMPLATE_ENVIRONMENTS", {"stray": object()})
 
     with pytest.raises(ComposeError, match="requirements file"):
         compose_mod.compose_template("stray")
@@ -124,6 +125,7 @@ def test_compose_env_without_docs_page_raises(tmp_path: Path, monkeypatch: pytes
     monkeypatch.setattr(compose_mod, "TEMPLATES_DIR", tmp_path / "templates")
     monkeypatch.setattr(compose_mod, "TEMPLATE_BASE_DIR", base)
     monkeypatch.setattr(compose_mod, "BUILD_DIR", tmp_path / "build")
+    monkeypatch.setattr(compose_mod, "TEMPLATE_ENVIRONMENTS", {"stray": object()})
 
     with pytest.raises(ComposeError, match="student docs page"):
         compose_mod.compose_template("stray")

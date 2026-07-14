@@ -24,7 +24,8 @@ import {
   startSession,
   type WatchAgentSummary,
 } from '../api/client.js'
-import { canParticipate, isAdmin, PENDING_START_MESSAGE, useMe } from '../me.js'
+import { handleSessionStartResult } from '../lib/session-start.js'
+import { canParticipate, isAdmin, useMe } from '../me.js'
 import SeatAssignmentDialog from './SeatAssignmentDialog.vue'
 import UiBadge from './ui/UiBadge.vue'
 import UiButton from './ui/UiButton.vue'
@@ -121,16 +122,8 @@ async function startRun(payload: StartPayload, loadingKey?: string): Promise<voi
   }
   try {
     const result = await startSession({ envId: props.envId, ...payload })
-    if (result.ok) {
-      await router.push(`/sessions/${result.session.id}`)
-    } else if (result.reason === 'already_active') {
-      // Rejoin rather than dead-end: the viewer already has a session running.
-      await router.push(`/sessions/${result.activeSessionId}`)
-    } else if (result.reason === 'not_active') {
-      startError.value = PENDING_START_MESSAGE
-      dialogOpen.value = false
-    } else {
-      startError.value = result.message
+    startError.value = await handleSessionStartResult(result, router)
+    if (startError.value !== null) {
       dialogOpen.value = false
     }
   } finally {

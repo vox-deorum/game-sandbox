@@ -155,39 +155,48 @@ async function resolveRateableAgents(deps: RatingDeps, session: Session): Promis
       ? undefined
       : await deps.recordings.readHeader(session.recording_id)
 
-  const refs: AgentRef[] = []
+  const candidates: Array<{ kind: 'submission'; id: string } | { kind: 'builtin-naive' }> = []
   if (header?.players !== undefined) {
     for (const entry of Object.values(header.players)) {
       if (entry.kind === 'human') {
         continue
       }
       if (entry.submission_id !== undefined) {
-        const submission = await deps.storage.getSubmission(entry.submission_id)
-        if (submission !== undefined) {
-          refs.push({
-            kind: 'submission',
-            submission_id: submission.id,
-            user_id: submission.user_id,
-          })
-        }
+        candidates.push({ kind: 'submission', id: entry.submission_id })
         continue
       }
       // An agent slot with no submission is the built-in Naive baseline, keyed on the absence of a
       // submission id — never on the "Naive agent" display label, which is presentation-only.
-      refs.push({ kind: 'builtin-naive' })
+      candidates.push({ kind: 'builtin-naive' })
     }
   } else {
     // No readable header: recover submitted agents from the slot links.
     const links = await deps.storage.listSessionSubmissions(session.id)
     for (const link of links) {
-      const submission = await deps.storage.getSubmission(link.submission_id)
-      if (submission !== undefined) {
-        refs.push({
-          kind: 'submission',
-          submission_id: submission.id,
-          user_id: submission.user_id,
-        })
-      }
+      candidates.push({ kind: 'submission', id: link.submission_id })
+    }
+  }
+
+  const submissions = new Map(
+    (
+      await deps.storage.getSubmissionsByIds(
+        candidates.flatMap((candidate) => (candidate.kind === 'submission' ? [candidate.id] : [])),
+      )
+    ).map((submission) => [submission.id, submission]),
+  )
+  const refs: AgentRef[] = []
+  for (const candidate of candidates) {
+    if (candidate.kind === 'builtin-naive') {
+      refs.push({ kind: 'builtin-naive' })
+      continue
+    }
+    const submission = submissions.get(candidate.id)
+    if (submission !== undefined) {
+      refs.push({
+        kind: 'submission',
+        submission_id: submission.id,
+        user_id: submission.user_id,
+      })
     }
   }
 
@@ -222,38 +231,42 @@ async function buildRatingView(
   // An admin retains submitted-agent identities while a public play window is open; everyone else
   // sees the blind anonymized numbering.
   const blind = season.play_status === 'open' && caller.status !== 'admin'
-  const anonymousNumbers = blind
-    ? new Map(
-        (await deps.storage.listActiveSubmissionsBySeason(season.id, 'ready')).map(
-          (submission, index) => [submission.id, index + 1],
+  const [activeSubmissions, names, seasonRatings, seasonPrompts] = await Promise.all([
+    blind ? deps.storage.listActiveSubmissionsBySeason(season.id, 'ready') : Promise.resolve([]),
+    blind
+      ? Promise.resolve(new Map<string, string>())
+      : deps.userDirectory.namesFor(
+          agents.flatMap((agent) => (agent.ref.kind === 'submission' ? [agent.ref.user_id] : [])),
         ),
-      )
-    : new Map<string, number>()
-  // Owner display names for the non-blind labels, batched once across the session's agents. Skipped
-  // while blind: the anonymized labels never name an owner, so no lookup is needed.
-  const names = blind
-    ? new Map<string, string>()
-    : await deps.userDirectory.namesFor(
-        agents.flatMap((agent) => (agent.ref.kind === 'submission' ? [agent.ref.user_id] : [])),
-      )
-  const agentViews = await Promise.all(
-    agents.map(async (agent): Promise<RateableAgentView> => {
-      const isOwn = agent.ref.kind === 'submission' && agent.ref.user_id === caller.id
-      const [authorPrompt, rating] = await Promise.all([
-        resolveAuthorPrompt(deps, season.id, agent.ref),
-        isOwn
-          ? Promise.resolve(undefined)
-          : deps.storage.getRating(season.id, caller.id, agent.ref),
-      ])
-      return {
-        agent: agent.wire,
-        display_name: displayName(agent.ref, isOwn, blind, anonymousNumbers, names),
-        is_own: isOwn,
-        author_prompt: authorPrompt,
-        your_rating: rating?.score ?? null,
-      }
-    }),
+    deps.storage.listRatingsByRater(season.id, caller.id),
+    deps.storage.listAgentRatingPromptsByUsers(
+      season.id,
+      agents.flatMap((agent) => (agent.ref.kind === 'submission' ? [agent.ref.user_id] : [])),
+    ),
+  ])
+  const anonymousNumbers = new Map(
+    activeSubmissions.map((submission, index) => [submission.id, index + 1]),
   )
+  const ratings = new Map(
+    seasonRatings.map((rating) => [
+      rating.agent_kind === 'submission'
+        ? `submission:${rating.agent_submission_id ?? ''}`
+        : 'builtin-naive',
+      rating.score,
+    ]),
+  )
+  const prompts = new Map(seasonPrompts.map((prompt) => [prompt.user_id, prompt.prompt]))
+  const agentViews = agents.map((agent): RateableAgentView => {
+    const isOwn = agent.ref.kind === 'submission' && agent.ref.user_id === caller.id
+    return {
+      agent: agent.wire,
+      display_name: displayName(agent.ref, isOwn, blind, anonymousNumbers, names),
+      is_own: isOwn,
+      author_prompt:
+        agent.ref.kind === 'submission' ? emptyToNull(prompts.get(agent.ref.user_id)) : null,
+      your_rating: isOwn ? null : (ratings.get(wireKey(agent.wire)) ?? null),
+    }
+  })
   return {
     session_id: session.id,
     season_id: season.id,
@@ -283,19 +296,6 @@ function displayName(
   }
   const number = anonymousNumbers.get(ref.submission_id)
   return number === undefined ? 'Submitted agent' : `Submitted agent ${number}`
-}
-
-/** The author's prompt for a submitted agent, resolved by the owner's identity (survives resubmission). */
-async function resolveAuthorPrompt(
-  deps: RatingDeps,
-  seasonId: string,
-  ref: AgentRef,
-): Promise<string | null> {
-  if (ref.kind !== 'submission') {
-    return null
-  }
-  const row = await deps.storage.getAgentRatingPrompt(seasonId, ref.user_id)
-  return emptyToNull(row?.prompt ?? null)
 }
 
 /** Treat a null, undefined, or blank string as "no prompt", so an empty stored value reads as none. */

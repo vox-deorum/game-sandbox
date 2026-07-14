@@ -35,13 +35,8 @@ import {
 
 import type { UserDirectory } from '../auth/users.js'
 import type { ImagePolicy, SandboxDefaults } from '../config.js'
-import type {
-  ExecutionDriver,
-  ExitInfo,
-  ImageRef,
-  SandboxProfile,
-  SessionProcess,
-} from '../driver/index.js'
+import type { ExecutionDriver, ExitInfo, ImageRef, SessionProcess } from '../driver/index.js'
+import { buildSandboxProfile } from '../driver/sandbox.js'
 import type { EnvironmentMeta, EnvironmentRegistry } from '../environments.js'
 import { forfeitScore, normalizeEpisodeScore } from '../leaderboards/score.js'
 import { optionalField } from '../optional-field.js'
@@ -68,8 +63,6 @@ import type {
 
 /** Where the recordings volume is mounted inside every match container (lockstep with the harness). */
 const CONTAINER_RECORDINGS_DIR = '/recordings'
-/** The writable scratch tmpfs mount point. */
-const CONTAINER_SCRATCH_DIR = '/tmp'
 /** Grace given to an in-flight container to stop politely before the driver hard-kills it (cancel). */
 const DEFAULT_KILL_GRACE_MS = 5_000
 /** Extra wall-clock slack over the episode compute budget before a workflow game is killed. */
@@ -327,7 +320,13 @@ class DockerWorkflowRunner implements WorkflowRunner {
       process = await this.deps.driver.launch({
         image,
         argv: [JSON.stringify(sessionConfig)],
-        sandbox: this.sandboxProfile(),
+        sandbox: buildSandboxProfile(this.deps.sandbox, [
+          {
+            hostPath: this.deps.recordingsDir,
+            containerPath: CONTAINER_RECORDINGS_DIR,
+            readOnly: false,
+          },
+        ]),
         sessionId: game.id,
       })
     } catch (error) {
@@ -612,23 +611,6 @@ class DockerWorkflowRunner implements WorkflowRunner {
         `workflow-runner: resolving display names failed, falling back to ids: ${String(error)}`,
       )
       return new Map()
-    }
-  }
-
-  private sandboxProfile(): SandboxProfile {
-    return {
-      cpus: this.deps.sandbox.cpus,
-      memoryMb: this.deps.sandbox.memoryMb,
-      readOnlyRoot: true,
-      scratch: { containerPath: CONTAINER_SCRATCH_DIR, sizeMb: this.deps.sandbox.scratchMb },
-      network: 'none',
-      mounts: [
-        {
-          hostPath: this.deps.recordingsDir,
-          containerPath: CONTAINER_RECORDINGS_DIR,
-          readOnly: false,
-        },
-      ],
     }
   }
 

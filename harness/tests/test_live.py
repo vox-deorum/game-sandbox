@@ -599,7 +599,7 @@ def test_human_chat_frame_over_transport_lands_in_the_recording(tmp_path: Path):
     source = TransportSource(control, clock=clock, paced=True, sleeper=sleeper)
     with Episode(
         entry,
-        {"player_0": ExternalSlot(source)},
+        {"player_0": ExternalSlot(source, message_source=source)},
         seed=1,
         store=store,
         recording_id="r",
@@ -628,7 +628,7 @@ def test_human_chat_frame_is_dropped_when_messaging_disabled_by_config(tmp_path:
     source = TransportSource(control, clock=clock, paced=True, sleeper=sleeper)
     with Episode(
         entry,
-        {"player_0": ExternalSlot(source)},
+        {"player_0": ExternalSlot(source, message_source=source)},
         seed=1,
         store=store,
         recording_id="r",

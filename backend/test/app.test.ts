@@ -1,66 +1,35 @@
-import { mkdtempSync, rmSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import type { FastifyInstance } from 'fastify'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { buildApp } from '../src/app.js'
-import { RecordingsStore } from '../src/recordings.js'
-import { Retention } from '../src/retention.js'
-import { Orchestrator } from '../src/session/orchestrator.js'
 import type { Storage } from '../src/storage/index.js'
 import type { TestUsers } from './support/auth.js'
-import { FakeDriver } from './support/fake-driver.js'
-import {
-  makeConfig,
-  makeEnvironments,
-  makeSubmissionDeps,
-  openTestStack,
-} from './support/harness.js'
+import { openTestApp, type TestApp } from './support/harness.js'
 
 describe('HTTP API', () => {
   let app: FastifyInstance
+  let fixture: TestApp
   let storage: Storage
   let users: TestUsers
-  let orchestrator: Orchestrator
   let dir: string
   let alice: Record<string, string>
 
   beforeEach(async () => {
-    dir = mkdtempSync(join(tmpdir(), 'gs-http-'))
-    const stack = await openTestStack()
-    storage = stack.storage
-    users = stack.users
+    fixture = await openTestApp()
+    app = fixture.app
+    storage = fixture.storage
+    users = fixture.users
+    dir = fixture.config.recordingsDir
     alice = await users.headersFor('alice')
     // Plain public sessions attach to the environment's play-open season; seed it so the start
     // routes are exercised against a normal play-open environment.
     await storage.ensureOpenSeason('flappy_bird', 1)
-    const config = makeConfig({ recordingsDir: dir })
-    orchestrator = new Orchestrator({
-      driver: new FakeDriver(),
-      storage,
-      environments: makeEnvironments(),
-      config,
-    })
-    const recordings = new RecordingsStore(dir)
-    app = await buildApp({
-      orchestrator,
-      environments: makeEnvironments(),
-      recordings,
-      retention: new Retention(storage, recordings, config),
-      auth: stack.auth,
-      userDirectory: stack.userDirectory,
-      ...makeSubmissionDeps(storage, config),
-    })
   })
 
   afterEach(async () => {
-    await orchestrator.shutdown()
-    await app.close()
-    await storage.close()
-    rmSync(dir, { recursive: true, force: true })
+    await fixture.close()
   })
 
   it('lists environments with their public metadata', async () => {
@@ -83,53 +52,33 @@ describe('HTTP API', () => {
   })
 
   it('reflects a configured site name and short name in GET /api/config', async () => {
-    const config = makeConfig({ recordingsDir: dir })
-    const recordings = new RecordingsStore(dir)
-    const stack = await openTestStack()
-    const custom = await buildApp({
-      orchestrator,
+    const custom = await openTestApp({
       siteName: 'Acme Arena',
       siteShortName: 'Acme',
-      environments: makeEnvironments(),
-      recordings,
-      retention: new Retention(storage, recordings, config),
-      auth: stack.auth,
-      userDirectory: stack.userDirectory,
-      ...makeSubmissionDeps(storage, config),
     })
     try {
-      const res = await custom.inject({ method: 'GET', url: '/api/config' })
+      const res = await custom.app.inject({ method: 'GET', url: '/api/config' })
       expect(res.json()).toEqual({
         site_name: 'Acme Arena',
         site_short_name: 'Acme',
         github_auth: false,
       })
     } finally {
+      // The fixture owns several resources, and cleanup remains safe for nested test helpers.
       await custom.close()
-      await stack.storage.close()
+      await custom.close()
     }
   })
 
   it('reports github_auth true in GET /api/config when GitHub OAuth is configured', async () => {
-    const config = makeConfig({ recordingsDir: dir })
-    const recordings = new RecordingsStore(dir)
-    const stack = await openTestStack()
-    const custom = await buildApp({
-      orchestrator,
+    const custom = await openTestApp({
       githubAuth: true,
-      environments: makeEnvironments(),
-      recordings,
-      retention: new Retention(storage, recordings, config),
-      auth: stack.auth,
-      userDirectory: stack.userDirectory,
-      ...makeSubmissionDeps(storage, config),
     })
     try {
-      const res = await custom.inject({ method: 'GET', url: '/api/config' })
+      const res = await custom.app.inject({ method: 'GET', url: '/api/config' })
       expect((res.json() as { github_auth: boolean }).github_auth).toBe(true)
     } finally {
       await custom.close()
-      await stack.storage.close()
     }
   })
 

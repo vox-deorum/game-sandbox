@@ -47,6 +47,8 @@ The Docker implementation lives under `driver/docker/`. A later Kubernetes imple
 
 The Docker driver maps these to Docker settings, drops capabilities, and labels containers with `game-sandbox.session=<id>`. Startup reaps leftover labeled containers from an interrupted backend process.
 
+Backend callers do not construct this profile field by field. `driver/sandbox.ts` builds the profile for live sessions, scheduled workflow games, and submission load checks. The helper fixes the security posture at a read-only root filesystem, disabled networking, and a bounded `/tmp` scratch mount; a caller may supply only its CPU and memory limits, scratch size, and the mounts its job requires. Add a sandbox caller through this helper and extend the invariant tests to cover its quotas and permitted mounts.
+
 ## Session base images
 
 Each supported dependency version has a concrete base-image definition:

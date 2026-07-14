@@ -20,6 +20,9 @@
   --palette-coral-400: #ff7a76;
   --palette-amber-300: #ffc966;
   --palette-sky-400: #6ab8ff;
+  --palette-gold-300: #ecc870;
+  --palette-silver-300: #c8ccd2;
+  --palette-bronze-400: #cd7f32;
   --palette-black: #000;
   --palette-scrim: rgba(5, 9, 18, 0.55);
 
@@ -40,6 +43,9 @@
   --color-scrim: var(--palette-scrim);
   /* The true-black letterbox behind a renderer canvas, so the game frame reads as the stage. */
   --color-stage-backdrop: var(--palette-black);
+  --color-medal-gold: var(--palette-gold-300);
+  --color-medal-silver: var(--palette-silver-300);
+  --color-medal-bronze: var(--palette-bronze-400);
 
   /* Spacing, a 4px base scale (4, 8, 12, 16, 24, 32, 48, 64). */
   --space-1: 0.25rem;
@@ -74,6 +80,7 @@
    * every component at once. */
   --motion-fast: 120ms;
   --motion-base: 200ms;
+  --motion-spinner: 800ms;
   --ease-out: cubic-bezier(0.2, 0, 0, 1);
 }
 

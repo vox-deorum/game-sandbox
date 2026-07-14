@@ -12,15 +12,19 @@ examples/<env>/<name>   (optional)
 complete runnable repository
 ```
 
-`templates/base/` holds the shared manifest, dependencies, and tests, plus the provided tooling under `sandbox/` (the `sandbox.play`/`sandbox.evaluate` scripts and the `python -m sandbox` helper). `templates/<env>/` adds the environment's starting `agent.py` and the generated local game package under `sandbox/env/`. A student edits only `agent.py` at the repository root. Everything under `sandbox/` is provided. An example stores only its differences from the composed template.
+`templates/base/` holds the shared manifest, dependencies, and tests, plus the provided tooling under `sandbox/` (the `sandbox.play`/`sandbox.evaluate` scripts, the `python -m sandbox` helper, and dependency-free helpers shared across environment layers). `templates/<env>/` adds the environment's starting `agent.py` and the generated local game package under `sandbox/env/`. A student edits only `agent.py` at the repository root. Everything under `sandbox/` is provided. An example stores only its differences from the composed template.
 
 This keeps shared files in one place and keeps examples small enough to review.
 
 Three environment layers ship today.
 
 - `flappy_bird` is the single-slot game. The base `sandbox/play.py` fits it unchanged.
-- `hearts` is the four-slot turn-based card game. Its local loop is turn-based and seats a human among agents, so its layer overrides `sandbox/play.py` whole-file (the one case step 3 below allows). It carries four single-idea example agents (`examples/hearts/{duck,moonshot,assassin,closer}/`).
-- `spades` is the four-slot partnership card game. Like Hearts it overrides `sandbox/play.py` whole-file for its turn-based bid-then-play loop. Its `sandbox/cards.py` helper reads the object-shaped observation and bridges the combined `Discrete(66)` bid-and-card action space, so an agent works with card objects and bid numbers rather than raw arrays and the mask.
+- `hearts` is the four-slot turn-based card game. Its layer keeps the Hearts-specific window and human-seat adapter in a whole-file `sandbox/play.py` override, while agent loading and the headless multi-seat episode loop delegate to `sandbox.multiseat_play`. It carries four single-idea example agents (`examples/hearts/{duck,moonshot,assassin,closer}/`).
+- `spades` is the four-slot partnership card game. Like Hearts it keeps its bid-then-play window adapter in `sandbox/play.py` and delegates the shared episode loop to `sandbox.multiseat_play`. Its `sandbox/cards.py` helper reads the object-shaped observation and bridges the combined `Discrete(66)` bid-and-card action space, so an agent works with card objects and bid numbers rather than raw arrays and the mask.
+
+The base `sandbox.multiseat_play` module has no third-party dependencies. It owns manifest-based agent loading and the common episode loop that resets one student agent, applies the environment's default action to the other seats, accumulates the student's reward, and optionally emits a frame callback. Environment adapters keep rendering, human input, score presentation, game-specific timing, and command-line options local.
+
+The base `sandbox.semantic_cards` module likewise holds only game-independent semantic-card constants and functions. Hearts and Spades import those operations into their separate `sandbox.cards` modules and re-export the same public names they exposed before. Their rules, legality, scoring, bidding, partnership, and observation accessors remain environment-specific.
 
 ## Composing
 
@@ -49,8 +53,8 @@ The bare template composes into a passing repo because it ships a working starti
 ## Adding an environment template
 
 1. Add the environment to the environments package (see [Adding an environment](environments.md)).
-2. Register it in `scripts/_paths.py` `TEMPLATE_ENVS` (env id to the import-self-contained modules to sync) and add its generated `__init__` texts in `scripts/generate.py`. The top-level `sandbox/env/__init__.py` must expose the uniform surface the provided scripts read: `make_env`, `ENV_ID`, `PLAYER_SLOT`, and `make_human_controller`. To make the environment human-playable, include its `human.py` (the `make_human_controller` factory) in the `TEMPLATE_ENVS` entry so it syncs alongside the env modules.
-3. Create the `templates/<env>/` layer: at minimum a working starting `agent.py` (the naive agent the docs page builds) and a `README.md`, plus, when the observation or action needs decoding, a plain-Python helper module at `sandbox/<name>.py` and its pin test at `tests/test_<name>.py`. The base `sandbox/play.py` is environment-agnostic. Override it whole-file in the env layer only if the local loop does not fit.
+2. Add one `TemplateEnvironmentSpec` to the static `TEMPLATE_ENVIRONMENTS` catalog in `scripts/_paths.py`. Put the environment's display name, inner package, import-self-contained module list, default-action export, and player slot in that spec. `scripts/generate.py` renders the uniform `sandbox.env` exports from the same spec, so there is no second registration map or runtime directory discovery. Include `human.py` in the module list when the environment is human-playable.
+3. Create the `templates/<env>/` layer: at minimum a working starting `agent.py` (the naive agent the docs page builds) and a `README.md`, plus, when the observation or action needs decoding, a plain-Python helper module at `sandbox/<name>.py` and its pin test at `tests/test_<name>.py`. The base `sandbox/play.py` is environment-agnostic. A multi-seat override should delegate manifest loading and the standard headless episode loop to `sandbox.multiseat_play`, keeping only environment-specific presentation and interaction in its adapter.
 4. Run `scripts/generate.py` to sync `templates/<env>/sandbox/env/`.
 5. Add at least one example under `examples/<env>/<name>/`, reading the observation through the helper module so it models the intended style.
 6. Write the student documentation page `docs/students/environments/<env>.md` and add its row to the environments index. Compose ships this page inside the template as `environment.md`, the single source for the game's reference, so the template's `README.md` and `agent.py` point at it rather than restating it. The [student-facing deliverables](environments.md#student-facing-deliverables) section lists the required page sections, the helper placement rules, and the template docstring and README standards.

@@ -112,6 +112,7 @@ describe('ReplaysPage', () => {
     const ownerCell = within(row).getByText('alice')
     expect(ownerCell).toHaveAttribute('title', 'alice')
     expect(within(row).getByText(/Naive agent/)).toBeInTheDocument()
+    expect(vi.mocked(watchAgentNumbers)).not.toHaveBeenCalled()
   })
 
   it('prefers the recording user_name over user_id in the Owner column, keeping the id as a tooltip', async () => {
@@ -252,6 +253,7 @@ describe('ReplaysPage', () => {
     expect(playersCell).not.toHaveAttribute('title')
     // The page leans on the public scope (which includes play-open seasons), not the operator path.
     expect(vi.mocked(listSeasons)).toHaveBeenCalledWith('flappy_bird', { includeUnreleased: false })
+    expect(vi.mocked(watchAgentNumbers)).toHaveBeenCalledWith('flappy_bird')
   })
 
   it('re-sorts by owner when the Owner header is clicked', async () => {

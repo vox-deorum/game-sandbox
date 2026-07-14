@@ -50,7 +50,7 @@ from _paths import (
     HARNESS_SCHEMA_DATA,
     REPO_ROOT,
     TEMPLATE_BASE_MODULES,
-    TEMPLATE_ENVS,
+    TEMPLATE_ENVIRONMENTS,
     TS_GENERATED_DIR,
     template_sandbox_base,
     template_sandbox_env,
@@ -133,7 +133,7 @@ def job_generated_code_fresh() -> None:
         str(HARNESS_SCHEMA_DATA.relative_to(REPO_ROOT)),
         str(FIXTURES_DIR.relative_to(REPO_ROOT)),
         str(BACKEND_GENERATED_DIR.relative_to(REPO_ROOT)),
-        *(str(template_sandbox_env(env).relative_to(REPO_ROOT)) for env in TEMPLATE_ENVS),
+        *(str(template_sandbox_env(env).relative_to(REPO_ROOT)) for env in TEMPLATE_ENVIRONMENTS),
         *(str((base_sandbox / name).relative_to(REPO_ROOT)) for name in TEMPLATE_BASE_MODULES),
     ]
     _run(["git", "diff", "--exit-code", "--", *targets])

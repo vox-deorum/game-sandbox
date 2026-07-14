@@ -39,8 +39,9 @@ import UiButton from '../components/ui/UiButton.vue'
 import UiDialog from '../components/ui/UiDialog.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import { useEnvironmentMeta } from '../composables/useEnvironmentMeta.js'
-import { formatDate, slotLabel } from '../lib/format.js'
-import { canParticipate, isAdmin, PENDING_START_MESSAGE, useMe, userId } from '../me.js'
+import { formatDate, formatSeasonName, slotLabel } from '../lib/format.js'
+import { handleSessionStartResult } from '../lib/session-start.js'
+import { canParticipate, isAdmin, useMe, userId } from '../me.js'
 import { thumbnailFor } from '../renderers/registry.js'
 
 const route = useRoute()
@@ -92,11 +93,8 @@ const releasedSeason = computed(() => leaderboards.value?.current?.season ?? nul
 const boardsHeading = computed(() =>
   releasedSeason.value === null
     ? 'Leaderboards'
-    : `Leaderboard: ${seasonLabel(releasedSeason.value)}`,
+    : `Leaderboard: ${formatSeasonName(releasedSeason.value)}`,
 )
-function seasonLabel(season: Pick<SeasonView, 'id' | 'label'>): string {
-  return season.label ?? `Season ${season.id.slice(0, 8)}`
-}
 
 // The released history minus the season already shown above (named in the header, boards embedded);
 // these are the older seasons whose boards you reach by clicking through.
@@ -219,16 +217,7 @@ async function submitStart(payload: StartPayload): Promise<void> {
   }
   startError.value = null
   const result = await startSession({ envId: meta.value.env_id, ...payload })
-  if (result.ok) {
-    await router.push(`/sessions/${result.session.id}`)
-  } else if (result.reason === 'already_active') {
-    // Rejoin rather than dead-end: the user already has a session running.
-    await router.push(`/sessions/${result.activeSessionId}`)
-  } else if (result.reason === 'not_active') {
-    startError.value = PENDING_START_MESSAGE
-  } else {
-    startError.value = result.message
-  }
+  startError.value = await handleSessionStartResult(result, router)
 }
 </script>
 
@@ -252,17 +241,17 @@ async function submitStart(payload: StartPayload): Promise<void> {
             class="env-meta-link"
             :to="`/environments/${meta.env_id}?play=1`"
           >
-            <UiBadge variant="accent">{{ seasonLabel(playableSeason) }}: Playable</UiBadge>
+            <UiBadge variant="accent">{{ formatSeasonName(playableSeason) }}: Playable</UiBadge>
           </RouterLink>
           <UiBadge v-else-if="playableSeason !== null" variant="accent">
-            {{ seasonLabel(playableSeason) }}: Playable
+            {{ formatSeasonName(playableSeason) }}: Playable
           </UiBadge>
           <RouterLink
             v-if="submittableSeason !== null && ownerId !== null"
             class="env-meta-link"
             :to="`/environments/${meta.env_id}/agents/${ownerId}`"
           >
-            <UiBadge variant="accent">{{ seasonLabel(submittableSeason) }}: Submittable</UiBadge>
+            <UiBadge variant="accent">{{ formatSeasonName(submittableSeason) }}: Submittable</UiBadge>
           </RouterLink>
           <UiBadge v-if="paceLabel !== null">{{ paceLabel }}</UiBadge>
         </div>
@@ -304,7 +293,7 @@ async function submitStart(payload: StartPayload): Promise<void> {
           class="env-season-record-link"
           :to="`/environments/${meta.env_id}/leaderboards/${entry.id}`"
         >
-          {{ seasonLabel(entry) }}
+          {{ formatSeasonName(entry) }}
         </RouterLink>
       </div>
     </section>

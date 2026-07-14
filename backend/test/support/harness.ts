@@ -3,26 +3,32 @@
  * environment registry, a fake browser socket, and microtask/timer helpers. No Docker, no Python —
  * everything runs against the {@link FakeDriver} and in-memory SQLite.
  */
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import type BetterSqlite3 from 'better-sqlite3'
+import type { FastifyInstance } from 'fastify'
 
+import { buildApp } from '../../src/app.js'
 import type { Auth } from '../../src/auth/auth.js'
 import { createUserDirectory, type UserDirectory } from '../../src/auth/users.js'
 import type { Config } from '../../src/config.js'
 import type { ExecutionDriver } from '../../src/driver/index.js'
 import { EnvironmentRegistry } from '../../src/environments.js'
+import { RecordingsStore } from '../../src/recordings.js'
+import { Retention } from '../../src/retention.js'
 import type { ClientSocket } from '../../src/session/live-session.js'
+import { Orchestrator } from '../../src/session/orchestrator.js'
 import type { Storage } from '../../src/storage/index.js'
 import { openSqlite } from '../../src/storage/sqlite.js'
 import { SubmissionSnapshotStore } from '../../src/submission/snapshot-store.js'
 import {
   createSubmissionSource,
+  type SubmissionSource,
   type SubmissionSourceDeps,
 } from '../../src/submission/source/index.js'
-import { ValidationWorker } from '../../src/submission/worker.js'
+import { type SubmissionEnqueuer, ValidationWorker } from '../../src/submission/worker.js'
 import type { WorkflowRunner } from '../../src/workflow/runner.js'
 import { makeTestAuth, type TestUsers } from './auth.js'
 import { TEST_AUTH_OPTIONS } from './auth-options.js'
@@ -49,6 +55,124 @@ export async function openTestStack(): Promise<TestStack> {
   const { storage, sqlite } = await openSqlite(':memory:')
   const { auth, users } = await makeTestAuth(sqlite)
   return { storage, sqlite, auth, users, userDirectory: createUserDirectory(sqlite) }
+}
+
+/** Explicit dependency overrides for {@link openTestApp}; omitted seams use Docker-free defaults. */
+export interface OpenTestAppOptions {
+  config?: Config
+  driver?: ExecutionDriver
+  environments?: EnvironmentRegistry
+  orchestrator?: Orchestrator
+  recordings?: RecordingsStore
+  retention?: Retention
+  userDirectory?: UserDirectory
+  knownDepsVersions?: ReadonlySet<number>
+  workflowRunner?: WorkflowRunner
+  submissionSource?: SubmissionSource
+  submissionSnapshots?: SubmissionSnapshotStore
+  validationWorker?: SubmissionEnqueuer
+  allowLocalSubmissions?: boolean
+  siteName?: string
+  siteShortName?: string
+  githubAuth?: boolean
+  frontendDir?: string
+  docsDir?: string
+  docsIndexFile?: string
+}
+
+/** A complete Docker-free app fixture and the handles API tests commonly need. */
+export interface TestApp {
+  app: FastifyInstance
+  storage: Storage
+  users: TestUsers
+  config: Config
+  driver: ExecutionDriver
+  environments: EnvironmentRegistry
+  orchestrator: Orchestrator
+  recordings: RecordingsStore
+  rootDir: string
+  /** Idempotently stop sessions, close Fastify/storage, and remove the fixture's temporary root. */
+  close(): Promise<void>
+}
+
+/**
+ * Open the standard Fastify test stack with real in-memory storage/auth and Docker-free execution.
+ * Every non-core app dependency is a named override, so a suite keeps its special seams visible.
+ */
+export async function openTestApp(options: OpenTestAppOptions = {}): Promise<TestApp> {
+  const rootDir = mkdtempSync(join(tmpdir(), 'gs-app-test-'))
+  const stack = await openTestStack()
+  const config =
+    options.config ??
+    makeConfig({
+      dataDir: rootDir,
+      recordingsDir: join(rootDir, 'recordings'),
+      submissionsDir: join(rootDir, 'submissions'),
+    })
+  const driver = options.driver ?? new FakeDriver()
+  const environments = options.environments ?? makeEnvironments()
+  const orchestrator =
+    options.orchestrator ??
+    new Orchestrator({ driver, storage: stack.storage, environments, config })
+  const recordings = options.recordings ?? new RecordingsStore(config.recordingsDir)
+  const retention = options.retention ?? new Retention(stack.storage, recordings, config)
+  const snapshots =
+    options.submissionSnapshots ?? new SubmissionSnapshotStore(config.submissionsDir)
+  const submissionDeps = makeSubmissionDeps(stack.storage, config, {
+    driver,
+    snapshots,
+    knownTemplateVersions: options.knownDepsVersions,
+  })
+  const app = await buildApp({
+    orchestrator,
+    environments,
+    recordings,
+    retention,
+    auth: stack.auth,
+    userDirectory: options.userDirectory ?? stack.userDirectory,
+    ...submissionDeps,
+    ...(options.siteName === undefined ? {} : { siteName: options.siteName }),
+    ...(options.siteShortName === undefined ? {} : { siteShortName: options.siteShortName }),
+    ...(options.githubAuth === undefined ? {} : { githubAuth: options.githubAuth }),
+    ...(options.frontendDir === undefined ? {} : { frontendDir: options.frontendDir }),
+    ...(options.docsDir === undefined ? {} : { docsDir: options.docsDir }),
+    ...(options.docsIndexFile === undefined ? {} : { docsIndexFile: options.docsIndexFile }),
+    knownDepsVersions: options.knownDepsVersions ?? submissionDeps.knownDepsVersions,
+    workflowRunner: options.workflowRunner ?? submissionDeps.workflowRunner,
+    submissionSource: options.submissionSource ?? submissionDeps.submissionSource,
+    submissionSnapshots: snapshots,
+    validationWorker: options.validationWorker ?? submissionDeps.validationWorker,
+    allowLocalSubmissions: options.allowLocalSubmissions ?? submissionDeps.allowLocalSubmissions,
+  })
+  await app.ready()
+
+  let closePromise: Promise<void> | undefined
+  return {
+    app,
+    storage: stack.storage,
+    users: stack.users,
+    config,
+    driver,
+    environments,
+    orchestrator,
+    recordings,
+    rootDir,
+    close: () => {
+      closePromise ??= (async () => {
+        try {
+          await orchestrator.shutdown()
+        } finally {
+          try {
+            await app.close()
+          } finally {
+            await stack.storage.close()
+            rmSync(rootDir, { recursive: true, force: true })
+          }
+        }
+      })()
+      return closePromise
+    },
+  }
 }
 
 /** A config with class-scale defaults overridable per test (e.g. a tiny idle window). */

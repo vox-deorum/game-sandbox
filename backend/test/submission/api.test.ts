@@ -238,6 +238,35 @@ describe('submission API', () => {
     expect(enqueued).toEqual([])
   })
 
+  it('keeps local-path precedence when both source fields are present', async () => {
+    await build({ allowLocalSubmissions: false })
+    await storage.ensureOpenSeason(ENV_ID, 1)
+    const headers = await users.headersFor('alice')
+    const payload = {
+      repo_url: 'https://example.test/repo',
+      local_path: '/srv/agent',
+    }
+
+    const reachability = await app.inject({
+      method: 'POST',
+      url: '/api/submissions/reachability',
+      headers,
+      payload,
+    })
+    expect(reachability.statusCode).toBe(403)
+    expect(reachability.json()).toMatchObject({ code: 'local_disabled' })
+
+    const submit = await app.inject({
+      method: 'POST',
+      url: '/api/submissions',
+      headers,
+      payload: { env_id: ENV_ID, ...payload },
+    })
+    expect(submit.statusCode).toBe(403)
+    expect(submit.json()).toMatchObject({ code: 'local_disabled' })
+    expect(enqueued).toEqual([])
+  })
+
   it('maps a concurrent-resubmit conflict to a retryable 409', async () => {
     await build()
     await storage.ensureOpenSeason(ENV_ID, 1)

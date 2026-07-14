@@ -14,7 +14,7 @@ import { computed } from 'vue'
 
 import UiButton from './ui/UiButton.vue'
 import { formatSlotIndex } from '../lib/format.js'
-import { buildStandings, type Medal } from '../lib/standings.js'
+import { buildStandings } from '../lib/standings.js'
 
 const props = withDefaults(
   defineProps<{
@@ -54,12 +54,6 @@ function onKeydown(event: KeyboardEvent): void {
   }
 }
 
-/** Cup tint per medal (gold / silver / bronze); plain finishers get no cup. */
-const MEDAL_COLOR: Record<Medal, string> = {
-  gold: '#ecc870',
-  silver: '#c8ccd2',
-  bronze: '#cd7f32',
-}
 </script>
 
 <template>
@@ -79,8 +73,8 @@ const MEDAL_COLOR: Record<Medal, string> = {
           class="row"
           :class="{ podium: row.medal !== null }"
         >
-          <span class="cup" aria-hidden="true">
-            <Trophy v-if="row.medal !== null" :size="20" :color="MEDAL_COLOR[row.medal]" />
+          <span class="cup" :class="row.medal" aria-hidden="true">
+            <Trophy v-if="row.medal !== null" :size="20" />
           </span>
           <span class="seat">P{{ formatSlotIndex(row.slot) }}</span>
           <span class="who">{{ row.label }}</span>
@@ -161,6 +155,18 @@ const MEDAL_COLOR: Record<Medal, string> = {
 .cup {
   display: inline-flex;
   justify-content: center;
+}
+
+.cup.gold {
+  color: var(--color-medal-gold);
+}
+
+.cup.silver {
+  color: var(--color-medal-silver);
+}
+
+.cup.bronze {
+  color: var(--color-medal-bronze);
 }
 
 .who {

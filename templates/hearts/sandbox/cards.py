@@ -22,59 +22,50 @@ from __future__ import annotations
 from typing import Any
 
 from sandbox.card_utils import card_from_obj, card_to_obj
+from sandbox.semantic_cards import (
+    CLUBS,
+    DIAMONDS,
+    HEARTS,
+    RANK_NAMES,
+    SPADES,
+    SUIT_NAMES,
+    card_name,
+    make_card,
+    rank_of,
+    suit_of,
+)
 
-#: Suit ids, which are also the ``"suit"`` field of a card object.
-CLUBS = 0
-DIAMONDS = 1
-SPADES = 2
-HEARTS = 3
+__all__ = [
+    "CLUBS",
+    "DIAMONDS",
+    "HEARTS",
+    "QUEEN_OF_SPADES",
+    "RANK_NAMES",
+    "SPADES",
+    "SUIT_NAMES",
+    "TWO_OF_CLUBS",
+    "card_from_obj",
+    "card_name",
+    "card_points",
+    "card_to_obj",
+    "current_trick",
+    "hand_cards",
+    "hearts_broken",
+    "led_suit",
+    "legal_cards",
+    "make_card",
+    "my_seat",
+    "play",
+    "rank_of",
+    "scores",
+    "suit_of",
+    "trick_winner_so_far",
+]
 
 #: The card that must lead the very first trick.
 TWO_OF_CLUBS = {"suit": CLUBS, "rank": 2}
 #: The 13-point penalty card.
 QUEEN_OF_SPADES = {"suit": SPADES, "rank": 12}
-
-#: Suit names indexed by suit id, and rank names indexed by face value (index 0/1 are unused
-#: placeholders so ``RANK_NAMES[rank]`` lines up directly with the face value). Used by
-#: :func:`card_name`.
-SUIT_NAMES: tuple[str, ...] = ("clubs", "diamonds", "spades", "hearts")
-RANK_NAMES: tuple[str, ...] = (
-    "",
-    "",
-    "2",
-    "3",
-    "4",
-    "5",
-    "6",
-    "7",
-    "8",
-    "9",
-    "10",
-    "J",
-    "Q",
-    "K",
-    "A",
-)
-
-
-def suit_of(card: dict[str, int]) -> int:
-    """Return the suit id (``0..3``) of a card object."""
-    return card["suit"]
-
-
-def rank_of(card: dict[str, int]) -> int:
-    """Return the face-value rank (``2..14``, where ``11=J, 12=Q, 13=K, 14=A``) of a card object."""
-    return card["rank"]
-
-
-def make_card(suit: int, rank: int) -> dict[str, int]:
-    """Return the card object for a ``suit`` (``0..3``) and face-value ``rank`` (``2..14``)."""
-    return {"suit": suit, "rank": rank}
-
-
-def card_name(card: dict[str, int]) -> str:
-    """Return a readable ASCII name for ``card``, for example ``"Q of spades"`` or ``"2 of clubs"``."""
-    return f"{RANK_NAMES[rank_of(card)]} of {SUIT_NAMES[suit_of(card)]}"
 
 
 def card_points(card: dict[str, int]) -> int:

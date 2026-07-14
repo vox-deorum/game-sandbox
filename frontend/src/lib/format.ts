@@ -112,6 +112,11 @@ export function shortId(id: string, n = 8): string {
   return id.slice(0, n)
 }
 
+/** A season's chosen label, or a stable short-id fallback for unnamed seasons. */
+export function formatSeasonName(season: { id: string; label: string | null }): string {
+  return season.label ?? `Season ${shortId(season.id)}`
+}
+
 /**
  * A recording id humanized for display: "flappy_bird-<uuid>" → "flappy_bird · 25f548a2", trading the
  * raw key for the environment prefix plus the uuid's first segment. Ids that are not the prefixed-uuid

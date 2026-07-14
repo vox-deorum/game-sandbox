@@ -200,6 +200,9 @@ export class KyselyStorage implements Storage {
   getSubmission(id: string): Promise<Submission | undefined> {
     return submissions.getSubmission(this.db, id)
   }
+  getSubmissionsByIds(ids: readonly string[]): Promise<Submission[]> {
+    return submissions.getSubmissionsByIds(this.db, ids)
+  }
   findActiveSubmission(seasonId: string, userId: string): Promise<Submission | undefined> {
     return submissions.findActiveSubmission(this.db, seasonId, userId)
   }
@@ -314,6 +317,9 @@ export class KyselyStorage implements Storage {
   listRatingsBySeason(seasonId: string): Promise<Rating[]> {
     return ratings.listRatingsBySeason(this.db, seasonId)
   }
+  listRatingsByRater(seasonId: string, raterUserId: string): Promise<Rating[]> {
+    return ratings.listRatingsByRater(this.db, seasonId, raterUserId)
+  }
   aggregateRatingsByAgent(seasonId: string): Promise<RatingAggregate[]> {
     return ratings.aggregateRatingsByAgent(this.db, seasonId)
   }
@@ -328,6 +334,12 @@ export class KyselyStorage implements Storage {
   }
   listAgentRatingPromptsBySeason(seasonId: string): Promise<AgentRatingPrompt[]> {
     return ratings.listAgentRatingPromptsBySeason(this.db, seasonId)
+  }
+  listAgentRatingPromptsByUsers(
+    seasonId: string,
+    userIds: readonly string[],
+  ): Promise<AgentRatingPrompt[]> {
+    return ratings.listAgentRatingPromptsByUsers(this.db, seasonId, userIds)
   }
 
   // --- Retention ---

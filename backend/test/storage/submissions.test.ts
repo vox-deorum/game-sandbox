@@ -100,6 +100,19 @@ describe('submission storage on :memory:', () => {
     expect((await storage.getSubmission(alice.id))?.superseded_at).toBeNull()
   })
 
+  it('batches a bounded set of submission ids and collapses duplicates', async () => {
+    const iter = await seasonId()
+    const alice = await storage.createSubmission(subInput({ season_id: iter, user_id: 'alice' }))
+    const bob = await storage.createSubmission(subInput({ season_id: iter, user_id: 'bob' }))
+
+    expect(await storage.getSubmissionsByIds([])).toEqual([])
+    const found = await storage.getSubmissionsByIds([alice.id, alice.id, 'missing', bob.id])
+    expect(found.map((submission) => submission.id).sort()).toEqual([alice.id, bob.id].sort())
+    await expect(
+      storage.getSubmissionsByIds(Array.from({ length: 101 }, (_, index) => `sub-${index}`)),
+    ).rejects.toThrow('submission lookup exceeds the 100-id limit')
+  })
+
   it('keeps exactly one active row when two submits race for the same participant', async () => {
     const iter = await seasonId()
     await Promise.all([

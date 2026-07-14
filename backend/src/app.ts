@@ -12,7 +12,7 @@ import { existsSync } from 'node:fs'
 import fastifyStatic from '@fastify/static'
 import websocket from '@fastify/websocket'
 import type { RecordingHeader } from '@game-sandbox/schema'
-import Fastify, { type FastifyInstance } from 'fastify'
+import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify'
 
 import { registerAdminRoutes } from './admin/routes.js'
 import type { Auth } from './auth/auth.js'
@@ -221,6 +221,28 @@ function sourceInputFromBody(body: SourceBody): SourceInput | null {
     return { kind: 'git', repoUrl: body.repo_url, ref: body.ref ?? null }
   }
   return null
+}
+
+/**
+ * Apply the submission-source admission policy shared by reachability and submit. Local paths keep
+ * precedence over repo URLs, and the local-development gate is checked before either route performs
+ * any source or season work. Returns `undefined` after sending the existing typed refusal.
+ */
+function admitSubmissionSource(
+  body: SourceBody,
+  allowLocalSubmissions: boolean,
+  reply: FastifyReply,
+): SourceInput | undefined {
+  const input = sourceInputFromBody(body)
+  if (input === null) {
+    reply.code(400).send({ error: 'a repo_url or local_path is required', code: 'invalid_source' })
+    return undefined
+  }
+  if (input.kind === 'local' && !allowLocalSubmissions) {
+    reply.code(403).send({ error: 'local submissions are disabled', code: 'local_disabled' })
+    return undefined
+  }
+  return input
 }
 
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
@@ -487,16 +509,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       if (user === undefined) {
         return
       }
-      const input = sourceInputFromBody(request.body)
-      if (input === null) {
-        return reply
-          .code(400)
-          .send({ error: 'a repo_url or local_path is required', code: 'invalid_source' })
-      }
-      if (input.kind === 'local' && !deps.allowLocalSubmissions) {
-        return reply
-          .code(403)
-          .send({ error: 'local submissions are disabled', code: 'local_disabled' })
+      const input = admitSubmissionSource(request.body, deps.allowLocalSubmissions, reply)
+      if (input === undefined) {
+        return
       }
       return reply.code(200).send(await deps.submissionSource.verifyReachable(input))
     },
@@ -513,16 +528,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       if (user === undefined) {
         return
       }
-      const input = sourceInputFromBody(request.body)
-      if (input === null) {
-        return reply
-          .code(400)
-          .send({ error: 'a repo_url or local_path is required', code: 'invalid_source' })
-      }
-      if (input.kind === 'local' && !deps.allowLocalSubmissions) {
-        return reply
-          .code(403)
-          .send({ error: 'local submissions are disabled', code: 'local_disabled' })
+      const input = admitSubmissionSource(request.body, deps.allowLocalSubmissions, reply)
+      if (input === undefined) {
+        return
       }
       const season = await deps.storage.getOpenSubmissionSeason(request.body.env_id)
       if (season === undefined) {
@@ -601,39 +609,43 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       const ownerNames = operator
         ? await deps.userDirectory.namesFor(submissions.map((submission) => submission.user_id))
         : new Map<string, string>()
-      return Promise.all(
-        submissions.map(async (submission, index) => {
-          // Personalized rating state only when a user resolves; an anonymous caller carries none.
-          const ratingStatus =
-            user === null
-              ? undefined
-              : submission.user_id === user.id
-                ? 'own'
-                : (await deps.storage.getRating(season.id, user.id, {
-                      kind: 'submission',
-                      submission_id: submission.id,
-                      user_id: submission.user_id,
-                    })) === undefined
-                  ? 'unrated'
-                  : 'rated'
-          return {
-            submission_id: submission.id,
-            anonymous_number: index + 1,
-            ...optionalField('rating_status', ratingStatus),
-            ...(operator
-              ? {
-                  owner_id: submission.user_id,
-                  ...optionalField('owner_name', ownerNames.get(submission.user_id)),
-                  source_kind: submission.source_kind,
-                  repo_url: submission.repo_url,
-                  commit_sha: submission.commit_sha,
-                  local_path: submission.local_path,
-                  ref: submission.ref,
-                }
-              : {}),
-          }
-        }),
-      )
+      const viewerRatings =
+        user === null
+          ? new Set<string>()
+          : new Set(
+              (await deps.storage.listRatingsByRater(season.id, user.id))
+                .filter((rating) => rating.agent_kind === 'submission')
+                .flatMap((rating) =>
+                  rating.agent_submission_id === null ? [] : [rating.agent_submission_id],
+                ),
+            )
+      return submissions.map((submission, index) => {
+        // Personalized rating state only when a user resolves; an anonymous caller carries none.
+        const ratingStatus =
+          user === null
+            ? undefined
+            : submission.user_id === user.id
+              ? 'own'
+              : viewerRatings.has(submission.id)
+                ? 'rated'
+                : 'unrated'
+        return {
+          submission_id: submission.id,
+          anonymous_number: index + 1,
+          ...optionalField('rating_status', ratingStatus),
+          ...(operator
+            ? {
+                owner_id: submission.user_id,
+                ...optionalField('owner_name', ownerNames.get(submission.user_id)),
+                source_kind: submission.source_kind,
+                repo_url: submission.repo_url,
+                commit_sha: submission.commit_sha,
+                local_path: submission.local_path,
+                ref: submission.ref,
+              }
+            : {}),
+        }
+      })
     },
   )
 

@@ -13,11 +13,10 @@
 <script setup lang="ts">
 import type { RecordingHeader, StepState } from '@game-sandbox/schema'
 import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
-import { computed, onMounted, ref, shallowRef } from 'vue'
+import { computed, nextTick, onMounted, ref, shallowRef } from 'vue'
 import { useRoute } from 'vue-router'
 
 import {
-  getEnvironments,
   getRecording,
   listRecordings,
   listSeasons,
@@ -30,6 +29,7 @@ import GameOverCard from '../components/GameOverCard.vue'
 import GameThread from '../components/GameThread.vue'
 import PlayerAttribution from '../components/PlayerAttribution.vue'
 import RunMetadata from '../components/RunMetadata.vue'
+import StageFrame from '../components/StageFrame.vue'
 import UiButton from '../components/ui/UiButton.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import UiSlider from '../components/ui/UiSlider.vue'
@@ -38,6 +38,8 @@ import { usePinning } from '../composables/usePinning.js'
 import { useRendererMount } from '../composables/useRendererMount.js'
 import { useReplayTransport } from '../composables/useReplayTransport.js'
 import { useStageLayout } from '../composables/useStageLayout.js'
+import { environmentMeta } from '../environmentCatalog.js'
+import { anonymityState, presentsMasked } from '../lib/anonymity.js'
 import { hasSubmittedAgent } from '../lib/attribution.js'
 import { type ChatEntry } from '../lib/chat.js'
 import { formatDate } from '../lib/format.js'
@@ -70,7 +72,7 @@ const decisions = ref<DecisionEntry[]>([])
 // The full message log, built once from the recording at load (recordings keep every message by
 // design). It never mutates afterward, so a shallowRef is enough.
 const chatLog = shallowRef<ChatEntry[]>([])
-const seasonPlayable = ref(false)
+const seasonPlayable = ref<boolean | null>(null)
 // Submission id → season-wide anonymous number, so the blind attribution line reads the same
 // "Submitted agent N" the watch picker and rating panel show for the same agent.
 const anonymousNumbers = ref<Record<string, number>>({})
@@ -97,9 +99,15 @@ const { pinned, busy: pinBusy, error: pinError, toggle: togglePin } = usePinning
 // attribution while the season is playable — but only when the recording actually carries a
 // submitted agent to protect; blind ownership masking has nothing to hide in an all-human or
 // all-Naive recording (mirrors ReplaysPage's isBlindReplay gate).
-const blindAttribution = computed(
-  () => seasonPlayable.value && !isAdmin(me.me) && hasSubmittedAgent(header.value?.players),
+const attributionState = computed(() =>
+  anonymityState({
+    identityResolved: !me.loading,
+    operator: isAdmin(me.me),
+    seasonPlayable: seasonPlayable.value,
+    hasSubmittedAgent: header.value === null ? null : hasSubmittedAgent(header.value.players),
+  }),
 )
+const blindAttribution = computed(() => presentsMasked(attributionState.value))
 
 // The panel mounts only for a recording that actually carries messages (a messaging session); it is
 // read-only, with no session row to consult. It shows the entries whose tick is at or before the
@@ -113,7 +121,7 @@ const visibleChat = computed<ChatEntry[]>(() => {
 
 // The decision log sits beside a portrait canvas and below a landscape one until the viewport is wide
 // enough to hold both (the same rule as live; see useStageLayout).
-const { portrait, logBeside } = useStageLayout(aspectRatio)
+const { logBeside } = useStageLayout(aspectRatio)
 
 // The recording is loaded but the renderer hasn't reported its shape yet, so the stage shows a loading
 // indicator rather than the decision log. (Stays false when no renderer is registered — its own state.)
@@ -208,10 +216,9 @@ onMounted(async () => {
     (state.messages ?? []).map((message) => ({ tick: state.tick, ...message })),
   )
   loading.value = false
+  await nextTick()
 
-  meta.value =
-    (await getEnvironments().catch(() => [])).find((e) => e.env_id === parsed.header.environment) ??
-    null
+  meta.value = await environmentMeta(parsed.header.environment).catch(() => null)
   if (meta.value === null) {
     noRenderer.value = true
   } else {
@@ -236,17 +243,20 @@ onMounted(async () => {
   // Determine ownership and the current pin state from the merged listing.
   await me.whenSettled()
   const [listing, seasons] = await Promise.all([
-    listRecordings({ env: parsed.header.environment }).catch(() => []),
-    listSeasons(parsed.header.environment).catch(() => []),
+    listRecordings({ env: parsed.header.environment }).catch(() => null),
+    listSeasons(parsed.header.environment).catch(() => null),
   ])
-  const entry = listing.find((r) => r.id === id)
-  listingEntry.value = entry ?? null
+  const entry = listing?.find((r) => r.id === id)
   seasonPlayable.value =
-    entry?.season_id != null &&
-    seasons.some((season) => season.id === entry.season_id && season.play_status === 'open')
+    entry === undefined || seasons === null
+      ? null
+      : entry.season_id === null
+        ? false
+        : seasons.some((season) => season.id === entry.season_id && season.play_status === 'open')
   // Only a blind viewer needs the anonymous numbering; an operator (or a closed season) sees real
   // owner labels and skips the lookup.
-  if (blindAttribution.value) {
+  listingEntry.value = entry ?? null
+  if (attributionState.value === 'masked') {
     anonymousNumbers.value = await watchAgentNumbers(parsed.header.environment).catch(() => ({}))
   }
   if (entry !== undefined && viewerId.value !== undefined && entry.user_id === viewerId.value) {
@@ -320,24 +330,17 @@ onMounted(async () => {
 
     <UiEmptyState v-if="owned && pinError !== null" tone="danger">{{ pinError }}</UiEmptyState>
 
-    <div
-      class="stage"
-      :class="[portrait ? 'portrait' : 'landscape', logBeside ? 'beside' : 'below']"
-      tabindex="0"
-      role="group"
-      aria-label="Replay stage"
+    <StageFrame
+      :aspect-ratio="aspectRatio"
+      :log-beside="logBeside"
+      :loading="stageLoading"
+      canvas-label="Replay"
+      stage-label="Replay stage"
+      :beside-log-label="hasChat ? undefined : 'Decision log'"
+      @renderer-host="hostEl = $event"
       @keydown="onStageKeydown"
     >
-      <section class="stage-canvas" aria-label="Replay">
-        <div
-          class="renderer-host"
-          ref="hostEl"
-          :style="
-            aspectRatio !== null
-              ? { aspectRatio: String(aspectRatio), '--stage-aspect': String(aspectRatio) }
-              : undefined
-          "
-        >
+      <template #overlay>
           <!-- The shared cross-environment game-over leaderboard, shown at the final frame. -->
           <GameOverCard
             v-if="finalState !== null && showGameOver && !gameOverDismissed"
@@ -348,24 +351,15 @@ onMounted(async () => {
             :anonymous-numbers="anonymousNumbers"
             @dismiss="gameOverDismissed = true"
           />
-        </div>
+      </template>
+      <template #renderer-status>
         <UiEmptyState v-if="noRenderer">No renderer is registered for this environment.</UiEmptyState>
-      </section>
-
-      <div v-if="stageLoading" class="stage-log stage-loading" role="status">
-        <span class="overlay-spinner" aria-hidden="true" />
-        <span>Loading…</span>
-      </div>
+      </template>
       <!-- A replay scrubs the whole game, so the decision log and chat merge into one thread: every
            tick's decision (the whole game, ahead-of-scrubber ticks dimmed) with its messages woven in
            as the scrubber reveals them. Without messaging there is nothing to merge, so the decision
            log keeps its table. -->
-      <section
-        v-else-if="logBeside"
-        class="stage-log"
-        :aria-label="hasChat ? undefined : 'Decision log'"
-      >
-        <div class="stage-log-body">
+      <template #beside-log>
           <GameThread
             v-if="hasChat"
             :decisions="decisions"
@@ -377,10 +371,9 @@ onMounted(async () => {
             :anonymous-numbers="anonymousNumbers"
           />
           <DecisionLog v-else :entries="decisions" :current-index="replayState.index" />
-        </div>
-      </section>
-      <template v-else>
-        <details v-if="hasChat" class="stage-log stage-log-below stage-thread-below">
+      </template>
+      <template #below-log>
+        <details v-if="!logBeside && hasChat" class="stage-log-below stage-thread-below">
           <summary>Game thread</summary>
           <GameThread
             :decisions="decisions"
@@ -392,12 +385,12 @@ onMounted(async () => {
             :anonymous-numbers="anonymousNumbers"
           />
         </details>
-        <details v-else class="stage-log stage-log-below">
+        <details v-else-if="!logBeside" class="stage-log-below">
           <summary>Decision log</summary>
           <DecisionLog :entries="decisions" :current-index="replayState.index" />
         </details>
       </template>
-    </div>
+    </StageFrame>
   </section>
 </template>
 
@@ -460,163 +453,7 @@ onMounted(async () => {
   white-space: nowrap;
 }
 
-.stage {
-  display: grid;
-  gap: var(--space-4);
-}
-
-.stage:focus-visible {
-  outline: 2px solid var(--color-focus-ring);
-  outline-offset: var(--space-2);
-  border-radius: var(--radius-md);
-}
-
-/* Beside layout: the columns stretch to a common height so the log matches the canvas beside it. The
-   column ratio splits on orientation — a portrait canvas is narrow (the log takes the rest), a
-   landscape canvas dominates (a narrower log sits to its right). Explicit grid-column placement keeps
-   the canvas in column 1 and the log in column 2 regardless of orientation. */
-.stage.beside {
-  align-items: stretch;
-}
-
-.stage.beside.portrait {
-  grid-template-columns: minmax(0, 22rem) minmax(0, 1fr);
-}
-
-.stage.beside.landscape {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 16rem);
-}
-
-.stage.beside .stage-canvas {
-  grid-column: 1;
-}
-
-/* The decision log and the load-time spinner (which carries .stage-log too) take the second column. */
-.stage.beside .stage-log {
-  grid-column: 2;
-}
-
-.stage.beside .stage-canvas,
-.stage.beside .stage-log {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-/* When the chat panel joins the decision log in the column, the two bodies split it and the gap keeps
-   them apart. */
-.stage.beside .stage-log {
-  gap: var(--space-3);
-}
-
-.stage.below {
-  grid-template-columns: minmax(0, 1fr);
-  justify-items: center;
-}
-
-.renderer-host {
-  position: relative;
-  width: 100%;
-  margin: 0 auto;
-  background: var(--color-stage-backdrop);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-}
-
-/* Portrait (Flappy Bird) keeps its exact width cap so it never grows absurdly tall. */
-.stage.portrait .renderer-host {
-  max-width: 480px;
-}
-
-/* Landscape (Hearts) grows to fill its column, but never taller than the fold. The cap is a width, not
-   a height, derived from the fold height times the canvas aspect ratio (--stage-aspect, set inline from
-   the renderer's reported ratio): capping width preserves the 4:3 shape instead of letterboxing it, so
-   the Pixi canvas (which scales from width) is never vertically clipped on a short viewport. */
-.stage.landscape .renderer-host {
-  max-width: calc(min(70vh, 640px) * var(--stage-aspect, 1.333));
-}
-
-/* The log fills the height the canvas defines and scrolls within it. The body is positioned so its
-   table never contributes to the row height — otherwise a long log would stretch the row past the
-   canvas; instead the canvas defines the height and the log scrolls inside it. */
-.stage.beside .stage-log-body {
-  position: relative;
-  flex: 1;
-  min-height: 0;
-}
-
-.stage.beside .stage-log-body :deep(.decision-log),
-.stage.beside .stage-log-body :deep(.chat-panel),
-.stage.beside .stage-log-body :deep(.game-thread) {
-  position: absolute;
-  inset: 0;
-}
-
-/* While the renderer mounts, a centered spinner stands in for the decision log it has no rows for. */
-.stage-loading {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-3);
-  padding: var(--space-6) 0;
-  color: var(--color-text-muted);
-  font-size: var(--text-md);
-}
-
-.overlay-spinner {
-  width: 2rem;
-  height: 2rem;
-  border-radius: 50%;
-  border: 3px solid var(--color-border);
-  border-top-color: var(--color-accent);
-  animation: overlay-spin 0.8s linear infinite;
-}
-
-@keyframes overlay-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .overlay-spinner {
-    animation: none;
-  }
-}
-
-.stage-log-below {
-  width: 100%;
-  max-width: 480px;
-}
-
-/* A landscape canvas in the stacked layout is wider than 480px, so its collapsed log matches it. */
-.stage.below.landscape .stage-log-below {
-  max-width: 100%;
-}
-
-.stage-log-below summary {
-  cursor: pointer;
-  padding: var(--space-2) 0;
-  font-family: var(--font-heading);
-  font-size: var(--text-md);
-}
-
-.stage-log-below :deep(.decision-log) {
-  max-height: 12rem;
-}
-
-/* The stacked merged thread caps its height and scrolls within it, like the split panels did. */
-.stage-thread-below :deep(.game-thread) {
-  max-height: 16rem;
-}
-
 @media (max-width: 768px) {
-  .stage.beside {
-    grid-template-columns: minmax(0, 1fr);
-    justify-items: center;
-  }
-
   .replay-controls {
     flex-wrap: wrap;
   }

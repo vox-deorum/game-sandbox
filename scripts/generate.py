@@ -17,7 +17,6 @@ import json
 import shutil
 import subprocess
 import sys
-from dataclasses import dataclass
 
 from _paths import (
     BACKEND_ENVIRONMENTS_JSON,
@@ -28,9 +27,10 @@ from _paths import (
     SCHEMA_DIR,
     SCHEMA_FILES,
     TEMPLATE_BASE_MODULES,
-    TEMPLATE_ENVS,
+    TEMPLATE_ENVIRONMENTS,
     TS_GENERATED_DIR,
     TS_GENERATED_TYPES,
+    TemplateEnvironmentSpec,
     template_sandbox_base,
     template_sandbox_env,
 )
@@ -59,44 +59,9 @@ def copy_packaged_schema() -> None:
 # provided scripts (sandbox/play.py, sandbox/evaluate.py, tests/) never hardcode an environment.
 # The inner package __init__ re-exports the factory and is what locally building the env imports.
 # Everything in those two files is boilerplate shared across template layers except a handful of
-# per-env facts, so they are rendered from a small spec instead of hand-maintained string-by-string:
-# adding a template env is one _TemplateEnvInit entry (plus its TEMPLATE_ENVS module list), not
-# another pair of bespoke __init__ texts. A registered env with no spec here fails generation,
-# keeping TEMPLATE_ENVS honest.
-@dataclass(frozen=True)
-class _TemplateEnvInit:
-    """The per-env facts the generated ``sandbox/env/`` __init__ files are rendered from."""
-
-    display_name: str  # human-facing name, e.g. "Flappy Bird"
-    default_action: str  # the env's default-action symbol, the module-level ``default_action`` callable
-    inner_package: str  # the synced inner package directory, e.g. "flappy_bird"
-    player_slot: str = "player_0"  # the single/primary slot id the provided scripts score
-
-
-# env id -> the spec its two generated __init__ files are rendered from. Every env exposes a
-# module-level ``default_action(env, slot_id)`` callable (the timeout default that returns the real
-# action played), so the surface re-exports the same name for all three and the provided play loops
-# call ``default_action(env, slot)`` for any seat they do not drive themselves.
-_TEMPLATE_ENV_INITS = {
-    "flappy_bird": _TemplateEnvInit(
-        display_name="Flappy Bird",
-        default_action="default_action",
-        inner_package="flappy_bird",
-    ),
-    "hearts": _TemplateEnvInit(
-        display_name="Hearts",
-        default_action="default_action",
-        inner_package="hearts",
-    ),
-    "spades": _TemplateEnvInit(
-        display_name="Spades",
-        default_action="default_action",
-        inner_package="spades",
-    ),
-}
-
-
-def _render_sandbox_init(env_id: str, spec: _TemplateEnvInit) -> str:
+# Per-environment facts and copied modules live together in the static catalog, so generation
+# cannot render an init whose package facts disagree with its synchronized source list.
+def _render_sandbox_init(env_id: str, spec: TemplateEnvironmentSpec) -> str:
     """Render the top-level ``sandbox/env/__init__.py`` (the uniform, env-agnostic surface)."""
     surface_import = (
         f"from .{spec.inner_package} import "
@@ -129,7 +94,7 @@ __all__ = [
 '''
 
 
-def _render_inner_init(spec: _TemplateEnvInit) -> str:
+def _render_inner_init(spec: TemplateEnvironmentSpec) -> str:
     """Render the inner ``sandbox/env/<pkg>/__init__.py`` (re-exports the synced factory)."""
     return f'''\
 """Synced {spec.display_name} environment for local development.
@@ -151,25 +116,19 @@ __all__ = ["make_env", "make_human_controller", "extract_overlay", "{spec.defaul
 def sync_template_env() -> None:
     """Copy the import-self-contained environment modules into each template's sandbox/env/.
 
-    For every environment registered in TEMPLATE_ENVS, only the modules that import nothing
+    For every environment in the static template catalog, only the modules that import nothing
     of ours (relative + third-party imports only) are copied verbatim; the harness-dependent
     package __init__ files are replaced by minimal generated ones (the uniform top-level
     surface plus the inner re-export). The staleness CI job diffs these locations like every
     other generated output, so the template copies are provably current on every PR.
     """
-    for env, modules in TEMPLATE_ENVS.items():
-        spec = _TEMPLATE_ENV_INITS.get(env)
-        if spec is None:
-            raise SystemExit(
-                f"env {env!r} is registered in TEMPLATE_ENVS but has no _TemplateEnvInit spec "
-                f"in scripts/generate.py; add one before syncing."
-            )
+    for env, spec in TEMPLATE_ENVIRONMENTS.items():
         sandbox_env = template_sandbox_env(env)
         if sandbox_env.exists():
             shutil.rmtree(sandbox_env)
         sandbox_env.mkdir(parents=True)
 
-        for relative in modules:
+        for relative in spec.modules:
             dest = sandbox_env / relative
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ENVIRONMENTS_SRC / relative, dest)

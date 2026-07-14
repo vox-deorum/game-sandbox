@@ -23,7 +23,8 @@
  * and the {@link SubmissionSource} seam, learning no Docker or git specifics.
  */
 import type { SandboxDefaults } from '../config.js'
-import type { ExecutionDriver, ImageRef, SandboxProfile } from '../driver/index.js'
+import type { ExecutionDriver, ImageRef } from '../driver/index.js'
+import { buildSandboxProfile } from '../driver/sandbox.js'
 import type {
   Storage,
   Submission,
@@ -45,8 +46,6 @@ import { runLoadCheck, validateStatic } from './validate/index.js'
  * disagree with every later reuse of that warm image.
  */
 const SLOT_ID = CANONICAL_SUBMISSION_SLOT
-/** The scratch mount point the load-check sandbox exposes (matches the session profile's `/tmp`). */
-const CONTAINER_SCRATCH_DIR = '/tmp'
 
 /** The minimal enqueue capability the submission route depends on, so a fake satisfies it in tests. */
 export interface SubmissionEnqueuer {
@@ -274,7 +273,7 @@ export class ValidationWorker implements SubmissionEnqueuer {
       runningStage = 'load'
       await this.deps.storage.startSubmissionCheck(submissionId, 'load')
       const loadResult = await runLoadCheck(this.deps.driver, image, {
-        sandbox: this.loadCheckSandbox(),
+        sandbox: buildSandboxProfile(this.deps.sandbox, []),
         sessionId: submissionId,
         timeoutMs: this.deps.loadCheckTimeoutMs,
         slotId: SLOT_ID,
@@ -338,16 +337,5 @@ export class ValidationWorker implements SubmissionEnqueuer {
   /** The effective byte cap for this submission: the season override when set, else the site default. */
   private sizeLimitBytes(overrideMb: number | undefined): number {
     return overrideMb !== undefined ? overrideMb * 1024 * 1024 : this.deps.submissionMaxSizeBytes
-  }
-
-  private loadCheckSandbox(): SandboxProfile {
-    return {
-      cpus: this.deps.sandbox.cpus,
-      memoryMb: this.deps.sandbox.memoryMb,
-      readOnlyRoot: true,
-      scratch: { containerPath: CONTAINER_SCRATCH_DIR, sizeMb: this.deps.sandbox.scratchMb },
-      network: 'none',
-      mounts: [],
-    }
   }
 }

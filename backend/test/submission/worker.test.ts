@@ -177,9 +177,13 @@ describe('ValidationWorker', () => {
     let disposed = 0
     const treePath = writeTree()
     const submission = await seedSubmission()
+    const driver = driverEmitting({ ok: true }, 0)
     const worker = makeWorker(
-      driverEmitting({ ok: true }, 0),
-      new FakeSource({ treePath, onDispose: () => (disposed += 1) }),
+      driver,
+      new FakeSource({
+        treePath,
+        onDispose: () => (disposed += 1),
+      }),
     )
 
     worker.enqueue(submission.id)
@@ -196,6 +200,14 @@ describe('ValidationWorker', () => {
       ['load', 'passed'],
     ])
     expect(disposed).toBe(1)
+    expect(driver.lastLaunch()?.spec.sandbox).toEqual({
+      cpus: 1,
+      memoryMb: 512,
+      readOnlyRoot: true,
+      scratch: { containerPath: '/tmp', sizeMb: 256 },
+      network: 'none',
+      mounts: [],
+    })
   })
 
   it('turns an unreachable repo into static_failed with a failed resolve and no static check', async () => {

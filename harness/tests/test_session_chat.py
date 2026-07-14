@@ -326,6 +326,20 @@ def test_chat_crash_sets_failed_slot():
 # --- human queue --------------------------------------------------------------------------------
 
 
+def test_action_source_is_not_implicitly_used_as_a_message_source():
+    source = QueueSource([{"to": None, "text": "must stay queued"}])
+    entry = make_chat_entry(seats=("player_0",), n_ticks=1)
+
+    run_episode(
+        entry,
+        {"player_0": ExternalSlot(source)},
+        seed=1,
+        clock=ManualClock(),
+    )
+
+    assert source._drained is False
+
+
 def test_human_queue_is_drained_once_per_stepped_tick_and_delivered_next(tmp_path: Path):
     # A human seat (player_1) queues a message; it is drained on the tick player_0 acts (not player_1's
     # turn), recorded there, and delivered to the agent on the agent's next turn.
@@ -335,7 +349,10 @@ def test_human_queue_is_drained_once_per_stepped_tick_and_delivered_next(tmp_pat
     entry = make_chat_entry(seats=("player_0", "player_1"), n_ticks=4)
     run_episode(
         entry,
-        {"player_0": AgentSlot(receiver), "player_1": ExternalSlot(source)},
+        {
+            "player_0": AgentSlot(receiver),
+            "player_1": ExternalSlot(source, message_source=source),
+        },
         seed=1,
         store=store,
         recording_id="r",
@@ -360,7 +377,10 @@ def test_agent_batch_is_ordered_before_the_human_batch_in_one_tick(tmp_path: Pat
     entry = make_chat_entry(seats=("player_0", "player_1"), n_ticks=2)
     run_episode(
         entry,
-        {"player_0": AgentSlot(sender), "player_1": ExternalSlot(source)},
+        {
+            "player_0": AgentSlot(sender),
+            "player_1": ExternalSlot(source, message_source=source),
+        },
         seed=1,
         store=store,
         recording_id="r",

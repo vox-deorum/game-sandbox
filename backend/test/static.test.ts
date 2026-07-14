@@ -5,18 +5,7 @@ import { join } from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { buildApp } from '../src/app.js'
-import { RecordingsStore } from '../src/recordings.js'
-import { Retention } from '../src/retention.js'
-import { Orchestrator } from '../src/session/orchestrator.js'
-import type { Storage } from '../src/storage/index.js'
-import { FakeDriver } from './support/fake-driver.js'
-import {
-  makeConfig,
-  makeEnvironments,
-  makeSubmissionDeps,
-  openTestStack,
-} from './support/harness.js'
+import { openTestApp, type TestApp } from './support/harness.js'
 
 // A built bundle is a tiny stand-in for `frontend/dist`: an index.html and one hashed asset, enough
 // to prove the backend serves files, falls back to index.html for client routes, and leaves /api alone.
@@ -26,45 +15,21 @@ const ASSET_JS = 'console.log("bundle asset")'
 
 describe('serving the built frontend', () => {
   let app: FastifyInstance
-  let storage: Storage
-  let orchestrator: Orchestrator
-  let dataDir: string
+  let fixture: TestApp
   let frontendDir: string
 
   beforeEach(async () => {
-    dataDir = mkdtempSync(join(tmpdir(), 'gs-static-'))
     frontendDir = mkdtempSync(join(tmpdir(), 'gs-dist-'))
     writeFileSync(join(frontendDir, 'index.html'), INDEX_HTML)
     mkdirSync(join(frontendDir, 'assets'))
     writeFileSync(join(frontendDir, 'assets', 'app.js'), ASSET_JS)
 
-    const stack = await openTestStack()
-    storage = stack.storage
-    const config = makeConfig({ recordingsDir: dataDir })
-    orchestrator = new Orchestrator({
-      driver: new FakeDriver(),
-      storage,
-      environments: makeEnvironments(),
-      config,
-    })
-    const recordings = new RecordingsStore(dataDir)
-    app = await buildApp({
-      orchestrator,
-      environments: makeEnvironments(),
-      recordings,
-      retention: new Retention(storage, recordings, config),
-      auth: stack.auth,
-      userDirectory: stack.userDirectory,
-      frontendDir,
-      ...makeSubmissionDeps(storage, config),
-    })
+    fixture = await openTestApp({ frontendDir })
+    app = fixture.app
   })
 
   afterEach(async () => {
-    await orchestrator.shutdown()
-    await app.close()
-    await storage.close()
-    rmSync(dataDir, { recursive: true, force: true })
+    await fixture.close()
     rmSync(frontendDir, { recursive: true, force: true })
   })
 

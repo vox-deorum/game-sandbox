@@ -20,7 +20,7 @@ Confirmed during the build: `LaunchSpec` also carries an optional `entrypoint` t
 - `network` (`none` in this stage; the internal gateway-only value arrives in Stage 9).
 - `mounts` (host path, container path, read-only flag). The recordings volume is the one mount this stage uses.
 
-Each driver maps the profile onto its platform.
+Each driver maps the profile onto its platform. Backend launchers construct profiles through `driver/sandbox.ts`; the helper hard-codes `readOnlyRoot`, `network: 'none'`, and the `/tmp` scratch path, and accepts only quotas, scratch size, and caller-specific mounts. Live sessions, scheduled workflow games, and submission load checks therefore share one security boundary while retaining the mounts each job needs.
 
 `SessionProcess` is the launched session, and it carries the transport decision confirmed at stage start: the bidirectional channel between backend and container is part of the driver abstraction, not something the layer above selects. The interface promises an ordered, line-delimited, bidirectional text channel and says nothing about how it is carried:
 

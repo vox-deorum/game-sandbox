@@ -10,7 +10,7 @@
 import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
 import { type MaybeRefOrGetter, type Ref, ref, toValue } from 'vue'
 
-import { getEnvironments } from '../api/client.js'
+import { environmentMeta } from '../environmentCatalog.js'
 
 export interface UseEnvironmentMeta {
   /** The resolved environment, or null until `ready` settles (and when it is not found). */
@@ -30,16 +30,11 @@ export function useEnvironmentMeta(envId: MaybeRefOrGetter<string>): UseEnvironm
 
   const ready = (async (): Promise<void> => {
     const id = toValue(envId)
-    const envs = await getEnvironments().catch(() => null)
-    if (envs === null) {
+    const found = await environmentMeta(id).catch(() => null)
+    if (found === null) {
       notFound.value = true
     } else {
-      const found = envs.find((e) => e.env_id === id)
-      if (found === undefined) {
-        notFound.value = true
-      } else {
-        meta.value = found
-      }
+      meta.value = found
     }
     loading.value = false
   })()

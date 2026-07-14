@@ -28,6 +28,7 @@ The app uses Vue reactivity and small explicit classes instead of a state-manage
 | `src/composables/` | Reusable page behavior |
 | `src/api/client.ts` | Typed HTTP wrappers |
 | `src/api/socket.ts` | Session WebSocket client |
+| `src/environmentCatalog.ts` | Application-lifetime environment metadata cache |
 | `src/renderers/` | Renderer contract, registry, PixiJS base, environment modules |
 | `src/replay/` | Browser-safe recording parser and replay transport |
 | `src/styles/` | Tokens, global element rules, and app-shell layout |
@@ -89,6 +90,8 @@ A `/login` page offers email and password sign-in and, when the deployment confi
 
 `me.ts` fetches `GET /api/me` once at load into `{ user | null }`, with a derived `status`. The `canParticipate` and `isAdmin` helpers gate the UI from that status. The frontend hides actions the user cannot take, but backend authorization remains the enforcement.
 
+`environmentCatalog.ts` is the shared application-lifetime read of public environment metadata. Consumers call `loadEnvironmentCatalog()` or `environmentMeta()` instead of issuing page-local `GET /api/environments` requests. Concurrent callers share one in-flight request, a successful catalog remains cached for later navigation, and a rejected request is discarded so another navigation can retry. Tests call `resetEnvironmentCatalog()` to isolate cache and retry cases.
+
 ## Typed API boundaries
 
 `api/client.ts` has one wrapper per HTTP route. Expected refusals such as 403 and 409 return typed results instead of throwing. Pages should branch on stable backend error codes, not message text.
@@ -147,6 +150,10 @@ Capabilities come from identity and session mode:
 - Everyone else is a spectator.
 
 Pause state comes from backend echoes, never local optimism. An ended session loads its final facts and decision log from the stored recording and does not open a socket.
+
+`StageFrame.vue` owns the renderer-and-log grid shared by `SessionPage.vue` and `ReplayPage.vue`. Its slots cover the renderer overlay and status, the beside-log position, and below-stage content; its layout switches between portrait and landscape using the renderer aspect ratio. The pages keep their transports separate: the live page still owns sockets and commands, while the replay page still owns its immutable state array and playback transport.
+
+Live and replay attribution use the pure `unknown`, `masked`, or `visible` policy from `lib/anonymity.ts`. Incomplete identity, season, or recording facts remain `unknown`, and presentation treats that state as masked until all facts establish visibility. Anonymous-number requests begin only after the policy reaches `masked`, so unresolved live state cannot briefly reveal canonical submission ownership or trigger a numbering read before masking is known.
 
 ## Submissions and watch runs
 
