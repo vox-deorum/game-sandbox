@@ -27,7 +27,7 @@ The repository layout contains no standalone LLM service. Delete the reserved `g
 
 ## Model aliases
 
-`LLM_MODEL_LARGE`, `LLM_MODEL_MEDIUM`, and `LLM_MODEL_SMALL` map public aliases to upstream model names. A grant carries the allowed alias subset. The proxy validates the requested alias, substitutes the configured upstream name before forwarding, and rewrites the response model back to the alias before returning or recording it.
+`LLM_MODEL_LARGE`, `LLM_MODEL_MEDIUM`, and `LLM_MODEL_SMALL` map public aliases to upstream model names. A grant carries its resolved alias-to-upstream-model map. The proxy validates the requested alias against that map, substitutes its upstream name before forwarding, and rewrites the response model back to the alias before returning or recording it. Live and development grant construction uses the current effective map, while workflow grant construction uses the map frozen in `season_runs.llm_policy_snapshot`.
 
 Provider model names and the upstream credential never reach agents, telemetry, development ledgers, or public APIs.
 
@@ -36,26 +36,37 @@ Provider model names and the upstream credential never reach agents, telemetry, 
 `KeyRegistry` is an in-process registry injected into the proxy, orchestrator, and workflow runner:
 
 ```ts
-type OfficialGrant = {
-  kind: 'official'
-  scopeId: string
+type LlmAccountingScope = {
+  key: string
+  limits: LlmLimits
+  readCommittedUsage: () => LlmUsage
+}
+
+type LlmGrant = {
+  kind: 'official' | 'development'
+  models: Partial<Record<ModelAlias, string>>
+  accountingScopes: LlmAccountingScope[]
+  recordSink: LlmRecordSink
+}
+
+type OfficialKeyEntry = {
   sessionId: string
-  slot: string
-  subjectId?: string
-  runId?: string
-  models: ModelAlias[]
-  sessionLimits: LlmLimits
-  runLimits?: LlmLimits
+  grant: LlmGrant
+  tick: OfficialTickMarkerRef
 }
 ```
 
-`issueOfficial(grant)` returns `sk-sandbox-` plus 32 random hexadecimal bytes. `authenticate(bearer)` returns the grant or null. `revokeSession(sessionId)` is idempotent and invalidates every key for that session.
+Official identities do not become fields the shared handler interprets. Grant construction captures session, slot, telemetry scope, and optional run subject in the committed-usage readers and `recordSink`. It also creates one mutable `OfficialTickMarkerRef`; the official record sink captures that reference and reads its current setup-or-tick value when it builds a telemetry row. `KeyRegistry` stores the same reference in an `OfficialKeyEntry` so lifecycle revocation and marker updates remain official-key concerns.
 
-Official keys remain in memory because a backend restart reaps the containers that hold them. Successful usage is durable in the grant's SQLite scope. Temporary reservations remain in memory and are released when their request finishes or the backend restarts.
+`issueOfficial(sessionId, grant, tick)` returns `sk-sandbox-` plus 32 random hexadecimal bytes. `authenticateGrant(bearer)` returns the entry's generic grant for the chat-completion handler, while `authenticateOfficial(bearer)` returns the full official entry for `/internal/tick` and rejects development keys. `revokeSession(sessionId)` is idempotent and invalidates every official entry for that session.
+
+Official keys remain in memory because a backend restart reaps the containers that hold them. Successful usage is durable in the grant's SQLite scope. Temporary reservations and conservative debt are process-lifetime state. Reservations are released when their request finishes or the backend restarts, and debt disappears only when that backend process exits.
 
 ## Successful-call admission and metering
 
-`LlmLimits` contains token, call, and logical-requests-per-minute limits. Call and token accounting queries committed successful usage from the scope's SQLite file and combines it with temporary in-memory reservations. Rate accounting uses an in-memory sliding window keyed by the same session and optional run subject scopes.
+`LlmLimits` contains token, call, and logical-requests-per-minute limits. The shared handler does not encode official session or run identities. Each authenticated grant supplies one or more accounting scopes, and each scope contains a stable accounting key, its limits, and a committed-usage reader. The grant separately supplies the one durable record sink used after success. Official grants construct accounting keys for the slot within a session and, when applicable, the submission within a run. Step 2 constructs one development key for the participant within the season.
+
+Call and token accounting combines committed successful usage from each scope's SQLite store with temporary in-memory reservations and conservative charged debt. Rate accounting uses an in-memory sliding window for each accounting key. Reservations, rate events, circuit breakers, recovery probes, and debt are all keyed by the same generic accounting key, so official and development grants use the same admission algorithm without sharing allowance.
 
 Admission runs in this order:
 
@@ -72,7 +83,9 @@ Each admitted logical inbound request appends one event to every applicable in-m
 
 An eventual success first validates the upstream usage object. Valid counts commit with `usage_estimated = 0`. When usage is absent or malformed, the proxy estimates input tokens from the accepted request and output tokens from the successful completion with the configured tiktoken encoding, preserves an independently exposed non-negative reasoning-token count or uses zero, and commits with `usage_estimated = 1`. Both cases consume one successful call and their committed token counts in full. Subsequent requests see the committed total, and the successful response is never discarded merely because actual usage crosses the reservation through tokenizer variance. A local rejection, non-retryable upstream response, timeout sequence, connection-failure sequence, or exhausted retry sequence releases its call and token reservation and commits nothing. Budget rejection returns `400 budget_exceeded`.
 
-The telemetry transaction must commit before the proxy returns a successful completion. If usage validation or estimation succeeds but the SQLite transaction fails, the proxy keeps the conservative call and token reservation as in-memory charged debt, trips a circuit breaker for every accounting scope that request used, and returns `503 meter_unavailable` instead of the completion. Requests rejected by that breaker never reach the upstream. The breaker remains open until storage recovery has been verified and the operator or recovery path explicitly resets it; a backend restart reopens a scope only after its telemetry file migrates and passes a write-health check. The failure is logged without request bodies or secrets. This exceptional path may lack a telemetry row, but it cannot be retried into repeated unaccounted provider calls.
+The telemetry transaction must commit before the proxy returns a successful completion. If usage validation or estimation succeeds but the SQLite transaction fails, the proxy moves the conservative call and token reservation into in-memory charged debt, trips a circuit breaker for every accounting scope that request used, and returns `503 meter_unavailable` instead of the completion. Debt is no longer an active reservation, so teardown can settle, but it remains included in subsequent usage calculations. Requests rejected by an open breaker never reach the upstream.
+
+An open breaker starts one single-flight recovery loop after `LLM_METER_RECOVERY_INTERVAL_MS`. The affected store's health probe opens the same SQLite file, begins a write transaction, upserts and reads back a singleton row in a small `meter_health` table, and commits. Failure leaves the breaker open and schedules the next bounded-interval probe. Success closes the breaker for new admission but does not release or turn the conservative debt into spendable allowance. On startup, each configured store completes schema initialization and this write-health transaction before its accounting scope can admit requests. The failure and recovery transitions are logged without request bodies or secrets. This exceptional path may lack a telemetry row, but the open breaker prevents repeated unaccounted calls within the running backend process. A trusted operator restart clears process-lifetime debt, as it clears reservations and rate windows, only after startup has verified that the store is writable again.
 
 ## Upstream retries and errors
 
@@ -112,15 +125,24 @@ CREATE TABLE calls (
 CREATE INDEX calls_session_slot ON calls (session_id, slot);
 CREATE INDEX calls_subject ON calls (subject_id);
 CREATE INDEX calls_created_at ON calls (created_at);
+
+CREATE TABLE meter_health (
+  id         INTEGER PRIMARY KEY CHECK (id = 1),
+  checked_at TEXT NOT NULL
+);
 ```
 
 The proxy stores the full accepted request and full successful completion. Rows contain no failure status or error field. `usage_estimated` is 0 for validated upstream usage and 1 for tokenizer fallback, and row codecs and aggregates preserve that distinction. The successful insert is a transaction that commits before the proxy returns the response. Session limits query by `(session_id, slot)`. Run limits query by `subject_id` within the run-scoped file. Rate windows remain in memory and never infer admitted requests from successful telemetry rows.
 
 Scope IDs are validated opaque identifiers and never interpolated into SQL. `PRAGMA user_version` versions the file schema, and startup applies explicit migrations before queries run. The store manages file creation, prepared statements, connection reuse, and closure. It closes a cached handle before retention deletes the file. Step 5 connects file retention to the session, run, and recording lifecycle and removes orphan files during startup.
 
-`POST /internal/tick` updates the latest marker on the authenticated official grant. `{"phase":"setup"}` sets a null tick. `{"tick":N}` sets the active tick. One grant cannot update another grant's marker.
+`POST /internal/tick` uses `authenticateOfficial` and updates the latest value through that entry's `OfficialTickMarkerRef`. `{"phase":"setup"}` sets a null tick. `{"tick":N}` sets the active tick. The record sink for the same entry observes that reference, and one key cannot update another key's marker.
 
 Step 3 sends the markers. Step 4 queries execution-scope SQLite for game-result aggregation. Step 5 resolves recordings to their session or run scope and serves matching rows through the recording API.
+
+## Runtime dependencies
+
+Add the official `openai` Node client and the `tiktoken` tokenizer as runtime dependencies of `@game-sandbox/backend` with `npm install --workspace @game-sandbox/backend openai tiktoken`. This updates `backend/package.json` and the root `package-lock.json`; do not add a backend-local lockfile. The client handles OpenAI-compatible request and response types, while all retry policy remains in `UpstreamCaller`.
 
 ## Configuration
 
@@ -137,6 +159,7 @@ Add these deployment settings in `backend/src/config.ts`:
 | `LLM_TIKTOKEN_ENCODING` | Encoding used for admission and fallback token estimates |
 | `LLM_DEFAULT_MAX_OUTPUT_TOKENS` | Enforced output maximum when a request supplies neither supported maximum field |
 | `LLM_MAX_OUTPUT_TOKENS` | Hard ceiling for every explicit or default output maximum |
+| `LLM_METER_RECOVERY_INTERVAL_MS` | Bounded interval between single-flight write-health probes for an open accounting breaker |
 | `LLM_SESSION_TOKEN_BUDGET`, `LLM_SESSION_CALL_BUDGET`, `LLM_SESSION_RATE_LIMIT_RPM` | Official per-slot session defaults |
 | `LLM_RUN_TOKEN_BUDGET`, `LLM_RUN_CALL_BUDGET`, `LLM_RUN_RATE_LIMIT_RPM` | Official per-submission run defaults |
 
@@ -157,11 +180,13 @@ Docker-free backend tests use fake timers and a stub OpenAI-compatible upstream:
 - A non-retryable upstream 4xx makes one attempt, returns immediately, releases its reservation, and records nothing.
 - Exhausted connection, timeout, 408, 409, 429, and 5xx sequences make the configured number of attempts, return the final error, release the reservation, and record nothing.
 - Concurrent reservations prevent the successful-call and token limits from being crossed by simultaneous requests.
+- Generic accounting keys keep two session slots, two run subjects, and development-shaped `(participant, season)` fixtures in independent sliding windows, reservation totals, debt, and breaker state.
 - Tick markers are isolated per grant and stamp setup calls with null and acted calls with their current tick.
 - Session, run-subject, and model aggregation queries return exact sums from successful rows and exact counts of estimated rows.
 - File creation sets the current `user_version`, migrations advance older fixtures, and retention closes cached handles before deletion.
 - Full request and completion bodies round-trip through the SQLite row codec.
-- A forced telemetry transaction failure retains the conservative in-memory charge, returns `meter_unavailable`, opens every affected scope breaker, and prevents a repeated request from reaching the upstream until an explicit successful recovery reset.
+- A forced telemetry transaction failure converts the reservation to conservative in-memory debt, returns `meter_unavailable`, opens every affected scope breaker, and prevents repeated requests from reaching the upstream. Fake-timer tests prove that probes are single-flight, failed probes keep the breaker open, a committed `meter_health` write closes it automatically, and the original debt still reduces the remaining allowance after recovery.
+- Startup migration and write-health failure prevent admission for the affected accounting scope until the same probe succeeds.
 
 ## Done when
 
@@ -171,5 +196,6 @@ Docker-free backend tests use fake timers and a stub OpenAI-compatible upstream:
 - Official grants enforce model, session, run, and rate boundaries and can be revoked by session.
 - Explicit and default output maxima are normalized, hard-capped, forwarded, and included in admission so they cannot bypass remaining token allowance.
 - SQLite rows contain full successful request and completion bodies and authoritative session, slot, subject, tick, model, token, estimated-usage, and latency fields.
-- Missing or malformed upstream usage is estimated with tiktoken and surfaced as estimated, while a telemetry commit failure retains a conservative charge and opens a scope circuit breaker before returning an error.
+- Missing or malformed upstream usage is estimated with tiktoken and surfaced as estimated, while a telemetry commit failure retains a conservative charge and opens a scope circuit breaker before returning an error. A successful write-health probe restores admission without forgiving that charge.
+- The backend manifest and root lockfile pin the OpenAI client and tiktoken runtime dependencies used by the implementation.
 - Docker-free tests cover every retry class, reservation release, compatible error shape, and successful-only accounting rule.

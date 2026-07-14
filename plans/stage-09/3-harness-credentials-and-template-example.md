@@ -52,7 +52,7 @@ Time spent in the backend proxy, including upstream attempts and exponential wai
 
 ## Template command and environment file
 
-`templates/base/.env.example` contains:
+Update the existing `templates/base/.env.example` to contain:
 
 ```dotenv
 OPENAI_BASE_URL=
@@ -62,7 +62,9 @@ OPENAI_MODEL=small
 
 Students copy the `base_url` and `api_key` returned by `POST /api/seasons/:seasonId/llm-development-key`. `OPENAI_MODEL` selects an alias allowed by that season.
 
-`templates/base/sandbox/llm_example.py` makes one non-streaming chat-completion request with the stock Python `openai` client. `python -m sandbox llm` runs it through the existing template command dispatcher and reports model alias and successful token usage without printing the key.
+Update the existing `templates/base/sandbox/llm_example.py` to use `OPENAI_MODEL`, make one non-streaming chat-completion request with the stock Python `openai` client, and report the model alias and successful token usage without printing the key. Replace its documented direct-module invocation, `python -m sandbox.llm_example`, with `python -m sandbox llm`.
+
+Extend the existing dispatcher in `templates/base/sandbox/__main__.py` with an `llm` command that invokes `sandbox.llm_example`. Give it a dedicated dependency probe, `import openai, dotenv`, so a runtime that satisfies the game dependencies but lacks the LLM client is bootstrapped before the example runs. Change `_runtime_python` to return an existing `.venv` interpreter only when it passes the selected command's probe; otherwise `setup()` repairs that environment from the pinned requirements before dispatch. Add `llm` to the module overview, command help, dispatcher table, and command set. Update the existing template READMEs and composed outputs to show the dispatcher command instead of the direct module command.
 
 ## Hearts oracle example
 
@@ -105,7 +107,8 @@ Docker-free Python tests cover:
 - Backend retry time inside an agent call contributes to decision, step, and episode timing.
 - The oracle follows a valid completion and uses its legal fallback for malformed output, `budget_exceeded`, a non-retryable API error, and an exhausted-retry error.
 - A retryable upstream failure followed by backend success reaches the oracle as one successful response.
-- `python -m sandbox llm`, the oracle tests, and the `.env.example` contract pass through template composition.
+- Dispatcher help lists `llm`, dispatches `python -m sandbox llm` to `sandbox.llm_example`, forwards extra arguments, and selects the LLM-specific dependency probe. Both a current interpreter and a pre-existing `.venv` with game dependencies but without `openai` or `dotenv` take the repair path before dispatch.
+- The updated `llm_example.py`, `.env.example`, dispatcher command, oracle tests, and READMEs pass through template composition, with no generated documentation retaining `python -m sandbox.llm_example`.
 - The non-LLM harness path preserves the deterministic recording fixtures.
 
 ## Done when

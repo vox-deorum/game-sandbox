@@ -22,11 +22,13 @@ Every returned row includes these public fields:
 - Whether the token counts are estimated.
 - End-to-end latency, including backend retries.
 
-The response includes `request` and `completion` for a row only when the caller is an operator or owns the submission controlling that row's slot. Ownership is resolved from the recording header's player attribution and authoritative submission ownership. In a multi-submission recording, an owner receives bodies for their own slots and metadata for the other slots.
+The response includes `request` and `completion` for a row only when the caller is an operator or owns the submission controlling that row's slot. Owner authorization requires both the recording header's player attribution and a surviving authoritative submission row owned by the authenticated user. Recorded attribution alone does not prove current ownership. In a multi-submission recording, an owner receives bodies for their own slots and metadata for the other slots.
+
+Deleting a submission does not delete a retained recording or its referenced telemetry. After the authoritative submission row is gone, its former owner receives only public metadata for that slot because ownership can no longer be proven. Operators retain body access. The same rule applies when the recording header still contains the deleted submission ID or historical user attribution.
 
 Identity comes from the authenticated session. Query parameters and request bodies never supply caller identity. Blind-season attribution continues to use the existing recording-view rules.
 
-Recording retention reads `llm_scope_id` before deleting a recording row. It deletes the scope file when no surviving recording row references that scope. A live scope normally has one recording. A run scope remains while any recording from that run survives. Cached SQLite handles close before unlinking a file, and deletion begins only after the teardown barrier for the live session or every session contributing to the run scope has blocked admission, aborted or drained active requests, and awaited reservation finalizers.
+Recording retention reads `llm_scope_id` before deleting a recording row. It deletes the scope file when no surviving recording row references that scope. Submission deletion does not participate in this retention decision: a surviving recording keeps its referenced telemetry even if one or more attributed submission rows have been deleted. A live scope normally has one recording. A run scope remains while any recording from that run survives. Cached SQLite handles close before unlinking a file, and deletion begins only after the teardown barrier for the live session or every session contributing to the run scope has blocked admission, aborted or drained active requests, and awaited reservation finalizers.
 
 After the session teardown barrier resolves, live-session teardown may aggregate final usage and delete an empty scope file or a scope file whose session produced no recording. A terminal workflow run awaits the same barrier for every contributing session before final aggregation and may then delete its scope file when the run produced no retained recording. Files referenced by retained recordings follow the recording-deletion rules above.
 
@@ -42,9 +44,9 @@ The panel renders no failure status because unsuccessful logical requests have n
 
 ## Submission-owner debug view
 
-`AgentProfilePage.vue` lists recordings with successful LLM calls under each submission history entry. Opening a recording shows that submission's calls grouped by tick, with expandable full request messages and completion bodies plus model, token, latency, and estimated-usage details.
+`AgentProfilePage.vue` lists recordings with successful LLM calls under each surviving submission history entry. Opening a recording shows that submission's calls grouped by tick, with expandable full request messages and completion bodies plus model, token, latency, and estimated-usage details. If the submission is later deleted, the former owner loses this body access even though the recording and its public telemetry metadata remain available through their normal surfaces.
 
-Operators receive the same body fields on every agent profile. A non-owner receives no prompt or completion bytes from the API. Server-side response filtering is the authorization boundary, and client-side display conditions control presentation only.
+Operators receive the same body fields wherever they inspect the recording, including after an attributed submission is deleted. A non-owner receives no prompt or completion bytes from the API. Server-side response filtering is the authorization boundary, and client-side display conditions control presentation only.
 
 ## Automated-board model usage
 
@@ -85,6 +87,7 @@ No new visual primitive or variant is required. If implementation introduces one
 Backend tests cover:
 
 - Anonymous, non-owner, one-slot owner, multi-slot owner, and operator responses from the recording endpoint.
+- Deleting an attributed submission preserving the recording and referenced telemetry file, masking request and completion bodies from the former owner, preserving public metadata, and retaining operator body access.
 - SQLite row decoding, insertion ordering, null setup ticks, estimated-usage flags, durable recording-association lookup, and 404 behavior.
 - Telemetry lookup continuing after producing session or workflow rows are pruned.
 - Deleting a live recording removing its scope file, deleting one run recording preserving the shared file, and deleting the last run recording removing it only after the teardown barrier settles active requests and reservations.
@@ -108,7 +111,7 @@ Playwright coverage in Step 6 ties the surfaces to the full backend.
 ## Done when
 
 - Public replay responses expose only successful-call model, token, estimate, tick, slot, and latency metadata.
-- Submission owners and operators can inspect full successful official prompts and completions, while every other caller receives no bodies.
+- Submission owners can inspect full successful official prompts and completions while an authoritative owned submission row survives. Operators retain access, while every other caller, including a former owner after submission deletion, receives no bodies.
 - Automated boards report successful calls, tokens, estimate status, and model-call latency by alias without changing rank.
 - Participants can create or rotate a season key, see their remaining development allowance, and inspect only their own successful development rows with estimates identified.
 - Operators can inspect every participant's development totals and rows for a season with estimates identified.

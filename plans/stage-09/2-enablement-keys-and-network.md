@@ -18,11 +18,34 @@ The hands-on check obtains a student key for one season, makes a successful loca
 2. The environment sets `llm: true`.
 3. The season sets `llm.enabled: true`.
 
-When `llm.models` is absent, the season inherits every alias configured by the deployment. When it is present, it must be a non-empty subset of those aliases. Empty lists, duplicate aliases, and aliases unavailable on the deployment are rejected. Live sessions resolve the play-open season. Workflow matches resolve the run's frozen `config_snapshot`. Development keys resolve their named season on every request. Submission, play, and release gates do not change development-key validity; the season's LLM configuration is the authority.
+When `llm.models` is absent, the season inherits every alias configured by the deployment. When it is present, it must be a non-empty subset of those aliases. Empty lists, duplicate aliases, and aliases unavailable on the deployment are rejected. Live sessions resolve the current play-open season when they start. Development keys resolve their named season against the current deployment and season configuration on every request. Submission, play, and release gates do not change development-key validity; the season's LLM configuration is the authority.
+
+Leaderboard-run creation resolves the complete official LLM policy once and stores its JSON encoding in a dedicated non-null `season_runs.llm_policy_snapshot` text column. This column is separate from the existing strict season `config_snapshot` and is validated on write and read:
+
+```ts
+type ResolvedOfficialLlmPolicy = {
+  enabled: boolean
+  models: Partial<Record<'large' | 'medium' | 'small', string>>
+  session: {
+    token_budget: number
+    call_budget: number
+    rate_limit_rpm: number
+  }
+  run: {
+    token_budget: number
+    call_budget: number
+    rate_limit_rpm: number
+  }
+}
+```
+
+The model values are upstream model names. Even a disabled run stores the object, with `enabled: false` and an empty model map, so workflow code never needs a live-configuration fallback. The stored policy contains no upstream credential. Every workflow match, grant, and admission check in that run reads this policy without consulting current alias mappings, deployment limit defaults, or season LLM values. A deployment may still make the upstream operationally unavailable, but configuration changes after run creation cannot change which models or limits the run uses.
 
 Persist the resolved official flag on the session row as `llm_enabled`. Session payloads and recording views read that stored value after execution.
 
-Add nullable `llm_scope_id` and `llm_session_id` columns to the backend recordings table and its creation input. A live LLM recording stores its session ID in both columns. Recordings without official LLM telemetry store null, and existing rows migrate as null. These durable fields remain available when session or workflow rows are pruned.
+Add nullable `llm_scope_id` and `llm_session_id` columns to the backend recordings table and its creation input. A live LLM recording stores its session ID in both columns. Recordings without official LLM telemetry store null. These durable fields remain available when session or workflow rows are pruned.
+
+Stage 9 updates the application's flat initial SQLite schema directly for the run-policy column, these recording columns, and the development-key table below. The application has not been deployed with persistent production data, so it adds no forward application-database migration. Existing local application databases are recreated when this schema lands. The separate official telemetry and development-ledger files keep their own `PRAGMA user_version` handling as described in their storage plans.
 
 ## Season schema and admin editor
 
@@ -48,7 +71,7 @@ llm?: {
 }
 ```
 
-Unset limits inherit deployment defaults, and an unset model list inherits every configured deployment alias. Official and development blocks resolve independently. Admin season updates reject unknown fields, non-positive limits, empty model lists, duplicate aliases, and aliases unavailable on the deployment.
+Unset limits inherit deployment defaults, and an unset model list inherits every configured deployment alias. Official and development blocks resolve independently. Admin season updates reject unknown fields, non-positive limits, empty model lists, duplicate aliases, and aliases unavailable on the deployment. Run creation persists the resulting official model mapping and limits, while live and development resolution continue to use the current effective values.
 
 `SeasonConfigEditor.vue` exposes enablement, allowed aliases, official session and run limits, and development limits as separate field groups built from existing UI primitives. The styleguide and admin-editor unit tests cover every new control and validation state.
 
@@ -56,7 +79,7 @@ Add deployment defaults `LLM_DEVELOPMENT_TOKEN_BUDGET`, `LLM_DEVELOPMENT_CALL_BU
 
 ## Official slot keys and launch config
 
-The orchestrator and workflow runner issue one official key for every agent slot when effective LLM access is enabled. Human slots receive no key. Each grant includes telemetry scope, session, slot, allowed models, resolved session limits, and optional run subject and limits. Live grants use the session ID as their scope. Workflow grants use the run ID.
+The orchestrator and workflow runner issue one official key for every agent slot when effective LLM access is enabled. Human slots receive no key. They construct each generic `LlmGrant` with a resolved alias-to-upstream-model map, its accounting scopes, and one record sink. For live grants, the session-and-slot reader and sink capture the live session ID as the telemetry scope. For workflow grants, the readers and sink capture the run ID as the telemetry scope, the workflow game ID as the session filter, and the optional submission or built-in subject. The registry separately associates every official key with its session for revocation and tick markers.
 
 `backend/src/session/launch-config.ts` emits:
 
@@ -134,11 +157,22 @@ CREATE TABLE calls (
   created_at       TEXT NOT NULL
 );
 CREATE INDEX calls_user ON calls (user_id, id);
+
+CREATE TABLE meter_health (
+  id         INTEGER PRIMARY KEY CHECK (id = 1),
+  checked_at TEXT NOT NULL
+);
 ```
 
 The development store uses `PRAGMA user_version`, explicit migrations, prepared statements, and the same validated scope-path rules as official telemetry.
 
-The development meter sums successful rows for `(seasonId, userId)` and combines them with temporary in-flight reservations. A successful logical request writes one full row and consumes one call using upstream usage when it is valid or the Step 1 fallback estimate otherwise. `usage_estimated` records which source produced the stored token counts so read APIs and user interfaces can identify estimates. Every unsuccessful path releases its reservation and leaves the ledger unchanged.
+The development meter uses `(seasonId, userId)` as one accounting scope for call, token, and rate limits. It sums successful rows for that pair and combines them with temporary in-flight call and token reservations. Its in-memory sliding rate window is keyed by the same pair. Key rotation does not create a new meter or clear any window.
+
+After authentication, current effective-configuration resolution, request validation, breaker checks, and successful call-and-token reservation, admission appends exactly one event to that pair's rate window before the first upstream attempt. The event remains for the full window whether the request succeeds, receives a non-retryable upstream error, or exhausts its retries. Backend retries are attempts within the same logical request and append no events. Requests rejected locally before upstream admission, including rate, budget, and open-breaker rejections, append no event.
+
+A successful logical request writes one full row and consumes one call using upstream usage when it is valid or the Step 1 fallback estimate otherwise. `usage_estimated` records which source produced the stored token counts so read APIs and user interfaces can identify estimates. Every unsuccessful upstream path releases its call and token reservation and leaves the ledger unchanged, while its admitted-request rate event remains until the window expires.
+
+The ledger transaction commits before the proxy returns a successful development completion. If that commit fails after the upstream succeeds, the meter moves the conservative call and token reservation into in-memory charged debt for `(seasonId, userId)`, opens that pair's circuit breaker, and returns `503 meter_unavailable` instead of the completion. Requests rejected by the breaker never reach the upstream. The generic single-flight recovery loop from Step 1 probes the season ledger at the configured interval. A committed `meter_health` transaction closes that pair's breaker automatically without discarding debt retained by the running process; a failed probe leaves it open and schedules the next attempt. Conservative debt is process-lifetime state, so a trusted operator restart clears it along with reservations and rate windows. After a restart, a pair can admit requests only after the season ledger opens, applies its `user_version` changes, and passes the same write-health transaction. Recovery failures are logged without bodies or credentials.
 
 Official telemetry files, game results, placements, and leaderboards never read or write the development ledger. Development requests never use execution scope IDs, recording IDs, session IDs, slots, ticks, or run subjects.
 
@@ -158,15 +192,17 @@ Docker-free backend and frontend tests cover:
 
 - The strict season schema, inheritance of every configured alias when models are absent, rejection of empty, duplicate, and unavailable model lists, independent fallback of official and development limits, and admin-editor round trips.
 - The effective configuration matrix across deployment, environment, and season inputs.
-- Live sessions using the play-open season and workflow matches using the frozen run configuration.
+- Live sessions using the current play-open season, development calls using current effective configuration, and workflow matches using only the fully resolved official policy stored when their run was created.
 - One key per agent slot, no key for human slots, live grants using the session scope, workflow grants using the run scope, the exact launch-config shape, and no LLM block for a disabled session.
 - Admission closure, active-request abort or drain, and reservation finalization after every launch failure and teardown path, with no write or aggregate query racing the completed barrier.
 - Development-key authentication through one indexed key ID lookup and constant-time secret verification, one-time plaintext return, hash persistence, rotation of both identifier and secret, backend restart, account status checks, and season scoping.
-- Independent development totals for two users in one season and one user in two seasons.
+- Independent development call, token, and sliding-rate scopes for two users in one season and one user in two seasons, including key rotation preserving every counter and rate event.
 - Immediate application of changed season models and limits to an existing development key.
+- One admitted development request adding one rate event across success, non-retryable failure, and exhausted retries, with backend retry attempts adding none and pre-admission rejections adding none.
 - Successful development calls writing one row with the correct `usage_estimated` value and every rejection or terminal upstream failure writing none.
+- A development-ledger transaction failure retaining conservative debt, returning `meter_unavailable`, and blocking that participant and season until the automatic recovery loop commits a successful write-health check, without blocking another participant or season.
 - Complete isolation between official meters and development meters.
-- Recording migrations preserve null associations for existing rows, and live LLM recording registration stores the session scope and session filter IDs.
+- A fresh application database creates the development-key table and nullable recording associations from the flat initial schema, and live LLM recording registration stores the session scope and session filter IDs.
 
 Docker integration covers:
 
@@ -177,9 +213,10 @@ Docker integration covers:
 
 ## Done when
 
-- Deployment, environment, and season inputs resolve one effective model and limit configuration for both launch paths.
+- Deployment, environment, and season inputs resolve current live and development policy, while run creation freezes a complete official model mapping and limit policy used by every workflow match.
 - Official sessions receive scoped slot keys, an explicit OpenAI base URL and tick URL, and a single-destination internal network. Every teardown path blocks admission and settles active work before aggregation or deletion.
 - An active participant can rotate one indexed key ID and secret for a season and call the public backend proxy with the returned base URL and credential.
-- Development usage is metered per participant and season under season-specific limits and remains isolated from every official artifact.
+- Development call, token, and admitted-request rate usage is metered per participant and season under season-specific limits and remains isolated from every official artifact.
 - Successful development calls create full private ledger rows that identify estimated token usage. Unsuccessful calls create no row and consume no call or token budget.
+- A development-ledger commit failure returns no completion and opens a pair-scoped circuit breaker until verified storage recovery closes it automatically.
 - Docker-free and Docker-gated tests prove the authorization, isolation, lifecycle, and network contracts.
