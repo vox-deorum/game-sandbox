@@ -246,7 +246,7 @@ describe('ReplaysPage', () => {
     await renderPage()
 
     const row = (await screen.findByRole('link', { name: 'blind' })).closest('tr') as HTMLElement
-    const playersCell = within(row).getByText(/Submitted agent 1/)
+    const playersCell = within(row).getByText(/Agent 1/)
     expect(playersCell).toBeInTheDocument()
     expect(within(row).queryByText('maya-fledgling')).toBeNull()
     // The masked row's identity is hidden outright, so the cell carries no id tooltip either.

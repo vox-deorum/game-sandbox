@@ -74,7 +74,7 @@ const decisions = ref<DecisionEntry[]>([])
 const chatLog = shallowRef<ChatEntry[]>([])
 const seasonPlayable = ref<boolean | null>(null)
 // Submission id → season-wide anonymous number, so the blind attribution line reads the same
-// "Submitted agent N" the watch picker and rating panel show for the same agent.
+// "Agent N" the watch picker and rating panel show for the same agent.
 const anonymousNumbers = ref<Record<string, number>>({})
 
 const hostEl = ref<HTMLElement | null>(null)

@@ -72,6 +72,52 @@ describe('SeatAssignmentDialog', () => {
     })
   })
 
+  it('uses compact masked labels for regular viewers', () => {
+    render(SeatAssignmentDialog, {
+      props: { meta: heartsMeta(), agents: AGENTS, mode: 'watch' },
+    })
+
+    const firstSeat = seat('Seat 1')
+    expect(within(firstSeat).getByRole('option', { name: 'Agent 1' })).toBeInTheDocument()
+    expect(within(firstSeat).getByRole('option', { name: 'Agent 2' })).toBeInTheDocument()
+  })
+
+  it('shows owner display names for operator-owned submissions and falls back to the stable id', () => {
+    const operatorAgents = [
+      agent({
+        submission_id: 'sub1',
+        owner_id: 'opaque-user-1',
+        owner_name: 'Eve Adler',
+        rating_status: 'own',
+        source_kind: 'git',
+        commit_sha: 'abcdef1234567890',
+      }),
+      agent({
+        submission_id: 'sub2',
+        anonymous_number: 2,
+        owner_id: 'opaque-user-2',
+        source_kind: 'local',
+      }),
+    ]
+    render(SeatAssignmentDialog, {
+      props: {
+        meta: heartsMeta(),
+        agents: operatorAgents,
+        mode: 'watch',
+        isOperator: true,
+      },
+    })
+
+    const firstSeat = seat('Seat 1')
+    expect(
+      within(firstSeat).getByRole('option', { name: 'Eve Adler · abcdef1234' }),
+    ).toBeInTheDocument()
+    expect(
+      within(firstSeat).getByRole('option', { name: 'opaque-user-2 · local folder' }),
+    ).toBeInTheDocument()
+    expect(within(firstSeat).queryByText('opaque-user-1')).toBeNull()
+  })
+
   it('watch: changing a preselected assignment before Start is reflected in the payload', async () => {
     const { emitted } = render(SeatAssignmentDialog, {
       props: {

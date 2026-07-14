@@ -42,7 +42,7 @@ describe('ChatPanel', () => {
     expect(screen.getByText('on it')).toBeInTheDocument()
 
     // The blind viewer sees the submitted agent's season number, never its owner's label.
-    expect(screen.getByText('Submitted agent 4')).toBeInTheDocument()
+    expect(screen.getByText('Agent 4')).toBeInTheDocument()
     expect(screen.queryByText("maya's agent")).toBeNull()
   })
 

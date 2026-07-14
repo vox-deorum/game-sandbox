@@ -113,7 +113,7 @@ describe('buildStandings (cross-environment game-over leaderboard)', () => {
       viewerId: 'viewer',
       anonymousNumbers: { 'sub-maya': 1 },
     })
-    expect(blind.map((s) => s.label)).toEqual(['you', 'Submitted agent 1'])
+    expect(blind.map((s) => s.label)).toEqual(['you', 'Agent 1'])
 
     // A different (non-owning) viewer sees the human seat masked to the bare neutral label too: public
     // leaderboard payloads already pair a submitted agent's user_id with its user_name, so an opaque id
@@ -123,7 +123,7 @@ describe('buildStandings (cross-environment game-over leaderboard)', () => {
       viewerId: 'someone-else',
       anonymousNumbers: { 'sub-maya': 1 },
     })
-    expect(blindOther.map((s) => s.label)).toEqual(['Human', 'Submitted agent 1'])
+    expect(blindOther.map((s) => s.label)).toEqual(['Human', 'Agent 1'])
   })
 
   it('fails closed the "own row" exemption for an anonymous viewer against a header entry with no user id', () => {
@@ -142,6 +142,6 @@ describe('buildStandings (cross-environment game-over leaderboard)', () => {
     }
 
     const blind = buildStandings(state, header(players), { blind: true, viewerId: undefined })
-    expect(blind.map((s) => s.label)).toEqual(['Human', 'Submitted agent'])
+    expect(blind.map((s) => s.label)).toEqual(['Human', 'Agent'])
   })
 })

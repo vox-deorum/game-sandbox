@@ -117,11 +117,11 @@ function sourceLabel(agent: WatchAgentSummary): string {
 
 /** Name one submitted agent for the dropdown: own, operator owner/source, or anonymous number. */
 function agentOptionLabel(agent: WatchAgentSummary): string {
-  if (agent.rating_status === 'own') {
-    return 'Your agent'
-  }
   if (props.isOperator === true && agent.owner_id !== undefined) {
     return `${agent.owner_name ?? agent.owner_id} · ${sourceLabel(agent)}`
+  }
+  if (agent.rating_status === 'own') {
+    return 'Your agent'
   }
   return maskedSubmissionLabel(agent.anonymous_number)
 }

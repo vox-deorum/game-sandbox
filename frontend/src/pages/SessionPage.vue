@@ -73,7 +73,7 @@ const chatLog = ref<ChatEntry[]>([])
 const seenMessages = new Set<string>()
 const seasonPlayable = ref<boolean | null>(null)
 // Submission id → season-wide anonymous number, so the blind attribution line reads the same
-// "Submitted agent N" the watch picker and post-session rating panel show for the same agent.
+// "Agent N" the watch picker and post-session rating panel show for the same agent.
 const anonymousNumbers = ref<Record<string, number>>({})
 // The recording header carries per-slot attribution (`players`); retained to show who played.
 const header = ref<RecordingHeader | null>(null)

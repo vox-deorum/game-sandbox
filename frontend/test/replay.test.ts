@@ -471,7 +471,7 @@ describe('ReplayPage', () => {
     vi.mocked(watchAgentNumbers).mockResolvedValue({ 'sub-maya': 1 })
     await renderReplay()
 
-    const attribution = await screen.findByText('Submitted agent 1')
+    const attribution = await screen.findByText('Agent 1')
     expect(attribution).not.toHaveAttribute('title')
     expect(screen.queryByText("maya-fledgling's agent")).toBeNull()
   })

@@ -34,7 +34,7 @@ const replays = ref<RecordingSummary[] | null>(null)
 /** season id → public season facts, used for labels and playable-season anonymity. */
 const seasonsById = ref<Map<string, PublicSeasonView>>(new Map())
 // Submission id → season-wide anonymous number for the env's play-open season (the only one a blind
-// replay can belong to), so a masked row reads the same "Submitted agent N" as the rating panel.
+// replay can belong to), so a masked row reads the same "Agent N" as the rating panel.
 const anonymousNumbers = ref<Record<string, number>>({})
 
 /** The sortable columns and the current sort. Default newest-first, matching the backend order. */
