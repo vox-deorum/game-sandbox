@@ -282,7 +282,7 @@ const isFailed = computed(
             class="submit-prompt-input"
             rows="3"
             maxlength="2000"
-            placeholder="e.g. Reward smooth, human-like play over raw score."
+            placeholder="e.g. My agent does not play to win. Give a good grade if you feel it acts funnily!"
             :aria-describedby="describedby"
           />
         </template>
