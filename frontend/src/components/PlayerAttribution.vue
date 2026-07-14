@@ -20,7 +20,7 @@ const props = withDefaults(
     viewerId?: string
     /**
      * Submission id → season-wide anonymous number, so a blind submitted agent reads with the same
-     * "Submitted agent N" label the watch picker and rating panel use for that agent. A missing
+     * "Agent N" label the watch picker and rating panel use for that agent. A missing
      * number degrades to the bare label, matching the rating route's own fallback for an agent no
      * longer in the active list.
      */

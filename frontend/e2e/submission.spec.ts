@@ -71,7 +71,7 @@ test('a submitted agent validates to ready and runs in a watch session', async (
 
   // The watch picker lists the ready agent anonymously and highlights that it still needs a rating.
   await page.goto(`/environments/${ENV_ID}`)
-  const row0 = page.locator('.agent-row').filter({ hasText: 'Submitted agent 1' })
+  const row0 = page.locator('.agent-row').filter({ hasText: 'Agent 1' })
   await expect(row0).toBeVisible()
   await expect(row0.getByText('Not rated')).toBeVisible()
   await expect(row0.getByText(owner)).toHaveCount(0)
@@ -92,7 +92,7 @@ test('a submitted agent validates to ready and runs in a watch session', async (
   const ratingsPanel = page.locator('.ratings-reveal')
   await expect(ratingsPanel).toBeVisible()
   await expect(ratingsPanel).toHaveCSS('transition-property', /grid-template-rows/)
-  await expect(ratingsPanel.getByText('Submitted agent 1')).toBeVisible()
+  await expect(ratingsPanel.getByText('Agent 1')).toBeVisible()
   await expect(ratingsPanel.getByText(OPERATOR_RATING_PROMPT)).toBeVisible()
   await expect(ratingsPanel.getByText(AUTHOR_RATING_PROMPT)).toBeVisible()
   const panelBox = await ratingsPanel.boundingBox()
@@ -106,7 +106,7 @@ test('a submitted agent validates to ready and runs in a watch session', async (
   await expect(ratingsPanel.getByText('Saved ✓')).toBeVisible()
 
   await page.goto(`/environments/${ENV_ID}`)
-  const ratedRow = page.locator('.agent-row').filter({ hasText: 'Submitted agent 1' })
+  const ratedRow = page.locator('.agent-row').filter({ hasText: 'Agent 1' })
   await expect(ratedRow.getByText('Rated')).toBeVisible()
   await expect(ratedRow.getByRole('button', { name: 'Watch again' })).toBeVisible()
 })

@@ -477,7 +477,7 @@ export async function listWatchAgents(envId: string): Promise<WatchAgentSummary[
 /**
  * The env's play-open anonymous numbering as a submission-id → number map. This is the same
  * season-wide sequence the watch picker and the post-session rating panel show, so a blind
- * attribution line can read "Submitted agent N" for the very agent the rater will score. Empty when
+ * attribution line can read "Agent N" for the very agent the rater will score. Empty when
  * the env has no play-open season.
  */
 export async function watchAgentNumbers(envId: string): Promise<Record<string, number>> {
