@@ -62,8 +62,8 @@ test('a submitted agent validates to ready and runs in a watch session', async (
   await page.goto(`/environments/${ENV_ID}/agents/${ownerId}`)
   const currentSeason = page.locator('#current-season-banner')
   await expect(currentSeason.getByText('Current Season')).toBeVisible()
-  await expect(currentSeason.getByText(/Submitted/)).toBeVisible()
   await expect(currentSeason.getByText('ready to compete')).toBeVisible()
+  await expect(currentSeason.getByText('Not submitted')).toHaveCount(0)
 
   // My Agents presents the same current-season state as one whole-card link back to this season.
   await page.goto('/my/agents')

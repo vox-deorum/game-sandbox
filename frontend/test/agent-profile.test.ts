@@ -340,11 +340,10 @@ describe('AgentProfilePage', () => {
       ],
     })
 
-    const banner = await screen.findByText('Week 4')
+    const banner = await screen.findByText('Current Season: Week 4')
     expect(banner).toBeInTheDocument()
-    expect(screen.getByText(/Submitted/)).toBeInTheDocument()
     expect(screen.getAllByText('load check failed').length).toBeGreaterThan(0)
-    expect(screen.queryByText('Not submitted yet.')).toBeNull()
+    expect(screen.queryByText('Not submitted')).toBeNull()
   })
 
   it('keeps the current season banner useful when its metadata read fails', async () => {
@@ -357,8 +356,8 @@ describe('AgentProfilePage', () => {
       submissions: [],
     })
 
-    expect(await screen.findByText('Season iteratio')).toBeInTheDocument()
-    expect(screen.getByText('Not submitted yet.')).toBeInTheDocument()
+    expect(await screen.findByText('Current Season: Season iteratio')).toBeInTheDocument()
+    expect(screen.getByText('Not submitted')).toBeInTheDocument()
   })
 
   it('shows the no-accepting-season state once instead of duplicating a closed-form notice', async () => {
@@ -436,7 +435,7 @@ describe('AgentProfilePage', () => {
       await fireEvent.click(screen.getByRole('button', { name: 'Submit agent' }))
 
       await waitFor(() => expect(within(banner).getByText('pending')).toBeInTheDocument())
-      expect(within(banner).getByText(/Submitted/)).toBeInTheDocument()
+      expect(within(banner).queryByText('Not submitted')).toBeNull()
       expect(scrollIntoView).toHaveBeenCalledTimes(1)
 
       settleValidation(readySubmission)
@@ -517,7 +516,7 @@ describe('AgentProfilePage', () => {
       '/environments/flappy_bird/agents/eve?season=does-not-exist',
     )
 
-    await screen.findByText('Not submitted yet.')
+    await screen.findByText('Not submitted')
     expect(document.activeElement).not.toBe(document.getElementById('current-season-banner'))
   })
 

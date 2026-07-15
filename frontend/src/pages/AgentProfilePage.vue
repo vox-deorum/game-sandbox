@@ -31,6 +31,7 @@ import {
 } from '../api/client.js'
 import SubmissionStageTimeline from '../components/SubmissionStageTimeline.vue'
 import SubmitAgentForm from '../components/SubmitAgentForm.vue'
+import UiBadge from '../components/ui/UiBadge.vue'
 import UiCard from '../components/ui/UiCard.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import UiStatusBadge from '../components/ui/UiStatusBadge.vue'
@@ -348,27 +349,21 @@ const seasonLabel = (label: string | null, id: string): string =>
     </header>
 
     <section v-if="isOwner()" class="agent-section">
-      <h2>Submit an Agent</h2>
-      <UiCard id="current-season-banner" class="current-season-banner" tabindex="-1">
+      <!-- The current-season context rides on the heading as two tags — a season pill and a
+           submission-status badge — rather than a standalone card. Keeps the id/tabindex anchor the
+           season deep-link navigation focuses and scrolls to. -->
+      <div id="current-season-banner" class="submit-head" tabindex="-1">
+        <h2>Submit an Agent</h2>
         <template v-if="profile.submission_season_id !== null">
-          <p class="current-season-kicker">Current Season</p>
-          <div class="current-season-head">
-            <h3>{{ currentSeasonName }}</h3>
-            <UiStatusBadge
-              v-if="currentSeasonSubmission !== null"
-              v-bind="statusBadge(currentSeasonSubmission)"
-            />
-          </div>
-          <p v-if="currentSeasonSubmission !== null" class="current-season-state">
-            Submitted {{ formatDate(currentSeasonSubmission.created_at) }}
-          </p>
-          <p v-else class="current-season-state current-season-missing">Not submitted yet.</p>
+          <UiBadge>Current Season: {{ currentSeasonName }}</UiBadge>
+          <UiStatusBadge
+            v-if="currentSeasonSubmission !== null"
+            v-bind="statusBadge(currentSeasonSubmission)"
+          />
+          <UiStatusBadge v-else label="Not submitted" tone="warning" />
         </template>
-        <template v-else>
-          <p class="current-season-kicker">Current Season</p>
-          <p class="current-season-state">No Season is accepting submissions right now.</p>
-        </template>
-      </UiCard>
+        <span v-else class="submit-none">No Season is accepting submissions right now.</span>
+      </div>
       <!-- Submitting is a participation action (requireActive on the backend), so a pending owner
            sees why it is off rather than an enabled control that 403s. -->
       <template v-if="profile.submission_season_id !== null && canParticipate(me.me)">
@@ -580,39 +575,24 @@ const seasonLabel = (label: string | null, id: string): string =>
   margin-bottom: var(--space-6);
 }
 
-.current-season-banner {
-  margin-bottom: var(--space-4);
-}
-
-.current-season-kicker {
-  margin: 0 0 var(--space-1);
-  color: var(--color-text-muted);
-  font-size: var(--text-xs);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.current-season-head {
+/* The Submit an Agent heading and its current-season tags share one wrapping row. The id/tabindex
+   anchor lives here so the season deep-link navigation can focus and scroll to it. */
+.submit-head {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  justify-content: space-between;
+  flex-wrap: wrap;
+  margin-bottom: var(--space-4);
+  scroll-margin-top: var(--space-5);
 }
 
-.current-season-head h3 {
+.submit-head h2 {
   margin: 0;
-  font-size: var(--text-lg);
 }
 
-.current-season-state {
-  margin: var(--space-2) 0 0;
+.submit-none {
   color: var(--color-text-muted);
   font-size: var(--text-sm);
-}
-
-.current-season-missing {
-  color: var(--color-warning);
-  font-weight: 600;
 }
 
 .season-groups {
