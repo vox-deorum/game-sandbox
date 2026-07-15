@@ -22,7 +22,7 @@
 }
 
 .season-row.status-current {
-  border-left-color: var(--color-accent);
+  border-left-color: var(--color-current);
 }
 
 .season-row-line {

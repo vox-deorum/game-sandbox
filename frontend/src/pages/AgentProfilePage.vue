@@ -222,7 +222,7 @@ const currentSeasonSubmission = computed(() => {
   )
 })
 
-// Public season metadata improves the banner label, but it is owner-only and non-blocking. The short
+// Public season metadata improves the header label, but it is owner-only and non-blocking. The short
 // id fallback renders immediately and remains if this secondary read fails.
 const currentSeasonMetadata = ref<PublicSeasonView | null>(null)
 let seasonMetadataSerial = 0
@@ -240,7 +240,7 @@ watch(
         currentSeasonMetadata.value = seasons.find((season) => season.id === seasonId) ?? null
       }
     } catch {
-      // Metadata is presentation-only. The banner keeps its stable short-id fallback.
+      // Metadata is presentation-only. The header keeps its stable short-id fallback.
     }
   },
   { immediate: true },
@@ -256,7 +256,7 @@ const currentSeasonName = computed(() => {
 
 // My Agents links to a season, not a specific attempt. A query change starts one navigation handling
 // pass; asynchronous identity/profile data may complete that pass, but later profile refreshes must not
-// repeat its focus and scroll side effects. The current season always targets the compact owner banner.
+// repeat its focus and scroll side effects. The current season always targets the compact owner header.
 const seasonGroupKey = computed(() => seasonGroups.value.map((group) => group.seasonId).join('|'))
 const seasonQueryNavigation = ref(0)
 let handledSeasonQueryNavigation = -1
@@ -351,7 +351,7 @@ const seasonLabel = (label: string | null, id: string): string =>
     <section v-if="isOwner()" class="agent-section">
       <!-- The current-season context stays on the plain heading as two tags. The id/tabindex anchor
            remains here so season deep links focus and scroll to it. -->
-      <div id="current-season-banner" class="submit-head" tabindex="-1">
+      <header id="current-season-banner" class="submit-head" tabindex="-1">
         <h2>Submit an Agent</h2>
         <template v-if="profile.submission_season_id !== null">
           <UiBadge>Current Season: {{ currentSeasonName }}</UiBadge>
@@ -362,7 +362,7 @@ const seasonLabel = (label: string | null, id: string): string =>
           <UiStatusBadge v-else label="Not submitted" tone="warning" />
         </template>
         <span v-else class="submit-none">No Season is accepting submissions right now.</span>
-      </div>
+      </header>
       <!-- Submitting is a participation action (requireActive on the backend), so a pending owner
            sees why it is off rather than an enabled control that 403s. -->
       <template v-if="profile.submission_season_id !== null && canParticipate(me.me)">

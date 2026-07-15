@@ -36,6 +36,7 @@
   --color-text-muted: var(--palette-slate-300);
   --color-accent: var(--palette-mint-400);
   --color-on-accent: var(--palette-mint-950);
+  --color-current: var(--palette-sky-400);
   --color-danger: var(--palette-coral-400);
   --color-success: var(--palette-mint-400);
   --color-warning: var(--palette-amber-300);

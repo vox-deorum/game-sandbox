@@ -75,7 +75,7 @@ describe('MyAgentsPage', () => {
           },
           mean_score: null,
         }),
-        previous_seasons: [],
+        previous_seasons: [season('week-3', { label: 'Week 3' })],
       },
       {
         env_id: 'hearts',
@@ -101,6 +101,16 @@ describe('MyAgentsPage', () => {
     expect(within(flappyLink).getByText('pending')).toBeInTheDocument()
     expect(within(flappyLink).queryByText('Results not released')).toBeNull()
     expect(flappyLink).toHaveAccessibleName(/Current season Week 4 pending/)
+    const currentRow = flappyLink.querySelector('.season-row') as HTMLElement
+    expect(currentRow).toHaveClass('status-current')
+    expect(currentRow).not.toHaveClass('status-success')
+
+    const previousLink = screen.getByRole('link', {
+      name: /Week 3 ready to compete Score 10.00/,
+    })
+    const previousRow = previousLink.querySelector('.season-row') as HTMLElement
+    expect(previousRow).toHaveClass('status-success')
+    expect(previousRow).not.toHaveClass('status-current')
 
     const heartsLink = screen.getByRole('link', {
       name: /Current season Season week-2 Not submitted/,

@@ -119,7 +119,7 @@ const ordered = computed(() =>
             v-if="seasonLink(season) !== null"
             class="season-card-link"
             :to="seasonLink(season) ?? ''"
-            :aria-label="`Open ${formatSeasonName(season)}`"
+            :aria-label="`Open season ${formatSeasonName(season)}`"
           />
           <div class="season-body">
             <div class="season-head">

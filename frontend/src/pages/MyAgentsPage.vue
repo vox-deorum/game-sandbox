@@ -143,7 +143,7 @@ function rowResult(row: SeasonRow): string | null {
                 >
                   <span v-if="seasonRow.isCurrent" class="sr-only">Current season</span>
                   <div class="season-row-line">
-                    <span class="season-name">{{ seasonName(seasonRow.season) }}</span>
+                    <span class="season-name">Season {{ seasonName(seasonRow.season) }}</span>
                     <template v-if="seasonRow.season.submission !== null">
                       <UiStatusBadge
                         :tone="submissionStatusTone(seasonRow.season.submission.status)"

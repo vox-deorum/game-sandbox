@@ -342,12 +342,15 @@ describe('AgentProfilePage', () => {
 
     const seasonTag = await screen.findByText('Current Season: Week 4')
     expect(seasonTag).toBeInTheDocument()
-    expect(seasonTag.closest('.ui-card')).toBeNull()
+    const currentSeasonHeader = document.getElementById('current-season-banner') as HTMLElement
+    expect(currentSeasonHeader.tagName).toBe('HEADER')
+    expect(currentSeasonHeader.closest('.ui-card')).toBeNull()
+    expect(currentSeasonHeader.querySelector('.ui-card')).toBeNull()
     expect(screen.getAllByText('load check failed').length).toBeGreaterThan(0)
     expect(screen.queryByText('Not submitted')).toBeNull()
   })
 
-  it('keeps the current season banner useful when its metadata read fails', async () => {
+  it('keeps the current season header useful when its metadata read fails', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('eve', 'normal'))
     vi.mocked(listSeasons).mockRejectedValueOnce(new Error('metadata unavailable'))
     await renderProfile({
@@ -403,8 +406,8 @@ describe('AgentProfilePage', () => {
         '/environments/flappy_bird/agents/eve?season=iter-next',
       )
       const repository = await screen.findByLabelText('Repository URL')
-      const banner = document.getElementById('current-season-banner') as HTMLElement
-      await waitFor(() => expect(document.activeElement).toBe(banner))
+      const header = document.getElementById('current-season-banner') as HTMLElement
+      await waitFor(() => expect(document.activeElement).toBe(header))
       expect(scrollIntoView).toHaveBeenCalledTimes(1)
       repository.focus()
       expect(document.activeElement).toBe(repository)
@@ -435,15 +438,15 @@ describe('AgentProfilePage', () => {
       await screen.findByText('reachable')
       await fireEvent.click(screen.getByRole('button', { name: 'Submit agent' }))
 
-      await waitFor(() => expect(within(banner).getByText('pending')).toBeInTheDocument())
-      expect(within(banner).queryByText('Not submitted')).toBeNull()
+      await waitFor(() => expect(within(header).getByText('pending')).toBeInTheDocument())
+      expect(within(header).queryByText('Not submitted')).toBeNull()
       expect(scrollIntoView).toHaveBeenCalledTimes(1)
 
       settleValidation(readySubmission)
-      await waitFor(() => expect(within(banner).getByText('ready to compete')).toBeInTheDocument())
+      await waitFor(() => expect(within(header).getByText('ready to compete')).toBeInTheDocument())
       expect(vi.mocked(getAgentProfile)).toHaveBeenCalledTimes(3)
       expect(scrollIntoView).toHaveBeenCalledTimes(1)
-      expect(document.activeElement).not.toBe(banner)
+      expect(document.activeElement).not.toBe(header)
     } finally {
       if (originalScrollIntoView === undefined) {
         Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView')
@@ -470,7 +473,7 @@ describe('AgentProfilePage', () => {
     expect(document.activeElement).toBe(document.getElementById('season-iter-old'))
   })
 
-  it('focuses the current season banner when the linked season has no submission', async () => {
+  it('focuses the current season header when the linked season has no submission', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('eve', 'normal'))
     await renderProfile(
       {
@@ -487,7 +490,7 @@ describe('AgentProfilePage', () => {
     )
   })
 
-  it('focuses the current season banner instead of its history group when it has a submission', async () => {
+  it('focuses the current season header instead of its history group when it has a submission', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('eve', 'normal'))
     await renderProfile(
       {
