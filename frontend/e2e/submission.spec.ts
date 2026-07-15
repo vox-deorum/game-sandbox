@@ -71,6 +71,9 @@ test('a submitted agent validates to ready and runs in a watch session', async (
 
   // The watch picker lists the ready agent anonymously and highlights that it still needs a rating.
   await page.goto(`/environments/${ENV_ID}`)
+  const playSection = page.locator('section#play')
+  await expect(playSection.getByRole('heading', { name: 'Rate an Agent' })).toBeVisible()
+  await expect(playSection.getByText('Season: Playground', { exact: true })).toBeVisible()
   const row0 = page.locator('.agent-row').filter({ hasText: 'Agent 1' })
   await expect(row0).toBeVisible()
   await expect(row0.getByText('Not rated')).toBeVisible()

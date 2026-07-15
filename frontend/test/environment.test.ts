@@ -130,6 +130,20 @@ describe('EnvironmentPage', () => {
 
   it('frames the watch section as "Rate an Agent" when there is an unrated agent', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
+    vi.mocked(listSeasons).mockResolvedValue([
+      {
+        id: 'iter-1',
+        env_id: 'flappy_bird',
+        submission_status: 'closed',
+        play_status: 'open',
+        release_status: 'unreleased',
+        label: 'Playground',
+        created_at: '2026-06-10T00:00:00Z',
+        released_at: null,
+        submission_count: 1,
+        game_count: 0,
+      },
+    ])
     // An unrated agent a participating viewer can rate flips the section heading from watch to rate.
     vi.mocked(listWatchAgents).mockResolvedValue([
       { submission_id: 'sub1', anonymous_number: 1, rating_status: 'unrated' },
@@ -138,6 +152,7 @@ describe('EnvironmentPage', () => {
     expect(
       await screen.findByRole('heading', { name: 'Rate an Agent', level: 2 }),
     ).toBeInTheDocument()
+    expect(document.querySelector('section#play')).toHaveTextContent('Season: Playground')
     expect(screen.queryByRole('heading', { name: 'Watch an Agent' })).toBeNull()
   })
 

@@ -260,7 +260,12 @@ async function submitStart(payload: StartPayload): Promise<void> {
     </header>
 
     <section id="play" class="env-section">
-      <h2>{{ rateable ? 'Rate an Agent' : 'Watch an Agent' }}</h2>
+      <div class="env-section-title">
+        <h2>{{ rateable ? 'Rate an Agent' : 'Watch an Agent' }}</h2>
+        <span v-if="playableSeason !== null" class="env-section-season">
+          Season: {{ formatSeasonName(playableSeason) }}
+        </span>
+      </div>
       <WatchAgentPicker v-if="playOpen" :env-id="meta.env_id" :meta="meta" :agents="watchAgents" />
       <UiEmptyState v-else>Public play is closed for this environment right now.</UiEmptyState>
     </section>
