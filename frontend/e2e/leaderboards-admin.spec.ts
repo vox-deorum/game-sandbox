@@ -45,7 +45,7 @@ test('the Seasons index shows the refreshed released-season card and navigates t
   await expect(card.locator('img.season-thumb')).toBeVisible()
   await expect(card.getByText('Open now')).toHaveCount(0)
 
-  await card.getByRole('link', { name: `Open ${SEASONS.releasedCard}` }).click()
+  await card.getByRole('link', { name: `Open season ${SEASONS.releasedCard}` }).click()
   await expect(page).toHaveURL(new RegExp(`/environments/${ENV_ID}/leaderboards/${season.id}$`))
 })
 
@@ -257,6 +257,46 @@ test('a full season: submissions, an automated run, several judges rate, then re
     await page.goto(`/environments/${ENV_ID}/agents/${await userIdOf(await as(OWNERS.flapper))}`)
     await expect(page.locator('.submission-item')).toHaveCount(2)
     await expect(page.getByText('superseded', { exact: true })).toHaveCount(1)
+
+    // Restore Playground before checking the glider owner's cross-season index. Updraft Open is now
+    // released history, so its successful status stripe must remain visually distinct from the
+    // dedicated current-Season stripe on the submission-open Playground row.
+    await closeSubmissions(admin, season.id).catch(() => {})
+    await closePlay(admin, season.id).catch(() => {})
+    if (original.submissionSeasonId !== null) {
+      await openSubmissions(admin, original.submissionSeasonId)
+    }
+    if (original.playSeasonId !== null) {
+      await openPlay(admin, original.playSeasonId)
+    }
+    await authenticateBrowser(page.context(), await as(OWNERS.glider))
+    await page.goto('/my/agents')
+    const environmentGroup = page.locator('.environment-group').filter({ hasText: 'Flappy Bird' })
+    const currentRow = environmentGroup
+      .getByRole('link', { name: /Current season Playground/ })
+      .locator('.season-row')
+    const releasedRow = environmentGroup
+      .getByRole('link', { name: /Updraft Open ready to compete/ })
+      .locator('.season-row')
+    await expect(currentRow).toHaveClass(/status-current/)
+    await expect(releasedRow).toHaveClass(/status-success/)
+    const [currentStripe, releasedStripe] = await Promise.all([
+      currentRow.evaluate((element) => getComputedStyle(element).borderLeftColor),
+      releasedRow.evaluate((element) => getComputedStyle(element).borderLeftColor),
+    ])
+    const semanticColors = await page.evaluate(() => {
+      const probe = document.createElement('span')
+      document.body.append(probe)
+      probe.style.color = 'var(--color-current)'
+      const current = getComputedStyle(probe).color
+      probe.style.color = 'var(--color-success)'
+      const success = getComputedStyle(probe).color
+      probe.remove()
+      return { current, success }
+    })
+    expect(currentStripe).toBe(semanticColors.current)
+    expect(releasedStripe).toBe(semanticColors.success)
+    expect(currentStripe).not.toBe(releasedStripe)
   } finally {
     // Restore the seeded Playground as the env's open submission+play season for the other specs.
     await closeSubmissions(admin, season.id).catch(() => {})

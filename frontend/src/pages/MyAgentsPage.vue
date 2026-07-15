@@ -18,7 +18,7 @@ import UiCard from '../components/ui/UiCard.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import UiStatusBadge from '../components/ui/UiStatusBadge.vue'
 import { loadEnvironmentCatalog } from '../environmentCatalog.js'
-import { formatDate, formatScore, shortId } from '../lib/format.js'
+import { formatDate, formatScore } from '../lib/format.js'
 import { submissionStatusLabel, submissionStatusTone } from '../lib/submission-status.js'
 import { useMe, userId } from '../me.js'
 
@@ -66,7 +66,7 @@ function environmentName(row: EnvironmentAgent): string {
 }
 
 function seasonName(season: MyAgentSeasonSummary): string {
-  return season.label ?? `Season ${shortId(season.id)}`
+  return season.label ?? 'Unknown'
 }
 
 function seasonLink(envId: string, seasonId: string): string {
@@ -143,7 +143,9 @@ function rowResult(row: SeasonRow): string | null {
                 >
                   <span v-if="seasonRow.isCurrent" class="sr-only">Current season</span>
                   <div class="season-row-line">
-                    <span class="season-name">Season {{ seasonName(seasonRow.season) }}</span>
+                    <span class="season-name">
+                      <span aria-hidden="true">Season </span>{{ seasonName(seasonRow.season) }}
+                    </span>
                     <template v-if="seasonRow.season.submission !== null">
                       <UiStatusBadge
                         :tone="submissionStatusTone(seasonRow.season.submission.status)"

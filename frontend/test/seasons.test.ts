@@ -78,7 +78,7 @@ describe('SeasonsPage', () => {
     expect(row).not.toBeNull()
     const card = within(row as HTMLElement)
 
-    expect(card.getByRole('link', { name: 'Open Released round' })).toHaveAttribute(
+    expect(card.getByRole('link', { name: 'Open season Released round' })).toHaveAttribute(
       'href',
       '/environments/flappy_bird/leaderboards/released',
     )
@@ -127,15 +127,15 @@ describe('SeasonsPage', () => {
 
     await renderPage()
 
-    expect(await screen.findByRole('link', { name: 'Open Released round' })).toHaveAttribute(
+    expect(await screen.findByRole('link', { name: 'Open season Released round' })).toHaveAttribute(
       'href',
       '/environments/flappy_bird/leaderboards/released',
     )
-    expect(screen.getByRole('link', { name: 'Open Submit round' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Open season Submit round' })).toHaveAttribute(
       'href',
       '/environments/flappy_bird/agents/alice',
     )
-    expect(screen.getByRole('link', { name: 'Open Play round' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Open season Play round' })).toHaveAttribute(
       'href',
       '/environments/flappy_bird?play=1',
     )
@@ -175,7 +175,7 @@ describe('SeasonsPage', () => {
       'href',
       '/login',
     )
-    expect(screen.getByRole('link', { name: 'Open Submit round' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Open season Submit round' })).toHaveAttribute(
       'href',
       '/login',
     )

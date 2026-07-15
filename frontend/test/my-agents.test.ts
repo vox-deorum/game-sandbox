@@ -113,10 +113,10 @@ describe('MyAgentsPage', () => {
     expect(previousRow).not.toHaveClass('status-current')
 
     const heartsLink = screen.getByRole('link', {
-      name: /Current season Season week-2 Not submitted/,
+      name: /Current season Unknown Not submitted/,
     })
     expect(within(heartsLink).getByText('Not submitted')).toBeInTheDocument()
-    expect(heartsLink).toHaveAccessibleName(/Current season Season week-2 Not submitted/)
+    expect(heartsLink).toHaveAccessibleName(/Current season Unknown Not submitted/)
     expect(screen.queryByText('Open agent profile')).toBeNull()
   })
 
