@@ -457,6 +457,11 @@ export interface Storage {
   /** An agent's placements across seasons, optionally narrowed to one environment (agent profile). */
   listPlacementsByAgent(agent: AgentRef, envId?: string): Promise<AutomatedPlacement[]>
   /**
+   * Every submitted-agent placement attributed to a user, across all of their submission attempts.
+   * This is the batched score source for the signed-in user's season summary.
+   */
+  listPlacementsByUser(userId: string): Promise<AutomatedPlacement[]>
+  /**
    * The automated board: per-agent aggregates over the season's latest completed run. Pass that run
    * when the caller has already resolved it (to read its games beside the board or persist placements
    * against it) so both describe the identical run and it is looked up once; omit it for a standalone read.

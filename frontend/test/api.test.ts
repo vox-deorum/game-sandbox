@@ -10,6 +10,7 @@ import {
   getEnvironmentLeaderboards,
   getEnvironments,
   getMe,
+  getMyAgents,
   getRecording,
   getSeasonLeaderboards,
   getSessionRatings,
@@ -105,6 +106,32 @@ describe('api client', () => {
   it('returns { user: null } from /api/me for an anonymous visitor', async () => {
     stubFetch(async () => jsonResponse({ user: null }))
     expect(await getMe()).toEqual(anonymousMe)
+  })
+
+  it("reads the signed-in user's cross-environment season summaries without an owner parameter", async () => {
+    const payload = [
+      {
+        env_id: 'flappy_bird',
+        current_season: {
+          id: 'iter-2',
+          label: 'Week 2',
+          created_at: '2026-06-15T00:00:00Z',
+          release_status: 'unreleased',
+          submission: {
+            id: 'sub-2',
+            status: 'pending',
+            submitted_at: '2026-06-16T00:00:00Z',
+          },
+          mean_score: null,
+        },
+        previous_seasons: [],
+      },
+    ]
+    const fetchMock = stubFetch(async () => jsonResponse(payload))
+
+    expect(await getMyAgents()).toEqual(payload)
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/my/agents')
+    expect((fetchMock.mock.calls[0]?.[1] as RequestInit | undefined)?.headers).toBeUndefined()
   })
 
   it('reads the deployment site name, short name, and github_auth flag from /api/config', async () => {

@@ -54,13 +54,31 @@ test('a submitted agent validates to ready and runs in a watch session', async (
   await setSeasonRatingPrompt(admin, windows.playSeasonId as string, OPERATOR_RATING_PROMPT)
   await setAuthorPrompt(ownerCtx, windows.playSeasonId as string, AUTHOR_RATING_PROMPT)
 
-  // Browse as the operator, so the owner's profile view below sees the real (non-anonymized) data.
-  await authenticateBrowser(page.context(), admin)
+  // Browse as the owner so both student-facing season summaries are exercised with the real row.
+  await authenticateBrowser(page.context(), ownerCtx)
 
-  // The owner's profile shows every stage of the timeline passed, the in-browser view of "ready". The
-  // profile is keyed on the owner's Better Auth id (the handle is only the display name now).
+  // My Submissions leads with the current season and makes the submission state explicit.
   const ownerId = await userIdOf(ownerCtx)
   await page.goto(`/environments/${ENV_ID}/agents/${ownerId}`)
+  const currentSeason = page.locator('#current-season-banner')
+  await expect(currentSeason.getByText('Current Season')).toBeVisible()
+  await expect(currentSeason.getByText(/Submitted/)).toBeVisible()
+  await expect(currentSeason.getByText('ready to compete')).toBeVisible()
+
+  // My Agents presents the same current-season state as one whole-card link back to this season.
+  await page.goto('/my/agents')
+  const environmentGroup = page.locator('.environment-group').filter({ hasText: 'Flappy Bird' })
+  await expect(environmentGroup.getByRole('heading', { name: 'Current Season' })).toBeVisible()
+  const currentSeasonLink = environmentGroup.getByRole('link', {
+    name: /ready to compete Submitted/,
+  })
+  await expect(currentSeasonLink.getByText(/Submitted/)).toBeVisible()
+  await expect(currentSeasonLink.getByText('ready to compete')).toBeVisible()
+  await currentSeasonLink.click()
+  await expect(page).toHaveURL(/\/environments\/flappy_bird\/agents\/.+\?season=/)
+
+  // The whole-card click lands on the matching My Submissions season, whose validation timeline shows
+  // every stage passed.
   for (const stage of ['resolve', 'static', 'build', 'load']) {
     await expect(page.getByTestId(`stage-${stage}`)).toContainText('passed')
   }

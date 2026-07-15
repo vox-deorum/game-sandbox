@@ -51,6 +51,13 @@ const props = withDefaults(
   { pollIntervalMs: 1500, stallAfterPolls: 20 },
 )
 
+const emit = defineEmits<{
+  /** The backend has created the pending submission row. */
+  accepted: [submissionId: string]
+  /** Validation reached a terminal success or failure state. */
+  settled: [submission: SubmissionDetail]
+}>()
+
 const repoUrl = ref('')
 const refInput = ref('')
 const localPath = ref('')
@@ -159,6 +166,7 @@ async function onSubmit(): Promise<void> {
     return
   }
   phase.value = 'polling'
+  emit('accepted', result.id)
   startPolling(result.id)
   // The pending submission row now exists and the season's submission window is still open, so save
   // the rating prompt right away rather than on the eventual `ready` poll: deferring it would silently
@@ -190,6 +198,7 @@ async function poll(id: string): Promise<void> {
   if (detail.status !== 'pending') {
     // Terminal: stop polling; the timeline and result banner now render the outcome. The rating
     // prompt was already saved when the submission was accepted (see onSubmit), so nothing to do here.
+    emit('settled', detail)
     return
   }
 

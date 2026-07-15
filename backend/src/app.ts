@@ -23,6 +23,7 @@ import { buildDocsManifest, DocsIndexError, readDocsIndex, readDocsPage } from '
 import type { EnvironmentRegistry } from './environments.js'
 import { createRequestIdentity } from './identity.js'
 import { registerLeaderboardRoutes } from './leaderboards/routes.js'
+import { registerMyAgentRoutes } from './my-agents.js'
 import { optionalField } from './optional-field.js'
 import { registerRatingRoutes } from './ratings/routes.js'
 import type { RecordingsStore } from './recordings.js'
@@ -571,6 +572,10 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     }
     return deps.storage.listSubmissionsByUser(user.id, request.query.env)
   })
+
+  // The current participant's cross-environment season status. Pending users may read their own
+  // history, but the identity always comes from the signed session and never from a route parameter.
+  registerMyAgentRoutes(app, { storage: deps.storage, identity })
 
   // One submission joined with its ordered per-stage validation log, so a poll is a single request.
   // Submission ids appear in the anonymous watch-list contract, so this route must not turn one of

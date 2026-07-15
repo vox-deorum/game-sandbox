@@ -14,7 +14,7 @@
     owner-only, gating on the signed-in identity matching the agent's owner.
 -->
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { ChevronDown, ChevronRight, Clock, FolderOpen, GitCommit, Play, Trophy } from '@lucide/vue'
 
@@ -25,6 +25,8 @@ import {
   type AgentProfileSubmission,
   getAgentPlacements,
   getAgentProfile,
+  listSeasons,
+  type PublicSeasonView,
   type SubmissionStatus,
 } from '../api/client.js'
 import SubmissionStageTimeline from '../components/SubmissionStageTimeline.vue'
@@ -58,15 +60,26 @@ const failed = ref(false)
 // failed read leaves the list empty rather than failing the whole profile.
 const placements = ref<AgentPlacements | null>(null)
 
-onMounted(() => {
-  getAgentProfile(envId, ownerId).then(
-    (data) => {
+// A form acceptance refresh can overlap the later terminal refresh. Only the newest request may
+// replace the page state, so a slower pending response cannot overwrite the terminal submission.
+let profileLoadSerial = 0
+async function refreshProfile(): Promise<void> {
+  const serial = ++profileLoadSerial
+  try {
+    const data = await getAgentProfile(envId, ownerId)
+    if (serial === profileLoadSerial) {
       profile.value = data
-    },
-    () => {
+      failed.value = false
+    }
+  } catch {
+    if (serial === profileLoadSerial && profile.value === null) {
       failed.value = true
-    },
-  )
+    }
+  }
+}
+
+onMounted(() => {
+  void refreshProfile()
   getAgentPlacements(envId, ownerId).then(
     (data) => {
       placements.value = data
@@ -195,6 +208,115 @@ const seasonCaption = (seasonId: string): string => {
 /** The owner viewing their own profile unlocks the owner-only affordances (the Stage 9 debug view). */
 const isOwner = () => userId(me.me) === ownerId
 
+/** The exact active attempt in the submission-open season, never an active row from another season. */
+const currentSeasonSubmission = computed(() => {
+  const seasonId = profile.value?.submission_season_id
+  if (seasonId === null || seasonId === undefined) {
+    return null
+  }
+  return (
+    profile.value?.submissions.find(
+      (submission) => submission.season_id === seasonId && submission.superseded_at === null,
+    ) ?? null
+  )
+})
+
+// Public season metadata improves the banner label, but it is owner-only and non-blocking. The short
+// id fallback renders immediately and remains if this secondary read fails.
+const currentSeasonMetadata = ref<PublicSeasonView | null>(null)
+let seasonMetadataSerial = 0
+watch(
+  [() => profile.value?.submission_season_id, () => userId(me.me)],
+  async ([seasonId, viewerId]) => {
+    const serial = ++seasonMetadataSerial
+    currentSeasonMetadata.value = null
+    if (seasonId === null || seasonId === undefined || viewerId !== ownerId) {
+      return
+    }
+    try {
+      const seasons = await listSeasons(envId)
+      if (serial === seasonMetadataSerial) {
+        currentSeasonMetadata.value = seasons.find((season) => season.id === seasonId) ?? null
+      }
+    } catch {
+      // Metadata is presentation-only. The banner keeps its stable short-id fallback.
+    }
+  },
+  { immediate: true },
+)
+
+const currentSeasonName = computed(() => {
+  const seasonId = profile.value?.submission_season_id
+  if (seasonId === null || seasonId === undefined) {
+    return null
+  }
+  return currentSeasonMetadata.value?.label ?? `Season ${shortId(seasonId)}`
+})
+
+// My Agents links to a season, not a specific attempt. A query change starts one navigation handling
+// pass; asynchronous identity/profile data may complete that pass, but later profile refreshes must not
+// repeat its focus and scroll side effects. The current season always targets the compact owner banner.
+const seasonGroupKey = computed(() => seasonGroups.value.map((group) => group.seasonId).join('|'))
+const seasonQueryNavigation = ref(0)
+let handledSeasonQueryNavigation = -1
+watch(
+  () => route.query.season,
+  () => {
+    seasonQueryNavigation.value += 1
+  },
+  { immediate: true },
+)
+watch(
+  [
+    seasonQueryNavigation,
+    seasonGroupKey,
+    () => profile.value?.submission_season_id,
+    () => isOwner(),
+    () => me.loading,
+  ],
+  async ([navigation]) => {
+    if (
+      typeof navigation !== 'number' ||
+      navigation === handledSeasonQueryNavigation ||
+      profile.value === null ||
+      me.loading
+    ) {
+      return
+    }
+
+    const rawSeason = route.query.season
+    const seasonId = Array.isArray(rawSeason) ? rawSeason[0] : rawSeason
+    if (typeof seasonId !== 'string' || seasonId === '') {
+      handledSeasonQueryNavigation = navigation
+      return
+    }
+
+    const group = seasonGroups.value.find((candidate) => candidate.seasonId === seasonId)
+    let targetId: string | null = null
+    if (isOwner() && profile.value.submission_season_id === seasonId) {
+      targetId = 'current-season-banner'
+    } else if (group !== undefined) {
+      openBySeason.value = { ...openBySeason.value, [seasonId]: group.activeId }
+      targetId = `season-${seasonId}`
+    }
+    // A fully loaded but unknown id is a valid no-op for this navigation. Do not let a later form
+    // refresh reinterpret it and move focus unexpectedly.
+    handledSeasonQueryNavigation = navigation
+    if (targetId === null) {
+      return
+    }
+
+    await nextTick()
+    if (navigation !== seasonQueryNavigation.value) {
+      return
+    }
+    const target = document.getElementById(targetId)
+    target?.focus()
+    target?.scrollIntoView?.({ block: 'start' })
+  },
+  { immediate: true, flush: 'post' },
+)
+
 /**
  * "My Submissions" on your own profile, "{owner}'s Submissions" when viewing someone else's. Prefers
  * the profile's resolved display name once it loads; the route-param id is the pre-load fallback (and
@@ -227,17 +349,37 @@ const seasonLabel = (label: string | null, id: string): string =>
 
     <section v-if="isOwner()" class="agent-section">
       <h2>Submit an Agent</h2>
+      <UiCard id="current-season-banner" class="current-season-banner" tabindex="-1">
+        <template v-if="profile.submission_season_id !== null">
+          <p class="current-season-kicker">Current Season</p>
+          <div class="current-season-head">
+            <h3>{{ currentSeasonName }}</h3>
+            <UiStatusBadge
+              v-if="currentSeasonSubmission !== null"
+              v-bind="statusBadge(currentSeasonSubmission)"
+            />
+          </div>
+          <p v-if="currentSeasonSubmission !== null" class="current-season-state">
+            Submitted {{ formatDate(currentSeasonSubmission.created_at) }}
+          </p>
+          <p v-else class="current-season-state current-season-missing">Not submitted yet.</p>
+        </template>
+        <template v-else>
+          <p class="current-season-kicker">Current Season</p>
+          <p class="current-season-state">No Season is accepting submissions right now.</p>
+        </template>
+      </UiCard>
       <!-- Submitting is a participation action (requireActive on the backend), so a pending owner
            sees why it is off rather than an enabled control that 403s. -->
-      <template v-if="canParticipate(me.me)">
+      <template v-if="profile.submission_season_id !== null && canParticipate(me.me)">
         <SubmitAgentForm
-          v-if="profile.submission_season_id !== null"
           :env-id="envId"
           :submission-season-id="profile.submission_season_id"
+          @accepted="refreshProfile"
+          @settled="refreshProfile"
         />
-        <UiEmptyState v-else>Submissions are closed for this environment right now.</UiEmptyState>
       </template>
-      <UiEmptyState v-else>
+      <UiEmptyState v-else-if="profile.submission_season_id !== null">
         Your account is awaiting approval, so you can't submit yet.
       </UiEmptyState>
     </section>
@@ -249,7 +391,13 @@ const seasonLabel = (label: string | null, id: string): string =>
         for this environment yet.
       </UiEmptyState>
       <div v-else class="season-groups">
-        <div v-for="group in seasonGroups" :key="group.seasonId" class="season-group">
+        <div
+          v-for="group in seasonGroups"
+          :id="`season-${group.seasonId}`"
+          :key="group.seasonId"
+          class="season-group"
+          tabindex="-1"
+        >
           <p v-if="seasonGroups.length > 1" class="season-caption">{{ seasonCaption(group.seasonId) }}</p>
           <p v-if="authorPromptFor(group.seasonId)" class="season-prompt">
             Rating prompt: “{{ authorPromptFor(group.seasonId) }}”
@@ -432,6 +580,41 @@ const seasonLabel = (label: string | null, id: string): string =>
   margin-bottom: var(--space-6);
 }
 
+.current-season-banner {
+  margin-bottom: var(--space-4);
+}
+
+.current-season-kicker {
+  margin: 0 0 var(--space-1);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.current-season-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  justify-content: space-between;
+}
+
+.current-season-head h3 {
+  margin: 0;
+  font-size: var(--text-lg);
+}
+
+.current-season-state {
+  margin: var(--space-2) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.current-season-missing {
+  color: var(--color-warning);
+  font-weight: 600;
+}
+
 .season-groups {
   display: flex;
   flex-direction: column;
@@ -442,6 +625,7 @@ const seasonLabel = (label: string | null, id: string): string =>
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+  scroll-margin-top: var(--space-5);
 }
 
 .season-caption {
@@ -452,7 +636,7 @@ const seasonLabel = (label: string | null, id: string): string =>
   color: var(--color-text-muted);
 }
 
-/* The owner's rating prompt for the round, shown once per season group above its submissions. */
+/* The owner's rating prompt for the season, shown once per season group above its submissions. */
 .season-prompt {
   margin: 0;
   font-size: var(--text-sm);

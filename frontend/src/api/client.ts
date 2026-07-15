@@ -503,6 +503,35 @@ export interface AgentProfile {
   author_prompts: Record<string, string>
 }
 
+/** The active submission attempt summarized on the signed-in user's cross-environment agent index. */
+export interface MyAgentSubmissionSummary {
+  id: string
+  status: SubmissionStatus
+  submitted_at: string
+}
+
+/** One current or historical season on the signed-in user's cross-environment agent index. */
+export interface MyAgentSeasonSummary {
+  id: string
+  label: string | null
+  created_at: string
+  release_status: ReleaseStatus
+  submission: MyAgentSubmissionSummary | null
+  mean_score: number | null
+}
+
+/** One environment on My Agents, with its open submission season and recent entered seasons. */
+export interface MyAgentEnvironmentSummary {
+  env_id: string
+  current_season: MyAgentSeasonSummary | null
+  previous_seasons: MyAgentSeasonSummary[]
+}
+
+/** The signed-in user's season-level submission summary across environments. */
+export async function getMyAgents(): Promise<MyAgentEnvironmentSummary[]> {
+  return (await json(await request('/my/agents'), 'GET /my/agents')) as MyAgentEnvironmentSummary[]
+}
+
 /** An owner's agent profile for an environment: history across seasons, newest first. */
 export async function getAgentProfile(envId: string, ownerId: string): Promise<AgentProfile> {
   return (await json(

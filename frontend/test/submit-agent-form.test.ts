@@ -179,12 +179,16 @@ describe('SubmitAgentForm', () => {
         { reason: 'overlay build kaboom' },
       ),
     )
-    renderForm()
+    const view = renderForm()
     await verifyReachable()
     await fireEvent.click(screen.getByRole('button', { name: 'Submit agent' }))
 
     expect(await screen.findByText('overlay build kaboom')).toBeInTheDocument()
     expect(within(screen.getByTestId('stage-build')).getByText('failed')).toBeInTheDocument()
+    expect(view.emitted().accepted).toEqual([['sub1']])
+    expect(view.emitted().settled).toEqual([
+      [expect.objectContaining({ id: 'sub1', status: 'build_failed' })],
+    ])
   })
 
   it('flips to a non-terminal "still processing" notice when a submission stays pending', async () => {

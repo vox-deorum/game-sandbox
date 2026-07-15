@@ -83,6 +83,21 @@ export async function listPlacementsByAgent(
   return await query.orderBy('created_at', 'desc').execute()
 }
 
+export async function listPlacementsByUser(
+  db: Kysely<Database>,
+  userId: string,
+): Promise<AutomatedPlacement[]> {
+  // The partial `automated_placements_user_season` index bounds this read to one participant while
+  // excluding baseline rows; callers can then group all of the participant's attempts by season.
+  return await db
+    .selectFrom('automated_placements')
+    .selectAll()
+    .where('agent_kind', '=', 'submission')
+    .where('agent_user_id', '=', userId)
+    .orderBy('created_at', 'desc')
+    .execute()
+}
+
 export async function getAutomatedBoard(
   db: Kysely<Database>,
   seasonId: string,

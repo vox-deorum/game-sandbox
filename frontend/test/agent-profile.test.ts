@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/vue'
+import { fireEvent, screen, waitFor, within } from '@testing-library/vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AgentProfile, AgentProfileSubmission, SubmissionCheck } from '../src/api/client.js'
@@ -8,6 +8,7 @@ import { memoryRouter, renderWithMe } from './helpers/render.js'
 vi.mock('../src/api/client.js', () => ({
   getMe: vi.fn(),
   getAgentProfile: vi.fn(),
+  listSeasons: vi.fn(async () => []),
   // The profile fetches the agent's released placements on mount; default it to none.
   getAgentPlacements: vi.fn(async () => ({
     env_id: 'flappy_bird',
@@ -21,10 +22,22 @@ vi.mock('../src/api/client.js', () => ({
   // The owner-only submit form (shown when a season is accepting submissions) probes capabilities on
   // mount; default the dev local-folder gate off. The submit/verify calls only fire on interaction.
   getSubmissionCapabilities: vi.fn(async () => ({ local_submissions: false })),
+  checkReachability: vi.fn(),
+  submitAgent: vi.fn(),
+  getSubmission: vi.fn(),
 }))
 
 import type { AgentPlacementView } from '../src/api/client.js'
-import { getAgentPlacements, getAgentProfile, getAuthorPrompt, getMe } from '../src/api/client.js'
+import {
+  checkReachability,
+  getAgentPlacements,
+  getAgentProfile,
+  getAuthorPrompt,
+  getMe,
+  getSubmission,
+  listSeasons,
+  submitAgent,
+} from '../src/api/client.js'
 import AgentProfilePage from '../src/pages/AgentProfilePage.vue'
 
 const ReplayStub = { template: '<div>replay {{ $route.params.id }}</div>' }
@@ -64,7 +77,10 @@ type ProfileFixture = Omit<
 > &
   Partial<Pick<AgentProfile, 'submission_season_id' | 'play_season_id' | 'author_prompts'>>
 
-async function renderProfile(profile: ProfileFixture) {
+async function renderProfile(
+  profile: ProfileFixture,
+  path = '/environments/flappy_bird/agents/eve',
+) {
   vi.mocked(getAgentProfile).mockResolvedValue({
     submission_season_id: null,
     play_season_id: null,
@@ -79,15 +95,16 @@ async function renderProfile(profile: ProfileFixture) {
     { path: '/environments/:envId/leaderboards/:seasonId?', component: { template: '<div />' } },
     { path: '/replays/:id', component: ReplayStub },
   ])
-  router.push('/environments/flappy_bird/agents/eve')
+  router.push(path)
   await router.isReady()
-  return renderWithMe(router)
+  return { router, view: renderWithMe(router) }
 }
 
 describe('AgentProfilePage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
+    vi.mocked(listSeasons).mockResolvedValue([])
   })
 
   it('renders submission history newest-first with active marker and replays', async () => {
@@ -295,6 +312,213 @@ describe('AgentProfilePage', () => {
 
     // The prompt is now set from inside the submit form, keyed to the open submission season.
     await waitFor(() => expect(vi.mocked(getAuthorPrompt)).toHaveBeenCalledWith('iter-next'))
+  })
+
+  it('shows the owner the labelled current season, exact submission date, and failed status', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('eve', 'normal'))
+    vi.mocked(listSeasons).mockResolvedValue([
+      {
+        id: 'iter-next',
+        env_id: 'flappy_bird',
+        submission_status: 'open',
+        play_status: 'closed',
+        release_status: 'unreleased',
+        label: 'Week 4',
+        created_at: '2026-06-10T00:00:00Z',
+        released_at: null,
+        submission_count: 1,
+        game_count: 0,
+      },
+    ])
+    await renderProfile({
+      env_id: 'flappy_bird',
+      owner_id: 'eve',
+      submission_season_id: 'iter-next',
+      submissions: [
+        submission({ id: 'current-failed', season_id: 'iter-next', status: 'load_failed' }),
+        submission({ id: 'other-active', season_id: 'iter-old' }),
+      ],
+    })
+
+    const banner = await screen.findByText('Week 4')
+    expect(banner).toBeInTheDocument()
+    expect(screen.getByText(/Submitted/)).toBeInTheDocument()
+    expect(screen.getAllByText('load check failed').length).toBeGreaterThan(0)
+    expect(screen.queryByText('Not submitted yet.')).toBeNull()
+  })
+
+  it('keeps the current season banner useful when its metadata read fails', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('eve', 'normal'))
+    vi.mocked(listSeasons).mockRejectedValueOnce(new Error('metadata unavailable'))
+    await renderProfile({
+      env_id: 'flappy_bird',
+      owner_id: 'eve',
+      submission_season_id: 'iteration-123456',
+      submissions: [],
+    })
+
+    expect(await screen.findByText('Season iteratio')).toBeInTheDocument()
+    expect(screen.getByText('Not submitted yet.')).toBeInTheDocument()
+  })
+
+  it('shows the no-accepting-season state once instead of duplicating a closed-form notice', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('eve', 'normal'))
+    await renderProfile({ env_id: 'flappy_bird', owner_id: 'eve', submissions: [] })
+
+    expect(
+      await screen.findAllByText('No Season is accepting submissions right now.'),
+    ).toHaveLength(1)
+    expect(screen.queryByText(/Submissions are closed/)).toBeNull()
+  })
+
+  it('shows pending on acceptance and ready on settlement without re-handling the season query', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('eve', 'normal'))
+    const scrollIntoView = vi.fn()
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView
+    HTMLElement.prototype.scrollIntoView = scrollIntoView
+
+    const pendingSubmission = submission({
+      id: 'new-sub',
+      season_id: 'iter-next',
+      status: 'pending',
+    })
+    const readySubmission = submission({
+      id: 'new-sub',
+      season_id: 'iter-next',
+      status: 'ready',
+    })
+    let settleValidation: (detail: AgentProfileSubmission) => void = () => {}
+    const terminalValidation = new Promise<AgentProfileSubmission>((resolve) => {
+      settleValidation = resolve
+    })
+
+    try {
+      await renderProfile(
+        {
+          env_id: 'flappy_bird',
+          owner_id: 'eve',
+          submission_season_id: 'iter-next',
+          submissions: [],
+        },
+        '/environments/flappy_bird/agents/eve?season=iter-next',
+      )
+      const repository = await screen.findByLabelText('Repository URL')
+      const banner = document.getElementById('current-season-banner') as HTMLElement
+      await waitFor(() => expect(document.activeElement).toBe(banner))
+      expect(scrollIntoView).toHaveBeenCalledTimes(1)
+      repository.focus()
+      expect(document.activeElement).toBe(repository)
+
+      vi.mocked(checkReachability).mockResolvedValue({ reachable: true })
+      vi.mocked(submitAgent).mockResolvedValue({ ok: true, id: 'new-sub', status: 'pending' })
+      vi.mocked(getSubmission).mockReturnValue(terminalValidation)
+      vi.mocked(getAgentProfile)
+        .mockResolvedValueOnce({
+          env_id: 'flappy_bird',
+          owner_id: 'eve',
+          submission_season_id: 'iter-next',
+          play_season_id: null,
+          author_prompts: {},
+          submissions: [pendingSubmission],
+        })
+        .mockResolvedValueOnce({
+          env_id: 'flappy_bird',
+          owner_id: 'eve',
+          submission_season_id: 'iter-next',
+          play_season_id: null,
+          author_prompts: {},
+          submissions: [readySubmission],
+        })
+
+      await fireEvent.update(repository, 'https://example.test/new')
+      await fireEvent.click(screen.getByRole('button', { name: 'Verify reachability' }))
+      await screen.findByText('reachable')
+      await fireEvent.click(screen.getByRole('button', { name: 'Submit agent' }))
+
+      await waitFor(() => expect(within(banner).getByText('pending')).toBeInTheDocument())
+      expect(within(banner).getByText(/Submitted/)).toBeInTheDocument()
+      expect(scrollIntoView).toHaveBeenCalledTimes(1)
+
+      settleValidation(readySubmission)
+      await waitFor(() => expect(within(banner).getByText('ready to compete')).toBeInTheDocument())
+      expect(vi.mocked(getAgentProfile)).toHaveBeenCalledTimes(3)
+      expect(scrollIntoView).toHaveBeenCalledTimes(1)
+      expect(document.activeElement).not.toBe(banner)
+    } finally {
+      if (originalScrollIntoView === undefined) {
+        Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView')
+      } else {
+        HTMLElement.prototype.scrollIntoView = originalScrollIntoView
+      }
+    }
+  })
+
+  it('reactively opens and focuses a season linked from My Agents', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('eve', 'normal'))
+    const { router } = await renderProfile({
+      env_id: 'flappy_bird',
+      owner_id: 'eve',
+      submissions: [submission({ id: 'historical', season_id: 'iter-old' })],
+    })
+    const summary = await screen.findByRole('button', { expanded: true })
+    await fireEvent.click(summary)
+    expect(summary).toHaveAttribute('aria-expanded', 'false')
+
+    await router.push('/environments/flappy_bird/agents/eve?season=iter-old')
+
+    await waitFor(() => expect(summary).toHaveAttribute('aria-expanded', 'true'))
+    expect(document.activeElement).toBe(document.getElementById('season-iter-old'))
+  })
+
+  it('focuses the current season banner when the linked season has no submission', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('eve', 'normal'))
+    await renderProfile(
+      {
+        env_id: 'flappy_bird',
+        owner_id: 'eve',
+        submission_season_id: 'iter-next',
+        submissions: [],
+      },
+      '/environments/flappy_bird/agents/eve?season=iter-next',
+    )
+
+    await waitFor(() =>
+      expect(document.activeElement).toBe(document.getElementById('current-season-banner')),
+    )
+  })
+
+  it('focuses the current season banner instead of its history group when it has a submission', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('eve', 'normal'))
+    await renderProfile(
+      {
+        env_id: 'flappy_bird',
+        owner_id: 'eve',
+        submission_season_id: 'iter-next',
+        submissions: [submission({ id: 'current', season_id: 'iter-next' })],
+      },
+      '/environments/flappy_bird/agents/eve?season=iter-next',
+    )
+
+    await waitFor(() =>
+      expect(document.activeElement).toBe(document.getElementById('current-season-banner')),
+    )
+    expect(document.activeElement).not.toBe(document.getElementById('season-iter-next'))
+  })
+
+  it('ignores an unknown season deep link', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('eve', 'normal'))
+    await renderProfile(
+      {
+        env_id: 'flappy_bird',
+        owner_id: 'eve',
+        submission_season_id: 'iter-next',
+        submissions: [],
+      },
+      '/environments/flappy_bird/agents/eve?season=does-not-exist',
+    )
+
+    await screen.findByText('Not submitted yet.')
+    expect(document.activeElement).not.toBe(document.getElementById('current-season-banner'))
   })
 
   it('shows the owner rating prompt once per season in submission history', async () => {

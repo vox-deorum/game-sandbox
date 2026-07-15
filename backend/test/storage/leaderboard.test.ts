@@ -5,6 +5,7 @@
  * season attribution, latest-completed-run selection, placement rewrites, the rating
  * upsert/own-agent/Naive rules, both rating prompts, and leaderboard-recording retention protection.
  */
+import type BetterSqlite3 from 'better-sqlite3'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   persistPlacementsForCompletedRun,
@@ -19,7 +20,7 @@ import type {
   Storage,
 } from '../../src/storage/index.js'
 import { decodeSeasonConfig } from '../../src/storage/index.js'
-import { openSqliteStorage } from '../../src/storage/sqlite.js'
+import { openSqlite } from '../../src/storage/sqlite.js'
 
 const ENV = 'flappy_bird'
 const NAIVE: AgentRef = { kind: 'builtin-naive' }
@@ -85,9 +86,12 @@ function defined<T>(value: T | undefined): T {
 
 describe('leaderboard storage on :memory:', () => {
   let storage: Storage
+  let sqlite: BetterSqlite3.Database
 
   beforeEach(async () => {
-    storage = await openSqliteStorage(':memory:')
+    const opened = await openSqlite(':memory:')
+    storage = opened.storage
+    sqlite = opened.sqlite
   })
 
   afterEach(async () => {
@@ -312,6 +316,26 @@ describe('leaderboard storage on :memory:', () => {
 
   // --- placements ---
 
+  it('uses the submitted-placement owner index for the batched user read', () => {
+    const index = sqlite
+      .prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?")
+      .get('automated_placements_user_season') as { sql: string } | undefined
+    expect(index?.sql).toContain('(agent_user_id, season_id)')
+    expect(index?.sql).toContain("WHERE agent_kind = 'submission'")
+
+    const plan = sqlite
+      .prepare(
+        `EXPLAIN QUERY PLAN
+         SELECT * FROM automated_placements
+         WHERE agent_kind = 'submission' AND agent_user_id = ?
+         ORDER BY created_at DESC`,
+      )
+      .all('alice') as { detail: string }[]
+    expect(
+      plan.some((step) => step.detail.includes('USING INDEX automated_placements_user_season')),
+    ).toBe(true)
+  })
+
   it('replaceAutomatedPlacements rewrites rows for a re-run and supports submitted and Naive agents', async () => {
     const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
     const run1 = await storage.createRunWithSchedule(season.id, 'dev-user', [], ONE_GAME)
@@ -341,6 +365,8 @@ describe('leaderboard storage on :memory:', () => {
       }),
     ).toHaveLength(1)
     expect(await storage.listPlacementsByAgent(NAIVE, ENV)).toHaveLength(1)
+    expect(await storage.listPlacementsByUser('alice')).toHaveLength(1)
+    expect(await storage.listPlacementsByUser('bob')).toEqual([])
 
     // A re-run rewrites the snapshot rather than appending.
     const run2 = await storage.createRunWithSchedule(season.id, 'dev-user', [], ONE_GAME)
@@ -362,6 +388,7 @@ describe('leaderboard storage on :memory:', () => {
       }),
     ).toHaveLength(0)
     expect(await storage.listPlacementsByAgent(NAIVE, ENV)).toHaveLength(1)
+    expect(await storage.listPlacementsByUser('alice')).toEqual([])
   })
 
   // --- ratings ---

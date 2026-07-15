@@ -255,6 +255,14 @@ const initialSchema: Migration = {
       .on('automated_placements')
       .columns(['agent_kind', 'agent_submission_id', 'env_id'])
       .execute()
+    // The signed-in user's season summary reads all submitted-agent placements for one owner. Keep
+    // that request on an owner-bounded index rather than scanning every environment's placements;
+    // season_id is covered because response assembly groups the result by season.
+    await sql`
+      CREATE INDEX automated_placements_user_season
+      ON automated_placements (agent_user_id, season_id)
+      WHERE agent_kind = 'submission'
+    `.execute(db)
     // Placement uniqueness: submitted agents key on the submission id; the null-submission Naive row
     // gets a second partial index (SQLite treats nulls as distinct).
     await sql`

@@ -32,6 +32,7 @@ Season and leaderboard reads are separate from `/api/admin/*`. The public season
 - `GET /api/environments/:envId/leaderboards`: return the current released season and both boards. Also return the current open submission season id and current play-open season id when either exists. If nothing is released yet, return an empty current-board payload. The submission and play targets are reported even when their seasons are unreleased, since an open submission or play window makes a season publicly reachable without exposing its boards.
 - `GET /api/environments/:envId/seasons/:seasonId/leaderboards`: return both boards for a specific released season. Return `404` for unreleased or unknown seasons.
 - `GET /api/environments/:envId/agents/:ownerId/placements`: return automated placements for the agent profile, as `{ env_id, owner_id, placements }`, including released-season, Naive-free submitted-agent rows only. It gathers the owner's submissions for the environment and reads each one's placements, so a resubmission's released history is included; the Naive baseline has no owner and never appears here.
+- `GET /api/my/agents`: return the authenticated caller's current submission-open Season and three most recent earlier submitted Seasons per environment. Identity comes only from `requireUser`; the route accepts no owner identifier and remains readable to pending users. The response is assembled from batched user-submission, relevant-Season, and `listPlacementsByUser` reads. The active attempt is selected within each Season, while score matching considers every attempt in the Season. Unreleased placements are filtered out.
 
 ## Background execution and the runner seam
 
@@ -52,6 +53,7 @@ Backend Vitest with a fake/stub runner and `:memory:` storage, no Docker:
 - Triggering a run snapshots config/deps/requested_by plus the eligible ready submissions, persists the concrete schedule before enqueue, rejects an empty schedule with `409 empty_schedule`, and returns its id without invoking Docker inline (the stubbed runner records the enqueue). A second trigger while a run is in progress (`pending`/`running`) returns `409 run_in_progress`. Cancel marks the run `cancelled` through the runner stub.
 - The status route returns the admin view, including an unreleased season's boards. The operator form of `GET /api/seasons` includes unreleased seasons and refuses the flag for non-operators.
 - The public history and leaderboard routes return only released seasons and `404` an unreleased-specific board read.
+- The My Agents route rejects an unauthenticated caller, permits a pending caller, never returns another user's data, selects independent active attempts across Seasons, limits history deterministically, exposes scores only for released Seasons, and preserves a placement earned by an attempt later superseded through resubmission.
 - The WebSocket log-stream route relays the stub runner's emitted lines to a subscriber and closes on terminal status.
 - Startup reconciles a leftover `running` run to `failed`.
 
