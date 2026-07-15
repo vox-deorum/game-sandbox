@@ -12,7 +12,7 @@ The raw palette tier (`--palette-*`) holds the literal color values and is priva
 
 The semantic tier is the public vocabulary components consume:
 
-- Color: `--color-bg`, `--color-surface`, `--color-surface-raised`, `--color-border`, `--color-border-strong`, `--color-text`, `--color-text-muted`, `--color-accent`, `--color-on-accent`, `--color-danger`, `--color-success`, `--color-warning`, `--color-focus-ring`. These absorb the Stage 4 tokens (`--bg`, `--surface`, `--surface-2`, `--text`, `--muted`, `--accent`) and the colors that were hardcoded around them: the error red, the on-accent ink, and the overlay scrim.
+- Color: `--color-bg`, `--color-surface`, `--color-surface-raised`, `--color-border`, `--color-border-strong`, `--color-text`, `--color-text-muted`, `--color-accent`, `--color-on-accent`, `--color-current`, `--color-danger`, `--color-success`, `--color-warning`, `--color-focus-ring`. These absorb the Stage 4 tokens (`--bg`, `--surface`, `--surface-2`, `--text`, `--muted`, `--accent`) and the colors that were hardcoded around them: the error red, the on-accent ink, and the overlay scrim.
 - Spacing: `--space-1` through `--space-8` on a 4px base (4, 8, 12, 16, 24, 32, 48, 64). Component CSS uses these for padding, gaps, and margins, and arbitrary rem values disappear.
 - Type: `--text-xs` through `--text-2xl` for the size scale, and `--font-body` (the Lato stack), `--font-heading` (the EB Garamond stack), and `--font-mono` (ui-monospace) for the families. The fonts themselves are unchanged from Stage 4 by decision.
 - Radii: `--radius-sm` (4px), `--radius-md` (8px), `--radius-lg` (12px), `--radius-full` (999px).
