@@ -65,19 +65,20 @@ test('a submitted agent validates to ready and runs in a watch session', async (
   await expect(currentSeason.getByText('ready to compete')).toBeVisible()
   await expect(currentSeason.getByText('Not submitted')).toHaveCount(0)
 
-  // My Agents presents the same current-season state as one whole-card link back to this season.
+  // My Agents presents the same current-season state as one compact whole-row link back to this season.
   await page.goto('/my/agents')
   const environmentGroup = page.locator('.environment-group').filter({ hasText: 'Flappy Bird' })
-  await expect(environmentGroup.getByRole('heading', { name: 'Current Season' })).toBeVisible()
   const currentSeasonLink = environmentGroup.getByRole('link', {
-    name: /ready to compete Submitted/,
+    name: /Current season .* ready to compete/,
   })
-  await expect(currentSeasonLink.getByText(/Submitted/)).toBeVisible()
+  await expect(currentSeasonLink.getByText('Current season')).toBeAttached()
   await expect(currentSeasonLink.getByText('ready to compete')).toBeVisible()
+  await expect(currentSeasonLink.locator('.season-row-date')).toBeVisible()
+  await expect(currentSeasonLink.getByText(/Submitted/)).toHaveCount(0)
   await currentSeasonLink.click()
   await expect(page).toHaveURL(/\/environments\/flappy_bird\/agents\/.+\?season=/)
 
-  // The whole-card click lands on the matching My Submissions season, whose validation timeline shows
+  // The whole-row click lands on the matching My Submissions season, whose validation timeline shows
   // every stage passed.
   for (const stage of ['resolve', 'static', 'build', 'load']) {
     await expect(page.getByTestId(`stage-${stage}`)).toContainText('passed')

@@ -1,6 +1,6 @@
 # Stage 4.5: Design Foundation
 
-Status: implemented. The tokens, the three-file global stylesheet, the Reka UI adoption, the `components/ui/` primitives with their suites, and the dev-only styleguide route are all built. The production build confirms the styleguide chunk's absence and that Reka contributes only the imported Dialog and Slider. The token values below are as implemented; they may still move during checkpoint-two season.
+Status: implemented. The tokens, the three foundational global stylesheets, the Reka UI adoption, the `components/ui/` primitives with their suites, and the dev-only styleguide route are all built. A later submissions change adds `season-rows.css` after those foundation layers for the compact row pattern shared by My Agents and agent profiles. The production build confirms the styleguide chunk's absence and that Reka contributes only the imported Dialog and Slider. The token values below are as implemented; they may still move during checkpoint-two season.
 
 Part of [Stage 4.5](../stage-04.5-ui-restructure.md). This document covers the layer everything else builds on: the design tokens, the reorganized global stylesheets, the Reka UI adoption, the `components/ui/` primitives, and the dev-only styleguide route. None of this depends on the IA approval. It proceeds in parallel and is reviewed at checkpoint two, which covers the styleguide plus the redesigned Home.
 
@@ -31,6 +31,8 @@ The single `src/styles.css` is replaced by three files under `src/styles/`, impo
 - `tokens.css`: the tokens above, nothing else.
 - `base.css`: the reset and element defaults (box sizing, body background and text, heading font family, link behavior, the global focus-visible style, the reduced-motion block).
 - `app.css`: the app shell layout only (the top bar zones, the main column and its max width).
+
+Feature-level styles remain scoped by default. `season-rows.css` is the later shared exception, imported after `app.css` because My Agents and agent profiles use the same compact row, stripe, date, and visually hidden utilities.
 
 During the transition, the legacy component classes from `styles.css` survive in a fourth file, re-expressed over the new semantic tokens so the existing pages keep working unchanged while they wait their turn to migrate. As each page migrates to primitives and scoped styles, its classes leave the legacy file. The file is deleted at the end of the stage.
 

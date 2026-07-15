@@ -349,9 +349,8 @@ const seasonLabel = (label: string | null, id: string): string =>
     </header>
 
     <section v-if="isOwner()" class="agent-section">
-      <!-- The current-season context rides on the heading as two tags — a season pill and a
-           submission-status badge — rather than a standalone card. Keeps the id/tabindex anchor the
-           season deep-link navigation focuses and scrolls to. -->
+      <!-- The current-season context stays on the plain heading as two tags. The id/tabindex anchor
+           remains here so season deep links focus and scroll to it. -->
       <div id="current-season-banner" class="submit-head" tabindex="-1">
         <h2>Submit an Agent</h2>
         <template v-if="profile.submission_season_id !== null">
@@ -405,10 +404,10 @@ const seasonLabel = (label: string | null, id: string): string =>
               class="submission-item"
             >
               <UiCard :padded="false">
-                <div class="submission-body" :class="statusAccentClass(submission.status)">
+                <div class="season-row" :class="statusAccentClass(submission.status)">
                   <button
                     type="button"
-                    class="submission-summary"
+                    class="submission-summary season-row-line"
                     :aria-expanded="isOpen(group.seasonId, submission.id)"
                     :aria-controls="`submission-detail-${submission.id}`"
                     @click="toggle(group.seasonId, submission.id)"
@@ -422,7 +421,7 @@ const seasonLabel = (label: string | null, id: string): string =>
                     <span class="submission-season">{{ seasonCaption(group.seasonId) }}</span>
                     <code class="submission-id">#{{ shortId(submission.id) }}</code>
                     <UiStatusBadge v-bind="statusBadge(submission)" />
-                    <span class="submission-date">
+                    <span class="season-row-date">
                       <Clock :size="13" aria-hidden="true" />{{ formatDate(submission.created_at) }}
                     </span>
                   </button>
@@ -575,8 +574,6 @@ const seasonLabel = (label: string | null, id: string): string =>
   margin-bottom: var(--space-6);
 }
 
-/* The Submit an Agent heading and its current-season tags share one wrapping row. The id/tabindex
-   anchor lives here so the season deep-link navigation can focus and scroll to it. */
 .submit-head {
   display: flex;
   align-items: center;
@@ -638,33 +635,7 @@ const seasonLabel = (label: string | null, id: string): string =>
   scroll-margin-top: var(--space-5);
 }
 
-/* The status accent stripe lets a stack of submissions be scanned by outcome. The body owns its
-   padding (the card is unpadded) so the stripe runs flush to the card edge. */
-.submission-body {
-  padding: var(--space-4) var(--space-5);
-  border-left: 3px solid transparent;
-}
-
-.submission-body.status-success {
-  border-left-color: var(--color-success);
-}
-
-.submission-body.status-danger {
-  border-left-color: var(--color-danger);
-}
-
-.submission-body.status-warning {
-  border-left-color: var(--color-warning);
-}
-
-.submission-body.status-neutral {
-  border-left-color: var(--color-border-strong);
-}
-
 .submission-summary {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
   width: 100%;
   padding: 0;
   border: none;
@@ -690,16 +661,6 @@ const seasonLabel = (label: string | null, id: string): string =>
   font-family: var(--font-mono);
   font-size: var(--text-sm);
   color: var(--color-text-muted);
-}
-
-.submission-date {
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  font-size: var(--text-sm);
-  color: var(--color-text-muted);
-  white-space: nowrap;
 }
 
 .submission-detail {

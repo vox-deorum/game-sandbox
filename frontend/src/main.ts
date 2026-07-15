@@ -30,12 +30,12 @@ import SeasonsPage from './pages/SeasonsPage.vue'
 import SessionPage from './pages/SessionPage.vue'
 import UsersAdminPage from './pages/UsersAdminPage.vue'
 import './renderers/index.js'
-// Style layers in order: tokens, reset, then the app shell layout. Component styling lives in scoped
-// component CSS on the tokens (see plans/stage-04.5/design-foundation.md); the global sheet carries
-// only these three layers now that every page has migrated off the transitional stylesheet.
+// Style layers in order: tokens, reset, the app shell layout, then shared season rows. Other component
+// styling lives in scoped CSS on the tokens (see plans/stage-04.5/design-foundation.md).
 import './styles/tokens.css'
 import './styles/base.css'
 import './styles/app.css'
+import './styles/season-rows.css'
 // The highlight.js token colors for fenced code in the in-app docs. The renderer already emits
 // `hljs-*` token spans (see docs/markdown.ts); this theme is what gives them color. `github-dark`'s
 // near-black background matches the ink surface, and DocsMarkdown's scoped `pre.hljs` rule keeps the

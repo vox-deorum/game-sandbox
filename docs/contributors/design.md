@@ -42,7 +42,7 @@ The scales:
 - **Radii** `--radius-sm` (4px), `--radius-md` (8px), `--radius-lg` (12px), `--radius-full` (pill).
 - **Motion** `--motion-fast` (~120ms), `--motion-base` (~200ms), `--ease-out`. A global `prefers-reduced-motion: reduce` block in `base.css` zeroes the durations, so any component animating with the tokens calms down automatically.
 
-The global stylesheet is three files imported in order by `main.ts`: `tokens.css` (the tokens), `base.css` (the reset, element defaults, the one global `:focus-visible` style, the reduced-motion block), and `app.css` (the app shell layout only). Everything else is scoped component CSS on the tokens.
+The global stylesheet is four files imported in order by `main.ts`: `tokens.css` (the tokens), `base.css` (the reset, element defaults, the one global `:focus-visible` style, the reduced-motion block), `app.css` (the app shell layout only), and `season-rows.css` (the compact row, status stripe, date, and visually hidden utilities shared by My Agents and agent profiles). Everything else is scoped component CSS on the tokens.
 
 ## Type and color
 

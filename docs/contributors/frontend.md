@@ -31,7 +31,7 @@ The app uses Vue reactivity and small explicit classes instead of a state-manage
 | `src/environmentCatalog.ts` | Application-lifetime environment metadata cache |
 | `src/renderers/` | Renderer contract, registry, PixiJS base, environment modules |
 | `src/replay/` | Browser-safe recording parser and replay transport |
-| `src/styles/` | Tokens, global element rules, and app-shell layout |
+| `src/styles/` | Tokens, global element rules, app-shell layout, and shared Season-row presentation |
 | `src/auth.ts` | The Better Auth Vue client |
 | `src/me.ts` | Shared `GET /api/me` state |
 | `src/composables/useSiteConfig.ts` | Shared `GET /api/config` site name for the brand and title |
@@ -42,8 +42,9 @@ The global styles load in this order:
 1. `tokens.css`
 2. `base.css`
 3. `app.css`
+4. `season-rows.css`
 
-Feature styles stay scoped to their components and use the semantic tokens.
+Feature styles stay scoped to their components and use the semantic tokens. `season-rows.css` is the shared exception for the compact Season rows used by My Agents and agent profiles.
 
 ## Run and test
 
@@ -171,7 +172,7 @@ The local-folder field exists only when both `import.meta.env.DEV` and the backe
 
 `AgentProfilePage.vue` shows one owner's history for one environment, including superseded submissions, validation checks, placements, and recent replays. The owner also sees the submission form, author prompt editor, and owner-only LLM debug surface.
 
-For the owner, the page folds the current-Season context onto the **Submit an Agent** heading as two tags rather than a standalone card: a `Current Season: <label>` badge and a submission-status badge (or **Not submitted** when no active attempt exists). It matches the non-superseded submission by `season_id`; a failed validation remains a submitted attempt, and its status tag shows the failure. The public Season label loads independently of the profile, so a failed metadata request leaves the profile usable and falls back to `Season <short id>`. When no Season accepts submissions, the heading carries the single closed-window message.
+For the owner, the current-Season context sits on the plain **Submit an Agent** heading as two tags: a `Current Season: <label>` badge and a submission-status badge (or **Not submitted** when no active attempt exists). It matches the non-superseded submission by `season_id`; a failed validation remains a submitted attempt, and its status tag shows the failure. The public Season label loads independently of the profile, so a failed metadata request leaves the profile usable and falls back to `Season <short id>`. When no Season accepts submissions, the heading carries the single closed-window message.
 
 `SubmitAgentForm.vue` emits once when the backend accepts the pending submission and again when polling reaches a terminal validation status. `AgentProfilePage.vue` reloads after both events. The first reload flips the status tag to pending immediately, while the second makes the final validation result and stored checks visible.
 
@@ -181,9 +182,9 @@ The optional `?season=<seasonId>` query makes My Submissions a Season-level dest
 
 The backend builds this response with batched reads for all of the caller's submissions, relevant Seasons, and `listPlacementsByUser(userId)`. Within a Season, the displayed attempt is only the non-superseded row. Score resolution examines every attempt by that user in that Season, because a later resubmission may supersede the submission that earned the latest released placement. A placement is returned only while its Season is released. Previous Seasons use the storage layer's canonical newest-first ordering, `created_at` followed by its existing row-order tie-break, exclude the current Season, and are limited to three after filtering to submitted Seasons.
 
-My Agents includes an environment when it has either a submission-open Season or submission history. It renders the current Season first and previous Seasons after it, with explicit submitted/not-submitted, status, date, and released-score states. Each interactive `UiCard` is covered by one descriptive `RouterLink` to `/environments/:envId/agents/:ownerId?season=:seasonId`; do not add a separate profile link inside the card. Score rendering must distinguish `null` from zero so zero and negative results remain visible.
+My Agents includes an environment when it has either a submission-open Season or submission history. Each environment has one flat list of compact Season rows with no subsection headings. The current Season appears first with an accent stripe and a visually hidden **Current season** label, while previous rows use submission-status stripes. A submitted row shows its status and date. The current row shows a score only after results are released; previous rows retain the full **Score N**, **No score**, and **Results not released** vocabulary. Each interactive `UiCard` is covered by one descriptive `RouterLink` to `/environments/:envId/agents/:ownerId?season=:seasonId`; do not add a separate profile link inside the card. Score rendering must distinguish `null` from zero so zero and negative results remain visible.
 
-Backend and storage tests cover authentication, pending-user reads, ownership isolation, active-attempt selection per Season, deterministic three-Season history, release filtering, and a score earned before resubmission. API-client contract tests pin the summary DTO. Frontend unit tests cover My Agents loading, error and signed-out states, every score state, whole-card links, current-Season profile states, metadata fallback, both form refresh events, and asynchronous deep-link behavior. The Playwright submission journey covers both pages and follows a Season card into My Submissions. Run `uv run python scripts/ci.py frontend-e2e` after these UI changes.
+Backend and storage tests cover authentication, pending-user reads, ownership isolation, active-attempt selection per Season, deterministic three-Season history, release filtering, and a score earned before resubmission. API-client contract tests pin the summary DTO. Frontend unit tests cover My Agents loading, error and signed-out states, every score state, whole-row links, current-Season profile states, metadata fallback, both form refresh events, and asynchronous deep-link behavior. The Playwright submission journey covers both pages and follows a Season row into My Submissions. Run `uv run python scripts/ci.py frontend-e2e` after these UI changes.
 
 `WatchAgentPicker.vue` lists:
 

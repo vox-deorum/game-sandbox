@@ -340,8 +340,9 @@ describe('AgentProfilePage', () => {
       ],
     })
 
-    const banner = await screen.findByText('Current Season: Week 4')
-    expect(banner).toBeInTheDocument()
+    const seasonTag = await screen.findByText('Current Season: Week 4')
+    expect(seasonTag).toBeInTheDocument()
+    expect(seasonTag.closest('.ui-card')).toBeNull()
     expect(screen.getAllByText('load check failed').length).toBeGreaterThan(0)
     expect(screen.queryByText('Not submitted')).toBeNull()
   })

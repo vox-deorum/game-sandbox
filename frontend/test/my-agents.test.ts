@@ -61,7 +61,7 @@ describe('MyAgentsPage', () => {
     ])
   })
 
-  it('shows current submission state and links the whole season card to My Submissions', async () => {
+  it('shows current submission state and links the whole season row to My Submissions', async () => {
     vi.mocked(getMyAgents).mockResolvedValue([
       {
         env_id: 'flappy_bird',
@@ -92,23 +92,65 @@ describe('MyAgentsPage', () => {
     await renderPage()
 
     const flappyLink = await screen.findByRole('link', {
-      name: /Week 4 pending Submitted .* Results not released/,
+      name: /Current season Week 4 pending/,
     })
     expect(flappyLink).toHaveAttribute(
       'href',
       '/environments/flappy_bird/agents/student-1?season=week-4',
     )
-    expect(within(flappyLink).getByText(/Submitted/)).toBeInTheDocument()
     expect(within(flappyLink).getByText('pending')).toBeInTheDocument()
-    expect(within(flappyLink).getByText('Results not released')).toBeInTheDocument()
-    expect(flappyLink).toHaveAccessibleName(/Week 4 pending Submitted .* Results not released/)
+    expect(within(flappyLink).queryByText('Results not released')).toBeNull()
+    expect(flappyLink).toHaveAccessibleName(/Current season Week 4 pending/)
 
     const heartsLink = screen.getByRole('link', {
-      name: 'Season week-2 Not submitted Results not released',
+      name: /Current season Season week-2 Not submitted/,
     })
     expect(within(heartsLink).getByText('Not submitted')).toBeInTheDocument()
-    expect(heartsLink).toHaveAccessibleName('Season week-2 Not submitted Results not released')
+    expect(heartsLink).toHaveAccessibleName(/Current season Season week-2 Not submitted/)
     expect(screen.queryByText('Open agent profile')).toBeNull()
+  })
+
+  it('shows a released score on the current season row', async () => {
+    vi.mocked(getMyAgents).mockResolvedValue([
+      {
+        env_id: 'flappy_bird',
+        current_season: season('week-4', {
+          label: 'Week 4',
+          release_status: 'released',
+          mean_score: 4.2,
+        }),
+        previous_seasons: [],
+      },
+    ])
+
+    await renderPage()
+
+    const currentLink = await screen.findByRole('link', {
+      name: /Current season Week 4 ready to compete Score 4.20/,
+    })
+    expect(within(currentLink).getByText('Score 4.20')).toBeInTheDocument()
+  })
+
+  it('shows no score when a released current season has no submission', async () => {
+    vi.mocked(getMyAgents).mockResolvedValue([
+      {
+        env_id: 'flappy_bird',
+        current_season: season('week-4', {
+          label: 'Week 4',
+          release_status: 'released',
+          submission: null,
+          mean_score: null,
+        }),
+        previous_seasons: [],
+      },
+    ])
+
+    await renderPage()
+
+    const currentLink = await screen.findByRole('link', {
+      name: /Current season Week 4 Not submitted No score/,
+    })
+    expect(within(currentLink).getByText('No score')).toBeInTheDocument()
   })
 
   it('shows at most three previous seasons and preserves zero, negative, and missing scores', async () => {
@@ -133,7 +175,13 @@ describe('MyAgentsPage', () => {
     expect(screen.queryByText('Hidden')).toBeNull()
     expect(screen.getAllByRole('link')).toHaveLength(3)
     expect(
-      screen.getByRole('link', { name: /Zero ready to compete Submitted .* Score 0.00/ }),
+      screen.getByRole('link', { name: /Zero ready to compete Score 0.00/ }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: /Negative ready to compete Score -2.50/ }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: /Missing ready to compete No score/ }),
     ).toBeInTheDocument()
   })
 
@@ -182,7 +230,7 @@ describe('MyAgentsPage', () => {
 
     expect(
       await screen.findByRole('link', {
-        name: 'Week 4 Not submitted Results not released',
+        name: /Current season Week 4 Not submitted/,
       }),
     ).toHaveAttribute('href', '/environments/flappy_bird/agents/pending-student?season=week-4')
     expect(vi.mocked(getMyAgents)).toHaveBeenCalledOnce()

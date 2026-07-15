@@ -1,10 +1,11 @@
 <!--
-  My Agents is the signed-in student's cross-environment season index. It leads with the season
-  currently accepting submissions, then keeps the three most recent seasons the student entered close
-  at hand. Every season card is one link to that season in My Submissions.
+  My Agents is the signed-in student's compact cross-environment season index. Each environment has
+  one flat list with the current season first, followed by recent seasons. Every row is one link to
+  that season in My Submissions.
 -->
 <script setup lang="ts">
 import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
+import { Clock } from '@lucide/vue'
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 
@@ -24,6 +25,11 @@ import { useMe, userId } from '../me.js'
 interface EnvironmentAgent {
   summary: MyAgentEnvironmentSummary
   meta: EnvironmentMeta | null
+}
+
+interface SeasonRow {
+  season: MyAgentSeasonSummary
+  isCurrent: boolean
 }
 
 const me = useMe()
@@ -67,11 +73,35 @@ function seasonLink(envId: string, seasonId: string): string {
   return `/environments/${encodeURIComponent(envId)}/agents/${encodeURIComponent(ownerId.value ?? '')}?season=${encodeURIComponent(seasonId)}`
 }
 
+function seasonsFor(row: EnvironmentAgent): SeasonRow[] {
+  const current = row.summary.current_season
+  return [
+    ...(current === null ? [] : [{ season: current, isCurrent: true }]),
+    ...row.summary.previous_seasons
+      .slice(0, 3)
+      .map((season) => ({ season, isCurrent: false })),
+  ]
+}
+
+function statusAccentClass(
+  status: NonNullable<MyAgentSeasonSummary['submission']>['status'],
+): string {
+  return `status-${submissionStatusTone(status)}`
+}
+
 function resultLabel(season: MyAgentSeasonSummary): string {
   if (season.release_status !== 'released') {
     return 'Results not released'
   }
   return season.mean_score === null ? 'No score' : `Score ${formatScore(season.mean_score)}`
+}
+
+function currentResult(season: MyAgentSeasonSummary): string | null {
+  return season.release_status === 'released' ? resultLabel(season) : null
+}
+
+function rowResult(row: SeasonRow): string | null {
+  return row.isCurrent ? currentResult(row.season) : resultLabel(row.season)
 }
 </script>
 
@@ -94,62 +124,49 @@ function resultLabel(season: MyAgentSeasonSummary): string {
     <ul v-else class="environment-list">
       <li v-for="row in rows" :key="row.summary.env_id" class="environment-group">
         <h2>{{ environmentName(row) }}</h2>
-
-        <section v-if="row.summary.current_season !== null" class="season-section">
-          <h3>Current Season</h3>
-          <RouterLink
-            class="season-card-link"
-            :to="seasonLink(row.summary.env_id, row.summary.current_season.id)"
-          >
-            <UiCard interactive>
-              <div class="season-head">
-                <span class="season-name">{{ seasonName(row.summary.current_season) }}</span>
-                <UiStatusBadge
-                  v-if="row.summary.current_season.submission !== null"
-                  :tone="submissionStatusTone(row.summary.current_season.submission.status)"
-                  :label="submissionStatusLabel(row.summary.current_season.submission.status)"
-                />
-              </div>
-              <div class="season-facts">
-                <span v-if="row.summary.current_season.submission !== null">
-                  Submitted {{ formatDate(row.summary.current_season.submission.submitted_at) }}
-                </span>
-                <strong v-else class="not-submitted">Not submitted</strong>
-                <span class="season-result">{{ resultLabel(row.summary.current_season) }}</span>
-              </div>
-            </UiCard>
-          </RouterLink>
-        </section>
-
-        <section v-if="row.summary.previous_seasons.length > 0" class="season-section">
-          <h3>Previous Seasons</h3>
-          <ul class="previous-list">
-            <li v-for="season in row.summary.previous_seasons" :key="season.id">
-              <RouterLink
-                class="season-card-link"
-                :to="seasonLink(row.summary.env_id, season.id)"
-              >
-                <UiCard interactive>
-                  <div class="season-head">
-                    <span class="season-name">{{ seasonName(season) }}</span>
-                    <UiStatusBadge
-                      v-if="season.submission !== null"
-                      :tone="submissionStatusTone(season.submission.status)"
-                      :label="submissionStatusLabel(season.submission.status)"
-                    />
-                  </div>
-                  <div class="season-facts">
-                    <span v-if="season.submission !== null">
-                      Submitted {{ formatDate(season.submission.submitted_at) }}
-                    </span>
+        <ul class="season-list">
+          <li v-for="seasonRow in seasonsFor(row)" :key="seasonRow.season.id">
+            <RouterLink
+              class="season-card-link"
+              :to="seasonLink(row.summary.env_id, seasonRow.season.id)"
+            >
+              <UiCard interactive :padded="false">
+                <div
+                  class="season-row"
+                  :class="
+                    seasonRow.isCurrent
+                      ? 'status-current'
+                      : seasonRow.season.submission === null
+                        ? undefined
+                        : statusAccentClass(seasonRow.season.submission.status)
+                  "
+                >
+                  <span v-if="seasonRow.isCurrent" class="sr-only">Current season</span>
+                  <div class="season-row-line">
+                    <span class="season-name">{{ seasonName(seasonRow.season) }}</span>
+                    <template v-if="seasonRow.season.submission !== null">
+                      <UiStatusBadge
+                        :tone="submissionStatusTone(seasonRow.season.submission.status)"
+                        :label="submissionStatusLabel(seasonRow.season.submission.status)"
+                      />
+                    </template>
                     <strong v-else class="not-submitted">Not submitted</strong>
-                    <span class="season-result">{{ resultLabel(season) }}</span>
+                    <span v-if="rowResult(seasonRow) !== null" class="season-result">
+                      {{ rowResult(seasonRow) }}
+                    </span>
+                    <span
+                      v-if="seasonRow.season.submission !== null"
+                      class="season-row-date"
+                    >
+                      <Clock :size="13" aria-hidden="true" />
+                      {{ formatDate(seasonRow.season.submission.submitted_at) }}
+                    </span>
                   </div>
-                </UiCard>
-              </RouterLink>
-            </li>
-          </ul>
-        </section>
+                </div>
+              </UiCard>
+            </RouterLink>
+          </li>
+        </ul>
       </li>
     </ul>
   </section>
@@ -161,8 +178,7 @@ function resultLabel(season: MyAgentSeasonSummary): string {
 }
 
 .my-agents-intro h1,
-.environment-group h2,
-.season-section h3 {
+.environment-group h2 {
   margin-top: 0;
 }
 
@@ -176,7 +192,7 @@ function resultLabel(season: MyAgentSeasonSummary): string {
 }
 
 .environment-list,
-.previous-list {
+.season-list {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -193,22 +209,9 @@ function resultLabel(season: MyAgentSeasonSummary): string {
   font-size: var(--text-xl);
 }
 
-.season-section + .season-section {
-  margin-top: var(--space-4);
-}
-
-.season-section h3 {
-  margin-bottom: var(--space-2);
-  color: var(--color-text-muted);
-  font-family: var(--font-body);
-  font-size: var(--text-sm);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.previous-list {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+.season-list {
+  display: flex;
+  flex-direction: column;
   gap: var(--space-3);
 }
 
@@ -217,32 +220,9 @@ function resultLabel(season: MyAgentSeasonSummary): string {
   color: inherit;
 }
 
-.season-card-link > :deep(.ui-card) {
-  height: 100%;
-}
-
-.season-head,
-.season-facts {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-}
-
-.season-head {
-  justify-content: space-between;
-  margin-bottom: var(--space-3);
-}
-
 .season-name {
-  font-size: var(--text-lg);
-  font-weight: 600;
-}
-
-.season-facts {
-  justify-content: space-between;
-  flex-wrap: wrap;
-  color: var(--color-text-muted);
   font-size: var(--text-sm);
+  font-weight: 600;
 }
 
 .not-submitted {
@@ -253,20 +233,6 @@ function resultLabel(season: MyAgentSeasonSummary): string {
 .season-result {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-}
-
-@media (max-width: 768px) {
-  .previous-list {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 480px) {
-  .season-head,
-  .season-facts {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
+  color: var(--color-text-muted);
 }
 </style>
