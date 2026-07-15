@@ -82,40 +82,78 @@ describe('SeatAssignmentDialog', () => {
     expect(within(firstSeat).getByRole('option', { name: 'Agent 2' })).toBeInTheDocument()
   })
 
-  it('shows owner display names for operator-owned submissions and falls back to the stable id', () => {
+  it('shows operator names or short submission ids while retaining the complete selected id', async () => {
+    const namedSubmissionId = 'named-submission-1234567890'
+    const namedOwnerId = 'named-owner-0987654321'
+    const fallbackSubmissionId = 'fallback-submission-abcdefghij'
+    const fallbackOwnerId = 'fallback-owner-jihgfedcba'
     const operatorAgents = [
       agent({
-        submission_id: 'sub1',
-        owner_id: 'opaque-user-1',
+        submission_id: namedSubmissionId,
+        owner_id: namedOwnerId,
         owner_name: 'Eve Adler',
         rating_status: 'own',
         source_kind: 'git',
         commit_sha: 'abcdef1234567890',
       }),
       agent({
-        submission_id: 'sub2',
+        submission_id: fallbackSubmissionId,
         anonymous_number: 2,
-        owner_id: 'opaque-user-2',
+        owner_id: fallbackOwnerId,
         source_kind: 'local',
       }),
     ]
-    render(SeatAssignmentDialog, {
+    const { emitted } = render(SeatAssignmentDialog, {
       props: {
         meta: heartsMeta(),
         agents: operatorAgents,
         mode: 'watch',
         isOperator: true,
+        preselect: {
+          kind: 'submission',
+          submissionId: fallbackSubmissionId,
+        } satisfies SlotAssignmentInput,
       },
     })
 
     const firstSeat = seat('Seat 1')
-    expect(
-      within(firstSeat).getByRole('option', { name: 'Eve Adler · abcdef1234' }),
-    ).toBeInTheDocument()
-    expect(
-      within(firstSeat).getByRole('option', { name: 'opaque-user-2 · local folder' }),
-    ).toBeInTheDocument()
-    expect(within(firstSeat).queryByText('opaque-user-1')).toBeNull()
+    const namedOption = within(firstSeat).getByRole('option', {
+      name: 'Eve Adler · abcdef1234',
+    }) as HTMLOptionElement
+    const fallbackOption = within(firstSeat).getByRole('option', {
+      name: 'fallback · local folder',
+    }) as HTMLOptionElement
+
+    // Operator-owned submissions still use the operator label branch, not the regular "Your agent"
+    // label. The missing-name fallback comes from the submission id, never the owner's stable id.
+    expect(namedOption).toHaveTextContent(/^Eve Adler · abcdef1234$/)
+    expect(fallbackOption).toHaveTextContent(/^fallback · local folder$/)
+    expect(within(firstSeat).queryByRole('option', { name: 'Your agent' })).toBeNull()
+
+    // Full owner and submission identifiers are absent from visible and accessible option labels.
+    for (const identifier of [
+      namedSubmissionId,
+      namedOwnerId,
+      fallbackSubmissionId,
+      fallbackOwnerId,
+    ]) {
+      expect(namedOption.textContent).not.toContain(identifier)
+      expect(fallbackOption.textContent).not.toContain(identifier)
+      expect(within(firstSeat).queryByRole('option', { name: new RegExp(identifier) })).toBeNull()
+    }
+
+    // Only the label is shortened. Native values, preselection, decoding, and the emitted session
+    // payload all retain the complete submission id.
+    expect(fallbackOption.value).toBe(`submission:${fallbackSubmissionId}`)
+    expect(firstSeat.value).toBe(`submission:${fallbackSubmissionId}`)
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Start watching' }))
+    expect(lastStart(emitted).slots).toEqual({
+      player_0: { kind: 'submission', submissionId: fallbackSubmissionId },
+      player_1: { kind: 'submission', submissionId: fallbackSubmissionId },
+      player_2: { kind: 'submission', submissionId: fallbackSubmissionId },
+      player_3: { kind: 'submission', submissionId: fallbackSubmissionId },
+    })
   })
 
   it('watch: changing a preselected assignment before Start is reflected in the payload', async () => {

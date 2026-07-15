@@ -23,6 +23,7 @@ import { computed, reactive, ref } from 'vue'
 
 import type { SlotAssignmentInput, StartPayload, WatchAgentSummary } from '../api/client.js'
 import { maskedSubmissionLabel } from '../lib/attribution.js'
+import { shortId } from '../lib/format.js'
 import { optionalNumber } from '../lib/forms.js'
 import UiButton from './ui/UiButton.vue'
 import UiField from './ui/UiField.vue'
@@ -117,8 +118,8 @@ function sourceLabel(agent: WatchAgentSummary): string {
 
 /** Name one submitted agent for the dropdown: own, operator owner/source, or anonymous number. */
 function agentOptionLabel(agent: WatchAgentSummary): string {
-  if (props.isOperator === true && agent.owner_id !== undefined) {
-    return `${agent.owner_name ?? agent.owner_id} · ${sourceLabel(agent)}`
+  if (props.isOperator === true) {
+    return `${agent.owner_name ?? shortId(agent.submission_id, 8)} · ${sourceLabel(agent)}`
   }
   if (agent.rating_status === 'own') {
     return 'Your agent'
