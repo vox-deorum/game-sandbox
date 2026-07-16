@@ -423,7 +423,8 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
          redirect: they may watch a public session through its end without signing in. -->
     <SessionRatings v-if="status === 'ended' && me.me?.user != null" :session-id="id" />
     <UiEmptyState v-else-if="status === 'ended' && !me.loading">
-      Sign in to rate the agents in this session. <RouterLink to="/login">Sign in</RouterLink>
+      <RouterLink class="sign-in-link" to="/login">Sign in</RouterLink> to rate the agents in this
+      session.
     </UiEmptyState>
 
     <StageFrame
@@ -549,6 +550,10 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
 .session-controls {
   display: flex;
   gap: var(--space-1);
+}
+
+.sign-in-link {
+  color: var(--color-accent);
 }
 
 .overlay-banner {

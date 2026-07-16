@@ -209,6 +209,11 @@ const seasonCaption = (seasonId: string): string => {
 /** The owner viewing their own profile unlocks the owner-only affordances (the Stage 9 debug view). */
 const isOwner = () => userId(me.me) === ownerId
 
+/** Prefer public profile attribution, then the signed-in owner's own identity, before the stable id. */
+const ownerName = computed(
+  () => profile.value?.owner_name ?? (isOwner() ? me.me?.user?.name : null) ?? ownerId,
+)
+
 /** The exact active attempt in the submission-open season, never an active row from another season. */
 const currentSeasonSubmission = computed(() => {
   const seasonId = profile.value?.submission_season_id
@@ -327,8 +332,7 @@ const heading = computed(() => {
   if (isOwner()) {
     return 'My Submissions'
   }
-  const name = profile.value?.owner_name ?? ownerId
-  return `${name}'s Submissions`
+  return `${ownerName.value}'s Submissions`
 })
 
 /** The owner's rating prompt for a season, or null when they set none (shown per season group). */
@@ -381,8 +385,8 @@ const seasonLabel = (label: string | null, id: string): string =>
     <section class="agent-section">
       <h2>Submission History</h2>
       <UiEmptyState v-if="profile.submissions.length === 0">
-        <span :title="ownerId">{{ profile.owner_name ?? ownerId }}</span> has not submitted an agent
-        for this environment yet.
+        <span :title="ownerId">{{ ownerName }}</span> has not submitted an agent for this environment
+        yet.
       </UiEmptyState>
       <div v-else class="season-groups">
         <div

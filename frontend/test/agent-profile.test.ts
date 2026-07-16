@@ -560,8 +560,12 @@ describe('AgentProfilePage', () => {
   })
 
   it('shows an empty history for an owner with no submissions', async () => {
-    await renderProfile({ env_id: 'flappy_bird', owner_id: 'newbie', submissions: [] })
+    vi.mocked(getMe).mockResolvedValue(signedInMe('eve', 'normal', { name: 'Eve Adler' }))
+    await renderProfile({ env_id: 'flappy_bird', owner_id: 'eve', submissions: [] })
+
     expect(await screen.findByText(/has not submitted an agent/)).toBeInTheDocument()
+    expect(screen.getByText('Eve Adler')).toHaveAttribute('title', 'eve')
+    expect(screen.queryByText('eve', { exact: true })).toBeNull()
   })
 
   it('prefers the profile owner_name over the owner id in the heading and empty state, once loaded', async () => {

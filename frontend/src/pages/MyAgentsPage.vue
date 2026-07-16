@@ -113,7 +113,7 @@ function rowResult(row: SeasonRow): string | null {
     </header>
 
     <UiEmptyState v-if="signedOut">
-      Sign in to see your agents. <RouterLink to="/login">Sign in</RouterLink>
+      <RouterLink class="sign-in-link" to="/login">Sign in</RouterLink> to see your agents.
     </UiEmptyState>
     <UiEmptyState v-else-if="error" tone="danger">Could not load your agents.</UiEmptyState>
     <UiEmptyState v-else-if="rows === null">Loading…</UiEmptyState>
@@ -191,6 +191,10 @@ function rowResult(row: SeasonRow): string | null {
 .my-agents-lede {
   margin: 0;
   color: var(--color-text-muted);
+}
+
+.sign-in-link {
+  color: var(--color-accent);
 }
 
 .environment-list,

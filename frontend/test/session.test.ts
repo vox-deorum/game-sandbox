@@ -517,10 +517,11 @@ describe('SessionPage', () => {
     vi.mocked(getSession).mockResolvedValue(endedOwnerRow())
     await renderSession()
 
-    const prompt = await screen.findByText(/Sign in to rate the agents in this session\./)
-    expect(prompt).toBeInTheDocument()
-    const signIn = within(prompt).getByRole('link', { name: 'Sign in' })
+    const signIn = await screen.findByRole('link', { name: 'Sign in' })
     expect(signIn).toHaveAttribute('href', '/login')
+    expect(signIn).toHaveClass('sign-in-link')
+    expect(signIn.parentElement?.firstElementChild).toBe(signIn)
+    expect(signIn.parentElement).toHaveTextContent('Sign in to rate the agents in this session.')
     // The panel never mounts for an anonymous viewer, so its self-fetch never runs.
     expect(screen.queryByTestId('ratings-reveal')).toBeNull()
     expect(vi.mocked(getSessionRatings)).not.toHaveBeenCalled()
