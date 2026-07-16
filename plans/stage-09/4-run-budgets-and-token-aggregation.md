@@ -14,14 +14,14 @@ The hands-on check runs two matches under a small per-submission run allowance. 
 
 The workflow runner reads `runId`, `subjectId`, and the resolved model map and limits from the run's frozen policy when it constructs each official grant. `subjectId` is the submission ID for a submission seat and a stable built-in subject for a built-in seat.
 
-Every workflow grant has two accounting scopes. Its session-and-slot scope reads committed usage by `(session_id, slot)` from `data/llm/<runId>.sqlite`, while its run-subject scope reads the same file by `subject_id`. Its record sink captures the run ID as the file scope plus the game session, slot, and subject written on every successful row. Every grant constructed for that subject in successive match sessions therefore shares the run allowance. A different subject or run receives an independent allowance.
+Every workflow grant has two accounting scopes. Its session-and-slot scope synchronously reads committed usage by `(session_id, slot)` from `data/llm/<runId>.sqlite`, while its run-subject scope synchronously reads the same file by `subject_id`. Its record sink writes that same file and captures the run ID as the file scope plus the game session, slot, and subject written on every successful row. Every grant constructed for that subject in successive match sessions therefore shares the run allowance. A different subject or run receives an independent allowance.
 
 Admission checks both scopes before forwarding:
 
 1. The session-and-slot accounting scope under the frozen per-slot limits.
 2. The run-subject accounting scope under the frozen per-submission limits.
 
-One temporary call-and-token reservation is registered in both scopes. An eventual success commits one call and either validated upstream usage or explicitly marked tokenizer estimates to both. Every local rejection or terminal upstream failure releases both reservations and commits nothing. A successful upstream response whose telemetry transaction fails retains its conservative reservation as charged in-memory debt and opens both scope circuit breakers, as defined in Step 1. If either scope cannot reserve the request, or either breaker is open, the proxy does not call the upstream.
+One temporary call-and-token reservation is registered in both scopes. An eventual success commits one call and either validated upstream usage or explicitly marked tokenizer estimates to both. Every local rejection or terminal upstream failure releases both reservations and commits nothing. Any normalization, usage-resolution, or telemetry failure after upstream success retains the conservative reservation as charged in-memory debt and opens both scope circuit breakers, as defined in Step 1. If either scope cannot reserve the request, or either breaker is open, the proxy does not call the upstream.
 
 Live watch and play sessions have no run subject. A rerun receives a new run ID, a new scope file, and a fresh allowance.
 
@@ -76,7 +76,7 @@ Docker-free workflow and storage tests cover:
 - A retryable sequence that succeeds committing once to both scopes.
 - Valid upstream usage and tokenizer-estimated usage aggregating into the same token totals while only estimated rows increment `estimated_calls`.
 - Local rejection, non-retryable upstream failure, and exhausted retries committing to neither scope.
-- A telemetry transaction failure retaining conservative debt and opening both the session and run circuit breakers before any second request reaches the upstream.
+- A post-upstream accounting failure retaining conservative debt and opening both the session and run circuit breakers before any second request reaches the upstream.
 - Run creation persisting a fully resolved official LLM policy, and workflow games continuing to use it after deployment defaults or the season configuration change.
 - Workflow recording registration persisting the run scope and game-session filter IDs.
 - Normal exit, crash, setup or launch failure, cancellation, and explicit stop closing grant admission, aborting or draining active requests, and awaiting reservation finalizers before the first telemetry query or per-game aggregate write.

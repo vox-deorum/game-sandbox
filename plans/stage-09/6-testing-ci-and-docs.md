@@ -17,6 +17,8 @@ Extend the backend integration and Playwright harnesses with one OpenAI-compatib
 - A non-retryable 4xx response.
 - Retryable responses through the configured retry limit.
 - A successful response with missing or malformed usage for tiktoken fallback.
+- Request and completion content that resembles tokenizer special tokens.
+- A successful response with provider-specific metadata beside standard generated content.
 - A delayed response for timeout and timing checks.
 
 The stub records upstream attempts, arrival times, model names, and authorization headers. Assertions verify exponential intervals, alias mapping, and that the backend credential reaches the upstream while participant and slot keys do not.
@@ -47,9 +49,9 @@ Create two active participants and two LLM-enabled seasons. Request and use deve
 - Each `(participant, season)` pair has an independent call, token, and rate allowance.
 - Successful and terminally failed logical requests each occupy one event in only that pair's sliding rate window, while upstream retry attempts add no events.
 - Rotating one key invalidates its previous secret without resetting usage.
-- A successful request creates one private ledger row with full bodies, retry-inclusive latency, and an accurate estimated-usage marker.
+- A successful request creates one private ledger row with the accepted request and canonical completion, retry-inclusive latency, and an accurate estimated-usage marker.
 - A non-retryable error and exhausted retry sequence create no usage and no ledger row.
-- A forced ledger transaction failure returns `meter_unavailable`, retains conservative charged debt, and opens only that pair's accounting breaker. Rejected requests make no upstream attempt. Failed single-flight health probes keep it open, and a later committed write-health probe restores admission without forgiving the debt or changing another pair's state.
+- A forced post-upstream accounting failure returns `meter_unavailable`, retains conservative charged debt, and opens only that pair's accounting breaker. Rejected requests make no upstream attempt. Failed single-flight health probes keep it open, and a later committed write-health probe restores admission without forgiving the debt or changing another pair's state.
 - Development calls create no official execution-scope row, game result, placement, or board usage.
 - Official calls do not change development totals.
 
@@ -84,8 +86,8 @@ Use the existing authenticated-persona fixtures and UI primitives. Update locato
 Update these documents to match the implementation:
 
 - `docs/specs/llm.md`, `execution.md`, `leaderboard.md`, `submission.md`, and `recording.md` describe the final behavior and data boundaries.
-- `docs/contributors/configuration.md` documents every `LLM_*` setting, including one upstream URL and key, model aliases, tiktoken encoding, default and hard output maxima, per-attempt timeout, maximum retries after the initial attempt, initial retry interval, meter recovery interval, official defaults, and development defaults. It also identifies the backend OpenAI client and tiktoken packages and the template's pinned Python OpenAI dependencies.
-- `docs/contributors/backend.md` describes the shared proxy handler, internal listener, public development route, grant authentication, generic per-accounting-scope admitted-request windows, retry loop, successful-call meters, conservative debt, automatic write-health recovery, tiktoken fallback, execution-scope SQLite, teardown barriers, frozen workflow policy, recording-to-scope resolution, visibility after submission deletion, retention, and the development ledger.
+- `docs/contributors/configuration.md` documents every `LLM_*` setting, including the validated upstream base URL and key, model aliases, ordinary-content tiktoken encoding, default and hard output maxima, per-attempt timeout, maximum retries after the initial attempt, initial retry interval, meter recovery interval, official defaults, and development defaults. It also identifies the backend OpenAI client and tiktoken packages and the template's pinned Python OpenAI dependencies.
+- `docs/contributors/backend.md` describes the shared proxy handler, standard response-metadata boundary, internal listener, public development route, grant authentication, synchronous reader-and-sink binding, generic per-accounting-scope admitted-request windows, retry loop, successful-call meters, post-upstream conservative debt, automatic write-health recovery, tiktoken fallback, execution-scope SQLite, teardown barriers, frozen workflow policy, recording-to-scope resolution, visibility after submission deletion, retention, and the development ledger.
 - `docs/contributors/execution.md` describes the per-session internal network and backend-proxy relay.
 - `docs/contributors/recordings.md` explains the durable recording association to external LLM telemetry. The recording schema remains unchanged.
 - `docs/contributors/index.md` lists LLM proxy code under the backend and contains no standalone gateway component.
@@ -104,7 +106,7 @@ Keep the stub upstream local to the test process so CI requires no external prov
 
 ## Done when
 
-- Docker-free tests cover every retry class, compatible error path, generic per-scope rate-event retention, completion-limit normalization, tiktoken fallback, reservation release, meter and ledger failure circuit breaking and automatic health recovery, successful-only record sink, frozen workflow policy, authorization boundary, dependency configuration, fresh flat-schema creation, and UI state.
+- Docker-free tests cover every retry class, compatible error path, response-metadata sanitization, generic per-scope rate-event retention, completion-limit normalization, ordinary-content tiktoken fallback, reservation release, post-upstream meter and ledger failure circuit breaking and automatic health recovery, successful-only record sink, frozen workflow policy, authorization boundary, dependency configuration, fresh flat-schema creation, and UI state.
 - Docker integration proves official and development flows against one stub upstream, including network isolation, teardown-before-aggregation ordering on every workflow exit, and exact cross-artifact accounting.
 - Playwright proves participant, current owner, former owner, public, and operator visibility at both UI and raw-API boundaries.
 - Disabled-session fixtures remain deterministic and byte-identical.

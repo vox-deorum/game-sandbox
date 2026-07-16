@@ -1,7 +1,7 @@
 import Fastify, { type FastifyInstance } from 'fastify'
 
-import { invalidRequest, LlmError } from './errors.js'
-import { asLlmError, type LlmHandler } from './handler.js'
+import { asLlmError, invalidRequest, LlmError } from './errors.js'
+import type { LlmHandler } from './handler.js'
 import type { KeyRegistry } from './key-registry.js'
 
 export interface LlmListenerDeps {

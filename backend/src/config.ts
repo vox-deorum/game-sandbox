@@ -307,6 +307,32 @@ function stringVar(env: NodeJS.ProcessEnv, name: string, fallback?: string): str
   return raw !== undefined && raw !== '' ? raw : fallback
 }
 
+/** Optional absolute HTTP(S) endpoint, retaining its configured path for compatible `/v1` bases. */
+function httpUrlVar(env: NodeJS.ProcessEnv, name: string): string | undefined {
+  const raw = stringVar(env, name)
+  if (raw === undefined) return undefined
+  let url: URL
+  try {
+    url = new URL(raw)
+  } catch {
+    throw new ConfigError(`${name} must be a valid absolute http(s) URL`)
+  }
+  if (
+    (url.protocol !== 'http:' && url.protocol !== 'https:') ||
+    raw !== raw.trim() ||
+    url.username !== '' ||
+    url.password !== '' ||
+    raw.includes('?') ||
+    raw.includes('#') ||
+    url.search !== '' ||
+    url.hash !== ''
+  ) {
+    // Never echo the configured value because a malformed URL may itself contain a credential.
+    throw new ConfigError(`${name} must be a valid absolute http(s) URL`)
+  }
+  return raw
+}
+
 /** The loopback hostnames a `PUBLIC_ORIGIN` may use under the insecure-defaults opt-in. */
 const LOOPBACK_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]'])
 
@@ -569,7 +595,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     auth,
     llm: {
       internalPort: boundedIntVar(env, 'LLM_INTERNAL_PORT', 8_081, 1, 65_535),
-      upstreamUrl: stringVar(env, 'LLM_UPSTREAM_URL'),
+      upstreamUrl: httpUrlVar(env, 'LLM_UPSTREAM_URL'),
       upstreamKey: stringVar(env, 'LLM_UPSTREAM_KEY'),
       models,
       upstreamTimeoutMs: boundedIntVar(env, 'LLM_UPSTREAM_TIMEOUT_MS', 30_000, 1, 600_000),

@@ -32,6 +32,8 @@ Browser
 | `src/admin/` | Operator-only season and workflow API |
 | `src/leaderboards/` | Public season and leaderboard reads |
 | `src/ratings/` | Session ratings and author prompts |
+| `src/llm/` | OpenAI-compatible proxy, scoped grants, admission, retries, token estimation, and circuit breaking |
+| `src/storage/llm/` | Execution-scoped successful-call telemetry and accounting health checks |
 | `src/workflow/` | Workflow runner interface, events, and recovery |
 | `src/recordings.ts` | Recording reads and deletion |
 | `src/retention.ts` | Recording metadata, pinning, and eviction |
@@ -59,9 +61,19 @@ Tests mirror source domains under `test/`. Shared doubles and fixtures live unde
 
 ## Configuration
 
-`config.ts` reads environment variables once. Services receive `Config`, or the slice they need, through construction. Do not read process environment variables from feature modules. Zod validates environment variables, manifests, and season configuration.
+`config.ts` reads environment variables once. Services receive `Config`, or the slice they need, through construction. Do not read process environment variables from feature modules. Dedicated parsers and Zod schemas validate environment variables, manifests, and season configuration.
 
 See [Configuration](configuration.md) for the full environment-variable reference and deployment notes.
+
+## LLM proxy
+
+The backend owns one OpenAI-compatible proxy over a configured upstream. Its shared handler authenticates a scoped grant, maps a public model alias, normalizes the output-token maximum, reserves every accounting scope, calls the upstream through the explicit retry loop, and commits successful-call telemetry before returning the completion. The internal listener is enabled only when an upstream URL and at least one model alias are configured.
+
+Each grant binds one or more synchronous committed-usage readers to the durable store updated by its record sink. The meter reads committed usage, checks every limit, and mutates all reservations in one synchronous section. This combines durable successful usage with in-flight reservations and process-lifetime conservative debt without an admission gap.
+
+The tokenizer encodes accepted request and completion JSON as ordinary text, so participant content cannot invoke tokenizer control-token behavior. Missing or malformed upstream usage is estimated from the same canonical request and completion retained in telemetry. Successful responses preserve generated content and standard fields, replace structured provider model metadata with public aliases, and drop nonstandard top-level provider metadata.
+
+An upstream failure releases the reservation and creates no successful-call row. After the upstream succeeds, every failure before the durable record commits converts the reservation to conservative debt, opens each affected accounting breaker, and returns `meter_unavailable`. A single-flight write-health probe can close the breaker, but it never forgives debt during that backend process. See the [LLM specification](../specs/llm.md) for the product rules and [Configuration](configuration.md#llm-proxy) for deployment settings.
 
 ## Static frontend
 

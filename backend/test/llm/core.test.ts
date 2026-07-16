@@ -33,7 +33,9 @@ const completion = (usage: unknown = null): OpenAI.Chat.Completions.ChatCompleti
     usage,
   }) as OpenAI.Chat.Completions.ChatCompletion
 
-function fixture(overrides: { rpm?: number; sink?: LlmGrant['recordSink'] } = {}) {
+function fixture(
+  overrides: { rpm?: number; sink?: LlmGrant['recordSink']; tokenizer?: LlmTokenCounter } = {},
+) {
   const records: LlmSuccessfulRecord[] = []
   const scope: LlmAccountingScope = {
     key: 'session:s1:player_0',
@@ -54,7 +56,10 @@ function fixture(overrides: { rpm?: number; sink?: LlmGrant['recordSink'] } = {}
     accountingScopes: [scope],
     recordSink: sink,
   }
-  const tokenizer: LlmTokenCounter = { countRequest: () => 3, countCompletion: () => 5 }
+  const tokenizer: LlmTokenCounter = overrides.tokenizer ?? {
+    countRequest: () => 3,
+    countCompletion: () => 5,
+  }
   const upstream = {
     call: vi.fn(async (_request: LlmChatRequest) => ({
       completion: completion({
@@ -79,6 +84,27 @@ function fixture(overrides: { rpm?: number; sink?: LlmGrant['recordSink'] } = {}
 describe('LLM registry, handler, and listener', () => {
   it('maps aliases both ways, normalizes the output maximum, and records once before success', async () => {
     const { grant, handler, records, upstream } = fixture()
+    const upstreamCompletion = completion({
+      prompt_tokens: 2,
+      completion_tokens: 4,
+      total_tokens: 6,
+      completion_tokens_details: { reasoning_tokens: 1 },
+    })
+    const firstChoice = upstreamCompletion.choices[0]
+    if (firstChoice !== undefined) {
+      firstChoice.message.content = 'provider-secret is literal generated content'
+    }
+    upstreamCompletion.moderation = {
+      input: { code: 'moderation_skipped', message: 'input not moderated', type: 'error' },
+      output: { code: 'moderation_skipped', message: 'output not moderated', type: 'error' },
+    }
+    upstream.call.mockResolvedValueOnce({
+      completion: {
+        ...upstreamCompletion,
+        provider_metadata: { resolved_model: 'provider-secret' },
+      } as OpenAI.Chat.Completions.ChatCompletion,
+      latencyMs: 17,
+    })
     const response = await handler.handle(grant, {
       model: 'small',
       messages: [{ role: 'user', content: 'hello' }],
@@ -88,7 +114,13 @@ describe('LLM registry, handler, and listener', () => {
       expect.objectContaining({ model: 'provider-secret', max_completion_tokens: 8 }),
     )
     expect(response.model).toBe('small')
+    expect(response.choices[0]?.message.content).toBe(
+      'provider-secret is literal generated content',
+    )
+    expect(response.moderation).toEqual(upstreamCompletion.moderation)
+    expect(response).not.toHaveProperty('provider_metadata')
     expect(records).toHaveLength(1)
+    expect(records[0]?.completion).not.toHaveProperty('provider_metadata')
     expect(records[0]).toMatchObject({
       model: 'small',
       request: { model: 'small', max_completion_tokens: 8 },
@@ -265,22 +297,6 @@ describe('LLM registry, handler, and listener', () => {
     await app.close()
   })
 
-  it('releases a reservation when usage fallback throws after an upstream success', async () => {
-    const { grant, handler, meter, tokenizer, upstream } = fixture()
-    upstream.call.mockResolvedValueOnce({ completion: completion(null), latencyMs: 1 })
-    vi.spyOn(tokenizer, 'countCompletion').mockImplementationOnce(() => {
-      throw new Error('tokenizer failed')
-    })
-    await expect(handler.handle(grant, { model: 'small', messages: [] })).rejects.toThrow(
-      'tokenizer failed',
-    )
-    expect(meter.inspect(grant.accountingScopes[0]?.key ?? '')).toMatchObject({
-      reservedCalls: 0,
-      reservedTokens: 0,
-      debt: { calls: 0 },
-    })
-  })
-
   it('redacts the configured upstream model from terminal error fields', async () => {
     const { grant, handler, upstream } = fixture()
     upstream.call.mockRejectedValueOnce(
@@ -438,6 +454,37 @@ describe('generic admission and recovery', () => {
       code: 'budget_exceeded',
     })
     expect(upstream.call).toHaveBeenCalledTimes(1)
+  })
+
+  it('retains debt and opens the breaker when estimation fails after upstream success', async () => {
+    vi.useFakeTimers()
+    const sink = { record: vi.fn(), probeHealth: vi.fn() }
+    const tokenizer: LlmTokenCounter = {
+      countRequest: () => 3,
+      countCompletion: () => {
+        throw new Error('estimator failed')
+      },
+    }
+    const { grant, handler, meter, upstream } = fixture({ sink, tokenizer })
+    upstream.call.mockResolvedValueOnce({ completion: completion(null), latencyMs: 1 })
+
+    await expect(handler.handle(grant, { model: 'small', messages: [] })).rejects.toMatchObject({
+      code: 'meter_unavailable',
+    })
+
+    const key = grant.accountingScopes[0]?.key ?? ''
+    expect(sink.record).not.toHaveBeenCalled()
+    expect(meter.inspect(key)).toMatchObject({
+      breakerOpen: true,
+      reservedCalls: 0,
+      reservedTokens: 0,
+      debt: { calls: 1, inputTokens: 3, outputTokens: 8 },
+    })
+    await expect(handler.handle(grant, { model: 'small', messages: [] })).rejects.toMatchObject({
+      code: 'meter_unavailable',
+    })
+    expect(upstream.call).toHaveBeenCalledOnce()
+    meter.close()
   })
 
   it('opens every scope breaker and charges conservative token debt after one sink failure', async () => {

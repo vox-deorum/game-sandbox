@@ -25,7 +25,8 @@ export type MaybePromise<T> = T | Promise<T>
 export interface LlmAccountingScope {
   key: string
   limits: LlmLimits
-  readCommittedUsage: () => MaybePromise<LlmUsage>
+  /** Must synchronously read the durable store written by this grant's record sink. */
+  readCommittedUsage: () => LlmUsage
 }
 
 /** The identity-free successful result handed to a grant's durable sink. */
@@ -44,7 +45,10 @@ export interface LlmRecordSink {
   probeHealth: () => MaybePromise<void>
 }
 
-/** Everything the shared handler needs after authentication, without official identity fields. */
+/**
+ * Everything the shared handler needs after authentication, without official identity fields.
+ * Grant construction must bind every scope reader to committed usage written by `recordSink`.
+ */
 export interface LlmGrant {
   kind: 'official' | 'development'
   models: Partial<Record<ModelAlias, string>>

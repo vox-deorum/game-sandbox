@@ -233,4 +233,19 @@ describe('loadConfig', () => {
   it('allows zero upstream retries', () => {
     expect(load({ LLM_UPSTREAM_MAX_RETRIES: '0' }).llm.upstreamMaxRetries).toBe(0)
   })
+
+  it.each([
+    'models.internal/v1',
+    'ftp://models.internal/v1',
+    ' https://models.internal/v1',
+    'https://user:password@models.internal/v1',
+    'https://models.internal/v1?token=secret',
+    'https://models.internal/v1?',
+    'https://models.internal/v1#chat',
+    'https://models.internal/v1#',
+  ])('rejects an invalid LLM_UPSTREAM_URL: %s', (url) => {
+    expect(() => load({ LLM_UPSTREAM_URL: url })).toThrow(
+      /^LLM_UPSTREAM_URL must be a valid absolute http\(s\) URL$/,
+    )
+  })
 })

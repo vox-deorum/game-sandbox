@@ -23,6 +23,7 @@ import { ValidationWorker } from '../../../src/submission/worker.js'
 import { createPlaceholderRunner } from '../../../src/workflow/runner.js'
 import { makeTestAuth, type TestUsers } from '../../support/auth.js'
 import { TEST_AUTH_OPTIONS } from '../../support/auth-options.js'
+import { makeTestLlmOptions } from '../../support/llm-options.js'
 
 export interface Stack {
   httpBase: string
@@ -69,19 +70,7 @@ export async function startStack(overrides: Partial<Config> = {}): Promise<Stack
       submissionMaxSizeBytes: 25 * 1024 * 1024,
     },
     auth: { ...TEST_AUTH_OPTIONS },
-    llm: {
-      internalPort: 8_081,
-      models: {},
-      upstreamTimeoutMs: 30_000,
-      upstreamMaxRetries: 2,
-      upstreamRetryIntervalMs: 250,
-      tiktokenEncoding: 'cl100k_base',
-      defaultMaxOutputTokens: 1_024,
-      maxOutputTokens: 4_096,
-      meterRecoveryIntervalMs: 5_000,
-      sessionLimits: { tokenBudget: 100_000, callBudget: 100, requestsPerMinute: 60 },
-      runLimits: { tokenBudget: 1_000_000, callBudget: 1_000, requestsPerMinute: 60 },
-    },
+    llm: makeTestLlmOptions(),
     ...overrides,
   }
 

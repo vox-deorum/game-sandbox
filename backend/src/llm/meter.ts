@@ -48,18 +48,18 @@ export class LlmMeter {
     this.log = options.log ?? (() => {})
   }
 
-  /** Atomically reserve every scope after all durable readers have completed. */
+  /** Atomically read committed usage, check every scope, and reserve them as one sync section. */
   async reserve(
     scopes: readonly LlmAccountingScope[],
     inputTokens: number,
     outputTokens: number,
   ): Promise<LlmReservation> {
     const unique = uniqueScopes(scopes)
-    const committed = await Promise.all(unique.map((scope) => scope.readCommittedUsage()))
+    const committed = unique.map((scope) => scope.readCommittedUsage())
     const now = this.now()
     const requestedTokens = inputTokens + outputTokens
 
-    // No await occurs after the reads, so checks and mutations are one JavaScript critical section.
+    // Durable readers are synchronous, so no commit can land between this snapshot and reservation.
     for (let index = 0; index < unique.length; index++) {
       const scope = unique[index] as LlmAccountingScope
       const usage = committed[index] as LlmUsage
@@ -116,10 +116,16 @@ export class LlmMeter {
       await sink.record(record)
       this.release(reservation)
     } catch {
-      this.moveToDebt(reservation)
-      for (const scope of reservation.scopes) this.openBreaker(scope.key, sink)
+      this.chargeConservativeDebt(reservation, sink)
       throw new LlmError(503, 'meter_unavailable', 'Usage accounting is temporarily unavailable.')
     }
+  }
+
+  /** Retain an upstream-spent reservation and block its scopes when post-call accounting fails. */
+  chargeConservativeDebt(reservation: LlmReservation, sink: LlmRecordSink): void {
+    if (!reservation.active) return
+    this.moveToDebt(reservation)
+    for (const scope of reservation.scopes) this.openBreaker(scope.key, sink)
   }
 
   /** Used by startup wiring when a scope's initial migration/write-health check fails. */

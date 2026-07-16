@@ -10,12 +10,13 @@ This page is the full reference for those variables. Read [Backend](backend.md) 
 
 ## Validation
 
-Zod validates every value, so a malformed setting fails fast at startup with a message naming the offending variable instead of surfacing later as a confusing runtime error. The accepted forms are:
+Dedicated parsers and Zod schemas validate every value, so a malformed setting fails fast at startup with a message naming the offending variable instead of surfacing later as a confusing runtime error. The accepted forms are:
 
 - Integer settings must be whole numbers. Quotas may allow zero, while ports and timing intervals use setting-specific positive upper and lower bounds. Floats, `NaN`, negatives, and out-of-range values are rejected.
 - Quotas that allow fractions, such as `SANDBOX_CPUS`, must be positive finite numbers.
 - Booleans accept `true`, `1`, or `yes` for true, and `false`, `0`, or `no` for false.
 - Comma-separated lists, such as `AUTH_TRUSTED_ORIGINS`, are trimmed and drop blank entries.
+- `LLM_UPSTREAM_URL` must be an absolute `http` or `https` base URL with no surrounding whitespace, embedded credentials, query, or fragment. An invalid value is rejected without copying the value into the error message.
 
 ## Server and session
 
@@ -70,7 +71,7 @@ The internal OpenAI-compatible proxy starts only when `LLM_UPSTREAM_URL` and at 
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `LLM_INTERNAL_PORT` | `8081` | Internal proxy port reached by the session relay; must be from 1 through 65535 |
-| `LLM_UPSTREAM_URL` | unset | Base URL of the one configured OpenAI-compatible upstream; the proxy remains off when unset |
+| `LLM_UPSTREAM_URL` | unset | Absolute `http` or `https` base URL of the one configured OpenAI-compatible upstream, without credentials, query, or fragment; the proxy remains off when unset |
 | `LLM_UPSTREAM_KEY` | unset | Optional upstream bearer credential; requests omit authorization when it is unset |
 | `LLM_MODEL_LARGE` | unset | Upstream model exposed to agents as `large` |
 | `LLM_MODEL_MEDIUM` | unset | Upstream model exposed to agents as `medium` |
@@ -78,7 +79,7 @@ The internal OpenAI-compatible proxy starts only when `LLM_UPSTREAM_URL` and at 
 | `LLM_UPSTREAM_TIMEOUT_MS` | `30000` | Per-attempt timeout, bounded from 1 through 600000 milliseconds |
 | `LLM_UPSTREAM_MAX_RETRIES` | `2` | Retry attempts after the initial attempt, bounded from 0 through 10 |
 | `LLM_UPSTREAM_RETRY_INTERVAL_MS` | `250` | Initial exponential-backoff interval, bounded from 1 through 60000 milliseconds |
-| `LLM_TIKTOKEN_ENCODING` | `cl100k_base` | Tiktoken encoding used for admission and fallback estimates |
+| `LLM_TIKTOKEN_ENCODING` | `cl100k_base` | Tiktoken encoding used over canonical JSON for admission and fallback estimates; participant strings are always ordinary content, including text resembling special tokens |
 | `LLM_DEFAULT_MAX_OUTPUT_TOKENS` | `1024` | Enforced output maximum when a request supplies neither supported maximum field |
 | `LLM_MAX_OUTPUT_TOKENS` | `4096` | Hard ceiling for explicit and default output maxima, bounded from 1 through 1000000 |
 | `LLM_METER_RECOVERY_INTERVAL_MS` | `5000` | Delay between write-health probes for an open accounting breaker, bounded from 1 through 3600000 milliseconds |

@@ -45,11 +45,16 @@ export class LlmHandler {
       outputTokens,
     )
 
+    let result: UpstreamSuccess
     try {
-      const result: UpstreamSuccess = await this.deps.upstream.call(
-        upstream as unknown as LlmChatRequest,
-      )
-      const completion = { ...result.completion, model: alias }
+      result = await this.deps.upstream.call(upstream as unknown as LlmChatRequest)
+    } catch (error) {
+      this.deps.meter.release(reservation)
+      throw redactUpstreamModel(error, upstream.model as string, alias)
+    }
+
+    try {
+      const completion = redactCompletion(result.completion, alias)
       const resolved = resolveUsage(accepted, completion, this.deps.tokenizer)
       await this.deps.meter.commit(reservation, grant.recordSink, {
         model: alias,
@@ -61,16 +66,56 @@ export class LlmHandler {
       })
       return completion
     } catch (error) {
-      // Commit failures have already converted the reservation to finalized debt. Every earlier
-      // failure still sees an active reservation here and releases it exactly once.
-      this.deps.meter.release(reservation)
-      throw redactUpstreamModel(error, upstream.model as string, alias)
+      // A sink failure already converted the reservation to debt inside commit. Any other failure
+      // after upstream success must do the same because the provider has already consumed spend.
+      if (reservation.active) {
+        this.deps.meter.chargeConservativeDebt(reservation, grant.recordSink)
+        throw new LlmError(503, 'meter_unavailable', 'Usage accounting is temporarily unavailable.')
+      }
+      throw error
     }
   }
 }
 
+function redactCompletion(completion: LlmChatCompletion, alias: ModelAlias): LlmChatCompletion {
+  // Keep the standard semantic payload while dropping provider-specific top-level metadata. Generated
+  // text and tool arguments are opaque model output and must never be rewritten as redaction metadata.
+  const redacted: LlmChatCompletion = {
+    id: completion.id,
+    choices: completion.choices,
+    created: completion.created,
+    model: alias,
+    object: completion.object,
+  }
+  if (completion.moderation !== undefined) {
+    redacted.moderation =
+      completion.moderation === null ? null : redactModeration(completion.moderation, alias)
+  }
+  if (completion.service_tier !== undefined) redacted.service_tier = completion.service_tier
+  if (completion.usage !== undefined) redacted.usage = completion.usage
+  return redacted
+}
+
+function redactModeration(
+  moderation: NonNullable<LlmChatCompletion['moderation']>,
+  alias: ModelAlias,
+): NonNullable<LlmChatCompletion['moderation']> {
+  type ModerationSide = (typeof moderation)['input']
+  const redactSide = (side: ModerationSide): ModerationSide => {
+    if (!('model' in side)) return side
+    return {
+      ...side,
+      model: alias,
+      results: side.results.map((result) => ({ ...result, model: alias })),
+    }
+  }
+  return { input: redactSide(moderation.input), output: redactSide(moderation.output) }
+}
+
 function redactUpstreamModel(error: unknown, upstreamModel: string, alias: ModelAlias): unknown {
   if (!(error instanceof UpstreamError) || upstreamModel.length === 0) return error
+  // Exact substring replacement deliberately favors provider-name secrecy over preserving ambiguous
+  // prose when an operator configures a short/common model name.
   const replace = (value: string): string => value.replaceAll(upstreamModel, alias)
   return new UpstreamError(error.status, {
     error: {
@@ -137,14 +182,4 @@ function normalizeMaximum(
 
 function enforcedMaximum(request: Record<string, unknown>): number {
   return (request.max_tokens ?? request.max_completion_tokens) as number
-}
-
-export function asLlmError(error: unknown): LlmError {
-  if (error instanceof LlmError) return error
-  return new LlmError(
-    500,
-    'internal_error',
-    'The LLM proxy encountered an internal error.',
-    'server_error',
-  )
 }

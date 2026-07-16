@@ -26,6 +26,9 @@ export class TiktokenCounter implements LlmTokenCounter {
   }
 
   private countJson(value: unknown): number {
-    return this.tokenizer.encode(JSON.stringify(value)).length
+    // Agent prompts are arbitrary text. `encode()` rejects strings that look like reserved model
+    // tokens by default, while ordinary encoding treats those same bytes as content and cannot turn
+    // a participant-controlled prompt into a metering failure.
+    return this.tokenizer.encode_ordinary(JSON.stringify(value)).length
   }
 }

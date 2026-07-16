@@ -26,3 +26,13 @@ export class LlmError extends Error {
 export function invalidRequest(code: string, message: string): LlmError {
   return new LlmError(400, code, message)
 }
+
+export function asLlmError(error: unknown): LlmError {
+  if (error instanceof LlmError) return error
+  return new LlmError(
+    500,
+    'internal_error',
+    'The LLM proxy encountered an internal error.',
+    'server_error',
+  )
+}
