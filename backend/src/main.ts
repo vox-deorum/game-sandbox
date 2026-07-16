@@ -21,6 +21,14 @@ import {
   persistPlacementsForCompletedRun,
   reconcileCompletedRunPlacements,
 } from './leaderboards/placements.js'
+import {
+  buildLlmListener,
+  KeyRegistry,
+  LlmHandler,
+  LlmMeter,
+  TiktokenCounter,
+  UpstreamCaller,
+} from './llm/index.js'
 import { RecordingsStore } from './recordings.js'
 import { Retention } from './retention.js'
 import { seedOpenSeasons } from './seasons-seed.js'
@@ -38,6 +46,37 @@ async function main(): Promise<void> {
   const log = (message: string): void => {
     console.error(message)
   }
+
+  // Stage 9.1 owns an internal listener separate from the public application. It remains absent in
+  // deployments that configure no upstream or no public model alias, preserving the pre-LLM path.
+  const llmConfigured =
+    config.llm.upstreamUrl !== undefined && Object.keys(config.llm.models).length > 0
+  const llmMeter = llmConfigured
+    ? new LlmMeter({ recoveryIntervalMs: config.llm.meterRecoveryIntervalMs, log })
+    : undefined
+  const llmTokenizer = llmConfigured ? new TiktokenCounter(config.llm.tiktokenEncoding) : undefined
+  const llmListener =
+    llmConfigured && llmMeter !== undefined && llmTokenizer !== undefined
+      ? await buildLlmListener({
+          registry: new KeyRegistry(),
+          handler: new LlmHandler({
+            meter: llmMeter,
+            tokenizer: llmTokenizer,
+            upstream: new UpstreamCaller({
+              baseURL: config.llm.upstreamUrl as string,
+              apiKey: config.llm.upstreamKey,
+              timeoutMs: config.llm.upstreamTimeoutMs,
+              maxRetries: config.llm.upstreamMaxRetries,
+              retryIntervalMs: config.llm.upstreamRetryIntervalMs,
+            }),
+            options: {
+              defaultMaxOutputTokens: config.llm.defaultMaxOutputTokens,
+              maxOutputTokens: config.llm.maxOutputTokens,
+            },
+          }),
+          log,
+        })
+      : undefined
 
   // Open the app database and hand its raw connection to Better Auth so the auth tables live on the
   // same SQLite handle. Migrate the auth schema, then re-sync the bootstrap admin from configuration;
@@ -178,6 +217,10 @@ async function main(): Promise<void> {
     }
   }
 
+  if (llmListener !== undefined) {
+    await llmListener.listen({ port: config.llm.internalPort, host: '0.0.0.0' })
+    log(`internal LLM proxy listening on 0.0.0.0:${config.llm.internalPort}`)
+  }
   await app.listen({ port: config.port, host: config.listenHost })
   log(`backend listening on ${config.listenHost}:${config.port}`)
 
@@ -193,6 +236,9 @@ async function main(): Promise<void> {
       overlayEviction.stop()
       // Stop accepting routes before draining the worker so no submit can enqueue during shutdown.
       await app.close()
+      await llmListener?.close()
+      llmMeter?.close()
+      llmTokenizer?.close()
       await orchestrator.shutdown()
       await validationWorker.whenIdle()
       await storage.close()

@@ -149,4 +149,88 @@ describe('loadConfig', () => {
     expect(load({ ALLOW_LOCAL_SUBMISSIONS: 'no' }).submission.allowLocalSubmissions).toBe(false)
     expect(() => load({ ALLOW_LOCAL_SUBMISSIONS: 'maybe' })).toThrow(/ALLOW_LOCAL_SUBMISSIONS/)
   })
+
+  it('defaults the optional LLM proxy to disabled deployment wiring with bounded limits', () => {
+    expect(load({}).llm).toEqual({
+      internalPort: 8_081,
+      upstreamUrl: undefined,
+      upstreamKey: undefined,
+      models: {},
+      upstreamTimeoutMs: 30_000,
+      upstreamMaxRetries: 2,
+      upstreamRetryIntervalMs: 250,
+      tiktokenEncoding: 'cl100k_base',
+      defaultMaxOutputTokens: 1_024,
+      maxOutputTokens: 4_096,
+      meterRecoveryIntervalMs: 5_000,
+      sessionLimits: { tokenBudget: 100_000, callBudget: 100, requestsPerMinute: 60 },
+      runLimits: { tokenBudget: 1_000_000, callBudget: 1_000, requestsPerMinute: 60 },
+    })
+  })
+
+  it('parses every Stage 9.1 LLM proxy override', () => {
+    const { llm } = load({
+      LLM_INTERNAL_PORT: '9081',
+      LLM_UPSTREAM_URL: 'http://models.internal/v1',
+      LLM_UPSTREAM_KEY: 'provider-secret',
+      LLM_MODEL_LARGE: 'provider-large',
+      LLM_MODEL_SMALL: 'provider-small',
+      LLM_UPSTREAM_TIMEOUT_MS: '1200',
+      LLM_UPSTREAM_MAX_RETRIES: '4',
+      LLM_UPSTREAM_RETRY_INTERVAL_MS: '75',
+      LLM_TIKTOKEN_ENCODING: 'o200k_base',
+      LLM_DEFAULT_MAX_OUTPUT_TOKENS: '256',
+      LLM_MAX_OUTPUT_TOKENS: '2048',
+      LLM_METER_RECOVERY_INTERVAL_MS: '9000',
+      LLM_SESSION_TOKEN_BUDGET: '3000',
+      LLM_SESSION_CALL_BUDGET: '12',
+      LLM_SESSION_RATE_LIMIT_RPM: '7',
+      LLM_RUN_TOKEN_BUDGET: '9000',
+      LLM_RUN_CALL_BUDGET: '30',
+      LLM_RUN_RATE_LIMIT_RPM: '11',
+    })
+
+    expect(llm).toEqual({
+      internalPort: 9_081,
+      upstreamUrl: 'http://models.internal/v1',
+      upstreamKey: 'provider-secret',
+      models: { large: 'provider-large', small: 'provider-small' },
+      upstreamTimeoutMs: 1_200,
+      upstreamMaxRetries: 4,
+      upstreamRetryIntervalMs: 75,
+      tiktokenEncoding: 'o200k_base',
+      defaultMaxOutputTokens: 256,
+      maxOutputTokens: 2_048,
+      meterRecoveryIntervalMs: 9_000,
+      sessionLimits: { tokenBudget: 3_000, callBudget: 12, requestsPerMinute: 7 },
+      runLimits: { tokenBudget: 9_000, callBudget: 30, requestsPerMinute: 11 },
+    })
+  })
+
+  it('rejects an LLM default output maximum above the hard ceiling', () => {
+    expect(() =>
+      load({ LLM_DEFAULT_MAX_OUTPUT_TOKENS: '4097', LLM_MAX_OUTPUT_TOKENS: '4096' }),
+    ).toThrow(/LLM_DEFAULT_MAX_OUTPUT_TOKENS/)
+  })
+
+  it('rejects an unsupported tiktoken encoding', () => {
+    expect(() => load({ LLM_TIKTOKEN_ENCODING: 'mystery_base' })).toThrow(/LLM_TIKTOKEN_ENCODING/)
+  })
+
+  it.each([
+    ['LLM_INTERNAL_PORT', '0'],
+    ['LLM_INTERNAL_PORT', '65536'],
+    ['LLM_UPSTREAM_TIMEOUT_MS', '0'],
+    ['LLM_UPSTREAM_MAX_RETRIES', '11'],
+    ['LLM_UPSTREAM_RETRY_INTERVAL_MS', '0'],
+    ['LLM_METER_RECOVERY_INTERVAL_MS', '0'],
+    ['LLM_MAX_OUTPUT_TOKENS', '0'],
+    ['LLM_MAX_OUTPUT_TOKENS', '1000001'],
+  ])('rejects an out-of-bounds %s value', (name, value) => {
+    expect(() => load({ [name]: value })).toThrow(new RegExp(name))
+  })
+
+  it('allows zero upstream retries', () => {
+    expect(load({ LLM_UPSTREAM_MAX_RETRIES: '0' }).llm.upstreamMaxRetries).toBe(0)
+  })
 })

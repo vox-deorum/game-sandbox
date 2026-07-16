@@ -1,6 +1,6 @@
 # Stage 9.1: Backend LLM Proxy
 
-Status: not started.
+Status: complete.
 
 Part of [Stage 9](../stage-09-llm-gateway.md), build-order step 1.
 
@@ -33,7 +33,7 @@ Provider model names and the upstream credential never reach agents, telemetry, 
 
 ## Official grants and key registry
 
-`KeyRegistry` is an in-process registry injected into the proxy, orchestrator, and workflow runner:
+`KeyRegistry` is an in-process registry constructed with the proxy. Step 2 injects that same process-owned registry into the orchestrator and workflow runner when those launch paths begin issuing grants:
 
 ```ts
 type LlmAccountingScope = {
@@ -145,6 +145,14 @@ Step 3 sends the markers. Step 4 queries execution-scope SQLite for game-result 
 Add the official `openai` Node client and the `tiktoken` tokenizer as runtime dependencies of `@game-sandbox/backend` with `npm install --workspace @game-sandbox/backend openai tiktoken`. This updates `backend/package.json` and the root `package-lock.json`; do not add a backend-local lockfile. The client handles OpenAI-compatible request and response types, while all retry policy remains in `UpstreamCaller`.
 
 ## Configuration
+
+The first implementation uses the following deployment defaults. They are operational defaults, not product limits, and every value remains configurable through the variable in the table below: internal port `8081`, per-attempt timeout `30_000` ms, two retries after the initial attempt, initial retry interval `250` ms, `cl100k_base` tokenization, `1_024` default and `4_096` hard-maximum output tokens, and a `5_000` ms meter-recovery interval. Session defaults are 100 calls, 100,000 tokens, and 60 admitted requests per minute per slot. Run defaults are 1,000 calls, 1,000,000 tokens, and 60 admitted requests per minute per submission.
+
+`LLM_UPSTREAM_KEY` is optional so an operator can use an unauthenticated local OpenAI-compatible endpoint. When it is absent, the upstream request omits authorization. The internal listener binds on all interfaces because Step 2's Docker relay reaches it through the host gateway; the listener still starts only when an upstream URL and at least one alias are configured.
+
+Token budgets count input tokens plus the upstream's total completion-token count. Reasoning tokens are preserved as a separately reported subset and are not added a second time. Fallback estimates encode the canonical JSON request and completion with the configured tokenizer. Scope IDs use a bounded filename-safe opaque identifier, and tick markers accept only non-negative safe integers.
+
+The execution telemetry implementation lives under `backend/src/storage/llm/` so better-sqlite3 remains inside the repository's enforced storage boundary. Its official sink adapter is the bridge from identity-free grants to session, slot, subject, and tick rows. Step 1 exercises official grants directly in Docker-free tests; Step 2 connects grant issuance and revocation to the orchestrator and workflow lifecycle.
 
 Add these deployment settings in `backend/src/config.ts`:
 

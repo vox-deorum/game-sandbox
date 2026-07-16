@@ -8,17 +8,17 @@ Use this page for the frontend development workflow. Read [the frontend specific
 
 Frontend code lives under `frontend/src/`.
 
-| Path | Responsibility |
-| --- | --- |
-| `pages/` | Route-level components, named `*Page.vue` |
-| `components/` | Feature components shared by pages |
-| `components/ui/` | Design-system primitives with the `Ui` prefix |
-| `composables/` | Reusable stateful Vue behavior |
-| `api/` | Typed HTTP and WebSocket clients |
-| `lib/` | Pure helpers |
-| `renderers/` | Environment renderers and the renderer registry |
-| `replay/` | Recording parsing and replay transport |
-| `styles/` | Design tokens and global styles |
+| Path             | Responsibility                                  |
+| ---------------- | ----------------------------------------------- |
+| `pages/`         | Route-level components, named `*Page.vue`       |
+| `components/`    | Feature components shared by pages              |
+| `components/ui/` | Design-system primitives with the `Ui` prefix   |
+| `composables/`   | Reusable stateful Vue behavior                  |
+| `api/`           | Typed HTTP and WebSocket clients                |
+| `lib/`           | Pure helpers                                    |
+| `renderers/`     | Environment renderers and the renderer registry |
+| `replay/`        | Recording parsing and replay transport          |
+| `styles/`        | Design tokens and global styles                 |
 
 `main.ts` creates the app and registers routes. `App.vue` installs the identity provider and application shell. Shared application-level state, such as the signed-in user and environment catalog, lives in focused modules rather than a state-management library.
 
@@ -26,12 +26,12 @@ Frontend code lives under `frontend/src/`.
 
 The frontend requires Node.js 22. Run these commands from `frontend/`:
 
-| Command | Purpose |
-| --- | --- |
-| `npm run dev` | Start Vite and proxy `/api` to the backend on port 8080 |
-| `npm run check` | Run Biome and TypeScript checks |
-| `npm test` | Run the Vitest unit tests |
-| `npm run build` | Create the production build in `frontend/dist/` |
+| Command         | Purpose                                                 |
+| --------------- | ------------------------------------------------------- |
+| `npm run dev`   | Start Vite and proxy `/api` to the backend on port 8080 |
+| `npm run check` | Run Biome and TypeScript checks                         |
+| `npm test`      | Run the Vitest unit tests                               |
+| `npm run build` | Create the production build in `frontend/dist/`         |
 
 For local development, start `npm run dev` in `backend/` separately. Docker is needed when the backend launches a session. From the repository root, `npm start` builds the frontend and starts the backend on port 8080.
 

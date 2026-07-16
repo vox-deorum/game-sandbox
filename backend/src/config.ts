@@ -8,8 +8,10 @@
  */
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-
+import type { TiktokenEncoding } from 'tiktoken'
 import { z } from 'zod'
+
+import type { LlmLimits, ModelAlias } from './llm/types.js'
 
 // The repo root sits two levels above backend/src, so the default frontend bundle path resolves the
 // same regardless of the process's working directory (started from the repo root or from backend/).
@@ -112,6 +114,23 @@ export interface AuthOptions {
   github?: AuthGithubOptions
 }
 
+/** Deployment wiring and default limits for the optional internal LLM proxy. */
+export interface LlmOptions {
+  internalPort: number
+  upstreamUrl?: string
+  upstreamKey?: string
+  models: Partial<Record<ModelAlias, string>>
+  upstreamTimeoutMs: number
+  upstreamMaxRetries: number
+  upstreamRetryIntervalMs: number
+  tiktokenEncoding: TiktokenEncoding
+  defaultMaxOutputTokens: number
+  maxOutputTokens: number
+  meterRecoveryIntervalMs: number
+  sessionLimits: LlmLimits
+  runLimits: LlmLimits
+}
+
 /**
  * The published development-only credentials, exported so `main.ts` can warn when they are in effect
  * and the config tests can assert they are refused in a normal (non-insecure) startup. They are
@@ -194,6 +213,7 @@ export interface Config {
   docker: DockerDriverOptions
   submission: SubmissionOptions
   auth: AuthOptions
+  llm: LlmOptions
 }
 
 class ConfigError extends Error {}
@@ -222,6 +242,21 @@ function intVar(env: NodeJS.ProcessEnv, name: string, fallback: number): number 
     throw new ConfigError(`${name} must be a non-negative integer, got ${raw}`)
   }
   return result.data
+}
+
+/** An integer setting with operational lower and upper bounds beyond basic non-negativity. */
+function boundedIntVar(
+  env: NodeJS.ProcessEnv,
+  name: string,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+): number {
+  const value = intVar(env, name, fallback)
+  if (value < minimum || value > maximum) {
+    throw new ConfigError(`${name} must be between ${minimum} and ${maximum}, got ${value}`)
+  }
+  return value
 }
 
 function listVar(env: NodeJS.ProcessEnv, name: string, fallback: string[]): string[] {
@@ -469,6 +504,35 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const siteName = stringVar(env, 'SITE_NAME', DEFAULT_SITE_NAME)
   const siteShortName = stringVar(env, 'SITE_SHORT_NAME', siteName)
 
+  const defaultMaxOutputTokens = boundedIntVar(
+    env,
+    'LLM_DEFAULT_MAX_OUTPUT_TOKENS',
+    1_024,
+    0,
+    1_000_000,
+  )
+  const maxOutputTokens = boundedIntVar(env, 'LLM_MAX_OUTPUT_TOKENS', 4_096, 1, 1_000_000)
+  if (defaultMaxOutputTokens > maxOutputTokens) {
+    throw new ConfigError('LLM_DEFAULT_MAX_OUTPUT_TOKENS must not exceed LLM_MAX_OUTPUT_TOKENS')
+  }
+
+  const models: Partial<Record<ModelAlias, string>> = {}
+  const largeModel = stringVar(env, 'LLM_MODEL_LARGE')
+  const mediumModel = stringVar(env, 'LLM_MODEL_MEDIUM')
+  const smallModel = stringVar(env, 'LLM_MODEL_SMALL')
+  if (largeModel !== undefined) models.large = largeModel
+  if (mediumModel !== undefined) models.medium = mediumModel
+  if (smallModel !== undefined) models.small = smallModel
+
+  const tiktokenEncoding = z
+    .enum(['gpt2', 'r50k_base', 'p50k_base', 'p50k_edit', 'cl100k_base', 'o200k_base'])
+    .safeParse(env.LLM_TIKTOKEN_ENCODING ?? 'cl100k_base')
+  if (!tiktokenEncoding.success) {
+    throw new ConfigError(
+      `LLM_TIKTOKEN_ENCODING is not supported, got ${env.LLM_TIKTOKEN_ENCODING}`,
+    )
+  }
+
   return {
     port,
     listenHost,
@@ -503,5 +567,34 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       submissionMaxSizeBytes: intVar(env, 'SUBMISSION_MAX_SIZE_MB', 25) * 1024 * 1024,
     },
     auth,
+    llm: {
+      internalPort: boundedIntVar(env, 'LLM_INTERNAL_PORT', 8_081, 1, 65_535),
+      upstreamUrl: stringVar(env, 'LLM_UPSTREAM_URL'),
+      upstreamKey: stringVar(env, 'LLM_UPSTREAM_KEY'),
+      models,
+      upstreamTimeoutMs: boundedIntVar(env, 'LLM_UPSTREAM_TIMEOUT_MS', 30_000, 1, 600_000),
+      upstreamMaxRetries: boundedIntVar(env, 'LLM_UPSTREAM_MAX_RETRIES', 2, 0, 10),
+      upstreamRetryIntervalMs: boundedIntVar(env, 'LLM_UPSTREAM_RETRY_INTERVAL_MS', 250, 1, 60_000),
+      tiktokenEncoding: tiktokenEncoding.data,
+      defaultMaxOutputTokens,
+      maxOutputTokens,
+      meterRecoveryIntervalMs: boundedIntVar(
+        env,
+        'LLM_METER_RECOVERY_INTERVAL_MS',
+        5_000,
+        1,
+        3_600_000,
+      ),
+      sessionLimits: {
+        tokenBudget: intVar(env, 'LLM_SESSION_TOKEN_BUDGET', 100_000),
+        callBudget: intVar(env, 'LLM_SESSION_CALL_BUDGET', 100),
+        requestsPerMinute: intVar(env, 'LLM_SESSION_RATE_LIMIT_RPM', 60),
+      },
+      runLimits: {
+        tokenBudget: intVar(env, 'LLM_RUN_TOKEN_BUDGET', 1_000_000),
+        callBudget: intVar(env, 'LLM_RUN_CALL_BUDGET', 1_000),
+        requestsPerMinute: intVar(env, 'LLM_RUN_RATE_LIMIT_RPM', 60),
+      },
+    },
   }
 }

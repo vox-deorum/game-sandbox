@@ -1,6 +1,6 @@
 # Stage 9: LLM API
 
-Status: not started (build order planned under [stage-09/](stage-09/)).
+Status: in progress (Step 1 complete; remaining build order planned under [stage-09/](stage-09/)).
 
 ## Goal
 

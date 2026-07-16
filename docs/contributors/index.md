@@ -18,9 +18,8 @@ The language split follows the container boundary: Python runs inside sessions, 
 | `schema/` | The canonical JSON Schema contract and the `@game-sandbox/schema` TS package. |
 | `harness/` | The Python harness: schema validation, state builders, the recording store, the session loop. |
 | `environments/` | Environment packages: the single-agent adapter and the Flappy Bird clone. |
-| `backend/` | The Node/TypeScript backend: sessions, the execution driver, and the WebSocket bridge. |
+| `backend/` | The Node/TypeScript backend: sessions, the execution driver, the WebSocket bridge, and the metered LLM proxy. |
 | `frontend/` | The browser frontend: Vue with Vite, the renderers, and the Better Auth session client. |
-| `gateway/` | The LLM gateway. Placeholder until Stage 9. |
 | `templates/` | The student starter kit: an env-agnostic `base/` layer plus one `<env>/` layer per environment. |
 | `examples/` | Example overlays under `<env>/<name>/`, holding only their diff against the composed template. |
 | `docs/` | This site. |

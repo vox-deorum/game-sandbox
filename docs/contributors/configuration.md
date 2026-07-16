@@ -1,6 +1,6 @@
 # Configuration
 
-Game Sandbox is configured entirely through environment variables. There are no configuration files and no secrets manager in this stage, and every setting has a class-scale default, so the backend, the admin console, and the demo all run out of the box without setting anything.
+Game Sandbox is configured entirely through environment variables. There are no configuration files or secrets manager in this stage. Most settings have class-scale defaults, while capabilities that require deployment credentials or external endpoints remain disabled until their required values are configured.
 
 This page is the full reference for those variables. Read [Backend](backend.md) for how the values are consumed, and [Development setup](development-setup.md) to get a working local environment first.
 
@@ -12,7 +12,7 @@ This page is the full reference for those variables. Read [Backend](backend.md) 
 
 Zod validates every value, so a malformed setting fails fast at startup with a message naming the offending variable instead of surfacing later as a confusing runtime error. The accepted forms are:
 
-- Integer settings must be non-negative whole numbers. Floats, `NaN`, and negatives are rejected.
+- Integer settings must be whole numbers. Quotas may allow zero, while ports and timing intervals use setting-specific positive upper and lower bounds. Floats, `NaN`, negatives, and out-of-range values are rejected.
 - Quotas that allow fractions, such as `SANDBOX_CPUS`, must be positive finite numbers.
 - Booleans accept `true`, `1`, or `yes` for true, and `false`, `0`, or `no` for false.
 - Comma-separated lists, such as `AUTH_TRUSTED_ORIGINS`, are trimmed and drop blank entries.
@@ -62,6 +62,34 @@ Zod validates every value, so a malformed setting fails fast at startup with a m
 | `RECORDING_RETENTION_DAYS` | `30` | Age limit for unpinned recordings |
 | `RECORDING_USER_QUOTA` | `100` | Per-user recording count; pinned recordings count but are not evicted |
 | `RECORDING_SWEEP_INTERVAL_MS` | `3600000` | Periodic sweep interval; sweeps also run at startup and finalization |
+
+## LLM proxy
+
+The internal OpenAI-compatible proxy starts only when `LLM_UPSTREAM_URL` and at least one model alias are configured. Agents use the stable aliases `large`, `medium`, and `small`; the matching `LLM_MODEL_*` values and the optional upstream credential stay inside the backend. `LLM_INTERNAL_PORT` binds on all interfaces so the per-session Docker relay added by Stage 9 can reach it through the host gateway. The listener requires a scoped bearer key on every route.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `LLM_INTERNAL_PORT` | `8081` | Internal proxy port reached by the session relay; must be from 1 through 65535 |
+| `LLM_UPSTREAM_URL` | unset | Base URL of the one configured OpenAI-compatible upstream; the proxy remains off when unset |
+| `LLM_UPSTREAM_KEY` | unset | Optional upstream bearer credential; requests omit authorization when it is unset |
+| `LLM_MODEL_LARGE` | unset | Upstream model exposed to agents as `large` |
+| `LLM_MODEL_MEDIUM` | unset | Upstream model exposed to agents as `medium` |
+| `LLM_MODEL_SMALL` | unset | Upstream model exposed to agents as `small` |
+| `LLM_UPSTREAM_TIMEOUT_MS` | `30000` | Per-attempt timeout, bounded from 1 through 600000 milliseconds |
+| `LLM_UPSTREAM_MAX_RETRIES` | `2` | Retry attempts after the initial attempt, bounded from 0 through 10 |
+| `LLM_UPSTREAM_RETRY_INTERVAL_MS` | `250` | Initial exponential-backoff interval, bounded from 1 through 60000 milliseconds |
+| `LLM_TIKTOKEN_ENCODING` | `cl100k_base` | Tiktoken encoding used for admission and fallback estimates |
+| `LLM_DEFAULT_MAX_OUTPUT_TOKENS` | `1024` | Enforced output maximum when a request supplies neither supported maximum field |
+| `LLM_MAX_OUTPUT_TOKENS` | `4096` | Hard ceiling for explicit and default output maxima, bounded from 1 through 1000000 |
+| `LLM_METER_RECOVERY_INTERVAL_MS` | `5000` | Delay between write-health probes for an open accounting breaker, bounded from 1 through 3600000 milliseconds |
+| `LLM_SESSION_TOKEN_BUDGET` | `100000` | Successful input-plus-completion token allowance per official session slot |
+| `LLM_SESSION_CALL_BUDGET` | `100` | Successful-call allowance per official session slot |
+| `LLM_SESSION_RATE_LIMIT_RPM` | `60` | Admitted logical requests per minute per official session slot |
+| `LLM_RUN_TOKEN_BUDGET` | `1000000` | Successful input-plus-completion token allowance per submission in a run |
+| `LLM_RUN_CALL_BUDGET` | `1000` | Successful-call allowance per submission in a run |
+| `LLM_RUN_RATE_LIMIT_RPM` | `60` | Admitted logical requests per minute per submission in a run |
+
+`LLM_DEFAULT_MAX_OUTPUT_TOKENS` may be zero but must not exceed `LLM_MAX_OUTPUT_TOKENS`. Token budgets count input plus total completion tokens. Reasoning tokens are reported separately as a subset of completion usage and are not charged twice.
 
 ## Submissions
 
