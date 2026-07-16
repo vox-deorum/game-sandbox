@@ -53,13 +53,11 @@ describe('LLM retry, accounting, and telemetry pipeline', () => {
     const grant: LlmGrant = {
       kind: 'official',
       models: { small: 'provider-small' },
-      accountingScopes: [
-        {
-          key: `session:${SESSION_ID}:${SLOT}`,
-          limits: { tokenBudget: 100, callBudget: 10, requestsPerMinute: 10 },
-          readCommittedUsage: () => store.readSessionUsage(SESSION_ID, SESSION_ID, SLOT),
-        },
-      ],
+      accountingScope: {
+        key: `session:${SESSION_ID}:${SLOT}`,
+        limits: { tokenBudget: 100, callBudget: 10, requestsPerMinute: 10 },
+        readCommittedUsage: () => store.readSessionUsage(SESSION_ID, SESSION_ID, SLOT),
+      },
       recordSink: createOfficialRecordSink(store, {
         scopeId: SESSION_ID,
         sessionId: SESSION_ID,
@@ -102,7 +100,7 @@ describe('LLM retry, accounting, and telemetry pipeline', () => {
       outputTokens: 4,
     })
     expect(store.listCalls(SESSION_ID)).toHaveLength(1)
-    expect(meter.inspect(grant.accountingScopes[0]?.key ?? '').rateEvents).toHaveLength(1)
+    expect(meter.inspect(grant.accountingScope.key).rateEvents).toHaveLength(1)
   })
 
   it.each([
@@ -124,7 +122,7 @@ describe('LLM retry, accounting, and telemetry pipeline', () => {
       outputTokens: 0,
     })
     expect(store.listCalls(SESSION_ID)).toEqual([])
-    expect(meter.inspect(grant.accountingScopes[0]?.key ?? '')).toMatchObject({
+    expect(meter.inspect(grant.accountingScope.key)).toMatchObject({
       rateEvents: [expect.any(Number)],
       reservedCalls: 0,
       reservedTokens: 0,

@@ -40,7 +40,7 @@ export class LlmHandler {
     const inputTokens = this.deps.tokenizer.countRequest(accepted)
     const outputTokens = enforcedMaximum(accepted)
     const reservation = await this.deps.meter.reserve(
-      grant.accountingScopes,
+      grant.accountingScope,
       inputTokens,
       outputTokens,
     )

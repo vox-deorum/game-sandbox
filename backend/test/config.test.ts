@@ -164,7 +164,6 @@ describe('loadConfig', () => {
       maxOutputTokens: 4_096,
       meterRecoveryIntervalMs: 5_000,
       sessionLimits: { tokenBudget: 100_000, callBudget: 100, requestsPerMinute: 60 },
-      runLimits: { tokenBudget: 1_000_000, callBudget: 1_000, requestsPerMinute: 60 },
     })
   })
 
@@ -185,9 +184,6 @@ describe('loadConfig', () => {
       LLM_SESSION_TOKEN_BUDGET: '3000',
       LLM_SESSION_CALL_BUDGET: '12',
       LLM_SESSION_RATE_LIMIT_RPM: '7',
-      LLM_RUN_TOKEN_BUDGET: '9000',
-      LLM_RUN_CALL_BUDGET: '30',
-      LLM_RUN_RATE_LIMIT_RPM: '11',
     })
 
     expect(llm).toEqual({
@@ -203,7 +199,6 @@ describe('loadConfig', () => {
       maxOutputTokens: 2_048,
       meterRecoveryIntervalMs: 9_000,
       sessionLimits: { tokenBudget: 3_000, callBudget: 12, requestsPerMinute: 7 },
-      runLimits: { tokenBudget: 9_000, callBudget: 30, requestsPerMinute: 11 },
     })
   })
 

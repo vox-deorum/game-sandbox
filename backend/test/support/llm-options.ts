@@ -13,6 +13,5 @@ export function makeTestLlmOptions(): LlmOptions {
     maxOutputTokens: 4_096,
     meterRecoveryIntervalMs: 5_000,
     sessionLimits: { tokenBudget: 100_000, callBudget: 100, requestsPerMinute: 60 },
-    runLimits: { tokenBudget: 1_000_000, callBudget: 1_000, requestsPerMinute: 60 },
   }
 }

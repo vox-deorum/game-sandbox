@@ -6,7 +6,6 @@ export interface OfficialRecordSinkScope {
   scopeId: string
   sessionId: string
   slot: string
-  subjectId?: string
   tick: OfficialTickMarkerRef
 }
 
@@ -24,7 +23,6 @@ export function createOfficialRecordSink(
       store.record(scope.scopeId, {
         sessionId: scope.sessionId,
         slot: scope.slot,
-        subjectId: scope.subjectId,
         tick: scope.tick.current,
         model: record.model,
         request: record.request,

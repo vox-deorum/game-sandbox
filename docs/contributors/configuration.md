@@ -86,9 +86,6 @@ The internal OpenAI-compatible proxy starts only when `LLM_UPSTREAM_URL` and at 
 | `LLM_SESSION_TOKEN_BUDGET` | `100000` | Successful input-plus-completion token allowance per official session slot |
 | `LLM_SESSION_CALL_BUDGET` | `100` | Successful-call allowance per official session slot |
 | `LLM_SESSION_RATE_LIMIT_RPM` | `60` | Admitted logical requests per minute per official session slot |
-| `LLM_RUN_TOKEN_BUDGET` | `1000000` | Successful input-plus-completion token allowance per submission in a run |
-| `LLM_RUN_CALL_BUDGET` | `1000` | Successful-call allowance per submission in a run |
-| `LLM_RUN_RATE_LIMIT_RPM` | `60` | Admitted logical requests per minute per submission in a run |
 
 `LLM_DEFAULT_MAX_OUTPUT_TOKENS` may be zero but must not exceed `LLM_MAX_OUTPUT_TOKENS`. Token budgets count input plus total completion tokens. Reasoning tokens are reported separately as a subset of completion usage and are not charged twice.
 

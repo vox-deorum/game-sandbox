@@ -53,7 +53,7 @@ function fixture(
   const grant: LlmGrant = {
     kind: 'official',
     models: { small: 'provider-secret' },
-    accountingScopes: [scope],
+    accountingScope: scope,
     recordSink: sink,
   }
   const tokenizer: LlmTokenCounter = overrides.tokenizer ?? {
@@ -356,8 +356,8 @@ describe('generic admission and recovery', () => {
       readCommittedUsage: emptyUsage,
     }
     const outcomes = await Promise.allSettled([
-      meter.reserve([accountingScope], input, output),
-      meter.reserve([accountingScope], input, output),
+      meter.reserve(accountingScope, input, output),
+      meter.reserve(accountingScope, input, output),
     ])
     expect(outcomes.map((outcome) => outcome.status).sort()).toEqual(['fulfilled', 'rejected'])
     const rejected = outcomes.find((outcome) => outcome.status === 'rejected')
@@ -370,7 +370,7 @@ describe('generic admission and recovery', () => {
     if (accepted?.status === 'fulfilled') meter.release(accepted.value)
   })
 
-  it('keeps multi-scope official and development-shaped accounting keys independent', async () => {
+  it('keeps official slot and development-shaped accounting keys independent', async () => {
     const meter = new LlmMeter({ recoveryIntervalMs: 10 })
     const makeScope = (key: string): LlmAccountingScope => ({
       key,
@@ -378,23 +378,21 @@ describe('generic admission and recovery', () => {
       readCommittedUsage: emptyUsage,
     })
     const sessionA = makeScope('session:s1:player_0')
-    const runA = makeScope('run:r1:submission-a')
     const sessionB = makeScope('session:s1:player_1')
-    const runB = makeScope('run:r1:submission-b')
     const development = makeScope('development:participant-1:season-1')
 
     const reservations = await Promise.all([
-      meter.reserve([sessionA, runA], 1, 1),
-      meter.reserve([sessionB, runB], 1, 1),
-      meter.reserve([development], 1, 1),
+      meter.reserve(sessionA, 1, 1),
+      meter.reserve(sessionB, 1, 1),
+      meter.reserve(development, 1, 1),
     ])
-    for (const scope of [sessionA, runA, sessionB, runB, development]) {
+    for (const scope of [sessionA, sessionB, development]) {
       expect(meter.inspect(scope.key)).toMatchObject({
         rateEvents: [expect.any(Number)],
         reservedCalls: 1,
       })
     }
-    await expect(meter.reserve([development], 1, 1)).rejects.toMatchObject({
+    await expect(meter.reserve(development, 1, 1)).rejects.toMatchObject({
       code: 'rate_limit_exceeded',
     })
     expect(meter.inspect(sessionB.key).rateEvents).toHaveLength(1)
@@ -407,7 +405,7 @@ describe('generic admission and recovery', () => {
     await expect(handler.handle(grant, { model: 'small', messages: [] })).rejects.toMatchObject({
       code: 'bad_upstream',
     })
-    expect(meter.inspect(grant.accountingScopes[0]?.key ?? '').reservedCalls).toBe(0)
+    expect(meter.inspect(grant.accountingScope.key).reservedCalls).toBe(0)
     await expect(handler.handle(grant, { model: 'small', messages: [] })).rejects.toMatchObject({
       code: 'rate_limit_exceeded',
     })
@@ -429,7 +427,7 @@ describe('generic admission and recovery', () => {
     await expect(handler.handle(grant, { model: 'small', messages: [] })).rejects.toMatchObject({
       code: 'meter_unavailable',
     })
-    const key = grant.accountingScopes[0]?.key ?? ''
+    const key = grant.accountingScope.key
     expect(meter.inspect(key)).toMatchObject({
       breakerOpen: true,
       reservedCalls: 0,
@@ -448,8 +446,7 @@ describe('generic admission and recovery', () => {
     expect(sink.probeHealth).toHaveBeenCalledTimes(2)
     expect(meter.inspect(key).breakerOpen).toBe(false)
     expect(meter.inspect(key).debt.calls).toBe(1)
-    const accountingScope = grant.accountingScopes[0] as LlmAccountingScope
-    accountingScope.limits.callBudget = 1
+    grant.accountingScope.limits.callBudget = 1
     await expect(handler.handle(grant, { model: 'small', messages: [] })).rejects.toMatchObject({
       code: 'budget_exceeded',
     })
@@ -472,7 +469,7 @@ describe('generic admission and recovery', () => {
       code: 'meter_unavailable',
     })
 
-    const key = grant.accountingScopes[0]?.key ?? ''
+    const key = grant.accountingScope.key
     expect(sink.record).not.toHaveBeenCalled()
     expect(meter.inspect(key)).toMatchObject({
       breakerOpen: true,
@@ -487,7 +484,7 @@ describe('generic admission and recovery', () => {
     meter.close()
   })
 
-  it('opens every scope breaker and charges conservative token debt after one sink failure', async () => {
+  it('opens the scope breaker and charges conservative token debt after a sink failure', async () => {
     vi.useFakeTimers()
     const sink = {
       record: vi.fn(() => {
@@ -498,25 +495,17 @@ describe('generic admission and recovery', () => {
       }),
     }
     const { grant, handler, meter } = fixture({ sink })
-    const secondScope: LlmAccountingScope = {
-      key: 'run:r1:submission-1',
-      limits: { tokenBudget: 100, callBudget: 10, requestsPerMinute: 10 },
-      readCommittedUsage: emptyUsage,
-    }
-    grant.accountingScopes.push(secondScope)
 
     await expect(handler.handle(grant, { model: 'small', messages: [] })).rejects.toMatchObject({
       code: 'meter_unavailable',
     })
 
-    for (const scope of grant.accountingScopes) {
-      expect(meter.inspect(scope.key)).toMatchObject({
-        breakerOpen: true,
-        reservedCalls: 0,
-        reservedTokens: 0,
-        debt: { calls: 1, inputTokens: 3, outputTokens: 8 },
-      })
-    }
+    expect(meter.inspect(grant.accountingScope.key)).toMatchObject({
+      breakerOpen: true,
+      reservedCalls: 0,
+      reservedTokens: 0,
+      debt: { calls: 1, inputTokens: 3, outputTokens: 8 },
+    })
     meter.close()
   })
 
@@ -533,7 +522,7 @@ describe('generic admission and recovery', () => {
       readCommittedUsage: emptyUsage,
     }
     const meter = new LlmMeter({ recoveryIntervalMs: 10 })
-    meter.markUnavailable([scope], sink)
+    meter.markUnavailable(scope, sink)
 
     vi.advanceTimersByTime(10)
     await Promise.resolve()

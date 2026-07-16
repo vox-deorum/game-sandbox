@@ -50,7 +50,6 @@ describe('createOfficialRecordSink', () => {
       scopeId: 'run-1',
       sessionId: 'game-1',
       slot: 'player_2',
-      subjectId: 'submission-9',
       tick,
     })
 
@@ -63,7 +62,6 @@ describe('createOfficialRecordSink', () => {
         id: 1,
         sessionId: 'game-1',
         slot: 'player_2',
-        subjectId: 'submission-9',
         tick: null,
         model: 'medium',
         request: SUCCESS.request,
@@ -79,7 +77,6 @@ describe('createOfficialRecordSink', () => {
         id: 2,
         sessionId: 'game-1',
         slot: 'player_2',
-        subjectId: 'submission-9',
         tick: 14,
         model: 'medium',
         request: SUCCESS.request,
@@ -94,7 +91,7 @@ describe('createOfficialRecordSink', () => {
     ])
   })
 
-  it('maps an absent run subject to null and delegates health to the same scope', () => {
+  it('writes the record and delegates health to the same scope', () => {
     const probe = vi.spyOn(store, 'probeHealth')
     const sink = createOfficialRecordSink(store, {
       scopeId: 'live-session',
@@ -106,7 +103,11 @@ describe('createOfficialRecordSink', () => {
     sink.record(SUCCESS)
     sink.probeHealth()
 
-    expect(store.listCalls('live-session')[0]?.subjectId).toBeNull()
+    expect(store.listCalls('live-session')[0]).toMatchObject({
+      sessionId: 'live-session',
+      slot: 'player_0',
+      model: 'medium',
+    })
     expect(probe).toHaveBeenCalledOnce()
     expect(probe).toHaveBeenCalledWith('live-session')
   })

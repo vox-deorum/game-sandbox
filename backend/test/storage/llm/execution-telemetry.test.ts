@@ -14,7 +14,6 @@ import {
 const CALL: ExecutionTelemetryCallInput = {
   sessionId: 'game-1',
   slot: 'player_0',
-  subjectId: 'submission-a',
   tick: null,
   model: 'small',
   request: { model: 'small', messages: [{ role: 'user', content: 'move?' }] },
@@ -55,7 +54,7 @@ describe('ExecutionTelemetryStore', () => {
         )
         .pluck()
         .all(),
-    ).toEqual(['calls_created_at', 'calls_session_slot', 'calls_subject'])
+    ).toEqual(['calls_created_at', 'calls_session_slot'])
     expect(db.prepare('SELECT * FROM meter_health').get()).toEqual({
       id: 1,
       checked_at: '2026-07-15T12:34:56.000Z',
@@ -68,12 +67,12 @@ describe('ExecutionTelemetryStore', () => {
     const old = new BetterSqlite3(path)
     old.exec(`
       CREATE TABLE calls (
-        id INTEGER PRIMARY KEY, session_id TEXT NOT NULL, slot TEXT NOT NULL, subject_id TEXT,
+        id INTEGER PRIMARY KEY, session_id TEXT NOT NULL, slot TEXT NOT NULL,
         tick INTEGER, model TEXT NOT NULL, request_json TEXT NOT NULL, completion_json TEXT NOT NULL,
         input_tokens INTEGER NOT NULL, reasoning_tokens INTEGER NOT NULL, output_tokens INTEGER NOT NULL,
         usage_estimated INTEGER NOT NULL, latency_ms INTEGER NOT NULL, created_at TEXT NOT NULL
       );
-      INSERT INTO calls VALUES (1, 'old-game', 'player_0', NULL, NULL, 'large', '{}', '{}',
+      INSERT INTO calls VALUES (1, 'old-game', 'player_0', NULL, 'large', '{}', '{}',
         1, 0, 2, 0, 3, '2026-07-01T00:00:00.000Z');
     `)
     old.close()
@@ -116,7 +115,6 @@ describe('ExecutionTelemetryStore', () => {
     store.insert('run', {
       ...CALL,
       slot: 'player_1',
-      subjectId: 'submission-b',
       model: 'large',
       inputTokens: 100,
       reasoningTokens: 20,
@@ -133,19 +131,21 @@ describe('ExecutionTelemetryStore', () => {
       reasoningTokens: 2,
       outputTokens: 3,
     })
-    expect(store.readSubjectUsage('run', 'submission-a')).toEqual({
-      calls: 2,
-      inputTokens: 16,
-      reasoningTokens: 3,
-      outputTokens: 10,
-    })
-    expect(store.readSubjectUsage('run', 'missing')).toEqual({
+    expect(store.readSessionUsage('run', 'missing', 'player_0')).toEqual({
       calls: 0,
       inputTokens: 0,
       reasoningTokens: 0,
       outputTokens: 0,
     })
-    expect(store.aggregateByModel('run', { subjectId: 'submission-a' })).toEqual({
+    expect(store.aggregateByModel('run')).toEqual({
+      large: {
+        calls: 1,
+        estimatedCalls: 0,
+        inputTokens: 100,
+        reasoningTokens: 20,
+        outputTokens: 30,
+        latencyMs: 25,
+      },
       small: {
         calls: 2,
         estimatedCalls: 1,

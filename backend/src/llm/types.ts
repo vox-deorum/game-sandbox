@@ -21,7 +21,7 @@ export interface LlmLimits {
 
 export type MaybePromise<T> = T | Promise<T>
 
-/** One independently enforced meter, such as a session slot or run subject. */
+/** One independently enforced meter, such as a session slot or a development key. */
 export interface LlmAccountingScope {
   key: string
   limits: LlmLimits
@@ -47,12 +47,12 @@ export interface LlmRecordSink {
 
 /**
  * Everything the shared handler needs after authentication, without official identity fields.
- * Grant construction must bind every scope reader to committed usage written by `recordSink`.
+ * Grant construction must bind the scope reader to committed usage written by `recordSink`.
  */
 export interface LlmGrant {
   kind: 'official' | 'development'
   models: Partial<Record<ModelAlias, string>>
-  accountingScopes: LlmAccountingScope[]
+  accountingScope: LlmAccountingScope
   recordSink: LlmRecordSink
 }
 

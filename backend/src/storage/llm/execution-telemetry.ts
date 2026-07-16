@@ -17,7 +17,6 @@ const SCOPE_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/
 export interface ExecutionTelemetryCallInput {
   sessionId: string
   slot: string
-  subjectId?: string | null
   tick: number | null
   model: string
   request: unknown
@@ -37,7 +36,6 @@ export interface ExecutionTelemetryCall extends Required<ExecutionTelemetryCallI
 export interface TelemetryCallFilter {
   sessionId?: string
   slot?: string
-  subjectId?: string
   model?: string
 }
 
@@ -52,7 +50,6 @@ interface CallRow {
   id: number
   session_id: string
   slot: string
-  subject_id: string | null
   tick: number | null
   model: string
   request_json: string
@@ -82,7 +79,6 @@ interface ScopeHandle {
   db: BetterSqlite3.Database
   insertCall: BetterSqlite3.Statement
   sessionUsage: BetterSqlite3.Statement
-  subjectUsage: BetterSqlite3.Statement
 }
 
 function validateScopeId(scopeId: string): void {
@@ -130,7 +126,6 @@ function decodeCall(row: CallRow): ExecutionTelemetryCall {
     id: row.id,
     sessionId: row.session_id,
     slot: row.slot,
-    subjectId: row.subject_id,
     tick: row.tick,
     model: row.model,
     request: JSON.parse(row.request_json) as unknown,
@@ -159,7 +154,6 @@ function migrate(db: BetterSqlite3.Database): void {
           id               INTEGER PRIMARY KEY,
           session_id       TEXT NOT NULL,
           slot             TEXT NOT NULL,
-          subject_id       TEXT,
           tick             INTEGER,
           model            TEXT NOT NULL,
           request_json     TEXT NOT NULL,
@@ -172,7 +166,6 @@ function migrate(db: BetterSqlite3.Database): void {
           created_at       TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS calls_session_slot ON calls (session_id, slot);
-        CREATE INDEX IF NOT EXISTS calls_subject ON calls (subject_id);
         CREATE INDEX IF NOT EXISTS calls_created_at ON calls (created_at);
         CREATE TABLE IF NOT EXISTS meter_health (
           id         INTEGER PRIMARY KEY CHECK (id = 1),
@@ -238,7 +231,6 @@ export class ExecutionTelemetryStore {
     const values = {
       session_id: input.sessionId,
       slot: input.slot,
-      subject_id: input.subjectId ?? null,
       tick: input.tick,
       model: input.model,
       request_json: encodeJson(input.request, 'request'),
@@ -262,12 +254,6 @@ export class ExecutionTelemetryStore {
   /** Successful committed usage for one slot within one producing session. */
   readSessionUsage(scopeId: string, sessionId: string, slot: string): LlmUsage {
     const row = this.handle(scopeId).sessionUsage.get(sessionId, slot) as UsageRow | undefined
-    return decodeUsage(row)
-  }
-
-  /** Successful committed usage for one submission/built-in subject across a run scope. */
-  readSubjectUsage(scopeId: string, subjectId: string): LlmUsage {
-    const row = this.handle(scopeId).subjectUsage.get(subjectId) as UsageRow | undefined
     return decodeUsage(row)
   }
 
@@ -361,10 +347,10 @@ export class ExecutionTelemetryStore {
         db,
         insertCall: db.prepare(`
           INSERT INTO calls (
-            session_id, slot, subject_id, tick, model, request_json, completion_json,
+            session_id, slot, tick, model, request_json, completion_json,
             input_tokens, reasoning_tokens, output_tokens, usage_estimated, latency_ms, created_at
           ) VALUES (
-            @session_id, @slot, @subject_id, @tick, @model, @request_json, @completion_json,
+            @session_id, @slot, @tick, @model, @request_json, @completion_json,
             @input_tokens, @reasoning_tokens, @output_tokens, @usage_estimated, @latency_ms, @created_at
           )
         `),
@@ -374,13 +360,6 @@ export class ExecutionTelemetryStore {
                  COALESCE(SUM(reasoning_tokens), 0) AS reasoning_tokens,
                  COALESCE(SUM(output_tokens), 0) AS output_tokens
           FROM calls WHERE session_id = ? AND slot = ?
-        `),
-        subjectUsage: db.prepare(`
-          SELECT COUNT(*) AS calls,
-                 COALESCE(SUM(input_tokens), 0) AS input_tokens,
-                 COALESCE(SUM(reasoning_tokens), 0) AS reasoning_tokens,
-                 COALESCE(SUM(output_tokens), 0) AS output_tokens
-          FROM calls WHERE subject_id = ?
         `),
       }
       this.handles.set(scopeId, handle)
@@ -401,7 +380,6 @@ function filteredQuery(
   for (const [column, value] of [
     ['session_id', filter.sessionId],
     ['slot', filter.slot],
-    ['subject_id', filter.subjectId],
     ['model', filter.model],
   ] as const) {
     if (value !== undefined) {

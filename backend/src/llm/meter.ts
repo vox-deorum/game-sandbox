@@ -19,7 +19,7 @@ interface MeterState {
 }
 
 export interface LlmReservation {
-  readonly scopes: readonly LlmAccountingScope[]
+  readonly scope: LlmAccountingScope
   readonly inputTokens: number
   readonly outputTokens: number
   active: boolean
@@ -48,49 +48,41 @@ export class LlmMeter {
     this.log = options.log ?? (() => {})
   }
 
-  /** Atomically read committed usage, check every scope, and reserve them as one sync section. */
+  /** Atomically read committed usage, check the scope, and reserve it as one sync section. */
   async reserve(
-    scopes: readonly LlmAccountingScope[],
+    scope: LlmAccountingScope,
     inputTokens: number,
     outputTokens: number,
   ): Promise<LlmReservation> {
-    const unique = uniqueScopes(scopes)
-    const committed = unique.map((scope) => scope.readCommittedUsage())
+    const usage = scope.readCommittedUsage()
     const now = this.now()
     const requestedTokens = inputTokens + outputTokens
 
-    // Durable readers are synchronous, so no commit can land between this snapshot and reservation.
-    for (let index = 0; index < unique.length; index++) {
-      const scope = unique[index] as LlmAccountingScope
-      const usage = committed[index] as LlmUsage
-      const state = this.state(scope.key)
-      this.pruneRateWindow(state, now)
-      if (state.breakerOpen) {
-        throw new LlmError(503, 'meter_unavailable', 'Usage accounting is temporarily unavailable.')
-      }
-      if (state.rateEvents.length >= scope.limits.requestsPerMinute) {
-        throw new LlmError(429, 'rate_limit_exceeded', 'Rate limit exceeded.', 'rate_limit_error')
-      }
-      if (usage.calls + state.reservedCalls + state.debt.calls + 1 > scope.limits.callBudget) {
-        throw new LlmError(400, 'budget_exceeded', 'Call budget exceeded.')
-      }
-      const committedTokens = totalTokens(usage)
-      const debtTokens = totalTokens(state.debt)
-      if (
-        committedTokens + state.reservedTokens + debtTokens + requestedTokens >
-        scope.limits.tokenBudget
-      ) {
-        throw new LlmError(400, 'budget_exceeded', 'Token budget exceeded.')
-      }
+    // The durable reader is synchronous, so no commit can land between this snapshot and reservation.
+    const state = this.state(scope.key)
+    this.pruneRateWindow(state, now)
+    if (state.breakerOpen) {
+      throw new LlmError(503, 'meter_unavailable', 'Usage accounting is temporarily unavailable.')
+    }
+    if (state.rateEvents.length >= scope.limits.requestsPerMinute) {
+      throw new LlmError(429, 'rate_limit_exceeded', 'Rate limit exceeded.', 'rate_limit_error')
+    }
+    if (usage.calls + state.reservedCalls + state.debt.calls + 1 > scope.limits.callBudget) {
+      throw new LlmError(400, 'budget_exceeded', 'Call budget exceeded.')
+    }
+    const committedTokens = totalTokens(usage)
+    const debtTokens = totalTokens(state.debt)
+    if (
+      committedTokens + state.reservedTokens + debtTokens + requestedTokens >
+      scope.limits.tokenBudget
+    ) {
+      throw new LlmError(400, 'budget_exceeded', 'Token budget exceeded.')
     }
 
-    for (const scope of unique) {
-      const state = this.state(scope.key)
-      state.rateEvents.push(now)
-      state.reservedCalls += 1
-      state.reservedTokens += requestedTokens
-    }
-    return { scopes: unique, inputTokens, outputTokens, active: true }
+    state.rateEvents.push(now)
+    state.reservedCalls += 1
+    state.reservedTokens += requestedTokens
+    return { scope, inputTokens, outputTokens, active: true }
   }
 
   /** Release an unsuccessful request without committing call or token spend. */
@@ -98,11 +90,9 @@ export class LlmMeter {
     if (!reservation.active) return
     reservation.active = false
     const tokens = reservation.inputTokens + reservation.outputTokens
-    for (const scope of reservation.scopes) {
-      const state = this.state(scope.key)
-      state.reservedCalls -= 1
-      state.reservedTokens -= tokens
-    }
+    const state = this.state(reservation.scope.key)
+    state.reservedCalls -= 1
+    state.reservedTokens -= tokens
   }
 
   /** Commit telemetry before releasing the reservation; retain conservative debt on failure. */
@@ -121,16 +111,16 @@ export class LlmMeter {
     }
   }
 
-  /** Retain an upstream-spent reservation and block its scopes when post-call accounting fails. */
+  /** Retain an upstream-spent reservation and block its scope when post-call accounting fails. */
   chargeConservativeDebt(reservation: LlmReservation, sink: LlmRecordSink): void {
     if (!reservation.active) return
     this.moveToDebt(reservation)
-    for (const scope of reservation.scopes) this.openBreaker(scope.key, sink)
+    this.openBreaker(reservation.scope.key, sink)
   }
 
   /** Used by startup wiring when a scope's initial migration/write-health check fails. */
-  markUnavailable(scopes: readonly LlmAccountingScope[], sink: LlmRecordSink): void {
-    for (const scope of uniqueScopes(scopes)) this.openBreaker(scope.key, sink)
+  markUnavailable(scope: LlmAccountingScope, sink: LlmRecordSink): void {
+    this.openBreaker(scope.key, sink)
   }
 
   inspect(key: string): Readonly<MeterState> {
@@ -148,15 +138,13 @@ export class LlmMeter {
     if (!reservation.active) return
     reservation.active = false
     const tokens = reservation.inputTokens + reservation.outputTokens
-    for (const scope of reservation.scopes) {
-      const state = this.state(scope.key)
-      state.reservedCalls -= 1
-      state.reservedTokens -= tokens
-      state.debt.calls += 1
-      state.debt.inputTokens += reservation.inputTokens
-      // The reservation is conservative and does not separately guess hidden reasoning.
-      state.debt.outputTokens += reservation.outputTokens
-    }
+    const state = this.state(reservation.scope.key)
+    state.reservedCalls -= 1
+    state.reservedTokens -= tokens
+    state.debt.calls += 1
+    state.debt.inputTokens += reservation.inputTokens
+    // The reservation is conservative and does not separately guess hidden reasoning.
+    state.debt.outputTokens += reservation.outputTokens
   }
 
   private openBreaker(key: string, sink: LlmRecordSink): void {
@@ -213,12 +201,4 @@ export class LlmMeter {
     }
     return state
   }
-}
-
-function uniqueScopes(scopes: readonly LlmAccountingScope[]): LlmAccountingScope[] {
-  const unique = new Map<string, LlmAccountingScope>()
-  for (const scope of scopes) {
-    if (!unique.has(scope.key)) unique.set(scope.key, scope)
-  }
-  return [...unique.values()]
 }
