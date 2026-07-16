@@ -31,15 +31,10 @@ type ResolvedOfficialLlmPolicy = {
     call_budget: number
     rate_limit_rpm: number
   }
-  run: {
-    token_budget: number
-    call_budget: number
-    rate_limit_rpm: number
-  }
 }
 ```
 
-The model values are upstream model names. Even a disabled run stores the object, with `enabled: false` and an empty model map, so workflow code never needs a live-configuration fallback. The stored policy contains no upstream credential. Every workflow match, grant, and admission check in that run reads this policy without consulting current alias mappings, deployment limit defaults, or season LLM values. A deployment may still make the upstream operationally unavailable, but configuration changes after run creation cannot change which models or limits the run uses.
+The model values are upstream model names. Even a disabled run stores the object, with `enabled: false` and an empty model map, so workflow code never needs a live-configuration fallback. The stored policy contains no upstream credential. Every workflow match, grant, and admission check in that run reads this policy without consulting current alias mappings, deployment limit defaults, or season LLM values. A deployment may still make the upstream operationally unavailable, but configuration changes after run creation cannot change which models or limits the run uses. The frozen limits are per agent slot; a run has no allowance of its own.
 
 Persist the resolved official flag on the session row as `llm_enabled`. Session payloads and recording views read that stored value after execution.
 
@@ -56,12 +51,9 @@ llm?: {
   enabled?: boolean
   models?: Array<'large' | 'medium' | 'small'>
   official?: {
-    session_token_budget?: number
-    session_call_budget?: number
-    session_rate_limit_rpm?: number
-    run_token_budget?: number
-    run_call_budget?: number
-    run_rate_limit_rpm?: number
+    token_budget?: number
+    call_budget?: number
+    rate_limit_rpm?: number
   }
   development?: {
     token_budget?: number
@@ -71,15 +63,15 @@ llm?: {
 }
 ```
 
-Unset limits inherit deployment defaults, and an unset model list inherits every configured deployment alias. Official and development blocks resolve independently. Admin season updates reject unknown fields, non-positive limits, empty model lists, duplicate aliases, and aliases unavailable on the deployment. Run creation persists the resulting official model mapping and limits, while live and development resolution continue to use the current effective values.
+Unset limits inherit deployment defaults, and an unset model list inherits every configured deployment alias. Official and development blocks resolve independently and mirror each other's shape: official limits apply per agent slot, and development limits apply per participant per season. Admin season updates reject unknown fields, non-positive limits, empty model lists, duplicate aliases, and aliases unavailable on the deployment. Run creation persists the resulting official model mapping and limits, while live and development resolution continue to use the current effective values.
 
-`SeasonConfigEditor.vue` exposes enablement, allowed aliases, official session and run limits, and development limits as separate field groups built from existing UI primitives. The styleguide and admin-editor unit tests cover every new control and validation state.
+`SeasonConfigEditor.vue` exposes enablement, allowed aliases, official per-slot limits, and development limits as separate field groups built from existing UI primitives. The styleguide and admin-editor unit tests cover every new control and validation state.
 
 Add deployment defaults `LLM_DEVELOPMENT_TOKEN_BUDGET`, `LLM_DEVELOPMENT_CALL_BUDGET`, and `LLM_DEVELOPMENT_RATE_LIMIT_RPM`.
 
 ## Official slot keys and launch config
 
-The orchestrator and workflow runner issue one official key for every agent slot when effective LLM access is enabled. Human slots receive no key. They construct each generic `LlmGrant` with a resolved alias-to-upstream-model map, its accounting scopes, and one record sink. Every scope reader synchronously queries a view of the same durable store updated by that sink. For live grants, the session-and-slot reader and sink capture the live session ID as the telemetry scope. For workflow grants, the readers and sink capture the run ID as the telemetry scope, the workflow game ID as the session filter, and the optional submission or built-in subject. The registry separately associates every official key with its session for revocation and tick markers.
+The orchestrator and workflow runner issue one official key for every agent slot when effective LLM access is enabled. Human slots receive no key. They construct each generic `LlmGrant` with a resolved alias-to-upstream-model map, its session-and-slot accounting scope, and one record sink. The scope reader synchronously queries a view of the same durable store updated by that sink. For live grants, the reader and sink capture the live session ID as the telemetry scope. For workflow grants, the reader and sink capture the run ID as the telemetry scope and the workflow game ID as the session filter. The registry separately associates every official key with its session for revocation and tick markers.
 
 `backend/src/session/launch-config.ts` emits:
 
@@ -174,7 +166,7 @@ A successful logical request writes one full row and consumes one call using ups
 
 Post-upstream processing and the ledger transaction complete before the proxy returns a successful development completion. If normalization, usage resolution, or the durable commit fails after the upstream succeeds, the meter moves the conservative call and token reservation into in-memory charged debt for `(seasonId, userId)`, opens that pair's circuit breaker, and returns `503 meter_unavailable` instead of the completion. Requests rejected by the breaker never reach the upstream. The generic single-flight recovery loop from Step 1 probes the season ledger at the configured interval. A committed `meter_health` transaction closes that pair's breaker automatically without discarding debt retained by the running process; a failed probe leaves it open and schedules the next attempt. Conservative debt is process-lifetime state, so a trusted operator restart clears it along with reservations and rate windows. After a restart, a pair can admit requests only after the season ledger opens, applies its `user_version` changes, and passes the same write-health transaction. Recovery failures are logged without bodies or credentials.
 
-Official telemetry files, game results, placements, and leaderboards never read or write the development ledger. Development requests never use execution scope IDs, recording IDs, session IDs, slots, ticks, or run subjects.
+Official telemetry files, game results, placements, and leaderboards never read or write the development ledger. Development requests never use execution scope IDs, recording IDs, session IDs, slots, or ticks.
 
 Step 5 adds participant and operator read APIs over this ledger. Ledger retention follows season retention and is independent of recording deletion.
 

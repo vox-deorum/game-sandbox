@@ -1,4 +1,4 @@
-# Stage 9.4: Official Run Budgets and Usage Aggregation
+# Stage 9.4: Official Usage Aggregation
 
 Status: not started.
 
@@ -6,28 +6,21 @@ Part of [Stage 9](../stage-09-llm-gateway.md), build-order step 4.
 
 ## Outcome
 
-Successful official calls consume a per-submission allowance across one leaderboard run. The run freezes its fully resolved LLM policy when it is created, so aliases and limits cannot change while the workflow is in progress. Call, token, and latency totals are aggregated by model alias into game results, persisted placements, and automated-board payloads only after the corresponding game has completed its grant teardown barrier. Budget rejections remain catchable agent errors and never create telemetry or cause a forfeit by themselves.
+Workflow matches meter successful official calls per slot under the run's frozen policy. The run freezes its fully resolved LLM policy when it is created, so aliases and limits cannot change while the workflow is in progress. Call, token, and latency totals are aggregated by model alias into game results, persisted placements, and automated-board payloads only after the corresponding game has completed its grant teardown barrier. Budget rejections remain catchable agent errors and never create telemetry or cause a forfeit by themselves.
 
-The hands-on check runs two matches under a small per-submission run allowance. Completed calls appear in the run-scoped SQLite file and board totals. The next over-budget request is rejected, the agent falls back to a legal action, and the game finishes normally.
+The hands-on check runs two matches under a small per-slot allowance. Completed calls appear in the run-scoped SQLite file and board totals. An over-budget request inside a match is rejected, the agent falls back to a legal action, and the game finishes normally, while the next match starts with a fresh per-slot allowance.
 
-## Run meter
+## Workflow grants
 
-The workflow runner reads `runId`, `subjectId`, and the resolved model map and limits from the run's frozen policy when it constructs each official grant. `subjectId` is the submission ID for a submission seat and a stable built-in subject for a built-in seat.
+The workflow runner reads `runId` and the resolved model map and per-slot limits from the run's frozen policy when it constructs each official grant.
 
-Every workflow grant has two accounting scopes. Its session-and-slot scope synchronously reads committed usage by `(session_id, slot)` from `data/llm/<runId>.sqlite`, while its run-subject scope synchronously reads the same file by `subject_id`. Its record sink writes that same file and captures the run ID as the file scope plus the game session, slot, and subject written on every successful row. Every grant constructed for that subject in successive match sessions therefore shares the run allowance. A different subject or run receives an independent allowance.
+Each workflow grant has one session-and-slot accounting scope. It synchronously reads committed usage by `(session_id, slot)` from `data/llm/<runId>.sqlite`, and its record sink writes that same file, capturing the run ID as the file scope plus the game session and slot written on every successful row. Every workflow game is a new session, so each slot's allowance covers one game, and a submission's total spend in a run is bounded by the frozen per-slot budget times the games it plays. There is no run-level allowance. A rerun receives a new run ID and a new scope file.
 
-Admission checks both scopes before forwarding:
-
-1. The session-and-slot accounting scope under the frozen per-slot limits.
-2. The run-subject accounting scope under the frozen per-submission limits.
-
-One temporary call-and-token reservation is registered in both scopes. An eventual success commits one call and either validated upstream usage or explicitly marked tokenizer estimates to both. Every local rejection or terminal upstream failure releases both reservations and commits nothing. Any normalization, usage-resolution, or telemetry failure after upstream success retains the conservative reservation as charged in-memory debt and opens both scope circuit breakers, as defined in Step 1. If either scope cannot reserve the request, or either breaker is open, the proxy does not call the upstream.
-
-Live watch and play sessions have no run subject. A rerun receives a new run ID, a new scope file, and a fresh allowance.
+Admission, reservation, commit, release, and post-upstream failure behavior for this scope follow Step 1 exactly: one temporary call-and-token reservation per admitted request, one committed call with validated or explicitly estimated usage on success, nothing committed on local rejection or terminal upstream failure, and conservative in-memory debt with an open scope circuit breaker after a post-upstream accounting failure.
 
 ## Workflow runner
 
-Run creation resolves the complete official LLM policy against the deployment configuration and stores that result in the run's dedicated `llm_policy_snapshot`, separate from the strict season `config_snapshot`. The frozen policy includes whether official access is enabled, the alias-to-upstream-model mapping, per-slot session limits, and per-submission run limits. `workflow-runner.ts` reads only these stored values. It never falls back to current deployment defaults or re-resolves the season configuration after the run exists. `runGame` constructs each generic `LlmGrant` from the frozen model map, the session-and-slot and run-subject accounting scopes, and an official record sink that captures the run, game session, slot, and subject identifiers.
+Run creation resolves the complete official LLM policy against the deployment configuration and stores that result in the run's dedicated `llm_policy_snapshot`, separate from the strict season `config_snapshot`. The frozen policy includes whether official access is enabled, the alias-to-upstream-model mapping, and the per-slot limits. `workflow-runner.ts` reads only these stored values. It never falls back to current deployment defaults or re-resolves the season configuration after the run exists. `runGame` constructs each generic `LlmGrant` from the frozen model map, the session-and-slot accounting scope, and an official record sink that captures the run, game session, and slot identifiers.
 
 When the workflow registers a recording, it stores `llm_scope_id = runId` and `llm_session_id = game.id`. Those fields preserve telemetry lookup after workflow rows are pruned.
 
@@ -62,7 +55,7 @@ Add this column directly to the flat initial application schema. Stage 9 adds no
 
 ## Budget-exhaustion journey
 
-Add a test-only hungry agent that requests a completion on every turn and uses a legal deterministic fallback for `budget_exceeded`. Configure its run allowance so successful calls in the first match leave too little room for a request in the second match.
+Add a test-only hungry agent that requests a completion on every turn and uses a legal deterministic fallback for `budget_exceeded`. Configure the per-slot allowance so successful calls early in a match leave too little room for a later request in the same match.
 
 The rejected request reaches no upstream, consumes no budget, creates no SQLite row, and does not mark the seat failed. The agent completes the game with its fallback action. The game result and board equal the successful rows produced before exhaustion.
 
@@ -70,13 +63,12 @@ The rejected request reaches no upstream, consumes no budget, creates no SQLite 
 
 Docker-free workflow and storage tests cover:
 
-- Successful usage accumulating across two sessions for one run and subject.
-- Independent counters for another subject in the same run and the same subject in another run.
-- Session and run reservations composing atomically, with the first unavailable scope returning `budget_exceeded`.
-- A retryable sequence that succeeds committing once to both scopes.
+- Two slots in one workflow game metering independently under the frozen per-slot limits.
+- The same submission receiving a fresh per-slot allowance in its next game, and independent counters for the same slot name in another run's file.
+- A retryable sequence that succeeds committing once.
 - Valid upstream usage and tokenizer-estimated usage aggregating into the same token totals while only estimated rows increment `estimated_calls`.
-- Local rejection, non-retryable upstream failure, and exhausted retries committing to neither scope.
-- A post-upstream accounting failure retaining conservative debt and opening both the session and run circuit breakers before any second request reaches the upstream.
+- Local rejection, non-retryable upstream failure, and exhausted retries committing nothing.
+- A post-upstream accounting failure retaining conservative debt and opening the slot's circuit breaker before any second request reaches the upstream.
 - Run creation persisting a fully resolved official LLM policy, and workflow games continuing to use it after deployment defaults or the season configuration change.
 - Workflow recording registration persisting the run scope and game-session filter IDs.
 - Normal exit, crash, setup or launch failure, cancellation, and explicit stop closing grant admission, aborting or draining active requests, and awaiting reservation finalizers before the first telemetry query or per-game aggregate write.
@@ -91,8 +83,8 @@ Docker integration runs the two-match journey through the real workflow runner a
 
 ## Done when
 
-- Per-slot session limits and per-submission run limits bound successful official use independently.
-- One eventual success consumes one call in both scopes. Every unsuccessful logical request consumes no call or token budget.
+- The frozen per-slot limits bound successful official use in every workflow match, and a run carries no allowance of its own.
+- One eventual success consumes one call in its slot's scope. Every unsuccessful logical request consumes no call or token budget.
 - Budget exhaustion is a catchable error, creates no SQLite row, and does not forfeit a game that the agent finishes legally.
 - A run uses the fully resolved official LLM policy stored at run creation and never current deployment defaults.
 - Every workflow exit path closes admission and awaits active-request and reservation settlement before querying telemetry or persisting usage aggregates.
