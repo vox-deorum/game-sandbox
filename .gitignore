@@ -37,6 +37,7 @@ Thumbs.db
 # Local environment
 .env
 .env.*
+!.env.default
 !.env.example
 
 # Local junction so Claude Code discovers skills under .agents/skills/.

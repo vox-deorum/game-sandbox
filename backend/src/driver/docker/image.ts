@@ -8,7 +8,7 @@
  * the heavy, irrelevant directories are excluded from the tar so only the sources the Dockerfile
  * copies are sent to the daemon.
  */
-import { dirname, join } from 'node:path'
+import { dirname, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import type Docker from 'dockerode'
@@ -46,8 +46,11 @@ export function imageTag(prefix: string, spec: SessionBaseImageSpec): string {
 
 /** True when an outer-edge ignored directory or a compiled-Python artifact sits on this path. */
 function isIgnored(absolutePath: string): boolean {
+  const rel = relative(REPO_ROOT, absolutePath)
+  const rootLocalEnvironmentFile =
+    !rel.includes(sep) && (rel === '.env' || (rel.startsWith('.env.') && rel !== '.env.default'))
   // The same shared exclusion set the submission snapshot and overlay use, anchored at the repo root.
-  return isSubmissionIgnored(REPO_ROOT, absolutePath)
+  return rootLocalEnvironmentFile || isSubmissionIgnored(REPO_ROOT, absolutePath)
 }
 
 async function imageExists(docker: Docker, tag: string): Promise<boolean> {

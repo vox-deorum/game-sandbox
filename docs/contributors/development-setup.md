@@ -26,7 +26,7 @@ uv run python scripts/ci.py docs
 
 Use [Testing](test.md) to choose Docker-gated and release-workflow checks.
 
-The defaults run the full stack locally with no environment variables set. See [Configuration](configuration.md) to tune the port, authentication, sandbox quotas, and retention.
+The required, committed `.env.default` owns the runtime defaults and opts the backend into loopback-only development authentication, so the full stack runs locally without setting environment variables first. Put machine-specific overrides and private credentials in a repository-root `.env`; it is ignored by Git. See [Configuration](configuration.md#how-configuration-loads) for precedence and the full variable reference.
 
 ## Tooling at a glance
 

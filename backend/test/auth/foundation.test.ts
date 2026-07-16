@@ -23,17 +23,19 @@ import {
   DEV_ADMIN_EMAIL,
   DEV_ADMIN_PASSWORD,
   DEV_AUTH_SECRET,
-  loadConfig,
+  loadConfig as parseConfig,
 } from '../../src/config.js'
 import { RecordingsStore } from '../../src/recordings.js'
 import { Retention } from '../../src/retention.js'
 import { Orchestrator } from '../../src/session/orchestrator.js'
 import { openSqlite, type SqliteHandle } from '../../src/storage/sqlite.js'
 import { makeTestAuth, type TestUsers } from '../support/auth.js'
+import { withDefaultEnvironment } from '../support/config-env.js'
 import { FakeDriver } from '../support/fake-driver.js'
 import { makeConfig, makeEnvironments, makeSubmissionDeps } from '../support/harness.js'
 
 const SEED_ADMIN = { email: 'root@test.local', password: 'root-password-123', name: 'Root' }
+const loadConfig = (env: NodeJS.ProcessEnv = {}) => parseConfig(withDefaultEnvironment(env))
 
 /** The table names in a database, for asserting both the auth and the app schema landed. */
 function tableNames(sqlite: SqliteHandle['sqlite']): string[] {
@@ -327,6 +329,7 @@ describe('ensureAdminUser', () => {
 // --- Config validation matrix ----------------------------------------------------------------
 describe('auth configuration', () => {
   const NORMAL = {
+    AUTH_ALLOW_INSECURE_DEFAULTS: 'false',
     PUBLIC_ORIGIN: 'https://sandbox.example.edu',
     AUTH_SECRET: 'an-explicit-secret-of-at-least-32-chars',
     ADMIN_EMAIL: 'ops@example.edu',
@@ -334,15 +337,10 @@ describe('auth configuration', () => {
   }
 
   it('requires an explicit public origin, secret, and credentials in normal mode', () => {
-    expect(() => loadConfig({})).toThrow(/PUBLIC_ORIGIN/)
-    const { PUBLIC_ORIGIN, ...noOrigin } = NORMAL
-    expect(() => loadConfig(noOrigin)).toThrow(/PUBLIC_ORIGIN/)
-    const { AUTH_SECRET, ...noSecret } = NORMAL
-    expect(() => loadConfig(noSecret)).toThrow(/AUTH_SECRET/)
-    const { ADMIN_EMAIL, ...noEmail } = NORMAL
-    expect(() => loadConfig(noEmail)).toThrow(/ADMIN_EMAIL/)
-    const { ADMIN_PASSWORD, ...noPassword } = NORMAL
-    expect(() => loadConfig(noPassword)).toThrow(/ADMIN_PASSWORD/)
+    expect(() => loadConfig({ ...NORMAL, PUBLIC_ORIGIN: undefined })).toThrow(/PUBLIC_ORIGIN/)
+    expect(() => loadConfig({ ...NORMAL, AUTH_SECRET: undefined })).toThrow(/AUTH_SECRET/)
+    expect(() => loadConfig({ ...NORMAL, ADMIN_EMAIL: undefined })).toThrow(/ADMIN_EMAIL/)
+    expect(() => loadConfig({ ...NORMAL, ADMIN_PASSWORD: undefined })).toThrow(/ADMIN_PASSWORD/)
   })
 
   it('rejects the published development credentials without the opt-in', () => {

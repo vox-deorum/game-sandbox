@@ -8,6 +8,7 @@
  * touches the driver or the container.
  */
 import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 
 import fastifyStatic from '@fastify/static'
 import websocket from '@fastify/websocket'
@@ -18,8 +19,8 @@ import { registerAdminRoutes } from './admin/routes.js'
 import type { Auth } from './auth/auth.js'
 import { registerAuthRoutes } from './auth/routes.js'
 import type { UserDirectory } from './auth/users.js'
-import { DEFAULT_DOCS_DIR, DEFAULT_SITE_NAME } from './config.js'
 import { buildDocsManifest, DocsIndexError, readDocsIndex, readDocsPage } from './docs.js'
+import { REPO_ROOT } from './env-files.js'
 import type { EnvironmentRegistry } from './environments.js'
 import { createRequestIdentity } from './identity.js'
 import { registerLeaderboardRoutes } from './leaderboards/routes.js'
@@ -40,6 +41,11 @@ import type { SubmissionSnapshotStore } from './submission/snapshot-store.js'
 import type { SourceInput, SubmissionSource } from './submission/source/index.js'
 import type { SubmissionEnqueuer } from './submission/worker.js'
 import type { WorkflowRunner } from './workflow/runner.js'
+
+// Isolated buildApp tests may omit deployment wiring. Runtime startup always passes the validated
+// values loaded through Config; these fallbacks mirror `.env.default` for app-only callers.
+const DEFAULT_SITE_NAME = 'Game Sandbox'
+const DEFAULT_DOCS_DIR = join(REPO_ROOT, 'docs')
 
 export interface AppDeps {
   orchestrator: Orchestrator

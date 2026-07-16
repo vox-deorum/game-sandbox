@@ -1,16 +1,20 @@
 # Configuration
 
-Game Sandbox is configured entirely through environment variables. There are no configuration files or secrets manager in this stage. Most settings have class-scale defaults, while capabilities that require deployment credentials or external endpoints remain disabled until their required values are configured.
+Game Sandbox is configured through environment variables. The tracked repository-root `.env.default` is the authoritative source for concrete runtime defaults, while capabilities that require private credentials or external endpoints remain disabled until their values are configured. There is no second set of fallback values in `config.ts` and no secrets manager.
 
 This page is the full reference for those variables. Read [Backend](backend.md) for how the values are consumed, and [Development setup](development-setup.md) to get a working local environment first.
 
 ## How configuration loads
 
-`config.ts` reads environment variables once, at startup, into a single typed `Config` object through `loadConfig()`. Services receive `Config`, or the slice they need, through their constructor. Reading process environment variables from feature modules is banned, so a test can assemble a whole backend with custom settings.
+`loadConfig()` reads configuration once at startup. It loads the required repository-root `.env.default`, overlays a repository-root `.env` when that file exists, then preserves variables supplied by the parent process over both files. The resulting precedence is process environment, `.env`, then `.env.default`. File locations and relative values for `DATA_DIR`, `FRONTEND_DIST`, `DOCS_DIR`, and `DOCS_INDEX_FILE` are resolved from the repository root, so startup does not depend on the current working directory.
+
+Edit `.env.default` when a tracked default changes. It includes public development credentials that are safe only because insecure development mode binds the backend to loopback; never put a private credential in this file. `.env` is for machine-specific values and private credentials and is ignored by Git. Other `.env.*` files are not loaded automatically.
+
+After loading, `config.ts` validates required values and parses the environment into a single typed `Config` object. It retains only derived behavior, such as `SITE_SHORT_NAME` falling back to `SITE_NAME`, and optional settings that remain absent when unset. Services receive `Config`, or the slice they need, through their constructor. Reading process environment variables from feature modules is banned. An explicit map passed to `loadConfig()` is treated as complete and reads neither file, which keeps tests isolated from a developer's `.env`; tests that exercise defaults seed their map from `.env.default` through the shared test helper.
 
 ## Validation
 
-Dedicated parsers and Zod schemas validate every value, so a malformed setting fails fast at startup with a message naming the offending variable instead of surfacing later as a confusing runtime error. The accepted forms are:
+Dedicated parsers and Zod schemas validate every value, so a missing required setting or malformed value fails fast at startup with a message naming the offending variable instead of surfacing later as a confusing runtime error. The accepted forms are:
 
 - Integer settings must be whole numbers. Quotas may allow zero, while ports and timing intervals use setting-specific positive upper and lower bounds. Floats, `NaN`, negatives, and out-of-range values are rejected.
 - Quotas that allow fractions, such as `SANDBOX_CPUS`, must be positive finite numbers.
@@ -25,7 +29,7 @@ Dedicated parsers and Zod schemas validate every value, so a malformed setting f
 | `PORT` | `8080` | HTTP and WebSocket port |
 | `SITE_NAME` | `Game Sandbox` | Display name used for branding, such as page titles and the sidebar brand |
 | `SITE_SHORT_NAME` | value of `SITE_NAME` | Compact brand for space-sensitive contexts, such as the mobile bar; falls back to `SITE_NAME` |
-| `DATA_DIR` | `./data` | Root containing `sandbox.db` and recording directories |
+| `DATA_DIR` | `backend/data` | Repository-relative root containing `sandbox.db` and recording directories |
 | `SESSION_IDLE_TIMEOUT_MS` | `60000` | Lifetime with no attached socket, or no human command in human mode |
 | `SESSION_MAX_DURATION_MS` | `600000` | Wall-clock backstop |
 | `SANDBOX_CPUS` | `1` | Session CPU quota |
@@ -37,9 +41,9 @@ Dedicated parsers and Zod schemas validate every value, so a malformed setting f
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `AUTH_SECRET` | `dev-secret-do-not-deploy-32-chars` | Better Auth signing secret for cookies and tokens. The development value meets the length minimum but is public and accepted only with the explicit insecure-defaults opt-in on a loopback origin. |
-| `PUBLIC_ORIGIN` | `http://localhost:<PORT>` in insecure development only | The public origin the site is reached at, for cookie origin checks and OAuth callbacks. A normal startup requires it explicitly. The GitHub callback URL is `<PUBLIC_ORIGIN>/api/auth/callback/github`. |
+| `PUBLIC_ORIGIN` | `http://localhost:8080` | The public origin the site is reached at, for cookie origin checks and OAuth callbacks. Override it together with `PORT` when changing the local port. A normal startup requires a deployment value. The GitHub callback URL is `<PUBLIC_ORIGIN>/api/auth/callback/github`. |
 | `AUTH_TRUSTED_ORIGINS` | unset | Extra comma-separated origins appended to the built-in list, which is `PUBLIC_ORIGIN` plus these (and `http://localhost:5173` only under the loopback insecure-defaults opt-in). |
-| `AUTH_ALLOW_INSECURE_DEFAULTS` | `false` | Allows the published development secret and bootstrap credentials, but only with a loopback `PUBLIC_ORIGIN`. Never enable it in a deployment. |
+| `AUTH_ALLOW_INSECURE_DEFAULTS` | `true` | Allows the published development secret and bootstrap credentials, but only with a loopback `PUBLIC_ORIGIN`. Never enable it in a deployment. |
 | `ADMIN_EMAIL` | `admin@example.com` | Bootstrap admin's development email. Accepted only with the insecure-defaults opt-in on a loopback origin; a deployment must set it explicitly. |
 | `ADMIN_PASSWORD` | `admin-dev-password` | Bootstrap admin's development password, re-synced on every boot. Accepted only with the insecure-defaults opt-in on a loopback origin; a deployment must set it explicitly. |
 | `ADMIN_NAME` | `Admin` | Seeded admin's display name. |
@@ -114,7 +118,7 @@ Static frontend serving is wired only when `FRONTEND_DIST` points at an existing
 
 The Documentation page reads the student guides from `DOCS_DIR` at request time, so a guide updates without a frontend rebuild. Set `DOCS_INDEX_FILE` to give a class its own landing page, such as a schedule or grading notes, without editing the shared guides; a configured file that cannot be read fails the landing request loudly rather than silently falling back.
 
-Set `AUTH_SECRET` and the bootstrap `ADMIN_EMAIL`/`ADMIN_PASSWORD` explicitly. A normal startup refuses to run without an explicit `PUBLIC_ORIGIN`, signing secret, and bootstrap credentials, so there is no accidental fallback to the published development values. Never enable `AUTH_ALLOW_INSECURE_DEFAULTS` outside loopback development; besides accepting those published values, it also restricts the HTTP listener to loopback. When GitHub OAuth is configured, register the callback URL `<PUBLIC_ORIGIN>/api/auth/callback/github` with the OAuth app. `GITHUB_TOKEN` stays a submissions-only credential, distinct from the OAuth app's client ID and secret. `sandbox.db` now also holds the Better Auth tables (`user`, `session`, `account`, `verification`), created by a separate programmatic migration rather than the app's own schema.
+Set `AUTH_SECRET` and the bootstrap `ADMIN_EMAIL`/`ADMIN_PASSWORD` explicitly. A normal startup refuses to run without an explicit `PUBLIC_ORIGIN`, signing secret, and bootstrap credentials, so there is no accidental fallback to the published development values. A deployment from a repository checkout must also set `AUTH_ALLOW_INSECURE_DEFAULTS=false` to override the local `.env.default`; never enable it outside loopback development. In local mode it accepts the published values and restricts the HTTP listener to loopback. When GitHub OAuth is configured, register the callback URL `<PUBLIC_ORIGIN>/api/auth/callback/github` with the OAuth app. `GITHUB_TOKEN` stays a submissions-only credential, distinct from the OAuth app's client ID and secret. `sandbox.db` now also holds the Better Auth tables (`user`, `session`, `account`, `verification`), created by a separate programmatic migration rather than the app's own schema.
 
 ## See also
 

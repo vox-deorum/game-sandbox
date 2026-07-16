@@ -35,16 +35,16 @@ backend/src/
 
 ## Configuration
 
-`config.ts` reads environment variables into one typed, validated `Config` object with class-scale defaults:
+The tracked `.env.default` declares the concrete class-scale defaults that `config.ts` validates into one typed `Config` object:
 
 - `PORT` (8080).
-- `DATA_DIR` (default `./data`), holding `sandbox.db` and the `recordings/` root that doubles as the volume mounted into session containers.
+- `DATA_DIR` (default `backend/data` relative to the repository root), holding `sandbox.db` and the `recordings/` root that doubles as the volume mounted into session containers.
 - `SESSION_IDLE_TIMEOUT_MS` (default 60000) and `SESSION_MAX_DURATION_MS` (default 600000), which bound the idle and wall-clock windows in [orchestrator-and-http-api.md](orchestrator-and-http-api.md).
 - The sandbox profile defaults: `SANDBOX_CPUS` at 1, `SANDBOX_MEMORY_MB` at 512, `SANDBOX_SCRATCH_MB` at 256.
 - `EXECUTION_DRIVER` (only `docker` exists, and is the default).
 - The Docker driver options: `DOCKER_IMAGE_TAG_PREFIX` defaulting to `game-sandbox`, and `DOCKER_IMAGE_POLICY` defaulting to `reuse`.
 
-There are no config files and no secrets manager; Stage 4 adds OAuth secrets when they exist. Every consumer receives `Config` (or a slice of it) as a constructor argument. Module-level config reads are banned, so tests can assemble whole backends with custom settings.
+The backend requires the committed repository-root `.env.default`, then applies a gitignored repository-root `.env` and parent-process variables. Precedence is parent process, `.env`, then `.env.default`. Concrete defaults live only in the tracked file; code retains validation, optional absence, and derived values such as `SITE_SHORT_NAME` following `SITE_NAME`. Relative configured paths are anchored to the repository rather than the process working directory. There is no secrets manager. Every consumer receives `Config` (or a slice of it) as a constructor argument. Module-level config reads are banned, so tests can assemble whole backends with complete explicit environment maps; the shared test helper seeds those maps from `.env.default` without reading a developer's `.env`.
 
 ## Identity stub
 

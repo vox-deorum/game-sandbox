@@ -3,34 +3,15 @@
  *
  * Every consumer receives {@link Config} (or a slice of it) as a constructor argument;
  * module-level config reads are banned, so a test can assemble a whole backend with custom
- * settings. There are no config files and no secrets manager in this stage; OAuth secrets
- * arrive in Stage 4 when they exist.
+ * settings. Repository-root `.env.default` and `.env` files feed the same environment boundary;
+ * there is no separate config-file schema or secrets manager.
  */
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { isAbsolute, join, resolve } from 'node:path'
 import type { TiktokenEncoding } from 'tiktoken'
 import { z } from 'zod'
 
+import { loadEnvironmentFiles, REPO_ROOT } from './env-files.js'
 import type { LlmLimits, ModelAlias } from './llm/types.js'
-
-// The repo root sits two levels above backend/src, so the default frontend bundle path resolves the
-// same regardless of the process's working directory (started from the repo root or from backend/).
-const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
-
-/**
- * The site's default display name, used when `SITE_NAME` is unset. Shared with the app layer so the
- * `/api/config` fallback and the config default cannot drift, and mirrored as the frontend's own
- * placeholder so the brand renders before the config fetch resolves.
- */
-export const DEFAULT_SITE_NAME = 'Game Sandbox'
-
-/**
- * The default documentation root: the repo's `docs/`, whose `students/` subtree is served in-app.
- * Resolved off the repo root so it holds regardless of the process working directory, the same
- * assumption `frontendDir` makes. Shared with the app layer so the `AppDeps.docsDir` fallback and the
- * config default cannot drift; override with `DOCS_DIR` when a deployment relocates the tree.
- */
-export const DEFAULT_DOCS_DIR = join(REPO_ROOT, 'docs')
 
 /** The only execution driver that exists in this stage. */
 export type ExecutionDriverKind = 'docker'
@@ -219,9 +200,9 @@ class ConfigError extends Error {}
 
 /**
  * Environment variables arrive as strings; these helpers wrap small zod schemas so every typed
- * value passes through the one validation library the backend standardizes on. Each helper applies
- * the unset/empty fallback first, then validates the present string, rethrowing a zod failure as a
- * {@link ConfigError} naming the offending variable (the message the operator and the tests read).
+ * value passes through the one validation library the backend standardizes on. Concrete defaults
+ * belong in `.env.default`, so required helpers reject an unset or empty value before validating it.
+ * Zod failures become a {@link ConfigError} naming the offending variable.
  */
 
 /** Non-negative integer (`Number()`-coerced); rejects floats, NaN, and negatives. */
@@ -231,11 +212,21 @@ const POSITIVE_NUMBER = z.coerce.number().positive().finite()
 /** The documented boolean spellings, normalized lower-case; anything else throws. */
 const ENV_BOOL = z.stringbool({ truthy: ['true', '1', 'yes'], falsy: ['false', '0', 'no'] })
 
-function intVar(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
+function requiredStringVar(env: NodeJS.ProcessEnv, name: string): string {
   const raw = env[name]
   if (raw === undefined || raw === '') {
-    return fallback
+    throw new ConfigError(`${name} is required in .env.default or the process environment`)
   }
+  return raw
+}
+
+function optionalStringVar(env: NodeJS.ProcessEnv, name: string): string | undefined {
+  const raw = env[name]
+  return raw !== undefined && raw !== '' ? raw : undefined
+}
+
+function intVar(env: NodeJS.ProcessEnv, name: string): number {
+  const raw = requiredStringVar(env, name)
   const result = NON_NEGATIVE_INT.safeParse(raw)
   if (!result.success) {
     throw new ConfigError(`${name} must be a non-negative integer, got ${raw}`)
@@ -247,21 +238,20 @@ function intVar(env: NodeJS.ProcessEnv, name: string, fallback: number): number 
 function boundedIntVar(
   env: NodeJS.ProcessEnv,
   name: string,
-  fallback: number,
   minimum: number,
   maximum: number,
 ): number {
-  const value = intVar(env, name, fallback)
+  const value = intVar(env, name)
   if (value < minimum || value > maximum) {
     throw new ConfigError(`${name} must be between ${minimum} and ${maximum}, got ${value}`)
   }
   return value
 }
 
-function listVar(env: NodeJS.ProcessEnv, name: string, fallback: string[]): string[] {
+function listVar(env: NodeJS.ProcessEnv, name: string): string[] {
   const raw = env[name]
   if (raw === undefined) {
-    return fallback
+    return []
   }
   const items = raw
     .split(',')
@@ -270,11 +260,8 @@ function listVar(env: NodeJS.ProcessEnv, name: string, fallback: string[]): stri
   return items
 }
 
-function boolVar(env: NodeJS.ProcessEnv, name: string, fallback: boolean): boolean {
-  const raw = env[name]
-  if (raw === undefined || raw === '') {
-    return fallback
-  }
+function boolVar(env: NodeJS.ProcessEnv, name: string): boolean {
+  const raw = requiredStringVar(env, name)
   const result = ENV_BOOL.safeParse(raw.trim().toLowerCase())
   if (!result.success) {
     throw new ConfigError(`${name} must be a boolean (true/false), got ${raw}`)
@@ -282,11 +269,8 @@ function boolVar(env: NodeJS.ProcessEnv, name: string, fallback: boolean): boole
   return result.data
 }
 
-function numberVar(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
-  const raw = env[name]
-  if (raw === undefined || raw === '') {
-    return fallback
-  }
+function numberVar(env: NodeJS.ProcessEnv, name: string): number {
+  const raw = requiredStringVar(env, name)
   const result = POSITIVE_NUMBER.safeParse(raw)
   if (!result.success) {
     throw new ConfigError(`${name} must be a positive number, got ${raw}`)
@@ -294,21 +278,19 @@ function numberVar(env: NodeJS.ProcessEnv, name: string, fallback: number): numb
   return result.data
 }
 
-/**
- * Read a string env var, treating unset and empty as absent so the one `''`-vs-`undefined` rule lives
- * in a single place. With a string fallback it always returns a string; with no fallback it returns
- * `undefined` when the variable is absent (the shape optional settings want).
- */
-function stringVar(env: NodeJS.ProcessEnv, name: string, fallback: string): string
-function stringVar(env: NodeJS.ProcessEnv, name: string, fallback?: undefined): string | undefined
-function stringVar(env: NodeJS.ProcessEnv, name: string, fallback?: string): string | undefined {
-  const raw = env[name]
-  return raw !== undefined && raw !== '' ? raw : fallback
+function repoPathVar(env: NodeJS.ProcessEnv, name: string): string {
+  const raw = requiredStringVar(env, name)
+  return isAbsolute(raw) ? raw : resolve(REPO_ROOT, raw)
+}
+
+function optionalRepoPathVar(env: NodeJS.ProcessEnv, name: string): string | undefined {
+  const raw = optionalStringVar(env, name)
+  return raw === undefined || isAbsolute(raw) ? raw : resolve(REPO_ROOT, raw)
 }
 
 /** Optional absolute HTTP(S) endpoint, retaining its configured path for compatible `/v1` bases. */
 function httpUrlVar(env: NodeJS.ProcessEnv, name: string): string | undefined {
-  const raw = stringVar(env, name)
+  const raw = optionalStringVar(env, name)
   if (raw === undefined) return undefined
   let url: URL
   try {
@@ -378,19 +360,20 @@ function requireDeployedValue(name: string, raw: string | undefined, devValue: s
  * Parse the Docker driver options. Extracted from {@link loadConfig} so `build-image.ts` can build
  * a driver from the environment without also requiring the auth variables a full {@link Config} does.
  */
-export function loadDockerOptions(env: NodeJS.ProcessEnv = process.env): DockerDriverOptions {
+export function loadDockerOptions(env?: NodeJS.ProcessEnv): DockerDriverOptions {
+  env ??= loadEnvironmentFiles()
   const imagePolicyResult = z
     .enum(['reuse', 'rebuild'])
-    .safeParse(env.DOCKER_IMAGE_POLICY ?? 'reuse')
+    .safeParse(requiredStringVar(env, 'DOCKER_IMAGE_POLICY'))
   if (!imagePolicyResult.success) {
     throw new ConfigError(
       `DOCKER_IMAGE_POLICY must be 'reuse' or 'rebuild', got ${env.DOCKER_IMAGE_POLICY}`,
     )
   }
   return {
-    imageTagPrefix: stringVar(env, 'DOCKER_IMAGE_TAG_PREFIX', 'game-sandbox'),
+    imageTagPrefix: requiredStringVar(env, 'DOCKER_IMAGE_TAG_PREFIX'),
     imagePolicy: imagePolicyResult.data,
-    overlayBuildTimeoutMs: intVar(env, 'SUBMISSION_BUILD_TIMEOUT_MS', 120_000),
+    overlayBuildTimeoutMs: intVar(env, 'SUBMISSION_BUILD_TIMEOUT_MS'),
   }
 }
 
@@ -400,16 +383,13 @@ export function loadDockerOptions(env: NodeJS.ProcessEnv = process.env): DockerD
  * development defaults are accepted only when `AUTH_ALLOW_INSECURE_DEFAULTS=true` **and**
  * `PUBLIC_ORIGIN` is loopback; that mode binds the matching loopback interface instead.
  */
-function loadAuthOptions(
-  env: NodeJS.ProcessEnv,
-  port: number,
-): { auth: AuthOptions; listenHost: string } {
-  const insecure = boolVar(env, 'AUTH_ALLOW_INSECURE_DEFAULTS', false)
+function loadAuthOptions(env: NodeJS.ProcessEnv): { auth: AuthOptions; listenHost: string } {
+  const insecure = boolVar(env, 'AUTH_ALLOW_INSECURE_DEFAULTS')
 
   // GitHub OAuth is both-or-neither: one half without the other is a misconfiguration, not a partial
   // capability. These are distinct from GITHUB_TOKEN, which stays a submissions-only credential.
-  const githubId = stringVar(env, 'GITHUB_OAUTH_CLIENT_ID')
-  const githubSecret = stringVar(env, 'GITHUB_OAUTH_CLIENT_SECRET')
+  const githubId = optionalStringVar(env, 'GITHUB_OAUTH_CLIENT_ID')
+  const githubSecret = optionalStringVar(env, 'GITHUB_OAUTH_CLIENT_SECRET')
   if ((githubId === undefined) !== (githubSecret === undefined)) {
     throw new ConfigError(
       'GITHUB_OAUTH_CLIENT_ID and GITHUB_OAUTH_CLIENT_SECRET must both be set or both be unset',
@@ -420,9 +400,9 @@ function loadAuthOptions(
       ? { clientId: githubId, clientSecret: githubSecret }
       : undefined
 
-  const adminName = stringVar(env, 'ADMIN_NAME', 'Admin')
-  const extraOrigins = listVar(env, 'AUTH_TRUSTED_ORIGINS', [])
-  const rawOrigin = stringVar(env, 'PUBLIC_ORIGIN')
+  const adminName = requiredStringVar(env, 'ADMIN_NAME')
+  const extraOrigins = listVar(env, 'AUTH_TRUSTED_ORIGINS')
+  const rawOrigin = requiredStringVar(env, 'PUBLIC_ORIGIN')
 
   let publicOrigin: string
   let listenHost: string
@@ -437,7 +417,7 @@ function loadAuthOptions(
     // Loopback-only: the opt-in defaults the origin to localhost and refuses any non-loopback origin,
     // and the listener binds the corresponding loopback interface so published credentials can never
     // answer off-host.
-    const originUrl = parseOrigin('PUBLIC_ORIGIN', rawOrigin ?? `http://localhost:${port}`)
+    const originUrl = parseOrigin('PUBLIC_ORIGIN', rawOrigin)
     if (!LOOPBACK_HOSTNAMES.has(originUrl.hostname)) {
       throw new ConfigError(
         `AUTH_ALLOW_INSECURE_DEFAULTS requires a loopback PUBLIC_ORIGIN (localhost, 127.0.0.1, or [::1]), got ${originUrl.hostname}`,
@@ -446,9 +426,9 @@ function loadAuthOptions(
     publicOrigin = originUrl.origin
     // URL keeps IPv6 hosts bracketed ("[::1]"); Node's listener wants the bare address ("::1").
     listenHost = originUrl.hostname === '[::1]' ? '::1' : '127.0.0.1'
-    secret = stringVar(env, 'AUTH_SECRET', DEV_AUTH_SECRET)
-    adminEmail = stringVar(env, 'ADMIN_EMAIL', DEV_ADMIN_EMAIL).toLowerCase()
-    adminPassword = stringVar(env, 'ADMIN_PASSWORD', DEV_ADMIN_PASSWORD)
+    secret = requiredStringVar(env, 'AUTH_SECRET')
+    adminEmail = requiredStringVar(env, 'ADMIN_EMAIL').toLowerCase()
+    adminPassword = requiredStringVar(env, 'ADMIN_PASSWORD')
     // Better Auth matches the request's `Origin` header against trustedOrigins exactly, so trusting
     // only the `localhost` spelling rejects a sign-in reached at the equivalent `127.0.0.1`/`[::1]`
     // loopback (a common Windows fallback when `localhost` resolves to a stack the listener is not on)
@@ -460,11 +440,6 @@ function loadAuthOptions(
     )
     devTrustedOrigins = [...loopbackOrigins, 'http://localhost:5173']
   } else {
-    if (rawOrigin === undefined) {
-      throw new ConfigError(
-        'PUBLIC_ORIGIN is required (or set AUTH_ALLOW_INSECURE_DEFAULTS=true for a loopback development setup)',
-      )
-    }
     publicOrigin = parseOrigin('PUBLIC_ORIGIN', rawOrigin).origin
     listenHost = '0.0.0.0'
     secret = requireDeployedValue('AUTH_SECRET', env.AUTH_SECRET, DEV_AUTH_SECRET)
@@ -506,52 +481,49 @@ function loadAuthOptions(
 }
 
 /**
- * Build a {@link Config} from environment variables with class-scale defaults.
+ * Build a {@link Config} from a complete environment and validate every tracked default or override.
  *
- * The default `env` is `process.env`; tests pass an explicit map. The idle and max-duration
- * windows are deliberately conservative defaults and may be tuned during Stage 4 playtesting.
+ * With no explicit `env`, the required `.env.default`, optional `.env`, and `process.env` are merged.
+ * Tests pass a complete explicit map and skip file loading so a developer's `.env` cannot affect them.
  */
-export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
-  const port = intVar(env, 'PORT', 8080)
-  const dataDir = stringVar(env, 'DATA_DIR', join(process.cwd(), 'data'))
+export function loadConfig(env?: NodeJS.ProcessEnv): Config {
+  // Explicit maps are complete configuration inputs. Only the process-backed path reads files,
+  // preserving dependency injection and deterministic unit tests.
+  env ??= loadEnvironmentFiles()
+  const port = intVar(env, 'PORT')
+  const dataDir = repoPathVar(env, 'DATA_DIR')
 
-  const driverResult = z.enum(['docker']).safeParse(env.EXECUTION_DRIVER ?? 'docker')
+  const driverResult = z.enum(['docker']).safeParse(requiredStringVar(env, 'EXECUTION_DRIVER'))
   if (!driverResult.success) {
     throw new ConfigError(
       `EXECUTION_DRIVER must be 'docker' (the only driver in this stage), got ${env.EXECUTION_DRIVER}`,
     )
   }
 
-  const { auth, listenHost } = loadAuthOptions(env, port)
+  const { auth, listenHost } = loadAuthOptions(env)
 
   // The short name falls back to the resolved site name (not the raw default), so a deployment that
   // sets only SITE_NAME gets a matching short form for free while either can be overridden alone.
-  const siteName = stringVar(env, 'SITE_NAME', DEFAULT_SITE_NAME)
-  const siteShortName = stringVar(env, 'SITE_SHORT_NAME', siteName)
+  const siteName = requiredStringVar(env, 'SITE_NAME')
+  const siteShortName = optionalStringVar(env, 'SITE_SHORT_NAME') ?? siteName
 
-  const defaultMaxOutputTokens = boundedIntVar(
-    env,
-    'LLM_DEFAULT_MAX_OUTPUT_TOKENS',
-    1_024,
-    0,
-    1_000_000,
-  )
-  const maxOutputTokens = boundedIntVar(env, 'LLM_MAX_OUTPUT_TOKENS', 4_096, 1, 1_000_000)
+  const defaultMaxOutputTokens = boundedIntVar(env, 'LLM_DEFAULT_MAX_OUTPUT_TOKENS', 0, 1_000_000)
+  const maxOutputTokens = boundedIntVar(env, 'LLM_MAX_OUTPUT_TOKENS', 1, 1_000_000)
   if (defaultMaxOutputTokens > maxOutputTokens) {
     throw new ConfigError('LLM_DEFAULT_MAX_OUTPUT_TOKENS must not exceed LLM_MAX_OUTPUT_TOKENS')
   }
 
   const models: Partial<Record<ModelAlias, string>> = {}
-  const largeModel = stringVar(env, 'LLM_MODEL_LARGE')
-  const mediumModel = stringVar(env, 'LLM_MODEL_MEDIUM')
-  const smallModel = stringVar(env, 'LLM_MODEL_SMALL')
+  const largeModel = optionalStringVar(env, 'LLM_MODEL_LARGE')
+  const mediumModel = optionalStringVar(env, 'LLM_MODEL_MEDIUM')
+  const smallModel = optionalStringVar(env, 'LLM_MODEL_SMALL')
   if (largeModel !== undefined) models.large = largeModel
   if (mediumModel !== undefined) models.medium = mediumModel
   if (smallModel !== undefined) models.small = smallModel
 
   const tiktokenEncoding = z
     .enum(['gpt2', 'r50k_base', 'p50k_base', 'p50k_edit', 'cl100k_base', 'o200k_base'])
-    .safeParse(env.LLM_TIKTOKEN_ENCODING ?? 'cl100k_base')
+    .safeParse(requiredStringVar(env, 'LLM_TIKTOKEN_ENCODING'))
   if (!tiktokenEncoding.success) {
     throw new ConfigError(
       `LLM_TIKTOKEN_ENCODING is not supported, got ${env.LLM_TIKTOKEN_ENCODING}`,
@@ -567,53 +539,47 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     dbPath: join(dataDir, 'sandbox.db'),
     recordingsDir: join(dataDir, 'recordings'),
     submissionsDir: join(dataDir, 'submissions'),
-    sessionIdleTimeoutMs: intVar(env, 'SESSION_IDLE_TIMEOUT_MS', 60_000),
-    sessionMaxDurationMs: intVar(env, 'SESSION_MAX_DURATION_MS', 600_000),
-    recordingRetentionDays: intVar(env, 'RECORDING_RETENTION_DAYS', 30),
-    recordingUserQuota: intVar(env, 'RECORDING_USER_QUOTA', 100),
-    recordingSweepIntervalMs: intVar(env, 'RECORDING_SWEEP_INTERVAL_MS', 3_600_000),
-    overlayImageBudget: intVar(env, 'OVERLAY_IMAGE_BUDGET', 50),
-    overlayImageSweepIntervalMs: intVar(env, 'OVERLAY_IMAGE_SWEEP_INTERVAL_MS', 3_600_000),
-    frontendDir: stringVar(env, 'FRONTEND_DIST', join(REPO_ROOT, 'frontend', 'dist')),
-    docsDir: stringVar(env, 'DOCS_DIR', DEFAULT_DOCS_DIR),
-    docsIndexFile: stringVar(env, 'DOCS_INDEX_FILE'),
+    sessionIdleTimeoutMs: intVar(env, 'SESSION_IDLE_TIMEOUT_MS'),
+    sessionMaxDurationMs: intVar(env, 'SESSION_MAX_DURATION_MS'),
+    recordingRetentionDays: intVar(env, 'RECORDING_RETENTION_DAYS'),
+    recordingUserQuota: intVar(env, 'RECORDING_USER_QUOTA'),
+    recordingSweepIntervalMs: intVar(env, 'RECORDING_SWEEP_INTERVAL_MS'),
+    overlayImageBudget: intVar(env, 'OVERLAY_IMAGE_BUDGET'),
+    overlayImageSweepIntervalMs: intVar(env, 'OVERLAY_IMAGE_SWEEP_INTERVAL_MS'),
+    frontendDir: repoPathVar(env, 'FRONTEND_DIST'),
+    docsDir: repoPathVar(env, 'DOCS_DIR'),
+    docsIndexFile: optionalRepoPathVar(env, 'DOCS_INDEX_FILE'),
     sandbox: {
-      cpus: numberVar(env, 'SANDBOX_CPUS', 1),
-      memoryMb: intVar(env, 'SANDBOX_MEMORY_MB', 512),
-      scratchMb: intVar(env, 'SANDBOX_SCRATCH_MB', 256),
+      cpus: numberVar(env, 'SANDBOX_CPUS'),
+      memoryMb: intVar(env, 'SANDBOX_MEMORY_MB'),
+      scratchMb: intVar(env, 'SANDBOX_SCRATCH_MB'),
     },
     executionDriver: 'docker',
     docker: loadDockerOptions(env),
     submission: {
-      githubToken: stringVar(env, 'GITHUB_TOKEN'),
-      allowLocalSubmissions: boolVar(env, 'ALLOW_LOCAL_SUBMISSIONS', false),
-      gitTimeoutMs: intVar(env, 'SUBMISSION_GIT_TIMEOUT_MS', 15_000),
-      loadCheckTimeoutMs: intVar(env, 'SUBMISSION_LOAD_CHECK_TIMEOUT_MS', 30_000),
-      submissionMaxSizeBytes: intVar(env, 'SUBMISSION_MAX_SIZE_MB', 25) * 1024 * 1024,
+      githubToken: optionalStringVar(env, 'GITHUB_TOKEN'),
+      allowLocalSubmissions: boolVar(env, 'ALLOW_LOCAL_SUBMISSIONS'),
+      gitTimeoutMs: intVar(env, 'SUBMISSION_GIT_TIMEOUT_MS'),
+      loadCheckTimeoutMs: intVar(env, 'SUBMISSION_LOAD_CHECK_TIMEOUT_MS'),
+      submissionMaxSizeBytes: intVar(env, 'SUBMISSION_MAX_SIZE_MB') * 1024 * 1024,
     },
     auth,
     llm: {
-      internalPort: boundedIntVar(env, 'LLM_INTERNAL_PORT', 8_081, 1, 65_535),
+      internalPort: boundedIntVar(env, 'LLM_INTERNAL_PORT', 1, 65_535),
       upstreamUrl: httpUrlVar(env, 'LLM_UPSTREAM_URL'),
-      upstreamKey: stringVar(env, 'LLM_UPSTREAM_KEY'),
+      upstreamKey: optionalStringVar(env, 'LLM_UPSTREAM_KEY'),
       models,
-      upstreamTimeoutMs: boundedIntVar(env, 'LLM_UPSTREAM_TIMEOUT_MS', 30_000, 1, 600_000),
-      upstreamMaxRetries: boundedIntVar(env, 'LLM_UPSTREAM_MAX_RETRIES', 2, 0, 10),
-      upstreamRetryIntervalMs: boundedIntVar(env, 'LLM_UPSTREAM_RETRY_INTERVAL_MS', 250, 1, 60_000),
+      upstreamTimeoutMs: boundedIntVar(env, 'LLM_UPSTREAM_TIMEOUT_MS', 1, 600_000),
+      upstreamMaxRetries: boundedIntVar(env, 'LLM_UPSTREAM_MAX_RETRIES', 0, 10),
+      upstreamRetryIntervalMs: boundedIntVar(env, 'LLM_UPSTREAM_RETRY_INTERVAL_MS', 1, 60_000),
       tiktokenEncoding: tiktokenEncoding.data,
       defaultMaxOutputTokens,
       maxOutputTokens,
-      meterRecoveryIntervalMs: boundedIntVar(
-        env,
-        'LLM_METER_RECOVERY_INTERVAL_MS',
-        5_000,
-        1,
-        3_600_000,
-      ),
+      meterRecoveryIntervalMs: boundedIntVar(env, 'LLM_METER_RECOVERY_INTERVAL_MS', 1, 3_600_000),
       sessionLimits: {
-        tokenBudget: intVar(env, 'LLM_SESSION_TOKEN_BUDGET', 100_000),
-        callBudget: intVar(env, 'LLM_SESSION_CALL_BUDGET', 100),
-        requestsPerMinute: intVar(env, 'LLM_SESSION_RATE_LIMIT_RPM', 60),
+        tokenBudget: intVar(env, 'LLM_SESSION_TOKEN_BUDGET'),
+        callBudget: intVar(env, 'LLM_SESSION_CALL_BUDGET'),
+        requestsPerMinute: intVar(env, 'LLM_SESSION_RATE_LIMIT_RPM'),
       },
     },
   }

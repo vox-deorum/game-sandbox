@@ -1,20 +1,25 @@
 import { describe, expect, it } from 'vitest'
 
 import { type Config, loadConfig } from '../src/config.js'
+import { withDefaultEnvironment } from './support/config-env.js'
 
-// Every startup now requires explicit auth configuration, so supply valid, non-published values and
-// let each test override just the variables it cares about. The auth validation matrix (required
-// variables, insecure-defaults opt-in, loopback rules, GitHub both-or-neither) is covered separately
-// in test/auth/foundation.test.ts.
+// Exercise the tracked defaults under normal-mode auth. The auth validation matrix (required
+// variables, local opt-in, loopback rules, GitHub both-or-neither) is covered separately.
 const AUTH_ENV = {
+  AUTH_ALLOW_INSECURE_DEFAULTS: 'false',
   PUBLIC_ORIGIN: 'https://sandbox.example.edu',
   AUTH_SECRET: 'an-explicit-secret-of-at-least-32-chars',
   ADMIN_EMAIL: 'ops@example.edu',
   ADMIN_PASSWORD: 'an-explicit-admin-password',
 }
-const load = (env: NodeJS.ProcessEnv = {}): Config => loadConfig({ ...AUTH_ENV, ...env })
+const load = (env: NodeJS.ProcessEnv = {}): Config =>
+  loadConfig(withDefaultEnvironment({ ...AUTH_ENV, ...env }))
 
 describe('loadConfig', () => {
+  it('rejects a missing value instead of supplying a code fallback', () => {
+    expect(() => load({ PORT: undefined })).toThrow(/PORT/)
+  })
+
   it('applies class-scale defaults when only the required auth variables are set', () => {
     const config = load({})
     expect(config.port).toBe(8080)
@@ -34,10 +39,9 @@ describe('loadConfig', () => {
     expect(config.recordingSweepIntervalMs).toBe(3_600_000)
   })
 
-  it('overrides the site name from SITE_NAME, ignoring an empty value', () => {
+  it('overrides the site name from SITE_NAME and rejects an empty value', () => {
     expect(load({ SITE_NAME: 'Acme Arena' }).siteName).toBe('Acme Arena')
-    // An empty value falls back to the default rather than blanking the brand.
-    expect(load({ SITE_NAME: '' }).siteName).toBe('Game Sandbox')
+    expect(() => load({ SITE_NAME: '' })).toThrow(/SITE_NAME/)
   })
 
   it('defaults the short name to the resolved site name and overrides it independently', () => {
@@ -58,14 +62,12 @@ describe('loadConfig', () => {
     expect(config.docsIndexFile).toBeUndefined()
   })
 
-  it('overrides the docs root and index file, ignoring empty values', () => {
+  it('overrides the docs root and index file, rejecting an empty required root', () => {
     const config = load({ DOCS_DIR: '/srv/docs', DOCS_INDEX_FILE: '/srv/class/home.md' })
     expect(config.docsDir).toBe('/srv/docs')
     expect(config.docsIndexFile).toBe('/srv/class/home.md')
-    // Empty values fall back to the default root and an unset override, not to blanks.
-    const empty = load({ DOCS_DIR: '', DOCS_INDEX_FILE: '' })
-    expect(empty.docsDir.endsWith('docs')).toBe(true)
-    expect(empty.docsIndexFile).toBeUndefined()
+    expect(() => load({ DOCS_DIR: '' })).toThrow(/DOCS_DIR/)
+    expect(load({ DOCS_INDEX_FILE: '' }).docsIndexFile).toBeUndefined()
   })
 
   it('parses the retention overrides', () => {

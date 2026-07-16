@@ -61,7 +61,7 @@ Tests mirror source domains under `test/`. Shared doubles and fixtures live unde
 
 ## Configuration
 
-`config.ts` reads environment variables once. Services receive `Config`, or the slice they need, through construction. Do not read process environment variables from feature modules. Dedicated parsers and Zod schemas validate environment variables, manifests, and season configuration.
+The required repository-root `.env.default` is the authority for concrete runtime defaults. `config.ts` loads it once, applies optional `.env` and parent-process overrides, then validates the complete environment without duplicating those defaults in code. Services receive `Config`, or the slice they need, through construction. Do not read process environment variables from feature modules. Dedicated parsers and Zod schemas validate environment variables, manifests, and season configuration.
 
 See [Configuration](configuration.md) for the full environment-variable reference and deployment notes.
 

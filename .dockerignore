@@ -14,3 +14,8 @@ dist
 .ruff_cache
 **/__pycache__
 **/*.pyc
+
+# Local configuration may contain credentials. The committed defaults are safe build-context input.
+.env
+.env.*
+!.env.default
