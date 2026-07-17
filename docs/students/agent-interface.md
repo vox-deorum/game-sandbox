@@ -70,6 +70,12 @@ act(observation) → chat(inbox) → environment step → learn(...)
 
 The harness constructs `Agent()` with no arguments. Put configuration that lasts for the whole object in `__init__`, and clear game-specific state in `reset`.
 
+## LLM calls
+
+When an environment and season enable the optional LLM API, the turn hooks `act`, `chat`, and `learn` may use the stock OpenAI Python client. Local development reads a season key from `.env`; official sessions inject a temporary endpoint and key for the acting agent slot. Keep every model-assisted `act` path able to return a legal fallback when the model budget is exhausted, an upstream error is terminal, or the completion is malformed.
+
+Model calls from `act`, `chat`, or `learn` are blocking and non-streaming. Their full wait time, including backend retries, counts toward the same step and episode limits as the rest of the turn. Calls during module import, construction, or `reset` are setup calls with null tick attribution and occur before a turn's decision timer, so keep setup lightweight. Follow [Using the LLM API](llm.md) to configure the client, run the smoke command, and understand accounting and prompt visibility.
+
 ## Time limits
 
 Two limits prevent a slow or stuck agent from blocking a session:
@@ -77,7 +83,7 @@ Two limits prevent a slow or stuck agent from blocking a session:
 - The **step limit** bounds one decision cycle. If `act` is late, the harness discards its result and uses the environment's legal default action. Optional hook time is included in the step's overage accounting, although `learn` runs after the chosen action has already happened.
 - The **episode limit** bounds the agent's total measured compute for the game. If it is exhausted, the episode ends early.
 
-Time spent in `act`, `learn`, `chat`, and LLM calls counts toward these limits. Recorded `decision_ms` measures `act` itself, while optional hook timings remain separate so the interface can show decision time and the leaderboard can still include the full compute cost.
+Time spent in `act`, `learn`, and `chat`, including LLM calls made within those turn hooks, counts toward these limits. Recorded `decision_ms` measures `act` itself, while optional hook timings remain separate so the interface can show decision time and the leaderboard can still include the full compute cost.
 
 ## Manifest
 

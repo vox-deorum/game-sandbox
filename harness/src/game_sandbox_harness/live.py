@@ -25,6 +25,7 @@ import contextlib
 import json
 import os
 import sys
+import urllib.request
 from dataclasses import dataclass
 from typing import IO, Any, cast
 
@@ -52,6 +53,9 @@ from game_sandbox_harness.state import PlayerAttribution
 DEFAULT_BUILTIN_AGENT_BASE = "/opt/agents/builtin"
 #: Cooperative wait granularity. Small enough that stop and resume stay responsive.
 _SLICE_MS = 5
+#: Tick markers are local control-plane requests and must never hold the participant loop open for
+#: an unbounded period when the proxy is unavailable.
+_MARKER_TIMEOUT_SECONDS = 2.0
 
 
 class LiveConfigError(ValueError):
@@ -64,6 +68,15 @@ class SlotBinding:
 
     kind: str
     path: str | None = None
+
+
+@dataclass(frozen=True)
+class LlmConfig:
+    """OpenAI-compatible endpoint and per-agent credentials for an official LLM session."""
+
+    base_url: str
+    tick_url: str
+    keys: dict[str, str]
 
 
 @dataclass(frozen=True)
@@ -96,6 +109,8 @@ class LiveConfig:
     message_cap: int | None = None
     #: Workflow containers set this to run as fast as the agents compute, without live pacing.
     headless: bool = False
+    #: Absent for ordinary sessions. The key map covers agent slots exactly and excludes humans.
+    llm: LlmConfig | None = None
 
 
 def parse_config(argv: list[str]) -> LiveConfig:
@@ -160,6 +175,7 @@ def parse_config(argv: list[str]) -> LiveConfig:
     headless = config.get("headless", False)
     if not isinstance(headless, bool):
         raise LiveConfigError("config 'headless' must be a boolean")
+    llm = _parse_llm(config.get("llm"), slots)
 
     return LiveConfig(
         env_id=env_id,
@@ -174,6 +190,7 @@ def parse_config(argv: list[str]) -> LiveConfig:
         messaging_enabled=messaging_enabled,
         message_cap=message_cap,
         headless=headless,
+        llm=llm,
     )
 
 
@@ -218,6 +235,106 @@ def _parse_players(raw: object) -> dict[str, PlayerAttribution] | None:
     return players
 
 
+def _parse_llm(raw: object, slots: dict[str, SlotBinding]) -> LlmConfig | None:
+    """Validate the optional strict LLM launch block and its exact agent-slot key coverage.
+
+    The field set is matched exactly on purpose. A harness image that predates a launch-config
+    change then fails the session loudly here instead of silently ignoring a field the backend now
+    depends on. The tradeoff is that adding a field to the backend launch config requires shipping a
+    harness image that understands it: bump the session deps image version alongside that change.
+    """
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise LiveConfigError("config 'llm' must be an object or null")
+    llm = cast("dict[str, Any]", raw)
+    expected_fields = {"base_url", "tick_url", "keys"}
+    if set(llm) != expected_fields:
+        missing = sorted(expected_fields - set(llm))
+        unknown = sorted(set(llm) - expected_fields)
+        details: list[str] = []
+        if missing:
+            details.append(f"missing {missing!r}")
+        if unknown:
+            details.append(f"unknown {unknown!r}")
+        raise LiveConfigError(
+            f"config 'llm' must contain exactly base_url, tick_url, and keys ({'; '.join(details)})"
+        )
+
+    for field_name in ("base_url", "tick_url"):
+        value = llm[field_name]
+        if not isinstance(value, str) or not value:
+            raise LiveConfigError(f"config 'llm' {field_name!r} must be a non-empty string")
+    raw_keys = llm["keys"]
+    if not isinstance(raw_keys, dict):
+        raise LiveConfigError("config 'llm' 'keys' must be an object keyed by agent slot id")
+    keys = cast("dict[str, Any]", raw_keys)
+    for slot_id, key in keys.items():
+        if not isinstance(key, str) or not key:
+            raise LiveConfigError(f"config 'llm' key for {slot_id!r} must be a non-empty string")
+
+    agent_slots = {slot_id for slot_id, binding in slots.items() if binding.kind == "builtin-agent"}
+    supplied_slots = set(keys)
+    if supplied_slots != agent_slots:
+        missing = sorted(agent_slots - supplied_slots)
+        unknown = sorted(supplied_slots - agent_slots)
+        details: list[str] = []
+        if missing:
+            details.append(f"missing agent slots {missing!r}")
+        if unknown:
+            details.append(f"unknown or non-agent slots {unknown!r}")
+        raise LiveConfigError(
+            f"config 'llm' keys must exactly cover configured agent slots ({'; '.join(details)})"
+        )
+
+    return LlmConfig(
+        base_url=cast("str", llm["base_url"]),
+        tick_url=cast("str", llm["tick_url"]),
+        keys=cast("dict[str, str]", dict(keys)),
+    )
+
+
+class _LlmExecutionScope:
+    """Select a slot credential and best-effort marker immediately before participant work."""
+
+    def __init__(self, config: LlmConfig) -> None:
+        self._config = config
+
+    def setup(self, slot_id: str) -> None:
+        self._activate(slot_id)
+        self._post_marker(slot_id, {"phase": "setup"})
+
+    def turn(self, slot_id: str, tick: int) -> None:
+        self._activate(slot_id)
+        self._post_marker(slot_id, {"tick": tick})
+
+    def _activate(self, slot_id: str) -> None:
+        os.environ["OPENAI_BASE_URL"] = self._config.base_url
+        os.environ["OPENAI_API_KEY"] = self._config.keys[slot_id]
+
+    def _post_marker(self, slot_id: str, payload: dict[str, str | int]) -> None:
+        try:
+            request = urllib.request.Request(
+                self._config.tick_url,
+                data=json.dumps(payload, separators=(",", ":")).encode("utf-8"),
+                headers={
+                    "Authorization": f"Bearer {self._config.keys[slot_id]}",
+                    "Content-Type": "application/json",
+                },
+                method="POST",
+            )
+            # The response body is unused. Closing after the headers arrive avoids draining a slow
+            # body beyond the local marker timeout.
+            with urllib.request.urlopen(request, timeout=_MARKER_TIMEOUT_SECONDS):
+                pass
+        except Exception as error:  # noqa: BLE001 - marker telemetry is deliberately best-effort
+            print(
+                f"live: LLM marker failed for slot {slot_id!r}: {error}",
+                file=sys.stderr,
+                flush=True,
+            )
+
+
 def build_slots(
     config: LiveConfig,
     entry: EnvironmentEntry,
@@ -237,6 +354,7 @@ def build_slots(
         config.human_timeout_ms if config.human_timeout_ms is not None else entry.meta.human_timeout_ms
     )
     slots: dict[str, Slot] = {}
+    execution_scope = _LlmExecutionScope(config.llm) if config.llm is not None else None
     for slot_id, binding in config.slots.items():
         if binding.kind == "external":
             source = TransportSource(control, clock=clock, paced=paced, sleeper=sleeper)
@@ -247,8 +365,12 @@ def build_slots(
             )
         else:  # "builtin-agent" — parse_config rejects any other kind.
             agent_path = binding.path or f"{DEFAULT_BUILTIN_AGENT_BASE}/{config.env_id}"
+            if execution_scope is not None:
+                # Manifest loading imports the participant module and constructs its agent, so this
+                # boundary must be activated before either operation can capture a client.
+                execution_scope.setup(slot_id)
             agent = load_agent(agent_path)
-            slots[slot_id] = AgentSlot(agent)
+            slots[slot_id] = AgentSlot(agent, execution_scope=execution_scope)
     return slots
 
 

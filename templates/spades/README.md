@@ -102,13 +102,13 @@ Submitting again while the season is open replaces the active submission and kee
 
 If your instructor enables model calls:
 
-1. Copy `.env.example` to `.env`.
-2. Add the endpoint and key provided by your instructor.
-3. Run `python -m sandbox.llm_example`.
+1. Follow [Using the LLM API](llm.md) to request a season development key.
+2. Copy `.env.example` to `.env`, add the returned endpoint and key, and select an allowed model alias.
+3. Run `python -m sandbox llm` to make one smoke-test call.
 
 Never commit `.env` or an API key to GitHub.
 
-Your code reads `OPENAI_BASE_URL` and `OPENAI_API_KEY` both locally and on the server. During a server session, Game Sandbox supplies a temporary key scoped to that session and agent slot, so the agent code does not change.
+Your code reads `OPENAI_BASE_URL`, `OPENAI_API_KEY`, and `OPENAI_MODEL` locally. When official LLM access is enabled for the environment and season, Game Sandbox supplies a temporary endpoint and key scoped to that session and agent slot, so the agent code does not change.
 
 ## Dependency updates
 

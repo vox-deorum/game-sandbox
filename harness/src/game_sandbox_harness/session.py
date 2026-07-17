@@ -84,6 +84,20 @@ class MessageSource(Protocol):
     def take_messages(self, slot_id: str) -> list[dict[str, Any]]: ...
 
 
+@runtime_checkable
+class AgentExecutionScope(Protocol):
+    """Activate one agent's execution scope at setup and turn ownership boundaries.
+
+    Live LLM sessions use this seam to select slot credentials and publish tick markers. Keeping
+    the scope optional on :class:`AgentSlot` leaves headless and non-LLM callers on their existing
+    path without environment changes or network operations.
+    """
+
+    def setup(self, slot_id: str) -> None: ...
+
+    def turn(self, slot_id: str, tick: int) -> None: ...
+
+
 class NoopSource:
     """An :class:`ActionSource` that never supplies input; the loop always defaults."""
 
@@ -111,6 +125,7 @@ class AgentSlot:
     """A slot driven by a loaded agent, under the agent-timeout machinery."""
 
     agent: Any
+    execution_scope: AgentExecutionScope | None = None
 
 
 @dataclass(frozen=True)
@@ -285,6 +300,8 @@ class Episode:
             for slot_id, binding in self._slots.items():
                 if isinstance(binding, AgentSlot):
                     try:
+                        if binding.execution_scope is not None:
+                            binding.execution_scope.setup(slot_id)
                         binding.agent.reset(self._seed)
                     except Exception:  # noqa: BLE001 - charge a reset crash to this seat, then re-raise
                         self._failed_slot = slot_id
@@ -369,12 +386,16 @@ class Episode:
             env.step(None)
             return
 
+        binding = self._slots[slot_id]
+        if isinstance(binding, AgentSlot) and binding.execution_scope is not None:
+            binding.execution_scope.turn(slot_id, self._tick)
+
         context = _StepContext(
             env=env,
             slot_id=slot_id,
             observation=observation,
             info=info,
-            binding=self._slots[slot_id],
+            binding=binding,
             slot=self._state[slot_id],
             started_at=self._clock.now_ms(),
         )

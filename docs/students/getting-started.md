@@ -106,10 +106,10 @@ Submit the repository URL through the course website. The server records one exa
 
 ## Optional: use the LLM API
 
-If your environment allows model calls, copy `.env.example` to `.env`, add the endpoint and key from your instructor, and run:
+If your environment allows model calls, follow [Using the LLM API](llm.md) to request a key for your season, copy `.env.example` to `.env`, add the returned endpoint and key, and run:
 
 ```console
-python -m sandbox.llm_example
+python -m sandbox llm
 ```
 
-Your agent reads `OPENAI_BASE_URL` and `OPENAI_API_KEY` locally and on the server. Never commit the `.env` file or an API key to GitHub. The [LLM specification](../specs/llm.md) explains server-side budgets and telemetry.
+Your agent reads `OPENAI_BASE_URL`, `OPENAI_API_KEY`, and an allowed `OPENAI_MODEL` alias locally. Official sessions inject their own endpoint and temporary slot key. Never commit the `.env` file or an API key to GitHub. [Using the LLM API](llm.md) explains how to request or rotate a development key, choose a model alias, handle terminal failures, and understand budgets and prompt visibility.

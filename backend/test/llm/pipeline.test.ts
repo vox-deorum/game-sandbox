@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { LlmHandler } from '../../src/llm/handler.js'
 import { LlmMeter } from '../../src/llm/meter.js'
-import type { LlmChatCompletion, LlmGrant } from '../../src/llm/types.js'
+import type { LlmChatCompletion, LlmGrant, OfficialTickMarkerRef } from '../../src/llm/types.js'
 import { UpstreamCaller } from '../../src/llm/upstream.js'
 import { ExecutionTelemetryStore } from '../../src/storage/llm/execution-telemetry.js'
 import { createOfficialRecordSink } from '../../src/storage/llm/official-record-sink.js'
@@ -44,12 +44,17 @@ describe('LLM retry, accounting, and telemetry pipeline', () => {
     for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
   })
 
-  function pipeline(client: { create: ReturnType<typeof vi.fn> }, maxRetries = 1) {
+  function pipeline(
+    client: { create: ReturnType<typeof vi.fn> },
+    maxRetries = 1,
+    initialTick: number | null = 7,
+  ) {
     const root = mkdtempSync(join(tmpdir(), 'gs-llm-pipeline-'))
     roots.push(root)
     const store = new ExecutionTelemetryStore(root)
     stores.push(store)
     const meter = new LlmMeter({ recoveryIntervalMs: 10 })
+    const tick: OfficialTickMarkerRef = { current: initialTick }
     const grant: LlmGrant = {
       kind: 'official',
       models: { small: 'provider-small' },
@@ -62,7 +67,7 @@ describe('LLM retry, accounting, and telemetry pipeline', () => {
         scopeId: SESSION_ID,
         sessionId: SESSION_ID,
         slot: SLOT,
-        tick: { current: 7 },
+        tick,
       }),
     }
     const upstream = new UpstreamCaller({
@@ -79,7 +84,7 @@ describe('LLM retry, accounting, and telemetry pipeline', () => {
       upstream,
       options: { defaultMaxOutputTokens: 8, maxOutputTokens: 20 },
     })
-    return { client, grant, handler, meter, store }
+    return { client, grant, handler, meter, store, tick }
   }
 
   it('retries to one success, one durable charge, and one telemetry row', async () => {
@@ -88,8 +93,12 @@ describe('LLM retry, accounting, and telemetry pipeline', () => {
     }
     const { grant, handler, meter, store } = pipeline(client)
 
-    await expect(handler.handle(grant, { model: 'small', messages: [] })).resolves.toMatchObject({
+    const response = await handler.handle(grant, { model: 'small', messages: [] })
+
+    expect(response).toMatchObject({
+      id: 'completion-1',
       model: 'small',
+      usage: { prompt_tokens: 2, completion_tokens: 4, total_tokens: 6 },
     })
 
     expect(client.create).toHaveBeenCalledTimes(2)
@@ -99,8 +108,29 @@ describe('LLM retry, accounting, and telemetry pipeline', () => {
       reasoningTokens: 0,
       outputTokens: 4,
     })
-    expect(store.listCalls(SESSION_ID)).toHaveLength(1)
+    expect(store.listCalls(SESSION_ID)).toEqual([
+      expect.objectContaining({
+        sessionId: SESSION_ID,
+        slot: SLOT,
+        tick: 7,
+        completion: response,
+      }),
+    ])
     expect(meter.inspect(grant.accountingScope.key).rateEvents).toHaveLength(1)
+  })
+
+  it('attributes successful setup and turn calls to the current tick marker', async () => {
+    const client = { create: vi.fn().mockResolvedValue(completion()) }
+    const { grant, handler, store, tick } = pipeline(client, 1, null)
+
+    await handler.handle(grant, { model: 'small', messages: [] })
+    tick.current = 12
+    await handler.handle(grant, { model: 'small', messages: [] })
+
+    expect(store.listCalls(SESSION_ID)).toEqual([
+      expect.objectContaining({ sessionId: SESSION_ID, slot: SLOT, tick: null }),
+      expect.objectContaining({ sessionId: SESSION_ID, slot: SLOT, tick: 12 }),
+    ])
   })
 
   it.each([

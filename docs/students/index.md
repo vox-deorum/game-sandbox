@@ -13,6 +13,7 @@ Get template → Set up Python → Improve agent → Test locally → Push to Gi
 1. [Getting started](getting-started.md) explains the tools and walks through the full local workflow.
 2. [Your environment](environments/index.md) starts by walking through the working agent your template ships, then goes deeper into the helpers, the scoring, and the raw actions and observations.
 3. [Agent interface](agent-interface.md) explains the full method contract your Python class follows in every environment.
-4. [Submitting](submitting.md) explains Git commits, the validation stages, and common rejection reasons.
+4. [Using the LLM API](llm.md) explains optional model access, development keys, budgets, fallbacks, and prompt visibility.
+5. [Submitting](submitting.md) explains Git commits, the validation stages, and common rejection reasons.
 
 If Git or Python is new to you, that is fine. The guide introduces the parts you need and links to official tutorials when a topic deserves a fuller explanation.

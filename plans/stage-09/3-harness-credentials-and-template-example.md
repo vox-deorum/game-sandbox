@@ -1,6 +1,6 @@
 # Stage 9.3: Harness Credentials and the Student LLM Example
 
-Status: not started.
+Status: complete.
 
 Part of [Stage 9](../stage-09-llm-gateway.md), build-order step 3.
 
@@ -44,11 +44,11 @@ Send a `POST` request to `LlmConfig.tick_url` with the slot's bearer key at the 
 - `{"phase":"setup"}` before module load, construction, and reset.
 - `{"tick":N}` before the acting slot's hooks for tick `N`.
 
-Use a small synchronous standard-library HTTP helper with a bounded local timeout. A marker failure writes a concise stderr diagnostic and allows the episode to continue. The model request still follows the agent's normal error handling.
+Use a small synchronous standard-library HTTP helper with a bounded local timeout. A marker failure writes a concise stderr diagnostic and allows the episode to continue. The model request still follows the agent's normal error handling. Because model requests do not carry a separate tick value, the backend retains that slot's last successful marker after a marker failure. Exact tick attribution resumes with the next successful marker. This is the explicit availability exception to per-call tick attribution.
 
 Calls made during setup carry a null tick in execution-scope SQLite. Calls made during a turn carry the marked tick. Durable scope and session IDs on recording metadata associate those rows with replays.
 
-Time spent in the backend proxy, including upstream attempts and exponential waits, remains inside the blocking participant hook. The existing wall-clock measurement therefore includes it in decision time, step limits, and episode limits.
+Time spent in the backend proxy during `act`, `chat`, or `learn`, including upstream attempts and exponential waits, remains inside the blocking participant hook. The existing wall-clock measurement therefore includes it in the corresponding decision, chat, or learn time and in step and episode limits. Module load, construction, and `reset` calls are setup work with null tick attribution and occur before turn timing.
 
 ## Template command and environment file
 
@@ -62,7 +62,7 @@ OPENAI_MODEL=small
 
 Students copy the `base_url` and `api_key` returned by `POST /api/seasons/:seasonId/llm-development-key`. `OPENAI_MODEL` selects an alias allowed by that season.
 
-Update the existing `templates/base/sandbox/llm_example.py` to use `OPENAI_MODEL`, make one non-streaming chat-completion request with the stock Python `openai` client, and report the model alias and successful token usage without printing the key. Replace its documented direct-module invocation, `python -m sandbox.llm_example`, with `python -m sandbox llm`.
+Update the existing `templates/base/sandbox/llm_example.py` to use `OPENAI_MODEL`, make one non-streaming chat-completion request with the stock Python `openai` client, and report the model alias and successful token usage without printing the key. Disable SDK retries so the backend remains the only retry owner and one smoke call remains one logical request. Replace its documented direct-module invocation, `python -m sandbox.llm_example`, with `python -m sandbox llm`.
 
 Extend the existing dispatcher in `templates/base/sandbox/__main__.py` with an `llm` command that invokes `sandbox.llm_example`. Give it a dedicated dependency probe, `import openai, dotenv`, so a runtime that satisfies the game dependencies but lacks the LLM client is bootstrapped before the example runs. Change `_runtime_python` to return an existing `.venv` interpreter only when it passes the selected command's probe; otherwise `setup()` repairs that environment from the pinned requirements before dispatch. Add `llm` to the module overview, command help, dispatcher table, and command set. Update the existing template READMEs and composed outputs to show the dispatcher command instead of the direct module command.
 
@@ -76,6 +76,8 @@ Add `examples/hearts/oracle/`. On each turn it:
 4. Uses the lowest legal card when the API returns a terminal error, the completion is malformed, or the selected card is illegal.
 
 The fallback keeps the game valid after budget exhaustion, a non-retryable upstream error, or exhausted backend retries. Retryable failures that recover inside the backend produce a normal successful result to the agent.
+
+The oracle also disables SDK retries. It makes one logical proxy request per turn and relies on the backend retry policy before applying its terminal fallback.
 
 ## Student documentation
 
@@ -104,7 +106,7 @@ Docker-free Python tests cover:
 - Setup and per-tick markers use the explicit tick URL and matching slot key, and precede the participant hooks they describe.
 - A failed marker request emits a diagnostic and does not stop the episode.
 - Setup calls persist with null ticks, and per-turn calls persist with the marked tick.
-- Backend retry time inside an agent call contributes to decision, step, and episode timing.
+- Backend retry time inside an `act` call contributes to decision, step, and episode timing. Calls from `chat` and `learn` contribute to their corresponding hook timing and the same limits.
 - The oracle follows a valid completion and uses its legal fallback for malformed output, `budget_exceeded`, a non-retryable API error, and an exhausted-retry error.
 - A retryable upstream failure followed by backend success reaches the oracle as one successful response.
 - Dispatcher help lists `llm`, dispatches `python -m sandbox llm` to `sandbox.llm_example`, forwards extra arguments, and selects the LLM-specific dependency probe. Both a current interpreter and a pre-existing `.venv` with game dependencies but without `openai` or `dotenv` take the repair path before dispatch.
@@ -114,8 +116,8 @@ Docker-free Python tests cover:
 ## Done when
 
 - Every participant hook runs with the correct slot's base URL and key.
-- Every successful official SQLite row has the correct session, slot, and setup or tick attribution.
-- LLM wait time, including backend retries, is included in the existing timing limits.
+- Every successful official SQLite row following a successful ownership marker has the correct session, slot, and setup or tick attribution. A failed marker follows the logged availability exception above.
+- LLM wait time during `act`, `chat`, and `learn`, including backend retries, is included in the existing timing limits.
 - A student runs the smoke command and Hearts oracle with a season development key stored in `.env`.
 - The same oracle runs in an official session with injected credentials and unchanged agent code.
 - The guide explains key handling, separate development limits, successful-only accounting, retry behavior, visibility, and fallback errors.

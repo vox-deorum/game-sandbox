@@ -110,6 +110,43 @@ def test_example_inherits_environment_page():
     assert (out / "environment.md").exists()
 
 
+@pytest.mark.parametrize("env", list_envs())
+def test_every_template_ships_localized_llm_guide_and_smoke_command(env: str):
+    out = compose_template(env)
+    guide = (out / "llm.md").read_text(encoding="utf-8")
+    readme = (out / "README.md").read_text(encoding="utf-8")
+    example = (out / "sandbox" / "llm_example.py").read_text(encoding="utf-8")
+    dispatcher = (out / "sandbox" / "__main__.py").read_text(encoding="utf-8")
+    dotenv = (out / ".env.example").read_text(encoding="utf-8")
+
+    assert "# Using the LLM API" in guide
+    assert "{{DOCS_URL}}" not in guide
+    assert "students/agent-interface/#llm-calls" in guide
+    assert "[LLM API specification](https://" in guide
+    assert "[Using the LLM API](llm.md)" in readme
+    assert "python -m sandbox llm" in readme
+    assert "python -m sandbox llm" in example
+    assert "OPENAI_MODEL" in example
+    # Compose only owns that the smoke command's surfaces ship together; the dispatcher's exact
+    # wiring (probe constant, table formatting) is the dispatcher test's contract, not this one.
+    assert '"llm"' in dispatcher
+    assert "sandbox.llm_example" in dispatcher
+    dotenv_lines = dotenv.splitlines()
+    assert "OPENAI_BASE_URL=" in dotenv_lines
+    assert "OPENAI_API_KEY=" in dotenv_lines
+    assert "OPENAI_MODEL=small" in dotenv_lines
+
+    documentation = "\n".join(path.read_text(encoding="utf-8") for path in out.rglob("*.md"))
+    assert "python -m sandbox.llm_example" not in documentation
+
+
+def test_oracle_example_composes_with_its_agent_and_failure_tests():
+    out = compose_example("hearts", "oracle")
+    assert "class Agent" in (out / "agent.py").read_text(encoding="utf-8")
+    assert (out / "tests" / "test_oracle.py").exists()
+    assert (out / "llm.md").exists()
+
+
 def test_compose_env_without_docs_page_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     # A template layer whose environment has no docs/students/environments page cannot compose:
     # there is no source for its environment.md.

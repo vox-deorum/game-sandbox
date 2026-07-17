@@ -34,6 +34,7 @@ import { SubmissionSnapshotStore } from '../../src/submission/snapshot-store.js'
 import type { SubmissionSource } from '../../src/submission/source/index.js'
 import type { RunEvent, TerminalRunStatus } from '../../src/workflow/runner.js'
 import { createWorkflowRunner } from '../../src/workflow/workflow-runner.js'
+import llmLaunchConfig from '../fixtures/llm-launch-config.json'
 import { FakeDriver, type FakeLaunch, type FakeSessionProcess } from '../support/fake-driver.js'
 
 const ENV_ID = 'flappy_bird'
@@ -353,13 +354,7 @@ describe('Docker-backed workflow runner', () => {
       limits: { tokenBudget: 100, callBudget: 10, requestsPerMinute: 10 },
     })
     const launch = handle.driver.lastLaunch()
-    expect(JSON.parse(launch?.spec.argv[0] ?? '{}')).toMatchObject({
-      llm: {
-        base_url: 'http://llm-proxy:9472/v1',
-        tick_url: 'http://llm-proxy:9472/internal/tick',
-        keys: { player_0: 'official-key' },
-      },
-    })
+    expect(JSON.parse(launch?.spec.argv[0] ?? '{}').llm).toEqual(llmLaunchConfig.llm)
     expect(launch?.spec.sandbox.network).toBe('llm')
     expect(await storage.getRecording(`${ENV_ID}-${game?.id}`)).toMatchObject({
       llm_scope_id: run.id,

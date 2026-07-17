@@ -16,11 +16,9 @@ requirements files — the dependency set is global, lives in ``templates/base/`
 versioned by the single ``template-v<N>`` axis. This is the same code path CI and the publish
 workflow use, so a student's clone is byte-identical to what CI tested.
 
-Each composed template also carries an ``environment.md``: a copy of the environment's student
-docs page from ``docs/students/environments/``, with its cross-doc links rewritten to absolute
-docs-site URLs. The template's README and ``agent.py`` point at that local file, so the game's
-observation/action reference lives in exactly one source — the docs page — rather than being
-duplicated into the template.
+Each composed template also carries ``environment.md`` and ``llm.md``, copied from the student
+documentation with cross-document links rewritten to absolute docs-site URLs. Template files point
+at those local copies, keeping the public guides as the single source of truth.
 """
 
 from __future__ import annotations
@@ -144,6 +142,7 @@ def _substitute_docs_url(out_dir: Path) -> None:
 # student's clone; _substitute_docs_url below then turns those into real URLs. In-page (#anchor) and
 # external (http...) links are left untouched.
 _ENVIRONMENT_DOC = "environment.md"
+_LLM_DOC = "llm.md"
 _MD_LINK = re.compile(r"\]\(([^)]+)\)")
 
 
@@ -188,6 +187,13 @@ def _localize_docs_links(text: str, page_dir: PurePosixPath) -> str:
     return _MD_LINK.sub(rewrite, text)
 
 
+def _ship_docs_page(page: Path, out_dir: Path, dest_name: str) -> None:
+    """Localize one student docs page's cross-doc links and write it into a composed template."""
+    page_dir = PurePosixPath(page.relative_to(DOCS_DIR).parent.as_posix())
+    localized = _localize_docs_links(page.read_text(encoding="utf-8"), page_dir)
+    (out_dir / dest_name).write_text(localized, encoding="utf-8", newline="\n")
+
+
 def _copy_environment_page(env: str, out_dir: Path) -> None:
     """Copy the environment's student docs page into the composed template as ``environment.md``."""
     page = env_docs_page(env)
@@ -196,9 +202,15 @@ def _copy_environment_page(env: str, out_dir: Path) -> None:
             f"environment {env!r} has no student docs page at {page}; the composed template ships "
             f"it as {_ENVIRONMENT_DOC}. Add the page under docs/students/environments/."
         )
-    page_dir = PurePosixPath(page.relative_to(DOCS_DIR).parent.as_posix())
-    localized = _localize_docs_links(page.read_text(encoding="utf-8"), page_dir)
-    (out_dir / _ENVIRONMENT_DOC).write_text(localized, encoding="utf-8", newline="\n")
+    _ship_docs_page(page, out_dir, _ENVIRONMENT_DOC)
+
+
+def _copy_llm_page(out_dir: Path) -> None:
+    """Copy the shared student LLM guide into a composed template as ``llm.md``."""
+    page = DOCS_DIR / "students" / _LLM_DOC
+    if not page.is_file():
+        raise ComposeError(f"no student LLM guide at {page}; every composed template ships {_LLM_DOC}")
+    _ship_docs_page(page, out_dir, _LLM_DOC)
 
 
 def _overlay_files(src_dir: Path, out_dir: Path, *, skip_extra: bool = False) -> None:
@@ -260,7 +272,10 @@ def compose_template(env: str) -> Path:
     # 3. Ship the environment's student docs page as environment.md — the local reference the
     #    template README and agent.py point at instead of duplicating it.
     _copy_environment_page(env, out_dir)
-    # 4. Resolve the docs-site link token now that every layer (and environment.md) is in place.
+    # 4. Ship the shared LLM guide beside the README so students can use it without finding the
+    #    documentation site first.
+    _copy_llm_page(out_dir)
+    # 5. Resolve the docs-site link token now that every layer and copied guide is in place.
     _substitute_docs_url(out_dir)
     return out_dir
 

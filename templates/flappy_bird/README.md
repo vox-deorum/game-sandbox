@@ -97,6 +97,16 @@ Submit the repository URL through the course website. Game Sandbox pins one exac
 
 Submitting again while the season is open replaces the active submission and keeps the earlier submission in history.
 
+## Optional LLM API
+
+If your instructor enables development model calls for a relevant season:
+
+1. Follow [Using the LLM API](llm.md) to request a season development key.
+2. Copy `.env.example` to `.env`, add the returned endpoint and key, and select an allowed model alias.
+3. Run `python -m sandbox llm` to make one smoke-test call.
+
+Never commit `.env` or an API key to GitHub. The smoke command confirms local development access only. An agent receives temporary slot credentials during official play only when that environment and season enable LLM access.
+
 ## Dependency updates
 
 The shared dependency set is controlled by the template release. Do not install or pin extra packages in a submission. Ask your instructor if the class needs a new package.

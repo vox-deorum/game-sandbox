@@ -5,6 +5,7 @@
     python -m sandbox play       # run YOUR agent in a window
     python -m sandbox eval       # run several seeded episodes, print the mean
     python -m sandbox test       # run the checks
+    python -m sandbox llm        # make one LLM API smoke-test call
     python -m sandbox setup      # just install dependencies into .venv
 
 The first time you run any of these from a fresh clone, it creates a local ``.venv`` and installs
@@ -32,6 +33,7 @@ commands:
   play     run YOUR agent in a window  (--headless for no window)
   eval     run several seeded episodes and print the mean
   test     run the checks (pytest)
+  llm      make one LLM API smoke-test call
   setup    install dependencies into .venv
 
 Extra args pass straight through, e.g. `python -m sandbox play --seed 7` or
@@ -45,6 +47,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 #: otherwise ``test`` could run under an interpreter that lacks pytest instead of bootstrapping.
 _RUNTIME_PROBE = "import pettingzoo, gymnasium"
 _TEST_PROBE = "import pettingzoo, gymnasium, pytest"
+_LLM_PROBE = "import openai, dotenv"
 
 
 def _venv_python() -> Path:
@@ -83,12 +86,15 @@ def setup() -> str:
 def _runtime_python(probe: str) -> str:
     """Return an interpreter that satisfies ``probe``, bootstrapping ``.venv`` on first use.
 
-    Prefers an existing ``.venv`` (setup installs every requirement, so it satisfies any probe);
-    otherwise uses the current interpreter if it already passes the probe (so maintainers running
-    under their own environment skip the venv); otherwise sets one up.
+    Prefers an existing ``.venv`` when it passes the selected command's probe. A stale environment
+    is repaired from the pinned requirements before it is used. With no ``.venv``, a current
+    interpreter that already passes the probe is used; otherwise setup creates the environment.
     """
     if _venv_python().exists():
-        return str(_venv_python())
+        python = str(_venv_python())
+        if _has_runtime(python, probe):
+            return python
+        return setup()
     if _has_runtime(sys.executable, probe):
         return sys.executable
     return setup()
@@ -108,6 +114,7 @@ _DISPATCH = {
     "play": (["-m", "sandbox.play"], _RUNTIME_PROBE),
     "eval": (["-m", "sandbox.evaluate"], _RUNTIME_PROBE),
     "test": (["-m", "pytest"], _TEST_PROBE),
+    "llm": (["-m", "sandbox.llm_example"], _LLM_PROBE),
 }
 _COMMANDS = {"setup", *_DISPATCH}
 

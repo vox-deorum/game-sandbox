@@ -56,4 +56,4 @@ The backend also exposes an authenticated OpenAI-compatible endpoint for student
 
 A seed does not make a model response deterministic. Seeded repetitions reduce the effect of stochastic policies but do not remove it.
 
-Time waiting for a model, including backend retries, counts toward the agent's step and episode limits. The automated board reports successful-call timing and token use by model. See [Leaderboards](leaderboard.md).
+During `act`, `chat`, or `learn`, time waiting for a model, including backend retries, counts toward the agent's step and episode limits. Calls during module import, construction, or `reset` are setup calls with null tick attribution and occur before turn timing. The automated board reports successful-call timing and token use by model. See [Leaderboards](leaderboard.md).
