@@ -81,6 +81,7 @@ async function setupAuthApp(): Promise<AuthAppFixture> {
     retention: new Retention(handle.storage, recordings, config),
     auth,
     userDirectory: createUserDirectory(handle.sqlite),
+    llm: config.llm,
     ...makeSubmissionDeps(handle.storage, config),
   })
   return { handle, auth, users, app, orchestrator, dir }

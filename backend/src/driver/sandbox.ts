@@ -1,5 +1,5 @@
 import type { SandboxDefaults } from '../config.js'
-import type { MountSpec, SandboxProfile } from './index.js'
+import type { MountSpec, SandboxNetwork, SandboxProfile } from './index.js'
 
 /** The only writable path exposed inside a sandboxed backend-launched container. */
 const SCRATCH_CONTAINER_PATH = '/tmp'
@@ -11,13 +11,14 @@ const SCRATCH_CONTAINER_PATH = '/tmp'
 export function buildSandboxProfile(
   resources: SandboxDefaults,
   mounts: readonly MountSpec[],
+  network: SandboxNetwork = 'none',
 ): SandboxProfile {
   return {
     cpus: resources.cpus,
     memoryMb: resources.memoryMb,
     readOnlyRoot: true,
     scratch: { containerPath: SCRATCH_CONTAINER_PATH, sizeMb: resources.scratchMb },
-    network: 'none',
+    network,
     mounts: [...mounts],
   }
 }

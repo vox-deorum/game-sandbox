@@ -22,6 +22,7 @@ export async function createSession(
       human_timeout_ms: input.human_timeout_ms ?? null,
       messaging_enabled: input.messaging_enabled ?? 0,
       message_cap: input.message_cap ?? null,
+      llm_enabled: input.llm_enabled ?? 0,
       status: 'starting',
       termination_reason: null,
       ended_at: null,

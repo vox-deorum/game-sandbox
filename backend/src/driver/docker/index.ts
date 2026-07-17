@@ -8,7 +8,9 @@
  * changing. Image caching lives here too, as the {@link DockerDriverOptions.imagePolicy}.
  */
 
-import type { Container, ContainerCreateOptions } from 'dockerode'
+import { randomUUID } from 'node:crypto'
+
+import type { Container, ContainerCreateOptions, Network } from 'dockerode'
 import Docker from 'dockerode'
 
 import type { DockerDriverOptions } from '../../config.js'
@@ -38,6 +40,15 @@ const SESSION_LABEL = 'game-sandbox.session'
  * backend's live container when several share one Docker daemon. Only the former is reaped.
  */
 const OWNER_PID_LABEL = 'game-sandbox.owner-pid'
+/** Driver-owned resources that make the backend proxy the internal network's only service. */
+const LLM_NETWORK_LABEL = 'game-sandbox.llm-network'
+const LLM_RELAY_LABEL = 'game-sandbox.llm-relay'
+const LLM_RELAY_IMAGE = 'alpine/socat:1.8.0.3'
+
+interface LlmNetworkResources {
+  networkName: string
+  cleanup: () => Promise<void>
+}
 
 /** Whether a process with this id currently exists, so its containers are not orphans yet. */
 function isProcessAlive(pid: number): boolean {
@@ -52,9 +63,12 @@ function isProcessAlive(pid: number): boolean {
 }
 
 export class DockerDriver implements ExecutionDriver {
+  private relayImageReady: Promise<void> | undefined
+
   constructor(
     private readonly docker: Docker,
     private readonly options: DockerDriverOptions,
+    private readonly llmInternalPort?: number,
   ) {}
 
   ensureImage(spec: ImageSpec): Promise<ImageRef> {
@@ -102,12 +116,119 @@ export class DockerDriver implements ExecutionDriver {
   }
 
   async launch(spec: LaunchSpec): Promise<SessionProcess> {
-    const container = await this.docker.createContainer(this.createOptions(spec))
-    return DockerSessionProcess.start(container)
+    let llm: LlmNetworkResources | undefined
+    try {
+      if (spec.sandbox.network === 'llm') {
+        llm = await this.createLlmNetwork(spec.sessionId)
+      }
+      const container = await this.docker.createContainer(
+        this.createOptions(spec, llm?.networkName ?? 'none'),
+      )
+      return await DockerSessionProcess.start(container, llm?.cleanup)
+    } catch (error) {
+      await llm?.cleanup().catch(() => undefined)
+      throw error
+    }
+  }
+
+  /** Create an agent-only bridge plus a separately routed relay egress for one LLM session. */
+  private async createLlmNetwork(sessionId: string): Promise<LlmNetworkResources> {
+    if (this.llmInternalPort === undefined) {
+      throw new Error('LLM_INTERNAL_PORT is required to launch an LLM-enabled sandbox')
+    }
+    await this.ensureRelayImage()
+
+    const resourceId = `${process.pid}-${randomUUID()}`
+    const networkName = `game-sandbox-llm-${resourceId}-agent`
+    const egressNetworkName = `game-sandbox-llm-${resourceId}-egress`
+    const labels = {
+      [SESSION_LABEL]: sessionId,
+      [OWNER_PID_LABEL]: String(process.pid),
+    }
+    const network = await this.docker.createNetwork({
+      Name: networkName,
+      Internal: true,
+      Labels: { ...labels, [LLM_NETWORK_LABEL]: 'agent' },
+    })
+    let egressNetwork: Network | undefined
+    let relay: Container | undefined
+    let cleanupPromise: Promise<void> | undefined
+    const cleanup = (): Promise<void> => {
+      cleanupPromise ??= (async () => {
+        await relay?.remove({ force: true }).catch(() => undefined)
+        await network.remove().catch(() => undefined)
+        await egressNetwork?.remove().catch(() => undefined)
+      })()
+      return cleanupPromise
+    }
+
+    try {
+      // Only the trusted relay joins this routed bridge. The submitted-agent container stays on the
+      // internal bridge, where there is no gateway route and no host-gateway alias.
+      egressNetwork = await this.docker.createNetwork({
+        Name: egressNetworkName,
+        Internal: false,
+        Labels: { ...labels, [LLM_NETWORK_LABEL]: 'egress' },
+      })
+      relay = await this.docker.createContainer({
+        Image: LLM_RELAY_IMAGE,
+        Entrypoint: ['socat'],
+        Cmd: [
+          '-d',
+          '-d',
+          `TCP-LISTEN:${this.llmInternalPort},fork,reuseaddr`,
+          `TCP:host.docker.internal:${this.llmInternalPort}`,
+        ],
+        Labels: { ...labels, [LLM_RELAY_LABEL]: 'true' },
+        HostConfig: {
+          NetworkMode: egressNetworkName,
+          ExtraHosts: ['host.docker.internal:host-gateway'],
+          ReadonlyRootfs: true,
+          CapDrop: ['ALL'],
+          SecurityOpt: ['no-new-privileges:true'],
+        },
+        NetworkingConfig: {
+          EndpointsConfig: { [egressNetworkName]: {} },
+        },
+      })
+      // The relay exposes exactly one fixed-destination socat listener to agents. It has no shell or
+      // dynamic proxy surface through which an agent can select another host or destination port.
+      await network.connect({
+        Container: relay.id,
+        EndpointConfig: { Aliases: ['llm-proxy'] },
+      })
+      await relay.start()
+      return { networkName, cleanup }
+    } catch (error) {
+      await cleanup()
+      throw error
+    }
+  }
+
+  /** Pull the small pinned relay image once per driver when it is not already present. */
+  private ensureRelayImage(): Promise<void> {
+    this.relayImageReady ??= (async () => {
+      try {
+        await this.docker.getImage(LLM_RELAY_IMAGE).inspect()
+        return
+      } catch {
+        const stream = await this.docker.pull(LLM_RELAY_IMAGE)
+        await new Promise<void>((resolve, reject) => {
+          this.docker.modem.followProgress(stream, (error: Error | null) => {
+            if (error) reject(error)
+            else resolve()
+          })
+        })
+      }
+    })().catch((error: unknown) => {
+      this.relayImageReady = undefined
+      throw error
+    })
+    return this.relayImageReady
   }
 
   /** Map the sandbox profile and session config onto Docker container-create options. */
-  private createOptions(spec: LaunchSpec): ContainerCreateOptions {
+  private createOptions(spec: LaunchSpec, networkMode: string): ContainerCreateOptions {
     const { sandbox } = spec
     const memoryBytes = sandbox.memoryMb * 1024 * 1024
     const binds = sandbox.mounts.map(
@@ -132,7 +253,7 @@ export class DockerDriver implements ExecutionDriver {
         MemorySwap: memoryBytes,
         ReadonlyRootfs: sandbox.readOnlyRoot,
         Tmpfs: { [sandbox.scratch.containerPath]: `rw,nosuid,size=${sandbox.scratch.sizeMb}m` },
-        NetworkMode: sandbox.network,
+        NetworkMode: networkMode,
         Binds: binds.length > 0 ? binds : undefined,
         CapDrop: ['ALL'],
       },
@@ -147,10 +268,15 @@ export class DockerDriver implements ExecutionDriver {
    * containers are skipped rather than killed.
    */
   async reapOrphans(): Promise<void> {
-    const containers = await this.docker.listContainers({
-      all: true,
-      filters: { label: [SESSION_LABEL] },
-    })
+    const [sessionContainers, relayContainers] = await Promise.all([
+      this.docker.listContainers({ all: true, filters: { label: [SESSION_LABEL] } }),
+      this.docker.listContainers({ all: true, filters: { label: [LLM_RELAY_LABEL] } }),
+    ])
+    const containers = [
+      ...new Map(
+        [...sessionContainers, ...relayContainers].map((info) => [info.Id, info]),
+      ).values(),
+    ]
     await Promise.all(
       containers.map(async (info) => {
         const ownerPid = info.Labels?.[OWNER_PID_LABEL]
@@ -167,6 +293,24 @@ export class DockerDriver implements ExecutionDriver {
         }
       }),
     )
+
+    // Relay and session containers must be gone before Docker will remove their shared network.
+    const networks = await this.docker.listNetworks({ filters: { label: [LLM_NETWORK_LABEL] } })
+    await Promise.all(
+      networks.map(async (info) => {
+        const ownerPid = info.Labels?.[OWNER_PID_LABEL]
+        const pid = ownerPid !== undefined ? Number.parseInt(ownerPid, 10) : Number.NaN
+        if (Number.isInteger(pid) && isProcessAlive(pid)) {
+          return
+        }
+        const network: Network = this.docker.getNetwork(info.Id)
+        try {
+          await network.remove()
+        } catch {
+          // An attachment may have raced this sweep; the next startup sweep retries the network.
+        }
+      }),
+    )
   }
 }
 
@@ -175,8 +319,11 @@ export class DockerDriver implements ExecutionDriver {
  * before returning, so the driver is ready and the host is clean. dockerode's socket defaults
  * suffice on both Windows and Linux.
  */
-export async function createDockerDriver(options: DockerDriverOptions): Promise<DockerDriver> {
-  const driver = new DockerDriver(new Docker(), options)
+export async function createDockerDriver(
+  options: DockerDriverOptions,
+  llmInternalPort?: number,
+): Promise<DockerDriver> {
+  const driver = new DockerDriver(new Docker(), options, llmInternalPort)
   await driver.reapOrphans()
   return driver
 }

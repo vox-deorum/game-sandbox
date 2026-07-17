@@ -18,6 +18,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { createDockerDriver } from '../../src/driver/docker/index.js'
 import { EnvironmentRegistry } from '../../src/environments.js'
+import type { ResolvedOfficialLlmPolicy } from '../../src/llm/config.js'
 import { RecordingsStore } from '../../src/recordings.js'
 import type { AgentRef, SeasonRun, Storage } from '../../src/storage/index.js'
 import { openSqliteStorage } from '../../src/storage/sqlite.js'
@@ -28,6 +29,14 @@ import { createWorkflowRunner } from '../../src/workflow/workflow-runner.js'
 import { DEPS_VERSION } from './support/base-image.js'
 
 const ENV_ID = 'flappy_bird'
+
+function disabledLlmPolicy(): ResolvedOfficialLlmPolicy {
+  return {
+    enabled: false,
+    models: {},
+    session: { token_budget: 1, call_budget: 1, rate_limit_rpm: 1 },
+  }
+}
 /** A deterministic agent: flap on a fixed period so the episode is a pure function of the seed. */
 const DETERMINISTIC_AGENT = [
   'class Agent:',
@@ -115,7 +124,13 @@ describe('workflow run end to end (Docker)', () => {
         slots: [{ kind: 'builtin-naive' } as AgentRef],
       },
     ]
-    const run = await storage.createRunWithSchedule(seasonId, 'dev-user', submissions, schedule)
+    const run = await storage.createRunWithSchedule(
+      seasonId,
+      'dev-user',
+      submissions,
+      schedule,
+      disabledLlmPolicy,
+    )
     const status = await new Promise<TerminalRunStatus>((res) => {
       const unsubscribe = runner.subscribe(run.id, (event) => {
         if (event.type === 'terminal') {

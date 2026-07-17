@@ -36,3 +36,12 @@ export function asLlmError(error: unknown): LlmError {
     'server_error',
   )
 }
+
+/** Parse a request's bearer credential, shared by every key-authenticated LLM route. */
+export function readBearer(header: string | undefined): string {
+  const match = /^Bearer ([^\s]+)$/i.exec(header ?? '')
+  if (match?.[1] === undefined) {
+    throw new LlmError(401, 'invalid_api_key', 'A valid bearer API key is required.')
+  }
+  return match[1]
+}

@@ -7,7 +7,10 @@ import { randomUUID } from 'node:crypto'
 
 import type { Kysely, SelectQueryBuilder } from 'kysely'
 import { sql } from 'kysely'
-
+import {
+  encodeResolvedOfficialLlmPolicy,
+  type ResolvedOfficialLlmPolicy,
+} from '../../llm/config.js'
 import type { AgentRef, RecordGameResultInput, ScheduledGameInput } from '../index.js'
 import type {
   Database,
@@ -17,6 +20,7 @@ import type {
   SeasonRun,
   SeasonRunGame,
 } from '../schema.js'
+import { decodeSeasonConfig, type SeasonConfig } from '../season-config.js'
 import { agentColumns } from './shared.js'
 
 /** Run-status values that close a run (stamping `ended_at`). */
@@ -64,15 +68,19 @@ export async function createRunWithSchedule(
   requestedBy: string,
   submissionSnapshot: AgentRef[],
   scheduledGames: ScheduledGameInput[],
+  resolveLlmPolicy: (config: SeasonConfig) => ResolvedOfficialLlmPolicy,
 ): Promise<SeasonRun> {
   return await db.transaction().execute(async (trx) => {
     // Freeze the season's already-validated config (incl. deps) and the eligible roster onto the
     // run, then persist the concrete games. The runner reads these, not the mutable source rows.
+    // The LLM policy is resolved from the same in-transaction config read that becomes
+    // `config_snapshot`, so a concurrent config edit can never leave the two snapshots disagreeing.
     const season = await trx
       .selectFrom('seasons')
       .select('config')
       .where('id', '=', seasonId)
       .executeTakeFirstOrThrow()
+    const llmPolicy = resolveLlmPolicy(decodeSeasonConfig(season.config))
     const runId = randomUUID()
     const now = new Date().toISOString()
     const run = await trx
@@ -82,6 +90,7 @@ export async function createRunWithSchedule(
         season_id: seasonId,
         requested_by: requestedBy,
         config_snapshot: season.config,
+        llm_policy_snapshot: encodeResolvedOfficialLlmPolicy(llmPolicy),
         submission_snapshot: JSON.stringify(submissionSnapshot),
         status: 'pending',
         started_at: now,

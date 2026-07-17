@@ -17,6 +17,7 @@ import { currentSessionBaseImageSpec } from '../deps-version.js'
 import type { ExecutionDriver, ImageRef } from '../driver/index.js'
 import { buildSandboxProfile } from '../driver/sandbox.js'
 import type { EnvironmentMeta, EnvironmentRegistry } from '../environments.js'
+import { resolveLlm as defaultResolveLlm } from '../llm/config.js'
 import { optionalField } from '../optional-field.js'
 import { decodeSeasonConfig, type Storage, type Submission } from '../storage/index.js'
 import type { Season, Session, SessionMode } from '../storage/schema.js'
@@ -27,13 +28,14 @@ import {
   type SessionImageSlot,
   submissionSlotPath,
 } from '../submission/submission-image.js'
-import { assembleSeats, type SeatBinding } from './launch-config.js'
+import { assembleLlmLaunchConfig, assembleSeats, type SeatBinding } from './launch-config.js'
 import {
   type Attachment,
   type ClientSocket,
   ensureRecordingsDir,
   LiveSession,
 } from './live-session.js'
+import type { OfficialGrantIssuer, OfficialGrantLease } from './official-grants.js'
 import { SessionRegistry } from './registry.js'
 
 /** Where the recordings volume is mounted inside every session container. */
@@ -142,6 +144,10 @@ export interface OrchestratorDeps {
    * Optional: without it (or for an id with no row) every label falls back to the stable id.
    */
   userDirectory?: UserDirectory
+  /** Issues launch-scoped official keys when the resolved live policy enables LLM access. */
+  officialGrantIssuer?: OfficialGrantIssuer
+  /** Injectable current-policy resolver; defaults to the deployment/environment/season resolver. */
+  resolveLiveLlm?: typeof defaultResolveLlm
 }
 
 export class Orchestrator {
@@ -155,6 +161,8 @@ export class Orchestrator {
   private readonly submissionSource?: SubmissionSource
   private readonly submissionSnapshots?: SubmissionSnapshotStore
   private readonly userDirectory?: UserDirectory
+  private readonly officialGrantIssuer?: OfficialGrantIssuer
+  private readonly resolveLiveLlm: typeof defaultResolveLlm
 
   constructor(deps: OrchestratorDeps) {
     this.driver = deps.driver
@@ -166,6 +174,8 @@ export class Orchestrator {
     this.submissionSource = deps.submissionSource
     this.submissionSnapshots = deps.submissionSnapshots
     this.userDirectory = deps.userDirectory
+    this.officialGrantIssuer = deps.officialGrantIssuer
+    this.resolveLiveLlm = deps.resolveLiveLlm ?? defaultResolveLlm
   }
 
   /**
@@ -219,48 +229,90 @@ export class Orchestrator {
     // enabled is the environment metadata AND the season override; the cap is the minimum of the two.
     // The same resolved block is handed to all three consumers (the container config, the relay, and
     // the session row) so live and reopened-ended payloads agree, and it is persisted on the row.
-    const overrides = decodeSeasonConfig(playSeason.config).overrides
+    const seasonConfig = decodeSeasonConfig(playSeason.config)
+    const overrides = seasonConfig.overrides
     const messaging = resolveMessaging(meta, overrides?.messaging)
+    const llm = this.resolveLiveLlm(this.config.llm, meta, seasonConfig)
     const externalSlots = resolvedSlots.filter((s) => s.kind === 'human').map((s) => s.slotId)
-
-    // Resolve the launch image from the validated submitted slots: the base image when none, a single
-    // submission's cached overlay, or a composed multi-submission session image.
-    const { image, submissionBindings } = await this.resolveImage(resolvedSlots, playSeason)
 
     const id = randomUUID()
     const recordingId = `${meta.env_id}-${id}`
     const createdAt = new Date().toISOString()
-    await this.storage.createSession({
-      id,
-      user_id: request.userId,
-      env_id: meta.env_id,
-      mode,
-      recording_id: recordingId,
-      season_id: playSeason.id,
-      human_timeout_ms: humanTimeoutMs,
-      messaging_enabled: messaging.enabled ? 1 : 0,
-      message_cap: messaging.cap,
-      created_at: createdAt,
-    })
+    let llmLease: OfficialGrantLease | undefined
+    if (llm.enabled) {
+      if (this.officialGrantIssuer === undefined) {
+        throw new OrchestratorError(500, 'official LLM grants are not configured')
+      }
+      try {
+        llmLease = await this.officialGrantIssuer.issue({
+          sessionId: id,
+          scopeId: id,
+          agentSlots: resolvedSlots
+            .filter((slot) => slot.kind !== 'human')
+            .map((slot) => slot.slotId),
+          models: llm.models,
+          limits: llm.official,
+        })
+      } catch (error) {
+        throw new OrchestratorError(500, `failed to issue official LLM grants: ${String(error)}`)
+      }
+    }
 
-    const sandbox = buildSandboxProfile(this.config.sandbox, [
-      {
-        hostPath: this.recordingsHostDir(),
-        containerPath: CONTAINER_RECORDINGS_DIR,
-        readOnly: false,
-      },
-    ])
-    const sessionConfig = await this.sessionConfig(
-      meta,
-      seed,
-      humanTimeoutMs,
-      recordingId,
-      resolvedSlots,
-      request.userId,
-      overrides,
-      messaging,
-    )
-    await ensureRecordingsDir(this.recordingsHostDir())
+    // Resolve the launch image from the validated submitted slots: the base image when none, a single
+    // submission's cached overlay, or a composed multi-submission session image.
+    let image: ImageRef
+    let submissionBindings: SubmissionBinding[]
+    try {
+      ;({ image, submissionBindings } = await this.resolveImage(resolvedSlots, playSeason))
+      await this.storage.createSession({
+        id,
+        user_id: request.userId,
+        env_id: meta.env_id,
+        mode,
+        recording_id: recordingId,
+        season_id: playSeason.id,
+        human_timeout_ms: humanTimeoutMs,
+        messaging_enabled: messaging.enabled ? 1 : 0,
+        message_cap: messaging.cap,
+        llm_enabled: llm.enabled ? 1 : 0,
+        created_at: createdAt,
+      })
+    } catch (error) {
+      await llmLease?.revoke()
+      throw error
+    }
+
+    let sandbox: ReturnType<typeof buildSandboxProfile>
+    let sessionConfig: Record<string, unknown>
+    try {
+      sandbox = buildSandboxProfile(
+        this.config.sandbox,
+        [
+          {
+            hostPath: this.recordingsHostDir(),
+            containerPath: CONTAINER_RECORDINGS_DIR,
+            readOnly: false,
+          },
+        ],
+        llm.enabled ? 'llm' : 'none',
+      )
+      sessionConfig = await this.sessionConfig(
+        meta,
+        seed,
+        humanTimeoutMs,
+        recordingId,
+        resolvedSlots,
+        request.userId,
+        overrides,
+        messaging,
+        llmLease?.keys ?? {},
+      )
+      await ensureRecordingsDir(this.recordingsHostDir())
+    } catch (error) {
+      await llmLease?.revoke()
+      await this.storage.markEnded(id, 'error', new Date().toISOString()).catch(() => undefined)
+      throw new OrchestratorError(500, `failed to prepare session launch: ${String(error)}`)
+    }
 
     let process: Awaited<ReturnType<ExecutionDriver['launch']>>
     try {
@@ -274,6 +326,7 @@ export class Orchestrator {
       // The row exists but no container does; mark it failed so it never looks active. No
       // session_submissions rows have been written yet (they land only after a successful launch,
       // below), so a launch that never started leaves no phantom "recent run" on any submission.
+      await llmLease?.revoke()
       await this.storage.markEnded(id, 'error', new Date().toISOString()).catch(() => undefined)
       throw new OrchestratorError(500, `failed to launch session: ${String(error)}`)
     }
@@ -288,6 +341,7 @@ export class Orchestrator {
     } catch (error) {
       // The post-launch writes (attribution rows) failed, but the container is running. Kill it and
       // mark the session ended so it never looks active and no LiveSession will try to manage it.
+      await llmLease?.revoke()
       try {
         await process.kill(KILL_GRACE_MS)
       } catch {
@@ -308,6 +362,7 @@ export class Orchestrator {
       humanSlots: meta.human_slots,
       externalSlots,
       messaging,
+      llmEnabled: llm.enabled,
       deps: {
         storage: this.storage,
         onEnd: (endedId) => this.registry.remove(endedId),
@@ -316,6 +371,7 @@ export class Orchestrator {
         idleTimeoutMs: this.config.sessionIdleTimeoutMs,
         maxDurationMs: this.config.sessionMaxDurationMs,
         killGraceMs: KILL_GRACE_MS,
+        revokeLlm: () => llmLease?.revoke() ?? Promise.resolve(),
       },
     })
     this.registry.add(session)
@@ -535,6 +591,7 @@ export class Orchestrator {
     ownerUserId: string,
     overrides: ReturnType<typeof decodeSeasonConfig>['overrides'],
     messaging: { enabled: boolean; cap: number | null },
+    llmKeys: Readonly<Record<string, string>>,
   ): Promise<Record<string, unknown>> {
     // Snapshot display names for the recording header at launch time: the human seat's user and every
     // submission owner, one batched lookup. Names are cosmetic — the label falls back to the stable id —
@@ -573,6 +630,7 @@ export class Orchestrator {
       // double application is idempotent (AND and min).
       messaging_enabled: messaging.enabled,
       message_cap: messaging.cap,
+      ...assembleLlmLaunchConfig(this.config.llm.internalPort, llmKeys),
       // The owner decision: the play-open season's overrides now reach live sessions too, exactly as
       // the workflow runner already spreads them into scheduled games.
       ...optionalField('step_timeout_ms', overrides?.step_timeout_ms),

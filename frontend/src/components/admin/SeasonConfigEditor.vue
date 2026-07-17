@@ -2,8 +2,9 @@
   The match-design config editor of the operator console (Stage 6.7). It edits the season's whole
   SeasonConfig: the match design (each match's slot composition of builtin-naive / submission seats,
   its seeds, and its game count), the deps_version (defaulted to the current release at declaration),
-  and the override blocks. The per-step / per-episode timeout overrides are active this stage; the
-  messaging and LLM fields are present but labeled as applying in Stages 8/9, and round-trip unchanged.
+  and the override blocks. The per-step / per-episode timeout, messaging, and LLM fields all map to
+  the backend's strict season codec. Official and development LLM limits remain separate because
+  they apply to different accounting scopes.
 
   Two guards, mirroring the step-3 contract:
   - A match with zero slots is never saved (the editor refuses it before the request).
@@ -14,10 +15,13 @@
     back as `invalid_config` and render inline.
 -->
 <script setup lang="ts">
+import { MODEL_ALIASES } from '@game-sandbox/schema/llm'
 import { computed, ref, watch } from 'vue'
 
 import {
   configureSeason,
+  type LlmLimitOverride,
+  type LlmModelAlias,
   type SeasonConfig,
   type SeasonOverrides,
   type SeasonView,
@@ -38,6 +42,7 @@ const emit = defineEmits<{
 }>()
 
 const SLOT_SPECS: SlotSpec[] = ['submission', 'builtin-naive']
+const LLM_MODEL_ALIASES: readonly LlmModelAlias[] = MODEL_ALIASES
 
 /** One match's editable form state; seeds are free text parsed to ints on save. */
 interface MatchDraft {
@@ -54,6 +59,15 @@ const episodeTimeout = ref<number | ''>('')
 // "default" leaves the environment's own setting in force, "on"/"off" write an explicit boolean.
 const messagingEnabled = ref<'default' | 'on' | 'off'>('default')
 const messageCap = ref<number | ''>('')
+const llmEnabled = ref<'default' | 'on' | 'off'>('default')
+const llmModelsMode = ref<'all' | 'custom'>('all')
+const llmModels = ref<LlmModelAlias[]>([])
+const officialTokenBudget = ref<number | ''>('')
+const officialCallBudget = ref<number | ''>('')
+const officialRateLimit = ref<number | ''>('')
+const developmentTokenBudget = ref<number | ''>('')
+const developmentCallBudget = ref<number | ''>('')
+const developmentRateLimit = ref<number | ''>('')
 
 const saving = ref(false)
 const saved = ref(false)
@@ -80,6 +94,16 @@ function seedFromSeason(): void {
   const messaging = config.overrides?.messaging
   messagingEnabled.value = messaging?.enabled === undefined ? 'default' : messaging.enabled ? 'on' : 'off'
   messageCap.value = messaging?.message_cap ?? ''
+  const llm = config.overrides?.llm
+  llmEnabled.value = llm?.enabled === undefined ? 'default' : llm.enabled ? 'on' : 'off'
+  llmModelsMode.value = llm?.models === undefined ? 'all' : 'custom'
+  llmModels.value = [...(llm?.models ?? [])]
+  officialTokenBudget.value = llm?.official?.token_budget ?? ''
+  officialCallBudget.value = llm?.official?.call_budget ?? ''
+  officialRateLimit.value = llm?.official?.rate_limit_rpm ?? ''
+  developmentTokenBudget.value = llm?.development?.token_budget ?? ''
+  developmentCallBudget.value = llm?.development?.call_budget ?? ''
+  developmentRateLimit.value = llm?.development?.rate_limit_rpm ?? ''
   saved.value = false
   error.value = null
 }
@@ -112,6 +136,29 @@ function parseSeeds(text: string): number[] {
     .filter((value) => Number.isInteger(value))
 }
 
+function buildLimitOverride(
+  label: string,
+  tokenBudget: number | '',
+  callBudget: number | '',
+  rateLimit: number | '',
+): { limits?: LlmLimitOverride; error?: string } {
+  const values = [
+    ['token budget', tokenBudget],
+    ['call budget', callBudget],
+    ['rate limit', rateLimit],
+  ] as const
+  for (const [name, value] of values) {
+    if (value !== '' && (!Number.isInteger(Number(value)) || Number(value) < 1)) {
+      return { error: `The ${label} ${name} must be a positive integer.` }
+    }
+  }
+  const limits: LlmLimitOverride = {}
+  if (tokenBudget !== '') limits.token_budget = Number(tokenBudget)
+  if (callBudget !== '') limits.call_budget = Number(callBudget)
+  if (rateLimit !== '') limits.rate_limit_rpm = Number(rateLimit)
+  return Object.keys(limits).length === 0 ? {} : { limits }
+}
+
 /** Build the config document from the form, or return a client-side validation message. */
 function buildConfig(): { config: SeasonConfig } | { error: string } {
   const built: MatchConfig[] = []
@@ -132,7 +179,7 @@ function buildConfig(): { config: SeasonConfig } | { error: string } {
   if (!Number.isInteger(depsVersion.value) || depsVersion.value < 1) {
     return { error: 'The dependency-set version must be a positive integer.' }
   }
-  // The active timeout and messaging overrides are edited here; the inert llm block round-trips untouched.
+  // Capability blocks stay absent when every field inherits its deployment or environment default.
   const overrides: NonNullable<SeasonConfig['overrides']> = {}
   if (stepTimeout.value !== '') overrides.step_timeout_ms = Number(stepTimeout.value)
   if (episodeTimeout.value !== '') overrides.episode_timeout_ms = Number(episodeTimeout.value)
@@ -140,8 +187,31 @@ function buildConfig(): { config: SeasonConfig } | { error: string } {
   if (messagingEnabled.value !== 'default') messaging.enabled = messagingEnabled.value === 'on'
   if (messageCap.value !== '') messaging.message_cap = Number(messageCap.value)
   if (Object.keys(messaging).length > 0) overrides.messaging = messaging
-  const existing = props.season.config.overrides
-  if (existing?.llm !== undefined) overrides.llm = existing.llm
+  if (llmModelsMode.value === 'custom' && llmModels.value.length === 0) {
+    return { error: 'Select at least one allowed LLM model alias, or inherit all deployment aliases.' }
+  }
+  const official = buildLimitOverride(
+    'official',
+    officialTokenBudget.value,
+    officialCallBudget.value,
+    officialRateLimit.value,
+  )
+  if (official.error !== undefined) return { error: official.error }
+  const development = buildLimitOverride(
+    'development',
+    developmentTokenBudget.value,
+    developmentCallBudget.value,
+    developmentRateLimit.value,
+  )
+  if (development.error !== undefined) return { error: development.error }
+  const llm: NonNullable<SeasonOverrides['llm']> = {}
+  if (llmEnabled.value !== 'default') llm.enabled = llmEnabled.value === 'on'
+  if (llmModelsMode.value === 'custom') {
+    llm.models = LLM_MODEL_ALIASES.filter((alias) => llmModels.value.includes(alias))
+  }
+  if (official.limits !== undefined) llm.official = official.limits
+  if (development.limits !== undefined) llm.development = development.limits
+  if (Object.keys(llm).length > 0) overrides.llm = llm
   const config: SeasonConfig = { deps_version: depsVersion.value, matches: built }
   if (Object.keys(overrides).length > 0) {
     config.overrides = overrides
@@ -165,9 +235,36 @@ function canonicalConfig(config: SeasonConfig): string {
             step_timeout_ms: overrides.step_timeout_ms ?? null,
             episode_timeout_ms: overrides.episode_timeout_ms ?? null,
             messaging: overrides.messaging ?? null,
-            llm: overrides.llm ?? null,
+            llm: canonicalLlm(overrides.llm),
           },
   })
+}
+
+/**
+ * Normalize a stored LLM override to the exact key/alias order `buildConfig` emits. The backend
+ * accepts any key order and any alias order, so a config saved by a script must not read as a
+ * permanent unsaved edit (which would gate the Run button) just because it serialized differently.
+ */
+function canonicalLlm(llm: SeasonOverrides['llm']): Record<string, unknown> | null {
+  if (llm === undefined) return null
+  return {
+    enabled: llm.enabled ?? null,
+    models:
+      llm.models === undefined
+        ? null
+        : LLM_MODEL_ALIASES.filter((alias) => llm.models?.includes(alias)),
+    official: canonicalLimits(llm.official),
+    development: canonicalLimits(llm.development),
+  }
+}
+
+function canonicalLimits(limits: LlmLimitOverride | undefined): Record<string, unknown> | null {
+  if (limits === undefined) return null
+  return {
+    token_budget: limits.token_budget ?? null,
+    call_budget: limits.call_budget ?? null,
+    rate_limit_rpm: limits.rate_limit_rpm ?? null,
+  }
 }
 
 /**
@@ -294,6 +391,7 @@ watch(confirmOpen, (open) => {
     <UiButton variant="secondary" size="tight" @click="addMatch">Add match</UiButton>
 
     <h3 class="config-title config-title--spaced">Overrides</h3>
+    <h4 class="config-group-title">Session behavior</h4>
     <div class="match-fields">
       <UiField label="Step timeout (ms)" hint="Optional; falls back to the environment default.">
         <template #default="{ id }">
@@ -332,7 +430,122 @@ watch(confirmOpen, (open) => {
         </template>
       </UiField>
     </div>
-    <p class="config-note">The LLM override applies in Stage 9 and is preserved unchanged.</p>
+
+    <section class="llm-config" aria-labelledby="llm-config-title">
+      <h4 id="llm-config-title" class="config-group-title">LLM access</h4>
+      <div class="match-fields">
+        <UiField
+          label="LLM enablement"
+          hint="A season must explicitly enable LLM access. Default leaves the field unset."
+        >
+          <template #default="{ id }">
+            <UiSelect :id="id" v-model="llmEnabled">
+              <option value="default">Not set (disabled)</option>
+              <option value="on">Enabled</option>
+              <option value="off">Explicitly disabled</option>
+            </UiSelect>
+          </template>
+        </UiField>
+        <UiField
+          label="Allowed model aliases"
+          hint="Inherit every configured deployment alias, or choose a non-empty subset."
+        >
+          <template #default="{ id }">
+            <UiSelect :id="id" v-model="llmModelsMode">
+              <option value="all">All deployment aliases</option>
+              <option value="custom">Custom selection</option>
+            </UiSelect>
+          </template>
+        </UiField>
+      </div>
+
+      <fieldset v-if="llmModelsMode === 'custom'" class="alias-picker">
+        <legend>Model aliases</legend>
+        <label v-for="alias in LLM_MODEL_ALIASES" :key="alias" class="alias-option">
+          <input v-model="llmModels" type="checkbox" :value="alias" />
+          <span>{{ alias }}</span>
+        </label>
+      </fieldset>
+
+      <div class="limit-groups">
+        <fieldset class="limit-group">
+          <legend>Official per-slot limits</legend>
+          <UiField label="Official token budget" hint="Optional; inherits the deployment default.">
+            <template #default="{ id }">
+              <UiInput
+                :id="id"
+                v-model.number="officialTokenBudget"
+                type="number"
+                min="1"
+                placeholder="default"
+              />
+            </template>
+          </UiField>
+          <UiField label="Official call budget" hint="Optional; inherits the deployment default.">
+            <template #default="{ id }">
+              <UiInput
+                :id="id"
+                v-model.number="officialCallBudget"
+                type="number"
+                min="1"
+                placeholder="default"
+              />
+            </template>
+          </UiField>
+          <UiField label="Official rate limit (RPM)" hint="Optional; inherits the deployment default.">
+            <template #default="{ id }">
+              <UiInput
+                :id="id"
+                v-model.number="officialRateLimit"
+                type="number"
+                min="1"
+                placeholder="default"
+              />
+            </template>
+          </UiField>
+        </fieldset>
+
+        <fieldset class="limit-group">
+          <legend>Development per-participant limits</legend>
+          <UiField label="Development token budget" hint="Optional; inherits the deployment default.">
+            <template #default="{ id }">
+              <UiInput
+                :id="id"
+                v-model.number="developmentTokenBudget"
+                type="number"
+                min="1"
+                placeholder="default"
+              />
+            </template>
+          </UiField>
+          <UiField label="Development call budget" hint="Optional; inherits the deployment default.">
+            <template #default="{ id }">
+              <UiInput
+                :id="id"
+                v-model.number="developmentCallBudget"
+                type="number"
+                min="1"
+                placeholder="default"
+              />
+            </template>
+          </UiField>
+          <UiField
+            label="Development rate limit (RPM)"
+            hint="Optional; inherits the deployment default."
+          >
+            <template #default="{ id }">
+              <UiInput
+                :id="id"
+                v-model.number="developmentRateLimit"
+                type="number"
+                min="1"
+                placeholder="default"
+              />
+            </template>
+          </UiField>
+        </fieldset>
+      </div>
+    </section>
 
     <div class="config-actions">
       <UiButton :loading="saving" @click="save">Save configuration</UiButton>
@@ -433,10 +646,54 @@ watch(confirmOpen, (open) => {
   flex-wrap: wrap;
 }
 
-.config-note {
-  margin: var(--space-3) 0 0;
+.config-group-title {
+  margin: var(--space-4) 0 var(--space-3);
   font-size: var(--text-sm);
+}
+
+.llm-config {
+  margin-top: var(--space-5);
+}
+
+.alias-picker,
+.limit-group {
+  margin: var(--space-4) 0 0;
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.alias-picker legend,
+.limit-group legend {
+  padding: 0 var(--space-2);
   color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.alias-picker {
+  display: flex;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.alias-option {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-mono);
+}
+
+.limit-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: var(--space-4);
+}
+
+.limit-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
 }
 
 .config-actions {

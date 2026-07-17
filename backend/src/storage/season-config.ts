@@ -17,6 +17,8 @@
  */
 import { z } from 'zod'
 
+import { MODEL_ALIASES } from '../llm/types.js'
+
 /** One seat in a match composition: the built-in scripted baseline, or a participant submission. */
 export const SLOT_SPECS = ['builtin-naive', 'submission'] as const
 export type SlotSpec = (typeof SLOT_SPECS)[number]
@@ -45,6 +47,27 @@ export const MessagingOverrideSchema = z.strictObject({
 })
 export type MessagingOverride = z.infer<typeof MessagingOverrideSchema>
 
+const LlmLimitOverrideSchema = z.strictObject({
+  token_budget: z.int().positive().optional(),
+  call_budget: z.int().positive().optional(),
+  rate_limit_rpm: z.int().positive().optional(),
+})
+
+/** Strict, deployment-independent season overrides for the optional LLM capability. */
+export const LlmOverrideSchema = z.strictObject({
+  enabled: z.boolean().optional(),
+  models: z
+    .array(z.enum(MODEL_ALIASES))
+    .nonempty()
+    .refine((models) => new Set(models).size === models.length, {
+      message: 'model aliases must not contain duplicates',
+    })
+    .optional(),
+  official: LlmLimitOverrideSchema.optional(),
+  development: LlmLimitOverrideSchema.optional(),
+})
+export type LlmOverride = z.infer<typeof LlmOverrideSchema>
+
 /**
  * The optional override block. `step_timeout_ms`/`episode_timeout_ms` are effective this stage (they
  * fall back to the environment defaults when absent). `submission_max_size_mb` overrides the site
@@ -57,7 +80,7 @@ export const OverridesSchema = z.strictObject({
   episode_timeout_ms: z.int().positive().optional(),
   submission_max_size_mb: z.int().positive().optional(),
   messaging: MessagingOverrideSchema.optional(),
-  llm: z.record(z.string(), z.unknown()).optional(),
+  llm: LlmOverrideSchema.optional(),
 })
 export type Overrides = z.infer<typeof OverridesSchema>
 

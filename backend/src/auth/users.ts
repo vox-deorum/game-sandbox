@@ -9,6 +9,8 @@
  * prepared statement rather than folding the table into the Kysely schema — `kysely` imports are
  * denied in `auth/` by the module boundary, while the raw handle's package is allowed here.
  */
+
+import { deriveStatus, type UserStatus } from '@game-sandbox/schema/accounts'
 import type { BoardAgentRef } from '@game-sandbox/schema/board'
 import type BetterSqlite3 from 'better-sqlite3'
 
@@ -26,6 +28,26 @@ export interface UserDirectory {
 interface UserNameRow {
   id: string
   name: string | null
+}
+
+/** The current authorization fields read directly from Better Auth's user row. */
+interface UserStatusRow {
+  role: string | null
+  banned: number | boolean | null
+}
+
+/** Read a user's current account status without relying on an existing login session. */
+export function createUserStatusReader(
+  sqlite: BetterSqlite3.Database,
+): (userId: string) => Promise<UserStatus | null> {
+  const statement = sqlite.prepare('SELECT role, banned FROM "user" WHERE id = ?')
+  return (userId: string): Promise<UserStatus | null> => {
+    const row = statement.get(userId) as UserStatusRow | undefined
+    if (row === undefined || row.banned === true || row.banned === 1) {
+      return Promise.resolve(null)
+    }
+    return Promise.resolve(deriveStatus(row.role))
+  }
 }
 
 /**

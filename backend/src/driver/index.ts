@@ -128,10 +128,10 @@ export interface MountSpec {
 }
 
 /**
- * The container's network posture. `none` is the only value this stage uses; the internal,
- * gateway-only value for LLM-enabled sessions arrives in Stage 9 as a new member of this union.
+ * The container's network posture. `llm` maps to an isolated per-session network whose only service
+ * is the backend proxy relay; it never means general outbound network access.
  */
-export type SandboxNetwork = 'none'
+export type SandboxNetwork = 'none' | 'llm'
 
 /**
  * The sandbox expressed in driver-neutral terms, per [execution.md](../../../docs/specs/execution.md).

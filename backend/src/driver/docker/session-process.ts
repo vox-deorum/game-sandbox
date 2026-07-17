@@ -9,10 +9,8 @@
  *
  * Lifecycle: attach *before* start so no early output is missed, then start, then `wait()` for the
  * exit code and `inspect()` for the driver-neutral OOM flag (the container is created without
- * auto-remove precisely so that inspect still works), then remove the container. {@link kill} is
- * the orchestrator's backstop — a Docker stop that escalates SIGTERM to SIGKILL after the grace
- * period; the removal is shared with the natural-exit path so the two never race into a double
- * remove.
+ * auto-remove precisely so that inspect still works). LLM-network cleanup is held after exit until
+ * the lifecycle owner calls {@link kill}, giving it a safe point to revoke and drain proxy work.
  */
 import type { PassThrough } from 'node:stream'
 import { PassThrough as PassThroughStream } from 'node:stream'
@@ -30,12 +28,18 @@ export class DockerSessionProcess implements SessionProcess {
 
   private readonly stdin: NodeJS.WritableStream
   private readonly container: Container
+  private readonly cleanup: (() => Promise<void>) | undefined
   private readonly settleExit: (info: ExitInfo) => void
   private removal: Promise<void> | null = null
 
-  private constructor(container: Container, stdio: NodeJS.ReadWriteStream) {
+  private constructor(
+    container: Container,
+    stdio: NodeJS.ReadWriteStream,
+    cleanup?: () => Promise<void>,
+  ) {
     this.container = container
     this.stdin = stdio
+    this.cleanup = cleanup
 
     const outChannel = new AsyncChannel<string>()
     const diagChannel = new AsyncChannel<string>()
@@ -69,7 +73,10 @@ export class DockerSessionProcess implements SessionProcess {
    * starting so the very first protocol line (the recording header) is never lost, and only waits
    * for the exit *after* the start — `wait()` on a not-yet-started container returns immediately.
    */
-  static async start(container: Container): Promise<DockerSessionProcess> {
+  static async start(
+    container: Container,
+    cleanup?: () => Promise<void>,
+  ): Promise<DockerSessionProcess> {
     let stdio: NodeJS.ReadWriteStream
     try {
       // docker-modem 5.x carries a hijacked attach by JSON-serializing these options as the POST
@@ -87,9 +94,10 @@ export class DockerSessionProcess implements SessionProcess {
       // Attach failed before any process wrapped the container; the container was already created by
       // the driver, so remove it directly or it leaks (nothing upstream holds a handle to clean up).
       await container.remove({ force: true }).catch(() => undefined)
+      await cleanup?.().catch(() => undefined)
       throw error
     }
-    const process = new DockerSessionProcess(container, stdio)
+    const process = new DockerSessionProcess(container, stdio, cleanup)
     try {
       await container.start()
     } catch (error) {
@@ -100,17 +108,23 @@ export class DockerSessionProcess implements SessionProcess {
     }
     container.wait().then(
       (result: { StatusCode: number }) => process.onExit(result.StatusCode),
-      (error: unknown) => {
-        // The wait stream broke (e.g. a racing remove); treat it as a non-clean exit.
-        process.settleExit({ code: -1, oomKilled: false })
-        void error
-      },
+      () => process.onWaitError(),
     )
     return process
   }
 
   private async onExit(statusCode: number): Promise<void> {
-    this.settleExit(await this.resolveExit(statusCode))
+    const info = await this.resolveExit(statusCode)
+    // Ordinary containers keep the historical eager removal. LLM containers retain their relay and
+    // networks until their owner observes exit, revokes admission, drains requests, and calls kill.
+    if (this.cleanup === undefined) await this.remove()
+    this.settleExit(info)
+  }
+
+  /** A broken wait stream is still terminal; an LLM lifecycle owner performs ordered teardown. */
+  private async onWaitError(): Promise<void> {
+    if (this.cleanup === undefined) await this.remove()
+    this.settleExit({ code: -1, oomKilled: false })
   }
 
   send(line: string): void {
@@ -147,17 +161,16 @@ export class DockerSessionProcess implements SessionProcess {
     } catch {
       // The container was already removed (a racing kill); keep the wait() status code.
     }
-    await this.remove()
     return { code, oomKilled }
   }
 
   /** Remove the container at most once, swallowing "already removed" so kill and exit can both call it. */
   private remove(): Promise<void> {
     if (this.removal === null) {
-      this.removal = this.container.remove({ force: true }).then(
-        () => undefined,
-        () => undefined,
-      )
+      this.removal = this.container
+        .remove({ force: true })
+        .catch(() => undefined)
+        .then(() => this.cleanup?.().catch(() => undefined))
     }
     return this.removal
   }

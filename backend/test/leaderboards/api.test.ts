@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { Season, Storage } from '../../src/storage/index.js'
 import type { TestUsers } from '../support/auth.js'
 import { openTestApp, type TestApp } from '../support/harness.js'
+import { TEST_DISABLED_OFFICIAL_LLM_POLICY } from '../support/llm-options.js'
 
 const ENV_ID = 'flappy_bird'
 
@@ -249,6 +250,7 @@ describe('public leaderboard API', () => {
         { match_index: 0, game_index: 0, seed: 1, slots: [agentRef(known)] },
         { match_index: 0, game_index: 1, seed: 2, slots: [agentRef(orphaned)] },
       ],
+      () => TEST_DISABLED_OFFICIAL_LLM_POLICY,
     )
     const games = await storage.listRunGames(run.id)
     for (const [index, submission] of [known, orphaned].entries()) {
@@ -346,6 +348,7 @@ describe('public leaderboard API', () => {
       'dev-user',
       [agentRef(hidden)],
       [{ match_index: 0, game_index: 0, seed: 1, slots: [agentRef(hidden)] }],
+      () => TEST_DISABLED_OFFICIAL_LLM_POLICY,
     )
     await storage.replaceAutomatedPlacements(unreleased.id, ENV_ID, hiddenRun.id, [
       {
@@ -366,6 +369,7 @@ describe('public leaderboard API', () => {
       'dev-user',
       [agentRef(visible)],
       [{ match_index: 0, game_index: 0, seed: 1, slots: [agentRef(visible)] }],
+      () => TEST_DISABLED_OFFICIAL_LLM_POLICY,
     )
     await storage.replaceAutomatedPlacements(released.id, ENV_ID, visibleRun.id, [
       {

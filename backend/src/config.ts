@@ -109,6 +109,7 @@ export interface LlmOptions {
   maxOutputTokens: number
   meterRecoveryIntervalMs: number
   sessionLimits: LlmLimits
+  developmentLimits: LlmLimits
 }
 
 /**
@@ -580,6 +581,11 @@ export function loadConfig(env?: NodeJS.ProcessEnv): Config {
         tokenBudget: intVar(env, 'LLM_SESSION_TOKEN_BUDGET'),
         callBudget: intVar(env, 'LLM_SESSION_CALL_BUDGET'),
         requestsPerMinute: intVar(env, 'LLM_SESSION_RATE_LIMIT_RPM'),
+      },
+      developmentLimits: {
+        tokenBudget: intVar(env, 'LLM_DEVELOPMENT_TOKEN_BUDGET'),
+        callBudget: intVar(env, 'LLM_DEVELOPMENT_CALL_BUDGET'),
+        requestsPerMinute: intVar(env, 'LLM_DEVELOPMENT_RATE_LIMIT_RPM'),
       },
     },
   }

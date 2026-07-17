@@ -17,6 +17,11 @@ import type { UserDirectory } from '../../src/auth/users.js'
 import type { ExitInfo } from '../../src/driver/index.js'
 import { EnvironmentRegistry } from '../../src/environments.js'
 import { forfeitScore } from '../../src/leaderboards/score.js'
+import type { ResolvedOfficialLlmPolicy } from '../../src/llm/config.js'
+import type {
+  IssueOfficialGrantsInput,
+  OfficialGrantIssuer,
+} from '../../src/session/official-grants.js'
 import type {
   AgentRef,
   ScheduledGameInput,
@@ -32,6 +37,22 @@ import { createWorkflowRunner } from '../../src/workflow/workflow-runner.js'
 import { FakeDriver, type FakeLaunch, type FakeSessionProcess } from '../support/fake-driver.js'
 
 const ENV_ID = 'flappy_bird'
+
+function disabledLlmPolicy(): ResolvedOfficialLlmPolicy {
+  return {
+    enabled: false,
+    models: {},
+    session: { token_budget: 1, call_budget: 1, rate_limit_rpm: 1 },
+  }
+}
+
+function enabledLlmPolicy(): ResolvedOfficialLlmPolicy {
+  return {
+    enabled: true,
+    models: { small: 'provider-small' },
+    session: { token_budget: 100, call_budget: 10, rate_limit_rpm: 10 },
+  }
+}
 
 /** A field-complete single-slot Flappy registry, like the shared harness but local to this suite. */
 function makeEnvironments(): EnvironmentRegistry {
@@ -90,6 +111,8 @@ function makeRunner(
     killGraceMs?: number
     gameWatchdogGraceMs?: number
     userDirectory?: UserDirectory
+    officialGrantIssuer?: OfficialGrantIssuer
+    llmInternalPort?: number
   } = {},
 ): RunnerHandle {
   const runner = createWorkflowRunner({
@@ -110,7 +133,11 @@ function makeRunner(
 async function makeRun(
   storage: Storage,
   schedule: ScheduledGameInput[],
-  options: { submissions?: AgentRef[]; overrides?: Record<string, unknown> } = {},
+  options: {
+    submissions?: AgentRef[]
+    overrides?: Record<string, unknown>
+    llmPolicy?: ResolvedOfficialLlmPolicy
+  } = {},
 ): Promise<SeasonRun> {
   const season = await storage.createSeason({ env_id: ENV_ID, deps_version: 1, label: null })
   await storage.updateSeasonConfig(season.id, {
@@ -118,7 +145,13 @@ async function makeRun(
     matches: [{ slots: ['submission'], seeds: [1], games: 1 }],
     ...(options.overrides ? { overrides: options.overrides } : {}),
   })
-  return storage.createRunWithSchedule(season.id, 'dev-user', options.submissions ?? [], schedule)
+  return storage.createRunWithSchedule(
+    season.id,
+    'dev-user',
+    options.submissions ?? [],
+    schedule,
+    () => options.llmPolicy ?? disabledLlmPolicy(),
+  )
 }
 
 /** One scheduled game's resolved slots, the all-Naive single seat by default. */
@@ -249,6 +282,89 @@ describe('Docker-backed workflow runner', () => {
 
   afterEach(async () => {
     await storage.close()
+  })
+
+  it('revokes and drains an exited LLM game before process cleanup', async () => {
+    let releaseRevocation = (): void => {}
+    const revocationBarrier = new Promise<void>((resolve) => {
+      releaseRevocation = resolve
+    })
+    let revocationStarted = (): void => {}
+    const started = new Promise<void>((resolve) => {
+      revocationStarted = resolve
+    })
+    const issuer: OfficialGrantIssuer = {
+      issue: async () => ({
+        keys: { player_0: 'official-key' },
+        revoke: () => {
+          revocationStarted()
+          return revocationBarrier
+        },
+      }),
+    }
+    const handle = makeRunner(storage, new FakeDriver(), {
+      officialGrantIssuer: issuer,
+      llmInternalPort: 9472,
+    })
+    const run = await makeRun(storage, [naiveGame(0)], { llmPolicy: enabledLlmPolicy() })
+    let launched: FakeSessionProcess | undefined
+    handle.driver.onLaunch = (launch): void => {
+      launched = launch.process
+      emitRecording(launch.process, { seed: 1 })
+    }
+
+    const terminal = runToTerminal(handle, run.id)
+    await started
+    expect(launched?.killGraceMs).toEqual([])
+
+    releaseRevocation()
+    await expect(terminal).resolves.toMatchObject({ status: 'completed' })
+    expect(launched?.killGraceMs).toEqual([5_000])
+  })
+
+  it('launches and records an enabled game from only its frozen official policy', async () => {
+    let issued: IssueOfficialGrantsInput | undefined
+    const issuer: OfficialGrantIssuer = {
+      issue: async (input) => {
+        issued = input
+        return { keys: { player_0: 'official-key' }, revoke: () => Promise.resolve() }
+      },
+    }
+    const handle = makeRunner(storage, new FakeDriver(), {
+      officialGrantIssuer: issuer,
+      llmInternalPort: 9472,
+    })
+    const policy = enabledLlmPolicy()
+    const run = await makeRun(storage, [naiveGame(0)], { llmPolicy: policy })
+    policy.models.small = 'changed-after-snapshot'
+    policy.session.token_budget = 999
+    handle.driver.onLaunch = (launch): void => {
+      const config = JSON.parse(launch.spec.argv[0] ?? '{}') as { seed: number }
+      emitRecording(launch.process, config)
+    }
+
+    await runToTerminal(handle, run.id)
+    const [game] = await storage.listRunGames(run.id)
+    expect(issued).toEqual({
+      sessionId: game?.id,
+      scopeId: run.id,
+      agentSlots: ['player_0'],
+      models: { small: 'provider-small' },
+      limits: { tokenBudget: 100, callBudget: 10, requestsPerMinute: 10 },
+    })
+    const launch = handle.driver.lastLaunch()
+    expect(JSON.parse(launch?.spec.argv[0] ?? '{}')).toMatchObject({
+      llm: {
+        base_url: 'http://llm-proxy:9472/v1',
+        tick_url: 'http://llm-proxy:9472/internal/tick',
+        keys: { player_0: 'official-key' },
+      },
+    })
+    expect(launch?.spec.sandbox.network).toBe('llm')
+    expect(await storage.getRecording(`${ENV_ID}-${game?.id}`)).toMatchObject({
+      llm_scope_id: run.id,
+      llm_session_id: game?.id,
+    })
   })
 
   it('runs the persisted schedule in order and writes results, recordings, and completed', async () => {
@@ -622,6 +738,53 @@ describe('Docker-backed workflow runner', () => {
     expect(await storage.getLatestCompletedRun(run.season_id)).toBeUndefined()
   })
 
+  it('shutdown rejects new work, revokes before kill, and drains the active pump', async () => {
+    let releaseRevocation = (): void => {}
+    const revocationBarrier = new Promise<void>((resolve) => {
+      releaseRevocation = resolve
+    })
+    let markRevocationStarted = (): void => {}
+    const revocationStarted = new Promise<void>((resolve) => {
+      markRevocationStarted = resolve
+    })
+    const issuer: OfficialGrantIssuer = {
+      issue: async () => ({
+        keys: { player_0: 'official-key' },
+        revoke: () => {
+          markRevocationStarted()
+          return revocationBarrier
+        },
+      }),
+    }
+    const handle = makeRunner(storage, new FakeDriver(), {
+      officialGrantIssuer: issuer,
+      llmInternalPort: 9472,
+    })
+    const run = await makeRun(storage, [naiveGame(0)], { llmPolicy: enabledLlmPolicy() })
+    let markLaunched = (): void => {}
+    const launched = new Promise<void>((resolve) => {
+      markLaunched = resolve
+    })
+    handle.driver.onLaunch = () => markLaunched()
+
+    const terminal = runToTerminal(handle, run.id)
+    await launched
+    const shutdown = handle.runner.shutdown()
+    await revocationStarted
+    let shutdownSettled = false
+    void shutdown.then(() => {
+      shutdownSettled = true
+    })
+    await Promise.resolve()
+    expect(shutdownSettled).toBe(false)
+    expect(() => handle.runner.enqueue('late-run')).toThrow(/shutting down/)
+
+    releaseRevocation()
+    await shutdown
+    expect(handle.driver.lastLaunch()?.process.killGraceMs).toEqual([5_000])
+    await expect(terminal).resolves.toMatchObject({ status: 'cancelled' })
+  })
+
   it('re-runs into a fresh run that becomes the latest completed', async () => {
     const handle = makeRunner(storage)
     const first = await makeRun(storage, [naiveGame(0)])
@@ -637,6 +800,7 @@ describe('Docker-backed workflow runner', () => {
       'dev-user',
       [],
       [naiveGame(0)],
+      disabledLlmPolicy,
     )
     await runToTerminal(handle, second.id)
 

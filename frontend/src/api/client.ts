@@ -13,6 +13,7 @@
 import type { RecordingHeader } from '@game-sandbox/schema'
 import type { BoardAgentRef } from '@game-sandbox/schema/board'
 import { type EnvironmentMeta, isEnvironmentMeta } from '@game-sandbox/schema/environment'
+import type { ModelAlias } from '@game-sandbox/schema/llm'
 
 const API_BASE = '/api'
 
@@ -735,9 +736,26 @@ export interface MessagingOverride {
   message_cap?: number
 }
 
+/** Stable model aliases an environment-facing agent or development client may request. */
+export type LlmModelAlias = ModelAlias
+
+/** Optional deployment-default overrides for one official or development accounting scope. */
+export interface LlmLimitOverride {
+  token_budget?: number
+  call_budget?: number
+  rate_limit_rpm?: number
+}
+
+/** A season's strict LLM enablement, model allowlist, and independently resolved limit groups. */
+export interface LlmOverride {
+  enabled?: boolean
+  models?: LlmModelAlias[]
+  official?: LlmLimitOverride
+  development?: LlmLimitOverride
+}
+
 /**
- * The override block. `step_timeout_ms`/`episode_timeout_ms`/`submission_max_size_mb`/`messaging` take
- * effect; `llm` is a parsed-but-inert opaque object until Stage 9 gives it a shape.
+ * The override block. Each nested capability has a strict shape shared with the backend season codec.
  */
 export interface SeasonOverrides {
   step_timeout_ms?: number
@@ -745,7 +763,7 @@ export interface SeasonOverrides {
   /** Per-season cap (MB) on a submission's checked-out source; absent uses the site default. */
   submission_max_size_mb?: number
   messaging?: MessagingOverride
-  llm?: Record<string, unknown>
+  llm?: LlmOverride
 }
 
 /** The whole season configuration document (the `seasons.config` JSON, decoded). */

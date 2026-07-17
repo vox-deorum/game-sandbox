@@ -12,6 +12,7 @@ import type { NewRecordingInput, ScheduledGameInput, Storage } from '../src/stor
 import { openSqliteStorage } from '../src/storage/sqlite.js'
 import { FakeSessionProcess } from './support/fake-driver.js'
 import { flush } from './support/harness.js'
+import { TEST_DISABLED_OFFICIAL_LLM_POLICY } from './support/llm-options.js'
 
 const DAY = 86_400_000
 // A fixed "now" so window math is deterministic; created_at values are offsets back from it.
@@ -29,13 +30,17 @@ describe('retention', () => {
   let root: string
   let recordings: RecordingsStore
 
-  function makeRetention(overrides: Partial<RetentionConfig> = {}): Retention {
+  function makeRetention(
+    overrides: Partial<RetentionConfig> = {},
+    llmTelemetry?: { deleteScope(scopeId: string): void },
+  ): Retention {
     return new Retention(
       storage,
       recordings,
       { ...DEFAULTS, ...overrides },
       () => {},
       () => NOW,
+      llmTelemetry,
     )
   }
 
@@ -107,6 +112,47 @@ describe('retention', () => {
         env_id: 'flappy_bird',
         pinned: 0,
       })
+    })
+  })
+
+  describe('sweep: LLM telemetry scopes', () => {
+    it('deletes a telemetry scope only with the last recording that references it', async () => {
+      const deleted: string[] = []
+      const reclaimer = { deleteScope: (id: string) => deleted.push(id) }
+      // Two games of one workflow run share the scope; a plain recording has none.
+      await writeRecording({
+        id: 'g1',
+        user_id: 'a',
+        env_id: 'flappy_bird',
+        created_at: ago(40),
+        llm_scope_id: 'run-1',
+        llm_session_id: 'g1',
+      })
+      await writeRecording({
+        id: 'g2',
+        user_id: 'a',
+        env_id: 'flappy_bird',
+        created_at: ago(5),
+        llm_scope_id: 'run-1',
+        llm_session_id: 'g2',
+      })
+      await writeRecording({
+        id: 'plain',
+        user_id: 'a',
+        env_id: 'flappy_bird',
+        created_at: ago(40),
+      })
+
+      // First sweep evicts g1 and plain; g2 still references the scope, so the file survives.
+      await makeRetention({}, reclaimer).sweep()
+      expect(await storage.getRecording('g1')).toBeUndefined()
+      expect(await storage.getRecording('g2')).toBeDefined()
+      expect(deleted).toEqual([])
+
+      // Tightening the window evicts g2, the last reference, and the scope goes with it.
+      await makeRetention({ recordingRetentionDays: 1 }, reclaimer).sweep()
+      expect(await storage.getRecording('g2')).toBeUndefined()
+      expect(deleted).toEqual(['run-1'])
     })
   })
 
@@ -219,7 +265,13 @@ describe('retention', () => {
 
     /** Drive a completed run for a season whose single game points at a recording id. */
     async function completedRunWithRecording(seasonId: string, recordingId: string): Promise<void> {
-      const run = await storage.createRunWithSchedule(seasonId, 'op', [], NAIVE_GAME)
+      const run = await storage.createRunWithSchedule(
+        seasonId,
+        'op',
+        [],
+        NAIVE_GAME,
+        () => TEST_DISABLED_OFFICIAL_LLM_POLICY,
+      )
       const game = run && (await storage.listRunGames(run.id))[0]
       if (game === undefined) {
         throw new Error('expected a scheduled game')

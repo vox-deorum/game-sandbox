@@ -84,6 +84,7 @@ describe('submission API', () => {
       validationWorker: { enqueue: (id) => enqueued.push(id) },
       allowLocalSubmissions: overrides.allowLocalSubmissions ?? false,
       docsDir: config.docsDir,
+      llm: config.llm,
     })
   }
 

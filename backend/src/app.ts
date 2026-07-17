@@ -19,11 +19,15 @@ import { registerAdminRoutes } from './admin/routes.js'
 import type { Auth } from './auth/auth.js'
 import { registerAuthRoutes } from './auth/routes.js'
 import type { UserDirectory } from './auth/users.js'
+import type { LlmOptions } from './config.js'
 import { buildDocsManifest, DocsIndexError, readDocsIndex, readDocsPage } from './docs.js'
 import { REPO_ROOT } from './env-files.js'
 import type { EnvironmentRegistry } from './environments.js'
 import { createRequestIdentity } from './identity.js'
 import { registerLeaderboardRoutes } from './leaderboards/routes.js'
+import type { DevelopmentKeyService } from './llm/development-keys.js'
+import { registerDevelopmentLlmRoutes } from './llm/development-routes.js'
+import type { LlmHandler } from './llm/handler.js'
 import { registerMyAgentRoutes } from './my-agents.js'
 import { optionalField } from './optional-field.js'
 import { registerRatingRoutes } from './ratings/routes.js'
@@ -111,6 +115,10 @@ export interface AppDeps {
    * only at the response boundary, never in stored rows.
    */
   userDirectory: UserDirectory
+  /** Current deployment LLM configuration, used by admin season validation and run-policy freezing. */
+  llm: LlmOptions
+  /** Public development-key routes; absent only in isolated tests with no proxy composition. */
+  llmDevelopment?: { keys: DevelopmentKeyService; handler: LlmHandler }
 }
 
 /**
@@ -259,6 +267,10 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   // The one place a request is turned into an acting user: a Better Auth session-cookie lookup,
   // memoized per request, with the three status guards routes gate on. Public routes never call it.
   const identity = createRequestIdentity(deps.auth)
+
+  if (deps.llmDevelopment !== undefined) {
+    registerDevelopmentLlmRoutes(app, { identity, ...deps.llmDevelopment })
+  }
 
   app.get('/api/environments', () => deps.environments.list())
 
@@ -729,6 +741,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     knownDepsVersions: deps.knownDepsVersions,
     snapshots: deps.submissionSnapshots,
     userDirectory: deps.userDirectory,
+    llm: deps.llm,
   })
   registerLeaderboardRoutes(app, {
     storage: deps.storage,

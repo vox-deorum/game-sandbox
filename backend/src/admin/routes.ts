@@ -25,9 +25,11 @@ import tar from 'tar-fs'
 import { z } from 'zod'
 
 import { enrichAgentRef, type UserDirectory } from '../auth/users.js'
+import type { LlmOptions } from '../config.js'
 import { DEPS_VERSION } from '../deps-version.js'
 import type { EnvironmentMeta, EnvironmentRegistry } from '../environments.js'
 import type { RequestIdentity } from '../identity.js'
+import { officialPolicy, resolveLlm, unavailableLlmAliases } from '../llm/config.js'
 import { optionalField } from '../optional-field.js'
 import { buildSchedule, type SubmissionRef } from '../scheduler/build-schedule.js'
 import {
@@ -61,6 +63,8 @@ export interface AdminDeps {
   snapshots: SubmissionSnapshotStore
   /** The display-name directory; run/board/submission views batch their user ids through it. */
   userDirectory: UserDirectory
+  /** Deployment aliases and defaults used to validate season edits and freeze run policy. */
+  llm: Pick<LlmOptions, 'upstreamUrl' | 'models' | 'sessionLimits' | 'developmentLimits'>
 }
 
 /** The operator's season-wide rating prompt is display-only guidance; cap it so it stays a prompt. */
@@ -338,6 +342,14 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
           if (!deps.knownDepsVersions.has(parsed.data.deps_version)) {
             return unsupportedDepsVersion(reply, parsed.data.deps_version, 'invalid_config')
           }
+          const unavailableAliases = unavailableLlmAliases(parsed.data, deps.llm.models)
+          if (unavailableAliases.length > 0) {
+            return reply.code(400).send({
+              error: 'invalid season config',
+              code: 'invalid_config',
+              reason: `overrides.llm.models: aliases unavailable on this deployment: ${unavailableAliases.join(', ')}`,
+            })
+          }
           const meta = deps.environments.get(season.env_id)
           if (meta !== undefined) {
             const slotIssue = validateSlotCounts(parsed.data.matches, meta)
@@ -512,6 +524,7 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
           requestedBy.id,
           submissions,
           schedule,
+          (frozen) => officialPolicy(resolveLlm(deps.llm, meta, frozen)),
         )
         deps.workflowRunner.enqueue(run.id)
         return reply.code(201).send({ id: run.id, status: run.status })

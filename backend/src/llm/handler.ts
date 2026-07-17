@@ -19,11 +19,20 @@ export interface LlmHandlerDeps {
   options: LlmHandlerOptions
 }
 
+export interface LlmRequestLifecycle {
+  signal: AbortSignal
+  beginFinalization(): void
+}
+
 /** The identity-free chat-completion path shared by official and later development routes. */
 export class LlmHandler {
   constructor(private readonly deps: LlmHandlerDeps) {}
 
-  async handle(grant: LlmGrant, body: unknown): Promise<LlmChatCompletion> {
+  async handle(
+    grant: LlmGrant,
+    body: unknown,
+    lifecycle?: LlmRequestLifecycle,
+  ): Promise<LlmChatCompletion> {
     const request = requestObject(body)
     const alias = allowedAlias(grant, request.model)
     if (Object.hasOwn(request, 'stream') && request.stream !== false) {
@@ -47,9 +56,23 @@ export class LlmHandler {
 
     let result: UpstreamSuccess
     try {
-      result = await this.deps.upstream.call(upstream as unknown as LlmChatRequest)
+      const upstreamRequest = upstream as unknown as LlmChatRequest
+      result =
+        lifecycle === undefined
+          ? await this.deps.upstream.call(upstreamRequest)
+          : await this.deps.upstream.call(upstreamRequest, lifecycle.signal)
+      // Once provider spend exists, cancellation would lose accounting. Revocation drains from here.
+      lifecycle?.beginFinalization()
     } catch (error) {
       this.deps.meter.release(reservation)
+      if (lifecycle?.signal.aborted === true) {
+        throw new LlmError(
+          503,
+          'request_cancelled',
+          'The session ended before the request completed.',
+          'server_error',
+        )
+      }
       throw redactUpstreamModel(error, upstream.model as string, alias)
     }
 

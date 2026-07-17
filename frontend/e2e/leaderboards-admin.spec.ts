@@ -96,6 +96,32 @@ test('operator leaderboard history includes unreleased seasons', async ({ page, 
   await expect(page.getByText('Operator preview · unreleased')).toBeVisible()
 })
 
+test('operator season configuration exposes and validates LLM controls', async ({
+  page,
+  admin,
+}) => {
+  const season = await declareSeason(admin, 'LLM controls')
+  await authenticateBrowser(page.context(), admin)
+  await page.goto(`/environments/${ENV_ID}/admin`)
+  await page.getByRole('button', { name: /LLM controls/ }).click()
+
+  await expect(page.getByLabel('LLM enablement')).toBeVisible()
+  await expect(page.getByLabel('Allowed model aliases')).toBeVisible()
+  await expect(page.getByLabel('Official token budget')).toBeVisible()
+  await expect(page.getByLabel('Official call budget')).toBeVisible()
+  await expect(page.getByLabel('Official rate limit (RPM)')).toBeVisible()
+  await expect(page.getByLabel('Development token budget')).toBeVisible()
+  await expect(page.getByLabel('Development call budget')).toBeVisible()
+  await expect(page.getByLabel('Development rate limit (RPM)')).toBeVisible()
+
+  await page.getByLabel('Allowed model aliases').selectOption('custom')
+  await page.getByRole('button', { name: 'Save configuration' }).click()
+  await expect(page.getByText(/Select at least one allowed LLM model alias/)).toBeVisible()
+
+  // The validation is local, so the freshly declared season remains untouched and usable by later tests.
+  expect(season.id).toBeTruthy()
+})
+
 /**
  * The whole leaderboards arc against real data: an operator opens a season, three differently-behaved
  * agents from three owners submit and build, the operator runs the automated workflow over them, four

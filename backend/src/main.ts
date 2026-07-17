@@ -12,7 +12,7 @@ import { buildApp } from './app.js'
 import { createAuth } from './auth/auth.js'
 import { migrateAuthSchema } from './auth/migrate.js'
 import { ensureAdminUser } from './auth/seed-admin.js'
-import { createUserDirectory } from './auth/users.js'
+import { createUserDirectory, createUserStatusReader } from './auth/users.js'
 import { DEV_ADMIN_EMAIL, DEV_ADMIN_PASSWORD, DEV_AUTH_SECRET, loadConfig } from './config.js'
 import { DEPS_VERSION, KNOWN_DEPS_VERSIONS } from './deps-version.js'
 import { createDockerDriver } from './driver/docker/index.js'
@@ -23,6 +23,7 @@ import {
 } from './leaderboards/placements.js'
 import {
   buildLlmListener,
+  DevelopmentKeyService,
   KeyRegistry,
   LlmHandler,
   LlmMeter,
@@ -32,7 +33,9 @@ import {
 import { RecordingsStore } from './recordings.js'
 import { Retention } from './retention.js'
 import { seedOpenSeasons } from './seasons-seed.js'
+import { createOfficialGrantIssuer } from './session/official-grants.js'
 import { Orchestrator } from './session/orchestrator.js'
+import { DevelopmentLedgerStore, ExecutionTelemetryStore } from './storage/llm/index.js'
 import { openSqlite } from './storage/sqlite.js'
 import { OverlayEviction } from './submission/overlay-eviction.js'
 import { SubmissionSnapshotStore } from './submission/snapshot-store.js'
@@ -55,25 +58,30 @@ async function main(): Promise<void> {
     ? new LlmMeter({ recoveryIntervalMs: config.llm.meterRecoveryIntervalMs, log })
     : undefined
   const llmTokenizer = llmConfigured ? new TiktokenCounter(config.llm.tiktokenEncoding) : undefined
-  const llmListener =
+  const llmRegistry = llmConfigured ? new KeyRegistry() : undefined
+  const llmHandler =
     llmConfigured && llmMeter !== undefined && llmTokenizer !== undefined
-      ? await buildLlmListener({
-          registry: new KeyRegistry(),
-          handler: new LlmHandler({
-            meter: llmMeter,
-            tokenizer: llmTokenizer,
-            upstream: new UpstreamCaller({
-              baseURL: config.llm.upstreamUrl as string,
-              apiKey: config.llm.upstreamKey,
-              timeoutMs: config.llm.upstreamTimeoutMs,
-              maxRetries: config.llm.upstreamMaxRetries,
-              retryIntervalMs: config.llm.upstreamRetryIntervalMs,
-            }),
-            options: {
-              defaultMaxOutputTokens: config.llm.defaultMaxOutputTokens,
-              maxOutputTokens: config.llm.maxOutputTokens,
-            },
+      ? new LlmHandler({
+          meter: llmMeter,
+          tokenizer: llmTokenizer,
+          upstream: new UpstreamCaller({
+            baseURL: config.llm.upstreamUrl as string,
+            apiKey: config.llm.upstreamKey,
+            timeoutMs: config.llm.upstreamTimeoutMs,
+            maxRetries: config.llm.upstreamMaxRetries,
+            retryIntervalMs: config.llm.upstreamRetryIntervalMs,
           }),
+          options: {
+            defaultMaxOutputTokens: config.llm.defaultMaxOutputTokens,
+            maxOutputTokens: config.llm.maxOutputTokens,
+          },
+        })
+      : undefined
+  const llmListener =
+    llmRegistry !== undefined && llmHandler !== undefined
+      ? await buildLlmListener({
+          registry: llmRegistry,
+          handler: llmHandler,
           log,
         })
       : undefined
@@ -87,6 +95,7 @@ async function main(): Promise<void> {
   // The display-name directory reads the library-owned `user` table on the same shared connection;
   // routes and the two launch paths batch user ids through it wherever an id crosses to the UI.
   const userDirectory = createUserDirectory(sqlite)
+  const readUserStatus = createUserStatusReader(sqlite)
   await ensureAdminUser(
     auth,
     {
@@ -97,15 +106,41 @@ async function main(): Promise<void> {
     log,
   )
   const environments = EnvironmentRegistry.load()
+  const officialTelemetry = llmConfigured
+    ? new ExecutionTelemetryStore(resolve(config.dataDir, 'llm'))
+    : undefined
+  const developmentLedger = llmConfigured
+    ? new DevelopmentLedgerStore(resolve(config.dataDir, 'llm', 'development'))
+    : undefined
+  const officialGrantIssuer =
+    llmRegistry === undefined || officialTelemetry === undefined
+      ? undefined
+      : createOfficialGrantIssuer(llmRegistry, officialTelemetry)
+  const developmentKeys =
+    llmMeter === undefined || developmentLedger === undefined
+      ? undefined
+      : new DevelopmentKeyService({
+          storage,
+          environments,
+          llm: config.llm,
+          meter: llmMeter,
+          ledger: developmentLedger,
+          publicOrigin: config.auth.publicOrigin,
+          readUserStatus,
+        })
   // Seed one open season per environment at the current dependency-set version, so submissions
   // have an identity boundary and pinned deps_version. Idempotent across restarts.
   await seedOpenSeasons(storage, environments, DEPS_VERSION)
-  const driver = await createDockerDriver(config.docker)
+  const driver = await createDockerDriver(
+    config.docker,
+    llmConfigured ? config.llm.internalPort : undefined,
+  )
   const recordings = new RecordingsStore(resolve(config.recordingsDir))
   // The durable per-submission source snapshot: written once a submission passes its size + static
   // checks, then read to rebuild an evicted overlay and to serve operator downloads.
   const snapshots = new SubmissionSnapshotStore(resolve(config.submissionsDir))
-  const retention = new Retention(storage, recordings, config, log)
+  // Retention also reclaims each execution telemetry scope with the last recording referencing it.
+  const retention = new Retention(storage, recordings, config, log, undefined, officialTelemetry)
   const overlayEviction = new OverlayEviction(driver, storage, config, log)
   // The submission source seam resolves and fetches participant code. The orchestrator needs it too,
   // to rebuild a submission's overlay (from the snapshot, falling back to git) when its image was evicted.
@@ -124,6 +159,7 @@ async function main(): Promise<void> {
     submissionSource,
     submissionSnapshots: snapshots,
     userDirectory,
+    officialGrantIssuer,
   })
 
   // The workflow runner (Stage 6.4): the Docker-backed background engine that drives a triggered run's
@@ -141,6 +177,8 @@ async function main(): Promise<void> {
     recordingsDir: resolve(config.recordingsDir),
     imagePolicy: config.docker.imagePolicy,
     userDirectory,
+    llmInternalPort: llmConfigured ? config.llm.internalPort : undefined,
+    officialGrantIssuer,
     log,
     // A completed run is the board's new source: snapshot its ranked placements, then sweep retention
     // (the run grew the recordings and may have superseded a prior run's, freeing them). Placements
@@ -195,6 +233,10 @@ async function main(): Promise<void> {
     allowLocalSubmissions: config.submission.allowLocalSubmissions,
     auth,
     userDirectory,
+    llm: config.llm,
+    ...(developmentKeys === undefined || llmHandler === undefined
+      ? {}
+      : { llmDevelopment: { keys: developmentKeys, handler: llmHandler } }),
   })
   retention.start()
   overlayEviction.start()
@@ -236,11 +278,15 @@ async function main(): Promise<void> {
       overlayEviction.stop()
       // Stop accepting routes before draining the worker so no submit can enqueue during shutdown.
       await app.close()
+      // Revoke official grants while the internal listener and meter are still alive. Revocation
+      // aborts requests that remain safely cancellable and drains every reservation finalizer.
+      await Promise.all([workflowRunner.shutdown(), orchestrator.shutdown()])
       await llmListener?.close()
       llmMeter?.close()
       llmTokenizer?.close()
-      await orchestrator.shutdown()
       await validationWorker.whenIdle()
+      officialTelemetry?.close()
+      developmentLedger?.close()
       await storage.close()
       process.exit(0)
     })()

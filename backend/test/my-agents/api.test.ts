@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { NewSubmissionInput, Season, Submission } from '../../src/storage/index.js'
 import type { TestApp } from '../support/harness.js'
 import { openTestApp } from '../support/harness.js'
+import { TEST_DISABLED_OFFICIAL_LLM_POLICY } from '../support/llm-options.js'
 
 const ENV = 'flappy_bird'
 
@@ -51,7 +52,13 @@ describe('my agents API', () => {
   }
 
   async function place(season: Season, submission: Submission, meanScore: number): Promise<void> {
-    const run = await testApp.storage.createRunWithSchedule(season.id, 'operator', [], [])
+    const run = await testApp.storage.createRunWithSchedule(
+      season.id,
+      'operator',
+      [],
+      [],
+      () => TEST_DISABLED_OFFICIAL_LLM_POLICY,
+    )
     await testApp.storage.replaceAutomatedPlacements(season.id, season.env_id, run.id, [
       {
         rank: 1,

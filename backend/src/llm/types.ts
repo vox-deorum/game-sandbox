@@ -1,8 +1,8 @@
+import type { ModelAlias } from '@game-sandbox/schema/llm'
 import type OpenAI from 'openai'
 
-/** The stable model names agent code is allowed to observe. */
-export const MODEL_ALIASES = ['large', 'medium', 'small'] as const
-export type ModelAlias = (typeof MODEL_ALIASES)[number]
+/** The stable model names agent code is allowed to observe, shared with the frontend. */
+export { MODEL_ALIASES, type ModelAlias } from '@game-sandbox/schema/llm'
 
 /** Successful usage accumulated by one accounting scope. */
 export interface LlmUsage {

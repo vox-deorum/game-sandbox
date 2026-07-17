@@ -7,6 +7,7 @@
  * `sqlite.ts` its one wiring today. Swapping engines is a new wiring file against the same schema,
  * queries, and interface.
  */
+import type { ResolvedOfficialLlmPolicy } from '../llm/config.js'
 import type {
   AgentRatingPrompt,
   AgentRef,
@@ -14,6 +15,7 @@ import type {
   CheckStatus,
   GameResult,
   GameStatus,
+  LlmDevelopmentKey,
   PublicSeason,
   Rating,
   Recording,
@@ -43,6 +45,7 @@ export type {
   CheckStatus,
   GameResult,
   GameStatus,
+  LlmDevelopmentKey,
   PublicSeason,
   Rating,
   Recording,
@@ -109,6 +112,7 @@ export interface NewSessionInput {
    */
   messaging_enabled?: number
   message_cap?: number | null
+  llm_enabled?: number
   created_at: string
 }
 
@@ -124,6 +128,8 @@ export interface NewRecordingInput {
    * reason — and for a non-completed automated game.
    */
   termination_reason?: TerminationReason | null
+  llm_scope_id?: string | null
+  llm_session_id?: string | null
 }
 
 /**
@@ -299,6 +305,16 @@ export interface AutomatedBoardRow {
 }
 
 export interface Storage {
+  rotateDevelopmentKey(input: {
+    seasonId: string
+    userId: string
+    keyId: string
+    secretHash: string
+    now: string
+  }): Promise<LlmDevelopmentKey>
+  getDevelopmentKeyByKeyId(keyId: string): Promise<LlmDevelopmentKey | undefined>
+  getDevelopmentKey(seasonId: string, userId: string): Promise<LlmDevelopmentKey | undefined>
+
   /** Insert a new session as `starting` and return the stored row. */
   createSession(input: NewSessionInput): Promise<Session>
   /** Move a session to `running` (the container's header line has arrived). */
@@ -328,6 +344,8 @@ export interface Storage {
   countPinnedByUser(userId: string): Promise<number>
   /** Delete a recording's row (the directory is removed separately by the retention sweep). */
   deleteRecording(id: string): Promise<void>
+  /** How many recordings still reference one LLM execution scope (retention's deletion guard). */
+  countRecordingsByLlmScope(scopeId: string): Promise<number>
 
   /**
    * The environment's submission-`open` season, the identity boundary every submission needs (the
@@ -410,6 +428,8 @@ export interface Storage {
     requestedBy: string,
     submissionSnapshot: AgentRef[],
     scheduledGames: ScheduledGameInput[],
+    /** Resolves the frozen LLM policy from the same in-transaction config read as `config_snapshot`. */
+    resolveLlmPolicy: (config: SeasonConfig) => ResolvedOfficialLlmPolicy,
   ): Promise<SeasonRun>
   /** Delete a season's runs, their games, results, and placements (the forced config-edit path). */
   deleteRunsForSeason(seasonId: string): Promise<void>

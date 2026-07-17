@@ -46,6 +46,9 @@ const invalidValue = ref('not a number')
 const selectValue = ref('builtin')
 const sliderValue = ref(120)
 const tabsValue = ref('all')
+const llmEnablement = ref('default')
+const llmModelsMode = ref('all')
+const llmTokenBudget = ref<number | ''>('')
 </script>
 
 <template>
@@ -170,6 +173,51 @@ const tabsValue = ref('all')
             <UiSelect :id="id" v-model="selectValue" disabled>
               <option value="builtin">Naive agent</option>
             </UiSelect>
+          </template>
+        </UiField>
+      </div>
+    </section>
+
+    <section>
+      <h2>Season LLM controls</h2>
+      <div class="fields">
+        <UiField label="LLM enablement" hint="A season must explicitly enable access.">
+          <template #default="{ id }">
+            <UiSelect :id="id" v-model="llmEnablement">
+              <option value="default">Not set (disabled)</option>
+              <option value="on">Enabled</option>
+              <option value="off">Explicitly disabled</option>
+            </UiSelect>
+          </template>
+        </UiField>
+        <UiField label="Allowed model aliases" hint="Inherit all aliases or choose a subset.">
+          <template #default="{ id }">
+            <UiSelect :id="id" v-model="llmModelsMode">
+              <option value="all">All deployment aliases</option>
+              <option value="custom">Custom selection</option>
+            </UiSelect>
+          </template>
+        </UiField>
+        <UiField label="Official token budget" hint="Optional; inherits the deployment default.">
+          <template #default="{ id }">
+            <UiInput
+              :id="id"
+              v-model.number="llmTokenBudget"
+              type="number"
+              min="1"
+              placeholder="default"
+            />
+          </template>
+        </UiField>
+        <UiField label="Invalid development call budget" error="Must be a positive integer.">
+          <template #default="{ id, describedby, invalid }">
+            <UiInput
+              :id="id"
+              model-value="0"
+              type="number"
+              :aria-describedby="describedby"
+              :invalid="invalid"
+            />
           </template>
         </UiField>
       </div>

@@ -12,10 +12,17 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { buildApp } from '../../src/app.js'
 import { DEPS_VERSION } from '../../src/deps-version.js'
+import { decodeResolvedOfficialLlmPolicy } from '../../src/llm/config.js'
 import { RecordingsStore } from '../../src/recordings.js'
 import { Retention } from '../../src/retention.js'
 import { Orchestrator } from '../../src/session/orchestrator.js'
-import type { Storage, Submission } from '../../src/storage/index.js'
+import type {
+  AgentRef,
+  ScheduledGameInput,
+  SeasonRun,
+  Storage,
+  Submission,
+} from '../../src/storage/index.js'
 import type { SeasonConfig } from '../../src/storage/season-config.js'
 import { SubmissionSnapshotStore } from '../../src/submission/snapshot-store.js'
 import type { TestUsers } from '../support/auth.js'
@@ -26,6 +33,7 @@ import {
   makeSubmissionDeps,
   openTestStack,
 } from '../support/harness.js'
+import { TEST_DISABLED_OFFICIAL_LLM_POLICY } from '../support/llm-options.js'
 import { StubWorkflowRunner } from '../support/stub-runner.js'
 
 const ENV_ID = 'flappy_bird'
@@ -89,10 +97,26 @@ describe('admin API', () => {
       auth: stack.auth,
       userDirectory: stack.userDirectory,
       ...makeSubmissionDeps(storage, config, { snapshots }),
+      llm: config.llm,
       knownDepsVersions,
       workflowRunner: runner,
     })
     await app.ready()
+  }
+
+  function createRun(
+    seasonId: string,
+    requestedBy: string,
+    submissions: AgentRef[],
+    games: ScheduledGameInput[],
+  ): Promise<SeasonRun> {
+    return storage.createRunWithSchedule(
+      seasonId,
+      requestedBy,
+      submissions,
+      games,
+      () => TEST_DISABLED_OFFICIAL_LLM_POLICY,
+    )
   }
 
   /** Insert a submission row directly, optionally writing it a downloadable snapshot. */
@@ -401,6 +425,22 @@ describe('admin API', () => {
       }
     })
 
+    it('rejects a model alias unavailable on this deployment', async () => {
+      const id = await declare()
+      const res = await app.inject({
+        method: 'PUT',
+        url: `/api/admin/seasons/${id}/config`,
+        headers: OPERATOR,
+        payload: flappyConfig({ overrides: { llm: { enabled: true, models: ['small'] } } }),
+      })
+
+      expect(res.statusCode).toBe(400)
+      expect(res.json()).toMatchObject({
+        code: 'invalid_config',
+        reason: expect.stringContaining('small'),
+      })
+    })
+
     it('400s a match whose slot count mismatches the environment (max 1 for Flappy)', async () => {
       const id = await declare()
       const res = await app.inject({
@@ -439,7 +479,7 @@ describe('admin API', () => {
       await storage.updateSeasonConfig(id, flappyConfig())
       // A run plus a result and a placement, all of which a forced edit must clear.
       const ready = await makeReadySubmission(storage, id)
-      const run = await storage.createRunWithSchedule(
+      const run = await createRun(
         id,
         'dev-user',
         [agentRef(ready)],
@@ -518,7 +558,7 @@ describe('admin API', () => {
     it('sets the operator prompt even after a run exists (never gated by the config rules)', async () => {
       const id = await declare()
       await storage.updateSeasonConfig(id, flappyConfig())
-      await storage.createRunWithSchedule(
+      await createRun(
         id,
         'dev-user',
         [],
@@ -716,6 +756,11 @@ describe('admin API', () => {
       const run = defined(await storage.getRun(runId))
       expect(run.requested_by).toBe(users.idOf('operator'))
       expect(JSON.parse(run.submission_snapshot)).toEqual([agentRef(ready)])
+      expect(decodeResolvedOfficialLlmPolicy(run.llm_policy_snapshot)).toEqual({
+        enabled: false,
+        models: {},
+        session: { token_budget: 100_000, call_budget: 100, rate_limit_rpm: 60 },
+      })
       // The concrete schedule was persisted before enqueue: two submitted games + two Naive games.
       const games = await storage.listRunGames(runId)
       expect(games).toHaveLength(4)
@@ -826,7 +871,7 @@ describe('admin API', () => {
       const id = await declare()
       await storage.updateSeasonConfig(id, flappyConfig())
       // A completed run with one Naive result, so the (still unreleased) board has a row.
-      const run = await storage.createRunWithSchedule(
+      const run = await createRun(
         id,
         'dev-user',
         [],
@@ -877,7 +922,7 @@ describe('admin API', () => {
       const carolId = users.idOf('carol')
       const submission = await seedSubmission(id, carolId, { withSnapshot: false })
       const ref = agentRef(submission)
-      const run = await storage.createRunWithSchedule(
+      const run = await createRun(
         id,
         users.idOf('operator'),
         [ref],
@@ -934,13 +979,13 @@ describe('admin API', () => {
       // Two runs created in order: the second (more games) must come back first. The first is
       // requested by a rowless raw id, the second by the minted operator, so the summary's
       // requested_by_name enrichment and its id fallback are both on the wire.
-      await storage.createRunWithSchedule(
+      await createRun(
         id,
         'dev-user',
         [],
         [{ match_index: 0, game_index: 0, seed: 1, slots: [{ kind: 'builtin-naive' }] }],
       )
-      const second = await storage.createRunWithSchedule(
+      const second = await createRun(
         id,
         users.idOf('operator'),
         [],
@@ -975,7 +1020,7 @@ describe('admin API', () => {
 
     it("returns a single run's full view with its games", async () => {
       const id = await declare()
-      const run = await storage.createRunWithSchedule(
+      const run = await createRun(
         id,
         'dev-user',
         [],
@@ -1008,7 +1053,7 @@ describe('admin API', () => {
       const orphaned = await seedSubmission(id, 'ghost-user', { withSnapshot: false })
       const knownRef = agentRef(known)
       const orphanedRef = agentRef(orphaned)
-      const run = await storage.createRunWithSchedule(
+      const run = await createRun(
         id,
         users.idOf('operator'),
         [knownRef, orphanedRef],
@@ -1042,7 +1087,7 @@ describe('admin API', () => {
     it('404s a run detail for an unknown run or one from another season', async () => {
       const id = await declare()
       const other = await declare()
-      const run = await storage.createRunWithSchedule(
+      const run = await createRun(
         id,
         'dev-user',
         [],
@@ -1119,7 +1164,7 @@ describe('admin API', () => {
     it('sends an immediate terminal and closes for an already-finished run', async () => {
       const id = await declare()
       await storage.updateSeasonConfig(id, flappyConfig())
-      const run = await storage.createRunWithSchedule(
+      const run = await createRun(
         id,
         'dev-user',
         [],

@@ -10,7 +10,7 @@ import { join } from 'node:path'
 import type BetterSqlite3 from 'better-sqlite3'
 import type { FastifyInstance } from 'fastify'
 
-import { buildApp } from '../../src/app.js'
+import { type AppDeps, buildApp } from '../../src/app.js'
 import type { Auth } from '../../src/auth/auth.js'
 import { createUserDirectory, type UserDirectory } from '../../src/auth/users.js'
 import type { Config } from '../../src/config.js'
@@ -79,6 +79,7 @@ export interface OpenTestAppOptions {
   frontendDir?: string
   docsDir?: string
   docsIndexFile?: string
+  llmDevelopment?: AppDeps['llmDevelopment']
 }
 
 /** A complete Docker-free app fixture and the handles API tests commonly need. */
@@ -131,6 +132,8 @@ export async function openTestApp(options: OpenTestAppOptions = {}): Promise<Tes
     retention,
     auth: stack.auth,
     userDirectory: options.userDirectory ?? stack.userDirectory,
+    llm: config.llm,
+    ...(options.llmDevelopment === undefined ? {} : { llmDevelopment: options.llmDevelopment }),
     ...submissionDeps,
     ...(options.siteName === undefined ? {} : { siteName: options.siteName }),
     ...(options.siteShortName === undefined ? {} : { siteShortName: options.siteShortName }),

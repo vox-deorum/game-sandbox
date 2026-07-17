@@ -31,6 +31,8 @@ describe('relay (LiveSession)', () => {
     options: {
       externalSlots?: readonly string[]
       messaging?: { enabled: boolean; cap: number | null }
+      llmEnabled?: boolean
+      revokeLlm?: () => Promise<void>
     } = {},
   ): {
     session: LiveSession
@@ -48,6 +50,7 @@ describe('relay (LiveSession)', () => {
       humanSlots: ['player_0'],
       externalSlots: options.externalSlots ?? (mode === 'human' ? ['player_0'] : []),
       messaging: options.messaging ?? { enabled: true, cap: 120 },
+      llmEnabled: options.llmEnabled,
       deps: {
         storage,
         onEnd: () => {},
@@ -55,6 +58,7 @@ describe('relay (LiveSession)', () => {
         idleTimeoutMs: 1_000_000,
         maxDurationMs: 1_000_000,
         killGraceMs: 10,
+        revokeLlm: options.revokeLlm,
       },
     })
     live.push(session)
@@ -406,5 +410,29 @@ describe('relay (LiveSession)', () => {
 
     expect(slow.closed).toBe(true)
     expect(healthy.received).toContain(HEADER)
+  })
+
+  it('awaits LLM revocation before process teardown and durable recording association', async () => {
+    let release!: () => void
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const { session, process } = makeSession('scripted', {
+      llmEnabled: true,
+      revokeLlm: () => barrier,
+    })
+
+    const stopped = session.requestStop()
+    await flush()
+    expect(process.killGraceMs).toEqual([])
+    expect(await storage.getRecording('flappy_bird-sess-1')).toBeUndefined()
+
+    release()
+    await stopped
+    expect(process.killGraceMs).toEqual([10])
+    expect(await storage.getRecording('flappy_bird-sess-1')).toMatchObject({
+      llm_scope_id: 'sess-1',
+      llm_session_id: 'sess-1',
+    })
   })
 })

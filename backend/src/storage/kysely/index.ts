@@ -10,11 +10,13 @@
  */
 import type { Kysely } from 'kysely'
 
+import type { ResolvedOfficialLlmPolicy } from '../../llm/config.js'
 import type {
   AgentRef,
   AutomatedBoardRow,
   CreateSeasonInput,
   HumanBoardRow,
+  LlmDevelopmentKey,
   NewRecordingInput,
   NewSessionInput,
   NewSubmissionInput,
@@ -57,6 +59,7 @@ import type {
 } from '../schema.js'
 import type { SeasonConfig } from '../season-config.js'
 import * as boards from './boards.js'
+import * as developmentKeys from './development-keys.js'
 import * as ratings from './ratings.js'
 import * as recordings from './recordings.js'
 import * as retention from './retention.js'
@@ -67,6 +70,20 @@ import * as submissions from './submissions.js'
 
 export class KyselyStorage implements Storage {
   constructor(private readonly db: Kysely<Database>) {}
+
+  // --- Development LLM credentials ---
+
+  rotateDevelopmentKey(
+    input: developmentKeys.RotateDevelopmentKeyInput,
+  ): Promise<LlmDevelopmentKey> {
+    return developmentKeys.rotateDevelopmentKey(this.db, input)
+  }
+  getDevelopmentKeyByKeyId(keyId: string): Promise<LlmDevelopmentKey | undefined> {
+    return developmentKeys.getDevelopmentKeyByKeyId(this.db, keyId)
+  }
+  getDevelopmentKey(seasonId: string, userId: string): Promise<LlmDevelopmentKey | undefined> {
+    return developmentKeys.getDevelopmentKey(this.db, seasonId, userId)
+  }
 
   // --- Sessions ---
 
@@ -108,6 +125,9 @@ export class KyselyStorage implements Storage {
   }
   deleteRecording(id: string): Promise<void> {
     return recordings.deleteRecording(this.db, id)
+  }
+  countRecordingsByLlmScope(scopeId: string): Promise<number> {
+    return recordings.countRecordingsByLlmScope(this.db, scopeId)
   }
 
   // --- Seasons ---
@@ -235,6 +255,7 @@ export class KyselyStorage implements Storage {
     requestedBy: string,
     submissionSnapshot: AgentRef[],
     scheduledGames: ScheduledGameInput[],
+    resolveLlmPolicy: (config: SeasonConfig) => ResolvedOfficialLlmPolicy,
   ): Promise<SeasonRun> {
     return runs.createRunWithSchedule(
       this.db,
@@ -242,6 +263,7 @@ export class KyselyStorage implements Storage {
       requestedBy,
       submissionSnapshot,
       scheduledGames,
+      resolveLlmPolicy,
     )
   }
   async deleteRunsForSeason(seasonId: string): Promise<void> {

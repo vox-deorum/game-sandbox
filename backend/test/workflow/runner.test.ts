@@ -4,11 +4,20 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
+import type { ResolvedOfficialLlmPolicy } from '../../src/llm/config.js'
 import type { Storage } from '../../src/storage/index.js'
 import { openSqliteStorage } from '../../src/storage/sqlite.js'
 import { createPlaceholderRunner, reconcileInterruptedRuns } from '../../src/workflow/runner.js'
 
 const ENV_ID = 'flappy_bird'
+
+function disabledLlmPolicy(): ResolvedOfficialLlmPolicy {
+  return {
+    enabled: false,
+    models: {},
+    session: { token_budget: 1, call_budget: 1, rate_limit_rpm: 1 },
+  }
+}
 
 describe('workflow runner seam', () => {
   let storage: Storage
@@ -37,6 +46,7 @@ describe('workflow runner seam', () => {
       'dev-user',
       [],
       [{ match_index: 0, game_index: 0, seed: 1, slots: [{ kind: 'builtin-naive' }] }],
+      disabledLlmPolicy,
     )
     return run.id
   }

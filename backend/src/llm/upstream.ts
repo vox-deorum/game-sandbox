@@ -6,7 +6,7 @@ import type { LlmChatCompletion, LlmChatRequest } from './types.js'
 export interface UpstreamChatClient {
   create(
     request: LlmChatRequest,
-    options: { timeout: number; maxRetries: 0 },
+    options: { timeout: number; maxRetries: 0; signal?: AbortSignal },
   ): Promise<LlmChatCompletion>
 }
 
@@ -17,7 +17,7 @@ export interface UpstreamCallerOptions {
   maxRetries: number
   retryIntervalMs: number
   client?: UpstreamChatClient
-  sleep?: (delayMs: number) => Promise<void>
+  sleep?: (delayMs: number, signal?: AbortSignal) => Promise<void>
   now?: () => number
 }
 
@@ -44,7 +44,7 @@ export class UpstreamError extends LlmError {
 /** One explicit retry loop around an SDK client whose own retries are disabled. */
 export class UpstreamCaller {
   private readonly client: UpstreamChatClient
-  private readonly sleep: (delayMs: number) => Promise<void>
+  private readonly sleep: (delayMs: number, signal?: AbortSignal) => Promise<void>
   private readonly now: () => number
 
   constructor(private readonly options: UpstreamCallerOptions) {
@@ -64,29 +64,50 @@ export class UpstreamCaller {
           sdk.chat.completions.create(request, requestOptions) as Promise<LlmChatCompletion>,
       }
     }
-    this.sleep = options.sleep ?? ((delay) => new Promise((resolve) => setTimeout(resolve, delay)))
+    this.sleep = options.sleep ?? abortableSleep
     this.now = options.now ?? Date.now
   }
 
-  async call(request: LlmChatRequest): Promise<UpstreamSuccess> {
+  async call(request: LlmChatRequest, signal?: AbortSignal): Promise<UpstreamSuccess> {
     const started = this.now()
     let finalError: unknown
     for (let attempt = 0; attempt <= this.options.maxRetries; attempt++) {
+      signal?.throwIfAborted()
       try {
         const completion = await this.client.create(request, {
           timeout: this.options.timeoutMs,
           maxRetries: 0,
+          ...(signal === undefined ? {} : { signal }),
         })
         return { completion, latencyMs: elapsed(started, this.now()) }
       } catch (error) {
         finalError = error
         if (!retryable(error) || attempt === this.options.maxRetries) break
         const retryNumber = attempt + 1
-        await this.sleep(this.options.retryIntervalMs * 2 ** (retryNumber - 1))
+        await this.sleep(this.options.retryIntervalMs * 2 ** (retryNumber - 1), signal)
       }
     }
     throw normalizeUpstreamError(finalError)
   }
+}
+
+/** Default retry sleep that revocation can interrupt without waiting for the next attempt. */
+function abortableSleep(delayMs: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted === true) {
+      reject(signal.reason)
+      return
+    }
+    const timer = setTimeout(resolve, delayMs)
+    signal?.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(timer)
+        reject(signal.reason)
+      },
+      { once: true },
+    )
+  })
 }
 
 function retryable(error: unknown): boolean {

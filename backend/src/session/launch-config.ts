@@ -49,6 +49,36 @@ export interface AssembledSeats {
   players: Record<string, PlayerAttribution>
 }
 
+/** The exact LLM block shared by live and workflow session argv. */
+export interface LlmLaunchConfig {
+  llm: {
+    base_url: string
+    tick_url: string
+    keys: Record<string, string>
+  }
+}
+
+/**
+ * Assemble the one harness-facing LLM shape. Keeping the two URLs explicit is intentional: the tick
+ * marker endpoint is not below the OpenAI-compatible `/v1` path, so callers must never derive it
+ * from `base_url`. An empty key map is not useful and is represented by no block at all.
+ */
+export function assembleLlmLaunchConfig(
+  internalPort: number,
+  keys: Readonly<Record<string, string>>,
+): LlmLaunchConfig | Record<string, never> {
+  if (Object.keys(keys).length === 0) {
+    return {}
+  }
+  return {
+    llm: {
+      base_url: `http://llm-proxy:${internalPort}/v1`,
+      tick_url: `http://llm-proxy:${internalPort}/internal/tick`,
+      keys: { ...keys },
+    },
+  }
+}
+
 /**
  * Map a slot-id → seat assignment onto the `slots` and `players` blocks of the session config. A
  * human slot is driven by the transport (`external`); a Naive or submitted slot is a `builtin-agent`,

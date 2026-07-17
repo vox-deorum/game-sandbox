@@ -63,6 +63,11 @@ export type PinResult =
   | { ok: false; reason: 'forbidden' }
   | { ok: false; reason: 'pinned_quota' }
 
+/** The narrow telemetry seam: remove one execution scope's SQLite file once it is unreferenced. */
+export interface LlmTelemetryReclaimer {
+  deleteScope(scopeId: string): void
+}
+
 export class Retention {
   private timer: ReturnType<typeof setInterval> | null = null
 
@@ -73,6 +78,8 @@ export class Retention {
     private readonly log: (message: string) => void = () => {},
     /** Injectable wall clock so the window sweep is testable without real time. */
     private readonly now: () => number = Date.now,
+    /** Optional: LLM telemetry scopes are reclaimed with the last recording that references them. */
+    private readonly llmTelemetry?: LlmTelemetryReclaimer,
   ) {}
 
   /** Run the sweep once at startup, then on the configured interval. */
@@ -125,7 +132,7 @@ export class Retention {
     // Pass 1: window. An unpinned recording older than the window goes.
     for (const row of rows) {
       if (row.pinned === 0 && Date.parse(row.created_at) < cutoff) {
-        await this.evict(row.id)
+        await this.evict(row)
         evicted.add(row.id)
       }
     }
@@ -151,20 +158,37 @@ export class Retention {
         if (over <= 0) {
           break
         }
-        await this.evict(row.id)
+        await this.evict(row)
         over -= 1
       }
     }
   }
 
   /** Remove a recording: the directory first, then the row (a crash between leaves only debris). */
-  private async evict(id: string): Promise<void> {
+  private async evict(row: Recording): Promise<void> {
     try {
-      await this.recordings.delete(id)
-      await this.storage.deleteRecording(id)
+      await this.recordings.delete(row.id)
+      await this.storage.deleteRecording(row.id)
+      await this.reclaimLlmScope(row.llm_scope_id)
     } catch (error) {
-      this.log(`retention: evicting ${id} failed: ${String(error)}`)
+      this.log(`retention: evicting ${row.id} failed: ${String(error)}`)
     }
+  }
+
+  /**
+   * Delete an execution scope's telemetry file once no recording references it. A workflow run's
+   * scope is shared by every game recording of that run, so the file goes only with the last one;
+   * a live session's scope is its single recording. Scopes reached here belong to ended work: an
+   * in-progress run's recordings are days younger than the eviction window.
+   */
+  private async reclaimLlmScope(scopeId: string | null): Promise<void> {
+    if (scopeId === null || this.llmTelemetry === undefined) {
+      return
+    }
+    if ((await this.storage.countRecordingsByLlmScope(scopeId)) > 0) {
+      return
+    }
+    this.llmTelemetry.deleteScope(scopeId)
   }
 
   /**

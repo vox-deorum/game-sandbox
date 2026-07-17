@@ -1,6 +1,6 @@
 import Fastify, { type FastifyInstance } from 'fastify'
 
-import { asLlmError, invalidRequest, LlmError } from './errors.js'
+import { asLlmError, invalidRequest, LlmError, readBearer } from './errors.js'
 import type { LlmHandler } from './handler.js'
 import type { KeyRegistry } from './key-registry.js'
 
@@ -15,12 +15,19 @@ export async function buildLlmListener(deps: LlmListenerDeps): Promise<FastifyIn
   const app = Fastify({ logger: false })
 
   app.post('/v1/chat/completions', async (request, reply) => {
+    let releaseAdmission: (() => void) | undefined
     try {
-      const grant = deps.registry.authenticateGrant(readBearer(request.headers.authorization))
-      return await deps.handler.handle(grant, request.body)
+      const admission = deps.registry.authenticateRequest(readBearer(request.headers.authorization))
+      releaseAdmission = admission.release
+      return await deps.handler.handle(admission.grant, request.body, {
+        signal: admission.signal,
+        beginFinalization: admission.beginFinalization,
+      })
     } catch (error) {
       const normalized = asLlmError(error)
       return reply.code(normalized.status).send(normalized.body())
+    } finally {
+      releaseAdmission?.()
     }
   })
 
@@ -50,14 +57,6 @@ export async function buildLlmListener(deps: LlmListenerDeps): Promise<FastifyIn
   })
   await app.ready()
   return app
-}
-
-function readBearer(header: string | undefined): string {
-  const match = /^Bearer ([^\s]+)$/i.exec(header ?? '')
-  if (match?.[1] === undefined) {
-    throw new LlmError(401, 'invalid_api_key', 'A valid bearer API key is required.')
-  }
-  return match[1]
 }
 
 function parseTick(body: unknown): number | null {

@@ -1,6 +1,6 @@
 # Stage 9.2: Season Access, Development Keys, and the Session Network
 
-Status: not started.
+Status: complete.
 
 Part of [Stage 9](../stage-09-llm-gateway.md), build-order step 2.
 
@@ -174,9 +174,9 @@ Step 5 adds participant and operator read APIs over this ledger. Ledger retentio
 
 `SandboxNetwork` supports `'none' | 'llm'`. Effective LLM sessions use `'llm'`; every other session uses `'none'`.
 
-The Docker implementation creates one internal network per session. A long-lived `alpine/socat` relay joins that network under the alias `llm-proxy` and forwards only to `host.docker.internal:<LLM_INTERNAL_PORT>`. The relay uses `host-gateway` mapping on Linux and Docker Desktop. The session container joins only its internal network.
+The Docker implementation creates one internal agent network and one routed relay-egress network per session. A long-lived `alpine/socat` relay joins both networks, exposes the alias `llm-proxy` only on the internal network, and forwards one fixed listener to `host.docker.internal:<LLM_INTERNAL_PORT>` through the egress network. The relay alone receives the `host-gateway` mapping used on Linux and Docker Desktop. The session container joins only the internal network, so it has no route to the host or public internet.
 
-Teardown closes grants to admission, aborts or drains active requests, and awaits reservation finalizers before disconnecting the relay and deleting the per-session network. Driver orphan reaping covers labeled LLM networks and relay attachments. The driver-neutral profile maps to an equivalent single-destination policy in other drivers.
+Teardown closes grants to admission, aborts or drains active requests, and awaits reservation finalizers before disconnecting the relay and deleting both per-session networks. Driver orphan reaping covers labeled LLM networks and relay attachments. The driver-neutral profile maps to an equivalent single-destination policy in other drivers.
 
 ## Tests
 

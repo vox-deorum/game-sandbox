@@ -12,6 +12,7 @@
     "./environment": "./src/environment.ts",
     "./accounts": "./src/accounts.ts",
     "./board": "./src/board.ts",
+    "./llm": "./src/llm.ts",
     "./text": "./src/text.ts",
     "./version": "./src/version.ts"
   },

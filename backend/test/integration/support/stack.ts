@@ -128,6 +128,7 @@ export async function startStack(overrides: Partial<Config> = {}): Promise<Stack
     validationWorker,
     allowLocalSubmissions: config.submission.allowLocalSubmissions,
     docsDir: config.docsDir,
+    llm: config.llm,
   })
 
   const httpBase = await app.listen({ port: 0, host: '127.0.0.1' })

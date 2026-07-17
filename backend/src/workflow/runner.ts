@@ -75,6 +75,8 @@ export interface WorkflowRunner {
    * the run `cancelled` (it owns the cooperative stop). A no-op for an unknown or already-terminal run.
    */
   cancel(runId: string): void
+  /** Stop accepting work, tear down the active game, and wait for background execution to settle. */
+  shutdown(): Promise<void>
   /**
    * Subscribe to a run's live event stream, returning an unsubscribe. Live-only: a late subscriber
    * misses lines emitted before it attached (the buffered backlog-on-attach is deferred polish). The
@@ -130,6 +132,9 @@ export function createPlaceholderRunner(
       void storage
         .setRunStatus(runId, 'cancelled', 'cancelled by operator')
         .catch((error) => log(`run ${runId}: cancel failed: ${String(error)}`))
+    },
+    shutdown(): Promise<void> {
+      return Promise.resolve()
     },
     subscribe(): () => void {
       return () => {}

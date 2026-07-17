@@ -55,6 +55,8 @@ export interface LiveSessionDeps {
   idleTimeoutMs: number
   maxDurationMs: number
   killGraceMs: number
+  /** Close official admission and await active-request finalizers before container teardown. */
+  revokeLlm?: () => Promise<void>
 }
 
 export interface LiveSessionInit {
@@ -76,6 +78,8 @@ export interface LiveSessionInit {
   externalSlots: readonly string[]
   /** The effective messaging rules resolved once by the orchestrator (metadata AND season override). */
   messaging: { enabled: boolean; cap: number | null }
+  /** Stored on the session and copied into the recording's durable telemetry association. */
+  llmEnabled?: boolean
   deps: LiveSessionDeps
 }
 
@@ -95,6 +99,7 @@ export class LiveSession {
   private readonly humanSlots: ReadonlySet<string>
   private readonly externalSlots: ReadonlySet<string>
   private readonly messaging: { enabled: boolean; cap: number | null }
+  private readonly llmEnabled: boolean
   private readonly deps: LiveSessionDeps
 
   /** Each attached socket with its audience marker, so a targeted message is filtered per attachment. */
@@ -107,7 +112,7 @@ export class LiveSession {
   private resultReason: TerminationReason | null = null
   private finalReason: TerminationReason | null = null
 
-  private finalized = false
+  private finalizePromise: Promise<void> | null = null
   private idleTimer: ReturnType<typeof setTimeout> | null = null
   private readonly maxTimer: ReturnType<typeof setTimeout>
 
@@ -122,6 +127,7 @@ export class LiveSession {
     this.humanSlots = new Set(init.humanSlots)
     this.externalSlots = new Set(init.externalSlots)
     this.messaging = init.messaging
+    this.llmEnabled = init.llmEnabled ?? false
     this.deps = init.deps
 
     this.maxTimer = setTimeout(() => {
@@ -433,14 +439,22 @@ export class LiveSession {
    * first caller's reason wins, so an orchestrator-initiated reason (idle, time limit) is not
    * overwritten by the container's own `result` arriving during the grace window.
    */
-  async finalize(reason: TerminationReason): Promise<void> {
-    if (this.finalized) {
-      return
-    }
-    this.finalized = true
+  finalize(reason: TerminationReason): Promise<void> {
+    this.finalizePromise ??= this.finalizeOnce(reason)
+    return this.finalizePromise
+  }
+
+  private async finalizeOnce(reason: TerminationReason): Promise<void> {
     this.finalReason = reason
     this.clearIdle()
     clearTimeout(this.maxTimer)
+
+    // Close admission and settle authenticated work before the process disappears with its network.
+    try {
+      await this.deps.revokeLlm?.()
+    } catch (error) {
+      this.deps.log(`session ${this.id}: LLM revocation failed: ${String(error)}`)
+    }
 
     // Ask politely (the container flushes its recording and exits), then force the teardown.
     this.process.send(STOP_LINE)
@@ -465,6 +479,8 @@ export class LiveSession {
         user_id: this.userId,
         env_id: this.envId,
         created_at: this.createdAt,
+        llm_scope_id: this.llmEnabled ? this.id : null,
+        llm_session_id: this.llmEnabled ? this.id : null,
       })
     } catch (error) {
       this.deps.log(`session ${this.id}: createRecording failed: ${String(error)}`)

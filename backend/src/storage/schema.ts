@@ -69,6 +69,8 @@ export interface SessionsTable {
    */
   messaging_enabled: number
   message_cap: number | null
+  /** Frozen effective capability flag for this session (SQLite 0/1). */
+  llm_enabled: number
   /** ISO-8601 UTC timestamps. */
   created_at: string
   ended_at: string | null
@@ -96,6 +98,8 @@ export interface RecordingsTable {
    * session's reason for those — and for a non-completed automated game (it shows no final standings).
    */
   termination_reason: TerminationReason | null
+  llm_scope_id: string | null
+  llm_session_id: string | null
 }
 
 /**
@@ -223,6 +227,8 @@ export interface SeasonRunsTable {
   requested_by: string
   /** The validated {@link SeasonConfig} JSON, copied from the season when the run is created. */
   config_snapshot: string
+  /** Fully resolved official LLM policy frozen independently from the season config. */
+  llm_policy_snapshot: string
   /** JSON array of the active `ready` submitted-agent {@link AgentRef}s eligible at trigger time. */
   submission_snapshot: string
   status: RunStatus
@@ -355,6 +361,16 @@ export interface AgentRatingPromptsTable {
   updated_at: string
 }
 
+/** One durable, rotatable development credential per participant and season. */
+export interface LlmDevelopmentKeysTable {
+  season_id: string
+  user_id: string
+  key_id: string
+  secret_hash: string
+  created_at: string
+  rotated_at: string | null
+}
+
 /**
  * The `submissions` table: one row per submitted agent. The row is created `pending` before
  * source resolution so an unreachable repo or non-resolving ref is still stored (as
@@ -439,6 +455,7 @@ export interface Database {
   automated_placements: AutomatedPlacementsTable
   ratings: RatingsTable
   agent_rating_prompts: AgentRatingPromptsTable
+  llm_development_keys: LlmDevelopmentKeysTable
 }
 
 /** A session row as read back from the database. */
@@ -452,6 +469,7 @@ export type SessionUpdate = Updateable<SessionsTable>
 
 /** A recording row as read back from the database. */
 export type Recording = Selectable<RecordingsTable>
+export type LlmDevelopmentKey = Selectable<LlmDevelopmentKeysTable>
 
 /** A recording row as inserted. */
 export type NewRecording = Insertable<RecordingsTable>

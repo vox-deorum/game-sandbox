@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { UserDirectory } from '../../src/auth/users.js'
 import { ensureRecordingsDir } from '../../src/session/live-session.js'
+import type { IssueOfficialGrantsInput } from '../../src/session/official-grants.js'
 import {
   Orchestrator,
   OrchestratorError,
@@ -207,6 +208,50 @@ describe('orchestrator', () => {
   })
 
   describe('start', () => {
+    it('issues keys only for agent slots and emits the exact live LLM launch block', async () => {
+      const config = makeConfig({ recordingsDir })
+      let issued: IssueOfficialGrantsInput | undefined
+      const orch = new Orchestrator({
+        driver,
+        storage,
+        environments: makeEnvironments(),
+        config,
+        resolveLiveLlm: () => ({
+          enabled: true,
+          models: { small: 'upstream-small' },
+          official: { tokenBudget: 1000, callBudget: 10, requestsPerMinute: 5 },
+          development: { tokenBudget: 2000, callBudget: 20, requestsPerMinute: 10 },
+        }),
+        officialGrantIssuer: {
+          issue: (input) => {
+            issued = input
+            return Promise.resolve({
+              keys: Object.fromEntries(input.agentSlots.map((slot) => [slot, `key-${slot}`])),
+              revoke: () => Promise.resolve(),
+            })
+          },
+        },
+      })
+
+      const launched = await start(orch, {
+        envId: 'hearts',
+        slots: heartsSlots({ player_0: { kind: 'human' } }),
+      })
+      expect(issued?.agentSlots).toEqual(['player_1', 'player_2', 'player_3'])
+      expect(launched.config.llm).toEqual({
+        base_url: `http://llm-proxy:${config.llm.internalPort}/v1`,
+        tick_url: `http://llm-proxy:${config.llm.internalPort}/internal/tick`,
+        keys: {
+          player_1: 'key-player_1',
+          player_2: 'key-player_2',
+          player_3: 'key-player_3',
+        },
+      })
+      expect(driver.lastLaunch()?.spec.sandbox.network).toBe('llm')
+      expect(await storage.getSession(launched.id)).toMatchObject({ llm_enabled: 1 })
+      await orch.stop(launched.id, 'alice')
+    })
+
     it('inserts a starting row and launches with the sandbox profile and config argv', async () => {
       const orch = makeOrchestrator()
       const { id, config } = await start(orch, { slots: slots({ kind: 'human' }), seed: 42 })

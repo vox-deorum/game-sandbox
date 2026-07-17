@@ -27,6 +27,10 @@ export class StubWorkflowRunner implements WorkflowRunner {
     }
   }
 
+  shutdown(): Promise<void> {
+    return Promise.resolve()
+  }
+
   subscribe(runId: string, listener: RunEventListener): () => void {
     let set = this.listeners.get(runId)
     if (set === undefined) {

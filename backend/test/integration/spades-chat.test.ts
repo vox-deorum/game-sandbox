@@ -45,6 +45,7 @@ import { SubmissionSnapshotStore } from '../../src/submission/snapshot-store.js'
 import { createSubmissionSource } from '../../src/submission/source/index.js'
 import type { TerminalRunStatus } from '../../src/workflow/runner.js'
 import { createWorkflowRunner } from '../../src/workflow/workflow-runner.js'
+import { TEST_DISABLED_OFFICIAL_LLM_POLICY } from '../support/llm-options.js'
 import { DEPS_VERSION } from './support/base-image.js'
 import { type Stack, startSession, startStack, waitForEnded } from './support/stack.js'
 import { WsClient } from './support/ws-client.js'
@@ -345,9 +346,13 @@ describe('Spades chat (Docker)', () => {
           ],
           ...(messaging !== undefined ? { overrides: { messaging } } : {}),
         })
-        const run = await stack.storage.createRunWithSchedule(season.id, 'dev-user', submissions, [
-          { match_index: 0, game_index: 0, seed: 1236, slots: submissions },
-        ])
+        const run = await stack.storage.createRunWithSchedule(
+          season.id,
+          'dev-user',
+          submissions,
+          [{ match_index: 0, game_index: 0, seed: 1236, slots: submissions }],
+          () => TEST_DISABLED_OFFICIAL_LLM_POLICY,
+        )
         const status = await new Promise<TerminalRunStatus>((res) => {
           const unsubscribe = runner.subscribe(run.id, (event) => {
             if (event.type === 'terminal') {

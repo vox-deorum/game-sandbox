@@ -68,6 +68,7 @@ describe('rating API', () => {
       retention: new Retention(storage, recordings, config),
       auth: stack.auth,
       userDirectory: stack.userDirectory,
+      llm: config.llm,
       ...makeSubmissionDeps(storage, config),
     })
     await app.ready()

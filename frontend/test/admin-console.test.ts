@@ -266,14 +266,12 @@ describe('AdminConsolePage', () => {
     expect(screen.getByText(/along with its existing runs and boards/)).toBeInTheDocument()
   })
 
-  it('writes the strict messaging override and preserves the inert llm block', async () => {
-    // A season carrying an llm block, so the round-trip must keep it untouched while the messaging
-    // fields are edited into the strict shape.
+  it('writes strict messaging and every LLM override control', async () => {
     const withLlm = season({
       config: {
         deps_version: 1,
         matches: [{ slots: ['submission'], seeds: [0], games: 1 }],
-        overrides: { llm: { model_allowlist: ['claude-opus-4-8'] } },
+        overrides: { llm: { enabled: false } },
       },
     })
     vi.mocked(getAdminSeason).mockResolvedValue(adminView({ season: withLlm }))
@@ -282,12 +280,49 @@ describe('AdminConsolePage', () => {
 
     await fireEvent.update(await screen.findByLabelText('Messaging'), 'off')
     await fireEvent.update(screen.getByLabelText('Message cap (code points)'), '80')
+    await fireEvent.update(screen.getByLabelText('LLM enablement'), 'on')
+    await fireEvent.update(screen.getByLabelText('Allowed model aliases'), 'custom')
+    await fireEvent.click(screen.getByLabelText('small'))
+    await fireEvent.click(screen.getByLabelText('medium'))
+    await fireEvent.update(screen.getByLabelText('Official token budget'), '10000')
+    await fireEvent.update(screen.getByLabelText('Official call budget'), '100')
+    await fireEvent.update(screen.getByLabelText('Official rate limit (RPM)'), '30')
+    await fireEvent.update(screen.getByLabelText('Development token budget'), '20000')
+    await fireEvent.update(screen.getByLabelText('Development call budget'), '200')
+    await fireEvent.update(screen.getByLabelText('Development rate limit (RPM)'), '15')
     await fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }))
 
     await waitFor(() => expect(vi.mocked(configureSeason)).toHaveBeenCalled())
     const savedConfig = vi.mocked(configureSeason).mock.calls[0]?.[1]
     expect(savedConfig?.overrides?.messaging).toEqual({ enabled: false, message_cap: 80 })
-    expect(savedConfig?.overrides?.llm).toEqual({ model_allowlist: ['claude-opus-4-8'] })
+    expect(savedConfig?.overrides?.llm).toEqual({
+      enabled: true,
+      models: ['medium', 'small'],
+      official: { token_budget: 10_000, call_budget: 100, rate_limit_rpm: 30 },
+      development: { token_budget: 20_000, call_budget: 200, rate_limit_rpm: 15 },
+    })
+  })
+
+  it('rejects a custom LLM model list with no aliases', async () => {
+    await renderConsole()
+    await fireEvent.update(await screen.findByLabelText('Allowed model aliases'), 'custom')
+    await fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }))
+
+    expect(
+      await screen.findByText(/Select at least one allowed LLM model alias/),
+    ).toBeInTheDocument()
+    expect(vi.mocked(configureSeason)).not.toHaveBeenCalled()
+  })
+
+  it('rejects non-positive LLM limits before saving', async () => {
+    await renderConsole()
+    await fireEvent.update(await screen.findByLabelText('Development call budget'), '0')
+    await fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }))
+
+    expect(
+      await screen.findByText(/development call budget must be a positive integer/),
+    ).toBeInTheDocument()
+    expect(vi.mocked(configureSeason)).not.toHaveBeenCalled()
   })
 
   it('discards a stale detail response after the operator selects another season', async () => {

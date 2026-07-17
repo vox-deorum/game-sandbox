@@ -14,7 +14,13 @@ export async function createRecording(
   // Idempotent: a re-finalize (or a backfilled id) leaves the existing row untouched.
   await db
     .insertInto('recordings')
-    .values({ ...input, pinned: 0, termination_reason: input.termination_reason ?? null })
+    .values({
+      ...input,
+      pinned: 0,
+      termination_reason: input.termination_reason ?? null,
+      llm_scope_id: input.llm_scope_id ?? null,
+      llm_session_id: input.llm_session_id ?? null,
+    })
     .onConflict((oc) => oc.column('id').doNothing())
     .execute()
 }
@@ -40,6 +46,19 @@ export async function setRecordingPinned(
     .set({ pinned: pinned ? 1 : 0 })
     .where('id', '=', id)
     .execute()
+}
+
+/** How many recordings still associate with one LLM execution scope (retention's deletion guard). */
+export async function countRecordingsByLlmScope(
+  db: Kysely<Database>,
+  scopeId: string,
+): Promise<number> {
+  const row = await db
+    .selectFrom('recordings')
+    .select((eb) => eb.fn.countAll<number>().as('count'))
+    .where('llm_scope_id', '=', scopeId)
+    .executeTakeFirst()
+  return Number(row?.count ?? 0)
 }
 
 export async function countPinnedByUser(db: Kysely<Database>, userId: string): Promise<number> {

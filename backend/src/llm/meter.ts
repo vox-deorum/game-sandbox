@@ -54,16 +54,17 @@ export class LlmMeter {
     inputTokens: number,
     outputTokens: number,
   ): Promise<LlmReservation> {
-    const usage = scope.readCommittedUsage()
     const now = this.now()
     const requestedTokens = inputTokens + outputTokens
 
-    // The durable reader is synchronous, so no commit can land between this snapshot and reservation.
     const state = this.state(scope.key)
     this.pruneRateWindow(state, now)
     if (state.breakerOpen) {
       throw new LlmError(503, 'meter_unavailable', 'Usage accounting is temporarily unavailable.')
     }
+    // Never touch a known-unhealthy store while its pair-scoped breaker is open. Once admitted to
+    // the read, the durable reader is synchronous, so no commit can land before reservation.
+    const usage = scope.readCommittedUsage()
     if (state.rateEvents.length >= scope.limits.requestsPerMinute) {
       throw new LlmError(429, 'rate_limit_exceeded', 'Rate limit exceeded.', 'rate_limit_error')
     }
@@ -118,7 +119,10 @@ export class LlmMeter {
     this.openBreaker(reservation.scope.key, sink)
   }
 
-  /** Used by startup wiring when a scope's initial migration/write-health check fails. */
+  /**
+   * Open a scope's breaker when its durable store failed outside a commit (e.g. a grant's ledger
+   * open/migration on the request path), so later reservations fail fast until a probe recovers it.
+   */
   markUnavailable(scope: LlmAccountingScope, sink: LlmRecordSink): void {
     this.openBreaker(scope.key, sink)
   }

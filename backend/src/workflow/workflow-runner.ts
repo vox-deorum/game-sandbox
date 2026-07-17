@@ -39,10 +39,16 @@ import type { ExecutionDriver, ExitInfo, ImageRef, SessionProcess } from '../dri
 import { buildSandboxProfile } from '../driver/sandbox.js'
 import type { EnvironmentMeta, EnvironmentRegistry } from '../environments.js'
 import { forfeitScore, normalizeEpisodeScore } from '../leaderboards/score.js'
+import { decodeResolvedOfficialLlmPolicy, type ResolvedOfficialLlmPolicy } from '../llm/config.js'
 import { optionalField } from '../optional-field.js'
 import { coerceResultReason } from '../result-reason.js'
-import { assembleSeats, type SeatBinding } from '../session/launch-config.js'
+import {
+  assembleLlmLaunchConfig,
+  assembleSeats,
+  type SeatBinding,
+} from '../session/launch-config.js'
 import { ensureRecordingsDir } from '../session/live-session.js'
+import type { OfficialGrantIssuer, OfficialGrantLease } from '../session/official-grants.js'
 import { decodeSeasonConfig, type Storage } from '../storage/index.js'
 import type { AgentRef, SeasonRun, SeasonRunGame } from '../storage/schema.js'
 import type { SubmissionSnapshotStore } from '../submission/snapshot-store.js'
@@ -83,6 +89,10 @@ export interface WorkflowRunnerDeps {
   recordingsDir: string
   /** The driver's reuse-vs-rebuild policy, threaded into overlay resolution. */
   imagePolicy: ImagePolicy
+  /** Internal proxy port emitted into the shared harness launch block. */
+  llmInternalPort?: number
+  /** Issues one temporary official key per workflow agent slot. */
+  officialGrantIssuer?: OfficialGrantIssuer
   /** Grace before a cancelled run's in-flight container is hard-killed. */
   killGraceMs?: number
   /** Extra wall-clock slack over the effective episode timeout before a game container is killed. */
@@ -131,11 +141,17 @@ class DockerWorkflowRunner implements WorkflowRunner {
 
   /** Run ids waiting to execute; drained one at a time so two runs never share the host. */
   private readonly queue: string[] = []
-  private running = false
+  private pumpPromise: Promise<void> | null = null
+  private stopping = false
+  private shutdownPromise: Promise<void> | null = null
+  private activeRunId: string | null = null
   /** Runs an operator asked to cancel; checked cooperatively between and during games. */
   private readonly cancelRequested = new Set<string>()
   /** The in-flight container per run, so a cancel can tear it down mid-game. */
   private readonly inFlight = new Map<string, SessionProcess>()
+  private readonly inFlightLlm = new Map<string, OfficialGrantLease>()
+  /** Share teardown across natural exit, cancel, and watchdog paths so Docker cleanup runs once. */
+  private readonly processCleanup = new WeakMap<SessionProcess, Promise<void>>()
   /** Live event subscribers per run (the admin log stream). */
   private readonly listeners = new Map<string, Set<RunEventListener>>()
 
@@ -146,8 +162,11 @@ class DockerWorkflowRunner implements WorkflowRunner {
   }
 
   enqueue(runId: string): void {
+    if (this.stopping) throw new Error('workflow runner is shutting down')
     this.queue.push(runId)
-    void this.pump()
+    this.pumpPromise ??= this.pump().finally(() => {
+      this.pumpPromise = null
+    })
   }
 
   cancel(runId: string): void {
@@ -156,10 +175,26 @@ class DockerWorkflowRunner implements WorkflowRunner {
     // its natural end. The run loop sees the flag and settles the run `cancelled`.
     const process = this.inFlight.get(runId)
     if (process !== undefined) {
-      void process.kill(this.killGraceMs).catch((error) => {
-        this.log(`run ${runId}: cancel kill failed: ${String(error)}`)
-      })
+      void (async (): Promise<void> => {
+        await this.inFlightLlm.get(runId)?.revoke()
+        await this.cleanupProcess(process)
+      })().catch((error) => this.log(`run ${runId}: cancel teardown failed: ${String(error)}`))
     }
+  }
+
+  shutdown(): Promise<void> {
+    this.shutdownPromise ??= this.shutdownOnce()
+    return this.shutdownPromise
+  }
+
+  private async shutdownOnce(): Promise<void> {
+    this.stopping = true
+    // Queued rows remain pending for startup reconciliation; only already-started work needs teardown.
+    this.queue.length = 0
+    if (this.activeRunId !== null) this.cancelRequested.add(this.activeRunId)
+    await Promise.all([...this.inFlightLlm.values()].map((lease) => lease.revoke()))
+    await Promise.all([...this.inFlight.values()].map((process) => this.cleanupProcess(process)))
+    await this.pumpPromise
   }
 
   subscribe(runId: string, listener: RunEventListener): () => void {
@@ -176,16 +211,20 @@ class DockerWorkflowRunner implements WorkflowRunner {
 
   /** Drain the queue one run at a time. */
   private async pump(): Promise<void> {
-    if (this.running) {
-      return
-    }
-    this.running = true
     try {
       for (let next = this.queue.shift(); next !== undefined; next = this.queue.shift()) {
-        await this.executeRun(next)
+        this.activeRunId = next
+        // Nothing awaits the pump during normal operation, so a throw here (e.g. a storage read
+        // failing before executeRun's own try) would be an unhandled rejection that kills the
+        // process and drops the rest of the queue. Contain it to the one run and keep draining.
+        try {
+          await this.executeRun(next)
+        } catch (error) {
+          this.log(`run ${next}: execution failed outside run handling: ${String(error)}`)
+        }
       }
     } finally {
-      this.running = false
+      this.activeRunId = null
     }
   }
 
@@ -250,6 +289,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
         return
       }
       const config = decodeSeasonConfig(run.config_snapshot)
+      const llmPolicy = decodeResolvedOfficialLlmPolicy(run.llm_policy_snapshot)
       await this.deps.storage.setRunStatus(runId, 'running')
       await ensureRecordingsDir(this.deps.recordingsDir)
 
@@ -259,7 +299,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
           await this.markGameCancelled(runId, game)
           continue
         }
-        await this.runGame(run, meta, config.deps_version, config.overrides, game)
+        await this.runGame(run, meta, config.deps_version, config.overrides, llmPolicy, game)
       }
 
       if (this.cancelRequested.has(runId)) {
@@ -289,6 +329,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
     meta: EnvironmentMeta,
     depsVersion: number,
     overrides: ReturnType<typeof decodeSeasonConfig>['overrides'],
+    llmPolicy: ResolvedOfficialLlmPolicy,
     game: SeasonRunGame,
   ): Promise<void> {
     const runId = run.id
@@ -311,177 +352,246 @@ class DockerWorkflowRunner implements WorkflowRunner {
       await this.infraFault(runId, game, `image resolution failed: ${errorText(error)}`)
       return
     }
+    if (this.cancelRequested.has(runId)) {
+      await this.markGameCancelled(runId, game)
+      return
+    }
 
     const recordingId = `${envId}-${game.id}`
-    const sessionConfig = await this.sessionConfig(envId, game.seed, slots, recordingId, overrides)
-
-    let process: SessionProcess
+    let llmLease: OfficialGrantLease | undefined
+    let process: SessionProcess | undefined
     try {
-      process = await this.deps.driver.launch({
-        image,
-        argv: [JSON.stringify(sessionConfig)],
-        sandbox: buildSandboxProfile(this.deps.sandbox, [
-          {
-            hostPath: this.deps.recordingsDir,
-            containerPath: CONTAINER_RECORDINGS_DIR,
-            readOnly: false,
-          },
-        ]),
-        sessionId: game.id,
-      })
-    } catch (error) {
-      await this.infraFault(runId, game, `container failed to start: ${errorText(error)}`)
-      return
-    }
-    this.inFlight.set(runId, process)
-    const watchdog = this.startGameWatchdog(
-      runId,
-      game,
-      process,
-      gameWatchdogMs(meta, overrides, this.gameWatchdogGraceMs),
-    )
-
-    // Drain stderr as live log lines, and stdout for the recording stream and the final result
-    // envelope. Both must finish before the recording is read so no line is missed.
-    const diagnostics = (async (): Promise<void> => {
-      try {
-        for await (const line of process.diagnostics) {
-          this.gameLog(runId, game, line)
+      if (llmPolicy.enabled) {
+        // A missing issuer or port is a deployment-wide misconfiguration: fail the run, not one
+        // game after another. A grant-issuance throw, by contrast, is a per-scope storage fault
+        // (a locked or corrupt telemetry file) and is classified like every other infra fault: the
+        // game fails, the rest of the schedule continues.
+        if (
+          this.deps.officialGrantIssuer === undefined ||
+          this.deps.llmInternalPort === undefined
+        ) {
+          throw new Error('official workflow LLM grants and internal proxy port are not configured')
         }
-      } catch {
-        // Diagnostics ending early is harmless; the game's fate is decided by stdout and exit.
+        try {
+          llmLease = await this.deps.officialGrantIssuer.issue({
+            sessionId: game.id,
+            scopeId: runId,
+            agentSlots: slots.map((_, index) => `player_${index}`),
+            models: llmPolicy.models,
+            limits: policyLimits(llmPolicy),
+          })
+        } catch (error) {
+          await this.infraFault(runId, game, `LLM grant issuance failed: ${errorText(error)}`)
+          return
+        }
       }
-    })()
-    const recordingLines: string[] = []
-    // A holder (not a bare `let`) so reading it back after the await keeps its declared type. TS does
-    // not narrow a closure-mutated local and would otherwise see it as forever-null here.
-    const captured: { result: ResultEnvelope | null } = { result: null }
-    const stdout = (async (): Promise<void> => {
+      const sessionConfig = await this.sessionConfig(
+        envId,
+        game.seed,
+        slots,
+        recordingId,
+        overrides,
+        llmLease?.keys ?? {},
+      )
+
       try {
-        for await (const raw of process.output) {
-          const line = classifyOutbound(raw)
-          if (line.type === 'recording') {
-            recordingLines.push(line.raw)
-          } else if (line.type === 'envelope' && line.kind === RESULT_KIND) {
-            captured.result = parseResultEnvelope(line.value)
-          }
-        }
+        process = await this.deps.driver.launch({
+          image,
+          argv: [JSON.stringify(sessionConfig)],
+          sandbox: buildSandboxProfile(
+            this.deps.sandbox,
+            [
+              {
+                hostPath: this.deps.recordingsDir,
+                containerPath: CONTAINER_RECORDINGS_DIR,
+                readOnly: false,
+              },
+            ],
+            llmPolicy.enabled ? 'llm' : 'none',
+          ),
+          sessionId: game.id,
+        })
       } catch (error) {
-        this.log(`run ${runId} game ${game.game_index}: output stream error: ${String(error)}`)
+        await this.infraFault(runId, game, `container failed to start: ${errorText(error)}`)
+        return
       }
-    })()
-
-    const exit = await process.exited
-    watchdog.stop()
-    await stdout
-    await diagnostics
-    this.inFlight.delete(runId)
-
-    // A cancel that killed this container mid-game: record the cancellation, not a failure or result.
-    if (this.cancelRequested.has(runId)) {
-      await this.deps.storage.setRunGameStatus(game.id, 'cancelled')
-      this.emit(runId, { type: 'game_status', game_index: game.game_index, status: 'cancelled' })
-      this.gameLog(runId, game, `game ${game.game_index} cancelled`, 'warning')
-      return
-    }
-
-    // No readable recording header means an infrastructure fault. No invented result row.
-    let parsed: ParsedRecording
-    try {
-      parsed = readRecording(recordingLines)
-    } catch {
-      await this.infraFault(
+      this.inFlight.set(runId, process)
+      if (llmLease !== undefined) this.inFlightLlm.set(runId, llmLease)
+      // A cancel that landed before `inFlight.set` found no process to kill, so re-check and kill
+      // here. Deliberately no early return: execution continues into the shared drain/exit path
+      // below, and the post-exit cancel check records the game `cancelled`. Revoke and cleanup are
+      // memoized, so the repeated calls on that path are no-ops.
+      if (this.cancelRequested.has(runId)) {
+        await llmLease?.revoke()
+        await this.cleanupProcess(process)
+      }
+      const watchdog = this.startGameWatchdog(
         runId,
         game,
-        `game produced no readable recording (container exit code ${exit.code})`,
+        process,
+        gameWatchdogMs(meta, overrides, this.gameWatchdogGraceMs),
+        llmLease,
       )
-      return
-    }
 
-    // A container that exits cleanly yet never emits a recognized `result` envelope reason violated its
-    // output contract: the envelope is authoritative for the final scores, so without it there is
-    // nothing trustworthy to attribute. Treat it as an infrastructure fault rather than inventing a
-    // `terminated` ending and a standings card built from stale recording scores. A non-clean exit
-    // (crash, OOM, or watchdog kill) is classified below from the exit itself and needs no envelope.
-    const cleanExit = !watchdog.timedOut() && !exit.oomKilled && exit.code === 0
-    if (cleanExit && coerceResultReason(captured.result?.reason) === null) {
-      await this.infraFault(
+      // Drain stderr as live log lines, and stdout for the recording stream and the final result
+      // envelope. Both must finish before the recording is read so no line is missed.
+      const diagnostics = (async (): Promise<void> => {
+        try {
+          for await (const line of process.diagnostics) {
+            this.gameLog(runId, game, line)
+          }
+        } catch {
+          // Diagnostics ending early is harmless; the game's fate is decided by stdout and exit.
+        }
+      })()
+      const recordingLines: string[] = []
+      // A holder (not a bare `let`) so reading it back after the await keeps its declared type. TS does
+      // not narrow a closure-mutated local and would otherwise see it as forever-null here.
+      const captured: { result: ResultEnvelope | null } = { result: null }
+      const stdout = (async (): Promise<void> => {
+        try {
+          for await (const raw of process.output) {
+            const line = classifyOutbound(raw)
+            if (line.type === 'recording') {
+              recordingLines.push(line.raw)
+            } else if (line.type === 'envelope' && line.kind === RESULT_KIND) {
+              captured.result = parseResultEnvelope(line.value)
+            }
+          }
+        } catch (error) {
+          this.log(`run ${runId} game ${game.game_index}: output stream error: ${String(error)}`)
+        }
+      })()
+
+      const exit = await process.exited
+      watchdog.stop()
+      await stdout
+      await diagnostics
+      await llmLease?.revoke()
+      // Natural exit only reports termination for an LLM container. Revoke and drain before this
+      // explicit cleanup disconnects the relay and removes the two per-session networks.
+      await this.cleanupProcess(process)
+      this.inFlight.delete(runId)
+      this.inFlightLlm.delete(runId)
+
+      // A cancel that killed this container mid-game: record the cancellation, not a failure or result.
+      if (this.cancelRequested.has(runId)) {
+        await this.deps.storage.setRunGameStatus(game.id, 'cancelled')
+        this.emit(runId, { type: 'game_status', game_index: game.game_index, status: 'cancelled' })
+        this.gameLog(runId, game, `game ${game.game_index} cancelled`, 'warning')
+        return
+      }
+
+      // No readable recording header means an infrastructure fault. No invented result row.
+      let parsed: ParsedRecording
+      try {
+        parsed = readRecording(recordingLines)
+      } catch {
+        await this.infraFault(
+          runId,
+          game,
+          `game produced no readable recording (container exit code ${exit.code})`,
+        )
+        return
+      }
+
+      // A container that exits cleanly yet never emits a recognized `result` envelope reason violated its
+      // output contract: the envelope is authoritative for the final scores, so without it there is
+      // nothing trustworthy to attribute. Treat it as an infrastructure fault rather than inventing a
+      // `terminated` ending and a standings card built from stale recording scores. A non-clean exit
+      // (crash, OOM, or watchdog kill) is classified below from the exit itself and needs no envelope.
+      const cleanExit = !watchdog.timedOut() && !exit.oomKilled && exit.code === 0
+      if (cleanExit && coerceResultReason(captured.result?.reason) === null) {
+        await this.infraFault(
+          runId,
+          game,
+          `game exited cleanly without a valid result envelope (container exit code ${exit.code})`,
+        )
+        return
+      }
+
+      const failure = classifyFailure(exit, captured.result, watchdog.timedOut())
+      // A failure the harness could pin to one seat (an agent crash, or a per-seat episode-budget
+      // overage) names that seat, so the blame lands there alone and not on every competitor sharing the
+      // container. A container-level fault it could not attribute (a wall-clock watchdog kill, an OOM)
+      // names no seat: the whole game's seats then carry it, since the culprit is genuinely unknown.
+      const culpritSlot = failure.kind !== null ? (captured.result?.failedSlot ?? null) : null
+      const status =
+        failure.kind === 'timeout' ? 'timed_out' : failure.kind === 'crash' ? 'failed' : 'completed'
+
+      // Register the produced recording (owned by the seat's natural owner) and link it to the game.
+      // An automated run has no producing session, so the recording carries its own termination reason
+      // for the replay viewer's game-over card. Only a cleanly completed game gets one, taken from its
+      // recognized result-envelope reason (a clean exit lacking one was already faulted above, so we
+      // never invent a reason); a crashed or timed-out game stays reasonless so its replay shows no final
+      // standings, mirroring a live session that ended badly.
+      const owner = recordingOwner(slots, run.requested_by)
+      await this.deps.storage
+        .createRecording({
+          id: recordingId,
+          user_id: owner,
+          env_id: envId,
+          created_at: new Date().toISOString(),
+          termination_reason:
+            status === 'completed' ? coerceResultReason(captured.result?.reason) : null,
+          llm_scope_id: llmPolicy.enabled ? runId : null,
+          llm_session_id: llmPolicy.enabled ? game.id : null,
+        })
+        .catch((error) => this.log(`run ${runId}: createRecording failed: ${String(error)}`))
+      await this.deps.storage.attachRunGameRecording(game.id, recordingId)
+
+      for (let slotIndex = 0; slotIndex < slots.length; slotIndex++) {
+        const agent = slots[slotIndex] as AgentRef
+        const slotId = `player_${slotIndex}`
+        const aggregate = aggregateSeat(parsed.states, slotId)
+        // The result envelope is authoritative for a seat's final episode score: it reports every
+        // seat's accumulated score, whereas the recording writes only the acting seat per tick. A
+        // turn-based env that pays all seats at the end (Hearts settles its penalty on the final
+        // trick) therefore never records the non-acting seats' terminal payout, so their recording
+        // `score` reads back as a stale 0. The recording-derived score is the fallback for the rare
+        // case the envelope never reported this seat at all.
+        const envelopeScore = captured.result?.scores[slotId]
+        const rawScore =
+          typeof envelopeScore === 'number' ? envelopeScore : (aggregate.finalScore ?? 0)
+        const seatFailed = failure.kind !== null && (culpritSlot === null || culpritSlot === slotId)
+        // A forfeited seat takes the environment's worst-case floor, not the partial score it accrued
+        // before failing. Otherwise a terminal-scored game (Hearts pays its penalty only at the final
+        // trick) lets an agent that crashes or plays an illegal move bank a ~0 partial — the best
+        // possible score — and lead the board despite failing every game. A clean seat keeps its score.
+        const episodeScore = seatFailed
+          ? forfeitScore(envId)
+          : normalizeEpisodeScore(envId, rawScore)
+        await this.deps.storage.recordGameResult({
+          game_id: game.id,
+          slot_index: slotIndex,
+          agent,
+          episode_score: episodeScore,
+          agent_compute_ms_total: aggregate.agentComputeMsTotal,
+          acted_tick_count: aggregate.actedTickCount,
+          failed: seatFailed,
+          failure_reason: seatFailed ? failure.reason : null,
+        })
+      }
+
+      await this.deps.storage.setRunGameStatus(game.id, status, failure.reason ?? undefined)
+      this.emit(runId, { type: 'game_status', game_index: game.game_index, status })
+      const level: RunLogLevel =
+        status === 'completed' ? 'success' : status === 'timed_out' ? 'warning' : 'error'
+      this.gameLog(
         runId,
         game,
-        `game exited cleanly without a valid result envelope (container exit code ${exit.code})`,
+        `game ${game.game_index} finished: ${status}${failure.reason ? ` (${failure.reason})` : ''}`,
+        level,
       )
-      return
+    } finally {
+      try {
+        await llmLease?.revoke()
+      } finally {
+        if (process !== undefined) await this.cleanupProcess(process)
+        this.inFlight.delete(runId)
+        this.inFlightLlm.delete(runId)
+      }
     }
-
-    const failure = classifyFailure(exit, captured.result, watchdog.timedOut())
-    // A failure the harness could pin to one seat (an agent crash, or a per-seat episode-budget
-    // overage) names that seat, so the blame lands there alone and not on every competitor sharing the
-    // container. A container-level fault it could not attribute (a wall-clock watchdog kill, an OOM)
-    // names no seat: the whole game's seats then carry it, since the culprit is genuinely unknown.
-    const culpritSlot = failure.kind !== null ? (captured.result?.failedSlot ?? null) : null
-    const status =
-      failure.kind === 'timeout' ? 'timed_out' : failure.kind === 'crash' ? 'failed' : 'completed'
-
-    // Register the produced recording (owned by the seat's natural owner) and link it to the game.
-    // An automated run has no producing session, so the recording carries its own termination reason
-    // for the replay viewer's game-over card. Only a cleanly completed game gets one, taken from its
-    // recognized result-envelope reason (a clean exit lacking one was already faulted above, so we
-    // never invent a reason); a crashed or timed-out game stays reasonless so its replay shows no final
-    // standings, mirroring a live session that ended badly.
-    const owner = recordingOwner(slots, run.requested_by)
-    await this.deps.storage
-      .createRecording({
-        id: recordingId,
-        user_id: owner,
-        env_id: envId,
-        created_at: new Date().toISOString(),
-        termination_reason:
-          status === 'completed' ? coerceResultReason(captured.result?.reason) : null,
-      })
-      .catch((error) => this.log(`run ${runId}: createRecording failed: ${String(error)}`))
-    await this.deps.storage.attachRunGameRecording(game.id, recordingId)
-
-    for (let slotIndex = 0; slotIndex < slots.length; slotIndex++) {
-      const agent = slots[slotIndex] as AgentRef
-      const slotId = `player_${slotIndex}`
-      const aggregate = aggregateSeat(parsed.states, slotId)
-      // The result envelope is authoritative for a seat's final episode score: it reports every
-      // seat's accumulated score, whereas the recording writes only the acting seat per tick. A
-      // turn-based env that pays all seats at the end (Hearts settles its penalty on the final
-      // trick) therefore never records the non-acting seats' terminal payout, so their recording
-      // `score` reads back as a stale 0. The recording-derived score is the fallback for the rare
-      // case the envelope never reported this seat at all.
-      const envelopeScore = captured.result?.scores[slotId]
-      const rawScore =
-        typeof envelopeScore === 'number' ? envelopeScore : (aggregate.finalScore ?? 0)
-      const seatFailed = failure.kind !== null && (culpritSlot === null || culpritSlot === slotId)
-      // A forfeited seat takes the environment's worst-case floor, not the partial score it accrued
-      // before failing. Otherwise a terminal-scored game (Hearts pays its penalty only at the final
-      // trick) lets an agent that crashes or plays an illegal move bank a ~0 partial — the best
-      // possible score — and lead the board despite failing every game. A clean seat keeps its score.
-      const episodeScore = seatFailed ? forfeitScore(envId) : normalizeEpisodeScore(envId, rawScore)
-      await this.deps.storage.recordGameResult({
-        game_id: game.id,
-        slot_index: slotIndex,
-        agent,
-        episode_score: episodeScore,
-        agent_compute_ms_total: aggregate.agentComputeMsTotal,
-        acted_tick_count: aggregate.actedTickCount,
-        failed: seatFailed,
-        failure_reason: seatFailed ? failure.reason : null,
-      })
-    }
-
-    await this.deps.storage.setRunGameStatus(game.id, status, failure.reason ?? undefined)
-    this.emit(runId, { type: 'game_status', game_index: game.game_index, status })
-    const level: RunLogLevel =
-      status === 'completed' ? 'success' : status === 'timed_out' ? 'warning' : 'error'
-    this.gameLog(
-      runId,
-      game,
-      `game ${game.game_index} finished: ${status}${failure.reason ? ` (${failure.reason})` : ''}`,
-      level,
-    )
   }
 
   /** Kill a game container if it exceeds its bounded wall-clock allowance. */
@@ -490,6 +600,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
     game: SeasonRunGame,
     process: SessionProcess,
     timeoutMs: number,
+    llmLease?: OfficialGrantLease,
   ): { timedOut: () => boolean; stop: () => void } {
     let fired = false
     const timer = setTimeout(() => {
@@ -500,14 +611,26 @@ class DockerWorkflowRunner implements WorkflowRunner {
         `game ${game.game_index} exceeded wall-clock watchdog (${timeoutMs} ms); killing container`,
         'warning',
       )
-      void process.kill(this.killGraceMs).catch((error) => {
-        this.log(`run ${runId} game ${game.game_index}: watchdog kill failed: ${String(error)}`)
+      void (async (): Promise<void> => {
+        await llmLease?.revoke()
+        await this.cleanupProcess(process)
+      })().catch((error) => {
+        this.log(`run ${runId} game ${game.game_index}: watchdog teardown failed: ${String(error)}`)
       })
     }, timeoutMs)
     return {
       timedOut: () => fired,
       stop: () => clearTimeout(timer),
     }
+  }
+
+  private cleanupProcess(process: SessionProcess): Promise<void> {
+    let cleanup = this.processCleanup.get(process)
+    if (cleanup === undefined) {
+      cleanup = process.kill(this.killGraceMs)
+      this.processCleanup.set(process, cleanup)
+    }
+    return cleanup
   }
 
   /**
@@ -551,6 +674,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
     slots: readonly AgentRef[],
     recordingId: string,
     overrides: ReturnType<typeof decodeSeasonConfig>['overrides'],
+    llmKeys: Readonly<Record<string, string>>,
   ): Promise<Record<string, unknown>> {
     // Snapshot each submission owner's display name for the recording header at launch time, one
     // batched lookup. Names are cosmetic — the label falls back to the stable id — so a directory
@@ -583,6 +707,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
       recording_id: recordingId,
       headless: true,
       players,
+      ...assembleLlmLaunchConfig(this.deps.llmInternalPort ?? 1, llmKeys),
       // Per-step/per-episode overrides take effect this stage; absent keys fall back to env defaults.
       ...optionalField('step_timeout_ms', overrides?.step_timeout_ms),
       ...optionalField('episode_timeout_ms', overrides?.episode_timeout_ms),
@@ -647,6 +772,19 @@ class DockerWorkflowRunner implements WorkflowRunner {
 /** The owner-visible text for a thrown value. */
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+/** Convert the frozen snapshot's wire spelling into the generic meter limit shape. */
+function policyLimits(policy: ResolvedOfficialLlmPolicy): {
+  tokenBudget: number
+  callBudget: number
+  requestsPerMinute: number
+} {
+  return {
+    tokenBudget: policy.session.token_budget,
+    callBudget: policy.session.call_budget,
+    requestsPerMinute: policy.session.rate_limit_rpm,
+  }
 }
 
 /** A human-readable seat summary for the started-game log line. */

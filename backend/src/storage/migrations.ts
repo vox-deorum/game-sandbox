@@ -46,6 +46,7 @@ const initialSchema: Migration = {
       .addColumn('human_timeout_ms', 'integer')
       .addColumn('messaging_enabled', 'integer', (col) => col.notNull().defaultTo(0))
       .addColumn('message_cap', 'integer')
+      .addColumn('llm_enabled', 'integer', (col) => col.notNull().defaultTo(0))
       .addColumn('created_at', 'text', (col) => col.notNull())
       .addColumn('ended_at', 'text')
       .execute()
@@ -64,6 +65,8 @@ const initialSchema: Migration = {
       .addColumn('created_at', 'text', (col) => col.notNull())
       .addColumn('pinned', 'integer', (col) => col.notNull().defaultTo(0))
       .addColumn('termination_reason', 'text')
+      .addColumn('llm_scope_id', 'text')
+      .addColumn('llm_session_id', 'text')
       .execute()
     await db.schema
       .createIndex('recordings_user_created')
@@ -178,6 +181,7 @@ const initialSchema: Migration = {
       .addColumn('season_id', 'text', (col) => col.notNull())
       .addColumn('requested_by', 'text', (col) => col.notNull())
       .addColumn('config_snapshot', 'text', (col) => col.notNull())
+      .addColumn('llm_policy_snapshot', 'text', (col) => col.notNull())
       .addColumn('submission_snapshot', 'text', (col) => col.notNull())
       .addColumn('status', 'text', (col) => col.notNull())
       .addColumn('started_at', 'text', (col) => col.notNull())
@@ -316,11 +320,29 @@ const initialSchema: Migration = {
       .addColumn('updated_at', 'text', (col) => col.notNull())
       .addPrimaryKeyConstraint('agent_rating_prompts_pk', ['season_id', 'user_id'])
       .execute()
+
+    await db.schema
+      .createTable('llm_development_keys')
+      .addColumn('season_id', 'text', (col) => col.notNull())
+      .addColumn('user_id', 'text', (col) => col.notNull())
+      .addColumn('key_id', 'text', (col) => col.notNull())
+      .addColumn('secret_hash', 'text', (col) => col.notNull())
+      .addColumn('created_at', 'text', (col) => col.notNull())
+      .addColumn('rotated_at', 'text')
+      .addPrimaryKeyConstraint('llm_development_keys_pk', ['season_id', 'user_id'])
+      .execute()
+    await db.schema
+      .createIndex('llm_development_keys_key_id')
+      .unique()
+      .on('llm_development_keys')
+      .column('key_id')
+      .execute()
   },
 
   async down(db: Kysely<Database>): Promise<void> {
     // Drop in reverse dependency order; each table's indexes go with it.
     for (const table of [
+      'llm_development_keys',
       'agent_rating_prompts',
       'ratings',
       'automated_placements',

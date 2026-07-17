@@ -27,6 +27,7 @@ describe('StyleguidePage', () => {
       'UiCard',
       'UiField and UiInput',
       'UiSelect',
+      'Season LLM controls',
       'UiTabs',
       'UiDialog',
       'UiSlider',

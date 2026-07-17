@@ -179,6 +179,7 @@ describe('docs HTTP routes', () => {
       retention: new Retention(storage, recordings, config),
       auth,
       userDirectory,
+      llm: config.llm,
       docsIndexFile,
       ...makeSubmissionDeps(storage, config),
     })

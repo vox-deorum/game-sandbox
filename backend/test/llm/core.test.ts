@@ -61,7 +61,7 @@ function fixture(
     countCompletion: () => 5,
   }
   const upstream = {
-    call: vi.fn(async (_request: LlmChatRequest) => ({
+    call: vi.fn(async (_request: LlmChatRequest, _signal?: AbortSignal) => ({
       completion: completion({
         prompt_tokens: 2,
         completion_tokens: 4,
@@ -236,6 +236,108 @@ describe('LLM registry, handler, and listener', () => {
     expect(denied.statusCode).toBe(401)
     expect(denied.json()).toMatchObject({ error: { code: 'invalid_api_key' } })
     expect(upstream.call).not.toHaveBeenCalled()
+    await app.close()
+  })
+
+  it('closes official admission immediately and drains requests through accounting finalization', async () => {
+    let startFinalizer = (): void => {}
+    const finalizerStarted = new Promise<void>((resolve) => {
+      startFinalizer = resolve
+    })
+    let finishFinalizer = (): void => {}
+    const finalizerGate = new Promise<void>((resolve) => {
+      finishFinalizer = resolve
+    })
+    let finalized = false
+    const { grant, handler, meter } = fixture({
+      sink: {
+        record: async () => {
+          startFinalizer()
+          await finalizerGate
+          finalized = true
+        },
+        probeHealth: () => {},
+      },
+    })
+    const registry = new KeyRegistry(() => new Uint8Array(32).fill(2))
+    const tick = createOfficialTickMarker()
+    const key = registry.issueOfficial('s1', grant, tick)
+    const app = await buildLlmListener({ registry, handler })
+
+    const activeRequest = app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      headers: { authorization: `Bearer ${key}` },
+      payload: { model: 'small', messages: [] },
+    })
+    await finalizerStarted
+
+    const revocation = registry.revokeSession('s1')
+    expect(registry.revokeSession('s1')).toBe(revocation)
+    let revoked = false
+    void revocation.then(() => {
+      revoked = true
+    })
+    await Promise.resolve()
+    expect(revoked).toBe(false)
+    expect(meter.inspect(grant.accountingScope.key).reservedCalls).toBe(1)
+
+    const deniedCompletion = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      headers: { authorization: `Bearer ${key}` },
+      payload: { model: 'small', messages: [] },
+    })
+    expect(deniedCompletion.statusCode).toBe(401)
+    const deniedTick = await app.inject({
+      method: 'POST',
+      url: '/internal/tick',
+      headers: { authorization: `Bearer ${key}` },
+      payload: { tick: 9 },
+    })
+    expect(deniedTick.statusCode).toBe(401)
+    expect(tick.current).toBeNull()
+    expect(revoked).toBe(false)
+
+    finishFinalizer()
+    await expect(activeRequest).resolves.toMatchObject({ statusCode: 200 })
+    await revocation
+    expect(finalized).toBe(true)
+    expect(revoked).toBe(true)
+    expect(meter.inspect(grant.accountingScope.key).reservedCalls).toBe(0)
+    await app.close()
+  })
+
+  it('aborts pre-success upstream work and releases its reservation during revocation', async () => {
+    const { grant, handler, meter, upstream } = fixture()
+    let markStarted = (): void => {}
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve
+    })
+    upstream.call.mockImplementationOnce(
+      (_request, signal) =>
+        new Promise((_, reject) => {
+          markStarted()
+          signal?.addEventListener('abort', () => reject(signal.reason), { once: true })
+        }),
+    )
+    const registry = new KeyRegistry(() => new Uint8Array(32).fill(3))
+    const key = registry.issueOfficial('s1', grant, createOfficialTickMarker())
+    const app = await buildLlmListener({ registry, handler })
+
+    const activeRequest = app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      headers: { authorization: `Bearer ${key}` },
+      payload: { model: 'small', messages: [] },
+    })
+    await started
+    await registry.revokeSession('s1')
+
+    const response = await activeRequest
+    expect(response.statusCode).toBe(503)
+    expect(response.json()).toMatchObject({ error: { code: 'request_cancelled' } })
+    expect(meter.inspect(grant.accountingScope.key).reservedCalls).toBe(0)
     await app.close()
   })
 
