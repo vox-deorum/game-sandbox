@@ -6,9 +6,9 @@
  * within it. Pinned recordings are exempt from both passes but count against the quota, so unbounded
  * pinning could make the quota meaningless, hence the pin guard, which refuses a pin once the user's
  * pinned count reaches the quota. The sweep runs at startup, on an interval, and after each session
- * finalize and workflow-run completion (the moments the data grows). Deletion removes the directory and
- * then the row; the listing tolerates either half missing, so a crash mid-deletion leaves only
- * ignorable debris the next pass cleans.
+ * finalize and workflow-run completion (the moments the data grows). Eviction claims remove the row
+ * and create durable cleanup work in one transaction; later filesystem or telemetry failures remain
+ * queued for the next sweep.
  *
  * Stage 6.5 layers leaderboard retention on top of this live-session policy. Leaderboard recordings
  * from each season's latest completed run are kept for as long as the season is viewable, so the
@@ -22,7 +22,7 @@
  * or pre-backfill data) is listed header-only and never evicted.
  */
 import type { RecordingsStore } from './recordings.js'
-import type { Recording, Storage } from './storage/index.js'
+import type { Recording, RecordingCleanupClaimResult, Storage } from './storage/index.js'
 
 const MS_PER_DAY = 86_400_000
 
@@ -70,6 +70,8 @@ export interface LlmTelemetryReclaimer {
 
 export class Retention {
   private timer: ReturnType<typeof setInterval> | null = null
+  /** Serialize triggers so two sweeps cannot simultaneously remove a scope's final references. */
+  private sweepTail: Promise<void> = Promise.resolve()
 
   constructor(
     private readonly storage: Storage,
@@ -100,10 +102,19 @@ export class Retention {
 
   /**
    * The eviction sweep: window first, then per-user quota. Pinned rows are exempt from both passes
-   * but still count toward the quota. Safe to call concurrently with itself in the sense that a
-   * double-delete is a no-op (the directory and row removals tolerate a missing half).
+   * but still count toward the quota. Concurrent triggers queue behind one another so deciding which
+   * recording is a scope's final durable association cannot race with another eviction.
    */
-  async sweep(): Promise<void> {
+  sweep(): Promise<void> {
+    const next = this.sweepTail.then(() => this.sweepOnce())
+    // Keep the queue usable if an unexpected error escapes the individually guarded operations.
+    this.sweepTail = next.catch(() => {})
+    return next
+  }
+
+  private async sweepOnce(): Promise<void> {
+    await this.retryPendingCleanup()
+
     let allRows: Recording[]
     try {
       allRows = await this.storage.listRecordings()
@@ -132,8 +143,7 @@ export class Retention {
     // Pass 1: window. An unpinned recording older than the window goes.
     for (const row of rows) {
       if (row.pinned === 0 && Date.parse(row.created_at) < cutoff) {
-        await this.evict(row)
-        evicted.add(row.id)
+        if (this.wasEvicted(await this.evict(row))) evicted.add(row.id)
       }
     }
 
@@ -158,37 +168,63 @@ export class Retention {
         if (over <= 0) {
           break
         }
-        await this.evict(row)
-        over -= 1
+        // Missing, active, newly protected, and successfully claimed rows all leave this sweep's
+        // evictable population, so each frees a quota slot. A concurrent pin still counts toward
+        // quota, and a transient error is retried by a later sweep — neither counts as progress.
+        if (this.wasEvicted(await this.evict(row))) over -= 1
       }
     }
+
+    await this.retryPendingCleanup()
   }
 
-  /** Remove a recording: the directory first, then the row (a crash between leaves only debris). */
-  private async evict(row: Recording): Promise<void> {
+  /** Atomically revalidate a stale sweep candidate and convert it into durable cleanup work. */
+  private async evict(row: Recording): Promise<RecordingCleanupClaimResult | 'error'> {
     try {
-      await this.recordings.delete(row.id)
-      await this.storage.deleteRecording(row.id)
-      await this.reclaimLlmScope(row.llm_scope_id)
+      return await this.storage.claimRecordingCleanup(row.id)
     } catch (error) {
       this.log(`retention: evicting ${row.id} failed: ${String(error)}`)
+      return 'error'
     }
   }
 
   /**
-   * Delete an execution scope's telemetry file once no recording references it. A workflow run's
-   * scope is shared by every game recording of that run, so the file goes only with the last one;
-   * a live session's scope is its single recording. Scopes reached here belong to ended work: an
-   * in-progress run's recordings are days younger than the eviction window.
+   * Whether an evict attempt removed the row from this sweep's evictable population. A live pin
+   * ('pinned') keeps its row counted toward quota; a transient failure ('error') leaves the row for
+   * a later sweep. Every other outcome — claimed, already gone, or now active/protected — means the
+   * row is no longer this sweep's to evict or count.
    */
-  private async reclaimLlmScope(scopeId: string | null): Promise<void> {
-    if (scopeId === null || this.llmTelemetry === undefined) {
+  private wasEvicted(result: RecordingCleanupClaimResult | 'error'): boolean {
+    return result !== 'pinned' && result !== 'error'
+  }
+
+  /** Retry claimed cleanup independently from recording pin and leaderboard protection state. */
+  private async retryPendingCleanup(): Promise<void> {
+    let queue: Awaited<ReturnType<Storage['listRecordingCleanupQueue']>>
+    try {
+      queue = await this.storage.listRecordingCleanupQueue()
+    } catch (error) {
+      this.log(`retention: listing cleanup queue failed: ${String(error)}`)
       return
     }
-    if ((await this.storage.countRecordingsByLlmScope(scopeId)) > 0) {
-      return
+    for (const item of queue) {
+      // A queued scope can only be reclaimed by a process wired with the telemetry seam. Defer the
+      // whole item — directory included — rather than deleting the directory now and stranding a row
+      // that could never be completed; a reclaimer-equipped sweep will finish it.
+      if (item.llm_scope_id !== null && this.llmTelemetry === undefined) {
+        this.log(`retention: no telemetry reclaimer for ${item.recording_id}; deferring cleanup`)
+        continue
+      }
+      try {
+        await this.recordings.delete(item.recording_id)
+        if (item.llm_scope_id !== null) {
+          this.llmTelemetry?.deleteScope(item.llm_scope_id)
+        }
+        await this.storage.completeRecordingCleanup(item.recording_id)
+      } catch (error) {
+        this.log(`retention: cleaning ${item.recording_id} failed: ${String(error)}`)
+      }
     }
-    this.llmTelemetry.deleteScope(scopeId)
   }
 
   /**
@@ -266,8 +302,9 @@ export class Retention {
     if (pinnedCount >= this.config.recordingUserQuota) {
       return { ok: false, reason: 'pinned_quota' }
     }
-    await this.storage.setRecordingPinned(id, true)
-    return { ok: true }
+    return (await this.storage.setRecordingPinned(id, true))
+      ? { ok: true }
+      : { ok: false, reason: 'not_found' }
   }
 
   /** Unpin a recording (owner-only). Idempotent. */
@@ -279,7 +316,8 @@ export class Retention {
     if (row.user_id !== userId) {
       return { ok: false, reason: 'forbidden' }
     }
-    await this.storage.setRecordingPinned(id, false)
-    return { ok: true }
+    return (await this.storage.setRecordingPinned(id, false))
+      ? { ok: true }
+      : { ok: false, reason: 'not_found' }
   }
 }

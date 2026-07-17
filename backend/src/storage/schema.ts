@@ -102,6 +102,13 @@ export interface RecordingsTable {
   llm_session_id: string | null
 }
 
+/** Durable filesystem and telemetry cleanup claimed atomically when a recording row is evicted. */
+export interface RecordingCleanupQueueTable {
+  recording_id: string
+  /** Set only when this claim removed the scope's final recording association. */
+  llm_scope_id: string | null
+}
+
 /**
  * A public gate's open/closed state. The submission window and the public-play window are each one of
  * these, modeled as independent columns because they gate different surfaces and move independently.
@@ -445,6 +452,7 @@ export interface SubmissionChecksTable {
 export interface Database {
   sessions: SessionsTable
   recordings: RecordingsTable
+  recording_cleanup_queue: RecordingCleanupQueueTable
   seasons: SeasonsTable
   submissions: SubmissionsTable
   session_submissions: SessionSubmissionsTable
@@ -469,6 +477,9 @@ export type SessionUpdate = Updateable<SessionsTable>
 
 /** A recording row as read back from the database. */
 export type Recording = Selectable<RecordingsTable>
+
+/** Durable cleanup work claimed by recording retention. */
+export type RecordingCleanup = Selectable<RecordingCleanupQueueTable>
 export type LlmDevelopmentKey = Selectable<LlmDevelopmentKeysTable>
 
 /** A recording row as inserted. */

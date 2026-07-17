@@ -154,6 +154,124 @@ describe('retention', () => {
       expect(await storage.getRecording('g2')).toBeUndefined()
       expect(deleted).toEqual(['run-1'])
     })
+
+    it('revalidates active and protected workflow recordings before claiming cleanup', async () => {
+      const deleted: string[] = []
+      const reclaimer = { deleteScope: (id: string) => deleted.push(id) }
+      const season = await storage.createSeason({ env_id: 'flappy_bird', deps_version: 1 })
+      const run = await storage.createRunWithSchedule(
+        season.id,
+        'operator',
+        [],
+        [
+          { match_index: 0, game_index: 0, seed: 1, slots: [{ kind: 'builtin-naive' }] },
+          { match_index: 0, game_index: 1, seed: 2, slots: [{ kind: 'builtin-naive' }] },
+        ],
+        () => TEST_DISABLED_OFFICIAL_LLM_POLICY,
+      )
+      const game = (await storage.listRunGames(run.id))[0]
+      if (game === undefined) throw new Error('expected a scheduled game')
+      await storage.setRunStatus(run.id, 'running')
+      await storage.attachRunGameRecording(game.id, 'game-1')
+      await writeRecording({
+        id: 'game-1',
+        user_id: 'operator',
+        env_id: 'flappy_bird',
+        created_at: ago(3),
+      })
+      await writeRecording({
+        id: 'quota-pressure',
+        user_id: 'operator',
+        env_id: 'flappy_bird',
+        created_at: ago(2),
+      })
+
+      // This disabled-policy recording has no LLM scope, matching production. The transactional
+      // claim still sees its active workflow association, so neither replay nor metadata is removed.
+      const retention = makeRetention({ recordingUserQuota: 1 }, reclaimer)
+      await retention.sweep()
+      expect(await recordings.exists('game-1')).toBe(true)
+      expect(await storage.getRecording('game-1')).toBeDefined()
+      expect(await storage.listRecordingCleanupQueue()).toEqual([])
+      expect(deleted).toEqual([])
+
+      // This direct claim represents a sweep whose protected-id snapshot went stale while it was
+      // paused. The database boundary sees the newly completed latest run and refuses cleanup.
+      await storage.setRunStatus(run.id, 'completed')
+      await expect(storage.claimRecordingCleanup('game-1')).resolves.toBe('protected')
+      expect(await recordings.exists('game-1')).toBe(true)
+      expect(await storage.getRecording('game-1')).toBeDefined()
+      expect(await storage.listRecordingCleanupQueue()).toEqual([])
+      expect(deleted).toEqual([])
+    })
+
+    it('retries claimed telemetry cleanup independently from recording state', async () => {
+      let attempts = 0
+      const reclaimer = {
+        deleteScope: () => {
+          attempts += 1
+          if (attempts === 1) {
+            throw new Error('unlink failed')
+          }
+        },
+      }
+      await storage.createSession({
+        id: 'ended-session',
+        user_id: 'alice',
+        env_id: 'flappy_bird',
+        mode: 'human',
+        recording_id: 'ended-recording',
+        created_at: ago(40),
+      })
+      await storage.markEnded('ended-session', 'terminated', ago(39))
+      await writeRecording({
+        id: 'ended-recording',
+        user_id: 'alice',
+        env_id: 'flappy_bird',
+        created_at: ago(40),
+        llm_scope_id: 'ended-session',
+        llm_session_id: 'ended-session',
+      })
+
+      const retention = makeRetention({}, reclaimer)
+      await retention.sweep()
+      expect(await recordings.exists('ended-recording')).toBe(false)
+      expect(await storage.getRecording('ended-recording')).toBeUndefined()
+      expect(await storage.listRecordingCleanupQueue()).toEqual([
+        { recording_id: 'ended-recording', llm_scope_id: 'ended-session' },
+      ])
+      expect(attempts).toBe(1)
+
+      await retention.sweep()
+      expect(await storage.getRecording('ended-recording')).toBeUndefined()
+      expect(await storage.listRecordingCleanupQueue()).toEqual([])
+      expect(attempts).toBe(2)
+    })
+  })
+
+  it('orders pin updates atomically against cleanup claims', async () => {
+    const retention = makeRetention()
+    for (let index = 0; index < 20; index++) {
+      const id = `pin-claim-${index}`
+      const userId = `owner-${index}`
+      await writeRecording({ id, user_id: userId, env_id: 'flappy_bird', created_at: ago(40) })
+
+      const [claim, pin] = await Promise.all([
+        storage.claimRecordingCleanup(id),
+        retention.pin(id, userId),
+      ])
+      if (pin.ok) {
+        expect(claim).toBe('pinned')
+        expect(await storage.getRecording(id)).toMatchObject({ pinned: 1 })
+        await storage.setRecordingPinned(id, false)
+        await expect(storage.claimRecordingCleanup(id)).resolves.toBe('claimed')
+      } else {
+        expect(pin.reason).toBe('not_found')
+        expect(claim).toBe('claimed')
+        expect(await storage.getRecording(id)).toBeUndefined()
+      }
+      await storage.completeRecordingCleanup(id)
+    }
   })
 
   describe('sweep: window', () => {

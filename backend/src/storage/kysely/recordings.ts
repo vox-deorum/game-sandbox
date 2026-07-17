@@ -40,25 +40,13 @@ export async function setRecordingPinned(
   db: Kysely<Database>,
   id: string,
   pinned: boolean,
-): Promise<void> {
-  await db
+): Promise<boolean> {
+  const result = await db
     .updateTable('recordings')
     .set({ pinned: pinned ? 1 : 0 })
     .where('id', '=', id)
-    .execute()
-}
-
-/** How many recordings still associate with one LLM execution scope (retention's deletion guard). */
-export async function countRecordingsByLlmScope(
-  db: Kysely<Database>,
-  scopeId: string,
-): Promise<number> {
-  const row = await db
-    .selectFrom('recordings')
-    .select((eb) => eb.fn.countAll<number>().as('count'))
-    .where('llm_scope_id', '=', scopeId)
     .executeTakeFirst()
-  return Number(row?.count ?? 0)
+  return Number(result.numUpdatedRows) > 0
 }
 
 export async function countPinnedByUser(db: Kysely<Database>, userId: string): Promise<number> {
@@ -69,8 +57,4 @@ export async function countPinnedByUser(db: Kysely<Database>, userId: string): P
     .where('pinned', '=', 1)
     .executeTakeFirst()
   return Number(row?.count ?? 0)
-}
-
-export async function deleteRecording(db: Kysely<Database>, id: string): Promise<void> {
-  await db.deleteFrom('recordings').where('id', '=', id).execute()
 }

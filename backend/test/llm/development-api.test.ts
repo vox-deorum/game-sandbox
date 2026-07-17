@@ -197,6 +197,46 @@ describe('development LLM API', () => {
     db.close()
   })
 
+  it.each([
+    ['syntactically invalid', '{'],
+    ['empty', ''],
+  ])('returns the OpenAI-compatible error envelope for %s completion JSON', async (_case, payload) => {
+    const { testApp, upstream } = await fixture()
+
+    const malformedCompletion = await testApp.app.inject({
+      method: 'POST',
+      url: '/api/llm/v1/chat/completions',
+      headers: { 'content-type': 'application/json' },
+      payload,
+    })
+    expect(malformedCompletion.statusCode).toBe(400)
+    expect(malformedCompletion.json()).toEqual({
+      error: {
+        message: 'The request body is not valid JSON.',
+        type: 'invalid_request_error',
+        code: 'invalid_request',
+      },
+    })
+    expect(upstream.call).not.toHaveBeenCalled()
+  })
+
+  it('leaves unrelated malformed requests on the application error contract', async () => {
+    const { testApp } = await fixture()
+
+    // The route-local parser handler must not replace the application's normal error contract.
+    const unrelatedMalformedRequest = await testApp.app.inject({
+      method: 'POST',
+      url: '/api/submissions/reachability',
+      headers: { 'content-type': 'application/json' },
+      payload: '{',
+    })
+    expect(unrelatedMalformedRequest.statusCode).toBe(400)
+    expect(unrelatedMalformedRequest.json()).toMatchObject({
+      code: 'FST_ERR_CTP_INVALID_JSON_BODY',
+      error: 'Bad Request',
+    })
+  })
+
   it('keeps terminal upstream failures out of the ledger while retaining one admission event', async () => {
     const { testApp, ledger, meter, upstream, statuses } = await fixture()
     const seasonId = await enabledSeason(testApp)

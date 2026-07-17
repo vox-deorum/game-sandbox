@@ -164,9 +164,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
   enqueue(runId: string): void {
     if (this.stopping) throw new Error('workflow runner is shutting down')
     this.queue.push(runId)
-    this.pumpPromise ??= this.pump().finally(() => {
-      this.pumpPromise = null
-    })
+    this.pumpPromise ??= this.pump()
   }
 
   cancel(runId: string): void {
@@ -225,6 +223,10 @@ class DockerWorkflowRunner implements WorkflowRunner {
       }
     } finally {
       this.activeRunId = null
+      // The pump owns its idle transition. Clearing the marker here, in the same turn that observed
+      // the empty queue, ensures a later enqueue starts a replacement pump instead of attaching work
+      // to a promise whose external cleanup callback has not run yet.
+      this.pumpPromise = null
     }
   }
 
@@ -526,6 +528,10 @@ class DockerWorkflowRunner implements WorkflowRunner {
       // never invent a reason); a crashed or timed-out game stays reasonless so its replay shows no final
       // standings, mirroring a live session that ended badly.
       const owner = recordingOwner(slots, run.requested_by)
+      // Publish the game association before its recording row. Retention can then recognize the
+      // active workflow in the first instant the row exists, including for non-LLM recordings that
+      // have no execution-scope id of their own.
+      await this.deps.storage.attachRunGameRecording(game.id, recordingId)
       await this.deps.storage
         .createRecording({
           id: recordingId,
@@ -538,7 +544,6 @@ class DockerWorkflowRunner implements WorkflowRunner {
           llm_session_id: llmPolicy.enabled ? game.id : null,
         })
         .catch((error) => this.log(`run ${runId}: createRecording failed: ${String(error)}`))
-      await this.deps.storage.attachRunGameRecording(game.id, recordingId)
 
       for (let slotIndex = 0; slotIndex < slots.length; slotIndex++) {
         const agent = slots[slotIndex] as AgentRef

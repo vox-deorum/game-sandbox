@@ -161,7 +161,9 @@ export async function listRunsByStatus(
  * "the latest run" is deterministic and a failed re-run never blanks a good board. Every latest-run
  * read funnels through here — {@link getLatestRun}, {@link getLatestCompletedRun},
  * {@link listRunsBySeason}, and the season-list `game_count` subquery — so they cannot disagree on
- * which run is "the latest" if the tie-break ever changes.
+ * which run is "the latest" if the tie-break ever changes. The one deliberate exception is
+ * `claimRecordingCleanup` in ./retention.ts, which re-derives this ordering in raw SQL so its
+ * protection recheck stays inside a single atomic statement; keep that copy in lockstep.
  */
 export function orderByNewestRun<O>(
   query: SelectQueryBuilder<Database, 'season_runs', O>,

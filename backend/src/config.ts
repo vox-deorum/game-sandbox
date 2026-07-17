@@ -208,6 +208,8 @@ class ConfigError extends Error {}
 
 /** Non-negative integer (`Number()`-coerced); rejects floats, NaN, and negatives. */
 const NON_NEGATIVE_INT = z.coerce.number().int().nonnegative()
+/** Positive integer (`Number()`-coerced); used where zero cannot represent a usable limit. */
+const POSITIVE_INT = z.coerce.number().int().positive()
 /** Positive, finite number; floats allowed (e.g. fractional CPU shares). */
 const POSITIVE_NUMBER = z.coerce.number().positive().finite()
 /** The documented boolean spellings, normalized lower-case; anything else throws. */
@@ -231,6 +233,15 @@ function intVar(env: NodeJS.ProcessEnv, name: string): number {
   const result = NON_NEGATIVE_INT.safeParse(raw)
   if (!result.success) {
     throw new ConfigError(`${name} must be a non-negative integer, got ${raw}`)
+  }
+  return result.data
+}
+
+function positiveIntVar(env: NodeJS.ProcessEnv, name: string): number {
+  const raw = requiredStringVar(env, name)
+  const result = POSITIVE_INT.safeParse(raw)
+  if (!result.success) {
+    throw new ConfigError(`${name} must be a positive integer, got ${raw}`)
   }
   return result.data
 }
@@ -578,14 +589,14 @@ export function loadConfig(env?: NodeJS.ProcessEnv): Config {
       maxOutputTokens,
       meterRecoveryIntervalMs: boundedIntVar(env, 'LLM_METER_RECOVERY_INTERVAL_MS', 1, 3_600_000),
       sessionLimits: {
-        tokenBudget: intVar(env, 'LLM_SESSION_TOKEN_BUDGET'),
-        callBudget: intVar(env, 'LLM_SESSION_CALL_BUDGET'),
-        requestsPerMinute: intVar(env, 'LLM_SESSION_RATE_LIMIT_RPM'),
+        tokenBudget: positiveIntVar(env, 'LLM_SESSION_TOKEN_BUDGET'),
+        callBudget: positiveIntVar(env, 'LLM_SESSION_CALL_BUDGET'),
+        requestsPerMinute: positiveIntVar(env, 'LLM_SESSION_RATE_LIMIT_RPM'),
       },
       developmentLimits: {
-        tokenBudget: intVar(env, 'LLM_DEVELOPMENT_TOKEN_BUDGET'),
-        callBudget: intVar(env, 'LLM_DEVELOPMENT_CALL_BUDGET'),
-        requestsPerMinute: intVar(env, 'LLM_DEVELOPMENT_RATE_LIMIT_RPM'),
+        tokenBudget: positiveIntVar(env, 'LLM_DEVELOPMENT_TOKEN_BUDGET'),
+        callBudget: positiveIntVar(env, 'LLM_DEVELOPMENT_CALL_BUDGET'),
+        requestsPerMinute: positiveIntVar(env, 'LLM_DEVELOPMENT_RATE_LIMIT_RPM'),
       },
     },
   }

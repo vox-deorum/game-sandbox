@@ -19,6 +19,7 @@ import type {
   PublicSeason,
   Rating,
   Recording,
+  RecordingCleanup,
   ReleaseStatus,
   RunStatus,
   Season,
@@ -49,6 +50,7 @@ export type {
   PublicSeason,
   Rating,
   Recording,
+  RecordingCleanup,
   ReleaseStatus,
   RunStatus,
   Season,
@@ -131,6 +133,14 @@ export interface NewRecordingInput {
   llm_scope_id?: string | null
   llm_session_id?: string | null
 }
+
+/** Why an atomic recording-cleanup claim did or did not remove the current row. */
+export type RecordingCleanupClaimResult =
+  | 'claimed'
+  | 'missing'
+  | 'pinned'
+  | 'active_scope'
+  | 'protected'
 
 /**
  * The domain-shaped fields the submission route provides when creating a pending submission. The
@@ -339,13 +349,18 @@ export interface Storage {
   /** One recording row by id, or `undefined` (a directory with no row — foreign debris). */
   getRecording(id: string): Promise<Recording | undefined>
   /** Set or clear a recording's pinned flag. */
-  setRecordingPinned(id: string, pinned: boolean): Promise<void>
+  setRecordingPinned(id: string, pinned: boolean): Promise<boolean>
   /** How many recordings a user has pinned; backs the pin-quota guard. */
   countPinnedByUser(userId: string): Promise<number>
-  /** Delete a recording's row (the directory is removed separately by the retention sweep). */
-  deleteRecording(id: string): Promise<void>
-  /** How many recordings still reference one LLM execution scope (retention's deletion guard). */
-  countRecordingsByLlmScope(scopeId: string): Promise<number>
+  /**
+   * Atomically revalidate and claim one candidate for cleanup, removing its recording row and
+   * inserting durable cleanup work only when it remains unpinned, inactive, and unprotected.
+   */
+  claimRecordingCleanup(id: string): Promise<RecordingCleanupClaimResult>
+  /** Durable filesystem and final-scope telemetry cleanup work, in claim order. */
+  listRecordingCleanupQueue(): Promise<RecordingCleanup[]>
+  /** Acknowledge cleanup only after its directory and optional telemetry scope have been deleted. */
+  completeRecordingCleanup(recordingId: string): Promise<void>
 
   /**
    * The environment's submission-`open` season, the identity boundary every submission needs (the

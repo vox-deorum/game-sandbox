@@ -232,6 +232,19 @@ describe('loadConfig', () => {
     expect(() => load({ [name]: value })).toThrow(new RegExp(name))
   })
 
+  it.each([
+    'LLM_SESSION_TOKEN_BUDGET',
+    'LLM_SESSION_CALL_BUDGET',
+    'LLM_SESSION_RATE_LIMIT_RPM',
+    'LLM_DEVELOPMENT_TOKEN_BUDGET',
+    'LLM_DEVELOPMENT_CALL_BUDGET',
+    'LLM_DEVELOPMENT_RATE_LIMIT_RPM',
+  ])('rejects a zero %s before constructing an unusable policy', (name) => {
+    expect(() => load({ [name]: '0' })).toThrow(
+      new RegExp(`^${name} must be a positive integer, got 0$`),
+    )
+  })
+
   it('allows zero upstream retries', () => {
     expect(load({ LLM_UPSTREAM_MAX_RETRIES: '0' }).llm.upstreamMaxRetries).toBe(0)
   })

@@ -23,6 +23,7 @@ import type {
   PlacementInput,
   RatingAggregate,
   RecordGameResultInput,
+  RecordingCleanupClaimResult,
   ScheduledGameInput,
   SetPlayStatusResult,
   SetSubmissionStatusResult,
@@ -42,6 +43,7 @@ import type {
   PublicSeason,
   Rating,
   Recording,
+  RecordingCleanup,
   ReleaseStatus,
   RunStatus,
   Season,
@@ -117,17 +119,20 @@ export class KyselyStorage implements Storage {
   getRecording(id: string): Promise<Recording | undefined> {
     return recordings.getRecording(this.db, id)
   }
-  setRecordingPinned(id: string, pinned: boolean): Promise<void> {
+  setRecordingPinned(id: string, pinned: boolean): Promise<boolean> {
     return recordings.setRecordingPinned(this.db, id, pinned)
   }
   countPinnedByUser(userId: string): Promise<number> {
     return recordings.countPinnedByUser(this.db, userId)
   }
-  deleteRecording(id: string): Promise<void> {
-    return recordings.deleteRecording(this.db, id)
+  claimRecordingCleanup(id: string): Promise<RecordingCleanupClaimResult> {
+    return retention.claimRecordingCleanup(this.db, id)
   }
-  countRecordingsByLlmScope(scopeId: string): Promise<number> {
-    return recordings.countRecordingsByLlmScope(this.db, scopeId)
+  listRecordingCleanupQueue(): Promise<RecordingCleanup[]> {
+    return retention.listRecordingCleanupQueue(this.db)
+  }
+  completeRecordingCleanup(recordingId: string): Promise<void> {
+    return retention.completeRecordingCleanup(this.db, recordingId)
   }
 
   // --- Seasons ---

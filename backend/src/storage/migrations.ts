@@ -74,6 +74,31 @@ const initialSchema: Migration = {
       .columns(['user_id', 'created_at'])
       .execute()
 
+    // --- recording_cleanup_queue: durable filesystem and final-scope telemetry cleanup. ---
+    await db.schema
+      .createTable('recording_cleanup_queue')
+      .addColumn('recording_id', 'text', (col) => col.primaryKey())
+      .addColumn('llm_scope_id', 'text')
+      .execute()
+    await sql`
+      CREATE TRIGGER recordings_queue_cleanup
+      BEFORE DELETE ON recordings
+      FOR EACH ROW
+      BEGIN
+        INSERT INTO recording_cleanup_queue (recording_id, llm_scope_id)
+        VALUES (
+          OLD.id,
+          CASE
+            WHEN OLD.llm_scope_id IS NOT NULL AND NOT EXISTS (
+              SELECT 1 FROM recordings AS other
+              WHERE other.llm_scope_id = OLD.llm_scope_id AND other.id <> OLD.id
+            ) THEN OLD.llm_scope_id
+            ELSE NULL
+          END
+        );
+      END
+    `.execute(db)
+
     // --- seasons: one row per environment's competition season. ---
     await db.schema
       .createTable('seasons')
@@ -340,6 +365,7 @@ const initialSchema: Migration = {
   },
 
   async down(db: Kysely<Database>): Promise<void> {
+    await sql`DROP TRIGGER IF EXISTS recordings_queue_cleanup`.execute(db)
     // Drop in reverse dependency order; each table's indexes go with it.
     for (const table of [
       'llm_development_keys',
@@ -353,6 +379,7 @@ const initialSchema: Migration = {
       'session_submissions',
       'submissions',
       'seasons',
+      'recording_cleanup_queue',
       'recordings',
       'sessions',
     ]) {

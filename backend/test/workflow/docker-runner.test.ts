@@ -417,6 +417,33 @@ describe('Docker-backed workflow runner', () => {
     expect((await storage.getLatestCompletedRun(run.season_id))?.id).toBe(run.id)
   })
 
+  it('starts work enqueued while the previous pump transitions to idle', async () => {
+    const handle = makeRunner(storage)
+    const first = await makeRun(storage, [naiveGame(0, 7)])
+    const second = await makeRun(storage, [naiveGame(0, 9)])
+    handle.driver.onLaunch = (launch): void => {
+      const config = JSON.parse(launch.spec.argv[0] ?? '{}') as { seed: number }
+      emitRecording(launch.process, config)
+    }
+
+    const originalGetRun = storage.getRun.bind(storage)
+    let secondRunRead = false
+    storage.getRun = (runId) => {
+      if (runId === second.id) secondRunRead = true
+      return originalGetRun(runId)
+    }
+
+    await runToTerminal(handle, first.id)
+    // Let the pump observe its empty queue while its outer `.finally` callback is still pending.
+    // Enqueuing in this microtask window used to see a non-null pump and strand the new run.
+    await Promise.resolve()
+    await Promise.resolve()
+
+    const secondTerminal = runToTerminal(handle, second.id)
+    expect(secondRunRead).toBe(true)
+    await expect(secondTerminal).resolves.toMatchObject({ status: 'completed' })
+  })
+
   it('records the envelope score, not a stale recording score, for a non-terminal-acting seat', async () => {
     // A turn-based env pays its seats only at the terminal tick, and the recording writes only the
     // acting seat per tick, so a seat that did not act last reads back a stale 0 in the recording. The
