@@ -16,18 +16,11 @@ The full specification lives under [docs/specs/](docs/specs/README.md). Read it 
 
 Public documentation under `docs/` also follows [docs/AGENTS.md](docs/AGENTS.md), including its audience, linking, and beginner-accessibility conventions.
 
-## Writing style
+## Writing Style
 
-When you write documentation, specs, responses, or any prose in this repo, follow these rules:
+Write everything in natural language: docs, code comments, commit messages, release notes, console output, and the AGENTS.md files themselves. Keep the prose plain and easy to follow. Bullets, subbullets, and tables are encouraged wherever they make the content easier to scan. Do not use em-dashes anywhere. Reach for a colon, a comma, parentheses, or two separate sentences instead. Every agent working in this repo must follow this rule.
 
-- Write naturally, the way a thoughtful human would write a spec. No marketing voice.
-- State assumptions, prerequisites, and specialized terms instead of relying on context that only an existing maintainer would know. When revising prose, preserve constraints, exceptions, and rationale that a new reader still needs.
-- Do not use em-dashes. Use commas, periods, parentheses, or rewording instead.
-- Specs describe what the system is. They do not include implementation details, build plans, or code scaffolding unless the task explicitly asks for those.
-- Organize clearly with sections and short paragraphs. Avoid bullet soup, which is a wall of single-sentence bullets that could have been a paragraph.
-- Do not hard-wrap prose to a fixed column. Write one line per paragraph and let the editor soft-wrap it. This applies to every Markdown file in the repo, docs and READMEs included, not just specs and plans. Markdown reflows when rendered, so a column limit only adds noisy diffs and tempts link workarounds. The exceptions that may exceed any width are things that cannot be wrapped: URLs, link reference definitions, and table rows.
-- No emoji.
-- Code comments should exist by default, either written with the code or added during review. They should explain intent, invariants, or non-obvious behavior. Keep them succinct, and do not add comments that only restate what the next line of code already says.
+Do not produce layered writings (e.g., instead of X we chose to do Y) that document revision histories, unless explicitly instructed to do so.
 
 ## Working on this repo
 
