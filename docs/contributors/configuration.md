@@ -89,7 +89,7 @@ The internal OpenAI-compatible proxy starts only when `LLM_UPSTREAM_URL` and at 
 | `LLM_METER_RECOVERY_INTERVAL_MS` | `5000` | Delay between write-health probes for an open accounting breaker, bounded from 1 through 3600000 milliseconds |
 | `LLM_SESSION_TOKEN_BUDGET` | `100000` | Successful input-plus-completion token allowance per official session slot |
 | `LLM_SESSION_CALL_BUDGET` | `100` | Successful-call allowance per official session slot |
-| `LLM_SESSION_RATE_LIMIT_RPM` | `60` | Admitted logical requests per minute per official session slot |
+| `LLM_SESSION_RATE_LIMIT_RPM` | `60` | Successful logical requests per minute per official session slot; an in-flight request holds one window slot until it resolves or its start leaves the window |
 
 `LLM_DEFAULT_MAX_OUTPUT_TOKENS` may be zero but must not exceed `LLM_MAX_OUTPUT_TOKENS`. Token budgets count input plus total completion tokens. Reasoning tokens are reported separately as a subset of completion usage and are not charged twice.
 

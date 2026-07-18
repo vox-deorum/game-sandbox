@@ -12,7 +12,7 @@ export interface LlmUsage {
   outputTokens: number
 }
 
-/** Successful-call and admitted-request limits for one generic accounting scope. */
+/** Successful-call limits with pending admission capacity for one generic accounting scope. */
 export interface LlmLimits {
   tokenBudget: number
   callBudget: number

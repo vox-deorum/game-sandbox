@@ -341,6 +341,100 @@ describe('LLM registry, handler, and listener', () => {
     await app.close()
   })
 
+  it('accrues in-flight ms across a successful and a failed call and serves it to the harness', async () => {
+    let now = 1_000
+    const { grant, handler, upstream } = fixture()
+    upstream.call
+      .mockImplementationOnce(async () => {
+        now += 40
+        return {
+          completion: completion({ prompt_tokens: 2, completion_tokens: 4, total_tokens: 6 }),
+          latencyMs: 40,
+        }
+      })
+      .mockImplementationOnce(async () => {
+        now += 25
+        throw new LlmError(400, 'bad_upstream', 'bad')
+      })
+    const registry = new KeyRegistry(() => new Uint8Array(32).fill(9), { now: () => now })
+    const key = registry.issueOfficial('s1', grant, createOfficialTickMarker())
+    const app = await buildLlmListener({ registry, handler })
+
+    const ok = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      headers: { authorization: `Bearer ${key}` },
+      payload: { model: 'small', messages: [] },
+    })
+    expect(ok.statusCode).toBe(200)
+    expect(registry.inFlightMsForScope(grant.accountingScope.key)).toBe(40)
+
+    const failed = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      headers: { authorization: `Bearer ${key}` },
+      payload: { model: 'small', messages: [] },
+    })
+    expect(failed.statusCode).toBe(400)
+    // A failed call still counts: timing authority stays with the proxy for the whole logical request.
+    expect(registry.inFlightMsForScope(grant.accountingScope.key)).toBe(65)
+
+    const inflight = await app.inject({
+      method: 'POST',
+      url: '/internal/inflight',
+      headers: { authorization: `Bearer ${key}` },
+    })
+    expect(inflight.json()).toEqual({ inflight_ms: 65 })
+    const tick = await app.inject({
+      method: 'POST',
+      url: '/internal/tick',
+      headers: { authorization: `Bearer ${key}` },
+      payload: { phase: 'setup' },
+    })
+    expect(tick.json()).toEqual({ ok: true, inflight_ms: 65 })
+    await app.close()
+  })
+
+  it('counts a capped active-request partial toward the session and clears accumulators on revocation', async () => {
+    let now = 1_000
+    const { grant, handler, upstream } = fixture()
+    let markStarted = (): void => {}
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve
+    })
+    upstream.call.mockImplementationOnce(
+      (_request, signal) =>
+        new Promise((_, reject) => {
+          markStarted()
+          signal?.addEventListener('abort', () => reject(signal.reason), { once: true })
+        }),
+    )
+    const registry = new KeyRegistry(() => new Uint8Array(32).fill(4), {
+      now: () => now,
+      maxRequestMs: 15,
+    })
+    const key = registry.issueOfficial('s1', grant, createOfficialTickMarker())
+    const app = await buildLlmListener({ registry, handler })
+
+    const active = app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      headers: { authorization: `Bearer ${key}` },
+      payload: { model: 'small', messages: [] },
+    })
+    await started
+    now = 1_050
+    // The active request has run 50 ms, but a single call may contribute at most maxRequestMs (15).
+    expect(registry.inFlightMs('s1')).toBe(15)
+
+    await registry.revokeSession('s1')
+    await active
+    // Revocation clears both the per-session view and the per-scope accumulator.
+    expect(registry.inFlightMs('s1')).toBe(0)
+    expect(registry.inFlightMsForScope(grant.accountingScope.key)).toBe(0)
+    await app.close()
+  })
+
   it.each([
     undefined,
     'Basic abc',
@@ -450,6 +544,7 @@ describe('generic admission and recovery', () => {
   it.each([
     ['call', { tokenBudget: 100, callBudget: 1, requestsPerMinute: 10 }, 2, 3],
     ['token', { tokenBudget: 10, callBudget: 10, requestsPerMinute: 10 }, 3, 3],
+    ['rate', { tokenBudget: 100, callBudget: 10, requestsPerMinute: 1 }, 2, 3],
   ])('makes concurrent %s reservations observe one atomic budget', async (_kind, limits, input, output) => {
     const meter = new LlmMeter({ recoveryIntervalMs: 10 })
     const accountingScope: LlmAccountingScope = {
@@ -463,11 +558,14 @@ describe('generic admission and recovery', () => {
     ])
     expect(outcomes.map((outcome) => outcome.status).sort()).toEqual(['fulfilled', 'rejected'])
     const rejected = outcomes.find((outcome) => outcome.status === 'rejected')
-    expect(rejected).toMatchObject({ reason: { code: 'budget_exceeded' } })
+    expect(rejected).toMatchObject({
+      reason: { code: _kind === 'rate' ? 'rate_limit_exceeded' : 'budget_exceeded' },
+    })
     expect(meter.inspect(accountingScope.key)).toMatchObject({
       reservedCalls: 1,
       reservedTokens: input + output,
     })
+    expect(meter.inspect(accountingScope.key).pendingRateEvents.size).toBe(1)
     const accepted = outcomes.find((outcome) => outcome.status === 'fulfilled')
     if (accepted?.status === 'fulfilled') meter.release(accepted.value)
   })
@@ -483,31 +581,152 @@ describe('generic admission and recovery', () => {
     const sessionB = makeScope('session:s1:player_1')
     const development = makeScope('development:participant-1:season-1')
 
-    const reservations = await Promise.all([
-      meter.reserve(sessionA, 1, 1),
-      meter.reserve(sessionB, 1, 1),
-      meter.reserve(development, 1, 1),
-    ])
+    // Convert each pending rate reservation into the event a successful call would retain.
     for (const scope of [sessionA, sessionB, development]) {
-      expect(meter.inspect(scope.key)).toMatchObject({
-        rateEvents: [expect.any(Number)],
-        reservedCalls: 1,
-      })
+      const reservation = await meter.reserve(scope, 1, 1)
+      meter.recordRateEvent(reservation)
+      meter.release(reservation)
     }
+    for (const scope of [sessionA, sessionB, development]) {
+      expect(meter.inspect(scope.key).rateEvents).toHaveLength(1)
+    }
+    // Each window is independent and full at rpm=1, so the next reservation on any scope is limited.
     await expect(meter.reserve(development, 1, 1)).rejects.toMatchObject({
       code: 'rate_limit_exceeded',
     })
     expect(meter.inspect(sessionB.key).rateEvents).toHaveLength(1)
-    for (const reservation of reservations) meter.release(reservation)
   })
 
-  it('keeps one rate event after terminal upstream failure while releasing call/token reservation', async () => {
+  it('retains successful request starts in time order when concurrent requests finish out of order', async () => {
+    let now = 1_000
+    const meter = new LlmMeter({ recoveryIntervalMs: 10, now: () => now })
+    const scope: LlmAccountingScope = {
+      key: 'concurrent:rate-order',
+      limits: { tokenBudget: 100, callBudget: 10, requestsPerMinute: 2 },
+      readCommittedUsage: emptyUsage,
+    }
+    const first = await meter.reserve(scope, 1, 1)
+    now = 1_010
+    const second = await meter.reserve(scope, 1, 1)
+
+    meter.recordRateEvent(second)
+    meter.release(second)
+    now = 1_020
+    meter.recordRateEvent(first)
+    meter.release(first)
+
+    expect(meter.inspect(scope.key)).toMatchObject({
+      rateEvents: [1_000, 1_010],
+    })
+    expect(meter.inspect(scope.key).pendingRateEvents.size).toBe(0)
+  })
+
+  it('keeps a later success when an earlier concurrent request fails', async () => {
+    let now = 1_000
+    const meter = new LlmMeter({ recoveryIntervalMs: 10, now: () => now })
+    const scope: LlmAccountingScope = {
+      key: 'concurrent:rate-rollback',
+      limits: { tokenBudget: 100, callBudget: 10, requestsPerMinute: 2 },
+      readCommittedUsage: emptyUsage,
+    }
+    const first = await meter.reserve(scope, 1, 1)
+    now = 1_010
+    const second = await meter.reserve(scope, 1, 1)
+
+    meter.recordRateEvent(second)
+    meter.release(second)
+    meter.release(first)
+
+    expect(meter.inspect(scope.key).rateEvents).toEqual([1_010])
+    expect(meter.inspect(scope.key).pendingRateEvents.size).toBe(0)
+    const admitted = await meter.reserve(scope, 1, 1)
+    // The freed capacity is really occupied again: one recorded event plus the new pending slot.
+    expect(meter.inspect(scope.key).rateEvents).toEqual([1_010])
+    expect(meter.inspect(scope.key).pendingRateEvents.size).toBe(1)
+    meter.release(admitted)
+  })
+
+  it('expires pending rate capacity when its request start leaves the sliding window', async () => {
+    let now = 1_000
+    const meter = new LlmMeter({ recoveryIntervalMs: 10, now: () => now })
+    const scope: LlmAccountingScope = {
+      key: 'concurrent:rate-expiry',
+      limits: { tokenBudget: 100, callBudget: 10, requestsPerMinute: 1 },
+      readCommittedUsage: emptyUsage,
+    }
+    const expired = await meter.reserve(scope, 1, 1)
+    now = 61_001
+    const current = await meter.reserve(scope, 1, 1)
+
+    meter.recordRateEvent(expired)
+    meter.release(expired)
+    expect(meter.inspect(scope.key).rateEvents).toEqual([])
+    expect(meter.inspect(scope.key).pendingRateEvents.size).toBe(1)
+    meter.release(current)
+  })
+
+  it('retains no event for a success whose start left the window even without an intervening prune', async () => {
+    let now = 1_000
+    const meter = new LlmMeter({ recoveryIntervalMs: 10, now: () => now })
+    const scope: LlmAccountingScope = {
+      key: 'concurrent:rate-late-success',
+      limits: { tokenBudget: 100, callBudget: 10, requestsPerMinute: 1 },
+      readCommittedUsage: emptyUsage,
+    }
+    const slow = await meter.reserve(scope, 1, 1)
+    now = 61_001
+
+    meter.recordRateEvent(slow)
+    meter.release(slow)
+    expect(meter.inspect(scope.key).rateEvents).toEqual([])
+    expect(meter.inspect(scope.key).pendingRateEvents.size).toBe(0)
+  })
+
+  it('ignores a duplicate record on a live reservation and throws on a finalized one', async () => {
+    let now = 1_000
+    const meter = new LlmMeter({ recoveryIntervalMs: 10, now: () => now })
+    const scope: LlmAccountingScope = {
+      key: 'concurrent:rate-finalized',
+      limits: { tokenBudget: 100, callBudget: 10, requestsPerMinute: 5 },
+      readCommittedUsage: emptyUsage,
+    }
+    const recorded = await meter.reserve(scope, 1, 1)
+    meter.recordRateEvent(recorded)
+    meter.recordRateEvent(recorded)
+    expect(meter.inspect(scope.key).rateEvents).toEqual([1_000])
+    meter.release(recorded)
+
+    now = 1_010
+    const released = await meter.reserve(scope, 1, 1)
+    meter.release(released)
+    expect(() => meter.recordRateEvent(released)).toThrow(
+      'LLM rate reservation was already finalized',
+    )
+    expect(meter.inspect(scope.key).rateEvents).toEqual([1_000])
+    expect(meter.inspect(scope.key).pendingRateEvents.size).toBe(0)
+  })
+
+  it('records no rate event after a terminal upstream failure so a later request still reaches upstream', async () => {
     const { grant, handler, meter, upstream } = fixture({ rpm: 1 })
-    upstream.call.mockRejectedValueOnce(new LlmError(400, 'bad_upstream', 'bad'))
+    upstream.call.mockRejectedValue(new LlmError(400, 'bad_upstream', 'bad'))
     await expect(handler.handle(grant, { model: 'small', messages: [] })).rejects.toMatchObject({
       code: 'bad_upstream',
     })
-    expect(meter.inspect(grant.accountingScope.key).reservedCalls).toBe(0)
+    expect(meter.inspect(grant.accountingScope.key)).toMatchObject({
+      rateEvents: [],
+      reservedCalls: 0,
+    })
+    expect(meter.inspect(grant.accountingScope.key).pendingRateEvents.size).toBe(0)
+    await expect(handler.handle(grant, { model: 'small', messages: [] })).rejects.toMatchObject({
+      code: 'bad_upstream',
+    })
+    expect(upstream.call).toHaveBeenCalledTimes(2)
+  })
+
+  it('records one rate event per success and limits the next call once the window is full at rpm=1', async () => {
+    const { grant, handler, meter, upstream } = fixture({ rpm: 1 })
+    await handler.handle(grant, { model: 'small', messages: [] })
+    expect(meter.inspect(grant.accountingScope.key).rateEvents).toHaveLength(1)
     await expect(handler.handle(grant, { model: 'small', messages: [] })).rejects.toMatchObject({
       code: 'rate_limit_exceeded',
     })

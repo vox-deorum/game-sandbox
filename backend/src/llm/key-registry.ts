@@ -5,8 +5,23 @@ import type { LlmGrant, OfficialKeyEntry, OfficialTickMarkerRef } from './types.
 
 type RandomKeyBytes = (size: number) => Uint8Array
 
+/** Generous fallback bound on a single request's in-flight contribution; deployments override it. */
+const DEFAULT_MAX_REQUEST_MS = 600_000
+
+export interface KeyRegistryOptions {
+  now?: () => number
+  /**
+   * Upper bound on how much a single in-flight request may contribute to {@link KeyRegistry.inFlightMs},
+   * matching the upstream caller's worst-case wall time. Defense-in-depth against an SDK per-attempt
+   * timeout that never fires, so future watchdog integration can rely on a stuck request's
+   * contribution being bounded.
+   */
+  maxRequestMs?: number
+}
+
 interface OfficialSessionState {
   keys: Set<string>
+  scopeKeys: Set<string>
   activeRequests: Set<OfficialRequestState>
   closed: boolean
   drain: Promise<void>
@@ -16,6 +31,7 @@ interface OfficialSessionState {
 interface OfficialRequestState {
   controller: AbortController
   cancellable: boolean
+  startedAt: number
 }
 
 /** One admitted official request. Releasing it settles the session revocation barrier. */
@@ -31,8 +47,18 @@ export interface OfficialRequestAdmission {
 export class KeyRegistry {
   private readonly official = new Map<string, OfficialKeyEntry>()
   private readonly sessions = new Map<string, OfficialSessionState>()
+  /** Cumulative completed in-flight ms per accounting-scope key, spanning success and failure alike. */
+  private readonly inFlightByScope = new Map<string, number>()
+  private readonly now: () => number
+  private readonly maxRequestMs: number
 
-  constructor(private readonly random: RandomKeyBytes = randomBytes) {}
+  constructor(
+    private readonly random: RandomKeyBytes = randomBytes,
+    options: KeyRegistryOptions = {},
+  ) {
+    this.now = options.now ?? Date.now
+    this.maxRequestMs = options.maxRequestMs ?? DEFAULT_MAX_REQUEST_MS
+  }
 
   issueOfficial(sessionId: string, grant: LlmGrant, tick: OfficialTickMarkerRef): string {
     let state = this.sessions.get(sessionId)
@@ -46,6 +72,7 @@ export class KeyRegistry {
     } while (this.official.has(bearer))
     this.official.set(bearer, { sessionId, grant, tick })
     state.keys.add(bearer)
+    state.scopeKeys.add(grant.accountingScope.key)
     this.sessions.set(sessionId, state)
     return bearer
   }
@@ -57,6 +84,7 @@ export class KeyRegistry {
     const requestState: OfficialRequestState = {
       controller: new AbortController(),
       cancellable: true,
+      startedAt: this.now(),
     }
     state.activeRequests.add(requestState)
 
@@ -70,11 +98,34 @@ export class KeyRegistry {
       release: () => {
         if (released) return
         released = true
+        // The whole logical request, from admission to final response and across every retry, counts,
+        // whether it succeeded or failed, so timing authority stays with the proxy.
+        const elapsed = Math.max(0, Math.round(this.now() - requestState.startedAt))
+        const scopeKey = entry.grant.accountingScope.key
+        this.inFlightByScope.set(scopeKey, (this.inFlightByScope.get(scopeKey) ?? 0) + elapsed)
         state.activeRequests.delete(requestState)
         if (state.closed && state.activeRequests.size === 0)
           this.finishRevocation(entry.sessionId, state)
       },
     }
+  }
+
+  /** Cumulative completed in-flight ms for one accounting scope, available to future hook timing. */
+  inFlightMsForScope(scopeKey: string): number {
+    return this.inFlightByScope.get(scopeKey) ?? 0
+  }
+
+  /** Cumulative in-flight ms for a session: completed requests plus each active request's capped partial. */
+  inFlightMs(sessionId: string): number {
+    const state = this.sessions.get(sessionId)
+    if (state === undefined) return 0
+    let total = 0
+    for (const scopeKey of state.scopeKeys) total += this.inFlightByScope.get(scopeKey) ?? 0
+    const now = this.now()
+    for (const request of state.activeRequests) {
+      total += Math.min(this.maxRequestMs, Math.max(0, Math.round(now - request.startedAt)))
+    }
+    return total
   }
 
   authenticateOfficial(bearer: string): OfficialKeyEntry {
@@ -106,6 +157,7 @@ export class KeyRegistry {
   private finishRevocation(sessionId: string, state: OfficialSessionState): void {
     if (this.sessions.get(sessionId) !== state) return
     this.sessions.delete(sessionId)
+    for (const scopeKey of state.scopeKeys) this.inFlightByScope.delete(scopeKey)
     state.resolveDrain()
   }
 }
@@ -115,7 +167,14 @@ function createSessionState(): OfficialSessionState {
   const drain = new Promise<void>((resolve) => {
     resolveDrain = resolve
   })
-  return { keys: new Set(), activeRequests: new Set(), closed: false, drain, resolveDrain }
+  return {
+    keys: new Set(),
+    scopeKeys: new Set(),
+    activeRequests: new Set(),
+    closed: false,
+    drain,
+    resolveDrain,
+  }
 }
 
 function invalidKey(): LlmError {

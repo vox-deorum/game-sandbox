@@ -237,7 +237,7 @@ describe('development LLM API', () => {
     })
   })
 
-  it('keeps terminal upstream failures out of the ledger while retaining one admission event', async () => {
+  it('keeps terminal upstream failures out of the ledger and records no rate event', async () => {
     const { testApp, ledger, meter, upstream, statuses } = await fixture()
     const seasonId = await enabledSeason(testApp)
     const key = await issue(testApp, statuses, seasonId, 'alice')
@@ -257,7 +257,7 @@ describe('development LLM API', () => {
     expect(response.statusCode).toBe(400)
     expect(ledger.readUserUsage(seasonId, userId).calls).toBe(0)
     expect(meter.inspect(`development:${seasonId}:${userId}`)).toMatchObject({
-      rateEvents: [expect.any(Number)],
+      rateEvents: [],
       reservedCalls: 0,
       reservedTokens: 0,
     })

@@ -1,3 +1,5 @@
+import { performance } from 'node:perf_hooks'
+
 import { LlmError } from './errors.js'
 import {
   emptyUsage,
@@ -8,8 +10,12 @@ import {
   totalTokens,
 } from './types.js'
 
+/** One sliding-window horizon shared by recorded events and pending capacity. */
+const RATE_WINDOW_MS = 60_000
+
 interface MeterState {
   rateEvents: number[]
+  pendingRateEvents: Set<LlmReservation>
   reservedCalls: number
   reservedTokens: number
   debt: LlmUsage
@@ -22,6 +28,8 @@ export interface LlmReservation {
   readonly scope: LlmAccountingScope
   readonly inputTokens: number
   readonly outputTokens: number
+  /** Admission instant that stamps this request's rate event and bounds its pending capacity. */
+  readonly rateStartedAt: number
   active: boolean
 }
 
@@ -42,7 +50,9 @@ export class LlmMeter {
   private readonly log: (message: string) => void
 
   constructor(private readonly options: LlmMeterOptions) {
-    this.now = options.now ?? Date.now
+    // The window only ever compares its own readings, so a monotonic clock keeps a wall-clock step
+    // (e.g. an NTP correction) from stranding an event in the window or expiring it early.
+    this.now = options.now ?? (() => performance.now())
     this.schedule = options.schedule ?? ((callback, delay) => setTimeout(callback, delay))
     this.cancel = options.cancel ?? clearTimeout
     this.log = options.log ?? (() => {})
@@ -58,14 +68,14 @@ export class LlmMeter {
     const requestedTokens = inputTokens + outputTokens
 
     const state = this.state(scope.key)
-    this.pruneRateWindow(state, now)
+    this.pruneRateWindows(state, now)
     if (state.breakerOpen) {
       throw new LlmError(503, 'meter_unavailable', 'Usage accounting is temporarily unavailable.')
     }
     // Never touch a known-unhealthy store while its pair-scoped breaker is open. Once admitted to
     // the read, the durable reader is synchronous, so no commit can land before reservation.
     const usage = scope.readCommittedUsage()
-    if (state.rateEvents.length >= scope.limits.requestsPerMinute) {
+    if (state.rateEvents.length + state.pendingRateEvents.size >= scope.limits.requestsPerMinute) {
       throw new LlmError(429, 'rate_limit_exceeded', 'Rate limit exceeded.', 'rate_limit_error')
     }
     if (usage.calls + state.reservedCalls + state.debt.calls + 1 > scope.limits.callBudget) {
@@ -80,20 +90,46 @@ export class LlmMeter {
       throw new LlmError(400, 'budget_exceeded', 'Token budget exceeded.')
     }
 
-    state.rateEvents.push(now)
+    const reservation: LlmReservation = {
+      scope,
+      inputTokens,
+      outputTokens,
+      rateStartedAt: now,
+      active: true,
+    }
+    state.pendingRateEvents.add(reservation)
     state.reservedCalls += 1
     state.reservedTokens += requestedTokens
-    return { scope, inputTokens, outputTokens, active: true }
+    return reservation
+  }
+
+  /**
+   * Convert one request's pending rate capacity into a successful event stamped at its admission
+   * time. Call this after upstream success and before any finalizer, ahead of durable accounting,
+   * so the event survives a post-upstream accounting failure. A failed or exhausted-retry request
+   * instead releases its capacity via {@link release} and records nothing, as does a success whose
+   * start has already left the sliding window, since its event could no longer influence admission.
+   */
+  recordRateEvent(reservation: LlmReservation): void {
+    if (!reservation.active) throw new Error('LLM rate reservation was already finalized')
+    const state = this.state(reservation.scope.key)
+    // Set membership is the single source of pending truth: a slot already converted, or expired by
+    // the prune, records nothing. A duplicate call on a live reservation is likewise a no-op.
+    if (!state.pendingRateEvents.delete(reservation)) return
+    if (this.now() - reservation.rateStartedAt >= RATE_WINDOW_MS) return
+    state.rateEvents.push(reservation.rateStartedAt)
+    // Concurrent requests can finish out of admission order; pruning assumes ascending timestamps.
+    state.rateEvents.sort((left, right) => left - right)
   }
 
   /** Release an unsuccessful request without committing call or token spend. */
   release(reservation: LlmReservation): void {
     if (!reservation.active) return
     reservation.active = false
-    const tokens = reservation.inputTokens + reservation.outputTokens
     const state = this.state(reservation.scope.key)
+    state.pendingRateEvents.delete(reservation)
     state.reservedCalls -= 1
-    state.reservedTokens -= tokens
+    state.reservedTokens -= reservation.inputTokens + reservation.outputTokens
   }
 
   /** Commit telemetry before releasing the reservation; retain conservative debt on failure. */
@@ -140,11 +176,8 @@ export class LlmMeter {
 
   private moveToDebt(reservation: LlmReservation): void {
     if (!reservation.active) return
-    reservation.active = false
-    const tokens = reservation.inputTokens + reservation.outputTokens
+    this.release(reservation)
     const state = this.state(reservation.scope.key)
-    state.reservedCalls -= 1
-    state.reservedTokens -= tokens
     state.debt.calls += 1
     state.debt.inputTokens += reservation.inputTokens
     // The reservation is conservative and does not separately guess hidden reasoning.
@@ -182,11 +215,15 @@ export class LlmMeter {
     }
   }
 
-  private pruneRateWindow(state: MeterState, now: number): void {
-    const cutoff = now - 60_000
+  /** Expire recorded events and pending capacity together on the shared window horizon. */
+  private pruneRateWindows(state: MeterState, now: number): void {
+    const cutoff = now - RATE_WINDOW_MS
     let first = 0
     while (first < state.rateEvents.length && (state.rateEvents[first] as number) <= cutoff) first++
     if (first > 0) state.rateEvents.splice(0, first)
+    for (const reservation of state.pendingRateEvents) {
+      if (reservation.rateStartedAt <= cutoff) state.pendingRateEvents.delete(reservation)
+    }
   }
 
   private state(key: string): MeterState {
@@ -194,6 +231,7 @@ export class LlmMeter {
     if (state === undefined) {
       state = {
         rateEvents: [],
+        pendingRateEvents: new Set(),
         reservedCalls: 0,
         reservedTokens: 0,
         debt: emptyUsage(),

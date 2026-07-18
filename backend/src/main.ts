@@ -58,7 +58,14 @@ async function main(): Promise<void> {
     ? new LlmMeter({ recoveryIntervalMs: config.llm.meterRecoveryIntervalMs, log })
     : undefined
   const llmTokenizer = llmConfigured ? new TiktokenCounter(config.llm.tiktokenEncoding) : undefined
-  const llmRegistry = llmConfigured ? new KeyRegistry() : undefined
+  // The worst-case wall time of one logical upstream request: every attempt plus its exponential
+  // backoff. Future watchdog integration can use it to bound one active call's deadline extension.
+  const upstreamMaxRequestMs =
+    config.llm.upstreamTimeoutMs * (config.llm.upstreamMaxRetries + 1) +
+    config.llm.upstreamRetryIntervalMs * 2 ** config.llm.upstreamMaxRetries
+  const llmRegistry = llmConfigured
+    ? new KeyRegistry(undefined, { maxRequestMs: upstreamMaxRequestMs })
+    : undefined
   const llmHandler =
     llmConfigured && llmMeter !== undefined && llmTokenizer !== undefined
       ? new LlmHandler({

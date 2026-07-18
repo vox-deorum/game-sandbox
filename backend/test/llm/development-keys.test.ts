@@ -238,7 +238,10 @@ describe('DevelopmentKeyService', () => {
     const first = await service.authenticate(
       (await service.rotate(firstSeason.id, 'user-a')).api_key,
     )
+    // A successful call would record one rate event; the window is keyed by scope, so it must survive
+    // a key rotation for the same participant and season.
     const reservation = await meter.reserve(first.accountingScope, 1, 1)
+    meter.recordRateEvent(reservation)
     meter.release(reservation)
     const rotated = await service.authenticate(
       (await service.rotate(firstSeason.id, 'user-a')).api_key,

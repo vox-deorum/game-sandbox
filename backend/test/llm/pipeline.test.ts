@@ -153,7 +153,7 @@ describe('LLM retry, accounting, and telemetry pipeline', () => {
     })
     expect(store.listCalls(SESSION_ID)).toEqual([])
     expect(meter.inspect(grant.accountingScope.key)).toMatchObject({
-      rateEvents: [expect.any(Number)],
+      rateEvents: [],
       reservedCalls: 0,
       reservedTokens: 0,
     })

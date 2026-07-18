@@ -7,6 +7,11 @@ export interface OfficialGrantLease {
   readonly keys: Readonly<Record<string, string>>
   /** Admission closes immediately; resolution is the abort/drain/reservation-finalizer barrier. */
   revoke(): Promise<void>
+  /**
+   * Cumulative in-flight LLM ms for this session (completed calls plus the current call's partial).
+   * Available to future watchdog integration. Optional so existing lease fakes keep compiling.
+   */
+  inFlightMs?(): number
 }
 
 export interface IssueOfficialGrantsInput {
@@ -72,6 +77,9 @@ export function createOfficialGrantIssuer(
         revoke(): Promise<void> {
           revocation ??= Promise.resolve(registry.revokeSession(input.sessionId))
           return revocation
+        },
+        inFlightMs(): number {
+          return registry.inFlightMs(input.sessionId)
         },
       }
     },

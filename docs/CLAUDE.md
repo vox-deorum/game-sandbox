@@ -1,0 +1,1 @@
+F:/Minor-Solutions/game-sandbox/AGENTS.md

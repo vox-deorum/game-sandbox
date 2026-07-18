@@ -77,6 +77,10 @@ export class LlmHandler {
     }
 
     try {
+      // Convert the pending rate capacity ahead of durable accounting: the event survives a later
+      // accounting failure, and any throw from here on lands in the debt-charging catch below
+      // rather than refunding a reservation the provider has already spent.
+      this.deps.meter.recordRateEvent(reservation)
       const completion = redactCompletion(result.completion, alias)
       const resolved = resolveUsage(accepted, completion, this.deps.tokenizer)
       await this.deps.meter.commit(reservation, grant.recordSink, {

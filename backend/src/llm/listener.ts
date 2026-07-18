@@ -35,7 +35,21 @@ export async function buildLlmListener(deps: LlmListenerDeps): Promise<FastifyIn
     try {
       const entry = deps.registry.authenticateOfficial(readBearer(request.headers.authorization))
       entry.tick.current = parseTick(request.body)
-      return { ok: true }
+      // Carry the scope's cumulative in-flight ms for planned hook-timing integration.
+      return {
+        ok: true,
+        inflight_ms: deps.registry.inFlightMsForScope(entry.grant.accountingScope.key),
+      }
+    } catch (error) {
+      const normalized = asLlmError(error)
+      return reply.code(normalized.status).send(normalized.body())
+    }
+  })
+
+  app.post('/internal/inflight', async (request, reply) => {
+    try {
+      const entry = deps.registry.authenticateOfficial(readBearer(request.headers.authorization))
+      return { inflight_ms: deps.registry.inFlightMsForScope(entry.grant.accountingScope.key) }
     } catch (error) {
       const normalized = asLlmError(error)
       return reply.code(normalized.status).send(normalized.body())
