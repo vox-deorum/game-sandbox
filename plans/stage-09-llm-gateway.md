@@ -6,7 +6,7 @@ Status: in progress (Steps 1 through 4 complete; remaining build order planned u
 
 Agents and students call an OpenAI-compatible API owned by the backend. The backend forwards each logical request to one configured OpenAI-compatible upstream, handles retries and terminal errors, enforces separate official and development limits, and meters and records only successful requests.
 
-Agent telemetry is stored in backend-managed SQLite files keyed by execution scope. Public replay views expose model, token, and latency metadata. Prompt and completion bodies are visible only to the controlling submission's owner and operators. Student development calls use a private season-keyed SQLite ledger and never contribute to recording telemetry or leaderboards.
+Agent telemetry is stored in backend-managed SQLite files keyed by execution scope. Public replay views expose model, token, estimate, and authoritative budget-cost metadata. Prompt and completion bodies are visible only to the controlling submission's owner and operators. Student development calls use a private season-keyed SQLite ledger and never contribute to recording telemetry or leaderboards. Latency remains internal reliability telemetry and is not shown in frontend surfaces.
 
 ## Architecture
 
@@ -44,11 +44,11 @@ An active participant requests a development key from `POST /api/seasons/:season
 
 ## Records and surfaces
 
-Official telemetry files live at `data/llm/<scopeId>.sqlite`. Every successful official call inserts one row containing session, tick, slot, model alias, full request and completion, input, reasoning, and output token counts, whether those counts were estimated, and end-to-end latency. Tick markers sent by the harness attribute calls made during each participant hook. Durable scope and session IDs on recording metadata resolve a recording to its rows after producing session or workflow data is pruned.
+Official telemetry files live at `data/llm/<scopeId>.sqlite`. Every successful official call inserts one row containing session, tick, slot, model alias, full request and completion, input, reasoning, and output token counts, whether those counts were estimated, end-to-end latency, and the grant-resolved cost weight and budget cost units charged for that call. Tick markers sent by the harness attribute calls made during each participant hook. Durable scope and session IDs on recording metadata resolve a recording to its rows after producing session or workflow data is pruned.
 
 Each season has a development ledger keyed by participant. Every successful development call records participant, model alias, full request and completion, token counts, whether those counts were estimated, and end-to-end latency. Participants can read only their own usage and rows. Operators can inspect every participant's rows for the season.
 
-The replay API returns public official metadata for every successful call and includes bodies only for the controlling submission's owner and operators. Game results store successful usage by model alias and its weighted cost under the run's frozen prices. Automated boards and placements aggregate both values. The participant profile exposes development-key rotation, model prices, remaining development allowance, and the participant's private development ledger.
+The replay API returns public official metadata and stored budget cost units for every successful call, plus the stored whole-recording total. It includes bodies only for the controlling submission's owner and operators. Ordinary and zero-success recordings return an empty telemetry result. Game results store successful usage by model alias and its weighted cost under the run's frozen prices. Automated boards and placements aggregate both values. The participant profile discovers eligible development seasons, shows model prices and remaining development allowance without rotating a key, and keeps development-key actions separate from the participant's private call history.
 
 ## Spec references
 
@@ -66,8 +66,9 @@ Stage 3 provides orchestration and driver networking. Stage 5 provides submissio
 | 2 | [Season access, development keys, and session network](stage-09/2-enablement-keys-and-network.md) | Current live and development resolution, frozen workflow policy, independent limit blocks, slot-key lifecycle, per-participant and per-season development meter and ledger, internal network | A student key works only for its participant and season; a run keeps its original official policy; a container reaches the proxy but not the internet |
 | 3 | [Harness credentials and student example](stage-09/3-harness-credentials-and-template-example.md) | Slot credential changes, tick markers, template command, Hearts example, student guide | The same agent code runs with a season development key and with an injected session key |
 | 4 | [Official usage aggregation](stage-09/4-usage-aggregation.md) | Successful usage aggregation over the run-scoped SQLite file, board and placement storage | A tiny per-slot budget produces a catchable error while completed calls appear on the board |
-| 5 | [LLM usage surfaces](stage-09/5-frontend-surfacing.md) | Replay metadata, owner debug view, board tokens, participant development-key and ledger view, operator ledger view | Browser checks prove public, owner, participant, and operator visibility boundaries |
-| 6 | [Testing, CI, and documentation](stage-09/6-testing-ci-and-docs.md) | Full-stack retry, accounting, isolation, privacy, regression, and documentation gates | Docker integration and browser suites pass against one stub OpenAI-compatible upstream |
+| 5 | [LLM surfacing APIs](stage-09/5-frontend-api.md) | Recording telemetry with stored budget costs, telemetry retention and cleanup, participant and operator development read APIs | Raw API calls prove empty, public, owner, participant, and operator response boundaries |
+| 6 | [LLM usage UI](stage-09/6-frontend-ui.md) | Replay decision costs and authorized inspection, board model usage, participant development access and call history, operator usage details | Browser checks compare costs, credentials, and anonymous, owner, participant, and operator views |
+| 7 | [Testing, CI, and documentation](stage-09/7-testing-ci-and-docs.md) | Full-stack retry, accounting, isolation, privacy, regression, and documentation gates | Docker integration and browser suites pass against one stub OpenAI-compatible upstream |
 
 ## Done when
 
@@ -78,5 +79,5 @@ Stage 3 provides orchestration and driver networking. Stage 5 provides submissio
 - A development-ledger commit failure returns no completion, retains conservative debt, and blocks that participant and season until the automatic recovery loop verifies writable storage and closes the breaker without forgiving debt in the running process.
 - The template LLM example runs unchanged with development credentials in `.env` and injected slot credentials in a session.
 - Session containers reach only the backend LLM proxy, and teardown drains or aborts authenticated work before temporary slot keys and telemetry scopes are retired.
-- Replays, owner debug views, and automated boards derive their data from successful official SQLite rows with the required visibility boundaries.
+- Replays and automated boards derive successful usage and authoritative budget costs from durable official records, with prompt and completion bodies limited to current owners and operators.
 - LLM-disabled sessions execute the unchanged non-LLM path and preserve deterministic recording fixtures.

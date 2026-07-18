@@ -1,8 +1,8 @@
-# Stage 9.6: Testing, CI, and Documentation
+# Stage 9.7: Testing, CI, and Documentation
 
 Status: not started.
 
-Part of [Stage 9](../stage-09-llm-gateway.md), build-order step 6.
+Part of [Stage 9](../stage-09-llm-gateway.md), build-order step 7.
 
 ## Outcome
 
@@ -70,14 +70,16 @@ Run the existing deterministic Spades and Flappy Bird fixtures with effective LL
 Add `frontend/e2e/llm.spec.ts` using the same stub upstream:
 
 1. An operator configures allowed aliases and separate official and development limits for a season.
-2. A participant opens My Profile, creates a development key, and sees the one-time credential dialog.
-3. A successful development request updates only that participant's selected-season allowance and private ledger.
-4. Another participant cannot read the ledger, while the operator can inspect it from season management.
-5. An official oracle session produces replay model-call metadata and owner debug bodies.
-6. A logged-out caller sees replay metadata but receives no request or completion bodies from the raw API.
-7. Deleting the controlling submission retains official telemetry and public metadata, but its former owner no longer receives request or completion bodies from either the replay UI or raw API.
-8. The automated board shows successful calls, tokens, estimated-usage status, and model-call latency by alias.
-9. No surface renders an error row for unsuccessful logical requests.
+2. A participant opens My Profile and sees a summary-first Development access section populated from eligible-season discovery, including resolved model cost weights and remaining budget units, before creating a key. Call history loads separately.
+3. Creating a key opens the one-time credential dialog with working copy actions for `OPENAI_BASE_URL`, `OPENAI_API_KEY`, and the combined `.env` text. Rotating an existing key first requires confirmation that the old key will stop working, then replaces it without resetting usage. Closing the dialog clears the secret from UI state.
+4. A successful development request updates only that participant's selected-season allowance and private call history, with estimates labeled. Another participant cannot read it.
+5. Season management shows a compact participant summary table. Selecting View calls opens a separate detail region for the operator, with estimates labeled, rather than nesting history inside the table.
+6. An official oracle session shows a Model cost column beside Decisions in the existing replay DecisionLog, with accessible tooltip details for its stored weight, token basis, estimate status, and authoritative budget cost units. `RunMetadata` shows the recording's stored total budget cost.
+7. The current submission owner and an operator can open one authorized request-and-completion dialog from the replay call row. The dialog is keyboard operable, traps and restores focus, and exposes clear request and completion headings. A logged-out caller sees costs and other public metadata but receives no bodies from the UI or raw API.
+8. Deleting the controlling submission retains official telemetry and public budget costs. Its former owner sees masked rows and cannot open bodies through the replay UI or raw API, while an operator can still inspect bodies on the retained recording.
+9. The automated board uses one summary-first Model usage line with successful calls, tokens, stored budget cost units, and estimate status. A By model disclosure provides the breakdown without changing rank.
+10. An ordinary non-LLM replay and an LLM-enabled replay with no successful calls both render the empty cost state without an error row. Unsuccessful logical requests never appear as calls or costs.
+11. Replay, board, development, and operator detail surfaces remain usable at the supported narrow-screen breakpoint. Cost tooltips, disclosures, dialogs, pagination, copy controls, and confirmation are reachable and understandable by keyboard.
 
 Use the existing authenticated-persona fixtures and UI primitives. Update locators and component tests in the same change as the new surfaces.
 
@@ -87,7 +89,7 @@ Update these documents to match the implementation:
 
 - `docs/specs/llm.md`, `execution.md`, `leaderboard.md`, `submission.md`, and `recording.md` describe the final behavior and data boundaries.
 - `docs/contributors/configuration.md` documents every `LLM_*` setting, including the validated upstream base URL and key, model aliases, default model prices, ordinary-content tiktoken encoding, default and hard output maxima, per-attempt timeout, maximum retries after the initial attempt, initial retry interval, meter recovery interval, official defaults, and development defaults. It also identifies the backend OpenAI client and tiktoken packages and the template's pinned Python OpenAI dependencies.
-- `docs/contributors/backend.md` describes the shared proxy handler, standard response-metadata boundary, internal listener, public development route, grant authentication, synchronous reader-and-sink binding, generic per-accounting-scope admitted-request windows, retry loop, successful-call meters, post-upstream conservative debt, automatic write-health recovery, tiktoken fallback, execution-scope SQLite, teardown barriers, frozen workflow policy, recording-to-scope resolution, visibility after submission deletion, retention, and the development ledger.
+- `docs/contributors/backend.md` describes the shared proxy handler, standard response-metadata boundary, internal listener, public development route, grant authentication, synchronous reader-and-sink binding, generic per-accounting-scope admitted-request windows, retry loop, successful-call meters, post-upstream conservative debt, automatic write-health recovery, tiktoken fallback, execution-scope SQLite and its cost-basis migration, teardown barriers, frozen workflow policy, recording-to-scope resolution, empty and unavailable telemetry responses, visibility after submission deletion, retention, and the development ledger.
 - `docs/contributors/execution.md` describes the per-session internal network and backend-proxy relay.
 - `docs/contributors/recordings.md` explains the durable recording association to external LLM telemetry. The recording schema remains unchanged.
 - `docs/contributors/index.md` lists LLM proxy code under the backend and contains no standalone gateway component.
@@ -108,7 +110,7 @@ Keep the stub upstream local to the test process so CI requires no external prov
 
 - Docker-free tests cover every retry class, compatible error path, response-metadata sanitization, generic per-scope rate-event retention, completion-limit normalization, ordinary-content tiktoken fallback, reservation release, post-upstream meter and ledger failure circuit breaking and automatic health recovery, successful-only record sink, frozen workflow policy, authorization boundary, dependency configuration, fresh flat-schema creation, and UI state.
 - Docker integration proves official and development flows against one stub upstream, including network isolation, teardown-before-aggregation ordering on every workflow exit, and exact cross-artifact accounting.
-- Playwright proves participant, current owner, former owner, public, and operator visibility at both UI and raw-API boundaries.
+- Playwright proves participant, current owner, former owner, public, and operator visibility at both UI and raw-API boundaries, including authoritative budget costs, empty telemetry, key handling, and keyboard and narrow-screen access.
 - Disabled-session fixtures remain deterministic and byte-identical.
 - Contributor and student documentation matches the delivered routes, settings, limits, retry behavior, and privacy model.
 - `uv run python scripts/ci.py docs`, the standard CI lanes, the Docker integration lane, and the frontend end-to-end lane pass.
