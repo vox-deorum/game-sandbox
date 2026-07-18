@@ -16,6 +16,7 @@ import type {
   GameResult,
   GameStatus,
   LlmDevelopmentKey,
+  LlmUsageByModel,
   PublicSeason,
   Rating,
   Recording,
@@ -47,6 +48,8 @@ export type {
   GameResult,
   GameStatus,
   LlmDevelopmentKey,
+  LlmModelUsage,
+  LlmUsageByModel,
   PublicSeason,
   Rating,
   Recording,
@@ -227,6 +230,8 @@ export interface RecordGameResultInput {
   episode_score: number
   agent_compute_ms_total: number
   acted_tick_count: number
+  /** Successful official calls for this seat, or null when it made none. */
+  llm_usage_by_model?: LlmUsageByModel | null
   failed: boolean
   failure_reason?: string | null
 }
@@ -238,6 +243,8 @@ export interface PlacementInput {
   mean_score: number
   /** Null/blank when the contributing tick count was zero. */
   mean_agent_compute_ms: number | null
+  /** Successful official calls aggregated over the placement's games, or null when there were none. */
+  llm_usage_by_model?: LlmUsageByModel | null
   failure_count: number
   recording_id: string | null
 }
@@ -307,6 +314,8 @@ export interface AutomatedBoardRow {
    * contributed a tick.
    */
   compute_std: number | null
+  /** Successful official calls aggregated over the agent's games, or null when there were none. */
+  llm_usage_by_model: LlmUsageByModel | null
   failure_count: number
   /** The number of games that produced a result for this agent in the run. */
   games: number

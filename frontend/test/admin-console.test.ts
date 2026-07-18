@@ -480,6 +480,7 @@ describe('AdminConsolePage', () => {
           score_std: 0,
           mean_agent_compute_ms: 1,
           compute_std: 0,
+          llm_usage_by_model: null,
           failure_count: 0,
           games: 2,
           recording_id: 'rec-1',

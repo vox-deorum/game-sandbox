@@ -13,7 +13,11 @@
 import type { RecordingHeader } from '@game-sandbox/schema'
 import type { BoardAgentRef } from '@game-sandbox/schema/board'
 import { type EnvironmentMeta, isEnvironmentMeta } from '@game-sandbox/schema/environment'
-import type { ModelAlias } from '@game-sandbox/schema/llm'
+import type {
+  ModelAlias,
+  LlmModelUsage as SchemaLlmModelUsage,
+  LlmUsageByModel as SchemaLlmUsageByModel,
+} from '@game-sandbox/schema/llm'
 
 const API_BASE = '/api'
 
@@ -739,6 +743,12 @@ export interface MessagingOverride {
 /** Stable model aliases an environment-facing agent or development client may request. */
 export type LlmModelAlias = ModelAlias
 
+/** Shared public usage totals, retained here as a compatibility export for API consumers. */
+export type LlmModelUsage = SchemaLlmModelUsage
+
+/** Shared public per-model usage, retained here as a compatibility export for API consumers. */
+export type LlmUsageByModel = SchemaLlmUsageByModel
+
 /** Optional deployment-default overrides for one official or development accounting scope. */
 export interface LlmLimitOverride {
   token_budget?: number
@@ -815,6 +825,8 @@ export interface AutomatedBoardRow {
   mean_agent_compute_ms: number | null
   /** Acted-tick-weighted spread of per-game compute rates; null exactly when the mean is. */
   compute_std: number | null
+  /** Successful official calls grouped by model, or null when the agent made none. */
+  llm_usage_by_model: LlmUsageByModel | null
   failure_count: number
   games: number
   /** The representative replay link (the agent's best game), or null. */
@@ -926,6 +938,8 @@ export interface AutomatedPlacement {
   agent_user_id: string | null
   mean_score: number
   mean_agent_compute_ms: number | null
+  /** Successful official calls grouped by model, or null when the placement has none. */
+  llm_usage_by_model: LlmUsageByModel | null
   failure_count: number
   recording_id: string | null
   created_at: string

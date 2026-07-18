@@ -8,6 +8,7 @@
  * and reached the right terminal state. The attributable-crash, timeout, infrastructure-fault, cancel,
  * and re-run paths each get a test. No Docker, no Python, deterministic.
  */
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -29,6 +30,7 @@ import type {
   Storage,
   Submission,
 } from '../../src/storage/index.js'
+import { ExecutionTelemetryStore, type ExecutionUsageByModel } from '../../src/storage/llm/index.js'
 import { openSqliteStorage } from '../../src/storage/sqlite.js'
 import { SubmissionSnapshotStore } from '../../src/submission/snapshot-store.js'
 import type { SubmissionSource } from '../../src/submission/source/index.js'
@@ -113,6 +115,7 @@ function makeRunner(
     gameWatchdogGraceMs?: number
     userDirectory?: UserDirectory
     officialGrantIssuer?: OfficialGrantIssuer
+    officialTelemetry?: Pick<ExecutionTelemetryStore, 'aggregateByModel'>
     llmInternalPort?: number
   } = {},
 ): RunnerHandle {
@@ -128,6 +131,10 @@ function makeRunner(
     ...options,
   })
   return { driver, storage, runner }
+}
+
+const emptyOfficialTelemetry: Pick<ExecutionTelemetryStore, 'aggregateByModel'> = {
+  aggregateByModel: () => ({}),
 }
 
 /** Create a configured season and a pending run with the given schedule; returns the run row. */
@@ -285,7 +292,10 @@ describe('Docker-backed workflow runner', () => {
     await storage.close()
   })
 
-  it('revokes and drains an exited LLM game before process cleanup', async () => {
+  it('includes delayed successful writes by aggregating only after the revocation barrier', async () => {
+    const ordering: string[] = []
+    let usage: ExecutionUsageByModel = {}
+    let revocationSettled = false
     let releaseRevocation = (): void => {}
     const revocationBarrier = new Promise<void>((resolve) => {
       releaseRevocation = resolve
@@ -305,9 +315,24 @@ describe('Docker-backed workflow runner', () => {
     }
     const handle = makeRunner(storage, new FakeDriver(), {
       officialGrantIssuer: issuer,
+      officialTelemetry: {
+        aggregateByModel: (scopeId, filter) => {
+          expect(revocationSettled).toBe(true)
+          expect(scopeId).toBe(run.id)
+          expect(filter).toEqual({ sessionId: game?.id, slot: 'player_0' })
+          ordering.push('aggregate')
+          return usage
+        },
+      },
       llmInternalPort: 9472,
     })
     const run = await makeRun(storage, [naiveGame(0)], { llmPolicy: enabledLlmPolicy() })
+    const [game] = await storage.listRunGames(run.id)
+    const recordGameResult = storage.recordGameResult.bind(storage)
+    storage.recordGameResult = async (input) => {
+      ordering.push('result-write')
+      return recordGameResult(input)
+    }
     let launched: FakeSessionProcess | undefined
     handle.driver.onLaunch = (launch): void => {
       launched = launch.process
@@ -317,10 +342,188 @@ describe('Docker-backed workflow runner', () => {
     const terminal = runToTerminal(handle, run.id)
     await started
     expect(launched?.killGraceMs).toEqual([])
+    expect(ordering).toEqual([])
 
+    // Model a successful telemetry finalizer that commits while revocation is draining. Resolving the
+    // barrier publishes that write to aggregation, and no successful write occurs after the query.
+    usage = {
+      small: {
+        calls: 1,
+        estimatedCalls: 1,
+        inputTokens: 11,
+        reasoningTokens: 2,
+        outputTokens: 7,
+        latencyMs: 31,
+      },
+    }
+    ordering.push('successful-write')
+    revocationSettled = true
+    ordering.push('revocation-settled')
     releaseRevocation()
     await expect(terminal).resolves.toMatchObject({ status: 'completed' })
     expect(launched?.killGraceMs).toEqual([5_000])
+    expect(ordering).toEqual([
+      'successful-write',
+      'revocation-settled',
+      'aggregate',
+      'result-write',
+    ])
+    expect((await storage.listGameResultsByRun(run.id))[0]?.llm_usage_by_model).toEqual({
+      small: {
+        calls: 1,
+        estimated_calls: 1,
+        input_tokens: 11,
+        reasoning_tokens: 2,
+        output_tokens: 7,
+        latency_ms: 31,
+      },
+    })
+  })
+
+  it('fails before persisting a result when telemetry contains an unsupported model alias', async () => {
+    const issuer: OfficialGrantIssuer = {
+      issue: async () => ({
+        keys: { player_0: 'official-key' },
+        revoke: () => Promise.resolve(),
+      }),
+    }
+    const handle = makeRunner(storage, new FakeDriver(), {
+      officialGrantIssuer: issuer,
+      officialTelemetry: {
+        aggregateByModel: () => ({
+          provider_model: {
+            calls: 1,
+            estimatedCalls: 0,
+            inputTokens: 3,
+            reasoningTokens: 0,
+            outputTokens: 2,
+            latencyMs: 7,
+          },
+        }),
+      },
+      llmInternalPort: 9472,
+    })
+    const run = await makeRun(storage, [naiveGame(0)], { llmPolicy: enabledLlmPolicy() })
+    handle.driver.onLaunch = (launch): void => {
+      const config = JSON.parse(launch.spec.argv[0] ?? '{}') as { seed: number }
+      emitRecording(launch.process, config)
+    }
+
+    await expect(runToTerminal(handle, run.id)).resolves.toMatchObject({ status: 'failed' })
+    expect((await storage.getRun(run.id))?.error).toMatch(/unsupported model alias provider_model/)
+    expect(await storage.listGameResultsByRun(run.id)).toEqual([])
+  })
+
+  it('persists only each settled game session and slot from the real telemetry store', async () => {
+    const telemetryRoot = mkdtempSync(join(tmpdir(), 'gs-workflow-telemetry-'))
+    const telemetry = new ExecutionTelemetryStore(telemetryRoot)
+    try {
+      const settledSessions = new Set<string>()
+      const issuer: OfficialGrantIssuer = {
+        issue: async (input) => ({
+          keys: { player_0: `key-${input.sessionId}` },
+          revoke: async () => {
+            settledSessions.add(input.sessionId)
+          },
+        }),
+      }
+      const handle = makeRunner(storage, new FakeDriver(), {
+        officialGrantIssuer: issuer,
+        officialTelemetry: telemetry,
+        llmInternalPort: 9472,
+      })
+      const policy = enabledLlmPolicy()
+      policy.models.medium = 'provider-medium'
+      const run = await makeRun(storage, [naiveGame(0, 7), naiveGame(1, 9)], {
+        llmPolicy: policy,
+      })
+      const games = await storage.listRunGames(run.id)
+      const [firstGame, secondGame] = games
+      if (firstGame === undefined || secondGame === undefined) {
+        throw new Error('expected two scheduled games')
+      }
+
+      const insert = (
+        scopeId: string,
+        sessionId: string,
+        slot: string,
+        model: string,
+        inputTokens: number,
+        reasoningTokens: number,
+        outputTokens: number,
+        usageEstimated: boolean,
+        latencyMs: number,
+      ): void => {
+        telemetry.insert(scopeId, {
+          sessionId,
+          slot,
+          tick: 1,
+          model,
+          request: { model, messages: [] },
+          completion: { model, choices: [] },
+          inputTokens,
+          reasoningTokens,
+          outputTokens,
+          usageEstimated,
+          latencyMs,
+        })
+      }
+
+      // The first game has two successful player_0 calls across models. Rows for another slot,
+      // another game with the same slot name, and another run scope must not enter its result.
+      insert(run.id, firstGame.id, 'player_0', 'small', 3, 1, 2, false, 11)
+      insert(run.id, firstGame.id, 'player_0', 'medium', 5, 2, 4, true, 13)
+      insert(run.id, firstGame.id, 'player_1', 'small', 100, 100, 100, false, 100)
+      insert(run.id, secondGame.id, 'player_0', 'small', 7, 0, 6, false, 17)
+      insert('other-run-scope', firstGame.id, 'player_0', 'small', 200, 200, 200, false, 200)
+
+      const recordGameResult = storage.recordGameResult.bind(storage)
+      storage.recordGameResult = async (input) => {
+        expect(settledSessions.has(input.game_id)).toBe(true)
+        return recordGameResult(input)
+      }
+      handle.driver.onLaunch = (launch): void => {
+        const config = JSON.parse(launch.spec.argv[0] ?? '{}') as { seed: number }
+        emitRecording(launch.process, config, { finalScore: config.seed })
+      }
+
+      await expect(runToTerminal(handle, run.id)).resolves.toMatchObject({ status: 'completed' })
+      expect(settledSessions).toEqual(new Set([firstGame.id, secondGame.id]))
+      const results = new Map(
+        (await storage.listGameResultsByRun(run.id)).map((result) => [result.game_id, result]),
+      )
+      expect(results.get(firstGame.id)?.llm_usage_by_model).toEqual({
+        medium: {
+          calls: 1,
+          estimated_calls: 1,
+          input_tokens: 5,
+          reasoning_tokens: 2,
+          output_tokens: 4,
+          latency_ms: 13,
+        },
+        small: {
+          calls: 1,
+          estimated_calls: 0,
+          input_tokens: 3,
+          reasoning_tokens: 1,
+          output_tokens: 2,
+          latency_ms: 11,
+        },
+      })
+      expect(results.get(secondGame.id)?.llm_usage_by_model).toEqual({
+        small: {
+          calls: 1,
+          estimated_calls: 0,
+          input_tokens: 7,
+          reasoning_tokens: 0,
+          output_tokens: 6,
+          latency_ms: 17,
+        },
+      })
+    } finally {
+      telemetry.close()
+      rmSync(telemetryRoot, { recursive: true, force: true })
+    }
   })
 
   it('launches and records an enabled game from only its frozen official policy', async () => {
@@ -333,6 +536,7 @@ describe('Docker-backed workflow runner', () => {
     }
     const handle = makeRunner(storage, new FakeDriver(), {
       officialGrantIssuer: issuer,
+      officialTelemetry: emptyOfficialTelemetry,
       llmInternalPort: 9472,
     })
     const policy = enabledLlmPolicy()
@@ -360,6 +564,27 @@ describe('Docker-backed workflow runner', () => {
       llm_scope_id: run.id,
       llm_session_id: game?.id,
     })
+    expect((await storage.listGameResultsByRun(run.id))[0]?.llm_usage_by_model).toBeNull()
+  })
+
+  it('fails an enabled run when workflow telemetry is not configured', async () => {
+    let issued = false
+    const issuer: OfficialGrantIssuer = {
+      issue: async () => {
+        issued = true
+        return { keys: {}, revoke: () => Promise.resolve() }
+      },
+    }
+    const handle = makeRunner(storage, new FakeDriver(), {
+      officialGrantIssuer: issuer,
+      llmInternalPort: 9472,
+    })
+    const run = await makeRun(storage, [naiveGame(0)], { llmPolicy: enabledLlmPolicy() })
+
+    await expect(runToTerminal(handle, run.id)).resolves.toMatchObject({ status: 'failed' })
+    expect(issued).toBe(false)
+    expect(handle.driver.launches).toHaveLength(0)
+    expect((await storage.getRun(run.id))?.error).toMatch(/telemetry/)
   })
 
   it('runs the persisted schedule in order and writes results, recordings, and completed', async () => {
@@ -760,6 +985,218 @@ describe('Docker-backed workflow runner', () => {
     expect(await storage.getLatestCompletedRun(run.season_id)).toBeUndefined()
   })
 
+  it('revokes an LLM lease before session configuration when cancellation lands during issuance', async () => {
+    const ordering: string[] = []
+    let markIssueStarted = (): void => {}
+    const issueStarted = new Promise<void>((resolve) => {
+      markIssueStarted = resolve
+    })
+    let releaseIssue = (): void => {}
+    const issueBarrier = new Promise<void>((resolve) => {
+      releaseIssue = resolve
+    })
+    let markRevocationStarted = (): void => {}
+    const revocationStarted = new Promise<void>((resolve) => {
+      markRevocationStarted = resolve
+    })
+    let releaseRevocation = (): void => {}
+    const revocationBarrier = new Promise<void>((resolve) => {
+      releaseRevocation = resolve
+    })
+    let revocationWorkStarts = 0
+    let sharedRevocation: Promise<void> | undefined
+    const issuer: OfficialGrantIssuer = {
+      issue: async () => {
+        markIssueStarted()
+        await issueBarrier
+        ordering.push('issue-resolved')
+        return {
+          keys: { player_0: 'official-key' },
+          revoke: () => {
+            sharedRevocation ??= (async (): Promise<void> => {
+              revocationWorkStarts += 1
+              ordering.push('revoke-started')
+              markRevocationStarted()
+              await revocationBarrier
+              ordering.push('revoke-settled')
+            })()
+            return sharedRevocation
+          },
+        }
+      },
+    }
+    const userDirectory: UserDirectory = {
+      namesFor: () => {
+        ordering.push('session-config')
+        return Promise.resolve(new Map())
+      },
+    }
+    const driver = new FakeDriver()
+    driver.onLaunch = (launch): void => {
+      ordering.push('launch')
+      const config = JSON.parse(launch.spec.argv[0] ?? '{}') as { seed: number }
+      emitRecording(launch.process, config)
+    }
+    const handle = makeRunner(storage, driver, {
+      officialGrantIssuer: issuer,
+      officialTelemetry: emptyOfficialTelemetry,
+      llmInternalPort: 9472,
+      userDirectory,
+    })
+    const run = await makeRun(storage, [naiveGame(0)], { llmPolicy: enabledLlmPolicy() })
+
+    const terminal = runToTerminal(handle, run.id)
+    await issueStarted
+    handle.runner.cancel(run.id)
+    expect(ordering).toEqual([])
+    expect(driver.launches).toEqual([])
+
+    releaseIssue()
+    await revocationStarted
+    expect(ordering).toEqual(['issue-resolved', 'revoke-started'])
+    expect(driver.launches).toEqual([])
+
+    releaseRevocation()
+    await expect(terminal).resolves.toMatchObject({ status: 'cancelled' })
+    expect(ordering).toEqual(['issue-resolved', 'revoke-started', 'revoke-settled'])
+    expect(driver.launches).toEqual([])
+    expect(revocationWorkStarts).toBe(1)
+    expect((await storage.listRunGames(run.id))[0]?.status).toBe('cancelled')
+    expect(await storage.listGameResultsByRun(run.id)).toEqual([])
+  })
+
+  it('cancels without launching when cancellation lands during session configuration', async () => {
+    let revocationWorkStarts = 0
+    let sharedRevocation: Promise<void> | undefined
+    let markRevocationStarted = (): void => {}
+    const revocationStarted = new Promise<void>((resolve) => {
+      markRevocationStarted = resolve
+    })
+    const issuer: OfficialGrantIssuer = {
+      issue: async () => ({
+        keys: { player_0: 'official-key' },
+        revoke: () => {
+          sharedRevocation ??= Promise.resolve().then(() => {
+            revocationWorkStarts += 1
+            markRevocationStarted()
+          })
+          return sharedRevocation
+        },
+      }),
+    }
+    let markSessionConfigStarted = (): void => {}
+    const sessionConfigStarted = new Promise<void>((resolve) => {
+      markSessionConfigStarted = resolve
+    })
+    let releaseSessionConfig = (): void => {}
+    const sessionConfigBarrier = new Promise<void>((resolve) => {
+      releaseSessionConfig = resolve
+    })
+    const userDirectory: UserDirectory = {
+      namesFor: async () => {
+        markSessionConfigStarted()
+        await sessionConfigBarrier
+        return new Map()
+      },
+    }
+    const driver = new FakeDriver()
+    const handle = makeRunner(storage, driver, {
+      officialGrantIssuer: issuer,
+      officialTelemetry: emptyOfficialTelemetry,
+      llmInternalPort: 9472,
+      userDirectory,
+    })
+    const run = await makeRun(storage, [naiveGame(0)], { llmPolicy: enabledLlmPolicy() })
+
+    const terminal = runToTerminal(handle, run.id)
+    await sessionConfigStarted
+    handle.runner.cancel(run.id)
+    await revocationStarted
+    expect(driver.launches).toEqual([])
+
+    releaseSessionConfig()
+    await expect(terminal).resolves.toMatchObject({ status: 'cancelled' })
+    expect(driver.launches).toEqual([])
+    expect(revocationWorkStarts).toBe(1)
+    expect((await storage.listRunGames(run.id))[0]?.status).toBe('cancelled')
+    expect(await storage.listGameResultsByRun(run.id)).toEqual([])
+  })
+
+  it('revokes an issued LLM lease while driver launch is still pending', async () => {
+    const driver = new FakeDriver()
+    let markLaunchStarted = (): void => {}
+    const launchStarted = new Promise<void>((resolve) => {
+      markLaunchStarted = resolve
+    })
+    let releaseLaunch = (): void => {}
+    const launchBarrier = new Promise<void>((resolve) => {
+      releaseLaunch = resolve
+    })
+    let launchResolved = false
+    const immediateLaunch = driver.launch.bind(driver)
+    driver.launch = async (spec) => {
+      const process = await immediateLaunch(spec)
+      markLaunchStarted()
+      await launchBarrier
+      launchResolved = true
+      return process
+    }
+
+    let markRevocationStarted = (): void => {}
+    const revocationStarted = new Promise<void>((resolve) => {
+      markRevocationStarted = resolve
+    })
+    let releaseRevocation = (): void => {}
+    const revocationBarrier = new Promise<void>((resolve) => {
+      releaseRevocation = resolve
+    })
+    let markRevocationSettled = (): void => {}
+    const revocationSettled = new Promise<void>((resolve) => {
+      markRevocationSettled = resolve
+    })
+    let revocationWorkStarts = 0
+    let sharedRevocation: Promise<void> | undefined
+    const issuer: OfficialGrantIssuer = {
+      issue: async () => ({
+        keys: { player_0: 'official-key' },
+        revoke: () => {
+          sharedRevocation ??= (async (): Promise<void> => {
+            revocationWorkStarts += 1
+            markRevocationStarted()
+            await revocationBarrier
+            markRevocationSettled()
+          })()
+          return sharedRevocation
+        },
+      }),
+    }
+    const handle = makeRunner(storage, driver, {
+      officialGrantIssuer: issuer,
+      officialTelemetry: emptyOfficialTelemetry,
+      llmInternalPort: 9472,
+    })
+    const run = await makeRun(storage, [naiveGame(0)], { llmPolicy: enabledLlmPolicy() })
+
+    const terminal = runToTerminal(handle, run.id)
+    await launchStarted
+    handle.runner.cancel(run.id)
+    await revocationStarted
+    expect(launchResolved).toBe(false)
+    expect(driver.lastLaunch()?.process.killGraceMs).toEqual([])
+
+    releaseRevocation()
+    await revocationSettled
+    expect(launchResolved).toBe(false)
+    expect(revocationWorkStarts).toBe(1)
+
+    releaseLaunch()
+    await expect(terminal).resolves.toMatchObject({ status: 'cancelled' })
+    expect(driver.lastLaunch()?.process.killGraceMs).toEqual([5_000])
+    expect(revocationWorkStarts).toBe(1)
+    expect((await storage.listRunGames(run.id))[0]?.status).toBe('cancelled')
+    expect(await storage.listGameResultsByRun(run.id)).toEqual([])
+  })
+
   it('shutdown rejects new work, revokes before kill, and drains the active pump', async () => {
     let releaseRevocation = (): void => {}
     const revocationBarrier = new Promise<void>((resolve) => {
@@ -780,6 +1217,7 @@ describe('Docker-backed workflow runner', () => {
     }
     const handle = makeRunner(storage, new FakeDriver(), {
       officialGrantIssuer: issuer,
+      officialTelemetry: emptyOfficialTelemetry,
       llmInternalPort: 9472,
     })
     const run = await makeRun(storage, [naiveGame(0)], { llmPolicy: enabledLlmPolicy() })

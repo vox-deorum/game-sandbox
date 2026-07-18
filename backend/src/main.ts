@@ -186,6 +186,7 @@ async function main(): Promise<void> {
     userDirectory,
     llmInternalPort: llmConfigured ? config.llm.internalPort : undefined,
     officialGrantIssuer,
+    officialTelemetry,
     log,
     // A completed run is the board's new source: snapshot its ranked placements, then sweep retention
     // (the run grew the recordings and may have superseded a prior run's, freeing them). Placements

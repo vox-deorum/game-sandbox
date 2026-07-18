@@ -343,6 +343,16 @@ describe('leaderboard storage on :memory:', () => {
       episode_score: 42,
       agent_compute_ms_total: 120,
       acted_tick_count: 30,
+      llm_usage_by_model: {
+        small: {
+          calls: 2,
+          estimated_calls: 1,
+          input_tokens: 40,
+          reasoning_tokens: 3,
+          output_tokens: 12,
+          latency_ms: 90,
+        },
+      },
       failed: false,
     })
     const [result] = await storage.listGameResultsByRun(run.id)
@@ -353,6 +363,16 @@ describe('leaderboard storage on :memory:', () => {
       episode_score: 42,
       agent_compute_ms_total: 120,
       acted_tick_count: 30,
+      llm_usage_by_model: {
+        small: {
+          calls: 2,
+          estimated_calls: 1,
+          input_tokens: 40,
+          reasoning_tokens: 3,
+          output_tokens: 12,
+          latency_ms: 90,
+        },
+      },
       failed: 0,
     })
   })
@@ -408,6 +428,16 @@ describe('leaderboard storage on :memory:', () => {
         agent: { kind: 'submission', submission_id: 's1', user_id: 'alice' },
         mean_score: 10,
         mean_agent_compute_ms: 5,
+        llm_usage_by_model: {
+          medium: {
+            calls: 1,
+            estimated_calls: 0,
+            input_tokens: 12,
+            reasoning_tokens: 2,
+            output_tokens: 4,
+            latency_ms: 35,
+          },
+        },
         failure_count: 0,
         recording_id: 'r1',
       },
@@ -420,14 +450,23 @@ describe('leaderboard storage on :memory:', () => {
         recording_id: null,
       },
     ])
-    expect(
-      await storage.listPlacementsByAgent({
-        kind: 'submission',
-        submission_id: 's1',
-        user_id: 'alice',
-      }),
-    ).toHaveLength(1)
-    expect(await storage.listPlacementsByAgent(NAIVE, ENV)).toHaveLength(1)
+    const submittedPlacements = await storage.listPlacementsByAgent({
+      kind: 'submission',
+      submission_id: 's1',
+      user_id: 'alice',
+    })
+    expect(submittedPlacements).toHaveLength(1)
+    expect(firstOf(submittedPlacements).llm_usage_by_model).toEqual({
+      medium: {
+        calls: 1,
+        estimated_calls: 0,
+        input_tokens: 12,
+        reasoning_tokens: 2,
+        output_tokens: 4,
+        latency_ms: 35,
+      },
+    })
+    expect(firstOf(await storage.listPlacementsByAgent(NAIVE, ENV)).llm_usage_by_model).toBeNull()
     expect(await storage.listPlacementsByUser('alice')).toHaveLength(1)
     expect(await storage.listPlacementsByUser('bob')).toEqual([])
 
@@ -755,6 +794,95 @@ describe('leaderboard storage on :memory:', () => {
       score_std: 0,
       mean_agent_compute_ms: null,
       compute_std: null,
+      llm_usage_by_model: null,
+    })
+  })
+
+  it('getAutomatedBoard sums exact successful usage by model without changing rank inputs', async () => {
+    const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
+    const agent: AgentRef = { kind: 'submission', submission_id: 's1', user_id: 'alice' }
+    const run = await createRun(
+      season.id,
+      'dev-user',
+      [agent],
+      [
+        { match_index: 0, game_index: 0, seed: 1, slots: [agent] },
+        { match_index: 0, game_index: 1, seed: 2, slots: [agent] },
+      ],
+    )
+    const games = await storage.listRunGames(run.id)
+    const [first, second] = [firstOf(games), defined(games[1])]
+
+    await storage.recordGameResult({
+      game_id: first.id,
+      slot_index: 0,
+      agent,
+      episode_score: 10,
+      agent_compute_ms_total: 10,
+      acted_tick_count: 1,
+      llm_usage_by_model: {
+        small: {
+          calls: 2,
+          estimated_calls: 0,
+          input_tokens: 10,
+          reasoning_tokens: 1,
+          output_tokens: 5,
+          latency_ms: 30,
+        },
+        medium: {
+          calls: 1,
+          estimated_calls: 1,
+          input_tokens: 8,
+          reasoning_tokens: 0,
+          output_tokens: 3,
+          latency_ms: 20,
+        },
+      },
+      failed: false,
+    })
+    await storage.recordGameResult({
+      game_id: second.id,
+      slot_index: 0,
+      agent,
+      episode_score: 20,
+      agent_compute_ms_total: 10,
+      acted_tick_count: 1,
+      llm_usage_by_model: {
+        small: {
+          calls: 1,
+          estimated_calls: 1,
+          input_tokens: 7,
+          reasoning_tokens: 2,
+          output_tokens: 4,
+          latency_ms: 25,
+        },
+      },
+      failed: false,
+    })
+    await storage.setRunStatus(run.id, 'completed')
+
+    expect(firstOf(await storage.getAutomatedBoard(season.id))).toMatchObject({
+      agent,
+      mean_score: 15,
+      mean_agent_compute_ms: 10,
+      llm_usage_by_model: {
+        small: {
+          calls: 3,
+          estimated_calls: 1,
+          input_tokens: 17,
+          reasoning_tokens: 3,
+          output_tokens: 9,
+          latency_ms: 55,
+        },
+        medium: {
+          calls: 1,
+          estimated_calls: 1,
+          input_tokens: 8,
+          reasoning_tokens: 0,
+          output_tokens: 3,
+          latency_ms: 20,
+        },
+      },
     })
   })
 
@@ -806,6 +934,16 @@ describe('leaderboard storage on :memory:', () => {
       episode_score: 20,
       agent_compute_ms_total: 50,
       acted_tick_count: 10,
+      llm_usage_by_model: {
+        large: {
+          calls: 1,
+          estimated_calls: 0,
+          input_tokens: 20,
+          reasoning_tokens: 5,
+          output_tokens: 6,
+          latency_ms: 75,
+        },
+      },
       failed: false,
     })
     await storage.recordGameResult({
@@ -824,6 +962,16 @@ describe('leaderboard storage on :memory:', () => {
       rank: 1,
       mean_score: 20,
       run_id: run1.id,
+      llm_usage_by_model: {
+        large: {
+          calls: 1,
+          estimated_calls: 0,
+          input_tokens: 20,
+          reasoning_tokens: 5,
+          output_tokens: 6,
+          latency_ms: 75,
+        },
+      },
     })
     expect(firstOf(await storage.listPlacementsByAgent(NAIVE, ENV))).toMatchObject({
       rank: 2,
@@ -862,6 +1010,7 @@ describe('leaderboard storage on :memory:', () => {
       rank: 2,
       mean_score: 8,
       run_id: run2.id,
+      llm_usage_by_model: null,
     })
   })
 

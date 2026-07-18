@@ -10,6 +10,11 @@
  * Later stages add their tables, unions, and derived types (submissions, seasons, ratings)
  * to this file.
  */
+
+import type {
+  LlmModelUsage as SchemaLlmModelUsage,
+  LlmUsageByModel as SchemaLlmUsageByModel,
+} from '@game-sandbox/schema/llm'
 import type { Insertable, Selectable, Updateable } from 'kysely'
 
 /** Whether a session is human-controlled or runs the built-in scripted agent. */
@@ -148,6 +153,12 @@ export type AgentKind = 'submission' | 'builtin-naive'
 export type AgentRef =
   | { kind: 'submission'; submission_id: string; user_id: string }
   | { kind: 'builtin-naive' }
+
+/** Shared public usage totals, retained here as a compatibility export for storage consumers. */
+export type LlmModelUsage = SchemaLlmModelUsage
+
+/** Shared public per-model usage, retained here as a compatibility export for storage consumers. */
+export type LlmUsageByModel = SchemaLlmUsageByModel
 
 /** The concrete column triple every agent-keyed table stores, derived from an {@link AgentRef}. */
 export interface AgentColumns {
@@ -296,6 +307,8 @@ export interface GameResultsTable {
   agent_compute_ms_total: number
   /** The number of ticks that carried this seat's timing and contributed to the total. */
   acted_tick_count: number
+  /** Nullable JSON text containing successful official LLM usage grouped by public model alias. */
+  llm_usage_by_model: string | null
   /** SQLite boolean (0/1): the agent crashed or timed out but a score row still exists. */
   failed: number
   failure_reason: string | null
@@ -320,6 +333,8 @@ export interface AutomatedPlacementsTable {
   mean_score: number
   /** Null/blank when the contributing tick count was zero. */
   mean_agent_compute_ms: number | null
+  /** Nullable JSON text copied from the live board's decoded LLM usage aggregate. */
+  llm_usage_by_model: string | null
   failure_count: number
   recording_id: string | null
   /** ISO-8601 UTC timestamp. */
@@ -515,11 +530,18 @@ export type SeasonRun = Selectable<SeasonRunsTable>
 /** A scheduled-match row as read back from the database. */
 export type SeasonRunGame = Selectable<SeasonRunGamesTable>
 
-/** A per-seat game-result row as read back from the database. */
-export type GameResult = Selectable<GameResultsTable>
+/** A per-seat game-result row with stored LLM JSON decoded at the storage boundary. */
+export type GameResult = Omit<Selectable<GameResultsTable>, 'llm_usage_by_model'> & {
+  llm_usage_by_model: LlmUsageByModel | null
+}
 
-/** An automated-placement row as read back from the database. */
-export type AutomatedPlacement = Selectable<AutomatedPlacementsTable>
+/** An automated-placement row with stored LLM JSON decoded at the storage boundary. */
+export type AutomatedPlacement = Omit<
+  Selectable<AutomatedPlacementsTable>,
+  'llm_usage_by_model'
+> & {
+  llm_usage_by_model: LlmUsageByModel | null
+}
 
 /** A rating row as read back from the database. */
 export type Rating = Selectable<RatingsTable>

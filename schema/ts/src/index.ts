@@ -18,6 +18,7 @@ import type { RecordingHeader, StepState } from './generated/types.js'
 // barrel re-exports them for the Node backend, which already pulls in the Ajv-backed readers below.
 export { type EnvironmentMeta, isEnvironmentMeta } from './environment.js'
 export type { AgentStep, Message, RecordingHeader, StepState } from './generated/types.js'
+export type { LlmModelUsage, LlmUsageByModel, ModelAlias } from './llm.js'
 export {
   type Command,
   type CommandParse,

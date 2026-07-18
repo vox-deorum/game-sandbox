@@ -11,6 +11,8 @@ import type {
   AgentRef,
   AutomatedBoardRow,
   HumanBoardRow,
+  LlmModelUsage,
+  LlmUsageByModel,
   PlacementInput,
   RatingAggregate,
 } from '../index.js'
@@ -22,8 +24,42 @@ import {
   agentKey,
   agentRefFromColumns,
   agentRefKey,
+  decodeLlmUsageByModel,
+  encodeLlmUsageByModel,
   populationStdDev,
 } from './shared.js'
+
+function decodePlacement(
+  row: Omit<AutomatedPlacement, 'llm_usage_by_model'> & {
+    llm_usage_by_model: string | null
+  },
+): AutomatedPlacement {
+  return { ...row, llm_usage_by_model: decodeLlmUsageByModel(row.llm_usage_by_model) }
+}
+
+function addLlmUsage(
+  current: LlmUsageByModel | null,
+  addition: LlmUsageByModel | null,
+): LlmUsageByModel | null {
+  if (addition === null || Object.keys(addition).length === 0) {
+    return current
+  }
+  const result: LlmUsageByModel = { ...(current ?? {}) }
+  for (const [model, usage] of Object.entries(addition) as Array<
+    [keyof LlmUsageByModel, LlmModelUsage]
+  >) {
+    const prior = result[model]
+    result[model] = {
+      calls: (prior?.calls ?? 0) + usage.calls,
+      estimated_calls: (prior?.estimated_calls ?? 0) + usage.estimated_calls,
+      input_tokens: (prior?.input_tokens ?? 0) + usage.input_tokens,
+      reasoning_tokens: (prior?.reasoning_tokens ?? 0) + usage.reasoning_tokens,
+      output_tokens: (prior?.output_tokens ?? 0) + usage.output_tokens,
+      latency_ms: (prior?.latency_ms ?? 0) + usage.latency_ms,
+    }
+  }
+  return result
+}
 
 /**
  * The minimum number of ratings an agent needs before the human board assigns it a rank. Under this
@@ -54,6 +90,7 @@ export async function replaceAutomatedPlacements(
           ...agentColumns(row.agent),
           mean_score: row.mean_score,
           mean_agent_compute_ms: row.mean_agent_compute_ms,
+          llm_usage_by_model: encodeLlmUsageByModel(row.llm_usage_by_model),
           failure_count: row.failure_count,
           recording_id: row.recording_id,
           created_at: now,
@@ -80,7 +117,8 @@ export async function listPlacementsByAgent(
   if (envId !== undefined) {
     query = query.where('env_id', '=', envId)
   }
-  return await query.orderBy('created_at', 'desc').execute()
+  const rows = await query.orderBy('created_at', 'desc').execute()
+  return rows.map(decodePlacement)
 }
 
 export async function listPlacementsByUser(
@@ -89,13 +127,14 @@ export async function listPlacementsByUser(
 ): Promise<AutomatedPlacement[]> {
   // The partial `automated_placements_user_season` index bounds this read to one participant while
   // excluding baseline rows; callers can then group all of the participant's attempts by season.
-  return await db
+  const rows = await db
     .selectFrom('automated_placements')
     .selectAll()
     .where('agent_kind', '=', 'submission')
     .where('agent_user_id', '=', userId)
     .orderBy('created_at', 'desc')
     .execute()
+  return rows.map(decodePlacement)
 }
 
 export async function getAutomatedBoard(
@@ -123,6 +162,7 @@ export async function getAutomatedBoard(
       'game_results.episode_score as episode_score',
       'game_results.agent_compute_ms_total as agent_compute_ms_total',
       'game_results.acted_tick_count as acted_tick_count',
+      'game_results.llm_usage_by_model as llm_usage_by_model',
       'game_results.failed as failed',
       'season_run_games.recording_id as recording_id',
       'season_run_games.game_index as game_index',
@@ -138,6 +178,7 @@ export async function getAutomatedBoard(
     // Each game's per-decision compute rate is weighted by its acted ticks, matching the displayed
     // mean. The weighted square sum lets the spread use the same decision-level weighting.
     computeRateSqWeightedSum: number
+    llmUsageByModel: LlmUsageByModel | null
     failureCount: number
     games: number
     bestScore: number
@@ -156,6 +197,7 @@ export async function getAutomatedBoard(
         computeSum: 0,
         tickSum: 0,
         computeRateSqWeightedSum: 0,
+        llmUsageByModel: null,
         failureCount: 0,
         games: 0,
         bestScore: Number.NEGATIVE_INFINITY,
@@ -172,6 +214,10 @@ export async function getAutomatedBoard(
       const rate = row.agent_compute_ms_total / row.acted_tick_count
       acc.computeRateSqWeightedSum += rate * rate * row.acted_tick_count
     }
+    acc.llmUsageByModel = addLlmUsage(
+      acc.llmUsageByModel,
+      decodeLlmUsageByModel(row.llm_usage_by_model),
+    )
     acc.failureCount += row.failed === 1 ? 1 : 0
     acc.games += 1
     const better =
@@ -195,6 +241,7 @@ export async function getAutomatedBoard(
           acc.tickSum > 0
             ? populationStdDev(acc.computeSum, acc.computeRateSqWeightedSum, acc.tickSum)
             : null,
+        llm_usage_by_model: acc.llmUsageByModel,
         failure_count: acc.failureCount,
         games: acc.games,
         recording_id: acc.bestRecording,

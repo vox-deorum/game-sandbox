@@ -85,6 +85,7 @@ export async function persistPlacementsForSeason(
     agent: row.agent,
     mean_score: row.mean_score,
     mean_agent_compute_ms: row.mean_agent_compute_ms,
+    llm_usage_by_model: row.llm_usage_by_model,
     failure_count: row.failure_count,
     recording_id: row.recording_id,
   }))

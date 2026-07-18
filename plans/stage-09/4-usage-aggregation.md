@@ -1,6 +1,6 @@
 # Stage 9.4: Official Usage Aggregation
 
-Status: not started.
+Status: complete.
 
 Part of [Stage 9](../stage-09-llm-gateway.md), build-order step 4.
 

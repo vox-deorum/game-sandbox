@@ -39,12 +39,12 @@ export interface TelemetryCallFilter {
   model?: string
 }
 
-export interface LlmModelUsage extends LlmUsage {
+export interface ExecutionModelUsage extends LlmUsage {
   estimatedCalls: number
   latencyMs: number
 }
 
-export type LlmUsageByModel = Record<string, LlmModelUsage>
+export type ExecutionUsageByModel = Record<string, ExecutionModelUsage>
 
 interface CallRow {
   id: number
@@ -267,7 +267,7 @@ export class ExecutionTelemetryStore {
   }
 
   /** Exact successful-call sums grouped by the public model alias. */
-  aggregateByModel(scopeId: string, filter: TelemetryCallFilter = {}): LlmUsageByModel {
+  aggregateByModel(scopeId: string, filter: TelemetryCallFilter = {}): ExecutionUsageByModel {
     const { sql, values } = filteredQuery(
       `SELECT model,
               COUNT(*) AS calls,

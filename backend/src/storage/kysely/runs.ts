@@ -21,7 +21,15 @@ import type {
   SeasonRunGame,
 } from '../schema.js'
 import { decodeSeasonConfig, type SeasonConfig } from '../season-config.js'
-import { agentColumns } from './shared.js'
+import { agentColumns, decodeLlmUsageByModel, encodeLlmUsageByModel } from './shared.js'
+
+function decodeGameResult(
+  row: Omit<GameResult, 'llm_usage_by_model'> & {
+    llm_usage_by_model: string | null
+  },
+): GameResult {
+  return { ...row, llm_usage_by_model: decodeLlmUsageByModel(row.llm_usage_by_model) }
+}
 
 /** Run-status values that close a run (stamping `ended_at`). */
 const TERMINAL_RUN_STATUSES: ReadonlySet<RunStatus> = new Set(['completed', 'failed', 'cancelled'])
@@ -265,7 +273,7 @@ export async function recordGameResult(
   db: Kysely<Database>,
   input: RecordGameResultInput,
 ): Promise<GameResult> {
-  return await db
+  const row = await db
     .insertInto('game_results')
     .values({
       id: randomUUID(),
@@ -275,21 +283,24 @@ export async function recordGameResult(
       episode_score: input.episode_score,
       agent_compute_ms_total: input.agent_compute_ms_total,
       acted_tick_count: input.acted_tick_count,
+      llm_usage_by_model: encodeLlmUsageByModel(input.llm_usage_by_model),
       failed: input.failed ? 1 : 0,
       failure_reason: input.failure_reason ?? null,
     })
     .returningAll()
     .executeTakeFirstOrThrow()
+  return decodeGameResult(row)
 }
 
 export async function listGameResultsByRun(
   db: Kysely<Database>,
   runId: string,
 ): Promise<GameResult[]> {
-  return await db
+  const rows = await db
     .selectFrom('game_results')
     .innerJoin('season_run_games', 'season_run_games.id', 'game_results.game_id')
     .where('season_run_games.run_id', '=', runId)
     .selectAll('game_results')
     .execute()
+  return rows.map(decodeGameResult)
 }

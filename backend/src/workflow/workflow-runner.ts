@@ -40,6 +40,7 @@ import { buildSandboxProfile } from '../driver/sandbox.js'
 import type { EnvironmentMeta, EnvironmentRegistry } from '../environments.js'
 import { forfeitScore, normalizeEpisodeScore } from '../leaderboards/score.js'
 import { decodeResolvedOfficialLlmPolicy, type ResolvedOfficialLlmPolicy } from '../llm/config.js'
+import { MODEL_ALIASES } from '../llm/types.js'
 import { optionalField } from '../optional-field.js'
 import { coerceResultReason } from '../result-reason.js'
 import {
@@ -49,7 +50,8 @@ import {
 } from '../session/launch-config.js'
 import { ensureRecordingsDir } from '../session/live-session.js'
 import type { OfficialGrantIssuer, OfficialGrantLease } from '../session/official-grants.js'
-import { decodeSeasonConfig, type Storage } from '../storage/index.js'
+import { decodeSeasonConfig, type LlmUsageByModel, type Storage } from '../storage/index.js'
+import type { ExecutionTelemetryStore, ExecutionUsageByModel } from '../storage/llm/index.js'
 import type { AgentRef, SeasonRun, SeasonRunGame } from '../storage/schema.js'
 import type { SubmissionSnapshotStore } from '../submission/snapshot-store.js'
 import type { SubmissionSource } from '../submission/source/index.js'
@@ -93,6 +95,8 @@ export interface WorkflowRunnerDeps {
   llmInternalPort?: number
   /** Issues one temporary official key per workflow agent slot. */
   officialGrantIssuer?: OfficialGrantIssuer
+  /** Reads successful calls from the run-scoped execution telemetry file after grant teardown. */
+  officialTelemetry?: Pick<ExecutionTelemetryStore, 'aggregateByModel'>
   /** Grace before a cancelled run's in-flight container is hard-killed. */
   killGraceMs?: number
   /** Extra wall-clock slack over the effective episode timeout before a game container is killed. */
@@ -169,13 +173,14 @@ class DockerWorkflowRunner implements WorkflowRunner {
 
   cancel(runId: string): void {
     this.cancelRequested.add(runId)
-    // Best-effort mid-game teardown: kill the in-flight container so the current game does not run to
-    // its natural end. The run loop sees the flag and settles the run `cancelled`.
+    // Best-effort teardown starts as soon as either resource exists. A grant lease is registered before
+    // launch, so cancellation can close admission while the driver is still resolving the process.
+    const llmLease = this.inFlightLlm.get(runId)
     const process = this.inFlight.get(runId)
-    if (process !== undefined) {
+    if (llmLease !== undefined || process !== undefined) {
       void (async (): Promise<void> => {
-        await this.inFlightLlm.get(runId)?.revoke()
-        await this.cleanupProcess(process)
+        await llmLease?.revoke()
+        if (process !== undefined) await this.cleanupProcess(process)
       })().catch((error) => this.log(`run ${runId}: cancel teardown failed: ${String(error)}`))
     }
   }
@@ -370,9 +375,12 @@ class DockerWorkflowRunner implements WorkflowRunner {
         // game fails, the rest of the schedule continues.
         if (
           this.deps.officialGrantIssuer === undefined ||
-          this.deps.llmInternalPort === undefined
+          this.deps.llmInternalPort === undefined ||
+          this.deps.officialTelemetry === undefined
         ) {
-          throw new Error('official workflow LLM grants and internal proxy port are not configured')
+          throw new Error(
+            'official workflow LLM grants, telemetry, and internal proxy port are not configured',
+          )
         }
         try {
           llmLease = await this.deps.officialGrantIssuer.issue({
@@ -382,8 +390,14 @@ class DockerWorkflowRunner implements WorkflowRunner {
             models: llmPolicy.models,
             limits: policyLimits(llmPolicy),
           })
+          this.inFlightLlm.set(runId, llmLease)
         } catch (error) {
           await this.infraFault(runId, game, `LLM grant issuance failed: ${errorText(error)}`)
+          return
+        }
+        if (this.cancelRequested.has(runId)) {
+          await llmLease.revoke()
+          await this.markGameCancelled(runId, game)
           return
         }
       }
@@ -395,6 +409,11 @@ class DockerWorkflowRunner implements WorkflowRunner {
         overrides,
         llmLease?.keys ?? {},
       )
+      if (this.cancelRequested.has(runId)) {
+        await llmLease?.revoke()
+        await this.markGameCancelled(runId, game)
+        return
+      }
 
       try {
         process = await this.deps.driver.launch({
@@ -418,7 +437,6 @@ class DockerWorkflowRunner implements WorkflowRunner {
         return
       }
       this.inFlight.set(runId, process)
-      if (llmLease !== undefined) this.inFlightLlm.set(runId, llmLease)
       // A cancel that landed before `inFlight.set` found no process to kill, so re-check and kill
       // here. Deliberately no early return: execution continues into the shared drain/exit path
       // below, and the post-exit cancel check records the game `cancelled`. Revoke and cleanup are
@@ -521,6 +539,24 @@ class DockerWorkflowRunner implements WorkflowRunner {
       const status =
         failure.kind === 'timeout' ? 'timed_out' : failure.kind === 'crash' ? 'failed' : 'completed'
 
+      // The revocation barrier above closed admission and awaited every request finalizer. Read every
+      // seat from the shared run scope before writing any per-seat result, so all results describe the
+      // same settled telemetry state and no delayed successful write can land after aggregation.
+      const llmUsageBySlot = new Map<string, LlmUsageByModel | null>()
+      if (llmPolicy.enabled) {
+        const telemetry = this.deps.officialTelemetry
+        if (telemetry === undefined) {
+          throw new Error('official workflow LLM telemetry is not configured')
+        }
+        for (let slotIndex = 0; slotIndex < slots.length; slotIndex++) {
+          const slotId = `player_${slotIndex}`
+          llmUsageBySlot.set(
+            slotId,
+            storedLlmUsage(telemetry.aggregateByModel(runId, { sessionId: game.id, slot: slotId })),
+          )
+        }
+      }
+
       // Register the produced recording (owned by the seat's natural owner) and link it to the game.
       // An automated run has no producing session, so the recording carries its own termination reason
       // for the replay viewer's game-over card. Only a cleanly completed game gets one, taken from its
@@ -573,6 +609,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
           episode_score: episodeScore,
           agent_compute_ms_total: aggregate.agentComputeMsTotal,
           acted_tick_count: aggregate.actedTickCount,
+          llm_usage_by_model: llmUsageBySlot.get(slotId) ?? null,
           failed: seatFailed,
           failure_reason: seatFailed ? failure.reason : null,
         })
@@ -772,6 +809,29 @@ class DockerWorkflowRunner implements WorkflowRunner {
       line,
     })
   }
+}
+
+/** Convert the telemetry store's internal camel-case totals into the persisted/public JSON shape. */
+function storedLlmUsage(usage: ExecutionUsageByModel): LlmUsageByModel | null {
+  for (const model of Object.keys(usage)) {
+    if (!MODEL_ALIASES.some((alias) => alias === model)) {
+      throw new Error(`execution telemetry contains unsupported model alias ${model}`)
+    }
+  }
+  const stored: LlmUsageByModel = {}
+  for (const model of MODEL_ALIASES) {
+    const totals = usage[model]
+    if (totals === undefined) continue
+    stored[model] = {
+      calls: totals.calls,
+      estimated_calls: totals.estimatedCalls,
+      input_tokens: totals.inputTokens,
+      reasoning_tokens: totals.reasoningTokens,
+      output_tokens: totals.outputTokens,
+      latency_ms: totals.latencyMs,
+    }
+  }
+  return Object.keys(stored).length === 0 ? null : stored
 }
 
 /** The owner-visible text for a thrown value. */
