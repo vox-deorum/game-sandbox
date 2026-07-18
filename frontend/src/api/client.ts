@@ -760,6 +760,7 @@ export interface LlmLimitOverride {
 export interface LlmOverride {
   enabled?: boolean
   models?: LlmModelAlias[]
+  cost_weights?: Partial<Record<LlmModelAlias, number>>
   official?: LlmLimitOverride
   development?: LlmLimitOverride
 }
@@ -827,6 +828,8 @@ export interface AutomatedBoardRow {
   compute_std: number | null
   /** Successful official calls grouped by model, or null when the agent made none. */
   llm_usage_by_model: LlmUsageByModel | null
+  /** Successful official token use priced with the run's frozen model weights. */
+  llm_weighted_cost: number | null
   failure_count: number
   games: number
   /** The representative replay link (the agent's best game), or null. */
@@ -940,6 +943,8 @@ export interface AutomatedPlacement {
   mean_agent_compute_ms: number | null
   /** Successful official calls grouped by model, or null when the placement has none. */
   llm_usage_by_model: LlmUsageByModel | null
+  /** Successful official token use priced with the run's frozen model weights. */
+  llm_weighted_cost: number | null
   failure_count: number
   recording_id: string | null
   created_at: string

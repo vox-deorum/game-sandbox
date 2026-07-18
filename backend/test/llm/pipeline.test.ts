@@ -57,11 +57,12 @@ describe('LLM retry, accounting, and telemetry pipeline', () => {
     const tick: OfficialTickMarkerRef = { current: initialTick }
     const grant: LlmGrant = {
       kind: 'official',
-      models: { small: 'provider-small' },
+      models: { small: { upstream: 'provider-small', costWeight: 1 } },
       accountingScope: {
         key: `session:${SESSION_ID}:${SLOT}`,
         limits: { tokenBudget: 100, callBudget: 10, requestsPerMinute: 10 },
-        readCommittedUsage: () => store.readSessionUsage(SESSION_ID, SESSION_ID, SLOT),
+        weights: { small: 1 },
+        readCommittedUsage: () => store.readSessionUsageByModel(SESSION_ID, SESSION_ID, SLOT),
       },
       recordSink: createOfficialRecordSink(store, {
         scopeId: SESSION_ID,
@@ -102,11 +103,13 @@ describe('LLM retry, accounting, and telemetry pipeline', () => {
     })
 
     expect(client.create).toHaveBeenCalledTimes(2)
-    expect(store.readSessionUsage(SESSION_ID, SESSION_ID, SLOT)).toEqual({
-      calls: 1,
-      inputTokens: 2,
-      reasoningTokens: 0,
-      outputTokens: 4,
+    expect(store.readSessionUsageByModel(SESSION_ID, SESSION_ID, SLOT)).toEqual({
+      small: {
+        calls: 1,
+        inputTokens: 2,
+        reasoningTokens: 0,
+        outputTokens: 4,
+      },
     })
     expect(store.listCalls(SESSION_ID)).toEqual([
       expect.objectContaining({
@@ -145,17 +148,12 @@ describe('LLM retry, accounting, and telemetry pipeline', () => {
     })
 
     expect(client.create).toHaveBeenCalledTimes(attempts)
-    expect(store.readSessionUsage(SESSION_ID, SESSION_ID, SLOT)).toEqual({
-      calls: 0,
-      inputTokens: 0,
-      reasoningTokens: 0,
-      outputTokens: 0,
-    })
+    expect(store.readSessionUsageByModel(SESSION_ID, SESSION_ID, SLOT)).toEqual({})
     expect(store.listCalls(SESSION_ID)).toEqual([])
     expect(meter.inspect(grant.accountingScope.key)).toMatchObject({
       rateEvents: [],
       reservedCalls: 0,
-      reservedTokens: 0,
+      reservedWeightedTokens: 0,
     })
   })
 })

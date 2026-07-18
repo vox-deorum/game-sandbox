@@ -271,19 +271,25 @@ describe('AdminConsolePage', () => {
       config: {
         deps_version: 1,
         matches: [{ slots: ['submission'], seeds: [0], games: 1 }],
-        overrides: { llm: { enabled: false } },
+        overrides: { llm: { enabled: false, cost_weights: { medium: 2.5 } } },
       },
     })
     vi.mocked(getAdminSeason).mockResolvedValue(adminView({ season: withLlm }))
     vi.mocked(configureSeason).mockResolvedValue({ ok: true, season: withLlm })
     await renderConsole()
 
+    expect(await screen.findByLabelText('Large model token price')).toHaveValue(null)
+    expect(screen.getByLabelText('Medium model token price')).toHaveValue(2.5)
+    expect(screen.getByLabelText('Small model token price')).toHaveValue(null)
     await fireEvent.update(await screen.findByLabelText('Messaging'), 'off')
     await fireEvent.update(screen.getByLabelText('Message cap (code points)'), '80')
     await fireEvent.update(screen.getByLabelText('LLM enablement'), 'on')
     await fireEvent.update(screen.getByLabelText('Allowed model aliases'), 'custom')
     await fireEvent.click(screen.getByLabelText('small'))
     await fireEvent.click(screen.getByLabelText('medium'))
+    await fireEvent.update(screen.getByLabelText('Large model token price'), '4')
+    await fireEvent.update(screen.getByLabelText('Medium model token price'), '2')
+    await fireEvent.update(screen.getByLabelText('Small model token price'), '0.5')
     await fireEvent.update(screen.getByLabelText('Official token budget'), '10000')
     await fireEvent.update(screen.getByLabelText('Official call budget'), '100')
     await fireEvent.update(screen.getByLabelText('Official rate limit (RPM)'), '30')
@@ -298,6 +304,7 @@ describe('AdminConsolePage', () => {
     expect(savedConfig?.overrides?.llm).toEqual({
       enabled: true,
       models: ['medium', 'small'],
+      cost_weights: { large: 4, medium: 2, small: 0.5 },
       official: { token_budget: 10_000, call_budget: 100, rate_limit_rpm: 30 },
       development: { token_budget: 20_000, call_budget: 200, rate_limit_rpm: 15 },
     })
@@ -321,6 +328,17 @@ describe('AdminConsolePage', () => {
 
     expect(
       await screen.findByText(/development call budget must be a positive integer/),
+    ).toBeInTheDocument()
+    expect(vi.mocked(configureSeason)).not.toHaveBeenCalled()
+  })
+
+  it('rejects invalid model token prices before saving', async () => {
+    await renderConsole()
+    await fireEvent.update(await screen.findByLabelText('Large model token price'), '1000001')
+    await fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }))
+
+    expect(
+      await screen.findByText(/large model token price must be a positive finite number/),
     ).toBeInTheDocument()
     expect(vi.mocked(configureSeason)).not.toHaveBeenCalled()
   })
@@ -481,6 +499,7 @@ describe('AdminConsolePage', () => {
           mean_agent_compute_ms: 1,
           compute_std: 0,
           llm_usage_by_model: null,
+          llm_weighted_cost: null,
           failure_count: 0,
           games: 2,
           recording_id: 'rec-1',

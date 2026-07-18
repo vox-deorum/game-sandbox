@@ -232,6 +232,8 @@ export interface RecordGameResultInput {
   acted_tick_count: number
   /** Successful official calls for this seat, or null when it made none. */
   llm_usage_by_model?: LlmUsageByModel | null
+  /** Frozen-policy weighted token cost, or null exactly when LLM usage is absent. */
+  llm_weighted_cost?: number | null
   failed: boolean
   failure_reason?: string | null
 }
@@ -245,6 +247,8 @@ export interface PlacementInput {
   mean_agent_compute_ms: number | null
   /** Successful official calls aggregated over the placement's games, or null when there were none. */
   llm_usage_by_model?: LlmUsageByModel | null
+  /** Weighted token cost aggregated over the placement's games. */
+  llm_weighted_cost?: number | null
   failure_count: number
   recording_id: string | null
 }
@@ -316,6 +320,8 @@ export interface AutomatedBoardRow {
   compute_std: number | null
   /** Successful official calls aggregated over the agent's games, or null when there were none. */
   llm_usage_by_model: LlmUsageByModel | null
+  /** Frozen-policy weighted token cost aggregated over the agent's games. */
+  llm_weighted_cost: number | null
   failure_count: number
   /** The number of games that produced a result for this agent in the run. */
   games: number

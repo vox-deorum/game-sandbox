@@ -9,7 +9,7 @@ import { join } from 'node:path'
 
 import BetterSqlite3 from 'better-sqlite3'
 
-import { emptyUsage, type LlmUsage } from '../../llm/types.js'
+import type { LlmUsage } from '../../llm/types.js'
 
 const CURRENT_SCHEMA_VERSION = 1
 const SCOPE_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/
@@ -78,7 +78,7 @@ interface ModelUsageRow extends UsageRow {
 interface ScopeHandle {
   db: BetterSqlite3.Database
   insertCall: BetterSqlite3.Statement
-  sessionUsage: BetterSqlite3.Statement
+  sessionUsageByModel: BetterSqlite3.Statement
 }
 
 function validateScopeId(scopeId: string): void {
@@ -109,10 +109,7 @@ function encodeJson(value: unknown, name: string): string {
   return encoded
 }
 
-function decodeUsage(row: UsageRow | undefined): LlmUsage {
-  if (row === undefined) {
-    return emptyUsage()
-  }
+function decodeUsage(row: UsageRow): LlmUsage {
   return {
     calls: row.calls,
     inputTokens: row.input_tokens,
@@ -251,10 +248,16 @@ export class ExecutionTelemetryStore {
     return this.insert(scopeId, input)
   }
 
-  /** Successful committed usage for one slot within one producing session. */
-  readSessionUsage(scopeId: string, sessionId: string, slot: string): LlmUsage {
-    const row = this.handle(scopeId).sessionUsage.get(sessionId, slot) as UsageRow | undefined
-    return decodeUsage(row)
+  /** Successful committed usage for one slot, grouped by every model name present in telemetry. */
+  readSessionUsageByModel(
+    scopeId: string,
+    sessionId: string,
+    slot: string,
+  ): Record<string, LlmUsage> {
+    const rows = this.handle(scopeId).sessionUsageByModel.all(sessionId, slot) as Array<
+      UsageRow & { model: string }
+    >
+    return Object.fromEntries(rows.map((row) => [row.model, decodeUsage(row)]))
   }
 
   /** List successful rows in insertion order, optionally narrowed by stable telemetry fields. */
@@ -354,12 +357,14 @@ export class ExecutionTelemetryStore {
             @input_tokens, @reasoning_tokens, @output_tokens, @usage_estimated, @latency_ms, @created_at
           )
         `),
-        sessionUsage: db.prepare(`
-          SELECT COUNT(*) AS calls,
+        sessionUsageByModel: db.prepare(`
+          SELECT model,
+                 COUNT(*) AS calls,
                  COALESCE(SUM(input_tokens), 0) AS input_tokens,
                  COALESCE(SUM(reasoning_tokens), 0) AS reasoning_tokens,
                  COALESCE(SUM(output_tokens), 0) AS output_tokens
           FROM calls WHERE session_id = ? AND slot = ?
+          GROUP BY model ORDER BY model
         `),
       }
       this.handles.set(scopeId, handle)

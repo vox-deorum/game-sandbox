@@ -2,12 +2,12 @@ import { performance } from 'node:perf_hooks'
 
 import { LlmError } from './errors.js'
 import {
-  emptyUsage,
+  committedCalls,
   type LlmAccountingScope,
   type LlmRecordSink,
   type LlmSuccessfulRecord,
-  type LlmUsage,
-  totalTokens,
+  type ModelAlias,
+  weightedCommittedTokens,
 } from './types.js'
 
 /** One sliding-window horizon shared by recorded events and pending capacity. */
@@ -17,8 +17,8 @@ interface MeterState {
   rateEvents: number[]
   pendingRateEvents: Set<LlmReservation>
   reservedCalls: number
-  reservedTokens: number
-  debt: LlmUsage
+  reservedWeightedTokens: number
+  debt: { calls: number; weightedTokens: number }
   breakerOpen: boolean
   probing: boolean
   recoveryTimer: ReturnType<typeof setTimeout> | null
@@ -26,8 +26,10 @@ interface MeterState {
 
 export interface LlmReservation {
   readonly scope: LlmAccountingScope
+  readonly model: ModelAlias
   readonly inputTokens: number
   readonly outputTokens: number
+  readonly weightedTokens: number
   /** Admission instant that stamps this request's rate event and bounds its pending capacity. */
   readonly rateStartedAt: number
   active: boolean
@@ -61,11 +63,17 @@ export class LlmMeter {
   /** Atomically read committed usage, check the scope, and reserve it as one sync section. */
   async reserve(
     scope: LlmAccountingScope,
+    model: ModelAlias,
     inputTokens: number,
     outputTokens: number,
   ): Promise<LlmReservation> {
     const now = this.now()
     const requestedTokens = inputTokens + outputTokens
+    const weight = scope.weights[model]
+    if (weight === undefined) {
+      throw new Error(`LLM accounting scope has no cost weight for model ${model}`)
+    }
+    const requestedWeightedTokens = weight * requestedTokens
 
     const state = this.state(scope.key)
     this.pruneRateWindows(state, now)
@@ -78,13 +86,17 @@ export class LlmMeter {
     if (state.rateEvents.length + state.pendingRateEvents.size >= scope.limits.requestsPerMinute) {
       throw new LlmError(429, 'rate_limit_exceeded', 'Rate limit exceeded.', 'rate_limit_error')
     }
-    if (usage.calls + state.reservedCalls + state.debt.calls + 1 > scope.limits.callBudget) {
+    if (
+      committedCalls(usage) + state.reservedCalls + state.debt.calls + 1 >
+      scope.limits.callBudget
+    ) {
       throw new LlmError(400, 'budget_exceeded', 'Call budget exceeded.')
     }
-    const committedTokens = totalTokens(usage)
-    const debtTokens = totalTokens(state.debt)
     if (
-      committedTokens + state.reservedTokens + debtTokens + requestedTokens >
+      weightedCommittedTokens(usage, scope.weights) +
+        state.reservedWeightedTokens +
+        state.debt.weightedTokens +
+        requestedWeightedTokens >
       scope.limits.tokenBudget
     ) {
       throw new LlmError(400, 'budget_exceeded', 'Token budget exceeded.')
@@ -92,14 +104,16 @@ export class LlmMeter {
 
     const reservation: LlmReservation = {
       scope,
+      model,
       inputTokens,
       outputTokens,
+      weightedTokens: requestedWeightedTokens,
       rateStartedAt: now,
       active: true,
     }
     state.pendingRateEvents.add(reservation)
     state.reservedCalls += 1
-    state.reservedTokens += requestedTokens
+    state.reservedWeightedTokens += requestedWeightedTokens
     return reservation
   }
 
@@ -129,7 +143,7 @@ export class LlmMeter {
     const state = this.state(reservation.scope.key)
     state.pendingRateEvents.delete(reservation)
     state.reservedCalls -= 1
-    state.reservedTokens -= reservation.inputTokens + reservation.outputTokens
+    state.reservedWeightedTokens -= reservation.weightedTokens
   }
 
   /** Commit telemetry before releasing the reservation; retain conservative debt on failure. */
@@ -179,9 +193,7 @@ export class LlmMeter {
     this.release(reservation)
     const state = this.state(reservation.scope.key)
     state.debt.calls += 1
-    state.debt.inputTokens += reservation.inputTokens
-    // The reservation is conservative and does not separately guess hidden reasoning.
-    state.debt.outputTokens += reservation.outputTokens
+    state.debt.weightedTokens += reservation.weightedTokens
   }
 
   private openBreaker(key: string, sink: LlmRecordSink): void {
@@ -233,8 +245,8 @@ export class LlmMeter {
         rateEvents: [],
         pendingRateEvents: new Set(),
         reservedCalls: 0,
-        reservedTokens: 0,
-        debt: emptyUsage(),
+        reservedWeightedTokens: 0,
+        debt: { calls: 0, weightedTokens: 0 },
         breakerOpen: false,
         probing: false,
         recoveryTimer: null,

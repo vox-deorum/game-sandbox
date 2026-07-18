@@ -70,7 +70,7 @@ Dedicated parsers and Zod schemas validate every value, so a missing required se
 
 ## LLM proxy
 
-The internal OpenAI-compatible proxy starts only when `LLM_UPSTREAM_URL` and at least one model alias are configured. Agents use the stable aliases `large`, `medium`, and `small`; the matching `LLM_MODEL_*` values and the optional upstream credential stay inside the backend. `LLM_INTERNAL_PORT` binds on all interfaces so the per-session Docker relay added by Stage 9 can reach it through the host gateway. The listener requires a scoped bearer key on every route.
+The internal OpenAI-compatible proxy starts only when `LLM_UPSTREAM_URL` and at least one model alias are configured. Agents use the stable aliases `large`, `medium`, and `small`. The matching `LLM_MODEL_*` values and optional upstream credential stay inside the backend, while development-key responses include the resolved model token prices. `LLM_INTERNAL_PORT` binds on all interfaces so the per-session Docker relay added by Stage 9 can reach it through the host gateway. The listener requires a scoped bearer key on every route.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
@@ -80,6 +80,9 @@ The internal OpenAI-compatible proxy starts only when `LLM_UPSTREAM_URL` and at 
 | `LLM_MODEL_LARGE` | unset | Upstream model exposed to agents as `large` |
 | `LLM_MODEL_MEDIUM` | unset | Upstream model exposed to agents as `medium` |
 | `LLM_MODEL_SMALL` | unset | Upstream model exposed to agents as `small` |
+| `LLM_COST_WEIGHT_LARGE` | `4` | Budget units consumed by each input or completion token from the `large` alias; positive and at most 1000000 |
+| `LLM_COST_WEIGHT_MEDIUM` | `2` | Budget units consumed by each input or completion token from the `medium` alias; positive and at most 1000000 |
+| `LLM_COST_WEIGHT_SMALL` | `1` | Budget units consumed by each input or completion token from the `small` alias; positive and at most 1000000 |
 | `LLM_UPSTREAM_TIMEOUT_MS` | `30000` | Per-attempt timeout, bounded from 1 through 600000 milliseconds |
 | `LLM_UPSTREAM_MAX_RETRIES` | `2` | Retry attempts after the initial attempt, bounded from 0 through 10 |
 | `LLM_UPSTREAM_RETRY_INTERVAL_MS` | `250` | Initial exponential-backoff interval, bounded from 1 through 60000 milliseconds |
@@ -87,11 +90,14 @@ The internal OpenAI-compatible proxy starts only when `LLM_UPSTREAM_URL` and at 
 | `LLM_DEFAULT_MAX_OUTPUT_TOKENS` | `1024` | Enforced output maximum when a request supplies neither supported maximum field |
 | `LLM_MAX_OUTPUT_TOKENS` | `4096` | Hard ceiling for explicit and default output maxima, bounded from 1 through 1000000 |
 | `LLM_METER_RECOVERY_INTERVAL_MS` | `5000` | Delay between write-health probes for an open accounting breaker, bounded from 1 through 3600000 milliseconds |
-| `LLM_SESSION_TOKEN_BUDGET` | `100000` | Successful input-plus-completion token allowance per official session slot |
+| `LLM_SESSION_TOKEN_BUDGET` | `100000` | Successful weighted-token allowance per official session slot |
 | `LLM_SESSION_CALL_BUDGET` | `100` | Successful-call allowance per official session slot |
 | `LLM_SESSION_RATE_LIMIT_RPM` | `60` | Successful logical requests per minute per official session slot; an in-flight request holds one window slot until it resolves or its start leaves the window |
+| `LLM_DEVELOPMENT_TOKEN_BUDGET` | `100000` | Successful weighted-token allowance per participant and season |
+| `LLM_DEVELOPMENT_CALL_BUDGET` | `1000` | Successful-call allowance per participant and season |
+| `LLM_DEVELOPMENT_RATE_LIMIT_RPM` | `30` | Successful logical requests per minute per participant and season |
 
-`LLM_DEFAULT_MAX_OUTPUT_TOKENS` may be zero but must not exceed `LLM_MAX_OUTPUT_TOKENS`. Token budgets count input plus total completion tokens. Reasoning tokens are reported separately as a subset of completion usage and are not charged twice.
+`LLM_DEFAULT_MAX_OUTPUT_TOKENS` may be zero but must not exceed `LLM_MAX_OUTPUT_TOKENS`. Token budgets count input plus total completion tokens at the requested model alias's price. Reasoning tokens are reported separately as a subset of completion usage and are not charged twice. With the default 4:2:1 prices, an unchanged budget buys one quarter as many raw `large` tokens as it did under unweighted accounting. Raise the token budgets if the deployment should preserve the previous large-model allowance. See [Budgets and limits](../specs/llm.md#budgets-and-limits) for the canonical rule.
 
 ## Submissions
 

@@ -32,7 +32,7 @@ Each admitted inbound request is one logical request across every upstream attem
 
 Successful-call accounting commits before the completion is returned for both official and development traffic. If normalization, usage resolution, telemetry, or ledger persistence fails after the upstream succeeds, the proxy retains the conservative reservation as in-memory debt for every affected accounting scope, opens those scopes' circuit breakers, and returns `503 meter_unavailable`. Further calls for an affected scope remain blocked until the single-flight recovery loop commits a write-health check and closes the breaker; recovery retains the in-memory debt for the lifetime of the process.
 
-Official limits apply per slot: every agent slot in a live session or workflow match has its own token, call, and rate limits, and every workflow match is a new session with a fresh allowance. Student development limits apply per participant per season. Deployment defaults exist for both groups, and a season may override them independently.
+Official limits apply per slot: every agent slot in a live session or workflow match has its own token, call, and rate limits, and every workflow match is a new session with a fresh allowance. Token budgets are enforced in weighted units using model prices that default to large:medium:small = 4:2:1, while one call always consumes one unweighted call. Student development limits apply per participant per season. Deployment defaults exist for both groups, and a season may override limits and model prices.
 
 ## Access and isolation
 
@@ -40,7 +40,7 @@ Effective official access requires a configured upstream, an environment with LL
 
 Each agent slot receives a temporary key scoped to its session, slot, telemetry scope, allowed models, and official limits. Live sessions use their session ID as the telemetry scope. Workflow matches use the leaderboard run ID, so every match in one run shares one SQLite file, and derive their grants only from the run's stored official LLM policy. Teardown first closes the session's keys to new admission, then aborts or drains authenticated requests and awaits their reservation finalizers before aggregation, telemetry cleanup, or lifecycle completion. A per-session internal network exposes only the backend proxy relay to the session container.
 
-An active participant requests a development key from `POST /api/seasons/:seasonId/llm-development-key`. The key is scoped to that participant and season, and rotation invalidates the previous key. The response supplies the public `OPENAI_BASE_URL`, the key, allowed model aliases, and resolved development limits.
+An active participant requests a development key from `POST /api/seasons/:seasonId/llm-development-key`. The key is scoped to that participant and season, and rotation invalidates the previous key. The response supplies the public `OPENAI_BASE_URL`, the key, allowed model aliases, resolved model prices, and resolved development limits.
 
 ## Records and surfaces
 
@@ -48,7 +48,7 @@ Official telemetry files live at `data/llm/<scopeId>.sqlite`. Every successful o
 
 Each season has a development ledger keyed by participant. Every successful development call records participant, model alias, full request and completion, token counts, whether those counts were estimated, and end-to-end latency. Participants can read only their own usage and rows. Operators can inspect every participant's rows for the season.
 
-The replay API returns public official metadata for every successful call and includes bodies only for the controlling submission's owner and operators. The automated board aggregates successful official usage by model alias. The participant profile exposes development-key rotation, remaining development allowance, and the participant's private development ledger.
+The replay API returns public official metadata for every successful call and includes bodies only for the controlling submission's owner and operators. Game results store successful usage by model alias and its weighted cost under the run's frozen prices. Automated boards and placements aggregate both values. The participant profile exposes development-key rotation, model prices, remaining development allowance, and the participant's private development ledger.
 
 ## Spec references
 
@@ -72,7 +72,7 @@ Stage 3 provides orchestration and driver networking. Stage 5 provides submissio
 ## Done when
 
 - The backend calls exactly one configured OpenAI-compatible upstream and exposes no provider-routing service.
-- Retryable failures follow the configured exponential schedule. Non-retryable errors return immediately. Admission reserves rate capacity, an eventual upstream success retains one rate event, and a terminal failure releases the capacity without recording an event. Only a fully accounted success consumes call and token limits and creates one record.
+- Retryable failures follow the configured exponential schedule. Non-retryable errors return immediately. Admission reserves rate capacity, an eventual upstream success retains one rate event, and a terminal failure releases the capacity without recording an event. Only a fully accounted success consumes one unweighted call and the model-priced token units, then creates one record.
 - A leaderboard run stores a fully resolved official LLM policy at creation, and every workflow match uses that policy even if deployment defaults or season configuration later change.
 - A student obtains a season-scoped development key, sees a private per-participant and per-season meter and ledger, and does not consume official limits. One successful logical request consumes one event in that pair's rate window across every retry, while terminal failure releases its pending rate capacity.
 - A development-ledger commit failure returns no completion, retains conservative debt, and blocks that participant and season until the automatic recovery loop verifies writable storage and closes the breaker without forgiving debt in the running process.

@@ -265,6 +265,21 @@ describe('public leaderboard API', () => {
         episode_score: 5 - index,
         agent_compute_ms_total: 10,
         acted_tick_count: 2,
+        ...(index === 0
+          ? {
+              llm_usage_by_model: {
+                small: {
+                  calls: 1,
+                  estimated_calls: 0,
+                  input_tokens: 1,
+                  reasoning_tokens: 0,
+                  output_tokens: 2,
+                  latency_ms: 5,
+                },
+              },
+              llm_weighted_cost: 3,
+            }
+          : {}),
         failed: false,
       })
     }
@@ -284,7 +299,7 @@ describe('public leaderboard API', () => {
       res.json() as {
         current: {
           board: {
-            automated: Array<{ agent: Record<string, unknown> }>
+            automated: Array<{ agent: Record<string, unknown>; llm_weighted_cost: number | null }>
             human: Array<{ agent: Record<string, unknown> }>
             games: Array<{ slots: Array<Record<string, unknown>> }>
           }
@@ -294,6 +309,7 @@ describe('public leaderboard API', () => {
 
     const automatedKnown = board.automated.find((row) => row.agent.user_id === aliceId)
     expect(automatedKnown?.agent).toMatchObject({ user_id: aliceId, user_name: 'alice' })
+    expect(automatedKnown?.llm_weighted_cost).toBe(3)
     // No user row for the owner id: the stable id stays and no user_name appears.
     const automatedOrphan = board.automated.find((row) => row.agent.user_id === 'ghost-user')
     expect(automatedOrphan?.agent.user_name).toBeUndefined()

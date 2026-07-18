@@ -16,7 +16,7 @@ const response = await fetch(`/api/seasons/${seasonId}/llm-development-key`, { m
 console.log(await response.json());
 ```
 
-The response contains `base_url`, `api_key`, `models`, and the season's development limits. Each request rotates the key. The previous key stops working, so rotation is also how you recover after a key is exposed.
+The response contains `base_url`, `api_key`, `models`, `cost_weights`, and the season's development limits. A model's entry in `cost_weights` is its token price, which tells you how quickly that model uses the token budget. Each request rotates the key. The previous key stops working, so rotation is also how you recover after a key is exposed.
 
 ## Configure the template
 
@@ -47,6 +47,10 @@ Never commit `.env` or paste a key into source code, a prompt, an issue, or chat
 ## Limits and accounting
 
 Development allowance is separate for each participant and season. Development calls do not spend an official session's allowance. Official sessions instead receive a temporary key and an independent allowance for each agent slot.
+
+### Model prices
+
+The model aliases can use different amounts of your token budget. By default, every token from the `large` model counts as 4 budget tokens, `medium` counts as 2, and `small` counts as 1. Your season may use different prices. The `cost_weights` returned with a development key contains the prices that apply to that season. The [LLM API specification](../specs/llm.md#budgets-and-limits) defines the complete accounting rule.
 
 Only calls with a successful upstream response consume the durable call and token budgets or create telemetry. The backend may retry a temporary upstream failure with exponential waits. Those attempts remain one logical request and, if one succeeds, create one successful record. During `act`, `chat`, or `learn`, time spent waiting and retrying still counts toward the agent's step and episode limits. Model calls made during module import, construction, or `reset` are setup calls with null tick attribution and occur before turn timing, so keep setup lightweight.
 

@@ -35,7 +35,7 @@ Run an LLM-enabled session with the Hearts oracle and a mix of upstream outcomes
 - A retryable sequence followed by success produces one successful response, one call charge, and one SQLite row whose latency includes attempts and waits.
 - A non-retryable error makes one upstream attempt and produces no charge or SQLite row.
 - Exhausted retries make the configured number of attempts and produce no charge or SQLite row.
-- Failed logical requests remain in the rate window even though they consume no call or token allowance, and backend retries do not add rate events.
+- Failed logical requests release their pending rate capacity and record no event, while backend retries reserve no additional capacity.
 - Requests using either supported completion-limit field reserve and forward the enforced output maximum, while omitted limits receive the configured default.
 - Missing or malformed upstream usage produces explicitly marked tiktoken estimates in one successful row.
 - Successful SQLite rows carry the acting slot and tick.
@@ -47,7 +47,7 @@ Run an LLM-enabled session with the Hearts oracle and a mix of upstream outcomes
 Create two active participants and two LLM-enabled seasons. Request and use development keys to prove that:
 
 - Each `(participant, season)` pair has an independent call, token, and rate allowance.
-- Successful and terminally failed logical requests each occupy one event in only that pair's sliding rate window, while upstream retry attempts add no events.
+- Successful logical requests occupy one event in only that pair's sliding rate window. Terminal failures release their pending capacity, while upstream retry attempts reserve no additional capacity.
 - Rotating one key invalidates its previous secret without resetting usage.
 - A successful request creates one private ledger row with the accepted request and canonical completion, retry-inclusive latency, and an accurate estimated-usage marker.
 - A non-retryable error and exhausted retry sequence create no usage and no ledger row.
@@ -86,12 +86,12 @@ Use the existing authenticated-persona fixtures and UI primitives. Update locato
 Update these documents to match the implementation:
 
 - `docs/specs/llm.md`, `execution.md`, `leaderboard.md`, `submission.md`, and `recording.md` describe the final behavior and data boundaries.
-- `docs/contributors/configuration.md` documents every `LLM_*` setting, including the validated upstream base URL and key, model aliases, ordinary-content tiktoken encoding, default and hard output maxima, per-attempt timeout, maximum retries after the initial attempt, initial retry interval, meter recovery interval, official defaults, and development defaults. It also identifies the backend OpenAI client and tiktoken packages and the template's pinned Python OpenAI dependencies.
+- `docs/contributors/configuration.md` documents every `LLM_*` setting, including the validated upstream base URL and key, model aliases, default model prices, ordinary-content tiktoken encoding, default and hard output maxima, per-attempt timeout, maximum retries after the initial attempt, initial retry interval, meter recovery interval, official defaults, and development defaults. It also identifies the backend OpenAI client and tiktoken packages and the template's pinned Python OpenAI dependencies.
 - `docs/contributors/backend.md` describes the shared proxy handler, standard response-metadata boundary, internal listener, public development route, grant authentication, synchronous reader-and-sink binding, generic per-accounting-scope admitted-request windows, retry loop, successful-call meters, post-upstream conservative debt, automatic write-health recovery, tiktoken fallback, execution-scope SQLite, teardown barriers, frozen workflow policy, recording-to-scope resolution, visibility after submission deletion, retention, and the development ledger.
 - `docs/contributors/execution.md` describes the per-session internal network and backend-proxy relay.
 - `docs/contributors/recordings.md` explains the durable recording association to external LLM telemetry. The recording schema remains unchanged.
 - `docs/contributors/index.md` lists LLM proxy code under the backend and contains no standalone gateway component.
-- `docs/students/llm.md` documents season key creation, `.env`, model aliases, development limits, backend retries, terminal error handling, successful-only accounting, and privacy.
+- `docs/students/llm.md` documents season key creation, `.env`, model aliases and prices, development limits, backend retries, terminal error handling, successful-only accounting, and privacy.
 - The template README points to the student guide and `python -m sandbox llm`.
 
 Document the repository's pre-production database policy next to the storage setup instructions. Stage 9 edits the flat initial application-database schema directly, does not add a forward migration, and requires contributors with an older local database to recreate it. Keep this guidance distinct from `PRAGMA user_version` migrations for per-scope telemetry and development-ledger files.

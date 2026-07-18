@@ -6,6 +6,12 @@
 export const MODEL_ALIASES = ['large', 'medium', 'small'] as const
 export type ModelAlias = (typeof MODEL_ALIASES)[number]
 
+/**
+ * The largest accepted model token price. The single bound shared by deployment env parsing, the
+ * season override codec, the frozen run policy schema, and the admin editor's client-side check.
+ */
+export const MAX_LLM_COST_WEIGHT = 1_000_000
+
 /** Successful official LLM usage for one public model alias. */
 export interface LlmModelUsage {
   calls: number

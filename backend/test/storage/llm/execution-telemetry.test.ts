@@ -77,11 +77,13 @@ describe('ExecutionTelemetryStore', () => {
     `)
     old.close()
     store.open('old')
-    expect(store.readSessionUsage('old', 'old-game', 'player_0')).toEqual({
-      calls: 1,
-      inputTokens: 1,
-      reasoningTokens: 0,
-      outputTokens: 2,
+    expect(store.readSessionUsageByModel('old', 'old-game', 'player_0')).toEqual({
+      large: {
+        calls: 1,
+        inputTokens: 1,
+        reasoningTokens: 0,
+        outputTokens: 2,
+      },
     })
     const migrated = new BetterSqlite3(path, { readonly: true })
     expect(migrated.pragma('user_version', { simple: true })).toBe(1)
@@ -125,18 +127,15 @@ describe('ExecutionTelemetryStore', () => {
       id: 1,
       ...CALL,
     })
-    expect(store.readSessionUsage('run', 'game-1', 'player_0')).toEqual({
-      calls: 1,
-      inputTokens: 11,
-      reasoningTokens: 2,
-      outputTokens: 3,
+    expect(store.readSessionUsageByModel('run', 'game-1', 'player_0')).toEqual({
+      small: {
+        calls: 1,
+        inputTokens: 11,
+        reasoningTokens: 2,
+        outputTokens: 3,
+      },
     })
-    expect(store.readSessionUsage('run', 'missing', 'player_0')).toEqual({
-      calls: 0,
-      inputTokens: 0,
-      reasoningTokens: 0,
-      outputTokens: 0,
-    })
+    expect(store.readSessionUsageByModel('run', 'missing', 'player_0')).toEqual({})
     expect(store.aggregateByModel('run')).toEqual({
       large: {
         calls: 1,
@@ -155,6 +154,33 @@ describe('ExecutionTelemetryStore', () => {
         latencyMs: 100,
       },
     })
+  })
+
+  it('groups committed usage by model without dropping an unknown stored alias', () => {
+    store.insert('run', CALL)
+    store.insert('run', {
+      ...CALL,
+      model: 'retired-alias',
+      inputTokens: 4,
+      reasoningTokens: 0,
+      outputTokens: 6,
+    })
+
+    expect(store.readSessionUsageByModel('run', 'game-1', 'player_0')).toEqual({
+      'retired-alias': {
+        calls: 1,
+        inputTokens: 4,
+        reasoningTokens: 0,
+        outputTokens: 6,
+      },
+      small: {
+        calls: 1,
+        inputTokens: 11,
+        reasoningTokens: 2,
+        outputTokens: 3,
+      },
+    })
+    expect(store.readSessionUsageByModel('run', 'missing', 'player_0')).toEqual({})
   })
 
   it('probes health, closes before deleting, and recreates a clean scope', () => {

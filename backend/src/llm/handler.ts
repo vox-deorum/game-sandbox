@@ -44,12 +44,17 @@ export class LlmHandler {
       this.deps.options.maxOutputTokens,
     )
     accepted.model = alias
-    upstream.model = grant.models[alias] as string
+    const configuredModel = grant.models[alias]
+    if (configuredModel === undefined) {
+      throw new Error(`LLM grant lost configured model ${alias}`)
+    }
+    upstream.model = configuredModel.upstream
 
     const inputTokens = this.deps.tokenizer.countRequest(accepted)
     const outputTokens = enforcedMaximum(accepted)
     const reservation = await this.deps.meter.reserve(
       grant.accountingScope,
+      alias,
       inputTokens,
       outputTokens,
     )
@@ -165,7 +170,7 @@ function allowedAlias(grant: LlmGrant, requested: unknown): ModelAlias {
     typeof requested !== 'string' ||
     !MODEL_ALIASES.includes(requested as ModelAlias) ||
     !Object.hasOwn(grant.models, requested) ||
-    typeof grant.models[requested as ModelAlias] !== 'string'
+    grant.models[requested as ModelAlias] === undefined
   ) {
     throw invalidRequest('model_not_allowed', 'The requested model alias is not allowed.')
   }

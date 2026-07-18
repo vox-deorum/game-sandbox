@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { decodeLlmUsageByModel, encodeLlmUsageByModel } from '../../src/storage/kysely/shared.js'
+import {
+  decodeLlmUsageByModel,
+  encodeLlmUsageByModel,
+  encodeLlmWeightedCost,
+} from '../../src/storage/kysely/shared.js'
 import type { LlmUsageByModel } from '../../src/storage/schema.js'
 
 const VALID_USAGE: LlmUsageByModel = {
@@ -57,6 +61,35 @@ describe('LLM usage storage codec', () => {
   ])('rejects a malformed usage entry with a %s', (_case, usage) => {
     expect(() => decodeLlmUsageByModel(JSON.stringify({ small: usage }))).toThrow(
       /supported metrics|invalid/,
+    )
+  })
+
+  it('accepts zero and fractional weighted costs when usage is present', () => {
+    expect(encodeLlmWeightedCost(0, VALID_USAGE)).toBe(0)
+    expect(encodeLlmWeightedCost(3.5, VALID_USAGE)).toBe(3.5)
+  })
+
+  it.each([
+    -1,
+    Number.POSITIVE_INFINITY,
+    Number.NaN,
+  ])('rejects invalid weighted cost %s', (cost) => {
+    expect(() => encodeLlmWeightedCost(cost, VALID_USAGE)).toThrow(
+      'LLM weighted cost must be a finite non-negative number',
+    )
+  })
+
+  it('requires weighted cost and usage to share the same null state', () => {
+    expect(encodeLlmWeightedCost(null, null)).toBeNull()
+    expect(encodeLlmWeightedCost(undefined, {})).toBeNull()
+    expect(() => encodeLlmWeightedCost(null, VALID_USAGE)).toThrow(
+      'LLM weighted cost must be present when LLM usage is present',
+    )
+    expect(() => encodeLlmWeightedCost(1, null)).toThrow(
+      'LLM weighted cost must be null when LLM usage is null',
+    )
+    expect(() => encodeLlmWeightedCost(1, {})).toThrow(
+      'LLM weighted cost must be null when LLM usage is null',
     )
   })
 })

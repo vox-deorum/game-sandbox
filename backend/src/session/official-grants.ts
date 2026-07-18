@@ -1,5 +1,11 @@
 import { createOfficialTickMarker, type KeyRegistry } from '../llm/key-registry.js'
-import type { LlmGrant, LlmLimits, ModelAlias } from '../llm/types.js'
+import {
+  type LlmGrant,
+  type LlmLimits,
+  type LlmModelConfig,
+  type ModelAlias,
+  modelCostWeights,
+} from '../llm/types.js'
 import { createOfficialRecordSink, type ExecutionTelemetryStore } from '../storage/llm/index.js'
 
 /** A launch-scoped owner for the temporary official keys issued to one session container. */
@@ -21,7 +27,7 @@ export interface IssueOfficialGrantsInput {
   scopeId: string
   /** Agent slot ids only. Human slots must be removed by the caller before this seam. */
   agentSlots: readonly string[]
-  models: Partial<Record<ModelAlias, string>>
+  models: Partial<Record<ModelAlias, LlmModelConfig>>
   limits: LlmLimits
 }
 
@@ -43,6 +49,7 @@ export function createOfficialGrantIssuer(
     async issue(input): Promise<OfficialGrantLease> {
       telemetry.open(input.scopeId)
       const keys: Record<string, string> = {}
+      const weights = modelCostWeights(input.models)
       try {
         for (const slot of input.agentSlots) {
           const tick = createOfficialTickMarker()
@@ -52,8 +59,9 @@ export function createOfficialGrantIssuer(
             accountingScope: {
               key: `official:${input.sessionId}:${slot}`,
               limits: input.limits,
+              weights,
               readCommittedUsage: () =>
-                telemetry.readSessionUsage(input.scopeId, input.sessionId, slot),
+                telemetry.readSessionUsageByModel(input.scopeId, input.sessionId, slot),
             },
             recordSink: createOfficialRecordSink(telemetry, {
               scopeId: input.scopeId,

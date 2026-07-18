@@ -1,5 +1,5 @@
 /**
- * Stage 9.4 end to end: a hungry Hearts submission exhausts its successful-call allowance in each
+ * Stage 9.4 end to end: a hungry Hearts submission exhausts its weighted token allowance in each
  * of two workflow games, catches the proxy's budget error, and keeps playing legal cards. The test
  * uses one local OpenAI-compatible upstream and the production listener, meter, grant, telemetry,
  * Docker relay, workflow, board, and placement paths. No external model service is contacted.
@@ -142,10 +142,12 @@ describe('workflow LLM budget exhaustion (Docker)', () => {
     )
     const policy: ResolvedOfficialLlmPolicy = {
       enabled: true,
-      models: { small: 'provider-small' },
+      models: { small: { model: 'provider-small', cost_weight: 4 } },
       session: {
-        token_budget: 1_000,
-        call_budget: SUCCESSFUL_CALLS_PER_GAME,
+        // The accepted request reserves 31 raw tokens. At 4x, one committed 3-token call plus the
+        // next reservation costs 136 units, while two committed calls plus another cost 148.
+        token_budget: 140,
+        call_budget: 100,
         rate_limit_rpm: 100,
       },
     }
@@ -285,6 +287,7 @@ describe('workflow LLM budget exhaustion (Docker)', () => {
       expect(submissionResult.llm_usage_by_model).toEqual(
         storedUsage(telemetry.aggregateByModel(run.id, { sessionId: game.id, slot: 'player_0' })),
       )
+      expect(submissionResult.llm_weighted_cost).toBe(SUCCESSFUL_CALLS_PER_GAME * 3 * 4)
       expect(
         gameResults
           .filter((result) => result.agent_submission_id === null)
@@ -309,6 +312,7 @@ describe('workflow LLM budget exhaustion (Docker)', () => {
     expect(submissionBoard.failure_count).toBe(0)
     expect(submissionBoard.games).toBe(2)
     expect(submissionBoard.llm_usage_by_model).toEqual(runUsage)
+    expect(submissionBoard.llm_weighted_cost).toBe(SUCCESSFUL_CALLS_PER_GAME * games.length * 3 * 4)
 
     const placements = await storage.listPlacementsByAgent(submissionRef, ENV_ID)
     const placement = placements.find((row) => row.season_id === season.id)
@@ -316,6 +320,7 @@ describe('workflow LLM budget exhaustion (Docker)', () => {
     expect(placement.run_id).toBe(run.id)
     expect(placement.failure_count).toBe(0)
     expect(placement.llm_usage_by_model).toEqual(runUsage)
+    expect(placement.llm_weighted_cost).toBe(SUCCESSFUL_CALLS_PER_GAME * games.length * 3 * 4)
   }, 240_000)
 })
 

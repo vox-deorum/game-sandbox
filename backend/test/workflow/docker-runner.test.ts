@@ -52,7 +52,7 @@ function disabledLlmPolicy(): ResolvedOfficialLlmPolicy {
 function enabledLlmPolicy(): ResolvedOfficialLlmPolicy {
   return {
     enabled: true,
-    models: { small: 'provider-small' },
+    models: { small: { model: 'provider-small', cost_weight: 4 } },
     session: { token_budget: 100, call_budget: 10, rate_limit_rpm: 10 },
   }
 }
@@ -378,6 +378,7 @@ describe('Docker-backed workflow runner', () => {
         latency_ms: 31,
       },
     })
+    expect((await storage.listGameResultsByRun(run.id))[0]?.llm_weighted_cost).toBe(72)
   })
 
   it('fails before persisting a result when telemetry contains an unsupported model alias', async () => {
@@ -433,7 +434,7 @@ describe('Docker-backed workflow runner', () => {
         llmInternalPort: 9472,
       })
       const policy = enabledLlmPolicy()
-      policy.models.medium = 'provider-medium'
+      policy.models.medium = { model: 'provider-medium', cost_weight: 2 }
       const run = await makeRun(storage, [naiveGame(0, 7), naiveGame(1, 9)], {
         llmPolicy: policy,
       })
@@ -510,6 +511,7 @@ describe('Docker-backed workflow runner', () => {
           latency_ms: 11,
         },
       })
+      expect(results.get(firstGame.id)?.llm_weighted_cost).toBe(38)
       expect(results.get(secondGame.id)?.llm_usage_by_model).toEqual({
         small: {
           calls: 1,
@@ -520,6 +522,7 @@ describe('Docker-backed workflow runner', () => {
           latency_ms: 17,
         },
       })
+      expect(results.get(secondGame.id)?.llm_weighted_cost).toBe(52)
     } finally {
       telemetry.close()
       rmSync(telemetryRoot, { recursive: true, force: true })
@@ -541,7 +544,7 @@ describe('Docker-backed workflow runner', () => {
     })
     const policy = enabledLlmPolicy()
     const run = await makeRun(storage, [naiveGame(0)], { llmPolicy: policy })
-    policy.models.small = 'changed-after-snapshot'
+    policy.models.small = { model: 'changed-after-snapshot', cost_weight: 99 }
     policy.session.token_budget = 999
     handle.driver.onLaunch = (launch): void => {
       const config = JSON.parse(launch.spec.argv[0] ?? '{}') as { seed: number }
@@ -554,7 +557,7 @@ describe('Docker-backed workflow runner', () => {
       sessionId: game?.id,
       scopeId: run.id,
       agentSlots: ['player_0'],
-      models: { small: 'provider-small' },
+      models: { small: { upstream: 'provider-small', costWeight: 4 } },
       limits: { tokenBudget: 100, callBudget: 10, requestsPerMinute: 10 },
     })
     const launch = handle.driver.lastLaunch()

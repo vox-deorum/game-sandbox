@@ -25,7 +25,9 @@ Leaderboard-run creation resolves the complete official LLM policy once and stor
 ```ts
 type ResolvedOfficialLlmPolicy = {
   enabled: boolean
-  models: Partial<Record<'large' | 'medium' | 'small', string>>
+  models: Partial<
+    Record<'large' | 'medium' | 'small', { model: string; cost_weight: number }>
+  >
   session: {
     token_budget: number
     call_budget: number
@@ -34,7 +36,7 @@ type ResolvedOfficialLlmPolicy = {
 }
 ```
 
-The model values are upstream model names. Even a disabled run stores the object, with `enabled: false` and an empty model map, so workflow code never needs a live-configuration fallback. The stored policy contains no upstream credential. Every workflow match, grant, and admission check in that run reads this policy without consulting current alias mappings, deployment limit defaults, or season LLM values. A deployment may still make the upstream operationally unavailable, but configuration changes after run creation cannot change which models or limits the run uses. The frozen limits are per agent slot; a run has no allowance of its own.
+Each model value stores its upstream model name and token price together. New snapshots preserve the complete resolved pricing policy, while legacy snapshots with plain string model values decode with a price of 1 so they keep their original unweighted semantics. Even a disabled run stores the object, with `enabled: false` and an empty model map, so workflow code never needs a live-configuration fallback. The stored policy contains no upstream credential. Every workflow match, grant, and admission check in that run reads this policy without consulting current alias mappings, deployment limit defaults, or season LLM values. A deployment may still make the upstream operationally unavailable, but configuration changes after run creation cannot change which models, prices, or limits the run uses. The frozen limits are per agent slot; a run has no allowance of its own.
 
 Persist the resolved official flag on the session row as `llm_enabled`. Session payloads and recording views read that stored value after execution.
 
@@ -50,6 +52,11 @@ Define a strict `LlmOverrideSchema` in `backend/src/storage/season-config.ts`:
 llm?: {
   enabled?: boolean
   models?: Array<'large' | 'medium' | 'small'>
+  cost_weights?: {
+    large?: number
+    medium?: number
+    small?: number
+  }
   official?: {
     token_budget?: number
     call_budget?: number
@@ -63,9 +70,9 @@ llm?: {
 }
 ```
 
-Unset limits inherit deployment defaults, and an unset model list inherits every configured deployment alias. Official and development blocks resolve independently and mirror each other's shape: official limits apply per agent slot, and development limits apply per participant per season. Admin season updates reject unknown fields, non-positive limits, empty model lists, duplicate aliases, and aliases unavailable on the deployment. Run creation persists the resulting official model mapping and limits, while live and development resolution continue to use the current effective values.
+Unset limits and token prices inherit deployment defaults, and an unset model list inherits every configured deployment alias. Official and development blocks resolve independently and mirror each other's shape: official limits apply per agent slot, and development limits apply per participant per season. Admin season updates reject unknown fields, non-positive limits or prices, prices above 1,000,000, empty model lists, duplicate aliases, and selected model aliases unavailable on the deployment. Run creation persists the resulting official model mapping, prices, and limits, while live and development resolution continue to use the current effective values.
 
-`SeasonConfigEditor.vue` exposes enablement, allowed aliases, official per-slot limits, and development limits as separate field groups built from existing UI primitives. The styleguide and admin-editor unit tests cover every new control and validation state.
+`SeasonConfigEditor.vue` exposes enablement, allowed aliases, per-alias token prices, official per-slot limits, and development limits as separate field groups built from existing UI primitives. The admin-editor unit and browser tests cover every new control and validation state.
 
 Add deployment defaults `LLM_DEVELOPMENT_TOKEN_BUDGET`, `LLM_DEVELOPMENT_CALL_BUDGET`, and `LLM_DEVELOPMENT_RATE_LIMIT_RPM`.
 
@@ -118,6 +125,10 @@ The `(season_id, user_id)` pair is the primary key, and `key_id` has a unique in
   "base_url": "https://sandbox.example/api/llm/v1",
   "api_key": "sk-sandbox-dev-<key-id>.<secret>",
   "models": ["small", "medium"],
+  "cost_weights": {
+    "small": 1,
+    "medium": 2
+  },
   "limits": {
     "token_budget": 100000,
     "call_budget": 1000,
@@ -158,11 +169,11 @@ CREATE TABLE meter_health (
 
 The development store uses `PRAGMA user_version`, explicit migrations, prepared statements, and the same validated scope-path rules as official telemetry.
 
-The development meter uses `(seasonId, userId)` as one accounting scope for call, token, and rate limits. It sums successful rows for that pair and combines them with temporary in-flight call and token reservations. Its in-memory sliding rate window is keyed by the same pair. Key rotation does not create a new meter or clear any window.
+The development meter uses `(seasonId, userId)` as one accounting scope for call, weighted-token, and rate limits. It sums successful rows by model for that pair and prices them with the current resolved season values, then combines them with temporary in-flight unweighted-call and weighted-token reservations. Its in-memory sliding rate window is keyed by the same pair. Key rotation does not create a new meter or clear any window.
 
-After authentication, current effective-configuration resolution, request validation, breaker checks, and successful call-and-token reservation, admission appends exactly one event to that pair's rate window before the first upstream attempt. The event remains for the full window whether the request succeeds, receives a non-retryable upstream error, or exhausts its retries. Backend retries are attempts within the same logical request and append no events. Requests rejected locally before upstream admission, including rate, budget, and open-breaker rejections, append no event.
+After authentication, current effective-configuration resolution, request validation, breaker checks, and successful call-and-token reservation, admission reserves one pending slot in that pair's rate window before the first upstream attempt. A successful response converts that slot into one event stamped at the request's start, unless the start has already left the window. A non-retryable upstream error or exhausted retry sequence releases the pending slot and records no event. Backend retries are attempts within the same logical request and reserve no additional slots. Requests rejected locally before upstream admission, including rate, budget, and open-breaker rejections, reserve no slot.
 
-A successful logical request writes one full row and consumes one call using upstream usage when it is valid or the Step 1 fallback estimate otherwise. `usage_estimated` records which source produced the stored token counts so read APIs and user interfaces can identify estimates. Every unsuccessful upstream path releases its call and token reservation and leaves the ledger unchanged, while its admitted-request rate event remains until the window expires.
+A successful logical request writes one full row and consumes one call using upstream usage when it is valid or the Step 1 fallback estimate otherwise. `usage_estimated` records which source produced the stored token counts so read APIs and user interfaces can identify estimates. Every unsuccessful upstream path releases its call, token, and pending rate reservations and leaves the ledger unchanged.
 
 Post-upstream processing and the ledger transaction complete before the proxy returns a successful development completion. If normalization, usage resolution, or the durable commit fails after the upstream succeeds, the meter moves the conservative call and token reservation into in-memory charged debt for `(seasonId, userId)`, opens that pair's circuit breaker, and returns `503 meter_unavailable` instead of the completion. Requests rejected by the breaker never reach the upstream. The generic single-flight recovery loop from Step 1 probes the season ledger at the configured interval. A committed `meter_health` transaction closes that pair's breaker automatically without discarding debt retained by the running process; a failed probe leaves it open and schedules the next attempt. Conservative debt is process-lifetime state, so a trusted operator restart clears it along with reservations and rate windows. After a restart, a pair can admit requests only after the season ledger opens, applies its `user_version` changes, and passes the same write-health transaction. Recovery failures are logged without bodies or credentials.
 
@@ -190,7 +201,7 @@ Docker-free backend and frontend tests cover:
 - Development-key authentication through one indexed key ID lookup and constant-time secret verification, one-time plaintext return, hash persistence, rotation of both identifier and secret, backend restart, account status checks, and season scoping.
 - Independent development call, token, and sliding-rate scopes for two users in one season and one user in two seasons, including key rotation preserving every counter and rate event.
 - Immediate application of changed season models and limits to an existing development key.
-- One admitted development request adding one rate event across success, non-retryable failure, and exhausted retries, with backend retry attempts adding none and pre-admission rejections adding none.
+- One successful development request adding one rate event, with non-retryable failures and exhausted retries releasing pending capacity, backend retry attempts adding no capacity, and pre-admission rejections reserving none.
 - Successful development calls writing one row with the correct `usage_estimated` value and every rejection or terminal upstream failure writing none.
 - A post-upstream development-accounting failure retaining conservative debt, returning `meter_unavailable`, and blocking that participant and season until the automatic recovery loop commits a successful write-health check, without blocking another participant or season.
 - Complete isolation between official meters and development meters.

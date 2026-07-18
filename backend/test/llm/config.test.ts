@@ -10,7 +10,10 @@ import type { SeasonConfig } from '../../src/storage/season-config.js'
 
 const DEPLOYMENT = {
   upstreamUrl: 'https://llm.example.test/v1',
-  models: { small: 'small-v1', medium: 'medium-v2' },
+  models: {
+    small: { upstream: 'small-v1', costWeight: 1 },
+    medium: { upstream: 'medium-v2', costWeight: 2 },
+  },
   sessionLimits: { tokenBudget: 10_000, callBudget: 50, requestsPerMinute: 12 },
   developmentLimits: { tokenBudget: 20_000, callBudget: 200, requestsPerMinute: 30 },
 } as const
@@ -50,12 +53,16 @@ describe('LLM configuration resolution', () => {
       { llm: true },
       season({
         enabled: true,
+        cost_weights: { medium: 2.5 },
         official: { call_budget: 9 },
         development: { token_budget: 1234, rate_limit_rpm: 4 },
       }),
     )
 
-    expect(resolved.models).toEqual({ small: 'small-v1', medium: 'medium-v2' })
+    expect(resolved.models).toEqual({
+      small: { upstream: 'small-v1', costWeight: 1 },
+      medium: { upstream: 'medium-v2', costWeight: 2.5 },
+    })
     expect(resolved.official).toEqual({ tokenBudget: 10_000, callBudget: 9, requestsPerMinute: 12 })
     expect(resolved.development).toEqual({
       tokenBudget: 1234,
@@ -66,6 +73,10 @@ describe('LLM configuration resolution', () => {
 
   it('round-trips the complete frozen official policy through the strict codec', () => {
     const frozen = officialPolicy(resolveLlm(DEPLOYMENT, { llm: true }, season({ enabled: true })))
+    expect(frozen.models).toEqual({
+      small: { model: 'small-v1', cost_weight: 1 },
+      medium: { model: 'medium-v2', cost_weight: 2 },
+    })
     expect(decodeResolvedOfficialLlmPolicy(encodeResolvedOfficialLlmPolicy(frozen))).toEqual(frozen)
     expect(() => decodeResolvedOfficialLlmPolicy('{"enabled":false}')).toThrow()
     expect(() =>
@@ -81,6 +92,20 @@ describe('LLM configuration resolution', () => {
     expect(() =>
       decodeResolvedOfficialLlmPolicy(
         '{"enabled":false,"models":{"small":"provider-small"},"session":{"token_budget":1,"call_budget":1,"rate_limit_rpm":1}}',
+      ),
+    ).toThrow()
+    expect(
+      decodeResolvedOfficialLlmPolicy(
+        '{"enabled":true,"models":{"small":"provider-small"},"session":{"token_budget":1,"call_budget":1,"rate_limit_rpm":1}}',
+      ),
+    ).toEqual({
+      enabled: true,
+      models: { small: { model: 'provider-small', cost_weight: 1 } },
+      session: { token_budget: 1, call_budget: 1, rate_limit_rpm: 1 },
+    })
+    expect(() =>
+      decodeResolvedOfficialLlmPolicy(
+        '{"enabled":true,"models":{"small":{"model":"provider-small","cost_weight":1000001}},"session":{"token_budget":1,"call_budget":1,"rate_limit_rpm":1}}',
       ),
     ).toThrow()
   })

@@ -40,7 +40,7 @@ import { buildSandboxProfile } from '../driver/sandbox.js'
 import type { EnvironmentMeta, EnvironmentRegistry } from '../environments.js'
 import { forfeitScore, normalizeEpisodeScore } from '../leaderboards/score.js'
 import { decodeResolvedOfficialLlmPolicy, type ResolvedOfficialLlmPolicy } from '../llm/config.js'
-import { MODEL_ALIASES } from '../llm/types.js'
+import { type LlmModelConfig, MODEL_ALIASES, type ModelAlias } from '../llm/types.js'
 import { optionalField } from '../optional-field.js'
 import { coerceResultReason } from '../result-reason.js'
 import {
@@ -387,7 +387,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
             sessionId: game.id,
             scopeId: runId,
             agentSlots: slots.map((_, index) => `player_${index}`),
-            models: llmPolicy.models,
+            models: policyModels(llmPolicy),
             limits: policyLimits(llmPolicy),
           })
           this.inFlightLlm.set(runId, llmLease)
@@ -581,6 +581,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
         })
         .catch((error) => this.log(`run ${runId}: createRecording failed: ${String(error)}`))
 
+      const pricedModels = policyModels(llmPolicy)
       for (let slotIndex = 0; slotIndex < slots.length; slotIndex++) {
         const agent = slots[slotIndex] as AgentRef
         const slotId = `player_${slotIndex}`
@@ -610,6 +611,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
           agent_compute_ms_total: aggregate.agentComputeMsTotal,
           acted_tick_count: aggregate.actedTickCount,
           llm_usage_by_model: llmUsageBySlot.get(slotId) ?? null,
+          llm_weighted_cost: weightedCostOf(llmUsageBySlot.get(slotId) ?? null, pricedModels),
           failed: seatFailed,
           failure_reason: seatFailed ? failure.reason : null,
         })
@@ -837,6 +839,46 @@ function storedLlmUsage(usage: ExecutionUsageByModel): LlmUsageByModel | null {
 /** The owner-visible text for a thrown value. */
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+/** Convert frozen snapshot metadata into the generic runtime model configuration. */
+function policyModels(
+  policy: ResolvedOfficialLlmPolicy,
+): Partial<Record<ModelAlias, LlmModelConfig>> {
+  const models: Partial<Record<ModelAlias, LlmModelConfig>> = {}
+  for (const alias of MODEL_ALIASES) {
+    const snapshot = policy.models[alias]
+    if (snapshot !== undefined) {
+      models[alias] = { upstream: snapshot.model, costWeight: snapshot.cost_weight }
+    }
+  }
+  return models
+}
+
+/** Price one settled telemetry aggregate with the same frozen weights used by admission. */
+function weightedCostOf(
+  usage: LlmUsageByModel | null,
+  models: Partial<Record<ModelAlias, LlmModelConfig>>,
+): number | null {
+  if (usage === null) return null
+  let cost = 0
+  for (const [alias, modelUsage] of Object.entries(usage) as Array<
+    [ModelAlias, NonNullable<LlmUsageByModel[ModelAlias]>]
+  >) {
+    const model = models[alias]
+    if (model === undefined) {
+      // Unlike the meter's committed-usage read, which prices a retired alias at the scope's highest
+      // weight to keep admission available, a persisted cost is never guessed: the handler only
+      // serves aliases granted from this same frozen snapshot, so a mismatch here means the run's
+      // records cannot be trusted and the run-level catch fails the whole run.
+      throw new Error(`frozen LLM policy has no cost weight for model ${alias}`)
+    }
+    cost += model.costWeight * (modelUsage.input_tokens + modelUsage.output_tokens)
+  }
+  if (!Number.isFinite(cost) || cost < 0) {
+    throw new Error('workflow LLM weighted cost must be finite and non-negative')
+  }
+  return cost
 }
 
 /** Convert the frozen snapshot's wire spelling into the generic meter limit shape. */

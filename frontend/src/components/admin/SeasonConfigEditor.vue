@@ -15,7 +15,7 @@
     back as `invalid_config` and render inline.
 -->
 <script setup lang="ts">
-import { MODEL_ALIASES } from '@game-sandbox/schema/llm'
+import { MAX_LLM_COST_WEIGHT, MODEL_ALIASES } from '@game-sandbox/schema/llm'
 import { computed, ref, watch } from 'vue'
 
 import {
@@ -62,6 +62,9 @@ const messageCap = ref<number | ''>('')
 const llmEnabled = ref<'default' | 'on' | 'off'>('default')
 const llmModelsMode = ref<'all' | 'custom'>('all')
 const llmModels = ref<LlmModelAlias[]>([])
+const largeCostWeight = ref<number | ''>('')
+const mediumCostWeight = ref<number | ''>('')
+const smallCostWeight = ref<number | ''>('')
 const officialTokenBudget = ref<number | ''>('')
 const officialCallBudget = ref<number | ''>('')
 const officialRateLimit = ref<number | ''>('')
@@ -98,6 +101,9 @@ function seedFromSeason(): void {
   llmEnabled.value = llm?.enabled === undefined ? 'default' : llm.enabled ? 'on' : 'off'
   llmModelsMode.value = llm?.models === undefined ? 'all' : 'custom'
   llmModels.value = [...(llm?.models ?? [])]
+  largeCostWeight.value = llm?.cost_weights?.large ?? ''
+  mediumCostWeight.value = llm?.cost_weights?.medium ?? ''
+  smallCostWeight.value = llm?.cost_weights?.small ?? ''
   officialTokenBudget.value = llm?.official?.token_budget ?? ''
   officialCallBudget.value = llm?.official?.call_budget ?? ''
   officialRateLimit.value = llm?.official?.rate_limit_rpm ?? ''
@@ -159,6 +165,29 @@ function buildLimitOverride(
   return Object.keys(limits).length === 0 ? {} : { limits }
 }
 
+function buildCostWeights(): {
+  costWeights?: NonNullable<NonNullable<SeasonOverrides['llm']>['cost_weights']>
+  error?: string
+} {
+  const values = [
+    ['large', largeCostWeight.value],
+    ['medium', mediumCostWeight.value],
+    ['small', smallCostWeight.value],
+  ] as const
+  const costWeights: NonNullable<NonNullable<SeasonOverrides['llm']>['cost_weights']> = {}
+  for (const [alias, value] of values) {
+    if (value === '') continue
+    const number = Number(value)
+    if (!Number.isFinite(number) || number <= 0 || number > MAX_LLM_COST_WEIGHT) {
+      return {
+        error: `The ${alias} model token price must be a positive finite number no greater than 1,000,000.`,
+      }
+    }
+    costWeights[alias] = number
+  }
+  return Object.keys(costWeights).length === 0 ? {} : { costWeights }
+}
+
 /** Build the config document from the form, or return a client-side validation message. */
 function buildConfig(): { config: SeasonConfig } | { error: string } {
   const built: MatchConfig[] = []
@@ -190,6 +219,8 @@ function buildConfig(): { config: SeasonConfig } | { error: string } {
   if (llmModelsMode.value === 'custom' && llmModels.value.length === 0) {
     return { error: 'Select at least one allowed LLM model alias, or inherit all deployment aliases.' }
   }
+  const costs = buildCostWeights()
+  if (costs.error !== undefined) return { error: costs.error }
   const official = buildLimitOverride(
     'official',
     officialTokenBudget.value,
@@ -209,6 +240,7 @@ function buildConfig(): { config: SeasonConfig } | { error: string } {
   if (llmModelsMode.value === 'custom') {
     llm.models = LLM_MODEL_ALIASES.filter((alias) => llmModels.value.includes(alias))
   }
+  if (costs.costWeights !== undefined) llm.cost_weights = costs.costWeights
   if (official.limits !== undefined) llm.official = official.limits
   if (development.limits !== undefined) llm.development = development.limits
   if (Object.keys(llm).length > 0) overrides.llm = llm
@@ -253,6 +285,14 @@ function canonicalLlm(llm: SeasonOverrides['llm']): Record<string, unknown> | nu
       llm.models === undefined
         ? null
         : LLM_MODEL_ALIASES.filter((alias) => llm.models?.includes(alias)),
+    cost_weights:
+      llm.cost_weights === undefined
+        ? null
+        : {
+            large: llm.cost_weights.large ?? null,
+            medium: llm.cost_weights.medium ?? null,
+            small: llm.cost_weights.small ?? null,
+          },
     official: canonicalLimits(llm.official),
     development: canonicalLimits(llm.development),
   }
@@ -468,6 +508,55 @@ watch(confirmOpen, (open) => {
       </fieldset>
 
       <div class="limit-groups">
+        <fieldset class="limit-group">
+          <legend>Model token prices</legend>
+          <UiField
+            label="Large model token price"
+            hint="Optional; inherits the deployment default. One token consumes this many budget units."
+          >
+            <template #default="{ id }">
+              <UiInput
+                :id="id"
+                v-model.number="largeCostWeight"
+                type="number"
+                :max="MAX_LLM_COST_WEIGHT"
+                step="any"
+                placeholder="default"
+              />
+            </template>
+          </UiField>
+          <UiField
+            label="Medium model token price"
+            hint="Optional; inherits the deployment default. One token consumes this many budget units."
+          >
+            <template #default="{ id }">
+              <UiInput
+                :id="id"
+                v-model.number="mediumCostWeight"
+                type="number"
+                :max="MAX_LLM_COST_WEIGHT"
+                step="any"
+                placeholder="default"
+              />
+            </template>
+          </UiField>
+          <UiField
+            label="Small model token price"
+            hint="Optional; inherits the deployment default. One token consumes this many budget units."
+          >
+            <template #default="{ id }">
+              <UiInput
+                :id="id"
+                v-model.number="smallCostWeight"
+                type="number"
+                :max="MAX_LLM_COST_WEIGHT"
+                step="any"
+                placeholder="default"
+              />
+            </template>
+          </UiField>
+        </fieldset>
+
         <fieldset class="limit-group">
           <legend>Official per-slot limits</legend>
           <UiField label="Official token budget" hint="Optional; inherits the deployment default.">

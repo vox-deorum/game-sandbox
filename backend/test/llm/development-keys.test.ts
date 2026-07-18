@@ -82,7 +82,10 @@ describe('DevelopmentKeyService', () => {
         llm: {
           ...makeTestLlmOptions(),
           upstreamUrl: 'https://provider.test/v1',
-          models: { small: 'provider-small', medium: 'provider-medium' },
+          models: {
+            small: { upstream: 'provider-small', costWeight: 1 },
+            medium: { upstream: 'provider-medium', costWeight: 2 },
+          },
         },
         meter,
         ledger,
@@ -100,6 +103,7 @@ describe('DevelopmentKeyService', () => {
       season_id: season.id,
       base_url: 'https://sandbox.test/api/llm/v1',
       models: ['medium', 'small'],
+      cost_weights: { medium: 2, small: 1 },
       limits: { token_budget: 100_000, call_budget: 1_000, rate_limit_rpm: 30 },
     })
     expect(storedFirst).toMatchObject({
@@ -152,7 +156,10 @@ describe('DevelopmentKeyService', () => {
     const llm = {
       ...makeTestLlmOptions(),
       upstreamUrl: 'https://provider.test/v1',
-      models: { small: 'provider-small', medium: 'provider-medium' },
+      models: {
+        small: { upstream: 'provider-small', costWeight: 1 },
+        medium: { upstream: 'provider-medium', costWeight: 2 },
+      },
     }
     const service = new DevelopmentKeyService({
       storage,
@@ -170,10 +177,14 @@ describe('DevelopmentKeyService', () => {
     const grant = await service.authenticate(credential)
     expect(lookup).toHaveBeenCalledOnce()
     expect(grant).toMatchObject({
-      models: { small: 'provider-small', medium: 'provider-medium' },
+      models: {
+        small: { upstream: 'provider-small', costWeight: 1 },
+        medium: { upstream: 'provider-medium', costWeight: 2 },
+      },
       accountingScope: {
         key: `development:${season.id}:user-a`,
         limits: { tokenBudget: 100_000, callBudget: 1_000, requestsPerMinute: 30 },
+        weights: { small: 1, medium: 2 },
       },
     })
     const queryPlan = handle.sqlite
@@ -197,8 +208,11 @@ describe('DevelopmentKeyService', () => {
       enabledConfig({ models: ['small'], development: { call_budget: 2, rate_limit_rpm: 1 } }),
     )
     await expect(service.authenticate(credential)).resolves.toMatchObject({
-      models: { small: 'provider-small' },
-      accountingScope: { limits: { callBudget: 2, requestsPerMinute: 1 } },
+      models: { small: { upstream: 'provider-small', costWeight: 1 } },
+      accountingScope: {
+        limits: { callBudget: 2, requestsPerMinute: 1 },
+        weights: { small: 1 },
+      },
     })
     await handle.storage.updateSeasonConfig(season.id, enabledConfig({ enabled: false }))
     await expect(service.authenticate(credential)).rejects.toMatchObject({
@@ -227,7 +241,10 @@ describe('DevelopmentKeyService', () => {
       llm: {
         ...makeTestLlmOptions(),
         upstreamUrl: 'https://provider.test/v1',
-        models: { small: 'provider-small', medium: 'provider-medium' },
+        models: {
+          small: { upstream: 'provider-small', costWeight: 1 },
+          medium: { upstream: 'provider-medium', costWeight: 2 },
+        },
       },
       meter,
       ledger,
@@ -240,7 +257,7 @@ describe('DevelopmentKeyService', () => {
     )
     // A successful call would record one rate event; the window is keyed by scope, so it must survive
     // a key rotation for the same participant and season.
-    const reservation = await meter.reserve(first.accountingScope, 1, 1)
+    const reservation = await meter.reserve(first.accountingScope, 'small', 1, 1)
     meter.recordRateEvent(reservation)
     meter.release(reservation)
     const rotated = await service.authenticate(

@@ -291,7 +291,7 @@ describe('leaderboard storage on :memory:', () => {
     const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
     const policy = {
       enabled: true,
-      models: { small: 'upstream-small-v1' },
+      models: { small: { model: 'upstream-small-v1', cost_weight: 1 } },
       session: { token_budget: 12_000, call_budget: 30, rate_limit_rpm: 7 },
     } as const
     // The resolver receives the same config text the transaction freezes into `config_snapshot`.
@@ -353,6 +353,7 @@ describe('leaderboard storage on :memory:', () => {
           latency_ms: 90,
         },
       },
+      llm_weighted_cost: 52,
       failed: false,
     })
     const [result] = await storage.listGameResultsByRun(run.id)
@@ -373,6 +374,7 @@ describe('leaderboard storage on :memory:', () => {
           latency_ms: 90,
         },
       },
+      llm_weighted_cost: 52,
       failed: 0,
     })
   })
@@ -438,6 +440,7 @@ describe('leaderboard storage on :memory:', () => {
             latency_ms: 35,
           },
         },
+        llm_weighted_cost: 32,
         failure_count: 0,
         recording_id: 'r1',
       },
@@ -466,6 +469,7 @@ describe('leaderboard storage on :memory:', () => {
         latency_ms: 35,
       },
     })
+    expect(firstOf(submittedPlacements).llm_weighted_cost).toBe(32)
     expect(firstOf(await storage.listPlacementsByAgent(NAIVE, ENV)).llm_usage_by_model).toBeNull()
     expect(await storage.listPlacementsByUser('alice')).toHaveLength(1)
     expect(await storage.listPlacementsByUser('bob')).toEqual([])
@@ -838,6 +842,7 @@ describe('leaderboard storage on :memory:', () => {
           latency_ms: 20,
         },
       },
+      llm_weighted_cost: 41.5,
       failed: false,
     })
     await storage.recordGameResult({
@@ -857,6 +862,7 @@ describe('leaderboard storage on :memory:', () => {
           latency_ms: 25,
         },
       },
+      llm_weighted_cost: 11,
       failed: false,
     })
     await storage.setRunStatus(run.id, 'completed')
@@ -883,6 +889,7 @@ describe('leaderboard storage on :memory:', () => {
           latency_ms: 20,
         },
       },
+      llm_weighted_cost: 52.5,
     })
   })
 
@@ -944,6 +951,7 @@ describe('leaderboard storage on :memory:', () => {
           latency_ms: 75,
         },
       },
+      llm_weighted_cost: 104,
       failed: false,
     })
     await storage.recordGameResult({
@@ -972,6 +980,7 @@ describe('leaderboard storage on :memory:', () => {
           latency_ms: 75,
         },
       },
+      llm_weighted_cost: 104,
     })
     expect(firstOf(await storage.listPlacementsByAgent(NAIVE, ENV))).toMatchObject({
       rank: 2,

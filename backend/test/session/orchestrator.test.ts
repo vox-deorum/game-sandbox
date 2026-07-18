@@ -218,7 +218,7 @@ describe('orchestrator', () => {
         config,
         resolveLiveLlm: () => ({
           enabled: true,
-          models: { small: 'upstream-small' },
+          models: { small: { upstream: 'upstream-small', costWeight: 1 } },
           official: { tokenBudget: 1000, callBudget: 10, requestsPerMinute: 5 },
           development: { tokenBudget: 2000, callBudget: 20, requestsPerMinute: 10 },
         }),

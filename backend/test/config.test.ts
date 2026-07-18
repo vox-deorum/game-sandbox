@@ -177,6 +177,9 @@ describe('loadConfig', () => {
       LLM_UPSTREAM_KEY: 'provider-secret',
       LLM_MODEL_LARGE: 'provider-large',
       LLM_MODEL_SMALL: 'provider-small',
+      LLM_COST_WEIGHT_LARGE: '8',
+      LLM_COST_WEIGHT_MEDIUM: '3',
+      LLM_COST_WEIGHT_SMALL: '0.5',
       LLM_UPSTREAM_TIMEOUT_MS: '1200',
       LLM_UPSTREAM_MAX_RETRIES: '4',
       LLM_UPSTREAM_RETRY_INTERVAL_MS: '75',
@@ -196,7 +199,10 @@ describe('loadConfig', () => {
       internalPort: 9_081,
       upstreamUrl: 'http://models.internal/v1',
       upstreamKey: 'provider-secret',
-      models: { large: 'provider-large', small: 'provider-small' },
+      models: {
+        large: { upstream: 'provider-large', costWeight: 8 },
+        small: { upstream: 'provider-small', costWeight: 0.5 },
+      },
       upstreamTimeoutMs: 1_200,
       upstreamMaxRetries: 4,
       upstreamRetryIntervalMs: 75,
@@ -228,6 +234,8 @@ describe('loadConfig', () => {
     ['LLM_METER_RECOVERY_INTERVAL_MS', '0'],
     ['LLM_MAX_OUTPUT_TOKENS', '0'],
     ['LLM_MAX_OUTPUT_TOKENS', '1000001'],
+    ['LLM_COST_WEIGHT_LARGE', '0'],
+    ['LLM_COST_WEIGHT_MEDIUM', '1000001'],
   ])('rejects an out-of-bounds %s value', (name, value) => {
     expect(() => load({ [name]: value })).toThrow(new RegExp(name))
   })

@@ -8,11 +8,11 @@ import { buildLlmListener } from '../../src/llm/listener.js'
 import { LlmMeter } from '../../src/llm/meter.js'
 import type { LlmTokenCounter } from '../../src/llm/tokenizer.js'
 import {
-  emptyUsage,
   type LlmAccountingScope,
   type LlmChatRequest,
   type LlmGrant,
   type LlmSuccessfulRecord,
+  weightedCommittedTokens,
 } from '../../src/llm/types.js'
 import { UpstreamError } from '../../src/llm/upstream.js'
 
@@ -40,7 +40,8 @@ function fixture(
   const scope: LlmAccountingScope = {
     key: 'session:s1:player_0',
     limits: { tokenBudget: 100, callBudget: 10, requestsPerMinute: overrides.rpm ?? 10 },
-    readCommittedUsage: emptyUsage,
+    weights: { small: 1 },
+    readCommittedUsage: () => ({}),
   }
   const sink =
     overrides.sink ??
@@ -52,7 +53,7 @@ function fixture(
     } satisfies LlmGrant['recordSink'])
   const grant: LlmGrant = {
     kind: 'official',
-    models: { small: 'provider-secret' },
+    models: { small: { upstream: 'provider-secret', costWeight: 1 } },
     accountingScope: scope,
     recordSink: sink,
   }
@@ -550,11 +551,12 @@ describe('generic admission and recovery', () => {
     const accountingScope: LlmAccountingScope = {
       key: `concurrent:${_kind}`,
       limits,
-      readCommittedUsage: emptyUsage,
+      weights: { small: 1 },
+      readCommittedUsage: () => ({}),
     }
     const outcomes = await Promise.allSettled([
-      meter.reserve(accountingScope, input, output),
-      meter.reserve(accountingScope, input, output),
+      meter.reserve(accountingScope, 'small', input, output),
+      meter.reserve(accountingScope, 'small', input, output),
     ])
     expect(outcomes.map((outcome) => outcome.status).sort()).toEqual(['fulfilled', 'rejected'])
     const rejected = outcomes.find((outcome) => outcome.status === 'rejected')
@@ -563,11 +565,91 @@ describe('generic admission and recovery', () => {
     })
     expect(meter.inspect(accountingScope.key)).toMatchObject({
       reservedCalls: 1,
-      reservedTokens: input + output,
+      reservedWeightedTokens: input + output,
     })
     expect(meter.inspect(accountingScope.key).pendingRateEvents.size).toBe(1)
     const accepted = outcomes.find((outcome) => outcome.status === 'fulfilled')
     if (accepted?.status === 'fulfilled') meter.release(accepted.value)
+  })
+
+  it('weights mixed committed usage and pending large-model capacity at the exact boundary', async () => {
+    const meter = new LlmMeter({ recoveryIntervalMs: 10 })
+    const scope: LlmAccountingScope = {
+      key: 'weighted:mixed',
+      limits: { tokenBudget: 20, callBudget: 10, requestsPerMinute: 10 },
+      weights: { large: 4, medium: 2, small: 1 },
+      readCommittedUsage: () => ({
+        small: { calls: 0, inputTokens: 1, reasoningTokens: 0, outputTokens: 1 },
+        medium: { calls: 0, inputTokens: 1, reasoningTokens: 0, outputTokens: 2 },
+      }),
+    }
+
+    const admitted = await meter.reserve(scope, 'large', 1, 2)
+    expect(meter.inspect(scope.key).reservedWeightedTokens).toBe(12)
+    await expect(meter.reserve(scope, 'small', 0, 1)).rejects.toMatchObject({
+      code: 'budget_exceeded',
+    })
+    meter.release(admitted)
+  })
+
+  it('carries a fractional weight through reservation arithmetic without rounding it away', async () => {
+    const meter = new LlmMeter({ recoveryIntervalMs: 10 })
+    const scope: LlmAccountingScope = {
+      key: 'weighted:fractional',
+      limits: { tokenBudget: 10, callBudget: 10, requestsPerMinute: 10 },
+      weights: { small: 0.5 },
+      readCommittedUsage: () => ({
+        small: { calls: 1, inputTokens: 4, reasoningTokens: 0, outputTokens: 4 },
+      }),
+    }
+
+    // Committed usage is already 4 weighted units (8 tokens at weight 0.5). Reserving 5+6 tokens
+    // adds 5.5 weighted units, for a running total of 9.5, still inside the budget of 10.
+    const admitted = await meter.reserve(scope, 'small', 5, 6)
+    expect(meter.inspect(scope.key).reservedWeightedTokens).toBe(5.5)
+
+    // One more weighted unit (1+1 tokens at weight 0.5) pushes the total to 10.5, over budget.
+    await expect(meter.reserve(scope, 'small', 1, 1)).rejects.toMatchObject({
+      code: 'budget_exceeded',
+    })
+    meter.release(admitted)
+  })
+
+  it('keeps the call budget raw and charges weighted debt without losing release precision', async () => {
+    const meter = new LlmMeter({ recoveryIntervalMs: 10 })
+    const scope: LlmAccountingScope = {
+      key: 'weighted:debt',
+      limits: { tokenBudget: 100, callBudget: 2, requestsPerMinute: 10 },
+      weights: { large: 4, small: 1 },
+      readCommittedUsage: () => ({
+        large: { calls: 1, inputTokens: 0, reasoningTokens: 0, outputTokens: 0 },
+        small: { calls: 1, inputTokens: 0, reasoningTokens: 0, outputTokens: 0 },
+      }),
+    }
+    await expect(meter.reserve(scope, 'large', 1, 2)).rejects.toMatchObject({
+      code: 'budget_exceeded',
+    })
+
+    scope.limits.callBudget = 3
+    const reservation = await meter.reserve(scope, 'large', 1, 2)
+    meter.chargeConservativeDebt(reservation, { record: () => {}, probeHealth: () => {} })
+    expect(meter.inspect(scope.key)).toMatchObject({
+      reservedCalls: 0,
+      reservedWeightedTokens: 0,
+      debt: { calls: 1, weightedTokens: 12 },
+    })
+    meter.close()
+  })
+
+  it.each([
+    'retired',
+    'constructor',
+    '__proto__',
+  ])('uses the highest configured weight for unknown committed alias %s', (alias) => {
+    const byModel = {
+      [alias]: { calls: 1, inputTokens: 2, reasoningTokens: 0, outputTokens: 3 },
+    }
+    expect(weightedCommittedTokens(byModel, { medium: 2, small: 1 })).toBe(10)
   })
 
   it('keeps official slot and development-shaped accounting keys independent', async () => {
@@ -575,7 +657,8 @@ describe('generic admission and recovery', () => {
     const makeScope = (key: string): LlmAccountingScope => ({
       key,
       limits: { tokenBudget: 100, callBudget: 10, requestsPerMinute: 1 },
-      readCommittedUsage: emptyUsage,
+      weights: { small: 1 },
+      readCommittedUsage: () => ({}),
     })
     const sessionA = makeScope('session:s1:player_0')
     const sessionB = makeScope('session:s1:player_1')
@@ -583,7 +666,7 @@ describe('generic admission and recovery', () => {
 
     // Convert each pending rate reservation into the event a successful call would retain.
     for (const scope of [sessionA, sessionB, development]) {
-      const reservation = await meter.reserve(scope, 1, 1)
+      const reservation = await meter.reserve(scope, 'small', 1, 1)
       meter.recordRateEvent(reservation)
       meter.release(reservation)
     }
@@ -591,7 +674,7 @@ describe('generic admission and recovery', () => {
       expect(meter.inspect(scope.key).rateEvents).toHaveLength(1)
     }
     // Each window is independent and full at rpm=1, so the next reservation on any scope is limited.
-    await expect(meter.reserve(development, 1, 1)).rejects.toMatchObject({
+    await expect(meter.reserve(development, 'small', 1, 1)).rejects.toMatchObject({
       code: 'rate_limit_exceeded',
     })
     expect(meter.inspect(sessionB.key).rateEvents).toHaveLength(1)
@@ -603,11 +686,12 @@ describe('generic admission and recovery', () => {
     const scope: LlmAccountingScope = {
       key: 'concurrent:rate-order',
       limits: { tokenBudget: 100, callBudget: 10, requestsPerMinute: 2 },
-      readCommittedUsage: emptyUsage,
+      weights: { small: 1 },
+      readCommittedUsage: () => ({}),
     }
-    const first = await meter.reserve(scope, 1, 1)
+    const first = await meter.reserve(scope, 'small', 1, 1)
     now = 1_010
-    const second = await meter.reserve(scope, 1, 1)
+    const second = await meter.reserve(scope, 'small', 1, 1)
 
     meter.recordRateEvent(second)
     meter.release(second)
@@ -627,11 +711,12 @@ describe('generic admission and recovery', () => {
     const scope: LlmAccountingScope = {
       key: 'concurrent:rate-rollback',
       limits: { tokenBudget: 100, callBudget: 10, requestsPerMinute: 2 },
-      readCommittedUsage: emptyUsage,
+      weights: { small: 1 },
+      readCommittedUsage: () => ({}),
     }
-    const first = await meter.reserve(scope, 1, 1)
+    const first = await meter.reserve(scope, 'small', 1, 1)
     now = 1_010
-    const second = await meter.reserve(scope, 1, 1)
+    const second = await meter.reserve(scope, 'small', 1, 1)
 
     meter.recordRateEvent(second)
     meter.release(second)
@@ -639,7 +724,7 @@ describe('generic admission and recovery', () => {
 
     expect(meter.inspect(scope.key).rateEvents).toEqual([1_010])
     expect(meter.inspect(scope.key).pendingRateEvents.size).toBe(0)
-    const admitted = await meter.reserve(scope, 1, 1)
+    const admitted = await meter.reserve(scope, 'small', 1, 1)
     // The freed capacity is really occupied again: one recorded event plus the new pending slot.
     expect(meter.inspect(scope.key).rateEvents).toEqual([1_010])
     expect(meter.inspect(scope.key).pendingRateEvents.size).toBe(1)
@@ -652,11 +737,12 @@ describe('generic admission and recovery', () => {
     const scope: LlmAccountingScope = {
       key: 'concurrent:rate-expiry',
       limits: { tokenBudget: 100, callBudget: 10, requestsPerMinute: 1 },
-      readCommittedUsage: emptyUsage,
+      weights: { small: 1 },
+      readCommittedUsage: () => ({}),
     }
-    const expired = await meter.reserve(scope, 1, 1)
+    const expired = await meter.reserve(scope, 'small', 1, 1)
     now = 61_001
-    const current = await meter.reserve(scope, 1, 1)
+    const current = await meter.reserve(scope, 'small', 1, 1)
 
     meter.recordRateEvent(expired)
     meter.release(expired)
@@ -671,9 +757,10 @@ describe('generic admission and recovery', () => {
     const scope: LlmAccountingScope = {
       key: 'concurrent:rate-late-success',
       limits: { tokenBudget: 100, callBudget: 10, requestsPerMinute: 1 },
-      readCommittedUsage: emptyUsage,
+      weights: { small: 1 },
+      readCommittedUsage: () => ({}),
     }
-    const slow = await meter.reserve(scope, 1, 1)
+    const slow = await meter.reserve(scope, 'small', 1, 1)
     now = 61_001
 
     meter.recordRateEvent(slow)
@@ -688,16 +775,17 @@ describe('generic admission and recovery', () => {
     const scope: LlmAccountingScope = {
       key: 'concurrent:rate-finalized',
       limits: { tokenBudget: 100, callBudget: 10, requestsPerMinute: 5 },
-      readCommittedUsage: emptyUsage,
+      weights: { small: 1 },
+      readCommittedUsage: () => ({}),
     }
-    const recorded = await meter.reserve(scope, 1, 1)
+    const recorded = await meter.reserve(scope, 'small', 1, 1)
     meter.recordRateEvent(recorded)
     meter.recordRateEvent(recorded)
     expect(meter.inspect(scope.key).rateEvents).toEqual([1_000])
     meter.release(recorded)
 
     now = 1_010
-    const released = await meter.reserve(scope, 1, 1)
+    const released = await meter.reserve(scope, 'small', 1, 1)
     meter.release(released)
     expect(() => meter.recordRateEvent(released)).toThrow(
       'LLM rate reservation was already finalized',
@@ -795,8 +883,8 @@ describe('generic admission and recovery', () => {
     expect(meter.inspect(key)).toMatchObject({
       breakerOpen: true,
       reservedCalls: 0,
-      reservedTokens: 0,
-      debt: { calls: 1, inputTokens: 3, outputTokens: 8 },
+      reservedWeightedTokens: 0,
+      debt: { calls: 1, weightedTokens: 11 },
     })
     await expect(handler.handle(grant, { model: 'small', messages: [] })).rejects.toMatchObject({
       code: 'meter_unavailable',
@@ -824,8 +912,8 @@ describe('generic admission and recovery', () => {
     expect(meter.inspect(grant.accountingScope.key)).toMatchObject({
       breakerOpen: true,
       reservedCalls: 0,
-      reservedTokens: 0,
-      debt: { calls: 1, inputTokens: 3, outputTokens: 8 },
+      reservedWeightedTokens: 0,
+      debt: { calls: 1, weightedTokens: 11 },
     })
     meter.close()
   })
@@ -840,7 +928,8 @@ describe('generic admission and recovery', () => {
     const scope: LlmAccountingScope = {
       key: 'session:startup:player_0',
       limits: { tokenBudget: 100, callBudget: 10, requestsPerMinute: 10 },
-      readCommittedUsage: emptyUsage,
+      weights: { small: 1 },
+      readCommittedUsage: () => ({}),
     }
     const meter = new LlmMeter({ recoveryIntervalMs: 10 })
     meter.markUnavailable(scope, sink)

@@ -21,7 +21,12 @@ import type {
   SeasonRunGame,
 } from '../schema.js'
 import { decodeSeasonConfig, type SeasonConfig } from '../season-config.js'
-import { agentColumns, decodeLlmUsageByModel, encodeLlmUsageByModel } from './shared.js'
+import {
+  agentColumns,
+  decodeLlmUsageByModel,
+  encodeLlmUsageByModel,
+  encodeLlmWeightedCost,
+} from './shared.js'
 
 function decodeGameResult(
   row: Omit<GameResult, 'llm_usage_by_model'> & {
@@ -284,6 +289,7 @@ export async function recordGameResult(
       agent_compute_ms_total: input.agent_compute_ms_total,
       acted_tick_count: input.acted_tick_count,
       llm_usage_by_model: encodeLlmUsageByModel(input.llm_usage_by_model),
+      llm_weighted_cost: encodeLlmWeightedCost(input.llm_weighted_cost, input.llm_usage_by_model),
       failed: input.failed ? 1 : 0,
       failure_reason: input.failure_reason ?? null,
     })

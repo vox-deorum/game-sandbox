@@ -82,6 +82,27 @@ export function decodeLlmUsageByModel(value: string | null): LlmUsageByModel | n
   return validateLlmUsageByModel(parsed)
 }
 
+/** Validate weighted token cost and keep its SQL null state paired with normalized LLM usage. */
+export function encodeLlmWeightedCost(
+  value: number | null | undefined,
+  usage: LlmUsageByModel | null | undefined,
+): number | null {
+  const hasUsage = usage !== null && usage !== undefined && Object.keys(usage).length > 0
+  if (value === null || value === undefined) {
+    if (hasUsage) {
+      throw new Error('LLM weighted cost must be present when LLM usage is present')
+    }
+    return null
+  }
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error('LLM weighted cost must be a finite non-negative number')
+  }
+  if (!hasUsage) {
+    throw new Error('LLM weighted cost must be null when LLM usage is null')
+  }
+  return value
+}
+
 /** Flatten an {@link AgentRef} to its three stored columns; null ids for the Naive baseline. */
 export function agentColumns(agent: AgentRef): AgentColumns {
   if (agent.kind === 'submission') {

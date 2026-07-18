@@ -82,7 +82,7 @@ describe('development LLM API', () => {
     const llm = {
       ...makeTestLlmOptions(),
       upstreamUrl: 'https://provider.test/v1',
-      models: { small: 'provider-small' },
+      models: { small: { upstream: 'provider-small', costWeight: 1 } },
       developmentLimits: { tokenBudget: 100, callBudget: 10, requestsPerMinute: 10 },
     }
     let storage: Storage | undefined
@@ -154,6 +154,7 @@ describe('development LLM API', () => {
       headers,
     })
     expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({ models: ['small'], cost_weights: { small: 1 } })
     return response.json().api_key as string
   }
 
@@ -179,11 +180,13 @@ describe('development LLM API', () => {
     expect(response.statusCode).toBe(200)
     expect(response.json()).toMatchObject({ model: 'small', id: 'completion-1' })
     expect(upstream.call).toHaveBeenCalledOnce()
-    expect(ledger.readUserUsage(seasonId, userId)).toEqual({
-      calls: 1,
-      inputTokens: 2,
-      reasoningTokens: 0,
-      outputTokens: 4,
+    expect(ledger.readUserUsageByModel(seasonId, userId)).toEqual({
+      small: {
+        calls: 1,
+        inputTokens: 2,
+        reasoningTokens: 0,
+        outputTokens: 4,
+      },
     })
     const db = new BetterSqlite3(ledger.pathForSeason(seasonId), { readonly: true })
     expect(
@@ -255,11 +258,11 @@ describe('development LLM API', () => {
       payload: { model: 'small', messages: [] },
     })
     expect(response.statusCode).toBe(400)
-    expect(ledger.readUserUsage(seasonId, userId).calls).toBe(0)
+    expect(ledger.readUserUsageByModel(seasonId, userId)).toEqual({})
     expect(meter.inspect(`development:${seasonId}:${userId}`)).toMatchObject({
       rateEvents: [],
       reservedCalls: 0,
-      reservedTokens: 0,
+      reservedWeightedTokens: 0,
     })
   })
 
@@ -288,14 +291,21 @@ describe('development LLM API', () => {
     expect(failed.json()).toMatchObject({ error: { code: 'meter_unavailable' } })
     expect(meter.inspect(`development:${seasonId}:${aliceId}`)).toMatchObject({
       breakerOpen: true,
-      debt: { calls: 1, inputTokens: 3, outputTokens: 8 },
+      debt: { calls: 1, weightedTokens: 11 },
     })
     const upstreamCalls = upstream.call.mock.calls.length
     expect((await call(aliceKey)).statusCode).toBe(503)
     expect(upstream.call).toHaveBeenCalledTimes(upstreamCalls)
 
     expect((await call(bobKey)).statusCode).toBe(200)
-    expect(ledger.readUserUsage(seasonId, bobId).calls).toBe(1)
+    expect(ledger.readUserUsageByModel(seasonId, bobId)).toEqual({
+      small: {
+        calls: 1,
+        inputTokens: 2,
+        reasoningTokens: 0,
+        outputTokens: 4,
+      },
+    })
     expect(meter.inspect(`development:${seasonId}:${bobId}`).breakerOpen).toBe(false)
 
     await vi.waitFor(

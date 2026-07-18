@@ -309,6 +309,8 @@ export interface GameResultsTable {
   acted_tick_count: number
   /** Nullable JSON text containing successful official LLM usage grouped by public model alias. */
   llm_usage_by_model: string | null
+  /** Token usage priced with the frozen per-model weights for this run. */
+  llm_weighted_cost: number | null
   /** SQLite boolean (0/1): the agent crashed or timed out but a score row still exists. */
   failed: number
   failure_reason: string | null
@@ -335,6 +337,8 @@ export interface AutomatedPlacementsTable {
   mean_agent_compute_ms: number | null
   /** Nullable JSON text copied from the live board's decoded LLM usage aggregate. */
   llm_usage_by_model: string | null
+  /** Sum of the contributing game results' frozen-policy weighted token costs. */
+  llm_weighted_cost: number | null
   failure_count: number
   recording_id: string | null
   /** ISO-8601 UTC timestamp. */

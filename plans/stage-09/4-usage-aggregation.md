@@ -30,7 +30,7 @@ Only after that full barrier resolves may `runGame` query `ExecutionTelemetrySto
 
 ## Game-result and board data
 
-Add nullable `llm_usage_by_model` JSON to `game_results`:
+Add nullable `llm_usage_by_model` JSON and nullable real `llm_weighted_cost` to `game_results`:
 
 ```ts
 type LlmModelUsage = {
@@ -47,17 +47,17 @@ type LlmUsageByModel = Partial<Record<ModelAlias, LlmModelUsage>>
 
 Add this column directly to the flat initial application schema. Stage 9 adds no forward application-database migration because the project has no persistent production database yet; contributors recreate older local databases when this schema lands.
 
-`runGame` writes one `LlmUsageByModel` value per seat beside the existing compute total. Calls, tokens, and latency are sums over successful execution-scope SQLite rows. `estimated_calls` counts rows whose `usage_estimated` value is 1, so boards and persisted placements do not present fallback token counts as provider-reported usage. Reservations, rejected calls, terminal upstream failures, and exceptional in-memory debt without a row contribute no telemetry aggregate.
+`runGame` writes one `LlmUsageByModel` value per seat beside the existing compute total. Calls, tokens, and latency are sums over successful execution-scope SQLite rows. It also writes `llm_weighted_cost` as the run snapshot's price for each alias multiplied by that alias's input plus output tokens. The value is null exactly when usage is null. `estimated_calls` counts rows whose `usage_estimated` value is 1, so boards and persisted placements do not present fallback token counts as provider-reported usage. Reservations, rejected calls, terminal upstream failures, and exceptional in-memory debt without a row contribute no telemetry aggregate or stored cost.
 
-`getAutomatedBoard` sums per-game values into each agent's `llm_usage_by_model`, including `estimated_calls`. The data reports successful model use and does not affect score, score spread, timing tie-breaks, or rank.
+`getAutomatedBoard` sums per-game values into each agent's `llm_usage_by_model`, including `estimated_calls`, and sums each non-null `llm_weighted_cost`. The data reports successful model use and does not affect score, score spread, timing tie-breaks, or rank.
 
-`AutomatedPlacementsTable`, `PlacementInput`, and `persistPlacementsForSeason` store the same aggregate so released history and agent profiles retain model usage after workflow rows are pruned. Board and placement readers accept null for seasons without LLM usage.
+`AutomatedPlacementsTable`, `PlacementInput`, and `persistPlacementsForSeason` store the same usage and weighted-cost aggregates so released history and agent profiles retain them after workflow rows are pruned. Board and placement readers accept null for seasons without LLM usage.
 
 ## Budget-exhaustion journey
 
 Add a test-only hungry agent that requests a completion on every turn and uses a legal deterministic fallback for `budget_exceeded`. Configure the per-slot allowance so successful calls early in a match leave too little room for a later request in the same match.
 
-The rejected request reaches no upstream, consumes no budget, creates no SQLite row, and does not mark the seat failed. The agent completes the game with its fallback action. The game result and board equal the successful rows produced before exhaustion.
+The rejected request reaches no upstream, consumes no budget, creates no SQLite row, and does not mark the seat failed. The agent completes the game with its fallback action. The game result and board usage equal the successful rows produced before exhaustion, and their weighted cost equals those rows priced with the run's frozen model values.
 
 ## Tests
 
@@ -75,7 +75,7 @@ Docker-free workflow and storage tests cover:
 - Concurrent teardown callers sharing one idempotent barrier, with delayed successful writes included in the aggregate and no telemetry write occurring after aggregation.
 - Terminal run aggregation, placement persistence, and scope cleanup waiting for every game barrier that issued grants.
 - Successful execution-scope rows grouping into exact per-model call, estimated-call, token, and latency sums for each seat.
-- `game_results`, automated boards, and placements persisting and reloading the same aggregate.
+- `game_results`, automated boards, and placements persisting and reloading the same usage and weighted-cost aggregates.
 - Null usage reading cleanly for seasons and games without successful LLM calls.
 - The hungry agent catching budget exhaustion, finishing naturally, retaining its honest score, and avoiding a forfeit.
 
@@ -88,5 +88,5 @@ Docker integration runs the two-match journey through the real workflow runner a
 - Budget exhaustion is a catchable error, creates no SQLite row, and does not forfeit a game that the agent finishes legally.
 - A run uses the fully resolved official LLM policy stored at run creation and never current deployment defaults.
 - Every workflow exit path closes admission and awaits active-request and reservation settlement before querying telemetry or persisting usage aggregates.
-- Game results, automated boards, and placements report successful calls, estimated-call counts, tokens, and model-call latency by alias.
+- Game results, automated boards, and placements report successful calls, estimated-call counts, tokens, and model-call latency by alias, plus the stored cost computed from the run's frozen prices.
 - All reported aggregates equal the successful rows in execution-scope SQLite.

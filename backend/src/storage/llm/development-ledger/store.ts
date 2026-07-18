@@ -4,7 +4,7 @@ import { join } from 'node:path'
 
 import BetterSqlite3 from 'better-sqlite3'
 
-import { emptyUsage, type LlmUsage } from '../../../llm/types.js'
+import type { LlmUsage } from '../../../llm/types.js'
 
 const CURRENT_SCHEMA_VERSION = 1
 const SEASON_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/
@@ -25,7 +25,7 @@ export interface DevelopmentCallInput {
 interface LedgerHandle {
   db: BetterSqlite3.Database
   insertCall: BetterSqlite3.Statement
-  userUsage: BetterSqlite3.Statement
+  userUsageByModel: BetterSqlite3.Statement
 }
 
 interface UsageRow {
@@ -148,15 +148,22 @@ export class DevelopmentLedgerStore {
     return Number(result.lastInsertRowid)
   }
 
-  readUserUsage(seasonId: string, userId: string): LlmUsage {
-    const row = this.handle(seasonId).userUsage.get(userId) as UsageRow | undefined
-    if (row === undefined) return emptyUsage()
-    return {
-      calls: row.calls,
-      inputTokens: row.input_tokens,
-      reasoningTokens: row.reasoning_tokens,
-      outputTokens: row.output_tokens,
-    }
+  /** Successful committed usage for one participant, grouped by every model name in the ledger. */
+  readUserUsageByModel(seasonId: string, userId: string): Record<string, LlmUsage> {
+    const rows = this.handle(seasonId).userUsageByModel.all(userId) as Array<
+      UsageRow & { model: string }
+    >
+    return Object.fromEntries(
+      rows.map((row) => [
+        row.model,
+        {
+          calls: row.calls,
+          inputTokens: row.input_tokens,
+          reasoningTokens: row.reasoning_tokens,
+          outputTokens: row.output_tokens,
+        },
+      ]),
+    )
   }
 
   probeHealth(seasonId: string): void {
@@ -187,11 +194,13 @@ export class DevelopmentLedgerStore {
           @user_id, @model, @request_json, @completion_json, @input_tokens, @reasoning_tokens,
           @output_tokens, @usage_estimated, @latency_ms, @created_at
         )`),
-        userUsage: db.prepare(`SELECT COUNT(*) AS calls,
+        userUsageByModel: db.prepare(`SELECT model,
+          COUNT(*) AS calls,
           COALESCE(SUM(input_tokens), 0) AS input_tokens,
           COALESCE(SUM(reasoning_tokens), 0) AS reasoning_tokens,
           COALESCE(SUM(output_tokens), 0) AS output_tokens
-          FROM calls WHERE user_id = ?`),
+          FROM calls WHERE user_id = ?
+          GROUP BY model ORDER BY model`),
       }
       this.handles.set(seasonId, handle)
       return handle

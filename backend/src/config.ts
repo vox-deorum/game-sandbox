@@ -11,7 +11,12 @@ import type { TiktokenEncoding } from 'tiktoken'
 import { z } from 'zod'
 
 import { loadEnvironmentFiles, REPO_ROOT } from './env-files.js'
-import type { LlmLimits, ModelAlias } from './llm/types.js'
+import {
+  type LlmLimits,
+  type LlmModelConfig,
+  MAX_LLM_COST_WEIGHT,
+  type ModelAlias,
+} from './llm/types.js'
 
 /** The only execution driver that exists in this stage. */
 export type ExecutionDriverKind = 'docker'
@@ -100,7 +105,7 @@ export interface LlmOptions {
   internalPort: number
   upstreamUrl?: string
   upstreamKey?: string
-  models: Partial<Record<ModelAlias, string>>
+  models: Partial<Record<ModelAlias, LlmModelConfig>>
   upstreamTimeoutMs: number
   upstreamMaxRetries: number
   upstreamRetryIntervalMs: number
@@ -288,6 +293,14 @@ function numberVar(env: NodeJS.ProcessEnv, name: string): number {
     throw new ConfigError(`${name} must be a positive number, got ${raw}`)
   }
   return result.data
+}
+
+function cappedPositiveNumberVar(env: NodeJS.ProcessEnv, name: string, maximum: number): number {
+  const value = numberVar(env, name)
+  if (value > maximum) {
+    throw new ConfigError(`${name} must be no greater than ${maximum}, got ${value}`)
+  }
+  return value
 }
 
 function repoPathVar(env: NodeJS.ProcessEnv, name: string): string {
@@ -525,13 +538,26 @@ export function loadConfig(env?: NodeJS.ProcessEnv): Config {
     throw new ConfigError('LLM_DEFAULT_MAX_OUTPUT_TOKENS must not exceed LLM_MAX_OUTPUT_TOKENS')
   }
 
-  const models: Partial<Record<ModelAlias, string>> = {}
+  const models: Partial<Record<ModelAlias, LlmModelConfig>> = {}
   const largeModel = optionalStringVar(env, 'LLM_MODEL_LARGE')
   const mediumModel = optionalStringVar(env, 'LLM_MODEL_MEDIUM')
   const smallModel = optionalStringVar(env, 'LLM_MODEL_SMALL')
-  if (largeModel !== undefined) models.large = largeModel
-  if (mediumModel !== undefined) models.medium = mediumModel
-  if (smallModel !== undefined) models.small = smallModel
+  const largeCostWeight = cappedPositiveNumberVar(env, 'LLM_COST_WEIGHT_LARGE', MAX_LLM_COST_WEIGHT)
+  const mediumCostWeight = cappedPositiveNumberVar(
+    env,
+    'LLM_COST_WEIGHT_MEDIUM',
+    MAX_LLM_COST_WEIGHT,
+  )
+  const smallCostWeight = cappedPositiveNumberVar(env, 'LLM_COST_WEIGHT_SMALL', MAX_LLM_COST_WEIGHT)
+  if (largeModel !== undefined) {
+    models.large = { upstream: largeModel, costWeight: largeCostWeight }
+  }
+  if (mediumModel !== undefined) {
+    models.medium = { upstream: mediumModel, costWeight: mediumCostWeight }
+  }
+  if (smallModel !== undefined) {
+    models.small = { upstream: smallModel, costWeight: smallCostWeight }
+  }
 
   const tiktokenEncoding = z
     .enum(['gpt2', 'r50k_base', 'p50k_base', 'p50k_edit', 'cl100k_base', 'o200k_base'])

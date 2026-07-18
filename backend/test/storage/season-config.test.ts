@@ -112,6 +112,7 @@ describe('SeasonConfig codec', () => {
         llm: {
           enabled: true,
           models: ['small', 'medium'],
+          cost_weights: { small: 0.5, medium: 2.5 },
           official: { token_budget: 10_000 },
           development: { call_budget: 200 },
         },
@@ -129,6 +130,9 @@ describe('SeasonConfig codec', () => {
       { models: ['unknown'] },
       { official: { token_budget: 0 } },
       { development: { rate_limit_rpm: -1 } },
+      { cost_weights: { small: 0 } },
+      { cost_weights: { large: 1_000_001 } },
+      { cost_weights: { unknown: 1 } },
       { surprise: true },
     ]) {
       expect(() => parseSeasonConfig(validConfig({ overrides: { llm: llm as never } }))).toThrow(

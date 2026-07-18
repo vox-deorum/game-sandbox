@@ -98,24 +98,50 @@ describe('DevelopmentLedgerStore', () => {
     ])
     db.close()
 
-    expect(store.readUserUsage('season-1', 'user-a')).toEqual({
-      calls: 1,
-      inputTokens: 11,
-      reasoningTokens: 2,
-      outputTokens: 3,
+    expect(store.readUserUsageByModel('season-1', 'user-a')).toEqual({
+      small: {
+        calls: 1,
+        inputTokens: 11,
+        reasoningTokens: 2,
+        outputTokens: 3,
+      },
     })
-    expect(store.readUserUsage('season-1', 'user-b')).toEqual({
-      calls: 1,
-      inputTokens: 5,
-      reasoningTokens: 1,
-      outputTokens: 7,
+    expect(store.readUserUsageByModel('season-1', 'user-b')).toEqual({
+      small: {
+        calls: 1,
+        inputTokens: 5,
+        reasoningTokens: 1,
+        outputTokens: 7,
+      },
     })
-    expect(store.readUserUsage('season-2', 'user-a')).toEqual({
-      calls: 0,
-      inputTokens: 0,
+    expect(store.readUserUsageByModel('season-2', 'user-a')).toEqual({})
+  })
+
+  it('groups committed usage by model without dropping an unknown stored alias', () => {
+    store.record('season-1', CALL)
+    store.record('season-1', {
+      ...CALL,
+      model: 'retired-alias',
+      inputTokens: 4,
       reasoningTokens: 0,
-      outputTokens: 0,
+      outputTokens: 6,
     })
+
+    expect(store.readUserUsageByModel('season-1', 'user-a')).toEqual({
+      'retired-alias': {
+        calls: 1,
+        inputTokens: 4,
+        reasoningTokens: 0,
+        outputTokens: 6,
+      },
+      small: {
+        calls: 1,
+        inputTokens: 11,
+        reasoningTokens: 2,
+        outputTokens: 3,
+      },
+    })
+    expect(store.readUserUsageByModel('season-1', 'missing')).toEqual({})
   })
 
   it('rejects newer schemas, unsafe season paths, and invalid rows without inserting a call', () => {
@@ -129,6 +155,6 @@ describe('DevelopmentLedgerStore', () => {
     }
     expect(() => store.record('season-1', { ...CALL, request: undefined })).toThrow('request')
     expect(() => store.record('season-1', { ...CALL, outputTokens: -1 })).toThrow('outputTokens')
-    expect(store.readUserUsage('season-1', 'user-a').calls).toBe(0)
+    expect(store.readUserUsageByModel('season-1', 'user-a')).toEqual({})
   })
 })

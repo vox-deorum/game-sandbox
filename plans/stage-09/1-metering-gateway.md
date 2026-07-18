@@ -27,7 +27,7 @@ The repository layout contains no standalone LLM service. Delete the reserved `g
 
 ## Model aliases
 
-`LLM_MODEL_LARGE`, `LLM_MODEL_MEDIUM`, and `LLM_MODEL_SMALL` map public aliases to upstream model names. A grant carries its resolved alias-to-upstream-model map. The proxy validates the requested alias against that map, substitutes its upstream name before forwarding, and constructs the returned and recorded completion from the standard OpenAI-compatible response fields. It rewrites the top-level model and structured moderation-model fields to the public alias, preserves generated content and tool arguments unchanged, and drops the deprecated backend fingerprint and nonstandard top-level provider metadata. Live and development grant construction uses the current effective map, while workflow grant construction uses the map frozen in `season_runs.llm_policy_snapshot`.
+`LLM_MODEL_LARGE`, `LLM_MODEL_MEDIUM`, and `LLM_MODEL_SMALL` map public aliases to upstream model names. The matching `LLM_COST_WEIGHT_LARGE`, `LLM_COST_WEIGHT_MEDIUM`, and `LLM_COST_WEIGHT_SMALL` values give each alias its token price. A grant carries the resolved upstream name and price together for every allowed alias. The proxy validates the requested alias against that map, substitutes its upstream name before forwarding, and constructs the returned and recorded completion from the standard OpenAI-compatible response fields. It rewrites the top-level model and structured moderation-model fields to the public alias, preserves generated content and tool arguments unchanged, and drops the deprecated backend fingerprint and nonstandard top-level provider metadata. Live and development grant construction uses the current effective map, while workflow grant construction uses the map frozen in `season_runs.llm_policy_snapshot`.
 
 Provider model identifiers from protocol metadata and the upstream credential never reach agents, telemetry, development ledgers, or public APIs. Compatible terminal error fields replace the configured upstream model name with the public alias. Generated assistant content remains opaque model output and is not rewritten as metadata redaction.
 
@@ -39,12 +39,13 @@ Provider model identifiers from protocol metadata and the upstream credential ne
 type LlmAccountingScope = {
   key: string
   limits: LlmLimits
-  readCommittedUsage: () => LlmUsage
+  weights: Partial<Record<ModelAlias, number>>
+  readCommittedUsage: () => LlmCommittedUsageByModel
 }
 
 type LlmGrant = {
   kind: 'official' | 'development'
-  models: Partial<Record<ModelAlias, string>>
+  models: Partial<Record<ModelAlias, LlmModelConfig>>
   accountingScope: LlmAccountingScope
   recordSink: LlmRecordSink
 }
@@ -64,7 +65,7 @@ Official keys remain in memory because a backend restart reaps the containers th
 
 ## Successful-call admission and metering
 
-`LlmLimits` contains token, call, and logical-requests-per-minute limits. Limits exist in exactly two scopes: the agent slot within a session and the development `(participant, season)` pair. The shared handler does not encode official session or run identities. Each authenticated grant supplies exactly one accounting scope containing a stable accounting key, its limits, and a committed-usage reader. The grant separately supplies the one durable record sink used after success. Official grants construct the accounting key for the slot within a session. Step 2 constructs one development key for the participant within the season.
+`LlmLimits` contains weighted-token, call, and logical-requests-per-minute limits. Each model token consumes its resolved price in weighted units, while one call consumes one unweighted call. Limits exist in exactly two scopes: the agent slot within a session and the development `(participant, season)` pair. The shared handler does not encode official session or run identities. Each authenticated grant supplies exactly one accounting scope containing a stable accounting key, its limits, model prices, and a committed per-model usage reader. The grant separately supplies the one durable record sink used after success. Official grants construct the accounting key for the slot within a session. Step 2 constructs one development key for the participant within the season.
 
 Call and token accounting combines committed successful usage from the scope's SQLite store with temporary in-memory reservations and conservative charged debt. Rate accounting combines pending capacity reservations with an in-memory sliding window of successful logical requests for each accounting key. Committed-usage reads, all scope checks, and the reservation mutation run in one synchronous event-loop section, so a completed durable commit cannot disappear between the committed snapshot and the in-memory reservation. Reservations, pending rate capacity, successful rate events, circuit breakers, recovery probes, and debt are all keyed by the same generic accounting key, so official and development grants use the same admission algorithm without sharing allowance.
 
@@ -77,7 +78,7 @@ Admission runs in this order:
 5. Check the scope circuit breaker and committed call and token usage plus in-flight reservations.
 6. Atomically reserve one logical call, its estimated input and enforced maximum output usage, and one pending rate-capacity slot after checking the scope's successful events plus pending rate reservations.
 
-Input reservation uses the configured tiktoken encoding over the accepted request. Request and completion JSON are encoded as ordinary text, so participant content that spells a tokenizer special token remains data and cannot trigger a tokenizer control-token error. Output reservation recognizes either `max_tokens` or `max_completion_tokens`. The two fields are mutually exclusive. An explicit value must not exceed `LLM_MAX_OUTPUT_TOKENS`; when both are absent, the proxy uses `LLM_DEFAULT_MAX_OUTPUT_TOKENS`. The proxy forwards exactly one maximum-output field carrying the enforced value, and admission rejects the request with `budget_exceeded` when estimated input plus that value does not fit the scope's remaining token allowance. This makes the configured maximum, rather than an input-size heuristic or an upstream default, the bound on completion overshoot.
+Input reservation uses the configured tiktoken encoding over the accepted request. Request and completion JSON are encoded as ordinary text, so participant content that spells a tokenizer special token remains data and cannot trigger a tokenizer control-token error. Output reservation recognizes either `max_tokens` or `max_completion_tokens`. The two fields are mutually exclusive. An explicit value must not exceed `LLM_MAX_OUTPUT_TOKENS`; when both are absent, the proxy uses `LLM_DEFAULT_MAX_OUTPUT_TOKENS`. The proxy forwards exactly one maximum-output field carrying the enforced value, and admission rejects the request with `budget_exceeded` when the current model price multiplied by estimated input plus that value does not fit the scope's remaining weighted-token allowance. This makes the configured maximum, rather than an input-size heuristic or an upstream default, the bound on completion overshoot.
 
 Each admitted logical inbound request reserves one pending slot in its scope's rate capacity before the upstream call. Its backend retry attempts reserve no additional capacity. An eventual upstream success converts the pending slot into one rate event timestamped at the logical request's start. A non-retryable error or exhausted retry sequence releases the pending slot without recording an event. A pending slot also expires once its start leaves the sliding window, so a request that outlives the window stops occupying capacity and, on eventual success, retains no event. Admission checks successful events plus pending slots, so concurrent requests cannot exceed the configured capacity while their starts remain inside the window. Local authentication, model, streaming, malformed-maximum, circuit-breaker, rate, and budget rejections never reach the upstream and reserve no rate capacity. A rate rejection returns 429.
 
@@ -144,11 +145,11 @@ Add the official `openai` Node client and the `tiktoken` tokenizer as runtime de
 
 ## Configuration
 
-The first implementation uses the following deployment defaults. They are operational defaults, not product limits, and every value remains configurable through the variable in the table below: internal port `8081`, per-attempt timeout `30_000` ms, two retries after the initial attempt, initial retry interval `250` ms, `cl100k_base` tokenization, `1_024` default and `4_096` hard-maximum output tokens, and a `5_000` ms meter-recovery interval. Official defaults are 100 calls, 100,000 tokens, and 60 successful logical requests per minute per slot.
+The first implementation uses the following deployment defaults. They are operational defaults, not product limits, and every value remains configurable through the variable in the table below: internal port `8081`, per-attempt timeout `30_000` ms, two retries after the initial attempt, initial retry interval `250` ms, `cl100k_base` tokenization, `1_024` default and `4_096` hard-maximum output tokens, a `5_000` ms meter-recovery interval, and large:medium:small token prices of 4:2:1. Official defaults are 100 calls, 100,000 weighted token units, and 60 successful logical requests per minute per slot.
 
 `LLM_UPSTREAM_URL` must be an absolute `http` or `https` base URL with no surrounding whitespace, embedded credentials, query, or fragment. Configuration rejects malformed or ambiguous values at startup without echoing the configured value. `LLM_UPSTREAM_KEY` is optional so an operator can use an unauthenticated local OpenAI-compatible endpoint. When it is absent, the upstream request omits authorization. The internal listener binds on all interfaces because Step 2's Docker relay reaches it through the host gateway; the listener still starts only when an upstream URL and at least one alias are configured.
 
-Token budgets count input tokens plus the upstream's total completion-token count. Reasoning tokens are preserved as a separately reported subset and are not added a second time. Fallback estimates encode the canonical JSON request and completion with the configured tokenizer. Scope IDs use a bounded filename-safe opaque identifier, and tick markers accept only non-negative safe integers.
+Token budgets count each alias's price multiplied by its input tokens plus the upstream's total completion-token count. Prices are positive finite numbers no greater than 1,000,000 and may be fractional. Call budgets remain unweighted. Reasoning tokens are preserved as a separately reported subset and are not added a second time. Fallback estimates encode the canonical JSON request and completion with the configured tokenizer. Scope IDs use a bounded filename-safe opaque identifier, and tick markers accept only non-negative safe integers.
 
 The execution telemetry implementation lives under `backend/src/storage/llm/` so better-sqlite3 remains inside the repository's enforced storage boundary. Its official sink adapter is the bridge from identity-free grants to session, slot, and tick rows. Step 1 exercises official grants directly in Docker-free tests; Step 2 connects grant issuance and revocation to the orchestrator and workflow lifecycle.
 
@@ -159,6 +160,7 @@ Add these deployment settings in `backend/src/config.ts`:
 | `LLM_INTERNAL_PORT` | Backend proxy port reached through the session relay |
 | `LLM_UPSTREAM_URL`, `LLM_UPSTREAM_KEY` | Single OpenAI-compatible upstream and its credential |
 | `LLM_MODEL_LARGE`, `LLM_MODEL_MEDIUM`, `LLM_MODEL_SMALL` | Public alias to upstream-model mappings |
+| `LLM_COST_WEIGHT_LARGE`, `LLM_COST_WEIGHT_MEDIUM`, `LLM_COST_WEIGHT_SMALL` | Per-alias token prices, defaulting to 4, 2, and 1 |
 | `LLM_UPSTREAM_TIMEOUT_MS` | Timeout for each upstream attempt |
 | `LLM_UPSTREAM_MAX_RETRIES` | Retry attempts after the initial request |
 | `LLM_UPSTREAM_RETRY_INTERVAL_MS` | Initial exponential-backoff interval |

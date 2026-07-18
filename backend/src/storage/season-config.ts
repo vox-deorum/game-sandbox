@@ -17,7 +17,7 @@
  */
 import { z } from 'zod'
 
-import { MODEL_ALIASES } from '../llm/types.js'
+import { MAX_LLM_COST_WEIGHT, MODEL_ALIASES } from '../llm/types.js'
 
 /** One seat in a match composition: the built-in scripted baseline, or a participant submission. */
 export const SLOT_SPECS = ['builtin-naive', 'submission'] as const
@@ -53,6 +53,12 @@ const LlmLimitOverrideSchema = z.strictObject({
   rate_limit_rpm: z.int().positive().optional(),
 })
 
+const LlmCostWeightOverrideSchema = z.strictObject({
+  large: z.number().positive().finite().max(MAX_LLM_COST_WEIGHT).optional(),
+  medium: z.number().positive().finite().max(MAX_LLM_COST_WEIGHT).optional(),
+  small: z.number().positive().finite().max(MAX_LLM_COST_WEIGHT).optional(),
+})
+
 /** Strict, deployment-independent season overrides for the optional LLM capability. */
 export const LlmOverrideSchema = z.strictObject({
   enabled: z.boolean().optional(),
@@ -63,6 +69,7 @@ export const LlmOverrideSchema = z.strictObject({
       message: 'model aliases must not contain duplicates',
     })
     .optional(),
+  cost_weights: LlmCostWeightOverrideSchema.optional(),
   official: LlmLimitOverrideSchema.optional(),
   development: LlmLimitOverrideSchema.optional(),
 })

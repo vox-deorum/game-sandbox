@@ -38,7 +38,7 @@ A startup sweep runs after active session and workflow recovery. It removes offi
 
 `ReplayPage.vue` fetches recording telemetry alongside the recording. A new Model calls panel groups successful rows by tick and follows the replay transport position. Each compact row shows slot, model alias, input and output tokens, reasoning tokens in accessible detail text, latency, and a clear estimate label when `usage_estimated` is true.
 
-`RunMetadata` shows whole-recording successful call count, token totals, model-call latency, and whether any included token total is estimated. The replay panel remains metadata-only for every viewer, including owners. Prompt inspection lives on the agent profile.
+`RunMetadata` shows whole-recording successful call count, token totals, stored weighted cost, model-call latency, and whether any included token total is estimated. Student-visible copy calls this a model cost or price, not a weight. The replay panel remains metadata-only for every viewer, including owners. Prompt inspection lives on the agent profile.
 
 The panel renders no failure status because unsuccessful logical requests have no telemetry row.
 
@@ -50,7 +50,7 @@ Operators receive the same body fields wherever they inspect the recording, incl
 
 ## Automated-board model usage
 
-`AutomatedBoardRow` carries `llm_usage_by_model` from Step 4. `LeaderboardBoards.vue` adds a Model usage column beside agent compute. Each model alias shows successful call count, input, reasoning, and output tokens, total model-call latency, and an estimate label when the aggregate includes estimated usage. Agents with no successful calls show the standard empty value.
+`AutomatedBoardRow` carries `llm_usage_by_model` and `llm_weighted_cost` from Step 4. `LeaderboardBoards.vue` adds a Model usage column beside agent compute. Each model alias shows successful call count, input, reasoning, and output tokens, total model-call latency, and an estimate label when the aggregate includes estimated usage. The column also shows the stored model cost. Agents with no successful calls show the standard empty value.
 
 The human-feedback board has no model-usage column. Model usage remains informational and does not affect rank.
 
@@ -73,6 +73,7 @@ Add a Development LLM section to `ProfilePage.vue` using existing cards, fields,
 
 - A season selector for seasons with effective LLM access.
 - Allowed model aliases and resolved development limits.
+- Friendly per-alias prices beside the remaining allowance, such as "large model tokens count 4x toward your budget."
 - Successful calls, token totals, remaining allowance, and clear labels on estimated row and summary usage.
 - A Create key or Rotate key action that calls the Step 2 endpoint.
 - A one-time credential dialog showing `OPENAI_BASE_URL` and `OPENAI_API_KEY` with a warning that the secret cannot be retrieved again.
@@ -112,7 +113,7 @@ Playwright coverage in Step 6 ties the surfaces to the full backend.
 
 - Public replay responses expose only successful-call model, token, estimate, tick, slot, and latency metadata.
 - Submission owners can inspect full successful official prompts and completions while an authoritative owned submission row survives. Operators retain access, while every other caller, including a former owner after submission deletion, receives no bodies.
-- Automated boards report successful calls, tokens, estimate status, and model-call latency by alias without changing rank.
+- Automated boards report successful calls, tokens, estimate status, model-call latency by alias, and stored weighted cost without changing rank.
 - Participants can create or rotate a season key, see their remaining development allowance, and inspect only their own successful development rows with estimates identified.
 - Operators can inspect every participant's development totals and rows for a season with estimates identified.
 - Backend authorization tests, frontend unit tests, and accessibility checks pass.

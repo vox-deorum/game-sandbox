@@ -3,9 +3,22 @@ import { z } from 'zod'
 
 import type { LlmOptions } from '../config.js'
 import type { SeasonConfig } from '../storage/season-config.js'
-import { type LlmLimits, MODEL_ALIASES, type ModelAlias } from './types.js'
+import {
+  type LlmLimits,
+  type LlmModelConfig,
+  MAX_LLM_COST_WEIGHT,
+  MODEL_ALIASES,
+  type ModelAlias,
+} from './types.js'
 
-const ModelMapSchema = z.partialRecord(z.enum(MODEL_ALIASES), z.string().min(1))
+const ModelSnapshotSchema = z.preprocess(
+  (value) => (typeof value === 'string' ? { model: value, cost_weight: 1 } : value),
+  z.strictObject({
+    model: z.string().min(1),
+    cost_weight: z.number().positive().finite().max(MAX_LLM_COST_WEIGHT),
+  }),
+)
+const ModelMapSchema = z.partialRecord(z.enum(MODEL_ALIASES), ModelSnapshotSchema)
 const ResolvedLimitsSchema = z.strictObject({
   token_budget: z.int().positive(),
   call_budget: z.int().positive(),
@@ -37,7 +50,7 @@ export type ResolvedOfficialLlmPolicy = z.infer<typeof ResolvedOfficialLlmPolicy
 
 export interface ResolvedLlm {
   enabled: boolean
-  models: Partial<Record<ModelAlias, string>>
+  models: Partial<Record<ModelAlias, LlmModelConfig>>
   official: LlmLimits
   development: LlmLimits
 }
@@ -52,10 +65,20 @@ export function resolveLlm(
   const aliases = override?.models ?? MODEL_ALIASES.filter((alias) => deployment.models[alias])
   const models = Object.fromEntries(
     aliases.flatMap((alias) => {
-      const upstream = deployment.models[alias]
-      return upstream === undefined ? [] : [[alias, upstream]]
+      const model = deployment.models[alias]
+      return model === undefined
+        ? []
+        : [
+            [
+              alias,
+              {
+                upstream: model.upstream,
+                costWeight: override?.cost_weights?.[alias] ?? model.costWeight,
+              },
+            ],
+          ]
     }),
-  ) as Partial<Record<ModelAlias, string>>
+  ) as Partial<Record<ModelAlias, LlmModelConfig>>
   const configured =
     deployment.upstreamUrl !== undefined && Object.keys(deployment.models).length > 0
   const requestedModelsAvailable = aliases.every((alias) => deployment.models[alias] !== undefined)
@@ -71,7 +94,7 @@ export function resolveLlm(
 /** Reject an admin edit that names aliases this deployment cannot serve. */
 export function unavailableLlmAliases(
   season: SeasonConfig,
-  configured: Partial<Record<ModelAlias, string>>,
+  configured: Partial<Record<ModelAlias, LlmModelConfig>>,
 ): ModelAlias[] {
   return (season.overrides?.llm?.models ?? []).filter((alias) => configured[alias] === undefined)
 }
@@ -79,7 +102,14 @@ export function unavailableLlmAliases(
 export function officialPolicy(resolved: ResolvedLlm): ResolvedOfficialLlmPolicy {
   return {
     enabled: resolved.enabled,
-    models: resolved.enabled ? resolved.models : {},
+    models: resolved.enabled
+      ? Object.fromEntries(
+          Object.entries(resolved.models).map(([alias, model]) => [
+            alias,
+            { model: model.upstream, cost_weight: model.costWeight },
+          ]),
+        )
+      : {},
     session: encodeLimits(resolved.official),
   }
 }

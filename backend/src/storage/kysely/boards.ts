@@ -26,6 +26,7 @@ import {
   agentRefKey,
   decodeLlmUsageByModel,
   encodeLlmUsageByModel,
+  encodeLlmWeightedCost,
   populationStdDev,
 } from './shared.js'
 
@@ -61,6 +62,15 @@ function addLlmUsage(
   return result
 }
 
+function addLlmWeightedCost(current: number | null, addition: number | null): number | null {
+  if (addition === null) return current
+  const result = (current ?? 0) + addition
+  if (!Number.isFinite(result)) {
+    throw new Error('aggregated LLM weighted cost must be finite')
+  }
+  return result
+}
+
 /**
  * The minimum number of ratings an agent needs before the human board assigns it a rank. Under this
  * threshold the agent's mean and count still show, but unranked, so a single early rating cannot place
@@ -91,6 +101,7 @@ export async function replaceAutomatedPlacements(
           mean_score: row.mean_score,
           mean_agent_compute_ms: row.mean_agent_compute_ms,
           llm_usage_by_model: encodeLlmUsageByModel(row.llm_usage_by_model),
+          llm_weighted_cost: encodeLlmWeightedCost(row.llm_weighted_cost, row.llm_usage_by_model),
           failure_count: row.failure_count,
           recording_id: row.recording_id,
           created_at: now,
@@ -163,6 +174,7 @@ export async function getAutomatedBoard(
       'game_results.agent_compute_ms_total as agent_compute_ms_total',
       'game_results.acted_tick_count as acted_tick_count',
       'game_results.llm_usage_by_model as llm_usage_by_model',
+      'game_results.llm_weighted_cost as llm_weighted_cost',
       'game_results.failed as failed',
       'season_run_games.recording_id as recording_id',
       'season_run_games.game_index as game_index',
@@ -179,6 +191,7 @@ export async function getAutomatedBoard(
     // mean. The weighted square sum lets the spread use the same decision-level weighting.
     computeRateSqWeightedSum: number
     llmUsageByModel: LlmUsageByModel | null
+    llmWeightedCost: number | null
     failureCount: number
     games: number
     bestScore: number
@@ -198,6 +211,7 @@ export async function getAutomatedBoard(
         tickSum: 0,
         computeRateSqWeightedSum: 0,
         llmUsageByModel: null,
+        llmWeightedCost: null,
         failureCount: 0,
         games: 0,
         bestScore: Number.NEGATIVE_INFINITY,
@@ -218,6 +232,7 @@ export async function getAutomatedBoard(
       acc.llmUsageByModel,
       decodeLlmUsageByModel(row.llm_usage_by_model),
     )
+    acc.llmWeightedCost = addLlmWeightedCost(acc.llmWeightedCost, row.llm_weighted_cost)
     acc.failureCount += row.failed === 1 ? 1 : 0
     acc.games += 1
     const better =
@@ -242,6 +257,7 @@ export async function getAutomatedBoard(
             ? populationStdDev(acc.computeSum, acc.computeRateSqWeightedSum, acc.tickSum)
             : null,
         llm_usage_by_model: acc.llmUsageByModel,
+        llm_weighted_cost: acc.llmWeightedCost,
         failure_count: acc.failureCount,
         games: acc.games,
         recording_id: acc.bestRecording,

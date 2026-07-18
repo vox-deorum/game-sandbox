@@ -9,8 +9,8 @@ import { decodeSeasonConfig } from '../storage/season-config.js'
 import { type ResolvedLlm, resolveLlm } from './config.js'
 import { LlmError } from './errors.js'
 import type { LlmMeter } from './meter.js'
-import type { LlmGrant } from './types.js'
-import { MODEL_ALIASES } from './types.js'
+import type { LlmGrant, ModelAlias } from './types.js'
+import { MODEL_ALIASES, modelCostWeights } from './types.js'
 
 const CREDENTIAL = /^sk-sandbox-dev-([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)$/
 
@@ -43,6 +43,7 @@ export interface DevelopmentKeyResponse {
   base_url: string
   api_key: string
   models: string[]
+  cost_weights: Partial<Record<ModelAlias, number>>
   limits: { token_budget: number; call_budget: number; rate_limit_rpm: number }
 }
 
@@ -72,6 +73,7 @@ export class DevelopmentKeyService {
       base_url: `${this.deps.publicOrigin}/api/llm/v1`,
       api_key: `sk-sandbox-dev-${keyId}.${secret}`,
       models: MODEL_ALIASES.filter((alias) => resolved.models[alias] !== undefined),
+      cost_weights: modelCostWeights(resolved.models),
       limits: {
         token_budget: resolved.development.tokenBudget,
         call_budget: resolved.development.callBudget,
@@ -94,7 +96,8 @@ export class DevelopmentKeyService {
     const scope = {
       key: `development:${row.season_id}:${row.user_id}`,
       limits: resolved.development,
-      readCommittedUsage: () => this.deps.ledger.readUserUsage(row.season_id, row.user_id),
+      weights: modelCostWeights(resolved.models),
+      readCommittedUsage: () => this.deps.ledger.readUserUsageByModel(row.season_id, row.user_id),
     }
     const sink = createDevelopmentRecordSink(this.deps.ledger, row.season_id, row.user_id)
     try {
