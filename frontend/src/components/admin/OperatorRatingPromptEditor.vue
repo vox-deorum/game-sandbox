@@ -53,10 +53,9 @@ async function save(): Promise<void> {
 <template>
   <div class="prompt">
     <p class="prompt-sub">
-      Shown to human raters for every agent in this season. Editable at any time, including after a
-      run or release. Separate from each author's own per-agent prompt.
+      Shown to human raters for every agent in this season. Each author can have their own prompt.
     </p>
-    <UiField label="Rating prompt">
+    <UiField>
       <template #default="{ id, describedby }">
         <textarea
           :id="id"
