@@ -12,7 +12,7 @@ The hands-on check runs two matches under a small per-slot allowance. Completed 
 
 ## Workflow grants
 
-The workflow runner reads `runId` and the resolved model map and per-slot limits from the run's frozen policy when it constructs each official grant.
+The workflow runner reads `runId`, the resolved alias-to-model map with its per-alias prices, and the per-slot limits from the run's frozen policy when it constructs each official grant.
 
 Each workflow grant has one session-and-slot accounting scope. It synchronously reads committed usage by `(session_id, slot)` from `data/llm/<runId>.sqlite`, and its record sink writes that same file, capturing the run ID as the file scope plus the game session and slot written on every successful row. Every workflow game is a new session, so each slot's allowance covers one game, and a submission's total spend in a run is bounded by the frozen per-slot budget times the games it plays. There is no run-level allowance. A rerun receives a new run ID and a new scope file.
 
@@ -20,7 +20,7 @@ Admission, reservation, commit, release, and post-upstream failure behavior for 
 
 ## Workflow runner
 
-Run creation resolves the complete official LLM policy against the deployment configuration and stores that result in the run's dedicated `llm_policy_snapshot`, separate from the strict season `config_snapshot`. The frozen policy includes whether official access is enabled, the alias-to-upstream-model mapping, and the per-slot limits. `workflow-runner.ts` reads only these stored values. It never falls back to current deployment defaults or re-resolves the season configuration after the run exists. `runGame` constructs each generic `LlmGrant` from the frozen model map, the session-and-slot accounting scope, and an official record sink that captures the run, game session, and slot identifiers.
+Run creation resolves the complete official LLM policy against the deployment configuration and stores that result in the run's dedicated `llm_policy_snapshot`, separate from the strict season `config_snapshot`. The frozen policy includes whether official access is enabled, the alias-to-upstream-model mapping with each alias's price, and the per-slot limits. `workflow-runner.ts` reads only these stored values. It never falls back to current deployment defaults or re-resolves the season configuration after the run exists. `runGame` constructs each generic `LlmGrant` from the frozen model map and prices, the session-and-slot accounting scope, and an official record sink that captures the run, game session, and slot identifiers.
 
 When the workflow registers a recording, it stores `llm_scope_id = runId` and `llm_session_id = game.id`. Those fields preserve telemetry lookup after workflow rows are pruned.
 
