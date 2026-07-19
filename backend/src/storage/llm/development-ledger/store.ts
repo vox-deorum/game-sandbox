@@ -22,10 +22,39 @@ export interface DevelopmentCallInput {
   createdAt?: string
 }
 
+export interface DevelopmentCall extends Required<DevelopmentCallInput> {
+  id: number
+}
+
+export interface DevelopmentCallPage {
+  calls: DevelopmentCall[]
+  nextCursor: number | null
+}
+
+export interface DevelopmentParticipantUsage {
+  userId: string
+  usageByModel: Record<string, LlmUsage>
+  usageEstimated: boolean
+}
+
 interface LedgerHandle {
   db: BetterSqlite3.Database
   insertCall: BetterSqlite3.Statement
   userUsageByModel: BetterSqlite3.Statement
+}
+
+interface CallRow {
+  id: number
+  user_id: string
+  model: string
+  request_json: string
+  completion_json: string
+  input_tokens: number
+  reasoning_tokens: number
+  output_tokens: number
+  usage_estimated: number
+  latency_ms: number
+  created_at: string
 }
 
 interface UsageRow {
@@ -33,6 +62,12 @@ interface UsageRow {
   input_tokens: number
   reasoning_tokens: number
   output_tokens: number
+}
+
+interface ParticipantUsageRow extends UsageRow {
+  user_id: string
+  model: string
+  estimated_calls: number
 }
 
 function validateSeasonId(seasonId: string): void {
@@ -102,6 +137,22 @@ function writeHealth(db: BetterSqlite3.Database, checkedAt: string): void {
   }).immediate()
 }
 
+function decodeCall(row: CallRow): DevelopmentCall {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    model: row.model,
+    request: JSON.parse(row.request_json) as unknown,
+    completion: JSON.parse(row.completion_json) as unknown,
+    inputTokens: row.input_tokens,
+    reasoningTokens: row.reasoning_tokens,
+    outputTokens: row.output_tokens,
+    usageEstimated: row.usage_estimated === 1,
+    latencyMs: row.latency_ms,
+    createdAt: row.created_at,
+  }
+}
+
 export class DevelopmentLedgerStore {
   private readonly handles = new Map<string, LedgerHandle>()
 
@@ -164,6 +215,77 @@ export class DevelopmentLedgerStore {
         },
       ]),
     )
+  }
+
+  /** Successful rows for one participant, newest first, using a stable reverse-id cursor. */
+  listUserCalls(
+    seasonId: string,
+    userId: string,
+    options: { cursor?: number; limit: number },
+  ): DevelopmentCallPage {
+    assertValue(userId, 'userId')
+    if (!Number.isSafeInteger(options.limit) || options.limit < 1 || options.limit > 100) {
+      throw new Error('limit must be an integer from 1 to 100')
+    }
+    if (
+      options.cursor !== undefined &&
+      (!Number.isSafeInteger(options.cursor) || options.cursor < 1)
+    ) {
+      throw new Error('cursor must be a positive safe integer')
+    }
+    const db = this.handle(seasonId).db
+    const rows = (
+      options.cursor === undefined
+        ? db
+            .prepare('SELECT * FROM calls WHERE user_id = ? ORDER BY id DESC LIMIT ?')
+            .all(userId, options.limit + 1)
+        : db
+            .prepare('SELECT * FROM calls WHERE user_id = ? AND id < ? ORDER BY id DESC LIMIT ?')
+            .all(userId, options.cursor, options.limit + 1)
+    ) as CallRow[]
+    const hasMore = rows.length > options.limit
+    const calls = rows.slice(0, options.limit).map(decodeCall)
+    return {
+      calls,
+      nextCursor: hasMore ? (calls.at(-1)?.id ?? null) : null,
+    }
+  }
+
+  /** Successful usage for every participant with at least one row in the season ledger. */
+  listParticipantUsage(seasonId: string): DevelopmentParticipantUsage[] {
+    const rows = this.handle(seasonId)
+      .db.prepare(`SELECT user_id, model,
+        COUNT(*) AS calls,
+        SUM(usage_estimated) AS estimated_calls,
+        COALESCE(SUM(input_tokens), 0) AS input_tokens,
+        COALESCE(SUM(reasoning_tokens), 0) AS reasoning_tokens,
+        COALESCE(SUM(output_tokens), 0) AS output_tokens
+        FROM calls GROUP BY user_id, model ORDER BY user_id, model`)
+      .all() as ParticipantUsageRow[]
+    const participants = new Map<string, DevelopmentParticipantUsage>()
+    for (const row of rows) {
+      const participant = participants.get(row.user_id) ?? {
+        userId: row.user_id,
+        usageByModel: {},
+        usageEstimated: false,
+      }
+      participant.usageByModel[row.model] = {
+        calls: row.calls,
+        inputTokens: row.input_tokens,
+        reasoningTokens: row.reasoning_tokens,
+        outputTokens: row.output_tokens,
+      }
+      participant.usageEstimated ||= row.estimated_calls > 0
+      participants.set(row.user_id, participant)
+    }
+    return [...participants.values()]
+  }
+
+  hasEstimatedUsage(seasonId: string, userId: string): boolean {
+    const row = this.handle(seasonId)
+      .db.prepare('SELECT 1 FROM calls WHERE user_id = ? AND usage_estimated = 1 LIMIT 1')
+      .get(userId)
+    return row !== undefined
   }
 
   probeHealth(seasonId: string): void {

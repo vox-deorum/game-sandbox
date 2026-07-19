@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -6,9 +6,14 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { RecordingsStore } from '../src/recordings.js'
-import { Retention, type RetentionConfig } from '../src/retention.js'
+import {
+  Retention,
+  type RetentionConfig,
+  reclaimOrphanedOfficialTelemetry,
+} from '../src/retention.js'
 import { LiveSession } from '../src/session/live-session.js'
 import type { NewRecordingInput, ScheduledGameInput, Storage } from '../src/storage/index.js'
+import { DevelopmentLedgerStore, ExecutionTelemetryStore } from '../src/storage/llm/index.js'
 import { openSqliteStorage } from '../src/storage/sqlite.js'
 import { FakeSessionProcess } from './support/fake-driver.js'
 import { flush } from './support/harness.js'
@@ -84,6 +89,7 @@ describe('retention', () => {
         recording_id: 'flappy_bird-sess-1',
         created_at: ago(0),
       })
+      const process = new FakeSessionProcess()
       const session = new LiveSession({
         id: 'sess-1',
         userId: 'alice',
@@ -91,7 +97,7 @@ describe('retention', () => {
         mode: 'human',
         recordingId: 'flappy_bird-sess-1',
         createdAt: ago(0),
-        process: new FakeSessionProcess(),
+        process,
         humanSlots: ['player_0'],
         externalSlots: ['player_0'],
         messaging: { enabled: true, cap: 120 },
@@ -104,6 +110,8 @@ describe('retention', () => {
           killGraceMs: 10,
         },
       })
+      process.emit(JSON.stringify({ schema_version: 1, environment: 'flappy_bird', seed: 0 }))
+      await flush()
       await session.finalize('stopped')
       await flush()
       expect(await storage.getRecording('flappy_bird-sess-1')).toMatchObject({
@@ -116,6 +124,36 @@ describe('retention', () => {
   })
 
   describe('sweep: LLM telemetry scopes', () => {
+    it('reclaims startup official orphans while preserving references and development ledgers', async () => {
+      const telemetryRoot = mkdtempSync(join(tmpdir(), 'gs-startup-telemetry-'))
+      const telemetry = new ExecutionTelemetryStore(telemetryRoot)
+      const development = new DevelopmentLedgerStore(join(telemetryRoot, 'development'))
+      try {
+        telemetry.open('retained-scope')
+        telemetry.open('orphan-scope')
+        development.open('season-1')
+        await storage.createRecording({
+          id: 'retained-recording',
+          user_id: 'alice',
+          env_id: 'flappy_bird',
+          created_at: ago(1),
+          llm_scope_id: 'retained-scope',
+          llm_session_id: 'session-1',
+        })
+
+        await reclaimOrphanedOfficialTelemetry(storage, telemetry)
+
+        expect(existsSync(telemetry.pathForScope('retained-scope'))).toBe(true)
+        expect(existsSync(telemetry.pathForScope('orphan-scope'))).toBe(false)
+        expect(existsSync(development.pathForSeason('season-1'))).toBe(true)
+        expect(telemetry.listCalls('retained-scope')).toEqual([])
+      } finally {
+        development.close()
+        telemetry.close()
+        rmSync(telemetryRoot, { recursive: true, force: true })
+      }
+    })
+
     it('deletes a telemetry scope only with the last recording that references it', async () => {
       const deleted: string[] = []
       const reclaimer = { deleteScope: (id: string) => deleted.push(id) }

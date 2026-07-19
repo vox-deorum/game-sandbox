@@ -47,6 +47,11 @@ export interface DevelopmentKeyResponse {
   limits: EncodedLlmLimits
 }
 
+export interface DevelopmentReadPolicy {
+  season: Season
+  resolved: ResolvedLlm
+}
+
 /** Persistent development credentials and per-request current-policy grant construction. */
 export class DevelopmentKeyService {
   private readonly now: () => Date
@@ -58,7 +63,7 @@ export class DevelopmentKeyService {
   }
 
   async rotate(seasonId: string, userId: string): Promise<DevelopmentKeyResponse> {
-    const resolved = await this.resolveSeason(seasonId)
+    const resolved = await this.resolveEligibleSeason(seasonId)
     const keyId = this.random(18).toString('base64url')
     const secret = this.random(32).toString('base64url')
     await this.deps.storage.rotateDevelopmentKey({
@@ -88,7 +93,7 @@ export class DevelopmentKeyService {
     if (status !== 'normal' && status !== 'admin') {
       throw new LlmError(403, 'account_not_active', 'The account is not active.')
     }
-    const resolved = await this.resolveSeason(row.season_id)
+    const resolved = await this.resolveEligibleSeason(row.season_id)
     const scope = {
       key: `development:${row.season_id}:${row.user_id}`,
       limits: resolved.development,
@@ -111,17 +116,23 @@ export class DevelopmentKeyService {
     }
   }
 
-  private async resolveSeason(seasonId: string): Promise<ResolvedLlm> {
+  /** Resolve the saved season and current deployment aliases without applying key eligibility. */
+  async resolveReadPolicy(seasonId: string): Promise<DevelopmentReadPolicy> {
     const season = await this.deps.storage.getSeason(seasonId)
     if (season === undefined) throw new LlmError(404, 'season_not_found', 'No such season.')
     const environment = this.deps.environments.get(season.env_id)
     if (environment === undefined) {
       throw new LlmError(403, 'llm_not_enabled', 'LLM access is not enabled for this season.')
     }
+    const resolved = resolveLlm(this.deps.llm, environment, decodeSeasonConfig(season.config))
+    return { season, resolved }
+  }
+
+  private async resolveEligibleSeason(seasonId: string): Promise<ResolvedLlm> {
+    const { season, resolved } = await this.resolveReadPolicy(seasonId)
     if (season.submission_status !== 'open') {
       throw new LlmError(403, 'development_closed', 'Development access is closed for this season.')
     }
-    const resolved = resolveLlm(this.deps.llm, environment, decodeSeasonConfig(season.config))
     if (!resolved.enabled) {
       throw new LlmError(403, 'llm_not_enabled', 'LLM access is not enabled for this season.')
     }

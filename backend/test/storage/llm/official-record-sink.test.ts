@@ -10,6 +10,8 @@ import { createOfficialRecordSink } from '../../../src/storage/llm/official-reco
 
 const SUCCESS: LlmSuccessfulRecord = {
   model: 'medium',
+  costWeight: 2.5,
+  budgetCostUnits: 42.5,
   request: { model: 'medium', messages: [{ role: 'user', content: 'Choose.' }] },
   completion: {
     id: 'completion-1',
@@ -64,6 +66,8 @@ describe('createOfficialRecordSink', () => {
         slot: 'player_2',
         tick: null,
         model: 'medium',
+        costWeight: 2.5,
+        budgetCostUnits: 42.5,
         request: SUCCESS.request,
         completion: SUCCESS.completion,
         inputTokens: 12,
@@ -79,6 +83,8 @@ describe('createOfficialRecordSink', () => {
         slot: 'player_2',
         tick: 14,
         model: 'medium',
+        costWeight: 2.5,
+        budgetCostUnits: 42.5,
         request: SUCCESS.request,
         completion: SUCCESS.completion,
         inputTokens: 12,

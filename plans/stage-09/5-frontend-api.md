@@ -1,6 +1,6 @@
 # Stage 9.5: LLM Surfacing APIs
 
-Status: not started.
+Status: complete.
 
 Part of [Stage 9](../stage-09-llm-gateway.md), build-order step 5.
 
@@ -12,7 +12,7 @@ The hands-on check exercises the raw APIs as anonymous, submission-owner, partic
 
 ## Recording telemetry API
 
-Add `GET /api/recordings/:id/llm`. The recording row supplies its durable `llm_scope_id` and `llm_session_id`. The backend opens `data/llm/<llm_scope_id>.sqlite` and returns successful rows matching `llm_session_id`, ordered by insertion ID. The response wraps the rows with `total_budget_cost_units`, the sum of their stored per-row budget costs.
+Add `GET /api/recordings/:id/llm`. The recording row supplies its durable `llm_scope_id` and `llm_session_id`. The backend opens `data/llm/<llm_scope_id>.sqlite` and returns successful rows matching `llm_session_id`, ordered by insertion ID. The response is `{ calls, total_budget_cost_units }`, where `calls` is the row array and the total is the sum of its stored per-row budget costs.
 
 An ordinary recording with no telemetry association returns `200` with an empty row list and `total_budget_cost_units: 0`. An associated scope with no successful row for that session returns the same successful empty payload. This covers LLM-enabled sessions whose model requests all failed or were rejected. A missing or unreadable associated scope file, an unsupported telemetry version, or a row without its required cost basis returns `500 telemetry_unavailable`. These states indicate broken retained data, not an empty recording.
 
@@ -56,11 +56,13 @@ Add three active-user routes:
 | `GET /api/seasons/:seasonId/llm-development` | Effective aliases with resolved cost weights, resolved limits, successful usage totals, whether any token total is estimated, remaining budget-unit allowance, and whether a key exists |
 | `GET /api/seasons/:seasonId/llm-development/calls?cursor=<id>&limit=<n>` | The authenticated participant's successful ledger rows, including token counts, `usage_estimated`, and budget cost units derived under the selected season's current resolved weights, in reverse chronological order |
 
+Discovery returns a direct array. The participant summary is an object carrying `season_id`, `models`, `cost_weights`, `limits`, `usage_by_model`, `successful_calls`, `usage_estimated`, `budget_cost_units_used`, `budget_cost_units_remaining`, and `key_exists`. History returns `{ calls, next_cursor }`; `next_cursor` is the final returned insertion ID when another page exists and `null` on the last page. Limits are integers from 1 through 100, with 25 as the default.
+
 At most one eligible season exists per environment because only one season's submission window can be open. My Agents can therefore render its current row meter from the discovery response without another summary request. Discovery resolves configuration without creating or rotating a key.
 
 Development usage follows the current season policy, so each call row's `budget_cost_units` uses the same current resolved weight as the summary. The calls response includes the stored estimate flag and full request and completion bodies because the ledger is private to that participant and operators. It serves closed seasons, omits internally stored latency, and uses bounded cursor pagination. Another participant cannot select a user ID or retrieve the ledger.
 
-Add operator routes under `/api/admin/seasons/:seasonId/llm-development` to list participant totals and page one participant's successful rows. Totals include informational calls used plus used and remaining budget units. The estimate flag remains in response data. Detail rows expose the same token, estimate, current-policy budget-cost, request, and completion fields as participant history and remain readable after the season closes. Operator routes use the existing admin guard and accept an explicit target user only after authorization.
+`GET /api/admin/seasons/:seasonId/llm-development` returns a direct array of participant totals. `GET /api/admin/seasons/:seasonId/llm-development/users/:userId/calls?cursor=<id>&limit=<n>` returns the same `{ calls, next_cursor }` envelope as participant history for the selected user. Totals include `user_id`, informational `successful_calls`, `usage_estimated`, `budget_cost_units_used`, and `budget_cost_units_remaining`. Detail rows expose the same token, estimate, current-policy budget-cost, request, and completion fields as participant history and remain readable after the season closes. Both routes use the existing admin guard, and the explicit target user is accepted only after authorization.
 
 ## Tests
 

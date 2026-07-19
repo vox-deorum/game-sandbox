@@ -124,6 +124,8 @@ describe('LLM registry, handler, and listener', () => {
     expect(records[0]?.completion).not.toHaveProperty('provider_metadata')
     expect(records[0]).toMatchObject({
       model: 'small',
+      costWeight: 1,
+      budgetCostUnits: 6,
       request: { model: 'small', max_completion_tokens: 8 },
       completion: { model: 'small' },
       usage: { inputTokens: 2, reasoningTokens: 1, outputTokens: 4 },
@@ -160,6 +162,8 @@ describe('LLM registry, handler, and listener', () => {
     const response = await handler.handle(grant, { model: 'small', messages: [] })
     expect(response.usage).toEqual(usage)
     expect(records[0]).toMatchObject({
+      costWeight: 1,
+      budgetCostUnits: 8,
       usage: {
         inputTokens: 3,
         reasoningTokens: name === 'reasoning exceeds completion' ? 5 : 0,

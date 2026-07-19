@@ -96,7 +96,8 @@ export interface WorkflowRunnerDeps {
   /** Issues one temporary official key per workflow agent slot. */
   officialGrantIssuer?: OfficialGrantIssuer
   /** Reads successful calls from the run-scoped execution telemetry file after grant teardown. */
-  officialTelemetry?: Pick<ExecutionTelemetryStore, 'aggregateByModel'>
+  officialTelemetry?: Pick<ExecutionTelemetryStore, 'aggregateByModel'> &
+    Partial<Pick<ExecutionTelemetryStore, 'deleteScope'>>
   /** Grace before a cancelled run's in-flight container is hard-killed. */
   killGraceMs?: number
   /** Extra wall-clock slack over the effective episode timeout before a game container is killed. */
@@ -253,12 +254,27 @@ class DockerWorkflowRunner implements WorkflowRunner {
     })
     this.cancelRequested.delete(runId)
     this.inFlight.delete(runId)
+    await this.cleanupUnusedRunScope(runId)
     try {
       await this.deps.onRunComplete?.(runId, status)
     } catch (cause) {
       this.log(`run ${runId}: completion hook failed: ${String(cause)}`)
     }
     this.emit(runId, { type: 'terminal', status })
+  }
+
+  private async cleanupUnusedRunScope(runId: string): Promise<void> {
+    const deleteScope = this.deps.officialTelemetry?.deleteScope
+    if (deleteScope === undefined) return
+    try {
+      const recordings = await this.deps.storage.listRecordings()
+      if (!recordings.some((recording) => recording.llm_scope_id === runId)) {
+        deleteScope.call(this.deps.officialTelemetry, runId)
+      }
+    } catch (error) {
+      // Fail safe: an uncertain association leaves the scope for startup recovery.
+      this.log(`run ${runId}: deleting unused LLM scope failed: ${String(error)}`)
+    }
   }
 
   /**

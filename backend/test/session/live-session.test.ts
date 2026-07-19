@@ -33,6 +33,7 @@ describe('relay (LiveSession)', () => {
       messaging?: { enabled: boolean; cap: number | null }
       llmEnabled?: boolean
       revokeLlm?: () => Promise<void>
+      deleteLlmScope?: (scopeId: string) => void
     } = {},
   ): {
     session: LiveSession
@@ -59,6 +60,7 @@ describe('relay (LiveSession)', () => {
         maxDurationMs: 1_000_000,
         killGraceMs: 10,
         revokeLlm: options.revokeLlm,
+        deleteLlmScope: options.deleteLlmScope,
       },
     })
     live.push(session)
@@ -421,6 +423,8 @@ describe('relay (LiveSession)', () => {
       llmEnabled: true,
       revokeLlm: () => barrier,
     })
+    process.emit(HEADER)
+    await flush()
 
     const stopped = session.requestStop()
     await flush()
@@ -434,5 +438,51 @@ describe('relay (LiveSession)', () => {
       llm_scope_id: 'sess-1',
       llm_session_id: 'sess-1',
     })
+  })
+
+  it('associates a recording header buffered during stop before reclaiming telemetry', async () => {
+    const deleted: string[] = []
+    const { session, process } = makeSession('scripted', {
+      llmEnabled: true,
+      deleteLlmScope: (scopeId) => deleted.push(scopeId),
+    })
+    process.kill = async (graceMs) => {
+      process.killGraceMs.push(graceMs)
+      setTimeout(() => {
+        process.emit(HEADER)
+        process.finish({ code: 0, oomKilled: false })
+      }, 0)
+    }
+
+    await session.requestStop()
+
+    expect(await storage.getRecording('flappy_bird-sess-1')).toMatchObject({
+      llm_scope_id: 'sess-1',
+      llm_session_id: 'sess-1',
+    })
+    expect(deleted).toEqual([])
+  })
+
+  it('deletes a zero-recording LLM scope only after the revocation barrier', async () => {
+    let release!: () => void
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const deleted: string[] = []
+    const { session } = makeSession('scripted', {
+      llmEnabled: true,
+      revokeLlm: () => barrier,
+      deleteLlmScope: (scopeId) => deleted.push(scopeId),
+    })
+
+    const stopped = session.requestStop()
+    await flush()
+    expect(deleted).toEqual([])
+    expect(await storage.getRecording('flappy_bird-sess-1')).toBeUndefined()
+
+    release()
+    await stopped
+    expect(deleted).toEqual(['sess-1'])
+    expect(await storage.getRecording('flappy_bird-sess-1')).toBeUndefined()
   })
 })

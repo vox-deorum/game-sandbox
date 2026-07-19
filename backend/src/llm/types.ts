@@ -43,6 +43,10 @@ export interface LlmAccountingScope {
 /** The identity-free successful result handed to a grant's durable sink. */
 export interface LlmSuccessfulRecord {
   model: ModelAlias
+  /** The grant-resolved alias price that admitted this call. */
+  costWeight: number
+  /** Authoritative weighted units charged for this successful call. */
+  budgetCostUnits: number
   request: Record<string, unknown>
   completion: OpenAI.Chat.Completions.ChatCompletion
   usage: Omit<LlmUsage, 'calls'>

@@ -16,6 +16,8 @@ const CALL: ExecutionTelemetryCallInput = {
   slot: 'player_0',
   tick: null,
   model: 'small',
+  costWeight: 1.5,
+  budgetCostUnits: 21,
   request: { model: 'small', messages: [{ role: 'user', content: 'move?' }] },
   completion: { choices: [{ message: { content: 'left' } }] },
   inputTokens: 11,
@@ -86,11 +88,12 @@ describe('ExecutionTelemetryStore', () => {
       },
     })
     const migrated = new BetterSqlite3(path, { readonly: true })
-    expect(migrated.pragma('user_version', { simple: true })).toBe(1)
+    expect(migrated.pragma('user_version', { simple: true })).toBe(2)
     expect(
       migrated.prepare("SELECT name FROM sqlite_master WHERE name = 'meter_health'").get(),
     ).toBeDefined()
     migrated.close()
+    expect(() => store.listCalls('old')).toThrow('no authoritative cost basis')
   })
 
   it('rejects newer schemas', () => {
@@ -109,6 +112,7 @@ describe('ExecutionTelemetryStore', () => {
       inputTokens: 5,
       reasoningTokens: 1,
       outputTokens: 7,
+      budgetCostUnits: 18,
       latencyMs: 75,
       usageEstimated: true,
       request: ['full', { nested: true }],
@@ -121,6 +125,7 @@ describe('ExecutionTelemetryStore', () => {
       inputTokens: 100,
       reasoningTokens: 20,
       outputTokens: 30,
+      budgetCostUnits: 195,
     })
 
     expect(store.listCalls('run', { sessionId: 'game-1', slot: 'player_0' })[0]).toEqual({
@@ -164,6 +169,7 @@ describe('ExecutionTelemetryStore', () => {
       inputTokens: 4,
       reasoningTokens: 0,
       outputTokens: 6,
+      budgetCostUnits: 15,
     })
 
     expect(store.readSessionUsageByModel('run', 'game-1', 'player_0')).toEqual({
@@ -211,6 +217,46 @@ describe('ExecutionTelemetryStore', () => {
     expect(() => store.insert('scope', { ...CALL, inputTokens: -1 })).toThrow('inputTokens')
     expect(() => store.insert('scope', { ...CALL, tick: 1.5 })).toThrow('tick')
     expect(() => store.insert('scope', { ...CALL, request: undefined })).toThrow('request')
+    expect(() => store.insert('scope', { ...CALL, costWeight: 0 })).toThrow('costWeight')
+    expect(() => store.insert('scope', { ...CALL, costWeight: Number.POSITIVE_INFINITY })).toThrow(
+      'costWeight',
+    )
+    expect(() => store.insert('scope', { ...CALL, budgetCostUnits: 20 })).toThrow('exactly match')
     expect(store.listCalls('scope')).toEqual([])
+  })
+
+  it('reads retained rows without mutating the associated file', () => {
+    store.insert('retained', CALL)
+    store.insert('retained', { ...CALL, sessionId: 'other', budgetCostUnits: 21 })
+    store.closeScope('retained')
+
+    expect(store.readAssociatedCalls('retained', 'game-1')).toEqual([{ id: 1, ...CALL }])
+  })
+
+  it('rejects missing and legacy associated files without creating or migrating them', () => {
+    const missing = join(root, 'missing.sqlite')
+    expect(() => store.readAssociatedCalls('missing', 'game-1')).toThrow('missing')
+    expect(existsSync(missing)).toBe(false)
+
+    const legacyPath = join(root, 'legacy.sqlite')
+    const legacy = new BetterSqlite3(legacyPath)
+    legacy.exec(`
+      CREATE TABLE calls (
+        id INTEGER PRIMARY KEY, session_id TEXT NOT NULL, slot TEXT NOT NULL,
+        tick INTEGER, model TEXT NOT NULL, request_json TEXT NOT NULL, completion_json TEXT NOT NULL,
+        input_tokens INTEGER NOT NULL, reasoning_tokens INTEGER NOT NULL, output_tokens INTEGER NOT NULL,
+        usage_estimated INTEGER NOT NULL, latency_ms INTEGER NOT NULL, created_at TEXT NOT NULL
+      );
+    `)
+    legacy.pragma('user_version = 1')
+    legacy.close()
+
+    expect(() => store.readAssociatedCalls('legacy', 'game-1')).toThrow('unavailable')
+    const unchanged = new BetterSqlite3(legacyPath, { readonly: true })
+    expect(unchanged.pragma('user_version', { simple: true })).toBe(1)
+    expect(unchanged.prepare('PRAGMA table_info(calls)').all()).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: 'cost_weight' })]),
+    )
+    unchanged.close()
   })
 })

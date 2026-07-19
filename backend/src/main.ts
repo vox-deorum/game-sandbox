@@ -31,7 +31,7 @@ import {
   UpstreamCaller,
 } from './llm/index.js'
 import { RecordingsStore } from './recordings.js'
-import { Retention } from './retention.js'
+import { Retention, reclaimOrphanedOfficialTelemetry } from './retention.js'
 import { seedOpenSeasons } from './seasons-seed.js'
 import { createOfficialGrantIssuer } from './session/official-grants.js'
 import { Orchestrator } from './session/orchestrator.js'
@@ -54,9 +54,9 @@ async function main(): Promise<void> {
   // deployments that configure no upstream or no public model alias, preserving the pre-LLM path.
   const llmConfigured =
     config.llm.upstreamUrl !== undefined && Object.keys(config.llm.models).length > 0
-  const llmMeter = llmConfigured
-    ? new LlmMeter({ recoveryIntervalMs: config.llm.meterRecoveryIntervalMs, log })
-    : undefined
+  // The meter and durable stores also serve development history and official recording reads. Keep
+  // them available when active upstream calling is not configured.
+  const llmMeter = new LlmMeter({ recoveryIntervalMs: config.llm.meterRecoveryIntervalMs, log })
   const llmTokenizer = llmConfigured ? new TiktokenCounter(config.llm.tiktokenEncoding) : undefined
   // The worst-case wall time of one logical upstream request: every attempt plus its exponential
   // backoff. Future watchdog integration can use it to bound one active call's deadline extension.
@@ -67,7 +67,7 @@ async function main(): Promise<void> {
     ? new KeyRegistry(undefined, { maxRequestMs: upstreamMaxRequestMs })
     : undefined
   const llmHandler =
-    llmConfigured && llmMeter !== undefined && llmTokenizer !== undefined
+    llmConfigured && llmTokenizer !== undefined
       ? new LlmHandler({
           meter: llmMeter,
           tokenizer: llmTokenizer,
@@ -113,28 +113,23 @@ async function main(): Promise<void> {
     log,
   )
   const environments = EnvironmentRegistry.load()
-  const officialTelemetry = llmConfigured
-    ? new ExecutionTelemetryStore(resolve(config.dataDir, 'llm'))
-    : undefined
-  const developmentLedger = llmConfigured
-    ? new DevelopmentLedgerStore(resolve(config.dataDir, 'llm', 'development'))
-    : undefined
+  const officialTelemetry = new ExecutionTelemetryStore(resolve(config.dataDir, 'llm'))
+  const developmentLedger = new DevelopmentLedgerStore(
+    resolve(config.dataDir, 'llm', 'development'),
+  )
   const officialGrantIssuer =
-    llmRegistry === undefined || officialTelemetry === undefined
+    llmRegistry === undefined
       ? undefined
       : createOfficialGrantIssuer(llmRegistry, officialTelemetry)
-  const developmentKeys =
-    llmMeter === undefined || developmentLedger === undefined
-      ? undefined
-      : new DevelopmentKeyService({
-          storage,
-          environments,
-          llm: config.llm,
-          meter: llmMeter,
-          ledger: developmentLedger,
-          publicOrigin: config.auth.publicOrigin,
-          readUserStatus,
-        })
+  const developmentKeys = new DevelopmentKeyService({
+    storage,
+    environments,
+    llm: config.llm,
+    meter: llmMeter,
+    ledger: developmentLedger,
+    publicOrigin: config.auth.publicOrigin,
+    readUserStatus,
+  })
   // Seed one open season per environment at the current dependency-set version, so submissions
   // have an identity boundary and pinned deps_version. Idempotent across restarts.
   await seedOpenSeasons(storage, environments, DEPS_VERSION)
@@ -167,6 +162,7 @@ async function main(): Promise<void> {
     submissionSnapshots: snapshots,
     userDirectory,
     officialGrantIssuer,
+    deleteLlmScope: (scopeId) => officialTelemetry.deleteScope(scopeId),
   })
 
   // The workflow runner (Stage 6.4): the Docker-backed background engine that drives a triggered run's
@@ -174,6 +170,7 @@ async function main(): Promise<void> {
   // is failed, then any completed run missing its placement snapshot is backfilled.
   await reconcileInterruptedRuns(storage, log)
   await reconcileCompletedRunPlacements(storage, log)
+  await reclaimOrphanedOfficialTelemetry(storage, officialTelemetry, log)
   const workflowRunner = createWorkflowRunner({
     driver,
     storage,
@@ -242,9 +239,12 @@ async function main(): Promise<void> {
     auth,
     userDirectory,
     llm: config.llm,
-    ...(developmentKeys === undefined || llmHandler === undefined
-      ? {}
-      : { llmDevelopment: { keys: developmentKeys, handler: llmHandler } }),
+    officialTelemetry,
+    llmDevelopment: {
+      keys: developmentKeys,
+      ...(llmHandler === undefined ? {} : { handler: llmHandler }),
+      ledger: developmentLedger,
+    },
   })
   retention.start()
   overlayEviction.start()
@@ -290,11 +290,11 @@ async function main(): Promise<void> {
       // aborts requests that remain safely cancellable and drains every reservation finalizer.
       await Promise.all([workflowRunner.shutdown(), orchestrator.shutdown()])
       await llmListener?.close()
-      llmMeter?.close()
+      llmMeter.close()
       llmTokenizer?.close()
       await validationWorker.whenIdle()
-      officialTelemetry?.close()
-      developmentLedger?.close()
+      officialTelemetry.close()
+      developmentLedger.close()
       await storage.close()
       process.exit(0)
     })()

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -64,7 +65,9 @@ describe('development LLM API', () => {
     for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
   })
 
-  async function fixture(): Promise<{
+  async function fixture(
+    options: { upstreamConfigured?: boolean; mountHandler?: boolean } = {},
+  ): Promise<{
     testApp: TestApp
     ledger: DevelopmentLedgerStore
     meter: LlmMeter
@@ -79,10 +82,15 @@ describe('development LLM API', () => {
     cleanups.push(() => meter.close())
     const statuses = new Map<string, UserStatus | null>()
     const environments = llmEnvironments()
+    const baseLlm = makeTestLlmOptions()
+    const { upstreamUrl: _upstreamUrl, ...llmWithoutUpstream } = baseLlm
     const llm = {
-      ...makeTestLlmOptions(),
-      upstreamUrl: 'https://provider.test/v1',
-      models: { small: { upstream: 'provider-small', costWeight: 1 } },
+      ...(options.upstreamConfigured === false ? llmWithoutUpstream : baseLlm),
+      ...(options.upstreamConfigured === false ? {} : { upstreamUrl: 'https://provider.test/v1' }),
+      models: {
+        small: { upstream: 'provider-small', costWeight: 1 },
+        medium: { upstream: 'provider-medium', costWeight: 2 },
+      },
       developmentLimits: { tokenBudget: 100, requestsPerMinute: 10 },
     }
     let storage: Storage | undefined
@@ -123,7 +131,11 @@ describe('development LLM API', () => {
     const testApp = await openTestApp({
       environments,
       config: makeConfig({ llm }),
-      llmDevelopment: { keys, handler },
+      llmDevelopment: {
+        keys,
+        ...(options.mountHandler === false ? {} : { handler }),
+        ledger,
+      },
     })
     storage = testApp.storage
     cleanups.push(() => testApp.close())
@@ -155,7 +167,8 @@ describe('development LLM API', () => {
       headers,
     })
     expect(response.statusCode).toBe(200)
-    expect(response.json()).toMatchObject({ models: ['small'], cost_weights: { small: 1 } })
+    expect(response.json().models).toContain('small')
+    expect(response.json().cost_weights.small).toEqual(expect.any(Number))
     return response.json().api_key as string
   }
 
@@ -356,5 +369,342 @@ describe('development LLM API', () => {
       { timeout: 500 },
     )
     expect(meter.inspect(`development:${seasonId}:${aliceId}`).debt.weightedTokens).toBe(11)
+  })
+
+  it('keeps closed-season history readable without an upstream handler', async () => {
+    const { testApp, ledger, statuses } = await fixture({
+      upstreamConfigured: false,
+      mountHandler: false,
+    })
+    const seasonId = await enabledSeason(testApp)
+    const aliceHeaders = await testApp.users.headersFor('alice')
+    const aliceId = testApp.users.idOf('alice')
+    statuses.set(aliceId, 'normal')
+
+    const rotate = await testApp.app.inject({
+      method: 'POST',
+      url: `/api/seasons/${seasonId}/llm-development-key`,
+      headers: aliceHeaders,
+    })
+    expect(rotate.statusCode).toBe(403)
+    expect(rotate.json()).toMatchObject({ error: { code: 'llm_not_enabled' } })
+
+    const keyId = 'retained-key'
+    const secret = 'retained-secret'
+    await testApp.storage.rotateDevelopmentKey({
+      seasonId,
+      userId: aliceId,
+      keyId,
+      secretHash: createHash('sha256').update(secret, 'utf8').digest('hex'),
+      now: '2026-07-19T00:00:00.000Z',
+    })
+    const completionWithoutHandler = await testApp.app.inject({
+      method: 'POST',
+      url: '/api/llm/v1/chat/completions',
+      headers: { authorization: `Bearer sk-sandbox-dev-${keyId}.${secret}` },
+      payload: { model: 'small', messages: [] },
+    })
+    expect(completionWithoutHandler.statusCode).toBe(403)
+    expect(completionWithoutHandler.json()).toMatchObject({
+      error: { code: 'llm_not_enabled' },
+    })
+
+    ledger.record(seasonId, {
+      userId: aliceId,
+      model: 'small',
+      request: { messages: ['retained request'] },
+      completion: { choices: ['retained response'] },
+      inputTokens: 2,
+      reasoningTokens: 1,
+      outputTokens: 4,
+      usageEstimated: false,
+      latencyMs: 50,
+      createdAt: '2026-07-19T00:01:00.000Z',
+    })
+    await testApp.storage.setSubmissionStatus(seasonId, 'closed')
+
+    const participantSummary = await testApp.app.inject({
+      method: 'GET',
+      url: `/api/seasons/${seasonId}/llm-development`,
+      headers: aliceHeaders,
+    })
+    expect(participantSummary.statusCode).toBe(200)
+    expect(participantSummary.json()).toMatchObject({
+      successful_calls: 1,
+      budget_cost_units_used: 6,
+    })
+    const participantCalls = await testApp.app.inject({
+      method: 'GET',
+      url: `/api/seasons/${seasonId}/llm-development/calls`,
+      headers: aliceHeaders,
+    })
+    expect(participantCalls.statusCode).toBe(200)
+    expect(participantCalls.json()).toMatchObject({
+      calls: [expect.objectContaining({ request: { messages: ['retained request'] } })],
+    })
+
+    const operatorHeaders = await testApp.users.headersFor('history-operator', {
+      status: 'admin',
+    })
+    const operatorSummary = await testApp.app.inject({
+      method: 'GET',
+      url: `/api/admin/seasons/${seasonId}/llm-development`,
+      headers: operatorHeaders,
+    })
+    expect(operatorSummary.statusCode).toBe(200)
+    expect(operatorSummary.json()).toEqual([
+      expect.objectContaining({ user_id: aliceId, successful_calls: 1 }),
+    ])
+    const operatorCalls = await testApp.app.inject({
+      method: 'GET',
+      url: `/api/admin/seasons/${seasonId}/llm-development/users/${aliceId}/calls`,
+      headers: operatorHeaders,
+    })
+    expect(operatorCalls.statusCode).toBe(200)
+    expect(operatorCalls.json()).toMatchObject({
+      calls: [expect.objectContaining({ completion: { choices: ['retained response'] } })],
+    })
+  })
+
+  it('serves private participant reads and guarded operator reads under current policy after closure', async () => {
+    const { testApp, ledger, statuses } = await fixture()
+    const seasonId = await enabledSeason(testApp)
+    await testApp.storage.setSeasonLabel(seasonId, 'LLM Week')
+    await testApp.storage.updateSeasonConfig(seasonId, {
+      deps_version: 1,
+      matches: [],
+      overrides: {
+        llm: {
+          enabled: true,
+          models: ['small', 'medium'],
+        },
+      },
+    })
+    const aliceHeaders = await testApp.users.headersFor('alice')
+    const bobHeaders = await testApp.users.headersFor('bob')
+    const aliceId = testApp.users.idOf('alice')
+    const bobId = testApp.users.idOf('bob')
+    statuses.set(aliceId, 'normal')
+    statuses.set(bobId, 'normal')
+    await issue(testApp, statuses, seasonId, 'alice')
+
+    ledger.record(seasonId, {
+      userId: aliceId,
+      model: 'small',
+      request: { messages: ['alice older'] },
+      completion: { choices: ['a1'] },
+      inputTokens: 2,
+      reasoningTokens: 1,
+      outputTokens: 4,
+      usageEstimated: false,
+      latencyMs: 50,
+      createdAt: '2026-07-19T00:00:00.000Z',
+    })
+    ledger.record(seasonId, {
+      userId: bobId,
+      model: 'small',
+      request: { messages: ['bob private'] },
+      completion: { choices: ['b1'] },
+      inputTokens: 4,
+      reasoningTokens: 0,
+      outputTokens: 2,
+      usageEstimated: false,
+      latencyMs: 60,
+      createdAt: '2026-07-19T00:01:00.000Z',
+    })
+    ledger.record(seasonId, {
+      userId: aliceId,
+      model: 'medium',
+      request: { messages: ['alice newer'] },
+      completion: { choices: ['a2'] },
+      inputTokens: 1,
+      reasoningTokens: 2,
+      outputTokens: 3,
+      usageEstimated: true,
+      latencyMs: 70,
+      createdAt: '2026-07-19T00:02:00.000Z',
+    })
+    await testApp.storage.updateSeasonConfig(seasonId, {
+      deps_version: 1,
+      matches: [],
+      overrides: {
+        llm: {
+          enabled: true,
+          models: ['small', 'medium'],
+          cost_weights: { small: 1.5, medium: 3 },
+        },
+      },
+    })
+
+    const anonymous = await testApp.app.inject({
+      method: 'GET',
+      url: `/api/seasons/${seasonId}/llm-development`,
+    })
+    expect(anonymous.statusCode).toBe(401)
+    const pending = await testApp.app.inject({
+      method: 'GET',
+      url: `/api/seasons/${seasonId}/llm-development`,
+      headers: await testApp.users.headersFor('pending-reader', { status: 'pending' }),
+    })
+    expect(pending.statusCode).toBe(403)
+    const bannedHeaders = await testApp.users.headersFor('banned-reader')
+    await testApp.users.ban('banned-reader')
+    expect(
+      (
+        await testApp.app.inject({
+          method: 'GET',
+          url: `/api/seasons/${seasonId}/llm-development`,
+          headers: bannedHeaders,
+        })
+      ).statusCode,
+    ).toBe(401)
+
+    const keyBeforeDiscovery = await testApp.storage.getDevelopmentKey(seasonId, aliceId)
+    const discovery = await testApp.app.inject({
+      method: 'GET',
+      url: '/api/llm-development/seasons',
+      headers: aliceHeaders,
+    })
+    expect(discovery.statusCode).toBe(200)
+    expect(discovery.json()).toEqual([
+      expect.objectContaining({
+        season_id: seasonId,
+        label: 'LLM Week',
+        environment: 'llm_env',
+        cost_weights: { small: 1.5, medium: 3 },
+        successful_calls: 2,
+        usage_estimated: true,
+        budget_cost_units_used: 21,
+        budget_cost_units_remaining: 79,
+        key_exists: true,
+      }),
+    ])
+    expect(await testApp.storage.getDevelopmentKey(seasonId, aliceId)).toEqual(keyBeforeDiscovery)
+
+    const summary = await testApp.app.inject({
+      method: 'GET',
+      url: `/api/seasons/${seasonId}/llm-development`,
+      headers: aliceHeaders,
+    })
+    expect(summary.statusCode).toBe(200)
+    expect(summary.json()).toMatchObject({
+      models: ['medium', 'small'],
+      cost_weights: { small: 1.5, medium: 3 },
+      limits: { token_budget: 100, rate_limit_rpm: 10 },
+      successful_calls: 2,
+      usage_estimated: true,
+      budget_cost_units_used: 21,
+      budget_cost_units_remaining: 79,
+      key_exists: true,
+      usage_by_model: {
+        small: { calls: 1, input_tokens: 2, reasoning_tokens: 1, output_tokens: 4 },
+        medium: { calls: 1, input_tokens: 1, reasoning_tokens: 2, output_tokens: 3 },
+      },
+    })
+
+    const firstPage = await testApp.app.inject({
+      method: 'GET',
+      url: `/api/seasons/${seasonId}/llm-development/calls?limit=1`,
+      headers: aliceHeaders,
+    })
+    expect(firstPage.statusCode).toBe(200)
+    const firstBody = firstPage.json() as {
+      calls: Array<Record<string, unknown>>
+      next_cursor: number
+    }
+    expect(firstBody.calls).toEqual([
+      expect.objectContaining({
+        id: 3,
+        model: 'medium',
+        usage_estimated: true,
+        cost_weight: 3,
+        budget_cost_units: 12,
+        request: { messages: ['alice newer'] },
+        completion: { choices: ['a2'] },
+      }),
+    ])
+    expect(firstBody.calls[0]).not.toHaveProperty('latency_ms')
+    expect(firstPage.body).not.toContain('bob private')
+    const secondPage = await testApp.app.inject({
+      method: 'GET',
+      url: `/api/seasons/${seasonId}/llm-development/calls?limit=1&cursor=${firstBody.next_cursor}`,
+      headers: aliceHeaders,
+    })
+    expect(secondPage.json()).toMatchObject({
+      calls: [expect.objectContaining({ id: 1, budget_cost_units: 9 })],
+      next_cursor: null,
+    })
+    expect(
+      (
+        await testApp.app.inject({
+          method: 'GET',
+          url: `/api/seasons/${seasonId}/llm-development/calls?limit=101`,
+          headers: aliceHeaders,
+        })
+      ).statusCode,
+    ).toBe(400)
+
+    const normalAdminRead = await testApp.app.inject({
+      method: 'GET',
+      url: `/api/admin/seasons/${seasonId}/llm-development`,
+      headers: bobHeaders,
+    })
+    expect(normalAdminRead.statusCode).toBe(403)
+    const operatorHeaders = await testApp.users.headersFor('llm-operator', { status: 'admin' })
+    const totals = await testApp.app.inject({
+      method: 'GET',
+      url: `/api/admin/seasons/${seasonId}/llm-development`,
+      headers: operatorHeaders,
+    })
+    expect(totals.statusCode).toBe(200)
+    const totalRows = totals.json() as Array<Record<string, unknown>>
+    expect(totalRows.find((row) => row.user_id === aliceId)).toMatchObject({
+      successful_calls: 2,
+      usage_estimated: true,
+      budget_cost_units_used: 21,
+      budget_cost_units_remaining: 79,
+    })
+    expect(totalRows.find((row) => row.user_id === bobId)).toMatchObject({
+      successful_calls: 1,
+      budget_cost_units_used: 9,
+      budget_cost_units_remaining: 91,
+    })
+    const bobDetail = await testApp.app.inject({
+      method: 'GET',
+      url: `/api/admin/seasons/${seasonId}/llm-development/users/${bobId}/calls`,
+      headers: operatorHeaders,
+    })
+    expect(bobDetail.statusCode).toBe(200)
+    expect(bobDetail.json()).toMatchObject({
+      calls: [expect.objectContaining({ id: 2, request: { messages: ['bob private'] } })],
+      next_cursor: null,
+    })
+
+    await testApp.storage.setSubmissionStatus(seasonId, 'closed')
+    const disabledSeason = await testApp.storage.createSeason({
+      env_id: 'llm_env',
+      deps_version: 1,
+    })
+    await testApp.storage.setSubmissionStatus(disabledSeason.id, 'open')
+    const closedDiscovery = await testApp.app.inject({
+      method: 'GET',
+      url: '/api/llm-development/seasons',
+      headers: aliceHeaders,
+    })
+    expect(closedDiscovery.json()).toEqual([])
+    for (const request of [
+      { url: `/api/seasons/${seasonId}/llm-development`, headers: aliceHeaders },
+      { url: `/api/seasons/${seasonId}/llm-development/calls`, headers: aliceHeaders },
+      {
+        url: `/api/admin/seasons/${seasonId}/llm-development`,
+        headers: operatorHeaders,
+      },
+      {
+        url: `/api/admin/seasons/${seasonId}/llm-development/users/${aliceId}/calls`,
+        headers: operatorHeaders,
+      },
+    ]) {
+      expect((await testApp.app.inject({ method: 'GET', ...request })).statusCode).toBe(200)
+    }
   })
 })

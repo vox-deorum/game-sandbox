@@ -30,6 +30,10 @@ import { DEPS_VERSION } from '../deps-version.js'
 import type { EnvironmentMeta, EnvironmentRegistry } from '../environments.js'
 import type { RequestIdentity } from '../identity.js'
 import { officialPolicy, resolveLlm, unavailableLlmAliases } from '../llm/config.js'
+import type { DevelopmentKeyService } from '../llm/development-keys.js'
+import { developmentCallView, participantTotalView } from '../llm/development-views.js'
+import { asLlmError } from '../llm/errors.js'
+import { modelCostWeights } from '../llm/types.js'
 import { optionalField } from '../optional-field.js'
 import { buildSchedule, type SubmissionRef } from '../scheduler/build-schedule.js'
 import {
@@ -43,6 +47,7 @@ import {
 } from '../season-views.js'
 import type { ClientSocket } from '../session/live-session.js'
 import type { Storage, Submission } from '../storage/index.js'
+import type { DevelopmentLedgerStore } from '../storage/llm/development-ledger/store.js'
 import { SeasonConfigSchema } from '../storage/season-config.js'
 import { SnapshotMissingError, type SubmissionSnapshotStore } from '../submission/snapshot-store.js'
 import type { RunEvent, WorkflowRunner } from '../workflow/runner.js'
@@ -65,6 +70,10 @@ export interface AdminDeps {
   userDirectory: UserDirectory
   /** Deployment aliases and defaults used to validate season edits and freeze run policy. */
   llm: Pick<LlmOptions, 'upstreamUrl' | 'models' | 'sessionLimits' | 'developmentLimits'>
+  llmDevelopment?: {
+    keys: Pick<DevelopmentKeyService, 'resolveReadPolicy'>
+    ledger: DevelopmentLedgerStore
+  }
 }
 
 /** The operator's season-wide rating prompt is display-only guidance; cap it so it stays a prompt. */
@@ -264,6 +273,66 @@ function registerSubmissionRoutes(admin: FastifyInstance, deps: AdminDeps): void
         .send(archive)
     },
   )
+}
+
+function registerDevelopmentReadRoutes(admin: FastifyInstance, deps: AdminDeps): void {
+  const reads = deps.llmDevelopment
+  if (reads === undefined) return
+
+  admin.get<{ Params: { seasonId: string } }>(
+    '/seasons/:seasonId/llm-development',
+    async (request, reply) => {
+      try {
+        const policy = await reads.keys.resolveReadPolicy(request.params.seasonId)
+        const weights = modelCostWeights(policy.resolved.models)
+        return reads.ledger
+          .listParticipantUsage(request.params.seasonId)
+          .map((participant) =>
+            participantTotalView(participant, weights, policy.resolved.development.tokenBudget),
+          )
+      } catch (error) {
+        const normalized = asLlmError(error)
+        return reply.code(normalized.status).send(normalized.body())
+      }
+    },
+  )
+
+  admin.get<{
+    Params: { seasonId: string; userId: string }
+    Querystring: { cursor?: string; limit?: string }
+  }>('/seasons/:seasonId/llm-development/users/:userId/calls', async (request, reply) => {
+    const pagination = parseDevelopmentPagination(request.query)
+    if (pagination === null) {
+      return reply.code(400).send({ error: 'invalid pagination', code: 'invalid_pagination' })
+    }
+    try {
+      const policy = await reads.keys.resolveReadPolicy(request.params.seasonId)
+      const weights = modelCostWeights(policy.resolved.models)
+      const page = reads.ledger.listUserCalls(
+        request.params.seasonId,
+        request.params.userId,
+        pagination,
+      )
+      return {
+        calls: page.calls.map((call) => developmentCallView(call, weights)),
+        next_cursor: page.nextCursor,
+      }
+    } catch (error) {
+      const normalized = asLlmError(error)
+      return reply.code(normalized.status).send(normalized.body())
+    }
+  })
+}
+
+function parseDevelopmentPagination(query: { cursor?: string; limit?: string }): {
+  cursor?: number
+  limit: number
+} | null {
+  const limit = query.limit === undefined ? 25 : Number(query.limit)
+  const cursor = query.cursor === undefined ? undefined : Number(query.cursor)
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) return null
+  if (cursor !== undefined && (!Number.isSafeInteger(cursor) || cursor < 1)) return null
+  return cursor === undefined ? { limit } : { cursor, limit }
 }
 
 /**
@@ -628,6 +697,7 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
 
       // --- Submissions: list + downloads -----------------------------------------------------
       registerSubmissionRoutes(admin, deps)
+      registerDevelopmentReadRoutes(admin, deps)
 
       // --- Log stream (WebSocket) ------------------------------------------------------------
       // Relay the running workflow's per-match container log lines and game-status transitions live,

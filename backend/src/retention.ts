@@ -71,6 +71,29 @@ export interface LlmTelemetryReclaimer {
   deleteScope(scopeId: string): void
 }
 
+export interface StartupLlmTelemetryReclaimer extends LlmTelemetryReclaimer {
+  deleteOrphanedScopes(referencedScopeIds: ReadonlySet<string>): string[]
+}
+
+/** Reclaim official startup debris from the durable recording association keep set. */
+export async function reclaimOrphanedOfficialTelemetry(
+  storage: Pick<Storage, 'listRecordings'>,
+  telemetry: StartupLlmTelemetryReclaimer,
+  log: (message: string) => void = () => {},
+): Promise<void> {
+  try {
+    const recordings = await storage.listRecordings()
+    const referenced = new Set(
+      recordings.flatMap((recording) =>
+        recording.llm_scope_id === null ? [] : [recording.llm_scope_id],
+      ),
+    )
+    telemetry.deleteOrphanedScopes(referenced)
+  } catch (error) {
+    log(`retention: startup LLM telemetry cleanup failed: ${String(error)}`)
+  }
+}
+
 export class Retention {
   private timer: ReturnType<typeof setInterval> | null = null
   /** Serialize triggers so two sweeps cannot simultaneously remove a scope's final references. */

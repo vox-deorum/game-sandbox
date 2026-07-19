@@ -57,6 +57,8 @@ export interface LiveSessionDeps {
   killGraceMs: number
   /** Close official admission and await active-request finalizers before container teardown. */
   revokeLlm?: () => Promise<void>
+  /** Remove this live scope after the barrier when no recording association was retained. */
+  deleteLlmScope?: (scopeId: string) => void
 }
 
 export interface LiveSessionInit {
@@ -464,6 +466,11 @@ export class LiveSession {
       this.deps.log(`session ${this.id}: kill failed: ${String(error)}`)
     }
 
+    // The process can flush its first recording lines while handling STOP or during the forced-kill
+    // grace period. Drain that buffered output before deciding whether a recording exists and before
+    // reclaiming an apparently unassociated telemetry scope.
+    await this.outputDone
+
     this.status = 'ended'
     try {
       await this.deps.storage.markEnded(this.id, reason, new Date().toISOString())
@@ -471,19 +478,33 @@ export class LiveSession {
       this.deps.log(`session ${this.id}: markEnded failed: ${String(error)}`)
     }
 
-    // Register the produced recording's retention row. Every end path converges here, so each
-    // session-produced recording gets exactly one row (the insert is idempotent on the id).
-    try {
-      await this.deps.storage.createRecording({
-        id: this.recordingId,
-        user_id: this.userId,
-        env_id: this.envId,
-        created_at: this.createdAt,
-        llm_scope_id: this.llmEnabled ? this.id : null,
-        llm_session_id: this.llmEnabled ? this.id : null,
-      })
-    } catch (error) {
-      this.deps.log(`session ${this.id}: createRecording failed: ${String(error)}`)
+    // Register only a recording that produced a readable header. A container that failed before its
+    // first recording line has no replay to retain, so its settled LLM scope is reclaimed below.
+    if (this.headerLine !== null) {
+      try {
+        await this.deps.storage.createRecording({
+          id: this.recordingId,
+          user_id: this.userId,
+          env_id: this.envId,
+          created_at: this.createdAt,
+          llm_scope_id: this.llmEnabled ? this.id : null,
+          llm_session_id: this.llmEnabled ? this.id : null,
+        })
+      } catch (error) {
+        this.deps.log(`session ${this.id}: createRecording failed: ${String(error)}`)
+      }
+    }
+
+    if (this.llmEnabled && this.deps.deleteLlmScope !== undefined) {
+      try {
+        const retained = await this.deps.storage.getRecording(this.recordingId)
+        if (retained?.llm_scope_id !== this.id) {
+          this.deps.deleteLlmScope(this.id)
+        }
+      } catch (error) {
+        // Fail safe: an uncertain association keeps the scope for startup recovery.
+        this.deps.log(`session ${this.id}: LLM scope cleanup failed: ${String(error)}`)
+      }
     }
 
     this.broadcast(sessionEnvelope('ended', reason))

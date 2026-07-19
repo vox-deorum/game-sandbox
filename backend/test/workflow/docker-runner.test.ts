@@ -8,7 +8,7 @@
  * and reached the right terminal state. The attributable-crash, timeout, infrastructure-fault, cancel,
  * and re-run paths each get a test. No Docker, no Python, deterministic.
  */
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -35,7 +35,10 @@ import { openSqliteStorage } from '../../src/storage/sqlite.js'
 import { SubmissionSnapshotStore } from '../../src/submission/snapshot-store.js'
 import type { SubmissionSource } from '../../src/submission/source/index.js'
 import type { RunEvent, TerminalRunStatus } from '../../src/workflow/runner.js'
-import { createWorkflowRunner } from '../../src/workflow/workflow-runner.js'
+import {
+  createWorkflowRunner,
+  type WorkflowRunnerDeps,
+} from '../../src/workflow/workflow-runner.js'
 import llmLaunchConfig from '../fixtures/llm-launch-config.json'
 import { FakeDriver, type FakeLaunch, type FakeSessionProcess } from '../support/fake-driver.js'
 
@@ -115,7 +118,7 @@ function makeRunner(
     gameWatchdogGraceMs?: number
     userDirectory?: UserDirectory
     officialGrantIssuer?: OfficialGrantIssuer
-    officialTelemetry?: Pick<ExecutionTelemetryStore, 'aggregateByModel'>
+    officialTelemetry?: WorkflowRunnerDeps['officialTelemetry']
     llmInternalPort?: number
   } = {},
 ): RunnerHandle {
@@ -381,6 +384,53 @@ describe('Docker-backed workflow runner', () => {
     expect((await storage.listGameResultsByRun(run.id))[0]?.llm_weighted_cost).toBe(72)
   })
 
+  it('deletes a zero-recording run scope only after every grant finalizer settles', async () => {
+    let release!: () => void
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let revoked = false
+    const issuer: OfficialGrantIssuer = {
+      issue: async () => ({
+        keys: { player_0: 'official-key' },
+        revoke: async () => {
+          await barrier
+          revoked = true
+        },
+      }),
+    }
+    const deleted: string[] = []
+    const handle = makeRunner(storage, new FakeDriver(), {
+      officialGrantIssuer: issuer,
+      officialTelemetry: {
+        aggregateByModel: () => ({}),
+        deleteScope: (scopeId) => {
+          expect(revoked).toBe(true)
+          deleted.push(scopeId)
+        },
+      },
+      llmInternalPort: 9472,
+    })
+    const run = await makeRun(storage, [naiveGame(0)], { llmPolicy: enabledLlmPolicy() })
+    handle.driver.onLaunch = (launch): void => {
+      emitRecording(launch.process, { seed: 1 }, { omitHeader: true })
+    }
+
+    let settled = false
+    const terminal = runToTerminal(handle, run.id).then((result) => {
+      settled = true
+      return result
+    })
+    await new Promise((resolve) => setImmediate(resolve))
+    expect(deleted).toEqual([])
+    expect(settled).toBe(false)
+
+    release()
+    await expect(terminal).resolves.toMatchObject({ status: 'completed' })
+    expect(deleted).toEqual([run.id])
+    expect((await storage.listRecordings()).some((row) => row.llm_scope_id === run.id)).toBe(false)
+  })
+
   it('fails before persisting a result when telemetry contains an unsupported model alias', async () => {
     const issuer: OfficialGrantIssuer = {
       issue: async () => ({
@@ -460,6 +510,8 @@ describe('Docker-backed workflow runner', () => {
           slot,
           tick: 1,
           model,
+          costWeight: 1,
+          budgetCostUnits: inputTokens + outputTokens,
           request: { model, messages: [] },
           completion: { model, choices: [] },
           inputTokens,
@@ -523,6 +575,7 @@ describe('Docker-backed workflow runner', () => {
         },
       })
       expect(results.get(secondGame.id)?.llm_weighted_cost).toBe(52)
+      expect(existsSync(telemetry.pathForScope(run.id))).toBe(true)
     } finally {
       telemetry.close()
       rmSync(telemetryRoot, { recursive: true, force: true })

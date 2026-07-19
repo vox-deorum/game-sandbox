@@ -25,6 +25,8 @@ export function createOfficialRecordSink(
         slot: scope.slot,
         tick: scope.tick.current,
         model: record.model,
+        costWeight: record.costWeight,
+        budgetCostUnits: record.budgetCostUnits,
         request: record.request,
         completion: record.completion,
         inputTokens: record.usage.inputTokens,

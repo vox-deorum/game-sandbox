@@ -80,6 +80,7 @@ export interface OpenTestAppOptions {
   docsDir?: string
   docsIndexFile?: string
   llmDevelopment?: AppDeps['llmDevelopment']
+  officialTelemetry?: AppDeps['officialTelemetry']
 }
 
 /** A complete Docker-free app fixture and the handles API tests commonly need. */
@@ -133,6 +134,9 @@ export async function openTestApp(options: OpenTestAppOptions = {}): Promise<Tes
     auth: stack.auth,
     userDirectory: options.userDirectory ?? stack.userDirectory,
     llm: config.llm,
+    ...(options.officialTelemetry === undefined
+      ? {}
+      : { officialTelemetry: options.officialTelemetry }),
     ...(options.llmDevelopment === undefined ? {} : { llmDevelopment: options.llmDevelopment }),
     ...submissionDeps,
     ...(options.siteName === undefined ? {} : { siteName: options.siteName }),

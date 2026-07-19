@@ -279,6 +279,7 @@ async function saveRename(seasonId: string): Promise<void> {
               <h2>Run Configuration</h2>
               <SeasonConfigEditor
                 :season="view.season"
+                :environment-messaging-enabled="meta?.messaging"
                 @changed="refresh"
                 @dirty-change="configDirty = $event"
               />

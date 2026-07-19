@@ -186,6 +186,37 @@ describe('AdminConsolePage', () => {
     expect(
       screen.getByRole('button', { name: 'Save configuration' }).closest('.ui-card'),
     ).toBeNull()
+
+    const messaging = screen.getByLabelText('Messaging') as HTMLSelectElement
+    expect(messaging).toHaveDisplayValue('Environment default (off)')
+    expect(Array.from(messaging.options, (option) => [option.value, option.text])).toEqual([
+      ['default', 'Environment default (off)'],
+      ['off', 'Off'],
+    ])
+  })
+
+  it('labels an enabled environment default and canonicalizes an explicit true override', async () => {
+    vi.mocked(getEnvironments).mockResolvedValue([flappyMeta({ messaging: true })])
+    const explicitTrue = season({
+      config: {
+        deps_version: 1,
+        matches: [{ slots: ['submission'], seeds: [0], games: 1 }],
+        overrides: { messaging: { enabled: true } },
+      },
+    })
+    vi.mocked(getAdminSeason).mockResolvedValue(adminView({ season: explicitTrue }))
+    vi.mocked(configureSeason).mockResolvedValue({ ok: true, season: explicitTrue })
+    await renderConsole()
+
+    expect(await screen.findByLabelText('Messaging')).toHaveDisplayValue('Environment default (on)')
+    expect(screen.getByRole('button', { name: 'Run workflow' })).toBeEnabled()
+    await fireEvent.update(screen.getByLabelText('Step timeout (ms)'), '500')
+    await fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }))
+
+    await waitFor(() => expect(vi.mocked(configureSeason)).toHaveBeenCalled())
+    const savedConfig = vi.mocked(configureSeason).mock.calls[0]?.[1]
+    expect(savedConfig?.overrides?.step_timeout_ms).toBe(500)
+    expect(savedConfig?.overrides?.messaging).toBeUndefined()
   })
 
   it('prefixes an unnamed season exactly once', async () => {

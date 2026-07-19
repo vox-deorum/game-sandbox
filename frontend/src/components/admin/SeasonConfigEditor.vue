@@ -35,7 +35,11 @@ import UiField from '../ui/UiField.vue'
 import UiInput from '../ui/UiInput.vue'
 import UiSelect from '../ui/UiSelect.vue'
 
-const props = defineProps<{ season: SeasonView }>()
+const props = defineProps<{
+  season: SeasonView
+  /** The environment capability shown beside the inherited messaging choice. */
+  environmentMessagingEnabled?: boolean
+}>()
 const emit = defineEmits<{
   (e: 'changed', season: SeasonView): void
   /** Whether the form holds match-design edits not yet persisted; drives the Run gate upstream. */
@@ -56,9 +60,14 @@ const depsVersion = ref(props.season.config.deps_version)
 const matches = ref<MatchDraft[]>([])
 const stepTimeout = ref<number | ''>('')
 const episodeTimeout = ref<number | ''>('')
-// The messaging override's `enabled` is an *optional* boolean, so the toggle has three states:
-// "default" leaves the environment's own setting in force, "on"/"off" write an explicit boolean.
-const messagingEnabled = ref<'default' | 'on' | 'off'>('default')
+// A season can inherit the environment's messaging capability or turn it off. An explicit `true`
+// has the same runtime meaning as inheritance, so the editor canonicalizes it back to "default".
+const messagingEnabled = ref<'default' | 'off'>('default')
+const messagingDefaultLabel = computed(() =>
+  props.environmentMessagingEnabled === undefined
+    ? 'Environment default'
+    : `Environment default (${props.environmentMessagingEnabled ? 'on' : 'off'})`,
+)
 const messageCap = ref<number | ''>('')
 const llmEnabled = ref<'default' | 'on' | 'off'>('default')
 const llmModelsMode = ref<'all' | 'custom'>('all')
@@ -94,7 +103,7 @@ function seedFromSeason(): void {
   stepTimeout.value = config.overrides?.step_timeout_ms ?? ''
   episodeTimeout.value = config.overrides?.episode_timeout_ms ?? ''
   const messaging = config.overrides?.messaging
-  messagingEnabled.value = messaging?.enabled === undefined ? 'default' : messaging.enabled ? 'on' : 'off'
+  messagingEnabled.value = messaging?.enabled === false ? 'off' : 'default'
   messageCap.value = messaging?.message_cap ?? ''
   const llm = config.overrides?.llm
   llmEnabled.value = llm?.enabled === undefined ? 'default' : llm.enabled ? 'on' : 'off'
@@ -207,7 +216,7 @@ function buildConfig(): { config: SeasonConfig } | { error: string } {
   if (stepTimeout.value !== '') overrides.step_timeout_ms = Number(stepTimeout.value)
   if (episodeTimeout.value !== '') overrides.episode_timeout_ms = Number(episodeTimeout.value)
   const messaging: NonNullable<SeasonOverrides['messaging']> = {}
-  if (messagingEnabled.value !== 'default') messaging.enabled = messagingEnabled.value === 'on'
+  if (messagingEnabled.value === 'off') messaging.enabled = false
   if (messageCap.value !== '') messaging.message_cap = Number(messageCap.value)
   if (Object.keys(messaging).length > 0) overrides.messaging = messaging
   if (llmModelsMode.value === 'custom' && llmModels.value.length === 0) {
@@ -248,20 +257,34 @@ function buildConfig(): { config: SeasonConfig } | { error: string } {
  * differences (seed-text spacing, override key order) and compares only what a save would persist.
  */
 function canonicalConfig(config: SeasonConfig): string {
-  const overrides = config.overrides
   return JSON.stringify({
     deps_version: config.deps_version,
     matches: config.matches.map((m) => ({ slots: m.slots, seeds: m.seeds, games: m.games })),
-    overrides:
-      overrides === undefined
-        ? null
-        : {
-            step_timeout_ms: overrides.step_timeout_ms ?? null,
-            episode_timeout_ms: overrides.episode_timeout_ms ?? null,
-            messaging: overrides.messaging ?? null,
-            llm: canonicalLlm(overrides.llm),
-          },
+    overrides: canonicalOverrides(config.overrides),
   })
+}
+
+/** Collapse an override object with no effective fields to the same meaning as an absent object. */
+function canonicalOverrides(overrides: SeasonConfig['overrides']): Record<string, unknown> | null {
+  if (overrides === undefined) return null
+  const normalized = {
+    step_timeout_ms: overrides.step_timeout_ms ?? null,
+    episode_timeout_ms: overrides.episode_timeout_ms ?? null,
+    messaging: canonicalMessaging(overrides.messaging),
+    llm: canonicalLlm(overrides.llm),
+  }
+  return Object.values(normalized).every((value) => value === null) ? null : normalized
+}
+
+/** Normalize explicit messaging enablement because `true` and inheritance resolve identically. */
+function canonicalMessaging(
+  messaging: SeasonOverrides['messaging'],
+): Record<string, unknown> | null {
+  if (messaging === undefined) return null
+  const enabled = messaging.enabled === false ? false : null
+  const messageCap = messaging.message_cap ?? null
+  if (enabled === null && messageCap === null) return null
+  return { enabled, message_cap: messageCap }
 }
 
 /**
@@ -444,12 +467,11 @@ watch(confirmOpen, (open) => {
       </UiField>
       <UiField
         label="Messaging"
-        hint="Default keeps the environment's setting; Off silences it. It can never enable an opted-out environment."
+        hint="Use the environment's setting, or turn messaging off for this season."
       >
         <template #default="{ id }">
           <UiSelect :id="id" v-model="messagingEnabled">
-            <option value="default">Environment default</option>
-            <option value="on">On</option>
+            <option value="default">{{ messagingDefaultLabel }}</option>
             <option value="off">Off</option>
           </UiSelect>
         </template>

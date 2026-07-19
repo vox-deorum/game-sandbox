@@ -4,14 +4,14 @@
  * shares the run id. The store is synchronous because admission needs committed usage before it can
  * reserve a request, and better-sqlite3 serializes each file's writes in process.
  */
-import { mkdirSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 
 import BetterSqlite3 from 'better-sqlite3'
 
 import type { LlmUsage } from '../../llm/types.js'
 
-const CURRENT_SCHEMA_VERSION = 1
+const CURRENT_SCHEMA_VERSION = 2
 const SCOPE_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/
 
 export interface ExecutionTelemetryCallInput {
@@ -19,6 +19,8 @@ export interface ExecutionTelemetryCallInput {
   slot: string
   tick: number | null
   model: string
+  costWeight: number
+  budgetCostUnits: number
   request: unknown
   completion: unknown
   inputTokens: number
@@ -52,6 +54,8 @@ interface CallRow {
   slot: string
   tick: number | null
   model: string
+  cost_weight: number | null
+  budget_cost_units: number | null
   request_json: string
   completion_json: string
   input_tokens: number
@@ -101,6 +105,18 @@ function assertNonNegativeInteger(value: number, name: string): void {
   }
 }
 
+function assertPositiveFinite(value: number, name: string): void {
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(`${name} must be a positive finite number`)
+  }
+}
+
+function assertNonNegativeFinite(value: number, name: string): void {
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error(`${name} must be a non-negative finite number`)
+  }
+}
+
 function encodeJson(value: unknown, name: string): string {
   const encoded = JSON.stringify(value)
   if (encoded === undefined) {
@@ -119,12 +135,18 @@ function decodeUsage(row: UsageRow): LlmUsage {
 }
 
 function decodeCall(row: CallRow): ExecutionTelemetryCall {
+  if (row.cost_weight === null || row.budget_cost_units === null) {
+    throw new Error('LLM telemetry row has no authoritative cost basis')
+  }
+  validateCostBasis(row.cost_weight, row.budget_cost_units, row.input_tokens, row.output_tokens)
   return {
     id: row.id,
     sessionId: row.session_id,
     slot: row.slot,
     tick: row.tick,
     model: row.model,
+    costWeight: row.cost_weight,
+    budgetCostUnits: row.budget_cost_units,
     request: JSON.parse(row.request_json) as unknown,
     completion: JSON.parse(row.completion_json) as unknown,
     inputTokens: row.input_tokens,
@@ -133,6 +155,20 @@ function decodeCall(row: CallRow): ExecutionTelemetryCall {
     usageEstimated: row.usage_estimated === 1,
     latencyMs: row.latency_ms,
     createdAt: row.created_at,
+  }
+}
+
+function validateCostBasis(
+  costWeight: number,
+  budgetCostUnits: number,
+  inputTokens: number,
+  outputTokens: number,
+): void {
+  assertPositiveFinite(costWeight, 'costWeight')
+  assertNonNegativeFinite(budgetCostUnits, 'budgetCostUnits')
+  const expected = costWeight * (inputTokens + outputTokens)
+  if (!Number.isFinite(expected) || budgetCostUnits !== expected) {
+    throw new Error('budgetCostUnits must exactly match costWeight times input and output tokens')
   }
 }
 
@@ -145,23 +181,42 @@ function migrate(db: BetterSqlite3.Database): void {
   }
 
   if (version < 1) {
+    const hasCalls =
+      db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'calls'").get() !==
+      undefined
+    if (!hasCalls) {
+      db.transaction(() => {
+        db.exec(`
+          CREATE TABLE calls (
+            id                INTEGER PRIMARY KEY,
+            session_id        TEXT NOT NULL,
+            slot              TEXT NOT NULL,
+            tick              INTEGER,
+            model             TEXT NOT NULL,
+            cost_weight       REAL NOT NULL,
+            budget_cost_units REAL NOT NULL,
+            request_json      TEXT NOT NULL,
+            completion_json   TEXT NOT NULL,
+            input_tokens      INTEGER NOT NULL,
+            reasoning_tokens  INTEGER NOT NULL,
+            output_tokens     INTEGER NOT NULL,
+            usage_estimated   INTEGER NOT NULL,
+            latency_ms        INTEGER NOT NULL,
+            created_at        TEXT NOT NULL
+          );
+          CREATE INDEX calls_session_slot ON calls (session_id, slot);
+          CREATE INDEX calls_created_at ON calls (created_at);
+          CREATE TABLE meter_health (
+            id         INTEGER PRIMARY KEY CHECK (id = 1),
+            checked_at TEXT NOT NULL
+          );
+        `)
+        db.pragma('user_version = 2')
+      }).immediate()
+      return
+    }
     db.transaction(() => {
       db.exec(`
-        CREATE TABLE IF NOT EXISTS calls (
-          id               INTEGER PRIMARY KEY,
-          session_id       TEXT NOT NULL,
-          slot             TEXT NOT NULL,
-          tick             INTEGER,
-          model            TEXT NOT NULL,
-          request_json     TEXT NOT NULL,
-          completion_json  TEXT NOT NULL,
-          input_tokens     INTEGER NOT NULL,
-          reasoning_tokens INTEGER NOT NULL,
-          output_tokens    INTEGER NOT NULL,
-          usage_estimated  INTEGER NOT NULL,
-          latency_ms       INTEGER NOT NULL,
-          created_at       TEXT NOT NULL
-        );
         CREATE INDEX IF NOT EXISTS calls_session_slot ON calls (session_id, slot);
         CREATE INDEX IF NOT EXISTS calls_created_at ON calls (created_at);
         CREATE TABLE IF NOT EXISTS meter_health (
@@ -171,6 +226,23 @@ function migrate(db: BetterSqlite3.Database): void {
       `)
       db.pragma('user_version = 1')
     }).immediate()
+  }
+  if (version < 2) {
+    db.transaction(() => {
+      db.exec(`
+        ALTER TABLE calls ADD COLUMN cost_weight REAL;
+        ALTER TABLE calls ADD COLUMN budget_cost_units REAL;
+      `)
+      db.pragma('user_version = 2')
+    }).immediate()
+  }
+}
+
+/** A retained official telemetry file cannot be surfaced authoritatively. */
+export class TelemetryUnavailableError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options)
+    this.name = 'TelemetryUnavailableError'
   }
 }
 
@@ -223,6 +295,12 @@ export class ExecutionTelemetryStore {
     assertNonNegativeInteger(input.reasoningTokens, 'reasoningTokens')
     assertNonNegativeInteger(input.outputTokens, 'outputTokens')
     assertNonNegativeInteger(input.latencyMs, 'latencyMs')
+    validateCostBasis(
+      input.costWeight,
+      input.budgetCostUnits,
+      input.inputTokens,
+      input.outputTokens,
+    )
 
     const handle = this.handle(scopeId)
     const values = {
@@ -230,6 +308,8 @@ export class ExecutionTelemetryStore {
       slot: input.slot,
       tick: input.tick,
       model: input.model,
+      cost_weight: input.costWeight,
+      budget_cost_units: input.budgetCostUnits,
       request_json: encodeJson(input.request, 'request'),
       completion_json: encodeJson(input.completion, 'completion'),
       input_tokens: input.inputTokens,
@@ -267,6 +347,37 @@ export class ExecutionTelemetryStore {
       .db.prepare(`${sql} ORDER BY id`)
       .all(...values) as CallRow[]
     return rows.map(decodeCall)
+  }
+
+  /**
+   * Read one retained recording association without creating, migrating, probing, or caching its
+   * scope file. Legacy and incomplete files fail because their historical price cannot be rebuilt
+   * from mutable configuration.
+   */
+  readAssociatedCalls(scopeId: string, sessionId: string): ExecutionTelemetryCall[] {
+    const path = this.pathForScope(scopeId)
+    if (!existsSync(path)) {
+      throw new TelemetryUnavailableError('Associated LLM telemetry file is missing')
+    }
+    let db: BetterSqlite3.Database | undefined
+    try {
+      db = new BetterSqlite3(path, { readonly: true, fileMustExist: true })
+      const version = db.pragma('user_version', { simple: true }) as number
+      if (version !== CURRENT_SCHEMA_VERSION) {
+        throw new Error(`unsupported LLM telemetry schema version ${version}`)
+      }
+      const rows = db
+        .prepare('SELECT * FROM calls WHERE session_id = ? ORDER BY id')
+        .all(sessionId) as CallRow[]
+      return rows.map(decodeCall)
+    } catch (error) {
+      if (error instanceof TelemetryUnavailableError) throw error
+      throw new TelemetryUnavailableError('Associated LLM telemetry is unavailable', {
+        cause: error,
+      })
+    } finally {
+      db?.close()
+    }
   }
 
   /** Exact successful-call sums grouped by the public model alias. */
@@ -325,6 +436,22 @@ export class ExecutionTelemetryStore {
     rmSync(`${path}-wal`, { force: true })
   }
 
+  /**
+   * Delete top-level official scope databases outside the supplied durable recording keep set.
+   * Directories, including the development-ledger subtree, are never descended into.
+   */
+  deleteOrphanedScopes(referencedScopeIds: ReadonlySet<string>): string[] {
+    const deleted: string[] = []
+    for (const entry of readdirSync(this.rootDir, { withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.endsWith('.sqlite')) continue
+      const scopeId = entry.name.slice(0, -'.sqlite'.length)
+      if (!SCOPE_ID.test(scopeId) || referencedScopeIds.has(scopeId)) continue
+      this.deleteScope(scopeId)
+      deleted.push(scopeId)
+    }
+    return deleted.sort()
+  }
+
   /** Release every cached SQLite handle. Idempotent. */
   close(): void {
     const handles = [...this.handles.values()]
@@ -350,10 +477,12 @@ export class ExecutionTelemetryStore {
         db,
         insertCall: db.prepare(`
           INSERT INTO calls (
-            session_id, slot, tick, model, request_json, completion_json,
+            session_id, slot, tick, model, cost_weight, budget_cost_units,
+            request_json, completion_json,
             input_tokens, reasoning_tokens, output_tokens, usage_estimated, latency_ms, created_at
           ) VALUES (
-            @session_id, @slot, @tick, @model, @request_json, @completion_json,
+            @session_id, @slot, @tick, @model, @cost_weight, @budget_cost_units,
+            @request_json, @completion_json,
             @input_tokens, @reasoning_tokens, @output_tokens, @usage_estimated, @latency_ms, @created_at
           )
         `),

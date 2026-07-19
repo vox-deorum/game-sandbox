@@ -114,6 +114,10 @@ test('operator season configuration exposes and validates LLM controls', async (
     runConfiguration.locator('.ui-card').getByRole('button', { name: 'Save configuration' }),
   ).toHaveCount(0)
 
+  const messaging = page.getByLabel('Messaging')
+  await expect(messaging).toHaveValue('default')
+  await expect(messaging.locator('option')).toHaveText(['Environment default (off)', 'Off'])
+
   const submissions = page.locator('section.admin-section', {
     has: page.getByRole('heading', { name: 'Submissions' }),
   })

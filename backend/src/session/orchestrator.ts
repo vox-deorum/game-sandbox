@@ -146,6 +146,8 @@ export interface OrchestratorDeps {
   userDirectory?: UserDirectory
   /** Issues launch-scoped official keys when the resolved live policy enables LLM access. */
   officialGrantIssuer?: OfficialGrantIssuer
+  /** Reclaims settled live scopes that never gained a durable recording association. */
+  deleteLlmScope?: (scopeId: string) => void
   /** Injectable current-policy resolver; defaults to the deployment/environment/season resolver. */
   resolveLiveLlm?: typeof defaultResolveLlm
 }
@@ -162,6 +164,7 @@ export class Orchestrator {
   private readonly submissionSnapshots?: SubmissionSnapshotStore
   private readonly userDirectory?: UserDirectory
   private readonly officialGrantIssuer?: OfficialGrantIssuer
+  private readonly deleteLlmScope?: (scopeId: string) => void
   private readonly resolveLiveLlm: typeof defaultResolveLlm
 
   constructor(deps: OrchestratorDeps) {
@@ -175,6 +178,7 @@ export class Orchestrator {
     this.submissionSnapshots = deps.submissionSnapshots
     this.userDirectory = deps.userDirectory
     this.officialGrantIssuer = deps.officialGrantIssuer
+    this.deleteLlmScope = deps.deleteLlmScope
     this.resolveLiveLlm = deps.resolveLiveLlm ?? defaultResolveLlm
   }
 
@@ -254,6 +258,7 @@ export class Orchestrator {
           limits: llm.official,
         })
       } catch (error) {
+        this.deleteUnusedLlmScope(id)
         throw new OrchestratorError(500, `failed to issue official LLM grants: ${String(error)}`)
       }
     }
@@ -279,6 +284,7 @@ export class Orchestrator {
       })
     } catch (error) {
       await llmLease?.revoke()
+      this.deleteUnusedLlmScope(id)
       throw error
     }
 
@@ -310,6 +316,7 @@ export class Orchestrator {
       await ensureRecordingsDir(this.recordingsHostDir())
     } catch (error) {
       await llmLease?.revoke()
+      this.deleteUnusedLlmScope(id)
       await this.storage.markEnded(id, 'error', new Date().toISOString()).catch(() => undefined)
       throw new OrchestratorError(500, `failed to prepare session launch: ${String(error)}`)
     }
@@ -327,6 +334,7 @@ export class Orchestrator {
       // session_submissions rows have been written yet (they land only after a successful launch,
       // below), so a launch that never started leaves no phantom "recent run" on any submission.
       await llmLease?.revoke()
+      this.deleteUnusedLlmScope(id)
       await this.storage.markEnded(id, 'error', new Date().toISOString()).catch(() => undefined)
       throw new OrchestratorError(500, `failed to launch session: ${String(error)}`)
     }
@@ -348,6 +356,7 @@ export class Orchestrator {
         // Best-effort kill; the process may have already exited.
       }
       await this.storage.markEnded(id, 'error', new Date().toISOString()).catch(() => undefined)
+      this.deleteUnusedLlmScope(id)
       throw new OrchestratorError(500, `failed to record session attribution: ${String(error)}`)
     }
 
@@ -372,11 +381,20 @@ export class Orchestrator {
         maxDurationMs: this.config.sessionMaxDurationMs,
         killGraceMs: KILL_GRACE_MS,
         revokeLlm: () => llmLease?.revoke() ?? Promise.resolve(),
+        deleteLlmScope: this.deleteLlmScope,
       },
     })
     this.registry.add(session)
 
     return { id, wsPath: `/api/sessions/${id}/ws` }
+  }
+
+  private deleteUnusedLlmScope(scopeId: string): void {
+    try {
+      this.deleteLlmScope?.(scopeId)
+    } catch (error) {
+      this.log(`session ${scopeId}: deleting unused LLM scope failed: ${String(error)}`)
+    }
   }
 
   /**

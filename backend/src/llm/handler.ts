@@ -2,7 +2,7 @@ import { invalidRequest, LlmError } from './errors.js'
 import type { LlmMeter } from './meter.js'
 import type { LlmTokenCounter } from './tokenizer.js'
 import type { LlmChatCompletion, LlmChatRequest, LlmGrant, ModelAlias } from './types.js'
-import { MODEL_ALIASES } from './types.js'
+import { MODEL_ALIASES, totalTokens } from './types.js'
 import type { UpstreamCaller, UpstreamSuccess } from './upstream.js'
 import { UpstreamError } from './upstream.js'
 import { resolveUsage } from './usage.js'
@@ -88,8 +88,11 @@ export class LlmHandler {
       this.deps.meter.recordRateEvent(reservation)
       const completion = redactCompletion(result.completion, alias)
       const resolved = resolveUsage(accepted, completion, this.deps.tokenizer)
+      const costWeight = configuredModel.costWeight
       await this.deps.meter.commit(reservation, grant.recordSink, {
         model: alias,
+        costWeight,
+        budgetCostUnits: costWeight * totalTokens(resolved.usage),
         request: accepted,
         completion,
         usage: resolved.usage,

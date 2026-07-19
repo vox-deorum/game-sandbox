@@ -28,6 +28,7 @@ import { registerLeaderboardRoutes } from './leaderboards/routes.js'
 import type { DevelopmentKeyService } from './llm/development-keys.js'
 import { registerDevelopmentLlmRoutes } from './llm/development-routes.js'
 import type { LlmHandler } from './llm/handler.js'
+import { registerRecordingLlmRoutes } from './llm/recording-routes.js'
 import { registerMyAgentRoutes } from './my-agents.js'
 import { optionalField } from './optional-field.js'
 import { registerRatingRoutes } from './ratings/routes.js'
@@ -41,6 +42,8 @@ import {
   type SlotAssignment,
 } from './session/orchestrator.js'
 import { type Storage, SubmissionConflictError } from './storage/index.js'
+import type { DevelopmentLedgerStore } from './storage/llm/development-ledger/store.js'
+import type { ExecutionTelemetryStore } from './storage/llm/execution-telemetry.js'
 import type { SubmissionSnapshotStore } from './submission/snapshot-store.js'
 import type { SourceInput, SubmissionSource } from './submission/source/index.js'
 import type { SubmissionEnqueuer } from './submission/worker.js'
@@ -117,8 +120,14 @@ export interface AppDeps {
   userDirectory: UserDirectory
   /** Current deployment LLM configuration, used by admin season validation and run-policy freezing. */
   llm: LlmOptions
-  /** Public development-key routes; absent only in isolated tests with no proxy composition. */
-  llmDevelopment?: { keys: DevelopmentKeyService; handler: LlmHandler }
+  /** Public development-key and history routes; the handler is absent without upstream calling. */
+  llmDevelopment?: {
+    keys: DevelopmentKeyService
+    handler?: LlmHandler
+    ledger: DevelopmentLedgerStore
+  }
+  /** Retained official telemetry reader; associated recordings fail closed when it is unavailable. */
+  officialTelemetry?: Pick<ExecutionTelemetryStore, 'readAssociatedCalls'>
 }
 
 /**
@@ -269,8 +278,14 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const identity = createRequestIdentity(deps.auth)
 
   if (deps.llmDevelopment !== undefined) {
-    registerDevelopmentLlmRoutes(app, { identity, ...deps.llmDevelopment })
+    registerDevelopmentLlmRoutes(app, { identity, storage: deps.storage, ...deps.llmDevelopment })
   }
+  registerRecordingLlmRoutes(app, {
+    identity,
+    recordings: deps.recordings,
+    storage: deps.storage,
+    ...(deps.officialTelemetry === undefined ? {} : { telemetry: deps.officialTelemetry }),
+  })
 
   app.get('/api/environments', () => deps.environments.list())
 
@@ -742,6 +757,14 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     snapshots: deps.submissionSnapshots,
     userDirectory: deps.userDirectory,
     llm: deps.llm,
+    ...(deps.llmDevelopment === undefined
+      ? {}
+      : {
+          llmDevelopment: {
+            keys: deps.llmDevelopment.keys,
+            ledger: deps.llmDevelopment.ledger,
+          },
+        }),
   })
   registerLeaderboardRoutes(app, {
     storage: deps.storage,
