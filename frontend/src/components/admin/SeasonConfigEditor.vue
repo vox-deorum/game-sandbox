@@ -666,12 +666,7 @@ watch(confirmOpen, (open) => {
 }
 
 .config-title {
-  margin: 0 0 var(--space-3);
-  font-size: var(--text-md);
-}
-
-.config-title--spaced {
-  margin-top: var(--space-5);
+  margin: 0 0 var(--space-2);
 }
 
 .match-list {
@@ -684,10 +679,8 @@ watch(confirmOpen, (open) => {
 }
 
 .match {
-  padding: var(--space-4);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-raised);
+  padding: var(--space-4) 0;
+  border-top: 1px solid var(--color-border);
 }
 
 .match-head {
@@ -738,9 +731,9 @@ watch(confirmOpen, (open) => {
 .alias-picker,
 .limit-group {
   margin: var(--space-4) 0 0;
-  padding: var(--space-4);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  padding: var(--space-4) 0 0;
+  border: 0;
+  border-top: 1px solid var(--color-border);
 }
 
 .alias-picker legend,

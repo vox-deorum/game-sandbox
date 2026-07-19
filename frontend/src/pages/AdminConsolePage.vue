@@ -308,10 +308,6 @@ async function saveRename(seasonId: string): Promise<void> {
 </template>
 
 <style scoped>
-.admin-header h1 {
-  margin: 0 0 var(--space-1);
-}
-
 .admin-body {
   display: grid;
   grid-template-columns: 1fr 16rem;
@@ -393,11 +389,6 @@ async function saveRename(seasonId: string): Promise<void> {
 
 .admin-card {
   margin: 0;
-}
-
-.admin-section h2 {
-  margin: 0 0 var(--space-4);
-  font-size: var(--text-lg);
 }
 
 .section-head {

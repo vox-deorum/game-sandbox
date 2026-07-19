@@ -110,6 +110,20 @@ test('operator season configuration exposes and validates LLM controls', async (
   await expect(runConfiguration.getByRole('heading', { name: 'Match Design' })).toBeVisible()
   await expect(runConfiguration.getByRole('heading', { name: 'Session Behavior' })).toBeVisible()
   await expect(runConfiguration.getByRole('heading', { name: 'LLM Access' })).toBeVisible()
+
+  const flatRegions = [
+    runConfiguration.getByTestId('match').first(),
+    runConfiguration.getByRole('group', { name: 'Per-slot limits' }),
+    runConfiguration.getByRole('group', { name: 'Development per-participant limits' }),
+  ]
+  for (const region of flatRegions) {
+    await expect(region).toHaveCSS('border-top-width', '1px')
+    await expect(region).toHaveCSS('border-right-width', '0px')
+    await expect(region).toHaveCSS('border-bottom-width', '0px')
+    await expect(region).toHaveCSS('border-left-width', '0px')
+    await expect(region).toHaveCSS('border-radius', '0px')
+  }
+
   await expect(
     runConfiguration.locator('.ui-card').getByRole('button', { name: 'Save configuration' }),
   ).toHaveCount(0)

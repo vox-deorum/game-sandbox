@@ -183,6 +183,11 @@ describe('AdminConsolePage', () => {
     for (const title of ['Match Design', 'Session Behavior', 'LLM Access']) {
       expect(screen.getByRole('heading', { name: title }).closest('.ui-card')).not.toBeNull()
     }
+    expect(screen.getByTestId('match')).toHaveClass('match')
+    expect(screen.getByRole('group', { name: 'Per-slot limits' })).toHaveClass('limit-group')
+    expect(screen.getByRole('group', { name: 'Development per-participant limits' })).toHaveClass(
+      'limit-group',
+    )
     expect(
       screen.getByRole('button', { name: 'Save configuration' }).closest('.ui-card'),
     ).toBeNull()

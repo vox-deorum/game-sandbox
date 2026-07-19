@@ -30,7 +30,7 @@ withDefaults(
 }
 
 .ui-card.padded {
-  padding: var(--space-4) var(--space-5);
+  padding: var(--space-4);
 }
 
 .ui-card.interactive {
