@@ -75,7 +75,7 @@ function createdText(row: RosterUser): string {
       <tr v-for="row in rows" :key="row.id">
         <td>{{ row.name }}</td>
         <td>{{ row.email }}</td>
-        <td class="users-status">
+        <td>
           <UiStatusBadge :tone="statusTone(statusOf(row))" :label="statusOf(row)" />
           <UiBadge v-if="row.banned === true" variant="danger">Banned</UiBadge>
         </td>
@@ -185,12 +185,6 @@ function createdText(row: RosterUser): string {
 .users-table th {
   color: var(--color-text-muted);
   font-weight: 600;
-}
-
-.users-status {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
 }
 
 .users-actions {
