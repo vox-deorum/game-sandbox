@@ -31,7 +31,11 @@ import type { EnvironmentMeta, EnvironmentRegistry } from '../environments.js'
 import type { RequestIdentity } from '../identity.js'
 import { officialPolicy, resolveLlm, unavailableLlmAliases } from '../llm/config.js'
 import type { DevelopmentKeyService } from '../llm/development-keys.js'
-import { developmentCallView, participantTotalView } from '../llm/development-views.js'
+import {
+  developmentCallPageView,
+  parseDevelopmentPagination,
+  participantTotalView,
+} from '../llm/development-views.js'
 import { asLlmError } from '../llm/errors.js'
 import { modelCostWeights } from '../llm/types.js'
 import { optionalField } from '../optional-field.js'
@@ -313,26 +317,12 @@ function registerDevelopmentReadRoutes(admin: FastifyInstance, deps: AdminDeps):
         request.params.userId,
         pagination,
       )
-      return {
-        calls: page.calls.map((call) => developmentCallView(call, weights)),
-        next_cursor: page.nextCursor,
-      }
+      return developmentCallPageView(page, weights)
     } catch (error) {
       const normalized = asLlmError(error)
       return reply.code(normalized.status).send(normalized.body())
     }
   })
-}
-
-function parseDevelopmentPagination(query: { cursor?: string; limit?: string }): {
-  cursor?: number
-  limit: number
-} | null {
-  const limit = query.limit === undefined ? 25 : Number(query.limit)
-  const cursor = query.cursor === undefined ? undefined : Number(query.cursor)
-  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) return null
-  if (cursor !== undefined && (!Number.isSafeInteger(cursor) || cursor < 1)) return null
-  return cursor === undefined ? { limit } : { cursor, limit }
 }
 
 /**

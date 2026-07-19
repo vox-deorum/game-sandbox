@@ -17,6 +17,20 @@ export interface RecordingLlmRouteDeps {
   telemetry?: Pick<ExecutionTelemetryStore, 'readAssociatedCalls'>
 }
 
+export interface RecordingPublicLlmCall {
+  tick: number | null
+  slot: string
+  model: string
+  input_tokens: number
+  reasoning_tokens: number
+  output_tokens: number
+  usage_estimated: boolean
+  cost_weight: number
+  budget_cost_units: number
+  request?: unknown
+  completion?: unknown
+}
+
 /** Mount the public metadata and authorized-body view over retained official telemetry. */
 export function registerRecordingLlmRoutes(
   app: FastifyInstance,
@@ -82,7 +96,7 @@ async function ownersForHeader(
   return new Map(submissions.map((submission) => [submission.id, submission.user_id]))
 }
 
-function publicCall(call: ExecutionTelemetryCall, includeBodies: boolean): Record<string, unknown> {
+function publicCall(call: ExecutionTelemetryCall, includeBodies: boolean): RecordingPublicLlmCall {
   return {
     tick: call.tick,
     slot: call.slot,

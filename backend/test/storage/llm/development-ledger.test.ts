@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import BetterSqlite3 from 'better-sqlite3'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
+import { parseDevelopmentPagination } from '../../../src/llm/development-views.js'
 import {
   DEVELOPMENT_LEDGER_SCHEMA_VERSION,
   type DevelopmentCallInput,
@@ -199,12 +200,16 @@ describe('DevelopmentLedgerStore', () => {
     expect(store.hasEstimatedUsage('season-1', 'missing')).toBe(false)
   })
 
-  it('enforces bounded positive cursor pagination', () => {
-    expect(() => store.listUserCalls('season-1', 'user-a', { limit: 0 })).toThrow('limit')
-    expect(() => store.listUserCalls('season-1', 'user-a', { limit: 101 })).toThrow('limit')
-    expect(() => store.listUserCalls('season-1', 'user-a', { cursor: 0, limit: 1 })).toThrow(
-      'cursor',
-    )
+  it('parses one bounded pagination contract before ledger access', () => {
+    expect(parseDevelopmentPagination({})).toEqual({ limit: 25 })
+    expect(parseDevelopmentPagination({ cursor: '12', limit: '100' })).toEqual({
+      cursor: 12,
+      limit: 100,
+    })
+    expect(parseDevelopmentPagination({ limit: '0' })).toBeNull()
+    expect(parseDevelopmentPagination({ limit: '101' })).toBeNull()
+    expect(parseDevelopmentPagination({ cursor: '0' })).toBeNull()
+    expect(parseDevelopmentPagination({ cursor: '1.5' })).toBeNull()
   })
 
   it('rejects newer schemas, unsafe season paths, and invalid rows without inserting a call', () => {

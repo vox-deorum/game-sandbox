@@ -85,7 +85,7 @@ export interface OfficialKeyEntry {
 export type LlmChatRequest = OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming
 export type LlmChatCompletion = OpenAI.Chat.Completions.ChatCompletion
 
-export function totalTokens(usage: Omit<LlmUsage, 'calls'>): number {
+export function totalTokens(usage: Pick<LlmUsage, 'inputTokens' | 'outputTokens'>): number {
   // OpenAI completion_tokens includes its reasoning subset, so never add reasoning twice.
   return usage.inputTokens + usage.outputTokens
 }

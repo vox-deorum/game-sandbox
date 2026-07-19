@@ -11,6 +11,11 @@ import {
   DevelopmentKeyService,
   type DevelopmentKeyStorage,
 } from '../../src/llm/development-keys.js'
+import type {
+  DevelopmentCallPageView,
+  DevelopmentParticipantTotalView,
+} from '../../src/llm/development-views.js'
+import { LlmError } from '../../src/llm/errors.js'
 import { LlmHandler } from '../../src/llm/handler.js'
 import { LlmMeter } from '../../src/llm/meter.js'
 import type { LlmChatCompletion } from '../../src/llm/types.js'
@@ -66,13 +71,14 @@ describe('development LLM API', () => {
   })
 
   async function fixture(
-    options: { upstreamConfigured?: boolean; mountHandler?: boolean } = {},
+    options: { upstreamConfigured?: boolean; mountHandler?: boolean; emptyModels?: boolean } = {},
   ): Promise<{
     testApp: TestApp
     ledger: DevelopmentLedgerStore
     meter: LlmMeter
     upstream: { call: ReturnType<typeof vi.fn> }
     statuses: Map<string, UserStatus | null>
+    keys: DevelopmentKeyService
   }> {
     const root = mkdtempSync(join(tmpdir(), 'gs-development-api-'))
     cleanups.push(() => rmSync(root, { recursive: true, force: true }))
@@ -87,10 +93,12 @@ describe('development LLM API', () => {
     const llm = {
       ...(options.upstreamConfigured === false ? llmWithoutUpstream : baseLlm),
       ...(options.upstreamConfigured === false ? {} : { upstreamUrl: 'https://provider.test/v1' }),
-      models: {
-        small: { upstream: 'provider-small', costWeight: 1 },
-        medium: { upstream: 'provider-medium', costWeight: 2 },
-      },
+      models: options.emptyModels
+        ? {}
+        : {
+            small: { upstream: 'provider-small', costWeight: 1 },
+            medium: { upstream: 'provider-medium', costWeight: 2 },
+          },
       developmentLimits: { tokenBudget: 100, requestsPerMinute: 10 },
     }
     let storage: Storage | undefined
@@ -139,7 +147,7 @@ describe('development LLM API', () => {
     })
     storage = testApp.storage
     cleanups.push(() => testApp.close())
-    return { testApp, ledger, meter, upstream, statuses }
+    return { testApp, ledger, meter, upstream, statuses, keys }
   }
 
   async function enabledSeason(testApp: TestApp): Promise<string> {
@@ -375,6 +383,7 @@ describe('development LLM API', () => {
     const { testApp, ledger, statuses } = await fixture({
       upstreamConfigured: false,
       mountHandler: false,
+      emptyModels: true,
     })
     const seasonId = await enabledSeason(testApp)
     const aliceHeaders = await testApp.users.headersFor('alice')
@@ -431,7 +440,8 @@ describe('development LLM API', () => {
     expect(participantSummary.statusCode).toBe(200)
     expect(participantSummary.json()).toMatchObject({
       successful_calls: 1,
-      budget_cost_units_used: 6,
+      budget_cost_units_used: 0,
+      budget_cost_units_remaining: 100,
     })
     const participantCalls = await testApp.app.inject({
       method: 'GET',
@@ -440,7 +450,13 @@ describe('development LLM API', () => {
     })
     expect(participantCalls.statusCode).toBe(200)
     expect(participantCalls.json()).toMatchObject({
-      calls: [expect.objectContaining({ request: { messages: ['retained request'] } })],
+      calls: [
+        expect.objectContaining({
+          cost_weight: 0,
+          budget_cost_units: 0,
+          request: { messages: ['retained request'] },
+        }),
+      ],
     })
 
     const operatorHeaders = await testApp.users.headersFor('history-operator', {
@@ -453,7 +469,12 @@ describe('development LLM API', () => {
     })
     expect(operatorSummary.statusCode).toBe(200)
     expect(operatorSummary.json()).toEqual([
-      expect.objectContaining({ user_id: aliceId, successful_calls: 1 }),
+      expect.objectContaining({
+        user_id: aliceId,
+        successful_calls: 1,
+        budget_cost_units_used: 0,
+        budget_cost_units_remaining: 100,
+      }),
     ])
     const operatorCalls = await testApp.app.inject({
       method: 'GET',
@@ -462,7 +483,13 @@ describe('development LLM API', () => {
     })
     expect(operatorCalls.statusCode).toBe(200)
     expect(operatorCalls.json()).toMatchObject({
-      calls: [expect.objectContaining({ completion: { choices: ['retained response'] } })],
+      calls: [
+        expect.objectContaining({
+          cost_weight: 0,
+          budget_cost_units: 0,
+          completion: { choices: ['retained response'] },
+        }),
+      ],
     })
   })
 
@@ -608,10 +635,7 @@ describe('development LLM API', () => {
       headers: aliceHeaders,
     })
     expect(firstPage.statusCode).toBe(200)
-    const firstBody = firstPage.json() as {
-      calls: Array<Record<string, unknown>>
-      next_cursor: number
-    }
+    const firstBody = firstPage.json() as DevelopmentCallPageView
     expect(firstBody.calls).toEqual([
       expect.objectContaining({
         id: 3,
@@ -657,7 +681,7 @@ describe('development LLM API', () => {
       headers: operatorHeaders,
     })
     expect(totals.statusCode).toBe(200)
-    const totalRows = totals.json() as Array<Record<string, unknown>>
+    const totalRows = totals.json() as DevelopmentParticipantTotalView[]
     expect(totalRows.find((row) => row.user_id === aliceId)).toMatchObject({
       successful_calls: 2,
       usage_estimated: true,
@@ -679,6 +703,15 @@ describe('development LLM API', () => {
       calls: [expect.objectContaining({ id: 2, request: { messages: ['bob private'] } })],
       next_cursor: null,
     })
+    expect(
+      (
+        await testApp.app.inject({
+          method: 'GET',
+          url: `/api/admin/seasons/${seasonId}/llm-development/users/${bobId}/calls?cursor=0`,
+          headers: operatorHeaders,
+        })
+      ).statusCode,
+    ).toBe(400)
 
     await testApp.storage.setSubmissionStatus(seasonId, 'closed')
     const disabledSeason = await testApp.storage.createSeason({
@@ -706,5 +739,36 @@ describe('development LLM API', () => {
     ]) {
       expect((await testApp.app.inject({ method: 'GET', ...request })).statusCode).toBe(200)
     }
+  })
+
+  it('skips expected discovery resolution errors and rethrows infrastructure failures', async () => {
+    const { testApp, statuses, keys } = await fixture()
+    await enabledSeason(testApp)
+    const headers = await testApp.users.headersFor('discovery-reader')
+    statuses.set(testApp.users.idOf('discovery-reader'), 'normal')
+    const resolve = vi.spyOn(keys, 'resolveReadPolicy')
+
+    resolve.mockRejectedValueOnce(
+      new LlmError(403, 'llm_not_enabled', 'LLM access is not enabled for this season.'),
+    )
+    const expected = await testApp.app.inject({
+      method: 'GET',
+      url: '/api/llm-development/seasons',
+      headers,
+    })
+    expect(expected.statusCode).toBe(200)
+    expect(expected.json()).toEqual([])
+    resolve.mockRestore()
+
+    const readSeason = vi
+      .spyOn(testApp.storage, 'getSeason')
+      .mockRejectedValueOnce(new Error('season storage failed'))
+    const unexpected = await testApp.app.inject({
+      method: 'GET',
+      url: '/api/llm-development/seasons',
+      headers,
+    })
+    expect(unexpected.statusCode).toBe(500)
+    readSeason.mockRestore()
   })
 })

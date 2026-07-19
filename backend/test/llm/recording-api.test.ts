@@ -8,6 +8,7 @@ import BetterSqlite3 from 'better-sqlite3'
 import type { FastifyInstance } from 'fastify'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
+import type { RecordingPublicLlmCall } from '../../src/llm/recording-routes.js'
 import type { NewSubmissionInput, Storage } from '../../src/storage/index.js'
 import { ExecutionTelemetryStore } from '../../src/storage/llm/execution-telemetry.js'
 import { openTestApp, type TestApp } from '../support/harness.js'
@@ -257,7 +258,7 @@ describe('recording LLM telemetry API', () => {
       url: '/api/recordings/multi/llm',
       headers: await fixture.users.headersFor('alice'),
     })
-    const aliceCalls = (aliceView.json() as { calls: Array<Record<string, unknown>> }).calls
+    const aliceCalls = (aliceView.json() as { calls: RecordingPublicLlmCall[] }).calls
     expect(aliceCalls[0]).not.toHaveProperty('request')
     expect(aliceCalls[1]).toMatchObject({ request: { model: 'small' } })
     expect(aliceCalls[2]).not.toHaveProperty('request')
@@ -267,7 +268,7 @@ describe('recording LLM telemetry API', () => {
       url: '/api/recordings/multi/llm',
       headers: await fixture.users.headersFor('bob'),
     })
-    const bobCalls = (bobView.json() as { calls: Array<Record<string, unknown>> }).calls
+    const bobCalls = (bobView.json() as { calls: RecordingPublicLlmCall[] }).calls
     expect(bobCalls[0]).toMatchObject({ request: { model: 'medium' } })
     expect(bobCalls[1]).not.toHaveProperty('request')
 
@@ -276,7 +277,7 @@ describe('recording LLM telemetry API', () => {
       url: '/api/recordings/multi/llm',
       headers: await fixture.users.headersFor('operator', { status: 'admin' }),
     })
-    const operatorCalls = (operator.json() as { calls: Array<Record<string, unknown>> }).calls
+    const operatorCalls = (operator.json() as { calls: RecordingPublicLlmCall[] }).calls
     expect(operatorCalls.every((call) => Object.hasOwn(call, 'request'))).toBe(true)
     expect(operatorCalls.every((call) => Object.hasOwn(call, 'completion'))).toBe(true)
   })

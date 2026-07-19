@@ -31,6 +31,11 @@ export interface DevelopmentCallPage {
   nextCursor: number | null
 }
 
+export interface DevelopmentCallPagination {
+  cursor?: number
+  limit: number
+}
+
 export interface DevelopmentParticipantUsage {
   userId: string
   usageByModel: Record<string, LlmUsage>
@@ -221,18 +226,9 @@ export class DevelopmentLedgerStore {
   listUserCalls(
     seasonId: string,
     userId: string,
-    options: { cursor?: number; limit: number },
+    options: DevelopmentCallPagination,
   ): DevelopmentCallPage {
     assertValue(userId, 'userId')
-    if (!Number.isSafeInteger(options.limit) || options.limit < 1 || options.limit > 100) {
-      throw new Error('limit must be an integer from 1 to 100')
-    }
-    if (
-      options.cursor !== undefined &&
-      (!Number.isSafeInteger(options.cursor) || options.cursor < 1)
-    ) {
-      throw new Error('cursor must be a positive safe integer')
-    }
     const db = this.handle(seasonId).db
     const rows = (
       options.cursor === undefined

@@ -460,16 +460,23 @@ export class LiveSession {
 
     // Ask politely (the container flushes its recording and exits), then force the teardown.
     this.process.send(STOP_LINE)
+    let killFailed = false
     try {
       await this.process.kill(this.deps.killGraceMs)
     } catch (error) {
+      killFailed = true
       this.deps.log(`session ${this.id}: kill failed: ${String(error)}`)
     }
 
     // The process can flush its first recording lines while handling STOP or during the forced-kill
     // grace period. Drain that buffered output before deciding whether a recording exists and before
-    // reclaiming an apparently unassociated telemetry scope.
-    await this.outputDone
+    // reclaiming an apparently unassociated telemetry scope. A failed kill leaves process and stream
+    // termination uncertain, so bound that drain and let durable startup recovery reclaim its scope.
+    if (killFailed) {
+      await boundedOutputDrain(this.outputDone, this.deps.killGraceMs)
+    } else {
+      await this.outputDone
+    }
 
     this.status = 'ended'
     try {
@@ -495,7 +502,7 @@ export class LiveSession {
       }
     }
 
-    if (this.llmEnabled && this.deps.deleteLlmScope !== undefined) {
+    if (this.llmEnabled && this.deps.deleteLlmScope !== undefined && !killFailed) {
       try {
         const retained = await this.deps.storage.getRecording(this.recordingId)
         if (retained?.llm_scope_id !== this.id) {
@@ -542,6 +549,20 @@ export class LiveSession {
     } catch {
       // Already closing; nothing to do.
     }
+  }
+}
+
+/** Give a failed process teardown one short chance to flush output without pinning Node's event loop. */
+async function boundedOutputDrain(outputDone: Promise<void>, timeoutMs: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, Math.max(1, timeoutMs))
+    timer.unref?.()
+  })
+  try {
+    await Promise.race([outputDone, timeout])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
   }
 }
 

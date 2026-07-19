@@ -10,6 +10,7 @@ import { join } from 'node:path'
 import BetterSqlite3 from 'better-sqlite3'
 
 import type { LlmUsage } from '../../llm/types.js'
+import { totalTokens } from '../../llm/types.js'
 
 const CURRENT_SCHEMA_VERSION = 2
 const SCOPE_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/
@@ -166,7 +167,7 @@ function validateCostBasis(
 ): void {
   assertPositiveFinite(costWeight, 'costWeight')
   assertNonNegativeFinite(budgetCostUnits, 'budgetCostUnits')
-  const expected = costWeight * (inputTokens + outputTokens)
+  const expected = costWeight * totalTokens({ inputTokens, outputTokens })
   if (!Number.isFinite(expected) || budgetCostUnits !== expected) {
     throw new Error('budgetCostUnits must exactly match costWeight times input and output tokens')
   }

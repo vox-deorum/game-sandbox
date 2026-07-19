@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { SessionProcess } from '../../src/driver/index.js'
 import { LiveSession } from '../../src/session/live-session.js'
@@ -34,6 +34,8 @@ describe('relay (LiveSession)', () => {
       llmEnabled?: boolean
       revokeLlm?: () => Promise<void>
       deleteLlmScope?: (scopeId: string) => void
+      onEnd?: (id: string) => void
+      onFinalized?: (id: string) => void
     } = {},
   ): {
     session: LiveSession
@@ -54,7 +56,8 @@ describe('relay (LiveSession)', () => {
       llmEnabled: options.llmEnabled,
       deps: {
         storage,
-        onEnd: () => {},
+        onEnd: options.onEnd ?? (() => {}),
+        onFinalized: options.onFinalized,
         log: () => {},
         idleTimeoutMs: 1_000_000,
         maxDurationMs: 1_000_000,
@@ -460,6 +463,37 @@ describe('relay (LiveSession)', () => {
       llm_scope_id: 'sess-1',
       llm_session_id: 'sess-1',
     })
+    expect(deleted).toEqual([])
+  })
+
+  it('finishes teardown when kill throws and the output stream never closes', async () => {
+    const onEnd = vi.fn()
+    const onFinalized = vi.fn()
+    const deleted: string[] = []
+    const { session, process } = makeSession('scripted', {
+      llmEnabled: true,
+      deleteLlmScope: (scopeId) => deleted.push(scopeId),
+      onEnd,
+      onFinalized,
+    })
+    const socket = new FakeSocket()
+    session.attach(socket, true)
+    process.kill = vi.fn(async () => {
+      throw new Error('container teardown failed')
+    })
+
+    await session.requestStop()
+
+    expect(await storage.getSession('sess-1')).toMatchObject({
+      status: 'ended',
+      termination_reason: 'stopped',
+    })
+    expect(socket.received).toContain(
+      JSON.stringify({ kind: 'session', status: 'ended', reason: 'stopped' }),
+    )
+    expect(socket.closed).toBe(true)
+    expect(onEnd).toHaveBeenCalledWith('sess-1')
+    expect(onFinalized).toHaveBeenCalledWith('sess-1')
     expect(deleted).toEqual([])
   })
 

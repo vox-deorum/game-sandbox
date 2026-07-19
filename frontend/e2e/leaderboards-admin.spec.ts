@@ -129,20 +129,15 @@ test('operator season configuration exposes and validates LLM controls', async (
 
   await expect(page.getByLabel('LLM enablement')).toBeVisible()
   await expect(page.getByLabel('Allowed model aliases')).toBeVisible()
-  await expect(page.getByLabel('Large model token price')).toBeVisible()
-  await expect(page.getByLabel('Medium model token price')).toBeVisible()
-  await expect(page.getByLabel('Small model token price')).toBeVisible()
-  await expect(page.getByLabel('Official token budget')).toBeVisible()
-  await expect(page.getByLabel('Official rate limit (RPM)')).toBeVisible()
+  await expect(page.getByLabel('Per-slot token budget')).toBeVisible()
+  await expect(page.getByLabel('Per-slot rate limit (RPM)')).toBeVisible()
   await expect(page.getByLabel('Development token budget')).toBeVisible()
   await expect(page.getByLabel('Development rate limit (RPM)')).toBeVisible()
 
-  await page.getByLabel('Large model token price').fill('0')
+  await page.getByLabel('Per-slot token budget').fill('0')
   await page.getByRole('button', { name: 'Save configuration' }).click()
-  await expect(
-    page.getByText(/large model token price must be a positive finite number/),
-  ).toBeVisible()
-  await page.getByLabel('Large model token price').fill('')
+  await expect(page.getByText(/official token budget must be a positive integer/)).toBeVisible()
+  await page.getByLabel('Per-slot token budget').fill('')
 
   await page.getByLabel('Allowed model aliases').selectOption('custom')
   await page.getByRole('button', { name: 'Save configuration' }).click()
