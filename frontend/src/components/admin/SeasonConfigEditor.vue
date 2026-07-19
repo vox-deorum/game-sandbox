@@ -454,14 +454,15 @@ watch(confirmOpen, (open) => {
           </UiSelect>
         </template>
       </UiField>
-      <UiField
+      <!--also hidden since it is not very useful.-->
+      <!--<UiField
         label="Message cap (code points)"
         hint="Optional; only tightens. The effective cap is the smaller of this and the environment's."
       >
         <template #default="{ id }">
           <UiInput :id="id" v-model.number="messageCap" type="number" min="1" placeholder="default" />
         </template>
-      </UiField>
+      </UiField>-->
       </div>
     </UiCard>
 
@@ -470,7 +471,7 @@ watch(confirmOpen, (open) => {
       <div class="match-fields">
         <UiField
           label="LLM enablement"
-          hint="A season must explicitly enable LLM access. Default leaves the field unset."
+          hint="A season must explicitly enable LLM access."
         >
           <template #default="{ id }">
             <UiSelect :id="id" v-model="llmEnabled">
@@ -482,7 +483,6 @@ watch(confirmOpen, (open) => {
         </UiField>
         <UiField
           label="Allowed model aliases"
-          hint="Inherit every configured deployment alias, or choose a non-empty subset."
         >
           <template #default="{ id }">
             <UiSelect :id="id" v-model="llmModelsMode">
