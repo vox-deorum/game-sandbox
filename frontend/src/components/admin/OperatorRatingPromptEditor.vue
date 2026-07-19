@@ -56,7 +56,7 @@ async function save(): Promise<void> {
       Shown to human raters for every agent in this season. Editable at any time, including after a
       run or release. Separate from each author's own per-agent prompt.
     </p>
-    <UiField label="Rating prompt" hint="Leave empty to clear it.">
+    <UiField label="Rating prompt">
       <template #default="{ id, describedby }">
         <textarea
           :id="id"

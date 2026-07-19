@@ -420,15 +420,14 @@ watch(confirmOpen, (open) => {
     </ol>
     <UiButton variant="secondary" size="tight" @click="addMatch">Add match</UiButton>
 
-    <h3 class="config-title config-title--spaced">Overrides</h3>
-    <h4 class="config-group-title">Session behavior</h4>
+    <h3 class="config-title">Session behavior</h3>
     <div class="match-fields">
-      <UiField label="Step timeout (ms)" hint="Optional; falls back to the environment default.">
+      <UiField label="Step timeout (ms)">
         <template #default="{ id }">
           <UiInput :id="id" v-model.number="stepTimeout" type="number" min="1" placeholder="default" />
         </template>
       </UiField>
-      <UiField label="Episode timeout (ms)" hint="Optional; falls back to the environment default.">
+      <UiField label="Per-slot timeout (ms)">
         <template #default="{ id }">
           <UiInput
             :id="id"
@@ -462,7 +461,7 @@ watch(confirmOpen, (open) => {
     </div>
 
     <section class="llm-config" aria-labelledby="llm-config-title">
-      <h4 id="llm-config-title" class="config-group-title">LLM access</h4>
+      <h3 id="llm-config-title" class="config-title">LLM access</h3>
       <div class="match-fields">
         <UiField
           label="LLM enablement"
@@ -498,7 +497,8 @@ watch(confirmOpen, (open) => {
       </fieldset>
 
       <div class="limit-groups">
-        <fieldset class="limit-group">
+        <!--this is likely unnecessary but we keep it for future's sake -->
+        <!--<fieldset class="limit-group">
           <legend>Model token prices</legend>
           <UiField
             label="Large model token price"
@@ -545,11 +545,11 @@ watch(confirmOpen, (open) => {
               />
             </template>
           </UiField>
-        </fieldset>
+        </fieldset>-->
 
         <fieldset class="limit-group">
-          <legend>Official per-slot limits</legend>
-          <UiField label="Official token budget" hint="Optional; inherits the deployment default.">
+          <legend>Per-slot limits</legend>
+          <UiField label="Per-slot token budget">
             <template #default="{ id }">
               <UiInput
                 :id="id"
@@ -560,7 +560,7 @@ watch(confirmOpen, (open) => {
               />
             </template>
           </UiField>
-          <UiField label="Official rate limit (RPM)" hint="Optional; inherits the deployment default.">
+          <UiField label="Per-slot rate limit (RPM)">
             <template #default="{ id }">
               <UiInput
                 :id="id"
@@ -575,7 +575,7 @@ watch(confirmOpen, (open) => {
 
         <fieldset class="limit-group">
           <legend>Development per-participant limits</legend>
-          <UiField label="Development token budget" hint="Optional; inherits the deployment default.">
+          <UiField label="Development token budget">
             <template #default="{ id }">
               <UiInput
                 :id="id"
@@ -588,7 +588,6 @@ watch(confirmOpen, (open) => {
           </UiField>
           <UiField
             label="Development rate limit (RPM)"
-            hint="Optional; inherits the deployment default."
           >
             <template #default="{ id }">
               <UiInput
@@ -701,11 +700,6 @@ watch(confirmOpen, (open) => {
   display: flex;
   gap: var(--space-4);
   flex-wrap: wrap;
-}
-
-.config-group-title {
-  margin: var(--space-4) 0 var(--space-3);
-  font-size: var(--text-sm);
 }
 
 .llm-config {
