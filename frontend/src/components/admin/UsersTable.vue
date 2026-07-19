@@ -103,7 +103,7 @@ function createdText(row: RosterUser): string {
           <UiButton
             v-else
             size="tight"
-            variant="secondary"
+            variant="danger"
             :disabled="isSelf(row)"
             @click="emit('changeRole', row, 'user')"
           >
@@ -129,9 +129,14 @@ function createdText(row: RosterUser): string {
           >
             Ban
           </UiButton>
-
-          <UiButton size="tight" variant="ghost" :disabled="isSelf(row)" @click="emit('reset', row)">
-            Reset password
+          <UiButton
+            v-else
+            size="tight"
+            variant="secondary"
+            :disabled="isSelf(row)"
+            @click="emit('reset', row)"
+          >
+            Reset
           </UiButton>
         </td>
       </tr>
