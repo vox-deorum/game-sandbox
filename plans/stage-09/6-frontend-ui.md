@@ -122,11 +122,8 @@ Call history is a separately loaded, reverse-chronological, paginated table. Row
 ```text
 Call history
 Date        Model   Tokens                              LLM cost
-May 6       large   1,204 in · 96 reasoning · 342 out  6,184 budget units
-                    Estimated
-  Inspect request and response
+May 6       large   1,204 in · 96 reasoning · 342 out   6,184 budget units
 May 6       small   310 in · 40 out                     350 budget units
-  Inspect request and response
 [ Load more ]
 ```
 
