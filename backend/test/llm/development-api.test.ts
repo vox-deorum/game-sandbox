@@ -83,7 +83,7 @@ describe('development LLM API', () => {
       ...makeTestLlmOptions(),
       upstreamUrl: 'https://provider.test/v1',
       models: { small: { upstream: 'provider-small', costWeight: 1 } },
-      developmentLimits: { tokenBudget: 100, callBudget: 10, requestsPerMinute: 10 },
+      developmentLimits: { tokenBudget: 100, requestsPerMinute: 10 },
     }
     let storage: Storage | undefined
     const currentStorage = (): Storage => {
@@ -137,6 +137,7 @@ describe('development LLM API', () => {
       matches: [],
       overrides: { llm: { enabled: true, models: ['small'] } },
     })
+    await testApp.storage.setSubmissionStatus(season.id, 'open')
     return season.id
   }
 
@@ -200,6 +201,49 @@ describe('development LLM API', () => {
     db.close()
   })
 
+  it('closes key rotation and completion access until submissions reopen', async () => {
+    const { testApp, statuses } = await fixture()
+    const seasonId = await enabledSeason(testApp)
+    const key = await issue(testApp, statuses, seasonId, 'alice')
+    const headers = await testApp.users.headersFor('alice')
+
+    await testApp.storage.setSubmissionStatus(seasonId, 'closed')
+    const rotateClosed = await testApp.app.inject({
+      method: 'POST',
+      url: `/api/seasons/${seasonId}/llm-development-key`,
+      headers,
+    })
+    expect(rotateClosed.statusCode).toBe(403)
+    expect(rotateClosed.json()).toMatchObject({ error: { code: 'development_closed' } })
+
+    const completionClosed = await testApp.app.inject({
+      method: 'POST',
+      url: '/api/llm/v1/chat/completions',
+      headers: { authorization: `Bearer ${key}` },
+      payload: { model: 'small', messages: [] },
+    })
+    expect(completionClosed.statusCode).toBe(403)
+    expect(completionClosed.json()).toMatchObject({ error: { code: 'development_closed' } })
+
+    await testApp.storage.setSubmissionStatus(seasonId, 'open')
+    const completionOpen = await testApp.app.inject({
+      method: 'POST',
+      url: '/api/llm/v1/chat/completions',
+      headers: { authorization: `Bearer ${key}` },
+      payload: { model: 'small', messages: [] },
+    })
+    expect(completionOpen.statusCode).toBe(200)
+    expect(
+      (
+        await testApp.app.inject({
+          method: 'POST',
+          url: `/api/seasons/${seasonId}/llm-development-key`,
+          headers,
+        })
+      ).statusCode,
+    ).toBe(200)
+  })
+
   it.each([
     ['syntactically invalid', '{'],
     ['empty', ''],
@@ -261,7 +305,6 @@ describe('development LLM API', () => {
     expect(ledger.readUserUsageByModel(seasonId, userId)).toEqual({})
     expect(meter.inspect(`development:${seasonId}:${userId}`)).toMatchObject({
       rateEvents: [],
-      reservedCalls: 0,
       reservedWeightedTokens: 0,
     })
   })
@@ -291,7 +334,7 @@ describe('development LLM API', () => {
     expect(failed.json()).toMatchObject({ error: { code: 'meter_unavailable' } })
     expect(meter.inspect(`development:${seasonId}:${aliceId}`)).toMatchObject({
       breakerOpen: true,
-      debt: { calls: 1, weightedTokens: 11 },
+      debt: { weightedTokens: 11 },
     })
     const upstreamCalls = upstream.call.mock.calls.length
     expect((await call(aliceKey)).statusCode).toBe(503)
@@ -312,6 +355,6 @@ describe('development LLM API', () => {
       () => expect(meter.inspect(`development:${seasonId}:${aliceId}`).breakerOpen).toBe(false),
       { timeout: 500 },
     )
-    expect(meter.inspect(`development:${seasonId}:${aliceId}`).debt.calls).toBe(1)
+    expect(meter.inspect(`development:${seasonId}:${aliceId}`).debt.weightedTokens).toBe(11)
   })
 })

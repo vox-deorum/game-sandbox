@@ -884,12 +884,10 @@ function weightedCostOf(
 /** Convert the frozen snapshot's wire spelling into the generic meter limit shape. */
 function policyLimits(policy: ResolvedOfficialLlmPolicy): {
   tokenBudget: number
-  callBudget: number
   requestsPerMinute: number
 } {
   return {
     tokenBudget: policy.session.token_budget,
-    callBudget: policy.session.call_budget,
     requestsPerMinute: policy.session.rate_limit_rpm,
   }
 }

@@ -209,7 +209,7 @@ const llmTokenBudget = ref<number | ''>('')
             />
           </template>
         </UiField>
-        <UiField label="Invalid development call budget" error="Must be a positive integer.">
+        <UiField label="Invalid development token budget" error="Must be a positive integer.">
           <template #default="{ id, describedby, invalid }">
             <UiInput
               :id="id"

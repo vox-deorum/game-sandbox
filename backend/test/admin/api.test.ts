@@ -759,7 +759,7 @@ describe('admin API', () => {
       expect(decodeResolvedOfficialLlmPolicy(run.llm_policy_snapshot)).toEqual({
         enabled: false,
         models: {},
-        session: { token_budget: 100_000, call_budget: 100, rate_limit_rpm: 60 },
+        session: { token_budget: 100_000, rate_limit_rpm: 60 },
       })
       // The concrete schedule was persisted before enqueue: two submitted games + two Naive games.
       const games = await storage.listRunGames(runId)

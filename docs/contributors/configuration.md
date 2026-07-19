@@ -91,13 +91,11 @@ The internal OpenAI-compatible proxy starts only when `LLM_UPSTREAM_URL` and at 
 | `LLM_MAX_OUTPUT_TOKENS` | `4096` | Hard ceiling for explicit and default output maxima, bounded from 1 through 1000000 |
 | `LLM_METER_RECOVERY_INTERVAL_MS` | `5000` | Delay between write-health probes for an open accounting breaker, bounded from 1 through 3600000 milliseconds |
 | `LLM_SESSION_TOKEN_BUDGET` | `100000` | Successful weighted-token allowance per official session slot |
-| `LLM_SESSION_CALL_BUDGET` | `100` | Successful-call allowance per official session slot |
 | `LLM_SESSION_RATE_LIMIT_RPM` | `60` | Successful logical requests per minute per official session slot; an in-flight request holds one window slot until it resolves or its start leaves the window |
 | `LLM_DEVELOPMENT_TOKEN_BUDGET` | `100000` | Successful weighted-token allowance per participant and season |
-| `LLM_DEVELOPMENT_CALL_BUDGET` | `1000` | Successful-call allowance per participant and season |
 | `LLM_DEVELOPMENT_RATE_LIMIT_RPM` | `30` | Successful logical requests per minute per participant and season |
 
-`LLM_DEFAULT_MAX_OUTPUT_TOKENS` may be zero but must not exceed `LLM_MAX_OUTPUT_TOKENS`. Token budgets count input plus total completion tokens at the requested model alias's price. Reasoning tokens are reported separately as a subset of completion usage and are not charged twice. With the default 4:2:1 prices, an unchanged budget buys one quarter as many raw `large` tokens as it did under unweighted accounting. Raise the token budgets if the deployment should preserve the previous large-model allowance. See [Budgets and limits](../specs/llm.md#budgets-and-limits) for the canonical rule.
+`LLM_DEFAULT_MAX_OUTPUT_TOKENS` may be zero but must not exceed `LLM_MAX_OUTPUT_TOKENS`. Token budgets count input plus total completion tokens at the requested model alias's price. Reasoning tokens are reported separately as a subset of completion usage and are not charged twice. With the default 4:2:1 prices, `large` tokens cost four budget units, `medium` tokens cost two, and `small` tokens cost one. See [Budgets and limits](../specs/llm.md#budgets-and-limits) for the canonical rule.
 
 ## Submissions
 

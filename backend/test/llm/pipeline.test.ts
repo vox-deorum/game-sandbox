@@ -60,7 +60,7 @@ describe('LLM retry, accounting, and telemetry pipeline', () => {
       models: { small: { upstream: 'provider-small', costWeight: 1 } },
       accountingScope: {
         key: `session:${SESSION_ID}:${SLOT}`,
-        limits: { tokenBudget: 100, callBudget: 10, requestsPerMinute: 10 },
+        limits: { tokenBudget: 100, requestsPerMinute: 10 },
         weights: { small: 1 },
         readCommittedUsage: () => store.readSessionUsageByModel(SESSION_ID, SESSION_ID, SLOT),
       },
@@ -152,7 +152,6 @@ describe('LLM retry, accounting, and telemetry pipeline', () => {
     expect(store.listCalls(SESSION_ID)).toEqual([])
     expect(meter.inspect(grant.accountingScope.key)).toMatchObject({
       rateEvents: [],
-      reservedCalls: 0,
       reservedWeightedTokens: 0,
     })
   })

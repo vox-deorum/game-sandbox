@@ -111,10 +111,8 @@ test('operator season configuration exposes and validates LLM controls', async (
   await expect(page.getByLabel('Medium model token price')).toBeVisible()
   await expect(page.getByLabel('Small model token price')).toBeVisible()
   await expect(page.getByLabel('Official token budget')).toBeVisible()
-  await expect(page.getByLabel('Official call budget')).toBeVisible()
   await expect(page.getByLabel('Official rate limit (RPM)')).toBeVisible()
   await expect(page.getByLabel('Development token budget')).toBeVisible()
-  await expect(page.getByLabel('Development call budget')).toBeVisible()
   await expect(page.getByLabel('Development rate limit (RPM)')).toBeVisible()
 
   await page.getByLabel('Large model token price').fill('0')

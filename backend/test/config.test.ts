@@ -165,8 +165,8 @@ describe('loadConfig', () => {
       defaultMaxOutputTokens: 1_024,
       maxOutputTokens: 4_096,
       meterRecoveryIntervalMs: 5_000,
-      sessionLimits: { tokenBudget: 100_000, callBudget: 100, requestsPerMinute: 60 },
-      developmentLimits: { tokenBudget: 100_000, callBudget: 1_000, requestsPerMinute: 30 },
+      sessionLimits: { tokenBudget: 100_000, requestsPerMinute: 60 },
+      developmentLimits: { tokenBudget: 100_000, requestsPerMinute: 30 },
     })
   })
 
@@ -188,10 +188,8 @@ describe('loadConfig', () => {
       LLM_MAX_OUTPUT_TOKENS: '2048',
       LLM_METER_RECOVERY_INTERVAL_MS: '9000',
       LLM_SESSION_TOKEN_BUDGET: '3000',
-      LLM_SESSION_CALL_BUDGET: '12',
       LLM_SESSION_RATE_LIMIT_RPM: '7',
       LLM_DEVELOPMENT_TOKEN_BUDGET: '6000',
-      LLM_DEVELOPMENT_CALL_BUDGET: '24',
       LLM_DEVELOPMENT_RATE_LIMIT_RPM: '9',
     })
 
@@ -210,8 +208,8 @@ describe('loadConfig', () => {
       defaultMaxOutputTokens: 256,
       maxOutputTokens: 2_048,
       meterRecoveryIntervalMs: 9_000,
-      sessionLimits: { tokenBudget: 3_000, callBudget: 12, requestsPerMinute: 7 },
-      developmentLimits: { tokenBudget: 6_000, callBudget: 24, requestsPerMinute: 9 },
+      sessionLimits: { tokenBudget: 3_000, requestsPerMinute: 7 },
+      developmentLimits: { tokenBudget: 6_000, requestsPerMinute: 9 },
     })
   })
 
@@ -242,10 +240,8 @@ describe('loadConfig', () => {
 
   it.each([
     'LLM_SESSION_TOKEN_BUDGET',
-    'LLM_SESSION_CALL_BUDGET',
     'LLM_SESSION_RATE_LIMIT_RPM',
     'LLM_DEVELOPMENT_TOKEN_BUDGET',
-    'LLM_DEVELOPMENT_CALL_BUDGET',
     'LLM_DEVELOPMENT_RATE_LIMIT_RPM',
   ])('rejects a zero %s before constructing an unusable policy', (name) => {
     expect(() => load({ [name]: '0' })).toThrow(

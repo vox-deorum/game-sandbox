@@ -35,7 +35,7 @@ Each season defines:
 - Template dependency version.
 - Optional step and episode limit overrides.
 - Optional messaging overrides.
-- Optional LLM model, official budget, and student development budget overrides of deployment defaults.
+- Optional LLM model, token-price, official limit, and student development limit overrides of deployment defaults. Limits set the weighted token budget and per-minute request rate.
 - Optional season-wide rating prompt.
 
 A season's timing, messaging, and official LLM overrides apply not only to its automated games but also to the live watch and play sessions started against the play-open season, so a season's rules hold everywhere its agents run. Student development LLM limits use their own meter keyed to the season and do not consume or contribute to official limits or telemetry.

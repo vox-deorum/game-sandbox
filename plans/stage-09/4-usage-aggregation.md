@@ -16,7 +16,7 @@ The workflow runner reads `runId`, the resolved alias-to-model map with its per-
 
 Each workflow grant has one session-and-slot accounting scope. It synchronously reads committed usage by `(session_id, slot)` from `data/llm/<runId>.sqlite`, and its record sink writes that same file, capturing the run ID as the file scope plus the game session and slot written on every successful row. Every workflow game is a new session, so each slot's allowance covers one game, and a submission's total spend in a run is bounded by the frozen per-slot budget times the games it plays. There is no run-level allowance. A rerun receives a new run ID and a new scope file.
 
-Admission, reservation, commit, release, and post-upstream failure behavior for this scope follow Step 1 exactly: one temporary call-and-token reservation per admitted request, one committed call with validated or explicitly estimated usage on success, nothing committed on local rejection or terminal upstream failure, and conservative in-memory debt with an open scope circuit breaker after a post-upstream accounting failure.
+Admission, reservation, commit, release, and post-upstream failure behavior for this scope follow Step 1 exactly: one temporary token reservation per admitted request, one committed row with validated or explicitly estimated usage on success, nothing committed on local rejection or terminal upstream failure, and conservative in-memory debt with an open scope circuit breaker after a post-upstream accounting failure.
 
 ## Workflow runner
 
@@ -84,7 +84,7 @@ Docker integration runs the two-match journey through the real workflow runner a
 ## Done when
 
 - The frozen per-slot limits bound successful official use in every workflow match, and a run carries no allowance of its own.
-- One eventual success consumes one call in its slot's scope. Every unsuccessful logical request consumes no call or token budget.
+- One eventual success consumes weighted tokens in its slot's scope. Every unsuccessful logical request consumes no token budget.
 - Budget exhaustion is a catchable error, creates no SQLite row, and does not forfeit a game that the agent finishes legally.
 - A run uses the fully resolved official LLM policy stored at run creation and never current deployment defaults.
 - Every workflow exit path closes admission and awaits active-request and reservation settlement before querying telemetry or persisting usage aggregates.

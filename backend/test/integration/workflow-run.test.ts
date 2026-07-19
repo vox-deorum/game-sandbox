@@ -34,7 +34,7 @@ function disabledLlmPolicy(): ResolvedOfficialLlmPolicy {
   return {
     enabled: false,
     models: {},
-    session: { token_budget: 1, call_budget: 1, rate_limit_rpm: 1 },
+    session: { token_budget: 1, rate_limit_rpm: 1 },
   }
 }
 /** A deterministic agent: flap on a fixed period so the episode is a pure function of the seed. */

@@ -46,17 +46,21 @@ A startup sweep runs after active session and workflow recovery. It removes offi
 
 ## Participant development API
 
+Development discovery, key creation, and completion calls treat a season as eligible only while its submission window is open and LLM access is effective. Summary, call-history, and operator read routes remain identity-gated after a season closes, so past ledgers stay reachable from submission-history rows.
+
 Add three active-user routes:
 
 | Route | Response |
 | --- | --- |
-| `GET /api/llm-development/seasons` | Seasons for which the authenticated participant currently has effective development access, each with its label, environment, effective aliases, resolved cost weights, and resolved development limits |
-| `GET /api/seasons/:seasonId/llm-development` | Effective aliases with resolved cost weights, resolved limits, successful usage totals, whether any token total is estimated, remaining call and budget-unit allowance, and whether a key exists |
+| `GET /api/llm-development/seasons` | Eligible seasons only, each with its label, environment, aliases and resolved cost weights, token budget and rate limit, weighted units used, informational successful-call count, and whether a key exists |
+| `GET /api/seasons/:seasonId/llm-development` | Effective aliases with resolved cost weights, resolved limits, successful usage totals, whether any token total is estimated, remaining budget-unit allowance, and whether a key exists |
 | `GET /api/seasons/:seasonId/llm-development/calls?cursor=<id>&limit=<n>` | The authenticated participant's successful ledger rows, including token counts, `usage_estimated`, and budget cost units derived under the selected season's current resolved weights, in reverse chronological order |
 
-Season discovery and the selected-season summary resolve configuration without creating or rotating a key, so the profile can render its selector, prices, and allowance before any credential action. Development usage intentionally follows the current season policy, so each call row's `budget_cost_units` uses the same current resolved weight as the selected-season meter and summary. The calls response includes full request and completion bodies because the development ledger is private to that participant and operators. Frontend-facing development responses omit the internally stored latency. Pagination has a bounded default and maximum. Another participant cannot select a user ID or retrieve the ledger.
+At most one eligible season exists per environment because only one season's submission window can be open. My Agents can therefore render its current row meter from the discovery response without another summary request. Discovery resolves configuration without creating or rotating a key.
 
-Add operator routes under `/api/admin/seasons/:seasonId/llm-development` to list participant totals and page one participant's successful rows. Totals include used and remaining calls and budget units plus estimate status. Detail rows expose the same token, estimate, current-policy budget-cost, request, and completion fields as the participant history. Operator routes use the existing admin guard and accept an explicit target user only after authorization.
+Development usage follows the current season policy, so each call row's `budget_cost_units` uses the same current resolved weight as the summary. The calls response includes the stored estimate flag and full request and completion bodies because the ledger is private to that participant and operators. It serves closed seasons, omits internally stored latency, and uses bounded cursor pagination. Another participant cannot select a user ID or retrieve the ledger.
+
+Add operator routes under `/api/admin/seasons/:seasonId/llm-development` to list participant totals and page one participant's successful rows. Totals include informational calls used plus used and remaining budget units. The estimate flag remains in response data. Detail rows expose the same token, estimate, current-policy budget-cost, request, and completion fields as participant history and remain readable after the season closes. Operator routes use the existing admin guard and accept an explicit target user only after authorization.
 
 ## Tests
 
@@ -71,10 +75,11 @@ Backend tests cover:
 - Deleting a live recording removing its scope file, deleting one run recording preserving the shared file, and deleting the last run recording removing it only after the teardown barrier settles active requests and reservations.
 - Live and terminal workflow scopes with no recording being deleted at their lifecycle boundary without a late telemetry write.
 - Startup orphan cleanup leaving season development ledgers untouched.
-- Eligible development-season discovery, summaries with resolved cost weights, and pagination scoped from authenticated identity without key creation or rotation.
+- Eligibility-filtered development-season discovery, summaries with resolved cost weights, and pagination scoped from authenticated identity without key creation or rotation.
+- Participant and operator summary and call-history reads remaining available after submissions close.
 - Anonymous, pending, banned, and cross-participant development-ledger access rejection.
 - Operator list and detail access.
-- Development totals and estimate indicators matching successful ledger rows and remaining independent from official execution-scope SQLite and board data.
+- Development calls used, weighted budget totals, and estimate flags matching successful ledger rows and remaining independent from official execution-scope SQLite and board data.
 
 The Docker integration coverage in Step 7 exercises these routes against the full stack.
 
@@ -84,5 +89,5 @@ The Docker integration coverage in Step 7 exercises these routes against the ful
 - Ordinary and zero-success recordings return a successful empty telemetry payload, while broken associated telemetry returns `telemetry_unavailable`.
 - Request and completion bodies reach only operators and owners with a surviving authoritative submission row. Every other caller, including a former owner after submission deletion, receives no bodies.
 - Recording deletion, session and workflow teardown, and the startup sweep remove telemetry files exactly when no surviving recording references them, and development ledgers are never touched.
-- Participants can discover eligible development seasons and read only their own development summary and successful rows. Discovery and summaries include resolved cost weights without rotating a key. Operators can read every participant's totals and rows for a season.
+- Participants can discover only submission-open, LLM-enabled seasons and read only their own development summary and successful rows. Closed-season ledgers remain readable. Discovery includes resolved cost weights, limits, usage, and key state without rotating a key. Operators can read every participant's totals and rows for a season.
 - Backend authorization and retention tests pass.

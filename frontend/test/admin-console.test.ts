@@ -291,10 +291,8 @@ describe('AdminConsolePage', () => {
     await fireEvent.update(screen.getByLabelText('Medium model token price'), '2')
     await fireEvent.update(screen.getByLabelText('Small model token price'), '0.5')
     await fireEvent.update(screen.getByLabelText('Official token budget'), '10000')
-    await fireEvent.update(screen.getByLabelText('Official call budget'), '100')
     await fireEvent.update(screen.getByLabelText('Official rate limit (RPM)'), '30')
     await fireEvent.update(screen.getByLabelText('Development token budget'), '20000')
-    await fireEvent.update(screen.getByLabelText('Development call budget'), '200')
     await fireEvent.update(screen.getByLabelText('Development rate limit (RPM)'), '15')
     await fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }))
 
@@ -305,8 +303,8 @@ describe('AdminConsolePage', () => {
       enabled: true,
       models: ['medium', 'small'],
       cost_weights: { large: 4, medium: 2, small: 0.5 },
-      official: { token_budget: 10_000, call_budget: 100, rate_limit_rpm: 30 },
-      development: { token_budget: 20_000, call_budget: 200, rate_limit_rpm: 15 },
+      official: { token_budget: 10_000, rate_limit_rpm: 30 },
+      development: { token_budget: 20_000, rate_limit_rpm: 15 },
     })
   })
 
@@ -323,11 +321,11 @@ describe('AdminConsolePage', () => {
 
   it('rejects non-positive LLM limits before saving', async () => {
     await renderConsole()
-    await fireEvent.update(await screen.findByLabelText('Development call budget'), '0')
+    await fireEvent.update(await screen.findByLabelText('Development token budget'), '0')
     await fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }))
 
     expect(
-      await screen.findByText(/development call budget must be a positive integer/),
+      await screen.findByText(/development token budget must be a positive integer/),
     ).toBeInTheDocument()
     expect(vi.mocked(configureSeason)).not.toHaveBeenCalled()
   })

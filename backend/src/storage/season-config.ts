@@ -49,7 +49,6 @@ export type MessagingOverride = z.infer<typeof MessagingOverrideSchema>
 
 const LlmLimitOverrideSchema = z.strictObject({
   token_budget: z.int().positive().optional(),
-  call_budget: z.int().positive().optional(),
   rate_limit_rpm: z.int().positive().optional(),
 })
 

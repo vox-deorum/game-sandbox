@@ -45,7 +45,7 @@ function disabledLlmPolicy(): ResolvedOfficialLlmPolicy {
   return {
     enabled: false,
     models: {},
-    session: { token_budget: 1, call_budget: 1, rate_limit_rpm: 1 },
+    session: { token_budget: 1, rate_limit_rpm: 1 },
   }
 }
 
@@ -53,7 +53,7 @@ function enabledLlmPolicy(): ResolvedOfficialLlmPolicy {
   return {
     enabled: true,
     models: { small: { model: 'provider-small', cost_weight: 4 } },
-    session: { token_budget: 100, call_budget: 10, rate_limit_rpm: 10 },
+    session: { token_budget: 100, rate_limit_rpm: 10 },
   }
 }
 
@@ -558,7 +558,7 @@ describe('Docker-backed workflow runner', () => {
       scopeId: run.id,
       agentSlots: ['player_0'],
       models: { small: { upstream: 'provider-small', costWeight: 4 } },
-      limits: { tokenBudget: 100, callBudget: 10, requestsPerMinute: 10 },
+      limits: { tokenBudget: 100, requestsPerMinute: 10 },
     })
     const launch = handle.driver.lastLaunch()
     expect(JSON.parse(launch?.spec.argv[0] ?? '{}').llm).toEqual(llmLaunchConfig.llm)

@@ -752,7 +752,6 @@ export type LlmUsageByModel = SchemaLlmUsageByModel
 /** Optional deployment-default overrides for one official or development accounting scope. */
 export interface LlmLimitOverride {
   token_budget?: number
-  call_budget?: number
   rate_limit_rpm?: number
 }
 

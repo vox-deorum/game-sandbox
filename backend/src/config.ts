@@ -616,12 +616,10 @@ export function loadConfig(env?: NodeJS.ProcessEnv): Config {
       meterRecoveryIntervalMs: boundedIntVar(env, 'LLM_METER_RECOVERY_INTERVAL_MS', 1, 3_600_000),
       sessionLimits: {
         tokenBudget: positiveIntVar(env, 'LLM_SESSION_TOKEN_BUDGET'),
-        callBudget: positiveIntVar(env, 'LLM_SESSION_CALL_BUDGET'),
         requestsPerMinute: positiveIntVar(env, 'LLM_SESSION_RATE_LIMIT_RPM'),
       },
       developmentLimits: {
         tokenBudget: positiveIntVar(env, 'LLM_DEVELOPMENT_TOKEN_BUDGET'),
-        callBudget: positiveIntVar(env, 'LLM_DEVELOPMENT_CALL_BUDGET'),
         requestsPerMinute: positiveIntVar(env, 'LLM_DEVELOPMENT_RATE_LIMIT_RPM'),
       },
     },

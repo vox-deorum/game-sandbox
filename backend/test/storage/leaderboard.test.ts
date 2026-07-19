@@ -292,7 +292,7 @@ describe('leaderboard storage on :memory:', () => {
     const policy = {
       enabled: true,
       models: { small: { model: 'upstream-small-v1', cost_weight: 1 } },
-      session: { token_budget: 12_000, call_budget: 30, rate_limit_rpm: 7 },
+      session: { token_budget: 12_000, rate_limit_rpm: 7 },
     } as const
     // The resolver receives the same config text the transaction freezes into `config_snapshot`.
     const run = await storage.createRunWithSchedule(
@@ -327,7 +327,7 @@ describe('leaderboard storage on :memory:', () => {
       storage.createRunWithSchedule(season.id, 'dev-user', [], ONE_GAME, () => ({
         enabled: false,
         models: {},
-        session: { token_budget: 0, call_budget: 1, rate_limit_rpm: 1 },
+        session: { token_budget: 0, rate_limit_rpm: 1 },
       })),
     ).rejects.toThrow()
   })

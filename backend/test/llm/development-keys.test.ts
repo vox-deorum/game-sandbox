@@ -18,28 +18,30 @@ import { openSqlite } from '../../src/storage/sqlite.js'
 import { makeTestLlmOptions } from '../support/llm-options.js'
 
 function llmEnvironments(): EnvironmentRegistry {
+  const environment = {
+    env_id: 'llm_env',
+    display_name: 'LLM Environment',
+    description: 'test env',
+    min_slots: 1,
+    max_slots: 1,
+    human_slots: [],
+    human_timeout_ms: null,
+    recommended_episode_ticks: 100,
+    pace_interval_ms: null,
+    step_limit_ms: 1_000,
+    episode_limit_ms: 60_000,
+    messaging: false,
+    message_cap: null,
+    llm: true,
+    renderer: 'test',
+    seat_order_matters: false,
+    view_interval_ms: null,
+    live_interval_ms: null,
+  }
   return EnvironmentRegistry.parse(
     JSON.stringify([
-      {
-        env_id: 'llm_env',
-        display_name: 'LLM Environment',
-        description: 'test env',
-        min_slots: 1,
-        max_slots: 1,
-        human_slots: [],
-        human_timeout_ms: null,
-        recommended_episode_ticks: 100,
-        pace_interval_ms: null,
-        step_limit_ms: 1_000,
-        episode_limit_ms: 60_000,
-        messaging: false,
-        message_cap: null,
-        llm: true,
-        renderer: 'test',
-        seat_order_matters: false,
-        view_interval_ms: null,
-        live_interval_ms: null,
-      },
+      environment,
+      { ...environment, env_id: 'llm_env_2', display_name: 'LLM Environment 2' },
     ]),
   )
 }
@@ -73,6 +75,7 @@ describe('DevelopmentKeyService', () => {
     cleanups.push(() => meter.close())
     const season = await handle.storage.createSeason({ env_id: 'llm_env', deps_version: 1 })
     await handle.storage.updateSeasonConfig(season.id, enabledConfig())
+    await handle.storage.setSubmissionStatus(season.id, 'open')
 
     let byte = 0
     const serviceFor = (storage: Storage): DevelopmentKeyService =>
@@ -104,7 +107,7 @@ describe('DevelopmentKeyService', () => {
       base_url: 'https://sandbox.test/api/llm/v1',
       models: ['medium', 'small'],
       cost_weights: { medium: 2, small: 1 },
-      limits: { token_budget: 100_000, call_budget: 1_000, rate_limit_rpm: 30 },
+      limits: { token_budget: 100_000, rate_limit_rpm: 30 },
     })
     expect(storedFirst).toMatchObject({
       key_id: firstKeyId,
@@ -171,6 +174,11 @@ describe('DevelopmentKeyService', () => {
       readUserStatus: async () => status,
       random: (bytes) => Buffer.alloc(bytes, bytes),
     })
+    await expect(service.rotate(season.id, 'user-a')).rejects.toMatchObject({
+      status: 403,
+      code: 'development_closed',
+    })
+    await handle.storage.setSubmissionStatus(season.id, 'open')
     const credential = (await service.rotate(season.id, 'user-a')).api_key
     lookup.mockClear()
 
@@ -183,7 +191,7 @@ describe('DevelopmentKeyService', () => {
       },
       accountingScope: {
         key: `development:${season.id}:user-a`,
-        limits: { tokenBudget: 100_000, callBudget: 1_000, requestsPerMinute: 30 },
+        limits: { tokenBudget: 100_000, requestsPerMinute: 30 },
         weights: { small: 1, medium: 2 },
       },
     })
@@ -191,6 +199,14 @@ describe('DevelopmentKeyService', () => {
       .prepare('EXPLAIN QUERY PLAN SELECT * FROM llm_development_keys WHERE key_id = ?')
       .all('public-id') as Array<{ detail: string }>
     expect(queryPlan.some((row) => row.detail.includes('llm_development_keys_key_id'))).toBe(true)
+
+    await handle.storage.setSubmissionStatus(season.id, 'closed')
+    await expect(service.authenticate(credential)).rejects.toMatchObject({
+      status: 403,
+      code: 'development_closed',
+    })
+    await handle.storage.setSubmissionStatus(season.id, 'open')
+    await expect(service.authenticate(credential)).resolves.toMatchObject({ kind: 'development' })
 
     status = 'pending'
     await expect(service.authenticate(credential)).rejects.toMatchObject({
@@ -205,12 +221,12 @@ describe('DevelopmentKeyService', () => {
     status = 'admin'
     await handle.storage.updateSeasonConfig(
       season.id,
-      enabledConfig({ models: ['small'], development: { call_budget: 2, rate_limit_rpm: 1 } }),
+      enabledConfig({ models: ['small'], development: { token_budget: 50, rate_limit_rpm: 1 } }),
     )
     await expect(service.authenticate(credential)).resolves.toMatchObject({
       models: { small: { upstream: 'provider-small', costWeight: 1 } },
       accountingScope: {
-        limits: { callBudget: 2, requestsPerMinute: 1 },
+        limits: { tokenBudget: 50, requestsPerMinute: 1 },
         weights: { small: 1 },
       },
     })
@@ -231,9 +247,11 @@ describe('DevelopmentKeyService', () => {
     const meter = new LlmMeter({ recoveryIntervalMs: 10, now: () => 1_000 })
     cleanups.push(() => meter.close())
     const firstSeason = await handle.storage.createSeason({ env_id: 'llm_env', deps_version: 1 })
-    const secondSeason = await handle.storage.createSeason({ env_id: 'llm_env', deps_version: 1 })
+    const secondSeason = await handle.storage.createSeason({ env_id: 'llm_env_2', deps_version: 1 })
     await handle.storage.updateSeasonConfig(firstSeason.id, enabledConfig())
     await handle.storage.updateSeasonConfig(secondSeason.id, enabledConfig())
+    await handle.storage.setSubmissionStatus(firstSeason.id, 'open')
+    await handle.storage.setSubmissionStatus(secondSeason.id, 'open')
     let byte = 0
     const service = new DevelopmentKeyService({
       storage: handle.storage,

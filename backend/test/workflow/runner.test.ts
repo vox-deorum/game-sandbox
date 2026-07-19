@@ -15,7 +15,7 @@ function disabledLlmPolicy(): ResolvedOfficialLlmPolicy {
   return {
     enabled: false,
     models: {},
-    session: { token_budget: 1, call_budget: 1, rate_limit_rpm: 1 },
+    session: { token_budget: 1, rate_limit_rpm: 1 },
   }
 }
 

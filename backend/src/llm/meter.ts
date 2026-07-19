@@ -2,7 +2,6 @@ import { performance } from 'node:perf_hooks'
 
 import { LlmError } from './errors.js'
 import {
-  committedCalls,
   type LlmAccountingScope,
   type LlmRecordSink,
   type LlmSuccessfulRecord,
@@ -16,9 +15,8 @@ const RATE_WINDOW_MS = 60_000
 interface MeterState {
   rateEvents: number[]
   pendingRateEvents: Set<LlmReservation>
-  reservedCalls: number
   reservedWeightedTokens: number
-  debt: { calls: number; weightedTokens: number }
+  debt: { weightedTokens: number }
   breakerOpen: boolean
   probing: boolean
   recoveryTimer: ReturnType<typeof setTimeout> | null
@@ -87,12 +85,6 @@ export class LlmMeter {
       throw new LlmError(429, 'rate_limit_exceeded', 'Rate limit exceeded.', 'rate_limit_error')
     }
     if (
-      committedCalls(usage) + state.reservedCalls + state.debt.calls + 1 >
-      scope.limits.callBudget
-    ) {
-      throw new LlmError(400, 'budget_exceeded', 'Call budget exceeded.')
-    }
-    if (
       weightedCommittedTokens(usage, scope.weights) +
         state.reservedWeightedTokens +
         state.debt.weightedTokens +
@@ -112,7 +104,6 @@ export class LlmMeter {
       active: true,
     }
     state.pendingRateEvents.add(reservation)
-    state.reservedCalls += 1
     state.reservedWeightedTokens += requestedWeightedTokens
     return reservation
   }
@@ -142,7 +133,6 @@ export class LlmMeter {
     reservation.active = false
     const state = this.state(reservation.scope.key)
     state.pendingRateEvents.delete(reservation)
-    state.reservedCalls -= 1
     state.reservedWeightedTokens -= reservation.weightedTokens
   }
 
@@ -192,7 +182,6 @@ export class LlmMeter {
     if (!reservation.active) return
     this.release(reservation)
     const state = this.state(reservation.scope.key)
-    state.debt.calls += 1
     state.debt.weightedTokens += reservation.weightedTokens
   }
 
@@ -244,9 +233,8 @@ export class LlmMeter {
       state = {
         rateEvents: [],
         pendingRateEvents: new Set(),
-        reservedCalls: 0,
         reservedWeightedTokens: 0,
-        debt: { calls: 0, weightedTokens: 0 },
+        debt: { weightedTokens: 0 },
         breakerOpen: false,
         probing: false,
         recoveryTimer: null,

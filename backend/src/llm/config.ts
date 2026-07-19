@@ -21,9 +21,10 @@ const ModelSnapshotSchema = z.preprocess(
 const ModelMapSchema = z.partialRecord(z.enum(MODEL_ALIASES), ModelSnapshotSchema)
 const ResolvedLimitsSchema = z.strictObject({
   token_budget: z.int().positive(),
-  call_budget: z.int().positive(),
   rate_limit_rpm: z.int().positive(),
 })
+/** The snake_case wire shape of {@link LlmLimits}, shared by policy snapshots and key responses. */
+export type EncodedLlmLimits = z.infer<typeof ResolvedLimitsSchema>
 
 export const ResolvedOfficialLlmPolicySchema = z
   .strictObject({
@@ -128,19 +129,18 @@ export function decodeResolvedOfficialLlmPolicy(text: string): ResolvedOfficialL
 
 function resolveLimits(
   defaults: LlmLimits,
-  override: { token_budget?: number; call_budget?: number; rate_limit_rpm?: number } | undefined,
+  override: { token_budget?: number; rate_limit_rpm?: number } | undefined,
 ): LlmLimits {
   return {
     tokenBudget: override?.token_budget ?? defaults.tokenBudget,
-    callBudget: override?.call_budget ?? defaults.callBudget,
     requestsPerMinute: override?.rate_limit_rpm ?? defaults.requestsPerMinute,
   }
 }
 
-function encodeLimits(limits: LlmLimits): ResolvedOfficialLlmPolicy['session'] {
+/** Encode camelCase limits into the wire shape. Kept here so the encoding exists once. */
+export function encodeLimits(limits: LlmLimits): EncodedLlmLimits {
   return {
     token_budget: limits.tokenBudget,
-    call_budget: limits.callBudget,
     rate_limit_rpm: limits.requestsPerMinute,
   }
 }

@@ -5,7 +5,7 @@ import type { ResolvedOfficialLlmPolicy } from '../../src/llm/config.js'
 export const TEST_DISABLED_OFFICIAL_LLM_POLICY: ResolvedOfficialLlmPolicy = {
   enabled: false,
   models: {},
-  session: { token_budget: 100_000, call_budget: 100, rate_limit_rpm: 60 },
+  session: { token_budget: 100_000, rate_limit_rpm: 60 },
 }
 
 /** Build the LLM proxy configuration shared by backend test stacks. */
@@ -20,7 +20,7 @@ export function makeTestLlmOptions(): LlmOptions {
     defaultMaxOutputTokens: 1_024,
     maxOutputTokens: 4_096,
     meterRecoveryIntervalMs: 5_000,
-    sessionLimits: { tokenBudget: 100_000, callBudget: 100, requestsPerMinute: 60 },
-    developmentLimits: { tokenBudget: 100_000, callBudget: 1_000, requestsPerMinute: 30 },
+    sessionLimits: { tokenBudget: 100_000, requestsPerMinute: 60 },
+    developmentLimits: { tokenBudget: 100_000, requestsPerMinute: 30 },
   }
 }

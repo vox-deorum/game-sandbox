@@ -66,10 +66,8 @@ const largeCostWeight = ref<number | ''>('')
 const mediumCostWeight = ref<number | ''>('')
 const smallCostWeight = ref<number | ''>('')
 const officialTokenBudget = ref<number | ''>('')
-const officialCallBudget = ref<number | ''>('')
 const officialRateLimit = ref<number | ''>('')
 const developmentTokenBudget = ref<number | ''>('')
-const developmentCallBudget = ref<number | ''>('')
 const developmentRateLimit = ref<number | ''>('')
 
 const saving = ref(false)
@@ -105,10 +103,8 @@ function seedFromSeason(): void {
   mediumCostWeight.value = llm?.cost_weights?.medium ?? ''
   smallCostWeight.value = llm?.cost_weights?.small ?? ''
   officialTokenBudget.value = llm?.official?.token_budget ?? ''
-  officialCallBudget.value = llm?.official?.call_budget ?? ''
   officialRateLimit.value = llm?.official?.rate_limit_rpm ?? ''
   developmentTokenBudget.value = llm?.development?.token_budget ?? ''
-  developmentCallBudget.value = llm?.development?.call_budget ?? ''
   developmentRateLimit.value = llm?.development?.rate_limit_rpm ?? ''
   saved.value = false
   error.value = null
@@ -145,12 +141,10 @@ function parseSeeds(text: string): number[] {
 function buildLimitOverride(
   label: string,
   tokenBudget: number | '',
-  callBudget: number | '',
   rateLimit: number | '',
 ): { limits?: LlmLimitOverride; error?: string } {
   const values = [
     ['token budget', tokenBudget],
-    ['call budget', callBudget],
     ['rate limit', rateLimit],
   ] as const
   for (const [name, value] of values) {
@@ -160,7 +154,6 @@ function buildLimitOverride(
   }
   const limits: LlmLimitOverride = {}
   if (tokenBudget !== '') limits.token_budget = Number(tokenBudget)
-  if (callBudget !== '') limits.call_budget = Number(callBudget)
   if (rateLimit !== '') limits.rate_limit_rpm = Number(rateLimit)
   return Object.keys(limits).length === 0 ? {} : { limits }
 }
@@ -224,14 +217,12 @@ function buildConfig(): { config: SeasonConfig } | { error: string } {
   const official = buildLimitOverride(
     'official',
     officialTokenBudget.value,
-    officialCallBudget.value,
     officialRateLimit.value,
   )
   if (official.error !== undefined) return { error: official.error }
   const development = buildLimitOverride(
     'development',
     developmentTokenBudget.value,
-    developmentCallBudget.value,
     developmentRateLimit.value,
   )
   if (development.error !== undefined) return { error: development.error }
@@ -302,7 +293,6 @@ function canonicalLimits(limits: LlmLimitOverride | undefined): Record<string, u
   if (limits === undefined) return null
   return {
     token_budget: limits.token_budget ?? null,
-    call_budget: limits.call_budget ?? null,
     rate_limit_rpm: limits.rate_limit_rpm ?? null,
   }
 }
@@ -570,17 +560,6 @@ watch(confirmOpen, (open) => {
               />
             </template>
           </UiField>
-          <UiField label="Official call budget" hint="Optional; inherits the deployment default.">
-            <template #default="{ id }">
-              <UiInput
-                :id="id"
-                v-model.number="officialCallBudget"
-                type="number"
-                min="1"
-                placeholder="default"
-              />
-            </template>
-          </UiField>
           <UiField label="Official rate limit (RPM)" hint="Optional; inherits the deployment default.">
             <template #default="{ id }">
               <UiInput
@@ -601,17 +580,6 @@ watch(confirmOpen, (open) => {
               <UiInput
                 :id="id"
                 v-model.number="developmentTokenBudget"
-                type="number"
-                min="1"
-                placeholder="default"
-              />
-            </template>
-          </UiField>
-          <UiField label="Development call budget" hint="Optional; inherits the deployment default.">
-            <template #default="{ id }">
-              <UiInput
-                :id="id"
-                v-model.number="developmentCallBudget"
                 type="number"
                 min="1"
                 placeholder="default"

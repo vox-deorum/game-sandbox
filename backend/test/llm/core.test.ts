@@ -39,7 +39,7 @@ function fixture(
   const records: LlmSuccessfulRecord[] = []
   const scope: LlmAccountingScope = {
     key: 'session:s1:player_0',
-    limits: { tokenBudget: 100, callBudget: 10, requestsPerMinute: overrides.rpm ?? 10 },
+    limits: { tokenBudget: 100, requestsPerMinute: overrides.rpm ?? 10 },
     weights: { small: 1 },
     readCommittedUsage: () => ({}),
   }
@@ -281,7 +281,7 @@ describe('LLM registry, handler, and listener', () => {
     })
     await Promise.resolve()
     expect(revoked).toBe(false)
-    expect(meter.inspect(grant.accountingScope.key).reservedCalls).toBe(1)
+    expect(meter.inspect(grant.accountingScope.key).reservedWeightedTokens).toBe(11)
 
     const deniedCompletion = await app.inject({
       method: 'POST',
@@ -305,7 +305,7 @@ describe('LLM registry, handler, and listener', () => {
     await revocation
     expect(finalized).toBe(true)
     expect(revoked).toBe(true)
-    expect(meter.inspect(grant.accountingScope.key).reservedCalls).toBe(0)
+    expect(meter.inspect(grant.accountingScope.key).reservedWeightedTokens).toBe(0)
     await app.close()
   })
 
@@ -338,7 +338,7 @@ describe('LLM registry, handler, and listener', () => {
     const response = await activeRequest
     expect(response.statusCode).toBe(503)
     expect(response.json()).toMatchObject({ error: { code: 'request_cancelled' } })
-    expect(meter.inspect(grant.accountingScope.key).reservedCalls).toBe(0)
+    expect(meter.inspect(grant.accountingScope.key).reservedWeightedTokens).toBe(0)
     await app.close()
   })
 
@@ -543,9 +543,8 @@ describe('generic admission and recovery', () => {
   afterEach(() => vi.useRealTimers())
 
   it.each([
-    ['call', { tokenBudget: 100, callBudget: 1, requestsPerMinute: 10 }, 2, 3],
-    ['token', { tokenBudget: 10, callBudget: 10, requestsPerMinute: 10 }, 3, 3],
-    ['rate', { tokenBudget: 100, callBudget: 10, requestsPerMinute: 1 }, 2, 3],
+    ['token', { tokenBudget: 10, requestsPerMinute: 10 }, 3, 3],
+    ['rate', { tokenBudget: 100, requestsPerMinute: 1 }, 2, 3],
   ])('makes concurrent %s reservations observe one atomic budget', async (_kind, limits, input, output) => {
     const meter = new LlmMeter({ recoveryIntervalMs: 10 })
     const accountingScope: LlmAccountingScope = {
@@ -564,7 +563,6 @@ describe('generic admission and recovery', () => {
       reason: { code: _kind === 'rate' ? 'rate_limit_exceeded' : 'budget_exceeded' },
     })
     expect(meter.inspect(accountingScope.key)).toMatchObject({
-      reservedCalls: 1,
       reservedWeightedTokens: input + output,
     })
     expect(meter.inspect(accountingScope.key).pendingRateEvents.size).toBe(1)
@@ -576,7 +574,7 @@ describe('generic admission and recovery', () => {
     const meter = new LlmMeter({ recoveryIntervalMs: 10 })
     const scope: LlmAccountingScope = {
       key: 'weighted:mixed',
-      limits: { tokenBudget: 20, callBudget: 10, requestsPerMinute: 10 },
+      limits: { tokenBudget: 20, requestsPerMinute: 10 },
       weights: { large: 4, medium: 2, small: 1 },
       readCommittedUsage: () => ({
         small: { calls: 0, inputTokens: 1, reasoningTokens: 0, outputTokens: 1 },
@@ -596,7 +594,7 @@ describe('generic admission and recovery', () => {
     const meter = new LlmMeter({ recoveryIntervalMs: 10 })
     const scope: LlmAccountingScope = {
       key: 'weighted:fractional',
-      limits: { tokenBudget: 10, callBudget: 10, requestsPerMinute: 10 },
+      limits: { tokenBudget: 10, requestsPerMinute: 10 },
       weights: { small: 0.5 },
       readCommittedUsage: () => ({
         small: { calls: 1, inputTokens: 4, reasoningTokens: 0, outputTokens: 4 },
@@ -615,28 +613,22 @@ describe('generic admission and recovery', () => {
     meter.release(admitted)
   })
 
-  it('keeps the call budget raw and charges weighted debt without losing release precision', async () => {
+  it('charges weighted debt without losing release precision', async () => {
     const meter = new LlmMeter({ recoveryIntervalMs: 10 })
     const scope: LlmAccountingScope = {
       key: 'weighted:debt',
-      limits: { tokenBudget: 100, callBudget: 2, requestsPerMinute: 10 },
+      limits: { tokenBudget: 100, requestsPerMinute: 10 },
       weights: { large: 4, small: 1 },
       readCommittedUsage: () => ({
         large: { calls: 1, inputTokens: 0, reasoningTokens: 0, outputTokens: 0 },
         small: { calls: 1, inputTokens: 0, reasoningTokens: 0, outputTokens: 0 },
       }),
     }
-    await expect(meter.reserve(scope, 'large', 1, 2)).rejects.toMatchObject({
-      code: 'budget_exceeded',
-    })
-
-    scope.limits.callBudget = 3
     const reservation = await meter.reserve(scope, 'large', 1, 2)
     meter.chargeConservativeDebt(reservation, { record: () => {}, probeHealth: () => {} })
     expect(meter.inspect(scope.key)).toMatchObject({
-      reservedCalls: 0,
       reservedWeightedTokens: 0,
-      debt: { calls: 1, weightedTokens: 12 },
+      debt: { weightedTokens: 12 },
     })
     meter.close()
   })
@@ -656,7 +648,7 @@ describe('generic admission and recovery', () => {
     const meter = new LlmMeter({ recoveryIntervalMs: 10 })
     const makeScope = (key: string): LlmAccountingScope => ({
       key,
-      limits: { tokenBudget: 100, callBudget: 10, requestsPerMinute: 1 },
+      limits: { tokenBudget: 100, requestsPerMinute: 1 },
       weights: { small: 1 },
       readCommittedUsage: () => ({}),
     })
@@ -685,7 +677,7 @@ describe('generic admission and recovery', () => {
     const meter = new LlmMeter({ recoveryIntervalMs: 10, now: () => now })
     const scope: LlmAccountingScope = {
       key: 'concurrent:rate-order',
-      limits: { tokenBudget: 100, callBudget: 10, requestsPerMinute: 2 },
+      limits: { tokenBudget: 100, requestsPerMinute: 2 },
       weights: { small: 1 },
       readCommittedUsage: () => ({}),
     }
@@ -710,7 +702,7 @@ describe('generic admission and recovery', () => {
     const meter = new LlmMeter({ recoveryIntervalMs: 10, now: () => now })
     const scope: LlmAccountingScope = {
       key: 'concurrent:rate-rollback',
-      limits: { tokenBudget: 100, callBudget: 10, requestsPerMinute: 2 },
+      limits: { tokenBudget: 100, requestsPerMinute: 2 },
       weights: { small: 1 },
       readCommittedUsage: () => ({}),
     }
@@ -736,7 +728,7 @@ describe('generic admission and recovery', () => {
     const meter = new LlmMeter({ recoveryIntervalMs: 10, now: () => now })
     const scope: LlmAccountingScope = {
       key: 'concurrent:rate-expiry',
-      limits: { tokenBudget: 100, callBudget: 10, requestsPerMinute: 1 },
+      limits: { tokenBudget: 100, requestsPerMinute: 1 },
       weights: { small: 1 },
       readCommittedUsage: () => ({}),
     }
@@ -756,7 +748,7 @@ describe('generic admission and recovery', () => {
     const meter = new LlmMeter({ recoveryIntervalMs: 10, now: () => now })
     const scope: LlmAccountingScope = {
       key: 'concurrent:rate-late-success',
-      limits: { tokenBudget: 100, callBudget: 10, requestsPerMinute: 1 },
+      limits: { tokenBudget: 100, requestsPerMinute: 1 },
       weights: { small: 1 },
       readCommittedUsage: () => ({}),
     }
@@ -774,7 +766,7 @@ describe('generic admission and recovery', () => {
     const meter = new LlmMeter({ recoveryIntervalMs: 10, now: () => now })
     const scope: LlmAccountingScope = {
       key: 'concurrent:rate-finalized',
-      limits: { tokenBudget: 100, callBudget: 10, requestsPerMinute: 5 },
+      limits: { tokenBudget: 100, requestsPerMinute: 5 },
       weights: { small: 1 },
       readCommittedUsage: () => ({}),
     }
@@ -802,7 +794,6 @@ describe('generic admission and recovery', () => {
     })
     expect(meter.inspect(grant.accountingScope.key)).toMatchObject({
       rateEvents: [],
-      reservedCalls: 0,
     })
     expect(meter.inspect(grant.accountingScope.key).pendingRateEvents.size).toBe(0)
     await expect(handler.handle(grant, { model: 'small', messages: [] })).rejects.toMatchObject({
@@ -839,8 +830,7 @@ describe('generic admission and recovery', () => {
     const key = grant.accountingScope.key
     expect(meter.inspect(key)).toMatchObject({
       breakerOpen: true,
-      reservedCalls: 0,
-      debt: { calls: 1 },
+      debt: { weightedTokens: 11 },
     })
     await expect(handler.handle(grant, { model: 'small', messages: [] })).rejects.toMatchObject({
       code: 'meter_unavailable',
@@ -854,8 +844,8 @@ describe('generic admission and recovery', () => {
     await vi.advanceTimersByTimeAsync(10)
     expect(sink.probeHealth).toHaveBeenCalledTimes(2)
     expect(meter.inspect(key).breakerOpen).toBe(false)
-    expect(meter.inspect(key).debt.calls).toBe(1)
-    grant.accountingScope.limits.callBudget = 1
+    expect(meter.inspect(key).debt.weightedTokens).toBe(11)
+    grant.accountingScope.limits.tokenBudget = 11
     await expect(handler.handle(grant, { model: 'small', messages: [] })).rejects.toMatchObject({
       code: 'budget_exceeded',
     })
@@ -882,9 +872,8 @@ describe('generic admission and recovery', () => {
     expect(sink.record).not.toHaveBeenCalled()
     expect(meter.inspect(key)).toMatchObject({
       breakerOpen: true,
-      reservedCalls: 0,
       reservedWeightedTokens: 0,
-      debt: { calls: 1, weightedTokens: 11 },
+      debt: { weightedTokens: 11 },
     })
     await expect(handler.handle(grant, { model: 'small', messages: [] })).rejects.toMatchObject({
       code: 'meter_unavailable',
@@ -911,9 +900,8 @@ describe('generic admission and recovery', () => {
 
     expect(meter.inspect(grant.accountingScope.key)).toMatchObject({
       breakerOpen: true,
-      reservedCalls: 0,
       reservedWeightedTokens: 0,
-      debt: { calls: 1, weightedTokens: 11 },
+      debt: { weightedTokens: 11 },
     })
     meter.close()
   })
@@ -927,7 +915,7 @@ describe('generic admission and recovery', () => {
     const sink = { record: vi.fn(), probeHealth: vi.fn(() => pendingProbe) }
     const scope: LlmAccountingScope = {
       key: 'session:startup:player_0',
-      limits: { tokenBudget: 100, callBudget: 10, requestsPerMinute: 10 },
+      limits: { tokenBudget: 100, requestsPerMinute: 10 },
       weights: { small: 1 },
       readCommittedUsage: () => ({}),
     }

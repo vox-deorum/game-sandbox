@@ -25,7 +25,6 @@ export type LlmCommittedUsageByModel = Partial<Record<ModelAlias, LlmUsage>> &
 /** Successful-call limits with pending admission capacity for one generic accounting scope. */
 export interface LlmLimits {
   tokenBudget: number
-  callBudget: number
   requestsPerMinute: number
 }
 
@@ -94,11 +93,6 @@ export function modelCostWeights(
   return Object.fromEntries(
     Object.entries(models).map(([alias, model]) => [alias, model.costWeight]),
   ) as Partial<Record<ModelAlias, number>>
-}
-
-/** Successful calls committed across every model in an accounting scope. */
-export function committedCalls(byModel: LlmCommittedUsageByModel): number {
-  return Object.values(byModel).reduce((sum, usage) => sum + (usage?.calls ?? 0), 0)
 }
 
 /**

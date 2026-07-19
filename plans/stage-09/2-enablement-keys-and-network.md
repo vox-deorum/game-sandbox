@@ -18,7 +18,7 @@ The hands-on check obtains a student key for one season, makes a successful loca
 2. The environment sets `llm: true`.
 3. The season sets `llm.enabled: true`.
 
-When `llm.models` is absent, the season inherits every alias configured by the deployment. When it is present, it must be a non-empty subset of those aliases. Empty lists, duplicate aliases, and aliases unavailable on the deployment are rejected. Live sessions resolve the current play-open season when they start. Development keys resolve their named season against the current deployment and season configuration on every request. Submission, play, and release gates do not change development-key validity; the season's LLM configuration is the authority.
+When `llm.models` is absent, the season inherits every alias configured by the deployment. When it is present, it must be a non-empty subset of those aliases. Empty lists, duplicate aliases, and aliases unavailable on the deployment are rejected. Live sessions resolve the current play-open season when they start. Development access requires an open submission window and effective LLM configuration for the named season. Key creation and every development call re-check both conditions, so closing submissions immediately stops existing keys. Play and release gates do not affect development access.
 
 Leaderboard-run creation resolves the complete official LLM policy once and stores its JSON encoding in a dedicated non-null `season_runs.llm_policy_snapshot` text column. This column is separate from the existing strict season `config_snapshot` and is validated on write and read:
 
@@ -30,7 +30,6 @@ type ResolvedOfficialLlmPolicy = {
   >
   session: {
     token_budget: number
-    call_budget: number
     rate_limit_rpm: number
   }
 }
@@ -59,12 +58,10 @@ llm?: {
   }
   official?: {
     token_budget?: number
-    call_budget?: number
     rate_limit_rpm?: number
   }
   development?: {
     token_budget?: number
-    call_budget?: number
     rate_limit_rpm?: number
   }
 }
@@ -74,7 +71,7 @@ Unset limits and token prices inherit deployment defaults, and an unset model li
 
 `SeasonConfigEditor.vue` exposes enablement, allowed aliases, per-alias token prices, official per-slot limits, and development limits as separate field groups built from existing UI primitives. The admin-editor unit and browser tests cover every new control and validation state.
 
-Add deployment defaults `LLM_DEVELOPMENT_TOKEN_BUDGET`, `LLM_DEVELOPMENT_CALL_BUDGET`, and `LLM_DEVELOPMENT_RATE_LIMIT_RPM`.
+Add deployment defaults `LLM_DEVELOPMENT_TOKEN_BUDGET` and `LLM_DEVELOPMENT_RATE_LIMIT_RPM`.
 
 ## Official slot keys and launch config
 
@@ -117,7 +114,7 @@ type LlmDevelopmentKeyRow = {
 
 The `(season_id, user_id)` pair is the primary key, and `key_id` has a unique index. A bearer credential uses the format `sk-sandbox-dev-<key_id>.<secret>`, where the public key ID selects one row and only a hash of the cryptographically random secret is stored. Authentication parses the key ID, performs one indexed lookup, and verifies the secret hash in constant time.
 
-`POST /api/seasons/:seasonId/llm-development-key` requires an authenticated `normal` or `admin` user and effective LLM access for the named season. It rotates the pair's key and returns the plaintext once:
+`POST /api/seasons/:seasonId/llm-development-key` requires an authenticated `normal` or `admin` user, an open submission window, and effective LLM access for the named season. It rotates the pair's key and returns the plaintext once:
 
 ```json
 {
@@ -131,7 +128,6 @@ The `(season_id, user_id)` pair is the primary key, and `key_id` has a unique in
   },
   "limits": {
     "token_budget": 100000,
-    "call_budget": 1000,
     "rate_limit_rpm": 30
   }
 }
@@ -139,7 +135,7 @@ The `(season_id, user_id)` pair is the primary key, and `key_id` has a unique in
 
 The public base URL is derived from `PUBLIC_ORIGIN`. Rotation atomically replaces both the key ID and secret hash, invalidating the previous credential immediately while leaving accumulated development usage unchanged.
 
-Mount the shared Step 1 handler at `POST /api/llm/v1/chat/completions`. Development-key authentication resolves `{kind: 'development', seasonId, userId}` through the indexed key ID lookup and constant-time secret verification. It also checks the participant's current account status and the season's current effective LLM configuration, so a ban, status restriction, disabled season, or unavailable upstream stops authorization without rotating the key.
+Mount the shared Step 1 handler at `POST /api/llm/v1/chat/completions`. Development-key authentication resolves `{kind: 'development', seasonId, userId}` through the indexed key ID lookup and constant-time secret verification. It checks the participant's current account status, the season's open submission window, and current effective LLM configuration on every call, so a ban, status restriction, closed window, disabled season, or unavailable upstream stops authorization without rotating the key.
 
 ## Development meter and ledger
 
@@ -169,13 +165,13 @@ CREATE TABLE meter_health (
 
 The development store uses `PRAGMA user_version`, explicit migrations, prepared statements, and the same validated scope-path rules as official telemetry.
 
-The development meter uses `(seasonId, userId)` as one accounting scope for call, weighted-token, and rate limits. It sums successful rows by model for that pair and prices them with the current resolved season values, then combines them with temporary in-flight unweighted-call and weighted-token reservations. Its in-memory sliding rate window is keyed by the same pair. Key rotation does not create a new meter or clear any window.
+The development meter uses `(seasonId, userId)` as one accounting scope for weighted-token and rate limits. It sums successful rows by model for that pair and prices them with the current resolved season values, then combines them with temporary in-flight weighted-token reservations. Its in-memory sliding rate window is keyed by the same pair. Key rotation does not create a new meter or clear any window.
 
-After authentication, current effective-configuration resolution, request validation, breaker checks, and successful call-and-token reservation, admission reserves one pending slot in that pair's rate window before the first upstream attempt. A successful response converts that slot into one event stamped at the request's start, unless the start has already left the window. A non-retryable upstream error or exhausted retry sequence releases the pending slot and records no event. Backend retries are attempts within the same logical request and reserve no additional slots. Requests rejected locally before upstream admission, including rate, budget, and open-breaker rejections, reserve no slot.
+After authentication, current effective-configuration resolution, request validation, breaker checks, and successful token reservation, admission reserves one pending slot in that pair's rate window before the first upstream attempt. A successful response converts that slot into one event stamped at the request's start, unless the start has already left the window. A non-retryable upstream error or exhausted retry sequence releases the pending slot and records no event. Backend retries are attempts within the same logical request and reserve no additional slots. Requests rejected locally before upstream admission, including rate, budget, and open-breaker rejections, reserve no slot.
 
-A successful logical request writes one full row and consumes one call using upstream usage when it is valid or the Step 1 fallback estimate otherwise. `usage_estimated` records which source produced the stored token counts so read APIs and user interfaces can identify estimates. Every unsuccessful upstream path releases its call, token, and pending rate reservations and leaves the ledger unchanged.
+A successful logical request writes one full row using upstream usage when it is valid or the Step 1 fallback estimate otherwise. `usage_estimated` records which source produced the stored token counts so read APIs can identify estimates. Every unsuccessful upstream path releases its token and pending rate reservations and leaves the ledger unchanged.
 
-Post-upstream processing and the ledger transaction complete before the proxy returns a successful development completion. If normalization, usage resolution, or the durable commit fails after the upstream succeeds, the meter moves the conservative call and token reservation into in-memory charged debt for `(seasonId, userId)`, opens that pair's circuit breaker, and returns `503 meter_unavailable` instead of the completion. Requests rejected by the breaker never reach the upstream. The generic single-flight recovery loop from Step 1 probes the season ledger at the configured interval. A committed `meter_health` transaction closes that pair's breaker automatically without discarding debt retained by the running process; a failed probe leaves it open and schedules the next attempt. Conservative debt is process-lifetime state, so a trusted operator restart clears it along with reservations and rate windows. After a restart, a pair can admit requests only after the season ledger opens, applies its `user_version` changes, and passes the same write-health transaction. Recovery failures are logged without bodies or credentials.
+Post-upstream processing and the ledger transaction complete before the proxy returns a successful development completion. If normalization, usage resolution, or the durable commit fails after the upstream succeeds, the meter moves the conservative token reservation into in-memory charged debt for `(seasonId, userId)`, opens that pair's circuit breaker, and returns `503 meter_unavailable` instead of the completion. Requests rejected by the breaker never reach the upstream. The generic single-flight recovery loop from Step 1 probes the season ledger at the configured interval. A committed `meter_health` transaction closes that pair's breaker automatically without discarding debt retained by the running process; a failed probe leaves it open and schedules the next attempt. Conservative debt is process-lifetime state, so a trusted operator restart clears it along with reservations and rate windows. After a restart, a pair can admit requests only after the season ledger opens, applies its `user_version` changes, and passes the same write-health transaction. Recovery failures are logged without bodies or credentials.
 
 Official telemetry files, game results, placements, and leaderboards never read or write the development ledger. Development requests never use execution scope IDs, recording IDs, session IDs, slots, or ticks.
 
@@ -199,13 +195,15 @@ Docker-free backend and frontend tests cover:
 - One key per agent slot, no key for human slots, live grants using the session scope, workflow grants using the run scope, the exact launch-config shape, and no LLM block for a disabled session.
 - Admission closure, active-request abort or drain, and reservation finalization after every launch failure and teardown path, with no write or aggregate query racing the completed barrier.
 - Development-key authentication through one indexed key ID lookup and constant-time secret verification, one-time plaintext return, hash persistence, rotation of both identifier and secret, backend restart, account status checks, and season scoping.
-- Independent development call, token, and sliding-rate scopes for two users in one season and one user in two seasons, including key rotation preserving every counter and rate event.
+- Independent development token and sliding-rate scopes for two users in one season and one user in two seasons, including key rotation preserving every counter and rate event. The two-season fixture uses distinct environments so both submission windows can be open.
+- Closed-submission key rotation returns `development_closed`; closing a season blocks an existing key on its next call, and reopening restores it under the current policy.
 - Immediate application of changed season models and limits to an existing development key.
 - One successful development request adding one rate event, with non-retryable failures and exhausted retries releasing pending capacity, backend retry attempts adding no capacity, and pre-admission rejections reserving none.
 - Successful development calls writing one row with the correct `usage_estimated` value and every rejection or terminal upstream failure writing none.
 - A post-upstream development-accounting failure retaining conservative debt, returning `meter_unavailable`, and blocking that participant and season until the automatic recovery loop commits a successful write-health check, without blocking another participant or season.
 - Complete isolation between official meters and development meters.
 - A fresh application database creates the development-key table and nullable recording associations from the flat initial schema, and live LLM recording registration stores the session scope and session filter IDs.
+- Local application databases containing stored `call_budget` values in season configs or `llm_policy_snapshot` rows are recreated. Strict decoders do not accept the removed field.
 
 Docker integration covers:
 
@@ -218,8 +216,8 @@ Docker integration covers:
 
 - Deployment, environment, and season inputs resolve current live and development policy, while run creation freezes a complete official model mapping and limit policy used by every workflow match.
 - Official sessions receive scoped slot keys, an explicit OpenAI base URL and tick URL, and a single-destination internal network. Every teardown path blocks admission and settles active work before aggregation or deletion.
-- An active participant can rotate one indexed key ID and secret for a season and call the public backend proxy with the returned base URL and credential.
-- Development call, token, and admitted-request rate usage is metered per participant and season under season-specific limits and remains isolated from every official artifact.
-- Successful development calls create full private ledger rows that identify estimated token usage. Unsuccessful calls create no row and consume no call or token budget.
+- An active participant can rotate one indexed key ID and secret for a submission-open season and call the public backend proxy with the returned base URL and credential. Closing submissions blocks key rotation and existing-key use until the window reopens.
+- Development token and admitted-request rate usage is metered per participant and season under season-specific limits and remains isolated from every official artifact.
+- Successful development calls create full private ledger rows that identify estimated token usage. Unsuccessful calls create no row and consume no token budget.
 - A post-upstream development-accounting failure returns no completion and opens a pair-scoped circuit breaker until verified storage recovery closes it automatically.
 - Docker-free and Docker-gated tests prove the authorization, isolation, lifecycle, and network contracts.

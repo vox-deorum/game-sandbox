@@ -147,7 +147,6 @@ describe('workflow LLM budget exhaustion (Docker)', () => {
         // The accepted request reserves 31 raw tokens. At 4x, one committed 3-token call plus the
         // next reservation costs 136 units, while two committed calls plus another cost 148.
         token_budget: 140,
-        call_budget: 100,
         rate_limit_rpm: 100,
       },
     }
@@ -197,7 +196,6 @@ describe('workflow LLM budget exhaustion (Docker)', () => {
           models: ['small'],
           official: {
             token_budget: policy.session.token_budget,
-            call_budget: policy.session.call_budget,
             rate_limit_rpm: policy.session.rate_limit_rpm,
           },
         },

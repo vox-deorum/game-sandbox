@@ -6,7 +6,7 @@ import { createDevelopmentRecordSink } from '../storage/llm/development-ledger/s
 import type { DevelopmentLedgerStore } from '../storage/llm/development-ledger/store.js'
 import type { LlmDevelopmentKey, Season } from '../storage/schema.js'
 import { decodeSeasonConfig } from '../storage/season-config.js'
-import { type ResolvedLlm, resolveLlm } from './config.js'
+import { type EncodedLlmLimits, encodeLimits, type ResolvedLlm, resolveLlm } from './config.js'
 import { LlmError } from './errors.js'
 import type { LlmMeter } from './meter.js'
 import type { LlmGrant, ModelAlias } from './types.js'
@@ -44,7 +44,7 @@ export interface DevelopmentKeyResponse {
   api_key: string
   models: string[]
   cost_weights: Partial<Record<ModelAlias, number>>
-  limits: { token_budget: number; call_budget: number; rate_limit_rpm: number }
+  limits: EncodedLlmLimits
 }
 
 /** Persistent development credentials and per-request current-policy grant construction. */
@@ -74,11 +74,7 @@ export class DevelopmentKeyService {
       api_key: `sk-sandbox-dev-${keyId}.${secret}`,
       models: MODEL_ALIASES.filter((alias) => resolved.models[alias] !== undefined),
       cost_weights: modelCostWeights(resolved.models),
-      limits: {
-        token_budget: resolved.development.tokenBudget,
-        call_budget: resolved.development.callBudget,
-        rate_limit_rpm: resolved.development.requestsPerMinute,
-      },
+      limits: encodeLimits(resolved.development),
     }
   }
 
@@ -121,6 +117,9 @@ export class DevelopmentKeyService {
     const environment = this.deps.environments.get(season.env_id)
     if (environment === undefined) {
       throw new LlmError(403, 'llm_not_enabled', 'LLM access is not enabled for this season.')
+    }
+    if (season.submission_status !== 'open') {
+      throw new LlmError(403, 'development_closed', 'Development access is closed for this season.')
     }
     const resolved = resolveLlm(this.deps.llm, environment, decodeSeasonConfig(season.config))
     if (!resolved.enabled) {
