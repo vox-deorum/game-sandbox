@@ -45,6 +45,9 @@ describe('SeasonSubmissions', () => {
     expect(link.getAttribute('download')).toBe('alice-sub-abcd.tar.gz')
     const all = screen.getByRole('link', { name: /Download all/ })
     expect(all.getAttribute('href')).toBe('/api/admin/seasons/iter-1/submissions/download')
+    expect(all).toHaveAttribute('download', 'season-iter-1.tar.gz')
+    expect(all).toHaveClass('ui-button', 'secondary', 'tight')
+    expect(screen.getByRole('heading', { name: 'Submissions', level: 2 })).toBeInTheDocument()
   })
 
   it('disables the download for a submission without a snapshot', async () => {

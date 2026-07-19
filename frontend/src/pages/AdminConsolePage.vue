@@ -277,13 +277,11 @@ async function saveRename(seasonId: string): Promise<void> {
 
             <section class="admin-section">
               <h2>Run Configuration</h2>
-              <UiCard class="admin-card">
-                <SeasonConfigEditor
-                  :season="view.season"
-                  @changed="refresh"
-                  @dirty-change="configDirty = $event"
-                />
-              </UiCard>
+              <SeasonConfigEditor
+                :season="view.season"
+                @changed="refresh"
+                @dirty-change="configDirty = $event"
+              />
             </section>
 
             <section class="admin-section">
@@ -294,10 +292,7 @@ async function saveRename(seasonId: string): Promise<void> {
             </section>
 
             <section class="admin-section">
-              <h2>Submissions</h2>
-              <UiCard class="admin-card">
-                <SeasonSubmissions :season-id="view.season.id" />
-              </UiCard>
+              <SeasonSubmissions :season-id="view.season.id" />
             </section>
 
             <section class="admin-section">

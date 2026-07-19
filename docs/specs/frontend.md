@@ -45,7 +45,7 @@ The environment overview targets three potentially different seasons:
 
 The built-in **Naive agent** is always the first watch option. Ready submissions for the play-open season follow it.
 
-Replays are public and read-only. They belong to an environment, while a season column records the season associated with the producing session. Owners may pin their own recordings.
+Replays are public and read-only. They belong to an environment, while a season column records the season associated with the producing session. The replay list shows only the final section of each recording identifier and places the owner first. A naturally completed multiplayer replay with one top-ranked player names that player as `player_N won`; multiple top-ranked players show `Tied`, while replays without eligible ranking data keep their general termination label. Owners may pin their own recordings.
 
 Human feedback is blind while a season's play window is open. Non-operators see numbered submitted agents in the watch list, without owner profiles or source details. An unrated agent is presented as a **Rate** action; an agent the viewer already rated, or the viewer's own agent, is a **Watch again** action. Operators retain the identified view. Submitted-agent attribution stays anonymous for non-operators on the live session, post-session rating panel, replay list, and replay viewer until play closes. Released leaderboards and agent profiles remain identified.
 

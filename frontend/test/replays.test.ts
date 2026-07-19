@@ -31,6 +31,7 @@ function recording(overrides: Partial<RecordingSummary> = {}): RecordingSummary 
     created_at: '2026-06-11T00:00:00.000Z',
     pinned: false,
     termination_reason: 'terminated',
+    winner_id: null,
     season_id: null,
     ...overrides,
   }
@@ -86,33 +87,61 @@ describe('ReplaysPage', () => {
   it('renders a row per replay with the season label, outcome, owner, and player summary', async () => {
     vi.mocked(listRecordings).mockResolvedValue([
       recording({
-        id: 'flappy_bird-1',
+        id: 'flappy_bird-12345678-abcd-ef01-2345-6789abcdef01',
         season_id: 'season-1',
+        winner_id: 'player_2',
         header: {
           schema_version: 1,
           environment: 'flappy_bird',
-          players: { player_0: { kind: 'agent', label: 'Naive agent' } },
+          players: {
+            player_0: { kind: 'agent', label: 'Naive agent' },
+            player_1: { kind: 'agent', label: 'Naive agent' },
+            player_2: { kind: 'agent', label: 'Naive agent' },
+          },
         },
       }),
     ])
     await renderPage()
 
-    // The env prefix is dropped from the displayed id (the page is already scoped to the environment),
-    // but the link still targets the full recording id.
-    const link = await screen.findByRole('link', { name: '1' })
-    expect(link).toHaveAttribute('href', '/replays/flappy_bird-1')
+    // Only the final id section is shown, but the link still targets the full recording id.
+    const link = await screen.findByRole('link', { name: '6789abcdef01' })
+    expect(link).toHaveAttribute(
+      'href',
+      '/replays/flappy_bird-12345678-abcd-ef01-2345-6789abcdef01',
+    )
     // The recordings read is scoped to the environment in the route.
     expect(vi.mocked(listRecordings)).toHaveBeenCalledWith({ env: 'flappy_bird' })
 
     const row = link.closest('tr') as HTMLElement
     expect(within(row).getByText('Week 1')).toBeInTheDocument() // season label, not the raw id
-    expect(within(row).getByText('Game over')).toBeInTheDocument() // termination reason via reasonText
+    expect(within(row).getByText('player_2 won')).toBeInTheDocument()
     // No user_name on this fixture, so the Owner cell falls back to the stable user_id, kept as its
     // own tooltip.
     const ownerCell = within(row).getByText('alice')
     expect(ownerCell).toHaveAttribute('title', 'alice')
+    const cells = within(row).getAllByRole('cell')
+    expect(cells[0]).toBe(ownerCell)
+    expect(cells[1]).toContainElement(link)
     expect(within(row).getByText(/Naive agent/)).toBeInTheDocument()
     expect(vi.mocked(watchAgentNumbers)).not.toHaveBeenCalled()
+  })
+
+  it('shows a tie when multiple players share the eligible top rank', async () => {
+    vi.mocked(listRecordings).mockResolvedValue([
+      recording({ id: 'flappy_bird-tied', winner_id: -1 }),
+    ])
+    await renderPage()
+
+    const row = (await screen.findByRole('link', { name: 'tied' })).closest('tr') as HTMLElement
+    expect(within(row).getByText('Tied')).toBeInTheDocument()
+  })
+
+  it('keeps the termination label when final ranking data is unavailable', async () => {
+    vi.mocked(listRecordings).mockResolvedValue([recording({ id: 'flappy_bird-unknown' })])
+    await renderPage()
+
+    const row = (await screen.findByRole('link', { name: 'unknown' })).closest('tr') as HTMLElement
+    expect(within(row).getByText('Game over')).toBeInTheDocument()
   })
 
   it('prefers the recording user_name over user_id in the Owner column, keeping the id as a tooltip', async () => {
@@ -185,9 +214,7 @@ describe('ReplaysPage', () => {
     vi.mocked(watchAgentNumbers).mockResolvedValue({ 'sub-maya': 1 })
     await renderPage()
 
-    const row = (await screen.findByRole('link', { name: 'blind-human' })).closest(
-      'tr',
-    ) as HTMLElement
+    const row = (await screen.findByRole('link', { name: 'human' })).closest('tr') as HTMLElement
     const playersCell = within(row).getByText(/: Human,/)
     expect(playersCell.textContent).not.toContain('Alice Chen')
     expect(playersCell.textContent).not.toContain('alice-chen')
@@ -262,7 +289,7 @@ describe('ReplaysPage', () => {
       recording({ id: 'rec-b', user_id: 'amy' }),
     ])
     await renderPage()
-    await screen.findByRole('link', { name: 'rec-a' })
+    await screen.findByRole('link', { name: 'a' })
 
     // Default order is the backend order (as returned): zoe's row first.
     expect(within(firstBodyRow()).getByText('zoe')).toBeInTheDocument()

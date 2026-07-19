@@ -105,6 +105,9 @@ const llmTokenBudget = ref<number | ''>('')
         <UiButton disabled>Disabled</UiButton>
         <UiButton loading>Loading</UiButton>
         <UiButton to="/">Link as button</UiButton>
+        <UiButton href="/styleguide-example.txt" download="styleguide-example.txt">
+          Native download link
+        </UiButton>
       </div>
     </section>
 

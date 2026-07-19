@@ -17,7 +17,7 @@ The transport is a plain client-side controller over the state array, and the co
 - **Scrub.** A slider over the state index, labeled with tick numbers; dragging renders the state under the thumb directly.
 - **Deep link.** `?t=⟨tick⟩` seeks on load, so a moment inside a replay is linkable, not just the replay.
 
-The environment's replays list comes from `GET /api/recordings` filtered to the environment (a `?env=` query parameter on the listing, matching against the retention rows below), newest first, each linking into the viewer and showing pin state for the owner's own recordings. (At this stage it rendered as a recent-replays list on the environment hub; Stage 6 moved it to the dedicated **Replays** tab as a sortable table.)
+The environment's replays list comes from `GET /api/recordings` filtered to the environment (a `?env=` query parameter on the listing, matching against the retention rows below), newest first, each linking into the viewer and showing pin state for the owner's own recordings. The volume listing reads the final complete state in bounded tail chunks and exposes the top-ranked multiplayer result for naturally completed runs. The sortable table places owner before the shortened final identifier section and renders one winner as `player_N won`, multiple top-ranked players as `Tied`, and ineligible runs with the general termination label. (At this stage it rendered as a recent-replays list on the environment hub; Stage 6 moved it to the dedicated **Replays** tab as a sortable table.)
 
 ## Retention metadata
 
@@ -25,7 +25,7 @@ Stage 3 lists recordings straight off the volume with no notion of owner or age,
 
 Rows are written by the orchestrator's finalize routine. Every end path already converges there, so every session-produced recording gets exactly one row. (An earlier plan iteration had a migration backfill rows from the existing `sessions` table for pre-Stage-4 recordings; with the single fresh-build schema and no deployed data, there is nothing to backfill, so a fresh deployment simply accrues rows as sessions finalize.) A directory with no row is foreign debris: a half-written crash artifact or hand-copied data. It is listed header-only, never evicted, and is an operator concern.
 
-`GET /api/recordings` merges the volume listing with the rows, so each entry carries the header plus `user_id`, `created_at`, and `pinned`; `GET /api/recordings/:id` is unchanged.
+`GET /api/recordings` merges the volume listing with the rows, so each entry carries the header plus `user_id`, `created_at`, `pinned`, termination metadata, season, and `winner_id`: the winning player slot, `-1` for a tie, or `null` when no eligible result exists. `GET /api/recordings/:id` is unchanged.
 
 ## Eviction
 

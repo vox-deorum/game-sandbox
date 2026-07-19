@@ -123,6 +123,8 @@ export interface RecordingSummary {
   pinned: boolean
   /** How the producing session ended, so the replay viewer can label its outcome; null when unknown. */
   termination_reason: string | null
+  /** The winning player slot, -1 for a tie, or null when no eligible result exists. */
+  winner_id?: string | -1 | null
   /** The season the producing session competed in; null when no session claims the recording. */
   season_id: string | null
 }

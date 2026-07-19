@@ -24,7 +24,7 @@ import { type AttributionContext, attributionLabel, hasSubmittedAgent, isBlindMa
 import { anonymityState, presentsMasked } from '../lib/anonymity.js'
 import { formatDateOnly, formatSeasonName, formatSlotIndex } from '../lib/format.js'
 import { isAdmin, useMe, userId } from '../me.js'
-import { reasonText } from '../replay/reason.js'
+import { isCompletedOutcome, reasonText } from '../replay/reason.js'
 
 const route = useRoute()
 const me = useMe()
@@ -84,11 +84,23 @@ function playersTitle(replay: RecordingSummary): string | undefined {
   return ids.length > 0 ? ids.join(', ') : undefined
 }
 
-/** The replay id with its leading `⟨environment⟩-` prefix dropped, since the page is already scoped
- *  to one environment — the prefix is redundant noise that only crowds the column. */
+/** Show only the final hyphen-delimited section while the link keeps the complete recording id. */
 function displayId(replay: RecordingSummary): string {
-  const prefix = `${envId.value}-`
-  return replay.id.startsWith(prefix) ? replay.id.slice(prefix.length) : replay.id
+  const section = replay.id.split('-').at(-1)
+  return section === undefined || section === '' ? replay.id : section
+}
+
+/** Name a unique multiplayer winner for completed play, otherwise retain the termination label. */
+function outcomeText(replay: RecordingSummary): string {
+  if (isCompletedOutcome(replay.termination_reason)) {
+    if (replay.winner_id === -1) {
+      return 'Tied'
+    }
+    if (typeof replay.winner_id === 'string') {
+      return `${replay.winner_id} won`
+    }
+  }
+  return reasonText(replay.termination_reason)
 }
 
 function seasonText(replay: RecordingSummary): string {
@@ -130,7 +142,7 @@ function sortValue(replay: RecordingSummary, key: SortKey): string {
     case 'season':
       return seasonText(replay)
     case 'outcome':
-      return reasonText(replay.termination_reason)
+      return outcomeText(replay)
     case 'created':
       return replay.created_at ?? ''
   }
@@ -192,13 +204,13 @@ watch(envId, (id) => void load(id), { immediate: true })
     <table v-else class="replays-table">
       <thead>
         <tr>
+          <th scope="col" :aria-sort="ariaSort('owner')">
+            <button type="button" class="sort-head" @click="sortBy('owner')">Owner</button>
+          </th>
           <th scope="col" :aria-sort="ariaSort('id')">
             <button type="button" class="sort-head" @click="sortBy('id')">Replay</button>
           </th>
           <th scope="col">Players</th>
-          <th scope="col" :aria-sort="ariaSort('owner')">
-            <button type="button" class="sort-head" @click="sortBy('owner')">Owner</button>
-          </th>
           <th scope="col" :aria-sort="ariaSort('season')">
             <button type="button" class="sort-head" @click="sortBy('season')">Season</button>
           </th>
@@ -212,16 +224,16 @@ watch(envId, (id) => void load(id), { immediate: true })
       </thead>
       <tbody>
         <tr v-for="replay in sortedReplays" :key="replay.id">
+          <td :title="isBlindReplay(replay) ? undefined : (replay.user_id ?? undefined)">
+            {{ isBlindReplay(replay) ? '—' : (replay.user_name ?? replay.user_id ?? '—') }}
+          </td>
           <td>
             <RouterLink class="replay-id" :to="`/replays/${replay.id}`">{{ displayId(replay) }}</RouterLink>
             <UiBadge v-if="showsPin(replay)" variant="accent">Pinned</UiBadge>
           </td>
           <td class="replay-players" :title="playersTitle(replay)">{{ playersSummary(replay) }}</td>
-          <td :title="isBlindReplay(replay) ? undefined : (replay.user_id ?? undefined)">
-            {{ isBlindReplay(replay) ? '—' : (replay.user_name ?? replay.user_id ?? '—') }}
-          </td>
           <td>{{ seasonText(replay) }}</td>
-          <td>{{ reasonText(replay.termination_reason) }}</td>
+          <td>{{ outcomeText(replay) }}</td>
           <td>{{ formatDateOnly(replay.created_at) ?? '—' }}</td>
         </tr>
       </tbody>

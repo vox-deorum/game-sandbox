@@ -25,6 +25,7 @@ import type { RecordingsStore } from './recordings.js'
 import type { Recording, RecordingCleanupClaimResult, Storage } from './storage/index.js'
 
 const MS_PER_DAY = 86_400_000
+const COMPLETED_OUTCOMES = new Set(['terminated', 'truncated'])
 
 /** The retention knobs, sliced from {@link import('./config.js').Config}. */
 export interface RetentionConfig {
@@ -48,6 +49,8 @@ export interface RecordingListing {
    * session. Null when neither carries one (foreign debris, or a session still running when listed).
    */
   termination_reason: string | null
+  /** The winning slot, -1 for a tie, or null when the completed run has no eligible ranking data. */
+  winner_id: string | -1 | null
   /**
    * The season the producing session competed in, joined from the session row, so a replay carries
    * the play-open (or submission) season it belongs to. Null when no session claims the recording
@@ -254,13 +257,15 @@ export class Retention {
 
     const merged: RecordingListing[] = volume.map((entry) => {
       const row = rowById.get(entry.id)
+      const terminationReason = reasonByRecording.get(entry.id) ?? row?.termination_reason ?? null
       return {
         id: entry.id,
         header: entry.header,
         user_id: row?.user_id ?? null,
         created_at: row?.created_at ?? null,
         pinned: row?.pinned === 1,
-        termination_reason: reasonByRecording.get(entry.id) ?? row?.termination_reason ?? null,
+        termination_reason: terminationReason,
+        winner_id: COMPLETED_OUTCOMES.has(terminationReason ?? '') ? entry.winner_id : null,
         season_id: seasonByRecording.get(entry.id) ?? null,
       }
     })

@@ -17,6 +17,7 @@ import {
 } from '../../api/client.js'
 import { formatDate } from '../../lib/format.js'
 import { submissionStatusLabel, submissionStatusTone } from '../../lib/submission-status.js'
+import UiButton from '../ui/UiButton.vue'
 import UiEmptyState from '../ui/UiEmptyState.vue'
 import UiStatusBadge from '../ui/UiStatusBadge.vue'
 
@@ -56,13 +57,15 @@ watch(
 <template>
   <div class="submissions">
     <div class="submissions-head">
-      <a
-        class="download-all"
+      <h2>Submissions</h2>
+      <UiButton
+        variant="secondary"
+        size="tight"
         :href="adminSeasonDownloadUrl(seasonId)"
         :download="`season-${seasonId.slice(0, 8)}.tar.gz`"
       >
         Download all (.tar.gz)
-      </a>
+      </UiButton>
     </div>
 
     <UiEmptyState v-if="loading">Loading…</UiEmptyState>
@@ -110,19 +113,15 @@ watch(
 <style scoped>
 .submissions-head {
   display: flex;
-  justify-content: flex-end;
-  margin-bottom: var(--space-3);
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
 }
 
-.download-all {
-  color: var(--color-accent);
-  text-decoration: none;
-  font-size: var(--text-sm);
-  font-weight: 600;
-}
-
-.download-all:hover {
-  text-decoration: underline;
+.submissions-head h2 {
+  margin: 0;
+  font-size: var(--text-lg);
 }
 
 .submissions-table {

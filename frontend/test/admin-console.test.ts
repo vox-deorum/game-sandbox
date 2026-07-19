@@ -170,6 +170,24 @@ describe('AdminConsolePage', () => {
     expect(screen.getByText('Play closed')).toBeInTheDocument()
   })
 
+  it('groups run configuration into three cards with the save action after them', async () => {
+    await renderConsole()
+
+    const runConfigurationHeading = await screen.findByRole('heading', {
+      name: 'Run Configuration',
+    })
+    const runConfiguration = runConfigurationHeading.closest('section')
+    expect(runConfiguration).not.toBeNull()
+    expect(runConfiguration?.querySelectorAll('.ui-card')).toHaveLength(3)
+
+    for (const title of ['Match Design', 'Session Behavior', 'LLM Access']) {
+      expect(screen.getByRole('heading', { name: title }).closest('.ui-card')).not.toBeNull()
+    }
+    expect(
+      screen.getByRole('button', { name: 'Save configuration' }).closest('.ui-card'),
+    ).toBeNull()
+  })
+
   it('prefixes an unnamed season exactly once', async () => {
     const unnamed = season({ id: 'abcdef123456', label: null })
     vi.mocked(listSeasons).mockResolvedValue([pickerSeason({ id: 'abcdef123456', label: null })])

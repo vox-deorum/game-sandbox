@@ -559,6 +559,7 @@ describe('UsersAdminPage', () => {
     await renderUsersPage()
     await screen.findByText('Pat')
 
+    expect(screen.getByRole('button', { name: 'Reset' })).toBeInTheDocument()
     await fireEvent.click(screen.getByRole('button', { name: 'Unban' }))
     await waitFor(() => expect(unbanUser).toHaveBeenCalledWith({ userId: 'u1' }))
     await waitFor(() => expect(listUsers).toHaveBeenCalledTimes(2))
@@ -569,7 +570,7 @@ describe('UsersAdminPage', () => {
     await renderUsersPage()
     await screen.findByText('Pat')
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Reset password' }))
+    await fireEvent.click(screen.getByRole('button', { name: 'Reset' }))
     const dialog = await screen.findByRole('dialog')
     await fireEvent.update(within(dialog).getByLabelText('New password'), 'hunter2')
     await fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
@@ -611,6 +612,6 @@ describe('UsersAdminPage', () => {
 
     expect(screen.getByRole('button', { name: 'Demote' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Ban' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Reset password' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Reset' })).toBeDisabled()
   })
 })

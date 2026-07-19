@@ -130,7 +130,6 @@ function createdText(row: RosterUser): string {
             Ban
           </UiButton>
           <UiButton
-            v-else
             size="tight"
             variant="secondary"
             :disabled="isSelf(row)"

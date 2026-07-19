@@ -29,6 +29,7 @@ import {
   type SlotSpec,
 } from '../../api/client.js'
 import UiButton from '../ui/UiButton.vue'
+import UiCard from '../ui/UiCard.vue'
 import UiDialog from '../ui/UiDialog.vue'
 import UiField from '../ui/UiField.vue'
 import UiInput from '../ui/UiInput.vue'
@@ -371,7 +372,8 @@ watch(confirmOpen, (open) => {
 
 <template>
   <div class="config">
-    <h3 class="config-title">Match design</h3>
+    <UiCard aria-labelledby="match-design-title">
+      <h3 id="match-design-title" class="config-title">Match Design</h3>
 
     <UiField label="Dependency-set version" hint="Defaults to the current template release.">
       <template #default="{ id }">
@@ -418,10 +420,12 @@ watch(confirmOpen, (open) => {
         </div>
       </li>
     </ol>
-    <UiButton variant="secondary" size="tight" @click="addMatch">Add match</UiButton>
+      <UiButton variant="secondary" size="tight" @click="addMatch">Add match</UiButton>
+    </UiCard>
 
-    <h3 class="config-title">Session behavior</h3>
-    <div class="match-fields">
+    <UiCard aria-labelledby="session-behavior-title">
+      <h3 id="session-behavior-title" class="config-title">Session Behavior</h3>
+      <div class="match-fields">
       <UiField label="Step timeout (ms)">
         <template #default="{ id }">
           <UiInput :id="id" v-model.number="stepTimeout" type="number" min="1" placeholder="default" />
@@ -458,10 +462,11 @@ watch(confirmOpen, (open) => {
           <UiInput :id="id" v-model.number="messageCap" type="number" min="1" placeholder="default" />
         </template>
       </UiField>
-    </div>
+      </div>
+    </UiCard>
 
-    <section class="llm-config" aria-labelledby="llm-config-title">
-      <h3 id="llm-config-title" class="config-title">LLM access</h3>
+    <UiCard aria-labelledby="llm-config-title">
+      <h3 id="llm-config-title" class="config-title">LLM Access</h3>
       <div class="match-fields">
         <UiField
           label="LLM enablement"
@@ -601,7 +606,7 @@ watch(confirmOpen, (open) => {
           </UiField>
         </fieldset>
       </div>
-    </section>
+    </UiCard>
 
     <div class="config-actions">
       <UiButton :loading="saving" @click="save">Save configuration</UiButton>
@@ -632,6 +637,12 @@ watch(confirmOpen, (open) => {
 </template>
 
 <style scoped>
+.config {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
 .config-title {
   margin: 0 0 var(--space-3);
   font-size: var(--text-md);
@@ -702,10 +713,6 @@ watch(confirmOpen, (open) => {
   flex-wrap: wrap;
 }
 
-.llm-config {
-  margin-top: var(--space-5);
-}
-
 .alias-picker,
 .limit-group {
   margin: var(--space-4) 0 0;
@@ -751,7 +758,7 @@ watch(confirmOpen, (open) => {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  margin-top: var(--space-4);
+  flex-wrap: wrap;
 }
 
 .config-saved {

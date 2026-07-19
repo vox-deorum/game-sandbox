@@ -105,6 +105,24 @@ test('operator season configuration exposes and validates LLM controls', async (
   await page.goto(`/environments/${ENV_ID}/admin`)
   await page.getByRole('button', { name: /LLM controls/ }).click()
 
+  const runConfiguration = page.getByRole('heading', { name: 'Run Configuration' }).locator('..')
+  await expect(runConfiguration.locator('.ui-card')).toHaveCount(3)
+  await expect(runConfiguration.getByRole('heading', { name: 'Match Design' })).toBeVisible()
+  await expect(runConfiguration.getByRole('heading', { name: 'Session Behavior' })).toBeVisible()
+  await expect(runConfiguration.getByRole('heading', { name: 'LLM Access' })).toBeVisible()
+  await expect(
+    runConfiguration.locator('.ui-card').getByRole('button', { name: 'Save configuration' }),
+  ).toHaveCount(0)
+
+  const submissions = page.locator('section.admin-section', {
+    has: page.getByRole('heading', { name: 'Submissions' }),
+  })
+  const downloadAll = submissions.getByRole('link', { name: 'Download all (.tar.gz)' })
+  await expect(downloadAll).toHaveClass(/secondary/)
+  await expect(downloadAll).toHaveClass(/tight/)
+  await expect(downloadAll).toHaveAttribute('download', `season-${season.id.slice(0, 8)}.tar.gz`)
+  await expect(submissions.locator('.ui-card')).toHaveCount(0)
+
   await expect(page.getByLabel('LLM enablement')).toBeVisible()
   await expect(page.getByLabel('Allowed model aliases')).toBeVisible()
   await expect(page.getByLabel('Large model token price')).toBeVisible()

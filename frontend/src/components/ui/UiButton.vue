@@ -1,7 +1,8 @@
 <!--
-  The button primitive: renders a RouterLink when `to` is set, a button otherwise, so links that
-  look like buttons and real buttons share one look. Variants and sizes are the only styling knobs;
-  pages must not restyle buttons with their own CSS (see docs/contributors/design.md).
+  The button primitive: renders a RouterLink when `to` is set, a native link when `href` is set, and
+  a button otherwise, so links that look like buttons and real buttons share one look. Variants and
+  sizes are the only styling knobs; pages must not restyle buttons with their own CSS (see
+  docs/contributors/design.md).
 -->
 <script setup lang="ts">
 import { computed } from 'vue'
@@ -13,12 +14,25 @@ const props = withDefaults(
     size?: 'tight' | 'md' | 'lg'
     /** Renders the button as a RouterLink to this target. */
     to?: string
+    /** Renders the button as a native link to this target. Use for downloads and external URLs. */
+    href?: string
+    /** Suggests a filename when the native link downloads its target. */
+    download?: string
     type?: 'button' | 'submit'
     disabled?: boolean
     /** A pending action: shows the busy state and blocks re-triggering. */
     loading?: boolean
   }>(),
-  { variant: 'primary', size: 'md', type: 'button', to: undefined, disabled: false, loading: false },
+  {
+    variant: 'primary',
+    size: 'md',
+    type: 'button',
+    to: undefined,
+    href: undefined,
+    download: undefined,
+    disabled: false,
+    loading: false,
+  },
 )
 
 // Loading implies disabled so a pending action cannot be fired twice.
@@ -29,6 +43,15 @@ const isDisabled = computed(() => props.disabled || props.loading)
   <RouterLink v-if="to" class="ui-button" :class="[variant, size]" :to="to">
     <slot />
   </RouterLink>
+  <a
+    v-else-if="href"
+    class="ui-button"
+    :class="[variant, size]"
+    :href="href"
+    :download="download"
+  >
+    <slot />
+  </a>
   <button
     v-else
     class="ui-button"

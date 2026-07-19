@@ -10,6 +10,20 @@ import { RecordingsStore } from '../src/recordings.js'
 const HEADER =
   '{"created_at":"2026-06-11T00:00:00+00:00","environment":"flappy_bird","schema_version":1,"seed":0}'
 const STATE = '{"schema_version":1,"tick":0,"agents":{},"timing":{"started_at":1,"duration_ms":1}}'
+const WIN_STATE = JSON.stringify({
+  schema_version: 1,
+  tick: 1,
+  agents: {},
+  overlay: { leaderboard_scores: [2, 8, 4] },
+  timing: { started_at: 2, duration_ms: 1 },
+})
+const TIED_STATE = JSON.stringify({
+  schema_version: 1,
+  tick: 1,
+  agents: {},
+  overlay: { leaderboard_scores: [8, 2, 8] },
+  timing: { started_at: 2, duration_ms: 1 },
+})
 
 describe('recordings store over the volume layout', () => {
   let root: string
@@ -42,6 +56,20 @@ describe('recordings store over the volume layout', () => {
     await writeRecording('empty', [''])
     await writeRecording('garbage', ['not json'])
     expect((await store.list()).map((s) => s.id)).toEqual(['good'])
+  })
+
+  it('lists a unique final-state winner and uses -1 for a tie', async () => {
+    await writeRecording('winner', [HEADER, STATE, WIN_STATE])
+    await writeRecording('tie', [HEADER, TIED_STATE])
+
+    const byId = new Map((await store.list()).map((summary) => [summary.id, summary]))
+    expect(byId.get('winner')?.winner_id).toBe('player_1')
+    expect(byId.get('tie')?.winner_id).toBe(-1)
+  })
+
+  it('uses the newest complete state when the recording ends with a partial line', async () => {
+    await writeRecording('partial', [HEADER, WIN_STATE, '{"schema_version":1'])
+    expect((await store.list())[0]?.winner_id).toBe('player_1')
   })
 
   it('returns no recordings when the volume does not exist yet', async () => {

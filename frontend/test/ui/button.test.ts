@@ -52,4 +52,22 @@ describe('UiButton', () => {
     expect(screen.getByRole('link', { name: 'Home' })).toHaveAttribute('href', '/')
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
+
+  it('renders a native download link when `href` is set', () => {
+    render(UiButton, {
+      props: {
+        href: '/archive.tar.gz',
+        download: 'season-archive.tar.gz',
+        variant: 'secondary',
+        size: 'tight',
+      },
+      slots: { default: 'Download archive' },
+    })
+
+    const link = screen.getByRole('link', { name: 'Download archive' })
+    expect(link).toHaveAttribute('href', '/archive.tar.gz')
+    expect(link).toHaveAttribute('download', 'season-archive.tar.gz')
+    expect(link).toHaveClass('ui-button', 'secondary', 'tight')
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
 })

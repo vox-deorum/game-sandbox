@@ -11,15 +11,24 @@ import { open, readdir, rm, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Readable } from 'node:stream'
 
-import { parseHeader, type RecordingHeader } from '@game-sandbox/schema'
+import {
+  parseHeader,
+  parseStepState,
+  type RecordingHeader,
+  type StepState,
+} from '@game-sandbox/schema'
 
 const RECORDING_FILE = 'recording.jsonl'
 /** Headers are tiny; cap the header read so a huge recording never loads into memory for a listing. */
 const HEADER_READ_LIMIT = 64 * 1024
+/** Read recordings from the end in bounded chunks when finding the final complete state. */
+const TAIL_READ_SIZE = 64 * 1024
 
 export interface RecordingSummary {
   id: string
   header: RecordingHeader
+  /** The winning slot, -1 for a tie, or null when the final state has no eligible ranking data. */
+  winner_id: string | -1 | null
 }
 
 export class RecordingsStore {
@@ -41,7 +50,8 @@ export class RecordingsStore {
       }
       const header = await this.readHeader(entry.name)
       if (header !== undefined) {
-        summaries.push({ id: entry.name, header })
+        const finalState = await this.lastState(entry.name)
+        summaries.push({ id: entry.name, header, winner_id: winnerId(finalState) })
       }
     }
     summaries.sort((a, b) => a.id.localeCompare(b.id))
@@ -108,4 +118,68 @@ export class RecordingsStore {
       await handle.close()
     }
   }
+
+  /**
+   * Read the last complete valid state without loading the full recording. A crashed writer may leave
+   * a partial final line, so invalid tail lines are skipped until the newest valid state is found.
+   */
+  private async lastState(id: string): Promise<StepState | null> {
+    let handle: Awaited<ReturnType<typeof open>>
+    try {
+      handle = await open(this.filePath(id), 'r')
+    } catch {
+      return null
+    }
+    try {
+      let position = (await handle.stat()).size
+      let suffix = ''
+      while (position > 0) {
+        const start = Math.max(0, position - TAIL_READ_SIZE)
+        const buffer = Buffer.alloc(position - start)
+        const { bytesRead } = await handle.read(buffer, 0, buffer.length, start)
+        const lines = `${buffer.toString('utf-8', 0, bytesRead)}${suffix}`.split('\n')
+        suffix = lines.shift() ?? ''
+        for (const line of lines.reverse()) {
+          const state = parseStateLine(line)
+          if (state !== null) {
+            return state
+          }
+        }
+        position = start
+      }
+      return null
+    } finally {
+      await handle.close()
+    }
+  }
+}
+
+function parseStateLine(line: string): StepState | null {
+  if (line.trim() === '') {
+    return null
+  }
+  try {
+    return parseStepState(JSON.parse(line))
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Resolve a winner or the -1 tie sentinel from the complete seat-indexed leaderboard. Recordings
+ * without that multiplayer ranking data are not eligible for a result label in the replay list.
+ */
+function winnerId(state: StepState | null): string | -1 | null {
+  const scores = state?.overlay?.leaderboard_scores
+  if (
+    Array.isArray(scores) &&
+    scores.length > 0 &&
+    scores.every((score) => typeof score === 'number' && Number.isFinite(score))
+  ) {
+    const best = Math.max(...scores)
+    const winners = scores.flatMap((score, seat) => (score === best ? [`player_${seat}`] : []))
+    return winners.length === 1 ? (winners[0] ?? null) : -1
+  }
+
+  return null
 }
