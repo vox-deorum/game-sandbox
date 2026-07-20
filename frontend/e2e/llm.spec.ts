@@ -70,12 +70,14 @@ test('LLM development access, private telemetry, and replay inspection work end 
     // The current-season My Agents row is the first key surface. Its secret is read once from the
     // real dialog and then used against the public OpenAI-compatible route.
     await authenticateBrowser(page.context(), owner)
-    await page.goto('/my-agents')
-    await expect(page.getByText('Development usage')).toBeVisible()
+    await page.goto('/my/agents')
+    await expect(page.getByRole('meter', { name: 'Development usage' })).toBeVisible()
     await page.getByRole('button', { name: 'Create development key' }).click()
     const credential = page.getByRole('dialog', { name: 'Development credential' })
-    await expect(credential.getByLabel('OPENAI_BASE_URL')).toBeVisible()
-    const firstKey = await credential.getByLabel('OPENAI_API_KEY').inputValue()
+    await expect(credential.getByRole('textbox', { name: 'OPENAI_BASE_URL', exact: true })).toBeVisible()
+    const firstKey = await credential
+      .getByRole('textbox', { name: 'OPENAI_API_KEY', exact: true })
+      .inputValue()
     await credential.getByRole('button', { name: 'Copy OPENAI_BASE_URL' }).click()
     await credential.getByRole('button', { name: 'Copy OPENAI_API_KEY' }).click()
     await credential.getByRole('button', { name: 'Copy .env' }).click()
@@ -93,7 +95,9 @@ test('LLM development access, private telemetry, and replay inspection work end 
     await expect(confirmation.getByText('will stop working immediately')).toBeVisible()
     await confirmation.getByRole('button', { name: 'Rotate development key' }).click()
     await expect(credential).toBeVisible()
-    const key = await credential.getByLabel('OPENAI_API_KEY').inputValue()
+    const key = await credential
+      .getByRole('textbox', { name: 'OPENAI_API_KEY', exact: true })
+      .inputValue()
     await credential.getByRole('button', { name: 'Done' }).click()
     const oldKeyResponse = await owner.post('/api/llm/v1/chat/completions', {
       headers: { authorization: `Bearer ${firstKey}` },
