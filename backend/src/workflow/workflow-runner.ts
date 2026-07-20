@@ -43,6 +43,7 @@ import { decodeResolvedOfficialLlmPolicy, type ResolvedOfficialLlmPolicy } from 
 import { type LlmModelConfig, MODEL_ALIASES, type ModelAlias } from '../llm/types.js'
 import { optionalField } from '../optional-field.js'
 import { coerceResultReason } from '../result-reason.js'
+import { createChargeableTimer } from '../session/chargeable-timer.js'
 import {
   assembleLlmLaunchConfig,
   assembleSeats,
@@ -100,7 +101,7 @@ export interface WorkflowRunnerDeps {
     Partial<Pick<ExecutionTelemetryStore, 'deleteScope'>>
   /** Grace before a cancelled run's in-flight container is hard-killed. */
   killGraceMs?: number
-  /** Extra wall-clock slack over the effective episode timeout before a game container is killed. */
+  /** Extra chargeable-wall-clock slack over the effective episode timeout before a game is killed. */
   gameWatchdogGraceMs?: number
   /**
    * The display-name directory the recording-header attribution snapshots names through at launch.
@@ -654,7 +655,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
     }
   }
 
-  /** Kill a game container if it exceeds its bounded wall-clock allowance. */
+  /** Kill a game container if it exceeds its bounded chargeable-wall-clock allowance. */
   private startGameWatchdog(
     runId: string,
     game: SeasonRunGame,
@@ -662,26 +663,27 @@ class DockerWorkflowRunner implements WorkflowRunner {
     timeoutMs: number,
     llmLease?: OfficialGrantLease,
   ): { timedOut: () => boolean; stop: () => void } {
-    let fired = false
-    const timer = setTimeout(() => {
-      fired = true
-      this.gameLog(
-        runId,
-        game,
-        `game ${game.game_index} exceeded wall-clock watchdog (${timeoutMs} ms); killing container`,
-        'warning',
-      )
-      void (async (): Promise<void> => {
-        await llmLease?.revoke()
-        await this.cleanupProcess(process)
-      })().catch((error) => {
-        this.log(`run ${runId} game ${game.game_index}: watchdog teardown failed: ${String(error)}`)
-      })
-    }, timeoutMs)
-    return {
-      timedOut: () => fired,
-      stop: () => clearTimeout(timer),
-    }
+    return createChargeableTimer({
+      budgetMs: timeoutMs,
+      inFlightMs: llmLease?.inFlightMs,
+      log: (message) => this.log(`run ${runId} game ${game.game_index}: ${message}`),
+      onExpire: () => {
+        this.gameLog(
+          runId,
+          game,
+          `game ${game.game_index} exceeded chargeable-wall-clock watchdog (${timeoutMs} ms); killing container`,
+          'warning',
+        )
+        void (async (): Promise<void> => {
+          await llmLease?.revoke()
+          await this.cleanupProcess(process)
+        })().catch((error) => {
+          this.log(
+            `run ${runId} game ${game.game_index}: watchdog teardown failed: ${String(error)}`,
+          )
+        })
+      },
+    })
   }
 
   private cleanupProcess(process: SessionProcess): Promise<void> {
@@ -942,7 +944,7 @@ function parseResultEnvelope(value: Record<string, unknown>): ResultEnvelope {
   return { reason, scores, failedSlot }
 }
 
-/** The wall-clock watchdog bound for one game, derived from the same effective episode timeout. */
+/** The chargeable-wall-clock watchdog bound for one game, derived from the effective episode timeout. */
 function gameWatchdogMs(
   meta: EnvironmentMeta,
   overrides: ReturnType<typeof decodeSeasonConfig>['overrides'],

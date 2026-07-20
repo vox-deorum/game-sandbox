@@ -49,7 +49,7 @@ The Docker driver maps these to Docker settings, drops capabilities, and labels 
 
 Backend callers do not construct this profile field by field. `driver/sandbox.ts` builds the profile for live sessions, scheduled workflow games, and submission load checks. The helper fixes the read-only root filesystem and bounded `/tmp` scratch mount. Callers choose either `none` or the narrowly scoped `llm` network, alongside CPU and memory limits, scratch size, and approved mounts. Add a sandbox caller through this helper and extend the invariant tests to cover its quotas, network posture, and permitted mounts.
 
-An LLM-enabled session gets two isolated Docker networks. The agent container joins the agent network, where `llm-proxy` is the only service. A relay joins that network and a separate egress network, then forwards only to the backend's internal LLM listener. The agent container never joins the egress network or gains general internet access. The launch configuration gives agents `http://llm-proxy:<port>/v1` and the internal tick endpoint.
+An LLM-enabled session gets two isolated Docker networks. The agent container joins the agent network, where `llm-proxy` is the only service. A relay joins that network and a separate egress network, then forwards only to the backend's internal LLM listener. The agent container never joins the egress network or gains general internet access. The launch configuration gives agents `http://llm-proxy:<port>/v1`, the internal tick endpoint, and the internal in-flight timing endpoint.
 
 ## Session base images
 
@@ -188,6 +188,8 @@ The finalizer stores the result, notifies clients, kills the container if needed
 ## Container-side live runner
 
 `python -m game_sandbox_harness.live` uses the same `Episode.step_once` path as headless execution.
+
+For an LLM-enabled official session, the launch configuration supplies `inflight_url` beside the model endpoint and tick-marker URL. The harness subtracts verified proxy time from hook timing and charges the full hook time when a reading fails. Module loading, construction, and `reset` are setup work outside turn timing. Live-session and workflow watchdogs use the same bounded credit; idle timeout remains wall-clock time.
 
 The only pacing branch reads environment metadata:
 

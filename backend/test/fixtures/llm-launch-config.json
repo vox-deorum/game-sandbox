@@ -2,6 +2,7 @@
   "llm": {
     "base_url": "http://llm-proxy:9472/v1",
     "tick_url": "http://llm-proxy:9472/internal/tick",
+    "inflight_url": "http://llm-proxy:9472/internal/inflight",
     "keys": {
       "player_0": "official-key"
     }

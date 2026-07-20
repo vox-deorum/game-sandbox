@@ -21,9 +21,11 @@ class StepTiming(TypedDict):
 
 
 class AgentTiming(TypedDict, total=False):
-    """Per-agent timing. ``decision_ms`` is pure ``act`` time; ``learn_ms`` is the optional
-    learn-hook time, present only for learning agents; ``chat_ms`` is the optional chat-hook time,
-    present only on a tick the chat hook ran. The leaderboard compute column sums all three."""
+    """Per-agent chargeable timing. Official LLM sessions discount verified proxy time when both
+    hook snapshots succeed, with calling-thread CPU time as a lower bound; otherwise values remain
+    at least full wall-clock hook times. ``decision_ms`` is ``act`` time, ``learn_ms`` is optional
+    learn-hook time, and ``chat_ms`` is optional chat-hook time. The leaderboard compute column sums
+    all three."""
 
     decision_ms: float
     learn_ms: float

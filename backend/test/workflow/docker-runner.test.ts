@@ -12,7 +12,7 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { UserDirectory } from '../../src/auth/users.js'
 import type { ExitInfo } from '../../src/driver/index.js'
@@ -292,6 +292,7 @@ describe('Docker-backed workflow runner', () => {
   })
 
   afterEach(async () => {
+    vi.useRealTimers()
     await storage.close()
   })
 
@@ -857,6 +858,57 @@ describe('Docker-backed workflow runner', () => {
     expect(timedOut?.failure_reason).toMatch(/watchdog/)
     const logs = events.filter((e) => e.type === 'log').map((e) => (e as { line: string }).line)
     expect(logs.some((line) => line.includes('wall-clock watchdog'))).toBe(true)
+  })
+
+  it('discounts post-launch official LLM wait from the game watchdog', async () => {
+    vi.useFakeTimers()
+    let inFlightMs = 7 // Work before the watchdog arms earns no deadline extension.
+    let markWatchdogArmed = (): void => {}
+    const watchdogArmed = new Promise<void>((resolve) => {
+      markWatchdogArmed = resolve
+    })
+    const issuer: OfficialGrantIssuer = {
+      issue: async () => ({
+        keys: { player_0: 'official-key' },
+        revoke: () => Promise.resolve(),
+        inFlightMs: () => {
+          markWatchdogArmed()
+          return inFlightMs
+        },
+      }),
+    }
+    const handle = makeRunner(storage, new FakeDriver(), {
+      killGraceMs: 2,
+      gameWatchdogGraceMs: 0,
+      officialGrantIssuer: issuer,
+      officialTelemetry: emptyOfficialTelemetry,
+      llmInternalPort: 9472,
+    })
+    const run = await makeRun(storage, [naiveGame(0, 1)], {
+      overrides: { episode_timeout_ms: 10 },
+      llmPolicy: enabledLlmPolicy(),
+    })
+    let markLaunched = (): void => {}
+    const launched = new Promise<void>((resolve) => {
+      markLaunched = resolve
+    })
+    handle.driver.onLaunch = (launch): void => {
+      emitHeader(launch.process, 1)
+      markLaunched()
+    }
+
+    const terminal = runToTerminal(handle, run.id)
+    await launched
+    expect(handle.driver.launches).toHaveLength(1)
+    await watchdogArmed
+
+    inFlightMs = 17
+    await vi.advanceTimersByTimeAsync(10)
+    expect(handle.driver.launches[0]?.process.killGraceMs).toEqual([])
+
+    await vi.advanceTimersByTimeAsync(10)
+    await expect(terminal).resolves.toMatchObject({ status: 'completed' })
+    expect(handle.driver.launches[0]?.process.killGraceMs).toEqual([2])
   })
 
   it('scores an attributable crash at the forfeit floor without aborting later games', async () => {

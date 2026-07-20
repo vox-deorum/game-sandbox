@@ -76,6 +76,7 @@ class LlmConfig:
 
     base_url: str
     tick_url: str
+    inflight_url: str
     keys: dict[str, str]
 
 
@@ -236,19 +237,13 @@ def _parse_players(raw: object) -> dict[str, PlayerAttribution] | None:
 
 
 def _parse_llm(raw: object, slots: dict[str, SlotBinding]) -> LlmConfig | None:
-    """Validate the optional strict LLM launch block and its exact agent-slot key coverage.
-
-    The field set is matched exactly on purpose. A harness image that predates a launch-config
-    change then fails the session loudly here instead of silently ignoring a field the backend now
-    depends on. The tradeoff is that adding a field to the backend launch config requires shipping a
-    harness image that understands it: bump the session deps image version alongside that change.
-    """
+    """Validate the optional LLM launch block and its agent-slot key coverage."""
     if raw is None:
         return None
     if not isinstance(raw, dict):
         raise LiveConfigError("config 'llm' must be an object or null")
     llm = cast("dict[str, Any]", raw)
-    expected_fields = {"base_url", "tick_url", "keys"}
+    expected_fields = {"base_url", "tick_url", "inflight_url", "keys"}
     if set(llm) != expected_fields:
         missing = sorted(expected_fields - set(llm))
         unknown = sorted(set(llm) - expected_fields)
@@ -258,10 +253,11 @@ def _parse_llm(raw: object, slots: dict[str, SlotBinding]) -> LlmConfig | None:
         if unknown:
             details.append(f"unknown {unknown!r}")
         raise LiveConfigError(
-            f"config 'llm' must contain exactly base_url, tick_url, and keys ({'; '.join(details)})"
+            "config 'llm' must contain exactly base_url, tick_url, inflight_url, and keys "
+            f"({'; '.join(details)})"
         )
 
-    for field_name in ("base_url", "tick_url"):
+    for field_name in ("base_url", "tick_url", "inflight_url"):
         value = llm[field_name]
         if not isinstance(value, str) or not value:
             raise LiveConfigError(f"config 'llm' {field_name!r} must be a non-empty string")
@@ -290,6 +286,7 @@ def _parse_llm(raw: object, slots: dict[str, SlotBinding]) -> LlmConfig | None:
     return LlmConfig(
         base_url=cast("str", llm["base_url"]),
         tick_url=cast("str", llm["tick_url"]),
+        inflight_url=cast("str", llm["inflight_url"]),
         keys=cast("dict[str, str]", dict(keys)),
     )
 
@@ -307,6 +304,36 @@ class _LlmExecutionScope:
     def turn(self, slot_id: str, tick: int) -> None:
         self._activate(slot_id)
         self._post_marker(slot_id, {"tick": tick})
+
+    def inflight_ms(self, slot_id: str) -> int | None:
+        """Read the slot's proxy time, including a capped active partial, without making it fatal."""
+        try:
+            request = urllib.request.Request(
+                self._config.inflight_url,
+                headers={"Authorization": f"Bearer {self._config.keys[slot_id]}"},
+                method="POST",
+            )
+            with urllib.request.urlopen(request, timeout=_MARKER_TIMEOUT_SECONDS) as response:
+                raw_payload: object = json.loads(response.read())
+            if not isinstance(raw_payload, dict):
+                raise ValueError("response must contain one non-negative integer inflight_ms")
+            payload = cast("dict[str, object]", raw_payload)
+            inflight_ms = payload.get("inflight_ms")
+            if (
+                set(payload) != {"inflight_ms"}
+                or not isinstance(inflight_ms, int)
+                or isinstance(inflight_ms, bool)
+                or inflight_ms < 0
+            ):
+                raise ValueError("response must contain one non-negative integer inflight_ms")
+            return inflight_ms
+        except Exception as error:  # noqa: BLE001 - timing discount must never stop agent lifecycle
+            print(
+                f"live: LLM in-flight snapshot failed for slot {slot_id!r}: {error}",
+                file=sys.stderr,
+                flush=True,
+            )
+            return None
 
     def _activate(self, slot_id: str) -> None:
         os.environ["OPENAI_BASE_URL"] = self._config.base_url

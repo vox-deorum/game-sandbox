@@ -6,7 +6,7 @@ Part of [Stage 9](../stage-09-llm-gateway.md), build-order step 7.
 
 ## Outcome
 
-Full-stack integration and browser journeys verify retries, successful-only accounting, official and development meter isolation, key lifecycle, network isolation, telemetry privacy, and disabled-session regressions. Contributor and student documentation describe the delivered API and configuration directly.
+Full-stack integration and browser journeys verify retries, successful-only accounting, meter isolation, key lifecycle, network isolation, telemetry privacy, proxy-time discounts, and disabled-session regressions. Contributor and student documentation describes the delivered API and configuration directly.
 
 ## Stub upstream
 
@@ -39,6 +39,8 @@ Start a live session in an LLM-enabled Hearts season and drive a mix of upstream
 - Requests using either supported completion-limit field reserve and forward the enforced output maximum, while omitted limits receive the configured default.
 - Missing or malformed upstream usage produces explicitly marked tiktoken estimates in one successful row.
 - Successful SQLite rows carry the acting slot and tick.
+- Per-slot inflight reads discount successful, retried, and terminal proxy calls from hook, step, and episode timing. Failed reads charge full wall time.
+- Live-session and workflow watchdogs use the same post-arm discount, cap active-request credit, and leave idle timeout on wall-clock time.
 - Every normal, failed-launch, crash, stop, and forced-exit path first closes grants to new admission, then aborts or drains active requests and awaits every reservation finalizer. Aggregation, telemetry deletion, network removal, and lifecycle completion happen only after that barrier resolves.
 - The saved slot key returns 401 after exit, and teardown removes the session network and relay attachment.
 
@@ -91,8 +93,8 @@ Use the existing authenticated-persona fixtures (`admin` and `as(handle)` in `fr
 Steps 1 through 6 already delivered most of the written documentation: `docs/contributors/configuration.md` documents every `LLM_*` setting, `docs/students/llm.md` covers key creation, the two-variable `.env`, fixed model tiers and prices, development limits, retries, terminal errors, successful-only accounting, and privacy, the template READMEs point to the student guide and `python -m sandbox llm [small|medium|large]`, `docs/contributors/index.md` lists the LLM proxy under the backend with no standalone gateway component, and `docs/contributors/backend.md` records the flat application-schema policy (edit the single initial migration in place, no forward migration, contributors with an older local database recreate it). This step verifies those pages against the final implementation and fills the remaining gaps:
 
 - `docs/specs/llm.md`, `execution.md`, `leaderboard.md`, `submission.md`, and `recording.md` describe the final behavior and data boundaries.
-- `docs/contributors/backend.md` describes the shared proxy handler, standard response-metadata boundary, internal listener, public development route, grant authentication, synchronous reader-and-sink binding, generic per-accounting-scope admitted-request windows, retry loop, successful-call meters, post-upstream conservative debt, automatic write-health recovery, tiktoken fallback, execution-scope SQLite and its cost-basis migration, teardown barriers, frozen workflow policy, recording-to-scope resolution, empty and unavailable telemetry responses, visibility after submission deletion, retention, and the development ledger. Its flat-schema guidance stays distinct from the `PRAGMA user_version` migrations used by per-scope telemetry and development-ledger files.
-- `docs/contributors/execution.md` gains the per-session internal network and backend-proxy relay.
+- `docs/contributors/backend.md` describes the shared proxy handler, standard response-metadata boundary, internal listener and inflight route, public development route, grant authentication, synchronous reader-and-sink binding, generic per-accounting-scope admitted-request windows, retry loop, successful-call meters, post-upstream conservative debt, automatic write-health recovery, tiktoken fallback, execution-scope SQLite and its cost-basis migration, teardown barriers, frozen workflow policy, recording-to-scope resolution, empty and unavailable telemetry responses, visibility after submission deletion, retention, and the development ledger. Its flat-schema guidance stays distinct from the `PRAGMA user_version` migrations used by per-scope telemetry and development-ledger files.
+- `docs/contributors/execution.md` gains the per-session internal network, backend-proxy relay, and fail-closed proxy-time discount contract.
 - `docs/contributors/recordings.md` gains the durable recording association to external LLM telemetry. The recording schema remains unchanged.
 
 Run the strict docs build. Update the Stage 9 overview and this file's status when the implementation and verification gates pass.

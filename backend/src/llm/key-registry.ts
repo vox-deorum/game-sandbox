@@ -13,7 +13,7 @@ export interface KeyRegistryOptions {
   /**
    * Upper bound on how much a single in-flight request may contribute to {@link KeyRegistry.inFlightMs},
    * matching the upstream caller's worst-case wall time. Defense-in-depth against an SDK per-attempt
-   * timeout that never fires, so future watchdog integration can rely on a stuck request's
+   * timeout that never fires, so outer watchdog discounting can rely on a stuck request's
    * contribution being bounded.
    */
   maxRequestMs?: number
@@ -31,6 +31,7 @@ interface OfficialSessionState {
 interface OfficialRequestState {
   controller: AbortController
   cancellable: boolean
+  scopeKey: string
   startedAt: number
 }
 
@@ -49,6 +50,8 @@ export class KeyRegistry {
   private readonly sessions = new Map<string, OfficialSessionState>()
   /** Cumulative completed in-flight ms per accounting-scope key, spanning success and failure alike. */
   private readonly inFlightByScope = new Map<string, number>()
+  /** Active requests by accounting scope, used by the hook-timing control read. */
+  private readonly activeRequestsByScope = new Map<string, Set<OfficialRequestState>>()
   private readonly now: () => number
   private readonly maxRequestMs: number
 
@@ -84,9 +87,13 @@ export class KeyRegistry {
     const requestState: OfficialRequestState = {
       controller: new AbortController(),
       cancellable: true,
+      scopeKey: entry.grant.accountingScope.key,
       startedAt: this.now(),
     }
     state.activeRequests.add(requestState)
+    const activeRequests = this.activeRequestsByScope.get(requestState.scopeKey) ?? new Set()
+    activeRequests.add(requestState)
+    this.activeRequestsByScope.set(requestState.scopeKey, activeRequests)
 
     let released = false
     return {
@@ -101,18 +108,25 @@ export class KeyRegistry {
         // The whole logical request, from admission to final response and across every retry, counts,
         // whether it succeeded or failed, so timing authority stays with the proxy.
         const elapsed = Math.max(0, Math.round(this.now() - requestState.startedAt))
-        const scopeKey = entry.grant.accountingScope.key
+        const scopeKey = requestState.scopeKey
         this.inFlightByScope.set(scopeKey, (this.inFlightByScope.get(scopeKey) ?? 0) + elapsed)
         state.activeRequests.delete(requestState)
+        const activeRequests = this.activeRequestsByScope.get(scopeKey)
+        activeRequests?.delete(requestState)
+        if (activeRequests?.size === 0) this.activeRequestsByScope.delete(scopeKey)
         if (state.closed && state.activeRequests.size === 0)
           this.finishRevocation(entry.sessionId, state)
       },
     }
   }
 
-  /** Cumulative completed in-flight ms for one accounting scope, available to future hook timing. */
+  /** Cumulative proxy ms for one accounting scope, including each active request's capped partial. */
   inFlightMsForScope(scopeKey: string): number {
-    return this.inFlightByScope.get(scopeKey) ?? 0
+    let total = this.inFlightByScope.get(scopeKey) ?? 0
+    const now = this.now()
+    for (const request of this.activeRequestsByScope.get(scopeKey) ?? [])
+      total += this.activeRequestMs(request, now)
+    return total
   }
 
   /** Cumulative in-flight ms for a session: completed requests plus each active request's capped partial. */
@@ -123,9 +137,13 @@ export class KeyRegistry {
     for (const scopeKey of state.scopeKeys) total += this.inFlightByScope.get(scopeKey) ?? 0
     const now = this.now()
     for (const request of state.activeRequests) {
-      total += Math.min(this.maxRequestMs, Math.max(0, Math.round(now - request.startedAt)))
+      total += this.activeRequestMs(request, now)
     }
     return total
+  }
+
+  private activeRequestMs(request: OfficialRequestState, now: number): number {
+    return Math.min(this.maxRequestMs, Math.max(0, Math.round(now - request.startedAt)))
   }
 
   authenticateOfficial(bearer: string): OfficialKeyEntry {

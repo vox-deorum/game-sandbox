@@ -32,6 +32,8 @@ Each admitted inbound request is one logical request across every upstream attem
 
 Successful-call accounting commits before the completion is returned for both official and development traffic. If normalization, usage resolution, telemetry, or ledger persistence fails after the upstream succeeds, the proxy retains the conservative reservation as in-memory debt for every affected accounting scope, opens those scopes' circuit breakers, and returns `503 meter_unavailable`. Further calls for an affected scope remain blocked until the single-flight recovery loop commits a write-health check and closes the breaker; recovery retains the in-memory debt for the lifetime of the process.
 
+Official hook timing follows the proxy-time contract in Step 3. Setup work has null tick attribution and is outside turn timing. Live-session and workflow watchdogs apply its bounded post-arm discount. Idle timeout remains wall-clock time.
+
 Official limits apply per slot: every agent slot in a live session or workflow match has its own weighted token budget and rate limit, and every workflow match is a new session with a fresh allowance. Token budgets use model prices that default to large:medium:small = 4:2:1. Student development limits apply per participant per season. Deployment defaults exist for both groups, and a season may override limits and model prices.
 
 ## Access and isolation
@@ -62,9 +64,9 @@ Stage 3 provides orchestration and driver networking. Stage 5 provides submissio
 
 | # | Subplan | Builds | Hands-on result |
 | --- | --- | --- | --- |
-| 1 | [Backend LLM proxy](stage-09/1-metering-gateway.md) | Shared proxy handler, model-tier mapping, grant registry, successful-only execution-scope SQLite telemetry, retry and error policy | A test grant calls a stub upstream; retryable failures recover once and terminal failures leave no usage row |
+| 1 | [Backend LLM proxy](stage-09/1-metering-gateway.md) | Shared proxy handler, model-tier mapping, grant registry, successful-only execution-scope SQLite telemetry, retry and error policy, per-slot completed-proxy counter | A test grant calls a stub upstream; retryable failures recover once and terminal failures leave no usage row |
 | 2 | [Season access, development keys, and session network](stage-09/2-enablement-keys-and-network.md) | Current live and development resolution, frozen workflow policy, independent limit blocks, slot-key lifecycle, per-participant and per-season development meter and ledger, internal network | A student key works only for its participant and season; a run keeps its original official policy; a container reaches the proxy but not the internet |
-| 3 | [Harness credentials and student example](stage-09/3-harness-credentials-and-template-example.md) | Slot credential changes, tick markers, template command, Hearts example, student guide | The same agent code runs with a season development key and with an injected session key |
+| 3 | [Harness credentials and student example](stage-09/3-harness-credentials-and-template-example.md) | Slot credential changes, tick and timing snapshots, template command, Hearts example, student guide | The same agent code runs with a season development key and with an injected session key |
 | 4 | [Official usage aggregation](stage-09/4-usage-aggregation.md) | Successful usage aggregation over the run-scoped SQLite file, board and placement storage | A tiny per-slot budget produces a catchable error while completed calls appear on the board |
 | 5 | [LLM surfacing APIs](stage-09/5-frontend-api.md) | Recording telemetry with stored budget costs, telemetry retention and cleanup, participant and operator development read APIs | Raw API calls prove empty, public, owner, participant, and operator response boundaries |
 | 6 | [LLM usage UI](stage-09/6-frontend-ui.md) | Replay decision costs and authorized inspection, board model usage, My Agents and agent-profile development access, shared call history, operator usage details | Browser checks compare costs, credentials, and anonymous, owner, participant, and operator views |
@@ -80,5 +82,6 @@ Stage 3 provides orchestration and driver networking. Stage 5 provides submissio
 - A development-ledger commit failure returns no completion, retains conservative debt, and blocks that participant and season until the automatic recovery loop verifies writable storage and closes the breaker without forgiving debt in the running process.
 - The template LLM example runs unchanged with development credentials in `.env` and injected slot credentials in a session.
 - Session containers reach only the backend LLM proxy, and teardown drains or aborts authenticated work before temporary slot keys and telemetry scopes are retired.
+- Official timing limits and watchdogs use the proxy-time discount contract above.
 - Replays and automated boards derive successful usage and authoritative budget costs from durable official records, with prompt and completion bodies limited to current owners and operators.
 - LLM-disabled sessions execute the unchanged non-LLM path and preserve deterministic recording fixtures.

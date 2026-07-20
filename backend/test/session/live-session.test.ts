@@ -33,6 +33,8 @@ describe('relay (LiveSession)', () => {
       messaging?: { enabled: boolean; cap: number | null }
       llmEnabled?: boolean
       revokeLlm?: () => Promise<void>
+      llmInFlightMs?: () => number
+      maxDurationMs?: number
       deleteLlmScope?: (scopeId: string) => void
       onEnd?: (id: string) => void
       onFinalized?: (id: string) => void
@@ -60,9 +62,10 @@ describe('relay (LiveSession)', () => {
         onFinalized: options.onFinalized,
         log: () => {},
         idleTimeoutMs: 1_000_000,
-        maxDurationMs: 1_000_000,
+        maxDurationMs: options.maxDurationMs ?? 1_000_000,
         killGraceMs: 10,
         revokeLlm: options.revokeLlm,
+        llmInFlightMs: options.llmInFlightMs,
         deleteLlmScope: options.deleteLlmScope,
       },
     })
@@ -83,8 +86,72 @@ describe('relay (LiveSession)', () => {
   })
 
   afterEach(async () => {
+    vi.useRealTimers()
     await Promise.all(live.splice(0).map((s) => s.finalize('stopped')))
     await storage.close()
+  })
+
+  it('uses the fixed live max-duration backstop without LLM timing', async () => {
+    vi.useFakeTimers()
+    const { process } = makeSession('scripted', { maxDurationMs: 10 })
+
+    await vi.advanceTimersByTimeAsync(10)
+
+    expect(process.killGraceMs).toEqual([10])
+    expect(await storage.getSession('sess-1')).toMatchObject({ termination_reason: 'time_limit' })
+  })
+
+  it('discounts only post-start LLM wait from the live max-duration backstop', async () => {
+    vi.useFakeTimers()
+    let inFlightMs = 7 // Setup work before LiveSession starts earns no deadline extension.
+    const { process } = makeSession('scripted', {
+      maxDurationMs: 10,
+      llmInFlightMs: () => inFlightMs,
+    })
+
+    inFlightMs = 17
+    await vi.advanceTimersByTimeAsync(10)
+    expect(process.killGraceMs).toEqual([])
+
+    await vi.advanceTimersByTimeAsync(9)
+    expect(process.killGraceMs).toEqual([])
+    await vi.advanceTimersByTimeAsync(1)
+    expect(process.killGraceMs).toEqual([10])
+    expect(await storage.getSession('sess-1')).toMatchObject({ termination_reason: 'time_limit' })
+  })
+
+  it('fails closed when the first live LLM timing read is unavailable', async () => {
+    vi.useFakeTimers()
+    let available = false
+    const { process } = makeSession('scripted', {
+      maxDurationMs: 10,
+      llmInFlightMs: () => {
+        if (!available) throw new Error('proxy unavailable')
+        return 100
+      },
+    })
+
+    available = true
+    await vi.advanceTimersByTimeAsync(10)
+
+    expect(process.killGraceMs).toEqual([10])
+  })
+
+  it('does not credit LLM time across a failed live timing read', async () => {
+    vi.useFakeTimers()
+    let reads = 0
+    const { process } = makeSession('scripted', {
+      maxDurationMs: 10,
+      llmInFlightMs: () => {
+        reads += 1
+        if (reads === 2) throw new Error('proxy unavailable')
+        return reads === 1 ? 100 : 200
+      },
+    })
+
+    await vi.advanceTimersByTimeAsync(10)
+
+    expect(process.killGraceMs).toEqual([10])
   })
 
   it('broadcasts recording lines verbatim to attached sockets', async () => {

@@ -47,13 +47,10 @@ def _diag(message: str) -> None:
 class PausableClock:
     """A :class:`~game_sandbox_harness.clock.Clock` that subtracts accumulated paused time.
 
-    Wraps any base clock (including ``ManualClock``, so the suites stay deterministic) and
-    reports ``base - total_paused``. Injected as the episode clock, it freezes the decision
-    clock and the realtime cadence together: while paused, ``now_ms`` does not advance, so
-    every duration measured as a difference of two readings — a step's ``decision_ms``, the
-    budget, the next cadence instant — freezes with it, and the spec'd pause semantics need no
-    special case in the loop. Thread-safe: the stepping thread reads ``now_ms`` while the
-    command pump calls :meth:`pause`/:meth:`resume`.
+    Wraps any base clock, including ``ManualClock``, and reports ``base - total_paused``.
+    Wall-clock timing and realtime cadence freeze while paused. The official LLM calling-thread
+    CPU floor uses a separate clock and remains chargeable. Thread-safe: the stepping thread reads
+    ``now_ms`` while the command pump calls :meth:`pause`/:meth:`resume`.
     """
 
     def __init__(self, base: Clock) -> None:

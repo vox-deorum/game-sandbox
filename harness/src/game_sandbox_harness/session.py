@@ -26,7 +26,8 @@ from __future__ import annotations
 
 import contextlib
 import sys
-from collections.abc import Mapping
+import time
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Protocol, cast, runtime_checkable
@@ -96,6 +97,8 @@ class AgentExecutionScope(Protocol):
     def setup(self, slot_id: str) -> None: ...
 
     def turn(self, slot_id: str, tick: int) -> None: ...
+
+    def inflight_ms(self, slot_id: str) -> int | None: ...
 
 
 class NoopSource:
@@ -219,6 +222,7 @@ class Episode:
         store: RecordingStore | None = None,
         recording_id: str | None = None,
         clock: Clock | None = None,
+        cpu_clock_ms: Callable[[], float] | None = None,
         step_limit_ms: int | None = None,
         episode_limit_ms: int | None = None,
         max_steps: int | None = None,
@@ -233,6 +237,7 @@ class Episode:
         self._recording_id = recording_id
         self._players = players
         self._clock = clock or SystemClock()
+        self._cpu_clock_ms = cpu_clock_ms or (lambda: time.thread_time_ns() / 1_000_000)
         self._step_limit = step_limit_ms if step_limit_ms is not None else entry.meta.step_limit_ms
         self._episode_limit = (
             episode_limit_ms if episode_limit_ms is not None else entry.meta.episode_limit_ms
@@ -259,6 +264,7 @@ class Episode:
         self._tick = 0
         self._stopped = False
         self._failed_slot: str | None = None
+        self._inflight_snapshots: dict[str, int] = {}
 
     def start(self) -> None:
         """Reset the environment, open the recording, then reset the agents.
@@ -414,11 +420,14 @@ class Episode:
         binding = context.binding
         if isinstance(binding, AgentSlot):
             try:
-                context.action = binding.agent.act(context.observation)
+                context.action, context.decision_ms = self._timed_llm_hook(
+                    binding.execution_scope,
+                    context.slot_id,
+                    lambda: binding.agent.act(context.observation),
+                )
             except Exception:  # noqa: BLE001 - charge the crash to this seat, then re-raise unchanged
                 self._failed_slot = context.slot_id
                 raise
-            context.decision_ms = self._clock.now_ms() - context.started_at
             context.agent_compute_ms += context.decision_ms
             context.slot.budget_used_ms += context.decision_ms
             if context.decision_ms > self._step_limit:
@@ -468,13 +477,15 @@ class Episode:
         inbox = self._chat.drain(context.slot_id)
         binding = context.binding
         if isinstance(binding, AgentSlot) and has_chat(binding.agent):
-            chat_start = self._clock.now_ms()
             try:
-                outgoing = binding.agent.chat(inbox)
+                outgoing, context.chat_ms = self._timed_llm_hook(
+                    binding.execution_scope,
+                    context.slot_id,
+                    lambda: binding.agent.chat(inbox),
+                )
             except Exception:  # noqa: BLE001 - charge the crash to this seat, then re-raise unchanged
                 self._failed_slot = context.slot_id
                 raise
-            context.chat_ms = self._clock.now_ms() - chat_start
             context.agent_compute_ms += context.chat_ms
             context.slot.budget_used_ms += context.chat_ms
             context.messages.extend(self._chat.validate_outgoing(context.slot_id, outgoing))
@@ -502,23 +513,66 @@ class Episode:
             terminated_now = bool(
                 context.env.terminations[context.slot_id] or context.env.truncations[context.slot_id]
             )
-            learn_start = self._clock.now_ms()
             try:
-                binding.agent.learn(
-                    context.observation,
-                    context.action,
-                    context.reward,
-                    terminated_now,
+                _, context.learn_ms = self._timed_llm_hook(
+                    binding.execution_scope,
+                    context.slot_id,
+                    lambda: binding.agent.learn(
+                        context.observation,
+                        context.action,
+                        context.reward,
+                        terminated_now,
+                    ),
                 )
             except Exception:  # noqa: BLE001 - charge the crash to this seat, then re-raise unchanged
                 self._failed_slot = context.slot_id
                 raise
-            context.learn_ms = self._clock.now_ms() - learn_start
             context.agent_compute_ms += context.learn_ms
             context.slot.budget_used_ms += context.learn_ms
 
         if isinstance(binding, AgentSlot) and context.agent_compute_ms > self._step_limit:
             context.slot.step_timeouts += 1
+
+    def _timed_llm_hook(
+        self,
+        scope: AgentExecutionScope | None,
+        slot_id: str,
+        callback: Callable[[], Any],
+    ) -> tuple[Any, float]:
+        """Measure a hook while discounting verified official proxy request time.
+
+        A valid post-hook snapshot becomes the next hook's baseline. Failed reads and hook errors
+        clear that cache, so no discount crosses an unknown interval. Calling-thread CPU is always
+        a lower bound.
+        """
+        if scope is None:
+            started = self._clock.now_ms()
+            return callback(), self._clock.now_ms() - started
+
+        before = self._inflight_snapshots.pop(slot_id, None)
+        if before is None:
+            before = scope.inflight_ms(slot_id)
+        started = self._clock.now_ms()
+        cpu_started = self._cpu_clock_ms()
+        try:
+            value = callback()
+        except Exception:
+            self._inflight_snapshots.pop(slot_id, None)
+            raise
+        # Thread CPU is independent of the pausable wall clock, so local work remains chargeable.
+        cpu_ms = max(0.0, self._cpu_clock_ms() - cpu_started)
+        raw_ms = self._clock.now_ms() - started
+        after = scope.inflight_ms(slot_id)
+        if after is not None:
+            self._inflight_snapshots[slot_id] = after
+        else:
+            self._inflight_snapshots.pop(slot_id, None)
+        if before is None or after is None:
+            return value, max(cpu_ms, raw_ms)
+        # A background request can overlap the hook's own computation. Never let proxy wall time
+        # erase CPU consumed by the calling agent thread while the request was in flight. Thread CPU
+        # avoids charging the acting slot for an opponent's background work in this shared process.
+        return value, max(cpu_ms, raw_ms - max(0, after - before))
 
     def _record_step(self, context: _StepContext) -> None:
         """Persist the completed cycle before accepted messages mutate recipient inboxes."""
@@ -602,6 +656,7 @@ def run_episode(
     store: RecordingStore | None = None,
     recording_id: str | None = None,
     clock: Clock | None = None,
+    cpu_clock_ms: Callable[[], float] | None = None,
     step_limit_ms: int | None = None,
     episode_limit_ms: int | None = None,
     max_steps: int | None = None,
@@ -625,6 +680,7 @@ def run_episode(
         store=store,
         recording_id=recording_id,
         clock=clock,
+        cpu_clock_ms=cpu_clock_ms,
         step_limit_ms=step_limit_ms,
         episode_limit_ms=episode_limit_ms,
         max_steps=max_steps,

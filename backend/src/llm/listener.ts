@@ -35,11 +35,7 @@ export async function buildLlmListener(deps: LlmListenerDeps): Promise<FastifyIn
     try {
       const entry = deps.registry.authenticateOfficial(readBearer(request.headers.authorization))
       entry.tick.current = parseTick(request.body)
-      // Carry the scope's cumulative in-flight ms for planned hook-timing integration.
-      return {
-        ok: true,
-        inflight_ms: deps.registry.inFlightMsForScope(entry.grant.accountingScope.key),
-      }
+      return { ok: true }
     } catch (error) {
       const normalized = asLlmError(error)
       return reply.code(normalized.status).send(normalized.body())

@@ -67,11 +67,13 @@ See [Configuration](configuration.md) for the full environment-variable referenc
 
 ## LLM proxy
 
-The backend owns one OpenAI-compatible proxy over a configured upstream. Its shared handler authenticates a scoped grant, maps a public model alias, normalizes the output-token maximum, reserves every accounting scope, calls the upstream through the explicit retry loop, and commits successful-call telemetry before returning the completion. The internal listener is enabled only when an upstream URL and at least one model alias are configured.
+The backend owns one OpenAI-compatible proxy over a configured upstream. Its shared handler authenticates a scoped grant, maps a public model tier, normalizes the output-token maximum, reserves every accounting scope, calls the upstream through the explicit retry loop, and commits successful-call telemetry before returning the completion. The internal listener is enabled only when an upstream URL and at least one model tier are configured.
+
+For an official key, `POST /internal/inflight` returns its accounting scope's cumulative proxy milliseconds as `inflight_ms`. The value includes completed requests, retries, terminal failures, and a bounded contribution from an active request, but not marker or counter reads. The harness uses snapshots around a hook for timing. See [Execution](execution.md#container-side-live-runner).
 
 Each grant binds one or more synchronous committed-usage readers to the durable store updated by its record sink. The meter reads committed usage, checks every limit, and mutates all reservations in one synchronous section. This combines durable successful usage with in-flight reservations and process-lifetime conservative debt without an admission gap.
 
-The tokenizer encodes accepted request and completion JSON as ordinary text, so participant content cannot invoke tokenizer control-token behavior. Missing or malformed upstream usage is estimated from the same canonical request and completion retained in telemetry. Successful responses preserve generated content and standard fields, replace structured provider model metadata with public aliases, and drop nonstandard top-level provider metadata.
+The tokenizer encodes accepted request and completion JSON as ordinary text, so participant content cannot invoke tokenizer control-token behavior. Missing or malformed upstream usage is estimated from the same canonical request and completion retained in telemetry. Successful responses preserve generated content and standard fields, replace structured provider model metadata with public model tiers, and drop nonstandard top-level provider metadata.
 
 An upstream failure releases the reservation and creates no successful-call row. After the upstream succeeds, every failure before the durable record commits converts the reservation to conservative debt, opens each affected accounting breaker, and returns `meter_unavailable`. A single-flight write-health probe can close the breaker, but it never forgives debt during that backend process. See the [LLM specification](../specs/llm.md) for the product rules and [Configuration](configuration.md#llm-proxy) for deployment settings.
 
@@ -83,7 +85,7 @@ The record sink commits a call before the completion is returned. Recording tele
 
 Public recording telemetry exposes metadata and authoritative budget costs. Accepted requests and canonical completions are returned only to an operator or the current owner of the controlling submission. Deleting that submission retains public telemetry and costs, but removes the former owner's body access. Retained recording metadata keeps the external telemetry queryable; cleanup reclaims an execution scope only when no retained recording still references it.
 
-Workflow creation stores a fully resolved official LLM policy snapshot. The runner reads that snapshot for every match, including allowed aliases, upstream model mappings, prices, and per-slot limits, rather than resolving changed deployment or season defaults. On every LLM-enabled session or workflow exit, the finalizer closes grants to new admission, drains or aborts authenticated requests, waits for their reservation finalizers, and only then aggregates or deletes telemetry, removes relay networking, and completes the lifecycle.
+Workflow creation stores a fully resolved official LLM policy snapshot. The runner reads that snapshot for every match, including enabled model tiers, upstream model mappings, prices, and per-slot limits. On every LLM-enabled session or workflow exit, the finalizer closes grants to new admission, drains or aborts authenticated requests, waits for their reservation finalizers, and only then aggregates or deletes telemetry, removes relay networking, and completes the lifecycle.
 
 ## Static frontend
 

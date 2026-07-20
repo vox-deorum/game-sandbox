@@ -54,14 +54,16 @@ export interface LlmLaunchConfig {
   llm: {
     base_url: string
     tick_url: string
+    inflight_url: string
     keys: Record<string, string>
   }
 }
 
 /**
- * Assemble the one harness-facing LLM shape. Keeping the two URLs explicit is intentional: the tick
- * marker endpoint is not below the OpenAI-compatible `/v1` path, so callers must never derive it
- * from `base_url`. An empty key map is not useful and is represented by no block at all.
+ * Assemble the one harness-facing LLM shape. Keeping the internal URLs explicit is intentional: the
+ * tick-marker and in-flight endpoints are not below the OpenAI-compatible `/v1` path, so callers
+ * must never derive either from `base_url`. An empty key map is not useful and is represented by no
+ * block at all.
  */
 export function assembleLlmLaunchConfig(
   internalPort: number,
@@ -74,6 +76,7 @@ export function assembleLlmLaunchConfig(
     llm: {
       base_url: `http://llm-proxy:${internalPort}/v1`,
       tick_url: `http://llm-proxy:${internalPort}/internal/tick`,
+      inflight_url: `http://llm-proxy:${internalPort}/internal/inflight`,
       keys: { ...keys },
     },
   }

@@ -21,7 +21,7 @@ from game_sandbox_harness.live import (
 )
 from game_sandbox_harness.live_io import PausableClock, SessionControl
 from game_sandbox_harness.recording.local import FolderRecordingStore
-from game_sandbox_harness.session import REASON_EPISODE_LIMIT, Episode, run_episode
+from game_sandbox_harness.session import Episode, run_episode
 
 
 class _Sleeper:
@@ -30,6 +30,9 @@ class _Sleeper:
 
 
 class _Response:
+    def __init__(self, body: bytes = b"") -> None:
+        self._body = body
+
     def __enter__(self) -> _Response:
         return self
 
@@ -37,7 +40,7 @@ class _Response:
         pass
 
     def read(self) -> bytes:
-        return b""
+        return self._body
 
 
 class _AlternatingEnv:
@@ -118,6 +121,7 @@ def _llm_block() -> dict[str, Any]:
     return {
         "base_url": "http://proxy.example/v1",
         "tick_url": "http://marker.example/internal/tick",
+        "inflight_url": "http://marker.example/internal/inflight",
         "keys": {"player_0": "key-0", "player_1": "key-1"},
     }
 
@@ -128,6 +132,7 @@ def test_parse_config_accepts_strict_llm_block_with_exact_agent_key_coverage():
     assert config.llm == LlmConfig(
         base_url="http://proxy.example/v1",
         tick_url="http://marker.example/internal/tick",
+        inflight_url="http://marker.example/internal/inflight",
         keys={"player_0": "key-0", "player_1": "key-1"},
     )
 
@@ -150,6 +155,7 @@ def test_parse_config_matches_backend_llm_launch_fixture_exactly():
     assert {
         "base_url": config.llm.base_url,
         "tick_url": config.llm.tick_url,
+        "inflight_url": config.llm.inflight_url,
         "keys": config.llm.keys,
     } == fixture["llm"]
 
@@ -159,22 +165,46 @@ def test_parse_config_matches_backend_llm_launch_fixture_exactly():
     [
         [],
         {"base_url": "http://proxy/v1", "tick_url": "http://tick", "keys": []},
-        {"base_url": "", "tick_url": "http://tick", "keys": {"player_0": "a", "player_1": "b"}},
-        {"base_url": "http://proxy/v1", "tick_url": 7, "keys": {"player_0": "a", "player_1": "b"}},
-        {"base_url": "http://proxy/v1", "tick_url": "http://tick", "keys": {"player_0": "a"}},
+        {
+            "base_url": "",
+            "tick_url": "http://tick",
+            "inflight_url": "http://inflight",
+            "keys": {"player_0": "a", "player_1": "b"},
+        },
+        {
+            "base_url": "http://proxy/v1",
+            "tick_url": 7,
+            "inflight_url": "http://inflight",
+            "keys": {"player_0": "a", "player_1": "b"},
+        },
         {
             "base_url": "http://proxy/v1",
             "tick_url": "http://tick",
+            "inflight_url": "",
+            "keys": {"player_0": "a", "player_1": "b"},
+        },
+        {
+            "base_url": "http://proxy/v1",
+            "tick_url": "http://tick",
+            "inflight_url": "http://inflight",
+            "keys": {"player_0": "a"},
+        },
+        {
+            "base_url": "http://proxy/v1",
+            "tick_url": "http://tick",
+            "inflight_url": "http://inflight",
             "keys": {"player_0": "a", "player_1": "b", "human": "c"},
         },
         {
             "base_url": "http://proxy/v1",
             "tick_url": "http://tick",
+            "inflight_url": "http://inflight",
             "keys": {"player_0": "a", "player_1": ""},
         },
         {
             "base_url": "http://proxy/v1",
             "tick_url": "http://tick",
+            "inflight_url": "http://inflight",
             "keys": {"player_0": "a", "player_1": "b"},
             "derived_tick": True,
         },
@@ -191,6 +221,8 @@ def test_credentials_and_markers_cover_load_reset_and_every_acting_hook(monkeypa
     events: list[tuple[Any, ...]] = []
 
     def urlopen(request: Any, *, timeout: float) -> _Response:
+        if request.full_url.endswith("/inflight"):
+            return _Response(b'{"inflight_ms": 0}')
         events.append(
             (
                 "marker",
@@ -355,12 +387,16 @@ def test_credentials_and_markers_cover_load_reset_and_every_acting_hook(monkeypa
     ]
 
 
-def test_model_wait_in_act_is_recorded_and_charged_to_step_and_episode_limits(monkeypatch, tmp_path: Path):
+def test_model_wait_in_act_is_discounted_from_step_and_episode_limits(monkeypatch, tmp_path: Path):
     import game_sandbox_harness.live as live
 
     clock = ManualClock()
+    proxy_ms = {"player_0": 0, "player_1": 0}
 
     class WaitingAgent:
+        def __init__(self, slot_id: str) -> None:
+            self._slot_id = slot_id
+
         def reset(self, seed: int) -> None:
             pass
 
@@ -368,10 +404,21 @@ def test_model_wait_in_act_is_recorded_and_charged_to_step_and_episode_limits(mo
             # This deterministic advance represents the blocking model/proxy request, including any
             # backend retry waits, that remains inside the participant's act hook.
             clock.advance(800)
+            proxy_ms[self._slot_id] += 700
             return 0
 
-    monkeypatch.setattr(live.urllib.request, "urlopen", lambda request, timeout: _Response())
-    monkeypatch.setattr(live, "load_agent", lambda path: WaitingAgent())
+    def urlopen(request: Any, *, timeout: float) -> _Response:
+        if request.full_url.endswith("/inflight"):
+            slot_id = "player_0" if request.headers["Authorization"] == "Bearer key-0" else "player_1"
+            return _Response(json.dumps({"inflight_ms": proxy_ms[slot_id]}).encode())
+        return _Response()
+
+    monkeypatch.setattr(live.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(
+        live,
+        "load_agent",
+        lambda path: WaitingAgent("player_0" if path.endswith("0") else "player_1"),
+    )
     payload = _payload(_llm_block())
     del payload["slots"]["human"]
     config = parse_config([json.dumps(payload)])
@@ -390,14 +437,21 @@ def test_model_wait_in_act_is_recorded_and_charged_to_step_and_episode_limits(mo
 
     steps = list(store.open("model-wait").steps())
     assert [next(iter(step["agents"].values()))["timing"]["decision_ms"] for step in steps] == [
-        800,
-        800,
-        800,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
     ]
-    assert result.step_timeouts == {"player_0": 2, "player_1": 1}
-    assert result.reason == REASON_EPISODE_LIMIT
-    assert result.failed_slot == "player_0"
-    assert result.ticks == 3
+    assert result.step_timeouts == {"player_0": 0, "player_1": 0}
+    assert result.reason == "terminated"
+    assert result.failed_slot is None
+    assert result.ticks == 10
 
 
 def test_marker_failure_logs_and_does_not_stop_agent_lifecycle(monkeypatch, capsys):
@@ -425,7 +479,12 @@ def test_marker_failure_logs_and_does_not_stop_agent_lifecycle(monkeypatch, caps
         human_timeout_ms=None,
         recording_dir="/recordings",
         recording_id=None,
-        llm=LlmConfig("http://proxy/v1", "http://marker/tick", {"player_0": "key-0"}),
+        llm=LlmConfig(
+            "http://proxy/v1",
+            "http://marker/tick",
+            "http://marker/inflight",
+            {"player_0": "key-0"},
+        ),
     )
     one_seat_entry = _entry(turns=1, messaging=False)
 
@@ -445,6 +504,241 @@ def test_marker_failure_logs_and_does_not_stop_agent_lifecycle(monkeypatch, caps
     diagnostic = capsys.readouterr().err
     assert "LLM marker failed for slot 'player_0': proxy down" in diagnostic
     assert "key-0" not in diagnostic
+
+
+def test_proxy_snapshots_reuse_each_post_hook_baseline_and_exclude_setup(monkeypatch, tmp_path: Path):
+    import game_sandbox_harness.live as live
+
+    clock = ManualClock()
+
+    class Agent:
+        def reset(self, seed: int) -> None:
+            # Setup proxy time is already present in the first hook's baseline and must not leak in.
+            pass
+
+        def act(self, observation: Any) -> int:
+            clock.advance(70)
+            return 0
+
+        def chat(self, inbox: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            clock.advance(50)
+            return []
+
+        def learn(self, observation: Any, action: Any, reward: float, terminated: bool) -> None:
+            clock.advance(20)
+
+    snapshots = iter([100, 150, 180, 500])
+    snapshot_calls = 0
+
+    def urlopen(request: Any, *, timeout: float) -> _Response:
+        nonlocal snapshot_calls
+        if request.full_url.endswith("/inflight"):
+            snapshot_calls += 1
+            return _Response(json.dumps({"inflight_ms": next(snapshots)}).encode())
+        return _Response()
+
+    monkeypatch.setattr(live.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(live, "load_agent", lambda path: Agent())
+    payload = _payload(
+        {
+            "base_url": "http://proxy/v1",
+            "tick_url": "http://marker/tick",
+            "inflight_url": "http://marker/inflight",
+            "keys": {"player_0": "key-0"},
+        }
+    )
+    payload["slots"] = {"player_0": {"kind": "builtin-agent", "path": "/agents/0"}}
+    entry = _entry(turns=1, messaging=True)
+    slots = build_slots(
+        parse_config([json.dumps(payload)]),
+        entry,
+        SessionControl(),
+        PausableClock(clock),
+        _Sleeper(),
+    )
+    store = FolderRecordingStore(tmp_path)
+
+    run_episode(
+        entry,
+        slots,
+        seed=1,
+        store=store,
+        recording_id="separate-hooks",
+        clock=clock,
+        cpu_clock_ms=lambda: 0,
+    )
+
+    timing = next(store.open("separate-hooks").steps())["agents"]["player_0"]["timing"]
+    # The final counter delta deliberately exceeds learn's raw duration, proving the clamp.
+    assert timing == {"decision_ms": 20, "chat_ms": 20, "learn_ms": 0}
+    assert snapshot_calls == 4
+
+
+def test_failed_post_hook_snapshot_is_not_reused(monkeypatch, tmp_path: Path, capsys):
+    import game_sandbox_harness.live as live
+
+    clock = ManualClock()
+
+    class Agent:
+        def reset(self, seed: int) -> None:
+            pass
+
+        def act(self, observation: Any) -> int:
+            clock.advance(70)
+            return 0
+
+        def chat(self, inbox: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            clock.advance(50)
+            return []
+
+        def learn(self, observation: Any, action: Any, reward: float, terminated: bool) -> None:
+            clock.advance(20)
+
+    snapshots = iter([100, 150, -1, 200, 210])
+
+    def urlopen(request: Any, *, timeout: float) -> _Response:
+        if request.full_url.endswith("/inflight"):
+            return _Response(json.dumps({"inflight_ms": next(snapshots)}).encode())
+        return _Response()
+
+    monkeypatch.setattr(live.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(live, "load_agent", lambda path: Agent())
+    payload = _payload(
+        {
+            "base_url": "http://proxy/v1",
+            "tick_url": "http://marker/tick",
+            "inflight_url": "http://marker/inflight",
+            "keys": {"player_0": "key-0"},
+        }
+    )
+    payload["slots"] = {"player_0": {"kind": "builtin-agent", "path": "/agents/0"}}
+    entry = _entry(turns=1, messaging=True)
+    slots = build_slots(
+        parse_config([json.dumps(payload)]),
+        entry,
+        SessionControl(),
+        PausableClock(clock),
+        _Sleeper(),
+    )
+    store = FolderRecordingStore(tmp_path)
+
+    run_episode(
+        entry,
+        slots,
+        seed=1,
+        store=store,
+        recording_id="failed-snapshot",
+        clock=clock,
+        cpu_clock_ms=lambda: 0,
+    )
+
+    timing = next(store.open("failed-snapshot").steps())["agents"]["player_0"]["timing"]
+    assert timing == {"decision_ms": 20, "chat_ms": 50, "learn_ms": 10}
+    assert "LLM in-flight snapshot failed for slot 'player_0'" in capsys.readouterr().err
+
+
+def test_proxy_discount_cannot_erase_overlapping_agent_cpu(monkeypatch, tmp_path: Path):
+    import game_sandbox_harness.live as live
+
+    clock = ManualClock()
+    cpu_snapshots = iter([0.0, 60.0])
+    proxy_snapshots = iter([0, 100])
+
+    class Agent:
+        def reset(self, seed: int) -> None:
+            pass
+
+        def act(self, observation: Any) -> int:
+            # Represents a background proxy request overlapping 60 ms of local agent CPU.
+            clock.advance(100)
+            return 0
+
+    def urlopen(request: Any, *, timeout: float) -> _Response:
+        if request.full_url.endswith("/inflight"):
+            return _Response(json.dumps({"inflight_ms": next(proxy_snapshots)}).encode())
+        return _Response()
+
+    monkeypatch.setattr(live.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(live, "load_agent", lambda path: Agent())
+    payload = _payload(
+        {
+            "base_url": "http://proxy/v1",
+            "tick_url": "http://marker/tick",
+            "inflight_url": "http://marker/inflight",
+            "keys": {"player_0": "key-0"},
+        }
+    )
+    payload["slots"] = {"player_0": {"kind": "builtin-agent", "path": "/agents/0"}}
+    entry = _entry(turns=1, messaging=False, step_limit_ms=50)
+    slots = build_slots(
+        parse_config([json.dumps(payload)]),
+        entry,
+        SessionControl(),
+        PausableClock(clock),
+        _Sleeper(),
+    )
+    store = FolderRecordingStore(tmp_path)
+
+    result = run_episode(
+        entry,
+        slots,
+        seed=1,
+        store=store,
+        recording_id="overlapping-cpu",
+        clock=clock,
+        cpu_clock_ms=lambda: next(cpu_snapshots),
+    )
+
+    timing = next(store.open("overlapping-cpu").steps())["agents"]["player_0"]["timing"]
+    assert timing["decision_ms"] == 60
+    assert result.step_timeouts == {"player_0": 1}
+
+
+def test_bad_proxy_snapshot_fails_closed_to_full_hook_time(monkeypatch, tmp_path: Path, capsys):
+    import game_sandbox_harness.live as live
+
+    clock = ManualClock()
+
+    class Agent:
+        def reset(self, seed: int) -> None:
+            pass
+
+        def act(self, observation: Any) -> int:
+            clock.advance(600)
+            return 0
+
+    def urlopen(request: Any, *, timeout: float) -> _Response:
+        if request.full_url.endswith("/inflight"):
+            return _Response(b'{"inflight_ms": -1}')
+        return _Response()
+
+    monkeypatch.setattr(live.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(live, "load_agent", lambda path: Agent())
+    payload = _payload(
+        {
+            "base_url": "http://proxy/v1",
+            "tick_url": "http://marker/tick",
+            "inflight_url": "http://marker/inflight",
+            "keys": {"player_0": "key-0"},
+        }
+    )
+    payload["slots"] = {"player_0": {"kind": "builtin-agent", "path": "/agents/0"}}
+    entry = _entry(turns=1, messaging=False, step_limit_ms=500)
+    slots = build_slots(
+        parse_config([json.dumps(payload)]),
+        entry,
+        SessionControl(),
+        PausableClock(clock),
+        _Sleeper(),
+    )
+    store = FolderRecordingStore(tmp_path)
+
+    result = run_episode(entry, slots, seed=1, store=store, recording_id="bad-snapshot", clock=clock)
+
+    timing = next(store.open("bad-snapshot").steps())["agents"]["player_0"]["timing"]
+    assert timing["decision_ms"] == 600
+    assert result.step_timeouts == {"player_0": 1}
+    assert "LLM in-flight snapshot failed for slot 'player_0'" in capsys.readouterr().err
 
 
 def test_non_llm_slots_do_not_touch_credentials_or_marker_transport(monkeypatch):

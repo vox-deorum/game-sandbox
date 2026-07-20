@@ -427,7 +427,7 @@ describe('LLM registry, handler, and listener', () => {
       headers: { authorization: `Bearer ${key}` },
       payload: { phase: 'setup' },
     })
-    expect(tick.json()).toEqual({ ok: true, inflight_ms: 65 })
+    expect(tick.json()).toEqual({ ok: true })
     await app.close()
   })
 
@@ -462,6 +462,13 @@ describe('LLM registry, handler, and listener', () => {
     now = 1_050
     // The active request has run 50 ms, but a single call may contribute at most maxRequestMs (15).
     expect(registry.inFlightMs('s1')).toBe(15)
+    expect(registry.inFlightMsForScope(grant.accountingScope.key)).toBe(15)
+    const inflight = await app.inject({
+      method: 'POST',
+      url: '/internal/inflight',
+      headers: { authorization: `Bearer ${key}` },
+    })
+    expect(inflight.json()).toEqual({ inflight_ms: 15 })
 
     await registry.revokeSession('s1')
     await active
@@ -469,6 +476,46 @@ describe('LLM registry, handler, and listener', () => {
     expect(registry.inFlightMs('s1')).toBe(0)
     expect(registry.inFlightMsForScope(grant.accountingScope.key)).toBe(0)
     await app.close()
+  })
+
+  it('indexes active requests by scope and removes them as their sessions drain', async () => {
+    let now = 1_000
+    let issued = 10
+    const { grant } = fixture()
+    const otherGrant: LlmGrant = {
+      ...grant,
+      accountingScope: { ...grant.accountingScope, key: 'session:s2:player_0' },
+    }
+    const registry = new KeyRegistry(() => new Uint8Array(32).fill(++issued), {
+      now: () => now,
+      maxRequestMs: 15,
+    })
+    const firstKey = registry.issueOfficial('s1', grant, createOfficialTickMarker())
+    const secondKey = registry.issueOfficial('s1', grant, createOfficialTickMarker())
+    const otherKey = registry.issueOfficial('s2', otherGrant, createOfficialTickMarker())
+    const first = registry.authenticateRequest(firstKey)
+    const second = registry.authenticateRequest(secondKey)
+    const other = registry.authenticateRequest(otherKey)
+
+    now = 1_050
+    // Two requests in one scope each contribute their capped partial, while the other scope is isolated.
+    expect(registry.inFlightMsForScope(grant.accountingScope.key)).toBe(30)
+    expect(registry.inFlightMsForScope(otherGrant.accountingScope.key)).toBe(15)
+
+    first.release()
+    // Released work moves to the cumulative counter and the remaining active request stays indexed.
+    expect(registry.inFlightMsForScope(grant.accountingScope.key)).toBe(65)
+    const revocation = registry.revokeSession('s1')
+    second.release()
+    await revocation
+
+    // Draining the session clears its cumulative state and its last active-scope entry.
+    expect(registry.inFlightMsForScope(grant.accountingScope.key)).toBe(0)
+    expect(registry.inFlightMsForScope(otherGrant.accountingScope.key)).toBe(15)
+
+    other.release()
+    await registry.revokeSession('s2')
+    expect(registry.inFlightMsForScope(otherGrant.accountingScope.key)).toBe(0)
   })
 
   it.each([

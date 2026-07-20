@@ -241,6 +241,7 @@ describe('orchestrator', () => {
       expect(launched.config.llm).toEqual({
         base_url: `http://llm-proxy:${config.llm.internalPort}/v1`,
         tick_url: `http://llm-proxy:${config.llm.internalPort}/internal/tick`,
+        inflight_url: `http://llm-proxy:${config.llm.internalPort}/internal/inflight`,
         keys: {
           player_1: 'key-player_1',
           player_2: 'key-player_2',

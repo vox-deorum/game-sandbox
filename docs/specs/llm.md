@@ -58,4 +58,8 @@ The backend also exposes an authenticated OpenAI-compatible endpoint for student
 
 A seed does not make a model response deterministic. Seeded repetitions reduce the effect of stochastic policies but do not remove it.
 
-During `act`, `chat`, or `learn`, time waiting for a model, including backend retries, counts toward the agent's step and episode limits. Calls during module import, construction, or `reset` are setup calls with null tick attribution and occur before turn timing. The automated board reports successful-call counts and token use by model. See [Leaderboards](leaderboard.md).
+In an official session, the chargeable duration of `act`, `chat`, and `learn` excludes verified backend-proxy time, including retry waits. The harness compares the slot's proxy-time snapshots around each hook and charges the remaining elapsed time to the step and episode limits. Chargeable time cannot be less than the calling thread's CPU time. If either snapshot is unavailable or invalid, the full hook time is charged. Model calls and local work must stay on that thread.
+
+Live-session and workflow watchdogs also exclude verified proxy time after they start. Their allowance for an active request is bounded, so a stuck request cannot extend the deadline indefinitely. Idle timeout always uses wall-clock time.
+
+Calls during module import, construction, or `reset` are setup calls with null tick attribution and occur before turn timing. The automated board reports successful-call counts and token use by model. See [Leaderboards](leaderboard.md).

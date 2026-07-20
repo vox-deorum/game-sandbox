@@ -15,7 +15,7 @@ Participants submit Python agents through GitHub. Every accepted submission is t
 
 The interface is independent of algorithm style. Agents always run inside the server-side session container. They may also call the optional [LLM API](llm.md).
 
-Learned state may persist across episodes in one leaderboard run, but not across submissions or seasons. Time spent in optional hooks and model calls counts toward the same limits as acting.
+Learned state may persist across episodes in one leaderboard run, but not across submissions or seasons. Time spent in optional hooks counts toward the same limits as acting. Official-session LLM timing is defined in the [LLM API](llm.md#determinism-and-timing).
 
 ## Packaging
 

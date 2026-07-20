@@ -19,6 +19,7 @@ The hands-on check runs the Hearts oracle locally with a requested development k
 class LlmConfig:
     base_url: str
     tick_url: str
+    inflight_url: str
     keys: dict[str, str]
 ```
 
@@ -48,7 +49,7 @@ Use a small synchronous standard-library HTTP helper with a bounded local timeou
 
 Calls made during setup carry a null tick in execution-scope SQLite. Calls made during a turn carry the marked tick. Durable scope and session IDs on recording metadata associate those rows with replays.
 
-Time spent in the backend proxy during `act`, `chat`, or `learn`, including upstream attempts and exponential waits, remains inside the blocking participant hook. The existing wall-clock measurement therefore includes it in the corresponding decision, chat, or learn time and in step and episode limits. Module load, construction, and `reset` calls are setup work with null tick attribution and occur before turn timing.
+The harness compares proxy-time snapshots around each `act`, `chat`, or `learn` hook. It subtracts the non-negative change from the hook's wall time while retaining the hook's own calling-thread CPU time. A failed or invalid snapshot leaves the full wall time chargeable. Module load, construction, and `reset` are setup work with null tick attribution and occur before turn timing.
 
 ## Template command and environment file
 
@@ -106,7 +107,7 @@ Docker-free Python tests cover:
 - Setup and per-tick markers use the explicit tick URL and matching slot key, and precede the participant hooks they describe.
 - A failed marker request emits a diagnostic and does not stop the episode.
 - Setup calls persist with null ticks, and per-turn calls persist with the marked tick.
-- Backend retry time inside an `act` call contributes to decision, step, and episode timing. Calls from `chat` and `learn` contribute to their corresponding hook timing and the same limits.
+- Proxy time, including retries, is discounted from `act`, `chat`, and `learn` only when both boundary snapshots are valid. An unavailable snapshot charges full wall time.
 - The oracle follows a valid completion and uses its legal fallback for malformed output, `budget_exceeded`, a non-retryable API error, and an exhausted-retry error.
 - A retryable upstream failure followed by backend success reaches the oracle as one successful response.
 - Dispatcher help lists `llm`, dispatches `python -m sandbox llm` to `sandbox.llm_example`, forwards extra arguments, and selects the LLM-specific dependency probe. Both a current interpreter and a pre-existing `.venv` with game dependencies but without `openai` or `dotenv` take the repair path before dispatch.
@@ -117,7 +118,7 @@ Docker-free Python tests cover:
 
 - Every participant hook runs with the correct slot's base URL and key.
 - Every successful official SQLite row following a successful ownership marker has the correct session, slot, and setup or tick attribution. A failed marker follows the logged availability exception above.
-- LLM wait time during `act`, `chat`, and `learn`, including backend retries, is included in the existing timing limits.
+- Hook timing follows the proxy-time discount contract.
 - A student runs `python -m sandbox llm [small|medium|large]` and the Hearts oracle with a season development key stored in `.env`.
 - The same oracle runs in an official session with injected credentials and unchanged agent code.
 - The guide explains key handling, separate development limits, successful-only accounting, retry behavior, visibility, and fallback errors.

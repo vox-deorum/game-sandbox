@@ -381,6 +381,7 @@ export class Orchestrator {
         maxDurationMs: this.config.sessionMaxDurationMs,
         killGraceMs: KILL_GRACE_MS,
         revokeLlm: () => llmLease?.revoke() ?? Promise.resolve(),
+        llmInFlightMs: () => llmLease?.inFlightMs?.() ?? 0,
         deleteLlmScope: this.deleteLlmScope,
       },
     })

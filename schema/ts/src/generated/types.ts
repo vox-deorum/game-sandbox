@@ -53,15 +53,15 @@ export interface AgentStep {
   score: number;
   timing?: {
     /**
-     * Wall-clock time the agent spent deciding this tick (act only). The leaderboard compute column combines this with learn_ms and later hook timing fields.
+     * Chargeable act time for this tick. The leaderboard compute column combines it with optional-hook timing.
      */
     decision_ms?: number;
     /**
-     * Wall-clock time the agent spent in the optional learn hook this tick. Present only for learning agents. Kept separate from decision_ms so consumers can show act time separately while the leaderboard compute column can include both.
+     * Chargeable optional-learn time for this tick. Present only for learning agents and kept separate so consumers can show act time alone.
      */
     learn_ms?: number;
     /**
-     * Wall-clock time the agent spent in the optional chat hook this tick. Present only on a tick the chat hook ran. Kept separate from decision_ms and learn_ms so consumers can show act time alone while the leaderboard compute column includes all three.
+     * Chargeable optional-chat time for this tick. Present only when the chat hook runs and kept separate so consumers can show act time alone.
      */
     chat_ms?: number;
   };

@@ -25,6 +25,7 @@ import type { SessionProcess } from '../driver/index.js'
 import { coerceResultReason } from '../result-reason.js'
 import type { Storage } from '../storage/index.js'
 import type { SessionMode, TerminationReason } from '../storage/schema.js'
+import { type ChargeableTimer, createChargeableTimer } from './chargeable-timer.js'
 
 /** The minimal browser-socket surface the relay needs, so it is framework- and test-agnostic. */
 export interface ClientSocket {
@@ -57,6 +58,8 @@ export interface LiveSessionDeps {
   killGraceMs: number
   /** Close official admission and await active-request finalizers before container teardown. */
   revokeLlm?: () => Promise<void>
+  /** Cumulative official LLM wait, including any capped partial active request. */
+  llmInFlightMs?: () => number
   /** Remove this live scope after the barrier when no recording association was retained. */
   deleteLlmScope?: (scopeId: string) => void
 }
@@ -116,7 +119,7 @@ export class LiveSession {
 
   private finalizePromise: Promise<void> | null = null
   private idleTimer: ReturnType<typeof setTimeout> | null = null
-  private readonly maxTimer: ReturnType<typeof setTimeout>
+  private readonly maxTimer: ChargeableTimer
 
   constructor(init: LiveSessionInit) {
     this.id = init.id
@@ -132,9 +135,12 @@ export class LiveSession {
     this.llmEnabled = init.llmEnabled ?? false
     this.deps = init.deps
 
-    this.maxTimer = setTimeout(() => {
-      void this.finalize('time_limit')
-    }, this.deps.maxDurationMs)
+    this.maxTimer = createChargeableTimer({
+      budgetMs: this.deps.maxDurationMs,
+      inFlightMs: this.deps.llmInFlightMs,
+      log: (message) => this.deps.log(`session ${this.id}: ${message}`),
+      onExpire: () => void this.finalize('time_limit'),
+    })
     this.armIdle()
 
     this.outputDone = this.consumeOutput()
@@ -428,6 +434,10 @@ export class LiveSession {
     this.armIdle()
   }
 
+  private clearMaxDuration(): void {
+    this.maxTimer.stop()
+  }
+
   // --- teardown ---
 
   /** The owner-initiated graceful stop (DELETE). */
@@ -449,7 +459,7 @@ export class LiveSession {
   private async finalizeOnce(reason: TerminationReason): Promise<void> {
     this.finalReason = reason
     this.clearIdle()
-    clearTimeout(this.maxTimer)
+    this.clearMaxDuration()
 
     // Close admission and settle authenticated work before the process disappears with its network.
     try {

@@ -18,6 +18,7 @@ Create `backend/src/llm/` with a shared request handler and an internal Fastify 
 | --- | --- |
 | `POST /v1/chat/completions` | Bearer-authenticated non-streaming chat completion request |
 | `POST /internal/tick` | Bearer-authenticated official-call tick marker |
+| `POST /internal/inflight` | Bearer-authenticated cumulative proxy-time snapshot for one official slot |
 
 `stream: true` returns `400 streaming_unsupported`. The API does not expose model discovery because `large`, `medium`, and `small` are the complete public vocabulary. Every local error uses `{"error":{"message","type","code"}}`.
 
@@ -59,7 +60,7 @@ type OfficialKeyEntry = {
 
 Official identities do not become fields the shared handler interprets. Grant construction captures session, slot, and telemetry scope in the committed-usage reader and `recordSink`. The committed-usage reader is synchronous and reads the same durable store and dimensions that the grant's record sink updates, so a grant cannot observe usage from a different accounting source. Step 2 grant factories construct that reader and the sink from one execution or development scope rather than wiring them independently. The grant also creates one mutable `OfficialTickMarkerRef`; the official record sink captures that reference and reads its current setup-or-tick value when it builds a telemetry row. `KeyRegistry` stores the same reference in an `OfficialKeyEntry` so lifecycle revocation and marker updates remain official-key concerns.
 
-`issueOfficial(sessionId, grant, tick)` returns `sk-sandbox-` plus 32 random hexadecimal bytes. `authenticateGrant(bearer)` returns the entry's generic grant for the chat-completion handler, while `authenticateOfficial(bearer)` returns the full official entry for `/internal/tick` and rejects development keys. `revokeSession(sessionId)` is idempotent and invalidates every official entry for that session.
+`issueOfficial(sessionId, grant, tick)` returns `sk-sandbox-` plus 32 random hexadecimal bytes. `authenticateGrant(bearer)` returns the entry's generic grant for the chat-completion handler, while `authenticateOfficial(bearer)` returns the full official entry for the internal tick and proxy-time routes and rejects development keys. `revokeSession(sessionId)` is idempotent and invalidates every official entry for that session.
 
 Official keys remain in memory because a backend restart reaps the containers that hold them. Successful usage is durable in the grant's SQLite scope. Temporary reservations and conservative debt are process-lifetime state. Reservations are released when their request finishes or the backend restarts, and debt disappears only when that backend process exits.
 
@@ -135,7 +136,7 @@ The proxy stores the full accepted request and the canonical successful completi
 
 Scope IDs are validated opaque identifiers and never interpolated into SQL. `PRAGMA user_version` versions the file schema, and startup applies explicit migrations before queries run. The store manages file creation, prepared statements, connection reuse, and closure. It closes a cached handle before retention deletes the file. Step 5 connects file retention to the session, run, and recording lifecycle and removes orphan files during startup.
 
-`POST /internal/tick` uses `authenticateOfficial` and updates the latest value through that entry's `OfficialTickMarkerRef`. `{"phase":"setup"}` sets a null tick. `{"tick":N}` sets the active tick. The record sink for the same entry observes that reference, and one key cannot update another key's marker.
+`POST /internal/tick` authenticates an official key and updates only that key's marker: `{"phase":"setup"}` sets a null tick and `{"tick":N}` sets the active tick. `POST /internal/inflight` uses the same key and returns cumulative proxy milliseconds for its accounting scope. Completed requests contribute their admission-to-response duration, including retries and terminal failures. An active request contributes a capped partial duration. These control reads do not contribute to the counter.
 
 Step 3 sends the markers. Step 4 queries execution-scope SQLite for game-result aggregation. Step 5 resolves recordings to their session or run scope and serves matching rows through the recording API.
 
@@ -190,7 +191,7 @@ Docker-free backend tests use fake timers and a stub OpenAI-compatible upstream:
 - Exhausted connection, timeout, 408, 409, 429, and 5xx sequences make the configured number of attempts, return the final error, release the reservation, and record nothing.
 - Concurrent reservations prevent the token and rate-capacity limits from being crossed by simultaneous requests.
 - Generic accounting keys keep two session slots and development-shaped `(participant, season)` fixtures in independent sliding windows, reservation totals, debt, and breaker state.
-- Tick markers are isolated per grant and stamp setup calls with null and acted calls with their current tick.
+- Tick markers and the inflight route are isolated per grant. The inflight route reports completed proxy time plus a capped active partial.
 - Session and model aggregation queries return exact sums from successful rows and exact counts of estimated rows.
 - File creation sets the current `user_version`, migrations advance older fixtures, and retention closes cached handles before deletion.
 - Accepted request and canonical completion bodies round-trip through the SQLite row codec.

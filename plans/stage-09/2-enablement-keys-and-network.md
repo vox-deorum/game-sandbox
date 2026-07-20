@@ -84,6 +84,7 @@ The orchestrator and workflow runner issue one official key for every agent slot
   "llm": {
     "base_url": "http://llm-proxy:<port>/v1",
     "tick_url": "http://llm-proxy:<port>/internal/tick",
+    "inflight_url": "http://llm-proxy:<port>/internal/inflight",
     "keys": {
       "player_0": "sk-sandbox-..."
     }
@@ -91,7 +92,7 @@ The orchestrator and workflow runner issue one official key for every agent slot
 }
 ```
 
-The session and workflow launch paths share this shape. The explicit tick URL keeps the internal marker route independent from the OpenAI base path, so the harness never derives one URL from the other. Step 3 adds the matching harness parser.
+The session and workflow launch paths share this shape. Explicit control URLs keep the harness from deriving internal routes from the OpenAI base URL. Step 3 parses the same shape.
 
 Key issuance is enclosed by a teardown owner. Image, network, configuration, and driver-launch failures await grant teardown before returning. Normal exit, crash exit, explicit stop, live-session finalization, and workflow-game completion await idempotent `revokeSession`.
 
@@ -192,7 +193,7 @@ Docker-free backend and frontend tests cover:
 - The strict season schema, inheritance of every configured tier when models are absent, rejection of empty, duplicate, and unavailable model lists, independent fallback of official and development limits, and admin-editor round trips.
 - The effective configuration matrix across deployment, environment, and season inputs.
 - Live sessions using the current play-open season, development calls using current effective configuration, and workflow matches using only the fully resolved official policy stored when their run was created.
-- One key per agent slot, no key for human slots, live grants using the session scope, workflow grants using the run scope, the exact launch-config shape, and no LLM block for a disabled session.
+- One key per agent slot, no key for human slots, live grants using the session scope, workflow grants using the run scope, the exact launch-config shape including `inflight_url`, and no LLM block for a disabled session.
 - Admission closure, active-request abort or drain, and reservation finalization after every launch failure and teardown path, with no write or aggregate query racing the completed barrier.
 - Development-key authentication through one indexed key ID lookup and constant-time secret verification, one-time plaintext return, hash persistence, rotation of both identifier and secret, backend restart, account status checks, and season scoping.
 - Independent development token and sliding-rate scopes for two users in one season and one user in two seasons, including key rotation preserving every counter and rate event. The two-season fixture uses distinct environments so both submission windows can be open.

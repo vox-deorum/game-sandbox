@@ -15,7 +15,7 @@ export interface OfficialGrantLease {
   revoke(): Promise<void>
   /**
    * Cumulative in-flight LLM ms for this session (completed calls plus the current call's partial).
-   * Available to future watchdog integration. Optional so existing lease fakes keep compiling.
+   * Used by outer watchdogs. Optional so existing lease fakes keep compiling.
    */
   inFlightMs?(): number
 }
