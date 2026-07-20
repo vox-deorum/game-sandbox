@@ -75,6 +75,16 @@ The tokenizer encodes accepted request and completion JSON as ordinary text, so 
 
 An upstream failure releases the reservation and creates no successful-call row. After the upstream succeeds, every failure before the durable record commits converts the reservation to conservative debt, opens each affected accounting breaker, and returns `meter_unavailable`. A single-flight write-health probe can close the breaker, but it never forgives debt during that backend process. See the [LLM specification](../specs/llm.md) for the product rules and [Configuration](configuration.md#llm-proxy) for deployment settings.
 
+The application exposes the internal listener to session containers through the session relay and the public development completion route to holders of a season development key. `POST /api/seasons/:seasonId/llm-development-key` creates or rotates that participant's key. The same shared handler authenticates both kinds of grant, while the development key service checks the active participant, submission window, and effective season access before issuing or accepting a key.
+
+Official successful calls are stored in `data/llm/<scopeId>.sqlite`. A live session uses its session ID as the scope, while all matches in a leaderboard run share the run ID and retain a separate session ID for each call. Development calls use a private season ledger per participant. These telemetry and ledger files use their own `PRAGMA user_version` migrations. That is separate from the application's flat initial Kysely schema, which contributors update in place while no deployed application data needs a forward migration.
+
+The record sink commits a call before the completion is returned. Recording telemetry reads resolve a recording's durable scope and session association. A recording without LLM association returns an empty result, while an associated scope that cannot be read returns `500 telemetry_unavailable` so the replay can distinguish unavailable data from no successful calls.
+
+Public recording telemetry exposes metadata and authoritative budget costs. Accepted requests and canonical completions are returned only to an operator or the current owner of the controlling submission. Deleting that submission retains public telemetry and costs, but removes the former owner's body access. Retained recording metadata keeps the external telemetry queryable; cleanup reclaims an execution scope only when no retained recording still references it.
+
+Workflow creation stores a fully resolved official LLM policy snapshot. The runner reads that snapshot for every match, including allowed aliases, upstream model mappings, prices, and per-slot limits, rather than resolving changed deployment or season defaults. On every LLM-enabled session or workflow exit, the finalizer closes grants to new admission, drains or aborts authenticated requests, waits for their reservation finalizers, and only then aggregates or deletes telemetry, removes relay networking, and completes the lifecycle.
+
 ## Static frontend
 
 When `FRONTEND_DIST` exists, the backend serves it through `@fastify/static`.

@@ -8,7 +8,6 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
-import Fastify from 'fastify'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { createDockerDriver } from '../../src/driver/docker/index.js'
@@ -31,6 +30,7 @@ import { createSubmissionSource } from '../../src/submission/source/index.js'
 import type { RunEvent, TerminalRunStatus, WorkflowRunner } from '../../src/workflow/runner.js'
 import { createWorkflowRunner } from '../../src/workflow/workflow-runner.js'
 import { DEPS_VERSION } from './support/base-image.js'
+import { createLlmUpstreamStub, RETRY_SUCCESS_ATTEMPTS } from './support/llm-upstream.js'
 
 const ENV_ID = 'hearts'
 const SUCCESSFUL_CALLS_PER_GAME = 2
@@ -41,13 +41,14 @@ const HUNGRY_AGENT = [
   '',
   'class Agent:',
   '    def reset(self, seed):',
-  '        pass',
+  '        self.call_id = 0',
   '',
   '    def act(self, observation):',
   '        try:',
+  '            self.call_id += 1',
   '            OpenAI(max_retries=0).chat.completions.create(',
   '                model="small",',
-  '                messages=[{"role": "user", "content": "Choose a Hearts card."}],',
+  '                messages=[{"role": "user", "content": f"[stub:retry-success:call-{self.call_id}] Choose a Hearts card."}],',
   '                max_completion_tokens=1,',
   '                stream=False,',
   '            )',
@@ -78,28 +79,8 @@ describe('workflow LLM budget exhaustion (Docker)', () => {
   })
 
   it('refreshes the per-game allowance and persists only successful calls everywhere', async () => {
-    const upstreamRequests: Array<Record<string, unknown>> = []
-    const upstream = Fastify({ logger: false })
-    upstream.post('/v1/chat/completions', async (request) => {
-      upstreamRequests.push(request.body as Record<string, unknown>)
-      const call = upstreamRequests.length
-      return {
-        id: `stub-completion-${call}`,
-        object: 'chat.completion',
-        created: call,
-        model: 'provider-small',
-        choices: [
-          {
-            index: 0,
-            message: { role: 'assistant', content: 'Play the lowest legal card.' },
-            finish_reason: 'stop',
-            logprobs: null,
-          },
-        ],
-        usage: { prompt_tokens: 2, completion_tokens: 1, total_tokens: 3 },
-      }
-    })
-    const upstreamAddress = await upstream.listen({ port: 0, host: '127.0.0.1' })
+    const upstream = createLlmUpstreamStub()
+    const upstreamAddress = await upstream.listen()
     cleanup.push(() => upstream.close())
 
     const root = mkdtempSync(join(tmpdir(), 'gs-wf-llm-budget-'))
@@ -121,9 +102,10 @@ describe('workflow LLM budget exhaustion (Docker)', () => {
       tokenizer,
       upstream: new UpstreamCaller({
         baseURL: `${upstreamAddress}/v1`,
+        apiKey: 'upstream-secret',
         timeoutMs: 10_000,
-        maxRetries: 0,
-        retryIntervalMs: 1,
+        maxRetries: 2,
+        retryIntervalMs: 20,
       }),
       options: { defaultMaxOutputTokens: 1, maxOutputTokens: 8 },
     })
@@ -252,8 +234,13 @@ describe('workflow LLM budget exhaustion (Docker)', () => {
     expect(calls, diagnosticText(terminal.events)).toHaveLength(
       SUCCESSFUL_CALLS_PER_GAME * games.length,
     )
-    expect(upstreamRequests).toHaveLength(calls.length)
-    expect(upstreamRequests.every((request) => request.model === 'provider-small')).toBe(true)
+    // Each accepted logical request retries twice through the real listener before the shared stub
+    // returns one success. The durable store still receives exactly one row per logical request.
+    expect(upstream.requests).toHaveLength(calls.length * RETRY_SUCCESS_ATTEMPTS)
+    expect(upstream.requests.every((request) => request.model === 'provider-small')).toBe(true)
+    expect(
+      upstream.requests.every((request) => request.authorization === 'Bearer upstream-secret'),
+    ).toBe(true)
     expect(
       games.map((game) => ({
         seed: game.seed,
@@ -295,7 +282,7 @@ describe('workflow LLM budget exhaustion (Docker)', () => {
 
     // The agent requests on every turn. Only two requests per game reached the upstream or acquired
     // a successful telemetry row, so later budget rejections stayed local and the next game reset it.
-    expect(attemptedSubmissionTurns).toBeGreaterThan(upstreamRequests.length)
+    expect(attemptedSubmissionTurns).toBeGreaterThan(calls.length)
     expect(new Set(calls.map((call) => call.sessionId))).toEqual(
       new Set(games.map((game) => game.id)),
     )

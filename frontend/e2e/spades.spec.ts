@@ -1,7 +1,4 @@
-import { copyFileSync, cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { rmSync } from 'node:fs'
 
 import type { BrowserContext, Locator } from '@playwright/test'
 import {
@@ -27,7 +24,7 @@ import {
   SPECTATOR,
   SPECTATOR_TWO,
 } from './support/names.js'
-import { TEMPLATE_VERSION } from './support/template-version.js'
+import { stageExampleAgent } from './support/stage-example-agent.js'
 
 /**
  * The focused Stage 8 browser journey. A human in player_0 queues one broadcast and one targeted
@@ -283,39 +280,12 @@ test('a season-silenced Spades session mounts no chat panel', async ({ page, adm
   }
 })
 
-/** A submittable manifest for a staged example: the standard three fields the validator requires. */
-const MANIFEST = `${JSON.stringify({ entry_point: 'agent', class_name: 'Agent', template_version: TEMPLATE_VERSION }, null, 2)}\n`
-
-/** Prune Python bytecode caches while copying: their `.pyc` files never belong in a submission. */
-const skipPycache = (src: string): boolean => !/[\\/]__pycache__(?:[\\/]|$)/.test(src)
-
 /** The three example strategies submitted into the matchup, each under its own owner handle. */
 const ROSTER = [
   { owner: SPADES_OWNERS.counter, agent: 'counter' },
   { owner: SPADES_OWNERS.daredevil, agent: 'daredevil' },
   { owner: SPADES_OWNERS.signaler, agent: 'signaler' },
 ] as const
-
-/**
- * Stage an `examples/spades/<name>/` agent as a submittable folder, exactly mirroring hearts.spec.ts's
- * `stageHeartsAgent`: the example's `agent.py`, a generated `manifest.json`, and the composed `sandbox/`
- * helper package its `agent.py` imports (`from sandbox.cards import …`). The example folders are
- * diff-only overlays carrying neither their own manifest nor the `sandbox/` package, both of which the
- * template supplies at compose time, so staging reproduces just those two pieces the way
- * `scripts/compose.py` does: the base layer copied first, then the Spades env layer overlaid whole-file.
- */
-function stageSpadesAgent(name: string): string {
-  const dir = mkdtempSync(join(tmpdir(), `spades-${name}-`))
-  const baseSandbox = fileURLToPath(new URL('../../templates/base/sandbox', import.meta.url))
-  const envSandbox = fileURLToPath(new URL('../../templates/spades/sandbox', import.meta.url))
-  cpSync(baseSandbox, join(dir, 'sandbox'), { recursive: true, filter: skipPycache })
-  cpSync(envSandbox, join(dir, 'sandbox'), { recursive: true, force: true, filter: skipPycache })
-
-  const source = fileURLToPath(new URL(`../../examples/spades/${name}/agent.py`, import.meta.url))
-  copyFileSync(source, join(dir, 'agent.py'))
-  writeFileSync(join(dir, 'manifest.json'), MANIFEST)
-  return dir
-}
 
 test('a Spades season: three example agents, a scheduled partnership matchup, then release', async ({
   page,
@@ -336,7 +306,7 @@ test('a Spades season: three example agents, a scheduled partnership matchup, th
   const stagedDirs: string[] = []
   const staged: Record<string, string> = {}
   for (const { agent } of ROSTER) {
-    const dir = stageSpadesAgent(agent)
+    const dir = stageExampleAgent('spades', agent)
     stagedDirs.push(dir)
     staged[agent] = dir
   }

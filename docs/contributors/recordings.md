@@ -19,6 +19,14 @@ The harness copies the map from session configuration. The backend assigns:
 
 The field is optional, so older recordings remain readable.
 
+## External LLM telemetry
+
+LLM telemetry is not a recording sidecar and does not change the JSONL header or step schema. The backend records durable `llm_scope_id` and `llm_session_id` metadata for an LLM-enabled recording, then uses those identifiers to read successful-call rows from the execution-scope SQLite file.
+
+A live session uses its session ID for both identifiers. Workflow matches share their run ID as `llm_scope_id` and keep the individual match ID as `llm_session_id`. This association allows a retained replay to resolve external telemetry after its producing session or workflow data is pruned.
+
+An unassociated recording has no LLM calls. An associated recording whose telemetry file is missing or unreadable reports unavailable telemetry rather than an empty result. Retention preserves a referenced scope until no retained recording needs it, then allows the backend to reclaim the external telemetry.
+
 ## The store interface
 
 The harness exposes a small save and load interface, `RecordingStore`, with three members:

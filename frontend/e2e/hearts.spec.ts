@@ -1,7 +1,4 @@
-import { copyFileSync, cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { rmSync } from 'node:fs'
 import {
   activeWindows,
   closePlay,
@@ -24,7 +21,7 @@ import {
   HEARTS_OWNERS,
   HEARTS_SEASON,
 } from './support/names.js'
-import { TEMPLATE_VERSION } from './support/template-version.js'
+import { stageExampleAgent } from './support/stage-example-agent.js'
 
 /**
  * The dedicated Hearts coverage. Unlike the flappy specs, Hearts is a four-seat, turn-based game, so
@@ -34,9 +31,6 @@ import { TEMPLATE_VERSION } from './support/template-version.js'
  * renderer in a live four-seat session. The agents are the `examples/hearts/*` reference agents, each
  * a different strategy, submitted into a real season whose released Scoreboard the demo then serves.
  */
-
-/** A submittable manifest for a staged example: the standard three fields the validator requires. */
-const MANIFEST = `${JSON.stringify({ entry_point: 'agent', class_name: 'Agent', template_version: TEMPLATE_VERSION }, null, 2)}\n`
 
 /** A four-seat, all-Naive Hearts session: no human seat, so it runs itself to completion (scripted). */
 const ALL_BUILTIN_SEATS = {
@@ -53,35 +47,6 @@ const ROSTER = [
   { owner: HEARTS_OWNERS.assassin, agent: 'assassin' },
   { owner: HEARTS_OWNERS.closer, agent: 'closer' },
 ] as const
-
-/** Prune Python bytecode caches while copying: their `.pyc` files never belong in a submission. */
-const skipPycache = (src: string): boolean => !/[\\/]__pycache__(?:[\\/]|$)/.test(src)
-
-/**
- * Stage an `examples/hearts/<name>/` agent as a submittable folder that loads exactly like a real
- * submission: its `agent.py`, a generated `manifest.json`, and the composed `sandbox/` helper package
- * its `agent.py` imports (`from sandbox.cards import …`).
- *
- * The example folders are diff-only overlays: they carry neither their own `manifest.json` nor the
- * `sandbox/` package, both of which the template supplies at compose time. So rather than run the full
- * compose pipeline, staging reproduces just those two pieces — the manifest inline, and the `sandbox/`
- * package the way `scripts/compose.py` composes it: the base layer copied first, then the hearts env
- * layer overlaid whole-file (adding `sandbox/cards.py` and the local env). Without the package the load
- * stage cannot import the entry point and the submission fails as `load_failed`. Returns the temp
- * directory's absolute path, which the local-submission source accepts as-is.
- */
-function stageHeartsAgent(name: string): string {
-  const dir = mkdtempSync(join(tmpdir(), `hearts-${name}-`))
-  const baseSandbox = fileURLToPath(new URL('../../templates/base/sandbox', import.meta.url))
-  const envSandbox = fileURLToPath(new URL('../../templates/hearts/sandbox', import.meta.url))
-  cpSync(baseSandbox, join(dir, 'sandbox'), { recursive: true, filter: skipPycache })
-  cpSync(envSandbox, join(dir, 'sandbox'), { recursive: true, force: true, filter: skipPycache })
-
-  const source = fileURLToPath(new URL(`../../examples/hearts/${name}/agent.py`, import.meta.url))
-  copyFileSync(source, join(dir, 'agent.py'))
-  writeFileSync(join(dir, 'manifest.json'), MANIFEST)
-  return dir
-}
 
 test('a four-seat Hearts session renders in the browser', async ({ page, admin }) => {
   // Container launch plus the first rendered frame for a four-seat game is slower than a DOM-only check.
@@ -118,7 +83,7 @@ test('a Hearts season: four example agents, a scheduled multi-seat matchup, then
   const stagedDirs: string[] = []
   const staged: Record<string, string> = {}
   for (const { agent } of ROSTER) {
-    const dir = stageHeartsAgent(agent)
+    const dir = stageExampleAgent('hearts', agent)
     stagedDirs.push(dir)
     staged[agent] = dir
   }
@@ -411,7 +376,7 @@ test('a multi-agent Hearts recording replays with per-seat attribution and trick
   // Stage and submit one example Hearts agent under its own owner, so its seat carries a real owner
   // attribution ("<owner>'s agent") in the recording header rather than the generic Naive label. It
   // attaches to the seeded Playground, which is both submission-open and play-open on a fresh backend.
-  const stagedDir = stageHeartsAgent('duck')
+  const stagedDir = stageExampleAgent('hearts', 'duck')
   try {
     const submissionId = await submitReadyAgent(
       await as(HEARTS_OWNERS.replay),

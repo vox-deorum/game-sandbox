@@ -23,6 +23,8 @@ Keeping every slot in one session container avoids a second container boundary i
 
 The backend launches a container, relays state to browsers over WebSocket, and forwards authorized commands to the harness. The harness steps the environment, calls agent slots, and routes messages. The container lasts for the session.
 
+When LLM access is enabled, the session uses a private per-session network path whose only reachable service is the backend LLM proxy. Session exit first closes its temporary LLM grants to new admission, then aborts or drains authenticated requests and waits for their accounting to settle. Telemetry cleanup, network removal, and lifecycle completion happen only after that barrier. See [LLM API for Agents](llm.md).
+
 ## Execution drivers
 
 The backend uses an execution-driver interface to:

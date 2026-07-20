@@ -1,6 +1,6 @@
 # Stage 9.7: Testing, CI, and Documentation
 
-Status: not started.
+Status: in progress.
 
 Part of [Stage 9](../stage-09-llm-gateway.md), build-order step 7.
 

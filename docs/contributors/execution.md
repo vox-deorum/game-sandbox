@@ -47,7 +47,9 @@ The Docker implementation lives under `driver/docker/`. A later Kubernetes imple
 
 The Docker driver maps these to Docker settings, drops capabilities, and labels containers with `game-sandbox.session=<id>`. Startup reaps leftover labeled containers from an interrupted backend process.
 
-Backend callers do not construct this profile field by field. `driver/sandbox.ts` builds the profile for live sessions, scheduled workflow games, and submission load checks. The helper fixes the security posture at a read-only root filesystem, disabled networking, and a bounded `/tmp` scratch mount; a caller may supply only its CPU and memory limits, scratch size, and the mounts its job requires. Add a sandbox caller through this helper and extend the invariant tests to cover its quotas and permitted mounts.
+Backend callers do not construct this profile field by field. `driver/sandbox.ts` builds the profile for live sessions, scheduled workflow games, and submission load checks. The helper fixes the read-only root filesystem and bounded `/tmp` scratch mount. Callers choose either `none` or the narrowly scoped `llm` network, alongside CPU and memory limits, scratch size, and approved mounts. Add a sandbox caller through this helper and extend the invariant tests to cover its quotas, network posture, and permitted mounts.
+
+An LLM-enabled session gets two isolated Docker networks. The agent container joins the agent network, where `llm-proxy` is the only service. A relay joins that network and a separate egress network, then forwards only to the backend's internal LLM listener. The agent container never joins the egress network or gains general internet access. The launch configuration gives agents `http://llm-proxy:<port>/v1` and the internal tick endpoint.
 
 ## Session base images
 
@@ -181,7 +183,7 @@ Every end path enters one idempotent finalizer. The first termination reason win
 | Memory kill                   | `oom_killed`                               |
 | Other crash                   | `error`                                    |
 
-The finalizer stores the result, notifies clients, kills the container if needed, and clears the active registry.
+The finalizer stores the result, notifies clients, kills the container if needed, and clears the active registry. For an LLM-enabled session, it first revokes admission, aborts or drains authenticated proxy requests, and waits for their reservations to settle. Only then may it aggregate or delete telemetry, disconnect the relay, remove the internal networks, and complete the lifecycle.
 
 ## Container-side live runner
 

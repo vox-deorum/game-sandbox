@@ -26,6 +26,14 @@ interface MessagingOverride {
   message_cap?: number
 }
 
+/** The explicit LLM season override the browser journey configures through the real admin endpoint. */
+export interface LlmOverride {
+  enabled?: boolean
+  models?: ('large' | 'medium' | 'small')[]
+  official?: { token_budget?: number; rate_limit_rpm?: number }
+  development?: { token_budget?: number; rate_limit_rpm?: number }
+}
+
 /** The season config document the admin config GET/PUT round-trips (mirrors `SeasonConfig`). */
 interface SeasonConfigDoc {
   deps_version: number
@@ -34,7 +42,7 @@ interface SeasonConfigDoc {
     step_timeout_ms?: number
     episode_timeout_ms?: number
     messaging?: MessagingOverride
-    llm?: unknown
+    llm?: LlmOverride
   }
 }
 
@@ -121,6 +129,26 @@ export async function setMessagingOverride(
   const overrides = { ...config.overrides, messaging }
   const res = await admin.put(`/api/admin/seasons/${seasonId}/config`, {
     data: { deps_version: config.deps_version, matches: config.matches, overrides },
+  })
+  expect(res.status(), await res.text()).toBe(200)
+}
+
+/**
+ * Replace only the LLM block while preserving the rest of the full-replace season configuration.
+ * This mirrors the administrator editor and lets E2E exercise a genuinely enabled season.
+ */
+export async function setLlmOverride(
+  admin: APIRequestContext,
+  seasonId: string,
+  llm: LlmOverride,
+): Promise<void> {
+  const config = await getSeasonConfig(admin, seasonId)
+  const res = await admin.put(`/api/admin/seasons/${seasonId}/config`, {
+    data: {
+      deps_version: config.deps_version,
+      matches: config.matches,
+      overrides: { ...config.overrides, llm },
+    },
   })
   expect(res.status(), await res.text()).toBe(200)
 }

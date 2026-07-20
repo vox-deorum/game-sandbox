@@ -35,7 +35,7 @@ Each season defines:
 - Template dependency version.
 - Optional step and episode limit overrides.
 - Optional messaging overrides.
-- Optional LLM model, token-price, official limit, and student development limit overrides of deployment defaults. Limits set the weighted token budget and per-minute request rate.
+- Optional LLM model, token-price, official limit, and student development limit overrides of deployment defaults. Limits set the weighted token budget and per-minute request rate. Creating an automated run freezes its complete resolved official policy, including enabled aliases, upstream model mappings, prices, and per-slot limits.
 - Optional season-wide rating prompt.
 
 A season's timing, messaging, and official LLM overrides apply not only to its automated games but also to the live watch and play sessions started against the play-open season, so a season's rules hold everywhere its agents run. Student development LLM limits use their own meter keyed to the season and do not consume or contribute to official limits or telemetry.
@@ -60,7 +60,7 @@ The operator-triggered workflow:
 - Runs matches sequentially on the same host for comparable timing.
 - Records every match.
 - Enforces step and episode limits.
-- Aggregates successful LLM usage by model.
+- Aggregates successful LLM usage by model, including authoritative weighted cost and estimated-call counts.
 
 When a match design fills more than one seat from submissions, the expansion respects whether seat order changes the game (see [Environments](environment.md)). It enumerates each distinct ordered seating where order matters, and each distinct unordered roster where it does not. The built-in baseline still fills every submission seat so each board keeps a comparable reference row.
 

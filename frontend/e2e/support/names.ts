@@ -41,6 +41,15 @@ export const HEARTS_OWNERS = {
   replay: 'annie-easley',
 } as const
 
+/** Dedicated actors for the LLM browser journey's owner and second participant. */
+export const LLM_PERSONAS = {
+  owner: 'margaret-hamilton',
+  other: 'dorothy-vaughan',
+} as const
+
+/** Kept distinct from the shared demo seasons because this journey changes its LLM policy. */
+export const LLM_SEASON = 'Inference Garden'
+
 /**
  * The fixed episode seed the on-screen human-seat test starts its Hearts session with. With this deal
  * `player_0` (the seat the connected human controls, drawn at the bottom of the table) holds the 2 of
