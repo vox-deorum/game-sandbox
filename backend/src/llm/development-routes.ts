@@ -146,8 +146,7 @@ interface DevelopmentSummaryResponse {
   key_exists: boolean
 }
 
-interface DevelopmentDiscoveryResponse
-  extends Omit<DevelopmentSummaryResponse, 'usage_by_model'> {
+interface DevelopmentDiscoveryResponse extends Omit<DevelopmentSummaryResponse, 'usage_by_model'> {
   label: string | null
   environment: string
 }

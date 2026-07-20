@@ -63,6 +63,7 @@ The primitives live in `frontend/src/components/ui/`, PascalCase with a `Ui` pre
 | `UiField` + `UiInput` | A labelled field with automatic `id`/`aria-describedby` wiring for hint and error text. |
 | `UiDialog` | The modal dialog (focus trap, escape, focus restore, `aria-modal`), wrapping Reka UI Dialog. |
 | `UiSlider` | The replay scrubber (keyboard operation and value announcement), wrapping Reka UI Slider. |
+| `UiMeter` | Read-only progress with a required visible text value. First used for LLM development budgets. |
 | `UiEmptyState` | The loading / empty / error message line, muted or danger. |
 
 Simple primitives are local Vue components. Use Reka UI only where focus management and ARIA are difficult to implement safely, currently dialog and slider.

@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/vue'
+import { fireEvent, screen, waitFor, within } from '@testing-library/vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { Board, Me, SeasonView } from '../src/api/client.js'
@@ -195,7 +195,66 @@ describe('LeaderboardsPage', () => {
     // 2-rating Naive row is row 2, unranked (an em dash where its rank would be).
     expect(within(rankedRow).getByText('1')).toBeInTheDocument()
     expect(within(rankedRow).getByText('4.2 ± 0.8')).toBeInTheDocument()
-    expect(within(unrankedRow).getByText('—')).toBeInTheDocument()
+    expect(within(unrankedRow).getByText('None')).toBeInTheDocument()
+  })
+
+  it('shows compact stored LLM usage with honest per-model details on the automated board only', async () => {
+    const usageBoard = board()
+    const usageRow = usageBoard.automated[0]
+    if (usageRow === undefined) throw new Error('expected an automated fixture row')
+    usageBoard.automated[0] = {
+      ...usageRow,
+      llm_weighted_cost: 41_600,
+      llm_usage_by_model: {
+        small: {
+          calls: 2,
+          estimated_calls: 0,
+          input_tokens: 100,
+          reasoning_tokens: 20,
+          output_tokens: 50,
+          latency_ms: 9,
+        },
+        medium: {
+          calls: 1,
+          estimated_calls: 0,
+          input_tokens: 40,
+          reasoning_tokens: 5,
+          output_tokens: 10,
+          latency_ms: 4,
+        },
+      },
+    }
+    vi.mocked(getEnvironmentLeaderboards).mockResolvedValue({
+      current: { season: season(), board: usageBoard },
+      submission_season_id: null,
+      play_season_id: null,
+    })
+    const view = await renderAt('/environments/flappy_bird/leaderboards')
+
+    const automatedSection = (await screen.findByText('Scoreboard')).closest(
+      'section',
+    ) as HTMLElement
+    const humanSection = screen.getByText('Human Ratings').closest('section') as HTMLElement
+    expect(
+      within(automatedSection).getByRole('columnheader', { name: 'LLM usage' }),
+    ).toBeInTheDocument()
+    expect(within(humanSection).queryByRole('columnheader', { name: 'LLM usage' })).toBeNull()
+    expect(automatedSection.querySelector('.llm-total')).toHaveTextContent('41.6k units')
+    expect(within(automatedSection).getByText('None')).toBeInTheDocument()
+
+    await fireEvent.click(within(automatedSection).getByText('By model'))
+    expect(within(automatedSection).getByText('small').closest('li')).toHaveTextContent(
+      'small: 2 calls, 100 input + 50 output tokens, 20 reasoning tokens within output',
+    )
+    expect(within(automatedSection).getByText('medium').closest('li')).toHaveTextContent(
+      'medium: 1 call, 40 input + 10 output tokens, 5 reasoning tokens within output',
+    )
+
+    const firstRow = within(automatedSection).getAllByRole('row')[1] as HTMLElement
+    expect(within(firstRow).getAllByRole('cell')[0]).toHaveTextContent('1')
+    expect(view.container.querySelector('.automated-table')?.parentElement).toHaveClass(
+      'board-scroll',
+    )
   })
 
   it("shows an agent's author rating prompt under its name on the human board", async () => {

@@ -9,16 +9,23 @@ import {
   getAuthorPrompt,
   getEnvironmentLeaderboards,
   getEnvironments,
+  getLlmDevelopmentSummary,
   getMe,
   getMyAgents,
   getRecording,
+  getRecordingLlm,
   getSeasonLeaderboards,
   getSessionRatings,
   getSiteConfig,
+  listAdminLlmDevelopmentCalls,
+  listAdminLlmDevelopmentUsers,
+  listLlmDevelopmentCalls,
+  listLlmDevelopmentSeasons,
   listSeasons,
   listWatchAgents,
   openSubmissions,
   pinRecording,
+  rotateLlmDevelopmentKey,
   type SeasonConfig,
   setAuthorPrompt,
   startSession,
@@ -215,6 +222,22 @@ describe('api client', () => {
   it('fetches a recording as raw text', async () => {
     stubFetch(async () => new Response('header\nstate\n', { status: 200 }))
     expect(await getRecording('rec-1')).toBe('header\nstate\n')
+  })
+
+  it('keeps unavailable recording telemetry distinct from a successful empty payload', async () => {
+    stubFetch(async () => jsonResponse({ code: 'telemetry_unavailable' }, 500))
+    await expect(getRecordingLlm('broken recording')).resolves.toEqual({
+      ok: false,
+      reason: 'telemetry_unavailable',
+    })
+
+    vi.unstubAllGlobals()
+    const fetchMock = stubFetch(async () => jsonResponse({ calls: [], total_budget_cost_units: 0 }))
+    await expect(getRecordingLlm('empty recording')).resolves.toEqual({
+      ok: true,
+      telemetry: { calls: [], total_budget_cost_units: 0 },
+    })
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/recordings/empty%20recording/llm')
   })
 
   it('maps a 204 pin to success and a 409 pinned_quota to its typed reason', async () => {
@@ -417,5 +440,50 @@ describe('api client', () => {
     vi.unstubAllGlobals()
     stubFetch(async () => jsonResponse({ id: 'run-1', status: 'pending' }, 201))
     expect(await triggerRun('iter-1')).toEqual({ ok: true, id: 'run-1', status: 'pending' })
+  })
+
+  it('wraps participant LLM development discovery, summary, calls, and key rotation', async () => {
+    const discovery = [{ season_id: 'season one', environment: 'hearts' }]
+    const discoveryMock = stubFetch(async () => jsonResponse(discovery))
+    expect(await listLlmDevelopmentSeasons()).toEqual(discovery)
+    expect(discoveryMock.mock.calls[0]?.[0]).toBe('/api/llm-development/seasons')
+
+    vi.unstubAllGlobals()
+    const summary = { season_id: 'season one', successful_calls: 2 }
+    const summaryMock = stubFetch(async () => jsonResponse(summary))
+    expect(await getLlmDevelopmentSummary('season one')).toEqual(summary)
+    expect(summaryMock.mock.calls[0]?.[0]).toBe('/api/seasons/season%20one/llm-development')
+
+    vi.unstubAllGlobals()
+    const page = { calls: [], next_cursor: 17 }
+    const callsMock = stubFetch(async () => jsonResponse(page))
+    expect(await listLlmDevelopmentCalls('season one', { cursor: 42, limit: 10 })).toEqual(page)
+    expect(callsMock.mock.calls[0]?.[0]).toBe(
+      '/api/seasons/season%20one/llm-development/calls?cursor=42&limit=10',
+    )
+
+    vi.unstubAllGlobals()
+    const credential = { season_id: 'season one', base_url: 'https://example.test/api/llm/v1' }
+    const rotateMock = stubFetch(async () => jsonResponse(credential))
+    expect(await rotateLlmDevelopmentKey('season one')).toEqual(credential)
+    expect(rotateMock.mock.calls[0]?.[0]).toBe('/api/seasons/season%20one/llm-development-key')
+    expect((rotateMock.mock.calls[0]?.[1] as RequestInit).method).toBe('POST')
+  })
+
+  it('wraps operator LLM participant totals and encoded call history pagination', async () => {
+    const users = [{ user_id: 'user/name', successful_calls: 1 }]
+    const usersMock = stubFetch(async () => jsonResponse(users))
+    expect(await listAdminLlmDevelopmentUsers('season one')).toEqual(users)
+    expect(usersMock.mock.calls[0]?.[0]).toBe('/api/admin/seasons/season%20one/llm-development')
+
+    vi.unstubAllGlobals()
+    const page = { calls: [], next_cursor: null }
+    const callsMock = stubFetch(async () => jsonResponse(page))
+    expect(await listAdminLlmDevelopmentCalls('season one', 'user/name', { limit: 100 })).toEqual(
+      page,
+    )
+    expect(callsMock.mock.calls[0]?.[0]).toBe(
+      '/api/admin/seasons/season%20one/llm-development/users/user%2Fname/calls?limit=100',
+    )
   })
 })

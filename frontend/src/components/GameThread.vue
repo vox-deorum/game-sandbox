@@ -15,14 +15,20 @@
 -->
 <script setup lang="ts">
 import type { RecordingHeader } from '@game-sandbox/schema'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 
+import type { RecordingLlmCall } from '../api/client.js'
 import { useActiveRowScroll } from '../composables/useActiveRowScroll.js'
 import { attributionLabel } from '../lib/attribution.js'
 import { type ChatEntry, type MessageBadge, messageBadge, messageKey } from '../lib/chat.js'
 import { formatAction, formatSlot, formatSlotIndex } from '../lib/format.js'
 import type { DecisionEntry } from './DecisionLog.vue'
+import LlmCostDetails from './LlmCostDetails.vue'
+import LlmCostTooltip from './LlmCostTooltip.vue'
+import RequestResponseView from './RequestResponseView.vue'
 import UiBadge from './ui/UiBadge.vue'
+import UiButton from './ui/UiButton.vue'
+import UiDialog from './ui/UiDialog.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -40,6 +46,10 @@ const props = withDefaults(
     anonymousNumbers?: Record<string, number>
     /** Slots the viewer controls; empty when spectating a replay (the usual case). */
     viewerSlots?: string[]
+    llmCalls?: RecordingLlmCall[]
+    setupLlmCalls?: RecordingLlmCall[]
+    llmUnavailable?: boolean
+    llmPending?: boolean
   }>(),
   {
     currentIndex: null,
@@ -48,6 +58,10 @@ const props = withDefaults(
     viewerId: undefined,
     anonymousNumbers: undefined,
     viewerSlots: () => [],
+    llmCalls: () => [],
+    setupLlmCalls: () => [],
+    llmUnavailable: false,
+    llmPending: false,
   },
 )
 
@@ -89,6 +103,7 @@ interface DecisionItem {
   seat: string
   action: string
   tick: number
+  slot: string
 }
 
 interface MessageItem {
@@ -116,9 +131,10 @@ const items = computed<ThreadItem[]>(() => {
       key: `d-${decision.tick}-${i}`,
       kind: 'decision',
       state,
-      seat: decision.slot ? `P${formatSlotIndex(decision.slot)}` : '—',
+      seat: decision.slot ? `P${formatSlotIndex(decision.slot)}` : 'None',
       action: formatAction(decision.action),
       tick: decision.tick,
+      slot: decision.slot,
     })
     for (const entry of chatByTick.value.get(decision.tick) ?? []) {
       result.push({
@@ -138,16 +154,75 @@ const items = computed<ThreadItem[]>(() => {
   return result
 })
 
+const setupRows = computed(() => {
+  if (props.llmUnavailable) return []
+  const bySlot = new Map<string, RecordingLlmCall[]>()
+  for (const call of props.setupLlmCalls) {
+    const calls = bySlot.get(call.slot) ?? []
+    calls.push(call)
+    bySlot.set(call.slot, calls)
+  }
+  return [...bySlot.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([slot, calls]) => ({ slot, calls }))
+})
+
+function decisionCalls(item: DecisionItem): RecordingLlmCall[] {
+  return props.llmCalls.filter((call) => call.tick === item.tick && call.slot === item.slot)
+}
+
+function totalCost(calls: RecordingLlmCall[]): number {
+  return calls.reduce((total, call) => total + call.budget_cost_units, 0)
+}
+
+function hasBodies(call: RecordingLlmCall): boolean {
+  return Object.hasOwn(call, 'request') && Object.hasOwn(call, 'completion')
+}
+
+const inspectorOpen = ref(false)
+const inspectedCalls = ref<RecordingLlmCall[]>([])
+
+function inspect(calls: RecordingLlmCall[]): void {
+  if (!calls.every(hasBodies)) return
+  inspectedCalls.value = calls
+  inspectorOpen.value = true
+}
+
 // Follow the scrubbed row: center the current tick, the same active-row scroll the decision log uses.
 const scroller = useActiveRowScroll(
-  () => props.decisions.length,
+  () => props.decisions.length + setupRows.value.length,
   () => activeIndex.value,
 )
 </script>
 
 <template>
   <div class="game-thread" ref="scroller" role="group" aria-label="Game thread">
-    <ul v-if="items.length > 0" class="thread-list">
+    <div class="thread-header" aria-hidden="true">
+      <span>Player</span>
+      <span>Tick</span>
+      <span>Decision</span>
+      <span>LLM cost</span>
+    </div>
+    <ul v-if="items.length > 0 || setupRows.length > 0" class="thread-list">
+      <li
+        v-for="row in setupRows"
+        :key="`setup:${row.slot}`"
+        class="thread-item thread-item--decision"
+        :data-row-id="`setup:${row.slot}`"
+      >
+        <span class="thread-seat">{{ row.slot ? `P${formatSlotIndex(row.slot)}` : 'None' }}</span>
+        <span class="thread-tick">Setup</span>
+        <span class="thread-action">Setup</span>
+        <span class="thread-cost">
+          <LlmCostTooltip
+            :calls="row.calls"
+            :total-budget-cost-units="totalCost(row.calls)"
+            :inspectable="row.calls.every(hasBodies)"
+            :accessible-label="row.calls.every(hasBodies) ? 'Inspect request and response' : 'LLM cost details'"
+            @inspect="inspect(row.calls)"
+          />
+        </span>
+      </li>
       <li
         v-for="item in items"
         :key="item.key"
@@ -161,8 +236,21 @@ const scroller = useActiveRowScroll(
       >
         <template v-if="item.kind === 'decision'">
           <span class="thread-seat">{{ item.seat }}</span>
-          <span class="thread-action">{{ item.action }}</span>
           <span class="thread-tick">tick {{ item.tick }}</span>
+          <span class="thread-action">{{ item.action }}</span>
+          <span class="thread-cost">
+            <template v-if="llmPending">Loading</template>
+            <template v-else-if="llmUnavailable">Unavailable</template>
+            <template v-else-if="decisionCalls(item).length === 0">None</template>
+            <LlmCostTooltip
+              v-else
+              :calls="decisionCalls(item)"
+              :total-budget-cost-units="totalCost(decisionCalls(item))"
+              :inspectable="decisionCalls(item).every(hasBodies)"
+              :accessible-label="decisionCalls(item).every(hasBodies) ? 'Inspect request and response' : 'LLM cost details'"
+              @inspect="inspect(decisionCalls(item))"
+            />
+          </span>
         </template>
         <template v-else>
           <div class="thread-meta">
@@ -176,6 +264,26 @@ const scroller = useActiveRowScroll(
       </li>
     </ul>
     <p v-else class="thread-empty">No decisions yet.</p>
+
+    <UiDialog v-model:open="inspectorOpen" title="Inspect request and response">
+      <LlmCostDetails
+        :calls="inspectedCalls"
+        :total-budget-cost-units="totalCost(inspectedCalls)"
+      />
+      <div class="call-inspector-list">
+        <details
+          v-for="(call, index) in inspectedCalls"
+          :key="index"
+          :open="inspectedCalls.length === 1"
+        >
+          <summary>Call {{ index + 1 }} · {{ call.model }}</summary>
+          <RequestResponseView :request="call.request" :response="call.completion" />
+        </details>
+      </div>
+      <div class="inspector-actions">
+        <UiButton variant="secondary" @click="inspectorOpen = false">Close</UiButton>
+      </div>
+    </UiDialog>
   </div>
 </template>
 
@@ -193,6 +301,26 @@ const scroller = useActiveRowScroll(
   padding: 0;
 }
 
+.thread-header,
+.thread-item--decision {
+  display: grid;
+  grid-template-columns: 5rem 4rem minmax(0, 1fr) max-content;
+  gap: var(--space-2);
+  align-items: baseline;
+}
+
+.thread-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface-raised);
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
 .thread-item {
   border-top: 1px solid var(--color-border);
 }
@@ -203,12 +331,24 @@ const scroller = useActiveRowScroll(
 
 /* A decision is a terse mono line — seat · action · tick — like the decision log's cells. */
 .thread-item--decision {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
   padding: var(--space-1) var(--space-3);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
+}
+
+.thread-cost {
+  white-space: nowrap;
+}
+
+.call-inspector-list {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.inspector-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--space-4);
 }
 
 .thread-seat {

@@ -9,9 +9,8 @@
     with the shared stage timeline. A load_failed submission shows the failed stage and its captured
     error here instead of a session, making the exit-criterion case visible to the owner.
   - Recent replays: the recordings the agent's submissions ran in, each linking to its replay page.
-  - Inert placeholders for leaderboard placements (Stage 6) and the owner's LLM debug view (Stage 9),
-    matching the Stage 4.5 convention of showing where later stages plug in. The debug placeholder is
-    owner-only, gating on the signed-in identity matching the agent's owner.
+  - Released leaderboard placements and owner-only development LLM access, including current usage,
+    key management, and successful-call history for current and past seasons.
 -->
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
@@ -23,17 +22,29 @@ import {
   type AgentPlacementView,
   type AgentProfile,
   type AgentProfileSubmission,
+  getLlmDevelopmentSummary,
   getAgentPlacements,
   getAgentProfile,
+  type LlmDevelopmentCall,
+  type LlmDevelopmentCredential,
+  type LlmDevelopmentSummary,
+  listLlmDevelopmentCalls,
+  listLlmDevelopmentSeasons,
   listSeasons,
   type PublicSeasonView,
+  rotateLlmDevelopmentKey,
   type SubmissionStatus,
 } from '../api/client.js'
+import DevelopmentCallHistoryDialog from '../components/DevelopmentCallHistoryDialog.vue'
+import DevelopmentCredentialDialog from '../components/DevelopmentCredentialDialog.vue'
 import SubmissionStageTimeline from '../components/SubmissionStageTimeline.vue'
 import SubmitAgentForm from '../components/SubmitAgentForm.vue'
 import UiBadge from '../components/ui/UiBadge.vue'
+import UiButton from '../components/ui/UiButton.vue'
 import UiCard from '../components/ui/UiCard.vue'
+import UiDialog from '../components/ui/UiDialog.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
+import UiMeter from '../components/ui/UiMeter.vue'
 import UiStatusBadge from '../components/ui/UiStatusBadge.vue'
 import {
   formatComputeMs,
@@ -43,6 +54,7 @@ import {
   formatScore,
   shortId,
 } from '../lib/format.js'
+import { formatLlmCost } from '../lib/llm.js'
 import {
   type SubmissionStatusTone,
   submissionStatusLabel,
@@ -259,6 +271,148 @@ const currentSeasonName = computed(() => {
   return currentSeasonMetadata.value?.label ?? `Season ${shortId(seasonId)}`
 })
 
+const developmentAccess = ref<LlmDevelopmentSummary | null>(null)
+let developmentRequest = 0
+watch(
+  [() => profile.value?.submission_season_id, () => userId(me.me)],
+  async ([seasonId, viewerId]) => {
+    const request = ++developmentRequest
+    developmentAccess.value = null
+    if (
+      typeof seasonId !== 'string' ||
+      viewerId !== ownerId ||
+      !canParticipate(me.me)
+    ) {
+      return
+    }
+    try {
+      const eligible = await listLlmDevelopmentSeasons()
+      if (!eligible.some((season) => season.season_id === seasonId && season.environment === envId)) {
+        return
+      }
+      const summary = await getLlmDevelopmentSummary(seasonId)
+      if (request === developmentRequest) {
+        developmentAccess.value = summary
+      }
+    } catch {
+      // Development access is optional. A failed secondary read leaves the profile usable.
+    }
+  },
+  { immediate: true },
+)
+
+const credential = ref<LlmDevelopmentCredential | null>(null)
+const credentialOpen = ref(false)
+const keyBusy = ref(false)
+const keyError = ref<string | null>(null)
+const rotateConfirmOpen = ref(false)
+
+async function requestDevelopmentKey(): Promise<void> {
+  const access = developmentAccess.value
+  if (access === null) {
+    return
+  }
+  keyError.value = null
+  if (access.key_exists) {
+    rotateConfirmOpen.value = true
+    return
+  }
+  await issueDevelopmentKey(access.season_id)
+}
+
+async function issueDevelopmentKey(seasonId: string): Promise<void> {
+  keyBusy.value = true
+  keyError.value = null
+  try {
+    credential.value = await rotateLlmDevelopmentKey(seasonId)
+    if (developmentAccess.value?.season_id === seasonId) {
+      developmentAccess.value = { ...developmentAccess.value, key_exists: true }
+    }
+    rotateConfirmOpen.value = false
+    credentialOpen.value = true
+  } catch {
+    keyError.value = 'Could not create the development key.'
+  } finally {
+    keyBusy.value = false
+  }
+}
+
+const historyOpen = ref(false)
+const historySeasonId = ref<string | null>(null)
+const historyCalls = ref<LlmDevelopmentCall[]>([])
+const historyNextCursor = ref<number | null>(null)
+const historyLoading = ref(false)
+const historyLoadingMore = ref(false)
+const historyError = ref<string | null>(null)
+let historyRequest = 0
+
+async function openCallHistory(seasonId: string): Promise<void> {
+  const request = ++historyRequest
+  historySeasonId.value = seasonId
+  historyCalls.value = []
+  historyNextCursor.value = null
+  historyError.value = null
+  historyOpen.value = true
+  historyLoading.value = true
+  try {
+    const page = await listLlmDevelopmentCalls(seasonId, { limit: 25 })
+    if (request === historyRequest && historySeasonId.value === seasonId) {
+      historyCalls.value = page.calls
+      historyNextCursor.value = page.next_cursor
+    }
+  } catch {
+    if (request === historyRequest) {
+      historyError.value = 'Could not load development call history.'
+    }
+  } finally {
+    if (request === historyRequest) {
+      historyLoading.value = false
+    }
+  }
+}
+
+async function loadMoreHistory(cursor: number): Promise<void> {
+  const seasonId = historySeasonId.value
+  if (seasonId === null) {
+    return
+  }
+  const request = ++historyRequest
+  historyLoadingMore.value = true
+  historyError.value = null
+  try {
+    const page = await listLlmDevelopmentCalls(seasonId, { cursor, limit: 25 })
+    if (request === historyRequest && historySeasonId.value === seasonId) {
+      historyCalls.value = [...historyCalls.value, ...page.calls]
+      historyNextCursor.value = page.next_cursor
+    }
+  } catch {
+    if (request === historyRequest) {
+      historyError.value = 'Could not load more development calls.'
+    }
+  } finally {
+    if (request === historyRequest) {
+      historyLoadingMore.value = false
+    }
+  }
+}
+
+function closeHistory(): void {
+  historyRequest += 1
+  historyLoadingMore.value = false
+  historySeasonId.value = null
+  historyCalls.value = []
+  historyNextCursor.value = null
+  historyError.value = null
+}
+
+function developmentMeterText(access: LlmDevelopmentSummary): string {
+  return `${formatLlmCost(access.budget_cost_units_used)} used, ${formatLlmCost(access.budget_cost_units_remaining)} remaining`
+}
+
+function aliasPrice(access: LlmDevelopmentSummary, alias: string): string {
+  return `${alias} × ${access.cost_weights[alias as keyof typeof access.cost_weights] ?? 0}`
+}
+
 // My Agents links to a season, not a specific attempt. A query change starts one navigation handling
 // pass; asynchronous identity/profile data may complete that pass, but later profile refreshes must not
 // repeat its focus and scroll side effects. The current season always targets the compact owner header.
@@ -382,6 +536,40 @@ const seasonLabel = (label: string | null, id: string): string =>
       </UiEmptyState>
     </section>
 
+    <section v-if="isOwner() && developmentAccess !== null" class="agent-section development-section">
+      <h2>Development access</h2>
+      <UiCard>
+        <p class="development-season">{{ currentSeasonName }}</p>
+        <div class="development-models">
+          <h3>Allowed model aliases</h3>
+          <ul>
+            <li v-for="alias in developmentAccess.models" :key="alias">
+              <code>{{ aliasPrice(developmentAccess, alias) }}</code>
+            </li>
+          </ul>
+        </div>
+        <UiMeter
+          :value="developmentAccess.budget_cost_units_used"
+          :max="developmentAccess.limits.token_budget"
+          :text-value="developmentMeterText(developmentAccess)"
+          label="Development usage"
+        />
+        <div class="development-totals">
+          <span>Used: {{ formatLlmCost(developmentAccess.budget_cost_units_used) }}</span>
+          <span>Remaining: {{ formatLlmCost(developmentAccess.budget_cost_units_remaining) }}</span>
+        </div>
+        <UiEmptyState v-if="keyError !== null" tone="danger">{{ keyError }}</UiEmptyState>
+        <div class="development-actions">
+          <UiButton :loading="keyBusy" @click="requestDevelopmentKey">
+            {{ developmentAccess.key_exists ? 'Rotate development key' : 'Create development key' }}
+          </UiButton>
+          <UiButton variant="secondary" @click="openCallHistory(developmentAccess.season_id)">
+            View call history
+          </UiButton>
+        </div>
+      </UiCard>
+    </section>
+
     <section class="agent-section">
       <h2>Submission History</h2>
       <UiEmptyState v-if="profile.submissions.length === 0">
@@ -493,6 +681,18 @@ const seasonLabel = (label: string | null, id: string): string =>
                         </li>
                       </ul>
                     </div>
+                    <div
+                      v-if="isOwner() && submission.season_id !== profile.submission_season_id"
+                      class="submission-history-action"
+                    >
+                      <UiButton
+                        size="tight"
+                        variant="secondary"
+                        @click="openCallHistory(submission.season_id)"
+                      >
+                        View call history
+                      </UiButton>
+                    </div>
                   </div>
                 </div>
               </UiCard>
@@ -567,15 +767,100 @@ const seasonLabel = (label: string | null, id: string): string =>
       </table>
     </section>
 
-    <p v-if="isOwner()" class="agent-placeholder">
-      Your agent's LLM debug view arrives in a later stage.
-    </p>
+    <UiDialog
+      v-model:open="rotateConfirmOpen"
+      title="Rotate development key?"
+      description="The current key will stop working immediately. Accumulated usage remains."
+    >
+      <div class="dialog-actions">
+        <UiButton
+          variant="danger"
+          :loading="keyBusy"
+          @click="developmentAccess !== null && issueDevelopmentKey(developmentAccess.season_id)"
+        >
+          Rotate development key
+        </UiButton>
+        <UiButton variant="secondary" @click="rotateConfirmOpen = false">Cancel</UiButton>
+      </div>
+    </UiDialog>
+
+    <DevelopmentCredentialDialog
+      v-model:open="credentialOpen"
+      :credential="credential"
+      @cleared="credential = null"
+    />
+    <DevelopmentCallHistoryDialog
+      v-model:open="historyOpen"
+      title="Development call history"
+      :calls="historyCalls"
+      :next-cursor="historyNextCursor"
+      :loading="historyLoading"
+      :loading-more="historyLoadingMore"
+      :error="historyError ?? undefined"
+      @load-more="loadMoreHistory"
+      @closed="closeHistory"
+    />
   </section>
 </template>
 
 <style scoped>
 .agent-section {
   margin-bottom: var(--space-6);
+}
+
+.development-section .ui-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.development-season {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.development-models h3 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-sm);
+}
+
+.development-models ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.development-models li {
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-raised);
+}
+
+.development-totals,
+.development-actions,
+.dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.development-totals {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+
+.dialog-actions {
+  justify-content: flex-end;
+  margin-top: var(--space-4);
+}
+
+.submission-history-action {
+  margin-top: var(--space-3);
 }
 
 .submit-head {

@@ -439,6 +439,9 @@ test('a multi-agent Hearts recording replays with per-seat attribution and trick
     // Open the replay in the viewer and assert it renders the recorded table.
     await page.goto(`/replays/${recordingId}`)
     await expect(page.locator('canvas.renderer-canvas')).toBeVisible({ timeout: 60_000 })
+    const decisionLog = page.locator('.decision-log')
+    await expect(decisionLog.getByRole('columnheader', { name: 'LLM cost' })).toBeVisible()
+    await expect(decisionLog.getByText('None').first()).toBeVisible()
 
     // Per-seat attribution: the PlayerAttribution line carries one entry per seat, each naming the slot
     // and who drove it. A four-seat Hearts recording shows all four seats; the submitted seat reads the

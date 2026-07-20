@@ -58,6 +58,9 @@ test('play Flappy Bird live, pause/resume, stop, then replay and pin', async ({ 
   await page.getByRole('link', { name: 'Open replay' }).click()
   await expect(page).toHaveURL(/\/replays\//)
   await expect(page.getByRole('button', { name: 'Play' })).toBeVisible()
+  const decisionLog = page.locator('.decision-log')
+  await expect(decisionLog.getByRole('columnheader', { name: 'LLM cost' })).toBeVisible()
+  await expect(decisionLog.getByText('None').first()).toBeVisible()
   const slider = page.getByRole('slider')
   await expect(slider).toBeVisible()
   // The scrubber is the Reka UiSlider (a span with role=slider, not an <input>), so drive it by

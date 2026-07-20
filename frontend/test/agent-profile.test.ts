@@ -25,6 +25,10 @@ vi.mock('../src/api/client.js', () => ({
   checkReachability: vi.fn(),
   submitAgent: vi.fn(),
   getSubmission: vi.fn(),
+  listLlmDevelopmentSeasons: vi.fn(async () => []),
+  getLlmDevelopmentSummary: vi.fn(),
+  listLlmDevelopmentCalls: vi.fn(async () => ({ calls: [], next_cursor: null })),
+  rotateLlmDevelopmentKey: vi.fn(),
 }))
 
 import type { AgentPlacementView } from '../src/api/client.js'
@@ -33,9 +37,13 @@ import {
   getAgentPlacements,
   getAgentProfile,
   getAuthorPrompt,
+  getLlmDevelopmentSummary,
   getMe,
   getSubmission,
+  listLlmDevelopmentCalls,
+  listLlmDevelopmentSeasons,
   listSeasons,
+  rotateLlmDevelopmentKey,
   submitAgent,
 } from '../src/api/client.js'
 import AgentProfilePage from '../src/pages/AgentProfilePage.vue'
@@ -105,6 +113,8 @@ describe('AgentProfilePage', () => {
     vi.clearAllMocks()
     vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
     vi.mocked(listSeasons).mockResolvedValue([])
+    vi.mocked(listLlmDevelopmentSeasons).mockResolvedValue([])
+    vi.mocked(listLlmDevelopmentCalls).mockResolvedValue({ calls: [], next_cursor: null })
   })
 
   it('renders submission history newest-first with active marker and replays', async () => {
@@ -202,14 +212,14 @@ describe('AgentProfilePage', () => {
     )
   })
 
-  it('shows the owner-only debug placeholder only to the agent owner', async () => {
+  it('keeps owner-only controls limited to the agent owner', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('eve', 'normal'))
     await renderProfile({ env_id: 'flappy_bird', owner_id: 'eve', submissions: [submission()] })
     // The owner sees the first-person heading rather than the possessive form.
     expect(
       await screen.findByRole('heading', { name: 'My Submissions', level: 1 }),
     ).toBeInTheDocument()
-    expect(await screen.findByText(/LLM debug view/)).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Development access' })).toBeNull()
     // The leaderboard placements section is visible to everyone (empty until released results exist).
     expect(screen.getByRole('heading', { name: 'Leaderboard Placements' })).toBeInTheDocument()
     expect(screen.getByText(/No released placements/)).toBeInTheDocument()
@@ -290,11 +300,122 @@ describe('AgentProfilePage', () => {
     )
   })
 
-  it('hides the owner-only debug placeholder from a non-owner viewer', async () => {
+  it('hides owner-only development access from a non-owner viewer', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('someone-else', 'normal'))
     await renderProfile({ env_id: 'flappy_bird', owner_id: 'eve', submissions: [submission()] })
     expect(await screen.findByText(/Leaderboard Placements/)).toBeInTheDocument()
-    expect(screen.queryByText(/LLM debug view/)).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Development access' })).toBeNull()
+  })
+
+  it('shows eligible development access with aliases, prices, meter values, and history', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('eve', 'normal'))
+    vi.mocked(listLlmDevelopmentSeasons).mockResolvedValue([
+      {
+        season_id: 'iter-next',
+        label: 'Week 4',
+        environment: 'flappy_bird',
+        models: ['small', 'medium'],
+        cost_weights: { small: 0.5, medium: 2 },
+        limits: { token_budget: 1000, rate_limit_rpm: 10 },
+        successful_calls: 3,
+        usage_estimated: false,
+        budget_cost_units_used: 250,
+        budget_cost_units_remaining: 750,
+        key_exists: false,
+      },
+    ])
+    vi.mocked(getLlmDevelopmentSummary).mockResolvedValue({
+      season_id: 'iter-next',
+      models: ['small', 'medium'],
+      cost_weights: { small: 0.5, medium: 2 },
+      limits: { token_budget: 1000, rate_limit_rpm: 10 },
+      usage_by_model: {},
+      successful_calls: 3,
+      usage_estimated: false,
+      budget_cost_units_used: 250,
+      budget_cost_units_remaining: 750,
+      key_exists: false,
+    })
+    vi.mocked(listLlmDevelopmentCalls).mockResolvedValue({ calls: [], next_cursor: null })
+    await renderProfile({
+      env_id: 'flappy_bird',
+      owner_id: 'eve',
+      submission_season_id: 'iter-next',
+      submissions: [submission({ season_id: 'iter-next' })],
+    })
+
+    expect(await screen.findByRole('heading', { name: 'Development access' })).toBeInTheDocument()
+    expect(screen.getByText('small × 0.5')).toBeInTheDocument()
+    expect(screen.getByText('medium × 2')).toBeInTheDocument()
+    expect(screen.getByText('250 units used, 750 units remaining')).toBeInTheDocument()
+    await fireEvent.click(screen.getByRole('button', { name: 'View call history' }))
+    expect(vi.mocked(listLlmDevelopmentCalls)).toHaveBeenCalledWith('iter-next', { limit: 25 })
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+    await fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+
+  it('requires confirmation before rotation and warns that invalidation is immediate', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('eve', 'normal'))
+    vi.mocked(listLlmDevelopmentSeasons).mockResolvedValue([
+      {
+        season_id: 'iter-next',
+        label: 'Week 4',
+        environment: 'flappy_bird',
+        models: ['small'],
+        cost_weights: { small: 1 },
+        limits: { token_budget: 1000, rate_limit_rpm: 10 },
+        successful_calls: 0,
+        usage_estimated: false,
+        budget_cost_units_used: 0,
+        budget_cost_units_remaining: 1000,
+        key_exists: true,
+      },
+    ])
+    vi.mocked(getLlmDevelopmentSummary).mockResolvedValue({
+      season_id: 'iter-next',
+      models: ['small'],
+      cost_weights: { small: 1 },
+      limits: { token_budget: 1000, rate_limit_rpm: 10 },
+      usage_by_model: {},
+      successful_calls: 0,
+      usage_estimated: false,
+      budget_cost_units_used: 0,
+      budget_cost_units_remaining: 1000,
+      key_exists: true,
+    })
+    await renderProfile({
+      env_id: 'flappy_bird',
+      owner_id: 'eve',
+      submission_season_id: 'iter-next',
+      submissions: [submission({ season_id: 'iter-next' })],
+    })
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Rotate development key' }))
+    expect(screen.getByText(/stop working immediately/)).toBeInTheDocument()
+    expect(screen.getByText(/Accumulated usage remains/)).toBeInTheDocument()
+    expect(vi.mocked(rotateLlmDevelopmentKey)).not.toHaveBeenCalled()
+    await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(vi.mocked(rotateLlmDevelopmentKey)).not.toHaveBeenCalled()
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    vi.mocked(rotateLlmDevelopmentKey).mockResolvedValue({
+      season_id: 'iter-next',
+      base_url: 'https://sandbox.example/api/llm/v1',
+      api_key: 'sk-sandbox-dev-id.secret',
+      models: ['small'],
+      cost_weights: { small: 1 },
+      limits: { token_budget: 1000, rate_limit_rpm: 10 },
+    })
+    await fireEvent.click(screen.getByRole('button', { name: 'Rotate development key' }))
+    const confirmation = await screen.findByRole('dialog', { name: 'Rotate development key?' })
+    await fireEvent.click(
+      within(confirmation).getByRole('button', { name: 'Rotate development key' }),
+    )
+    await waitFor(() =>
+      expect(vi.mocked(rotateLlmDevelopmentKey)).toHaveBeenCalledWith('iter-next'),
+    )
+    expect(await screen.findByDisplayValue('sk-sandbox-dev-id.secret')).toBeInTheDocument()
   })
 
   it('prefills the submit form rating prompt for the open submission season', async () => {

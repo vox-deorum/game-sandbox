@@ -31,6 +31,7 @@ describe('StyleguidePage', () => {
       'UiTabs',
       'UiDialog',
       'UiSlider',
+      'UiMeter',
       'UiEmptyState',
     ]) {
       expect(screen.getByRole('heading', { name: section })).toBeInTheDocument()

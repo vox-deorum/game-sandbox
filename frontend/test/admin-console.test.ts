@@ -35,6 +35,8 @@ vi.mock('../src/api/client.js', () => ({
   listSeasonSubmissions: vi.fn(() => Promise.resolve([])),
   adminSeasonDownloadUrl: vi.fn(() => '#'),
   adminSubmissionDownloadUrl: vi.fn(() => '#'),
+  listAdminLlmDevelopmentUsers: vi.fn(async () => []),
+  listAdminLlmDevelopmentCalls: vi.fn(async () => ({ calls: [], next_cursor: null })),
 }))
 
 import {
@@ -43,6 +45,8 @@ import {
   getAdminSeason,
   getEnvironments,
   getMe,
+  listAdminLlmDevelopmentCalls,
+  listAdminLlmDevelopmentUsers,
   listRuns,
   listSeasons,
   openPlay,
@@ -147,6 +151,8 @@ describe('AdminConsolePage', () => {
     vi.mocked(listSeasons).mockResolvedValue([pickerSeason()])
     vi.mocked(getAdminSeason).mockResolvedValue(adminView())
     vi.mocked(listRuns).mockResolvedValue([])
+    vi.mocked(listAdminLlmDevelopmentUsers).mockResolvedValue([])
+    vi.mocked(listAdminLlmDevelopmentCalls).mockResolvedValue({ calls: [], next_cursor: null })
   })
 
   afterEach(() => {
@@ -168,6 +174,34 @@ describe('AdminConsolePage', () => {
     expect(await screen.findByText('Unreleased')).toBeInTheDocument()
     expect(screen.getByText('Submissions closed')).toBeInTheDocument()
     expect(screen.getByText('Play closed')).toBeInTheDocument()
+  })
+
+  it('shows development totals and opens the shared history dialog from a participant row', async () => {
+    vi.mocked(listAdminLlmDevelopmentUsers).mockResolvedValue([
+      {
+        user_id: 'alice',
+        successful_calls: 3,
+        usage_estimated: false,
+        budget_cost_units_used: 250,
+        budget_cost_units_remaining: 750,
+      },
+    ])
+    vi.mocked(listAdminLlmDevelopmentCalls).mockResolvedValue({ calls: [], next_cursor: null })
+    await renderConsole()
+
+    expect(await screen.findByRole('heading', { name: 'Development usage' })).toBeInTheDocument()
+    expect(screen.getByText('3')).toBeInTheDocument()
+    expect(screen.getByText('250 units')).toBeInTheDocument()
+    expect(screen.getByText('750 units')).toBeInTheDocument()
+    await fireEvent.click(screen.getByRole('button', { name: 'alice' }))
+    expect(vi.mocked(listAdminLlmDevelopmentCalls)).toHaveBeenCalledWith('iter-1', 'alice', {
+      limit: 25,
+    })
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+    expect(screen.queryByText(/latency/i)).toBeNull()
+    expect(screen.queryByText(/estimate/i)).toBeNull()
+    await fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 
   it('groups run configuration into three cards with the save action after them', async () => {
@@ -320,7 +354,7 @@ describe('AdminConsolePage', () => {
     expect(screen.getByText(/along with its existing runs and boards/)).toBeInTheDocument()
   })
 
-  it('writes strict messaging and every LLM override control', async () => {
+  it('writes the visible LLM access and limit controls while preserving stored prices', async () => {
     const withLlm = season({
       config: {
         deps_version: 1,
@@ -332,31 +366,22 @@ describe('AdminConsolePage', () => {
     vi.mocked(configureSeason).mockResolvedValue({ ok: true, season: withLlm })
     await renderConsole()
 
-    expect(await screen.findByLabelText('Large model token price')).toHaveValue(null)
-    expect(screen.getByLabelText('Medium model token price')).toHaveValue(2.5)
-    expect(screen.getByLabelText('Small model token price')).toHaveValue(null)
-    await fireEvent.update(await screen.findByLabelText('Messaging'), 'off')
-    await fireEvent.update(screen.getByLabelText('Message cap (code points)'), '80')
-    await fireEvent.update(screen.getByLabelText('LLM enablement'), 'on')
+    await fireEvent.update(await screen.findByLabelText('LLM enablement'), 'on')
     await fireEvent.update(screen.getByLabelText('Allowed model aliases'), 'custom')
     await fireEvent.click(screen.getByLabelText('small'))
     await fireEvent.click(screen.getByLabelText('medium'))
-    await fireEvent.update(screen.getByLabelText('Large model token price'), '4')
-    await fireEvent.update(screen.getByLabelText('Medium model token price'), '2')
-    await fireEvent.update(screen.getByLabelText('Small model token price'), '0.5')
-    await fireEvent.update(screen.getByLabelText('Official token budget'), '10000')
-    await fireEvent.update(screen.getByLabelText('Official rate limit (RPM)'), '30')
+    await fireEvent.update(screen.getByLabelText('Per-slot token budget'), '10000')
+    await fireEvent.update(screen.getByLabelText('Per-slot rate limit (RPM)'), '30')
     await fireEvent.update(screen.getByLabelText('Development token budget'), '20000')
     await fireEvent.update(screen.getByLabelText('Development rate limit (RPM)'), '15')
-    await fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }))
+    await fireEvent.click(await screen.findByRole('button', { name: 'Save configuration' }))
 
     await waitFor(() => expect(vi.mocked(configureSeason)).toHaveBeenCalled())
     const savedConfig = vi.mocked(configureSeason).mock.calls[0]?.[1]
-    expect(savedConfig?.overrides?.messaging).toEqual({ enabled: false, message_cap: 80 })
     expect(savedConfig?.overrides?.llm).toEqual({
       enabled: true,
       models: ['medium', 'small'],
-      cost_weights: { large: 4, medium: 2, small: 0.5 },
+      cost_weights: { medium: 2.5 },
       official: { token_budget: 10_000, rate_limit_rpm: 30 },
       development: { token_budget: 20_000, rate_limit_rpm: 15 },
     })
@@ -384,10 +409,20 @@ describe('AdminConsolePage', () => {
     expect(vi.mocked(configureSeason)).not.toHaveBeenCalled()
   })
 
-  it('rejects invalid model token prices before saving', async () => {
+  it('rejects an invalid stored model token price before saving', async () => {
+    vi.mocked(getAdminSeason).mockResolvedValue(
+      adminView({
+        season: season({
+          config: {
+            deps_version: 1,
+            matches: [{ slots: ['submission'], seeds: [0], games: 1 }],
+            overrides: { llm: { cost_weights: { large: 1_000_001 } } },
+          },
+        }),
+      }),
+    )
     await renderConsole()
-    await fireEvent.update(await screen.findByLabelText('Large model token price'), '1000001')
-    await fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }))
+    await fireEvent.click(await screen.findByRole('button', { name: 'Save configuration' }))
 
     expect(
       await screen.findByText(/large model token price must be a positive finite number/),

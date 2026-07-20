@@ -319,6 +319,50 @@ export async function getRecording(id: string): Promise<string> {
   return res.text()
 }
 
+/** Public metadata for one successful official model call, with bodies only when authorized. */
+export interface RecordingLlmCall {
+  tick: number | null
+  slot: string
+  model: string
+  input_tokens: number
+  reasoning_tokens: number
+  output_tokens: number
+  usage_estimated: boolean
+  cost_weight: number
+  budget_cost_units: number
+  request?: unknown
+  completion?: unknown
+}
+
+/** Successful recording telemetry, including the authoritative stored whole-recording cost. */
+export interface RecordingLlmTelemetry {
+  calls: RecordingLlmCall[]
+  total_budget_cost_units: number
+}
+
+/** Broken retained telemetry is distinct from a valid recording with no successful calls. */
+export type RecordingLlmResult =
+  | { ok: true; telemetry: RecordingLlmTelemetry }
+  | { ok: false; reason: 'telemetry_unavailable' }
+
+/** Read official calls without turning broken retained data into a valid empty result. */
+export async function getRecordingLlm(id: string): Promise<RecordingLlmResult> {
+  const res = await request(`/recordings/${encodeURIComponent(id)}/llm`)
+  if (res.status === 500) {
+    const body = (await res
+      .clone()
+      .json()
+      .catch(() => ({}))) as { code?: string }
+    if (body.code === 'telemetry_unavailable') {
+      return { ok: false, reason: 'telemetry_unavailable' }
+    }
+  }
+  return {
+    ok: true,
+    telemetry: (await json(res, 'GET /recordings/:id/llm')) as RecordingLlmTelemetry,
+  }
+}
+
 /** The typed outcome of a pin request; the UI distinguishes the pinned-quota refusal. */
 export type PinResult =
   | { ok: true }
@@ -1336,4 +1380,143 @@ export async function cancelRun(seasonId: string, runId: string): Promise<Cancel
 /** The path of the admin run-log WebSocket the {@link RunLogSocket} attaches to. */
 export function runLogWsPath(seasonId: string, runId: string): string {
   return `/api/admin/seasons/${encodeURIComponent(seasonId)}/runs/${encodeURIComponent(runId)}/logs/ws`
+}
+
+// --- LLM development access ----------------------------------------------------------------
+
+export interface LlmDevelopmentLimits {
+  token_budget: number
+  rate_limit_rpm: number
+}
+
+export interface LlmDevelopmentModelUsage {
+  calls: number
+  input_tokens: number
+  reasoning_tokens: number
+  output_tokens: number
+}
+
+export interface LlmDevelopmentSummary {
+  season_id: string
+  models: LlmModelAlias[]
+  cost_weights: Partial<Record<LlmModelAlias, number>>
+  limits: LlmDevelopmentLimits
+  usage_by_model: Record<string, LlmDevelopmentModelUsage>
+  successful_calls: number
+  usage_estimated: boolean
+  budget_cost_units_used: number
+  budget_cost_units_remaining: number
+  key_exists: boolean
+}
+
+export interface LlmDevelopmentSeason extends Omit<LlmDevelopmentSummary, 'usage_by_model'> {
+  label: string | null
+  environment: string
+}
+
+export interface LlmDevelopmentCall {
+  id: number
+  created_at: string
+  model: string
+  input_tokens: number
+  reasoning_tokens: number
+  output_tokens: number
+  usage_estimated: boolean
+  cost_weight: number
+  budget_cost_units: number
+  request: unknown
+  completion: unknown
+}
+
+export interface LlmDevelopmentCallPage {
+  calls: LlmDevelopmentCall[]
+  next_cursor: number | null
+}
+
+/** Plaintext is returned once after first creation or rotation. */
+export interface LlmDevelopmentCredential {
+  season_id: string
+  base_url: string
+  api_key: string
+  models: LlmModelAlias[]
+  cost_weights: Partial<Record<LlmModelAlias, number>>
+  limits: LlmDevelopmentLimits
+}
+
+export interface AdminLlmDevelopmentUser {
+  user_id: string
+  successful_calls: number
+  usage_estimated: boolean
+  budget_cost_units_used: number
+  budget_cost_units_remaining: number
+}
+
+export interface LlmCallPageOptions {
+  cursor?: number
+  limit?: number
+}
+
+function llmCallPageQuery(options: LlmCallPageOptions): string {
+  const params = new URLSearchParams()
+  if (options.cursor !== undefined) params.set('cursor', String(options.cursor))
+  if (options.limit !== undefined) params.set('limit', String(options.limit))
+  const query = params.toString()
+  return query.length === 0 ? '' : `?${query}`
+}
+
+export async function listLlmDevelopmentSeasons(): Promise<LlmDevelopmentSeason[]> {
+  return (await json(
+    await request('/llm-development/seasons'),
+    'GET /llm-development/seasons',
+  )) as LlmDevelopmentSeason[]
+}
+
+export async function getLlmDevelopmentSummary(seasonId: string): Promise<LlmDevelopmentSummary> {
+  return (await json(
+    await request(`/seasons/${encodeURIComponent(seasonId)}/llm-development`),
+    'GET /seasons/:seasonId/llm-development',
+  )) as LlmDevelopmentSummary
+}
+
+export async function listLlmDevelopmentCalls(
+  seasonId: string,
+  options: LlmCallPageOptions = {},
+): Promise<LlmDevelopmentCallPage> {
+  return (await json(
+    await request(
+      `/seasons/${encodeURIComponent(seasonId)}/llm-development/calls${llmCallPageQuery(options)}`,
+    ),
+    'GET /seasons/:seasonId/llm-development/calls',
+  )) as LlmDevelopmentCallPage
+}
+
+export async function rotateLlmDevelopmentKey(seasonId: string): Promise<LlmDevelopmentCredential> {
+  return (await json(
+    await request(`/seasons/${encodeURIComponent(seasonId)}/llm-development-key`, {
+      method: 'POST',
+    }),
+    'POST /seasons/:seasonId/llm-development-key',
+  )) as LlmDevelopmentCredential
+}
+
+export async function listAdminLlmDevelopmentUsers(
+  seasonId: string,
+): Promise<AdminLlmDevelopmentUser[]> {
+  return (await json(
+    await request(`/admin/seasons/${encodeURIComponent(seasonId)}/llm-development`),
+    'GET /admin/seasons/:seasonId/llm-development',
+  )) as AdminLlmDevelopmentUser[]
+}
+
+export async function listAdminLlmDevelopmentCalls(
+  seasonId: string,
+  userId: string,
+  options: LlmCallPageOptions = {},
+): Promise<LlmDevelopmentCallPage> {
+  return (await json(
+    await request(
+      `/admin/seasons/${encodeURIComponent(seasonId)}/llm-development/users/${encodeURIComponent(userId)}/calls${llmCallPageQuery(options)}`,
+    ),
+    'GET /admin/seasons/:seasonId/llm-development/users/:userId/calls',
+  )) as LlmDevelopmentCallPage
 }

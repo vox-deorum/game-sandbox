@@ -43,6 +43,7 @@ vi.mock('../src/renderers/registry.js', () => ({
 
 vi.mock('../src/api/client.js', () => ({
   getRecording: vi.fn(),
+  getRecordingLlm: vi.fn(),
   getEnvironments: vi.fn(async () => [META]),
   listRecordings: vi.fn(async () => []),
   listSeasons: vi.fn(async () => []),
@@ -57,6 +58,7 @@ import {
   getEnvironments,
   getMe,
   getRecording,
+  getRecordingLlm,
   listRecordings,
   listSeasons,
   pinRecording,
@@ -102,6 +104,10 @@ describe('ReplayPage', () => {
     drawn = []
     mountCtx = null
     vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
+    vi.mocked(getRecordingLlm).mockResolvedValue({
+      ok: true,
+      telemetry: { calls: [], total_budget_cost_units: 0 },
+    })
     vi.mocked(listRecordings).mockResolvedValue([])
     vi.mocked(listSeasons).mockResolvedValue([])
     vi.mocked(watchAgentNumbers).mockResolvedValue({})
@@ -129,6 +135,37 @@ describe('ReplayPage', () => {
         renderer !== null &&
         Boolean(controls.compareDocumentPosition(renderer) & Node.DOCUMENT_POSITION_FOLLOWING),
     ).toBe(true)
+  })
+
+  it('keeps successful empty telemetry distinct and shows None for decision costs', async () => {
+    vi.mocked(getRecording).mockResolvedValue(replayRecording())
+    await renderReplay()
+
+    expect(await screen.findByRole('button', { name: 'Play' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'LLM cost' })).toBeInTheDocument()
+    expect(screen.getAllByText('None')).toHaveLength(4)
+    expect(
+      screen.getByRole('button', { name: 'Show whole-recording LLM cost details' }),
+    ).toHaveTextContent('0 units')
+    expect(screen.queryByText('LLM cost data unavailable.')).toBeNull()
+  })
+
+  it('leaves the replay usable when retained telemetry is unavailable', async () => {
+    vi.mocked(getRecording).mockResolvedValue(replayRecording())
+    vi.mocked(getRecordingLlm).mockResolvedValue({
+      ok: false,
+      reason: 'telemetry_unavailable',
+    })
+    await renderReplay()
+
+    expect(await screen.findByRole('button', { name: 'Play' })).toBeInTheDocument()
+    expect(drawn.at(-1)?.tick).toBe(0)
+    expect(screen.getByText('LLM cost data unavailable.')).toBeInTheDocument()
+    expect(screen.getAllByText('Unavailable')).toHaveLength(4)
+    expect(
+      screen.queryByRole('button', { name: 'Show whole-recording LLM cost details' }),
+    ).toBeNull()
+    expect(screen.queryByText('None')).toBeNull()
   })
 
   it('scrubs with the slider keyboard to the state under the index', async () => {

@@ -15,6 +15,8 @@ import { RouterLink } from 'vue-router'
 
 import type { Board, BoardAgentRef } from '../api/client.js'
 import { formatComputeSpread, formatRatingSpread, formatScoreSpread } from '../lib/format.js'
+import { formatLlmCost } from '../lib/llm.js'
+import LlmCostDetails from './LlmCostDetails.vue'
 import UiBadge from './ui/UiBadge.vue'
 import UiEmptyState from './ui/UiEmptyState.vue'
 
@@ -43,126 +45,165 @@ function ownerNameOf(agent: BoardAgentRef): string | null {
       <UiEmptyState v-if="props.board.automated.length === 0">
         No automated results yet.
       </UiEmptyState>
-      <table v-else class="board-table">
-        <colgroup>
-          <col class="col-rank" />
-          <col class="col-agent" />
-          <col />
-          <col />
-          <col />
-          <col />
-        </colgroup>
-        <thead>
-          <tr>
-            <th scope="col" class="rank">#</th>
-            <th scope="col">Agent</th>
-            <th scope="col" class="num">Mean score</th>
-            <th scope="col" class="num">Agent compute</th>
-            <th scope="col" class="num">Games</th>
-            <th scope="col">Replay</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="(row, index) in props.board.automated" :key="agentKey(row.agent)">
-            <td class="rank">{{ index + 1 }}</td>
-            <td>
-              <RouterLink
-                v-if="ownerOf(row.agent) !== null"
-                class="agent-link"
-                :to="`/environments/${props.envId}/agents/${ownerOf(row.agent)}`"
-                :title="ownerOf(row.agent) ?? undefined"
-              >
-                {{ ownerNameOf(row.agent) }}
-              </RouterLink>
-              <span v-else class="agent-naive">
-                Naive baseline <UiBadge>Built-in</UiBadge>
-              </span>
-              <UiBadge v-if="row.failure_count > 0" variant="accent" class="failure-flag">
-                {{ row.failure_count }} failed
-              </UiBadge>
-            </td>
-            <td class="num">{{ formatScoreSpread(row.mean_score, row.score_std) }}</td>
-            <td class="num">
-              {{ formatComputeSpread(row.mean_agent_compute_ms, row.compute_std) }}
-            </td>
-            <td class="num">{{ row.games }}</td>
-            <td>
-              <RouterLink
-                v-if="row.recording_id !== null"
-                class="replay-link"
-                :to="`/replays/${row.recording_id}`"
-              >
-                Replay
-              </RouterLink>
-              <span v-else class="muted">—</span>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+      <div v-else class="board-scroll">
+        <table class="board-table automated-table">
+          <colgroup>
+            <col class="col-rank" />
+            <col class="col-agent" />
+            <col />
+            <col />
+            <col />
+            <col />
+            <col />
+          </colgroup>
+          <thead>
+            <tr>
+              <th scope="col" class="rank">#</th>
+              <th scope="col">Agent</th>
+              <th scope="col" class="num">Mean score</th>
+              <th scope="col" class="num">Agent compute</th>
+              <th scope="col">LLM usage</th>
+              <th scope="col" class="num">Games</th>
+              <th scope="col">Replay</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="(row, index) in props.board.automated"
+              :key="agentKey(row.agent)"
+            >
+              <td class="rank">{{ index + 1 }}</td>
+              <td>
+                <RouterLink
+                  v-if="ownerOf(row.agent) !== null"
+                  class="agent-link"
+                  :to="`/environments/${props.envId}/agents/${ownerOf(row.agent)}`"
+                  :title="ownerOf(row.agent) ?? undefined"
+                >
+                  {{ ownerNameOf(row.agent) }}
+                </RouterLink>
+                <span v-else class="agent-naive">
+                  Naive baseline <UiBadge>Built-in</UiBadge>
+                </span>
+                <UiBadge
+                  v-if="row.failure_count > 0"
+                  variant="accent"
+                  class="failure-flag"
+                >
+                  {{ row.failure_count }} failed
+                </UiBadge>
+              </td>
+              <td class="num">
+                {{ formatScoreSpread(row.mean_score, row.score_std) }}
+              </td>
+              <td class="num">
+                {{ formatComputeSpread(row.mean_agent_compute_ms, row.compute_std) }}
+              </td>
+              <td class="llm-usage">
+                <template v-if="row.llm_weighted_cost === null">None</template>
+                <template v-else>
+                  <span
+                    class="llm-total"
+                    >{{ formatLlmCost(row.llm_weighted_cost) }}</span
+                  >
+                  <LlmCostDetails
+                    :usage-by-model="row.llm_usage_by_model"
+                    :total-budget-cost-units="row.llm_weighted_cost"
+                    by-model-disclosure
+                  />
+                </template>
+              </td>
+              <td class="num">{{ row.games }}</td>
+              <td>
+                <RouterLink
+                  v-if="row.recording_id !== null"
+                  class="replay-link"
+                  :to="`/replays/${row.recording_id}`"
+                >
+                  Replay
+                </RouterLink>
+                <span v-else class="muted">None</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </section>
 
     <section class="board" aria-labelledby="human-board-title">
       <h3 id="human-board-title">Human Ratings</h3>
-      <p v-if="props.ratingPrompt" class="board-prompt">“{{ props.ratingPrompt }}”</p>
-      <UiEmptyState v-if="props.board.human.length === 0">No ratings yet.</UiEmptyState>
-      <table v-else class="board-table">
-        <colgroup>
-          <col class="col-rank" />
-          <col class="col-agent" />
-          <col />
-          <col />
-          <col />
-        </colgroup>
-        <thead>
-          <tr>
-            <th scope="col" class="rank">#</th>
-            <th scope="col">Agent</th>
-            <th scope="col" class="num">Mean rating</th>
-            <th scope="col" class="num"># Ratings</th>
-            <th scope="col">Replay</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr
-            v-for="row in props.board.human"
-            :key="agentKey(row.agent)"
-            :class="{ unranked: row.rank === null }"
-          >
-            <td class="rank">
-              <span v-if="row.rank !== null">{{ row.rank }}</span>
-              <span v-else class="muted" title="Fewer than three ratings">—</span>
-            </td>
-            <td>
-              <RouterLink
-                v-if="ownerOf(row.agent) !== null"
-                class="agent-link"
-                :to="`/environments/${props.envId}/agents/${ownerOf(row.agent)}`"
-                :title="ownerOf(row.agent) ?? undefined"
-              >
-                {{ ownerNameOf(row.agent) }}
-              </RouterLink>
-              <span v-else class="agent-naive">
-                Naive baseline <UiBadge>Built-in</UiBadge>
-              </span>
-              <p v-if="row.author_prompt" class="row-prompt" :title="row.author_prompt">
-                “{{ row.author_prompt }}”
-              </p>
-            </td>
-            <td class="num">{{ formatRatingSpread(row.mean, row.std) }}</td>
-            <td class="num">{{ row.count }}</td>
-            <td>
-              <RouterLink
-                v-if="row.recording_id !== null"
-                class="replay-link"
-                :to="`/replays/${row.recording_id}`"
-              >
-                Replay
-              </RouterLink>
-              <span v-else class="muted">—</span>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+      <p v-if="props.ratingPrompt" class="board-prompt">
+        “{{ props.ratingPrompt }}”
+      </p>
+      <UiEmptyState v-if="props.board.human.length === 0"
+        >No ratings yet.</UiEmptyState
+      >
+      <div v-else class="board-scroll">
+        <table class="board-table human-table">
+          <colgroup>
+            <col class="col-rank" />
+            <col class="col-agent" />
+            <col />
+            <col />
+            <col />
+          </colgroup>
+          <thead>
+            <tr>
+              <th scope="col" class="rank">#</th>
+              <th scope="col">Agent</th>
+              <th scope="col" class="num">Mean rating</th>
+              <th scope="col" class="num"># Ratings</th>
+              <th scope="col">Replay</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="row in props.board.human"
+              :key="agentKey(row.agent)"
+              :class="{ unranked: row.rank === null }"
+            >
+              <td class="rank">
+                <span v-if="row.rank !== null">{{ row.rank }}</span>
+                <span v-else class="muted" title="Fewer than three ratings"
+                  >None</span
+                >
+              </td>
+              <td>
+                <RouterLink
+                  v-if="ownerOf(row.agent) !== null"
+                  class="agent-link"
+                  :to="`/environments/${props.envId}/agents/${ownerOf(row.agent)}`"
+                  :title="ownerOf(row.agent) ?? undefined"
+                >
+                  {{ ownerNameOf(row.agent) }}
+                </RouterLink>
+                <span v-else class="agent-naive">
+                  Naive baseline <UiBadge>Built-in</UiBadge>
+                </span>
+                <p
+                  v-if="row.author_prompt"
+                  class="row-prompt"
+                  :title="row.author_prompt"
+                >
+                  “{{ row.author_prompt }}”
+                </p>
+              </td>
+              <td class="num">{{ formatRatingSpread(row.mean, row.std) }}</td>
+              <td class="num">{{ row.count }}</td>
+              <td>
+                <RouterLink
+                  v-if="row.recording_id !== null"
+                  class="replay-link"
+                  :to="`/replays/${row.recording_id}`"
+                >
+                  Replay
+                </RouterLink>
+                <span v-else class="muted">None</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </section>
   </div>
 </template>
@@ -200,6 +241,26 @@ function ownerNameOf(agent: BoardAgentRef): string | null {
   table-layout: fixed;
   border-collapse: collapse;
   font-size: var(--text-sm);
+}
+
+.board-scroll {
+  overflow-x: auto;
+}
+
+.automated-table {
+  min-width: max-content;
+}
+
+.llm-usage {
+  white-space: nowrap;
+}
+
+.llm-total {
+  margin-right: var(--space-2);
+}
+
+.llm-usage :deep(.llm-cost-details) {
+  display: inline-grid;
 }
 
 /* Pin the leading columns to the same widths in both tables so the rank and
@@ -261,5 +322,4 @@ function ownerNameOf(agent: BoardAgentRef): string | null {
 .unranked {
   opacity: 0.7;
 }
-
 </style>

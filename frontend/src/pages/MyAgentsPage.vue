@@ -11,14 +11,23 @@ import { RouterLink } from 'vue-router'
 
 import {
   getMyAgents,
+  type LlmDevelopmentCredential,
+  type LlmDevelopmentSeason,
+  listLlmDevelopmentSeasons,
   type MyAgentEnvironmentSummary,
   type MyAgentSeasonSummary,
+  rotateLlmDevelopmentKey,
 } from '../api/client.js'
+import DevelopmentCredentialDialog from '../components/DevelopmentCredentialDialog.vue'
+import UiButton from '../components/ui/UiButton.vue'
 import UiCard from '../components/ui/UiCard.vue'
+import UiDialog from '../components/ui/UiDialog.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
+import UiMeter from '../components/ui/UiMeter.vue'
 import UiStatusBadge from '../components/ui/UiStatusBadge.vue'
 import { loadEnvironmentCatalog } from '../environmentCatalog.js'
 import { formatDate, formatScore } from '../lib/format.js'
+import { formatLlmCost } from '../lib/llm.js'
 import { submissionStatusLabel, submissionStatusTone } from '../lib/submission-status.js'
 import { useMe, userId } from '../me.js'
 
@@ -37,6 +46,14 @@ const ownerId = ref<string | null>(null)
 const rows = ref<EnvironmentAgent[] | null>(null)
 const error = ref(false)
 const signedOut = ref(false)
+const developmentSeasons = ref<LlmDevelopmentSeason[]>([])
+const developmentError = ref(false)
+const keyBusySeasonId = ref<string | null>(null)
+const keyError = ref<string | null>(null)
+const confirmSeason = ref<LlmDevelopmentSeason | null>(null)
+const confirmOpen = ref(false)
+const credential = ref<LlmDevelopmentCredential | null>(null)
+const credentialOpen = ref(false)
 
 onMounted(async () => {
   await me.whenSettled()
@@ -48,7 +65,11 @@ onMounted(async () => {
   }
 
   try {
-    const [summaries, environments] = await Promise.all([getMyAgents(), loadEnvironmentCatalog()])
+    const [summaries, environments] = await Promise.all([
+      getMyAgents(),
+      loadEnvironmentCatalog(),
+      loadDevelopmentSeasons(),
+    ])
     const metadata = new Map(environments.map((environment) => [environment.env_id, environment]))
     rows.value = summaries.map((summary) => ({
       summary,
@@ -60,6 +81,25 @@ onMounted(async () => {
 })
 
 const hasRows = computed(() => rows.value !== null && rows.value.length > 0)
+const developmentBySeason = computed(
+  () =>
+    new Map(
+      developmentSeasons.value.map((development) => [
+        `${development.environment}\u0000${development.season_id}`,
+        development,
+      ]),
+    ),
+)
+
+async function loadDevelopmentSeasons(): Promise<void> {
+  developmentError.value = false
+  try {
+    developmentSeasons.value = await listLlmDevelopmentSeasons()
+  } catch {
+    developmentSeasons.value = []
+    developmentError.value = true
+  }
+}
 
 function environmentName(row: EnvironmentAgent): string {
   return row.meta?.display_name ?? row.summary.env_id
@@ -103,6 +143,62 @@ function currentResult(season: MyAgentSeasonSummary): string | null {
 function rowResult(row: SeasonRow): string | null {
   return row.isCurrent ? currentResult(row.season) : resultLabel(row.season)
 }
+
+function rowAccessibleLabel(row: SeasonRow): string {
+  return [
+    row.isCurrent ? 'Current season' : null,
+    seasonName(row.season),
+    row.season.submission === null
+      ? 'Not submitted'
+      : submissionStatusLabel(row.season.submission.status),
+    rowResult(row),
+  ]
+    .filter((part): part is string => part !== null)
+    .join(' ')
+}
+
+function developmentFor(envId: string, row: SeasonRow): LlmDevelopmentSeason | null {
+  if (!row.isCurrent) {
+    return null
+  }
+  return developmentBySeason.value.get(`${envId}\u0000${row.season.id}`) ?? null
+}
+
+function meterText(development: LlmDevelopmentSeason): string {
+  return `${formatLlmCost(development.budget_cost_units_used)} used of ${formatLlmCost(development.limits.token_budget)}`
+}
+
+async function createOrConfirm(development: LlmDevelopmentSeason): Promise<void> {
+  if (keyBusySeasonId.value !== null) return
+  keyError.value = null
+  if (development.key_exists) {
+    confirmSeason.value = development
+    confirmOpen.value = true
+    return
+  }
+  await issueKey(development)
+}
+
+async function issueKey(development: LlmDevelopmentSeason): Promise<void> {
+  keyBusySeasonId.value = development.season_id
+  keyError.value = null
+  try {
+    credential.value = await rotateLlmDevelopmentKey(development.season_id)
+    development.key_exists = true
+    confirmOpen.value = false
+    confirmSeason.value = null
+    credentialOpen.value = true
+  } catch {
+    keyError.value = 'Could not create the development key.'
+  } finally {
+    keyBusySeasonId.value = null
+  }
+}
+
+function cancelRotation(): void {
+  confirmOpen.value = false
+  confirmSeason.value = null
+}
 </script>
 
 <template>
@@ -126,11 +222,12 @@ function rowResult(row: SeasonRow): string | null {
         <h2>{{ environmentName(row) }}</h2>
         <ul class="season-list">
           <li v-for="seasonRow in seasonsFor(row)" :key="seasonRow.season.id">
-            <RouterLink
-              class="season-card-link"
-              :to="seasonLink(row.summary.env_id, seasonRow.season.id)"
-            >
-              <UiCard interactive :padded="false">
+            <UiCard class="season-card" interactive :padded="false">
+              <RouterLink
+                class="season-card-link"
+                :to="seasonLink(row.summary.env_id, seasonRow.season.id)"
+                :aria-label="rowAccessibleLabel(seasonRow)"
+              />
                 <div
                   class="season-row"
                   :class="
@@ -164,13 +261,65 @@ function rowResult(row: SeasonRow): string | null {
                       {{ formatDate(seasonRow.season.submission.submitted_at) }}
                     </span>
                   </div>
+                  <div
+                    v-if="developmentFor(row.summary.env_id, seasonRow)"
+                    class="development-access"
+                  >
+                    <UiMeter
+                      :value="developmentFor(row.summary.env_id, seasonRow)!.budget_cost_units_used"
+                      :max="developmentFor(row.summary.env_id, seasonRow)!.limits.token_budget"
+                      :text-value="meterText(developmentFor(row.summary.env_id, seasonRow)!)"
+                      label="Development usage"
+                    />
+                    <UiButton
+                      class="development-key-action"
+                      size="tight"
+                      variant="secondary"
+                      :loading="keyBusySeasonId === seasonRow.season.id"
+                      :disabled="keyBusySeasonId !== null"
+                      @click="createOrConfirm(developmentFor(row.summary.env_id, seasonRow)!)"
+                    >
+                      {{
+                        developmentFor(row.summary.env_id, seasonRow)!.key_exists
+                          ? 'Rotate development key'
+                          : 'Create development key'
+                      }}
+                    </UiButton>
+                  </div>
                 </div>
-              </UiCard>
-            </RouterLink>
+            </UiCard>
           </li>
         </ul>
       </li>
     </ul>
+    <UiEmptyState v-if="developmentError" tone="danger">
+      Could not load development access.
+      <UiButton variant="secondary" size="tight" @click="loadDevelopmentSeasons">Retry</UiButton>
+    </UiEmptyState>
+    <UiEmptyState v-if="keyError !== null" tone="danger">{{ keyError }}</UiEmptyState>
+
+    <UiDialog
+      v-model:open="confirmOpen"
+      title="Rotate development key?"
+      description="The current key will stop working immediately. Accumulated usage remains."
+    >
+      <div class="dialog-actions">
+        <UiButton
+          variant="danger"
+          :loading="confirmSeason !== null && keyBusySeasonId === confirmSeason.season_id"
+          @click="confirmSeason !== null && issueKey(confirmSeason)"
+        >
+          Rotate development key
+        </UiButton>
+        <UiButton variant="secondary" @click="cancelRotation">Cancel</UiButton>
+      </div>
+    </UiDialog>
+
+    <DevelopmentCredentialDialog
+      v-model:open="credentialOpen"
+      :credential="credential"
+      @cleared="credential = null"
+    />
   </section>
 </template>
 
@@ -221,9 +370,15 @@ function rowResult(row: SeasonRow): string | null {
   gap: var(--space-3);
 }
 
+.season-card {
+  position: relative;
+}
+
 .season-card-link {
-  display: block;
-  color: inherit;
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
 }
 
 .season-name {
@@ -240,5 +395,28 @@ function rowResult(row: SeasonRow): string | null {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--color-text-muted);
+}
+
+.development-access {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-4) var(--space-3);
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+@media (max-width: 480px) {
+  .development-access {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 </style>

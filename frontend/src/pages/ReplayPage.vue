@@ -18,8 +18,10 @@ import { useRoute } from 'vue-router'
 
 import {
   getRecording,
+  getRecordingLlm,
   listRecordings,
   listSeasons,
+  type RecordingLlmTelemetry,
   type RecordingSummary,
   watchAgentNumbers,
 } from '../api/client.js'
@@ -69,6 +71,18 @@ const gameOverDismissed = ref(false)
 const listingEntry = ref<RecordingSummary | null>(null)
 const owned = ref(false)
 const decisions = ref<DecisionEntry[]>([])
+// Recording telemetry is deliberately independent from the JSONL recording. Broken retained
+// telemetry must never prevent the renderer and transport from loading, and it must not be confused
+// with a successful empty telemetry payload.
+const llmTelemetry = ref<RecordingLlmTelemetry | null>(null)
+const llmTelemetryUnavailable = ref(false)
+const llmPending = computed(() => llmTelemetry.value === null && !llmTelemetryUnavailable.value)
+const tickLlmCalls = computed(
+  () => llmTelemetry.value?.calls.filter((call) => call.tick !== null) ?? [],
+)
+const setupLlmCalls = computed(
+  () => llmTelemetry.value?.calls.filter((call) => call.tick === null) ?? [],
+)
 // The full message log, built once from the recording at load (recordings keep every message by
 // design). It never mutates afterward, so a shallowRef is enough.
 const chatLog = shallowRef<ChatEntry[]>([])
@@ -184,6 +198,17 @@ function toDecision(state: StepState): DecisionEntry {
 }
 
 onMounted(async () => {
+  const telemetryPromise = getRecordingLlm(id).catch(() => ({
+    ok: false as const,
+    reason: 'telemetry_unavailable' as const,
+  }))
+  void telemetryPromise.then((result) => {
+    if (result.ok) {
+      llmTelemetry.value = result.telemetry
+    } else {
+      llmTelemetryUnavailable.value = true
+    }
+  })
   let text: string
   try {
     text = await getRecording(id)
@@ -268,17 +293,27 @@ onMounted(async () => {
 
 <template>
   <UiEmptyState v-if="loading">Loading replay…</UiEmptyState>
-  <UiEmptyState v-else-if="loadError" tone="danger">Could not load this replay.</UiEmptyState>
+  <UiEmptyState v-else-if="loadError" tone="danger"
+    >Could not load this replay.</UiEmptyState
+  >
   <UiEmptyState v-else-if="versionMessage !== null">
     This replay needs a newer viewer. {{ versionMessage }}
   </UiEmptyState>
   <section v-else class="replay">
-    <ExperimentTabs v-if="header !== null" class="replay-tabs" :env-id="header.environment" />
+    <ExperimentTabs
+      v-if="header !== null"
+      class="replay-tabs"
+      :env-id="header.environment"
+    />
 
     <header class="replay-bar">
       <div class="replay-status">
         <UiStatusBadge tone="neutral" :label="statusLabel" />
-        <RunMetadata class="status-facts" :items="metadataItems" />
+        <RunMetadata
+          class="status-facts"
+          :items="metadataItems"
+          :llm-telemetry="llmTelemetry ?? undefined"
+        />
       </div>
     </header>
 
@@ -312,10 +347,15 @@ onMounted(async () => {
         <span aria-hidden="true">→</span>
       </UiButton>
       <div class="scrubber">
-        <UiSlider v-model="scrubIndex" :max="Math.max(0, replayState.total - 1)" label="Replay position" />
+        <UiSlider
+          v-model="scrubIndex"
+          :max="Math.max(0, replayState.total - 1)"
+          label="Replay position"
+        />
       </div>
       <span class="replay-position">
-        tick {{ replayState.tick ?? 0 }} · {{ replayState.index + 1 }}/{{ replayState.total }}
+        tick {{ replayState.tick ?? 0 }} ·
+        {{ replayState.index + 1 }}/{{ replayState.total }}
       </span>
       <UiButton
         v-if="owned"
@@ -328,7 +368,14 @@ onMounted(async () => {
       </UiButton>
     </div>
 
-    <UiEmptyState v-if="owned && pinError !== null" tone="danger">{{ pinError }}</UiEmptyState>
+    <UiEmptyState
+      v-if="owned && pinError !== null"
+      tone="danger"
+      >{{ pinError }}</UiEmptyState
+    >
+    <UiEmptyState v-if="llmTelemetryUnavailable" tone="danger">
+      LLM cost data unavailable.
+    </UiEmptyState>
 
     <StageFrame
       :aspect-ratio="aspectRatio"
@@ -341,39 +388,56 @@ onMounted(async () => {
       @keydown="onStageKeydown"
     >
       <template #overlay>
-          <!-- The shared cross-environment game-over leaderboard, shown at the final frame. -->
-          <GameOverCard
-            v-if="finalState !== null && showGameOver && !gameOverDismissed"
-            :state="finalState"
-            :header="header"
-            :blind="blindAttribution"
-            :viewer-id="viewerId"
-            :anonymous-numbers="anonymousNumbers"
-            @dismiss="gameOverDismissed = true"
-          />
+        <!-- The shared cross-environment game-over leaderboard, shown at the final frame. -->
+        <GameOverCard
+          v-if="finalState !== null && showGameOver && !gameOverDismissed"
+          :state="finalState"
+          :header="header"
+          :blind="blindAttribution"
+          :viewer-id="viewerId"
+          :anonymous-numbers="anonymousNumbers"
+          @dismiss="gameOverDismissed = true"
+        />
       </template>
       <template #renderer-status>
-        <UiEmptyState v-if="noRenderer">No renderer is registered for this environment.</UiEmptyState>
+        <UiEmptyState v-if="noRenderer"
+          >No renderer is registered for this environment.</UiEmptyState
+        >
       </template>
       <!-- A replay scrubs the whole game, so the decision log and chat merge into one thread: every
            tick's decision (the whole game, ahead-of-scrubber ticks dimmed) with its messages woven in
            as the scrubber reveals them. Without messaging there is nothing to merge, so the decision
            log keeps its table. -->
       <template #beside-log>
-          <GameThread
-            v-if="hasChat"
-            :decisions="decisions"
-            :chat="visibleChat"
-            :current-index="replayState.index"
-            :players="header?.players"
-            :blind="blindAttribution"
-            :viewer-id="viewerId"
-            :anonymous-numbers="anonymousNumbers"
-          />
-          <DecisionLog v-else :entries="decisions" :current-index="replayState.index" />
+        <GameThread
+          v-if="hasChat"
+          :decisions="decisions"
+          :chat="visibleChat"
+          :current-index="replayState.index"
+          :players="header?.players"
+          :blind="blindAttribution"
+          :viewer-id="viewerId"
+          :anonymous-numbers="anonymousNumbers"
+          :llm-calls="tickLlmCalls"
+          :setup-llm-calls="setupLlmCalls"
+          :llm-unavailable="llmTelemetryUnavailable"
+          :llm-pending="llmPending"
+        />
+        <DecisionLog
+          v-else
+          :entries="decisions"
+          :current-index="replayState.index"
+          :llm-calls="tickLlmCalls"
+          :setup-llm-calls="setupLlmCalls"
+          :llm-unavailable="llmTelemetryUnavailable"
+          :llm-pending="llmPending"
+        />
       </template>
       <template #below-log>
-        <details v-if="!logBeside && hasChat" class="stage-log-below stage-thread-below">
+        <details
+          v-if="!logBeside && hasChat"
+          class="stage-log-below stage-thread-below"
+        >
           <summary>Game thread</summary>
           <GameThread
             :decisions="decisions"
@@ -383,11 +447,22 @@ onMounted(async () => {
             :blind="blindAttribution"
             :viewer-id="viewerId"
             :anonymous-numbers="anonymousNumbers"
+            :llm-calls="tickLlmCalls"
+            :setup-llm-calls="setupLlmCalls"
+            :llm-unavailable="llmTelemetryUnavailable"
+            :llm-pending="llmPending"
           />
         </details>
         <details v-else-if="!logBeside" class="stage-log-below">
           <summary>Decision log</summary>
-          <DecisionLog :entries="decisions" :current-index="replayState.index" />
+          <DecisionLog
+            :entries="decisions"
+            :current-index="replayState.index"
+            :llm-calls="tickLlmCalls"
+            :setup-llm-calls="setupLlmCalls"
+            :llm-unavailable="llmTelemetryUnavailable"
+            :llm-pending="llmPending"
+          />
         </details>
       </template>
     </StageFrame>

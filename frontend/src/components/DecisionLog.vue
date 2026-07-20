@@ -10,10 +10,16 @@
   generically (formatAction): naming an action is the renderer's job, not the host log's.
 -->
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 
+import type { RecordingLlmCall } from '../api/client.js'
 import { useActiveRowScroll } from '../composables/useActiveRowScroll.js'
 import { formatAction, formatSlotIndex } from '../lib/format.js'
+import LlmCostDetails from './LlmCostDetails.vue'
+import LlmCostTooltip from './LlmCostTooltip.vue'
+import RequestResponseView from './RequestResponseView.vue'
+import UiButton from './ui/UiButton.vue'
+import UiDialog from './ui/UiDialog.vue'
 
 export interface DecisionEntry {
   tick: number
@@ -26,9 +32,70 @@ const props = withDefaults(
     entries: DecisionEntry[]
     /** The row to mark current and scroll to (a scrubbed replay). Null follows the latest row (live). */
     currentIndex?: number | null
+    /** Successful calls attached to normal decisions. Null-tick calls use setupLlmCalls instead. */
+    llmCalls?: RecordingLlmCall[]
+    /** Successful setup calls, kept separate so they never change decision indexes. */
+    setupLlmCalls?: RecordingLlmCall[]
+    /** Broken retained telemetry. Every decision cell says Unavailable and no setup rows are invented. */
+    llmUnavailable?: boolean
+    /** Telemetry is still loading. Every decision cell reports that state instead of a false empty result. */
+    llmPending?: boolean
   }>(),
-  { currentIndex: null },
+  { currentIndex: null, llmUnavailable: false, llmPending: false },
 )
+
+interface SetupRow {
+  slot: string
+  calls: RecordingLlmCall[]
+}
+
+const setupRows = computed<SetupRow[]>(() => {
+  if (props.llmUnavailable || props.llmPending) return []
+  const bySlot = new Map<string, RecordingLlmCall[]>()
+  for (const call of props.setupLlmCalls ?? []) {
+    const calls = bySlot.get(call.slot) ?? []
+    calls.push(call)
+    bySlot.set(call.slot, calls)
+  }
+  return [...bySlot.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([slot, calls]) => ({ slot, calls }))
+})
+
+function decisionCalls(entry: DecisionEntry): RecordingLlmCall[] {
+  return (props.llmCalls ?? []).filter(
+    (call) => call.tick === entry.tick && call.slot === entry.slot,
+  )
+}
+
+const showLlmCost = computed(
+  () =>
+    props.llmCalls !== undefined ||
+    props.setupLlmCalls !== undefined ||
+    props.llmUnavailable ||
+    props.llmPending,
+)
+
+function totalCost(calls: RecordingLlmCall[]): number {
+  return calls.reduce((total, call) => total + call.budget_cost_units, 0)
+}
+
+function hasBodies(call: RecordingLlmCall): boolean {
+  return Object.hasOwn(call, 'request') && Object.hasOwn(call, 'completion')
+}
+
+function costAccessibleLabel(calls: RecordingLlmCall[]): string {
+  return calls.every(hasBodies) ? 'Inspect request and response' : 'LLM cost details'
+}
+
+const inspectorOpen = ref(false)
+const inspectedCalls = ref<RecordingLlmCall[]>([])
+
+function inspect(calls: RecordingLlmCall[]): void {
+  if (!calls.every(hasBodies)) return
+  inspectedCalls.value = calls
+  inspectorOpen.value = true
+}
 
 const activeIndex = computed(() =>
   props.currentIndex ?? (props.entries.length > 0 ? props.entries.length - 1 : -1),
@@ -36,7 +103,7 @@ const activeIndex = computed(() =>
 
 // Follow the active row: a live log tracks the latest tick, a scrubbed replay tracks the scrubber.
 const scroller = useActiveRowScroll(
-  () => props.entries.length,
+  () => props.entries.length + setupRows.value.length,
   () => activeIndex.value,
 )
 </script>
@@ -49,8 +116,31 @@ const scroller = useActiveRowScroll(
           <th class="player-col" scope="col">Player</th>
           <th class="tick-col" scope="col">Tick</th>
           <th scope="col">Decision</th>
+          <th v-if="showLlmCost" class="cost-col" scope="col">LLM cost</th>
         </tr>
       </thead>
+      <tbody v-if="setupRows.length > 0" class="setup-rows">
+        <tr
+          v-for="row in setupRows"
+          :key="`setup:${row.slot}`"
+          :data-row-id="`setup:${row.slot}`"
+        >
+          <td class="player-col">
+            {{ row.slot ? formatSlotIndex(row.slot) : 'None' }}
+          </td>
+          <td class="tick-col">Setup</td>
+          <td>Setup</td>
+          <td v-if="showLlmCost" class="cost-col">
+            <LlmCostTooltip
+              :calls="row.calls"
+              :total-budget-cost-units="totalCost(row.calls)"
+              :inspectable="row.calls.every(hasBodies)"
+              :accessible-label="costAccessibleLabel(row.calls)"
+              @inspect="inspect(row.calls)"
+            />
+          </td>
+        </tr>
+      </tbody>
       <tbody>
         <tr
           v-for="(entry, i) in entries"
@@ -58,13 +148,55 @@ const scroller = useActiveRowScroll(
           :data-active="i === activeIndex || undefined"
           :aria-current="i === activeIndex ? 'true' : undefined"
         >
-          <td class="player-col">{{ entry.slot ? formatSlotIndex(entry.slot) : '—' }}</td>
+          <td class="player-col">
+            {{ entry.slot ? formatSlotIndex(entry.slot) : 'None' }}
+          </td>
           <td class="tick-col">{{ entry.tick }}</td>
           <td>{{ formatAction(entry.action) }}</td>
+          <td v-if="showLlmCost" class="cost-col">
+            <template v-if="llmPending">Loading</template>
+            <template v-else-if="llmUnavailable">Unavailable</template>
+            <template v-else-if="decisionCalls(entry).length === 0"
+              >None</template
+            >
+            <LlmCostTooltip
+              v-else
+              :calls="decisionCalls(entry)"
+              :total-budget-cost-units="totalCost(decisionCalls(entry))"
+              :inspectable="decisionCalls(entry).every(hasBodies)"
+              :accessible-label="costAccessibleLabel(decisionCalls(entry))"
+              @inspect="inspect(decisionCalls(entry))"
+            />
+          </td>
         </tr>
       </tbody>
     </table>
     <p v-if="entries.length === 0" class="decision-empty">No decisions yet.</p>
+
+    <UiDialog v-model:open="inspectorOpen" title="Inspect request and response">
+      <LlmCostDetails
+        :calls="inspectedCalls"
+        :total-budget-cost-units="totalCost(inspectedCalls)"
+      />
+      <div class="call-inspector-list">
+        <details
+          v-for="(call, index) in inspectedCalls"
+          :key="index"
+          :open="inspectedCalls.length === 1"
+        >
+          <summary>Call {{ index + 1 }} · {{ call.model }}</summary>
+          <RequestResponseView
+            :request="call.request"
+            :response="call.completion"
+          />
+        </details>
+      </div>
+      <div class="inspector-actions">
+        <UiButton variant="secondary" @click="inspectorOpen = false"
+          >Close</UiButton
+        >
+      </div>
+    </UiDialog>
   </div>
 </template>
 
@@ -107,6 +239,27 @@ td {
 .player-col {
   width: 5rem;
   color: var(--color-text-muted);
+}
+
+.cost-col {
+  white-space: nowrap;
+}
+
+.call-inspector-list {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.call-inspector-list summary {
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+
+.inspector-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--space-4);
 }
 
 /* The current row (latest live tick, or the scrubbed replay tick) is marked, never by color alone:

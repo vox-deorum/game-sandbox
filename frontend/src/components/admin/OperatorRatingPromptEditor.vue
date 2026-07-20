@@ -55,7 +55,7 @@ async function save(): Promise<void> {
     <p class="prompt-sub">
       Shown to human raters for every agent in this season. Each author can have their own prompt.
     </p>
-    <UiField>
+    <UiField label="Rating prompt">
       <template #default="{ id, describedby }">
         <textarea
           :id="id"

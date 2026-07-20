@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
+import type { RecordingLlmTelemetry } from '../api/client.js'
+import LlmCostTooltip from './LlmCostTooltip.vue'
+
 // Shared display for run facts that can appear on both replay and terminal session screens.
 export interface RunMetadataItem {
   label: string
@@ -10,7 +13,11 @@ export interface RunMetadataItem {
   title?: string
 }
 
-const props = defineProps<{ items: RunMetadataItem[] }>()
+const props = defineProps<{
+  items: RunMetadataItem[]
+  /** Successful whole-recording telemetry. Omit this prop when telemetry is unavailable. */
+  llmTelemetry?: RecordingLlmTelemetry
+}>()
 
 // A compact inline strip: only the facts that have a value, so the row never carries empty slots.
 const shown = computed(() =>
@@ -27,6 +34,16 @@ const shown = computed(() =>
       <dd :title="item.title">
         <code v-if="item.code">{{ item.value }}</code>
         <template v-else>{{ item.value }}</template>
+      </dd>
+    </div>
+    <div v-if="llmTelemetry !== undefined" class="run-metadata-item">
+      <dt>LLM</dt>
+      <dd>
+        <LlmCostTooltip
+          :calls="llmTelemetry.calls"
+          :total-budget-cost-units="llmTelemetry.total_budget_cost_units"
+          accessible-label="Show whole-recording LLM cost details"
+        />
       </dd>
     </div>
   </dl>

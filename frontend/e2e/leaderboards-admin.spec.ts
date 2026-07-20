@@ -111,6 +111,7 @@ test('operator season configuration exposes and validates LLM controls', async (
   await expect(runConfiguration.getByRole('heading', { name: 'Session Behavior' })).toBeVisible()
   await expect(runConfiguration.getByRole('heading', { name: 'LLM Access' })).toBeVisible()
 
+  await runConfiguration.getByRole('button', { name: 'Add match' }).click()
   const flatRegions = [
     runConfiguration.getByTestId('match').first(),
     runConfiguration.getByRole('group', { name: 'Per-slot limits' }),
@@ -293,6 +294,9 @@ test('a full season: submissions, an automated run, several judges rate, then re
 
     const scoreboard = page.locator('section.board', { hasText: 'Scoreboard' })
     const humanBoard = page.locator('section.board', { hasText: 'Human Ratings' })
+    await expect(scoreboard.getByRole('columnheader', { name: 'LLM usage' })).toBeVisible()
+    await expect(scoreboard.getByText('None').first()).toBeVisible()
+    await expect(humanBoard.getByRole('columnheader', { name: 'LLM usage' })).toHaveCount(0)
     await expect(scoreboard.getByText('Naive baseline')).toBeVisible()
     for (const owner of [OWNERS.glider, OWNERS.flapper, OWNERS.drifter]) {
       await expect(scoreboard.getByRole('link', { name: owner })).toBeVisible()
@@ -339,9 +343,11 @@ test('a full season: submissions, an automated run, several judges rate, then re
     const environmentGroup = page.locator('.environment-group').filter({ hasText: 'Flappy Bird' })
     const currentRow = environmentGroup
       .getByRole('link', { name: /Current season Playground/ })
+      .locator('..')
       .locator('.season-row')
     const releasedRow = environmentGroup
       .getByRole('link', { name: /Updraft Open ready to compete/ })
+      .locator('..')
       .locator('.season-row')
     await expect(currentRow).toHaveClass(/status-current/)
     await expect(releasedRow).toHaveClass(/status-success/)

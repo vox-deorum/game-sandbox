@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/vue'
+import { fireEvent, screen, waitFor, within } from '@testing-library/vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { MyAgentEnvironmentSummary } from '../src/api/client.js'
@@ -9,6 +9,8 @@ import { memoryRouter, renderWithMe } from './helpers/render.js'
 vi.mock('../src/api/client.js', () => ({
   getMe: vi.fn(),
   getMyAgents: vi.fn(),
+  listLlmDevelopmentSeasons: vi.fn(async () => []),
+  rotateLlmDevelopmentKey: vi.fn(),
 }))
 
 vi.mock('../src/environmentCatalog.js', () => ({
@@ -16,7 +18,12 @@ vi.mock('../src/environmentCatalog.js', () => ({
   resetEnvironmentCatalog: vi.fn(),
 }))
 
-import { getMe, getMyAgents } from '../src/api/client.js'
+import {
+  getMe,
+  getMyAgents,
+  listLlmDevelopmentSeasons,
+  rotateLlmDevelopmentKey,
+} from '../src/api/client.js'
 import { loadEnvironmentCatalog } from '../src/environmentCatalog.js'
 import MyAgentsPage from '../src/pages/MyAgentsPage.vue'
 
@@ -29,7 +36,7 @@ async function renderPage() {
   ])
   router.push('/my/agents')
   await router.isReady()
-  return renderWithMe(router)
+  return Object.assign(renderWithMe(router), { router })
 }
 
 function season(
@@ -55,6 +62,7 @@ describe('MyAgentsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(getMe).mockResolvedValue(signedInMe('student-1'))
+    vi.mocked(listLlmDevelopmentSeasons).mockResolvedValue([])
     vi.mocked(loadEnvironmentCatalog).mockResolvedValue([
       flappyMeta({ env_id: 'flappy_bird', display_name: 'Flappy Bird' }),
       flappyMeta({ env_id: 'hearts', display_name: 'Hearts' }),
@@ -98,24 +106,28 @@ describe('MyAgentsPage', () => {
       'href',
       '/environments/flappy_bird/agents/student-1?season=week-4',
     )
-    expect(within(flappyLink).getByText('pending')).toBeInTheDocument()
-    expect(within(flappyLink).queryByText('Results not released')).toBeNull()
+    expect(screen.getByText('pending')).toBeInTheDocument()
+    expect(screen.queryByText('Results not released')).toBeNull()
     expect(flappyLink).toHaveAccessibleName(/Current season Week 4 pending/)
-    const currentRow = flappyLink.querySelector('.season-row') as HTMLElement
+    const currentRow = flappyLink
+      .closest('.season-card')
+      ?.querySelector('.season-row') as HTMLElement
     expect(currentRow).toHaveClass('status-current')
     expect(currentRow).not.toHaveClass('status-success')
 
     const previousLink = screen.getByRole('link', {
       name: /Week 3 ready to compete Score 10.00/,
     })
-    const previousRow = previousLink.querySelector('.season-row') as HTMLElement
+    const previousRow = previousLink
+      .closest('.season-card')
+      ?.querySelector('.season-row') as HTMLElement
     expect(previousRow).toHaveClass('status-success')
     expect(previousRow).not.toHaveClass('status-current')
 
     const heartsLink = screen.getByRole('link', {
       name: /Current season Unknown Not submitted/,
     })
-    expect(within(heartsLink).getByText('Not submitted')).toBeInTheDocument()
+    expect(screen.getByText('Not submitted')).toBeInTheDocument()
     expect(heartsLink).toHaveAccessibleName(/Current season Unknown Not submitted/)
     expect(screen.queryByText('Open agent profile')).toBeNull()
   })
@@ -135,10 +147,84 @@ describe('MyAgentsPage', () => {
 
     await renderPage()
 
-    const currentLink = await screen.findByRole('link', {
+    await screen.findByRole('link', {
       name: /Current season Week 4 ready to compete Score 4.20/,
     })
-    expect(within(currentLink).getByText('Score 4.20')).toBeInTheDocument()
+    expect(screen.getByText('Score 4.20')).toBeInTheDocument()
+  })
+
+  it('shows development usage only on the matching eligible current season', async () => {
+    vi.mocked(getMyAgents).mockResolvedValue([
+      {
+        env_id: 'flappy_bird',
+        current_season: season('week-4', { label: 'Week 4' }),
+        previous_seasons: [season('week-3', { label: 'Week 3' })],
+      },
+    ])
+    vi.mocked(listLlmDevelopmentSeasons).mockResolvedValue([
+      {
+        season_id: 'week-4',
+        label: 'Week 4',
+        environment: 'flappy_bird',
+        models: ['small'],
+        cost_weights: { small: 0.5 },
+        limits: { token_budget: 1000, rate_limit_rpm: 10 },
+        successful_calls: 2,
+        usage_estimated: false,
+        budget_cost_units_used: 250,
+        budget_cost_units_remaining: 750,
+        key_exists: false,
+      },
+    ])
+
+    await renderPage()
+
+    expect(await screen.findByRole('meter', { name: 'Development usage' })).toHaveValue(250)
+    expect(screen.getByText('250 units used of 1,000 units')).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Create development key' })).toHaveLength(1)
+    const previousSeason = screen.getByText('Week 3').closest('li')
+    expect(previousSeason).not.toBeNull()
+    expect(within(previousSeason as HTMLElement).queryByRole('meter')).toBeNull()
+  })
+
+  it('layers key creation above the row link and shows the one-time credential', async () => {
+    vi.mocked(getMyAgents).mockResolvedValue([
+      {
+        env_id: 'flappy_bird',
+        current_season: season('week-4', { label: 'Week 4' }),
+        previous_seasons: [],
+      },
+    ])
+    vi.mocked(listLlmDevelopmentSeasons).mockResolvedValue([
+      {
+        season_id: 'week-4',
+        label: 'Week 4',
+        environment: 'flappy_bird',
+        models: ['small'],
+        cost_weights: { small: 1 },
+        limits: { token_budget: 1000, rate_limit_rpm: 10 },
+        successful_calls: 0,
+        usage_estimated: false,
+        budget_cost_units_used: 0,
+        budget_cost_units_remaining: 1000,
+        key_exists: false,
+      },
+    ])
+    vi.mocked(rotateLlmDevelopmentKey).mockResolvedValue({
+      season_id: 'week-4',
+      base_url: 'https://sandbox.test/api/llm/v1',
+      api_key: 'sk-sandbox-dev-secret',
+      models: ['small'],
+      cost_weights: { small: 1 },
+      limits: { token_budget: 1000, rate_limit_rpm: 10 },
+    })
+
+    const { router } = await renderPage()
+    await fireEvent.click(await screen.findByRole('button', { name: 'Create development key' }))
+
+    expect(vi.mocked(rotateLlmDevelopmentKey)).toHaveBeenCalledWith('week-4')
+    expect(router.currentRoute.value.fullPath).toBe('/my/agents')
+    expect(await screen.findByDisplayValue('sk-sandbox-dev-secret')).toHaveAttribute('readonly')
   })
 
   it('shows no score when a released current season has no submission', async () => {
@@ -157,10 +243,10 @@ describe('MyAgentsPage', () => {
 
     await renderPage()
 
-    const currentLink = await screen.findByRole('link', {
+    await screen.findByRole('link', {
       name: /Current season Week 4 Not submitted No score/,
     })
-    expect(within(currentLink).getByText('No score')).toBeInTheDocument()
+    expect(screen.getByText('No score')).toBeInTheDocument()
   })
 
   it('shows at most three previous seasons and preserves zero, negative, and missing scores', async () => {
@@ -266,5 +352,28 @@ describe('MyAgentsPage', () => {
     await renderPage()
 
     expect(await screen.findByText('Could not load your agents.')).toBeInTheDocument()
+  })
+
+  it('keeps agent summaries visible and offers a retry when development access fails', async () => {
+    vi.mocked(getMyAgents).mockResolvedValue([
+      {
+        env_id: 'flappy_bird',
+        current_season: season('week-4', { label: 'Week 4' }),
+        previous_seasons: [],
+      },
+    ])
+    vi.mocked(listLlmDevelopmentSeasons)
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce([])
+
+    await renderPage()
+
+    expect(await screen.findByText('Week 4')).toBeInTheDocument()
+    expect(screen.getByText('Could not load development access.')).toBeInTheDocument()
+    await fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    await waitFor(() =>
+      expect(screen.queryByText('Could not load development access.')).not.toBeInTheDocument(),
+    )
+    expect(listLlmDevelopmentSeasons).toHaveBeenCalledTimes(2)
   })
 })

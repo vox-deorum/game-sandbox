@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/vue'
+import { fireEvent, render, screen } from '@testing-library/vue'
 import { describe, expect, it } from 'vitest'
 
 import type { DecisionEntry } from '../../src/components/DecisionLog.vue'
@@ -95,5 +95,63 @@ describe('GameThread', () => {
   it('shows an empty state when there are no decisions', () => {
     render(GameThread, { props: { decisions: [], chat: [] } })
     expect(screen.getByText('No decisions yet.')).toBeInTheDocument()
+  })
+
+  it('uses None for an empty decision slot', () => {
+    const { container } = render(GameThread, {
+      props: {
+        decisions: [{ tick: 0, slot: '', action: 'wait' }],
+        chat: [],
+      },
+    })
+
+    expect(container.querySelector('.thread-seat')).toHaveTextContent('None')
+  })
+
+  it('keeps setup costs, exact decision costs, and authorized inspection in chat replays', async () => {
+    const { container } = render(GameThread, {
+      props: {
+        decisions: decisions().slice(0, 2),
+        chat: [{ tick: 0, from: 'player_0', to: null, text: 'thinking' }],
+        setupLlmCalls: [
+          {
+            tick: null,
+            slot: 'player_1',
+            model: 'small',
+            input_tokens: 2,
+            reasoning_tokens: 0,
+            output_tokens: 1,
+            usage_estimated: false,
+            cost_weight: 1,
+            budget_cost_units: 3,
+          },
+        ],
+        llmCalls: [
+          {
+            tick: 0,
+            slot: 'player_0',
+            model: 'medium',
+            input_tokens: 3,
+            reasoning_tokens: 1,
+            output_tokens: 2,
+            usage_estimated: false,
+            cost_weight: 2,
+            budget_cost_units: 10,
+            request: { prompt: 'move' },
+            completion: { answer: 'bid 3' },
+          },
+        ],
+      },
+    })
+
+    expect(container.querySelector('[data-row-id="setup:player_1"]')).toHaveTextContent('3 units')
+    expect(screen.getByText('thinking')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Inspect request and response' })).toHaveTextContent(
+      '10 units',
+    )
+    expect(screen.getByText('None')).toBeInTheDocument()
+    await fireEvent.click(screen.getByRole('button', { name: 'Inspect request and response' }))
+    expect(screen.getByRole('heading', { name: 'Request' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Response' })).toBeInTheDocument()
   })
 })

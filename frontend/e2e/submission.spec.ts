@@ -71,10 +71,13 @@ test('a submitted agent validates to ready and runs in a watch session', async (
   const currentSeasonLink = environmentGroup.getByRole('link', {
     name: /Current season .* ready to compete/,
   })
-  await expect(currentSeasonLink.getByText('Current season')).toBeAttached()
-  await expect(currentSeasonLink.getByText('ready to compete')).toBeVisible()
-  await expect(currentSeasonLink.locator('.season-row-date')).toBeVisible()
-  await expect(currentSeasonLink.getByText(/Submitted/)).toHaveCount(0)
+  const currentSeasonCard = currentSeasonLink.locator('..')
+  await expect(currentSeasonCard.getByText('Current season')).toBeAttached()
+  await expect(currentSeasonCard.getByText('ready to compete')).toBeVisible()
+  await expect(currentSeasonCard.locator('.season-row-date')).toBeVisible()
+  await expect(currentSeasonCard.getByRole('meter')).toHaveCount(0)
+  await expect(currentSeasonCard.getByRole('button', { name: /development key/i })).toHaveCount(0)
+  await expect(currentSeasonCard.getByText(/Submitted/)).toHaveCount(0)
   await currentSeasonLink.click()
   await expect(page).toHaveURL(/\/environments\/flappy_bird\/agents\/.+\?season=/)
 

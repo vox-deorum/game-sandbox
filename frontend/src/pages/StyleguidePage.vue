@@ -14,6 +14,7 @@ import UiDialog from '../components/ui/UiDialog.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import UiField from '../components/ui/UiField.vue'
 import UiInput from '../components/ui/UiInput.vue'
+import UiMeter from '../components/ui/UiMeter.vue'
 import UiSelect from '../components/ui/UiSelect.vue'
 import UiSlider from '../components/ui/UiSlider.vue'
 import UiStatusBadge from '../components/ui/UiStatusBadge.vue'
@@ -256,6 +257,16 @@ const llmTokenBudget = ref<number | ''>('')
       <UiSlider v-model="sliderValue" label="Demo position" :max="300" />
       <p class="slider-readout">value: {{ sliderValue }} / 300</p>
       <UiSlider v-model="sliderValue" label="Disabled slider" :max="300" disabled />
+    </section>
+
+    <section>
+      <h2>UiMeter</h2>
+      <UiMeter
+        :value="41600"
+        :max="100000"
+        label="Development budget used"
+        text-value="41.6k of 100k budget units used"
+      />
     </section>
 
     <section>

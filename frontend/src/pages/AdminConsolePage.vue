@@ -16,9 +16,13 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 
 import {
+  type AdminLlmDevelopmentUser,
   type AdminSeasonView,
   declareSeason,
   getAdminSeason,
+  type LlmDevelopmentCall,
+  listAdminLlmDevelopmentCalls,
+  listAdminLlmDevelopmentUsers,
   listRuns,
   listSeasons,
   type PublicSeasonView,
@@ -26,6 +30,7 @@ import {
   type RunSummaryView,
   type SeasonView,
 } from '../api/client.js'
+import DevelopmentCallHistoryDialog from '../components/DevelopmentCallHistoryDialog.vue'
 import SeasonConfigEditor from '../components/admin/SeasonConfigEditor.vue'
 import SeasonLifecycleControls from '../components/admin/SeasonLifecycleControls.vue'
 import OperatorRatingPromptEditor from '../components/admin/OperatorRatingPromptEditor.vue'
@@ -37,6 +42,7 @@ import UiCard from '../components/ui/UiCard.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import UiInput from '../components/ui/UiInput.vue'
 import { useEnvironmentMeta } from '../composables/useEnvironmentMeta.js'
+import { formatLlmCost } from '../lib/llm.js'
 import { isAdmin, useMe } from '../me.js'
 
 const route = useRoute()
@@ -52,6 +58,8 @@ const selectedId = ref<string | null>(null)
 const view = ref<AdminSeasonView | null>(null)
 // The selected season's runs, newest first, for the runs list. Loaded alongside the detail view.
 const runs = ref<RunSummaryView[]>([])
+const developmentUsers = ref<AdminLlmDevelopmentUser[] | null>(null)
+const developmentUsersError = ref(false)
 const loadingDetail = ref(false)
 // A board exists to inspect only once a run has computed one; before that the link is disabled.
 const boardAvailable = computed(
@@ -101,10 +109,19 @@ async function loadDetail(): Promise<void> {
   const requestId = ++detailRequest
   loadingDetail.value = true
   try {
-    const [loaded, loadedRuns] = await Promise.all([getAdminSeason(seasonId), listRuns(seasonId)])
+    const [loaded, loadedRuns, loadedDevelopmentUsers] = await Promise.all([
+      getAdminSeason(seasonId),
+      listRuns(seasonId),
+      listAdminLlmDevelopmentUsers(seasonId).then(
+        (users) => ({ users, failed: false }),
+        () => ({ users: [] as AdminLlmDevelopmentUser[], failed: true }),
+      ),
+    ])
     if (requestId === detailRequest && selectedId.value === seasonId) {
       view.value = loaded
       runs.value = loadedRuns
+      developmentUsers.value = loadedDevelopmentUsers.users
+      developmentUsersError.value = loadedDevelopmentUsers.failed
     }
   } finally {
     if (requestId === detailRequest) {
@@ -121,6 +138,10 @@ async function select(id: string): Promise<void> {
   // Hide the previous season's destructive controls (and any open rename) while the new detail loads.
   view.value = null
   runs.value = []
+  developmentUsers.value = null
+  developmentUsersError.value = false
+  historyOpen.value = false
+  closeDevelopmentHistory()
   renaming.value = false
   await loadDetail()
 }
@@ -185,6 +206,87 @@ async function saveRename(seasonId: string): Promise<void> {
   } finally {
     savingRename.value = false
   }
+}
+
+const historyOpen = ref(false)
+const historyUserId = ref<string | null>(null)
+const historyCalls = ref<LlmDevelopmentCall[]>([])
+const historyNextCursor = ref<number | null>(null)
+const historyLoading = ref(false)
+const historyLoadingMore = ref(false)
+const historyError = ref<string | null>(null)
+let historyRequest = 0
+
+async function openDevelopmentHistory(userId: string): Promise<void> {
+  const seasonId = selectedId.value
+  if (seasonId === null) {
+    return
+  }
+  const request = ++historyRequest
+  historyUserId.value = userId
+  historyCalls.value = []
+  historyNextCursor.value = null
+  historyError.value = null
+  historyOpen.value = true
+  historyLoading.value = true
+  try {
+    const page = await listAdminLlmDevelopmentCalls(seasonId, userId, { limit: 25 })
+    if (
+      request === historyRequest &&
+      selectedId.value === seasonId &&
+      historyUserId.value === userId
+    ) {
+      historyCalls.value = page.calls
+      historyNextCursor.value = page.next_cursor
+    }
+  } catch {
+    if (request === historyRequest) {
+      historyError.value = 'Could not load development call history.'
+    }
+  } finally {
+    if (request === historyRequest) {
+      historyLoading.value = false
+    }
+  }
+}
+
+async function loadMoreDevelopmentHistory(cursor: number): Promise<void> {
+  const seasonId = selectedId.value
+  const userId = historyUserId.value
+  if (seasonId === null || userId === null) {
+    return
+  }
+  const request = ++historyRequest
+  historyLoadingMore.value = true
+  historyError.value = null
+  try {
+    const page = await listAdminLlmDevelopmentCalls(seasonId, userId, { cursor, limit: 25 })
+    if (
+      request === historyRequest &&
+      selectedId.value === seasonId &&
+      historyUserId.value === userId
+    ) {
+      historyCalls.value = [...historyCalls.value, ...page.calls]
+      historyNextCursor.value = page.next_cursor
+    }
+  } catch {
+    if (request === historyRequest) {
+      historyError.value = 'Could not load more development calls.'
+    }
+  } finally {
+    if (request === historyRequest) {
+      historyLoadingMore.value = false
+    }
+  }
+}
+
+function closeDevelopmentHistory(): void {
+  historyRequest += 1
+  historyLoadingMore.value = false
+  historyUserId.value = null
+  historyCalls.value = []
+  historyNextCursor.value = null
+  historyError.value = null
 }
 </script>
 
@@ -293,6 +395,52 @@ async function saveRename(seasonId: string): Promise<void> {
             </section>
 
             <section class="admin-section">
+              <h2>Development usage</h2>
+              <UiEmptyState v-if="developmentUsers === null">Loading…</UiEmptyState>
+              <UiEmptyState v-else-if="developmentUsersError" tone="danger">
+                Could not load development usage.
+              </UiEmptyState>
+              <UiEmptyState v-else-if="developmentUsers.length === 0">
+                No development calls for this season.
+              </UiEmptyState>
+              <div v-else class="development-table-wrap">
+                <table class="development-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Participant</th>
+                      <th scope="col" class="num">Calls used</th>
+                      <th scope="col" class="num">Budget units used</th>
+                      <th scope="col" class="num">Budget units remaining</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr
+                      v-for="participant in developmentUsers"
+                      :key="participant.user_id"
+                      class="development-user-row"
+                      @click="openDevelopmentHistory(participant.user_id)"
+                    >
+                      <td>
+                        <button
+                          type="button"
+                          class="participant-history-button"
+                          @click.stop="openDevelopmentHistory(participant.user_id)"
+                        >
+                          {{ participant.user_id }}
+                        </button>
+                      </td>
+                      <td class="num">{{ participant.successful_calls }}</td>
+                      <td class="num">{{ formatLlmCost(participant.budget_cost_units_used) }}</td>
+                      <td class="num">
+                        {{ formatLlmCost(participant.budget_cost_units_remaining) }}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="admin-section">
               <SeasonSubmissions :season-id="view.season.id" />
             </section>
 
@@ -303,6 +451,18 @@ async function saveRename(seasonId: string): Promise<void> {
           </template>
         </main>
       </div>
+
+      <DevelopmentCallHistoryDialog
+        v-model:open="historyOpen"
+        :title="historyUserId === null ? 'Development call history' : `${historyUserId} call history`"
+        :calls="historyCalls"
+        :next-cursor="historyNextCursor"
+        :loading="historyLoading"
+        :loading-more="historyLoadingMore"
+        :error="historyError ?? undefined"
+        @load-more="loadMoreDevelopmentHistory"
+        @closed="closeDevelopmentHistory"
+      />
     </template>
   </section>
 </template>
@@ -389,6 +549,51 @@ async function saveRename(seasonId: string): Promise<void> {
 
 .admin-card {
   margin: 0;
+}
+
+.development-table-wrap {
+  overflow-x: auto;
+}
+
+.development-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.development-table th,
+.development-table td {
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+}
+
+.development-table th {
+  color: var(--color-text-muted);
+  font-weight: 600;
+}
+
+.development-table .num {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.participant-history-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+.development-user-row {
+  cursor: pointer;
+}
+
+.development-user-row:hover {
+  background: var(--color-surface-raised);
 }
 
 .section-head {

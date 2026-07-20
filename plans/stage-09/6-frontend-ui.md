@@ -1,6 +1,6 @@
 # Stage 9.6: LLM Usage UI
 
-Status: not started.
+Status: complete.
 
 Part of [Stage 9](../stage-09-llm-gateway.md), build-order step 6. Replay and development surfaces read the APIs from [step 5](5-frontend-api.md). Automated-board data comes from [step 4](4-usage-aggregation.md), and development-key creation and rotation come from [step 2](2-enablement-keys-and-network.md). Server-side response filtering is the authorization boundary. Client-side display conditions control presentation only.
 
@@ -14,7 +14,7 @@ The hands-on check compares anonymous, submission-owner, participant, and operat
 
 `ReplayPage.vue` fetches recording telemetry alongside the recording and passes it into the existing `DecisionLog`. A successful empty payload means the recording has no successful model calls, so recordings from before this stage and runs with no model use still load normally.
 
-`DecisionLog` remains the one data rail beside or below the renderer. It gains an `LLM cost` column immediately beside `Decision`; there is no separate model-calls panel. Each normal row sums the successful calls whose tick and slot match that decision. A row with no matching calls uses the standard `None` value used by the existing data tables.
+The existing decision rail remains beside or below the renderer, with no separate model-calls panel. Replays without chat use `DecisionLog`; chat-bearing replays use the existing interleaved `GameThread`. Both show an `LLM cost` column immediately beside `Decision`, use the same cost details and inspector, and sum successful calls whose tick and slot match that decision. A row with no matching calls uses the standard `None` value used by the existing data tables.
 
 Null-tick calls arrive through a separate setup-cost input, not as synthetic `DecisionEntry` values. `DecisionLog` renders them in a leading setup row group ordered by slot, with stable row IDs in the form `setup:<slot>`. The original decision entries, their keys, and the replay state's index-to-decision mapping remain unchanged. Active-row highlighting, `aria-current`, and automatic scrolling target decision rows only, so one or many setup rows never shift the row selected by the replay scrubber.
 
@@ -115,6 +115,7 @@ Frontend unit tests cover:
 
 - Replay telemetry grouping by exact tick and slot, multiple calls in one cost cell, a separate setup-cost input, multiple setup slots with stable `setup:<slot>` row IDs, the standard `None` value, and successful empty telemetry payloads.
 - Setup rows leaving `DecisionEntry[]`, decision keys, replay current-index mapping, active-row highlighting, and active-row scrolling unchanged, including the correct scrubbed decision row with several setup rows present.
+- Chat-bearing replays retaining interleaved messages while showing setup costs, exact tick-and-slot costs, unavailable states, and authorized inspection.
 - A `500 telemetry_unavailable` response leaving the recording and game usable, showing the danger `LLM cost data unavailable.` state and `Unavailable` cost cells, omitting the `RunMetadata` total, and never appearing as empty telemetry.
 - Cost formatting in explicit budget units and tooltip details for calls, aliases, stored weights, input-plus-output token bases, reasoning tokens, and authoritative costs. No Stage 9 surface displays estimate wording.
 - Every cost tooltip implementation programmatically associating trigger and content, persisting across trigger-to-content hover, opening from keyboard focus, closing on Escape without moving focus, and exposing the same details on touch.
