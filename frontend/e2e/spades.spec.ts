@@ -177,7 +177,7 @@ test('Spades chat is filtered live and complete in replay', async ({
     await expect(replayThread.getByText(BROADCAST)).toBeVisible()
     await expect(replayThread.getByText(TARGETED)).toBeVisible()
     await expect(replayThread.getByText('broadcast')).toBeVisible()
-    await expect(replayThread.getByText('to Player 2')).toBeVisible()
+    await expect(replayThread.getByText('to P2')).toBeVisible()
     await expect(replayThread.getByRole('textbox')).toHaveCount(0)
 
     // Navigate directly to the now-ended session page (not the replay viewer above): SessionPage's

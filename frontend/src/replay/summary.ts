@@ -1,5 +1,7 @@
 import type { StepState } from '@game-sandbox/schema'
 
+import { formatSlot } from '../lib/format.js'
+
 // Recordings do not store the trailing result envelope, so replay and terminal-session pages derive
 // their final score and tick count from the readable state prefix instead.
 export interface RunSummary {
@@ -25,7 +27,7 @@ export function formatScoreMap(scores: Record<string, unknown>): string | null {
     const first = entries[0]
     return first === undefined ? null : formatNumber(first[1])
   }
-  return entries.map(([slot, score]) => `${slot}: ${formatNumber(score)}`).join(', ')
+  return entries.map(([slot, score]) => `${formatSlot(slot)}: ${formatNumber(score)}`).join(', ')
 }
 
 export function summarizeStates(states: readonly StepState[]): RunSummary {

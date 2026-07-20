@@ -27,7 +27,7 @@ const TAIL_READ_SIZE = 64 * 1024
 export interface RecordingSummary {
   id: string
   header: RecordingHeader
-  /** The winning slot, -1 for a tie, or null when the final state has no eligible ranking data. */
+  /** The winning player id (`P0`, `P1`, ...), -1 for a tie, or null without eligible ranking data. */
   winner_id: string | -1 | null
 }
 
@@ -177,7 +177,7 @@ function winnerId(state: StepState | null): string | -1 | null {
     scores.every((score) => typeof score === 'number' && Number.isFinite(score))
   ) {
     const best = Math.max(...scores)
-    const winners = scores.flatMap((score, seat) => (score === best ? [`player_${seat}`] : []))
+    const winners = scores.flatMap((score, seat) => (score === best ? [`P${seat}`] : []))
     return winners.length === 1 ? (winners[0] ?? null) : -1
   }
 

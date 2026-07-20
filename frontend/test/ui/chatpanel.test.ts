@@ -155,12 +155,12 @@ describe('ChatPanel', () => {
       },
     })
 
-    // Each opponent is a distinct recipient option, told apart by its seat number alone.
-    expect(screen.getByRole('option', { name: 'Player 0' })).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: 'Player 1' })).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: 'Player 3' })).toBeInTheDocument()
+    // Each opponent is a distinct recipient option, told apart by its compact player id alone.
+    expect(screen.getByRole('option', { name: 'P0' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'P1' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'P3' })).toBeInTheDocument()
     // And a message line carries its sender's seat beside the shared label (queried by the seat cell,
-    // since the terse "Player 0" now also names the recipient option).
-    expect(container.querySelector('.chat-seat')?.textContent).toBe('Player 0')
+    // since the terse "P0" now also names the recipient option).
+    expect(container.querySelector('.chat-seat')?.textContent).toBe('P0')
   })
 })

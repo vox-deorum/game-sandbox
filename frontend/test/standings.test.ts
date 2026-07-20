@@ -82,7 +82,7 @@ describe('buildStandings (cross-environment game-over leaderboard)', () => {
     const standings = buildStandings(state, null)
     expect(standings).toHaveLength(1)
     expect(standings[0]).toMatchObject({ slot: 'player_0', value: 42, medal: 'gold' })
-    expect(standings[0]?.label).toBe('Player 0') // no header → slot fallback
+    expect(standings[0]?.label).toBe('P0') // no header → slot fallback
   })
 
   it('falls back to the rounded cumulative score when the overlay ships no game score', () => {

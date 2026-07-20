@@ -89,7 +89,7 @@ describe('ReplaysPage', () => {
       recording({
         id: 'flappy_bird-12345678-abcd-ef01-2345-6789abcdef01',
         season_id: 'season-1',
-        winner_id: 'player_2',
+        winner_id: 'P2',
         header: {
           schema_version: 1,
           environment: 'flappy_bird',
@@ -114,7 +114,8 @@ describe('ReplaysPage', () => {
 
     const row = link.closest('tr') as HTMLElement
     expect(within(row).getByText('Week 1')).toBeInTheDocument() // season label, not the raw id
-    expect(within(row).getByText('player_2 won')).toBeInTheDocument()
+    expect(within(row).getByText('P2 won')).toBeInTheDocument()
+    expect(within(row).getByText(/P0: Naive agent/)).toBeInTheDocument()
     // No user_name on this fixture, so the Owner cell falls back to the stable user_id, kept as its
     // own tooltip.
     const ownerCell = within(row).getByText('alice')

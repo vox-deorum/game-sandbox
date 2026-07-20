@@ -564,7 +564,7 @@ describe('ReplayPage', () => {
     expect(screen.getByText('good luck all')).toBeInTheDocument()
     expect(screen.getByText('cover the king')).toBeInTheDocument()
     // The targeted line names its recipient by seat, so a same-labelled roster stays unambiguous.
-    expect(screen.getByText('to Player 3')).toBeInTheDocument()
+    expect(screen.getByText('to P3')).toBeInTheDocument()
 
     // Home empties it again, and a replay never offers a composer.
     await fireEvent.keyDown(stage, { key: 'Home' })

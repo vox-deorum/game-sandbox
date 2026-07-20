@@ -63,13 +63,13 @@ describe('recordings store over the volume layout', () => {
     await writeRecording('tie', [HEADER, TIED_STATE])
 
     const byId = new Map((await store.list()).map((summary) => [summary.id, summary]))
-    expect(byId.get('winner')?.winner_id).toBe('player_1')
+    expect(byId.get('winner')?.winner_id).toBe('P1')
     expect(byId.get('tie')?.winner_id).toBe(-1)
   })
 
   it('uses the newest complete state when the recording ends with a partial line', async () => {
     await writeRecording('partial', [HEADER, WIN_STATE, '{"schema_version":1'])
-    expect((await store.list())[0]?.winner_id).toBe('player_1')
+    expect((await store.list())[0]?.winner_id).toBe('P1')
   })
 
   it('returns no recordings when the volume does not exist yet', async () => {

@@ -61,7 +61,7 @@ describe('GameThread', () => {
     expect(screen.getByText('cover the king')).toBeInTheDocument()
     expect(screen.getByText('broadcast')).toBeInTheDocument()
     // A targeted line names its recipient by seat, so a same-labelled roster stays unambiguous.
-    expect(screen.getByText('to Player 3')).toBeInTheDocument()
+    expect(screen.getByText('to P3')).toBeInTheDocument()
 
     // The broadcast rode tick 1, so it sits between the tick-1 and tick-2 decisions.
     const items = Array.from(container.querySelectorAll('.thread-item'))

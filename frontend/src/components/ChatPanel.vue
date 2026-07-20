@@ -87,7 +87,7 @@ const rows = computed(() =>
   })),
 )
 
-// The recipient options: every other seat, labelled by its seat ("Player 1"). The seat number alone
+// The recipient options: every other seat, labelled by its compact player id ("P1"). The id alone
 // keeps identical agent labels (three "Naive agent" seats) tellable apart, so the terse label suffices.
 // "Everyone" (a broadcast) is the empty-value option in the template.
 const recipientOptions = computed(() =>

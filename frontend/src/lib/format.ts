@@ -40,8 +40,12 @@ export function formatDateOnly(value: string | null | undefined): string | null 
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(value))
 }
 
-/** "player_0" → "Player 0": a human-readable slot label, for attribution. */
+/** "player_0" → "P0": the compact player id used in human-facing labels. */
 export function formatSlot(slot: string): string {
+  const player = slot.match(/^player_(\d+)$/)
+  if (player !== null) {
+    return `P${player[1]}`
+  }
   return slot
     .split('_')
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))

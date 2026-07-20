@@ -22,7 +22,7 @@ import UiBadge from '../components/ui/UiBadge.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import { type AttributionContext, attributionLabel, hasSubmittedAgent, isBlindMasked } from '../lib/attribution.js'
 import { anonymityState, presentsMasked } from '../lib/anonymity.js'
-import { formatDateOnly, formatSeasonName, formatSlotIndex } from '../lib/format.js'
+import { formatDateOnly, formatSeasonName, formatSlot } from '../lib/format.js'
 import { isAdmin, useMe, userId } from '../me.js'
 import { isCompletedOutcome, reasonText } from '../replay/reason.js'
 
@@ -63,7 +63,7 @@ function playersSummary(replay: RecordingSummary): string {
     // A masked human already reads as the bare neutral "Human" (attributionLabel's blind branch); the
     // "Human (name)" parenthetical only applies once the real name is showing.
     const text = player.kind === 'human' && !isBlindMasked(player, ctx) ? `Human (${label})` : label
-    return `${formatSlotIndex(slot)}: ${text}`
+    return `${formatSlot(slot)}: ${text}`
   })
   return parts.length > 0 ? parts.join(', ') : '—'
 }
@@ -97,7 +97,7 @@ function outcomeText(replay: RecordingSummary): string {
       return 'Tied'
     }
     if (typeof replay.winner_id === 'string') {
-      return `${replay.winner_id} won`
+      return `${formatSlot(replay.winner_id)} won`
     }
   }
   return reasonText(replay.termination_reason)
