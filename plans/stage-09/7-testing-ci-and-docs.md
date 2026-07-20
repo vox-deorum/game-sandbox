@@ -29,7 +29,7 @@ Add these journeys to the Docker-gated `backend-integration` lane:
 
 ### Official session
 
-Run an LLM-enabled session with the Hearts oracle and a mix of upstream outcomes. Confirm that:
+Replace an existing Hearts season with an LLM-enabled session, with a mix of upstream LLM outcomes. Confirm that:
 
 - The container reaches the backend proxy and cannot reach the public internet.
 - A retryable sequence followed by success produces one successful response, the expected weighted-token charge, and one SQLite row whose latency includes attempts and waits.
