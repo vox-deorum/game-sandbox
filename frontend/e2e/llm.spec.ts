@@ -141,7 +141,7 @@ test('LLM development access, private telemetry, and replay inspection work end 
     }
     await historicalHistory.click()
     const historicalDialog = page.getByRole('dialog', { name: 'Development call history' })
-    await expect(historicalDialog.getByText('small')).toBeVisible()
+    await expect(historicalDialog.getByRole('button', { name: /small/ })).toHaveCount(2)
     await historicalDialog.getByRole('button', { name: 'Close' }).click()
     await openSubmissions(admin, season.id)
 
@@ -163,10 +163,11 @@ test('LLM development access, private telemetry, and replay inspection work end 
     await expect(development.getByText(/small × 2/)).toBeVisible()
     await development.getByRole('button', { name: 'View call history' }).click()
     const history = page.getByRole('dialog', { name: 'Development call history' })
-    await expect(history.getByText('small')).toBeVisible()
-    await history.getByRole('button', { name: /small/ }).click()
-    await expect(history.getByRole('heading', { name: 'Request' })).toBeVisible()
-    await expect(history.getByRole('heading', { name: 'Response' })).toBeVisible()
+    const calls = history.getByRole('button', { name: /small/ })
+    await expect(calls).toHaveCount(2)
+    await calls.first().click()
+    await expect(history.getByRole('heading', { name: 'Request', exact: true })).toBeVisible()
+    await expect(history.getByRole('heading', { name: 'Response', exact: true })).toBeVisible()
     await history.getByRole('button', { name: 'Close' }).click()
 
     // A submitted Oracle makes genuine official calls through the internal relay. Its owner gets
@@ -220,8 +221,8 @@ test('LLM development access, private telemetry, and replay inspection work end 
     const inspect = log.getByRole('button', { name: 'Inspect request and response' }).first()
     await inspect.click()
     const inspector = page.getByRole('dialog', { name: 'Inspect request and response' })
-    await expect(inspector.getByRole('heading', { name: 'Request' })).toBeVisible()
-    await expect(inspector.getByRole('heading', { name: 'Response' })).toBeVisible()
+    await expect(inspector.getByRole('heading', { name: 'Request', exact: true })).toBeVisible()
+    await expect(inspector.getByRole('heading', { name: 'Response', exact: true })).toBeVisible()
     await inspector.getByRole('button', { name: 'Close' }).click()
 
     // Operators retain the same body inspection capability on the replay UI.
@@ -233,8 +234,12 @@ test('LLM development access, private telemetry, and replay inspection work end 
       .first()
       .click()
     const operatorInspector = page.getByRole('dialog', { name: 'Inspect request and response' })
-    await expect(operatorInspector.getByRole('heading', { name: 'Request' })).toBeVisible()
-    await expect(operatorInspector.getByRole('heading', { name: 'Response' })).toBeVisible()
+    await expect(
+      operatorInspector.getByRole('heading', { name: 'Request', exact: true }),
+    ).toBeVisible()
+    await expect(
+      operatorInspector.getByRole('heading', { name: 'Response', exact: true }),
+    ).toBeVisible()
     await operatorInspector.getByRole('button', { name: 'Close' }).click()
 
     // A genuinely logged-out replay reader retains costs but gets no inspection action. The tooltip
