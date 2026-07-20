@@ -1,5 +1,5 @@
 import { rmSync } from 'node:fs'
-import type { APIRequestContext } from '@playwright/test'
+import type { APIRequestContext, Page } from '@playwright/test'
 
 import {
   activeWindows,
@@ -33,6 +33,14 @@ async function developmentCompletion(actor: APIRequestContext, key: string): Pro
     },
   })
   expect(response.status(), await response.text()).toBe(200)
+}
+
+async function openNarrowDecisionLog(page: Page): Promise<void> {
+  const disclosure = page.locator('details.stage-log-below', {
+    has: page.getByText('Decision log', { exact: true }),
+  })
+  await disclosure.getByText('Decision log', { exact: true }).click()
+  await expect(disclosure).toHaveAttribute('open', '')
 }
 
 test('LLM development access, private telemetry, and replay inspection work end to end', async ({
@@ -74,7 +82,9 @@ test('LLM development access, private telemetry, and replay inspection work end 
     await expect(page.getByRole('meter', { name: 'Development usage' })).toBeVisible()
     await page.getByRole('button', { name: 'Create development key' }).click()
     const credential = page.getByRole('dialog', { name: 'Development credential' })
-    await expect(credential.getByRole('textbox', { name: 'OPENAI_BASE_URL', exact: true })).toBeVisible()
+    await expect(
+      credential.getByRole('textbox', { name: 'OPENAI_BASE_URL', exact: true }),
+    ).toBeVisible()
     const firstKey = await credential
       .getByRole('textbox', { name: 'OPENAI_API_KEY', exact: true })
       .inputValue()
@@ -247,6 +257,7 @@ test('LLM development access, private telemetry, and replay inspection work end 
     await page.context().clearCookies()
     await page.setViewportSize({ width: 480, height: 900 })
     await page.goto(`/replays/${recordingId}`)
+    await openNarrowDecisionLog(page)
     const publicLog = page.locator('.decision-log')
     await expect(
       publicLog.getByRole('button', { name: 'Inspect request and response' }),
@@ -289,6 +300,7 @@ test('LLM development access, private telemetry, and replay inspection work end 
     try {
       const touchPage = await touchContext.newPage()
       await touchPage.goto(`/replays/${recordingId}`)
+      await openNarrowDecisionLog(touchPage)
       const touchDetails = touchPage
         .locator('.decision-log')
         .getByRole('button', { name: 'LLM cost details' })
