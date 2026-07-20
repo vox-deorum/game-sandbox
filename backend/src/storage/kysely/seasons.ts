@@ -11,6 +11,7 @@ import { sql } from 'kysely'
 
 import type {
   CreateSeasonInput,
+  DeleteSeasonResult,
   SetPlayStatusResult,
   SetSubmissionStatusResult,
   UpdateSeasonConfigResult,
@@ -149,6 +150,64 @@ export async function createSeason(
     })
     .returningAll()
     .executeTakeFirstOrThrow()
+}
+
+/**
+ * Remove an unused private season. This deliberately never cascades or cancels work: a season with
+ * any durable activity is historical data and must stay intact. The activity checks and final row
+ * removal share a transaction so a partial delete cannot escape on an error.
+ */
+export async function deleteSeason(db: Kysely<Database>, id: string): Promise<DeleteSeasonResult> {
+  return await db.transaction().execute(async (trx) => {
+    const season = await trx
+      .selectFrom('seasons')
+      .select(['submission_status', 'play_status', 'release_status', 'rating_prompt'])
+      .where('id', '=', id)
+      .executeTakeFirst()
+    if (season === undefined) {
+      return { ok: false, reason: 'not_found' }
+    }
+    if (
+      season.submission_status !== 'closed' ||
+      season.play_status !== 'closed' ||
+      season.release_status !== 'unreleased'
+    ) {
+      return { ok: false, reason: 'season_not_deletable' }
+    }
+
+    const activity = await Promise.all([
+      trx.selectFrom('season_runs').select('id').where('season_id', '=', id).executeTakeFirst(),
+      trx.selectFrom('submissions').select('id').where('season_id', '=', id).executeTakeFirst(),
+      trx.selectFrom('sessions').select('id').where('season_id', '=', id).executeTakeFirst(),
+      trx.selectFrom('ratings').select('id').where('season_id', '=', id).executeTakeFirst(),
+      trx
+        .selectFrom('agent_rating_prompts')
+        .select('user_id')
+        .where('season_id', '=', id)
+        .executeTakeFirst(),
+      trx
+        .selectFrom('llm_development_keys')
+        .select('key_id')
+        .where('season_id', '=', id)
+        .executeTakeFirst(),
+    ])
+    if (activity.some((row) => row !== undefined)) {
+      return { ok: false, reason: 'season_not_empty' }
+    }
+    if (season.rating_prompt !== null) {
+      return { ok: false, reason: 'season_not_empty' }
+    }
+
+    const deleted = await trx
+      .deleteFrom('seasons')
+      .where('id', '=', id)
+      .where('submission_status', '=', 'closed')
+      .where('play_status', '=', 'closed')
+      .where('release_status', '=', 'unreleased')
+      .returning('id')
+      .executeTakeFirst()
+    return deleted === undefined ? { ok: false, reason: 'season_not_deletable' } : { ok: true }
+  })
 }
 
 export async function updateSeasonConfig(

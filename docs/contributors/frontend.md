@@ -67,6 +67,8 @@ The browser receives identity from the same-origin Better Auth session cookie. H
 
 Build features from the primitives in `components/ui/` and use semantic tokens from `styles/tokens.css`. Do not introduce raw color or spacing values in component styles. Renderer modules are exempt because each environment owns its game visuals.
 
+For a confirmation dialog, use `UiDialogActions` instead of a feature-local action row. Put the consequential action first, use the `danger` button variant for irreversible work, and follow it with a ghost Cancel button.
+
 Add every new primitive variant to the development-only `/styleguide` route. Follow the accessibility and visual rules in [the design system](design.md), and confirm new visual patterns with the project owner.
 
 Global styles are limited to tokens, element defaults, application-shell layout, and deliberately shared presentation. Keep feature styles scoped to their components.

@@ -11,6 +11,7 @@ import UiBadge from '../components/ui/UiBadge.vue'
 import UiButton from '../components/ui/UiButton.vue'
 import UiCard from '../components/ui/UiCard.vue'
 import UiDialog from '../components/ui/UiDialog.vue'
+import UiDialogActions from '../components/ui/UiDialogActions.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import UiField from '../components/ui/UiField.vue'
 import UiInput from '../components/ui/UiInput.vue'
@@ -245,10 +246,10 @@ const llmTokenBudget = ref<number | ''>('')
       <UiButton variant="secondary" @click="dialogOpen = true">Open dialog</UiButton>
       <UiDialog v-model:open="dialogOpen" title="Start session" description="A demo of the start form dialog.">
         <p>Dialog body content. Escape closes, focus is trapped.</p>
-        <div class="row">
+        <UiDialogActions>
           <UiButton @click="dialogOpen = false">Confirm</UiButton>
           <UiButton variant="ghost" @click="dialogOpen = false">Cancel</UiButton>
-        </div>
+        </UiDialogActions>
       </UiDialog>
     </section>
 

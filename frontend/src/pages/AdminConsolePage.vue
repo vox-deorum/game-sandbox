@@ -18,6 +18,7 @@ import { useRoute } from 'vue-router'
 import {
   type AdminLlmDevelopmentUser,
   type AdminSeasonView,
+  deleteSeason,
   declareSeason,
   getAdminSeason,
   type LlmDevelopmentCall,
@@ -39,6 +40,8 @@ import RunsList from '../components/admin/RunsList.vue'
 import SeasonSubmissions from '../components/admin/SeasonSubmissions.vue'
 import UiButton from '../components/ui/UiButton.vue'
 import UiCard from '../components/ui/UiCard.vue'
+import UiDialog from '../components/ui/UiDialog.vue'
+import UiDialogActions from '../components/ui/UiDialogActions.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import UiInput from '../components/ui/UiInput.vue'
 import { useEnvironmentMeta } from '../composables/useEnvironmentMeta.js'
@@ -75,6 +78,9 @@ const renaming = ref(false)
 const renameLabel = ref('')
 const savingRename = ref(false)
 const renameError = ref<string | null>(null)
+const deleteOpen = ref(false)
+const deleting = ref(false)
+const deleteError = ref<string | null>(null)
 // Monotonically identifies the newest detail request. A slower response for a previously selected
 // season must never replace the controls for the season the sidebar now highlights.
 let detailRequest = 0
@@ -186,6 +192,62 @@ function startRename(season: SeasonView): void {
 
 function cancelRename(): void {
   renaming.value = false
+}
+
+function openDelete(): void {
+  deleteError.value = null
+  deleteOpen.value = true
+}
+
+function closeDelete(): void {
+  if (!deleting.value) {
+    deleteOpen.value = false
+    deleteError.value = null
+  }
+}
+
+/** Clear data that belongs to the previously selected season before choosing a replacement. */
+function clearSelectedSeason(): void {
+  detailRequest += 1
+  selectedId.value = null
+  view.value = null
+  runs.value = []
+  developmentUsers.value = null
+  developmentUsersError.value = false
+  configDirty.value = false
+  renaming.value = false
+  historyOpen.value = false
+  closeDevelopmentHistory()
+}
+
+async function confirmDelete(): Promise<void> {
+  const seasonId = selectedId.value
+  if (seasonId === null) {
+    return
+  }
+  deleting.value = true
+  deleteError.value = null
+  try {
+    const result = await deleteSeason(seasonId)
+    if (result.ok) {
+      deleteOpen.value = false
+      clearSelectedSeason()
+      await loadSeasons()
+      return
+    }
+    deleteError.value =
+      result.reason === 'season_not_deletable'
+        ? 'Only closed, unreleased seasons can be deleted.'
+        : result.reason === 'season_not_empty'
+          ? 'This season has activity, so it cannot be deleted.'
+          : result.reason === 'not_found'
+            ? 'This season no longer exists. Reload the season list and try again.'
+            : 'Could not delete the season. Try again.'
+  } catch {
+    deleteError.value = 'Could not delete the season. Try again.'
+  } finally {
+    deleting.value = false
+  }
 }
 
 async function saveRename(seasonId: string): Promise<void> {
@@ -357,9 +419,14 @@ function closeDevelopmentHistory(): void {
                 </template>
                 <template v-else>
                   <h2>{{ seasonHeading(view.season) }}</h2>
-                  <UiButton variant="secondary" size="tight" @click="startRename(view.season)">
-                    Rename
-                  </UiButton>
+                  <div class="section-actions">
+                    <UiButton variant="secondary" size="tight" @click="startRename(view.season)">
+                      Rename
+                    </UiButton>
+                    <UiButton variant="danger" size="tight" @click="openDelete">
+                      Delete season
+                    </UiButton>
+                  </div>
                 </template>
               </div>
               <p v-if="renameError" class="rename-error" role="alert">{{ renameError }}</p>
@@ -463,6 +530,24 @@ function closeDevelopmentHistory(): void {
         @load-more="loadMoreDevelopmentHistory"
         @closed="closeDevelopmentHistory"
       />
+
+      <UiDialog
+        v-if="view !== null"
+        v-model:open="deleteOpen"
+        title="Delete season?"
+        :description="`Permanently delete ${seasonLabel(view.season)}?`"
+      >
+        <p class="delete-confirmation">
+          Only closed, unreleased seasons without activity can be permanently deleted.
+        </p>
+        <p v-if="deleteError" class="delete-error" role="alert">{{ deleteError }}</p>
+        <UiDialogActions>
+          <UiButton variant="danger" :loading="deleting" @click="confirmDelete">
+            Delete season
+          </UiButton>
+          <UiButton variant="ghost" :disabled="deleting" @click="closeDelete">Cancel</UiButton>
+        </UiDialogActions>
+      </UiDialog>
     </template>
   </section>
 </template>
@@ -608,6 +693,12 @@ function closeDevelopmentHistory(): void {
   margin: 0;
 }
 
+.section-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
 .rename {
   display: flex;
   align-items: center;
@@ -619,6 +710,17 @@ function closeDevelopmentHistory(): void {
   margin: 0 0 var(--space-3);
   font-size: var(--text-sm);
   color: var(--color-danger);
+}
+
+.delete-confirmation {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.delete-error {
+  margin: 0 0 var(--space-3);
+  color: var(--color-danger);
+  font-size: var(--text-sm);
 }
 
 @media (max-width: 768px) {

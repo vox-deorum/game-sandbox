@@ -31,6 +31,7 @@ import {
 import UiButton from '../ui/UiButton.vue'
 import UiCard from '../ui/UiCard.vue'
 import UiDialog from '../ui/UiDialog.vue'
+import UiDialogActions from '../ui/UiDialogActions.vue'
 import UiField from '../ui/UiField.vue'
 import UiInput from '../ui/UiInput.vue'
 import UiSelect from '../ui/UiSelect.vue'
@@ -648,12 +649,12 @@ watch(confirmOpen, (open) => {
           boards so they can be recomputed from the new design.
         </template>
       </p>
-      <div class="confirm-actions">
+      <UiDialogActions>
         <UiButton variant="danger" :loading="saving" @click="confirmForce">
           Delete and save
         </UiButton>
         <UiButton variant="ghost" @click="confirmOpen = false">Cancel</UiButton>
-      </div>
+      </UiDialogActions>
     </UiDialog>
   </div>
 </template>
@@ -793,12 +794,7 @@ watch(confirmOpen, (open) => {
 }
 
 .confirm-text {
-  margin: 0 0 var(--space-4);
+  margin: 0;
   color: var(--color-text);
-}
-
-.confirm-actions {
-  display: flex;
-  gap: var(--space-3);
 }
 </style>

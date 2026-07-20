@@ -13,6 +13,7 @@ import { useTargetedAction } from '../../composables/useTargetedAction.js'
 import type { RosterUser } from '../../lib/roster.js'
 import UiButton from '../ui/UiButton.vue'
 import UiDialog from '../ui/UiDialog.vue'
+import UiDialogActions from '../ui/UiDialogActions.vue'
 
 const props = defineProps<{
   target: RosterUser | null
@@ -65,10 +66,10 @@ async function onConfirm(): Promise<void> {
 <template>
   <UiDialog v-model:open="open" :title="`${verb} user`" :description="description">
     <p v-if="error !== null" class="dialog-error" role="alert">{{ error }}</p>
-    <div class="dialog-actions">
+    <UiDialogActions>
       <UiButton :loading="busy" @click="onConfirm">{{ verb }}</UiButton>
       <UiButton variant="ghost" @click="open = false">Cancel</UiButton>
-    </div>
+    </UiDialogActions>
   </UiDialog>
 </template>
 
@@ -79,9 +80,4 @@ async function onConfirm(): Promise<void> {
   font-size: var(--text-sm);
 }
 
-.dialog-actions {
-  display: flex;
-  gap: var(--space-2);
-  margin-top: var(--space-4);
-}
 </style>

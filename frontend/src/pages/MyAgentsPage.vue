@@ -22,6 +22,7 @@ import DevelopmentCredentialDialog from '../components/DevelopmentCredentialDial
 import UiButton from '../components/ui/UiButton.vue'
 import UiCard from '../components/ui/UiCard.vue'
 import UiDialog from '../components/ui/UiDialog.vue'
+import UiDialogActions from '../components/ui/UiDialogActions.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import UiMeter from '../components/ui/UiMeter.vue'
 import UiStatusBadge from '../components/ui/UiStatusBadge.vue'
@@ -303,7 +304,7 @@ function cancelRotation(): void {
       title="Rotate development key?"
       description="The current key will stop working immediately. Accumulated usage remains."
     >
-      <div class="dialog-actions">
+      <UiDialogActions>
         <UiButton
           variant="danger"
           :loading="confirmSeason !== null && keyBusySeasonId === confirmSeason.season_id"
@@ -311,8 +312,8 @@ function cancelRotation(): void {
         >
           Rotate development key
         </UiButton>
-        <UiButton variant="secondary" @click="cancelRotation">Cancel</UiButton>
-      </div>
+        <UiButton variant="ghost" @click="cancelRotation">Cancel</UiButton>
+      </UiDialogActions>
     </UiDialog>
 
     <DevelopmentCredentialDialog
@@ -405,13 +406,6 @@ function cancelRotation(): void {
   align-items: center;
   gap: var(--space-3);
   padding: 0 var(--space-4) var(--space-3);
-}
-
-.dialog-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-2);
-  margin-top: var(--space-4);
 }
 
 @media (max-width: 480px) {

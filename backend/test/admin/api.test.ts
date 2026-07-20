@@ -171,6 +171,7 @@ describe('admin API', () => {
       const id = await declare()
       const routes: Array<[string, string]> = [
         ['POST', `/api/admin/environments/${ENV_ID}/seasons`],
+        ['DELETE', `/api/admin/seasons/${id}`],
         ['PUT', `/api/admin/seasons/${id}/config`],
         ['PUT', `/api/admin/seasons/${id}/rating-prompt`],
         ['PUT', `/api/admin/seasons/${id}/label`],
@@ -225,6 +226,68 @@ describe('admin API', () => {
         headers: OPERATOR,
       })
       expect(res.statusCode).toBe(200)
+    })
+  })
+
+  describe('season deletion', () => {
+    it('removes an empty private season and returns 404 after it is gone', async () => {
+      const id = await declare()
+
+      const removed = await app.inject({
+        method: 'DELETE',
+        url: `/api/admin/seasons/${id}`,
+        headers: OPERATOR,
+      })
+      expect(removed.statusCode).toBe(204)
+
+      const missing = await app.inject({
+        method: 'DELETE',
+        url: `/api/admin/seasons/${id}`,
+        headers: OPERATOR,
+      })
+      expect(missing.statusCode).toBe(404)
+      expect(missing.json()).toEqual({ error: 'no such season' })
+    })
+
+    it('reports stable conflicts for public seasons and seasons with activity', async () => {
+      const open = await declare()
+      await storage.setSubmissionStatus(open, 'open')
+      const publicSeason = await app.inject({
+        method: 'DELETE',
+        url: `/api/admin/seasons/${open}`,
+        headers: OPERATOR,
+      })
+      expect(publicSeason.statusCode).toBe(409)
+      expect(publicSeason.json()).toEqual({
+        error: 'season_not_deletable',
+        code: 'season_not_deletable',
+      })
+
+      const active = await declare()
+      await seedSubmission(active, users.idOf('carol'))
+      const populatedSeason = await app.inject({
+        method: 'DELETE',
+        url: `/api/admin/seasons/${active}`,
+        headers: OPERATOR,
+      })
+      expect(populatedSeason.statusCode).toBe(409)
+      expect(populatedSeason.json()).toEqual({
+        error: 'season_not_empty',
+        code: 'season_not_empty',
+      })
+
+      const prompted = await declare()
+      await storage.setSeasonRatingPrompt(prompted, 'Evaluate every agent fairly.')
+      const promptedSeason = await app.inject({
+        method: 'DELETE',
+        url: `/api/admin/seasons/${prompted}`,
+        headers: OPERATOR,
+      })
+      expect(promptedSeason.statusCode).toBe(409)
+      expect(promptedSeason.json()).toEqual({
+        error: 'season_not_empty',
+        code: 'season_not_empty',
+      })
     })
   })
 

@@ -5,6 +5,7 @@ import {
   closeSubmissions,
   configureMatches,
   declareSeason,
+  deleteSeason,
   finishedScriptedSession,
   openPlay,
   openSubmissions,
@@ -81,19 +82,38 @@ test('released leaderboard history is visible and navigates by season URL', asyn
 
 test('operator leaderboard history includes unreleased seasons', async ({ page, admin }) => {
   const season = await declareSeason(admin, SEASONS.operatorPreview)
+  try {
+    // This test depends on the browser being the operator: only the operator's history lists an
+    // unreleased season, so the browser authenticates as the bootstrap admin before browsing.
+    await authenticateBrowser(page.context(), admin)
+    await page.goto(`/environments/${ENV_ID}/leaderboards`)
 
-  // This test depends on the browser being the operator: only the operator's history lists an
-  // unreleased season, so the browser authenticates as the bootstrap admin before browsing.
-  await authenticateBrowser(page.context(), admin)
-  await page.goto(`/environments/${ENV_ID}/leaderboards`)
+    const link = page.getByRole('link', { name: SEASONS.operatorPreview })
+    await expect(link).toBeVisible()
+    await link.click()
 
-  const link = page.getByRole('link', { name: SEASONS.operatorPreview })
-  await expect(link).toBeVisible()
-  await link.click()
+    await expect(page).toHaveURL(new RegExp(`/environments/${ENV_ID}/leaderboards/${season.id}$`))
+    await expect(page.locator('.leaderboards-sub')).toContainText(SEASONS.operatorPreview)
+    await expect(page.getByText('Operator preview · unreleased')).toBeVisible()
 
-  await expect(page).toHaveURL(new RegExp(`/environments/${ENV_ID}/leaderboards/${season.id}$`))
-  await expect(page.locator('.leaderboards-sub')).toContainText(SEASONS.operatorPreview)
-  await expect(page.getByText('Operator preview · unreleased')).toBeVisible()
+    // The fixture has served its purpose. Remove it through the operator UI so the demo keeps only
+    // meaningful seasons, and prove the destructive action waits for explicit confirmation.
+    await page.goto(`/environments/${ENV_ID}/admin`)
+    await page.getByRole('button', { name: new RegExp(SEASONS.operatorPreview) }).click()
+    await page.getByRole('button', { name: 'Delete season' }).click()
+    const confirmation = page.getByRole('dialog', { name: 'Delete season?' })
+    await confirmation.getByRole('button', { name: 'Cancel' }).click()
+    await expect(
+      page.getByRole('button', { name: new RegExp(SEASONS.operatorPreview) }),
+    ).toBeVisible()
+    await page.getByRole('button', { name: 'Delete season' }).click()
+    await confirmation.getByRole('button', { name: 'Delete season' }).click()
+    await expect(
+      page.getByRole('button', { name: new RegExp(SEASONS.operatorPreview) }),
+    ).toHaveCount(0)
+  } finally {
+    await deleteSeason(admin, season.id).catch(() => {})
+  }
 })
 
 test('operator season configuration exposes and validates LLM controls', async ({
@@ -101,65 +121,69 @@ test('operator season configuration exposes and validates LLM controls', async (
   admin,
 }) => {
   const season = await declareSeason(admin, 'LLM controls')
-  await authenticateBrowser(page.context(), admin)
-  await page.goto(`/environments/${ENV_ID}/admin`)
-  await page.getByRole('button', { name: /LLM controls/ }).click()
+  try {
+    await authenticateBrowser(page.context(), admin)
+    await page.goto(`/environments/${ENV_ID}/admin`)
+    await page.getByRole('button', { name: /LLM controls/ }).click()
 
-  const runConfiguration = page.getByRole('heading', { name: 'Run Configuration' }).locator('..')
-  await expect(runConfiguration.locator('.ui-card')).toHaveCount(3)
-  await expect(runConfiguration.getByRole('heading', { name: 'Match Design' })).toBeVisible()
-  await expect(runConfiguration.getByRole('heading', { name: 'Session Behavior' })).toBeVisible()
-  await expect(runConfiguration.getByRole('heading', { name: 'LLM Access' })).toBeVisible()
+    const runConfiguration = page.getByRole('heading', { name: 'Run Configuration' }).locator('..')
+    await expect(runConfiguration.locator('.ui-card')).toHaveCount(3)
+    await expect(runConfiguration.getByRole('heading', { name: 'Match Design' })).toBeVisible()
+    await expect(runConfiguration.getByRole('heading', { name: 'Session Behavior' })).toBeVisible()
+    await expect(runConfiguration.getByRole('heading', { name: 'LLM Access' })).toBeVisible()
 
-  await runConfiguration.getByRole('button', { name: 'Add match' }).click()
-  const flatRegions = [
-    runConfiguration.getByTestId('match').first(),
-    runConfiguration.getByRole('group', { name: 'Per-slot limits' }),
-    runConfiguration.getByRole('group', { name: 'Development per-participant limits' }),
-  ]
-  for (const region of flatRegions) {
-    await expect(region).toHaveCSS('border-top-width', '1px')
-    await expect(region).toHaveCSS('border-right-width', '0px')
-    await expect(region).toHaveCSS('border-bottom-width', '0px')
-    await expect(region).toHaveCSS('border-left-width', '0px')
-    await expect(region).toHaveCSS('border-radius', '0px')
+    await runConfiguration.getByRole('button', { name: 'Add match' }).click()
+    const flatRegions = [
+      runConfiguration.getByTestId('match').first(),
+      runConfiguration.getByRole('group', { name: 'Per-slot limits' }),
+      runConfiguration.getByRole('group', { name: 'Development per-participant limits' }),
+    ]
+    for (const region of flatRegions) {
+      await expect(region).toHaveCSS('border-top-width', '1px')
+      await expect(region).toHaveCSS('border-right-width', '0px')
+      await expect(region).toHaveCSS('border-bottom-width', '0px')
+      await expect(region).toHaveCSS('border-left-width', '0px')
+      await expect(region).toHaveCSS('border-radius', '0px')
+    }
+
+    await expect(
+      runConfiguration.locator('.ui-card').getByRole('button', { name: 'Save configuration' }),
+    ).toHaveCount(0)
+
+    const messaging = page.getByLabel('Messaging')
+    await expect(messaging).toHaveValue('default')
+    await expect(messaging.locator('option')).toHaveText(['Environment default (off)', 'Off'])
+
+    const submissions = page.locator('section.admin-section', {
+      has: page.getByRole('heading', { name: 'Submissions' }),
+    })
+    const downloadAll = submissions.getByRole('link', { name: 'Download all (.tar.gz)' })
+    await expect(downloadAll).toHaveClass(/secondary/)
+    await expect(downloadAll).toHaveClass(/tight/)
+    await expect(downloadAll).toHaveAttribute('download', `season-${season.id.slice(0, 8)}.tar.gz`)
+    await expect(submissions.locator('.ui-card')).toHaveCount(0)
+
+    await expect(page.getByLabel('LLM enablement')).toBeVisible()
+    await expect(page.getByLabel('Allowed model aliases')).toBeVisible()
+    await expect(page.getByLabel('Per-slot token budget')).toBeVisible()
+    await expect(page.getByLabel('Per-slot rate limit (RPM)')).toBeVisible()
+    await expect(page.getByLabel('Development token budget')).toBeVisible()
+    await expect(page.getByLabel('Development rate limit (RPM)')).toBeVisible()
+
+    await page.getByLabel('Per-slot token budget').fill('0')
+    await page.getByRole('button', { name: 'Save configuration' }).click()
+    await expect(page.getByText(/official token budget must be a positive integer/)).toBeVisible()
+    await page.getByLabel('Per-slot token budget').fill('')
+
+    await page.getByLabel('Allowed model aliases').selectOption('custom')
+    await page.getByRole('button', { name: 'Save configuration' }).click()
+    await expect(page.getByText(/Select at least one allowed LLM model alias/)).toBeVisible()
+
+    // The validation is local, so the freshly declared season remains empty and safe to remove.
+    expect(season.id).toBeTruthy()
+  } finally {
+    await deleteSeason(admin, season.id).catch(() => {})
   }
-
-  await expect(
-    runConfiguration.locator('.ui-card').getByRole('button', { name: 'Save configuration' }),
-  ).toHaveCount(0)
-
-  const messaging = page.getByLabel('Messaging')
-  await expect(messaging).toHaveValue('default')
-  await expect(messaging.locator('option')).toHaveText(['Environment default (off)', 'Off'])
-
-  const submissions = page.locator('section.admin-section', {
-    has: page.getByRole('heading', { name: 'Submissions' }),
-  })
-  const downloadAll = submissions.getByRole('link', { name: 'Download all (.tar.gz)' })
-  await expect(downloadAll).toHaveClass(/secondary/)
-  await expect(downloadAll).toHaveClass(/tight/)
-  await expect(downloadAll).toHaveAttribute('download', `season-${season.id.slice(0, 8)}.tar.gz`)
-  await expect(submissions.locator('.ui-card')).toHaveCount(0)
-
-  await expect(page.getByLabel('LLM enablement')).toBeVisible()
-  await expect(page.getByLabel('Allowed model aliases')).toBeVisible()
-  await expect(page.getByLabel('Per-slot token budget')).toBeVisible()
-  await expect(page.getByLabel('Per-slot rate limit (RPM)')).toBeVisible()
-  await expect(page.getByLabel('Development token budget')).toBeVisible()
-  await expect(page.getByLabel('Development rate limit (RPM)')).toBeVisible()
-
-  await page.getByLabel('Per-slot token budget').fill('0')
-  await page.getByRole('button', { name: 'Save configuration' }).click()
-  await expect(page.getByText(/official token budget must be a positive integer/)).toBeVisible()
-  await page.getByLabel('Per-slot token budget').fill('')
-
-  await page.getByLabel('Allowed model aliases').selectOption('custom')
-  await page.getByRole('button', { name: 'Save configuration' }).click()
-  await expect(page.getByText(/Select at least one allowed LLM model alias/)).toBeVisible()
-
-  // The validation is local, so the freshly declared season remains untouched and usable by later tests.
-  expect(season.id).toBeTruthy()
 })
 
 /**

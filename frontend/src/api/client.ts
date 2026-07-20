@@ -1166,6 +1166,29 @@ export async function declareSeason(
   return (await json(res, 'POST /api/admin/environments/:envId/seasons')) as SeasonView
 }
 
+/** The outcome of permanently deleting an inactive, unreleased season. */
+export type DeleteSeasonResult =
+  | { ok: true }
+  | { ok: false; reason: 'not_found' | 'season_not_deletable' | 'season_not_empty' | 'failed' }
+
+/** Permanently delete a closed, unreleased season that has no submissions, runs, or recordings. */
+export async function deleteSeason(seasonId: string): Promise<DeleteSeasonResult> {
+  const res = await request(`/admin/seasons/${encodeURIComponent(seasonId)}`, { method: 'DELETE' })
+  if (res.status === 204) {
+    return { ok: true }
+  }
+  if (res.status === 404) {
+    return { ok: false, reason: 'not_found' }
+  }
+  if (res.status === 409) {
+    const body = (await res.json().catch(() => ({}))) as { code?: string }
+    if (body.code === 'season_not_deletable' || body.code === 'season_not_empty') {
+      return { ok: false, reason: body.code }
+    }
+  }
+  return { ok: false, reason: 'failed' }
+}
+
 /**
  * The outcome of replacing a season's config. An unforced edit against existing runs (or a
  * `deps_version` change against existing submissions) is refused; the console re-sends with `force`

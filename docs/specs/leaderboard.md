@@ -40,7 +40,7 @@ Each season defines:
 
 A season's timing, messaging, and official LLM overrides apply not only to its automated games but also to the live watch and play sessions started against the play-open season, so a season's rules hold everywhere its agents run. Student development LLM limits use their own meter keyed to the season and do not consume or contribute to official limits or telemetry.
 
-Operators manage seasons through the website's admin console and an operator-only HTTP API. They can declare, configure, open, close, run, rerun, cancel, preview, and release seasons. The backend runs the workflow and streams logs to the console.
+Operators manage seasons through the website's admin console and an operator-only HTTP API. They can declare, configure, open, close, run, rerun, cancel, preview, and release seasons. They may also permanently delete a closed, unreleased season that has no submissions, sessions, runs, ratings, prompts, or development keys. The admin console requires explicit confirmation, and the API refuses to cascade through historical activity. The backend runs the workflow and streams logs to the console.
 
 ## Automated board
 

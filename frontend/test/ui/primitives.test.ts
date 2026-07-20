@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 import UiBadge from '../../src/components/ui/UiBadge.vue'
 import UiCard from '../../src/components/ui/UiCard.vue'
+import UiDialogActions from '../../src/components/ui/UiDialogActions.vue'
 import UiEmptyState from '../../src/components/ui/UiEmptyState.vue'
 import UiStatusBadge from '../../src/components/ui/UiStatusBadge.vue'
 
@@ -31,6 +32,14 @@ describe('UiCard', () => {
   it('renders slot content', () => {
     render(UiCard, { slots: { default: 'Card body' } })
     expect(screen.getByText('Card body')).toBeInTheDocument()
+  })
+})
+
+describe('UiDialogActions', () => {
+  it('renders actions in the shared dialog footer', () => {
+    const { container } = render(UiDialogActions, { slots: { default: 'Confirm and cancel' } })
+    expect(screen.getByText('Confirm and cancel')).toBeInTheDocument()
+    expect(container.querySelector('.ui-dialog-actions')).not.toBeNull()
   })
 })
 

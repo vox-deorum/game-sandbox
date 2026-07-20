@@ -77,3 +77,32 @@ def test_bootstrap_admin_and_ordinary_member_are_distinct_personas():
     # non-admin), never promoted to admin.
     assert demo._ADMIN_EMAIL != demo._MEMBER_EMAIL
     assert demo._MEMBER_EMAIL.startswith("ada-lovelace@")
+
+
+def test_prepare_demo_data_snapshots_database_and_sidecars(tmp_path, monkeypatch):
+    main = tmp_path / "main"
+    demo_dir = tmp_path / "demo"
+    (main / "recordings" / "recording-one").mkdir(parents=True)
+    (main / "llm" / "development").mkdir(parents=True)
+    (main / "submissions").mkdir(parents=True)
+    (main / "sandbox.db").write_bytes(b"database")
+    (main / "recordings" / "recording-one" / "recording.jsonl").write_text("recording", encoding="utf-8")
+    (main / "llm" / "scope.sqlite").write_bytes(b"official telemetry")
+    (main / "llm" / "development" / "season.sqlite").write_bytes(b"development telemetry")
+    (main / "submissions" / "submission.tar.gz").write_bytes(b"submission")
+    demo_dir.mkdir()
+    (demo_dir / "stale.txt").write_text("stale", encoding="utf-8")
+
+    monkeypatch.setattr(demo, "E2E_MAIN_DATA_DIR", main)
+    monkeypatch.setattr(demo, "DEMO_DATA_DIR", demo_dir)
+
+    demo.prepare_demo_data()
+
+    assert (demo_dir / "sandbox.db").read_bytes() == b"database"
+    assert (demo_dir / "recordings" / "recording-one" / "recording.jsonl").read_text(
+        encoding="utf-8"
+    ) == "recording"
+    assert (demo_dir / "llm" / "scope.sqlite").read_bytes() == b"official telemetry"
+    assert (demo_dir / "llm" / "development" / "season.sqlite").read_bytes() == b"development telemetry"
+    assert (demo_dir / "submissions" / "submission.tar.gz").read_bytes() == b"submission"
+    assert not (demo_dir / "stale.txt").exists()

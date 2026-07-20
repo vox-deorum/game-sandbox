@@ -154,21 +154,13 @@ def build_frontend() -> None:
 def prepare_demo_data() -> None:
     """Discard any prior demo data, then snapshot main/ into demo/.
 
-    No backend is writing main/ here (e2e has exited), so the WAL is quiescent; copy the db
-    together with its -wal/-shm siblings so SQLite replays a consistent state on open. The Better
-    Auth tables (accounts, sessions, etc.) live in this same sandbox.db, so the copy already
-    carries them — no separate step is needed to bring the personas along.
+    No backend is writing main/ here (e2e has exited), so the complete data directory is a stable
+    snapshot. Copying the whole tree keeps the database together with recordings, submission
+    archives, LLM telemetry, and any future backend-managed sidecars.
     """
     if DEMO_DATA_DIR.exists():
         shutil.rmtree(DEMO_DATA_DIR)
-    DEMO_DATA_DIR.mkdir(parents=True, exist_ok=True)
-    for name in ("sandbox.db", "sandbox.db-wal", "sandbox.db-shm"):
-        src = E2E_MAIN_DATA_DIR / name
-        if src.exists():
-            shutil.copy2(src, DEMO_DATA_DIR / name)
-    recordings = E2E_MAIN_DATA_DIR / "recordings"
-    if recordings.exists():
-        shutil.copytree(recordings, DEMO_DATA_DIR / "recordings", dirs_exist_ok=True)
+    shutil.copytree(E2E_MAIN_DATA_DIR, DEMO_DATA_DIR)
 
 
 def _print_credentials() -> None:

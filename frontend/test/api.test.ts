@@ -6,6 +6,7 @@ import {
   adminSubmissionDownloadUrl,
   configureSeason,
   declareSeason,
+  deleteSeason,
   getAuthorPrompt,
   getEnvironmentLeaderboards,
   getEnvironments,
@@ -388,6 +389,30 @@ describe('api client', () => {
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
     expect(url).toBe('/api/admin/environments/flappy_bird/seasons')
     expect(JSON.parse(init.body as string)).toEqual({ label: 'Week 2' })
+  })
+
+  it('deletes a season through the admin prefix and maps deletion outcomes', async () => {
+    const successMock = stubFetch(async () => new Response(null, { status: 204 }))
+    expect(await deleteSeason('iter-1')).toEqual({ ok: true })
+    const [url, init] = successMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe('/api/admin/seasons/iter-1')
+    expect(init.method).toBe('DELETE')
+
+    vi.unstubAllGlobals()
+    stubFetch(async () => jsonResponse({}, 404))
+    expect(await deleteSeason('missing')).toEqual({ ok: false, reason: 'not_found' })
+
+    vi.unstubAllGlobals()
+    stubFetch(async () => jsonResponse({ code: 'season_not_empty' }, 409))
+    expect(await deleteSeason('iter-1')).toEqual({ ok: false, reason: 'season_not_empty' })
+
+    vi.unstubAllGlobals()
+    stubFetch(async () => jsonResponse({ code: 'season_not_deletable' }, 409))
+    expect(await deleteSeason('iter-1')).toEqual({ ok: false, reason: 'season_not_deletable' })
+
+    vi.unstubAllGlobals()
+    stubFetch(async () => jsonResponse({}, 500))
+    expect(await deleteSeason('iter-1')).toEqual({ ok: false, reason: 'failed' })
   })
 
   it('sends ?force=true on a forced config edit and maps the unforced conflict', async () => {

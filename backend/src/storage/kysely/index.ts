@@ -15,6 +15,7 @@ import type {
   AgentRef,
   AutomatedBoardRow,
   CreateSeasonInput,
+  DeleteSeasonResult,
   HumanBoardRow,
   LlmDevelopmentKey,
   NewRecordingInput,
@@ -155,6 +156,9 @@ export class KyselyStorage implements Storage {
   }
   createSeason(input: CreateSeasonInput): Promise<Season> {
     return seasons.createSeason(this.db, input)
+  }
+  deleteSeason(id: string): Promise<DeleteSeasonResult> {
+    return seasons.deleteSeason(this.db, id)
   }
   updateSeasonConfig(
     id: string,

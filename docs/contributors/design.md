@@ -62,11 +62,14 @@ The primitives live in `frontend/src/components/ui/`, PascalCase with a `Ui` pre
 | `UiCard` | A bordered surface (optional padding, optional interactive hover). Layout inside is the caller's. |
 | `UiField` + `UiInput` | A labelled field with automatic `id`/`aria-describedby` wiring for hint and error text. |
 | `UiDialog` | The modal dialog (focus trap, escape, focus restore, `aria-modal`), wrapping Reka UI Dialog. |
+| `UiDialogActions` | The shared right-aligned, wrapping footer for dialog actions. Use it for confirmations, with the consequential action first and a ghost Cancel control second. |
 | `UiSlider` | The replay scrubber (keyboard operation and value announcement), wrapping Reka UI Slider. |
 | `UiMeter` | Read-only progress with a required visible text value. First used for LLM development budgets. |
 | `UiEmptyState` | The loading / empty / error message line, muted or danger. |
 
 Simple primitives are local Vue components. Use Reka UI only where focus management and ARIA are difficult to implement safely, currently dialog and slider.
+
+Confirmation dialogs use `UiDialog` for the consequence and `UiDialogActions` for their footer. Keep the action text specific, make irreversible actions `danger`, keep cancellation as a ghost button, and preserve any loading or error state in the feature component.
 
 To add a variant, update the typed prop, scoped styles, tests, and `/styleguide`. A variant absent from the styleguide does not exist.
 

@@ -1,4 +1,5 @@
 import { rmSync } from 'node:fs'
+import type { APIRequestContext, Page } from '@playwright/test'
 import {
   activeWindows,
   closePlay,
@@ -9,6 +10,7 @@ import {
   openPlay,
   openSubmissions,
   release,
+  setLlmOverride,
   startSession,
   stopSessionAndAwaitFree,
   submitReadyAgent,
@@ -20,6 +22,7 @@ import {
   HEARTS_HUMAN_LEAD_SEED,
   HEARTS_OWNERS,
   HEARTS_SEASON,
+  LLM_PERSONAS,
 } from './support/names.js'
 import { stageExampleAgent } from './support/stage-example-agent.js'
 
@@ -42,11 +45,31 @@ const ALL_BUILTIN_SEATS = {
 
 /** The four example strategies submitted into the matchup, each under its own owner handle. */
 const ROSTER = [
-  { owner: HEARTS_OWNERS.duck, agent: 'duck' },
+  { owner: HEARTS_OWNERS.oracle, agent: 'oracle' },
   { owner: HEARTS_OWNERS.moonshot, agent: 'moonshot' },
   { owner: HEARTS_OWNERS.assassin, agent: 'assassin' },
   { owner: HEARTS_OWNERS.closer, agent: 'closer' },
 ] as const
+
+async function developmentCompletion(actor: APIRequestContext, key: string): Promise<void> {
+  const response = await actor.post('/api/llm/v1/chat/completions', {
+    headers: { authorization: `Bearer ${key}` },
+    data: {
+      model: 'small',
+      messages: [{ role: 'user', content: '[stub:success] Return one useful sentence.' }],
+      max_completion_tokens: 4,
+    },
+  })
+  expect(response.status(), await response.text()).toBe(200)
+}
+
+async function openNarrowDecisionLog(page: Page): Promise<void> {
+  const disclosure = page.locator('details.stage-log-below', {
+    has: page.getByText('Decision log', { exact: true }),
+  })
+  await disclosure.getByText('Decision log', { exact: true }).click()
+  await expect(disclosure).toHaveAttribute('open', '')
+}
 
 test('a four-seat Hearts session renders in the browser', async ({ page, admin }) => {
   // Container launch plus the first rendered frame for a four-seat game is slower than a DOM-only check.
@@ -67,6 +90,9 @@ test('a four-seat Hearts session renders in the browser', async ({ page, admin }
 
 test('a Hearts season: four example agents, a scheduled multi-seat matchup, then release', async ({
   page,
+  browser,
+  baseURL,
+  request,
   admin,
   as,
 }) => {
@@ -87,6 +113,9 @@ test('a Hearts season: four example agents, a scheduled multi-seat matchup, then
     stagedDirs.push(dir)
     staged[agent] = dir
   }
+  const owner = await as(HEARTS_OWNERS.oracle)
+  const other = await as(LLM_PERSONAS.other)
+  const ownerId = await userIdOf(owner)
 
   // Free the Hearts env's single open-submission and open-play slots, held by the seeded Playground.
   const original = await activeWindows(admin, HEARTS_ENV_ID)
@@ -101,17 +130,8 @@ test('a Hearts season: four example agents, a scheduled multi-seat matchup, then
   try {
     await openSubmissions(admin, season.id)
 
-    // Each owner submits one example strategy; submissions attach to this now-open season. Building runs
-    // a real container per agent (duck's load also proves the base image carries its wcwidth dependency).
-    await Promise.all(
-      ROSTER.map(async (entry) =>
-        submitReadyAgent(await as(entry.owner), staged[entry.agent], HEARTS_ENV_ID),
-      ),
-    )
-
-    // The matchup: two submission seats and two Naive seats. Hearts is a four-seat env, so the config
-    // must name exactly four slots; `seat_order_matters` makes the scheduler emit one game per ordered
-    // pairing of the ready submissions across the two submission seats, plus the appended Naive baseline.
+    // Set the schedule before configuring its model policy. With four submissions, two submitted
+    // seats produce P(4,2)=12 ordered games, followed by the Naive-only baseline.
     await configureMatches(admin, season.id, [
       {
         slots: ['submission', 'submission', 'builtin-naive', 'builtin-naive'],
@@ -119,9 +139,129 @@ test('a Hearts season: four example agents, a scheduled multi-seat matchup, then
         games: 1,
       },
     ])
+    await setLlmOverride(admin, season.id, {
+      enabled: true,
+      models: ['small'],
+      official: { token_budget: 10_000, rate_limit_rpm: 60 },
+      development: { token_budget: 10_000, rate_limit_rpm: 60 },
+    })
+
+    // Each owner submits one example strategy; submissions attach to this now-open season. Building runs
+    // a real container per agent. Oracle is submitted below, after its development-access history closes.
+    // The current-season My Agents row is the first key surface. Its secret is read once from the
+    // real dialog and then used against the public OpenAI-compatible route.
+    await authenticateBrowser(page.context(), owner)
+    await page.goto('/my/agents')
+    await expect(page.getByRole('meter', { name: 'Development usage' })).toBeVisible()
+    await page.getByRole('button', { name: 'Create development key' }).click()
+    const credential = page.getByRole('dialog', { name: 'Development credential' })
+    await expect(
+      credential.getByRole('textbox', { name: 'OPENAI_BASE_URL', exact: true }),
+    ).toBeVisible()
+    const firstKey = await credential
+      .getByRole('textbox', { name: 'OPENAI_API_KEY', exact: true })
+      .inputValue()
+    await credential.getByRole('button', { name: 'Copy OPENAI_BASE_URL' }).click()
+    await credential.getByRole('button', { name: 'Copy OPENAI_API_KEY' }).click()
+    await credential.getByRole('button', { name: 'Copy .env' }).click()
+    await credential.getByRole('button', { name: 'Done' }).click()
+    await expect(credential).toHaveCount(0)
+
+    // Spend against the first key before rotation so the later history assertion proves rotation
+    // preserves the participant-season meter instead of merely invalidating an unused credential.
+    await developmentCompletion(owner, firstKey)
+
+    // Rotation confirms invalidation before showing the replacement. Closing the second dialog clears
+    // the plaintext from the component, then the old credential is rejected by the proxy.
+    await page.getByRole('button', { name: 'Rotate development key' }).click()
+    const confirmation = page.getByRole('dialog', { name: 'Rotate development key?' })
+    await expect(confirmation.getByText('will stop working immediately')).toBeVisible()
+    await confirmation.getByRole('button', { name: 'Rotate development key' }).click()
+    await expect(credential).toBeVisible()
+    const key = await credential
+      .getByRole('textbox', { name: 'OPENAI_API_KEY', exact: true })
+      .inputValue()
+    await credential.getByRole('button', { name: 'Done' }).click()
+    const oldKeyResponse = await owner.post('/api/llm/v1/chat/completions', {
+      headers: { authorization: `Bearer ${firstKey}` },
+      data: { model: 'small', messages: [{ role: 'user', content: 'old key' }] },
+    })
+    expect(oldKeyResponse.status()).toBe(401)
+
+    const retainedCalls = await owner.get(`/api/seasons/${season.id}/llm-development/calls`)
+    expect(retainedCalls.status(), await retainedCalls.text()).toBe(200)
+    expect(((await retainedCalls.json()) as { calls: unknown[] }).calls).toHaveLength(1)
+
+    await developmentCompletion(owner, key)
+    const ownCalls = await owner.get(`/api/seasons/${season.id}/llm-development/calls`)
+    expect(ownCalls.status(), await ownCalls.text()).toBe(200)
+    expect(((await ownCalls.json()) as { calls: unknown[] }).calls).toHaveLength(2)
+    const otherCalls = await other.get(`/api/seasons/${season.id}/llm-development/calls`)
+    expect(otherCalls.status(), await otherCalls.text()).toBe(200)
+    expect(((await otherCalls.json()) as { calls: unknown[] }).calls).toHaveLength(0)
+
+    // The active Oracle submission enters the regular roster once this closed-window history check
+    // completes. It is not a separate LLM-only session.
+    const oracleSubmissionId = await submitReadyAgent(owner, staged.oracle, HEARTS_ENV_ID)
+    await closeSubmissions(admin, season.id)
+    const closedKeyResponse = await owner.post('/api/llm/v1/chat/completions', {
+      headers: { authorization: `Bearer ${key}` },
+      data: {
+        model: 'small',
+        messages: [{ role: 'user', content: '[stub:success] This call must stay blocked.' }],
+      },
+    })
+    expect(closedKeyResponse.status()).toBe(403)
+    expect((await closedKeyResponse.json()) as { error: { code?: string } }).toMatchObject({
+      error: { code: 'development_closed' },
+    })
+    await page.goto(`/environments/${HEARTS_ENV_ID}/agents/${ownerId}`)
+    await expect(page.getByRole('heading', { name: 'Development access' })).toHaveCount(0)
+    const historicalRow = page.locator(`#submission-${oracleSubmissionId}`)
+    const historicalHistory = historicalRow.getByRole('button', { name: 'View call history' })
+    if (!(await historicalHistory.isVisible())) {
+      await historicalRow.locator('.submission-summary').click()
+    }
+    await historicalHistory.click()
+    const historicalDialog = page.getByRole('dialog', { name: 'Development call history' })
+    await expect(historicalDialog.getByRole('button', { name: /small/ })).toHaveCount(2)
+    await historicalDialog.getByRole('button', { name: 'Close' }).click()
+    await openSubmissions(admin, season.id)
+
+    // Operators receive the compact participant table and can open the shared detail dialog.
+    await authenticateBrowser(page.context(), admin)
+    await page.goto(`/environments/${HEARTS_ENV_ID}/admin`)
+    await page.getByRole('button', { name: new RegExp(HEARTS_SEASON) }).click()
+    const usage = page.locator('section.admin-section', { hasText: 'Development usage' })
+    await expect(usage.getByRole('button', { name: ownerId })).toBeVisible()
+    await usage.getByRole('button', { name: ownerId }).click()
+    await expect(page.getByRole('dialog', { name: `${ownerId} call history` })).toBeVisible()
+    await page.getByRole('button', { name: 'Close' }).click()
+
+    // The owner-facing profile resolves prices and totals, then shows the same private call history.
+    await authenticateBrowser(page.context(), owner)
+    await page.goto(`/environments/${HEARTS_ENV_ID}/agents/${ownerId}`)
+    const development = page.locator('.development-section')
+    await expect(development.getByText('Allowed model aliases')).toBeVisible()
+    await expect(development.getByText(/small × 2/)).toBeVisible()
+    await development.getByRole('button', { name: 'View call history' }).click()
+    const history = page.getByRole('dialog', { name: 'Development call history' })
+    const calls = history.getByRole('button', { name: /small/ })
+    await expect(calls).toHaveCount(2)
+    await calls.first().click()
+    await expect(history.getByRole('heading', { name: 'Request', exact: true })).toBeVisible()
+    await expect(history.getByRole('heading', { name: 'Response', exact: true })).toBeVisible()
+    await history.getByRole('button', { name: 'Close' }).click()
+
+    await Promise.all(
+      ROSTER.filter((entry) => entry.agent !== 'oracle').map(async (entry) =>
+        submitReadyAgent(await as(entry.owner), staged[entry.agent], HEARTS_ENV_ID),
+      ),
+    )
 
     // Trigger the run from the operator console. The config was set through the API, so the editor loads
     // clean (not dirty) and the trigger stays enabled; it hands off to the run-details page's live log.
+    await authenticateBrowser(page.context(), admin)
     await page.goto(`/environments/${HEARTS_ENV_ID}/admin`)
     await page.getByRole('button', { name: new RegExp(HEARTS_SEASON) }).click()
     await expect(page.getByRole('heading', { name: `Season ${HEARTS_SEASON}` })).toBeVisible()
@@ -149,6 +289,20 @@ test('a Hearts season: four example agents, a scheduled multi-seat matchup, then
       await expect(scoreboard.getByRole('link', { name: entry.owner })).toBeVisible()
     }
     await expect(humanBoard.getByText('No ratings yet.')).toBeVisible()
+
+    // This is a regular mixed season: Oracle has recorded LLM usage from its official workflow
+    // calls, including the `small` breakdown, while a conventional strategy reports no usage.
+    const oracleBoardRow = scoreboard.locator('tr', {
+      has: page.getByRole('link', { name: HEARTS_OWNERS.oracle }),
+    })
+    const oracleUsage = oracleBoardRow.locator('.llm-usage')
+    await expect(oracleUsage).not.toHaveText('None')
+    await oracleUsage.getByText('By model', { exact: true }).click()
+    await expect(oracleUsage).toContainText(/small: \d+ calls?/)
+    const nonLlmBoardRow = scoreboard.locator('tr', {
+      has: page.getByRole('link', { name: HEARTS_OWNERS.moonshot }),
+    })
+    await expect(nonLlmBoardRow.locator('.llm-usage')).toHaveText('None')
 
     // The Mean score column must show real Hearts scores, not the stale zeros a per-seat capture bug
     // once produced (only the seat acting on the final trick recorded its score; every other seat
@@ -195,15 +349,152 @@ test('a Hearts season: four example agents, a scheduled multi-seat matchup, then
     expect(await matchups.getByTestId('game-row').count()).toBeGreaterThan(1)
     await expect(matchups.getByRole('link', { name: 'Replay' }).first()).toBeVisible()
 
+    // Use an Oracle game generated by the released workflow, rather than a standalone session, for
+    // the owner, operator, and public telemetry boundaries.
+    const oracleGame = matchups
+      .getByTestId('game-row')
+      .filter({ hasText: HEARTS_OWNERS.oracle })
+      .first()
+    const replayHref = await oracleGame.getByRole('link', { name: 'Replay' }).getAttribute('href')
+    expect(replayHref, 'an Oracle workflow game has a replay link').not.toBeNull()
+    const recordingId = replayHref?.split('/').at(-1)
+    if (recordingId === undefined) throw new Error('Oracle workflow replay id was missing')
+
     // The submitting owner's agent profile now lists the replays of the games it actually played: the
     // automated competition recordings attach through the run's games (no session), so the session-only
     // replay lookup once showed "No replays yet." here despite a full season of play.
-    await page.goto(
-      `/environments/${HEARTS_ENV_ID}/agents/${await userIdOf(await as(HEARTS_OWNERS.duck))}`,
-    )
+    await page.goto(`/environments/${HEARTS_ENV_ID}/agents/${ownerId}`)
     await expect(page.locator('.submission-replays .replay-chip').first()).toBeVisible({
       timeout: 30_000,
     })
+
+    const ownerTelemetry = await owner.get(`/api/recordings/${recordingId}/llm`)
+    expect(ownerTelemetry.status(), await ownerTelemetry.text()).toBe(200)
+    const ownerBody = (await ownerTelemetry.json()) as {
+      calls: Array<{ request?: unknown; completion?: unknown }>
+      total_budget_cost_units: number
+    }
+    expect(ownerBody.calls.length).toBeGreaterThan(0)
+    expect(ownerBody.calls[0]).toHaveProperty('request')
+    expect(ownerBody.calls[0]).toHaveProperty('completion')
+    const operatorTelemetry = await admin.get(`/api/recordings/${recordingId}/llm`)
+    expect(operatorTelemetry.status(), await operatorTelemetry.text()).toBe(200)
+    const operatorBody = (await operatorTelemetry.json()) as {
+      calls: Array<{ request?: unknown; completion?: unknown }>
+    }
+    expect(operatorBody.calls[0]).toHaveProperty('request')
+    expect(operatorBody.calls[0]).toHaveProperty('completion')
+    const publicTelemetry = await request.get(`/api/recordings/${recordingId}/llm`)
+    expect(publicTelemetry.status(), await publicTelemetry.text()).toBe(200)
+    const publicBody = (await publicTelemetry.json()) as {
+      calls: Array<{
+        tick: number | null
+        model: string
+        input_tokens: number
+        reasoning_tokens: number
+        output_tokens: number
+        cost_weight: number
+        budget_cost_units: number
+        request?: unknown
+        completion?: unknown
+      }>
+      total_budget_cost_units: number
+    }
+    expect(publicBody.calls.length).toBeGreaterThan(0)
+    expect(publicBody.total_budget_cost_units).toBe(ownerBody.total_budget_cost_units)
+    expect(publicBody.calls[0]).not.toHaveProperty('request')
+    expect(publicBody.calls[0]).not.toHaveProperty('completion')
+
+    await authenticateBrowser(page.context(), owner)
+    await page.goto(`/replays/${recordingId}`)
+    const log = page.locator('.decision-log')
+    await expect(log.getByRole('columnheader', { name: 'LLM cost' })).toBeVisible()
+    const recordingTotal = page.getByRole('button', {
+      name: 'Show whole-recording LLM cost details',
+    })
+    await expect(recordingTotal).toContainText(
+      `${ownerBody.total_budget_cost_units.toLocaleString()} units`,
+    )
+    const inspect = log.getByRole('button', { name: 'Inspect request and response' }).first()
+    await inspect.click()
+    const inspector = page.getByRole('dialog', { name: 'Inspect request and response' })
+    await expect(inspector.getByRole('heading', { name: 'Request', exact: true })).toBeVisible()
+    await expect(inspector.getByRole('heading', { name: 'Response', exact: true })).toBeVisible()
+    await inspector.getByRole('button', { name: 'Close' }).click()
+
+    // Operators retain the same body-inspection capability on the workflow replay UI.
+    await authenticateBrowser(page.context(), admin)
+    await page.goto(`/replays/${recordingId}`)
+    await page
+      .locator('.decision-log')
+      .getByRole('button', { name: 'Inspect request and response' })
+      .first()
+      .click()
+    const operatorInspector = page.getByRole('dialog', { name: 'Inspect request and response' })
+    await expect(
+      operatorInspector.getByRole('heading', { name: 'Request', exact: true }),
+    ).toBeVisible()
+    await expect(
+      operatorInspector.getByRole('heading', { name: 'Response', exact: true }),
+    ).toBeVisible()
+    await operatorInspector.getByRole('button', { name: 'Close' }).click()
+
+    // A logged-out reader retains cost metadata but gets no request or response inspection action.
+    await page.context().clearCookies()
+    await page.setViewportSize({ width: 480, height: 900 })
+    await page.goto(`/replays/${recordingId}`)
+    await openNarrowDecisionLog(page)
+    const publicLog = page.locator('.decision-log')
+    await expect(
+      publicLog.getByRole('button', { name: 'Inspect request and response' }),
+    ).toHaveCount(0)
+    const details = publicLog.getByRole('button', { name: 'LLM cost details' }).first()
+    await details.focus()
+    const describedBy = await details.getAttribute('aria-describedby')
+    expect(describedBy).not.toBeNull()
+    const tooltip = page.locator(`#${describedBy as string}`)
+    await expect(tooltip).toHaveAttribute('role', 'tooltip')
+    await expect(tooltip).toContainText('successful call')
+    const displayedCall = publicBody.calls.find((call) => call.tick !== null)
+    expect(displayedCall).toBeDefined()
+    if (displayedCall === undefined) throw new Error('recording had no tick-attributed LLM call')
+    await expect(tooltip).toContainText(displayedCall.model)
+    await expect(tooltip).toContainText(`${displayedCall.cost_weight} units/token`)
+    await expect(tooltip).toContainText(
+      `${displayedCall.input_tokens.toLocaleString()} input + ${displayedCall.output_tokens.toLocaleString()} output tokens`,
+    )
+    await expect(tooltip).toContainText(
+      `${displayedCall.reasoning_tokens.toLocaleString()} reasoning tokens within output`,
+    )
+    await expect(tooltip).toContainText(`${displayedCall.budget_cost_units.toLocaleString()} units`)
+    await page.keyboard.press('Escape')
+    await expect(tooltip).toHaveCount(0)
+    await expect(details).toBeFocused()
+    await details.hover()
+    await expect(tooltip).toBeVisible()
+    await tooltip.hover()
+    await page.waitForTimeout(200)
+    await expect(tooltip).toBeVisible()
+
+    // Exercise the same disclosure with a real touch-enabled browser context.
+    const touchContext = await browser.newContext({
+      baseURL: baseURL as string,
+      hasTouch: true,
+      viewport: { width: 480, height: 900 },
+    })
+    try {
+      const touchPage = await touchContext.newPage()
+      await touchPage.goto(`/replays/${recordingId}`)
+      await openNarrowDecisionLog(touchPage)
+      const touchDetails = touchPage
+        .locator('.decision-log')
+        .getByRole('button', { name: 'LLM cost details' })
+        .first()
+      await touchDetails.tap()
+      await expect(touchPage.getByRole('tooltip')).toContainText('successful call')
+    } finally {
+      await touchContext.close()
+    }
   } finally {
     // Restore the seeded Playground as the env's open submission+play season for any later spec.
     await closeSubmissions(admin, season.id).catch(() => {})

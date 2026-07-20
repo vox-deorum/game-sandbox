@@ -213,6 +213,14 @@ export type SetPlayStatusResult =
   | { ok: true; season: Season }
   | { ok: false; conflict: 'open_play_season_exists' }
 
+/** The result of removing an unused, private season. */
+export type DeleteSeasonResult =
+  | { ok: true }
+  | {
+      ok: false
+      reason: 'not_found' | 'season_not_deletable' | 'season_not_empty'
+    }
+
 /** One concrete scheduled game the pure scheduler produced, persisted by `createRunWithSchedule`. */
 export interface ScheduledGameInput {
   match_index: number
@@ -408,6 +416,11 @@ export interface Storage {
    * (including the given `deps_version`) and an empty match design.
    */
   createSeason(input: CreateSeasonInput): Promise<Season>
+  /**
+   * Remove a season only while both public windows are closed, it is unreleased, and no activity
+   * has ever been associated with it. The check and delete share one transaction.
+   */
+  deleteSeason(id: string): Promise<DeleteSeasonResult>
   /**
    * Replace the whole {@link SeasonConfig} (including `deps_version`). With no runs and no
    * `deps_version` change it just writes; otherwise it needs `force`, which first deletes the

@@ -377,6 +377,20 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
         return reply.code(201).send(seasonView(season))
       })
 
+      // --- Delete ----------------------------------------------------------------------------
+      // Only a fully private season with no activity can disappear. This is intentionally not a
+      // general cleanup endpoint: runs and historical participant data are never cascaded or cancelled.
+      admin.delete<{ Params: { id: string } }>('/seasons/:id', async (request, reply) => {
+        const result = await deps.storage.deleteSeason(request.params.id)
+        if (result.ok) {
+          return reply.code(204).send()
+        }
+        if (result.reason === 'not_found') {
+          return reply.code(404).send({ error: 'no such season' })
+        }
+        return reply.code(409).send({ error: result.reason, code: result.reason })
+      })
+
       // --- Configure -------------------------------------------------------------------------
       // Replace the whole SeasonConfig through the typed codec, validating slot counts against the
       // environment metadata. A config edit once runs exist (or a deps_version change once submissions

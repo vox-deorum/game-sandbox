@@ -32,9 +32,9 @@ describe('DecisionLog', () => {
     })
     // One header row plus a row per tick.
     expect(screen.getAllByRole('row')).toHaveLength(4)
-    // The Player column shows the bare slot index (the column header already names it "Player").
+    // The Player column shows the formatted slot label.
     const playerCells = container.querySelectorAll('tbody td.player-col')
-    expect([...playerCells].map((c) => c.textContent)).toEqual(['0', '0', '0'])
+    expect([...playerCells].map((c) => c.textContent)).toEqual(['P0', 'P0', 'P0'])
     // A structured action is formatted generically as key=value.
     expect(screen.getByText('flap=true')).toBeInTheDocument()
     // The live log pins to the latest tick: that row is the current one.

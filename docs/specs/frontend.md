@@ -30,7 +30,7 @@ The site uses **Environment** and **Season** as its front-facing names, matching
 | Replay viewer | Renderer, transport, player attribution, chat, public LLM summaries |
 | Live session | Renderer, shared controls, decision log, result, pinning, ratings |
 | Leaderboards | Automated and human-feedback boards for one environment and season |
-| Manage | Operator-only season configuration, workflow logs, preview, and release |
+| Manage | Operator-only season configuration, deletion of unused private seasons, workflow logs, preview, and release |
 | Documentation | Student guides, rendered in-app with a section navigation |
 | My Profile | Signed-in identity and capabilities |
 | Users | Admin-only roster management, approval, bans, roles, and password resets |

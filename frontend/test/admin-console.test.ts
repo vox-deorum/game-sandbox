@@ -19,6 +19,7 @@ vi.mock('../src/api/client.js', () => ({
   getAdminSeason: vi.fn(),
   listRuns: vi.fn(),
   declareSeason: vi.fn(),
+  deleteSeason: vi.fn(),
   renameSeason: vi.fn(),
   configureSeason: vi.fn(),
   setSeasonRatingPrompt: vi.fn(),
@@ -42,6 +43,7 @@ vi.mock('../src/api/client.js', () => ({
 import {
   configureSeason,
   declareSeason,
+  deleteSeason,
   getAdminSeason,
   getEnvironments,
   getMe,
@@ -272,6 +274,83 @@ describe('AdminConsolePage', () => {
     await renderConsole()
     await fireEvent.click(await screen.findByRole('button', { name: 'Declare season' }))
     expect(vi.mocked(declareSeason)).toHaveBeenCalledWith('flappy_bird', {})
+  })
+
+  it('opens deletion confirmation without sending a request and cancels cleanly', async () => {
+    await renderConsole()
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Delete season' }))
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+    expect(screen.getByText(/Permanently delete Week 1/)).toBeInTheDocument()
+    expect(screen.getByText(/Only closed, unreleased seasons without activity/)).toBeInTheDocument()
+    expect(vi.mocked(deleteSeason)).not.toHaveBeenCalled()
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(vi.mocked(deleteSeason)).not.toHaveBeenCalled()
+  })
+
+  it('deletes a selected season, refreshes the list, and clears stale detail state', async () => {
+    const replacement = season({ id: 'iter-2', label: 'Week 2' })
+    vi.mocked(listSeasons)
+      .mockResolvedValueOnce([pickerSeason()])
+      .mockResolvedValueOnce([pickerSeason({ id: 'iter-2', label: 'Week 2' })])
+    vi.mocked(getAdminSeason)
+      .mockResolvedValueOnce(adminView())
+      .mockResolvedValueOnce(adminView({ season: replacement }))
+    vi.mocked(deleteSeason).mockResolvedValue({ ok: true })
+    await renderConsole()
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Delete season' }))
+    await fireEvent.click(screen.getByRole('button', { name: 'Delete season' }))
+
+    await waitFor(() => expect(vi.mocked(deleteSeason)).toHaveBeenCalledWith('iter-1'))
+    expect(await screen.findByRole('heading', { name: 'Season Week 2' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Season Week 1' })).toBeNull()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(vi.mocked(listSeasons)).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(getAdminSeason)).toHaveBeenLastCalledWith('iter-2')
+  })
+
+  it('clears selected detail state when deleting the final season', async () => {
+    vi.mocked(listSeasons).mockResolvedValueOnce([pickerSeason()]).mockResolvedValueOnce([])
+    vi.mocked(deleteSeason).mockResolvedValue({ ok: true })
+    await renderConsole()
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Delete season' }))
+    await fireEvent.click(screen.getByRole('button', { name: 'Delete season' }))
+
+    expect(
+      await screen.findByText('Select or declare a season to configure it.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Season Week 1' })).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Run Configuration' })).toBeNull()
+  })
+
+  it('keeps deletion confirmation open with a useful conflict message', async () => {
+    vi.mocked(deleteSeason).mockResolvedValue({ ok: false, reason: 'season_not_empty' })
+    await renderConsole()
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Delete season' }))
+    await fireEvent.click(screen.getByRole('button', { name: 'Delete season' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'This season has activity, so it cannot be deleted.',
+    )
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+
+  it('keeps deletion confirmation open when deletion fails', async () => {
+    vi.mocked(deleteSeason).mockResolvedValue({ ok: false, reason: 'failed' })
+    await renderConsole()
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Delete season' }))
+    await fireEvent.click(screen.getByRole('button', { name: 'Delete season' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Could not delete the season. Try again.',
+    )
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
   })
 
   it('surfaces the one-open-submission invariant when opening submissions', async () => {

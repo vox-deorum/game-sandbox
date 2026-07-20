@@ -12,6 +12,7 @@ import { useTargetedAction } from '../../composables/useTargetedAction.js'
 import type { RosterUser } from '../../lib/roster.js'
 import UiButton from '../ui/UiButton.vue'
 import UiDialog from '../ui/UiDialog.vue'
+import UiDialogActions from '../ui/UiDialogActions.vue'
 import UiField from '../ui/UiField.vue'
 import UiInput from '../ui/UiInput.vue'
 
@@ -70,10 +71,10 @@ async function onConfirm(): Promise<void> {
       </template>
     </UiField>
     <p v-if="error !== null" class="dialog-error" role="alert">{{ error }}</p>
-    <div class="dialog-actions">
+    <UiDialogActions>
       <UiButton variant="danger" :loading="busy" @click="onConfirm">Ban</UiButton>
       <UiButton variant="ghost" @click="open = false">Cancel</UiButton>
-    </div>
+    </UiDialogActions>
   </UiDialog>
 </template>
 
@@ -84,9 +85,4 @@ async function onConfirm(): Promise<void> {
   font-size: var(--text-sm);
 }
 
-.dialog-actions {
-  display: flex;
-  gap: var(--space-2);
-  margin-top: var(--space-4);
-}
 </style>

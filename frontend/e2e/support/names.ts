@@ -22,11 +22,12 @@ export const HEARTS_SEASON = 'Black Lady Open'
 /**
  * The four Hearts agent owners, one per example strategy submitted into the matchup. The owner id is
  * the public agent identity (the scoreboard row links to it), so these read like real handles and are
- * distinct from the flappy {@link OWNERS}. Each maps to an `examples/hearts/<name>/` agent.
+ * distinct from the flappy {@link OWNERS}. Each maps to an `examples/hearts/<name>/` agent, with
+ * Oracle also exercising the season's LLM policy.
  */
 export const HEARTS_OWNERS = {
-  /** examples/hearts/duck: avoids taking points. */
-  duck: 'katherine-johnson',
+  /** examples/hearts/oracle: makes calls through the season's OpenAI-compatible relay. */
+  oracle: 'margaret-hamilton',
   /** examples/hearts/moonshot: tries to win every trick and shoot the moon. */
   moonshot: 'mae-jemison',
   /** examples/hearts/assassin: hunts and dumps the queen of spades. */
@@ -41,14 +42,10 @@ export const HEARTS_OWNERS = {
   replay: 'annie-easley',
 } as const
 
-/** Dedicated actors for the LLM browser journey's owner and second participant. */
+/** A second participant for the Hearts season's LLM development-access checks. */
 export const LLM_PERSONAS = {
-  owner: 'margaret-hamilton',
   other: 'dorothy-vaughan',
 } as const
-
-/** Kept distinct from the shared demo seasons because this journey changes its LLM policy. */
-export const LLM_SEASON = 'Inference Garden'
 
 /**
  * The fixed episode seed the on-screen human-seat test starts its Hearts session with. With this deal

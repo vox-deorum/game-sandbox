@@ -1,6 +1,6 @@
 // Smoke test: the styleguide page renders every primitive section without error. The page is the
 // definition of done for primitive variants, so this suite fails when a section breaks at mount.
-import { render, screen } from '@testing-library/vue'
+import { fireEvent, render, screen } from '@testing-library/vue'
 import { describe, expect, it } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
@@ -36,5 +36,8 @@ describe('StyleguidePage', () => {
     ]) {
       expect(screen.getByRole('heading', { name: section })).toBeInTheDocument()
     }
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Open dialog' }))
+    expect((await screen.findByRole('dialog')).querySelector('.ui-dialog-actions')).not.toBeNull()
   })
 })

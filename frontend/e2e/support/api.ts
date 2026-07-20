@@ -78,6 +78,12 @@ export async function declareSeason(
   return (await res.json()) as Season
 }
 
+/** Permanently remove one closed, unreleased season that has no activity. */
+export async function deleteSeason(admin: APIRequestContext, seasonId: string): Promise<void> {
+  const res = await admin.delete(`/api/admin/seasons/${seasonId}`)
+  expect(res.status(), await res.text()).toBe(204)
+}
+
 /** Replace a season's whole match design through the typed config endpoint. */
 export async function configureMatches(
   admin: APIRequestContext,

@@ -43,6 +43,7 @@ import UiBadge from '../components/ui/UiBadge.vue'
 import UiButton from '../components/ui/UiButton.vue'
 import UiCard from '../components/ui/UiCard.vue'
 import UiDialog from '../components/ui/UiDialog.vue'
+import UiDialogActions from '../components/ui/UiDialogActions.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import UiMeter from '../components/ui/UiMeter.vue'
 import UiStatusBadge from '../components/ui/UiStatusBadge.vue'
@@ -772,7 +773,7 @@ const seasonLabel = (label: string | null, id: string): string =>
       title="Rotate development key?"
       description="The current key will stop working immediately. Accumulated usage remains."
     >
-      <div class="dialog-actions">
+      <UiDialogActions>
         <UiButton
           variant="danger"
           :loading="keyBusy"
@@ -780,8 +781,8 @@ const seasonLabel = (label: string | null, id: string): string =>
         >
           Rotate development key
         </UiButton>
-        <UiButton variant="secondary" @click="rotateConfirmOpen = false">Cancel</UiButton>
-      </div>
+        <UiButton variant="ghost" @click="rotateConfirmOpen = false">Cancel</UiButton>
+      </UiDialogActions>
     </UiDialog>
 
     <DevelopmentCredentialDialog
@@ -841,8 +842,7 @@ const seasonLabel = (label: string | null, id: string): string =>
 }
 
 .development-totals,
-.development-actions,
-.dialog-actions {
+.development-actions {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-3);
@@ -852,11 +852,6 @@ const seasonLabel = (label: string | null, id: string): string =>
   color: var(--color-text-muted);
   font-family: var(--font-mono);
   font-size: var(--text-sm);
-}
-
-.dialog-actions {
-  justify-content: flex-end;
-  margin-top: var(--space-4);
 }
 
 .submission-history-action {
