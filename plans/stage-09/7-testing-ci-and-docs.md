@@ -10,7 +10,7 @@ Full-stack integration and browser journeys verify retries, successful-only acco
 
 ## Stub upstream
 
-Extend the backend integration and Playwright harnesses with one OpenAI-compatible stub upstream. A request fixture selects deterministic behavior without changing the proxy contract:
+`backend/test/integration/workflow-llm-budget.test.ts` already stands up an in-process Fastify server as a local OpenAI-compatible upstream. Promote it to one shared stub used by both harnesses: the backend integration suite keeps running it in process, and the Playwright setup (`frontend/e2e/fresh-backend.mjs`) spawns it as a small standalone process and points the spawned backend at it through `LLM_UPSTREAM_URL` and the related `LLM_*` settings. A request fixture selects deterministic behavior without changing the proxy contract:
 
 - Immediate success with known model and usage fields.
 - A configured sequence of retryable responses followed by success.
@@ -25,11 +25,11 @@ The stub records upstream attempts, arrival times, model names, and authorizatio
 
 ## Docker integration journeys
 
-Add these journeys to the Docker-gated `backend-integration` lane:
+Add these journeys to the Docker-gated `backend-integration` lane under `backend/test/integration/`:
 
 ### Official session
 
-Replace an existing Hearts season with an LLM-enabled session, with a mix of upstream LLM outcomes. Confirm that:
+Start a live session in an LLM-enabled Hearts season and drive a mix of upstream outcomes through the stub. Confirm that:
 
 - The container reaches the backend proxy and cannot reach the public internet.
 - A retryable sequence followed by success produces one successful response, the expected weighted-token charge, and one SQLite row whose latency includes attempts and waits.
@@ -58,17 +58,17 @@ Create two active participants and two LLM-enabled seasons. Request and use deve
 
 ### Leaderboard run
 
-Run two workflow matches under a small per-slot allowance. Confirm each slot in each match meters independently, a submission's second match starts with a fresh per-slot allowance, and the run produces exact run-SQLite, game-result, board, and placement aggregates, including estimated-call counts. Change the season configuration between matches and confirm that the active run continues to use its frozen official model and limit policy. A Docker-free recovery test reloads the persisted run through a workflow runner constructed with different deployment defaults and proves that it still reads only `llm_policy_snapshot`. An over-budget request inside a match is rejected without an upstream attempt or telemetry row, and the agent completes the game without forfeiting.
+Extend the existing `workflow-llm-budget.test.ts`, which already proves that an over-budget request inside a match is rejected without an upstream attempt or telemetry row and that the agent completes the game without forfeiting. Run two workflow matches under a small per-slot allowance. Confirm each slot in each match meters independently, a submission's second match starts with a fresh per-slot allowance, and the run produces exact run-SQLite, game-result, board, and placement aggregates, including estimated-call counts. Change the season configuration between matches and confirm that the active run continues to use its frozen official model and limit policy. A Docker-free recovery test reloads the persisted run through a workflow runner constructed with different deployment defaults and proves that it still reads only `llm_policy_snapshot`.
 
 Force workflow success, failure, cancellation, and worker-shutdown exits while an upstream request is delayed. Each path closes admission and settles all authenticated work before querying run telemetry or persisting game-result, board, and placement aggregates. Assert that no late row appears after those artifacts are written.
 
 ### Disabled sessions
 
-Run the existing deterministic Spades and Flappy Bird fixtures with effective LLM access disabled. Their launch configs, network mode, environment variables, hook order, and recording bytes remain unchanged.
+Run the existing deterministic Spades and Flappy Bird coverage (the `spades-chat.test.ts` journey and the fixtures produced by `scripts/gen_spades_fixture.py` and `scripts/gen_flappy_fixture.py`) with effective LLM access disabled. Their launch configs, network mode, environment variables, hook order, and recording bytes remain unchanged.
 
 ## Browser journeys
 
-Add `frontend/e2e/llm.spec.ts` using the same stub upstream:
+Add `frontend/e2e/llm.spec.ts` against the same stub upstream, spawned and wired into the backend by `fresh-backend.mjs`:
 
 1. An operator configures allowed aliases and separate official and development limits for a season.
 2. A participant sees the eligible current-season usage meter and layered key action on My Agents, then opens the owner-only agent-profile Development access section with resolved model prices, used and remaining budget units, and call-history action.
@@ -84,36 +84,30 @@ Add `frontend/e2e/llm.spec.ts` using the same stub upstream:
 12. A replay whose telemetry endpoint returns `500 telemetry_unavailable` still loads the recording and game. It shows a danger `UiEmptyState` reading `LLM cost data unavailable.`, omits the LLM cost total from `RunMetadata`, and renders `Unavailable` rather than `None` in every decision cost cell.
 13. Replay, board, development, and operator dialog surfaces remain usable at the supported narrow-screen breakpoint. Cost tooltips, disclosures, dialogs, pagination, copy controls, and confirmation remain usable by keyboard and touch.
 
-Use the existing authenticated-persona fixtures and UI primitives. Update locators and component tests in the same change as the new surfaces.
+Use the existing authenticated-persona fixtures (`admin` and `as(handle)` in `frontend/e2e/support/fixtures.ts`) and UI primitives. Update locators and component tests in the same change as the new surfaces.
 
 ## Documentation
 
-Update these documents to match the implementation:
+Steps 1 through 6 already delivered most of the written documentation: `docs/contributors/configuration.md` documents every `LLM_*` setting, `docs/students/llm.md` covers key creation, `.env`, model aliases and prices, development limits, retries, terminal errors, successful-only accounting, and privacy, the template READMEs point to the student guide and `python -m sandbox llm`, `docs/contributors/index.md` lists the LLM proxy under the backend with no standalone gateway component, and `docs/contributors/backend.md` records the flat application-schema policy (edit the single initial migration in place, no forward migration, contributors with an older local database recreate it). This step verifies those pages against the final implementation and fills the remaining gaps:
 
 - `docs/specs/llm.md`, `execution.md`, `leaderboard.md`, `submission.md`, and `recording.md` describe the final behavior and data boundaries.
-- `docs/contributors/configuration.md` documents every `LLM_*` setting, including the validated upstream base URL and key, model aliases, default model prices, ordinary-content tiktoken encoding, default and hard output maxima, per-attempt timeout, maximum retries after the initial attempt, initial retry interval, meter recovery interval, official defaults, and development defaults. It also identifies the backend OpenAI client and tiktoken packages and the template's pinned Python OpenAI dependencies.
-- `docs/contributors/backend.md` describes the shared proxy handler, standard response-metadata boundary, internal listener, public development route, grant authentication, synchronous reader-and-sink binding, generic per-accounting-scope admitted-request windows, retry loop, successful-call meters, post-upstream conservative debt, automatic write-health recovery, tiktoken fallback, execution-scope SQLite and its cost-basis migration, teardown barriers, frozen workflow policy, recording-to-scope resolution, empty and unavailable telemetry responses, visibility after submission deletion, retention, and the development ledger.
-- `docs/contributors/execution.md` describes the per-session internal network and backend-proxy relay.
-- `docs/contributors/recordings.md` explains the durable recording association to external LLM telemetry. The recording schema remains unchanged.
-- `docs/contributors/index.md` lists LLM proxy code under the backend and contains no standalone gateway component.
-- `docs/students/llm.md` documents season key creation, `.env`, model aliases and prices, development limits, backend retries, terminal error handling, successful-only accounting, and privacy.
-- The template README points to the student guide and `python -m sandbox llm`.
+- `docs/contributors/backend.md` describes the shared proxy handler, standard response-metadata boundary, internal listener, public development route, grant authentication, synchronous reader-and-sink binding, generic per-accounting-scope admitted-request windows, retry loop, successful-call meters, post-upstream conservative debt, automatic write-health recovery, tiktoken fallback, execution-scope SQLite and its cost-basis migration, teardown barriers, frozen workflow policy, recording-to-scope resolution, empty and unavailable telemetry responses, visibility after submission deletion, retention, and the development ledger. Its flat-schema guidance stays distinct from the `PRAGMA user_version` migrations used by per-scope telemetry and development-ledger files.
+- `docs/contributors/execution.md` gains the per-session internal network and backend-proxy relay.
+- `docs/contributors/recordings.md` gains the durable recording association to external LLM telemetry. The recording schema remains unchanged.
 
-Document the repository's pre-production database policy next to the storage setup instructions. Stage 9 edits the flat initial application-database schema directly, does not add a forward migration, and requires contributors with an older local database to recreate it. Keep this guidance distinct from `PRAGMA user_version` migrations for per-scope telemetry and development-ledger files.
-
-Run the strict docs build and link checks. Update the Stage 9 overview and all subplan statuses when the implementation and verification gates pass.
+Run the strict docs build. Update the Stage 9 overview and this file's status when the implementation and verification gates pass.
 
 ## CI gates
 
-The Docker-free default lane runs backend proxy, retry, meter, schema, storage, harness, template, and frontend unit tests. It creates the application database from an empty path and verifies the resulting flat schema rather than exercising a forward migration. It also verifies that `backend/package.json` and the root `package-lock.json` contain the backend OpenAI client and tiktoken dependencies, and that the template's pinned requirements, dispatcher help, LLM dependency probe, and stale-venv repair path agree. The Docker integration lane runs network and end-to-end official and development journeys. The Playwright lane runs the browser visibility and key-management journey.
+The Docker-free lanes already run the unit suites from steps 1 through 6: `python` covers the harness and template tests, including the dispatcher help, LLM dependency probe, and stale-venv repair path, and `typescript` covers the backend proxy, retry, meter, schema, storage, and frontend unit tests, creating the application database from an empty path so tests exercise the flat schema rather than a forward migration. This step extends the two Docker-gated lanes: `backend-integration` gains the network and end-to-end official and development journeys, and `frontend-e2e` gains the browser visibility and key-management journey.
 
-Keep the stub upstream local to the test process so CI requires no external provider credential or network service.
+Keep the stub upstream local to the test harness so CI requires no external provider credential or network service.
 
 ## Done when
 
-- Docker-free tests cover every retry class, compatible error path, response-metadata sanitization, generic per-scope rate-event retention, completion-limit normalization, ordinary-content tiktoken fallback, reservation release, post-upstream meter and ledger failure circuit breaking and automatic health recovery, successful-only record sink, frozen workflow policy, authorization boundary, dependency configuration, fresh flat-schema creation, and UI state.
+- Docker-free tests, delivered in steps 1 through 6 and extended here where this step finds gaps, cover every retry class, compatible error path, response-metadata sanitization, generic per-scope rate-event retention, completion-limit normalization, ordinary-content tiktoken fallback, reservation release, post-upstream meter and ledger failure circuit breaking and automatic health recovery, successful-only record sink, frozen workflow policy, authorization boundary, fresh flat-schema creation, and UI state.
 - Docker integration proves official and development flows against one stub upstream, including network isolation, teardown-before-aggregation ordering on every workflow exit, and exact cross-artifact accounting.
 - Playwright proves participant, current owner, former owner, public, and operator visibility at both UI and raw-API boundaries, including authoritative budget costs, setup-row index stability, successful empty telemetry, `telemetry_unavailable`, exact inspector labels, key handling, tooltip accessibility, touch access, keyboard access, and narrow-screen access.
 - Disabled-session fixtures remain deterministic and byte-identical.
 - Contributor and student documentation matches the delivered routes, settings, limits, retry behavior, and privacy model.
-- `uv run python scripts/ci.py docs`, the standard CI lanes, the Docker integration lane, and the frontend end-to-end lane pass.
+- `uv run python scripts/ci.py all` (which includes the `python`, `typescript`, and `docs` lanes) and the Docker-gated `backend-integration` and `frontend-e2e` lanes pass.
