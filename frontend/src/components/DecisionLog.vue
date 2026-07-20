@@ -113,7 +113,7 @@ const scroller = useActiveRowScroll(
     <table>
       <thead>
         <tr>
-          <th class="player-col" scope="col">Player</th>
+          <th class="player-col" scope="col">P#</th>
           <th class="tick-col" scope="col">Tick</th>
           <th scope="col">Decision</th>
           <th v-if="showLlmCost" class="cost-col" scope="col">LLM cost</th>

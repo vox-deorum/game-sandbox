@@ -103,7 +103,7 @@ const tabs = computed(() => {
 .tabs-inner {
   max-width: 960px;
   margin: 0 auto;
-  padding: var(--space-3) var(--space-5) 0;
+  padding: var(--space-3) 0 0;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -148,12 +148,5 @@ const tabs = computed(() => {
   color: var(--color-text);
   font-weight: 600;
   border-bottom-color: var(--color-accent);
-}
-
-@media (max-width: 768px) {
-  .tabs-inner {
-    padding-left: var(--space-4);
-    padding-right: var(--space-4);
-  }
 }
 </style>
