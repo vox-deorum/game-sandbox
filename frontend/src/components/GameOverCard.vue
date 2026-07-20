@@ -13,7 +13,7 @@ import { Trophy } from '@lucide/vue'
 import { computed } from 'vue'
 
 import UiButton from './ui/UiButton.vue'
-import { formatSlotIndex } from '../lib/format.js'
+import { formatSlot } from '../lib/format.js'
 import { buildStandings } from '../lib/standings.js'
 
 const props = withDefaults(
@@ -76,7 +76,7 @@ function onKeydown(event: KeyboardEvent): void {
           <span class="cup" :class="row.medal" aria-hidden="true">
             <Trophy v-if="row.medal !== null" :size="20" />
           </span>
-          <span class="seat">P{{ formatSlotIndex(row.slot) }}</span>
+          <span class="seat">{{ formatSlot(row.slot) }}</span>
           <span class="who">{{ row.label }}</span>
           <span class="value">{{ row.value }}</span>
         </li>

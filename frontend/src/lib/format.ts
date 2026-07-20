@@ -52,13 +52,6 @@ export function formatSlot(slot: string): string {
     .join(' ')
 }
 
-/** "player_0" → "0": the terse slot index for the decision log, whose column header already reads
- *  "Player". Falls back to the whole slot id when it carries no trailing index. */
-export function formatSlotIndex(slot: string): string {
-  const last = slot.split('_').at(-1)
-  return last !== undefined && last !== '' ? last : slot
-}
-
 /** "1 slot", "2 slots", or "1–4 slots" from an environment's slot range. */
 export function slotLabel(meta: EnvironmentMeta): string {
   return meta.min_slots === meta.max_slots
