@@ -242,7 +242,7 @@ test('a Hearts season: four example agents, a scheduled multi-seat matchup, then
     await authenticateBrowser(page.context(), owner)
     await page.goto(`/environments/${HEARTS_ENV_ID}/agents/${ownerId}`)
     const development = page.locator('.development-section')
-    await expect(development.getByText('Allowed model aliases')).toBeVisible()
+    await expect(development.getByText('Available model tiers')).toBeVisible()
     await expect(development.getByText(/small × 2/)).toBeVisible()
     await development.getByRole('button', { name: 'View call history' }).click()
     const history = page.getByRole('dialog', { name: 'Development call history' })

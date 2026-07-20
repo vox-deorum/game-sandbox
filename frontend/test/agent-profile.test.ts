@@ -307,7 +307,7 @@ describe('AgentProfilePage', () => {
     expect(screen.queryByRole('heading', { name: 'Development access' })).toBeNull()
   })
 
-  it('shows eligible development access with aliases, prices, meter values, and history', async () => {
+  it('shows eligible development access with model tiers, prices, meter values, and history', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('eve', 'normal'))
     vi.mocked(listLlmDevelopmentSeasons).mockResolvedValue([
       {
@@ -345,6 +345,7 @@ describe('AgentProfilePage', () => {
     })
 
     expect(await screen.findByRole('heading', { name: 'Development access' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Available model tiers' })).toBeInTheDocument()
     expect(screen.getByText('small × 0.5')).toBeInTheDocument()
     expect(screen.getByText('medium × 2')).toBeInTheDocument()
     expect(screen.getByText('250 units used, 750 units remaining')).toBeInTheDocument()

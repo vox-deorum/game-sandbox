@@ -31,7 +31,7 @@ Player 1 13      {"card":"7H"}                    920
 Each populated cost cell has an accessible details tooltip. Its trigger is reachable by keyboard, has a descriptive accessible name, reveals the details on hover and focus, and makes the same details available on touch. The details contain:
 
 - Total successful call count for that tick and slot.
-- Model alias and successful call count for every contributing alias.
+- Model tier and successful call count for every contributing tier.
 - Each call's stored cost weight in budget units per token.
 - The authoritative input-plus-output token basis used for charging, with reasoning tokens shown separately as an output-token subset.
 - Each call's authoritative stored budget cost and the grouped authoritative budget cost.
@@ -56,7 +56,7 @@ A `500 telemetry_unavailable` response means associated retained telemetry is br
 Seed 4821 · Ticks 96 · Owner ada · Created May 3, 2026 · LLM 41.6k units
 ```
 
-The cost uses the recording's stored total. Its accessible tooltip shows successful call and alias counts, stored cost weights, the input-plus-output token basis, reasoning tokens as an output-token subset, and authoritative budget costs. These details stay out of the main metadata strip so the game stage remains visually primary. The summary does not show model latency.
+The cost uses the recording's stored total. Its accessible tooltip shows successful call and tier counts, stored cost weights, the input-plus-output token basis, reasoning tokens as an output-token subset, and authoritative budget costs. These details stay out of the main metadata strip so the game stage remains visually primary. The summary does not show model latency.
 
 ## Automated-board model usage
 
@@ -80,7 +80,7 @@ The current-season row shows a compact development usage meter with weighted bud
 
 ### Agent profile
 
-The owner sees a **Development access** section above Submission History. It has no season selector. It shows allowed aliases with price multipliers, the usage meter with used and remaining budget units, key creation or rotation, and a **View call history** action. The section is absent when there is no eligible season. Past-season call history remains reachable from a **View call history** action inside each expanded submission-history row.
+The owner sees a **Development access** section above Submission History. It has no season selector. It shows available model tiers with price multipliers, the usage meter with used and remaining budget units, key creation or rotation, and a **View call history** action. The section is absent when there is no eligible season. Past-season call history remains reachable from a **View call history** action inside each expanded submission-history row.
 
 Creating a first key calls the Step 2 endpoint directly. Rotating an existing key first opens a confirmation dialog that warns the current key will stop working immediately while accumulated usage remains. Only explicit confirmation sends the rotation request.
 
@@ -88,7 +88,7 @@ A successful create or rotate opens a one-time credential dialog. `OPENAI_BASE_U
 
 ### Shared call history dialog
 
-One shared `UiDialog` serves participant, submission-history, and operator entry points without nesting focus traps. Its reverse-chronological list shows date, model alias, input, reasoning, and output tokens, and weighted cost in budget units. It omits latency and estimate labels. **Load more** uses the Step 5 cursor.
+One shared `UiDialog` serves participant, submission-history, and operator entry points without nesting focus traps. Its reverse-chronological list shows date, model tier, input, reasoning, and output tokens, and weighted cost in budget units. It omits latency and estimate labels. **Load more** uses the Step 5 cursor.
 
 Selecting a row swaps the dialog body to that call's detail: token detail, stored weight, authoritative cost, request under **Request**, and completion under **Response**. A **Back** control restores the list and its scroll position.
 
@@ -123,7 +123,7 @@ Frontend unit tests cover:
 - Whole-recording cost details in `RunMetadata`, without call latency.
 - Automated-board one-line summaries, multiple-alias details, explicit budget units, empty usage, unchanged ranking, and absence from the human-feedback board.
 - My Agents eligible and ineligible current-season rows, layered key action behavior, and meter text values.
-- Agent-profile Development access presence and absence, allowed aliases, meter values, and past-season history actions.
+- Agent-profile Development access presence and absence, available model tiers, meter values, and past-season history actions.
 - Key creation, rotation confirmation and cancellation, immediate-invalidation warning, read-only full credentials, field Copy actions, `Copy .env`, one-time secret behavior, and secret-state clearing through every dialog close path.
 - Shared call-history list and detail navigation, cursor pagination, Back behavior, scroll restoration, and a single focus trap.
 - Operator totals and participant-row activation opening the shared call-history dialog.

@@ -125,8 +125,8 @@ def test_every_template_ships_localized_llm_guide_and_smoke_command(env: str):
     assert "[LLM API specification](https://" in guide
     assert "[Using the LLM API](llm.md)" in readme
     assert "python -m sandbox llm" in readme
-    assert "python -m sandbox llm" in example
-    assert "OPENAI_MODEL" in example
+    assert "python -m sandbox llm [small|medium|large]" in example
+    assert "OPENAI_MODEL" not in example
     # Compose only owns that the smoke command's surfaces ship together; the dispatcher's exact
     # wiring (probe constant, table formatting) is the dispatcher test's contract, not this one.
     assert '"llm"' in dispatcher
@@ -134,7 +134,7 @@ def test_every_template_ships_localized_llm_guide_and_smoke_command(env: str):
     dotenv_lines = dotenv.splitlines()
     assert "OPENAI_BASE_URL=" in dotenv_lines
     assert "OPENAI_API_KEY=" in dotenv_lines
-    assert "OPENAI_MODEL=small" in dotenv_lines
+    assert not any(line.startswith("OPENAI_MODEL=") for line in dotenv_lines)
 
     documentation = "\n".join(path.read_text(encoding="utf-8") for path in out.rglob("*.md"))
     assert "python -m sandbox.llm_example" not in documentation

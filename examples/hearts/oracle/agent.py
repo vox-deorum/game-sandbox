@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import re
 from typing import Any
 
@@ -62,9 +61,6 @@ class Agent:
 
     def __init__(self) -> None:
         load_dotenv()
-        # Official sessions inject the endpoint and key. The public alias remains stable, and
-        # defaults to the template's small alias when no local .env is present.
-        self.model = os.environ.get("OPENAI_MODEL", "small")
 
     def reset(self, seed: int) -> None:
         pass
@@ -76,7 +72,7 @@ class Agent:
             # The backend owns retries. Disabling SDK retries keeps each turn to one logical
             # request and lets terminal backend errors reach the legal fallback immediately.
             response = OpenAI(max_retries=0).chat.completions.create(
-                model=self.model,
+                model="small",
                 messages=[{"role": "user", "content": _prompt(observation, legal)}],
                 stream=False,
             )

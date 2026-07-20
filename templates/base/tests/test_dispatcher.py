@@ -10,7 +10,7 @@ from sandbox import __main__ as dispatcher
 
 def test_help_lists_llm(capsys):
     assert dispatcher.main(["--help"]) == 0
-    assert "llm      make one LLM API smoke-test call" in capsys.readouterr().out
+    assert "llm      smoke-test small, medium, or large (default: small)" in capsys.readouterr().out
 
 
 def test_llm_dispatches_with_its_probe_and_forwards_arguments(monkeypatch):

@@ -6,7 +6,7 @@ Part of [Stage 9](../stage-09-llm-gateway.md), build-order step 2.
 
 ## Outcome
 
-Environment metadata and season configuration resolve the allowed model aliases and separate official and development limits. Official launches receive temporary slot keys and an isolated route to the backend proxy. Active participants can request a durable development key scoped to one season and use a private per-participant meter and ledger.
+Environment metadata and season configuration resolve the enabled model tiers and separate official and development limits. Official launches receive temporary slot keys and an isolated route to the backend proxy. Active participants can request a durable development key scoped to one season and use a private per-participant meter and ledger.
 
 The hands-on check obtains a student key for one season, makes a successful local request, and confirms that another participant and season have independent usage. A session container reaches the backend proxy and cannot reach the public internet. Its slot key stops authorizing at teardown.
 
@@ -14,11 +14,11 @@ The hands-on check obtains a student key for one season, makes a successful loca
 
 `EnvironmentMeta.llm` remains the environment capability flag. `resolveLlm(deployment, environment, season)` enables LLM access only when all three conditions hold:
 
-1. The deployment configures an upstream and at least one model alias.
+1. The deployment configures an upstream and at least one model-tier mapping.
 2. The environment sets `llm: true`.
 3. The season sets `llm.enabled: true`.
 
-When `llm.models` is absent, the season inherits every alias configured by the deployment. When it is present, it must be a non-empty subset of those aliases. Empty lists, duplicate aliases, and aliases unavailable on the deployment are rejected. Live sessions resolve the current play-open season when they start. Development access requires an open submission window and effective LLM configuration for the named season. Key creation and every development call re-check both conditions, so closing submissions immediately stops existing keys. Play and release gates do not affect development access.
+When `llm.models` is absent, the season inherits every tier configured by the deployment. When it is present, it must be a non-empty subset of those tiers. Empty lists, duplicate entries, and tiers unavailable on the deployment are rejected. Live sessions resolve the current play-open season when they start. Development access requires an open submission window and effective LLM configuration for the named season. Key creation and every development call re-check both conditions, so closing submissions immediately stops existing keys. Play and release gates do not affect development access.
 
 Leaderboard-run creation resolves the complete official LLM policy once and stores its JSON encoding in a dedicated non-null `season_runs.llm_policy_snapshot` text column. This column is separate from the existing strict season `config_snapshot` and is validated on write and read:
 
@@ -69,7 +69,7 @@ llm?: {
 
 Unset limits and token prices inherit deployment defaults, and an unset model list inherits every configured deployment alias. Official and development blocks resolve independently and mirror each other's shape: official limits apply per agent slot, and development limits apply per participant per season. Admin season updates reject unknown fields, non-positive limits or prices, prices above 1,000,000, empty model lists, duplicate aliases, and selected model aliases unavailable on the deployment. Run creation persists the resulting official model mapping, prices, and limits, while live and development resolution continue to use the current effective values.
 
-`SeasonConfigEditor.vue` exposes enablement, allowed aliases, per-alias token prices, official per-slot limits, and development limits as separate field groups built from existing UI primitives. The admin-editor unit and browser tests cover every new control and validation state.
+`SeasonConfigEditor.vue` exposes enablement, available model tiers, per-tier token prices, official per-slot limits, and development limits as separate field groups built from existing UI primitives. The admin-editor unit and browser tests cover every new control and validation state.
 
 Add deployment defaults `LLM_DEVELOPMENT_TOKEN_BUDGET` and `LLM_DEVELOPMENT_RATE_LIMIT_RPM`.
 

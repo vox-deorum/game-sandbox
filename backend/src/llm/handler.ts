@@ -175,7 +175,7 @@ function allowedAlias(grant: LlmGrant, requested: unknown): ModelAlias {
     !Object.hasOwn(grant.models, requested) ||
     grant.models[requested as ModelAlias] === undefined
   ) {
-    throw invalidRequest('model_not_allowed', 'The requested model alias is not allowed.')
+    throw invalidRequest('model_not_allowed', 'The requested model tier is not allowed.')
   }
   return requested as ModelAlias
 }

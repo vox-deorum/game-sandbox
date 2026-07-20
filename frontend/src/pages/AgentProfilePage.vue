@@ -542,7 +542,7 @@ const seasonLabel = (label: string | null, id: string): string =>
       <UiCard>
         <p class="development-season">{{ currentSeasonName }}</p>
         <div class="development-models">
-          <h3>Allowed model aliases</h3>
+          <h3>Available model tiers</h3>
           <ul>
             <li v-for="alias in developmentAccess.models" :key="alias">
               <code>{{ aliasPrice(developmentAccess, alias) }}</code>

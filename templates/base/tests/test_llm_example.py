@@ -1,13 +1,23 @@
-"""The LLM smoke command uses the configured alias and never exposes the key."""
+"""The LLM smoke command uses a requested tier and never exposes the key."""
 
 from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
 from sandbox import llm_example
 
 
-def test_smoke_call_uses_configured_alias_and_reports_usage(monkeypatch, capsys):
+@pytest.mark.parametrize(
+    ("argv", "model_tier"),
+    [
+        ([], "small"),
+        (["small"], "small"),
+        (["medium"], "medium"),
+        (["large"], "large"),
+    ],
+)
+def test_smoke_call_uses_requested_tier_and_reports_usage(monkeypatch, capsys, argv, model_tier):
     calls: list[dict] = []
     completions = SimpleNamespace(
         create=lambda **kwargs: (
@@ -28,24 +38,32 @@ def test_smoke_call_uses_configured_alias_and_reports_usage(monkeypatch, capsys)
     monkeypatch.setattr(llm_example, "OpenAI", openai)
     monkeypatch.setenv("OPENAI_BASE_URL", "https://course.example/api/llm/v1")
     monkeypatch.setenv("OPENAI_API_KEY", "secret-development-key")
-    monkeypatch.setenv("OPENAI_MODEL", "small")
+    monkeypatch.setenv("OPENAI_MODEL", "large")
 
-    assert llm_example.main() == 0
+    assert llm_example.main(argv) == 0
     output = capsys.readouterr().out
     assert clients == [("https://course.example/api/llm/v1", "secret-development-key", 0)]
     assert len(calls) == 1
-    assert calls[0]["model"] == "small"
+    assert calls[0]["model"] == model_tier
     assert calls[0]["stream"] is False
-    assert "model alias: small" in output
+    assert f"model tier: {model_tier}" in output
     assert "tokens used: 9" in output
     assert "secret-development-key" not in output
 
 
-def test_smoke_call_requires_all_three_settings(monkeypatch, capsys):
+@pytest.mark.parametrize("missing", ["OPENAI_BASE_URL", "OPENAI_API_KEY"])
+def test_smoke_call_requires_credentials(monkeypatch, capsys, missing):
     monkeypatch.setattr(llm_example, "load_dotenv", lambda: None)
-    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.delenv("OPENAI_MODEL", raising=False)
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://course.example/api/llm/v1")
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-development-key")
+    monkeypatch.delenv(missing)
 
-    assert llm_example.main() == 1
-    assert "OPENAI_MODEL" in capsys.readouterr().err
+    assert llm_example.main([]) == 1
+    assert missing in capsys.readouterr().err
+
+
+def test_smoke_call_rejects_unknown_tier_before_creating_client(monkeypatch):
+    monkeypatch.setattr(llm_example, "OpenAI", lambda **_kwargs: pytest.fail("client was created"))
+
+    with pytest.raises(SystemExit, match="2"):
+        llm_example.main(["unknown"])

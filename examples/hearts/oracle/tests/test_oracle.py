@@ -67,7 +67,7 @@ def test_backend_recovered_success_is_one_client_visible_response(monkeypatch: p
     # upstream failure that recovered is one ordinary successful response to one SDK call.
     completions = _Completions(content="I choose q OF spades.")
     _install_client(monkeypatch, completions)
-    monkeypatch.setenv("OPENAI_MODEL", "small")
+    monkeypatch.setenv("OPENAI_MODEL", "large")
 
     assert agent.Agent().act(_observation(legal)) == play({"suit": SPADES, "rank": 12})
     assert len(completions.calls) == 1

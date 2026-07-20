@@ -83,6 +83,30 @@ function fixture(
 }
 
 describe('LLM registry, handler, and listener', () => {
+  it.each([
+    ['small', 'provider-small', 1],
+    ['medium', 'provider-medium', 2],
+    ['large', 'provider-large', 4],
+  ] as const)('maps the public %s tier to its configured upstream model and retains the tier in telemetry', async (tier, upstreamModel, costWeight) => {
+    const { grant, handler, records, upstream } = fixture()
+    grant.models = { [tier]: { upstream: upstreamModel, costWeight } }
+    grant.accountingScope.weights = { [tier]: costWeight }
+
+    const response = await handler.handle(grant, { model: tier, messages: [] })
+
+    expect(upstream.call).toHaveBeenCalledWith(
+      expect.objectContaining({ model: upstreamModel, max_completion_tokens: 8 }),
+    )
+    expect(response.model).toBe(tier)
+    expect(records).toHaveLength(1)
+    expect(records[0]).toMatchObject({
+      model: tier,
+      costWeight,
+      request: { model: tier },
+      completion: { model: tier },
+    })
+  })
+
   it('maps aliases both ways, normalizes the output maximum, and records once before success', async () => {
     const { grant, handler, records, upstream } = fixture()
     const upstreamCompletion = completion({
@@ -539,6 +563,17 @@ describe('LLM registry, handler, and listener', () => {
     for (const [body, code] of cases) {
       await expect(handler.handle(grant, body)).rejects.toMatchObject({ code })
     }
+    expect(upstream.call).not.toHaveBeenCalled()
+  })
+
+  it('rejects a disabled model tier with the standard model_not_allowed error', async () => {
+    const { grant, handler, upstream } = fixture()
+
+    await expect(handler.handle(grant, { model: 'large', messages: [] })).rejects.toMatchObject({
+      status: 400,
+      code: 'model_not_allowed',
+      message: 'The requested model tier is not allowed.',
+    })
     expect(upstream.call).not.toHaveBeenCalled()
   })
 })

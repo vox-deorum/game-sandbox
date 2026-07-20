@@ -21,7 +21,7 @@ Step 5 advances the official telemetry file's `PRAGMA user_version` and adds a p
 Every returned row includes these public fields:
 
 - Tick and slot.
-- Model alias.
+- Model tier.
 - Input, reasoning, and output token counts.
 - Whether the token counts are estimated.
 - The stored cost weight and authoritative `budget_cost_units` charged for the call.
@@ -52,8 +52,8 @@ Add three active-user routes:
 
 | Route | Response |
 | --- | --- |
-| `GET /api/llm-development/seasons` | Eligible seasons only, each with its label, environment, aliases and resolved cost weights, token budget and rate limit, weighted units used, informational successful-call count, and whether a key exists |
-| `GET /api/seasons/:seasonId/llm-development` | Effective aliases with resolved cost weights, resolved limits, successful usage totals, whether any token total is estimated, remaining budget-unit allowance, and whether a key exists |
+| `GET /api/llm-development/seasons` | Eligible seasons only, each with its label, environment, enabled tiers and resolved cost weights, token budget and rate limit, weighted units used, informational successful-call count, and whether a key exists |
+| `GET /api/seasons/:seasonId/llm-development` | Effective tiers with resolved cost weights, resolved limits, successful usage totals, whether any token total is estimated, remaining budget-unit allowance, and whether a key exists |
 | `GET /api/seasons/:seasonId/llm-development/calls?cursor=<id>&limit=<n>` | The authenticated participant's successful ledger rows, including token counts, `usage_estimated`, and budget cost units derived under the selected season's current resolved weights, in reverse chronological order |
 
 Discovery returns a direct array. The participant summary is an object carrying `season_id`, `models`, `cost_weights`, `limits`, `usage_by_model`, `successful_calls`, `usage_estimated`, `budget_cost_units_used`, `budget_cost_units_remaining`, and `key_exists`. History returns `{ calls, next_cursor }`; `next_cursor` is the final returned insertion ID when another page exists and `null` on the last page. Limits are integers from 1 through 100, with 25 as the default.

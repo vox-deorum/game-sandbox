@@ -6,13 +6,13 @@ Part of [Stage 9](../stage-09-llm-gateway.md), build-order step 1.
 
 ## Outcome
 
-The backend exposes an OpenAI-compatible proxy backed by one configured OpenAI-compatible upstream. It authenticates scoped grants, maps stable model aliases, applies rate and budget admission, retries retryable upstream failures, returns terminal errors in a compatible shape, and commits usage and telemetry only for successful logical requests.
+The backend exposes an OpenAI-compatible proxy backed by one configured OpenAI-compatible upstream. It authenticates scoped grants, maps stable public model tiers to private upstream names, applies rate and budget admission, retries retryable upstream failures, returns terminal errors in a compatible shape, and commits usage and telemetry only for successful logical requests.
 
 The hands-on check uses a test grant and a stub upstream. A retryable failure followed by success produces one charge and one SQLite row. A non-retryable failure and an exhausted retry sequence produce no charge and no row.
 
 ## Backend proxy
 
-Create `backend/src/llm/` with a shared request handler and an internal Fastify listener constructed in `backend/src/main.ts`. The listener starts only when `LLM_UPSTREAM_URL` and at least one model alias are configured.
+Create `backend/src/llm/` with a shared request handler and an internal Fastify listener constructed in `backend/src/main.ts`. The listener starts only when `LLM_UPSTREAM_URL` and at least one model-tier mapping are configured.
 
 | Route | Purpose |
 | --- | --- |
@@ -25,11 +25,11 @@ The shared handler accepts an authenticated `LlmGrant`, performs admission, call
 
 The repository layout contains no standalone LLM service. Delete the reserved `gateway/` directory and update repository documentation that lists it.
 
-## Model aliases
+## Model tiers and upstream mappings
 
-`LLM_MODEL_LARGE`, `LLM_MODEL_MEDIUM`, and `LLM_MODEL_SMALL` map public aliases to upstream model names. The matching `LLM_COST_WEIGHT_LARGE`, `LLM_COST_WEIGHT_MEDIUM`, and `LLM_COST_WEIGHT_SMALL` values give each alias its token price. A grant carries the resolved upstream name and price together for every allowed alias. The proxy validates the requested alias against that map, substitutes its upstream name before forwarding, and constructs the returned and recorded completion from the standard OpenAI-compatible response fields. It rewrites the top-level model and structured moderation-model fields to the public alias, preserves generated content and tool arguments unchanged, and drops the deprecated backend fingerprint and nonstandard top-level provider metadata. Live and development grant construction uses the current effective map, while workflow grant construction uses the map frozen in `season_runs.llm_policy_snapshot`.
+`LLM_MODEL_LARGE`, `LLM_MODEL_MEDIUM`, and `LLM_MODEL_SMALL` map the public `large`, `medium`, and `small` tiers to upstream model names. The matching `LLM_COST_WEIGHT_LARGE`, `LLM_COST_WEIGHT_MEDIUM`, and `LLM_COST_WEIGHT_SMALL` values give each tier its token price. A grant carries the resolved upstream name and price together for every enabled tier. The internal `ModelAlias` type represents these fixed tier names. The proxy validates the requested tier against that map, substitutes its upstream name before forwarding, and constructs the returned and recorded completion from the standard OpenAI-compatible response fields. It rewrites the top-level model and structured moderation-model fields to the public tier, preserves generated content and tool arguments unchanged, and drops the deprecated backend fingerprint and nonstandard top-level provider metadata. Live and development grant construction uses the current effective map, while workflow grant construction uses the map frozen in `season_runs.llm_policy_snapshot`.
 
-Provider model identifiers from protocol metadata and the upstream credential never reach agents, telemetry, development ledgers, or public APIs. Compatible terminal error fields replace the configured upstream model name with the public alias. Generated assistant content remains opaque model output and is not rewritten as metadata redaction.
+Provider model identifiers from protocol metadata and the upstream credential never reach agents, telemetry, development ledgers, or public APIs. Compatible terminal error fields replace the configured upstream model name with the public tier. Generated assistant content remains opaque model output and is not rewritten as metadata redaction.
 
 ## Official grants and key registry
 
@@ -72,7 +72,7 @@ Token accounting combines committed successful usage from the scope's SQLite sto
 Admission runs in this order:
 
 1. Authenticate the key.
-2. Validate the model alias.
+2. Validate the model tier.
 3. Reject streaming.
 4. Reject a request that supplies both `max_tokens` and `max_completion_tokens`, or a maximum above the deployment hard ceiling.
 5. Check the scope circuit breaker and committed token usage plus in-flight reservations.
@@ -82,7 +82,7 @@ Input reservation uses the configured tiktoken encoding over the accepted reques
 
 Each admitted logical inbound request reserves one pending slot in its scope's rate capacity before the upstream call. Its backend retry attempts reserve no additional capacity. An eventual upstream success converts the pending slot into one rate event timestamped at the logical request's start. A non-retryable error or exhausted retry sequence releases the pending slot without recording an event. A pending slot also expires once its start leaves the sliding window, so a request that outlives the window stops occupying capacity and, on eventual success, retains no event. Admission checks successful events plus pending slots, so concurrent requests cannot exceed the configured capacity while their starts remain inside the window. Local authentication, model, streaming, malformed-maximum, circuit-breaker, rate, and budget rejections never reach the upstream and reserve no rate capacity. A rate rejection returns 429.
 
-An eventual success first retains its rate event, constructs the canonical completion described under model aliases, then validates its usage object. Valid counts commit with `usage_estimated = 0`. When usage is absent or malformed, the proxy estimates input tokens from the accepted request and output tokens from that same canonical completion with the configured tiktoken encoding, preserves an independently exposed non-negative reasoning-token count or uses zero, and commits with `usage_estimated = 1`. Both cases consume their committed token counts in full. Subsequent requests see the committed total, and the successful response is never discarded merely because actual usage crosses the reservation through tokenizer variance. A local rejection, non-retryable upstream response, timeout sequence, connection-failure sequence, or exhausted retry sequence releases its token and pending rate reservations and commits nothing. Budget rejection returns `400 budget_exceeded`.
+An eventual success first retains its rate event, constructs the canonical completion described under model tiers and upstream mappings, then validates its usage object. Valid counts commit with `usage_estimated = 0`. When usage is absent or malformed, the proxy estimates input tokens from the accepted request and output tokens from that same canonical completion with the configured tiktoken encoding, preserves an independently exposed non-negative reasoning-token count or uses zero, and commits with `usage_estimated = 1`. Both cases consume their committed token counts in full. Subsequent requests see the committed total, and the successful response is never discarded merely because actual usage crosses the reservation through tokenizer variance. A local rejection, non-retryable upstream response, timeout sequence, connection-failure sequence, or exhausted retry sequence releases its token and pending rate reservations and commits nothing. Budget rejection returns `400 budget_exceeded`.
 
 The telemetry transaction must commit before the proxy returns a successful completion. Once the upstream returns success, any later failure before durable accounting completes, including usage validation, fallback estimation, completion normalization, or the SQLite transaction, moves the conservative token reservation into in-memory charged debt, trips the scope's circuit breaker, and returns `503 meter_unavailable` instead of the completion. Debt is no longer an active reservation, so teardown can settle, but it remains included in subsequent usage calculations. Requests rejected by an open breaker never reach the upstream.
 
@@ -159,8 +159,8 @@ Add these deployment settings in `backend/src/config.ts`:
 | --- | --- |
 | `LLM_INTERNAL_PORT` | Backend proxy port reached through the session relay |
 | `LLM_UPSTREAM_URL`, `LLM_UPSTREAM_KEY` | Single OpenAI-compatible upstream and its credential |
-| `LLM_MODEL_LARGE`, `LLM_MODEL_MEDIUM`, `LLM_MODEL_SMALL` | Public alias to upstream-model mappings |
-| `LLM_COST_WEIGHT_LARGE`, `LLM_COST_WEIGHT_MEDIUM`, `LLM_COST_WEIGHT_SMALL` | Per-alias token prices, defaulting to 4, 2, and 1 |
+| `LLM_MODEL_LARGE`, `LLM_MODEL_MEDIUM`, `LLM_MODEL_SMALL` | Public tier to upstream-model mappings |
+| `LLM_COST_WEIGHT_LARGE`, `LLM_COST_WEIGHT_MEDIUM`, `LLM_COST_WEIGHT_SMALL` | Per-tier token prices, defaulting to 4, 2, and 1 |
 | `LLM_UPSTREAM_TIMEOUT_MS` | Timeout for each upstream attempt |
 | `LLM_UPSTREAM_MAX_RETRIES` | Retry attempts after the initial request |
 | `LLM_UPSTREAM_RETRY_INTERVAL_MS` | Initial exponential-backoff interval |
@@ -177,7 +177,7 @@ Secrets use the existing secret-loading conventions and never appear in logs or 
 Docker-free backend tests use fake timers and a stub OpenAI-compatible upstream:
 
 - Missing, malformed, unknown, and revoked keys return 401 without reaching the upstream.
-- Model aliases map in both directions, and disallowed aliases return `model_not_allowed`.
+- Model tiers map to upstream models and back in successful responses, and disabled tiers return `model_not_allowed`.
 - Streaming, rate, and budget rejections use the pinned OpenAI-compatible envelope and create no SQLite row.
 - Admission reserves pending rate capacity atomically. Eventual success retains one event, terminal failure releases the pending capacity, retry attempts add no capacity or events, and the next request at the combined successful-plus-pending boundary returns 429.
 - `max_tokens` and `max_completion_tokens` each reserve and forward their enforced value, supplying both is rejected, an absent value injects the configured default, a value over the hard ceiling is rejected, and no request whose enforced input-plus-output reservation exceeds remaining budget reaches the upstream.

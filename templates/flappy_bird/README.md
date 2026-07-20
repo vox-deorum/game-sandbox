@@ -99,13 +99,7 @@ Submitting again while the season is open replaces the active submission and kee
 
 ## Optional LLM API
 
-If your instructor enables development model calls for a relevant season:
-
-1. Follow [Using the LLM API](llm.md) to request a season development key.
-2. Copy `.env.example` to `.env`, add the returned endpoint and key, and select an allowed model alias.
-3. Run `python -m sandbox llm` to make one smoke-test call.
-
-Never commit `.env` or an API key to GitHub. The smoke command confirms local development access only. An agent receives temporary slot credentials during official play only when that environment and season enable LLM access.
+If your instructor enables model calls, follow [Using the LLM API](llm.md): copy `.env.example` to `.env`, add the returned endpoint and key, then run `python -m sandbox llm` for `small` or `python -m sandbox llm medium` for `medium`. Use the same literal tier in agent code. Never commit `.env` or an API key.
 
 ## Dependency updates
 

@@ -5,7 +5,7 @@
     python -m sandbox play       # run YOUR agent in a window
     python -m sandbox eval       # run several seeded episodes, print the mean
     python -m sandbox test       # run the checks
-    python -m sandbox llm        # make one LLM API smoke-test call
+    python -m sandbox llm [tier] # smoke-test small, medium, or large (default: small)
     python -m sandbox setup      # just install dependencies into .venv
 
 The first time you run any of these from a fresh clone, it creates a local ``.venv`` and installs
@@ -33,7 +33,7 @@ commands:
   play     run YOUR agent in a window  (--headless for no window)
   eval     run several seeded episodes and print the mean
   test     run the checks (pytest)
-  llm      make one LLM API smoke-test call
+  llm      smoke-test small, medium, or large (default: small)
   setup    install dependencies into .venv
 
 Extra args pass straight through, e.g. `python -m sandbox play --seed 7` or

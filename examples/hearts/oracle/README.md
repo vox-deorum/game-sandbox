@@ -8,13 +8,13 @@ Compose the runnable repository:
 uv run python scripts/compose.py hearts oracle
 ```
 
-The result is written to `build/examples/hearts/oracle/`. This example selects the `small` alias in source when `OPENAI_MODEL` is absent, so the target season must allow `small` for the same code to run in an official session. Follow [`llm.md`](llm.md) to request a season development key and put the returned endpoint, key, and allowed model alias in `.env`.
+The result is written to `build/examples/hearts/oracle/`. This example always uses the `small` model tier, so the target season must make `small` available. Follow [`llm.md`](llm.md) to request a season development key and put the returned endpoint and key in `.env`.
 
 From the composed repository, first make the smoke call, then run one complete local oracle game:
 
 ```console
 cd build/examples/hearts/oracle
-python -m sandbox llm
+python -m sandbox llm small
 python -m sandbox play --headless --seed 7
 ```
 
