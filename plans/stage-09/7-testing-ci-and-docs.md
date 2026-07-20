@@ -21,7 +21,7 @@ Full-stack integration and browser journeys verify retries, successful-only acco
 - A successful response with provider-specific metadata beside standard generated content.
 - A delayed response for timeout and timing checks.
 
-The stub records upstream attempts, arrival times, model names, and authorization headers. Assertions verify exponential intervals, alias mapping, and that the backend credential reaches the upstream while participant and slot keys do not.
+The stub records upstream attempts, arrival times, model names, and authorization headers. Assertions verify tier mapping and exponential intervals, and that the backend credential reaches the upstream while participant and slot keys do not.
 
 ## Docker integration journeys
 

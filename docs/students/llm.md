@@ -33,13 +33,13 @@ Use the same agent code locally and in an official session. Locally, it reads a 
    python -m sandbox llm
    ```
 
-4. Use a literal tier in your agent code. To test a different tier, pass it as an argument, for example:
+   The accepted tiers are `small`, `medium`, and `large`. To test another tier, pass it as an argument, for example:
 
    ```console
    python -m sandbox llm medium
    ```
 
-   The accepted tiers are `small`, `medium`, and `large`. The template examples use the stock OpenAI client's non-streaming `chat.completions.create` call.
+4. Use the same literal tier in your agent code, for example `model="medium"`.
 
 The smoke command prints the selected tier, response, and successful token usage. It never prints the API key.
 
@@ -65,7 +65,7 @@ The rate limit follows the same successful-only rule, measured at request starts
 
 Your agent must retain a legal fallback for a terminal error. Examples include `budget_exceeded`, `model_not_allowed`, a non-retryable request or upstream error, and a retryable upstream failure that still fails after the backend exhausts its retries. Construct the stock client with `OpenAI(max_retries=0)`, as the template examples do, so the backend is the only retry owner and one turn makes one logical request. Do not add another retry loop inside each game turn unless your instructor has designed the agent around the extra delay and rate use.
 
-Streaming completions are not supported.
+Streaming completions are not supported. Use the stock OpenAI client's non-streaming `chat.completions.create` call with `stream=False`, as shown by the template smoke command.
 
 ## What is recorded and who can see it
 

@@ -6,13 +6,13 @@ Part of [Stage 9](../stage-09-llm-gateway.md), build-order step 4.
 
 ## Outcome
 
-Workflow matches meter successful official calls per slot under the run's frozen policy. The run freezes its fully resolved LLM policy when it is created, so aliases and limits cannot change while the workflow is in progress. Call, token, and latency totals are aggregated by model alias into game results, persisted placements, and automated-board payloads only after the corresponding game has completed its grant teardown barrier. Budget rejections remain catchable agent errors and never create telemetry or cause a forfeit by themselves.
+Workflow matches meter successful official calls per slot under the run's frozen policy. The run freezes its fully resolved LLM policy when it is created, so tiers and limits cannot change while the workflow is in progress. Call, token, and latency totals are aggregated by model tier into game results, persisted placements, and automated-board payloads only after the corresponding game has completed its grant teardown barrier. Budget rejections remain catchable agent errors and never create telemetry or cause a forfeit by themselves.
 
 The hands-on check runs two matches under a small per-slot allowance. Completed calls appear in the run-scoped SQLite file and board totals. An over-budget request inside a match is rejected, the agent falls back to a legal action, and the game finishes normally, while the next match starts with a fresh per-slot allowance.
 
 ## Workflow grants
 
-The workflow runner reads `runId`, the resolved alias-to-model map with its per-alias prices, and the per-slot limits from the run's frozen policy when it constructs each official grant.
+The workflow runner reads `runId`, the resolved tier-to-model map with its per-tier prices, and the per-slot limits from the run's frozen policy when it constructs each official grant.
 
 Each workflow grant has one session-and-slot accounting scope. It synchronously reads committed usage by `(session_id, slot)` from `data/llm/<runId>.sqlite`, and its record sink writes that same file, capturing the run ID as the file scope plus the game session and slot written on every successful row. Every workflow game is a new session, so each slot's allowance covers one game, and a submission's total spend in a run is bounded by the frozen per-slot budget times the games it plays. There is no run-level allowance. A rerun receives a new run ID and a new scope file.
 
@@ -20,13 +20,13 @@ Admission, reservation, commit, release, and post-upstream failure behavior for 
 
 ## Workflow runner
 
-Run creation resolves the complete official LLM policy against the deployment configuration and stores that result in the run's dedicated `llm_policy_snapshot`, separate from the strict season `config_snapshot`. The frozen policy includes whether official access is enabled, the alias-to-upstream-model mapping with each alias's price, and the per-slot limits. `workflow-runner.ts` reads only these stored values. It never falls back to current deployment defaults or re-resolves the season configuration after the run exists. `runGame` constructs each generic `LlmGrant` from the frozen model map and prices, the session-and-slot accounting scope, and an official record sink that captures the run, game session, and slot identifiers.
+Run creation resolves the complete official LLM policy against the deployment configuration and stores that result in the run's dedicated `llm_policy_snapshot`, separate from the strict season `config_snapshot`. The frozen policy includes whether official access is enabled, the tier-to-upstream-model mapping with each tier's price, and the per-slot limits. `workflow-runner.ts` reads only these stored values. It never falls back to current deployment defaults or re-resolves the season configuration after the run exists. `runGame` constructs each generic `LlmGrant` from the frozen model map and prices, the session-and-slot accounting scope, and an official record sink that captures the run, game session, and slot identifiers.
 
 When the workflow registers a recording, it stores `llm_scope_id = runId` and `llm_session_id = game.id`. Those fields preserve telemetry lookup after workflow rows are pruned.
 
 Each workflow game has one teardown owner covering grant issuance, process launch, execution, and result persistence. Every completion path, including setup or launch failure, normal exit, crash, cancellation, and explicit stop, calls and awaits the same idempotent `revokeSession` barrier. It first closes all of the game's grants to new admission, then aborts active requests where cancellation remains safe, drains requests that have passed that boundary, and awaits every reservation finalizer. Overlapping failure and stop paths await the same barrier.
 
-Only after that full barrier resolves may `runGame` query `ExecutionTelemetryStore` for rows in the run file matching the workflow game's session ID and slot, group them by model alias, or persist a per-game aggregate. A terminal run also awaits the barrier for every game that issued grants before it performs any final run-level telemetry query, placement persistence, or scope cleanup. This ordering applies even when the process never launched or no successful row is expected.
+Only after that full barrier resolves may `runGame` query `ExecutionTelemetryStore` for rows in the run file matching the workflow game's session ID and slot, group them by model tier, or persist a per-game aggregate. A terminal run also awaits the barrier for every game that issued grants before it performs any final run-level telemetry query, placement persistence, or scope cleanup. This ordering applies even when the process never launched or no successful row is expected.
 
 ## Game-result and board data
 
@@ -47,7 +47,7 @@ type LlmUsageByModel = Partial<Record<ModelAlias, LlmModelUsage>>
 
 Add this column directly to the flat initial application schema. Stage 9 adds no forward application-database migration because the project has no persistent production database yet; contributors recreate older local databases when this schema lands.
 
-`runGame` writes one `LlmUsageByModel` value per seat beside the existing compute total. Calls, tokens, and latency are sums over successful execution-scope SQLite rows. It also writes `llm_weighted_cost` as the run snapshot's price for each alias multiplied by that alias's input plus output tokens. The value is null exactly when usage is null. `estimated_calls` counts rows whose `usage_estimated` value is 1, so boards and persisted placements do not present fallback token counts as provider-reported usage. Reservations, rejected calls, terminal upstream failures, and exceptional in-memory debt without a row contribute no telemetry aggregate or stored cost.
+`runGame` writes one `LlmUsageByModel` value per seat beside the existing compute total. Calls, tokens, and latency are sums over successful execution-scope SQLite rows. It also writes `llm_weighted_cost` as the run snapshot's price for each tier multiplied by that tier's input plus output tokens. The value is null exactly when usage is null. `estimated_calls` counts rows whose `usage_estimated` value is 1, so boards and persisted placements do not present fallback token counts as provider-reported usage. Reservations, rejected calls, terminal upstream failures, and exceptional in-memory debt without a row contribute no telemetry aggregate or stored cost.
 
 `getAutomatedBoard` sums per-game values into each agent's `llm_usage_by_model`, including `estimated_calls`, and sums each non-null `llm_weighted_cost`. The data reports successful model use and does not affect score, score spread, timing tie-breaks, or rank.
 
@@ -88,5 +88,5 @@ Docker integration runs the two-match journey through the real workflow runner a
 - Budget exhaustion is a catchable error, creates no SQLite row, and does not forfeit a game that the agent finishes legally.
 - A run uses the fully resolved official LLM policy stored at run creation and never current deployment defaults.
 - Every workflow exit path closes admission and awaits active-request and reservation settlement before querying telemetry or persisting usage aggregates.
-- Game results, automated boards, and placements report successful calls, estimated-call counts, tokens, and model-call latency by alias, plus the stored cost computed from the run's frozen prices.
+- Game results, automated boards, and placements report successful calls, estimated-call counts, tokens, and model-call latency by tier, plus the stored cost computed from the run's frozen prices.
 - All reported aggregates equal the successful rows in execution-scope SQLite.

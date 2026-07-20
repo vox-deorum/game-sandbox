@@ -99,7 +99,7 @@ Submitting again while the season is open replaces the active submission and kee
 
 ## Optional LLM API
 
-If your instructor enables model calls, follow [Using the LLM API](llm.md): copy `.env.example` to `.env`, add the returned endpoint and key, then run `python -m sandbox llm` for `small` or `python -m sandbox llm medium` for `medium`. Use the same literal tier in agent code. Never commit `.env` or an API key.
+If your instructor enables model calls, follow [Using the LLM API](llm.md): copy `.env.example` to `.env`, add the returned endpoint and key, then choose `small`, `medium`, or `large`. Run the smoke command with that tier, for example `python -m sandbox llm medium`, and use the same literal tier in agent code. The command defaults to `small`. Never commit `.env` or an API key.
 
 ## Dependency updates
 

@@ -12,6 +12,7 @@ import {
   type LlmChatRequest,
   type LlmGrant,
   type LlmSuccessfulRecord,
+  type ModelAlias,
   weightedCommittedTokens,
 } from '../../src/llm/types.js'
 import { UpstreamError } from '../../src/llm/upstream.js'
@@ -34,13 +35,19 @@ const completion = (usage: unknown = null): OpenAI.Chat.Completions.ChatCompleti
   }) as OpenAI.Chat.Completions.ChatCompletion
 
 function fixture(
-  overrides: { rpm?: number; sink?: LlmGrant['recordSink']; tokenizer?: LlmTokenCounter } = {},
+  overrides: {
+    model?: { tier: ModelAlias; upstream: string; costWeight: number }
+    rpm?: number
+    sink?: LlmGrant['recordSink']
+    tokenizer?: LlmTokenCounter
+  } = {},
 ) {
+  const model = overrides.model ?? { tier: 'small', upstream: 'provider-secret', costWeight: 1 }
   const records: LlmSuccessfulRecord[] = []
   const scope: LlmAccountingScope = {
     key: 'session:s1:player_0',
     limits: { tokenBudget: 100, requestsPerMinute: overrides.rpm ?? 10 },
-    weights: { small: 1 },
+    weights: { [model.tier]: model.costWeight },
     readCommittedUsage: () => ({}),
   }
   const sink =
@@ -53,7 +60,7 @@ function fixture(
     } satisfies LlmGrant['recordSink'])
   const grant: LlmGrant = {
     kind: 'official',
-    models: { small: { upstream: 'provider-secret', costWeight: 1 } },
+    models: { [model.tier]: { upstream: model.upstream, costWeight: model.costWeight } },
     accountingScope: scope,
     recordSink: sink,
   }
@@ -88,9 +95,9 @@ describe('LLM registry, handler, and listener', () => {
     ['medium', 'provider-medium', 2],
     ['large', 'provider-large', 4],
   ] as const)('maps the public %s tier to its configured upstream model and retains the tier in telemetry', async (tier, upstreamModel, costWeight) => {
-    const { grant, handler, records, upstream } = fixture()
-    grant.models = { [tier]: { upstream: upstreamModel, costWeight } }
-    grant.accountingScope.weights = { [tier]: costWeight }
+    const { grant, handler, records, upstream } = fixture({
+      model: { tier, upstream: upstreamModel, costWeight },
+    })
 
     const response = await handler.handle(grant, { model: tier, messages: [] })
 

@@ -106,4 +106,4 @@ Submit the repository URL through the course website. The server records one exa
 
 ## Optional: use the LLM API
 
-If your environment allows model calls, follow [Using the LLM API](llm.md) to create a season development key, add the returned endpoint and key to `.env`, and run `python -m sandbox llm` for the default `small` tier. To test another tier, run `python -m sandbox llm medium`. Your agent sends the same literal `small`, `medium`, or `large` tier in local development and official sessions. Never commit `.env` or an API key to GitHub.
+If your environment allows model calls, follow [Using the LLM API](llm.md) to create a season development key and add its endpoint and key to `.env`. Choose `small`, `medium`, or `large`, then run the smoke command with that tier, for example `python -m sandbox llm medium`. The command defaults to `small` when you omit the tier. Use the same literal tier in agent code, and never commit `.env` or an API key to GitHub.

@@ -35,7 +35,7 @@ type ResolvedOfficialLlmPolicy = {
 }
 ```
 
-Each model value stores its upstream model name and token price together. New snapshots preserve the complete resolved pricing policy, while legacy snapshots with plain string model values decode with a price of 1 so they keep their original unweighted semantics. Even a disabled run stores the object, with `enabled: false` and an empty model map, so workflow code never needs a live-configuration fallback. The stored policy contains no upstream credential. Every workflow match, grant, and admission check in that run reads this policy without consulting current alias mappings, deployment limit defaults, or season LLM values. A deployment may still make the upstream operationally unavailable, but configuration changes after run creation cannot change which models, prices, or limits the run uses. The frozen limits are per agent slot; a run has no allowance of its own.
+Each model value stores its upstream model name and token price together. New snapshots preserve the complete resolved pricing policy, while legacy snapshots with plain string model values decode with a price of 1 so they keep their original unweighted semantics. Even a disabled run stores the object, with `enabled: false` and an empty model map, so workflow code never needs a live-configuration fallback. The stored policy contains no upstream credential. Every workflow match, grant, and admission check in that run reads this policy without consulting current tier-to-upstream mappings, deployment limit defaults, or season LLM values. A deployment may still make the upstream operationally unavailable, but configuration changes after run creation cannot change which models, prices, or limits the run uses. The frozen limits are per agent slot; a run has no allowance of its own.
 
 Persist the resolved official flag on the session row as `llm_enabled`. Session payloads and recording views read that stored value after execution.
 
@@ -67,7 +67,7 @@ llm?: {
 }
 ```
 
-Unset limits and token prices inherit deployment defaults, and an unset model list inherits every configured deployment alias. Official and development blocks resolve independently and mirror each other's shape: official limits apply per agent slot, and development limits apply per participant per season. Admin season updates reject unknown fields, non-positive limits or prices, prices above 1,000,000, empty model lists, duplicate aliases, and selected model aliases unavailable on the deployment. Run creation persists the resulting official model mapping, prices, and limits, while live and development resolution continue to use the current effective values.
+Unset limits and token prices inherit deployment defaults, and an unset model list inherits every configured deployment tier. Official and development blocks resolve independently and mirror each other's shape: official limits apply per agent slot, and development limits apply per participant per season. Admin season updates reject unknown fields, non-positive limits or prices, prices above 1,000,000, empty model lists, duplicate tiers, and selected tiers unavailable on the deployment. Run creation persists the resulting official model mapping, prices, and limits, while live and development resolution continue to use the current effective values.
 
 `SeasonConfigEditor.vue` exposes enablement, available model tiers, per-tier token prices, official per-slot limits, and development limits as separate field groups built from existing UI primitives. The admin-editor unit and browser tests cover every new control and validation state.
 
@@ -75,7 +75,7 @@ Add deployment defaults `LLM_DEVELOPMENT_TOKEN_BUDGET` and `LLM_DEVELOPMENT_RATE
 
 ## Official slot keys and launch config
 
-The orchestrator and workflow runner issue one official key for every agent slot when effective LLM access is enabled. Human slots receive no key. They construct each generic `LlmGrant` with a resolved alias-to-upstream-model map, its session-and-slot accounting scope, and one record sink. The scope reader synchronously queries a view of the same durable store updated by that sink. For live grants, the reader and sink capture the live session ID as the telemetry scope. For workflow grants, the reader and sink capture the run ID as the telemetry scope and the workflow game ID as the session filter. The registry separately associates every official key with its session for revocation and tick markers.
+The orchestrator and workflow runner issue one official key for every agent slot when effective LLM access is enabled. Human slots receive no key. They construct each generic `LlmGrant` with a resolved tier-to-upstream-model map, its session-and-slot accounting scope, and one record sink. The scope reader synchronously queries a view of the same durable store updated by that sink. For live grants, the reader and sink capture the live session ID as the telemetry scope. For workflow grants, the reader and sink capture the run ID as the telemetry scope and the workflow game ID as the session filter. The registry separately associates every official key with its session for revocation and tick markers.
 
 `backend/src/session/launch-config.ts` emits:
 
@@ -189,7 +189,7 @@ Teardown closes grants to admission, aborts or drains active requests, and await
 
 Docker-free backend and frontend tests cover:
 
-- The strict season schema, inheritance of every configured alias when models are absent, rejection of empty, duplicate, and unavailable model lists, independent fallback of official and development limits, and admin-editor round trips.
+- The strict season schema, inheritance of every configured tier when models are absent, rejection of empty, duplicate, and unavailable model lists, independent fallback of official and development limits, and admin-editor round trips.
 - The effective configuration matrix across deployment, environment, and season inputs.
 - Live sessions using the current play-open season, development calls using current effective configuration, and workflow matches using only the fully resolved official policy stored when their run was created.
 - One key per agent slot, no key for human slots, live grants using the session scope, workflow grants using the run scope, the exact launch-config shape, and no LLM block for a disabled session.

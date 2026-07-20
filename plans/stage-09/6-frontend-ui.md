@@ -101,7 +101,7 @@ The season-management view shows a compact totals table with participant, inform
 Keep formatting and behavior consistent through feature components rather than page-local markup:
 
 - A shared LLM cost formatter owns compact numbers and the `units` label.
-- A shared cost-details presentation owns call and alias counts, token bases, stored cost weights, and authoritative costs. Replay decisions and run metadata use its tooltip form. Automated-board rows use its `By model` disclosure with the per-alias data Step 4 persists.
+- A shared cost-details presentation owns call and tier counts, token bases, stored cost weights, and authoritative costs. Replay decisions and run metadata use its tooltip form. Automated-board rows use its `By model` disclosure with the per-tier data Step 4 persists.
 - A shared request-and-response presentation keeps the exact `Request` and `Response` headings, code treatment, long-content wrapping, and copy behavior consistent between the replay and call-history dialogs. Its replay action label is always `Inspect request and response`.
 - A shared development call-history dialog owns list and detail navigation, scroll restoration, row formatting, pagination, and empty states. Callers supply the authorized data and loading actions.
 
@@ -117,11 +117,11 @@ Frontend unit tests cover:
 - Setup rows leaving `DecisionEntry[]`, decision keys, replay current-index mapping, active-row highlighting, and active-row scrolling unchanged, including the correct scrubbed decision row with several setup rows present.
 - Chat-bearing replays retaining interleaved messages while showing setup costs, exact tick-and-slot costs, unavailable states, and authorized inspection.
 - A `500 telemetry_unavailable` response leaving the recording and game usable, showing the danger `LLM cost data unavailable.` state and `Unavailable` cost cells, omitting the `RunMetadata` total, and never appearing as empty telemetry.
-- Cost formatting in explicit budget units and tooltip details for calls, aliases, stored weights, input-plus-output token bases, reasoning tokens, and authoritative costs. No Stage 9 surface displays estimate wording.
+- Cost formatting in explicit budget units and tooltip details for calls, tiers, stored weights, input-plus-output token bases, reasoning tokens, and authoritative costs. No Stage 9 surface displays estimate wording.
 - Every cost tooltip implementation programmatically associating trigger and content, persisting across trigger-to-content hover, opening from keyboard focus, closing on Escape without moving focus, and exposing the same details on touch.
 - Replay inspector opening by click, Enter, and Space when authorized bodies exist; the exact `Inspect request and response` action and `Request` and `Response` headings; metadata-only behavior for masked responses; focus restoration; and operator body access when the attributed submission no longer exists.
 - Whole-recording cost details in `RunMetadata`, without call latency.
-- Automated-board one-line summaries, multiple-alias details, explicit budget units, empty usage, unchanged ranking, and absence from the human-feedback board.
+- Automated-board one-line summaries, multiple-tier details, explicit budget units, empty usage, unchanged ranking, and absence from the human-feedback board.
 - My Agents eligible and ineligible current-season rows, layered key action behavior, and meter text values.
 - Agent-profile Development access presence and absence, available model tiers, meter values, and past-season history actions.
 - Key creation, rotation confirmation and cancellation, immediate-invalidation warning, read-only full credentials, field Copy actions, `Copy .env`, one-time secret behavior, and secret-state clearing through every dialog close path.
@@ -138,7 +138,7 @@ Playwright coverage in Step 7 exercises anonymous, owner, former-owner, particip
 - Empty telemetry displays `None`, while `telemetry_unavailable` leaves the replay usable, displays a danger state and `Unavailable` cells, and omits the recording total.
 - Anonymous viewers see metadata only. Authorized current owners can inspect bodies for their slots, former owners cannot inspect bodies after submission deletion, and operators retain replay inspector access.
 - `RunMetadata` shows one quiet whole-recording LLM cost with optional call and token details.
-- Automated-board rows show one-line model-use summaries with per-alias details, explicit budget units, and no effect on rank. The human-feedback board remains unchanged.
+- Automated-board rows show one-line model-use summaries with per-tier details, explicit budget units, and no effect on rank. The human-feedback board remains unchanged.
 - My Agents shows a text-backed development meter and layered key action on eligible current-season rows. The agent profile shows owner-only current-season access and past-season history actions.
 - Participant and operator call histories use one shared list-and-detail dialog with no nested focus trap. Operator rows open that dialog directly.
 - `UiMeter` joins the design system with typed props, semantic-token styling, accessibility coverage, and a styleguide example.

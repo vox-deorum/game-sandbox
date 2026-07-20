@@ -23,13 +23,15 @@ _MODEL_TIERS = ("small", "medium", "large")
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Make one LLM API smoke-test call.")
+    parser = argparse.ArgumentParser(
+        prog="python -m sandbox llm",
+        description="Make one LLM API smoke-test call.",
+    )
     parser.add_argument(
         "model_tier",
         nargs="?",
         choices=_MODEL_TIERS,
         default="small",
-        metavar="{small,medium,large}",
         help="model tier to request (default: small)",
     )
     return parser.parse_args(argv)

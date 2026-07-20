@@ -8,16 +8,7 @@ import pytest
 from sandbox import llm_example
 
 
-@pytest.mark.parametrize(
-    ("argv", "model_tier"),
-    [
-        ([], "small"),
-        (["small"], "small"),
-        (["medium"], "medium"),
-        (["large"], "large"),
-    ],
-)
-def test_smoke_call_uses_requested_tier_and_reports_usage(monkeypatch, capsys, argv, model_tier):
+def _install_smoke_client(monkeypatch: pytest.MonkeyPatch):
     calls: list[dict] = []
     completions = SimpleNamespace(
         create=lambda **kwargs: (
@@ -38,7 +29,20 @@ def test_smoke_call_uses_requested_tier_and_reports_usage(monkeypatch, capsys, a
     monkeypatch.setattr(llm_example, "OpenAI", openai)
     monkeypatch.setenv("OPENAI_BASE_URL", "https://course.example/api/llm/v1")
     monkeypatch.setenv("OPENAI_API_KEY", "secret-development-key")
-    monkeypatch.setenv("OPENAI_MODEL", "large")
+    return calls, clients
+
+
+@pytest.mark.parametrize(
+    ("argv", "model_tier"),
+    [
+        ([], "small"),
+        (["small"], "small"),
+        (["medium"], "medium"),
+        (["large"], "large"),
+    ],
+)
+def test_smoke_call_uses_requested_tier_and_reports_usage(monkeypatch, capsys, argv, model_tier):
+    calls, clients = _install_smoke_client(monkeypatch)
 
     assert llm_example.main(argv) == 0
     output = capsys.readouterr().out
@@ -62,8 +66,11 @@ def test_smoke_call_requires_credentials(monkeypatch, capsys, missing):
     assert missing in capsys.readouterr().err
 
 
-def test_smoke_call_rejects_unknown_tier_before_creating_client(monkeypatch):
+def test_smoke_call_rejects_unknown_tier_before_creating_client(monkeypatch, capsys):
     monkeypatch.setattr(llm_example, "OpenAI", lambda **_kwargs: pytest.fail("client was created"))
 
     with pytest.raises(SystemExit, match="2"):
         llm_example.main(["unknown"])
+    error = capsys.readouterr().err
+    assert "usage: python -m sandbox llm" in error
+    assert "llm_example.py" not in error
