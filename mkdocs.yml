@@ -10,6 +10,7 @@ repo_name: vox-deorum/game-sandbox
 docs_dir: docs
 exclude_docs: |
   AGENTS.md
+  CLAUDE.md
 
 theme:
   name: material
@@ -36,4 +37,4 @@ markdown_extensions:
   - pymdownx.details
 
 # No explicit nav: the tree under docs/ drives the tabs, so a new public page appears
-# automatically. AGENTS.md is excluded because it contains authoring instructions.
+# automatically. AGENTS.md and CLAUDE.md are excluded because they contain authoring instructions.
