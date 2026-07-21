@@ -4,6 +4,8 @@
 node_modules/
 build/
 dist/
+.pytest-cache/
+.pytest_cache/
 **/__pycache__/
 **/.venv/
 schema/ts/src/generated/

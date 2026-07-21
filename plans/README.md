@@ -36,6 +36,7 @@ Stages are listed below in dependency order. Stage numbers preserve the original
 | [8. Communication](stage-08-communication.md) | Spades, chat hook, routing, UI, recordings |
 | [10. Documentation page](stage-10-documentation-page.md) | In-app student guides, configurable class landing |
 | [11. Semantic contract](stage-11-semantic-contract.md) | Semantic observations, helper-built actions, shared spaces, template v2 |
+| [13. Unified browser rendering](stage-13-unified-rendering.md) | Browser-only rendering, shared local runner, pygame-free templates |
 | [12. User system](stage-12-user-system.md) | Better Auth sessions, GitHub sign-in, user statuses, admin roster |
 | [9. LLM API](stage-09-llm-gateway.md) | Backend proxy, retries, official and development meters, telemetry |
 

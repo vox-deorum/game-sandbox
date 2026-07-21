@@ -25,8 +25,8 @@
     "check:ts": "npm run check --workspaces --if-present",
     "test:py": "uv run pytest",
     "test:ts": "npm run test --workspaces --if-present",
-    "docs:unwrap": "prettier --write \"**/*.md\"",
-    "docs:check": "prettier --check \"**/*.md\""
+    "docs:unwrap": "prettier --write \"**/*.md\" \"!**/build/**\" \"!**/dist/**\" \"!**/.pytest-tmp/**\" \"!**/.pytest-cache/**\" \"!**/.pytest_cache/**\" \"!**/__pycache__/**\" \"!**/.venv/**\" \"!schema/ts/src/generated/**\"",
+    "docs:check": "prettier --check \"**/*.md\" \"!**/build/**\" \"!**/dist/**\" \"!**/.pytest-tmp/**\" \"!**/.pytest-cache/**\" \"!**/.pytest_cache/**\" \"!**/__pycache__/**\" \"!**/.venv/**\" \"!schema/ts/src/generated/**\""
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.16",
