@@ -34,6 +34,9 @@ import { createLlmUpstreamStub, RETRY_SUCCESS_ATTEMPTS } from './support/llm-ups
 
 const ENV_ID = 'hearts'
 const SUCCESSFUL_CALLS_PER_GAME = 2
+const SUCCESSFUL_TOKENS_PER_CALL = 3
+const SMALL_MODEL_COST_WEIGHT = 4
+const MAX_COMPLETION_TOKENS = 1
 
 const HUNGRY_AGENT = [
   'import sys',
@@ -49,7 +52,7 @@ const HUNGRY_AGENT = [
   '            OpenAI(max_retries=0).chat.completions.create(',
   '                model="small",',
   '                messages=[{"role": "user", "content": f"[stub:retry-success:call-{self.call_id}] Choose a Hearts card."}],',
-  '                max_completion_tokens=1,',
+  `                max_completion_tokens=${MAX_COMPLETION_TOKENS},`,
   '                stream=False,',
   '            )',
   '        except OpenAIError as error:',
@@ -96,6 +99,7 @@ describe('workflow LLM budget exhaustion (Docker)', () => {
     cleanup.push(() => meter.close())
     const tokenizer = new TiktokenCounter('cl100k_base')
     cleanup.push(() => tokenizer.close())
+    const tokenBudget = budgetForSuccessfulCalls(tokenizer)
     const registry = new KeyRegistry()
     const handler = new LlmHandler({
       meter,
@@ -124,11 +128,11 @@ describe('workflow LLM budget exhaustion (Docker)', () => {
     )
     const policy: ResolvedOfficialLlmPolicy = {
       enabled: true,
-      models: { small: { model: 'provider-small', cost_weight: 4 } },
+      models: { small: { model: 'provider-small', cost_weight: SMALL_MODEL_COST_WEIGHT } },
       session: {
-        // The accepted request reserves 31 raw tokens. At 4x, one committed 3-token call plus the
-        // next reservation costs 136 units, while two committed calls plus another cost 148.
-        token_budget: 140,
+        // Keep the allowance tied to the production tokenizer. It admits the requested number of
+        // successful calls, then rejects the next same-shaped request after their usage commits.
+        token_budget: tokenBudget,
         rate_limit_rpm: 100,
       },
     }
@@ -272,7 +276,9 @@ describe('workflow LLM budget exhaustion (Docker)', () => {
       expect(submissionResult.llm_usage_by_model).toEqual(
         storedUsage(telemetry.aggregateByModel(run.id, { sessionId: game.id, slot: 'player_0' })),
       )
-      expect(submissionResult.llm_weighted_cost).toBe(SUCCESSFUL_CALLS_PER_GAME * 3 * 4)
+      expect(submissionResult.llm_weighted_cost).toBe(
+        SUCCESSFUL_CALLS_PER_GAME * SUCCESSFUL_TOKENS_PER_CALL * SMALL_MODEL_COST_WEIGHT,
+      )
       expect(
         gameResults
           .filter((result) => result.agent_submission_id === null)
@@ -297,7 +303,12 @@ describe('workflow LLM budget exhaustion (Docker)', () => {
     expect(submissionBoard.failure_count).toBe(0)
     expect(submissionBoard.games).toBe(2)
     expect(submissionBoard.llm_usage_by_model).toEqual(runUsage)
-    expect(submissionBoard.llm_weighted_cost).toBe(SUCCESSFUL_CALLS_PER_GAME * games.length * 3 * 4)
+    expect(submissionBoard.llm_weighted_cost).toBe(
+      SUCCESSFUL_CALLS_PER_GAME *
+        games.length *
+        SUCCESSFUL_TOKENS_PER_CALL *
+        SMALL_MODEL_COST_WEIGHT,
+    )
 
     const placements = await storage.listPlacementsByAgent(submissionRef, ENV_ID)
     const placement = placements.find((row) => row.season_id === season.id)
@@ -305,7 +316,12 @@ describe('workflow LLM budget exhaustion (Docker)', () => {
     expect(placement.run_id).toBe(run.id)
     expect(placement.failure_count).toBe(0)
     expect(placement.llm_usage_by_model).toEqual(runUsage)
-    expect(placement.llm_weighted_cost).toBe(SUCCESSFUL_CALLS_PER_GAME * games.length * 3 * 4)
+    expect(placement.llm_weighted_cost).toBe(
+      SUCCESSFUL_CALLS_PER_GAME *
+        games.length *
+        SUCCESSFUL_TOKENS_PER_CALL *
+        SMALL_MODEL_COST_WEIGHT,
+    )
   }, 240_000)
 })
 
@@ -317,6 +333,23 @@ function writeHungrySubmission(): string {
   )
   writeFileSync(join(dir, 'agent.py'), HUNGRY_AGENT)
   return dir
+}
+
+function budgetForSuccessfulCalls(tokenizer: TiktokenCounter): number {
+  const inputTokens = tokenizer.countRequest({
+    model: 'small',
+    messages: [
+      {
+        role: 'user',
+        content: '[stub:retry-success:call-1] Choose a Hearts card.',
+      },
+    ],
+    max_completion_tokens: MAX_COMPLETION_TOKENS,
+    stream: false,
+  })
+  const reservedTokens = inputTokens + MAX_COMPLETION_TOKENS
+  const previouslyCommittedTokens = (SUCCESSFUL_CALLS_PER_GAME - 1) * SUCCESSFUL_TOKENS_PER_CALL
+  return (reservedTokens + previouslyCommittedTokens) * SMALL_MODEL_COST_WEIGHT
 }
 
 function portFrom(address: string): number {
