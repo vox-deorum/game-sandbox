@@ -18,10 +18,10 @@ env:
 
 jobs:
   frontend-e2e:
-    # Playwright drives Chromium against the real backend serving the built frontend; starting a
-    # session launches a real container, so it needs the Docker daemon (available on ubuntu-latest).
-    # ci.py builds the frontend, builds the session base image inside Docker, installs Chromium, and
-    # runs the suite, so the host needs only Node and Docker — no Python toolchain.
+    # Playwright drives Chromium against the real backend and the local Python loopback bridge.
+    # Production sessions launch real containers, so the job needs Docker (available on ubuntu-latest).
+    # ci.py builds both frontend entries, builds the session base image inside Docker, installs
+    # Chromium, and runs the suite. The local-play journey also launches the Python loopback bridge.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,5 +29,9 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
       - run: npm ci
       - run: python3 scripts/ci.py frontend-e2e

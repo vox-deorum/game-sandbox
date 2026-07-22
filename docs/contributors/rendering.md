@@ -188,7 +188,7 @@ Its `computeScene` describes the sky, pipes, ground, bird, score, pipe count, an
 
 - Internal size: `960 x 720`.
 - Scene source: the per-step overlay (hands, current trick, per-slot penalty scores, turn, legal-action mask).
-- Drawing: a port of the local pygame renderer (`environments/src/hearts/render.py`), kept in sync through the cross-references in `scene.ts`.
+- Drawing: a browser-native PixiJS scene built from the semantic overlay.
 - Input: a legal card on the controlled seat's turn is clickable and plays itself; illegal cards are greyed straight from the emitted mask, never a reimplementation of the rules.
 - Animation: the trick-won sweep and the active-seat glow ride the base's `onFrame` loop and replay at replay-time scale.
 - Tests: pure scene, replay, animation math, and hit-testing in Vitest; canvas behavior in the browser suite.

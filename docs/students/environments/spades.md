@@ -81,7 +81,7 @@ This agent can never make an illegal move. During bidding every bid from `0` to 
 With the agent already in place, you can run it straight away from the template folder:
 
 ```console
-python -m sandbox play    # watch it take a seat, in a window
+python -m sandbox play    # watch it take a seat in your browser
 python -m sandbox eval    # play several seeded games and report the mean score
 python -m sandbox test    # run the checks, which pass before you change anything
 ```

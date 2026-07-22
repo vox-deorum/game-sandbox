@@ -5,14 +5,9 @@
  * the clickable grid of bid chips (`0..13`, `0` labelled NIL) laid out in the centre well. Everything a
  * Hearts and a Spades table draw identically — the card codec, the felt palette, the seat/trick/hand
  * geometry, the legal-mask hand fan, the hit-test, and the fly-in/sweep animation helpers — lives in the
- * shared `../cards/scene.ts` (the browser twin of `environments/src/local_play/render_cards.py`) and is
- * re-exported below so this module stays the single Spades entry point.
- *
- * This is the browser twin of the Python pygame renderer in `environments/src/spades/render.py`. The two
- * draw the same recorded overlay (from `environments/src/spades/overlay.py`); when you change the Spades
- * layout here, change `render.py` to match (and vice versa), and the shared table lives in the shared
- * module on both sides. `computeScene` is pure in `state` plus `config`, so the same inputs always yield
- * the same scene (the scrubber's same-state-same-frame rule).
+ * shared `../cards/scene.ts` and is re-exported below so this module stays the single Spades entry point.
+ * It draws the recorded overlay from `environments/src/spades/overlay.py`. `computeScene` is pure in
+ * `state` plus `config`, so the same inputs always yield the same scene, including during replay scrubs.
  */
 import type { StepState } from '@game-sandbox/schema'
 
@@ -67,21 +62,21 @@ export function teamSeats(team: number): [number, number] {
   return [team, team + 2]
 }
 
-// --- Spades palette (mirror render.py; the shared card/table colours live in cards/scene.ts) ---
+// --- Spades palette (shared card and table colours live in cards/scene.ts) ---
 /** The ink for a nil bid, so a NIL chip and a nil badge read apart from an ordinary bid. */
 export const NIL_INK = '#f0b060'
 /** The two partnership accent colours, so the team scores and badges read as two teams. */
 export const TEAM_TINT: Record<number, string> = { 0: '#6cc4ec', 1: '#ec9c78' }
-/** A bid chip's felt-green body, its hover body, and its edge (render.py CHIP_BG/CHIP_BG_HOVER/CHIP_EDGE). */
+/** A bid chip's felt-green body, its hover body, and its edge. */
 export const CHIP_BG = '#12422d'
 export const CHIP_BG_HOVER = '#1e6042'
 export const CHIP_EDGE = '#78c896'
-/** The bid chips wrap into this many columns (the 14 bids fill a 7×2 grid); render.py BID_CHIP_COLS. */
+/** The bid chips wrap into this many columns, so the 14 bids fill a 7 by 2 grid. */
 export const BID_CHIP_COLS = 7
 
 /**
- * Spades' table geometry: the pygame `SpadesRenderer` class-attribute overrides applied to the frontend
- * hearts baseline. The badges are a touch taller than Hearts', so the seats and the north opponent row
+ * Spades' table geometry relative to the shared Hearts baseline. The badges are a touch taller than
+ * Hearts', so the seats and the north opponent row
  * sit a little lower to clear the taller status strip, and the side badges slide further in so the edge
  * card stacks no longer overlay them.
  */
@@ -124,7 +119,7 @@ export interface SpadesSceneStatus {
   teamScores: SceneTeamScore[]
 }
 
-/** One clickable bid chip in the centre grid (twin of render.py's `_bid_rects` entries). */
+/** One clickable bid chip in the centre grid. */
 export interface SceneBidChip {
   /** The bid value 0..13 (0 is nil). */
   bid: number
@@ -212,7 +207,7 @@ export function computeScene(state: StepState, config: SceneConfig = {}): Spades
   const opponents = buildOpponents(o, view.viewSeat, view.revealAll, SPADES_GEOMETRY)
   // Spades reads the emitted legal-cards overlay verbatim: during bidding it is empty (you cannot play
   // a card until you have bid), so every hand card greys — the correct read
-  // (render.py `_legal_cards_from_overlay`).
+  // This comes directly from the semantic overlay.
   const hand = buildHand(o, view, new Set(o.legalCards.map(cardKey)))
   const status = buildStatus(o, view, trickWinner)
   const moveClock = buildMoveClock(o, view, config.humanTimeoutMs)
@@ -276,7 +271,7 @@ function buildStatus(
 }
 
 /**
- * The primary-row state message and its tone (render.py `_status_message`). First-person ("You", "Your
+ * The primary-row state message and its tone. First-person ("You", "Your
  * bid", "Your turn") is used only for the seat the user actually controls; a spectator or replay
  * (controlledSeat null) never matches, so the same lines render in the third person ("P2 took the
  * trick", "P0 to bid").
@@ -304,7 +299,7 @@ function statusMessage(
 
 /**
  * Build the bidding-round centre panel: a `7 × 2` grid of the 14 bid chips centred on the table well,
- * with the prompt above it (mirror render.py `_draw_bid_chips`, chip 50×52, gap 4, vgap 8, prompt 26px
+ * with the prompt above it (chip 50 by 52, gap 4, vertical gap 8, prompt 26 pixels
  * above the grid). Returns null once play begins. Every chip carries its absolute rect (for the
  * hit-test), whether it is `enabled` (in the emitted `legal_bids` overlay — verbatim, so a partial list
  * greys the rest), and whether it is `controllable` (enabled and the controlled seat is on turn). The
@@ -350,7 +345,7 @@ function buildBidPanel(o: SpadesOverlay, view: ViewContext): SceneBidPanel | nul
   return { chips, prompt, promptTone: viewTurn ? 'gold' : 'white', x: WIDTH / 2, y: startY - 26 }
 }
 
-// --- Hit-testing (twin of render.py bid_action_at_pos) ---
+// --- Hit-testing ---
 
 /**
  * The bid chip under a point in internal (960×720) coordinates, or null if none. The chips do not

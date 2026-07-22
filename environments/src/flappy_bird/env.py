@@ -1,10 +1,10 @@
 """The Flappy Bird environment factory.
 
-Wraps ``flappy-bird-gymnasium``'s ``FlappyBird-v0`` in the general-purpose
+Wraps the local pygame-free simulation in the general-purpose
 :class:`GymnasiumToAEC` adapter, so the harness sees a one-slot PettingZoo env. The gym env
 itself still produces the library's normalized 12-feature vector internally (unused by us),
 but the AEC-facing observation this module exposes is the OBJECT form the semantic contract
-requires: the same unnormalized screen-pixel values the overlay renderer reads, structured as
+requires: the same unnormalized screen-pixel values the browser overlay reads, structured as
 a player dict, an ordered tuple of pipe dicts (nearest-first), a pipes-passed counter, and the
 screen dimensions. The action space is ``Discrete(2)`` (0 = idle, 1 = flap).
 
@@ -14,15 +14,13 @@ is copied verbatim into the student template's ``sandbox/env/`` by the generate 
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
-# Importing the package registers the ``FlappyBird-v0`` id with Gymnasium.
-import flappy_bird_gymnasium  # noqa: F401
-import gymnasium
 import numpy as np
 from gymnasium import spaces
 
-from .overlay import PIPE_KEYS, PLAYER_KEYS, _read_state
+from .game import FlappyBirdGame
+from .overlay import PIPE_KEYS, PLAYER_KEYS
 from .single_agent import DEFAULT_AGENT_ID, GymnasiumToAEC
 
 #: The player observation sub-space: four unnormalized float32 scalars.
@@ -42,15 +40,9 @@ OBS_SPACE = spaces.Dict(
 )
 
 
-def make_env(render_mode: str | None = None) -> FlappyBirdEnv:
+def make_env() -> FlappyBirdEnv:
     """Create a fresh Flappy Bird AEC environment. The seed arrives at ``reset``."""
-    gym_env = gymnasium.make(
-        "FlappyBird-v0",
-        use_lidar=False,
-        normalize_obs=True,
-        render_mode=render_mode,
-    )
-    return FlappyBirdEnv(gym_env, name="flappy_bird_v0")
+    return FlappyBirdEnv(FlappyBirdGame(normalize_obs=True), name="flappy_bird_v0")
 
 
 class FlappyBirdEnv(GymnasiumToAEC):
@@ -59,13 +51,13 @@ class FlappyBirdEnv(GymnasiumToAEC):
     The base :class:`GymnasiumToAEC` forwards the wrapped gym env's own observation space and
     ``observe`` (the raw 12-float vector). This subclass replaces both with the object contract:
     the observation space becomes :data:`OBS_SPACE`, and ``observe`` reads the same
-    unnormalized internals the overlay renderer reads (via :func:`flappy_bird.overlay._read_state`)
+    unnormalized state the browser overlay reads
     so agents see real screen pixels, not a normalized vector.
     """
 
     def __init__(
         self,
-        gym_env: gymnasium.Env,
+        gym_env: FlappyBirdGame,
         *,
         name: str = "flappy_bird_v0",
         agent_id: str = DEFAULT_AGENT_ID,
@@ -78,8 +70,8 @@ class FlappyBirdEnv(GymnasiumToAEC):
         self.observation_spaces = {self._agent_id: OBS_SPACE}
 
     def observe(self, agent: str) -> Any:
-        game = self.gym_env.unwrapped
-        player, pipes, pipes_passed, width, height = _read_state(game)
+        game = cast("FlappyBirdGame", self.gym_env)
+        state = game.state
 
         # Each continuous leaf is a 0-d array, not a bare np.float32/np.int64 scalar, so it is the
         # exact member type its shape=() Box publishes. gymnasium's Space.contains casts any
@@ -87,14 +79,14 @@ class FlappyBirdEnv(GymnasiumToAEC):
         # emit that cast warning on every leaf of every step. width/height stay plain ints for their
         # Discrete spaces, which accept Python ints without casting.
         return {
-            "player": {k: np.array(player[k], dtype=np.float32) for k in PLAYER_KEYS},
+            "player": {k: np.array(getattr(state.player, k), dtype=np.float32) for k in PLAYER_KEYS},
             "pipes": tuple(
-                {key: np.array(value, dtype=np.float32) for key, value in zip(PIPE_KEYS, pipe, strict=True)}
-                for pipe in pipes
+                {key: np.array(getattr(pipe, key), dtype=np.float32) for key in PIPE_KEYS}
+                for pipe in state.pipes
             ),
-            "pipes_passed": np.array(pipes_passed, dtype=np.int64),
-            "width": width,
-            "height": height,
+            "pipes_passed": np.array(state.score, dtype=np.int64),
+            "width": state.width,
+            "height": state.height,
         }
 
 

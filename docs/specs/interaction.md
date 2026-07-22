@@ -16,6 +16,8 @@ The renderer owns the game world and in-game interface, including scores, lives,
 
 Live play and replay use the same renderer. See [Recording](recording.md).
 
+Local play uses the same browser renderer and session protocol through a loopback-only Python relay. Its page has no account shell, but start, pause, resume, stop, input, status, and game-over behavior follow this contract.
+
 Structured state keeps bandwidth and latency lower than streamed video and makes replay a first-class interactive view instead of a passive recording. The cost is that each environment must provide a small renderer.
 
 ## Per-step state object
@@ -51,7 +53,7 @@ The environment's [metadata](environment.md) selects timing:
 
 Realtime input takes effect after a network round trip, so supported games use modest cadences rather than twitch-sensitive timing.
 
-Live sessions may pause. Pausing freezes stepping and timeout accounting. Headless leaderboard runs do not pace or pause.
+Live sessions may pause. Pausing freezes stepping and timeout accounting. The host page changes its pause control only after the relay echoes an accepted pause or resume command. A paused session reports that state to a newly attached browser. Stop has no echo: terminal UI waits for the result and ended status. Headless leaderboard runs do not pace or pause.
 
 Human slots use a separate timeout from agent compute limits. In realtime games, the cadence is the deadline. In turn-based games, the timeout is a move clock. A session may override the environment default, and the interface shows the active value when it affects play.
 

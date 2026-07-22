@@ -3,13 +3,12 @@ import { fileURLToPath } from 'node:url'
 import { defineConfig, devices } from '@playwright/test'
 
 /**
- * The browser end-to-end suite: Chromium against the real backend, which serves the built frontend
- * from the same origin (the production path) so there is one server and no proxy. The backend launches
- * real session containers, so this suite needs a Docker daemon — the same gate as `backend:integration`
- * — and is wired into CI as the `frontend-e2e` job (see scripts/ci.py). The `frontend-e2e` job builds
- * the frontend and the session base image before invoking this config.
+ * The browser end-to-end suite: Chromium against the real backend and a scripted Python loopback
+ * bridge. The backend serves the production bundle from the same origin and launches real session
+ * containers. The loopback bridge serves the standalone local bundle and exercises its shared live
+ * protocol. The suite is wired into CI as the Docker-gated `frontend-e2e` job (see scripts/ci.py).
  *
- * One server serves the built bundle. Identity is a Better Auth session cookie (Stage 12): the suite's
+ * The backend serves the production bundle. Identity is a Better Auth session cookie (Stage 12): the suite's
  * fixtures sign in as the seeded bootstrap admin and create member accounts through the roster endpoint
  * (see e2e/support/fixtures.ts), so there is no allowlist to vary across servers.
  */
@@ -19,6 +18,7 @@ const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url))
 // (see e2e/fresh-backend.mjs). It must wipe in the launch command, not a global-setup hook: Playwright
 // starts its web servers before global setup, so by then the backend already holds the db file open.
 const FRESH_BACKEND = `node ${JSON.stringify(fileURLToPath(new URL('./e2e/fresh-backend.mjs', import.meta.url)))}`
+const LOCAL_BRIDGE = `uv run python ${JSON.stringify(fileURLToPath(new URL('./e2e/local-play-bridge.py', import.meta.url)))} --port 8091`
 
 const MAIN_PORT = 8090
 
@@ -98,6 +98,13 @@ export default defineConfig({
       url: `http://127.0.0.1:${MAIN_PORT}/api/me`,
       // Never reattach to a leftover backend: the launcher just wiped the database for a fresh run, so
       // a fresh DB requires a fresh server. Playwright shuts down the servers it starts.
+      reuseExistingServer: false,
+      timeout: 120_000,
+    },
+    {
+      command: LOCAL_BRIDGE,
+      cwd: REPO_ROOT,
+      url: 'http://127.0.0.1:8091/api/environments',
       reuseExistingServer: false,
       timeout: 120_000,
     },

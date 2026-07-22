@@ -80,8 +80,6 @@ Rules remain integer-based. Hearts and Spades convert cards only in their enviro
 
 Recorded card overlays use card objects for hands and play-ordered tricks. Hearts exposes `legal_cards`. Spades exposes `legal_cards` during play and `legal_bids` during bidding. These semantic legality values and the agent masks come from the same rules functions.
 
-Update the shared pygame card renderer to use objects for drawing, animation, and hit testing. It reads `suit` and `rank` directly and uses a semantic card key only where stable map identity is needed. A card hit test returns a card object; a bid hit test returns a bid value. Human controllers call `card_from_obj(card)` or `bid_to_action(n)` only when returning the integer accepted by `env.step()`.
-
 Define one frontend `Card` type and keep it through Pixi scene state, drawing, animation, legality, and hit testing. `readCardOverlay` validates semantic overlays without re-encoding them. Replace integer card constants with object constants or predicates, and use `cardKey(card)` for stable keys.
 
 Convert only at the browser send boundary. A card tap calls `cardToAction(card)`, a bid chip calls `bidToAction(n)`, and Flappy Bird sends `1`. Recorded actions, the WebSocket relay, the decision log, and `formatAction` remain integer-based.
@@ -100,7 +98,7 @@ Because template version 1 was never public, this stage keeps version 1 rather t
 
 Update Hearts and Spades fixture agents for the nested object-shaped observations and helper-built actions. Add a deterministic Flappy fixture generator. Regenerate all three recorded fixtures with semantic overlays and integer recorded actions.
 
-Update Python environment tests, pygame renderer tests, frontend scene and playback tests, template tests, example tests, and generated-file tests in the same change. Move the Hearts integration timeout assertion from sentinel `-1` to the real recorded default action here. Other integration sources should already consume the examples and built-ins migrated above; adjust a source only when it directly names a removed field or sentinel.
+Update Python environment tests, frontend scene and playback tests, template tests, example tests, and generated-file tests in the same change. Move the Hearts integration timeout assertion from sentinel `-1` to the real recorded default action here. Other integration sources should already consume the examples and built-ins migrated above; adjust a source only when it directly names a removed field or sentinel.
 
 Coverage must include:
 
@@ -109,7 +107,7 @@ Coverage must include:
 - Card codec and action conversion across all 52 cards, including the queen of spades example.
 - Spades phase masks, never-nil timeout bid, partnership fields, score projection, and previous trick.
 - Flappy observation and overlay agreement, nearest-first pipes, and public space mappings.
-- Object-based pygame and Pixi drawing, animation, legality, and hit testing.
+- Object-based Pixi drawing, animation, legality, and hit testing.
 - Integer conversion only at environment and browser action boundaries.
 - Complete template, example, built-in, generation, Python, and TypeScript unit checks.
 

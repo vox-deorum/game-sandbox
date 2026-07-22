@@ -4,14 +4,9 @@
  * contextual rule hints (opening 2♣, follow-suit, the hearts-not-broken lead restriction). Everything a
  * Hearts and a Spades table draw identically — the card codec, the felt palette, the seat/trick/hand
  * geometry, the legal-mask hand fan, the hit-test, and the fly-in/sweep animation helpers — lives in the
- * shared `../cards/scene.ts` (the browser twin of `environments/src/local_play/render_cards.py`) and is
- * re-exported below so this module stays the single Hearts entry point.
- *
- * This is the browser twin of the Python pygame renderer in `environments/src/hearts/render.py`. The two
- * draw the same recorded overlay (from `environments/src/hearts/overlay.py`); when you change the Hearts
- * layout here, change `render.py` to match (and vice versa), and the shared table lives in the shared
- * module on both sides. `computeScene` is pure in `state` plus `config`, so the same inputs always yield
- * the same scene (the scrubber's same-state-same-frame rule).
+ * shared `../cards/scene.ts` and is re-exported below so this module stays the single Hearts entry point.
+ * It draws the recorded overlay from `environments/src/hearts/overlay.py`. `computeScene` is pure in
+ * `state` plus `config`, so the same inputs always yield the same scene, including during replay scrubs.
  */
 import type { StepState } from '@game-sandbox/schema'
 
@@ -60,14 +55,14 @@ export function cardPoints(card: Card): number {
   return card.suit === HEARTS ? 1 : 0
 }
 
-/** Suit names for the status-line hints, by suit id (mirrors render.py SUIT_NAMES). */
+/** Suit names for the status-line hints, by suit id. */
 export const SUIT_NAMES: Record<number, string> = {
   0: 'clubs',
   1: 'diamonds',
   2: 'spades',
   3: 'hearts',
 }
-/** Singular suit names for the follow-suit hint (mirrors render.py SUIT_SINGULAR). */
+/** Singular suit names for the follow-suit hint. */
 export const SUIT_SINGULAR: Record<number, string> = {
   0: 'club',
   1: 'diamond',
@@ -156,7 +151,7 @@ function buildSeats(o: HeartsOverlay, view: ViewContext): SceneSeat[] {
   }))
 }
 
-/** Build the status strip text (render.py _draw_status / _status_message / _legal_hint). */
+/** Build the status strip text. */
 function buildStatus(o: HeartsOverlay, view: ViewContext, trickWinner: number | null): SceneStatus {
   const trickText = o.terminal ? 'hand complete' : `trick ${o.tricksPlayed + 1}/${NUM_TRICKS}`
   const { message, messageTone } = statusMessage(o, view, trickWinner)
@@ -167,7 +162,7 @@ function buildStatus(o: HeartsOverlay, view: ViewContext, trickWinner: number | 
 }
 
 /**
- * The primary-row state message and its tone (render.py _status_message). First-person ("You", "Your
+ * The primary-row state message and its tone. First-person ("You", "Your
  * turn") is used only for the seat the user actually controls; a spectator or replay (controlledSeat
  * null) never matches, so the same lines render in the third person ("P2 took the trick", "P0's turn").
  */
@@ -193,7 +188,7 @@ function statusMessage(
 }
 
 /**
- * The contextual hint explaining the controlled seat's legal options (render.py _legal_hint). On the
+ * The contextual hint explaining the controlled seat's legal options. On the
  * controlled seat's turn it explains why the legal set is what it is (opening 2♣, follow-suit,
  * void/discard, or the hearts-not-broken lead restriction); otherwise — an opponent's turn, or any turn
  * in a spectator/replay view with no controlled seat — it gives third-person table context (never a

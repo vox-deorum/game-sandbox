@@ -1,12 +1,14 @@
 # Execution boundary
 
-A live session crosses three processes:
+A production live session crosses three processes:
 
 ```text
 Browser ⇄ Node backend ⇄ sandboxed Python container
 ```
 
 The browser renders and sends user commands. The backend authorizes, supervises, stores metadata, and relays. The container runs the harness, environment, and agents.
+
+Local play reuses the browser protocol and the live runner without starting the backend or a container. `game_sandbox_harness.local_server` binds only to `127.0.0.1`, serves the generated local browser bundle, starts the requested runner command, and relays its protocol lines. It accepts only the local page, environment metadata, static assets, and its WebSocket endpoint. It does not expose the local game to a network or implement game stepping itself.
 
 Read [the execution specification](../specs/execution.md) for the architectural rules, [Frontend](frontend.md) for the browser host, and [Backend](backend.md) for storage and HTTP routes.
 
@@ -152,7 +154,7 @@ The browser receives:
 - Pause and resume echoes.
 - Backend session-status events.
 
-On attachment, the backend immediately sends the buffered header, latest state, and current status.
+On attachment, the backend immediately sends the buffered header, latest state, and current status. When a session is paused, it follows with the current pause echo. The loopback relay follows the same attach contract.
 
 The browser sends the same command envelopes used on the container side. The backend validates shape and authority, then forwards without interpreting environment actions.
 
@@ -198,7 +200,7 @@ The only pacing branch reads environment metadata:
 
 Pausing uses a `PausableClock`, so cadence and decision-time accounting stop together. Headless runs do not construct this live loop.
 
-The runner claims stdout for protocol traffic before importing games or agents. Each recording line is written once and mirrored to the live stream, so stored and streamed bytes are identical.
+The runner claims stdout for protocol traffic before importing games or agents. Each recording line is written once and mirrored to the live stream, so stored and streamed bytes are identical. The local bridge forwards those bytes unchanged and uses a caller-owned scratch recording directory.
 
 ## Add a driver
 

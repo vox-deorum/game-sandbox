@@ -12,12 +12,14 @@ from __future__ import annotations
 import json
 import math
 import warnings
+from pathlib import Path
 
 import numpy as np
 from pettingzoo.test import api_test
 
 from flappy_bird import ENTRY
-from flappy_bird.env import default_action, make_env
+from flappy_bird.env import FlappyBirdEnv, default_action, make_env
+from flappy_bird.game import FlappyBirdGame
 from flappy_bird.overlay import extract_overlay
 
 # PettingZoo's api_test emits two advisory UserWarnings for any non-array composite observation: it
@@ -56,6 +58,59 @@ def _snapshot(observed: dict) -> dict:
         "width": int(observed["width"]),
         "height": int(observed["height"]),
     }
+
+
+def _golden_snapshot(observed: dict) -> dict:
+    """Return the JSON shape committed from the upstream 0.4.0 wrapper."""
+    return {
+        "player": {key: float(value) for key, value in observed["player"].items()},
+        "pipes": [{key: float(value) for key, value in pipe.items()} for pipe in observed["pipes"]],
+        "pipes_passed": int(observed["pipes_passed"]),
+        "width": int(observed["width"]),
+        "height": int(observed["height"]),
+    }
+
+
+def test_local_core_reproduces_upstream_golden_traces():
+    fixture_path = Path(__file__).parent / "fixtures" / "flappy_bird_golden_traces.json"
+    fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+    assert fixture["upstream"] == "flappy-bird-gymnasium 0.4.0"
+
+    for name, trace in fixture["traces"].items():
+        env = FlappyBirdEnv(FlappyBirdGame(score_limit=trace["score_limit"]))
+        env.reset(seed=trace["seed"])
+        recycled = False
+        previous_xs: list[float] | None = None
+        for frame in trace["frames"]:
+            observed, reward, terminated, truncated, info = env.last()
+            overlay = extract_overlay(env)
+            assert _golden_snapshot(env.observe("player_0")) == frame["observation"], (name, frame["tick"])
+            assert overlay == frame["overlay"], (name, frame["tick"])
+            assert float(reward) == frame["reward"], (name, frame["tick"])
+            assert bool(terminated) is frame["terminated"], (name, frame["tick"])
+            assert bool(truncated) is frame["truncated"], (name, frame["tick"])
+            assert int(info["score"]) == frame["score"], (name, frame["tick"])
+            xs = [pipe["x"] for pipe in overlay["pipes"]]
+            if previous_xs and any(x > prior for x, prior in zip(xs, previous_xs, strict=True)):
+                recycled = True
+            previous_xs = xs
+            if frame["action"] is not None:
+                env.step(frame["action"])
+        if name == "scoring_recycle_pipe_crash":
+            assert recycled
+        env.close()
+
+
+def test_aabb_collision_matches_pygame_edge_behavior():
+    # Pygame Rect.colliderect treats a shared edge as non-overlapping, but a one-pixel overlap as
+    # a collision. The local numeric helper deliberately preserves those boundaries.
+    rect = {"x": 34.0, "y": 20.0}
+    assert not FlappyBirdGame._aabb_overlaps(0, 34, 20, 44, rect)
+    assert FlappyBirdGame._aabb_overlaps(0, 35, 20, 44, rect)
+    assert not FlappyBirdGame._aabb_overlaps(52, 86, 20, 44, {"x": 0.0, "y": 20.0})
+    vertical_rect = {"x": 0.0, "y": 20.0}
+    assert not FlappyBirdGame._aabb_overlaps(0, 34, -300, 20, vertical_rect)
+    assert FlappyBirdGame._aabb_overlaps(0, 34, -299, 21, vertical_rect)
 
 
 def _rollout(seed: int, actions: list[int]) -> tuple[list, list]:

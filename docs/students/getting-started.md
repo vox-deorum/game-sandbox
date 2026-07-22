@@ -31,7 +31,7 @@ From the repository folder, run:
 python -m sandbox
 ```
 
-The first time, this creates a local virtual environment, installs the pinned packages, and opens the game for you to play yourself (press **space** or the **up arrow** to flap). There is no separate install step, and you can re-run it any time. The other commands in this guide (`python -m sandbox play`, `eval`, `test`) work the same way.
+The first time, this creates a local virtual environment, installs the pinned packages, and opens browser play on your own computer. Select Start when you are ready, then use **space** or the **up arrow** to flap. There is no separate install step, and you can re-run it any time. The game is served only on your computer and does not need the Game Sandbox website or an internet connection. The other commands in this guide (`python -m sandbox play`, `eval`, `test`) work the same way.
 
 Prefer to manage the virtual environment yourself? A **virtual environment** keeps this project's Python packages separate from packages used by other projects. Create one inside the repository.
 
@@ -77,7 +77,7 @@ python -m sandbox eval --episodes 10
 python -m sandbox            # play it yourself
 ```
 
-`play` runs one visible game with your agent. `--headless` runs without opening a game window. `eval` runs several seeded games and reports the mean score, which is more useful than judging an agent from one lucky run. With no command, `python -m sandbox` lets you play the game yourself.
+`play` opens one local browser game with your agent. `--headless` runs without opening a browser. `eval` runs several seeded games and reports the mean score, which is more useful than judging an agent from one lucky run. With no command, `python -m sandbox` lets you play the game yourself. The browser page has start, pause, resume, and stop controls shared by every environment.
 
 ## 5. Run the checks
 

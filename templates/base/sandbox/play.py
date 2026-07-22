@@ -1,121 +1,61 @@
-"""Play one episode of your environment locally, against vanilla PettingZoo.
+"""Run one local browser session through the same live runner used by production.
 
-    python -m sandbox.play                 # run YOUR agent in a window
-    python -m sandbox.play --headless      # run YOUR agent, no window, just the score
-    python -m sandbox.play --human         # play it yourself (space/up or click flaps)
-    python -m sandbox.play --seed 7        # pick the episode seed
-
-This script touches nothing of the sandbox backend: it loads your agent through
-``manifest.json``, builds the environment from the provided ``sandbox.env`` package, and runs
-the same agent-environment cycle the server runs. The loop here is the contract — the server
-wraps this exact stepping with timeouts, recording, and (for live play) pacing. It is
-environment-agnostic: ``sandbox.env`` exports ``make_env`` and ``PLAYER_SLOT`` for whichever
-environment this template targets, and ``make_human_controller`` for playing it by hand.
-
-When there is a window, every run begins on a manual interaction (any key or click) rather than
-the instant it opens; ``--headless`` has no window, so it (and ``evaluate`` and the tests) starts
-immediately and the server-side contract is unchanged.
+``python -m sandbox.play`` opens local browser play. The selected seat is human by default; the
+other seats run the repository's agent through explicit harness bindings. ``--headless`` is a small
+test and evaluation escape hatch that drives the same ``Episode`` and default-action paths without a
+relay or browser.
 """
 
 from __future__ import annotations
 
 import argparse
-import importlib
+import asyncio
 import json
 import sys
-import time
-from collections.abc import Callable
+import webbrowser
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 
-import numpy as np
-import pygame
+from sandbox.env import META, PLAYER_SLOT, default_action, extract_overlay, make_env
+from sandbox.harness.environment import EnvironmentEntry
+from sandbox.harness.local_server import LocalServer
+from sandbox.harness.manifest import load_agent as _load_agent
+from sandbox.harness.session import AgentSlot, ExternalSlot, run_episode
 
-from sandbox.env import PLAYER_SLOT, make_env
-from sandbox.hidpi import display_scale, enable_hidpi
-
-#: The banner shown over the frozen first frame until you begin the episode.
-START_PROMPT = "Press any key or click to start"
-
-#: Frames per second for windowed local play. The env is realtime, so we pace the loop ourselves so
-#: it is followable; the server paces live play on its own side, separately from this local loop.
-WINDOW_FPS = 30
-
-#: The repository root (this file is ``sandbox/play.py``), where ``manifest.json`` lives.
 REPO_ROOT = Path(__file__).resolve().parent.parent
+WEB_ROOT = Path(__file__).resolve().parent / "web"
+_METADATA_TIMEOUT = object()
+
+
+class _DefaultSource:
+    """An action source that lets ``ExternalSlot`` select the environment's legal default."""
+
+    def get_action(self, slot_id: str, observation: object, deadline_ms: int | None) -> None:
+        return None
 
 
 def load_agent(repo_root: Path) -> Any:
-    """Load and instantiate the agent named by ``manifest.json`` (a local mini-loader).
-
-    Mirrors what the server's harness does: read the manifest, put the repo root on the path,
-    import the entry-point module, and construct the named class with no arguments.
-    """
-    manifest = json.loads((repo_root / "manifest.json").read_text(encoding="utf-8"))
-    root_str = str(repo_root)
-    if root_str not in sys.path:
-        sys.path.insert(0, root_str)
-    module = importlib.import_module(manifest["entry_point"])
-    return getattr(module, manifest["class_name"])()
+    """Load the manifest-selected agent through the same harness loader used by live sessions."""
+    return _load_agent(str(repo_root))
 
 
-def wait_for_start(prompt: str = START_PROMPT) -> bool:
-    """Block until you press a key or click; return ``False`` if you close the window instead.
-
-    The game begins on a manual interaction, not the moment the window opens, so a realtime game
-    is not already falling before you are ready. It draws a banner over the frozen first frame and
-    waits there. A no-op (returns ``True``) when there is no window, so ``--headless`` runs,
-    ``evaluate``, and the tests are never blocked.
-    """
-    if not pygame.display.get_init():
-        return True
-    surface = pygame.display.get_surface()
-    if surface is None:
-        return True
-    print(prompt)
-    # Dim the frozen first frame and center the prompt over it.
-    overlay = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
-    overlay.fill((0, 0, 0, 110))
-    pygame.font.init()
-    label = pygame.font.Font(None, 36).render(prompt, True, (255, 255, 255))
-    overlay.blit(label, label.get_rect(center=surface.get_rect().center))
-    surface.blit(overlay, (0, 0))
-    pygame.display.flip()
-    while True:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                return False
-            if event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
-                return True
-        time.sleep(0.02)
+def _entry(make: Any = make_env) -> EnvironmentEntry:
+    return EnvironmentEntry(
+        meta=META,
+        make=make,
+        default_action=default_action,
+        overlay=extract_overlay,
+    )
 
 
-class HiDpiWindow:
-    """A window that upscales the env's rgb frames to crisp pixels on a high-DPI display.
-
-    This environment renders at a fixed resolution, so on a 150% / 200% display its own window
-    would be bitmap-stretched by the OS and look blurry. Instead we render to an rgb array and blit
-    it, magnified by an integer factor, into a DPI-aware window (see :mod:`sandbox.hidpi`).
-    Nearest-neighbour scaling keeps the pixel-art sprites crisp; the window opens on the first frame.
-    """
-
-    def __init__(self) -> None:
-        self._screen: pygame.Surface | None = None
-        self._factor = max(1, round(display_scale()))
-
-    def present(self, env: Any) -> None:
-        """Draw the env's current frame, magnified, into the window (opening it on first call)."""
-        frame = env.render()
-        if frame is None:
-            return
-        height, width = int(frame.shape[0]), int(frame.shape[1])
-        if self._screen is None:
-            if not pygame.get_init():
-                pygame.init()
-            self._screen = pygame.display.set_mode((width * self._factor, height * self._factor))
-        surface = pygame.surfarray.make_surface(np.transpose(frame, (1, 0, 2)))
-        pygame.transform.scale(surface, self._screen.get_size(), self._screen)
-        pygame.display.flip()
+def possible_slots() -> tuple[str, ...]:
+    """Read the environment's complete slot set instead of assuming every slot is human-capable."""
+    env = make_env()
+    try:
+        return tuple(env.possible_agents)
+    finally:
+        env.close()
 
 
 def play_episode(
@@ -124,122 +64,142 @@ def play_episode(
     *,
     seed: int,
     max_steps: int | None = None,
-    on_frame: Callable[[], None] | None = None,
+    slot: str = PLAYER_SLOT,
 ) -> float:
-    """Run one episode, returning the cumulative score. Shared by play, evaluate, and tests.
-
-    The pure stepping contract. ``on_frame`` is an optional per-step callback the windowed ``play``
-    path uses to draw and pace the frame; headless ``evaluate`` and the tests pass nothing and reuse
-    the loop unchanged.
-    """
-    env.reset(seed=seed)
-    agent.reset(seed)
-    score = 0.0
-    tick = 0
-    while env.agents:
-        observation, _reward, termination, truncation, _info = env.last()
-        if termination or truncation:
-            env.step(None)
-            continue
-        action = agent.act(observation)
-        env.step(action)
-        score += float(env.rewards[PLAYER_SLOT])
-        if on_frame is not None:
-            on_frame()
-        tick += 1
-        if max_steps is not None and tick >= max_steps:
-            break
-    return score
+    """Play one headless episode with one supplied agent and legal defaults for every other seat."""
+    slots = {
+        slot_id: AgentSlot(agent) if slot_id == slot else ExternalSlot(_DefaultSource())
+        for slot_id in possible_slots()
+    }
+    result = run_episode(
+        _entry(lambda: env),
+        slots,
+        seed=seed,
+        max_steps=max_steps,
+    )
+    return result.scores[slot]
 
 
-def play_human(
-    env: Any, controller: Any, window: HiDpiWindow, *, seed: int, max_steps: int | None = None
-) -> float:
-    """Run one episode you control yourself, returning the cumulative score.
-
-    The episode begins on a manual interaction (any key or click), not the moment the window
-    opens. Realtime: each tick samples the controller non-blocking (a flap-key tap or click flaps),
-    then we draw the frame upscaled into the HiDPI window and pace the loop. Closing the window
-    stops it.
-    """
-    env.reset(seed=seed)
-    score = 0.0
-    tick = 0
-    clock = pygame.time.Clock()
-    window.present(env)  # open the window on the first frame
-    if not wait_for_start():  # begin on a manual interaction, not on window open
-        return score
-    while env.agents:
-        observation, _reward, termination, truncation, _info = env.last()
-        if termination or truncation:
-            env.step(None)
-            continue
-        action = controller.act(PLAYER_SLOT, observation, blocking=False)
-        if controller.quit:
-            break
-        env.step(action)
-        score += float(env.rewards[PLAYER_SLOT])
-        window.present(env)
-        clock.tick(WINDOW_FPS)
-        tick += 1
-        if max_steps is not None and tick >= max_steps:
-            break
-    return score
+def run_headless(*, seed: int, max_steps: int | None, seat: int) -> float:
+    """Run the selected seat through the harness without local networking or browser rendering."""
+    slots = possible_slots()
+    slot = slots[seat]
+    env = make_env()
+    try:
+        return play_episode(load_agent(REPO_ROOT), env, seed=seed, max_steps=max_steps, slot=slot)
+    finally:
+        env.close()
 
 
-def main(argv: list[str] | None = None) -> int:
-    # Make the process DPI-aware before any window opens, so a high-DPI display renders the window
-    # at physical pixels (crisp) instead of bitmap-stretching it (blurry).
-    enable_hidpi()
-    parser = argparse.ArgumentParser(description="Play one episode locally.")
-    parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--headless", action="store_true", help="run without a render window")
-    parser.add_argument("--human", action="store_true", help="play it yourself instead of the agent")
-    parser.add_argument("--steps", type=int, help="cap the episode at this many steps")
-    args = parser.parse_args(argv)
-
-    if args.human:
-        try:
-            from sandbox.env import make_human_controller
-        except ImportError:
-            print("this environment does not support playing by hand", file=sys.stderr)
-            return 2
-        # rgb_array, not "human": we own the window so we can upscale the fixed-resolution frame
-        # to a crisp, sensible size on a high-DPI display (the env's own window can't be enlarged).
-        env = make_env(render_mode="rgb_array")
-        controller = make_human_controller(env)
-        try:
-            score = play_human(env, controller, HiDpiWindow(), seed=args.seed, max_steps=args.steps)
-        finally:
-            env.close()
+def local_config(
+    *,
+    seed: int,
+    mode: str,
+    seat: int,
+    recording_dir: Path,
+    step_limit: int | None,
+    human_timeout_ms: int | None | object = _METADATA_TIMEOUT,
+) -> dict[str, object]:
+    """Build the complete runner config and header attribution for one local launch."""
+    available_slots = possible_slots()
+    human_slot = available_slots[seat] if mode == "human" else None
+    slots: dict[str, dict[str, str]] = {}
+    players: dict[str, dict[str, str]] = {}
+    for slot_id in available_slots:
+        if slot_id == human_slot:
+            slots[slot_id] = {"kind": "external"}
+            players[slot_id] = {"kind": "human", "label": "You"}
+        else:
+            slots[slot_id] = {"kind": "builtin-agent", "path": str(REPO_ROOT)}
+            players[slot_id] = {"kind": "agent", "label": "Your agent"}
+    config: dict[str, object] = {
+        "env_id": META.env_id,
+        "seed": seed,
+        "slots": slots,
+        "players": players,
+        "recording_dir": str(recording_dir),
+        "recording_id": "local",
+        "human_timeout_ms": None,
+        "llm": None,
+        "start_paused": True,
+    }
+    # ``max_steps`` is the local runner's explicit step cap. Omit it for normal unlimited sessions.
+    if step_limit is not None:
+        config["max_steps"] = step_limit
+    # Omission means the metadata default. JSON null is reserved for an explicit disabled timeout.
+    if human_timeout_ms is not _METADATA_TIMEOUT:
+        config["human_timeout_ms"] = human_timeout_ms
     else:
-        agent = load_agent(REPO_ROOT)
-        env = make_env(render_mode=None if args.headless else "rgb_array")
-        try:
-            if args.headless:
-                score = play_episode(agent, env, seed=args.seed, max_steps=args.steps)
-            else:
-                # Windowed agent run: draw the first frame and wait for a manual interaction before
-                # stepping, just like human play. play_episode resets again with the same seed
-                # (deterministic), so this pre-roll changes nothing about the episode.
-                window = HiDpiWindow()
-                clock = pygame.time.Clock()
-                env.reset(seed=args.seed)
-                window.present(env)
-                if not wait_for_start():
-                    return 0
+        config.pop("human_timeout_ms")
+    return config
 
-                def show_frame() -> None:
-                    window.present(env)
-                    clock.tick(WINDOW_FPS)
 
-                score = play_episode(agent, env, seed=args.seed, max_steps=args.steps, on_frame=show_frame)
-        finally:
-            env.close()
+def launch_browser(config: dict[str, object], *, port: int, open_browser: bool) -> int:
+    """Serve the local bundle and runner until the player closes the command with Ctrl+C."""
 
-    print(f"seed {args.seed}: score {score:.2f}")
+    command = [sys.executable, "-m", "sandbox.live_local", json.dumps(config, separators=(",", ":"))]
+
+    async def serve() -> None:
+        async with LocalServer(
+            _entry(),
+            command=command,
+            static_root=WEB_ROOT,
+            start_paused=True,
+            port=port,
+        ) as server:
+            print(f"local play: {server.url}", flush=True)
+            if open_browser:
+                webbrowser.open(server.url)
+            await server.wait()
+
+    try:
+        asyncio.run(serve())
+    except KeyboardInterrupt:
+        return 0
     return 0
 
 
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Play your environment in a local browser session.")
+    parser.add_argument("mode", nargs="?", choices=("human", "agent", "watch"), default="human")
+    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--steps", type=int, help="cap headless steps")
+    parser.add_argument("--seat", type=int, default=0, help="seat index (default 0)")
+    parser.add_argument("--port", type=int, default=0, help="loopback port, or 0 for an available port")
+    parser.add_argument("--no-browser", action="store_true", help="serve without opening a browser")
+    parser.add_argument("--headless", action="store_true", help="run one harness episode without a browser")
+    timeouts = parser.add_mutually_exclusive_group()
+    timeouts.add_argument("--human-timeout-ms", type=int, help="override the human turn timeout")
+    timeouts.add_argument(
+        "--no-human-timeout",
+        action="store_true",
+        help="disable the turn timeout for turn-based local play",
+    )
+    args = parser.parse_args(argv)
+
+    if args.seat < 0 or args.seat >= len(possible_slots()):
+        parser.error(f"--seat must name one of 0..{len(possible_slots()) - 1}")
+    if args.headless:
+        score = run_headless(seed=args.seed, max_steps=args.steps, seat=args.seat)
+        print(f"seed {args.seed}: score {score:.2f}")
+        return 0
+    with TemporaryDirectory(prefix="game-sandbox-local-") as recording_dir:
+        config = local_config(
+            seed=args.seed,
+            mode=args.mode,
+            seat=args.seat,
+            recording_dir=Path(recording_dir),
+            step_limit=args.steps,
+            human_timeout_ms=(
+                None
+                if args.no_human_timeout
+                else args.human_timeout_ms
+                if args.human_timeout_ms is not None
+                else _METADATA_TIMEOUT
+            ),
+        )
+        return launch_browser(config, port=args.port, open_browser=not args.no_browser)
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

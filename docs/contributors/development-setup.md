@@ -44,8 +44,8 @@ To run the development host locally, you will need a running Docker daemon (e.g.
 | Regenerate types, packaged schema, and fixtures | `uv run python scripts/generate.py` |
 | Lint and typecheck both languages | `npm run check` |
 | Run all Docker-free tests | `npm run test` |
-| Compose a template or example | `uv run python scripts/compose.py <env> [name]` |
-| Play-test an environment locally (no backend) | `npm run play -- <env> [human\|agent\|watch]` |
+| Compose a template or example source tree | `uv run python scripts/compose.py <env> [name]` |
+| Play-test an environment locally (browser loopback, no backend) | `npm run play -- <env> [human\|agent\|watch]` |
 | Run one CI job exactly as CI does | `uv run python scripts/ci.py <job>` |
 | Run the full local suite (every non-Docker workflow job) | `uv run python scripts/ci.py all` |
 | Publish the template and examples (dry-run available) | `uv run python scripts/publish_template.py --dry-run` |
@@ -68,7 +68,9 @@ On launch the command prints the credentials for two example accounts, so the de
 
 By default the e2e run happens only when the source database is missing, so a successful run is reused indefinitely. Pass `--rerun-e2e` (`npm run demo -- --rerun-e2e`) to force a fresh run regardless of any prior result: it discards the existing e2e database and runs the suite again before launching, picking up changes to the specs or the data they produce.
 
-`scripts/generate.py` owns TypeScript schema types, packaged schema copies, environment metadata, template environment copies, and golden fixtures. Edit the source, regenerate, and commit both. Do not hand-edit generated files.
+`scripts/generate.py` owns TypeScript schema types, packaged schema copies, environment metadata, template environment copies, the copied `sandbox.harness` package, and golden fixtures. Edit the source, regenerate, and commit both. Do not hand-edit generated files.
+
+The local browser export stays outside the template source tree. A release or publish dry run builds `frontend/dist-local/` once, then injects that output into `sandbox/web/` in each staged template and example. Node is therefore required for publication, while ordinary generation and source composition remain bundle-free.
 
 `npm run build:image` runs from `backend/` and rebuilds the current session base image. Use it after changing the Dockerfile, harness, environment, or built-in agent. See [Backend](backend.md#run-and-test).
 

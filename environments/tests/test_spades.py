@@ -1,6 +1,6 @@
 """Environment-level tests for Spades: PettingZoo API conformance, the pure rules engine (bidding
 and play legality, trick resolution, and the scoring matrix), the legal-action/overlay/rules
-three-way agreement, seeded determinism, the headless renderer, metadata serialization, and a full
+three-way agreement, seeded determinism, metadata serialization, and a full
 game driven through the harness.
 
 The determinism test runs at the environment level (two resets with the same seed under the same
@@ -30,7 +30,6 @@ from game_sandbox_harness.session import REASON_TERMINATED, AgentSlot, run_episo
 from spades import ENTRY, rules
 from spades.env import IllegalMoveError, card_to_obj, default_action, make_env
 from spades.overlay import extract_overlay
-from spades.render import HEIGHT, WIDTH
 
 #: The frozen v1 built-in Spades baseline the session image stages and the harness loads for every
 #: Naive seat (``backend/images/session-base/deps-v1/builtin/spades``), from this repo's root.
@@ -520,40 +519,6 @@ def test_overlay_round_trips_through_json():
             env.step(default_action(env, env.agent_selection))
     overlay = extract_overlay(env)
     assert json.loads(json.dumps(overlay)) == overlay
-    env.close()
-
-
-# -- renderer --------------------------------------------------------------------------------
-
-
-def test_renderer_headless_frame_and_hittests_for_both_phases():
-    env = make_env("rgb_array")
-    env.reset(seed=1)
-
-    # Bidding-phase frame, and a bid-chip click maps to the 52 + k action.
-    frame = env.render()
-    assert frame.ndim == 3
-    assert frame.shape[2] == 3
-    assert frame.dtype == np.uint8
-    renderer = env._renderer
-    chip = renderer.bid_rect(5)
-    assert chip is not None
-    assert renderer.bid_action_at_pos(chip.center) == rules.bid_to_action(5)  # 57
-
-    # Advance to the play phase and check a card click maps to the expected card.
-    for _ in range(rules.NUM_PLAYERS):
-        env.step(default_action(env, env.agent_selection))
-    env.view_seat = 0
-    play_frame = env.render()
-    assert play_frame.ndim == 3
-    card = card_to_obj(env.state.hands[0][0])
-    rect = renderer.card_rect(card)
-    assert rect is not None
-    assert renderer.card_at_pos(rect.center) == card
-    # No bid chips are drawn during play, so a centre click yields no bid.
-    assert renderer.bid_action_at_pos((WIDTH // 2, HEIGHT // 2)) is None
-
-    assert set(make_env().metadata["render_modes"]) >= {"human", "rgb_array"}
     env.close()
 
 

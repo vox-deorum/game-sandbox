@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import sys
 from pathlib import Path, PurePosixPath
 
@@ -26,6 +27,35 @@ def test_compose_template_has_base_and_env_files():
     assert (out / "sandbox" / "play.py").exists()  # from templates/base/
     assert (out / "agent.py").exists()  # from templates/flappy_bird/
     assert (out / "sandbox" / "env" / "__init__.py").exists()  # generated env sync
+
+
+def test_composed_template_ships_relocated_harness_and_local_shim(monkeypatch: pytest.MonkeyPatch, capsys):
+    """The composed template imports its copied harness and validates through its packaged schemas."""
+    out = compose_template("flappy_bird")
+    package = out / "sandbox" / "env" / "flappy_bird"
+    assert (package / "game.py").is_file()
+    assert (package / "UPSTREAM_LICENSE.md").is_file()
+    assert not any((package / name).is_dir() for name in ("assets", "images", "resources"))
+    assert (out / "sandbox" / "harness" / "schema_data" / "step-state.schema.json").is_file()
+    assert (out / "sandbox" / "harness" / "schema_data" / "recording-header.schema.json").is_file()
+
+    for name in [name for name in sys.modules if name == "sandbox" or name.startswith("sandbox.")]:
+        monkeypatch.delitem(sys.modules, name, raising=False)
+    monkeypatch.syspath_prepend(str(out))
+    importlib.invalidate_caches()
+
+    schema = importlib.import_module("sandbox.harness.schema")
+    schema.validate_step(
+        {
+            "schema_version": 1,
+            "tick": 0,
+            "agents": {},
+            "timing": {"started_at": 1_700_000_000_000, "duration_ms": 0.0},
+        }
+    )
+    live_local = importlib.import_module("sandbox.live_local")
+    assert live_local.main(["{}"]) == 2
+    assert "live_local: invalid config" in capsys.readouterr().err
 
 
 def test_env_layer_wins_over_base():
@@ -177,7 +207,8 @@ def test_extra_requirements_are_appended():
     out = compose_example("flappy_bird", "hello")
     composed = (out / "requirements.txt").read_text(encoding="utf-8")
     # A template pin and the example's extra pin both end up in the composed file.
-    assert "flappy-bird-gymnasium==0.4.0" in composed
+    assert "websockets==" in composed
+    assert "flappy-bird-gymnasium" not in composed
     assert "wcwidth==0.2.13" in composed
 
 

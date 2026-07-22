@@ -35,6 +35,7 @@ E2E_MAIN_DATA_DIR = E2E_DATA_DIR / "main"
 E2E_MAIN_DB = E2E_MAIN_DATA_DIR / "sandbox.db"
 DEMO_DATA_DIR = E2E_DATA_DIR / "demo"
 FRONTEND_DIST_DIR = REPO_ROOT / "frontend" / "dist"
+FRONTEND_LOCAL_DIST_DIR = REPO_ROOT / "frontend" / "dist-local"
 
 # A template is composed from the env-agnostic base layer plus one per-environment layer.
 # templates/base/ never ships alone; templates/<env>/ overlays it whole-file. The default
@@ -87,9 +88,10 @@ TEMPLATE_ENVIRONMENTS: dict[str, TemplateEnvironmentSpec] = {
         inner_package="flappy_bird",
         modules=(
             "flappy_bird/single_agent.py",
+            "flappy_bird/game.py",
             "flappy_bird/env.py",
             "flappy_bird/overlay.py",
-            "flappy_bird/human.py",
+            "flappy_bird/UPSTREAM_LICENSE.md",
         ),
     ),
     "hearts": TemplateEnvironmentSpec(
@@ -99,8 +101,6 @@ TEMPLATE_ENVIRONMENTS: dict[str, TemplateEnvironmentSpec] = {
             "hearts/rules.py",
             "hearts/env.py",
             "hearts/overlay.py",
-            "hearts/human.py",
-            "hearts/render.py",
         ),
     ),
     "spades": TemplateEnvironmentSpec(
@@ -110,21 +110,15 @@ TEMPLATE_ENVIRONMENTS: dict[str, TemplateEnvironmentSpec] = {
             "spades/rules.py",
             "spades/env.py",
             "spades/overlay.py",
-            "spades/human.py",
-            "spades/render.py",
         ),
     ),
 }
 
 # Shared, import-self-contained sandbox helpers synced from the env source into the env-agnostic
 # base layer (templates/base/sandbox/, not per-env): destination filename under sandbox/ -> source
-# path under ENVIRONMENTS_SRC. These are reused verbatim by both the student's local play and the
-# maintainer's scripts/play.py, so there is one source of truth: the HiDPI display shim and the two
-# shared pygame renderers (a game-agnostic base and the four-seat card table the card games share).
+# path under ENVIRONMENTS_SRC. The card games use these pure codecs and spaces in their local
+# environment copies, so the template keeps one source of truth for the semantic card contract.
 TEMPLATE_BASE_MODULES = {
-    "hidpi.py": "local_play/hidpi.py",
-    "render_base.py": "local_play/render_base.py",
-    "render_cards.py": "local_play/render_cards.py",
     # The dependency-free card codec and its Gymnasium spaces: the pure rules engines pull their
     # encoding from card_utils, and card_spaces declares the shared CARD/HAND/TRICK observation
     # shapes. Both sync into templates/base/sandbox/ (as sandbox.card_utils / sandbox.card_spaces)
@@ -132,8 +126,17 @@ TEMPLATE_BASE_MODULES = {
     "card_utils.py": "local_play/card_utils.py",
     "card_spaces.py": "local_play/card_spaces.py",
     "semantic_cards.py": "local_play/semantic_cards.py",
-    "multiseat_play.py": "local_play/multiseat_play.py",
 }
+
+# These were generated pygame local-play helpers. They are deliberately removed before the remaining
+# base modules sync, because templates/base/sandbox/ also contains hand-authored command modules and
+# cannot itself be wiped safely.
+RETIRED_TEMPLATE_BASE_PATHS = (
+    "hidpi.py",
+    "render_base.py",
+    "render_cards.py",
+    "multiseat_play.py",
+)
 
 # Each environment's student reference page. scripts/compose.py copies the page for the composed
 # environment into the template as environment.md (rewriting its cross-doc links to absolute
@@ -153,6 +156,11 @@ def template_sandbox_env(env: str) -> Path:
 def template_sandbox_base() -> Path:
     """The base template's ``sandbox/`` directory, where shared sandbox helpers are synced."""
     return TEMPLATE_BASE_DIR / "sandbox"
+
+
+def template_sandbox_harness() -> Path:
+    """The generated relocated harness package inside the base template."""
+    return template_sandbox_base() / "harness"
 
 
 def env_docs_page(env: str) -> Path:

@@ -52,7 +52,7 @@ The image entrypoint is `python -m game_sandbox_harness.live`, and the launch ar
 
 Several details were confirmed during the build (`backend/images/session-base/deps-v1/Dockerfile`):
 
-- `python:3.12-slim` needs `libglib2.0-0` for the SDL mixer PyGame imports, so one minimal apt layer installs it. The dummy SDL drivers mean no display or audio device, so there is no GL/ALSA stack.
+- The image has no SDL or pygame system dependency. Browser rendering and local browser play run outside the session image.
 - The harness installs _with_ its dependencies, not `--no-deps`, because its one runtime dependency, `jsonschema`, is harness infrastructure that is not part of the student set and must be pulled in. The environments package still installs `--no-deps`, since its dependencies are the set.
 - The built-in agent and its extra `wcwidth` pin are frozen beside the v1 Dockerfile and copied to `/opt/agents/builtin`, so a later template release cannot alter an old-tag rebuild.
 - A build-time smoke step imports the environment and loads the built-in agent through the manifest loader, so a packaging error fails the build rather than the first session.

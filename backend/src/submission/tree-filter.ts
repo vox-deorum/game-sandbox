@@ -18,6 +18,7 @@ export const SUBMISSION_IGNORED_SEGMENTS: ReadonlySet<string> = new Set([
   'data',
   'dist',
   '.pytest-tmp',
+  '.pytest-cache',
   '.pytest_cache',
   '.mypy_cache',
   '.ruff_cache',

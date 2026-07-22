@@ -48,10 +48,10 @@ Every workflow job delegates to `scripts/ci.py`, so the same entry point works l
 | --- | --- |
 | `python` | Ruff, Pyright, pytest |
 | `typescript` | Biome, TypeScript checks, Vitest |
-| `generated-code-fresh` | Regenerate and fail on a diff |
-| `examples` | Compose every example in a fresh environment and run pytest |
+| `generated-code-fresh` | Regenerate tracked outputs and fail on a diff |
+| `examples` | Compose every example source tree in a fresh environment and run pytest |
 | `docs` | `mkdocs build --strict` |
-| `publish-dry-run` | Assemble student-repository snapshots without pushing |
+| `publish-dry-run` | Build the local frontend once, stage runnable student-repository snapshots, and do not push |
 | `backend-integration` | Real Docker backend suite |
 | `frontend-e2e` | Real backend, built frontend, Playwright Chromium |
 
@@ -123,7 +123,7 @@ uv run python scripts/ci.py examples
 
 CI requires at least one example per environment and tests each example in a fresh virtual environment.
 
-Use the publish dry run before changing release machinery:
+Use the publish dry run before changing release machinery. It verifies the publish-only browser bundle injection that ordinary composition intentionally omits:
 
 ```console
 uv run python scripts/ci.py publish-dry-run

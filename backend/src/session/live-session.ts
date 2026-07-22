@@ -113,6 +113,8 @@ export class LiveSession {
   private status: 'starting' | 'running' | 'ended' = 'starting'
   private headerLine: string | null = null
   private latestState: string | null = null
+  /** The accepted pause state is replayed to late attachers after their running envelope. */
+  private paused = false
   /** The container's reported episode outcome, stashed from the `result` envelope. */
   private resultReason: TerminationReason | null = null
   private finalReason: TerminationReason | null = null
@@ -343,6 +345,9 @@ export class LiveSession {
     }
     if (this.status === 'running') {
       this.trySend(socket, sessionEnvelope('running'))
+      if (this.paused) {
+        this.trySend(socket, serializeCommand({ kind: 'pause' }))
+      }
     } else if (this.status === 'ended') {
       this.trySend(socket, sessionEnvelope('ended', this.finalReason ?? undefined))
     }
@@ -392,6 +397,7 @@ export class LiveSession {
     }
     this.process.send(serializeCommand(command))
     if (command.kind === 'pause' || command.kind === 'resume') {
+      this.paused = command.kind === 'pause'
       this.broadcast(serializeCommand(command))
     }
     if (this.mode === 'human') {

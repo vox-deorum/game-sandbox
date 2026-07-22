@@ -101,15 +101,15 @@ def set_manifest_version(path: Path, version: int) -> None:
 
 
 def _frozen_header_marker(version: int) -> str:
-    """The stable first-line marker a frozen requirements file must carry, checked on validation."""
-    return f"# Frozen v{version} dependency set"
+    """The stable first-line marker a versioned requirements file carries."""
+    return f"# Dependency set for the deps-v{version}"
 
 
 def _frozen_header(version: int) -> str:
     return (
-        f"{_frozen_header_marker(version)} for the deps-v{version} session base image. "
-        f"Snapshot of the v{version} template release;\n"
-        "# do not edit. A new dependency set is a new versioned image directory, not a change here.\n"
+        f"{_frozen_header_marker(version)} session base image. This snapshot may be regenerated with "
+        f"the matching\n# template until template-v{version} is published. After publication it is "
+        f"immutable, and changes require v{version + 1}.\n"
     )
 
 

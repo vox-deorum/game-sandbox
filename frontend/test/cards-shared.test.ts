@@ -15,13 +15,13 @@ import {
 import { HeartsRenderer } from '../src/renderers/hearts/index.js'
 // The Hearts scene module re-exports the whole shared layer, so importing the frame constants from it
 // must yield the same values as importing them from the shared module (the single-source-of-truth rule
-// the pixel/pygame ports both rely on). Aliased so the two can be compared.
+// both card games rely on). Aliased so the two can be compared.
 import { HEIGHT as HEARTS_HEIGHT, WIDTH as HEARTS_WIDTH } from '../src/renderers/hearts/scene.js'
 import { SpadesRenderer } from '../src/renderers/spades/index.js'
 import { SPADES_GEOMETRY } from '../src/renderers/spades/scene.js'
 
-// The frontend twin of environments/tests/test_render_shared.py: the shared card-table layer is a single
-// source both card renderers extend, its codec agrees with the rules encoding, and the per-game geometry
+// The shared card-table layer is a single source both card renderers extend, its codec agrees with the
+// rules encoding, and the per-game geometry
 // stays a hook. These are cheap, canvas-free invariants (no renderer is mounted).
 
 describe('the shared card-table renderer layer', () => {

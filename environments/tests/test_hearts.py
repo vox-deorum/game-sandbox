@@ -1,6 +1,6 @@
 """Environment-level tests for Hearts: PettingZoo API conformance, the pure rules engine
 (legality and scoring), the legal-mask/overlay/rules three-way agreement, seeded determinism,
-the headless renderer, metadata serialization, and a full game driven through the harness.
+metadata serialization, and a full game driven through the harness.
 
 The determinism test runs at the environment level — two resets with the same seed under the
 same scripted policy must produce identical observation and overlay sequences, and the same
@@ -371,26 +371,6 @@ def test_shoot_the_moon_flip():
     leaderboard = rules.leaderboard_scores(state)
     assert leaderboard == [0, -26, -26, -26]
     assert leaderboard[0] == max(leaderboard)  # the shooter is best off
-
-
-# -- renderer --------------------------------------------------------------------------------
-
-
-def test_renderer_headless_frame_and_hittest():
-    env = make_env("rgb_array")
-    env.reset(seed=1)
-    frame = env.render()
-    assert frame.ndim == 3
-    assert frame.shape[2] == 3
-    assert frame.dtype == np.uint8
-
-    assert set(make_env().metadata["render_modes"]) >= {"human", "rgb_array"}
-
-    card = card_to_obj(env.state.hands[0][0])
-    rect = env._renderer.card_rect(card)
-    assert rect is not None
-    assert env._renderer.card_at_pos(rect.center) == card
-    env.close()
 
 
 # -- metadata --------------------------------------------------------------------------------

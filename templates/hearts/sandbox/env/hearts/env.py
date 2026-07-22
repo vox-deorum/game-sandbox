@@ -65,9 +65,9 @@ class IllegalMoveError(ValueError):
     """Raised by :meth:`HeartsEnv.step` when an action is not a legal card."""
 
 
-def make_env(render_mode: str | None = None) -> HeartsEnv:
+def make_env() -> HeartsEnv:
     """Return a fresh :class:`HeartsEnv`. The seed arrives later at :meth:`HeartsEnv.reset`."""
-    return HeartsEnv(render_mode=render_mode)
+    return HeartsEnv()
 
 
 def default_action(env: HeartsEnv, slot_id: str) -> int:
@@ -86,22 +86,15 @@ class HeartsEnv(AECEnv):
     metadata = {
         "name": "hearts_v0",
         "is_parallelizable": False,
-        "render_modes": ["human", "rgb_array"],
     }
 
-    def __init__(self, render_mode: str | None = None) -> None:
+    def __init__(self) -> None:
         super().__init__()
-        self.render_mode = render_mode
-        # Local-renderer view options, set by the demo/template before rendering: the seat shown
-        # at the bottom of the table, and whether every hand is revealed (spectator/replay).
-        self.view_seat = 0
-        self.reveal_all = False
         self.possible_agents = [f"player_{i}" for i in range(rules.NUM_PLAYERS)]
         self.agents: list[str] = []
         # Bound in reset(); declared (not None-initialised) so the type stays HeartsState and
         # every access below is free of Optional-narrowing noise. api_test always resets first.
         self.state: rules.HeartsState
-        self._renderer: Any = None
 
         # Build the spaces exactly once so the accessors can return the same object every call
         # (api_test asserts space identity). The space mirrors observe()'s structure: the semantic
@@ -218,22 +211,6 @@ class HeartsEnv(AECEnv):
         self._accumulate_rewards()
         self._deads_step_first()
 
-        if self.render_mode == "human":
-            self.render()
-
     def render(self) -> Any:
-        if self.render_mode is None:
-            return None
-        # Lazy-import so env.py imports cleanly even before render.py exists (built in a later
-        # step). The renderer is never touched when render_mode is None, so api_test stays
-        # free of any pygame dependency.
-        from .render import HeartsRenderer
-
-        if self._renderer is None:
-            self._renderer = HeartsRenderer(self.render_mode)
-        return self._renderer.render(self)
-
-    def close(self) -> None:
-        if self._renderer is not None:
-            self._renderer.close()
-            self._renderer = None
+        """Return no pixels: browser renderers consume the semantic overlay instead."""
+        return None

@@ -31,6 +31,7 @@ describe('submission tree filter', () => {
       const root = '/work'
       expect(isSubmissionIgnored(root, join(root, '.git', 'HEAD'))).toBe(true)
       expect(isSubmissionIgnored(root, join(root, 'pkg', 'node_modules', 'x.js'))).toBe(true)
+      expect(isSubmissionIgnored(root, join(root, '.pytest-cache', 'state'))).toBe(true)
       expect(isSubmissionIgnored(root, join(root, '__pycache__'))).toBe(true)
       expect(isSubmissionIgnored(root, join(root, 'agent', 'mod.pyc'))).toBe(true)
     })

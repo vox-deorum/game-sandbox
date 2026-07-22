@@ -9,9 +9,7 @@ dependencies = [
     "game-sandbox-harness",
     "pettingzoo>=1.26,<1.27",
     "gymnasium>=1.3,<2.0",
-    "flappy-bird-gymnasium==0.4.0",
     "numpy>=2,<3",
-    "pygame>=2.6,<3",
 ]
 
 # Environments register themselves under this group, name = env id. The harness discovers
@@ -29,6 +27,6 @@ build-backend = "hatchling.build"
 # Each environment is its own top-level package under src/ (importable as the env id, e.g.
 # `flappy_bird`); add a line here per new environment. The shared single-agent adapter lives
 # inside each single-agent env package, so it ships with the package walk below. `local_play`
-# is not an environment: it holds standalone local-play helpers (the HiDPI shim) shared by the
-# Hearts renderer and scripts/play.py, and synced verbatim into the student template.
+# holds the shared card rules, spaces, and semantic helpers used by the card environments.
 packages = ["src/flappy_bird", "src/hearts", "src/spades", "src/local_play"]
+artifacts = ["src/flappy_bird/UPSTREAM_LICENSE.md"]

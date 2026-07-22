@@ -1,22 +1,15 @@
-"""Evaluate your agent over several seeded episodes, headless, and print the scores.
+"""Evaluate your agent over seeded headless harness episodes.
 
-    python -m sandbox.evaluate                  # default seeds
-    python -m sandbox.evaluate --seeds 0 1 2 3  # pick the seeds
-    python -m sandbox.evaluate --episodes 10    # seeds 0..9
-
-This is the same controlled-repetition shape the leaderboard uses: every episode is seeded,
-so your local mean predicts your board number. It never renders and never touches the
-backend.
+This command deliberately reuses ``sandbox.play.run_headless``. Evaluation therefore shares the
+same injected environment entry, agent loader, timeout accounting, and legal default-action behavior
+as browser local play without starting the loopback relay.
 """
 
 from __future__ import annotations
 
 import argparse
-import sys
-from pathlib import Path
 
-from sandbox.env import make_env
-from sandbox.play import load_agent, play_episode
+from sandbox.play import run_headless
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -24,19 +17,13 @@ def main(argv: list[str] | None = None) -> int:
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--seeds", type=int, nargs="+", help="explicit list of seeds")
     group.add_argument("--episodes", type=int, default=5, help="run seeds 0..N-1 (default 5)")
+    parser.add_argument("--seat", type=int, default=0, help="seat index to evaluate (default 0)")
     args = parser.parse_args(argv)
 
     seeds = args.seeds if args.seeds is not None else list(range(args.episodes))
-    repo_root = Path(__file__).resolve().parent.parent
-    agent = load_agent(repo_root)
-
     scores: list[float] = []
     for seed in seeds:
-        env = make_env(render_mode=None)
-        try:
-            score = play_episode(agent, env, seed=seed)
-        finally:
-            env.close()
+        score = run_headless(seed=seed, max_steps=None, seat=args.seat)
         scores.append(score)
         print(f"seed {seed}: score {score:.2f}")
 
@@ -46,4 +33,4 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

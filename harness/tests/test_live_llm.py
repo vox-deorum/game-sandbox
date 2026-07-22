@@ -110,6 +110,11 @@ def _payload(llm: object = None) -> dict[str, Any]:
             "player_1": {"kind": "builtin-agent", "path": "/agents/1"},
             "human": {"kind": "external"},
         },
+        "players": {
+            "player_0": {"kind": "agent", "label": "Player 0"},
+            "player_1": {"kind": "agent", "label": "Player 1"},
+            "human": {"kind": "human", "label": "Human"},
+        },
         "recording_dir": "/recordings",
     }
     if llm is not None:
@@ -146,6 +151,10 @@ def test_parse_config_matches_backend_llm_launch_fixture_exactly():
     payload["slots"] = {
         "player_0": {"kind": "builtin-agent", "path": "/agents/0"},
         "human": {"kind": "external"},
+    }
+    payload["players"] = {
+        "player_0": {"kind": "agent", "label": "Player 0"},
+        "human": {"kind": "human", "label": "Human"},
     }
     payload.update(fixture)
 
@@ -421,6 +430,7 @@ def test_model_wait_in_act_is_discounted_from_step_and_episode_limits(monkeypatc
     )
     payload = _payload(_llm_block())
     del payload["slots"]["human"]
+    del payload["players"]["human"]
     config = parse_config([json.dumps(payload)])
     entry = _entry(turns=10, messaging=False, step_limit_ms=500, episode_limit_ms=1200)
     slots = build_slots(config, entry, SessionControl(), PausableClock(clock), _Sleeper())
@@ -548,6 +558,7 @@ def test_proxy_snapshots_reuse_each_post_hook_baseline_and_exclude_setup(monkeyp
         }
     )
     payload["slots"] = {"player_0": {"kind": "builtin-agent", "path": "/agents/0"}}
+    payload["players"] = {"player_0": {"kind": "agent", "label": "Player 0"}}
     entry = _entry(turns=1, messaging=True)
     slots = build_slots(
         parse_config([json.dumps(payload)]),
@@ -612,6 +623,7 @@ def test_failed_post_hook_snapshot_is_not_reused(monkeypatch, tmp_path: Path, ca
         }
     )
     payload["slots"] = {"player_0": {"kind": "builtin-agent", "path": "/agents/0"}}
+    payload["players"] = {"player_0": {"kind": "agent", "label": "Player 0"}}
     entry = _entry(turns=1, messaging=True)
     slots = build_slots(
         parse_config([json.dumps(payload)]),
@@ -669,6 +681,7 @@ def test_proxy_discount_cannot_erase_overlapping_agent_cpu(monkeypatch, tmp_path
         }
     )
     payload["slots"] = {"player_0": {"kind": "builtin-agent", "path": "/agents/0"}}
+    payload["players"] = {"player_0": {"kind": "agent", "label": "Player 0"}}
     entry = _entry(turns=1, messaging=False, step_limit_ms=50)
     slots = build_slots(
         parse_config([json.dumps(payload)]),
@@ -723,6 +736,7 @@ def test_bad_proxy_snapshot_fails_closed_to_full_hook_time(monkeypatch, tmp_path
         }
     )
     payload["slots"] = {"player_0": {"kind": "builtin-agent", "path": "/agents/0"}}
+    payload["players"] = {"player_0": {"kind": "agent", "label": "Player 0"}}
     entry = _entry(turns=1, messaging=False, step_limit_ms=500)
     slots = build_slots(
         parse_config([json.dumps(payload)]),

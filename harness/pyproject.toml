@@ -5,6 +5,7 @@ description = "Game Sandbox session harness: schema validation, state builders, 
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "jsonschema>=4.21",
+    "websockets>=16,<17",
 ]
 
 [build-system]

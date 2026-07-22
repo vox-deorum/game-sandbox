@@ -5,16 +5,13 @@
  * "won/bid" pill raised over a trick's winner, and the gold pulse plus chosen-chip flash that mark a
  * seat and its bid the instant a bid is placed.
  * The shared card table (felt, seats, trick, hand, opponents, card faces, and the fly-in/sweep
- * animation) lives in {@link CardTableRenderer}, the browser twin of
- * `environments/src/local_play/render_cards.py`.
+ * animation) lives in {@link CardTableRenderer}.
  *
  * The same class runs unchanged from a stored recording, where it has no `sendAction` and no controlled
  * slot, so the cards and chips are inert and it is draw-only (what the replay viewer relies on). It
  * registers under the metadata key `"spades"` (see `renderers/index.ts`).
  *
- * This is the browser twin of the Python pygame renderer in `environments/src/spades/render.py`; the
- * Spades-only drawing below mirrors that file's `_draw_seat_content`, `_draw_status`, `_draw_bid_chips`,
- * and `_draw_trick_won_badge`, while the shared table mirrors `render_cards.py` on both sides.
+ * Spades-specific drawing stays here while the shared trick-taking table remains in the base class.
  */
 import type { StepState } from '@game-sandbox/schema'
 import { Container, Graphics, Rectangle } from 'pixi.js'
@@ -47,7 +44,7 @@ import {
 const BID_PULSE_NATURAL_MS = 620
 /** The shortest that pulse is ever allowed to run, so a tiny replay budget still reads. */
 const BID_PULSE_MIN_MS = 240
-/** The muted spade-pip colour when spades are not yet broken (render.py's `(92, 112, 102)`). */
+/** The muted spade-pip colour when spades are not yet broken. */
 const SPADE_MUTED = '#5c7066'
 
 /** A running gold pulse on the seat that just bid: a state-to-state flourish, not an ambient loop. */
@@ -80,7 +77,7 @@ export class SpadesRenderer extends CardTableRenderer<SpadesScene> {
   // Spades declares no base input intents: the shared hand wires on-screen card clicks per card and the
   // bid chips wire their own clicks below, so it inherits the base `inputs()` default of [].
 
-  // --- Seat interior (render.py _draw_seat_content) ---
+  // --- Seat interior ---
 
   /** The badge interior: the partnership tab, the "(you)"-aware name, and the `bid · won` line. */
   protected drawSeatContent(container: Container, seat: SpadesSceneSeat): void {
@@ -120,7 +117,7 @@ export class SpadesRenderer extends CardTableRenderer<SpadesScene> {
     container.addChild(wonImg)
   }
 
-  // --- Trick-won pill (render.py _draw_trick_won_badge) ---
+  // --- Trick-won pill ---
 
   /** A compact `won/bid` pill (e.g. "3/4") over the trick winner during the sweep. `tricks_won` already
    *  counts the just-won trick, so it reads "now 3 of your bid 4"; a nil-breaker shows "1/0". */
@@ -131,7 +128,7 @@ export class SpadesRenderer extends CardTableRenderer<SpadesScene> {
     return `${won}/${bid}`
   }
 
-  // --- Status strip (render.py _draw_status) ---
+  // --- Status strip ---
 
   protected reconcileStatus(scene: SpadesScene): void {
     // The base clears the status layer before calling this; we just build the two rows.
@@ -182,7 +179,7 @@ export class SpadesRenderer extends CardTableRenderer<SpadesScene> {
     }
   }
 
-  // --- Centre bid chips (render.py _draw_bid_chips) ---
+  // --- Centre bid chips ---
 
   /** Draw the bidding-round chip grid into the game layer, or nothing once play begins. */
   protected override reconcileGameLayers(scene: SpadesScene): void {

@@ -7,12 +7,8 @@
  * plain Vitest (jsdom has no canvas) and the contract's determinism rule holds: the same state (plus the
  * mount-time config) always yields the same scene, which is what the replay scrubber depends on.
  *
- * This is the browser twin of the Python pygame shared layer in
- * `environments/src/local_play/render_cards.py` (the `CardTableRenderer` the pygame Hearts and Spades
- * renderers extend). The two draw the same recorded overlays so a student watching locally in pygame and
- * a user watching in the browser see the same table; when you change the layout here, change
- * `render_cards.py` to match (and vice versa). The cross-references in the comments call out the matching
- * `render_cards.py` symbol so the two stay in sync.
+ * This is the canonical shared scene layer for browser rendering and local browser play. Both Hearts
+ * and Spades consume the same semantic overlays and geometry from this module.
  *
  * The animations (the card-play fly-in and the trick-won sweep) are intentionally *not* baked into the
  * scene: a transition is a function of the move *between* two states, not of one state, so it would break
@@ -58,7 +54,7 @@ export function rankOf(card: Card): number {
   return card.rank
 }
 
-/** Rank labels indexed by rank id 0..12 (mirrors render_cards.py RANK_LABELS). */
+/** Rank labels indexed by rank id 0..12. */
 export const RANK_LABELS = [
   '2',
   '3',
@@ -80,7 +76,7 @@ export function rankLabel(card: Card): string {
   return RANK_LABELS[card.rank - 2] ?? '?'
 }
 
-// --- Fixed frame and card dimensions (mirrors render_cards.py WIDTH/HEIGHT/CARD_*/SMALL_*) ---
+// --- Fixed frame and card dimensions ---
 export const WIDTH = 960
 export const HEIGHT = 720
 /** Card-face dimensions for the view seat's fanned hand. */
@@ -91,9 +87,8 @@ export const SMALL_W = 48
 export const SMALL_H = 70
 
 /**
- * Flat-color palette (RGB hex), copied from render_cards.py's color constants so the two renderers read
- * the same. Renderer modules are the one place raw color literals are allowed (a renderer owns its game's
- * visual identity); these are the Python `FELT_TOP`, `GOLD`, `CARD_FACE`, etc. translated to hex.
+ * Flat-color palette (RGB hex). Renderer modules are the one place raw color literals are allowed
+ * because a renderer owns its game's visual identity.
  */
 export const COLORS = {
   feltTop: '#14744a',
@@ -117,36 +112,34 @@ export const COLORS = {
   badgeShadow: '#032015',
   legalBorder: '#5ee284',
   winnerGlow: '#ecc870',
-  // The grey veil over an illegal card (render_cards.py GREY_VEIL, with its alpha kept separate).
+  // The grey veil over an illegal card, with its alpha kept separate.
   greyVeil: '#26322c',
   greyVeilAlpha: 168 / 255,
 } as const
 
-/** The center of the table, where the trick is laid out (render_cards.py uses WIDTH//2, HEIGHT//2). */
+/** The center of the table, where the trick is laid out. */
 export const TRICK_CENTER = { x: WIDTH / 2, y: HEIGHT / 2 }
 
-// --- Per-game table geometry (render_cards.py exposes these as overridable class attributes) ---
+// --- Per-game table geometry ---
 
 /**
- * The handful of table measurements a game varies. The pygame `CardTableRenderer` keeps them as class
- * attributes a subclass overrides (`NORTH_BADGE_Y`, `OPPONENT_ROW_NORTH_Y`, `BADGE_W/H`, the side-badge
- * inset); here they are one data object threaded through the geometry helpers so Hearts uses the defaults
- * and Spades passes its own without duplicating any layout code.
+ * The handful of table measurements a game varies. They are threaded through the geometry helpers so
+ * Hearts uses the defaults and Spades passes its own without duplicating layout code.
  */
 export interface TableGeometry {
-  /** The y of the North seat badge center (render_cards.py NORTH_BADGE_Y). */
+  /** The y of the North seat badge center. */
   northBadgeY: number
-  /** The y of the North opponent card row (render_cards.py OPPONENT_ROW_NORTH_Y). */
+  /** The y of the North opponent card row. */
   opponentRowNorthY: number
-  /** Seat badge width (render_cards.py BADGE_W). */
+  /** Seat badge width. */
   badgeW: number
-  /** Seat badge height (render_cards.py BADGE_H). */
+  /** Seat badge height. */
   badgeH: number
-  /** How far the West/East badges sit in from the side edges (render_cards.py side badge inset). */
+  /** How far the West and East badges sit in from the side edges. */
   sideBadgeInset: number
 }
 
-/** The Hearts geometry, the shared default (render_cards.py's base class-attribute values). */
+/** The Hearts geometry, used as the shared default. */
 export const DEFAULT_GEOMETRY: TableGeometry = {
   northBadgeY: 101,
   opponentRowNorthY: 150,
@@ -160,7 +153,7 @@ export const DEFAULT_GEOMETRY: TableGeometry = {
 /** The game-agnostic core of a seat badge; a game extends it with its own fields (score, bid/won). */
 export interface SceneSeatBase {
   seat: number
-  /** Screen slot 0=South (view), 1=West, 2=North, 3=East (render_cards.py _slot_of_seat). */
+  /** Screen slot 0=South (view), 1=West, 2=North, 3=East. */
   slot: number
   x: number
   y: number
@@ -262,7 +255,7 @@ export function slotOfSeat(seat: number, viewSeat: number): number {
   return (((seat - viewSeat) % NUM_PLAYERS) + NUM_PLAYERS) % NUM_PLAYERS
 }
 
-/** The (x, y) center of the seat badge for a screen slot (render_cards.py _seat_anchor). */
+/** The (x, y) center of the seat badge for a screen slot. */
 export function seatAnchor(
   slot: number,
   geom: TableGeometry = DEFAULT_GEOMETRY,
@@ -282,7 +275,7 @@ export function seatAnchor(
   }
 }
 
-/** The center offset (dx, dy) for a card played from a screen slot (render_cards.py _trick_offset). */
+/** The center offset (dx, dy) for a card played from a screen slot. */
 export function trickOffset(slot: number): { dx: number; dy: number } {
   switch (slot) {
     case 0:
@@ -406,8 +399,8 @@ export interface ViewContext {
  * The recorded overlay always carries all four hands. In live human play the user controls one slot,
  * so that seat sits at the bottom, is the controlled seat, and the opponents are face-down (no
  * peeking). With no controlled slots (a spectator watching, or a replay) we reveal every hand, default
- * the view to seat 0, and leave `controlledSeat` null. This mirrors render_cards.py's `view_seat` /
- * `reveal_all`, except that the "(you)" marker and first-person status here follow real control rather
+ * the view to seat 0, and leave `controlledSeat` null. The "(you)" marker and first-person status follow
+ * real control rather
  * than always tagging the bottom seat, since a replay's bottom seat is not the viewer.
  */
 export function resolveView(config: SceneConfig): ViewContext {
@@ -423,7 +416,7 @@ export function resolveView(config: SceneConfig): ViewContext {
 
 /**
  * The geometric core of the four seat badges: seat, screen slot, badge center, "(you)"-aware label, and
- * the active-turn flag (render_cards.py _draw_seats). A game maps over these to add its own per-seat
+ * the active-turn flag. A game maps over these to add its own per-seat
  * fields (Hearts' running score, Spades' bid/won and partnership).
  */
 export function buildSeatsBase(
@@ -473,7 +466,7 @@ function placeTrickCards(
 
 /**
  * Build the central trick. While a trick is in progress we show its cards; between tricks we show the
- * just-completed trick with its winner highlighted (render_cards.py's rgb_array path), so a scrubber
+ * just-completed trick with its winner highlighted, so a scrubber
  * landing on the completion frame still sees what was played. The retained renderer animates the sweep on
  * top. Returns the trick cards and who won (null while in progress) for the caller's status message.
  */
@@ -493,7 +486,7 @@ export function buildTrick(
   return { trick: placeTrickCards(entries, viewSeat, winner), trickWinner: winner }
 }
 
-/** Lay out the three non-view seats' cards along their table edges (render_cards.py _draw_opponent_row). */
+/** Lay out the three non-view seats' cards along their table edges. */
 export function buildOpponents(
   o: CardOverlay,
   viewSeat: number,
@@ -534,8 +527,8 @@ export function buildOpponents(
 /**
  * Fan the view seat's hand across the bottom, marking each card legal (lit and raised) or illegal
  * (greyed). Legality reads the passed `legalKeys` set of {@link cardKey} identities — which the game
- * derives verbatim from the emitted `legal_cards` overlay (render_cards.py _draw_hand /
- * _legal_cards_from_overlay), so the browser never recomputes the rules; the set is the current turn's,
+ * derives verbatim from the emitted `legal_cards` overlay, so the browser never recomputes the rules;
+ * the set is the current turn's,
  * so a card lights only when it is the view seat's turn. A card is clickable when it is legal, it is the
  * view seat's turn, and the user controls that seat.
  */
@@ -557,7 +550,7 @@ export function buildHand(
 
   const margin = 40
   const avail = WIDTH - 2 * margin
-  // Overlap as needed so all cards fit within the available width (render_cards.py step/run/start_x).
+  // Overlap as needed so all cards fit within the available width.
   const step = count > 1 ? Math.min(CARD_W + 6, Math.floor((avail - CARD_W) / (count - 1))) : 0
   const run = step * (count - 1) + CARD_W
   const startX = Math.floor((WIDTH - run) / 2)
@@ -568,7 +561,7 @@ export function buildHand(
     return {
       card,
       x: startX + i * step,
-      // Raise legal cards a few px so they read as selectable (render_cards.py raises legal by 10).
+      // Raise legal cards a few pixels so they read as selectable.
       y: baseY - (legal ? 10 : 0),
       w: CARD_W,
       h: CARD_H,
@@ -601,12 +594,12 @@ export function buildMoveClock(
   return { x: south.x, y: south.y - 56, seconds: Math.round(humanTimeoutMs / 1000) }
 }
 
-// --- Hit-testing (mirrors render_cards.py card_at_pos) ---
+// --- Hit-testing ---
 
 /**
  * The hand card under a point in internal (960x720) coordinates, or null if none. Hand cards overlap,
  * so the rects are scanned in reverse draw order (the visually front-most / right-most card first), as
- * in render_cards.py. Legality is ignored here; the caller decides whether to accept the click.
+ * in the fan. Legality is ignored here; the caller decides whether to accept the click.
  */
 export function handCardAt(
   hand: readonly SceneHandCard[],
@@ -669,7 +662,7 @@ export function detectSweep(
   return { cards, toX: winnerAnchor.x, toY: winnerAnchor.y, winner: n.lastTrickWinner }
 }
 
-/** Clamp `t` to [0,1] and apply the classic smoothstep ease (render_cards.py _smoothstep). */
+/** Clamp `t` to [0,1] and apply the classic smoothstep ease. */
 export function smoothstep(t: number): number {
   const c = t < 0 ? 0 : t > 1 ? 1 : t
   return c * c * (3 - 2 * c)
@@ -678,7 +671,7 @@ export function smoothstep(t: number): number {
 /**
  * The position and scale of one swept card at progress `t` in [0,1]. The first `HOLD` fraction holds
  * the cards in place (the winner's card pulses), then they slide and shrink into the winner's seat
- * (render_cards.py _animate_trick_won: hold = 0.34, scale = 1 - 0.7 * move).
+ * using a 0.34 hold fraction and a `1 - 0.7 * move` scale.
  */
 export const SWEEP_HOLD = 0.34
 export function sweepCardAt(

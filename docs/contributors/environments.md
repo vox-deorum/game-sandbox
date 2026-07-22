@@ -22,7 +22,7 @@ Items 9 and 10 are the [student-facing deliverables](#student-facing-deliverable
 
 ## Play test
 
-`npm run play -- <env> [mode]` opens any registered environment in a window and runs it locally, with no backend, Docker, or session — the maintainer counterpart to a student's local play. `mode` is `human` (default; you play — keyboard for realtime games like Flappy Bird, click-a-card for Hearts), `agent` (watch the bundled example agent), or `watch` (the built-in baseline). Every mode begins paused on the first frame until you press a key or click, so a realtime game doesn't start before you're ready. Pass `--seat` to pick a seat in a multi-slot game, or `--agent-repo <path>` to play a `manifest.json` agent repo of your own. It resolves the environment through the same entry-point registry the harness uses, so it works for every installed environment.
+`npm run play -- <env> [mode]` starts loopback browser play with the production live runner and the same PixiJS renderer used by a live session. It needs no backend, Docker, or external network connection. `mode` is `human` (default; keyboard for realtime games such as Flappy Bird, click a card for Hearts), `agent` (watch the bundled example agent), or `watch` (the built-in baseline). Every mode starts paused at the first frame. Use the page's Start control when ready, then use its shared pause, resume, and stop controls. Pass `--seat` to choose a multi-slot seat, or `--agent-repo <path>` to play an agent repository with a `manifest.json`. The command resolves the environment through the same entry-point registry and live-runner path as the harness.
 
 ## Directory layout
 
@@ -51,7 +51,7 @@ A natively single-agent `gymnasium.Env` is lifted into a one-slot AEC environmen
 
 The renderer never sees pixels, so the per-step `overlay` must contain everything the frontend needs to draw the frame. `overlay.py` exposes `extract_overlay(env)`, which returns JSON-compatible, unnormalized display data. For Flappy Bird, this includes the bird's position, velocity, and rotation, along with pipe coordinates, score, and screen dimensions.
 
-Only the environment wrapper may reach into a pinned third-party package's internals. A test must confirm that every overlay field exists and is finite, so an incompatible upstream change fails before it reaches the renderer.
+The environment owns its display state. A test must confirm that every overlay field exists and is finite. Flappy Bird reads its immutable local simulation snapshot, not private fields from a third-party package.
 
 ## The registry entry
 
@@ -109,7 +109,7 @@ Pair this with an environment-level determinism test (two resets with the same s
 
 ## Syncing to the template
 
-Students run the environment locally without the harness. `scripts/generate.py` copies the self-contained modules into `templates/<env>/sandbox/env/`.
+Students run the environment locally through the copied `sandbox.harness` package. `scripts/generate.py` copies each environment's self-contained modules into `templates/<env>/sandbox/env/` and the shared harness into the base template.
 
 Add one `TemplateEnvironmentSpec` to the static `TEMPLATE_ENVIRONMENTS` catalog in `scripts/_paths.py`, then regenerate. The spec keeps the display name, inner package, module-copy list, default-action export, and player slot together. Generation and composition both read this catalog and do not discover environment directories at runtime, so an unregistered directory cannot silently become a student template.
 
@@ -117,7 +117,7 @@ Add one `TemplateEnvironmentSpec` to the static `TEMPLATE_ENVIRONMENTS` catalog 
 uv run python scripts/generate.py
 ```
 
-The template's top-level `sandbox.env` package exposes `make_env`, `ENV_ID`, `PLAYER_SLOT`, and `make_human_controller`. To make the game human-playable locally, add a `human.py` exposing `make_human_controller(env)` (keyboard for realtime games, mouse or click for turn-based ones) and include it in the spec's module list so it syncs too. Never sync harness, recording, or metadata modules. See [Examples and the template](examples-and-template.md).
+The template's top-level `sandbox.env` package exposes the generated environment metadata and factory surface. Human input belongs in the browser renderer, not in a Python `human.py` module. Include the environment's import-self-contained modules and any credited source files in its template specification. The copied `sandbox.harness` package provides the supported local runner and relay surface. See [Examples and the template](examples-and-template.md).
 
 ## Student-facing deliverables
 
@@ -127,9 +127,9 @@ A student should be able to write an agent for a new environment from the docs a
 
 Give the template a small helper module whenever the object-shaped observation or the integer action needs a game-specific bridge, which is almost always: a card codec, named observation fields, an action mask to read. Hearts and Spades ship `sandbox/cards.py` (read the semantic card objects and observation fields, and convert a chosen card or bid to its integer action) and Flappy Bird ships `sandbox/features.py` (name the observation fields — the bird and the pipes — and the two actions). The module is student-facing template content, so hand-author it in the environment's template layer at `templates/<env>/sandbox/<name>.py`, next to the other files a student is given.
 
-Two placement rules matter. Keep the module plain Python with no heavy imports so that `from sandbox import <name>` at the top of `agent.py` stays cheap: the base `sandbox/__init__.py` deliberately imports nothing heavy, and an agent must be able to import the helper without pulling in pettingzoo or pygame. And never place it under `sandbox/env/`, because `scripts/generate.py` wipes and regenerates that directory on every sync, so a hand-authored file there is destroyed. Tell students to import the helper at the top of `agent.py` rather than inside a method, since a submission's module-top imports are the ones the harness isolates cleanly per slot.
+Two placement rules matter. Keep the module plain Python with no heavy imports so that `from sandbox import <name>` at the top of `agent.py` stays cheap: the base `sandbox/__init__.py` deliberately imports nothing heavy, and an agent must be able to import the helper without pulling in PettingZoo or browser-play dependencies. Never place it under `sandbox/env/`, because `scripts/generate.py` wipes and regenerates that directory on every sync, so a hand-authored file there is destroyed. Tell students to import the helper at the top of `agent.py` rather than inside a method, since a submission's module-top imports are the ones the harness isolates cleanly per slot.
 
-Because a helper restates facts that live in the environment source (the card encoding, the observation layout), add a pin test under `templates/<env>/tests/test_<name>.py` that asserts the helper agrees with the synced environment code, so the two cannot drift. The Hearts `test_cards.py` checks every card against the synced `sandbox.env.hearts.rules`, checks the observation accessors against a freshly stepped environment, and confirms in a subprocess that importing the helper does not load pygame. Every composed example inherits these template tests, so the CI `examples` job runs them.
+Because a helper restates facts that live in the environment source (the card encoding, the observation layout), add a pin test under `templates/<env>/tests/test_<name>.py` that asserts the helper agrees with the synced environment code, so the two cannot drift. The Hearts `test_cards.py` checks every card against the synced `sandbox.env.hearts.rules` and checks the observation accessors against a freshly stepped environment. Every composed example inherits these template tests, so the CI `examples` job runs them.
 
 Hearts and Spades share only the game-independent semantic-card operations from the dependency-free base `sandbox.semantic_cards` module. Each environment's `sandbox.cards` imports and re-exports those established names, then keeps its own legality, scoring, bidding, partnership, and observation helpers locally. Preserve those `sandbox.cards` exports when adding common card operations so existing student agents do not need to change imports.
 

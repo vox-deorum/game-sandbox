@@ -21,7 +21,7 @@ Status: implemented. The unit suites live under `backend/test/` and run with the
 - **Unpaced path**: with no pace interval the step advances when input arrives, and the human-slot timeout applies the default: the same loop, one conditional.
 - **Config**: the human-slot timeout override flows from session config into the `ExternalSlot`.
 - **Stop**: the `stop` command closes a loadable recording, emits the `result` envelope, exits 0.
-- **Stdout hygiene**: run the module as a subprocess; the pygame banner lands on stderr and stdout contains only classifiable lines.
+- **Stdout hygiene**: run the module as a subprocess; stray environment output lands on stderr and stdout contains only classifiable lines.
 - **Tee parity**: streamed lines equal the recording file byte-for-byte.
 - **Refactor regression**: the Stage 2 determinism fixtures pass unchanged over the `Episode` extraction, byte-for-byte.
 

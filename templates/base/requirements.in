@@ -10,10 +10,8 @@
 
 pettingzoo
 gymnasium
-# Pinned exactly: the Flappy Bird overlay extractor reads this package's internals, which
-# only a pinned version makes safe.
-flappy-bird-gymnasium==0.4.0
 numpy
-pygame
+jsonschema
+websockets>=16,<17
 python-dotenv
 openai

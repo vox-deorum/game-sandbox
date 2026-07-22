@@ -22,6 +22,21 @@ def test_llm_dispatches_with_its_probe_and_forwards_arguments(monkeypatch):
     assert seen == [(["-m", "sandbox.llm_example", "--example-flag", "value"], "import openai, dotenv")]
 
 
+def test_browser_commands_dispatch_their_positional_modes(monkeypatch):
+    seen: list[tuple[list[str], str]] = []
+    monkeypatch.setattr(dispatcher, "_run", lambda args, probe: seen.append((args, probe)) or 0)
+
+    assert dispatcher.main([]) == 0
+    assert dispatcher.main(["human", "--seed", "7"]) == 0
+    assert dispatcher.main(["play", "--seed", "8"]) == 0
+
+    assert seen == [
+        (["-m", "sandbox.play", "human"], dispatcher._RUNTIME_PROBE),
+        (["-m", "sandbox.play", "human", "--seed", "7"], dispatcher._RUNTIME_PROBE),
+        (["-m", "sandbox.play", "agent", "--seed", "8"], dispatcher._RUNTIME_PROBE),
+    ]
+
+
 def test_current_interpreter_without_llm_dependencies_uses_setup(tmp_path: Path, monkeypatch):
     missing_venv = tmp_path / "missing-python"
     probes: list[tuple[str, str]] = []

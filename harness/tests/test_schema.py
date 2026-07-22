@@ -2,6 +2,12 @@
 
 from __future__ import annotations
 
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
 import pytest
 
 from game_sandbox_harness.schema import (
@@ -67,3 +73,28 @@ def test_message_shape_validates():
     state = _valid_state()
     state["messages"] = [{"from": "player_0", "to": None, "text": "hi"}]
     validate_step(state)
+
+
+def test_relocated_package_loads_packaged_schema_resources():
+    """The copied student package must not retain the monorepo package name."""
+    source = Path(__file__).parents[1] / "src" / "game_sandbox_harness"
+    with TemporaryDirectory() as raw:
+        root = Path(raw)
+        package = root / "sandbox" / "harness"
+        package.parent.mkdir()
+        (package.parent / "__init__.py").write_text("", encoding="utf-8")
+        shutil.copytree(source, package)
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "from sandbox.harness.schema import validate_header; "
+                "validate_header({'schema_version': 1, 'environment': 'fake', 'seed': 1, 'slots': [], "
+                "'players': {}, 'metadata': {}})",
+            ],
+            cwd=root,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    assert result.returncode == 0, result.stderr

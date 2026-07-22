@@ -2,8 +2,8 @@
 
 This module is the single source of truth for card legality and scoring. It is deliberately
 dependency-free — it imports only the standard library — so the same rules can drive the
-PettingZoo environment, a reference bot, the renderer, and any tests without dragging in
-``pettingzoo``/``pygame``/``numpy``. Everything is expressed over the fixed integer card
+PettingZoo environment, a reference bot, and tests without dragging in ``pettingzoo`` or
+``numpy``. Everything is expressed over the fixed integer card
 encoding below, which downstream code relies on verbatim.
 
 Card encoding (fixed): a card is an int ``0..51`` with ``card = suit * 13 + rank``. Suits are

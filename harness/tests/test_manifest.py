@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
@@ -65,6 +66,34 @@ def test_good_repo_loads_and_exposes_hooks(tmp_path: Path):
         assert describe_agent_hooks(agent) == {"learn": True, "chat": False}
     finally:
         _cleanup(tmp_path)
+
+
+def test_loading_repo_keeps_modules_from_its_active_virtualenv(tmp_path: Path, monkeypatch):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    module = "venv_safe_agent"
+    _write_repo(
+        repo,
+        module,
+        manifest={"entry_point": module, "class_name": "Agent", "template_version": 1},
+        source=_AGENT_SOURCE,
+    )
+    interpreter_root = repo / ".venv"
+    dependency_path = interpreter_root / "Lib" / "site-packages" / "kept_dependency.py"
+    dependency_path.parent.mkdir(parents=True)
+    dependency_path.write_text("VALUE = 1\n", encoding="utf-8")
+    dependency = ModuleType("kept_dependency")
+    dependency.__file__ = str(dependency_path)
+    sys.modules[dependency.__name__] = dependency
+    monkeypatch.setattr(sys, "prefix", str(interpreter_root))
+
+    try:
+        load_agent(repo)
+        assert sys.modules[dependency.__name__] is dependency
+    finally:
+        _cleanup(repo)
+        sys.modules.pop(module, None)
+        sys.modules.pop(dependency.__name__, None)
 
 
 def test_same_entry_point_in_two_repo_roots_loads_each_repo(tmp_path: Path):

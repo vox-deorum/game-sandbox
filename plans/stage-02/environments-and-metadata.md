@@ -4,7 +4,7 @@ Part of [Stage 2](../stage-02-harness-and-first-environment.md). This file desig
 
 ## Package layout
 
-`environments/` becomes the third uv workspace member, distribution package name `game-sandbox-environments`. Each environment is its own top-level import package under `environments/src/`, named by its env id, for example `flappy_bird`. The distribution depends on `game-sandbox-harness` (for the metadata types below) plus `pettingzoo`, `gymnasium`, and `flappy-bird-gymnasium`.
+`environments/` becomes the third uv workspace member, distribution package name `game-sandbox-environments`. Each environment is its own top-level import package under `environments/src/`, named by its env id, for example `flappy_bird`. The distribution depends on `game-sandbox-harness` (for the metadata types below), `pettingzoo`, and `gymnasium`.
 
 ```
 environments/
@@ -12,7 +12,7 @@ environments/
   src/
     flappy_bird/
       __init__.py            ENTRY: the registry entry (metadata + factory + hooks)
-      env.py                 factory wrapping flappy-bird-gymnasium
+      env.py                 factory for the local Flappy Bird simulation
       overlay.py             render-data extraction
       single_agent.py        GymnasiumToAEC adapter
   tests/
@@ -34,7 +34,7 @@ This is the foundation the harness-level "same seed twice produces identical rec
 
 ## Flappy Bird
 
-The game comes from `flappy-bird-gymnasium` (v0.4.0, the current release), pinned exactly. The pin serves two purposes: the dependency set pins everything, and the overlay extraction below reads the package's internals, which only a pinned version makes safe. The factory creates `FlappyBird-v0` with the 12-feature numerical observation (`use_lidar=False`), so the agent sees exactly what it will see locally against the template. Action space is `Discrete(2)`: 0 is noop, 1 is flap. The default action for every timeout path is 0. The per-step `score` is the cumulative reward under the package's scheme: +0.1 per frame alive, +1.0 per pipe, −1.0 on death, and −0.5 for hitting the ceiling.
+Flappy Bird uses the local pygame-free adaptation of the non-rendering `flappy-bird-gymnasium` 0.4.0 simulation. Its public immutable snapshot supplies observations and overlays, so no third-party private fields are read. Action space is `Discrete(2)`: 0 is noop, 1 is flap. The default action for every timeout path is 0. The per-step `score` follows the preserved reward scheme: +0.1 per frame alive, +1.0 per pipe, −1.0 on death, and −0.5 for hitting the ceiling.
 
 The renderer never sees pixels, so the overlay must carry everything Stage 4 needs to draw the frame:
 

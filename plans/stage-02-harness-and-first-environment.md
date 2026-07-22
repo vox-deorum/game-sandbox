@@ -4,7 +4,7 @@ Status: complete. The Python vertical slice is built and green locally. This cha
 
 ## Goal
 
-A complete Python-side vertical slice with no server involved. The session harness steps the single-agent Flappy Bird environment, driven by either a scripted agent or a supplied human/noop action source. It emits schema-valid per-step states and writes a replayable recording to disk. The participant template repo exists and works against vanilla PettingZoo.
+A complete Python-side vertical slice with no production server involved. The session harness steps the single-agent Flappy Bird environment, driven by an agent or browser input through the local loopback relay. It emits schema-valid per-step states and writes a replayable recording to disk. The participant template repo includes the harness and local browser bundle required for that flow.
 
 ## Plan documents
 
@@ -18,7 +18,7 @@ The detailed design lives under [stage-02/](stage-02/):
 
 ## Scope
 
-Bring in the Flappy Bird style game (the `flappy-bird-gymnasium` package) behind a small in-house, general-purpose Gymnasium-to-PettingZoo compatibility wrapper. The harness then only ever sees a PettingZoo interface, per [environment.md](../docs/specs/environment.md). The wrapper must accept a seed on reset and expose one slot. That slot can be controlled by either an agent or a human action source.
+Use a pygame-free local adaptation of the `flappy-bird-gymnasium` 0.4.0 non-rendering simulation behind a small in-house, general-purpose Gymnasium-to-PettingZoo compatibility wrapper. The adapted source retains its upstream provenance and MIT notice. The harness then only ever sees a PettingZoo interface, per [environment.md](../docs/specs/environment.md). The wrapper must accept a seed on reset and expose one slot. That slot can be controlled by either an agent or a browser input source.
 
 Implement the public-facing metadata layer as a declarative structure that each environment registers alongside its PettingZoo entry point. It carries: display name, description, slot counts, human-capable slots, recommended episode length, pace interval (set for realtime environments, null for turn-based), default per-step and per-episode time limits, default human-slot timeout for live sessions, messaging flag and cap, LLM flag, and the renderer reference. The backend will later serve this to the frontend, so it must be serializable.
 
@@ -40,7 +40,7 @@ Stage 1 (schema, validation, recording format).
 
 ## Done when
 
-A scripted agent loaded from a manifest plays a full seeded Flappy Bird episode through the harness CLI. The same seed twice produces identical recordings when run with a deterministic test clock. A deliberately slow agent trips the per-step timeout. A human/noop action source can drive the same single slot through the programmatic API. The human-slot timeout path falls back to noop without using the agent timeout machinery. The template repo's local play script runs an episode on a clean machine with no sandbox backend present.
+A scripted agent loaded from a manifest plays a full seeded Flappy Bird episode through the harness CLI. The same seed twice produces identical recordings when run with a deterministic test clock. A deliberately slow agent trips the per-step timeout. A human/noop action source can drive the same single slot through the programmatic API. The human-slot timeout path falls back to noop without using the agent timeout machinery. The template's local browser play runs an episode on a clean machine with no sandbox backend present.
 
 Additionally for the release: the `template-publish` workflow runs for version 1, replacing the placeholder in the student repository with the real template and the real hello example, and stamps `template-v1` on the monorepo.
 
@@ -58,8 +58,8 @@ Additionally for the release: the `template-publish` workflow runs for version 1
 
 ## Open questions
 
-Flappy Bird's pace interval is proposed at 50 ms, but it can only be tuned honestly with a renderer under real input. So the value is confirmed during Stage 4 playtesting; the metadata field is trivial to change. The overlay extractor depends on `flappy-bird-gymnasium` internals at the pinned 0.4.0. If those internals prove unusable at implementation time, the documented escalation is vendoring a minimal Flappy Bird implementation into the environments package. Per-episode budget semantics across multiple slots are deliberately left to Stage 7, when a second, multi-slot environment makes the question concrete.
+Flappy Bird's pace interval is proposed at 50 ms, but it can only be tuned honestly with a renderer under real input. So the value is confirmed during Stage 4 playtesting; the metadata field is trivial to change. Per-episode budget semantics across multiple slots are deliberately left to Stage 7, when a second, multi-slot environment makes the question concrete.
 
 ## Resolved at implementation time
 
-The `flappy-bird-gymnasium==0.4.0` internals proved usable directly, with no vendoring needed. The overlay reads `gym_env.unwrapped`'s `_player_*`, `_upper_pipes`/`_lower_pipes`, `_score`, and the screen dimensions, all covered by the finite-field test. The dependency set v1 was compiled with `uv pip compile templates/base/requirements.in -o templates/base/requirements.txt --python-version 3.12`. It resolves `pettingzoo==1.26.1`, `gymnasium==1.3.0`, `numpy==2.4.6`, `pygame==2.6.1`, plus `openai`, `python-dotenv`, and their transitive closure. The environments package pins are kept in step with that set (`pettingzoo>=1.26,<1.27`). All proposed Flappy Bird metadata values were adopted as-is. The overlay carries the screen `width`/`height` on every step rather than only the first, so each frame is self-describing for the renderer (a few bytes; harmless). `run_episode` gained a `max_steps` parameter backing the CLI's `--steps` cap. The synced environment modules use relative/third-party imports, so the generate step copies them verbatim into `templates/flappy_bird/sandbox_env/` and writes only the two `sandbox_env` `__init__` files (the top-level one exposing the uniform `make_env`/`ENV_ID`/`PLAYER_SLOT` surface).
+Flappy Bird now uses a small pygame-free adaptation of the `flappy-bird-gymnasium==0.4.0` non-rendering simulation. Its immutable state snapshot supplies the overlay, and the shipped source carries the applicable upstream copyright, acknowledgements, and complete MIT notice. The dependency set v1 was recompiled without `pygame`, `flappy-bird-gymnasium`, or its unused `matplotlib` dependency. The environments package pins remain in step with that set. All proposed Flappy Bird metadata values were adopted as-is. The overlay carries the screen `width`/`height` on every step rather than only the first, so each frame is self-describing. `run_episode` gained a `max_steps` parameter backing the CLI's `--steps` cap. Generation copies the environment modules and relocated `sandbox.harness` package into tracked template sources. Publication alone builds the local frontend once and injects that browser bundle into every staged template and example for local play.

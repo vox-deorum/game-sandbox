@@ -76,9 +76,9 @@ class IllegalMoveError(ValueError):
     """Raised by :meth:`SpadesEnv.step` when an action is not legal in the current phase."""
 
 
-def make_env(render_mode: str | None = None) -> SpadesEnv:
+def make_env() -> SpadesEnv:
     """Return a fresh :class:`SpadesEnv`. The seed arrives later at :meth:`SpadesEnv.reset`."""
-    return SpadesEnv(render_mode=render_mode)
+    return SpadesEnv()
 
 
 def default_action(env: SpadesEnv, slot_id: str) -> int:
@@ -98,22 +98,15 @@ class SpadesEnv(AECEnv):
     metadata = {
         "name": "spades_v0",
         "is_parallelizable": False,
-        "render_modes": ["human", "rgb_array"],
     }
 
-    def __init__(self, render_mode: str | None = None) -> None:
+    def __init__(self) -> None:
         super().__init__()
-        self.render_mode = render_mode
-        # Local-renderer view options, set by the demo/template before rendering: the seat shown at
-        # the bottom of the table, and whether every hand is revealed (spectator/replay).
-        self.view_seat = 0
-        self.reveal_all = False
         self.possible_agents = [f"player_{i}" for i in range(rules.NUM_PLAYERS)]
         self.agents: list[str] = []
         # Bound in reset(); declared (not None-initialised) so the type stays SpadesState and every
         # access below is free of Optional-narrowing noise. api_test always resets first.
         self.state: rules.SpadesState
-        self._renderer: Any = None
 
         # Build the spaces exactly once so the accessors can return the same object every call
         # (api_test asserts space identity). The space mirrors observe()'s structure: the semantic
@@ -251,21 +244,6 @@ class SpadesEnv(AECEnv):
         self._accumulate_rewards()
         self._deads_step_first()
 
-        if self.render_mode == "human":
-            self.render()
-
     def render(self) -> Any:
-        if self.render_mode is None:
-            return None
-        # Lazy-import so env.py imports cleanly without pulling in pygame. The renderer is never
-        # touched when render_mode is None, so api_test stays free of any pygame dependency.
-        from .render import SpadesRenderer
-
-        if self._renderer is None:
-            self._renderer = SpadesRenderer(self.render_mode)
-        return self._renderer.render(self)
-
-    def close(self) -> None:
-        if self._renderer is not None:
-            self._renderer.close()
-            self._renderer = None
+        """Return no pixels: browser renderers consume the semantic overlay instead."""
+        return None

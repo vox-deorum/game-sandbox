@@ -3,15 +3,13 @@
  * generic trick-taking — the overlay→scene function, the seat badge's penalty-score line, the
  * hearts-broken status strip, and the "+N points" pill raised over a trick's winner. The shared card
  * table (felt, seats, trick, hand, opponents, card faces, and the fly-in/sweep animation) lives in
- * {@link CardTableRenderer}, the browser twin of `environments/src/local_play/render_cards.py`.
+ * {@link CardTableRenderer}.
  *
  * The same class runs unchanged from a stored recording, where it has no `sendAction` and no controlled
  * slot, so the cards are inert and it is draw-only (what the replay viewer relies on). It registers under
  * the metadata key `"hearts"` (see `renderers/index.ts`).
  *
- * This is the browser twin of the Python pygame renderer in `environments/src/hearts/render.py`; the
- * Hearts-only drawing below mirrors that file's `_draw_seat_content`, `_draw_status`, and
- * `_draw_trick_won_badge`, while the shared table mirrors `render_cards.py` on both sides.
+ * Hearts-specific drawing stays here while the shared trick-taking table remains in the base class.
  */
 import type { StepState } from '@game-sandbox/schema'
 import { type Container, Graphics } from 'pixi.js'
@@ -61,13 +59,11 @@ export class HeartsRenderer extends CardTableRenderer<HeartsScene> {
     return points > 0 ? `+${points}` : null
   }
 
-  // --- Status strip (render.py _draw_status) ---
+  // --- Status strip ---
 
   protected reconcileStatus(scene: HeartsScene): void {
     // The base clears the status layer before calling this; we just build the two rows.
-    // Tall enough to hold both rows. Pixi renders this text larger than pygame, so the hint fills the
-    // panel here where the Python `strip_h` (52) has room to spare — the two are intentionally not
-    // pixel-identical. (A brief stint at 55 clipped the hint row, so keep this at 60.)
+    // Tall enough to hold both rows. A shorter panel clips the hint row.
     this.statusLayer.addChild(this.makeStatusPanel(60))
 
     const s = scene.status
@@ -101,8 +97,7 @@ export class HeartsRenderer extends CardTableRenderer<HeartsScene> {
 
     if (s.hint) {
       const hint = this.text(s.hint, 18, COLORS.hintInk, 'left')
-      // Sit just under the first row; the small +2 gap keeps the hint inside the 60px panel. (render.py
-      // lowers its hint more within a shorter strip; Pixi's larger text already fills this panel.)
+      // Sit just under the first row; the small gap keeps the hint inside the panel.
       hint.position.set(16, 9 + trick.height + 2)
       this.statusLayer.addChild(hint)
     }

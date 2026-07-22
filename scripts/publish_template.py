@@ -34,7 +34,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from _paths import BUILD_DIR, DEFAULT_TEMPLATE_ENV, REPO_ROOT
+from _paths import BUILD_DIR, DEFAULT_TEMPLATE_ENV, FRONTEND_LOCAL_DIST_DIR, REPO_ROOT
 from compose import compose_example, compose_template, list_envs, list_examples
 
 DEFAULT_TARGET_REPO = "vox-deorum/game-agent-template"
@@ -75,6 +75,35 @@ def _remote_url(target_repo: str, token: str | None) -> str:
     return f"https://github.com/{target_repo}.git"
 
 
+def _build_local_frontend() -> Path:
+    """Build and validate the local browser bundle used only in published snapshots."""
+    if FRONTEND_LOCAL_DIST_DIR.exists():
+        if FRONTEND_LOCAL_DIST_DIR.is_dir():
+            shutil.rmtree(FRONTEND_LOCAL_DIST_DIR)
+        else:
+            FRONTEND_LOCAL_DIST_DIR.unlink()
+    npm = "npm.cmd" if sys.platform == "win32" else "npm"
+    subprocess.run(
+        [npm, "run", "build:local", "--workspace", "@game-sandbox/frontend"],
+        cwd=REPO_ROOT,
+        check=True,
+    )
+    local_html = FRONTEND_LOCAL_DIST_DIR / "local.html"
+    if not local_html.is_file():
+        raise PublishError(f"local frontend build did not produce {local_html}")
+    return FRONTEND_LOCAL_DIST_DIR
+
+
+def _inject_local_frontend(bundle: Path, destinations: list[Path]) -> None:
+    """Replace each composed output's browser bundle with the validated publish artifact."""
+    for output in destinations:
+        destination = output / "sandbox" / "web"
+        if destination.exists():
+            shutil.rmtree(destination)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(bundle, destination)
+
+
 def _assemble_snapshot(src: Path, dest: Path) -> None:
     """Replace dest's working content with a fresh copy of src (keeping any .git)."""
     if dest.exists():
@@ -97,11 +126,15 @@ def _drop_venv(snapshot_dir: Path) -> None:
         shutil.rmtree(venv)
 
 
-def _publish_orphan_snapshot(src: Path, dest: Path, *, branch: str, message: str, remote: str) -> None:
-    """Assemble ``src`` under ``dest`` and force-push it as a fresh orphan ``branch``."""
-    dest.mkdir(parents=True)
+def _prepare_snapshot(src: Path, dest: Path) -> None:
+    """Assemble a clean, runnable publish snapshot at ``dest``."""
+    dest.mkdir(parents=True, exist_ok=True)
     _assemble_snapshot(src, dest)
     _drop_venv(dest)
+
+
+def _publish_orphan_snapshot(dest: Path, *, branch: str, message: str, remote: str) -> None:
+    """Force-push an already prepared snapshot as a fresh orphan ``branch``."""
     _git(["init", "-q"], cwd=dest)
     _git(["checkout", "-q", "--orphan", branch], cwd=dest)
     _git(["add", "-A"], cwd=dest)
@@ -122,9 +155,11 @@ def publish(
         raise PublishError(
             f"default environment {DEFAULT_TEMPLATE_ENV!r} has no template layer; found {envs or '(none)'}."
         )
+    local_bundle = _build_local_frontend()
     templates = {env: compose_template(env) for env in envs}
     examples = list_examples()
     composed = {(env, name): compose_example(env, name) for env, name in examples}
+    _inject_local_frontend(local_bundle, [*templates.values(), *composed.values()])
     print(f"composed {len(templates)} template(s): {', '.join(templates) or '(none)'}")
     print(f"composed {len(composed)} example(s): {', '.join(f'{e}/{n}' for e, n in composed) or '(none)'}")
 
@@ -140,9 +175,13 @@ def publish(
     #    "Use this template" instantiates main, so main must be a runnable composed kit, not
     #    the raw templates/ tree (which no longer runs on its own).
     main_dir = publish_root / "main"
-    main_dir.mkdir()
-    _assemble_snapshot(templates[DEFAULT_TEMPLATE_ENV], main_dir)
-    _drop_venv(main_dir)
+    _prepare_snapshot(templates[DEFAULT_TEMPLATE_ENV], main_dir)
+    template_snapshots = {env: publish_root / "templates" / env for env in templates}
+    example_snapshots = {(env, name): publish_root / "examples" / env / name for env, name in composed}
+    for env, out_dir in templates.items():
+        _prepare_snapshot(out_dir, template_snapshots[env])
+    for key, out_dir in composed.items():
+        _prepare_snapshot(out_dir, example_snapshots[key])
     print(f"prepared {DEFAULT_TEMPLATE_ENV} template snapshot for main: {commit_message!r}, tag v{version}")
 
     if dry_run:
@@ -169,20 +208,18 @@ def publish(
     _git(["push", "-f", remote, f"v{version}"], cwd=main_dir)
 
     # 2. Each environment's composed template -> its own orphan snapshot branch.
-    for env, out_dir in templates.items():
+    for env in templates:
         _publish_orphan_snapshot(
-            out_dir,
-            publish_root / "templates" / env,
+            template_snapshots[env],
             branch=f"templates/{env}",
             message=f"{commit_message} (template: {env})",
             remote=remote,
         )
 
     # 3. Each composed example -> its own orphan snapshot branch.
-    for (env, name), out_dir in composed.items():
+    for env, name in composed:
         _publish_orphan_snapshot(
-            out_dir,
-            publish_root / "examples" / env / name,
+            example_snapshots[(env, name)],
             branch=f"examples/{env}/{name}",
             message=f"{commit_message} (example: {env}/{name})",
             remote=remote,

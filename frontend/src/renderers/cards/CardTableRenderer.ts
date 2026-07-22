@@ -7,11 +7,8 @@
  * subclass supplies only its overlay→scene function, its geometry, its per-seat badge interior, its
  * status strip, and any center extras (Spades' bid chips).
  *
- * This is the browser twin of the Python pygame shared layer in
- * `environments/src/local_play/render_cards.py` (`CardTableRenderer`): the card/suit/table drawing below
- * mirrors its `_draw_card_face`, `_draw_suit_shapes`, `_draw_seats`, `_animate_card_played`, and
- * `_animate_trick_won`, and the subclass hooks mirror its `_extract_overlay`, `_draw_seat_content`,
- * `_draw_status`, `_draw_center`, and `_draw_trick_won_badge`.
+ * This is the canonical retained browser renderer for the shared card table. Game-specific subclasses
+ * supply their semantic-overlay scene, seat content, status, and center controls.
  *
  * It keeps the pure/retained split the architecture rests on: a game's `computeScene` (in its own
  * scene.ts) is a pure function of state that produces the static "snapped" table a scrubber lands on, and
@@ -133,30 +130,26 @@ export abstract class CardTableRenderer<
   /** Cached gradient for the felt backdrop (one GPU texture, freed in destroy). */
   private feltGradient: FillGradient | null = null
 
-  // --- Subclass hooks (the browser twins of render_cards.py's overridable methods) ---
+  // --- Subclass hooks ---
 
-  /** The table geometry this game draws at (render_cards.py's class-attribute overrides). */
+  /** The table geometry this game draws at. */
   protected abstract readonly geometry: TableGeometry
 
-  /** Turn one recorded state into this game's scene (render_cards.py `_extract_overlay` + scene). */
+  /** Turn one recorded state into this game's scene. */
   protected abstract computeSceneFor(state: StepState): TScene
 
-  /** Draw the interior of a seat badge (name plus the game's per-seat line); render_cards.py
-   *  `_draw_seat_content`. The badge frame, halo, and border are drawn for you by {@link makeSeat}. */
+  /** Draw the seat badge interior. The frame, halo, and border come from {@link makeSeat}. */
   protected abstract drawSeatContent(container: Container, seat: TScene['seats'][number]): void
 
-  /** Draw the top status strip for this game (render_cards.py `_draw_status`). The status layer is
-   *  cleared for you before this runs; use {@link makeStatusPanel} for the shared translucent strip. */
+  /** Draw the top status strip. The layer is cleared first; use {@link makeStatusPanel}. */
   protected abstract reconcileStatus(scene: TScene): void
 
-  /** The pill text raised over the winner during a sweep, or null for none (render_cards.py
-   *  `_draw_trick_won_badge`). Default: no pill. Computed once when the sweep phase is created. */
+  /** The pill text raised over the winner during a sweep, or null for none. */
   protected sweepPillText(_sweep: TrickSweep, _state: StepState): string | null {
     return null
   }
 
-  /** Draw any center extras into {@link gameLayer} (Spades' bid chips); render_cards.py `_draw_center`
-   *  extras. The game layer is cleared for you before this runs. Default: nothing. */
+  /** Draw center extras into {@link gameLayer}, such as Spades bid chips. */
   protected reconcileGameLayers(_scene: TScene): void {}
 
   /** A seam run at the end of each {@link update}, before the previous state is replaced, for a game's
@@ -351,7 +344,7 @@ export abstract class CardTableRenderer<
         }
       } else {
         // Drive the trick-won sweep: slide and shrink the cards into the winner, then leave the center
-        // clear (the cards are "with" the winner now), exactly as render_cards.py's _animate_trick_won.
+        // clear because the cards are with the winner now.
         if (t >= 1) {
           this.active = null
           clear(this.trickLayer)
@@ -368,7 +361,7 @@ export abstract class CardTableRenderer<
     return this.active !== null || extra || !this.scene.terminal
   }
 
-  // --- Table backdrop (built once; render_cards.py _build_background) ---
+  // --- Table backdrop, built once ---
 
   private drawTable(): void {
     const g = new Graphics()
@@ -399,7 +392,7 @@ export abstract class CardTableRenderer<
     this.bgLayer.addChild(g)
   }
 
-  // --- Seats (render_cards.py _draw_seats) ---
+  // --- Seats ---
 
   private reconcileSeats(scene: TScene): void {
     clear(this.seatLayer)
@@ -455,7 +448,7 @@ export abstract class CardTableRenderer<
     }
   }
 
-  // --- Opponents (render_cards.py _draw_opponents / _draw_opponent_row) ---
+  // --- Opponents ---
 
   private reconcileOpponents(opponents: readonly SceneCard[]): void {
     clear(this.opponentLayer)
@@ -468,7 +461,7 @@ export abstract class CardTableRenderer<
     }
   }
 
-  // --- Center trick (render_cards.py _draw_trick) ---
+  // --- Center trick ---
 
   private reconcileTrick(trick: readonly SceneTrickCard[]): void {
     clear(this.trickLayer)
@@ -477,7 +470,7 @@ export abstract class CardTableRenderer<
         border: card.isWinner ? COLORS.winnerGlow : undefined,
         borderW: 4,
       })
-      // Trick cards position by their center (render_cards.py centers the rect on the offset point).
+      // Trick cards position by their center.
       node.position.set(card.x - SMALL_W / 2, card.y - SMALL_H / 2)
       this.trickLayer.addChild(node)
     }
@@ -486,7 +479,7 @@ export abstract class CardTableRenderer<
   /**
    * Draw a card fly-in at progress `t`: the cards already in the center sit static, and the played card
    * slides from where it left the player's hand (held and ringed gold during the hold) into its trick
-   * spot, shrinking from hand size to trick size (mirrors render_cards.py `_animate_card_played`).
+   * spot, shrinking from hand size to trick size.
    */
   private renderPlay(move: PlayMove, t: number): void {
     clear(this.trickLayer)
@@ -512,8 +505,7 @@ export abstract class CardTableRenderer<
     this.flyLayer.addChild(node)
   }
 
-  /** Draw the four swept cards at progress `t`, plus the game's winner pill (render_cards.py
-   *  _animate_trick_won). */
+  /** Draw the four swept cards at progress `t`, plus the game's winner pill. */
   private renderSweep(phase: SweepPhase, t: number): void {
     clear(this.trickLayer)
     for (const card of phase.sweep.cards) {
@@ -532,7 +524,7 @@ export abstract class CardTableRenderer<
   }
 
   /**
-   * The gold pill above the winner's seat, scaling in during the hold (render_cards.py _draw_pill). A
+   * The gold pill above the winner's seat, scaling in during the hold. A
    * null text draws nothing (a trick that earned no flourish). Games supply the text via
    * {@link sweepPillText}.
    */
@@ -562,7 +554,7 @@ export abstract class CardTableRenderer<
     this.pillLayer.addChild(c)
   }
 
-  // --- The view seat's hand (render_cards.py _draw_hand), with click-to-play wiring ---
+  // --- The view seat's hand, with click-to-play wiring ---
 
   private reconcileHand(hand: readonly SceneHandCard[], viewSeat: number): void {
     clear(this.handLayer)
@@ -650,7 +642,7 @@ export abstract class CardTableRenderer<
 
   // --- Shared status helper (a game's reconcileStatus builds on this) ---
 
-  /** The translucent status strip panel with its gold under-rule (render_cards.py status panel). */
+  /** The translucent status strip panel with its gold under-rule. */
   protected makeStatusPanel(stripH = 60): Graphics {
     const panel = new Graphics()
     panel.rect(0, 0, WIDTH, stripH).fill({ color: '#000000', alpha: 0.41 })
@@ -658,7 +650,7 @@ export abstract class CardTableRenderer<
     return panel
   }
 
-  // --- Card primitives (render_cards.py _draw_card_face / _draw_card_back / _draw_suit_shapes) ---
+  // --- Card primitives ---
 
   /**
    * Build a face-up card as a Container at (0,0): a rounded cream face, an optional colored border (legal
@@ -687,7 +679,7 @@ export abstract class CardTableRenderer<
     const ink = suit === DIAMONDS || suit === HEARTS ? COLORS.redInk : COLORS.blackInk
     const rankStr = rankLabel(card)
 
-    // Corner index: rank in the top-left with a small pip beneath it (render_cards.py _draw_corner_index).
+    // Corner index: rank in the top-left with a small pip beneath it.
     const rankSize = Math.max(12, h * 0.22)
     const rank = this.text(rankStr, rankSize, ink, 'left')
     rank.position.set(w * 0.08, h * 0.03)
@@ -702,7 +694,7 @@ export abstract class CardTableRenderer<
       cornerPip,
       ink,
     )
-    // Center pip: the big suit mark (render_cards.py centers a size = rect.width * 0.5 pip).
+    // Center pip: the big suit mark.
     this.drawSuit(pips, suit, w / 2, h / 2, w * 0.5, ink)
     c.addChild(pips)
 
@@ -723,7 +715,7 @@ export abstract class CardTableRenderer<
     return c
   }
 
-  /** A face-down card: a gold lattice on deep blue with a gold rim (render_cards.py _draw_card_back). */
+  /** A face-down card: a gold lattice on deep blue with a gold rim. */
   protected makeCardBack(w: number, h: number): Container {
     const c = new Container()
     const radius = Math.max(3, w * 0.1)
@@ -757,8 +749,8 @@ export abstract class CardTableRenderer<
 
   /**
    * Draw an antialiased suit pip centered at (cx, cy) within a `size`-pixel box, from primitives rather
-   * than a font glyph (the suits are not in the UI font). A faithful port of render_cards.py
-   * `_draw_suit_shapes`: PixiJS Graphics are vector and antialiased, so no supersampling is needed.
+   * than a font glyph because the suits are not in the UI font. PixiJS Graphics are vector and
+   * antialiased, so no supersampling is needed.
    */
   protected drawSuit(
     g: Graphics,
@@ -800,7 +792,7 @@ export abstract class CardTableRenderer<
     this.drawSuitStem(g, cx, cy, size, ink)
   }
 
-  /** The little trapezoid stem shared by the spade and club pips (render_cards.py _draw_suit_stem). */
+  /** The little trapezoid stem shared by the spade and club pips. */
   private drawSuitStem(g: Graphics, cx: number, cy: number, size: number, ink: string): void {
     g.poly([
       cx - size * 0.16,

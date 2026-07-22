@@ -2,8 +2,8 @@
 
 This module is the single source of truth for bidding, card legality, and scoring. Like the
 Hearts engine it is deliberately dependency-free (it imports only the standard library), so the
-same rules can drive the PettingZoo environment, a reference bot, the renderer, and any tests
-without dragging in ``pettingzoo``/``pygame``/``numpy``. Everything is expressed over the fixed
+same rules can drive the PettingZoo environment, a reference bot, and tests without dragging in
+``pettingzoo`` or ``numpy``. Everything is expressed over the fixed
 integer card encoding below, which downstream code relies on verbatim.
 
 Card encoding (fixed, identical to Hearts): a card is an int ``0..51`` with
@@ -400,7 +400,7 @@ def display_scores(state: SpadesState) -> list[int]:
 
     Identical values to :func:`leaderboard_scores` (the raw team score is already higher-is-better).
     The browser game-over standings shows this per-seat value (and ranks by :func:`leaderboard_scores`),
-    while the local pygame scoreboard instead reads the two-element :func:`hand_team_scores`. Surfaced
+    while the browser renderer reads the two-element :func:`hand_team_scores`. Surfaced
     per seat, partners sharing, so that seat-indexed surface can index it directly and the overlay
     matches the Hearts shape.
     """

@@ -1,8 +1,8 @@
 """One command to set up, run, and human-test your agent: ``python -m sandbox``.
 
     python -m sandbox            # set up if needed, then play it yourself
-    python -m sandbox human      # play it yourself (space/up or click flaps)
-    python -m sandbox play       # run YOUR agent in a window
+    python -m sandbox human      # play a seat in your browser
+    python -m sandbox play       # watch YOUR agent in your browser
     python -m sandbox eval       # run several seeded episodes, print the mean
     python -m sandbox test       # run the checks
     python -m sandbox llm [tier] # smoke-test small, medium, or large (default: small)
@@ -28,9 +28,9 @@ _USAGE = """\
 usage: python -m sandbox [command] [args...]
 
 commands:
-  (none)   play it yourself in a window (same as `human`)
-  human    play it yourself in a window
-  play     run YOUR agent in a window  (--headless for no window)
+  (none)   play a seat in your browser (same as `human`)
+  human    play a seat in your browser
+  play     watch YOUR agent in your browser
   eval     run several seeded episodes and print the mean
   test     run the checks (pytest)
   llm      smoke-test small, medium, or large (default: small)
@@ -45,7 +45,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 #: Import lines that prove an interpreter has what a command needs. The runtime deps cover
 #: play/eval/human; ``test`` additionally needs pytest, so each command probes for its own deps —
 #: otherwise ``test`` could run under an interpreter that lacks pytest instead of bootstrapping.
-_RUNTIME_PROBE = "import pettingzoo, gymnasium"
+_RUNTIME_PROBE = "import pettingzoo, gymnasium, jsonschema, websockets"
 _TEST_PROBE = "import pettingzoo, gymnasium, pytest"
 _LLM_PROBE = "import openai, dotenv"
 
@@ -110,8 +110,8 @@ def _run(module_args: list[str], probe: str) -> int:
 #: is special-cased in ``main`` (it builds the runtime rather than running under it), and a bare
 #: ``python -m sandbox`` — or a leading flag — maps to ``human``.
 _DISPATCH = {
-    "human": (["-m", "sandbox.play", "--human"], _RUNTIME_PROBE),
-    "play": (["-m", "sandbox.play"], _RUNTIME_PROBE),
+    "human": (["-m", "sandbox.play", "human"], _RUNTIME_PROBE),
+    "play": (["-m", "sandbox.play", "agent"], _RUNTIME_PROBE),
     "eval": (["-m", "sandbox.evaluate"], _RUNTIME_PROBE),
     "test": (["-m", "pytest"], _TEST_PROBE),
     "llm": (["-m", "sandbox.llm_example"], _LLM_PROBE),

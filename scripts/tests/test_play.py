@@ -1,64 +1,113 @@
-"""Tests for the local play launcher's game-over standings (``scripts/play.py``).
-
-The one behaviour pinned here is the dense, tie-aware medal ranking: in a partnership game both
-partners share a leaderboard score by construction, so the winning pair must both show gold and the
-losing pair both silver, rather than being split by row position.
-"""
+"""Focused seams for the maintainer local browser launcher."""
 
 from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import cast
 
-from game_sandbox_harness.environment import EnvironmentEntry
+from game_sandbox_harness.environment import EnvironmentEntry, EnvironmentMeta
 
-# The dev scripts are run as top-level modules (scripts/ on sys.path), so mirror that here.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import play  # noqa: E402
 
 
-class _FakeEntry:
-    """Minimal stand-in exposing only the ``overlay`` hook ``_standings`` reads.
+def _entry() -> EnvironmentEntry:
+    class Env:
+        possible_agents = ["player_0", "player_1"]
 
-    ``_standings`` touches nothing else on the entry, so the tests pass this (via ``cast``) where a
-    full :class:`EnvironmentEntry` is annotated rather than building one with a real meta/make.
-    """
+        def close(self) -> None:
+            pass
 
-    def __init__(self, display_scores: list[int]) -> None:
-        self._display_scores = display_scores
-
-    def overlay(self, env: object) -> dict:
-        return {"display_scores": self._display_scores}
-
-
-def test_standings_award_dense_tie_aware_medals_to_a_partnership():
-    # Team 0 (seats 0 & 2) both scored 52; team 1 (seats 1 & 3) both scored -70.
-    scores = {"player_0": 52.0, "player_1": -70.0, "player_2": 52.0, "player_3": -70.0}
-    display = [52, -70, 52, -70]
-
-    rows = play._standings(cast(EnvironmentEntry, _FakeEntry(display)), object(), scores)
-
-    labels = [label for label, _value, _cup in rows]
-    cups = [cup for _label, _value, cup in rows]
-    values = [value for _label, value, _cup in rows]
-
-    # Best-first: the winning partnership, then the losing one.
-    assert set(labels[:2]) == {"P0", "P2"}
-    assert set(labels[2:]) == {"P1", "P3"}
-    # Dense ranking: the tied winners share gold (rank 0), the tied losers share silver (rank 1).
-    assert cups == [0, 0, 1, 1]
-    # The displayed value is each seat's team score, read from the overlay.
-    assert values == ["52", "52", "-70", "-70"]
+    return EnvironmentEntry(
+        meta=EnvironmentMeta(
+            env_id="fixture",
+            display_name="Fixture",
+            description="fixture",
+            min_slots=2,
+            max_slots=2,
+            human_slots=("player_0", "player_1"),
+            human_timeout_ms=1000,
+            recommended_episode_ticks=1,
+            pace_interval_ms=None,
+            step_limit_ms=1000,
+            episode_limit_ms=1000,
+            messaging=False,
+            message_cap=None,
+            llm=False,
+            renderer="fixture",
+        ),
+        make=Env,
+        default_action=lambda _env, _slot: 0,
+    )
 
 
-def test_standings_rank_distinct_scores_without_gaps():
-    # Four distinct scores: dense ranks 0,1,2,3, and only the top three (0,1,2) get a trophy.
-    scores = {"player_0": 5.0, "player_1": 3.0, "player_2": 1.0, "player_3": -2.0}
-    display = [5, 3, 1, -2]
+def test_local_config_has_complete_slots_and_players(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(play, "BUILTIN_AGENT_ROOT", tmp_path / "builtin")
+    (play.BUILTIN_AGENT_ROOT / "fixture").mkdir(parents=True)
+    config = play.local_config(
+        _entry(),
+        mode="human",
+        seat=1,
+        seed=7,
+        max_steps=3,
+        recording_dir=tmp_path,
+    )
 
-    rows = play._standings(cast(EnvironmentEntry, _FakeEntry(display)), object(), scores)
+    assert config["slots"] == {
+        "player_0": {"kind": "builtin-agent", "path": str(play.BUILTIN_AGENT_ROOT / "fixture")},
+        "player_1": {"kind": "external"},
+    }
+    players = config["players"]
+    assert isinstance(players, dict)
+    assert set(players) == {"player_0", "player_1"}
+    assert config["llm"] is None
+    assert config["start_paused"] is True
 
-    assert [label for label, _v, _c in rows] == ["P0", "P1", "P2", "P3"]
-    assert [cup for _l, _v, cup in rows] == [0, 1, 2, None]
+
+def test_local_bundle_builds_only_when_missing(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(play, "FRONTEND_LOCAL_DIST_DIR", tmp_path)
+    calls: list[tuple[list[str], Path]] = []
+
+    def build(command: list[str], *, cwd: Path, check: bool) -> None:
+        calls.append((command, cwd))
+        (tmp_path / "local.html").write_text("ok", encoding="utf-8")
+
+    monkeypatch.setattr(play.subprocess, "run", build)
+    assert play.ensure_local_bundle() == tmp_path
+    assert calls == [([play.NPM_COMMAND, "run", "build:local"], play.REPO_ROOT / "frontend")]
+    assert play.ensure_local_bundle() == tmp_path
+    assert len(calls) == 1
+
+
+def test_launch_browser_uses_the_local_server_and_browser_seam(monkeypatch, tmp_path: Path):
+    events: list[object] = []
+
+    class Server:
+        url = "http://127.0.0.1:1234/local.html"
+
+        def __init__(self, *args, **kwargs) -> None:
+            events.append((args, kwargs))
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args) -> None:
+            pass
+
+        async def wait(self) -> None:
+            events.append("wait")
+
+    monkeypatch.setattr(play, "LocalServer", Server)
+    monkeypatch.setattr(play.webbrowser, "open", events.append)
+    assert (
+        play.launch_browser(_entry(), {"env_id": "fixture"}, port=12, open_browser=True, static_root=tmp_path)
+        == 0
+    )
+    assert events[-2:] == ["http://127.0.0.1:1234/local.html", "wait"]
+
+
+def test_builtin_agent_path_resolves_inside_this_checkout():
+    path = Path(play.builtin_agent_path("hearts"))
+    assert path.is_relative_to(play.REPO_ROOT)
+    assert (path / "manifest.json").is_file()

@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:local": "vite build --config vite.local.config.ts",
     "preview": "vite preview",
     "check": "biome check . && vue-tsc --noEmit",
     "test": "vitest run",

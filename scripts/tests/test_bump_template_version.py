@@ -67,11 +67,11 @@ COPY backend/images/session-base/deps-v1/builtin /opt/agents/builtin
 
 def test_freeze_requirements_strips_comments_and_headers():
     frozen = freeze_requirements(_PIP_COMPILE, 3)
-    assert frozen.startswith("# Frozen v3 dependency set for the deps-v3 session base image.")
+    assert frozen.startswith("# Dependency set for the deps-v3 session base image.")
     lines = frozen.splitlines()
     # Two header lines, then only the pins, in order, no "# via" blocks.
-    assert lines[0].startswith("# Frozen v3")
-    assert lines[1].startswith("# do not edit")
+    assert lines[0].startswith("# Dependency set for the deps-v3")
+    assert lines[1].startswith("# template until template-v3 is published")
     assert lines[2:] == ["annotated-types==0.7.0", "anyio==4.13.0", "numpy==2.4.6"]
     assert frozen.endswith("\n")
 
@@ -197,7 +197,7 @@ def test_apply_bumps_every_touchpoint(repo: Path):
     assert "deps-v2/Dockerfile" in ts
 
     deps_v2 = repo / "backend" / "images" / "session-base" / "deps-v2"
-    assert (deps_v2 / "requirements.txt").read_text().startswith("# Frozen v2")
+    assert (deps_v2 / "requirements.txt").read_text().startswith("# Dependency set for the deps-v2")
     assert '"template_version": 2' in (deps_v2 / "builtin" / "hearts" / "manifest.json").read_text()
     # Non-manifest builtin files are copied verbatim.
     assert (deps_v2 / "builtin" / "flappy_bird" / "requirements.txt").read_text() == "wcwidth==0.2.13\n"

@@ -12,7 +12,7 @@ The chat panel is deliberately **not** part of this step. Messages are environme
 
 ## What to build
 
-A `spades` renderer under `frontend/src/renderers/spades/` (`index.ts`, `scene.ts`, `thumbnail.svg`), extending the Pixi base and registered once in `frontend/src/renderers/index.ts` under the `renderer="spades"` metadata key. Like Hearts, it is a deliberate port of the local pygame renderer (`environments/src/spades/render.py`), with cross-referenced symbols in `scene.ts` so the two stay in lockstep, and legality read verbatim from the emitted mask in both.
+A `spades` renderer under `frontend/src/renderers/spades/` (`index.ts`, `scene.ts`, `thumbnail.svg`), extending the Pixi base and registered once in `frontend/src/renderers/index.ts` under the `renderer="spades"` metadata key. It serves both the web app and loopback local play, and reads legality verbatim from the emitted mask.
 
 It draws:
 

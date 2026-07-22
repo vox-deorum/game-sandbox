@@ -181,6 +181,24 @@ describe('relay (LiveSession)', () => {
     expect(JSON.parse(late.received[2] ?? '{}')).toEqual({ kind: 'session', status: 'running' })
   })
 
+  it('replays the accepted paused state after running status to a late attacher', async () => {
+    const { session, process } = makeSession()
+    const owner = session.attach(new FakeSocket(), true)
+    process.emit(HEADER)
+    process.emit(STATE_0)
+    await flush()
+    owner.handleMessage('{"kind":"pause"}')
+
+    const late = new FakeSocket()
+    session.attach(late, false)
+    expect(late.received).toEqual([
+      HEADER,
+      STATE_0,
+      JSON.stringify({ kind: 'session', status: 'running' }),
+      '{"kind":"pause"}',
+    ])
+  })
+
   it('relays the result envelope and ignores a malformed line', async () => {
     const { session, process } = makeSession()
     const socket = new FakeSocket()

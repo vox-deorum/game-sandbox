@@ -24,7 +24,7 @@ Timeout defaults become real actions. `EnvironmentEntry.default_action` receives
 
 The observation change breaks agents written for the prerelease template version 1. Since version 1 never shipped publicly, this stage reshapes version 1 in place — updating templates, examples, built-in agents, fixtures, student documentation, and tests — rather than publishing a version 2 or adding a compatibility adapter.
 
-Rules engines remain integer-based internally. Environments convert their state to semantic objects for observations and overlays. Pygame and browser renderers use those objects directly for drawing, animation, legality, and hit testing. A selected card becomes an integer only when a human action is passed to `env.step()` or sent through the browser session channel.
+Rules engines remain integer-based internally. Environments convert their state to semantic objects for observations and overlays. Browser renderers use those objects directly for drawing, animation, legality, and hit testing. A selected card becomes an integer only when a human action is passed to `env.step()` or sent through the browser session channel.
 
 Out of scope are new environments, changes to the AEC loop, changes to integer action encoding, chat, the LLM gateway, and replay compatibility for recordings made before this stage.
 
@@ -41,11 +41,11 @@ Stage 2 provides the harness and metadata types. Stages 7 and 8 provide Hearts a
 Stage 11 has three implementation steps. The first is a non-breaking proof and foundation. The second is the one breaking change, so it moves environments and every consumer together rather than leaving temporary mixed contracts in the repository.
 
 1. **[Foundation and compatibility proof](stage-11/1-foundation-and-compatibility.md).** Add the dependency-free card codec and shared Gymnasium spaces, establish the nested composite observation against pinned PettingZoo (tolerating the known api_test #1211 error in CI), and change the timeout hook while retaining sentinel aliases for direct callers.
-2. **[Semantic rollout](stage-11/2-semantic-rollout.md).** Convert all three environments, overlays, pygame and browser renderers, fixtures, templates, examples, built-in agents, and integration-test consumers in one atomic contract change. Remove sentinels only after every caller moves.
+2. **[Semantic rollout](stage-11/2-semantic-rollout.md).** Convert all three environments, overlays, browser renderers, fixtures, templates, examples, built-in agents, and integration-test consumers in one atomic contract change. Remove sentinels only after every caller moves.
 3. **[Testing, CI, and docs](stage-11/3-testing-ci-and-docs.md).** Run the complete integration and browser journeys, revise student and contributor documentation, update the specs, and reconcile earlier stage plans.
 
 ## Done when
 
 Agents for all three environments read object-shaped observations and return simple integer actions through helpers. Hearts and Spades publish masks that agree with their rules, and Flappy Bird exposes both always-legal actions without a mask. Every observation satisfies its declared space through a complete episode, and PettingZoo's pinned `api_test` passes for all three environments except for the known #1211 `dtype` access on the composite observation, which CI tolerates behind a documented guard.
 
-All three games are watchable, playable, and replayable in the browser and through local pygame play. A composed template (the reshaped version 1) completes a game, timeout recordings contain the real action used, generated files are current, and the complete Python, TypeScript, integration, browser, and documentation checks pass. The specs, student guides, contributor guides, and earlier stage plans describe the new contract consistently.
+All three games are watchable, playable, and replayable in the browser, including through loopback local play. A composed template (the reshaped version 1) completes a game, timeout recordings contain the real action used, generated files are current, and the complete Python, TypeScript, integration, browser, and documentation checks pass. The specs, student guides, contributor guides, and earlier stage plans describe the new contract consistently.

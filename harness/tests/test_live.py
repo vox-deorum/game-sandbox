@@ -20,6 +20,7 @@ import pytest
 from game_sandbox_harness.clock import ManualClock
 from game_sandbox_harness.environment import EnvironmentEntry, EnvironmentMeta
 from game_sandbox_harness.live import (
+    UNSET_TIMEOUT,
     LiveConfig,
     LiveConfigError,
     SlotBinding,
@@ -177,16 +178,22 @@ def test_parse_config_minimal_and_full():
     )
 
 
-def test_parse_config_players_defaults_to_none():
+def test_parse_config_requires_players():
     payload = {"env_id": "fake", "slots": {"p": {"kind": "external"}}, "recording_dir": "/r"}
-    assert parse_config([json.dumps(payload)]).players is None
+    with pytest.raises(LiveConfigError):
+        parse_config([json.dumps(payload)])
 
 
 def test_parse_config_defaults_seed_and_optional_fields():
-    payload = {"env_id": "fake", "slots": {"p": {"kind": "external"}}, "recording_dir": "/r"}
+    payload = {
+        "env_id": "fake",
+        "slots": {"p": {"kind": "external"}},
+        "players": {"p": {"kind": "human", "label": "Human"}},
+        "recording_dir": "/r",
+    }
     cfg = parse_config([json.dumps(payload)])
     assert cfg.seed == 0
-    assert cfg.human_timeout_ms is None
+    assert cfg.human_timeout_ms is UNSET_TIMEOUT
     assert cfg.recording_id is None
     # The Stage 6 timeout overrides default to None (take the environment metadata default).
     assert cfg.step_timeout_ms is None
@@ -201,6 +208,7 @@ def test_parse_config_reads_workflow_overrides():
     payload = {
         "env_id": "fake",
         "slots": {"p": {"kind": "builtin-agent"}},
+        "players": {"p": {"kind": "agent", "label": "Agent"}},
         "recording_dir": "/r",
         "step_timeout_ms": 250,
         "episode_timeout_ms": 60_000,
@@ -216,6 +224,7 @@ def test_parse_config_reads_messaging_keys():
     payload = {
         "env_id": "fake",
         "slots": {"p": {"kind": "builtin-agent"}},
+        "players": {"p": {"kind": "agent", "label": "Agent"}},
         "recording_dir": "/r",
         "messaging_enabled": False,
         "message_cap": 80,
@@ -301,7 +310,7 @@ def test_build_slots_external_resolves_timeout_override_then_metadata():
     entry = make_entry(3, pace_interval_ms=None, human_timeout_ms=8000)
 
     # No override → metadata default.
-    cfg = LiveConfig("fake", 0, {"player_0": SlotBinding("external")}, None, "/r", None)
+    cfg = LiveConfig("fake", 0, {"player_0": SlotBinding("external")}, UNSET_TIMEOUT, "/r", None)
     slots = build_slots(cfg, entry, control, clock, sleeper)
     slot = slots["player_0"]
     assert isinstance(slot, ExternalSlot)
@@ -313,6 +322,12 @@ def test_build_slots_external_resolves_timeout_override_then_metadata():
     slots = build_slots(cfg, entry, control, clock, sleeper)
     assert isinstance(slots["player_0"], ExternalSlot)
     assert slots["player_0"].timeout_ms == 2000
+
+    # An explicit null disables the metadata timeout. It is distinct from the absent override.
+    cfg = LiveConfig("fake", 0, {"player_0": SlotBinding("external")}, None, "/r", None)
+    slots = build_slots(cfg, entry, control, clock, sleeper)
+    assert isinstance(slots["player_0"], ExternalSlot)
+    assert slots["player_0"].timeout_ms is None
 
 
 def test_build_slots_builtin_agent_loads_through_manifest(tmp_path: Path):
@@ -464,6 +479,54 @@ def test_turn_based_opening_frame_streams_before_the_loop_but_is_not_recorded(tm
     # No recorded line is an actionless opening frame: every recorded state carries its acting agent.
     for line in recording_lines[1:]:
         assert json.loads(line)["agents"] != {}
+
+
+def test_run_starts_command_pump_after_header_and_turn_opening(monkeypatch, tmp_path: Path):
+    """The stdin reader begins only after a local client can render the opening table."""
+    import game_sandbox_harness.live as live
+    from game_sandbox_harness.live_io import build_tee_store
+
+    base = ManualClock()
+    clock = PausableClock(base)
+    control = SessionControl(clock)
+    streamed: list[str] = []
+    seen_when_pump_started: list[str] = []
+
+    def fake_command_pump(lines, received_control):
+        seen_when_pump_started.extend(streamed)
+        received_control.handle_line('{"kind":"stop"}')
+
+    monkeypatch.setattr(live, "start_command_pump", fake_command_pump)
+    config = LiveConfig(
+        "fake",
+        0,
+        {"player_0": SlotBinding("external")},
+        None,
+        str(tmp_path),
+        "r",
+        players={"player_0": {"kind": "human", "label": "Human"}},
+    )
+    protocol = ProtocolStream(_ListSink(streamed))  # type: ignore[arg-type]
+
+    assert (
+        live.run(
+            make_entry(1, pace_interval_ms=None, with_overlay=True),
+            config,
+            protocol=protocol,
+            control=control,
+            clock=clock,
+            sleeper=AdvancingSleeper(base),
+            store=build_tee_store(str(tmp_path), protocol),
+            command_lines=(),
+        )
+        == 0
+    )
+
+    assert len(seen_when_pump_started) == 2
+    assert json.loads(seen_when_pump_started[0])["environment"] == "fake"
+    opening = json.loads(seen_when_pump_started[1])
+    assert opening["tick"] == 0
+    assert opening["agents"] == {}
 
 
 def test_stop_command_ends_the_session_with_reason_stopped(tmp_path: Path):
@@ -647,16 +710,19 @@ def test_human_chat_frame_is_dropped_when_messaging_disabled_by_config(tmp_path:
 
 
 def test_module_subprocess_keeps_stdout_clean_and_classifiable(tmp_path: Path):
-    """Run ``python -m game_sandbox_harness.live`` against Flappy Bird, which imports PyGame and
-    prints a banner. The banner and any stray prints must land on stderr; stdout must carry only
-    classifiable protocol lines — the header and states (no top-level ``kind``) and the trailing
-    ``result`` envelope. A ``stop`` on stdin ends the run promptly."""
+    """Run the live module against a real environment and classify every stdout protocol line.
+
+    Any stray prints from imported environment or agent code must land on stderr. Stdout carries
+    only the header and states, which have no top-level ``kind``, plus the trailing result envelope.
+    A ``stop`` on stdin ends the run promptly.
+    """
     pytest.importorskip("flappy_bird", reason="environments package not installed")
 
     config = {
         "env_id": "flappy_bird",
         "seed": 0,
         "slots": {"player_0": {"kind": "external"}},
+        "players": {"player_0": {"kind": "human", "label": "Human"}},
         "recording_dir": str(tmp_path),
         "recording_id": "r",
     }
@@ -681,8 +747,6 @@ def test_module_subprocess_keeps_stdout_clean_and_classifiable(tmp_path: Path):
     assert all(kind is None for kind in kinds[:-1])
     # The first protocol line is the recording header.
     assert json.loads(out_lines[0])["environment"] == "flappy_bird"
-    # The PyGame banner, if any, went to diagnostics — never to the protocol stream.
-    assert "pygame" not in proc.stdout.lower()
 
 
 def test_module_subprocess_charges_a_crashing_agent_to_its_own_seat(tmp_path: Path):
@@ -708,6 +772,7 @@ def test_module_subprocess_charges_a_crashing_agent_to_its_own_seat(tmp_path: Pa
         "env_id": "flappy_bird",
         "seed": 0,
         "slots": {"player_0": {"kind": "builtin-agent", "path": str(agent_dir)}},
+        "players": {"player_0": {"kind": "agent", "label": "Agent"}},
         "recording_dir": str(tmp_path),
         "recording_id": "r",
     }
@@ -757,6 +822,7 @@ def test_module_subprocess_charges_a_reset_crash_to_its_own_seat(tmp_path: Path)
         "env_id": "flappy_bird",
         "seed": 0,
         "slots": {"player_0": {"kind": "builtin-agent", "path": str(agent_dir)}},
+        "players": {"player_0": {"kind": "agent", "label": "Agent"}},
         "recording_dir": str(tmp_path),
         "recording_id": "r",
     }

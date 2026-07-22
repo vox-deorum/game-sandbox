@@ -19,8 +19,8 @@ ci.yml (runs on every push and pull request):
 
 e2e.yml (manually dispatched from the Actions tab — too Docker-heavy and slow for every push):
 - ``frontend-e2e``: the Docker-gated browser suite — Playwright drives Chromium against the real
-  backend serving the built frontend (a real session launches a container). Like
-  ``backend-integration`` it needs a Docker daemon and is *not* part of ``all``.
+  backend serving the production frontend and the scripted loopback bridge serving the local bundle.
+  A production session launches a container, so the job needs Docker and is *not* part of ``all``.
 
 docs.yml:
 - ``docs``: the strict ``mkdocs build`` that gates docs pull requests.
@@ -49,11 +49,13 @@ from _paths import (
     FIXTURES_DIR,
     HARNESS_SCHEMA_DATA,
     REPO_ROOT,
+    RETIRED_TEMPLATE_BASE_PATHS,
     TEMPLATE_BASE_MODULES,
     TEMPLATE_ENVIRONMENTS,
     TS_GENERATED_DIR,
     template_sandbox_base,
     template_sandbox_env,
+    template_sandbox_harness,
 )
 
 _NPM = "npm.cmd" if sys.platform == "win32" else "npm"
@@ -98,12 +100,12 @@ def job_backend_integration() -> None:
 
 
 def job_frontend_e2e() -> None:
-    # The browser end-to-end suite: Playwright drives Chromium against the real backend serving the
-    # built frontend from the same origin. Starting a session launches a real container, so this job
-    # needs a Docker daemon — the same gate as backend-integration — and like it builds the session
-    # base image entirely inside Docker, so the host needs only Node and Docker (no Python).
-    # Build the frontend, build the image, install Chromium, then run the gated suite.
+    # Playwright drives Chromium against both the real backend and the Python local-play bridge.
+    # Production sessions launch real containers, so this job needs the same Docker gate as
+    # backend-integration. The local journey also needs the repository's Python environment.
+    # Build both browser entries, build the image, install Chromium, then run the gated suite.
     _run([_NPM, "run", "build:frontend"])
+    _run([_NPM, "run", "build:local", "--workspace", "@game-sandbox/frontend"])
     _run([_NPM, "run", "build:image"])
     install_chromium = [
         _NPM,
@@ -135,8 +137,19 @@ def job_generated_code_fresh() -> None:
         str(BACKEND_GENERATED_DIR.relative_to(REPO_ROOT)),
         *(str(template_sandbox_env(env).relative_to(REPO_ROOT)) for env in TEMPLATE_ENVIRONMENTS),
         *(str((base_sandbox / name).relative_to(REPO_ROOT)) for name in TEMPLATE_BASE_MODULES),
+        *(str((base_sandbox / name).relative_to(REPO_ROOT)) for name in RETIRED_TEMPLATE_BASE_PATHS),
+        str(template_sandbox_harness().relative_to(REPO_ROOT)),
     ]
     _run(["git", "diff", "--exit-code", "--", *targets])
+    status = subprocess.run(
+        ["git", "status", "--short", "--", *targets],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    if status.stdout:
+        raise SystemExit(f"generated output has untracked or removed paths:\n{status.stdout}")
     # Not generated, but the same idea: the version touchpoints (base manifest, DEPS_VERSION, the
     # frozen deps-v<N> snapshot, e2e fixtures) are derived state that must agree. --check fails the
     # PR if a manual edit desynced them, before a release can inherit the drift.

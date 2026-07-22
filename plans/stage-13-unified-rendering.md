@@ -1,6 +1,6 @@
 # Stage 13: Unified browser rendering
 
-Status: planned. The owner has approved browser-only rendering, maximum reuse of the production harness, a credited pygame-free adaptation of the upstream Flappy Bird simulation, no backward compatibility work, and no `template_version` bump while the repository remains unreleased.
+Status: completed. Browser-only rendering, maximum reuse of the production harness, the credited pygame-free Flappy Bird adaptation, no backward compatibility work, and no `template_version` bump are implemented while the repository remains unreleased.
 
 ## Goal
 
@@ -15,7 +15,7 @@ The repository and every composed student environment have no pygame dependency.
 - Make the harness relocatable under `sandbox.harness` and add environment injection seams.
 - Add a loopback HTTP and WebSocket bridge around the existing live runner.
 - Add a local frontend entry that reuses the production renderer, socket, and UI components.
-- Ship the relocated harness and prebuilt local frontend in every composed student repository.
+- Ship the relocated harness in tracked template sources and inject the prebuilt local frontend only while staging student repositories for publication.
 - Keep production stepping and the browser state schema unchanged. Both relays gain pause-state replay on attach so the shared socket has an authoritative state after reconnect.
 
 Unity ML-Agents, browser execution of participant code, production HTTP routes, and a general-purpose local web server remain out of scope.
@@ -102,12 +102,11 @@ Security boundaries are explicit:
 
 ### Student template and command entry points
 
-`scripts/generate.py` performs two owned-directory wipe-and-copy operations:
+`scripts/generate.py` performs one owned-directory wipe-and-copy operation: `harness/src/game_sandbox_harness/` to `templates/base/sandbox/harness/`, including `schema_data`. It does not build the frontend or write an exported bundle into template source.
 
-- `harness/src/game_sandbox_harness/` to `templates/base/sandbox/harness/`, including `schema_data`.
-- `frontend/dist-local/` to `templates/base/sandbox/web/` after running the local Vite build.
+`scripts/publish_template.py` builds `frontend/dist-local/` once for a release or dry run, then injects that directory as `sandbox/web/` into every staged template and example. `templates/base/sandbox/web/` is ignored and absent from tracked template sources. Ordinary generation and composition operate only on tracked source files, while the release workflow provides Node for the one publish-time build.
 
-The existing base-module sync cannot wipe `templates/base/sandbox/` because that directory also holds hand-authored files. Add an explicit retired-generated-path list for `hidpi.py`, `render_base.py`, `render_cards.py`, and `multiseat_play.py`; generation removes those paths before copying the remaining catalog entries. A generator test seeds each retired output and proves regeneration removes it. The freshness job tracks the harness and web directories and checks both `git diff` and `git status` so added and removed hashed files cannot escape detection.
+The existing base-module sync cannot wipe `templates/base/sandbox/` because that directory also holds hand-authored files. Add an explicit retired-generated-path list for `hidpi.py`, `render_base.py`, `render_cards.py`, and `multiseat_play.py`; generation removes those paths before copying the remaining catalog entries. A generator test seeds each retired output and proves regeneration removes it. The freshness job tracks the harness and checks both `git diff` and `git status`; publish tests verify the staged web directory instead of treating hashed frontend output as a generated repository artifact.
 
 The generated `sandbox.env.META` is the full registry metadata. `templates/base/sandbox/live_local.py` constructs the environment entry and invokes the relocated runner. `sandbox/evaluate.py` uses a small headless harness helper, so evaluation and server execution share timeout and default-action behavior.
 
@@ -150,6 +149,7 @@ Version 1 has not been published. Update the dependency-version comments and con
 - Local server: loopback default, route and method rejection, traversal and symlink escape rejection, content type and HEAD behavior, header-first ordering, verbatim runner lines, running/ended exactly once, pause/resume echoes, paused reconnect state, command forwarding, second attachment, and child failure.
 - Integrated harness: a real Hearts episode runs through injected `live.run` without discovery.
 - Template smoke: composed examples import the relocated harness and run `sandbox.live_local` without a browser.
+- Publish staging: a dry run builds the local frontend once and gives every staged template and example a complete `sandbox/web/` directory containing `local.html` and its referenced assets.
 - Flappy Bird: upstream golden traces, API conformance, seeded determinism, observation and overlay shape, AABB boundary behavior, and absence of copied upstream binary assets.
 - Frontend unit test: metadata validation, header mounting, controlled human seat, state rendering, start resume, pause echo, paused reconnect, stop awaiting terminal status, and terminal game-over state.
 - Playwright local-play journey: start a scripted Python bridge on loopback with the built local bundle, then exercise start, input forwarding, pause, resume, refresh while paused, stop, terminal game over, and browser reconnect against the live DOM. Run it through the existing `frontend-e2e` job.
@@ -159,7 +159,7 @@ Version 1 has not been published. Update the dependency-version comments and con
 
 - Flappy Bird behavior may drift when pygame collision helpers are removed. Golden traces are captured before dependency deletion, and direct geometry tests cover the boundary cases traces may miss.
 - Harness relocation touches production imports and schema loading. It lands as a behavior-neutral step and must pass both package-name test paths before the local bridge is added.
-- The local Vite bundle creates hashed-file churn in the template. The lockfile pins the toolchain, generation owns the entire copied directory, and a content-manifest fallback is reserved for any cross-machine nondeterminism that appears.
+- The local Vite bundle has hashed output. The lockfile pins the toolchain, publication builds it once and owns each staged `sandbox/web/` directory, and no exported bundle is tracked in the template source tree.
 - Copying the harness into student repositories exposes implementation internals. Student docs keep `sandbox.env` and the helper modules as the supported authoring surface.
 - `websockets` major APIs change over time. The dependency stays within major version 16, and bridge tests pin the HTTP and WebSocket behavior the implementation relies on.
 
@@ -181,7 +181,7 @@ Update completed plan text that describes the removed renderers or third-party F
 3. Build the loopback bridge and its safety, lifecycle, attach, and integrated-runner tests.
 4. Build the local frontend entry, Vite config, unit tests, and local Playwright journey.
 5. Rewrite the maintainer play command on the bridge and verify it against the prebuilt local bundle.
-6. Add harness and bundle generation, full metadata, retired-output reconciliation, template shims, generic play and evaluation commands, and template smoke tests.
+6. Add harness generation, publish-time bundle staging, full metadata, retired-output reconciliation, template shims, generic play and evaluation commands, and template smoke tests.
 7. Delete custom pygame sources and dead tests, then update dependencies, generated outputs, docs, completed plans, and comments.
 
 ## Exit criteria
@@ -190,6 +190,7 @@ Update completed plan text that describes the removed renderers or third-party F
 - Fixed Flappy seeds and action scripts reproduce the committed upstream 0.4.0 golden behavior.
 - `npm run play -- hearts human` and `npm run play -- flappy_bird human` open loopback browser play; start, input, pause, resume, refresh, stop, and game over work.
 - A composed template runs `python -m sandbox play` fully offline and `python -m sandbox eval` headless.
+- Publish dry runs and releases build the local frontend once and inject it into every staged template and example, while tracked template sources contain no exported browser bundle.
 - Server and local play emit structurally identical header, state, and result lines for the same environment configuration and seed.
 - Mid-game reconnect receives header, latest state, running status, and the current pause state; terminal status appears exactly once.
 - The local server is loopback-only by default and rejects filesystem escape attempts.

@@ -55,13 +55,13 @@ def extract_overlay(env: Any) -> dict[str, Any]:
     become ``{"suit","rank"}`` objects and trick pairs become play-ordered ``{"seat","card"}``
     objects. It carries both the play state and everything the badges/score line draw: per-seat
     ``bids`` (``-1`` until a seat has bid) and ``tricks_won``, and three views of the score for two
-    surfaces. The two-element ``team_scores`` is what the local pygame renderer and the
-    ``scripts/play.py`` scoreboard show. The per-seat ``display_scores`` and ``leaderboard_scores``
+    surfaces. The two-element ``team_scores`` feeds the browser renderer. The per-seat
+    ``display_scores`` and ``leaderboard_scores``
     (each seat carrying its team's score, so partners share) feed the browser game-over standings,
     which ranks seats by ``leaderboard_scores`` and shows ``display_scores``; the two are equal for
     Spades, kept as a pair so the overlay matches the Hearts shape that surface also consumes.
     ``legal_cards``/``legal_bids`` are the phase-legal sets for the seat on turn, both empty once
-    the hand is terminal, and are what both renderers grey from.
+    the hand is terminal, and are what the browser renderer greys from.
     """
     state = env.state
     terminal = rules.is_terminal(state)

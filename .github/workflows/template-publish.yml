@@ -16,8 +16,9 @@ name: Publish Template
 # Ordering this way means a failure anywhere leaves main and tags untouched — nothing to clean up.
 # Recovery: if main moved during the run the fast-forward push fails and no tag is written, so just
 # dispatch a fresh run; the student-repo publish force-pushes, so a partial previous attempt is
-# overwritten cleanly. `dry_run: true` rehearses the whole path (bump, commit, full CI, dry-run
-# compose) while pushing nothing to the student repo, main, or tags.
+# overwritten cleanly. `dry_run: true` rehearses the whole path (bump, commit, full CI, local
+# frontend build, and complete publish snapshot staging) while pushing nothing to the student repo,
+# main, or tags.
 on:
   workflow_dispatch:
     inputs:
@@ -26,7 +27,7 @@ on:
         required: true
         type: string
       dry_run:
-        description: "Rehearse everything (bump, CI, compose) without pushing to the student repo, main, or tags."
+        description: "Rehearse everything, including the local frontend build and complete publish snapshot staging, without pushing."
         required: false
         default: false
         type: boolean
@@ -140,7 +141,12 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
       - run: uv sync
+      - run: npm ci
       - name: Configure git identity for the published commits
         run: |
           git config --global user.name "game-sandbox publisher"

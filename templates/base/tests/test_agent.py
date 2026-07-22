@@ -34,7 +34,7 @@ def test_agent_has_required_interface():
 
 def test_three_step_headless_episode_runs():
     agent = load_agent(REPO_ROOT)
-    env = make_env(render_mode=None)
+    env = make_env()
     try:
         score = play_episode(agent, env, seed=0, max_steps=3)
     finally:

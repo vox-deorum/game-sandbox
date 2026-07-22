@@ -2,7 +2,7 @@
 
 You may import this module from your ``agent.py`` (``from sandbox import cards``). It is the one
 piece of ``sandbox/`` you are meant to use from your agent, and importing it stays cheap: it is
-plain Python with no third-party dependencies, so it does not drag in pettingzoo or pygame. Import
+plain Python with no third-party dependencies, so it does not drag in the environment engine. Import
 it at the top of ``agent.py``, not inside a method.
 
 A card is a semantic object ``{"suit": 0..3, "rank": 2..14}``. Suits are ``0=clubs, 1=diamonds,

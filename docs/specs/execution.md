@@ -66,14 +66,25 @@ Agents in a multi-agent session share one container and could interfere with one
 
 ## Local development
 
-Contributors run the full stack locally. Participants use the template and do not need the backend or container stack.
+Contributors can run an environment locally through the same live runner and browser protocol used by a production session. The local bridge starts a caller-supplied Python runner, serves the prebuilt local browser page, and binds only to `127.0.0.1`. It has no authentication shell, Docker dependency, general-purpose server routes, or non-loopback host option.
+
+```text
+Local browser ⇄ loopback Python relay ⇄ live runner + environment + agents
+                                             │
+                                             └→ scratch recording
+```
+
+The local relay passes recording header, state, and result lines through unchanged. It validates and forwards commands, retains the accepted pause state, and gives every attachment the header, latest state, session status, and current paused state when applicable. The live runner remains authoritative for stepping, pacing, agent loading, timeouts, and recording.
+
+Participants use this local browser loop through the template. They do not need the backend, containers, or a network connection.
 
 ## Implementation languages
 
 | Side | Language | Responsibilities |
 | --- | --- | --- |
 | Inside container | Python | Harness, PettingZoo environments, participant agents |
-| Outside container | TypeScript on Node | Identity, submissions, storage, orchestration, WebSocket relay, browser app, LLM forwarding, retries, error handling, metering, and telemetry |
+| Outside production container | TypeScript on Node | Identity, submissions, storage, orchestration, production WebSocket relay, browser app, LLM forwarding, retries, error handling, metering, and telemetry |
+| Local development | Python | Loopback-only relay and static local-page server, plus the same live runner used in a session |
 
 The state contract is a versioned JSON Schema. Python validates emitted payloads, while TypeScript types are generated from the same source.
 

@@ -26,7 +26,7 @@ def test_actions_are_distinct():
 
 
 def test_feature_readers_match_the_raw_observation():
-    env = make_env(render_mode=None)
+    env = make_env()
     try:
         env.reset(seed=0)
         observation = env.observe(env.agent_selection)

@@ -14,20 +14,6 @@ def test_extra_dependency_is_usable():
     assert agent.display_width("duck") == 4
 
 
-def test_renderer_produces_a_headless_frame():
-    # Drives the synced local renderer in rgb_array mode (no window), which also proves its HiDPI
-    # shim import resolves in the composed template (as sandbox.hidpi).
-    env = make_env(render_mode="rgb_array")
-    try:
-        env.reset(seed=0)
-        frame = env.render()
-        assert frame is not None
-        assert frame.ndim == 3
-        assert frame.shape[2] == 3
-    finally:
-        env.close()
-
-
 class Baseline:
     """The built-in opponent's policy: the lowest legal card (by rank, then suit)."""
 
@@ -44,7 +30,7 @@ def _mean_score(policy) -> float:
     # score (higher is better: the negated penalty total).
     scores: list[float] = []
     for seed in _SEEDS:
-        env = make_env(render_mode=None)
+        env = make_env()
         try:
             scores.append(play_episode(policy, env, seed=seed))
         finally:

@@ -22,7 +22,7 @@ def extract_overlay(env: Any) -> dict[str, Any]:
 
     The returned dict is fully JSON-serializable (ints, bools, lists, dicts, ``None``): cards are
     semantic ``{"suit","rank"}`` objects and trick entries are ``{"seat","card"}`` objects in play
-    order. ``display_scores`` are penalties (lower better), read by the local pygame renderer and
+    order. ``display_scores`` are penalties (lower better), read by the browser renderer and
     shown per seat by the browser game-over standings; ``leaderboard_scores`` are their negation
     (higher better), which that browser standings ranks seats by. ``legal_cards`` is empty once the
     hand is terminal.
