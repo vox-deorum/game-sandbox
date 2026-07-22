@@ -14,10 +14,9 @@
  * Spades-specific drawing stays here while the shared trick-taking table remains in the base class.
  */
 import type { StepState } from '@game-sandbox/schema'
+import { CardTableRenderer } from '@renderers/cards/CardTableRenderer.js'
+import type { RendererDefinition, RenderOptions } from '@renderers/types.js'
 import { Container, Graphics, Rectangle } from 'pixi.js'
-
-import { CardTableRenderer } from '../cards/CardTableRenderer.js'
-import type { RenderOptions } from '../types.js'
 import {
   asNumberList,
   CHIP_BG,
@@ -39,6 +38,7 @@ import {
   type TrickSweep,
   WIDTH,
 } from './scene.js'
+import thumbnail from './thumbnail.svg'
 
 /** The natural length (ms) of the gold pulse that marks a seat just after it bids. */
 const BID_PULSE_NATURAL_MS = 620
@@ -390,3 +390,11 @@ function bidPulseDuration(options?: RenderOptions): number {
   }
   return BID_PULSE_NATURAL_MS
 }
+
+const definition = {
+  key: 'spades',
+  renderer: SpadesRenderer,
+  thumbnail,
+} satisfies RendererDefinition
+
+export default definition

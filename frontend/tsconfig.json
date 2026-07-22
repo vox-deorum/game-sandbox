@@ -3,6 +3,10 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "baseUrl": ".",
+    "paths": {
+      "@renderers/*": ["src/renderers/*"]
+    },
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "jsx": "preserve",
     "types": ["node", "vite/client"],
@@ -15,5 +19,12 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src", "test", "vite.config.ts", "vitest.config.ts"]
+  "include": [
+    "src",
+    "test",
+    "../environments/src/*/renderer/**/*.ts",
+    "vite.config.ts",
+    "vite.local.config.ts",
+    "vitest.config.ts"
+  ]
 }

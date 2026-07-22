@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { FlappyBirdRenderer } from '../src/renderers/flappy-bird/index.js'
-import type { RendererContext } from '../src/renderers/types.js'
-import { flappyHeader, flappyMeta } from './helpers/fixtures.js'
+import { flappyHeader, flappyMeta } from '../../../../frontend/test/helpers/fixtures.js'
+import type { RendererContext } from '@renderers/types.js'
+
+import { FlappyBirdRenderer } from './index.js'
 
 const META = flappyMeta({ description: '' })
 const HEADER = flappyHeader()

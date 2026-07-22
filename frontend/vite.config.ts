@@ -1,3 +1,5 @@
+import { fileURLToPath, URL } from 'node:url'
+
 import vue from '@vitejs/plugin-vue'
 import { defineConfig } from 'vite'
 
@@ -7,6 +9,11 @@ import { defineConfig } from 'vite'
 // whole stack is one process and one command — see backend/src/app.ts.
 export default defineConfig({
   plugins: [vue()],
+  resolve: {
+    alias: {
+      '@renderers': fileURLToPath(new URL('./src/renderers', import.meta.url)),
+    },
+  },
   server: {
     proxy: {
       '/api': {

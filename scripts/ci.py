@@ -43,15 +43,17 @@ import subprocess
 import sys
 from pathlib import Path
 
+from _envs import discover_environments
 from _paths import (
     BACKEND_GENERATED_DIR,
     BUILD_DIR,
+    ENVIRONMENTS_PYPROJECT,
     FIXTURES_DIR,
     HARNESS_SCHEMA_DATA,
     REPO_ROOT,
     RETIRED_TEMPLATE_BASE_PATHS,
     TEMPLATE_BASE_MODULES,
-    TEMPLATE_ENVIRONMENTS,
+    TEMPLATES_DIR,
     TS_GENERATED_DIR,
     template_sandbox_base,
     template_sandbox_env,
@@ -122,6 +124,17 @@ def job_frontend_e2e() -> None:
 
 
 def job_generated_code_fresh() -> None:
+    from generate import is_generated_template_env
+
+    existing_template_envs = (
+        tuple(
+            layer / "sandbox" / "env"
+            for layer in TEMPLATES_DIR.iterdir()
+            if layer.is_dir() and is_generated_template_env(layer / "sandbox" / "env")
+        )
+        if TEMPLATES_DIR.is_dir()
+        else ()
+    )
     _run(["uv", "run", "python", "scripts/generate.py"])
     # Fail if regeneration changed anything tracked under the generated locations: the schema
     # mirrors, every per-environment template sandbox/env/, and the shared base-sandbox helpers.
@@ -129,12 +142,15 @@ def job_generated_code_fresh() -> None:
     # also holds hand-written play.py/evaluate.py/etc.). Retired renderer paths are included so this
     # check verifies that regeneration keeps them absent.
     base_sandbox = template_sandbox_base()
+    template_envs = set(existing_template_envs)
+    template_envs.update(template_sandbox_env(env) for env in discover_environments())
     targets = [
         str(TS_GENERATED_DIR.relative_to(REPO_ROOT)),
         str(HARNESS_SCHEMA_DATA.relative_to(REPO_ROOT)),
         str(FIXTURES_DIR.relative_to(REPO_ROOT)),
         str(BACKEND_GENERATED_DIR.relative_to(REPO_ROOT)),
-        *(str(template_sandbox_env(env).relative_to(REPO_ROOT)) for env in TEMPLATE_ENVIRONMENTS),
+        str(ENVIRONMENTS_PYPROJECT.relative_to(REPO_ROOT)),
+        *(str(path.relative_to(REPO_ROOT)) for path in sorted(template_envs)),
         *(str((base_sandbox / name).relative_to(REPO_ROOT)) for name in TEMPLATE_BASE_MODULES),
         *(str((base_sandbox / name).relative_to(REPO_ROOT)) for name in RETIRED_TEMPLATE_BASE_PATHS),
         str(template_sandbox_harness().relative_to(REPO_ROOT)),

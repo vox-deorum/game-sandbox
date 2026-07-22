@@ -1,16 +1,29 @@
 /**
  * Renderer registration barrel. Importing this once (from `main.ts`) is what pulls every
- * environment's renderer in so it can register itself with the registry. Each future environment adds
- * one line here, mapping its metadata `renderer` key to its renderer class and home-card thumbnail.
+ * environment's renderer in so it can register itself with the registry. Renderer definitions live
+ * beside their environment packages and are registered by this eager glob.
  */
-import { FlappyBirdRenderer } from './flappy-bird/index.js'
-import flappyBirdThumbnail from './flappy-bird/thumbnail.svg'
-import { HeartsRenderer } from './hearts/index.js'
-import heartsThumbnail from './hearts/thumbnail.svg'
 import { registerRenderer } from './registry.js'
-import { SpadesRenderer } from './spades/index.js'
-import spadesThumbnail from './spades/thumbnail.svg'
+import type { RendererDefinition } from './types.js'
 
-registerRenderer('flappy-bird', FlappyBirdRenderer, flappyBirdThumbnail)
-registerRenderer('hearts', HeartsRenderer, heartsThumbnail)
-registerRenderer('spades', SpadesRenderer, spadesThumbnail)
+const modules = import.meta.glob<{ default: RendererDefinition }>(
+  '../../../environments/src/*/renderer/index.ts',
+  { eager: true },
+)
+
+const rendererKeys = new Set<string>()
+for (const [path, module] of Object.entries(modules)) {
+  const definition = module.default
+  if (
+    !definition?.key ||
+    typeof definition.renderer?.mount !== 'function' ||
+    !definition.thumbnail
+  ) {
+    throw new Error(`Invalid renderer definition from ${path}`)
+  }
+  if (rendererKeys.has(definition.key)) {
+    throw new Error(`Duplicate renderer key '${definition.key}' from ${path}`)
+  }
+  rendererKeys.add(definition.key)
+  registerRenderer(definition.key, definition.renderer, definition.thumbnail)
+}

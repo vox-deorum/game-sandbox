@@ -6,19 +6,16 @@ Read the [environment specification](../specs/environment.md) for product rules 
 
 ## Checklist
 
-1. Add the environment package and factory.
-2. Define a legal default action.
-3. Extract a JSON-compatible renderer overlay.
-4. Create metadata and `ENTRY`.
-5. Register the Python entry point.
-6. Pass PettingZoo `api_test` and determinism tests.
-7. Sync the self-contained environment code to the student template.
-8. Add a template layer and at least one example.
-9. Add a student helper module and its pin test when raw observations or actions need decoding.
-10. Write the student environment page and add a row to the environments index.
-11. Add and register a frontend renderer.
+1. Create `environments/src/<env>/` with the package factory, legal default action, overlay extractor, metadata, and `ENTRY`.
+2. Add game-rule tests under `environments/src/<env>/tests/`. The shared conformance suite discovers the package automatically.
+3. Add `environments/src/<env>/renderer/` with its definition, scene code, thumbnail, and dedicated renderer tests.
+4. Add a template layer and at least one example.
+5. Add a student helper module and its pin test when raw observations or actions need decoding.
+6. Write the student environment page and add a row to the environments index.
+7. Run `npm run sync:envs` to regenerate registration, packaging, metadata, and template output.
+8. Run the repository checks and play-test the environment.
 
-Items 9 and 10 are the [student-facing deliverables](#student-facing-deliverables): a new environment is not done when it merely runs, but when a student can find out how to play it without reading the environment source.
+Items 4 through 6 are the [student-facing deliverables](#student-facing-deliverables): a new environment is not done when it merely runs, but when a student can find out how to play it without reading the environment source.
 
 ## Play test
 
@@ -35,9 +32,16 @@ environments/src/
     env.py                 # the make_env() factory
     overlay.py             # render-data extraction
     single_agent.py        # the Gymnasium -> AEC adapter (single-agent envs only)
+    renderer/
+      index.ts             # renderer definition, discovered by the frontend
+      scene.ts             # pure state-to-scene logic
+      scene.test.ts        # renderer-specific unit tests
+      thumbnail.svg
+    tests/
+      test_flappy_bird.py  # environment-specific rule tests
 ```
 
-Discovery is automatic after registration.
+The directory is the registration source. `npm run sync:envs` discovers it and regenerates the installed entry point and wheel package list. Shared platform tests remain in `environments/tests/` and shared frontend renderer code remains in `frontend/src/renderers/`.
 
 ## Single-agent games: the adapter
 
@@ -85,14 +89,11 @@ The single session loop reads `pace_interval_ms` rather than branching on an env
 
 ## Registration
 
-Register the entry in `environments/pyproject.toml` under the `game_sandbox.environments` group, name = env id:
+Do not edit the entry-point table or wheel package list by hand. `npm run sync:envs` scans package directories under `environments/src/`, imports each package directly to read its `ENTRY` and metadata, and regenerates both lists in `environments/pyproject.toml`. The installed harness still enumerates the generated `game_sandbox.environments` entry points through `importlib.metadata`, keeping the runtime dependency arrow pointing one way (environments → harness).
 
-```toml
-[project.entry-points."game_sandbox.environments"]
-flappy_bird = "flappy_bird:ENTRY"
-```
+`environments/.envignore` is the negative catalog. Its gitignore-style patterns exclude directories that are Python packages but are not environments. For example, `local_play/` holds shared card helpers, ships in the wheel, and is excluded from environment registration. Anything else under `environments/src/` is treated as an environment and must satisfy the structural conformance checks.
 
-Also add the env's package to the wheel build in `environments/pyproject.toml` (`[tool.hatch.build.targets.wheel] packages = ["src/flappy_bird", ...]`). The harness enumerates installed environments through `importlib.metadata` and never imports them by name, keeping the dependency arrow pointing one way (environments → harness).
+The wheel build excludes `src/*/renderer` and `src/*/tests`, so TypeScript, SVG thumbnails, and authoring tests remain in the repository without entering the Python distribution.
 
 ## PettingZoo conformance
 
@@ -105,19 +106,33 @@ api_test(make_env(), num_cycles=100)
 
 An environment with an object-shaped, composite inner `observation` (the card games' `{"observation": {…}, "action_mask": …}` wrapper) trips the known [PettingZoo #1211](https://github.com/Farama-Foundation/PettingZoo/issues/1211) `api_test` bug in pinned 1.26.1, where reading a `.dtype` off the composite observation raises; the [environment spec](../specs/environment.md#pettingzoo-conformance-and-the-api_test-1211-bug) records the exact failure. Run `api_test` through the shared guard that treats exactly that failure as expected and re-raises anything else, and keep the linked TODO so the guard is deleted once a fixed PettingZoo ships. Validate the observation directly with `observation_space.contains()` across a complete episode, which the bug does not affect.
 
-Pair this with an environment-level determinism test (two resets with the same seed produce identical observation and overlay sequences) and the overlay-field test described above.
+The discovery-driven suite in `environments/tests/test_conformance.py` runs this guard, seeded determinism, overlay JSON and finite-value checks, and the authoring-layout checks for every recognized environment. Keep only game-specific rules and regressions in `environments/src/<env>/tests/`.
 
 ## Syncing to the template
 
 Students run the environment locally through the copied `sandbox.harness` package. `scripts/generate.py` copies each environment's self-contained modules into `templates/<env>/sandbox/env/` and the shared harness into the base template.
 
-Add one `TemplateEnvironmentSpec` to the static `TEMPLATE_ENVIRONMENTS` catalog in `scripts/_paths.py`, then regenerate. The spec keeps the display name, inner package, module-copy list, default-action export, and player slot together. Generation and composition both read this catalog and do not discover environment directories at runtime, so an unregistered directory cannot silently become a student template.
+The sync command builds each `TemplateEnvironmentSpec` from `ENTRY.meta` and the package's direct files. It regenerates the entry-point table, wheel package list, backend environment metadata, and student-template environment copies in one pass:
 
 ```console
-uv run python scripts/generate.py
+npm run sync:envs
 ```
 
-The template's top-level `sandbox.env` package exposes the generated environment metadata and factory surface. Human input belongs in the browser renderer, not in a Python `human.py` module. Include the environment's import-self-contained modules and any credited source files in its template specification. The copied `sandbox.harness` package provides the supported local runner and relay surface. See [Examples and the template](examples-and-template.md).
+`npm run generate` is the same command. Run either command again after changing metadata or a directly contained environment module. Recognition is automatic, exclusion is explicit in `.envignore`, and CI catches drift through `generated-code-fresh` and the conformance suite.
+
+The template's top-level `sandbox.env` package exposes the generated environment metadata and factory surface. Human input belongs in the browser renderer, not in a Python `human.py` module. Keep import-self-contained modules and credited source files directly inside the environment package so discovery includes them. The copied `sandbox.harness` package provides the supported local runner and relay surface. See [Examples and the template](examples-and-template.md).
+
+## Publishing the environment to students
+
+Once the environment package, renderer, and dedicated tests are complete:
+
+1. Create `templates/<env>/` with its starting `agent.py`, `README.md`, helper module when needed, and helper pin tests.
+2. Add at least one worked agent under `examples/<env>/<name>/`.
+3. Write `docs/students/environments/<env>.md` and add its row to `docs/students/environments/index.md`.
+4. Run `npm run generate`, then `uv run python scripts/ci.py all`.
+5. When the dependency set or template contract requires a release, use `scripts/bump_template_version.py` and publish with `scripts/publish_template.py`.
+
+Publishing composes each environment template and force-pushes it to the `templates/<env>` orphan branch of the student repository. Worked examples publish to `examples/<env>/<name>` branches. Read [Examples and the template](examples-and-template.md) for composition, versioning, dry-run, and publication details.
 
 ## Student-facing deliverables
 

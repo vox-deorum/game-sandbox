@@ -19,6 +19,7 @@
     "build:frontend": "npm run build --workspace @game-sandbox/frontend",
     "build:image": "npm run build:image --workspace @game-sandbox/backend",
     "generate": "uv run python scripts/generate.py",
+    "sync:envs": "uv run python scripts/generate.py",
     "check": "uv run python scripts/ci.py check",
     "test": "uv run python scripts/ci.py test",
     "check:py": "uv run ruff check . && uv run ruff format --check . && uv run pyright",

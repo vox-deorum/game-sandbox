@@ -20,7 +20,7 @@ from game_sandbox_harness.recording.local import FolderRecordingStore
 from game_sandbox_harness.session import AgentSlot, run_episode
 from spades import ENTRY
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[4]
 TEMPLATE_BASE = REPO_ROOT / "templates" / "base"
 TEMPLATE_SPADES = REPO_ROOT / "templates" / "spades"
 

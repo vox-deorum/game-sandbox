@@ -10,9 +10,10 @@
  * `renderers/index.ts`). See docs/contributors/rendering.md for the architecture.
  */
 import type { StepState } from '@game-sandbox/schema'
-import { Container, FillGradient, Graphics, Text } from 'pixi.js'
+import { type InputIntent, PixiRenderer } from '@renderers/base/PixiRenderer.js'
 
-import { type InputIntent, PixiRenderer } from '../base/PixiRenderer.js'
+import type { RendererDefinition } from '@renderers/types.js'
+import { Container, FillGradient, Graphics, Text } from 'pixi.js'
 import {
   type BirdShape,
   COLORS,
@@ -23,6 +24,7 @@ import {
   type Scene,
   type Shape,
 } from './scene.js'
+import thumbnail from './thumbnail.svg'
 
 /** The slot Flappy Bird's human plays, and the flap action value the harness latches per pace step. */
 const HUMAN_SLOT = 'player_0'
@@ -206,6 +208,14 @@ function removeExtra(pool: Array<Graphics | Text>, keep: number): void {
 function alignAnchor(align: HudText['align']): number {
   return align === 'left' ? 0 : align === 'right' ? 1 : 0.5
 }
+
+const definition = {
+  key: 'flappy-bird',
+  renderer: FlappyBirdRenderer,
+  thumbnail,
+} satisfies RendererDefinition
+
+export default definition
 
 /**
  * Apply one HUD entry to a (reused) Text node: text, position, alignment, size, outline, and shadow.

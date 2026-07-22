@@ -5,7 +5,7 @@
  * the clickable grid of bid chips (`0..13`, `0` labelled NIL) laid out in the centre well. Everything a
  * Hearts and a Spades table draw identically — the card codec, the felt palette, the seat/trick/hand
  * geometry, the legal-mask hand fan, the hit-test, and the fly-in/sweep animation helpers — lives in the
- * shared `../cards/scene.ts` and is re-exported below so this module stays the single Spades entry point.
+ * shared `@renderers/cards/scene.ts` and is re-exported below so this module stays the single Spades entry point.
  * It draws the recorded overlay from `environments/src/spades/overlay.py`. `computeScene` is pure in
  * `state` plus `config`, so the same inputs always yield the same scene, including during replay scrubs.
  */
@@ -31,11 +31,11 @@ import {
   type TableGeometry,
   type ViewContext,
   WIDTH,
-} from '../cards/scene.js'
+} from '@renderers/cards/scene.js'
 
 // Re-export the whole shared card-table layer so this module is the single Spades entry point: the
 // renderer and the tests import `WIDTH`, `detectSweep`, `handCardAt`, etc. from here as before.
-export * from '../cards/scene.js'
+export * from '@renderers/cards/scene.js'
 
 // --- Spades action / partnership constants (mirror environments/src/spades/rules.py) ---
 /** The 52 card actions (0..51); a bid is encoded above this offset. */

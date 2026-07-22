@@ -7,6 +7,11 @@ import { defineConfig } from 'vite'
 // one HTML entry and output directory isolated so the normal Vite build cannot ship local play.
 export default defineConfig({
   plugins: [vue()],
+  resolve: {
+    alias: {
+      '@renderers': fileURLToPath(new URL('./src/renderers', import.meta.url)),
+    },
+  },
   build: {
     outDir: 'dist-local',
     emptyOutDir: true,

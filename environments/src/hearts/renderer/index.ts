@@ -12,9 +12,9 @@
  * Hearts-specific drawing stays here while the shared trick-taking table remains in the base class.
  */
 import type { StepState } from '@game-sandbox/schema'
+import { CardTableRenderer } from '@renderers/cards/CardTableRenderer.js'
+import type { RendererDefinition } from '@renderers/types.js'
 import { type Container, Graphics } from 'pixi.js'
-
-import { CardTableRenderer } from '../cards/CardTableRenderer.js'
 import {
   COLORS,
   cardPoints,
@@ -27,6 +27,7 @@ import {
   type TrickSweep,
   WIDTH,
 } from './scene.js'
+import thumbnail from './thumbnail.svg'
 
 export class HeartsRenderer extends CardTableRenderer<HeartsScene> {
   protected readonly geometry: TableGeometry = DEFAULT_GEOMETRY
@@ -105,3 +106,11 @@ export class HeartsRenderer extends CardTableRenderer<HeartsScene> {
     // into the canvas; the strip's "Game over" message (s.message) is the renderer's only terminal note.
   }
 }
+
+const definition = {
+  key: 'hearts',
+  renderer: HeartsRenderer,
+  thumbnail,
+} satisfies RendererDefinition
+
+export default definition

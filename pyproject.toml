@@ -38,6 +38,7 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 pythonVersion = "3.12"
 typeCheckingMode = "basic"
 include = ["harness/src", "environments/src", "scripts"]
+exclude = ["environments/src/*/tests"]
 # The harness is where types pay for themselves, so it is the only strict package: it is
 # basic repo-wide and strict on harness/src. The environment wrappers talk to untyped game
 # internals, where strictness buys suppressions, not safety.
@@ -45,4 +46,4 @@ strict = ["harness/src"]
 reportMissingTypeStubs = false
 
 [tool.pytest.ini_options]
-testpaths = ["harness/tests", "environments/tests", "scripts/tests"]
+testpaths = ["harness/tests", "environments/tests", "environments/src", "scripts/tests"]

@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
-
+import { HeartsRenderer } from '../../environments/src/hearts/renderer/index.js'
+// The Hearts scene module re-exports the whole shared layer, so importing the frame constants from it
+// must yield the same values as importing them from the shared module (the single-source-of-truth rule
+// both card games rely on). Aliased so the two can be compared.
+import {
+  HEIGHT as HEARTS_HEIGHT,
+  WIDTH as HEARTS_WIDTH,
+} from '../../environments/src/hearts/renderer/scene.js'
+import { SpadesRenderer } from '../../environments/src/spades/renderer/index.js'
+import { SPADES_GEOMETRY } from '../../environments/src/spades/renderer/scene.js'
 import { PixiRenderer } from '../src/renderers/base/PixiRenderer.js'
 import { CardTableRenderer } from '../src/renderers/cards/CardTableRenderer.js'
 import {
@@ -12,13 +21,6 @@ import {
   rankLabel,
   WIDTH,
 } from '../src/renderers/cards/scene.js'
-import { HeartsRenderer } from '../src/renderers/hearts/index.js'
-// The Hearts scene module re-exports the whole shared layer, so importing the frame constants from it
-// must yield the same values as importing them from the shared module (the single-source-of-truth rule
-// both card games rely on). Aliased so the two can be compared.
-import { HEIGHT as HEARTS_HEIGHT, WIDTH as HEARTS_WIDTH } from '../src/renderers/hearts/scene.js'
-import { SpadesRenderer } from '../src/renderers/spades/index.js'
-import { SPADES_GEOMETRY } from '../src/renderers/spades/scene.js'
 
 // The shared card-table layer is a single source both card renderers extend, its codec agrees with the
 // rules encoding, and the per-game geometry

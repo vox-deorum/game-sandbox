@@ -88,3 +88,12 @@ export interface Renderer {
   /** Construct and mount an instance into the host described by `ctx`. */
   mount(ctx: RendererContext): RendererInstance
 }
+
+/** The static definition each environment renderer exports for automatic registration. */
+export interface RendererDefinition {
+  /** Must equal the environment metadata's `renderer` value. */
+  key: string
+  renderer: Renderer
+  /** Static SVG asset URL used by environment cards. */
+  thumbnail: string
+}

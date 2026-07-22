@@ -17,7 +17,7 @@
  * - The orchestrator resolves a live session's messaging rules from the play-open season's overrides,
  *   so setting them there before starting a session reproduces the same silence live.
  *
- * The daredevil demo hand is pinned against `environments/tests/test_spades_chat.py`, the Python-side
+ * The daredevil demo hand is pinned against `environments/src/spades/tests/test_spades_chat.py`, the Python-side
  * integration test that drives the same examples through the same harness directly: seed 1236 with
  * `daredevil` at seats 0/2 (partners) and the chat-less `counter` at 1/3 scores
  * `{player_0: 121, player_1: 46, player_2: 121, player_3: 46}` with messaging on, and the broadcast
@@ -52,7 +52,7 @@ import { WsClient } from './support/ws-client.js'
 
 const ENV_ID = 'spades'
 const NIL_WARNING = 'nil! cover me'
-/** The exact per-seat scores `environments/tests/test_spades_chat.py` pins for daredevil (0/2) vs
+/** The exact per-seat scores `environments/src/spades/tests/test_spades_chat.py` pins for daredevil (0/2) vs
  * counter (1/3) on seed 1236 with messaging on: the made nil, shared by the partnership. */
 const DAREDEVIL_SCORES_ON = { player_0: 121, player_1: 46, player_2: 121, player_3: 46 }
 
@@ -384,7 +384,7 @@ describe('Spades chat (Docker)', () => {
       }
 
       // Messaging on (default season, no override): the exact pinned demo-hand scores, matching
-      // environments/tests/test_spades_chat.py's test_daredevil_demo_hand_bids_nil_warns_and_scores.
+      // environments/src/spades/tests/test_spades_chat.py's daredevil score regression.
       // Partners share their team score, so slots 0 and 2 both read the made-nil +121.
       const on = await runWithOverride(undefined)
       expect(on.messages).toContainEqual({ from: 'player_0', to: null, text: NIL_WARNING })

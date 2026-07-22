@@ -17,13 +17,10 @@ from __future__ import annotations
 import importlib.util
 import json
 import random
-import warnings
 from pathlib import Path
 
 import numpy as np
 import pytest
-from pettingzoo.test import api_test
-from pettingzoo.utils.env import AECEnv
 
 from game_sandbox_harness.manifest import load_agent
 from game_sandbox_harness.session import REASON_TERMINATED, AgentSlot, run_episode
@@ -34,49 +31,8 @@ from spades.overlay import extract_overlay
 #: The frozen v1 built-in Spades baseline the session image stages and the harness loads for every
 #: Naive seat (``backend/images/session-base/deps-v1/builtin/spades``), from this repo's root.
 BUILTIN_SPADES_AGENT_DIR = (
-    Path(__file__).resolve().parents[2] / "backend/images/session-base/deps-v1/builtin/spades"
+    Path(__file__).resolve().parents[4] / "backend/images/session-base/deps-v1/builtin/spades"
 )
-
-# The two UserWarnings pinned PettingZoo emits for a non-array composite observation; incidental to
-# the #1211 bug, so the guard filters them rather than failing on them. Each is a message *prefix*:
-# warnings.filterwarnings matches the regex against the start of the message.
-_1211_WARNINGS = (
-    "Observation is not a NumPy array",
-    "Observation space for each agent probably should be",
-)
-
-
-def _api_test_tolerating_1211(env: AECEnv, num_cycles: int = 100) -> bool:
-    """Run ``api_test`` and swallow *only* the known PettingZoo #1211 failure. Return whether it hit.
-
-    Pinned PettingZoo 1.26.1 has an open bug
-    (https://github.com/Farama-Foundation/PettingZoo/issues/1211): for a composite inner
-    ``observation`` Dict, ``api_test`` recurses the declared space and evaluates ``seen.dtype`` on a
-    semantic leaf (a plain ``int`` / ``tuple`` / ``dict``, whichever it reaches first), raising
-    ``AttributeError: '<type>' object has no attribute 'dtype'``. That single error — and its two
-    UserWarnings — is expected and tolerated; every other failure is a real conformance break and is
-    re-raised unchanged. If a future, fixed PettingZoo stops raising, this returns ``False`` and the
-    call still passes. Mirrors ``test_card_modules.py``'s identical guard for the throwaway fixture
-    that proved this contract before Spades adopted the real object observation.
-
-    TODO(#1211): delete this guard and call ``api_test`` directly once a PettingZoo release fixes
-    the composite-observation ``dtype`` recursion.
-    """
-    with warnings.catch_warnings():
-        for message in _1211_WARNINGS:
-            warnings.filterwarnings("ignore", message=message)
-        try:
-            api_test(env, num_cycles=num_cycles)
-        except AttributeError as exc:
-            if "dtype" not in str(exc):
-                raise  # a different AttributeError is a genuine failure
-            return True
-    return False
-
-
-def test_passes_pettingzoo_api_test():
-    _api_test_tolerating_1211(make_env(), num_cycles=100)
-
 
 # -- bidding legality ------------------------------------------------------------------------
 
@@ -489,59 +445,14 @@ def _rollout(seed: int):
     return observations, overlays, deal
 
 
-def test_same_seed_produces_identical_sequences():
-    obs_a, ov_a, deal_a = _rollout(7)
-    obs_b, ov_b, deal_b = _rollout(7)
-
-    assert deal_a == deal_b
-    assert len(obs_a) == len(obs_b)
-    for a, b in zip(obs_a, obs_b, strict=True):
-        assert a.keys() == b.keys()
-        for key in a:
-            if isinstance(a[key], np.ndarray):
-                assert np.array_equal(a[key], b[key])
-            else:
-                assert a[key] == b[key]
-    assert json.dumps(ov_a, sort_keys=True) == json.dumps(ov_b, sort_keys=True)
-
-
 def test_different_seeds_diverge():
     _obs_a, ov_a, _deal_a = _rollout(1)
     _obs_b, ov_b, _deal_b = _rollout(2)
     assert json.dumps(ov_a, sort_keys=True) != json.dumps(ov_b, sort_keys=True)
 
 
-def test_overlay_round_trips_through_json():
-    env = make_env()
-    env.reset(seed=3)
-    for _ in range(12):  # partway through: bids placed and a trick or two underway
-        if env.agents:
-            env.step(default_action(env, env.agent_selection))
-    overlay = extract_overlay(env)
-    assert json.loads(json.dumps(overlay)) == overlay
-    env.close()
-
-
-# -- metadata --------------------------------------------------------------------------------
-
-
-def test_metadata_round_trips_through_json():
-    parsed = json.loads(json.dumps(ENTRY.meta.to_json()))
-    assert parsed["env_id"] == "spades"
-    assert parsed["renderer"] == "spades"
-    assert parsed["seat_order_matters"] is True
-    assert parsed["messaging"] is True
-    assert parsed["message_cap"] == 120
-    assert parsed["min_slots"] == parsed["max_slots"] == 4
-    assert parsed["human_slots"] == ["player_0", "player_1", "player_2", "player_3"]
-    assert parsed["pace_interval_ms"] is None
-    assert parsed["view_interval_ms"] == 3000
-    assert parsed["live_interval_ms"] == 900
-    assert parsed["recommended_episode_ticks"] == 56
-
-
 def test_generated_environments_json_includes_spades():
-    path = Path(__file__).resolve().parents[2] / "backend" / "src" / "generated" / "environments.json"
+    path = Path(__file__).resolve().parents[4] / "backend" / "src" / "generated" / "environments.json"
     entries = json.loads(path.read_text(encoding="utf-8"))
     spades = next((entry for entry in entries if entry["env_id"] == "spades"), None)
     assert spades is not None

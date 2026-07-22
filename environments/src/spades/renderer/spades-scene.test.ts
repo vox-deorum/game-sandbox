@@ -1,6 +1,6 @@
 import type { StepState } from '@game-sandbox/schema'
+import { getRenderer } from '@renderers/registry.js'
 import { describe, expect, it } from 'vitest'
-import { getRenderer } from '../src/renderers/registry.js'
 import {
   bidChipAt,
   bidToAction,
@@ -9,16 +9,16 @@ import {
   handCardAt,
   NIL_BID,
   type SpadesScene,
-} from '../src/renderers/spades/scene.js'
+} from './scene.js'
 // Importing the barrel registers every renderer, including Spades, so the registration test below can
 // look it up by its metadata key the way the host pages do.
-import '../src/renderers/index.js'
+import '@renderers/index.js'
 // A checked-in slice of a real four-agent Spades recording (header + per-step states), produced by
 // scripts/gen_spades_fixture.py through the real harness recording path. Like the Hearts renderer test,
 // the determinism fixture doubles as the renderer fixture, so any visual regression has a byte-identical,
 // real-shape input carrying the opening bids and all thirteen tricks. `?raw` (Vite) gives the file as a
 // string under jsdom.
-import fixture from './fixtures/spades-recording.jsonl?raw'
+import fixture from '../../../../frontend/test/fixtures/spades-recording.jsonl?raw'
 
 const states: StepState[] = fixture
   .split('\n')

@@ -15,13 +15,10 @@ from __future__ import annotations
 
 import json
 import random
-import warnings
 from pathlib import Path
 
 import numpy as np
 import pytest
-from pettingzoo.test import api_test
-from pettingzoo.utils.env import AECEnv
 
 from game_sandbox_harness.manifest import load_agent
 from game_sandbox_harness.session import REASON_TERMINATED, AgentSlot, run_episode
@@ -32,49 +29,8 @@ from hearts.overlay import extract_overlay
 #: The frozen v1 built-in Hearts baseline the session image stages and the harness loads for every
 #: Naive seat (``backend/images/session-base/deps-v1/builtin/hearts``), from this repo's root.
 BUILTIN_HEARTS_AGENT_DIR = (
-    Path(__file__).resolve().parents[2] / "backend/images/session-base/deps-v1/builtin/hearts"
+    Path(__file__).resolve().parents[4] / "backend/images/session-base/deps-v1/builtin/hearts"
 )
-
-# The two UserWarnings pinned PettingZoo emits for a non-array composite observation; incidental to
-# the #1211 bug, so the guard filters them rather than failing on them. Each is a message *prefix*:
-# warnings.filterwarnings matches the regex against the start of the message.
-_1211_WARNINGS = (
-    "Observation is not a NumPy array",
-    "Observation space for each agent probably should be",
-)
-
-
-def _api_test_tolerating_1211(env: AECEnv, num_cycles: int = 100) -> bool:
-    """Run ``api_test`` and swallow *only* the known PettingZoo #1211 failure. Return whether it hit.
-
-    Pinned PettingZoo 1.26.1 has an open bug
-    (https://github.com/Farama-Foundation/PettingZoo/issues/1211): for a composite inner
-    ``observation`` Dict, ``api_test`` recurses the declared space and evaluates ``seen.dtype`` on a
-    semantic leaf (a plain ``int`` / ``tuple`` / ``dict``, whichever it reaches first), raising
-    ``AttributeError: '<type>' object has no attribute 'dtype'``. That single error — and its two
-    UserWarnings — is expected and tolerated; every other failure is a real conformance break and is
-    re-raised unchanged. If a future, fixed PettingZoo stops raising, this returns ``False`` and the
-    call still passes. Mirrors ``test_card_modules.py``'s identical guard for the throwaway fixture
-    that proved this contract before Hearts adopted the real object observation.
-
-    TODO(#1211): delete this guard and call ``api_test`` directly once a PettingZoo release fixes
-    the composite-observation ``dtype`` recursion.
-    """
-    with warnings.catch_warnings():
-        for message in _1211_WARNINGS:
-            warnings.filterwarnings("ignore", message=message)
-        try:
-            api_test(env, num_cycles=num_cycles)
-        except AttributeError as exc:
-            if "dtype" not in str(exc):
-                raise  # a different AttributeError is a genuine failure
-            return True
-    return False
-
-
-def test_passes_pettingzoo_api_test():
-    _api_test_tolerating_1211(make_env(), num_cycles=100)
-
 
 # -- rule enforcement ------------------------------------------------------------------------
 
@@ -373,24 +329,6 @@ def test_shoot_the_moon_flip():
     assert leaderboard[0] == max(leaderboard)  # the shooter is best off
 
 
-# -- metadata --------------------------------------------------------------------------------
-
-
-def test_metadata_round_trips_through_json():
-    blob = json.dumps(ENTRY.meta.to_json())
-    parsed = json.loads(blob)
-    assert parsed["env_id"] == "hearts"
-    assert parsed["renderer"] == "hearts"
-    assert parsed["seat_order_matters"] is True
-    assert parsed["min_slots"] == parsed["max_slots"] == 4
-    assert parsed["human_slots"] == ["player_0", "player_1", "player_2", "player_3"]
-    assert parsed["pace_interval_ms"] is None
-    # Turn-based spectator/replay cadence vs. the snappier live human throttle.
-    assert parsed["view_interval_ms"] == 3000
-    assert parsed["live_interval_ms"] == 900
-    assert parsed["messaging"] is False
-
-
 # -- default action --------------------------------------------------------------------------
 
 
@@ -467,22 +405,6 @@ def _rollout(seed: int) -> tuple[list, list, list]:
         env.step(default_action(env, agent))
     env.close()
     return observations, overlays, deal
-
-
-def test_same_seed_produces_identical_sequences():
-    obs_a, ov_a, deal_a = _rollout(7)
-    obs_b, ov_b, deal_b = _rollout(7)
-
-    assert deal_a == deal_b  # identical deal under the same seed
-    assert len(obs_a) == len(obs_b)
-    for a, b in zip(obs_a, obs_b, strict=True):
-        assert a.keys() == b.keys()
-        for key in a:
-            if isinstance(a[key], np.ndarray):
-                assert np.array_equal(a[key], b[key])
-            else:
-                assert a[key] == b[key]
-    assert json.dumps(ov_a, sort_keys=True) == json.dumps(ov_b, sort_keys=True)
 
 
 def test_different_seeds_diverge():

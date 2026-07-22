@@ -65,6 +65,9 @@ E2E_SUBMISSION_FIXTURES_DIR = REPO_ROOT / "frontend" / "e2e" / "fixtures" / "sub
 
 # The environments source root, under which each environment is its own top-level package.
 ENVIRONMENTS_SRC = REPO_ROOT / "environments" / "src"
+ENVIRONMENTS_DIR = REPO_ROOT / "environments"
+ENVIRONMENTS_IGNORE_FILE = ENVIRONMENTS_DIR / ".envignore"
+ENVIRONMENTS_PYPROJECT = ENVIRONMENTS_DIR / "pyproject.toml"
 
 
 @dataclass(frozen=True)
@@ -77,42 +80,6 @@ class TemplateEnvironmentSpec:
     default_action: str = "default_action"
     player_slot: str = "player_0"
 
-
-# This static catalog is the single registration point for student templates. Generation and
-# composition deliberately do not discover template directories at runtime, so an unregistered
-# directory cannot silently become a publishable environment and the generated init facts cannot
-# drift from the module-copy list.
-TEMPLATE_ENVIRONMENTS: dict[str, TemplateEnvironmentSpec] = {
-    "flappy_bird": TemplateEnvironmentSpec(
-        display_name="Flappy Bird",
-        inner_package="flappy_bird",
-        modules=(
-            "flappy_bird/single_agent.py",
-            "flappy_bird/game.py",
-            "flappy_bird/env.py",
-            "flappy_bird/overlay.py",
-            "flappy_bird/UPSTREAM_LICENSE.md",
-        ),
-    ),
-    "hearts": TemplateEnvironmentSpec(
-        display_name="Hearts",
-        inner_package="hearts",
-        modules=(
-            "hearts/rules.py",
-            "hearts/env.py",
-            "hearts/overlay.py",
-        ),
-    ),
-    "spades": TemplateEnvironmentSpec(
-        display_name="Spades",
-        inner_package="spades",
-        modules=(
-            "spades/rules.py",
-            "spades/env.py",
-            "spades/overlay.py",
-        ),
-    ),
-}
 
 # Shared, import-self-contained sandbox helpers synced from the env source into the env-agnostic
 # base layer (templates/base/sandbox/, not per-env): destination filename under sandbox/ -> source

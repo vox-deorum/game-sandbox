@@ -4,7 +4,7 @@
  * contextual rule hints (opening 2♣, follow-suit, the hearts-not-broken lead restriction). Everything a
  * Hearts and a Spades table draw identically — the card codec, the felt palette, the seat/trick/hand
  * geometry, the legal-mask hand fan, the hit-test, and the fly-in/sweep animation helpers — lives in the
- * shared `../cards/scene.ts` and is re-exported below so this module stays the single Hearts entry point.
+ * shared `@renderers/cards/scene.ts` and is re-exported below so this module stays the single Hearts entry point.
  * It draws the recorded overlay from `environments/src/hearts/overlay.py`. `computeScene` is pure in
  * `state` plus `config`, so the same inputs always yield the same scene, including during replay scrubs.
  */
@@ -32,11 +32,11 @@ import {
   SPADES,
   type ViewContext,
   WIDTH,
-} from '../cards/scene.js'
+} from '@renderers/cards/scene.js'
 
 // Re-export the whole shared card-table layer so this module is the single Hearts entry point: the
 // renderer and the tests import `WIDTH`, `detectSweep`, `handCardAt`, etc. from here as before.
-export * from '../cards/scene.js'
+export * from '@renderers/cards/scene.js'
 
 // --- Hearts card constants (mirror environments/src/hearts/rules.py) ---
 /** A full Hearts hand is thirteen tricks. */

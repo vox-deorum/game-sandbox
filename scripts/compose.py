@@ -29,13 +29,13 @@ import shutil
 import sys
 from pathlib import Path, PurePosixPath
 
+from _envs import discover_environments
 from _paths import (
     BUILD_DIR,
     DOCS_DIR,
     EXAMPLES_DIR,
     REPO_ROOT,
     TEMPLATE_BASE_DIR,
-    TEMPLATE_ENVIRONMENTS,
     TEMPLATES_DIR,
     env_docs_page,
 )
@@ -225,8 +225,8 @@ def _overlay_files(src_dir: Path, out_dir: Path, *, skip_extra: bool = False) ->
 
 
 def list_envs() -> list[str]:
-    """Every environment in the static template catalog."""
-    return sorted(TEMPLATE_ENVIRONMENTS)
+    """Every recognized environment package."""
+    return sorted(discover_environments())
 
 
 def list_examples() -> list[tuple[str, str]]:

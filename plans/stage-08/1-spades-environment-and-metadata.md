@@ -76,7 +76,7 @@ Regenerate `backend/src/generated/environments.json` through `scripts/generate.p
 
 ## Tests
 
-Pure Python unit tests in the environments package mirroring `environments/tests/test_hearts.py`, no Docker, no DB:
+Pure Python unit tests under `environments/src/spades/tests/` mirroring `environments/src/hearts/tests/test_hearts.py`, no Docker, no DB:
 
 - Bidding legality: every seat bids exactly once in seat order starting at seat 0, card actions are illegal during bidding, and bid actions are illegal during play.
 - Play legality: follow-suit, spades-not-led-until-broken (including the all-spades exception), and trick-winner resolution each accept legal play and reject illegal play, and `legal_actions` matches the emitted mask in representative fixtures.

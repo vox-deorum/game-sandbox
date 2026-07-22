@@ -27,7 +27,7 @@ The shared `PixiRenderer` base handles those concerns so environment modules foc
 
 ## Contract
 
-The types live in `src/renderers/types.ts`:
+The shared types live in `frontend/src/renderers/types.ts`:
 
 ```ts
 interface RendererContext {
@@ -159,7 +159,7 @@ The overlay carries semantic objects (a card is a `{"suit", "rank"}` object), so
 
 ## Add a renderer
 
-1. Create `src/renderers/<env>/`.
+1. Create `environments/src/<env>/renderer/` beside the environment's Python code and tests.
 2. Add a class extending `PixiRenderer`.
 3. Declare `internalSize`.
 4. Create display objects in `setup`.
@@ -167,14 +167,14 @@ The overlay carries semantic objects (a card is a `{"suit", "rank"}` object), so
 6. Reconcile the scene in `update`.
 7. Add `inputs()` if humans can control the environment.
 8. Add `thumbnail.svg`.
-9. Register the class and thumbnail in `src/renderers/index.ts`.
-10. Add unit tests and update the browser journeys.
+9. Default-export `{ key, renderer, thumbnail }` from `renderer/index.ts`. The key must equal `ENTRY.meta.renderer`.
+10. Add renderer-specific unit tests beside the renderer and update the browser journeys.
 
-No host or environment metadata changes are needed when the metadata already names the renderer key.
+The frontend eagerly discovers every `environments/src/*/renderer/index.ts` module. There is no registration line to edit. Import the shared base, card table, registry, or types through the `@renderers/*` alias. Keep shared renderer infrastructure in `frontend/src/renderers/`.
 
 ## Flappy Bird reference
 
-`src/renderers/flappy-bird/` is the reference implementation.
+`environments/src/flappy_bird/renderer/` is the reference implementation.
 
 - Internal size: `288 × 512`.
 - Scene source: the per-step overlay.
@@ -186,7 +186,7 @@ Its `computeScene` describes the sky, pipes, ground, bird, score, pipe count, an
 
 ## Hearts reference
 
-`src/renderers/hearts/` is the reference for a turn-based environment with on-screen input and animation.
+`environments/src/hearts/renderer/` is the reference for a turn-based environment with on-screen input and animation.
 
 - Internal size: `960 x 720`.
 - Scene source: the per-step overlay (hands, current trick, per-slot penalty scores, turn, legal-action mask).

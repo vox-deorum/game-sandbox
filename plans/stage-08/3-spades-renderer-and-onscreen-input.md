@@ -12,7 +12,7 @@ The chat panel is deliberately **not** part of this step. Messages are environme
 
 ## What to build
 
-A `spades` renderer under `frontend/src/renderers/spades/` (`index.ts`, `scene.ts`, `thumbnail.svg`), extending the Pixi base and registered once in `frontend/src/renderers/index.ts` under the `renderer="spades"` metadata key. It serves both the web app and loopback local play, and reads legality verbatim from the emitted mask.
+A `spades` renderer under `environments/src/spades/renderer/` (`index.ts`, `scene.ts`, `thumbnail.svg`), extending the shared Pixi base through the `@renderers` alias and default-exporting the `renderer="spades"` definition for automatic discovery. It serves both the web app and loopback local play, and reads legality verbatim from the emitted mask.
 
 It draws:
 

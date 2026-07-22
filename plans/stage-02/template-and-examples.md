@@ -36,7 +36,7 @@ The dependency set is **global**: one `requirements.in`/`requirements.txt` in `b
 
 ## The synced environment code
 
-Students run Flappy Bird locally through the browser protocol and the copied `sandbox.harness` package. `scripts/generate.py` copies the import-self-contained modules from `environments/src/flappy_bird/` into `templates/flappy_bird/sandbox/env/flappy_bird/`, writes the generated environment exports, and copies the shared harness. Publication builds the local browser bundle once and injects it into every staged template and example. Each environment has one `TemplateEnvironmentSpec` in the static `TEMPLATE_ENVIRONMENTS` catalog in `scripts/_paths.py`; generation and composition use that same spec rather than separate registration maps or runtime directory discovery.
+Students run Flappy Bird locally through the browser protocol and the copied `sandbox.harness` package. `scripts/generate.py` discovers environment packages under `environments/src/`, excluding patterns in `environments/.envignore`, then copies each package's import-self-contained direct modules into `templates/<env>/sandbox/env/<env>/`, writes the generated environment exports, and copies the shared harness. Publication builds the local browser bundle once and injects it into every staged template and example. Generation and composition use the same discovered `TemplateEnvironmentSpec` facts, while the generated-code freshness check catches output drift.
 
 ## Scripts
 

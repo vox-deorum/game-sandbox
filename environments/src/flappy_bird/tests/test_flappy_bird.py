@@ -10,42 +10,20 @@ recording determinism test ever runs and might misattribute it.
 from __future__ import annotations
 
 import json
-import math
-import warnings
 from pathlib import Path
 
 import numpy as np
-from pettingzoo.test import api_test
 
 from flappy_bird import ENTRY
 from flappy_bird.env import FlappyBirdEnv, default_action, make_env
 from flappy_bird.game import FlappyBirdGame
 from flappy_bird.overlay import extract_overlay
 
-# PettingZoo's api_test emits two advisory UserWarnings for any non-array composite observation: it
-# recommends Box/Discrete observation spaces and flags that the observation is not a bare ndarray.
-# Both are incidental to the deliberate semantic Dict observation (the same design Hearts and Spades
-# carry) and are filtered rather than failed on. Unlike the card games, Flappy's observation is a
-# flat Dict with no inner "observation" key, so api_test's dtype recursion never descends into it and
-# Flappy never trips the PettingZoo #1211 AttributeError itself — only these two warnings. Each entry
-# is a message *prefix*: warnings.filterwarnings matches the regex against the start of the message.
-_1211_WARNINGS = (
-    "Observation is not a NumPy array",
-    "Observation space for each agent probably should be",
-)
-
 
 def _is_scalar_array(value: object, dtype: type) -> bool:
     """A 0-d NumPy array of exactly ``dtype`` — the member a ``shape=()`` Box publishes, so
     ``Space.contains`` accepts each leaf without casting a bare scalar (which api_test warns on)."""
     return isinstance(value, np.ndarray) and value.shape == () and value.dtype == dtype
-
-
-def test_passes_pettingzoo_api_test():
-    with warnings.catch_warnings():
-        for message in _1211_WARNINGS:
-            warnings.filterwarnings("ignore", message=message)
-        api_test(make_env(), num_cycles=100)
 
 
 def _snapshot(observed: dict) -> dict:
@@ -129,15 +107,6 @@ def _rollout(seed: int, actions: list[int]) -> tuple[list, list]:
     return observations, overlays
 
 
-def test_same_seed_produces_identical_observation_and_overlay_sequences():
-    actions = [0, 1, 0, 0, 1, 0, 1, 1, 0, 0]
-    obs_a, ov_a = _rollout(123, actions)
-    obs_b, ov_b = _rollout(123, actions)
-    assert len(obs_a) == len(obs_b)
-    assert obs_a == obs_b
-    assert json.dumps(ov_a, sort_keys=True) == json.dumps(ov_b, sort_keys=True)
-
-
 def test_different_seeds_diverge():
     actions = [0] * 10
     _obs_a, ov_a = _rollout(1, actions)
@@ -176,35 +145,6 @@ def test_observation_is_flat_object_with_no_action_mask_and_nearest_first_pipes(
     space = env.observation_space("player_0")
     assert space.contains(observed)
     env.close()
-
-
-def test_overlay_has_every_field_and_all_finite():
-    env = make_env()
-    env.reset(seed=7)
-    overlay = extract_overlay(env)
-    assert set(overlay) == {"player", "pipes", "pipes_passed", "width", "height"}
-    player = overlay["player"]
-    assert set(player) == {"x", "y", "vel_y", "rot"}
-    for value in player.values():
-        assert math.isfinite(value)
-    assert overlay["pipes"], "expected at least one pipe"
-    for pipe in overlay["pipes"]:
-        assert set(pipe) == {"x", "gap_top", "gap_bottom"}
-        for value in pipe.values():
-            assert math.isfinite(value)
-    xs = [pipe["x"] for pipe in overlay["pipes"]]
-    assert xs == sorted(xs)  # nearest-first, matching the observation order
-    assert isinstance(overlay["pipes_passed"], int)
-    assert overlay["width"] > 0 and overlay["height"] > 0
-    env.close()
-
-
-def test_entry_metadata_round_trips_through_json():
-    blob = json.dumps(ENTRY.meta.to_json())
-    parsed = json.loads(blob)
-    assert parsed["env_id"] == "flappy_bird"
-    assert parsed["renderer"] == "flappy-bird"
-    assert parsed["min_slots"] == parsed["max_slots"] == 1
 
 
 def test_default_action_is_noop():

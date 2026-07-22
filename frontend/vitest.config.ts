@@ -1,3 +1,5 @@
+import { fileURLToPath, URL } from 'node:url'
+
 import vue from '@vitejs/plugin-vue'
 import { defineConfig } from 'vitest/config'
 
@@ -6,9 +8,14 @@ import { defineConfig } from 'vitest/config'
 // Real pixels and a real session are the end-to-end suite's job (see testing-ci-and-docs.md).
 export default defineConfig({
   plugins: [vue()],
+  resolve: {
+    alias: {
+      '@renderers': fileURLToPath(new URL('./src/renderers', import.meta.url)),
+    },
+  },
   test: {
     environment: 'jsdom',
     setupFiles: ['./test/setup.ts'],
-    include: ['test/**/*.test.{ts,tsx}'],
+    include: ['test/**/*.test.{ts,tsx}', '../environments/src/*/renderer/**/*.test.ts'],
   },
 })

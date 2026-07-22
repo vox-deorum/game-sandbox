@@ -15,18 +15,21 @@ dependencies = [
 # Environments register themselves under this group, name = env id. The harness discovers
 # them through importlib.metadata without ever importing this package.
 [project.entry-points."game_sandbox.environments"]
+# BEGIN GENERATED ENTRY POINTS
 flappy_bird = "flappy_bird:ENTRY"
 hearts = "hearts:ENTRY"
 spades = "spades:ENTRY"
+# END GENERATED ENTRY POINTS
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-# Each environment is its own top-level package under src/ (importable as the env id, e.g.
-# `flappy_bird`); add a line here per new environment. The shared single-agent adapter lives
-# inside each single-agent env package, so it ships with the package walk below. `local_play`
-# holds the shared card rules, spaces, and semantic helpers used by the card environments.
-packages = ["src/flappy_bird", "src/hearts", "src/spades", "src/local_play"]
+# Each environment is its own top-level package under src/. This block is regenerated so the wheel
+# keeps ignored shared helper packages such as `local_play` alongside recognized environments.
+# BEGIN GENERATED WHEEL PACKAGES
+packages = ["src/flappy_bird", "src/hearts", "src/local_play", "src/spades"]
+# END GENERATED WHEEL PACKAGES
 artifacts = ["src/flappy_bird/UPSTREAM_LICENSE.md"]
+exclude = ["src/*/renderer", "src/*/tests"]

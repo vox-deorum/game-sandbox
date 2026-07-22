@@ -60,7 +60,7 @@ def _suggested_bid(hand: list[int]) -> int:
 
     This image cannot import ``spades.rules``, so the estimate is vendored verbatim. It is pinned to
     its source over many hands by ``test_builtin_suggested_bid_matches_the_rules_engine`` in
-    ``environments/tests/test_spades.py``, which fails if this copy drifts from ``suggested_bid``.
+    ``environments/src/spades/tests/test_spades.py``, which fails if this copy drifts from ``suggested_bid``.
     """
     estimate = 0
     spades = [card for card in hand if _suit(card) == _SPADES]

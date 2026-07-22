@@ -1,4 +1,5 @@
 import type { StepState } from '@game-sandbox/schema'
+import { getRenderer } from '@renderers/registry.js'
 import { describe, expect, it } from 'vitest'
 import {
   type Card,
@@ -17,16 +18,15 @@ import {
   sweepCardAt,
   trickOffset,
   WIDTH,
-} from '../src/renderers/hearts/scene.js'
-import { getRenderer } from '../src/renderers/registry.js'
+} from './scene.js'
 // Importing the barrel registers every renderer, including Hearts, so the registration test below can
 // look it up by its metadata key the way the host pages do.
-import '../src/renderers/index.js'
+import '@renderers/index.js'
 // A checked-in slice of a real four-agent Hearts recording (header + per-step states), produced by
 // scripts/gen_hearts_fixture.py through the real harness recording path. Like the Flappy Bird renderer
 // test, the determinism fixture doubles as the renderer fixture, so any visual regression has a
 // byte-identical, real-shape input. `?raw` (Vite) gives the file as a string under jsdom.
-import fixture from './fixtures/hearts-recording.jsonl?raw'
+import fixture from '../../../../frontend/test/fixtures/hearts-recording.jsonl?raw'
 
 const states: StepState[] = fixture
   .split('\n')

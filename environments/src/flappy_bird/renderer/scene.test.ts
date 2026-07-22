@@ -1,5 +1,10 @@
 import type { StepState } from '@game-sandbox/schema'
 import { describe, expect, it } from 'vitest'
+// A checked-in slice of a real Flappy Bird recording (header + per-step states): the determinism
+// fixture doubles as the renderer fixture, so any visual regression has a byte-identical input. The
+// `?raw` import (Vite) gives the file as a string, which works under jsdom where import.meta.url is
+// not a file:// URL.
+import fixture from '../../../../frontend/test/fixtures/flappy-recording.jsonl?raw'
 import {
   type BirdShape,
   computeScene,
@@ -7,12 +12,7 @@ import {
   PIPE_WIDTH,
   type RectShape,
   type Scene,
-} from '../src/renderers/flappy-bird/scene.js'
-// A checked-in slice of a real Flappy Bird recording (header + per-step states): the determinism
-// fixture doubles as the renderer fixture, so any visual regression has a byte-identical input. The
-// `?raw` import (Vite) gives the file as a string, which works under jsdom where import.meta.url is
-// not a file:// URL.
-import fixture from './fixtures/flappy-recording.jsonl?raw'
+} from './scene.js'
 
 const states: StepState[] = fixture
   .split('\n')
