@@ -28,7 +28,7 @@ import {
   watchAgentNumbers,
 } from '../api/client.js'
 import ChatPanel from '../components/ChatPanel.vue'
-import DecisionLog, { type DecisionEntry } from '../components/DecisionLog.vue'
+import DecisionLog from '../components/DecisionLog.vue'
 import ExperimentTabs from '../components/ExperimentTabs.vue'
 import GameOverCard from '../components/GameOverCard.vue'
 import PlayerAttribution from '../components/PlayerAttribution.vue'
@@ -39,18 +39,17 @@ import UiButton from '../components/ui/UiButton.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import UiStatusBadge from '../components/ui/UiStatusBadge.vue'
 import { usePinning } from '../composables/usePinning.js'
+import { useLiveFramePresentation } from '../composables/useLiveFramePresentation.js'
 import { useRendererMount } from '../composables/useRendererMount.js'
 import { useSessionSocket } from '../composables/useSessionSocket.js'
 import { useStageLayout } from '../composables/useStageLayout.js'
 import { environmentMeta } from '../environmentCatalog.js'
 import { anonymityState, presentsMasked } from '../lib/anonymity.js'
 import { hasSubmittedAgent } from '../lib/attribution.js'
-import { type ChatEntry, messageKey } from '../lib/chat.js'
 import { formatDate } from '../lib/format.js'
 import { liveIntervalMs, playbackIntervalMs } from '../lib/playback.js'
 import { isAdmin, useMe, userId } from '../me.js'
 import { parseRecording } from '../replay/parse.js'
-import { isCompletedOutcome, reasonText } from '../replay/reason.js'
 import { summarizeStates } from '../replay/summary.js'
 
 const route = useRoute()
@@ -64,13 +63,6 @@ const row = ref<SessionRow | null>(null)
 const meta = ref<EnvironmentMeta | null>(null)
 const loadError = ref(false)
 const hostEl = ref<HTMLElement | null>(null)
-const decisions = ref<DecisionEntry[]>([])
-// The messages the chat panel renders, each tagged with the tick of the state it rode in on.
-// Accumulated in onState so the jitter buffer paces them with their frames, and deduplicated on the
-// tuple the harness guarantees is unique per run, because attach and reconnect replay the relay's
-// latest state line and the panel must never show the same message twice.
-const chatLog = ref<ChatEntry[]>([])
-const seenMessages = new Set<string>()
 const seasonPlayable = ref<boolean | null>(null)
 // Submission id → season-wide anonymous number, so the blind attribution line reads the same
 // "Agent N" the watch picker and post-session rating panel show for the same agent.
@@ -177,24 +169,18 @@ const {
         decisions.value.push(toDecision(state))
       }
     },
+})
+const { appendMessages, chatLog, completedOutcome, decisions, statusLabel, statusTone, toDecision } =
+  useLiveFramePresentation({
+    controlledSlots,
+    status,
+    paused,
+    endReason,
   })
 const { pinned, busy: pinBusy, error: pinError, toggle: togglePin } = usePinning(recordingId)
 
 function sendInput(slot: string, action: unknown): void {
   send({ kind: 'input', slot, action })
-}
-
-/** Append a state's messages to the chat log, skipping any already seen (attach/reconnect replays the
- *  relay's latest state line, so the same message can arrive twice). */
-function appendMessages(state: StepState): void {
-  for (const message of state.messages ?? []) {
-    const entry: ChatEntry = { tick: state.tick, ...message }
-    const key = messageKey(entry)
-    if (!seenMessages.has(key)) {
-      seenMessages.add(key)
-      chatLog.value.push(entry)
-    }
-  }
 }
 
 // The chat panel mounts when the session's effective messaging block enables it — resolved once by the
@@ -217,17 +203,6 @@ function sendChat(payload: { to: string | null; text: string }): void {
   }
 }
 
-/** The per-tick decision-log row: the primary agent's action. Prefer the controlled slot, else the
- *  first agent (single-agent today; multi-agent slot selection is a later stage's concern). */
-function toDecision(state: StepState): DecisionEntry {
-  const slot = controlledSlots.value[0] ?? Object.keys(state.agents)[0]
-  return {
-    tick: state.tick,
-    slot: slot ?? '',
-    action: slot === undefined ? undefined : state.agents[slot]?.action,
-  }
-}
-
 // The decision log sits beside a portrait canvas (a column is left free) and below a landscape one
 // until the viewport is wide enough to hold both (see useStageLayout).
 const { logBeside } = useStageLayout(aspectRatio)
@@ -236,22 +211,6 @@ const { logBeside } = useStageLayout(aspectRatio)
 // flight, so the stage shows a loading indicator rather than the decision log it has no rows for.
 // (Stays false when no renderer is registered — that's its own empty state.)
 const stageLoading = computed(() => aspectRatio.value === null && !noRenderer.value)
-
-const statusLabel = computed(() => {
-  if (status.value === 'ended') {
-    return reasonText(endReason.value)
-  }
-  if (paused.value) {
-    return 'Paused'
-  }
-  return status.value === 'running' ? 'Live' : 'Starting…'
-})
-const statusTone = computed<'neutral' | 'success' | 'warning'>(() => {
-  if (status.value === 'ended') {
-    return 'neutral'
-  }
-  return paused.value ? 'warning' : status.value === 'running' ? 'success' : 'neutral'
-})
 
 // The run's own facts, shown inline in the status row beside the badge. The tabs name the environment,
 // the status badge names the end reason, and the pin button shows pin state — so the strip carries only
@@ -454,7 +413,7 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
               status === 'ended' &&
               lastState !== null &&
               !gameOverDismissed &&
-              isCompletedOutcome(endReason)
+              completedOutcome
             "
             :state="lastState"
             :header="header"

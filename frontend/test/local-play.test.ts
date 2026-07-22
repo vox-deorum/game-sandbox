@@ -142,7 +142,7 @@ describe('LocalPlayPage', () => {
     expect(screen.queryByRole('button', { name: 'Start' })).toBeNull()
   })
 
-  it('waits for terminal status before showing game over after stop', async () => {
+  it('waits for terminal status and labels a stopped session without final standings', async () => {
     await renderLocal()
     startPaused()
     handlers.onResume?.()
@@ -152,8 +152,19 @@ describe('LocalPlayPage', () => {
     expect(sent).toContainEqual({ kind: 'stop' })
     expect(screen.queryByRole('dialog', { name: 'Game over' })).toBeNull()
 
+    handlers.onResult?.({ scores: { player_0: 4 }, ticks: 1, reason: 'stopped' })
+    handlers.onSessionStatus?.('ended', 'stopped')
+    expect(await screen.findByText('Stopped')).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'Game over' })).toBeNull()
+  })
+
+  it('shows final standings when the environment completes normally', async () => {
+    await renderLocal()
+    startPaused()
+    handlers.onState(flappyState(1))
     handlers.onResult?.({ scores: { player_0: 4 }, ticks: 1, reason: 'terminated' })
     handlers.onSessionStatus?.('ended', 'terminated')
+
     expect(await screen.findByRole('dialog', { name: 'Game over' })).toBeInTheDocument()
   })
 

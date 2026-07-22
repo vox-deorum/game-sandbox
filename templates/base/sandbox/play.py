@@ -19,13 +19,13 @@ from typing import Any
 
 from sandbox.env import META, PLAYER_SLOT, default_action, extract_overlay, make_env
 from sandbox.harness.environment import EnvironmentEntry
+from sandbox.harness.live import UNSET_TIMEOUT, UnsetTimeout
 from sandbox.harness.local_server import LocalServer
 from sandbox.harness.manifest import load_agent as _load_agent
 from sandbox.harness.session import AgentSlot, ExternalSlot, run_episode
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WEB_ROOT = Path(__file__).resolve().parent / "web"
-_METADATA_TIMEOUT = object()
 
 
 class _DefaultSource:
@@ -98,7 +98,7 @@ def local_config(
     seat: int,
     recording_dir: Path,
     step_limit: int | None,
-    human_timeout_ms: int | None | object = _METADATA_TIMEOUT,
+    human_timeout_ms: int | None | UnsetTimeout = UNSET_TIMEOUT,
 ) -> dict[str, object]:
     """Build the complete runner config and header attribution for one local launch."""
     available_slots = possible_slots()
@@ -127,7 +127,7 @@ def local_config(
     if step_limit is not None:
         config["max_steps"] = step_limit
     # Omission means the metadata default. JSON null is reserved for an explicit disabled timeout.
-    if human_timeout_ms is not _METADATA_TIMEOUT:
+    if human_timeout_ms is not UNSET_TIMEOUT:
         config["human_timeout_ms"] = human_timeout_ms
     else:
         config.pop("human_timeout_ms")
@@ -161,7 +161,7 @@ def launch_browser(config: dict[str, object], *, port: int, open_browser: bool) 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Play your environment in a local browser session.")
-    parser.add_argument("mode", nargs="?", choices=("human", "agent", "watch"), default="human")
+    parser.add_argument("mode", nargs="?", choices=("human", "agent"), default="human")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--steps", type=int, help="cap headless steps")
     parser.add_argument("--seat", type=int, default=0, help="seat index (default 0)")
@@ -177,8 +177,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    if args.seat < 0 or args.seat >= len(possible_slots()):
-        parser.error(f"--seat must name one of 0..{len(possible_slots()) - 1}")
+    available_slots = possible_slots()
+    if args.seat < 0 or args.seat >= len(available_slots):
+        parser.error(f"--seat must name one of 0..{len(available_slots) - 1}")
+    if args.mode == "human" and not args.headless and available_slots[args.seat] not in META.human_slots:
+        parser.error(f"seat {args.seat} is not human-playable in {META.env_id!r}")
     if args.headless:
         score = run_headless(seed=args.seed, max_steps=args.steps, seat=args.seat)
         print(f"seed {args.seed}: score {score:.2f}")
@@ -195,7 +198,7 @@ def main(argv: list[str] | None = None) -> int:
                 if args.no_human_timeout
                 else args.human_timeout_ms
                 if args.human_timeout_ms is not None
-                else _METADATA_TIMEOUT
+                else UNSET_TIMEOUT
             ),
         )
         return launch_browser(config, port=args.port, open_browser=not args.no_browser)

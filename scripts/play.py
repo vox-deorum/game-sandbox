@@ -13,10 +13,10 @@ from tempfile import TemporaryDirectory
 
 from _paths import FRONTEND_LOCAL_DIST_DIR, REPO_ROOT
 from game_sandbox_harness.environment import EnvironmentEntry, EnvironmentLookupError, load_environment
+from game_sandbox_harness.live import UNSET_TIMEOUT, UnsetTimeout
 from game_sandbox_harness.local_server import LocalServer
 
 MODES = ("human", "agent", "watch")
-_METADATA_TIMEOUT = object()
 NPM_COMMAND = "npm.cmd" if sys.platform == "win32" else "npm"
 BUILTIN_AGENT_ROOT = REPO_ROOT / "backend" / "images" / "session-base" / "deps-v1" / "builtin"
 
@@ -45,7 +45,7 @@ def local_config(
     seat: int,
     seed: int,
     max_steps: int | None,
-    human_timeout_ms: int | None | object = _METADATA_TIMEOUT,
+    human_timeout_ms: int | None | UnsetTimeout = UNSET_TIMEOUT,
     agent_repo: Path | None = None,
     recording_dir: Path,
 ) -> dict[str, object]:
@@ -77,7 +77,7 @@ def local_config(
     }
     if max_steps is not None:
         config["max_steps"] = max_steps
-    if human_timeout_ms is not _METADATA_TIMEOUT:
+    if human_timeout_ms is not UNSET_TIMEOUT:
         config["human_timeout_ms"] = human_timeout_ms
     return config
 
@@ -132,7 +132,7 @@ def build_parser() -> argparse.ArgumentParser:
     """Build the maintainer launcher CLI."""
     parser = argparse.ArgumentParser(description="Play a registered environment in a local browser.")
     parser.add_argument("env_id", help="registered environment id, for example hearts")
-    parser.add_argument("mode", nargs="?", choices=MODES, default="human")
+    parser.add_argument("mode", nargs="?", choices=MODES, default=None)
     parser.add_argument("--agent-repo", type=Path, help="manifest.json agent repository for agent mode")
     parser.add_argument("--seat", type=int, default=0, help="human seat index")
     parser.add_argument("--seed", type=int, default=0)
@@ -153,7 +153,9 @@ def main(argv: list[str] | None = None) -> int:
     except EnvironmentLookupError as error:
         parser.error(str(error))
 
-    mode = "agent" if args.agent_repo is not None else args.mode
+    if args.agent_repo is not None and args.mode not in (None, "agent"):
+        parser.error("--agent-repo PATH requires agent mode, so omit mode or pass 'agent'")
+    mode = "agent" if args.agent_repo is not None else args.mode or "human"
     if mode == "agent" and args.agent_repo is None:
         parser.error("agent mode requires --agent-repo PATH")
     if args.steps is not None and args.steps <= 0:
@@ -166,13 +168,13 @@ def main(argv: list[str] | None = None) -> int:
     if mode == "human" and slots[args.seat] not in entry.meta.human_slots:
         parser.error(f"seat {args.seat} is not human-playable in {entry.meta.env_id!r}")
 
-    timeout: int | None | object
+    timeout: int | None | UnsetTimeout
     if args.no_human_timeout:
         timeout = None
     elif args.human_timeout_ms is not None:
         timeout = args.human_timeout_ms
     else:
-        timeout = _METADATA_TIMEOUT
+        timeout = UNSET_TIMEOUT
     with TemporaryDirectory(prefix="game-sandbox-local-") as scratch:
         config = local_config(
             entry,

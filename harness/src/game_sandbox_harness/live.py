@@ -64,11 +64,11 @@ class LiveConfigError(ValueError):
     """Raised when the session config argument is missing, malformed, or self-inconsistent."""
 
 
-class _UnsetTimeout:
+class UnsetTimeout:
     """The absent timeout wire state, distinct from JSON null (which disables it)."""
 
 
-UNSET_TIMEOUT = _UnsetTimeout()
+UNSET_TIMEOUT = UnsetTimeout()
 
 
 @dataclass(frozen=True)
@@ -102,7 +102,7 @@ class LiveConfig:
     env_id: str
     seed: int
     slots: dict[str, SlotBinding]
-    human_timeout_ms: int | None | _UnsetTimeout
+    human_timeout_ms: int | None | UnsetTimeout
     recording_dir: str
     recording_id: str | None
     #: Per-slot attribution copied verbatim into the recording header (slot id -> attribution
@@ -166,7 +166,7 @@ def parse_config(argv: list[str]) -> LiveConfig:
         slots[slot_id] = SlotBinding(kind=kind, path=path)
 
     if "human_timeout_ms" not in config:
-        human_timeout_ms: int | None | _UnsetTimeout = UNSET_TIMEOUT
+        human_timeout_ms: int | None | UnsetTimeout = UNSET_TIMEOUT
     else:
         human_timeout_ms = config["human_timeout_ms"]
         if human_timeout_ms is not None and (
@@ -423,7 +423,7 @@ def build_slots(
     paced = not config.headless and entry.meta.pace_interval_ms is not None
     configured_timeout = config.human_timeout_ms
     resolved_timeout = (
-        entry.meta.human_timeout_ms if isinstance(configured_timeout, _UnsetTimeout) else configured_timeout
+        entry.meta.human_timeout_ms if isinstance(configured_timeout, UnsetTimeout) else configured_timeout
     )
     slots: dict[str, Slot] = {}
     execution_scope = _LlmExecutionScope(config.llm) if config.llm is not None else None

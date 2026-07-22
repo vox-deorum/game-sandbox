@@ -27,9 +27,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # 2. The harness and environment packages from source. The environments package installs --no-deps
 #    because its dependencies ARE the student set already installed above, so the set stays exactly
-#    authoritative for those shared libraries. The harness installs WITH its dependencies: its only
-#    runtime dep is jsonschema, harness infrastructure that is not part of the student set, so it
-#    must be pulled in (pip leaves the pinned set untouched — jsonschema's subtree does not overlap it).
+#    authoritative for those shared libraries. The harness installs WITH its dependencies because
+#    its jsonschema and websockets infrastructure must be available independently of the environment
+#    package. Pip leaves the matching pinned student dependencies untouched.
 COPY harness ./harness
 COPY environments ./environments
 RUN pip install --no-cache-dir ./harness \

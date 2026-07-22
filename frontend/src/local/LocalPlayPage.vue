@@ -5,7 +5,7 @@ import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
 import { computed, onMounted, ref, shallowRef, watch } from 'vue'
 
 import ChatPanel from '../components/ChatPanel.vue'
-import DecisionLog, { type DecisionEntry } from '../components/DecisionLog.vue'
+import DecisionLog from '../components/DecisionLog.vue'
 import GameOverCard from '../components/GameOverCard.vue'
 import StageFrame from '../components/StageFrame.vue'
 import UiButton from '../components/ui/UiButton.vue'
@@ -14,17 +14,14 @@ import UiStatusBadge from '../components/ui/UiStatusBadge.vue'
 import { useRendererMount } from '../composables/useRendererMount.js'
 import { useSessionSocket } from '../composables/useSessionSocket.js'
 import { useStageLayout } from '../composables/useStageLayout.js'
+import { useLiveFramePresentation } from '../composables/useLiveFramePresentation.js'
 import { loadEnvironmentCatalog } from '../environmentCatalog.js'
-import { type ChatEntry, messageKey } from '../lib/chat.js'
 
 const meta = ref<EnvironmentMeta | null>(null)
 const loadError = ref(false)
 const hostEl = ref<HTMLElement | null>(null)
 const header = ref<RecordingHeader | null>(null)
 const lastState = shallowRef<StepState | null>(null)
-const decisions = ref<DecisionEntry[]>([])
-const chatLog = ref<ChatEntry[]>([])
-const seenMessages = new Set<string>()
 const gameOverDismissed = ref(false)
 // The first resume is the start gate. Later pause echoes drive the ordinary session control.
 const started = ref(false)
@@ -73,6 +70,13 @@ const {
     }
   },
 })
+const { appendMessages, chatLog, completedOutcome, decisions, statusLabel, statusTone, toDecision } =
+  useLiveFramePresentation({
+    controlledSlots,
+    status,
+    paused,
+    endReason,
+  })
 
 // The relay echo is the authority for pause state. This only switches the first-control label.
 watch(paused, (value) => {
@@ -87,39 +91,10 @@ const stageLoading = computed(() => meta.value === null || (aspectRatio.value ==
 const messagingEnabled = computed(() => meta.value?.messaging === true)
 const showStartGate = computed(() => paused.value && !started.value)
 const controlsReady = computed(() => header.value !== null && status.value === 'running')
-const statusLabel = computed(() => {
-  if (status.value === 'ended') return endReason.value ?? 'Ended'
-  if (paused.value) return 'Paused'
-  return status.value === 'running' ? 'Live' : 'Starting…'
-})
-const statusTone = computed<'neutral' | 'success' | 'warning'>(() => {
-  if (status.value === 'ended') return 'neutral'
-  return paused.value ? 'warning' : status.value === 'running' ? 'success' : 'neutral'
-})
 
 function start(): void {
   startRequested.value = true
   send({ kind: 'resume' })
-}
-
-function appendMessages(state: StepState): void {
-  for (const message of state.messages ?? []) {
-    const entry: ChatEntry = { tick: state.tick, ...message }
-    const key = messageKey(entry)
-    if (!seenMessages.has(key)) {
-      seenMessages.add(key)
-      chatLog.value.push(entry)
-    }
-  }
-}
-
-function toDecision(state: StepState): DecisionEntry {
-  const slot = controlledSlots.value[0] ?? Object.keys(state.agents)[0]
-  return {
-    tick: state.tick,
-    slot: slot ?? '',
-    action: slot === undefined ? undefined : state.agents[slot]?.action,
-  }
 }
 
 onMounted(async () => {
@@ -183,7 +158,12 @@ onMounted(async () => {
           Waiting…
         </div>
         <GameOverCard
-          v-if="status === 'ended' && lastState !== null && !gameOverDismissed"
+          v-if="
+            status === 'ended' &&
+            lastState !== null &&
+            !gameOverDismissed &&
+            completedOutcome
+          "
           :state="lastState"
           :header="header"
           @dismiss="gameOverDismissed = true"

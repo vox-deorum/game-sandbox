@@ -7,7 +7,9 @@ const LOCAL_PLAY_URL = 'http://127.0.0.1:8091/local.html'
  * The scripted runner makes input forwarding deterministic while exercising the same JSON-lines and
  * WebSocket contracts as a real template episode.
  */
-test('local play starts, reconnects while paused, and reaches game over', async ({ page }) => {
+test('local play starts, reconnects while paused, and reaches a stopped terminal state', async ({
+  page,
+}) => {
   await page.goto(LOCAL_PLAY_URL)
   await expect(page.getByRole('heading', { name: 'Flappy Bird' })).toBeVisible()
   await expect(page.locator('canvas.renderer-canvas')).toBeVisible()
@@ -40,6 +42,6 @@ test('local play starts, reconnects while paused, and reaches game over', async 
 
   await page.getByRole('button', { name: 'Resume' }).click()
   await page.getByRole('button', { name: 'Stop' }).click()
-  await expect(page.getByRole('dialog', { name: 'Game over' })).toBeVisible()
   await expect(page.getByText('Stopped')).toBeVisible()
+  await expect(page.getByRole('dialog', { name: 'Game over' })).toHaveCount(0)
 })

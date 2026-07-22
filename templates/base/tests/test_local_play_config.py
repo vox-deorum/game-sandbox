@@ -6,9 +6,11 @@ import importlib
 import io
 import json
 import sys
+from dataclasses import replace
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
+import pytest
 from sandbox import play
 
 
@@ -50,6 +52,33 @@ def test_four_slot_local_config_covers_every_slot_and_preserves_null_timeout(mon
     assert config["players"]["player_2"] == {"kind": "human", "label": "You"}
     assert config["human_timeout_ms"] is None
     assert config["max_steps"] == 52
+
+
+def test_human_mode_rejects_a_slot_excluded_from_metadata(monkeypatch, capsys):
+    monkeypatch.setattr(play, "possible_slots", lambda: ("player_0", "player_1"))
+    monkeypatch.setattr(play, "META", replace(play.META, human_slots=("player_0",)))
+
+    with pytest.raises(SystemExit) as error:
+        play.main(["human", "--seat", "1"])
+
+    assert error.value.code == 2
+    assert "not human-playable" in capsys.readouterr().err
+
+
+def test_headless_allows_a_valid_seat_excluded_from_human_metadata(monkeypatch, capsys):
+    monkeypatch.setattr(play, "possible_slots", lambda: ("player_0", "player_1"))
+    monkeypatch.setattr(play, "META", replace(play.META, human_slots=("player_0",)))
+    monkeypatch.setattr(play, "run_headless", lambda **kwargs: 3.5)
+
+    assert play.main(["human", "--headless", "--seat", "1", "--seed", "7"]) == 0
+    assert capsys.readouterr().out == "seed 7: score 3.50\n"
+
+
+def test_template_play_does_not_offer_unsupported_watch_mode():
+    with pytest.raises(SystemExit) as error:
+        play.main(["watch"])
+
+    assert error.value.code == 2
 
 
 def test_local_runner_passes_stdin_to_the_harness_run_seam(monkeypatch, tmp_path: Path):

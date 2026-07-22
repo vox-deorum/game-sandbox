@@ -125,10 +125,10 @@ def job_frontend_e2e() -> None:
 def job_generated_code_fresh() -> None:
     _run(["uv", "run", "python", "scripts/generate.py"])
     # Fail if regeneration changed anything tracked under the generated locations: the schema
-    # mirrors, every per-environment template sandbox/env/, and the shared base-sandbox helpers
-    # synced from local_play/. The base helpers are diffed per file (not the whole
-    # templates/base/sandbox/ dir, which also holds hand-written play.py/evaluate.py/etc.) so a
-    # drift in the synced hidpi/renderer copies is caught like every other generated output.
+    # mirrors, every per-environment template sandbox/env/, and the shared base-sandbox helpers.
+    # The base helpers are diffed per file (not the whole templates/base/sandbox/ directory, which
+    # also holds hand-written play.py/evaluate.py/etc.). Retired renderer paths are included so this
+    # check verifies that regeneration keeps them absent.
     base_sandbox = template_sandbox_base()
     targets = [
         str(TS_GENERATED_DIR.relative_to(REPO_ROOT)),

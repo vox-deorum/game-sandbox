@@ -144,7 +144,7 @@ describe('computeScene greying from the legal-action mask', () => {
 
   it('greys the whole hand when it is not the view seat turn (the mask is the other seat)', () => {
     // legal_cards belongs to the current turn (seat 1), whose cards the view seat does not hold, so
-    // none of the view seat's cards light. This matches render.py: you cannot act, nothing is lit.
+    // none of the view seat's cards light. When you cannot act, nothing is lit.
     const state = mkState(
       overlay({
         hands: [[THREE_CLUBS, FOUR_CLUBS], [SEVEN_CLUBS], [], []],
@@ -349,7 +349,7 @@ describe('the trick-won sweep animation (pure, replay-able)', () => {
     expect(atStart.x).toBe(card.fromX)
     expect(atStart.y).toBe(card.fromY)
     expect(atStart.scale).toBe(1)
-    // Through the initial hold the card does not move yet (render.py holds, then sweeps).
+    // Through the initial hold the card does not move yet. It moves during the following sweep.
     expect(sweepCardAt(card, sweep, SWEEP_HOLD / 2).x).toBe(card.fromX)
     const atEnd = sweepCardAt(card, sweep, 1)
     expect(atEnd.x).toBeCloseTo(sweep.toX)

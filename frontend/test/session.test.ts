@@ -508,6 +508,7 @@ describe('SessionPage', () => {
     ).not.toBe(0)
     expect(screen.getByText('Judge survival.')).toBeInTheDocument()
     expect(screen.getByText('Judge smoothness.')).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'Game over' })).toBeNull()
   })
 
   it('prompts an anonymous viewer to sign in to rate an ended session, without reading ratings', async () => {

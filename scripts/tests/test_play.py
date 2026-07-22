@@ -5,6 +5,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 from game_sandbox_harness.environment import EnvironmentEntry, EnvironmentMeta
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -111,3 +113,30 @@ def test_builtin_agent_path_resolves_inside_this_checkout():
     path = Path(play.builtin_agent_path("hearts"))
     assert path.is_relative_to(play.REPO_ROOT)
     assert (path / "manifest.json").is_file()
+
+
+def test_agent_repo_rejects_an_explicit_conflicting_mode(monkeypatch, tmp_path: Path, capsys):
+    monkeypatch.setattr(play, "load_environment", lambda _env_id: _entry())
+
+    with pytest.raises(SystemExit) as error:
+        play.main(["fixture", "human", "--agent-repo", str(tmp_path / "agent")])
+
+    assert error.value.code == 2
+    assert "requires agent mode" in capsys.readouterr().err
+
+
+def test_agent_repo_without_a_mode_selects_agent_mode(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(play, "load_environment", lambda _env_id: _entry())
+    captured: dict[str, object] = {}
+
+    def launch(_entry: EnvironmentEntry, config: dict[str, object], **_kwargs: object) -> int:
+        captured.update(config)
+        return 0
+
+    monkeypatch.setattr(play, "launch_browser", launch)
+
+    assert play.main(["fixture", "--agent-repo", str(tmp_path / "agent"), "--no-browser"]) == 0
+    assert captured["slots"] == {
+        "player_0": {"kind": "builtin-agent", "path": str(tmp_path / "agent")},
+        "player_1": {"kind": "builtin-agent", "path": str(tmp_path / "agent")},
+    }
