@@ -7,7 +7,7 @@ Read the [environment specification](../specs/environment.md) for product rules 
 ## Checklist
 
 1. Create `environments/src/<env>/` with the package factory, legal default action, overlay extractor, metadata, and `ENTRY`.
-2. Add game-rule tests under `environments/src/<env>/tests/`. The shared conformance suite discovers the package automatically.
+2. Add game-rule tests under `environments/src/<env>/tests/`. Name each file `test_<env_id>*.py` so its basename is unique across the repository. The shared conformance suite discovers the package automatically.
 3. Add `environments/src/<env>/renderer/` with its definition, scene code, thumbnail, and dedicated renderer tests.
 4. Add a template layer and at least one example.
 5. Add a student helper module and its pin test when raw observations or actions need decoding.
@@ -118,7 +118,7 @@ The sync command builds each `TemplateEnvironmentSpec` from `ENTRY.meta` and the
 npm run sync:envs
 ```
 
-`npm run generate` is the same command. Run either command again after changing metadata or a directly contained environment module. Recognition is automatic, exclusion is explicit in `.envignore`, and CI catches drift through `generated-code-fresh` and the conformance suite.
+`npm run sync:envs` is the canonical environment-authoring command. The repository-wide `npm run generate` command is an exact alias. Run the sync command again after changing metadata or a directly contained environment module. Recognition is automatic, exclusion is explicit in `.envignore`, and CI catches drift through `generated-code-fresh` and the conformance suite.
 
 The template's top-level `sandbox.env` package exposes the generated environment metadata and factory surface. Human input belongs in the browser renderer, not in a Python `human.py` module. Keep import-self-contained modules and credited source files directly inside the environment package so discovery includes them. The copied `sandbox.harness` package provides the supported local runner and relay surface. See [Examples and the template](examples-and-template.md).
 
@@ -129,7 +129,7 @@ Once the environment package, renderer, and dedicated tests are complete:
 1. Create `templates/<env>/` with its starting `agent.py`, `README.md`, helper module when needed, and helper pin tests.
 2. Add at least one worked agent under `examples/<env>/<name>/`.
 3. Write `docs/students/environments/<env>.md` and add its row to `docs/students/environments/index.md`.
-4. Run `npm run generate`, then `uv run python scripts/ci.py all`.
+4. Run `npm run sync:envs`, then `uv run python scripts/ci.py all`.
 5. When the dependency set or template contract requires a release, use `scripts/bump_template_version.py` and publish with `scripts/publish_template.py`.
 
 Publishing composes each environment template and force-pushes it to the `templates/<env>` orphan branch of the student repository. Worked examples publish to `examples/<env>/<name>` branches. Read [Examples and the template](examples-and-template.md) for composition, versioning, dry-run, and publication details.

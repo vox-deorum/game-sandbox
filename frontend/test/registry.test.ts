@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
+import environmentMetadata from '../../backend/src/generated/environments.json'
+import '../src/renderers/index.js'
 import { getRenderer, registerRenderer, thumbnailFor } from '../src/renderers/registry.js'
 import type { Renderer, RendererDefinition } from '../src/renderers/types.js'
 
@@ -29,14 +31,14 @@ describe('renderer registry', () => {
     expect(thumbnailFor('demo')).toBe('demo-thumb.svg')
   })
 
-  it('loads every environment renderer through the authoring contract', () => {
+  it('registers the exported renderer for every generated environment', () => {
     const definitions = Object.values(environmentRendererModules).map((module) => module.default)
-    expect(definitions.length).toBeGreaterThan(0)
-    expect(new Set(definitions.map((definition) => definition.key)).size).toBe(definitions.length)
+    const definitionKeys = definitions.map((definition) => definition.key).sort()
+    const metadataKeys = environmentMetadata.map((environment) => environment.renderer).sort()
+    expect(definitionKeys).toEqual(metadataKeys)
     for (const definition of definitions) {
-      expect(definition.key).not.toBe('')
-      expect(typeof definition.renderer.mount).toBe('function')
-      expect(definition.thumbnail).toContain('.svg')
+      expect(getRenderer(definition.key)).toBe(definition.renderer)
+      expect(thumbnailFor(definition.key)).toBe(definition.thumbnail)
     }
   })
 })
