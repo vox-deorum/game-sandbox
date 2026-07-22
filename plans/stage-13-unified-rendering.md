@@ -114,7 +114,7 @@ Add `flappy_bird/game.py` and `flappy_bird/UPSTREAM_LICENSE.md` to the Flappy `T
 
 `templates/base/sandbox/play.py` becomes the generic CLI for every game. It parses seed, step limit, mode, seat, port, and browser options; constructs complete `slots` and `players` maps; launches the local server; and opens the browser. Hearts and Spades no longer override it. The runtime probe includes `jsonschema` and `websockets`. `python -m sandbox eval` remains the headless command.
 
-`scripts/play.py` uses the same bridge, live runner, registry, and manifest loading, serving `frontend/dist-local/`. It builds when the local bundle is absent.
+`scripts/play.py` uses the same bridge, live runner, registry, and manifest loading, serving `frontend/dist-local/`. It rebuilds the local bundle before every play launch so frontend changes are always present.
 
 ### Local frontend entry
 
@@ -152,7 +152,7 @@ Version 1 has not been published. Update the dependency-version comments and con
 - Publish staging: a dry run builds the local frontend once and gives every staged template and example a complete `sandbox/web/` directory containing `local.html` and its referenced assets.
 - Flappy Bird: upstream golden traces, API conformance, seeded determinism, observation and overlay shape, AABB boundary behavior, and absence of copied upstream binary assets.
 - Frontend unit test: metadata validation, header mounting, controlled human seat, state rendering, start resume, pause echo, paused reconnect, stop awaiting terminal status, and terminal game-over state.
-- Playwright local-play journey: start a scripted Python bridge on loopback with the built local bundle, then exercise start, input forwarding, pause, resume, refresh while paused, stop, terminal game over, and browser reconnect against the live DOM. Run it through the existing `frontend-e2e` job.
+- Playwright local-play journey: rebuild both frontend entries, start a scripted Python bridge on loopback with the fresh local bundle, then exercise start, input forwarding, pause, resume, refresh while paused, stop, terminal game over, and browser reconnect against the live DOM. Run it through the existing `frontend-e2e` job.
 - Existing session and replay tests remain unchanged unless a shared component contract moves.
 
 ## Risks

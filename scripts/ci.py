@@ -103,9 +103,8 @@ def job_frontend_e2e() -> None:
     # Playwright drives Chromium against both the real backend and the Python local-play bridge.
     # Production sessions launch real containers, so this job needs the same Docker gate as
     # backend-integration. The local journey also needs the repository's Python environment.
-    # Build both browser entries, build the image, install Chromium, then run the gated suite.
-    _run([_NPM, "run", "build:frontend"])
-    _run([_NPM, "run", "build:local", "--workspace", "@game-sandbox/frontend"])
+    # Build the image, install Chromium, then run the gated suite. The frontend package's e2e script
+    # rebuilds both browser entries itself, so direct and CI-driven Playwright runs cannot use stale bundles.
     _run([_NPM, "run", "build:image"])
     install_chromium = [
         _NPM,

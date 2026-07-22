@@ -98,7 +98,9 @@ base resizes PixiJS and uniformly scales root
 
 The host controls responsive layout. The renderer always draws in internal coordinates and never reads device pixels.
 
-The base initializes PixiJS with `window.devicePixelRatio` and `autoDensity: true`. It scales the root by `cssWidth / internalSize.width`. Matching aspect ratios avoid letterboxing.
+The base initializes PixiJS with `autoDensity: true`. Once the host has a nonzero layout size, it sets PixiJS's CSS screen to that size and resizes the physical backing store to `cssWidth × devicePixelRatio` by `cssHeight × devicePixelRatio`. It scales the root by `cssWidth / internalSize.width`. Matching aspect ratios avoid letterboxing.
+
+The base repeats that resize when the host changes size and when device pixel ratio changes, including a browser zoom change or moving the window between displays. Root scale is not included in the renderer resolution because PixiJS's screen already uses CSS pixels. Including it there would apply the enlargement twice.
 
 When the stage changes size, the base resizes in place, reapplies scale, and renders the cached state.
 

@@ -83,9 +83,7 @@ def local_config(
 
 
 def ensure_local_bundle() -> Path:
-    """Return the local frontend bundle, building it only when it is absent."""
-    if (FRONTEND_LOCAL_DIST_DIR / "local.html").is_file():
-        return FRONTEND_LOCAL_DIST_DIR
+    """Rebuild and return the local frontend bundle."""
     subprocess.run([NPM_COMMAND, "run", "build:local"], cwd=REPO_ROOT / "frontend", check=True)
     if not (FRONTEND_LOCAL_DIST_DIR / "local.html").is_file():
         raise RuntimeError("local frontend build did not produce dist-local/local.html")

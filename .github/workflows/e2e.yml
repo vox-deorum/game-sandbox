@@ -20,8 +20,9 @@ jobs:
   frontend-e2e:
     # Playwright drives Chromium against the real backend and the local Python loopback bridge.
     # Production sessions launch real containers, so the job needs Docker (available on ubuntu-latest).
-    # ci.py builds both frontend entries, builds the session base image inside Docker, installs
-    # Chromium, and runs the suite. The local-play journey also launches the Python loopback bridge.
+    # The frontend e2e command builds both frontend entries. ci.py also builds the session base image
+    # inside Docker, installs Chromium, and runs the suite. The local-play journey launches the Python
+    # loopback bridge.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

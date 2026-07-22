@@ -22,7 +22,7 @@ Items 9 and 10 are the [student-facing deliverables](#student-facing-deliverable
 
 ## Play test
 
-`npm run play -- <env> [mode]` starts loopback browser play with the production live runner and the same PixiJS renderer used by a live session. It needs no backend, Docker, or external network connection. `mode` is `human` (default; keyboard for realtime games such as Flappy Bird, click a card for Hearts), `agent` (watch the bundled example agent), or `watch` (the built-in baseline). Every mode starts paused at the first frame. Use the page's Start control when ready, then use its shared pause, resume, and stop controls. Pass `--seat` to choose a multi-slot seat, or `--agent-repo <path>` to play an agent repository with a `manifest.json`. The command resolves the environment through the same entry-point registry and live-runner path as the harness.
+`npm run play -- <env> [mode]` rebuilds the local frontend, then starts loopback browser play with the production live runner and the same PixiJS renderer used by a live session. It needs no backend, Docker, or external network connection. `mode` is `human` (default; keyboard for realtime games such as Flappy Bird, click a card for Hearts), `agent` (watch the bundled example agent), or `watch` (the built-in baseline). Every mode starts paused at the first frame. Use the page's Start control when ready, then use its shared pause, resume, and stop controls. Pass `--seat` to choose a multi-slot seat, or `--agent-repo <path>` to play an agent repository with a `manifest.json`. The command resolves the environment through the same entry-point registry and live-runner path as the harness.
 
 ## Directory layout
 

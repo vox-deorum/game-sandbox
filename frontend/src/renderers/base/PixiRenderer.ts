@@ -93,6 +93,7 @@ export abstract class PixiRenderer implements RendererInstance {
   private destroyed = false
   private resizeObserver: ResizeObserver | null = null
   private resizeTimer: ReturnType<typeof setTimeout> | null = null
+  private devicePixelRatioQuery: MediaQueryList | null = null
   private detachInput: (() => void) | null = null
 
   constructor(ctx: RendererContext) {
@@ -139,6 +140,8 @@ export abstract class PixiRenderer implements RendererInstance {
     }
     this.resizeObserver?.disconnect()
     this.resizeObserver = null
+    this.devicePixelRatioQuery?.removeEventListener('change', this.onDevicePixelRatioChange)
+    this.devicePixelRatioQuery = null
     if (this.app !== null) {
       // `true` removes the canvas from the DOM; `{ children: true }` frees the scene graph.
       this.app.destroy(true, { children: true })
@@ -229,11 +232,12 @@ export abstract class PixiRenderer implements RendererInstance {
       return
     }
     const app = new Application()
-    const { width, height } = this.measure()
+    const initialSize = this.measure() ?? this.internalSize
+    const { width, height } = initialSize
     await app.init({
       width,
       height,
-      resolution: window.devicePixelRatio || 1,
+      resolution: this.devicePixelRatio(),
       autoDensity: true,
       autoStart: false, // we render on state changes and resizes, not on a continuous ticker
       sharedTicker: false,
@@ -254,7 +258,11 @@ export abstract class PixiRenderer implements RendererInstance {
     this.root = root
     app.stage.addChild(root)
     this.setup(root)
-    this.applyScale(width)
+
+    // App initialization can happen before the host has its final layout. Measure it again once the
+    // canvas is attached, so the Pixi screen and backing store immediately match a settled host rather
+    // than retaining the logical fallback size.
+    this.resizeSurface(this.measure() ?? initialSize)
 
     this.ready = true
     this.observeResize()
@@ -270,13 +278,18 @@ export abstract class PixiRenderer implements RendererInstance {
     }
   }
 
-  /** The container's current content-box size in CSS pixels, falling back to the internal size. */
-  private measure(): { width: number; height: number } {
+  /** The container's current displayed size in CSS pixels, or null before it has been laid out. */
+  private measure(): { width: number; height: number } | null {
     const rect = this.ctx.container.getBoundingClientRect()
-    return {
-      width: rect.width > 0 ? rect.width : this.internalSize.width,
-      height: rect.height > 0 ? rect.height : this.internalSize.height,
+    if (rect.width <= 0 || rect.height <= 0) {
+      return null
     }
+    return { width: rect.width, height: rect.height }
+  }
+
+  /** The current browser pixel density, with a safe default for unusual browser environments. */
+  private devicePixelRatio(): number {
+    return window.devicePixelRatio || 1
   }
 
   /** Scale the root so one internal unit maps to the right number of CSS pixels for the current size.
@@ -297,12 +310,29 @@ export abstract class PixiRenderer implements RendererInstance {
    * resize re-runs `update`, the value tracks the live size with no extra wiring.
    */
   protected textResolution(): number {
-    return (window.devicePixelRatio || 1) * this.scaleFactor
+    return this.devicePixelRatio() * this.scaleFactor
   }
 
   private observeResize(): void {
     this.resizeObserver = new ResizeObserver(() => this.scheduleResize())
     this.resizeObserver.observe(this.ctx.container)
+    this.observeDevicePixelRatio()
+  }
+
+  /**
+   * A ResizeObserver tracks host geometry but not every display-density change, such as moving the
+   * window between monitors. Listen to the current DPR media query and replace it after each change so
+   * the next DPR transition is observed too.
+   */
+  private observeDevicePixelRatio(): void {
+    this.devicePixelRatioQuery?.removeEventListener('change', this.onDevicePixelRatioChange)
+    this.devicePixelRatioQuery = window.matchMedia(`(resolution: ${this.devicePixelRatio()}dppx)`)
+    this.devicePixelRatioQuery.addEventListener('change', this.onDevicePixelRatioChange)
+  }
+
+  private readonly onDevicePixelRatioChange = (): void => {
+    this.observeDevicePixelRatio()
+    this.scheduleResize()
   }
 
   private scheduleResize(): void {
@@ -320,14 +350,29 @@ export abstract class PixiRenderer implements RendererInstance {
     if (this.app === null || !this.ready) {
       return
     }
-    const { width, height } = this.measure()
-    this.app.renderer.resize(width, height)
-    this.applyScale(width)
+    const size = this.measure()
+    if (size === null) {
+      return
+    }
+    this.resizeSurface(size)
     if (this.latestState !== null) {
       // A resize only relays out the current state; it must not re-fire a transition, so it snaps.
       this.update(this.latestState, { snap: true })
     }
     this.app.render()
+  }
+
+  /**
+   * Keep Pixi's CSS screen equal to the host and its physical backing store equal to CSS pixels times
+   * the current DPR. The root scale maps only logical coordinates to CSS pixels, so it is deliberately
+   * not folded into the renderer resolution.
+   */
+  private resizeSurface({ width, height }: { width: number; height: number }): void {
+    if (this.app === null) {
+      return
+    }
+    this.app.renderer.resize(width, height, this.devicePixelRatio())
+    this.applyScale(width)
   }
 
   // --- Input ---

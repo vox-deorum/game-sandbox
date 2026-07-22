@@ -15,7 +15,7 @@
     "check": "biome check . && vue-tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "e2e": "playwright test"
+    "e2e": "npm run build && npm run build:local && playwright test"
   },
   "dependencies": {
     "@game-sandbox/schema": "*",

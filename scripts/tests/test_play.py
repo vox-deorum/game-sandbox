@@ -67,7 +67,7 @@ def test_local_config_has_complete_slots_and_players(tmp_path: Path, monkeypatch
     assert config["start_paused"] is True
 
 
-def test_local_bundle_builds_only_when_missing(tmp_path: Path, monkeypatch):
+def test_local_bundle_rebuilds_every_time(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(play, "FRONTEND_LOCAL_DIST_DIR", tmp_path)
     calls: list[tuple[list[str], Path]] = []
 
@@ -79,7 +79,10 @@ def test_local_bundle_builds_only_when_missing(tmp_path: Path, monkeypatch):
     assert play.ensure_local_bundle() == tmp_path
     assert calls == [([play.NPM_COMMAND, "run", "build:local"], play.REPO_ROOT / "frontend")]
     assert play.ensure_local_bundle() == tmp_path
-    assert len(calls) == 1
+    assert calls == [
+        ([play.NPM_COMMAND, "run", "build:local"], play.REPO_ROOT / "frontend"),
+        ([play.NPM_COMMAND, "run", "build:local"], play.REPO_ROOT / "frontend"),
+    ]
 
 
 def test_launch_browser_uses_the_local_server_and_browser_seam(monkeypatch, tmp_path: Path):

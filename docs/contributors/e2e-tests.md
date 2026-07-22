@@ -10,11 +10,11 @@ For the wider verification matrix and how this job fits the pipeline, see [Testi
 # Full job: build frontend + session image, install Chromium, run the suite.
 uv run python scripts/ci.py frontend-e2e
 
-# Just the tests (frontend bundle and session image already built):
+# Rebuild both frontend bundles and run the tests (session image already built):
 npm run e2e --workspace @game-sandbox/frontend
 
-# One spec, from the frontend workspace:
-cd frontend && npx playwright test leaderboards-admin.spec.ts
+# Rebuild both frontend bundles and run one spec:
+npm run e2e --workspace @game-sandbox/frontend -- leaderboards-admin.spec.ts
 ```
 
 The suite runs serially (`workers: 1`, `fullyParallel: false`) so the real containers and the shared database never contend.
