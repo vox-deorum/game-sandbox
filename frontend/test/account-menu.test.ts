@@ -86,4 +86,15 @@ describe('AccountMenu', () => {
     expect(signIn).toHaveAttribute('href', '/login')
     expect(screen.queryByRole('button', { name: 'Log out' })).toBeNull()
   })
+
+  it('shows a connected GitHub handle below the display name', async () => {
+    vi.mocked(getMe).mockResolvedValue(
+      signedInMe('alice', 'normal', { name: 'Alice', github_username: 'alice-dev' }),
+    )
+    await renderMenu()
+
+    expect(await screen.findByText('Alice')).toBeInTheDocument()
+    expect(screen.getByText('@alice-dev')).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: "Alice's avatar" })).toHaveTextContent('A')
+  })
 })

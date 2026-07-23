@@ -1,12 +1,12 @@
 /**
- * The app-shell identity provider. The shell fetches `GET /api/me` once at startup so the header can
- * show the signed-in user and every page can learn what the user may do, without each page refetching.
+ * The app-shell identity provider. The shell fetches `GET /api/me` at startup so the header can show
+ * the signed-in user and every page can learn what the user may do, without each page refetching.
  * Components read it through {@link useMe} and derive capabilities with {@link canParticipate} and
- * {@link isAdmin}.
+ * {@link isAdmin}. An in-place account change may explicitly refresh this same shared identity.
  *
- * The one `/api/me` fetch is the single identity source: a sign-in or sign-out is a full-page
- * navigation (see `LoginPage.vue` and `AccountMenu.vue`), which re-runs this fetch, rather than a
- * reactive session propagated through a second source.
+ * `/api/me` remains the single identity source: refreshes replace its value in place, while sign-in
+ * and sign-out use a full-page navigation (see `LoginPage.vue` and `AccountMenu.vue`) that creates a
+ * fresh provider rather than propagating a second reactive session source.
  */
 import { defineComponent, type InjectionKey, inject, provide, reactive } from 'vue'
 
@@ -39,8 +39,10 @@ export interface MeState {
   me: Me | null
   loading: boolean
   error: boolean
+  /** Re-fetch `/api/me` after an in-place identity change, such as disconnecting GitHub. */
+  refresh(): Promise<void>
   /**
-   * Resolves once the single `/api/me` fetch has settled (success or failure). Pages that must know
+   * Resolves once the initial `/api/me` fetch has settled (success or failure). Pages that must know
    * the identity before acting await this instead of polling `loading`, which removes a latent race
    * rather than relocating it (see plans/stage-04.5/page-restructure.md).
    */
@@ -49,7 +51,7 @@ export interface MeState {
 
 const ME_KEY: InjectionKey<MeState> = Symbol('me')
 
-/** Build the reactive me-state and kick off the single `/api/me` fetch that fills it in. */
+/** Build the reactive me-state and kick off the initial `/api/me` fetch that fills it in. */
 export function createMeState(): MeState {
   let settle: () => void = () => {}
   const settled = new Promise<void>((resolve) => {
@@ -60,28 +62,35 @@ export function createMeState(): MeState {
     loading: true,
     error: false,
     whenSettled: () => settled,
+    refresh: async () => {},
   })
-  getMe()
-    .then(
-      (me) => {
-        state.me = me
-        state.loading = false
-        state.error = false
-      },
-      () => {
+  let initialStarted = false
+  state.refresh = async (): Promise<void> => {
+    const isInitial = !initialStarted
+    initialStarted = true
+    try {
+      state.me = await getMe()
+      state.error = false
+    } catch {
+      if (isInitial) {
         state.me = null
+      }
+      state.error = true
+    } finally {
+      if (isInitial) {
         state.loading = false
-        state.error = true
-      },
-    )
-    .finally(() => settle())
+        settle()
+      }
+    }
+  }
+  void state.refresh()
   return state
 }
 
 /**
- * Provider component: fetches `/api/me` once and provides the shared, reactive state to every
- * descendant. The app wraps the shell in this; tests wrap the page under test in it so the same one
- * fetch backs the header and the pages.
+ * Provider component: starts the shared `/api/me` identity state and provides it to every descendant.
+ * The app wraps the shell in this; tests wrap the page under test in it so the same initial fetch and
+ * any explicit refresh back the header and the pages.
  */
 export const MeProvider = defineComponent({
   name: 'MeProvider',
@@ -99,6 +108,7 @@ export function useMe(): MeState {
       me: null,
       loading: false,
       error: true,
+      refresh: () => Promise.resolve(),
       whenSettled: () => Promise.resolve(),
     })
   )

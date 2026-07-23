@@ -94,6 +94,14 @@ function stubDirectory(names: Record<string, string>): UserDirectory {
       Promise.resolve(
         new Map(ids.flatMap((id) => (names[id] === undefined ? [] : [[id, names[id]] as const]))),
       ),
+    profilesFor: (ids) =>
+      Promise.resolve(
+        new Map(
+          ids.flatMap((id) =>
+            names[id] === undefined ? [] : [[id, { name: names[id] }] as const],
+          ),
+        ),
+      ),
   }
 }
 

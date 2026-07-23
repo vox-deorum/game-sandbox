@@ -10,13 +10,14 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-
+import type { GithubProfile, github } from 'better-auth/social-providers'
+import BetterSqlite3 from 'better-sqlite3'
 import type { FastifyInstance } from 'fastify'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { buildApp } from '../../src/app.js'
-import type { Auth } from '../../src/auth/auth.js'
-import { migrateAuthSchema } from '../../src/auth/migrate.js'
+import { type Auth, createAuth, GithubProfileCapture, githubProvider } from '../../src/auth/auth.js'
+import { migrateAuthSchema, verifyCredentialUsers } from '../../src/auth/migrate.js'
 import { BOOTSTRAP_ADMIN_ID, ensureAdminUser } from '../../src/auth/seed-admin.js'
 import { createUserDirectory } from '../../src/auth/users.js'
 import {
@@ -125,8 +126,485 @@ describe('auth schema migration', () => {
   it('is idempotent: a second migration changes nothing', async () => {
     const before = tableNames(handle.sqlite)
     const { auth } = await makeTestAuth(handle.sqlite)
-    await migrateAuthSchema(auth)
+    await migrateAuthSchema(auth, handle.sqlite)
     expect(tableNames(handle.sqlite)).toEqual(before)
+  })
+
+  it('upgrades a legacy auth schema without losing users', async () => {
+    handle.sqlite
+      .prepare(
+        `INSERT INTO "user" (id, name, email, emailVerified, createdAt, updatedAt)
+         VALUES ('legacy-user', 'Legacy', 'legacy@test.local', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+      )
+      .run()
+    handle.sqlite.exec(`
+      DROP TRIGGER account_github_clear_username;
+      DROP TRIGGER account_github_adopt_email;
+      DROP TRIGGER account_github_refuse_conflict;
+      DROP INDEX account_one_github_per_user;
+      DROP INDEX account_unique_github_identity;
+      ALTER TABLE account DROP COLUMN githubVerifiedEmail;
+      ALTER TABLE "user" DROP COLUMN githubUsername;
+    `)
+
+    const auth = createAuth(handle.sqlite, makeConfig().auth, () => {})
+    await migrateAuthSchema(auth, handle.sqlite)
+
+    expect(
+      handle.sqlite.prepare('SELECT name, email FROM "user" WHERE id = ?').get('legacy-user'),
+    ).toEqual({ name: 'Legacy', email: 'legacy@test.local' })
+    const userColumns = handle.sqlite.prepare('PRAGMA table_info("user")').all() as {
+      name: string
+    }[]
+    expect(userColumns.map((column) => column.name)).toContain('githubUsername')
+    const accountColumns = handle.sqlite.prepare('PRAGMA table_info(account)').all() as {
+      name: string
+    }[]
+    expect(accountColumns.map((column) => column.name)).toContain('githubVerifiedEmail')
+    const objects = handle.sqlite
+      .prepare(
+        `SELECT name FROM sqlite_master
+         WHERE name IN (
+           'account_one_github_per_user',
+           'account_unique_github_identity',
+           'account_github_adopt_email',
+           'account_github_refuse_conflict',
+           'account_github_clear_username'
+         )`,
+      )
+      .all() as { name: string }[]
+    expect(objects.map((object) => object.name).sort()).toEqual([
+      'account_github_adopt_email',
+      'account_github_clear_username',
+      'account_github_refuse_conflict',
+      'account_one_github_per_user',
+      'account_unique_github_identity',
+    ])
+    const githubTriggerSql = handle.sqlite
+      .prepare(
+        `SELECT sql FROM sqlite_master
+         WHERE type = 'trigger' AND name LIKE 'account_github_%'`,
+      )
+      .all() as { sql: string }[]
+    expect(githubTriggerSql.map((row) => row.sql).join('\n')).not.toContain(
+      'game_sandbox_github_verified_email',
+    )
+  })
+
+  it('keeps account inserts usable from connections that did not create the auth instance', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'gs-auth-connections-'))
+    const databasePath = join(dir, 'auth.sqlite')
+    const primary = await openSqlite(databasePath)
+    let secondary: BetterSqlite3.Database | undefined
+    try {
+      await makeTestAuth(primary.sqlite)
+      const insertUser = primary.sqlite.prepare(
+        `INSERT INTO "user" (id, name, email, emailVerified, createdAt, updatedAt)
+         VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+      )
+      insertUser.run('credential-owner', 'Credential', 'credential-owner@test.local')
+      insertUser.run('github-owner', 'GitHub', 'github-owner@test.local')
+      insertUser.run('collision-owner', 'Collision', 'collision-owner@test.local')
+
+      secondary = new BetterSqlite3(databasePath)
+      secondary.pragma('foreign_keys = ON')
+      const credential = secondary
+        .prepare(
+          `INSERT INTO account (id, accountId, providerId, userId, createdAt, updatedAt)
+           VALUES ('credential-account', 'credential-owner', 'credential', 'credential-owner',
+                   CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+        )
+        .run()
+      expect(credential.changes).toBe(1)
+
+      const githubWithoutVerifiedEmail = secondary
+        .prepare(
+          `INSERT INTO account (id, accountId, providerId, userId, createdAt, updatedAt)
+           VALUES ('unverified-github', '100', 'github', 'github-owner',
+                   CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+        )
+        .run()
+      expect(githubWithoutVerifiedEmail.changes).toBe(0)
+
+      const github = secondary
+        .prepare(
+          `INSERT INTO account (
+             id, accountId, providerId, userId, githubVerifiedEmail, createdAt, updatedAt
+           )
+           VALUES ('verified-github', '101', 'github', 'github-owner',
+                   'NEW-GITHUB@TEST.LOCAL', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+        )
+        .run()
+      expect(github.changes).toBe(1)
+      expect(
+        secondary.prepare('SELECT email FROM "user" WHERE id = ?').get('github-owner'),
+      ).toEqual({ email: 'new-github@test.local' })
+
+      const collision = secondary
+        .prepare(
+          `INSERT INTO account (
+             id, accountId, providerId, userId, githubVerifiedEmail, createdAt, updatedAt
+           )
+           VALUES ('conflicting-github', '102', 'github', 'collision-owner',
+                   'credential-owner@test.local', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+        )
+        .run()
+      expect(collision.changes).toBe(0)
+      expect(
+        secondary.prepare('SELECT email FROM "user" WHERE id = ?').get('collision-owner'),
+      ).toEqual({ email: 'collision-owner@test.local' })
+    } finally {
+      secondary?.close()
+      await primary.storage.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('backfills verification for existing credential users, idempotently', async () => {
+    const created = await handle.sqlite
+      .prepare(
+        `INSERT INTO "user" (id, name, email, emailVerified, createdAt, updatedAt)
+         VALUES ('credential-user', 'Credential', 'credential@test.local', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+      )
+      .run()
+    expect(created.changes).toBe(1)
+    handle.sqlite
+      .prepare(
+        `INSERT INTO account (id, accountId, providerId, userId, createdAt, updatedAt)
+         VALUES ('credential-account', 'credential-user', 'credential', 'credential-user', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+      )
+      .run()
+
+    verifyCredentialUsers(handle.sqlite)
+    verifyCredentialUsers(handle.sqlite)
+    const row = handle.sqlite
+      .prepare('SELECT emailVerified FROM "user" WHERE id = ?')
+      .get('credential-user') as { emailVerified: number }
+    expect(row.emailVerified).toBe(1)
+  })
+})
+
+describe('GitHub identity hooks', () => {
+  let handle: SqliteHandle
+
+  beforeEach(async () => {
+    handle = await openSqlite(':memory:')
+  })
+
+  afterEach(async () => {
+    await handle.storage.close()
+  })
+
+  it('delegates the provider profile fetch once and captures its returned identity', async () => {
+    const profiles = new GithubProfileCapture()
+    const providerResult = {
+      user: {
+        id: '321',
+        name: 'Octo',
+        email: 'octo@test.local',
+        image: null,
+        emailVerified: true,
+      },
+      data: { id: 321 as unknown as string, login: 'octo' } as GithubProfile,
+    }
+    const calls: unknown[] = []
+    const provider = {
+      getUserInfo: async (tokens: unknown) => {
+        calls.push(tokens)
+        return providerResult
+      },
+    } as unknown as ReturnType<typeof github>
+    const wrapped = githubProvider(
+      { clientId: 'github-client', clientSecret: 'github-secret' },
+      profiles,
+      provider,
+    )
+    const tokens = { accessToken: 'github-token' }
+
+    const result = await wrapped.getUserInfo(tokens)
+
+    expect(result).toBe(providerResult)
+    expect(calls).toEqual([tokens])
+    expect(profiles.take('321')).toMatchObject({
+      username: 'octo',
+      email: 'octo@test.local',
+    })
+  })
+
+  it('rejects an unverified provider identity before capturing it', async () => {
+    const profiles = new GithubProfileCapture()
+    const providerResult = {
+      user: {
+        id: '654',
+        name: 'Unverified',
+        email: 'unverified@test.local',
+        image: null,
+        emailVerified: false,
+      },
+      data: { id: 654 as unknown as string, login: 'unverified-octo' } as GithubProfile,
+    }
+    const calls: unknown[] = []
+    const provider = {
+      getUserInfo: async (tokens: unknown) => {
+        calls.push(tokens)
+        return providerResult
+      },
+    } as unknown as ReturnType<typeof github>
+    const wrapped = githubProvider(
+      { clientId: 'github-client', clientSecret: 'github-secret' },
+      profiles,
+      provider,
+    )
+    const tokens = { accessToken: 'unverified-token' }
+
+    expect(await wrapped.getUserInfo(tokens)).toBeNull()
+    expect(calls).toEqual([tokens])
+    expect(profiles.take('654')).toBeUndefined()
+  })
+
+  it('keeps both GitHub unique indexes as backstops', async () => {
+    const auth = createAuth(handle.sqlite, makeConfig().auth, () => {})
+    await migrateAuthSchema(auth, handle.sqlite)
+    handle.sqlite.exec('DROP TRIGGER account_github_refuse_conflict')
+    const insertUser = handle.sqlite.prepare(
+      `INSERT INTO "user" (id, name, email, emailVerified, createdAt, updatedAt)
+       VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+    )
+    insertUser.run('index-user-one', 'One', 'index-one@test.local')
+    insertUser.run('index-user-two', 'Two', 'index-two@test.local')
+    const insertAccount = handle.sqlite.prepare(
+      `INSERT INTO account (id, accountId, providerId, userId, createdAt, updatedAt)
+       VALUES (?, ?, 'github', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+    )
+    insertAccount.run('github-index-one', '101', 'index-user-one')
+
+    expect(() => insertAccount.run('github-index-same-user', '202', 'index-user-one')).toThrow(
+      /UNIQUE constraint/,
+    )
+    expect(() => insertAccount.run('github-index-same-account', '101', 'index-user-two')).toThrow(
+      /UNIQUE constraint/,
+    )
+  })
+
+  it('uses GitHub numeric ids, syncs a linked handle and email, rejects a second link, and clears on unlink', async () => {
+    const profiles = new GithubProfileCapture()
+    const logs: string[] = []
+    const auth = createAuth(
+      handle.sqlite,
+      {
+        ...makeConfig().auth,
+        github: { clientId: 'github-client', clientSecret: 'github-secret' },
+      },
+      (message) => logs.push(message),
+      profiles,
+    )
+    // This is deliberately the first operation after createAuth. The hook statements must stay lazy
+    // because Better Auth creates the user and account tables only during this migration.
+    await migrateAuthSchema(auth, handle.sqlite)
+    expect(auth.options.account?.accountLinking).toMatchObject({
+      enabled: true,
+      trustedProviders: ['github'],
+      allowDifferentEmails: true,
+      allowUnlinkingAll: false,
+      updateUserInfoOnLink: false,
+    })
+    const created = await auth.api.createUser({
+      body: {
+        email: 'local@test.local',
+        password: 'local-password',
+        name: 'Local',
+        role: 'user',
+      },
+    })
+    const ctx = await auth.$context
+
+    profiles.capture(
+      { id: 123 as unknown as string, login: 'octo-local' } as GithubProfile,
+      'GITHUB@TEST.LOCAL',
+    )
+    const linked = await ctx.internalAdapter.createAccount({
+      userId: created.user.id,
+      providerId: 'github',
+      accountId: '123',
+    })
+    expect(linked).not.toBeNull()
+    expect(
+      handle.sqlite
+        .prepare('SELECT email, githubUsername FROM "user" WHERE id = ?')
+        .get(created.user.id),
+    ).toEqual({ email: 'github@test.local', githubUsername: 'octo-local' })
+    expect(
+      handle.sqlite
+        .prepare('SELECT githubVerifiedEmail FROM account WHERE id = ?')
+        .get(linked?.id ?? ''),
+    ).toEqual({ githubVerifiedEmail: 'github@test.local' })
+    const signedIn = await auth.api.signInEmail({
+      body: { email: 'github@test.local', password: 'local-password' },
+      returnHeaders: true,
+    })
+    const cookie = signedIn.headers
+      .getSetCookie()
+      .map((entry) => entry.split(';')[0])
+      .join('; ')
+    const accountList = await auth.api.listUserAccounts({
+      headers: new Headers({ cookie }),
+    })
+    expect(accountList.find((account) => account.providerId === 'github')).not.toHaveProperty(
+      'githubVerifiedEmail',
+    )
+    const adoptedEmailSignIn = await auth.api.signInEmail({
+      body: { email: 'github@test.local', password: 'local-password' },
+    })
+    expect(adoptedEmailSignIn.user.id).toBe(created.user.id)
+    await expect(
+      auth.api.signInEmail({
+        body: { email: 'local@test.local', password: 'local-password' },
+      }),
+    ).rejects.toThrow()
+
+    profiles.capture(
+      { id: 123 as unknown as string, login: 'renamed-octo' } as GithubProfile,
+      'github@test.local',
+    )
+    await ctx.internalAdapter.updateAccount(linked?.id ?? '', { accessToken: 'fresh-token' })
+    expect(
+      (
+        handle.sqlite
+          .prepare('SELECT githubUsername FROM "user" WHERE id = ?')
+          .get(created.user.id) as {
+          githubUsername: string
+        }
+      ).githubUsername,
+    ).toBe('renamed-octo')
+
+    handle.sqlite.exec(`
+      CREATE TRIGGER fail_github_username_update
+      BEFORE UPDATE OF githubUsername ON "user"
+      WHEN NEW.githubUsername = 'broken-octo'
+      BEGIN
+        SELECT RAISE(ABORT, 'forced username failure');
+      END;
+    `)
+    profiles.capture(
+      { id: 123 as unknown as string, login: 'broken-octo' } as GithubProfile,
+      'github@test.local',
+    )
+    await ctx.internalAdapter.updateAccount(linked?.id ?? '', { accessToken: 'another-token' })
+    expect(
+      (
+        handle.sqlite
+          .prepare('SELECT githubUsername FROM "user" WHERE id = ?')
+          .get(created.user.id) as { githubUsername: string }
+      ).githubUsername,
+    ).toBe('renamed-octo')
+    expect(logs).toEqual([
+      expect.stringContaining(`could not synchronize GitHub profile for user ${created.user.id}`),
+    ])
+
+    profiles.capture(
+      { id: 456 as unknown as string, login: 'second-octo' } as GithubProfile,
+      'second@test.local',
+    )
+    const refusedSecondLink = await ctx.internalAdapter.createAccount({
+      userId: created.user.id,
+      providerId: 'github',
+      accountId: '456',
+    })
+    expect(refusedSecondLink ?? null).toBeNull()
+
+    const emailOwner = await auth.api.createUser({
+      body: {
+        email: 'taken@test.local',
+        password: 'taken-password',
+        name: 'Taken',
+        role: 'user',
+      },
+    })
+    const other = await auth.api.createUser({
+      body: {
+        email: 'other-local@test.local',
+        password: 'other-password',
+        name: 'Other',
+        role: 'user',
+      },
+    })
+    profiles.capture(
+      { id: 123 as unknown as string, login: 'same-octo' } as GithubProfile,
+      'other-github@test.local',
+    )
+    const refusedSharedAccount = await ctx.internalAdapter.createAccount({
+      userId: other.user.id,
+      providerId: 'github',
+      accountId: '123',
+    })
+    expect(refusedSharedAccount ?? null).toBeNull()
+
+    profiles.capture(
+      { id: 789 as unknown as string, login: 'taken-octo' } as GithubProfile,
+      'taken@test.local',
+    )
+    const refusedEmailCollision = await ctx.internalAdapter.createAccount({
+      userId: other.user.id,
+      providerId: 'github',
+      accountId: '789',
+    })
+    expect(refusedEmailCollision ?? null).toBeNull()
+    expect(
+      (
+        handle.sqlite
+          .prepare(
+            "SELECT COUNT(*) AS count FROM account WHERE providerId = 'github' AND userId = ?",
+          )
+          .get(other.user.id) as { count: number }
+      ).count,
+    ).toBe(0)
+    expect(
+      handle.sqlite
+        .prepare('SELECT email, githubUsername FROM "user" WHERE id = ?')
+        .get(other.user.id),
+    ).toEqual({ email: 'other-local@test.local', githubUsername: null })
+    expect(
+      handle.sqlite
+        .prepare('SELECT email, githubUsername FROM "user" WHERE id = ?')
+        .get(emailOwner.user.id),
+    ).toEqual({ email: 'taken@test.local', githubUsername: null })
+
+    handle.sqlite.exec(`
+      CREATE TRIGGER fail_github_username_clear
+      BEFORE UPDATE OF githubUsername ON "user"
+      WHEN OLD.githubUsername IS NOT NULL AND NEW.githubUsername IS NULL
+      BEGIN
+        SELECT RAISE(ABORT, 'forced username clear failure');
+      END;
+    `)
+    await expect(ctx.internalAdapter.deleteAccount(linked?.id ?? '')).rejects.toThrow(
+      /forced username clear failure/,
+    )
+    expect(
+      handle.sqlite.prepare('SELECT providerId FROM account WHERE id = ?').get(linked?.id ?? ''),
+    ).toEqual({ providerId: 'github' })
+    expect(
+      (
+        handle.sqlite
+          .prepare('SELECT githubUsername FROM "user" WHERE id = ?')
+          .get(created.user.id) as { githubUsername: string }
+      ).githubUsername,
+    ).toBe('renamed-octo')
+
+    handle.sqlite.exec('DROP TRIGGER fail_github_username_clear')
+    await ctx.internalAdapter.deleteAccount(linked?.id ?? '')
+    expect(
+      handle.sqlite.prepare('SELECT id FROM account WHERE id = ?').get(linked?.id ?? ''),
+    ).toBeUndefined()
+    expect(
+      (
+        handle.sqlite
+          .prepare('SELECT githubUsername FROM "user" WHERE id = ?')
+          .get(created.user.id) as {
+          githubUsername: string | null
+        }
+      ).githubUsername,
+    ).toBeNull()
   })
 })
 
@@ -482,6 +960,13 @@ describe('admin roster endpoints', () => {
     })
     expect(created.statusCode).toBe(200)
     const targetId = created.json().user.id as string
+    expect(
+      (
+        fx.handle.sqlite.prepare('SELECT emailVerified FROM "user" WHERE id = ?').get(targetId) as {
+          emailVerified: number
+        }
+      ).emailVerified,
+    ).toBe(1)
 
     const setRole = await app.inject({
       method: 'POST',

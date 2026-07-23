@@ -1,24 +1,26 @@
 <!--
-  The account block pinned to the bottom of the sidebar. Signed in, it shows the session user's name,
-  a link to the profile page, and a working "Log out". Signed out, it shows a "Sign in" link to /login
+  The account block pinned to the bottom of the sidebar. Signed in, it shows the session user's avatar,
+  display name, optional GitHub handle, a link to the profile page, and a working "Log out". Signed out, it shows a "Sign in" link to /login
   in place of the account block. Log-out ends the Better Auth session through authClient, then does a
-  full-page navigation to /login so the one /api/me fetch re-runs and the shell renders signed-out.
+  full-page navigation to /login so the initial /api/me fetch re-runs and the shell renders signed-out.
 -->
 <script setup lang="ts">
-import { LogIn, LogOut, User } from '@lucide/vue'
+import { LogIn, LogOut } from '@lucide/vue'
 import { computed, ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
 import { authClient } from '../auth.js'
 import { useMe } from '../me.js'
+import UiAvatar from './ui/UiAvatar.vue'
 
 const me = useMe()
 const route = useRoute()
 
-// The session user, or null when anonymous. While the single /api/me fetch is in flight we keep the
+// The session user, or null when anonymous. While the initial /api/me fetch is in flight we keep the
 // signed-in layout with a placeholder label so the block never flickers between states.
 const user = computed(() => me.me?.user ?? null)
 const userLabel = computed(() => (me.loading ? 'signing in…' : user.value?.name ?? ''))
+const githubHandle = computed(() => user.value?.github_username ?? null)
 const profileActive = computed(() => route.path.startsWith('/my/profile'))
 const signingOut = ref(false)
 
@@ -45,10 +47,10 @@ async function logOut(): Promise<void> {
         to="/my/profile"
         :title="user?.email ?? userLabel"
       >
-        <User class="account-icon" :size="20" />
+        <UiAvatar :name="userLabel" :image="user?.image" />
         <span class="account-text">
           <span class="account-name">{{ userLabel }}</span>
-          <span class="account-sub">My profile</span>
+          <span class="account-sub">{{ githubHandle === null ? 'My profile' : `@${githubHandle}` }}</span>
         </span>
       </RouterLink>
       <button class="logout" type="button" :disabled="signingOut" @click="logOut">

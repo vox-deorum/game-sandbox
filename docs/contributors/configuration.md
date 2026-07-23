@@ -47,7 +47,7 @@ Dedicated parsers and Zod schemas validate every value, so a missing required se
 | `ADMIN_EMAIL` | `admin@example.com` | Bootstrap admin's development email. Accepted only with the insecure-defaults opt-in on a loopback origin; a deployment must set it explicitly. |
 | `ADMIN_PASSWORD` | `admin-dev-password` | Bootstrap admin's development password, re-synced on every boot. Accepted only with the insecure-defaults opt-in on a loopback origin; a deployment must set it explicitly. |
 | `ADMIN_NAME` | `Admin` | Seeded admin's display name. |
-| `GITHUB_OAUTH_CLIENT_ID` / `GITHUB_OAUTH_CLIENT_SECRET` | unset | GitHub OAuth app credentials. Both or neither: setting exactly one is a `ConfigError`. Distinct from `GITHUB_TOKEN`, which stays a submissions-only credential. |
+| `GITHUB_OAUTH_CLIENT_ID` / `GITHUB_OAUTH_CLIENT_SECRET` | unset | GitHub OAuth app credentials. Both or neither: setting exactly one is a `ConfigError`. The same OAuth app powers sign-in and profile account linking. Distinct from `GITHUB_TOKEN`, which stays a submissions-only credential. |
 
 ## Execution and frontend
 
@@ -122,7 +122,7 @@ Static frontend serving is wired only when `FRONTEND_DIST` points at an existing
 
 The Documentation page reads the student guides from `DOCS_DIR` at request time, so a guide updates without a frontend rebuild. Set `DOCS_INDEX_FILE` to give a class its own landing page, such as a schedule or grading notes, without editing the shared guides; a configured file that cannot be read fails the landing request loudly rather than silently falling back.
 
-Set `AUTH_SECRET` and the bootstrap `ADMIN_EMAIL`/`ADMIN_PASSWORD` explicitly. A normal startup refuses to run without an explicit `PUBLIC_ORIGIN`, signing secret, and bootstrap credentials, so there is no accidental fallback to the published development values. A deployment from a repository checkout must also set `AUTH_ALLOW_INSECURE_DEFAULTS=false` to override the local `.env.default`; never enable it outside loopback development. In local mode it accepts the published values and restricts the HTTP listener to loopback. When GitHub OAuth is configured, register the callback URL `<PUBLIC_ORIGIN>/api/auth/callback/github` with the OAuth app. `GITHUB_TOKEN` stays a submissions-only credential, distinct from the OAuth app's client ID and secret. `sandbox.db` now also holds the Better Auth tables (`user`, `session`, `account`, `verification`), created by a separate programmatic migration rather than the app's own schema.
+Set `AUTH_SECRET` and the bootstrap `ADMIN_EMAIL`/`ADMIN_PASSWORD` explicitly. A normal startup refuses to run without an explicit `PUBLIC_ORIGIN`, signing secret, and bootstrap credentials, so there is no accidental fallback to the published development values. A deployment from a repository checkout must also set `AUTH_ALLOW_INSECURE_DEFAULTS=false` to override the local `.env.default`; never enable it outside loopback development. In local mode it accepts the published values and restricts the HTTP listener to loopback. When GitHub OAuth is configured, register the callback URL `<PUBLIC_ORIGIN>/api/auth/callback/github` with the OAuth app. That app handles both sign-in and the connect action on My Profile. `GITHUB_TOKEN` stays a submissions-only credential, distinct from the OAuth app's client ID and secret. `sandbox.db` now also holds the Better Auth tables (`user`, `session`, `account`, `verification`), created by a separate programmatic migration rather than the app's own schema.
 
 ## See also
 

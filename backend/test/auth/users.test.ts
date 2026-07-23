@@ -70,4 +70,22 @@ describe('UserDirectory.namesFor', () => {
       ]),
     )
   })
+
+  it('returns display names and optional GitHub handles through profilesFor', async () => {
+    await stack.users.headersFor('alice')
+    await stack.users.headersFor('bob')
+    const aliceId = stack.users.idOf('alice')
+    const bobId = stack.users.idOf('bob')
+    stack.sqlite
+      .prepare('UPDATE "user" SET githubUsername = ? WHERE id = ?')
+      .run('octo-alice', aliceId)
+
+    const profiles = await stack.userDirectory.profilesFor?.([aliceId, bobId, 'nobody'])
+    expect(profiles).toEqual(
+      new Map([
+        [aliceId, { name: 'alice', githubUsername: 'octo-alice' }],
+        [bobId, { name: 'bob' }],
+      ]),
+    )
+  })
 })

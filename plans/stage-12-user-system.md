@@ -1,6 +1,6 @@
 # Stage 12: User system
 
-Status: steps 1 through 5 are complete and verified end to end: Better Auth cookie sessions on the shared SQLite database, the identity seam and status authorization, the frontend sign-in and session, the admin Users page, and the testing/CI/docs closeout. The `SESSION_ALLOWLIST`, `OPERATOR_ALLOWLIST`, `VITE_SANDBOX_USER`, `x-sandbox-user`, and `not_allowlisted` names appear nowhere in code, tests, docs, or CI. Step 6, GitHub integration, was added after that closeout and is planned but not started.
+Status: complete. Steps 1 through 6 provide Better Auth cookie sessions on the shared SQLite database, the identity seam and status authorization, the frontend sign-in and session, the admin Users page, GitHub account linking and public profile identity, and the testing/CI/docs closeout. The `SESSION_ALLOWLIST`, `OPERATOR_ALLOWLIST`, `VITE_SANDBOX_USER`, `x-sandbox-user`, and `not_allowlisted` names appear nowhere in code, tests, docs, or CI.
 
 ## Goal
 
@@ -22,7 +22,7 @@ Admin user management. The roster is driven through the admin plugin's own endpo
 
 Frontend. A `/login` page carries the email and password form and, when configured, the GitHub button. The sidebar account block gets a real sign-out. `GET /api/me` is reshaped around the session user and its status, `frontend/src/identity.ts` is deleted because cookies replace the header and query-parameter identity everywhere, and the shell gains the pending-approval banner and the signed-out affordances anonymous browsing needs.
 
-GitHub integration. A later addition, planned as step 6. Better Auth account linking connects a GitHub sign-in to an existing account with the same verified email instead of creating a duplicate pending user, the profile page gains an explicit connect and disconnect flow, the GitHub username is captured and shown on the profile and account menu alongside the avatar GitHub sign-ups already carry, and an agent profile links to its owner's GitHub. The policy details live in the subplan.
+GitHub integration. Step 6 connects a GitHub sign-in to an existing account with the same verified email instead of creating a duplicate pending user. The profile page provides an explicit connect and disconnect flow, the GitHub username appears on the profile and account menu alongside the avatar GitHub sign-ups already carry, and an agent profile links to its owner's GitHub. The policy details live in the subplan.
 
 ## Spec references
 
@@ -41,7 +41,7 @@ Each step is its own subplan under [stage-12/](stage-12/), plus the cross-cuttin
 3. **[Frontend sign-in and session](stage-12/3-frontend-auth.md).** The Better Auth Vue client, the login page, real sign-out, the reshaped `Me` with its capability helpers, cookie-based requests with `identity.ts` deleted, the pending notice, the banned and expired-session handling, and the GitHub-auth capability flag on `/api/config`.
 4. **[Admin Users page](stage-12/4-admin-users-page.md).** The global `/admin/users` roster page over the admin client with search, pagination, create, approve, ban and unban, promote and demote, and password reset, its sidebar entry, and the human display names on the public payloads that today show raw user ids.
 5. **[Testing, CI, and docs](stage-12/5-testing-ci-and-docs.md).** The whole-stage coverage picture, the browser journeys for sign-in, pending approval, and the roster, the CI wiring, and the specification and contributor-doc updates, including the removal of the allowlists from the record.
-6. **[GitHub integration](stage-12/6-github-integration.md).** The account-linking policy and its profile-page UI, the captured GitHub username and avatar, `profilesFor` on the user directory, and the owner's GitHub link on agent profiles. Added after the stage closed, so it carries its own tests and docs rather than reopening step 5.
+6. **[GitHub integration](stage-12/6-github-integration.md).** The account-linking policy and its profile-page UI, the captured GitHub username and avatar, `profilesFor` on the user directory, and the owner's GitHub link on agent profiles. Added after the initial stage closeout, with its own tests and docs.
 
 ## Done when
 

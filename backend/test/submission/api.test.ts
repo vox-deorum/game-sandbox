@@ -8,7 +8,7 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-
+import type BetterSqlite3 from 'better-sqlite3'
 import type { FastifyInstance } from 'fastify'
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -53,12 +53,14 @@ describe('submission API', () => {
   let dir: string
   let enqueued: string[]
   let source: StubSource
+  let sqlite: BetterSqlite3.Database
 
   async function build(overrides: { allowLocalSubmissions?: boolean } = {}): Promise<void> {
     dir = mkdtempSync(join(tmpdir(), 'gs-sub-'))
     const stack = await openTestStack()
     storage = stack.storage
     users = stack.users
+    sqlite = stack.sqlite
     const config = makeConfig({ recordingsDir: dir })
     orchestrator = new Orchestrator({
       driver: new FakeDriver(),
@@ -743,6 +745,7 @@ describe('submission API', () => {
       await build()
       await users.headersFor('alice')
       const aliceId = users.idOf('alice')
+      sqlite.prepare('UPDATE "user" SET githubUsername = ? WHERE id = ?').run('octo-alice', aliceId)
       // The name resolves only for an owner who actually has a submission here (see the oracle test
       // below), so give alice one first.
       const season = await storage.ensureOpenSeason(ENV_ID, 1)
@@ -763,7 +766,11 @@ describe('submission API', () => {
         url: `/api/environments/${ENV_ID}/agents/${aliceId}`,
       })
       expect(res.statusCode).toBe(200)
-      expect(res.json()).toMatchObject({ owner_id: aliceId, owner_name: 'alice' })
+      expect(res.json()).toMatchObject({
+        owner_id: aliceId,
+        owner_name: 'alice',
+        owner_github: 'octo-alice',
+      })
     })
 
     it('omits owner_name for a real account with no submission here, so it is not an id-to-name oracle', async () => {
@@ -772,6 +779,7 @@ describe('submission API', () => {
       // open, unauthenticated profile route must not resolve her name from a bare id alone.
       await users.headersFor('alice')
       const aliceId = users.idOf('alice')
+      sqlite.prepare('UPDATE "user" SET githubUsername = ? WHERE id = ?').run('octo-alice', aliceId)
 
       const res = await app.inject({
         method: 'GET',
@@ -780,6 +788,7 @@ describe('submission API', () => {
       expect(res.statusCode).toBe(200)
       expect(res.json()).toMatchObject({ owner_id: aliceId, submissions: [] })
       expect(res.json()).not.toHaveProperty('owner_name')
+      expect(res.json()).not.toHaveProperty('owner_github')
     })
   })
 })

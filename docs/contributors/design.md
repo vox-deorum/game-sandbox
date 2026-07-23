@@ -57,6 +57,7 @@ The primitives live in `frontend/src/components/ui/`, PascalCase with a `Ui` pre
 | Primitive | Replaces / role |
 | --- | --- |
 | `UiButton` | All buttons and button-styled links (renders a `<button>` or a `RouterLink` via `to`). Variants primary/secondary/ghost/danger, sizes tight/md/lg, disabled and loading states. |
+| `UiAvatar` | A compact or profile-sized user image with an accessible initial-letter fallback. |
 | `UiBadge` | Small text-bearing tags. Always text, never a bare glyph or color-only dot. |
 | `UiStatusBadge` | Live status: a colored dot **paired with a text label** that carries the meaning. |
 | `UiCard` | A bordered surface (optional padding, optional interactive hover). Layout inside is the caller's. |

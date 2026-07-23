@@ -10,7 +10,7 @@ import { resolve } from 'node:path'
 
 import { buildApp } from './app.js'
 import { createAuth } from './auth/auth.js'
-import { migrateAuthSchema } from './auth/migrate.js'
+import { migrateAuthSchema, verifyCredentialUsers } from './auth/migrate.js'
 import { ensureAdminUser } from './auth/seed-admin.js'
 import { createUserDirectory, createUserStatusReader } from './auth/users.js'
 import { DEV_ADMIN_EMAIL, DEV_ADMIN_PASSWORD, DEV_AUTH_SECRET, loadConfig } from './config.js'
@@ -97,8 +97,9 @@ async function main(): Promise<void> {
   // same SQLite handle. Migrate the auth schema, then re-sync the bootstrap admin from configuration;
   // a seed refusal (an email collision) throws out of `main` and exits non-zero.
   const { storage, sqlite } = await openSqlite(config.dbPath)
-  const auth = createAuth(sqlite, config.auth)
-  await migrateAuthSchema(auth)
+  const auth = createAuth(sqlite, config.auth, log)
+  await migrateAuthSchema(auth, sqlite)
+  verifyCredentialUsers(sqlite)
   // The display-name directory reads the library-owned `user` table on the same shared connection;
   // routes and the two launch paths batch user ids through it wherever an id crosses to the UI.
   const userDirectory = createUserDirectory(sqlite)

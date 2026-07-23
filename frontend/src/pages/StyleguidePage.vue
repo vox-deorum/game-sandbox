@@ -7,6 +7,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 
+import UiAvatar from '../components/ui/UiAvatar.vue'
 import UiBadge from '../components/ui/UiBadge.vue'
 import UiButton from '../components/ui/UiButton.vue'
 import UiCard from '../components/ui/UiCard.vue'
@@ -120,6 +121,16 @@ const llmTokenBudget = ref<number | ''>('')
         <UiBadge variant="accent">accent</UiBadge>
         <UiBadge variant="warning">warning</UiBadge>
         <UiBadge variant="danger">danger</UiBadge>
+      </div>
+    </section>
+
+    <section>
+      <h2>UiAvatar</h2>
+      <div class="row">
+        <UiAvatar name="Ada Lovelace" image="https://example.test/ada.png" />
+        <UiAvatar name="Ada Lovelace" />
+        <UiAvatar name="Grace Hopper" size="profile" image="https://example.test/grace.png" />
+        <UiAvatar name="Grace Hopper" size="profile" />
       </div>
     </section>
 

@@ -226,6 +226,11 @@ const isOwner = () => userId(me.me) === ownerId
 const ownerName = computed(
   () => profile.value?.owner_name ?? (isOwner() ? me.me?.user?.name : null) ?? ownerId,
 )
+const ownerGithub = computed(() => profile.value?.owner_github ?? null)
+
+function githubProfileUrl(username: string): string {
+  return `https://github.com/${encodeURIComponent(username)}`
+}
 
 /** The exact active attempt in the submission-open season, never an active row from another season. */
 const currentSeasonSubmission = computed(() => {
@@ -505,6 +510,15 @@ const seasonLabel = (label: string | null, id: string): string =>
   <section v-else class="agent">
     <header>
       <h1 :title="ownerId">{{ heading }}</h1>
+      <a
+        v-if="ownerGithub !== null"
+        class="owner-github"
+        :href="githubProfileUrl(ownerGithub)"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        GitHub @{{ ownerGithub }}
+      </a>
     </header>
 
     <section v-if="isOwner()" class="agent-section">
@@ -807,6 +821,11 @@ const seasonLabel = (label: string | null, id: string): string =>
 <style scoped>
 .agent-section {
   margin-bottom: var(--space-6);
+}
+
+.owner-github {
+  color: var(--color-accent);
+  font-size: var(--text-sm);
 }
 
 .development-section .ui-card {

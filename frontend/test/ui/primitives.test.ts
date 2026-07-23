@@ -1,7 +1,8 @@
 // The small presentational primitives in one suite: badge, status badge, card, empty state.
-import { render, screen } from '@testing-library/vue'
+import { fireEvent, render, screen } from '@testing-library/vue'
 import { describe, expect, it } from 'vitest'
 
+import UiAvatar from '../../src/components/ui/UiAvatar.vue'
 import UiBadge from '../../src/components/ui/UiBadge.vue'
 import UiCard from '../../src/components/ui/UiCard.vue'
 import UiDialogActions from '../../src/components/ui/UiDialogActions.vue'
@@ -12,6 +13,26 @@ describe('UiBadge', () => {
   it('renders its text', () => {
     render(UiBadge, { slots: { default: 'Human playable' } })
     expect(screen.getByText('Human playable')).toBeInTheDocument()
+  })
+})
+
+describe('UiAvatar', () => {
+  it('renders a labelled initial fallback when no image is available', () => {
+    render(UiAvatar, { props: { name: 'Ada Lovelace' } })
+    expect(screen.getByRole('img', { name: "Ada Lovelace's avatar" })).toHaveTextContent('A')
+  })
+
+  it('renders a labelled image in the profile size', () => {
+    render(UiAvatar, {
+      props: { name: 'Ada Lovelace', image: 'https://example.test/ada.png', size: 'profile' },
+    })
+    expect(screen.getByRole('img', { name: "Ada Lovelace's avatar" })).toHaveClass('profile')
+  })
+
+  it('falls back to the initial when its image cannot load', async () => {
+    render(UiAvatar, { props: { name: 'Ada Lovelace', image: 'https://example.test/ada.png' } })
+    await fireEvent.error(screen.getByRole('img', { name: "Ada Lovelace's avatar" }))
+    expect(screen.getByRole('img', { name: "Ada Lovelace's avatar" })).toHaveTextContent('A')
   })
 })
 

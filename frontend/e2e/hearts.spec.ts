@@ -43,12 +43,10 @@ const ALL_BUILTIN_SEATS = {
   player_3: { kind: 'builtin-agent' as const },
 }
 
-/** The four example strategies submitted into the matchup, each under its own owner handle. */
+/** Two distinct strategies are enough to exercise both ordered two-submission seatings. */
 const ROSTER = [
   { owner: HEARTS_OWNERS.oracle, agent: 'oracle' },
   { owner: HEARTS_OWNERS.moonshot, agent: 'moonshot' },
-  { owner: HEARTS_OWNERS.assassin, agent: 'assassin' },
-  { owner: HEARTS_OWNERS.closer, agent: 'closer' },
 ] as const
 
 async function developmentCompletion(actor: APIRequestContext, key: string): Promise<void> {
@@ -88,7 +86,7 @@ test('a four-seat Hearts session renders in the browser', async ({ page, admin }
   await admin.delete(`/api/sessions/${sessionId}`).catch(() => {})
 })
 
-test('a Hearts season: four example agents, a scheduled multi-seat matchup, then release', async ({
+test('a Hearts season: two example agents, a scheduled multi-seat matchup, then release', async ({
   page,
   browser,
   baseURL,
@@ -96,16 +94,14 @@ test('a Hearts season: four example agents, a scheduled multi-seat matchup, then
   admin,
   as,
 }) => {
-  // Four real overlay builds plus a multi-seat schedule of real container games (P(4,2)=12 ordered
-  // seatings + the Naive baseline = 13 games), each a full 13-trick hand (52 card plays), so the budget
-  // is wide. If CI time becomes a problem, the cheapest lever is fewer submitted agents (see
-  // docs/contributors/e2e-tests.md).
-  test.setTimeout(1_800_000)
+  // Two real overlay builds plus both ordered seatings and the Naive baseline produce three real
+  // four-seat container games. This is the minimum roster that still proves seat-order expansion.
+  test.setTimeout(900_000)
 
   // The browser drives the admin console as the bootstrap admin, the operator throughout this spec.
   await authenticateBrowser(page.context(), admin)
 
-  // Stage the four example agents as submittable folders before touching any windows.
+  // Stage both example agents as submittable folders before touching any windows.
   const stagedDirs: string[] = []
   const staged: Record<string, string> = {}
   for (const { agent } of ROSTER) {
@@ -130,8 +126,8 @@ test('a Hearts season: four example agents, a scheduled multi-seat matchup, then
   try {
     await openSubmissions(admin, season.id)
 
-    // Set the schedule before configuring its model policy. With four submissions, two submitted
-    // seats produce P(4,2)=12 ordered games, followed by the Naive-only baseline.
+    // Set the schedule before configuring its model policy. With two submissions, two submitted
+    // seats produce both ordered seatings, followed by the Naive-only baseline.
     await configureMatches(admin, season.id, [
       {
         slots: ['submission', 'submission', 'builtin-naive', 'builtin-naive'],
@@ -270,14 +266,13 @@ test('a Hearts season: four example agents, a scheduled multi-seat matchup, then
       new RegExp(`/environments/${HEARTS_ENV_ID}/admin/seasons/${season.id}/runs/`),
     )
     await expect(page.getByTestId('log-line').first()).toBeVisible({ timeout: 120_000 })
-    // Thirteen four-seat games run serially, several needing a composed multi-submission image, so give
-    // the run a wide window before its header status badge settles on completed (the flappy arc budgets
-    // ~105s per game for a slow runner; this keeps that generous margin for the larger Hearts schedule).
+    // Three four-seat games run serially, and both submitted seatings need a composed multi-submission
+    // image. Keep a generous margin for a slow Docker runner without consuming the whole test budget.
     await expect(page.locator('.run-header .ui-status-badge')).toHaveText('completed', {
-      timeout: 1_500_000,
+      timeout: 420_000,
     })
 
-    // Release, then verify the public board the demo serves: a Scoreboard ranking all four agents and the
+    // Release, then verify the public board the demo serves: a Scoreboard ranking both agents and the
     // Naive baseline. No ratings were seeded, so the Human Ratings board shows its intentional empty state.
     await release(admin, season.id)
     await page.goto(`/environments/${HEARTS_ENV_ID}/leaderboards/${season.id}`)
@@ -342,11 +337,21 @@ test('a Hearts season: four example agents, a scheduled multi-seat matchup, then
     }
 
     // The public Matchups table lists every game of the run, each with its seats and its own replay
-    // link — how a reader reaches each game of a multi-seat matchup that the board's one representative
-    // replay per agent cannot show. More than one game proves the multi-seat schedule expanded.
+    // link: how a reader reaches each game of a multi-seat matchup that the board's one representative
+    // replay per agent cannot show. Assert the exact three-game schedule and both submitted seat orders
+    // so an unordered scheduler regression cannot pass on the Naive baseline alone.
     const matchups = page.getByRole('region', { name: 'Matchups' })
     await expect(matchups).toBeVisible()
-    expect(await matchups.getByTestId('game-row').count()).toBeGreaterThan(1)
+    const gameRows = matchups.getByTestId('game-row')
+    await expect(gameRows).toHaveCount(3)
+    const playerSummaries = await gameRows.locator('td:nth-child(2)').allInnerTexts()
+    expect(playerSummaries).toEqual(
+      expect.arrayContaining([
+        `${HEARTS_OWNERS.oracle} · ${HEARTS_OWNERS.moonshot} · Naive · Naive`,
+        `${HEARTS_OWNERS.moonshot} · ${HEARTS_OWNERS.oracle} · Naive · Naive`,
+        'Naive · Naive · Naive · Naive',
+      ]),
+    )
     await expect(matchups.getByRole('link', { name: 'Replay' }).first()).toBeVisible()
 
     // Use an Oracle game generated by the released workflow, rather than a standalone session, for

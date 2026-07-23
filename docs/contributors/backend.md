@@ -167,9 +167,19 @@ Public reads stay open to anonymous visitors. Ban is a standalone Better Auth fl
 | `requireActive` | Session start, submit, rate, and author-prompt writes |
 | `requireAdmin` | `/api/admin/*`, unreleased seasons, and admin downloads |
 
-`GET /api/me` returns `{ user: { id, name, email, image, status } | null }`.
+`GET /api/me` returns `{ user: { id, name, email, image, github_username, status } | null }`. The GitHub username is nullable and is read-only to every client.
 
 Cookies ride HTTP fetches, WebSocket upgrades, and native download navigations on the same origin, so no route needs a header or query-parameter fallback for identity.
+
+### GitHub account linking
+
+`auth/auth.ts` enables Better Auth account linking for the trusted GitHub provider. An implicit link requires the provider email to match an existing verified local email. The admin create path and bootstrap seed mark credential accounts verified, and the auth migration idempotently backfills that attestation for credential accounts created before linking support.
+
+An authenticated explicit link may use a different verified GitHub email. The account-create hook puts that address in a private, non-returned account field. Plain SQL triggers refuse an owned address and adopt an available one inside the GitHub account insert, so a collision follows Better Auth's normal error callback without leaving a partial link. The triggers depend only on stored row data, so other SQLite connections remain able to maintain credential accounts without registering process-local functions. The user's email and password sign-in address changes too, and unlinking GitHub leaves the changed email in place. Partial unique indexes enforce one GitHub connection per user and one local owner per GitHub identity even when callbacks overlap. Better Auth's last-account guard prevents a user from unlinking their only sign-in method.
+
+GitHub's numeric provider account id is not a public profile handle. The GitHub provider adapter delegates to Better Auth's built-in profile request, rejects a result without a verified email before any user or account write, and carries the returned `login` into the account hooks without another network call. Those hooks write the server-owned `githubUsername` user field after a link and on later GitHub sign-ins. A database trigger clears it atomically on unlink. A failed handle snapshot is logged without blocking authentication and leaves the previous value available for the next GitHub flow to refresh. Linking does not copy the provider name or avatar onto an existing user.
+
+`auth/users.ts` resolves public attribution from the Better Auth-owned `user` table. `namesFor(ids)` remains the low-cost name-only batch read used across sessions, recordings, workflows, and leaderboards. `profilesFor(ids)` adds the optional GitHub username and is used only by the agent-profile response, so blind-rating and recording payloads never gain the handle.
 
 ## Environment metadata
 

@@ -22,12 +22,20 @@ const CHUNK_SIZE = 500
 /** Resolves Better Auth user ids to display names; an id with no row (or a blank name) is absent. */
 export interface UserDirectory {
   namesFor(ids: readonly string[]): Promise<Map<string, string>>
+  profilesFor(ids: readonly string[]): Promise<Map<string, UserProfile>>
+}
+
+/** The safe public profile fields an agent page may resolve for a submission owner. */
+export interface UserProfile {
+  name?: string
+  githubUsername?: string
 }
 
 /** The one row shape the directory reads from the library-owned `user` table. */
 interface UserNameRow {
   id: string
   name: string | null
+  githubUsername: string | null
 }
 
 /** The current authorization fields read directly from Better Auth's user row. */
@@ -66,26 +74,45 @@ export function createUserDirectory(sqlite: BetterSqlite3.Database): UserDirecto
       return cached
     }
     const placeholders = Array.from({ length: count }, () => '?').join(', ')
-    const statement = sqlite.prepare(`SELECT id, name FROM "user" WHERE id IN (${placeholders})`)
+    const statement = sqlite.prepare(
+      `SELECT id, name, githubUsername FROM "user" WHERE id IN (${placeholders})`,
+    )
     statements.set(count, statement)
     return statement
   }
-  return {
-    namesFor(ids: readonly string[]): Promise<Map<string, string>> {
-      const names = new Map<string, string>()
-      const unique = [...new Set(ids)]
-      for (let offset = 0; offset < unique.length; offset += CHUNK_SIZE) {
-        const chunk = unique.slice(offset, offset + CHUNK_SIZE)
-        const rows = statementFor(chunk.length).all(...chunk) as UserNameRow[]
-        for (const row of rows) {
-          // A blank name is treated as missing, so callers fall back to the stable id.
-          if (row.name !== null && row.name !== '') {
-            names.set(row.id, row.name)
-          }
+  const profilesFor = (ids: readonly string[]): Promise<Map<string, UserProfile>> => {
+    const profiles = new Map<string, UserProfile>()
+    const unique = [...new Set(ids)]
+    for (let offset = 0; offset < unique.length; offset += CHUNK_SIZE) {
+      const chunk = unique.slice(offset, offset + CHUNK_SIZE)
+      const rows = statementFor(chunk.length).all(...chunk) as UserNameRow[]
+      for (const row of rows) {
+        const profile: UserProfile = {}
+        if (row.name !== null && row.name !== '') {
+          profile.name = row.name
+        }
+        if (row.githubUsername !== null && row.githubUsername !== '') {
+          profile.githubUsername = row.githubUsername
+        }
+        if (profile.name !== undefined || profile.githubUsername !== undefined) {
+          profiles.set(row.id, profile)
         }
       }
-      return Promise.resolve(names)
+    }
+    return Promise.resolve(profiles)
+  }
+  return {
+    async namesFor(ids: readonly string[]): Promise<Map<string, string>> {
+      const names = new Map<string, string>()
+      for (const [id, profile] of await profilesFor(ids)) {
+        // A blank name is absent from the profile, so callers fall back to the stable id.
+        if (profile.name !== undefined) {
+          names.set(id, profile.name)
+        }
+      }
+      return names
     },
+    profilesFor,
   }
 }
 

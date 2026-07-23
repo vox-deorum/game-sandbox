@@ -147,6 +147,7 @@ describe('AgentProfilePage', () => {
     const heading = await screen.findByRole('heading', { name: "eve's Submissions", level: 1 })
     expect(heading).toBeInTheDocument()
     expect(heading).toHaveAttribute('title', 'eve')
+    expect(screen.queryByRole('link', { name: /GitHub @/ })).toBeNull()
     // The active ready submission reads "ready to compete" (the old standalone "Current" marker is
     // folded into the status label); the superseded static-check failure keeps its own status. Both
     // submissions' rollup status reads from the summary row (the superseded one stays collapsed, but
@@ -711,5 +712,19 @@ describe('AgentProfilePage', () => {
     // Same preference in the empty-history copy, with the id kept as its own tooltip.
     expect(screen.getByText('Eve Adler')).toHaveAttribute('title', 'eve')
     expect(screen.queryByText('eve', { exact: true })).toBeNull()
+  })
+
+  it('links an owner GitHub profile only when the profile payload carries a handle', async () => {
+    await renderProfile({
+      env_id: 'flappy_bird',
+      owner_id: 'eve',
+      owner_github: 'eve-dev',
+      submissions: [],
+    })
+
+    const github = await screen.findByRole('link', { name: 'GitHub @eve-dev' })
+    expect(github).toHaveAttribute('href', 'https://github.com/eve-dev')
+    expect(github).toHaveAttribute('target', '_blank')
+    expect(github).toHaveAttribute('rel', 'noopener noreferrer')
   })
 })

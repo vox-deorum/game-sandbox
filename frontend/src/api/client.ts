@@ -66,6 +66,8 @@ export interface MeUser {
   name: string
   email: string
   image: string | null
+  /** The connected GitHub account's snapshotted handle, or null when GitHub is not linked. */
+  github_username: string | null
   status: UserStatus
 }
 
@@ -547,6 +549,8 @@ export interface AgentProfile {
   owner_id: string
   /** The owner's display name, when the directory has one; absent falls back to `owner_id`. */
   owner_name?: string
+  /** The owner's linked GitHub handle, present only on this public profile payload. */
+  owner_github?: string
   submission_season_id: string | null
   play_season_id: string | null
   submissions: AgentProfileSubmission[]

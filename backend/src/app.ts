@@ -343,6 +343,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         name: user.name,
         email: user.email,
         image: user.image,
+        github_username: user.githubUsername ?? null,
         status: user.status,
       },
     }
@@ -726,16 +727,17 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       // The owner's display name beside the stable owner id, but only for an owner who actually has a
       // submission here — otherwise this open route would resolve a name for any id at all (pending,
       // banned, or never-submitted accounts), an id-to-name oracle. Omitted when the directory has no row.
-      const ownerName =
+      const ownerProfile =
         submissions.length === 0
           ? undefined
-          : (await deps.userDirectory.namesFor([request.params.ownerId])).get(
+          : (await deps.userDirectory.profilesFor([request.params.ownerId])).get(
               request.params.ownerId,
             )
       return {
         env_id: request.params.envId,
         owner_id: request.params.ownerId,
-        ...optionalField('owner_name', ownerName),
+        ...optionalField('owner_name', ownerProfile?.name),
+        ...optionalField('owner_github', ownerProfile?.githubUsername),
         submission_season_id: submissionTarget?.id ?? null,
         play_season_id: playTarget?.id ?? null,
         submissions: detailed,

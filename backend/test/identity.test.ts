@@ -76,6 +76,7 @@ describe('createRequestIdentity.resolveUser', () => {
       name: 'Ann',
       email: 'ann@test.local',
       image: null,
+      githubUsername: null,
       status: 'normal',
     })
   })

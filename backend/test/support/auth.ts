@@ -35,7 +35,7 @@ export interface TestAuth {
 
 export async function makeTestAuth(sqlite: BetterSqlite3.Database): Promise<TestAuth> {
   const auth = createAuth(sqlite, TEST_AUTH_OPTIONS)
-  await migrateAuthSchema(auth)
+  await migrateAuthSchema(auth, sqlite)
   return { auth, users: new TestUsers(auth) }
 }
 

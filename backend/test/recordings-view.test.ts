@@ -11,8 +11,22 @@ import {
 
 type Players = NonNullable<import('@game-sandbox/schema').RecordingHeader['players']>
 
-const admin: AuthUser = { id: 'op', name: 'Op', email: 'op@x', image: null, status: 'admin' }
-const normal: AuthUser = { id: 'u1', name: 'One', email: 'u1@x', image: null, status: 'normal' }
+const admin: AuthUser = {
+  id: 'op',
+  name: 'Op',
+  email: 'op@x',
+  image: null,
+  githubUsername: null,
+  status: 'admin',
+}
+const normal: AuthUser = {
+  id: 'u1',
+  name: 'One',
+  email: 'u1@x',
+  image: null,
+  githubUsername: null,
+  status: 'normal',
+}
 
 const submittedPlayers: Players = {
   player_0: { kind: 'agent', label: "alice's agent", user: 'alice', submission_id: 'sub-a' },

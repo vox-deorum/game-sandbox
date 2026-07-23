@@ -23,6 +23,7 @@ describe('StyleguidePage', () => {
       'Type scale',
       'UiButton',
       'UiBadge',
+      'UiAvatar',
       'UiStatusBadge',
       'UiCard',
       'UiField and UiInput',

@@ -25,6 +25,7 @@ export interface AuthUser {
   name: string
   email: string
   image: string | null
+  githubUsername: string | null
   status: UserStatus
 }
 
@@ -78,6 +79,7 @@ export function createRequestIdentity(auth: Auth): RequestIdentity {
       name: user.name,
       email: user.email,
       image: user.image ?? null,
+      githubUsername: (user as { githubUsername?: string | null }).githubUsername ?? null,
       status: deriveStatus(user.role),
     }
   }

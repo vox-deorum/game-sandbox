@@ -18,6 +18,7 @@ export function signedInMe(
       name: id,
       email: `${id}@test.local`,
       image: null,
+      github_username: null,
       status,
       ...overrides,
     },

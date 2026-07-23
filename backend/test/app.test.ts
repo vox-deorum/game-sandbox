@@ -103,6 +103,7 @@ describe('HTTP API', () => {
       user_id: users.idOf('alice'),
       user_name: 'alice',
     })
+    expect(row.json()).not.toHaveProperty('github_username')
     // Attribution carries the Better Auth id, not a fabricated dev identity.
     expect((await storage.getSession(body.id))?.user_id).toBe(users.idOf('alice'))
   })
@@ -195,6 +196,7 @@ describe('HTTP API', () => {
         name: 'alice',
         email: 'alice@test.local',
         image: null,
+        github_username: null,
         status: 'normal',
       },
     })
@@ -323,6 +325,7 @@ describe('HTTP API', () => {
         user_name: 'alice',
         pinned: false,
       })
+      expect(all.find((r) => r.id === 'flappy_bird-1')).not.toHaveProperty('github_username')
       expect(all.find((r) => r.id === 'other-1')).toMatchObject({ user_id: 'ghost-user' })
       expect(all.find((r) => r.id === 'other-1')).not.toHaveProperty('user_name')
 

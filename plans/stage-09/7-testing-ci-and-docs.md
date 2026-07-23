@@ -70,7 +70,7 @@ Run the existing deterministic Spades and Flappy Bird coverage (the `spades-chat
 
 ## Browser journeys
 
-Extend the released Black Lady Open workflow in `frontend/e2e/hearts.spec.ts` against the same stub upstream, spawned and wired into the backend by `fresh-backend.mjs`. Oracle competes beside three non-LLM submissions, so one season covers development access, official workflow accounting, board aggregation, and retained replay telemetry:
+Extend the released Black Lady Open workflow in `frontend/e2e/hearts.spec.ts` against the same stub upstream, spawned and wired into the backend by `fresh-backend.mjs`. Oracle competes beside one non-LLM submission in both ordered seatings, so one season covers development access, official workflow accounting, board aggregation, and retained replay telemetry:
 
 1. An operator configures available model tiers and separate official and development limits for a season.
 2. A participant sees the eligible current-season usage meter and layered key action on My Agents, then opens the owner-only agent-profile Development access section with resolved model prices, used and remaining budget units, and call-history action.

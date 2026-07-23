@@ -18,6 +18,7 @@ vi.mock('../src/api/client.js', () => ({
         name: 'dev-user',
         email: 'dev-user@test.local',
         image: null,
+        github_username: null,
         status: 'normal',
       },
     }),

@@ -1138,6 +1138,7 @@ describe('Docker-backed workflow runner', () => {
         ordering.push('session-config')
         return Promise.resolve(new Map())
       },
+      profilesFor: () => Promise.resolve(new Map()),
     }
     const driver = new FakeDriver()
     driver.onLaunch = (launch): void => {
@@ -1206,6 +1207,7 @@ describe('Docker-backed workflow runner', () => {
         await sessionConfigBarrier
         return new Map()
       },
+      profilesFor: () => Promise.resolve(new Map()),
     }
     const driver = new FakeDriver()
     const handle = makeRunner(storage, driver, {
@@ -1458,6 +1460,10 @@ describe('Docker-backed workflow runner', () => {
         namesFor: (ids) =>
           Promise.resolve(
             new Map<string, string>(ids.includes('alice') ? [['alice', 'Alice Chen']] : []),
+          ),
+        profilesFor: (ids) =>
+          Promise.resolve(
+            new Map(ids.includes('alice') ? [['alice', { name: 'Alice Chen' }]] : []),
           ),
       },
     })
