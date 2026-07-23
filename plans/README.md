@@ -37,7 +37,7 @@ Stages are listed below in dependency order. Stage numbers preserve the original
 | [10. Documentation page](stage-10-documentation-page.md) | In-app student guides, configurable class landing |
 | [11. Semantic contract](stage-11-semantic-contract.md) | Semantic observations, helper-built actions, shared spaces, template v2 |
 | [13. Unified browser rendering](stage-13-unified-rendering.md) | Browser-only rendering, shared local runner, pygame-free templates |
-| [12. User system](stage-12-user-system.md) | Better Auth sessions, GitHub sign-in, user statuses, admin roster |
+| [12. User system](stage-12-user-system.md) | Better Auth sessions, GitHub sign-in and linking, user statuses, admin roster |
 | [9. LLM API](stage-09-llm-gateway.md) | Backend proxy, retries, official and development meters, telemetry |
 
 Communication follows multi-agent and builds its own test bed: Spades, a partnership environment where targeted partner signals and broadcast warnings genuinely differ, while Hearts stays messaging-free. Documentation, the semantic contract, and the user system can land independently after communication. The LLM proxy and accounting model do not depend on messaging semantics, but the current Stage 9 plan comes last because it uses the semantic Hearts helpers and real account authorization, covers credentials in the existing `chat` hook, and keeps Spades as a disabled-session regression.
