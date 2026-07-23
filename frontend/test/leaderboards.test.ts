@@ -50,6 +50,7 @@ function season(overrides: Partial<SeasonView> = {}): SeasonView {
     label: 'Week 1',
     config: { deps_version: 1, matches: [] },
     rating_prompt: null,
+    description_markdown: null,
     created_at: '2026-06-10T00:00:00Z',
     released_at: '2026-06-12T00:00:00Z',
     ...overrides,

@@ -108,6 +108,7 @@ const initialSchema: Migration = {
       .addColumn('play_status', 'text', (col) => col.notNull())
       .addColumn('release_status', 'text', (col) => col.notNull())
       .addColumn('label', 'text')
+      .addColumn('description_markdown', 'text')
       .addColumn('config', 'text', (col) => col.notNull())
       .addColumn('rating_prompt', 'text')
       .addColumn('created_at', 'text', (col) => col.notNull())

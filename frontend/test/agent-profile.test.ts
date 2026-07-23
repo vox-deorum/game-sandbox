@@ -451,6 +451,7 @@ describe('AgentProfilePage', () => {
         play_status: 'closed',
         release_status: 'unreleased',
         label: 'Week 4',
+        description_markdown: null,
         created_at: '2026-06-10T00:00:00Z',
         released_at: null,
         submission_count: 1,

@@ -56,7 +56,7 @@ The primitives live in `frontend/src/components/ui/`, PascalCase with a `Ui` pre
 - `UiButton`: replaces the global `button` styles, `button.secondary`, and `.button-link`. Renders a `button` or a `RouterLink` from a `to` prop. Variants are primary, secondary, ghost, and danger; sizes are md and lg; it has disabled and loading states and visible focus.
 - `UiBadge`: replaces `.badge`, `.badge-human`, and the replay list's pin marker. The pin marker currently uses an emoji; badges are always text-bearing, so color is never the sole signal.
 - `UiCard`: replaces `.card`, `.end-card`, and the `.start-form` surface; a surface with border, radius, and padding slots rather than a layout component.
-- `UiField` with `UiInput`: replaces `.field` and `.hint`. It wires the label, the input id, and `aria-describedby` for hint and error text, so association is automatic.
+- `UiField` with `UiInput` or `UiTextarea`: replaces `.field`, `.hint`, and feature-owned text-control styling. It wires the label, the control id, and `aria-describedby` for hint and error text, so association is automatic.
 - `UiDialog`: wraps Reka UI Dialog. The start form renders inside it as a feature component.
 - `UiSlider`: wraps Reka UI Slider for the replay scrubber, keeping the `slider` role the end-to-end suite locates.
 - `UiStatusBadge`: replaces `.status-dot` plus its adjacent text. The dot keeps its color, and the label carries the meaning.

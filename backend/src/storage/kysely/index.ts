@@ -188,6 +188,9 @@ export class KyselyStorage implements Storage {
   setSeasonRatingPrompt(seasonId: string, prompt: string | null): Promise<void> {
     return seasons.setSeasonRatingPrompt(this.db, seasonId, prompt)
   }
+  setSeasonDescription(seasonId: string, markdown: string | null): Promise<Season | undefined> {
+    return seasons.setSeasonDescription(this.db, seasonId, markdown)
+  }
   setSeasonLabel(seasonId: string, label: string | null): Promise<void> {
     return seasons.setSeasonLabel(this.db, seasonId, label)
   }

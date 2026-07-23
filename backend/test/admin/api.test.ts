@@ -173,6 +173,7 @@ describe('admin API', () => {
         ['POST', `/api/admin/environments/${ENV_ID}/seasons`],
         ['DELETE', `/api/admin/seasons/${id}`],
         ['PUT', `/api/admin/seasons/${id}/config`],
+        ['PUT', `/api/admin/seasons/${id}/description`],
         ['PUT', `/api/admin/seasons/${id}/rating-prompt`],
         ['PUT', `/api/admin/seasons/${id}/label`],
         ['POST', `/api/admin/seasons/${id}/submissions/open`],
@@ -614,6 +615,117 @@ describe('admin API', () => {
       })
       expect(forced.statusCode).toBe(200)
       expect(await storage.listActiveSubmissionsBySeason(id)).toEqual([])
+    })
+  })
+
+  describe('season description', () => {
+    it('normalizes, replaces, and clears the description after a run and release', async () => {
+      const id = await declare()
+      await storage.updateSeasonConfig(id, flappyConfig())
+      await createRun(
+        id,
+        'dev-user',
+        [],
+        [{ match_index: 0, game_index: 0, seed: 1, slots: [{ kind: 'builtin-naive' }] }],
+      )
+      await storage.setReleaseStatus(id, 'released')
+
+      const saved = await app.inject({
+        method: 'PUT',
+        url: `/api/admin/seasons/${id}/description`,
+        headers: OPERATOR,
+        payload: { markdown: '  **Start here**\r\nThen submit your agent.  ' },
+      })
+      expect(saved.statusCode).toBe(200)
+      expect((saved.json() as { description_markdown: string }).description_markdown).toBe(
+        '**Start here**\nThen submit your agent.',
+      )
+
+      const replaced = await app.inject({
+        method: 'PUT',
+        url: `/api/admin/seasons/${id}/description`,
+        headers: OPERATOR,
+        payload: { markdown: 'x'.repeat(2_000) },
+      })
+      expect(replaced.statusCode).toBe(200)
+      expect(
+        (replaced.json() as { description_markdown: string }).description_markdown,
+      ).toHaveLength(2_000)
+
+      const cleared = await app.inject({
+        method: 'PUT',
+        url: `/api/admin/seasons/${id}/description`,
+        headers: OPERATOR,
+        payload: { markdown: ' \r\n\t ' },
+      })
+      expect(cleared.statusCode).toBe(200)
+      expect(
+        (cleared.json() as { description_markdown: string | null }).description_markdown,
+      ).toBeNull()
+    })
+
+    it('returns typed validation errors and 404s an unknown Season', async () => {
+      const id = await declare()
+      const invalidBodies = [{}, { markdown: 123 }, { markdown: 'valid', extra: true }]
+      for (const payload of invalidBodies) {
+        const invalid = await app.inject({
+          method: 'PUT',
+          url: `/api/admin/seasons/${id}/description`,
+          headers: OPERATOR,
+          payload,
+        })
+        expect(invalid.statusCode).toBe(400)
+        expect(invalid.json()).toMatchObject({ code: 'invalid_season_description' })
+      }
+
+      const multiple = await app.inject({
+        method: 'PUT',
+        url: `/api/admin/seasons/${id}/description`,
+        headers: OPERATOR,
+        payload: { markdown: 'First paragraph.\n \t\nSecond paragraph.' },
+      })
+      expect(multiple.statusCode).toBe(400)
+      expect(multiple.json()).toMatchObject({
+        code: 'season_description_multiple_paragraphs',
+      })
+
+      const tooLong = await app.inject({
+        method: 'PUT',
+        url: `/api/admin/seasons/${id}/description`,
+        headers: OPERATOR,
+        payload: { markdown: ` ${'x'.repeat(2_001)} ` },
+      })
+      expect(tooLong.statusCode).toBe(400)
+      expect(tooLong.json()).toMatchObject({ code: 'season_description_too_long' })
+
+      const missing = await app.inject({
+        method: 'PUT',
+        url: '/api/admin/seasons/does-not-exist/description',
+        headers: OPERATOR,
+        payload: { markdown: 'Welcome.' },
+      })
+      expect(missing.statusCode).toBe(404)
+    })
+
+    it.each([
+      ['line separator', '\u2028'],
+      ['paragraph separator', '\u2029'],
+      ['vertical tab', '\v'],
+      ['form feed', '\f'],
+    ])('replaces a %s with a space before storing the description', async (_label, separator) => {
+      const id = await declare()
+      const saved = await app.inject({
+        method: 'PUT',
+        url: `/api/admin/seasons/${id}/description`,
+        headers: OPERATOR,
+        payload: { markdown: `First${separator}second.` },
+      })
+
+      expect(saved.statusCode).toBe(200)
+      expect((saved.json() as { description_markdown: string }).description_markdown).toBe(
+        'First second.',
+      )
+      expect((await storage.getSeason(id))?.description_markdown).toBe('First second.')
     })
   })
 

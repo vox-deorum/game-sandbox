@@ -65,6 +65,7 @@ describe('submission storage on :memory:', () => {
     const second = await storage.ensureOpenSeason('flappy_bird', 2)
     expect(second.id).toBe(first.id)
     expect(first.submission_status).toBe('open')
+    expect(first.description_markdown).toBeNull()
     // The pinned deps version now lives inside the validated config document.
     expect(decodeSeasonConfig(first.config).deps_version).toBe(1)
     expect(decodeSeasonConfig(second.config).deps_version).toBe(1)

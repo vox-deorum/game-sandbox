@@ -64,6 +64,7 @@ export type PublicSeasonView = Pick<
   | 'play_status'
   | 'release_status'
   | 'label'
+  | 'description_markdown'
   | 'created_at'
   | 'released_at'
   | 'submission_count'
@@ -82,6 +83,7 @@ export function publicSeasonView(season: PublicSeason): PublicSeasonView {
     play_status: season.play_status,
     release_status: season.release_status,
     label: season.label,
+    description_markdown: season.description_markdown,
     created_at: season.created_at,
     released_at: season.released_at,
     submission_count: season.submission_count,

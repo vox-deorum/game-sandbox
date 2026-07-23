@@ -20,6 +20,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createGzip } from 'node:zlib'
 
+import { RATING_PROMPT_MAX, SEASON_DESCRIPTION_MAX } from '@game-sandbox/schema/seasons'
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import tar from 'tar-fs'
 import { z } from 'zod'
@@ -80,9 +81,6 @@ export interface AdminDeps {
   }
 }
 
-/** The operator's season-wide rating prompt is display-only guidance; cap it so it stays a prompt. */
-const RATING_PROMPT_MAX = 2_000
-
 /** A season label is a short operator-facing name; cap it so it stays a label rather than prose. */
 const SEASON_LABEL_MAX = 100
 
@@ -100,6 +98,14 @@ const RenameSeasonBodySchema = z.strictObject({
 /** The optional body accepted when setting or clearing the operator rating prompt. */
 const RatingPromptBodySchema = z.strictObject({
   prompt: z.string().max(RATING_PROMPT_MAX).nullable().optional(),
+})
+
+/**
+ * The body accepted when setting or clearing the public Season description. Its length cap applies
+ * after line-ending and separator normalization, so it cannot be expressed directly in Zod.
+ */
+const SeasonDescriptionBodySchema = z.strictObject({
+  markdown: z.string().nullable(),
 })
 
 /** Whether a run is still in progress, so a re-run is refused and a cancel is meaningful. */
@@ -457,6 +463,50 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
             }
           }
           return reply.code(200).send(seasonView(result.season))
+        },
+      )
+
+      // --- Season description ---------------------------------------------------------------
+      // Public, display-only Season guidance. It stays outside config and remains editable after
+      // submissions, runs, and release. Normalize source wrapping while keeping the content to one
+      // Markdown paragraph.
+      admin.put<{ Params: { id: string }; Body: unknown }>(
+        '/seasons/:id/description',
+        async (request, reply) => {
+          const parsed = SeasonDescriptionBodySchema.safeParse(request.body)
+          if (!parsed.success) {
+            return reply.code(400).send({
+              error: 'invalid season description',
+              code: 'invalid_season_description',
+              reason: zodReason(parsed.error),
+            })
+          }
+
+          const normalized =
+            parsed.data.markdown === null
+              ? null
+              : parsed.data.markdown
+                  .replace(/\r\n?/g, '\n')
+                  .replace(/[\u2028\u2029\v\f]/g, ' ')
+                  .trim() || null
+          if (normalized !== null && /\n[ \t]*\n/.test(normalized)) {
+            return reply.code(400).send({
+              error: 'season description must be one paragraph',
+              code: 'season_description_multiple_paragraphs',
+            })
+          }
+          if (normalized !== null && normalized.length > SEASON_DESCRIPTION_MAX) {
+            return reply.code(400).send({
+              error: 'season description too long',
+              code: 'season_description_too_long',
+            })
+          }
+
+          const updated = await deps.storage.setSeasonDescription(request.params.id, normalized)
+          if (updated === undefined) {
+            return reply.code(404).send({ error: 'no such season' })
+          }
+          return reply.code(200).send(seasonView(updated))
         },
       )
 

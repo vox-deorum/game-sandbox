@@ -34,6 +34,7 @@ import {
 import DevelopmentCallHistoryDialog from '../components/DevelopmentCallHistoryDialog.vue'
 import SeasonConfigEditor from '../components/admin/SeasonConfigEditor.vue'
 import SeasonLifecycleControls from '../components/admin/SeasonLifecycleControls.vue'
+import OperatorSeasonDescriptionEditor from '../components/admin/OperatorSeasonDescriptionEditor.vue'
 import OperatorRatingPromptEditor from '../components/admin/OperatorRatingPromptEditor.vue'
 import RunActions from '../components/admin/RunActions.vue'
 import RunsList from '../components/admin/RunsList.vue'
@@ -154,7 +155,7 @@ async function select(id: string): Promise<void> {
 
 /** Reload both the picker (labels/gates may have changed) and the selected season's detail. */
 async function refresh(updated?: SeasonView): Promise<void> {
-  if (updated !== undefined && view.value !== null) {
+  if (updated !== undefined && updated.id === selectedId.value && view.value !== null) {
     view.value = { ...view.value, season: updated }
   }
   seasons.value = await listSeasons(envId, { includeUnreleased: true })
@@ -432,6 +433,9 @@ function closeDevelopmentHistory(): void {
               <p v-if="renameError" class="rename-error" role="alert">{{ renameError }}</p>
               <UiCard class="admin-card">
                 <SeasonLifecycleControls :season="view.season" @changed="refresh" />
+              </UiCard>
+              <UiCard class="admin-card description-card">
+                <OperatorSeasonDescriptionEditor :season="view.season" @changed="refresh" />
               </UiCard>
             </section>
 

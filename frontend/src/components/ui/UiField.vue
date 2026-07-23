@@ -31,7 +31,7 @@ const describedby = computed(() => {
     <label class="ui-field-label" :for="id">{{ label }}</label>
     <slot :id="id" :describedby="describedby" :invalid="error !== undefined" />
     <p v-if="hint" :id="hintId" class="ui-field-hint">{{ hint }}</p>
-    <p v-if="error" :id="errorId" class="ui-field-error">{{ error }}</p>
+    <p v-if="error" :id="errorId" class="ui-field-error" role="alert">{{ error }}</p>
   </div>
 </template>
 

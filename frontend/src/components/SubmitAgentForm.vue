@@ -20,6 +20,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
+import { RATING_PROMPT_MAX } from '@game-sandbox/schema/seasons'
+
 import {
   checkReachability,
   getAuthorPrompt,
@@ -37,6 +39,7 @@ import UiCard from './ui/UiCard.vue'
 import UiField from './ui/UiField.vue'
 import UiInput from './ui/UiInput.vue'
 import UiStatusBadge from './ui/UiStatusBadge.vue'
+import UiTextarea from './ui/UiTextarea.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -285,12 +288,11 @@ const isFailed = computed(
         hint="Tell raters what to evaluate about your agent. Shown next to the 1-5 control after a session. You can edit it while submissions stay open."
       >
         <template #default="{ id, describedby }">
-          <textarea
+          <UiTextarea
             :id="id"
             v-model="ratingPrompt"
-            class="submit-prompt-input"
             rows="3"
-            maxlength="2000"
+            :maxlength="RATING_PROMPT_MAX"
             placeholder="e.g. My agent does not play to win. Give a good grade if you feel it acts funnily!"
             :aria-describedby="describedby"
           />
@@ -360,22 +362,6 @@ const isFailed = computed(
 .submit-error {
   color: var(--color-danger);
   font-size: var(--text-sm);
-}
-
-.submit-prompt-input {
-  font: inherit;
-  width: 100%;
-  resize: vertical;
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--color-border);
-  background: var(--color-bg);
-  color: var(--color-text);
-  transition: border-color var(--motion-fast) var(--ease-out);
-}
-
-.submit-prompt-input:hover {
-  border-color: var(--color-border-strong);
 }
 
 .submit-progress {

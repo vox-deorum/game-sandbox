@@ -76,6 +76,7 @@ function openSeason(overrides: Partial<PublicSeasonView> = {}): PublicSeasonView
     play_status: 'open',
     release_status: 'unreleased',
     label: 'Playground',
+    description_markdown: null,
     created_at: '2026-06-01T00:00:00Z',
     released_at: null,
     submission_count: 1,

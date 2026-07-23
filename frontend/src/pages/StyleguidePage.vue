@@ -21,6 +21,7 @@ import UiSelect from '../components/ui/UiSelect.vue'
 import UiSlider from '../components/ui/UiSlider.vue'
 import UiStatusBadge from '../components/ui/UiStatusBadge.vue'
 import UiTabs from '../components/ui/UiTabs.vue'
+import UiTextarea from '../components/ui/UiTextarea.vue'
 
 // The semantic color tokens, named so the swatch grid stays in sync with tokens.css by review.
 const colorTokens = [
@@ -46,6 +47,7 @@ const textTokens = ['xs', 'sm', 'md', 'lg', 'xl', '2xl']
 const dialogOpen = ref(false)
 const inputValue = ref('')
 const invalidValue = ref('not a number')
+const textareaValue = ref('')
 const selectValue = ref('builtin')
 const sliderValue = ref(120)
 const tabsValue = ref('all')
@@ -189,6 +191,40 @@ const llmTokenBudget = ref<number | ''>('')
             <UiSelect :id="id" v-model="selectValue" disabled>
               <option value="builtin">Naive agent</option>
             </UiSelect>
+          </template>
+        </UiField>
+      </div>
+    </section>
+
+    <section>
+      <h2>UiTextarea</h2>
+      <div class="fields">
+        <UiField label="Notes" hint="A multiline text input.">
+          <template #default="{ id, describedby, invalid }">
+            <UiTextarea
+              :id="id"
+              v-model="textareaValue"
+              rows="3"
+              placeholder="Write a note"
+              :aria-describedby="describedby"
+              :invalid="invalid"
+            />
+          </template>
+        </UiField>
+        <UiField label="Invalid notes" error="Enter one paragraph.">
+          <template #default="{ id, describedby, invalid }">
+            <UiTextarea
+              :id="id"
+              model-value="Two paragraphs"
+              rows="3"
+              :aria-describedby="describedby"
+              :invalid="invalid"
+            />
+          </template>
+        </UiField>
+        <UiField label="Disabled notes">
+          <template #default="{ id }">
+            <UiTextarea :id="id" model-value="Unavailable" rows="3" disabled />
           </template>
         </UiField>
       </div>

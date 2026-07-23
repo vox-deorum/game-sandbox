@@ -100,6 +100,7 @@ export async function ensureOpenSeason(
         play_status: 'open',
         release_status: release,
         label: defaults?.label ?? null,
+        description_markdown: null,
         config: encodeSeasonConfig(emptySeasonConfig(depsVersion)),
         rating_prompt: null,
         created_at: now,
@@ -143,6 +144,7 @@ export async function createSeason(
       play_status: 'closed',
       release_status: 'unreleased',
       label: input.label ?? null,
+      description_markdown: null,
       config: encodeSeasonConfig(emptySeasonConfig(input.deps_version)),
       rating_prompt: null,
       created_at: new Date().toISOString(),
@@ -161,7 +163,13 @@ export async function deleteSeason(db: Kysely<Database>, id: string): Promise<De
   return await db.transaction().execute(async (trx) => {
     const season = await trx
       .selectFrom('seasons')
-      .select(['submission_status', 'play_status', 'release_status', 'rating_prompt'])
+      .select([
+        'submission_status',
+        'play_status',
+        'release_status',
+        'description_markdown',
+        'rating_prompt',
+      ])
       .where('id', '=', id)
       .executeTakeFirst()
     if (season === undefined) {
@@ -194,7 +202,7 @@ export async function deleteSeason(db: Kysely<Database>, id: string): Promise<De
     if (activity.some((row) => row !== undefined)) {
       return { ok: false, reason: 'season_not_empty' }
     }
-    if (season.rating_prompt !== null) {
+    if (season.description_markdown !== null || season.rating_prompt !== null) {
       return { ok: false, reason: 'season_not_empty' }
     }
 
@@ -454,6 +462,19 @@ export async function setSeasonRatingPrompt(
     .set({ rating_prompt: prompt })
     .where('id', '=', seasonId)
     .execute()
+}
+
+export async function setSeasonDescription(
+  db: Kysely<Database>,
+  seasonId: string,
+  markdown: string | null,
+): Promise<Season | undefined> {
+  return await db
+    .updateTable('seasons')
+    .set({ description_markdown: markdown })
+    .where('id', '=', seasonId)
+    .returningAll()
+    .executeTakeFirst()
 }
 
 export async function setSeasonLabel(

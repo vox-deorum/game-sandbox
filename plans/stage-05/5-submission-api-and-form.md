@@ -47,7 +47,7 @@ The worker must not let stale work publish over a newer active submission. Befor
 
 ## `SubmitAgentForm.vue`
 
-The "Submit agent" form on the environment page for the currently open season, per [frontend.md](../../docs/specs/frontend.md) and built on the Stage 4.5 primitives (`UiField`/`UiInput`, `UiButton`, `UiCard`, the status/badge primitives) so it inherits the design system rather than introducing new styles:
+The "Submit agent" form on the environment page for the currently open season, per [frontend.md](../../docs/specs/frontend.md) and built on the Stage 4.5 primitives (`UiField`/`UiInput`/`UiTextarea`, `UiButton`, `UiCard`, the status/badge primitives) so it inherits the design system rather than introducing new styles:
 
 - Paste the repository URL, optionally a branch/tag/commit to target. The form calls the reachability pre-check and only enables submit once the repo and ref verify reachable, surfacing an unreachable repo/ref inline.
 - On submit, the submission is recorded under the signed-in identity (no name field, identity comes from the session).

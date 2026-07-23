@@ -843,6 +843,8 @@ export interface SeasonView {
   label: string | null
   config: SeasonConfig
   rating_prompt: string | null
+  /** A short, one-paragraph inline Markdown summary shown on public season cards. */
+  description_markdown: string | null
   created_at: string
   released_at: string | null
 }
@@ -856,6 +858,7 @@ export type PublicSeasonView = Pick<
   | 'play_status'
   | 'release_status'
   | 'label'
+  | 'description_markdown'
   | 'created_at'
   | 'released_at'
 > & {
@@ -1240,6 +1243,33 @@ export type SetSeasonRatingPromptResult =
   | { ok: true; season: SeasonView }
   | { ok: false; reason: 'too_long' | 'failed' }
 
+/** The outcome of setting the short public season description. */
+export type SetSeasonDescriptionResult =
+  | { ok: true; season: SeasonView }
+  | { ok: false; reason: 'too_long' | 'multiple_paragraphs' | 'invalid' | 'failed' }
+
+/** Set or clear the operator-editable public season description. */
+export async function setSeasonDescription(
+  seasonId: string,
+  markdown: string | null,
+): Promise<SetSeasonDescriptionResult> {
+  const res = await request(`/admin/seasons/${encodeURIComponent(seasonId)}/description`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ markdown }),
+  })
+  if (res.ok) return { ok: true, season: (await res.json()) as SeasonView }
+  const body = (await res.json().catch(() => ({}))) as { code?: string }
+  const reason =
+    body.code === 'season_description_too_long'
+      ? 'too_long'
+      : body.code === 'season_description_multiple_paragraphs'
+        ? 'multiple_paragraphs'
+        : body.code === 'invalid_season_description'
+          ? 'invalid'
+          : 'failed'
+  return { ok: false, reason }
+}
 /** Set or clear the operator's always-editable season rating prompt. */
 export async function setSeasonRatingPrompt(
   seasonId: string,

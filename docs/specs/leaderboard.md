@@ -37,10 +37,11 @@ Each season defines:
 - Optional messaging overrides.
 - Optional LLM model, token-price, official limit, and student development limit overrides of deployment defaults. Limits set the weighted token budget and per-minute request rate. Creating an automated run freezes its complete resolved official policy, including enabled aliases, upstream model mappings, prices, and per-slot limits.
 - Optional season-wide rating prompt.
+- Optional **Season description** Markdown, which is display metadata rather than run configuration or workflow input. Operators can save, replace, or clear it at any time. It is public whenever submissions or play are open, or results are released; it is otherwise private. The public cross-game Seasons cards show a description only when one exists. The description is one normalized and trimmed inline paragraph of at most 2,000 characters, with soft-wrapped lines allowed and blank-line-separated paragraphs rejected. It supports emphasis, strong text, inline code, and absolute HTTP(S) links. Raw HTML, images, block Markdown, and other link destinations are inactive.
 
 A season's timing, messaging, and official LLM overrides apply not only to its automated games but also to the live watch and play sessions started against the play-open season, so a season's rules hold everywhere its agents run. Student development LLM limits use their own meter keyed to the season and do not consume or contribute to official limits or telemetry.
 
-Operators manage seasons through the website's admin console and an operator-only HTTP API. They can declare, configure, open, close, run, rerun, cancel, preview, and release seasons. They may also permanently delete a closed, unreleased season that has no submissions, sessions, runs, ratings, prompts, or development keys. The admin console requires explicit confirmation, and the API refuses to cascade through historical activity. The backend runs the workflow and streams logs to the console.
+Operators manage seasons through the website's admin console and an operator-only HTTP API. They can declare, configure, describe, open, close, run, rerun, cancel, preview, and release seasons. They may also permanently delete a closed, unreleased season that has no submissions, sessions, runs, ratings, prompts, descriptions, or development keys. The admin console requires explicit confirmation, and the API refuses to cascade through historical activity. The backend runs the workflow and streams logs to the console.
 
 ## Automated board
 

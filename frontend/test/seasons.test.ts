@@ -28,6 +28,7 @@ function season(overrides: Partial<PublicSeasonView> = {}): PublicSeasonView {
     play_status: 'closed',
     release_status: 'unreleased',
     label: 'Season',
+    description_markdown: null,
     created_at: '2026-06-11T00:00:00Z',
     released_at: null,
     submission_count: 0,
@@ -157,6 +158,42 @@ describe('SeasonsPage', () => {
     expect(playCard.queryByText('Results released')).not.toBeInTheDocument()
   })
 
+  it('omits absent descriptions and renders a supplied description above the environment metadata', async () => {
+    vi.mocked(listSeasons).mockResolvedValue([
+      season({ id: 'without', label: 'No description' }),
+      season({
+        id: 'with',
+        label: 'With description',
+        submission_status: 'open',
+        description_markdown:
+          'Try **careful** [timing notes](https://example.test/notes) at `60 FPS`.',
+      }),
+    ])
+
+    await renderPage()
+    await screen.findByText('No description')
+
+    const without = screen.getByText('No description').closest('li') as HTMLElement
+    expect(without.querySelector('.season-description')).toBeNull()
+    const withDescription = screen.getByText('With description').closest('li') as HTMLElement
+    const description = withDescription.querySelector('.season-description') as HTMLElement
+    const environment = withDescription.querySelector('.season-env')
+    expect(environment).not.toBeNull()
+    expect(description).toHaveTextContent('Try careful timing notes at 60 FPS.')
+    expect(description.innerHTML).toContain('<strong>careful</strong>')
+    const descriptionLink = description.querySelector('a') as HTMLAnchorElement
+    expect(descriptionLink).toHaveAttribute('href', 'https://example.test/notes')
+    expect(descriptionLink).toHaveAttribute('target', '_blank')
+    expect(descriptionLink).toHaveAttribute('rel', 'noopener noreferrer')
+    expect(withDescription.querySelector('.season-card-link')).toHaveAttribute(
+      'aria-label',
+      'Open season With description',
+    )
+    expect(
+      description.compareDocumentPosition(environment as Element) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+  })
   it('points the submission action at sign-in for an anonymous visitor', async () => {
     vi.mocked(getMe).mockResolvedValue(anonymousMe)
     vi.mocked(listSeasons).mockResolvedValue([

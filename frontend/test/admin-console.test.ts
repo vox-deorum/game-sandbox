@@ -1,3 +1,4 @@
+import { SEASON_DESCRIPTION_MAX } from '@game-sandbox/schema/seasons'
 import { fireEvent, screen, waitFor } from '@testing-library/vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -23,6 +24,7 @@ vi.mock('../src/api/client.js', () => ({
   renameSeason: vi.fn(),
   configureSeason: vi.fn(),
   setSeasonRatingPrompt: vi.fn(),
+  setSeasonDescription: vi.fn(),
   openSubmissions: vi.fn(),
   closeSubmissions: vi.fn(),
   openPlay: vi.fn(),
@@ -55,6 +57,7 @@ import {
   openSubmissions,
   releaseSeason,
   renameSeason,
+  setSeasonDescription,
   setSeasonRatingPrompt,
   triggerRun,
 } from '../src/api/client.js'
@@ -70,6 +73,7 @@ function season(overrides: Partial<SeasonView> = {}): SeasonView {
     label: 'Week 1',
     config: { deps_version: 1, matches: [{ slots: ['submission'], seeds: [0], games: 1 }] },
     rating_prompt: null,
+    description_markdown: null,
     created_at: '2026-06-10T00:00:00Z',
     released_at: null,
     ...overrides,
@@ -556,6 +560,154 @@ describe('AdminConsolePage', () => {
     expect(await screen.findByText('Saved ✓')).toBeInTheDocument()
   })
 
+  it('ignores a delayed rating prompt save for a previously selected season', async () => {
+    vi.mocked(listSeasons).mockResolvedValue([
+      pickerSeason({ rating_prompt: 'First prompt.' }),
+      pickerSeason({ id: 'iter-2', label: 'Week 2', rating_prompt: 'Second prompt.' }),
+    ])
+    vi.mocked(getAdminSeason).mockImplementation(async (id) =>
+      adminView({
+        season: season({
+          id,
+          label: id === 'iter-2' ? 'Week 2' : 'Week 1',
+          rating_prompt: id === 'iter-2' ? 'Second prompt.' : 'First prompt.',
+        }),
+      }),
+    )
+    let finish: ((value: { ok: true; season: SeasonView }) => void) | undefined
+    vi.mocked(setSeasonRatingPrompt).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+    )
+    await renderConsole()
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Save prompt' }))
+    expect(screen.getByLabelText('Rating prompt')).toBeDisabled()
+    await fireEvent.click(screen.getByRole('button', { name: /Week 2/ }))
+    expect(await screen.findByLabelText('Rating prompt')).toHaveValue('Second prompt.')
+    finish?.({ ok: true, season: season({ rating_prompt: 'Stale prompt.' }) })
+    await Promise.resolve()
+    expect(screen.getByLabelText('Rating prompt')).toHaveValue('Second prompt.')
+    expect(screen.queryByText('Saved ✓')).toBeNull()
+  })
+
+  it('saves and clears the public season description after a run', async () => {
+    vi.mocked(getAdminSeason).mockResolvedValue(adminView({ latest_run: runningRun() }))
+    vi.mocked(setSeasonDescription).mockResolvedValue({
+      ok: true,
+      season: season({ description_markdown: 'Practice **timing**.' }),
+    })
+    await renderConsole()
+
+    const textarea = await screen.findByLabelText('Season description')
+    expect(
+      screen.getByText(/After line-ending normalization, use up to 2,000 characters/),
+    ).toBeInTheDocument()
+    expect(textarea).toHaveAttribute('maxlength', String(SEASON_DESCRIPTION_MAX))
+    await fireEvent.update(textarea, 'Practice **timing**.')
+    await fireEvent.click(screen.getByRole('button', { name: 'Save description' }))
+    expect(vi.mocked(setSeasonDescription)).toHaveBeenCalledWith('iter-1', 'Practice **timing**.')
+    expect(await screen.findByRole('status')).toHaveTextContent('Saved')
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Clear description' }))
+    expect(vi.mocked(setSeasonDescription)).toHaveBeenLastCalledWith('iter-1', null)
+    expect(await screen.findByRole('status')).toHaveTextContent('Cleared')
+  })
+
+  it('reseeds the description draft from the normalized saved value', async () => {
+    vi.mocked(setSeasonDescription).mockResolvedValue({
+      ok: true,
+      season: season({ description_markdown: 'Practice\ntiming.' }),
+    })
+    await renderConsole()
+
+    const textarea = await screen.findByLabelText('Season description')
+    await fireEvent.update(textarea, 'Practice\r\ntiming.')
+    await fireEvent.click(screen.getByRole('button', { name: 'Save description' }))
+
+    expect(await screen.findByLabelText('Season description')).toHaveValue('Practice\ntiming.')
+  })
+
+  it('keeps the description draft after a failed clear and uses a generic invalid request error', async () => {
+    vi.mocked(getAdminSeason).mockResolvedValue(
+      adminView({ season: season({ description_markdown: 'Keep this description.' }) }),
+    )
+    vi.mocked(setSeasonDescription).mockResolvedValueOnce({ ok: false, reason: 'failed' })
+    vi.mocked(setSeasonDescription).mockResolvedValueOnce({ ok: false, reason: 'invalid' })
+    await renderConsole()
+
+    const textarea = await screen.findByLabelText('Season description')
+    await fireEvent.click(screen.getByRole('button', { name: 'Clear description' }))
+    expect(textarea).toHaveValue('Keep this description.')
+    expect(
+      await screen.findByText('Could not save the season description. Please try again.'),
+    ).toBeInTheDocument()
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Save description' }))
+    expect(
+      await screen.findByText('Could not save the season description. Please try again.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('Use valid inline Markdown only.')).toBeNull()
+  })
+
+  it('shows typed description errors and reseeds when selection changes', async () => {
+    vi.mocked(setSeasonDescription).mockResolvedValue({ ok: false, reason: 'multiple_paragraphs' })
+    vi.mocked(listSeasons).mockResolvedValue([
+      pickerSeason({ description_markdown: 'First summary.' }),
+      pickerSeason({ id: 'iter-2', label: 'Week 2', description_markdown: 'Second summary.' }),
+    ])
+    vi.mocked(getAdminSeason).mockImplementation(async (id) =>
+      adminView({
+        season: season({
+          id,
+          label: id === 'iter-2' ? 'Week 2' : 'Week 1',
+          description_markdown: id === 'iter-2' ? 'Second summary.' : 'First summary.',
+        }),
+      }),
+    )
+    await renderConsole()
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Save description' }))
+    expect(await screen.findByText('Use one paragraph only.')).toBeInTheDocument()
+    await fireEvent.click(screen.getByRole('button', { name: /Week 2/ }))
+    expect(await screen.findByLabelText('Season description')).toHaveValue('Second summary.')
+  })
+
+  it('ignores a delayed description save for a previously selected season', async () => {
+    vi.mocked(listSeasons).mockResolvedValue([
+      pickerSeason(),
+      pickerSeason({ id: 'iter-2', label: 'Week 2', description_markdown: 'Second summary.' }),
+    ])
+    vi.mocked(getAdminSeason).mockImplementation(async (id) =>
+      adminView({
+        season: season({
+          id,
+          label: id === 'iter-2' ? 'Week 2' : 'Week 1',
+          description_markdown: id === 'iter-2' ? 'Second summary.' : null,
+        }),
+      }),
+    )
+    let finish: ((value: { ok: true; season: SeasonView }) => void) | undefined
+    vi.mocked(setSeasonDescription).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+    )
+    await renderConsole()
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Save description' }))
+    expect(screen.getByLabelText('Season description')).toBeDisabled()
+    await fireEvent.click(screen.getByRole('button', { name: /Week 2/ }))
+    expect(await screen.findByLabelText('Season description')).toHaveValue('Second summary.')
+    finish?.({ ok: true, season: season({ description_markdown: 'Stale summary.' }) })
+    await Promise.resolve()
+    expect(screen.getByLabelText('Season description')).toHaveValue('Second summary.')
+    expect(screen.queryByText('Saved')).toBeNull()
+    expect(vi.mocked(listSeasons)).toHaveBeenCalledTimes(1)
+  })
   it('surfaces run_in_progress and empty_schedule from a trigger', async () => {
     vi.mocked(triggerRun).mockResolvedValue({
       ok: false,

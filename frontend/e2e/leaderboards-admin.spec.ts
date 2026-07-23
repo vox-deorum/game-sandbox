@@ -12,6 +12,7 @@ import {
   rateSession,
   release,
   setAuthorPrompt,
+  setSeasonDescription,
   setSeasonRatingPrompt,
   submitReadyAgent,
 } from './support/api.js'
@@ -48,6 +49,50 @@ test('the Seasons index shows the refreshed released-season card and navigates t
 
   await card.getByRole('link', { name: `Open season ${SEASONS.releasedCard}` }).click()
   await expect(page).toHaveURL(new RegExp(`/environments/${ENV_ID}/leaderboards/${season.id}$`))
+})
+
+test('an unreleased Season description becomes public with submissions and keeps safe card navigation', async ({
+  page,
+  admin,
+}) => {
+  const original = await activeWindows(admin)
+  if (original.submissionSeasonId !== null) {
+    await closeSubmissions(admin, original.submissionSeasonId)
+  }
+
+  const label = 'Description preview'
+  const markdown =
+    'A *focused* **Season** uses `safe code` and [Season docs](https://example.com/season-docs).'
+  const season = await declareSeason(admin, label)
+  try {
+    await setSeasonDescription(admin, season.id, markdown)
+    await openSubmissions(admin, season.id)
+
+    await authenticateBrowser(page.context(), admin)
+    await page.goto('/seasons')
+
+    const card = page.locator('li').filter({ hasText: label })
+    const description = card.locator('.season-description')
+    await expect(description).toContainText('A focused Season uses safe code and Season docs.')
+    await expect(description.locator('em')).toHaveText('focused')
+    await expect(description.locator('strong')).toHaveText('Season')
+    await expect(description.locator('code')).toHaveText('safe code')
+    const external = description.getByRole('link', { name: 'Season docs' })
+    await expect(external).toHaveAttribute('href', 'https://example.com/season-docs')
+    await expect(external).toHaveAttribute('target', '_blank')
+    await expect(external).toHaveAttribute('rel', 'noopener noreferrer')
+
+    // Assert the safe link's properties without following it, then exercise the card's ordinary primary route.
+    await card.getByRole('link', { name: `Open season ${label}` }).click()
+    await expect(page).toHaveURL(new RegExp(`/environments/${ENV_ID}/agents/`))
+  } finally {
+    await closeSubmissions(admin, season.id).catch(() => {})
+    await setSeasonDescription(admin, season.id, null).catch(() => {})
+    await deleteSeason(admin, season.id).catch(() => {})
+    if (original.submissionSeasonId !== null) {
+      await openSubmissions(admin, original.submissionSeasonId).catch(() => {})
+    }
+  }
 })
 
 test('released leaderboard history is visible and navigates by season URL', async ({

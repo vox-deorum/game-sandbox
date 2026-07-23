@@ -24,7 +24,7 @@ The site uses **Environment** and **Season** as its front-facing names, matching
 | Environments | Cards with name, description, slot count, human-play support, and thumbnail |
 | Environment overview | Description, current boards, season history, play and watch entry points |
 | Agent profile | Submission history (with each Season's rating prompt), current Season submission state, status, placements, replays, and owner-only development access for the current submission-open season |
-| Seasons | Public seasons, active gates, environment, release time, submission count, session count |
+| Seasons | Public seasons, active gates, environment, optional description, release time, submission count, session count |
 | My Agents | Signed-in user's current Season submission state and recent submitted-Season results across environments |
 | Replays | Sortable environment recording list |
 | Replay viewer | Renderer, transport, player attribution, chat, public LLM summaries |
@@ -42,6 +42,10 @@ The environment overview targets three potentially different seasons:
 - Boards use the current released season.
 - Watch and play use the current play-open season.
 - My Submissions uses the current submission-open season.
+
+An operator may set an optional **Season description** as display-only Markdown metadata, independently of run configuration and workflow execution. The description may be saved, replaced, or cleared at any time. It becomes public when the season accepts submissions, is open for play, or is released, and it remains hidden while all three gates are closed. The cross-game Seasons cards show it only when it has content, with no empty-state placeholder.
+
+A Season description is one inline Markdown paragraph of at most 2,000 characters after line-ending normalization and trimming. Soft-wrapped lines are allowed, but a blank line that would create a second paragraph is rejected. It supports emphasis, strong text, inline code, and absolute HTTP(S) links. Raw HTML, images, block Markdown, relative links, and other link schemes are inactive. Links open in a new tab with the safe external-link attributes.
 
 The built-in **Naive agent** is always the first watch option. Ready submissions for the play-open season follow it.
 

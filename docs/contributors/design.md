@@ -61,7 +61,7 @@ The primitives live in `frontend/src/components/ui/`, PascalCase with a `Ui` pre
 | `UiBadge` | Small text-bearing tags. Always text, never a bare glyph or color-only dot. |
 | `UiStatusBadge` | Live status: a colored dot **paired with a text label** that carries the meaning. |
 | `UiCard` | A bordered surface (optional padding, optional interactive hover). Layout inside is the caller's. |
-| `UiField` + `UiInput` | A labelled field with automatic `id`/`aria-describedby` wiring for hint and error text. |
+| `UiField` + `UiInput` + `UiTextarea` | Labelled single-line and multiline fields with automatic `id`/`aria-describedby` wiring for hint and error text. |
 | `UiDialog` | The modal dialog (focus trap, escape, focus restore, `aria-modal`), wrapping Reka UI Dialog. |
 | `UiDialogActions` | The shared right-aligned, wrapping footer for dialog actions. Use it for confirmations, with the consequential action first and a ghost Cancel control second. |
 | `UiSlider` | The replay scrubber (keyboard operation and value announcement), wrapping Reka UI Slider. |

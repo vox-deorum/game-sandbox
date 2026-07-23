@@ -13,6 +13,7 @@
     "./accounts": "./src/accounts.ts",
     "./board": "./src/board.ts",
     "./llm": "./src/llm.ts",
+    "./seasons": "./src/seasons.ts",
     "./text": "./src/text.ts",
     "./version": "./src/version.ts"
   },

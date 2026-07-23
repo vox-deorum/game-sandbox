@@ -29,6 +29,7 @@ import {
   rotateLlmDevelopmentKey,
   type SeasonConfig,
   setAuthorPrompt,
+  setSeasonDescription,
   startSession,
   submitRatings,
   triggerRun,
@@ -358,6 +359,7 @@ describe('api client', () => {
         play_status: 'open',
         release_status: 'unreleased',
         label: 'Week 1',
+        description_markdown: null,
         created_at: '2026-06-10T00:00:00Z',
         released_at: null,
         submission_count: 3,
@@ -415,6 +417,29 @@ describe('api client', () => {
     expect(await deleteSeason('iter-1')).toEqual({ ok: false, reason: 'failed' })
   })
 
+  it('saves a season description with its typed validation failures', async () => {
+    const saved = { id: 'iter-1', description_markdown: 'A **bold** summary.' }
+    const successMock = stubFetch(async () => jsonResponse(saved))
+    expect(await setSeasonDescription('iter 1', 'A **bold** summary.')).toEqual({
+      ok: true,
+      season: saved,
+    })
+    const [url, init] = successMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe('/api/admin/seasons/iter%201/description')
+    expect(init.method).toBe('PUT')
+    expect(JSON.parse(init.body as string)).toEqual({ markdown: 'A **bold** summary.' })
+
+    for (const [code, reason] of [
+      ['season_description_too_long', 'too_long'],
+      ['season_description_multiple_paragraphs', 'multiple_paragraphs'],
+      ['invalid_season_description', 'invalid'],
+      ['unexpected', 'failed'],
+    ] as const) {
+      vi.unstubAllGlobals()
+      stubFetch(async () => jsonResponse({ code }, 400))
+      expect(await setSeasonDescription('iter-1', null)).toEqual({ ok: false, reason })
+    }
+  })
   it('sends ?force=true on a forced config edit and maps the unforced conflict', async () => {
     const config: SeasonConfig = {
       deps_version: 1,

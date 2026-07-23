@@ -14,6 +14,7 @@
  * (keyed on the absence of `submission_id`, not the display label), and `human` entries are skipped.
  * A resolved set containing only the built-in baseline is intentionally returned as empty.
  */
+import { RATING_PROMPT_MAX } from '@game-sandbox/schema/seasons'
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import { z } from 'zod'
 
@@ -33,9 +34,6 @@ export interface RatingDeps {
   userDirectory: UserDirectory
 }
 
-/** The author's per-submission rating prompt is display-only guidance; cap it so it stays a prompt. */
-const AUTHOR_PROMPT_MAX = 2_000
-
 /** The agent identity as it arrives on the wire: no `user_id`, which the route resolves server-side. */
 const AgentWireSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('submission'), submission_id: z.string().min(1) }),
@@ -50,7 +48,7 @@ const RateBodySchema = z.strictObject({
 
 /** The author-prompt body: a string to set, or null/empty to clear. */
 const AuthorPromptBodySchema = z.strictObject({
-  prompt: z.string().max(AUTHOR_PROMPT_MAX).nullable().optional(),
+  prompt: z.string().max(RATING_PROMPT_MAX).nullable().optional(),
 })
 
 /** One rateable agent in the session, as returned to the UI. The wire `agent` carries no `user_id`. */

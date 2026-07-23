@@ -458,6 +458,8 @@ export interface Storage {
 
   /** The operator's season-wide rating prompt; editable anytime, never gated by the config rules. */
   setSeasonRatingPrompt(seasonId: string, prompt: string | null): Promise<void>
+  /** Set or clear the public Season description; editable anytime and outside run configuration. */
+  setSeasonDescription(seasonId: string, markdown: string | null): Promise<Season | undefined>
   /** Rename a season (or clear its label with `null`); editable anytime, never gated by the config rules. */
   setSeasonLabel(seasonId: string, label: string | null): Promise<void>
 

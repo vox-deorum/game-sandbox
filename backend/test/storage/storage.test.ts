@@ -182,6 +182,12 @@ describe('storage on :memory:', () => {
       {
         add: (seasonId) =>
           storage
+            .setSeasonDescription(seasonId, 'Read the Season instructions.')
+            .then(() => undefined),
+      },
+      {
+        add: (seasonId) =>
+          storage
             .rotateDevelopmentKey({
               seasonId,
               userId: `developer-${seasonId}`,
@@ -202,5 +208,18 @@ describe('storage on :memory:', () => {
       })
       expect(await storage.getSeason(season.id)).toBeDefined()
     }
+  })
+
+  it('sets, replaces, and clears a Season description', async () => {
+    const season = await storage.createSeason({ env_id: 'flappy_bird', deps_version: 1 })
+    expect(season.description_markdown).toBeNull()
+
+    const saved = await storage.setSeasonDescription(season.id, 'First description.')
+    expect(saved?.description_markdown).toBe('First description.')
+    const replaced = await storage.setSeasonDescription(season.id, 'Replacement description.')
+    expect(replaced?.description_markdown).toBe('Replacement description.')
+    const cleared = await storage.setSeasonDescription(season.id, null)
+    expect(cleared?.description_markdown).toBeNull()
+    expect(await storage.setSeasonDescription('missing', 'No row')).toBeUndefined()
   })
 })

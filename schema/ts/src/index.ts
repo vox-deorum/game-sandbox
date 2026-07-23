@@ -30,6 +30,7 @@ export {
   serializeCommand,
   sessionEnvelope,
 } from './protocol.js'
+export { RATING_PROMPT_MAX, SEASON_DESCRIPTION_MAX } from './seasons.js'
 // The code-point counter for the messaging cap, shared by the relay pre-gate and the panel counter.
 export { codePointLength } from './text.js'
 // The schema version lives in a dependency-free module so the browser can import it without Ajv.

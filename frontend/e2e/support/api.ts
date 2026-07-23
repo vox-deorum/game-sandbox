@@ -184,6 +184,18 @@ export async function activeWindows(
   return { submissionSeasonId: body.submission_season_id, playSeasonId: body.play_season_id }
 }
 
+/** Save, replace, or clear a Season description without changing its run configuration. */
+export async function setSeasonDescription(
+  admin: APIRequestContext,
+  seasonId: string,
+  markdown: string | null,
+): Promise<void> {
+  const res = await admin.put(`/api/admin/seasons/${seasonId}/description`, {
+    data: { markdown },
+  })
+  expect(res.status(), await res.text()).toBe(200)
+}
+
 /** Set the operator's season-wide rating prompt (display-only guidance shown to every rater). */
 export async function setSeasonRatingPrompt(
   admin: APIRequestContext,

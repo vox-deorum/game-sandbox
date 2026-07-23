@@ -216,6 +216,11 @@ export interface SeasonsTable {
   release_status: ReleaseStatus
   /** An operator-facing name ("Week 3", "Final round"); null when unset. */
   label: string | null
+  /**
+   * The operator-authored Season description shown on public Season cards. Null means no
+   * description. It is display-only and always editable, so it stays outside the run configuration.
+   */
+  description_markdown: string | null
   /** The validated {@link SeasonConfig} document as JSON text (includes the pinned `deps_version`). */
   config: string
   /**

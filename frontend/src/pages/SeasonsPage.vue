@@ -14,6 +14,7 @@ import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 
 import { listSeasons, type PublicSeasonView } from '../api/client.js'
+import InlineMarkdown from '../components/InlineMarkdown.vue'
 import UiBadge from '../components/ui/UiBadge.vue'
 import UiCard from '../components/ui/UiCard.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
@@ -148,6 +149,9 @@ const ordered = computed(() =>
                 </RouterLink>
               </div>
             </div>
+            <p v-if="season.description_markdown !== null" class="season-description">
+              <InlineMarkdown :markdown="season.description_markdown" />
+            </p>
             <div class="season-env">Environment: {{ envName(season) }}</div>
             <div class="season-metadata">{{ metadataLine(season) }}</div>
           </div>
@@ -218,6 +222,14 @@ const ordered = computed(() =>
   display: inline-flex;
 }
 
+.season-description {
+  position: relative;
+  z-index: 2;
+  pointer-events: none;
+  margin: var(--space-2) 0 0;
+  color: var(--color-text);
+  font-size: var(--text-sm);
+}
 .season-env {
   margin-top: var(--space-1);
   color: var(--color-text-muted);

@@ -50,6 +50,7 @@ describe('public leaderboard API', () => {
   it('lists every public-facing season across the three flags, without boards', async () => {
     const released = await declare()
     await storage.setReleaseStatus(released.id, 'released')
+    await storage.setSeasonDescription(released.id, 'Read the **rules**.')
     const submitOpen = await declare()
     await storage.setSubmissionStatus(submitOpen.id, 'open')
     const playOpen = await declare()
@@ -70,6 +71,7 @@ describe('public leaderboard API', () => {
           season.config === undefined &&
           season.rating_prompt === undefined &&
           season.board === undefined &&
+          (season.id !== released.id || season.description_markdown === 'Read the **rules**.') &&
           typeof season.submission_count === 'number' &&
           typeof season.game_count === 'number',
       ),
@@ -96,6 +98,7 @@ describe('public leaderboard API', () => {
         (season) =>
           season.config === undefined &&
           season.rating_prompt === undefined &&
+          season.description_markdown === null &&
           typeof season.submission_count === 'number',
       ),
     ).toBe(true)
