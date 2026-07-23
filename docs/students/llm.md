@@ -6,7 +6,7 @@ Use the same agent code locally and in an official session. Locally, it reads a 
 
 ## Set up development access
 
-1. While signed in to the course website, create or rotate a development key for the open season your agent targets. If the website does not yet show a key control, ask your instructor for the site address and season ID, then run this in the browser developer console:
+1. While signed in to the course website, create or rotate a development key for the open season your agent targets. If the website does not yet show a key control, ask your instructor for the site address and season ID, then use the browser **developer console**: a panel where you can run a line of code on the page you have open. On the course website, press `F12` (or `Ctrl+Shift+I`, `Cmd+Option+I` on a Mac), select the **Console** tab, paste the snippet below with your season ID filled in, and press Enter. MDN's [developer tools introduction](https://developer.mozilla.org/en-US/docs/Learn_web_development/Howto/Tools_and_setup/What_are_browser_developer_tools) shows where the console lives in each browser.
 
    ```javascript
    const seasonId = "your-season-id";

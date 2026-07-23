@@ -4,10 +4,10 @@ You submit a GitHub repository, not a zip file. The server resolves the reposito
 
 ## Before you submit
 
-Run the local checks:
+Run the local checks with the same command you have used all along:
 
 ```console
-pytest
+python -m sandbox test
 ```
 
 Then save and push your current work:

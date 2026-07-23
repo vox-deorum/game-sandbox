@@ -1,6 +1,6 @@
 # Stage 6: Seasons and Leaderboards
 
-Status: not started
+Status: completed
 
 ## Goal
 

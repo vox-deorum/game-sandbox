@@ -36,5 +36,55 @@ markdown_extensions:
   - pymdownx.superfences
   - pymdownx.details
 
-# No explicit nav: the tree under docs/ drives the tabs, so a new public page appears
-# automatically. AGENTS.md and CLAUDE.md are excluded because they contain authoring instructions.
+# The nav mirrors the "read in this order" progression on each section's index page, so the
+# sidebar presents pages in learning order rather than alphabetically. The validation setting
+# below makes a page that is missing from this list fail the strict docs build, so add new
+# public pages here. AGENTS.md and CLAUDE.md are excluded because they contain authoring
+# instructions.
+validation:
+  nav:
+    omitted_files: warn
+
+nav:
+  - Home: index.md
+  - Students:
+      - students/index.md
+      - students/getting-started.md
+      - Environments:
+          - students/environments/index.md
+          - students/environments/flappy-bird.md
+          - students/environments/hearts.md
+          - students/environments/spades.md
+      - students/agent-interface.md
+      - students/llm.md
+      - students/submitting.md
+  - Contributors:
+      - contributors/index.md
+      - contributors/development-setup.md
+      - contributors/configuration.md
+      - contributors/test.md
+      - contributors/e2e-tests.md
+      - contributors/state-schema.md
+      - contributors/recordings.md
+      - contributors/backend.md
+      - contributors/execution.md
+      - contributors/frontend.md
+      - contributors/design.md
+      - contributors/template.md
+      - Adding an environment:
+          - contributors/environments/index.md
+          - contributors/environments/package.md
+          - contributors/environments/rendering.md
+          - contributors/environments/template-and-examples.md
+  - Specification:
+      - specs/index.md
+      - specs/overview.md
+      - specs/environment.md
+      - specs/interaction.md
+      - specs/submission.md
+      - specs/communication.md
+      - specs/llm.md
+      - specs/frontend.md
+      - specs/leaderboard.md
+      - specs/execution.md
+      - specs/recording.md

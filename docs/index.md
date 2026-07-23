@@ -8,7 +8,7 @@ Choose the section that matches what you are doing:
 | --- | --- |
 | Write and submit an agent | [Student guide](students/index.md) |
 | Develop Game Sandbox itself | [Contributor guide](contributors/index.md) |
-| Understand the product rules and architecture | [Specification](specs/README.md) |
+| Understand the product rules and architecture | [Specification](specs/index.md) |
 
 Game Sandbox uses [PettingZoo](https://pettingzoo.farama.org/) as its environment interface. A compatibility wrapper gives single-agent games the same shape as multi-agent games, so the rest of the system uses one model.
 

@@ -42,11 +42,11 @@ The **pace interval** is the only distinction between realtime and turn-based st
 
 ## Observations and actions
 
-The platform convention is an **object-shaped observation** and a simple **`Discrete` action space**. An observation carries meaningful game values — a card is an object `{"suit", "rank"}`, a hand is a sequence of those objects, Flappy Bird's is the bird and pipes as coordinate objects — rather than a packed integer array the agent must decode. Every observation still satisfies its declared Gymnasium space through a complete episode.
+The platform convention is an **object-shaped observation** and a simple **`Discrete` action space**. An observation carries meaningful game values (a card is an object `{"suit", "rank"}`, a hand is a sequence of those objects, Flappy Bird's is the bird and pipes as coordinate objects) rather than a packed integer array the agent must decode. Every observation still satisfies its declared Gymnasium space through a complete episode.
 
 An environment whose legality depends on state publishes a top-level binary **`action_mask`** beside the observation, wrapping the semantic state as `{"observation": {…}, "action_mask": …}`, where PettingZoo's masked sampling expects the mask. Hearts and Spades carry a mask marking the currently legal cards and bids; Flappy Bird has none, because idle and flap are always legal while its agent is active. The mask is the single authority on legality, so a renderer greys illegal choices from it rather than re-deriving the rules.
 
-Actions stay flat integers accepted by a `Discrete` space, and `env.step()` validates the integer and rejects an illegal one. A flat `Discrete` action keeps the mask effective: Gymnasium's masked sampling covers `Discrete` spaces, whereas a composite `Dict`/`OneOf` action space could sample outside the legal set. Helpers in the template turn a semantic choice, such as a card or a bid, into the integer the action space accepts, so agents never build the index by hand.
+Actions stay flat integers accepted by a `Discrete` space, and `env.step()` validates the integer and rejects an illegal one. A flat `Discrete` action keeps the mask effective: Gymnasium's masked sampling covers `Discrete` spaces, whereas a composite `Dict`/`OneOf` action space could sample outside the legal set. Helpers in the template turn a semantic choice, such as a card or a bid, into the integer the action space accepts, so agents don't have to build the index by hand.
 
 ### PettingZoo conformance and the api_test #1211 bug
 

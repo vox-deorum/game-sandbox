@@ -12,7 +12,7 @@ If you have never seen the game, the [Wikipedia article about Flappy Bird](https
 
 Your template already contains a complete, working agent, the one this section builds. It runs before you change anything, and the rest of this section explains it line by line so you can see exactly how each step is decided.
 
-On every step the harness calls `act` with an observation of the bird and the pipes, and your job is to return one action: flap or do nothing. You never read raw numbers to decide: the template's helper module gives the observation's values readable names, and this agent uses two of them, plus the names of the two actions.
+On every step the harness calls `act` with an observation of the bird and the pipes, and your job is to return one action: flap or do nothing. You don't have to read raw numbers to decide: the template's helper module gives the observation's values readable names, and this agent uses two of them, plus the names of the two actions.
 
 `player_y(observation)` is the bird's height in real screen pixels, measured from the top of the screen, where `0` is the very top and `screen_height(observation)` is the bottom, so a larger value means the bird is lower.
 
@@ -49,7 +49,7 @@ class Agent:
         return FLAP if below_middle else IDLE
 ```
 
-Both actions are always allowed in Flappy Bird, so this agent can never make an illegal move. There is no action mask to read; you only choose between flapping and falling.
+Both actions are always allowed in Flappy Bird, so this agent will not make an illegal move. There is no action mask to read; you only choose between flapping and falling.
 
 With the agent already in place, you can run it straight away from the template folder:
 
@@ -61,7 +61,7 @@ python -m sandbox test    # run the checks, which pass before you change anythin
 
 `eval` reports a score you can read with the [Scoring and rewards](#scoring-and-rewards) section below, and `test` is green on the fresh template because this agent is already complete.
 
-The `TODO(you)` comment inside `act` marks the one line where you take over. This agent never looks at the pipes, so it survives only until the first gap that sits away from the middle of the screen. When you are ready, the [Your first improvement](#your-first-improvement) section shows you how to find the fix yourself.
+The `TODO(you)` comment inside `act` marks the one line where you take over. This agent never looks at the pipes, so it survives only until the first gap that sits away from the middle of the screen. When you are ready, the [Your first improvement](#your-first-improvement) section shows you how to find the fix yourself. In your own repository this page is the `environment.md` file, which is what the template's comments point to.
 
 ## Scoring and rewards
 
@@ -78,7 +78,7 @@ The rewards add together over a run. A higher total generally means the bird sur
 
 ## The helper module
 
-Your first agent used `sandbox.features`, the template's plain Python helper module. Import what you need from it at the top of `agent.py`, never inside a method. Its functions and constants read the observation's fields and name the two actions, so your code never contains an unexplained `observation["player"]["y"]` or `return 1`.
+Your first agent used `sandbox.features`, the template's plain Python helper module. Import what you need from it at the top of `agent.py`, not inside a method. Its functions and constants read the observation's fields and name the two actions, so your code doesn't have to contain an unexplained `observation["player"]["y"]` or `return 1`.
 
 `player_y(observation)` returns the bird's height in screen pixels. `next_gap_center(observation)` averages the top and bottom of the next pipe's gap and returns the pixel height the bird should aim for, on the same scale as `player_y`; when there is no pipe ahead it falls back to the middle of the screen. `player_velocity(observation)` returns the bird's vertical velocity in pixels per step, the same scale as `player_y`, so adding the two estimates where the bird will be next step.
 
@@ -97,7 +97,7 @@ The module provides these helpers and constants:
 
 ## Under the hood
 
-Your first agent never touched the raw observation or a raw action integer; the helpers handled both. This section is the full reference for what the observation contains and what `act` returns, for when you outgrow the helpers and want to read the observation yourself.
+Your first agent didn't have to touch the raw observation or a raw action integer; the helpers handled both. This section is the full reference for what the observation contains and what `act` returns, for when you outgrow the helpers and want to read the observation yourself.
 
 Without the helpers, a decision that aims the bird at the next pipe's gap reads the object's fields directly:
 

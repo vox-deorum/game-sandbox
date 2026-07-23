@@ -1,6 +1,6 @@
 # Implementation Plan
 
-The [specification](../docs/specs/README.md) defines the system. This folder tracks how it is built, in dependency order.
+The [specification](../docs/specs/index.md) defines the system. This folder tracks how it is built, in dependency order.
 
 The plan is a living description of the current intended build path, not a change log or a launch checklist. Edit a stage directly when implementation decisions change so the plan never describes work that was not built.
 

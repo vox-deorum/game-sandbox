@@ -66,7 +66,7 @@ An environment may expose human-capable slots. Its renderer can accept:
 
 A renderer may use both. It maps each gesture to an action in the environment's action space and sends the action with the slot ID. Spectators and replay viewers receive no input capability.
 
-A turn-based environment marks which actions are currently legal with a binary `action_mask`, carried in the per-step state so the renderer presents only legal choices, for example by disabling the illegal ones, rather than re-deriving the rules in the browser. Overlay data is object-shaped for the same reason: a card is a `{"suit", "rank"}` object, not an integer, so the renderer draws, animates, and hit-tests semantic values directly and encodes a chosen action back to its integer only when sending it. When a human slot's move clock expires, the environment supplies a default legal action — the real integer that gets played, recorded like any other move — so play continues.
+The [environment contract](environment.md#observations-and-actions) defines the object-shaped observation and the binary `action_mask` that marks the currently legal actions. The mask travels in the per-step state so the renderer presents only legal choices, for example by disabling the illegal ones, rather than re-deriving the rules in the browser. Object-shaped overlay data serves the renderer the same way: it draws, animates, and hit-tests semantic values such as a `{"suit", "rank"}` card directly, and encodes a chosen action back to its integer only when sending it. When a human slot's move clock expires, the environment supplies a default legal action (the real integer that gets played, recorded like any other move) so play continues.
 
 ## Chat
 

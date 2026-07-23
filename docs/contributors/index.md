@@ -1,6 +1,6 @@
 # For Contributors
 
-This section explains how to develop Game Sandbox. Read the [specification](../specs/README.md) for product rules and the [implementation plan](https://github.com/vox-deorum/game-sandbox/blob/main/plans/README.md) for stage status.
+This section explains how to develop Game Sandbox. Read the [specification](../specs/index.md) for product rules and the [implementation plan](https://github.com/vox-deorum/game-sandbox/blob/main/plans/README.md) for stage status.
 
 ## System map
 
@@ -15,11 +15,11 @@ The language split follows the container boundary: Python runs inside sessions, 
 
 | Directory | What it is |
 | --- | --- |
-| `schema/` | The canonical JSON Schema contract and the `@game-sandbox/schema` TS package. |
+| `schema/` | The canonical JSON Schema contract and the `@game-sandbox/schema` TS package ([README](https://github.com/vox-deorum/game-sandbox/blob/main/schema/README.md)). |
 | `harness/` | The Python harness: schema validation, state builders, the recording store, the session loop. |
-| `environments/` | Environment packages, renderers, hand-authored template layers, and worked examples. |
-| `backend/` | The Node/TypeScript backend: sessions, the execution driver, the WebSocket bridge, and the metered LLM proxy. |
-| `frontend/` | The browser frontend: Vue with Vite, the renderers, and the Better Auth session client. |
+| `environments/` | Environment packages, renderers, hand-authored template layers, and worked examples ([README](https://github.com/vox-deorum/game-sandbox/blob/main/environments/README.md)). |
+| `backend/` | The Node/TypeScript backend: sessions, the execution driver, the WebSocket bridge, and the metered LLM proxy ([README](https://github.com/vox-deorum/game-sandbox/blob/main/backend/README.md)). |
+| `frontend/` | The browser frontend: Vue with Vite, the renderers, and the Better Auth session client ([README](https://github.com/vox-deorum/game-sandbox/blob/main/frontend/README.md)). |
 | `templates/` | The environment-agnostic student base layer. |
 | `docs/` | This site. |
 | `scripts/` | Cross-platform Python dev scripts. |

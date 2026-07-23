@@ -8,9 +8,9 @@ ALWAYS delegate less critical/lower-level BATCH work to subagents with less capa
 
 ## About this repo
 
-Game Sandbox is a classwise playground for Game AI. Participants submit agents through GitHub, and everyone can watch those agents, play with or against them, rate them, and see them ranked on per-environment leaderboards. The system is built on PettingZoo, with Shimmy wrapping single-agent games so the rest of the codebase only sees a PettingZoo interface. Web users authenticate with GitHub OAuth, submissions are repo links pinned to a commit and tagged with a season, and there are two leaderboards per environment per season (automated and human feedback). Unity ML-Agents support is planned for later but not in scope today.
+Game Sandbox is a classwise playground for Game AI. Participants submit agents through GitHub, and everyone can watch those agents, play with or against them, rate them, and see them ranked on per-environment leaderboards. The system is built on PettingZoo, with a small in-house adapter (see `environments/flappy_bird/single_agent.py`) wrapping single-agent games so the rest of the codebase only sees a PettingZoo interface. Web users authenticate with GitHub OAuth, submissions are repo links pinned to a commit and tagged with a season, and there are two leaderboards per environment per season (automated and human feedback). Unity ML-Agents support is planned for later but not in scope today.
 
-The full specification lives under [docs/specs/](docs/specs/README.md). Read it before changing anything substantive. The implementation plan lives under [plans/](plans/README.md); implementation work must stay connected to it, so when code diverges from a stage file, revise the stage file in the same change set (see the plan README for the rules).
+The full specification lives under [docs/specs/](docs/specs/index.md). Read it before changing anything substantive. The implementation plan lives under [plans/](plans/README.md); implementation work must stay connected to it, so when code diverges from a stage file, revise the stage file in the same change set (see the plan README for the rules).
 
 Public documentation under `docs/` also follows [docs/AGENTS.md](docs/AGENTS.md), including its audience, linking, and beginner-accessibility conventions.
 
@@ -24,17 +24,17 @@ Do not produce layered writings (e.g., instead of X we chose to do Y) that docum
 
 A few defaults that will save back-and-forth:
 
-- Read the relevant files under [docs/specs/](docs/specs/README.md) before proposing changes that touch the design. Start with [docs/specs/overview.md](docs/specs/overview.md).
+- Read the relevant files under [docs/specs/](docs/specs/index.md) before proposing changes that touch the design. Start with [docs/specs/overview.md](docs/specs/overview.md).
 - Ask before expanding scope. If a request implies new features beyond what is in the spec, raise it rather than quietly adding them.
 - Prefer editing existing files over creating new ones.
-- Keep specification documents under [docs/specs/](docs/specs/README.md). Each file should have a single clear topic and cross-link to the others rather than duplicating content.
+- Keep specification documents under [docs/specs/](docs/specs/index.md). Each file should have a single clear topic and cross-link to the others rather than duplicating content.
 - Python code is linted and formatted with Ruff, configured in the root [pyproject.toml](pyproject.toml) (target `py312`, line length 110, rule sets `E`, `F`, `I`, `UP`, `B`, `SIM`). After any Python change, auto-fix and reformat in place with `uv run ruff check --fix .` and `uv run ruff format .` before committing. CI runs the same rules in check-only mode (`uv run ruff check .` and `uv run ruff format --check .`, part of `uv run python scripts/ci.py python`, which also runs pyright and pytest), so a change that is not fixed and formatted locally will fail there.
 
 ### UI consistency
 
 The frontend has a design system; new UI joins it rather than reinventing CSS. Before any visual work, read [docs/contributors/design.md](docs/contributors/design.md), then:
 
-- Use the semantic tokens. No raw color or spacing literals live outside `frontend/src/styles/tokens.css` (renderer modules are the only exemption, since a renderer owns its game's visual identity).
+- Use the semantic tokens. No raw color or spacing literals live outside `frontend/src/styles/tokens.css` (renderer modules under `environments/<env>/renderer/` are the only exemption, since a renderer owns its game's visual identity).
 - Build UI from the `frontend/src/components/ui/` primitives (`UiButton`, `UiCard`, `UiField`, `UiDialog`, …) instead of new ad hoc markup and CSS. Reach for a third-party UI library only where focus and ARIA are genuinely hard (the project uses Reka UI for the dialog and slider, nothing more).
 - Put every new primitive variant on the dev-only `/styleguide` route; a variant that is not shown there does not exist.
 - Confirm with the owner before inventing a new visual pattern or settling an open design question. Design decisions are the owner's to make.

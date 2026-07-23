@@ -22,20 +22,20 @@ If you have never played, the [Wikipedia article about Hearts](https://en.wikipe
 
 Your template already contains a complete, working agent, the one this section builds. It runs before you change anything, and the rest of this section explains it line by line so you can see exactly how a turn is decided.
 
-On each of your turns the harness calls `act` with an observation of the table, and your job is to return the one card you want to play. You never touch raw numbers to do it: the template's helper module turns the observation into card objects and plain Python values, and this agent uses just three of its helpers.
+On each of your turns the harness calls `act` with an observation of the table, and your job is to return the one card you want to play. You don't have to touch raw numbers to do it: the template's helper module turns the observation into card objects and plain Python values, and this agent uses just two of its helpers.
 
 A card is a small object, `{"suit": 0..3, "rank": 2..14}`, where the rank is the face value printed on the card (`11` is the jack, `12` the queen, `13` the king, `14` the ace). So the queen of spades is `{"suit": 2, "rank": 12}`.
 
 `legal_cards(observation)` gives you the list of card objects you are allowed to play this turn. It already accounts for every rule, following suit, not leading a heart before hearts are broken, and the first-trick restrictions, so every card it returns is a legal move.
 
-`rank_of(card)` reads a card object's face-value rank, from the two up to the ace, ignoring its suit. Passing it as the `key` to Python's built-in `min` picks the lowest-ranked card out of a list.
+A card object's `"rank"` entry is its face-value rank, from the two up to the ace, ignoring its suit. Passing `lambda c: c["rank"]` as the `key` to Python's built-in `min` picks the lowest-ranked card out of a list. The helper module also offers `rank_of(card)`, which reads the same value, if you prefer a named function over the lambda.
 
-`play(card)` turns a card object into the integer your `act` method must return. You choose with card objects and convert to an action only at the very end, so you never build that integer by hand.
+`play(card)` turns a card object into the integer your `act` method must return. You choose with card objects and convert to an action only at the very end, so you don't have to build that integer by hand.
 
 The strategy is one idea: always play the lowest-ranked legal card. Low cards rarely win a trick, and in Hearts winning a trick is how you collect the penalty cards you want to avoid, so ducking low is a reasonable default. It is also exactly how the built-in opponents play, so any smarter idea you add is a real edge over them.
 
 ```python
-from sandbox.cards import legal_cards, play, rank_of
+from sandbox.cards import legal_cards, play
 
 
 class Agent:
@@ -59,12 +59,12 @@ class Agent:
         # lowest-ranked legal card is a sane start. It is also exactly how the
         # built-in opponents play. Replace it with something smarter; the
         # "Your first improvement" section of environment.md shows you how to
-        # find one. play() turns your chosen card object into the integer act()
-        # must return.
-        return play(min(legal, key=rank_of))
+        # find one. cards.play(card) turns your chosen card object into the
+        # integer act() must return.
+        return play(min(legal, key=lambda c: c["rank"]))
 ```
 
-This agent can never make an illegal move, because it only ever plays a card that came from `legal_cards`. You never have to check the rules yourself; picking from that list is enough.
+This agent will not make an illegal move, because it only ever plays a card that came from `legal_cards`. You don't have to check the rules yourself; picking from that list is enough.
 
 With the agent already in place, you can run it straight away from the template folder:
 
@@ -76,7 +76,7 @@ python -m sandbox test    # run the checks, which pass before you change anythin
 
 `eval` reports a score you can read with the [Scoring and rewards](#scoring-and-rewards) section below, and `test` is green on the fresh template because this agent is already complete.
 
-The `TODO(you)` comment inside `act` marks the one line where you take over. Everything above it is plumbing you can keep; the return statement is the decision to improve. When you are ready, the [Your first improvement](#your-first-improvement) section shows you how to find a smarter one yourself.
+The `TODO(you)` comment inside `act` marks the one line where you take over. Everything above it is plumbing you can keep; the return statement is the decision to improve. When you are ready, the [Your first improvement](#your-first-improvement) section shows you how to find a smarter one yourself. In your own repository this page is the `environment.md` file, which is what the template's comments point to.
 
 ## Scoring and rewards
 
@@ -97,9 +97,9 @@ After a successful moon shot, the shooter receives `0.0` and each other player r
 
 ## The helper module
 
-Your first agent used `sandbox.cards`, the template's plain Python helper module. Import what you need from it at the top of `agent.py`, never inside a method. It reads the observation for you and hands back card objects, lists, and plain Python values, so `act` never touches a raw NumPy array or the action mask directly.
+Your first agent used `sandbox.cards`, the template's plain Python helper module. Import what you need from it at the top of `agent.py`, not inside a method. It reads the observation for you and hands back card objects, lists, and plain Python values, so `act` doesn't have to touch a raw NumPy array or the action mask directly.
 
-`legal_cards(observation)` returns a list of the card objects you may play, and the list is never empty on your turn. `rank_of(card)` returns a card's face-value rank, so `min(legal, key=rank_of)` selects the lowest-ranked legal card, and `play(card)` turns the card you chose into the integer `act` returns. Because the choice always comes from `legal_cards`, an agent automatically follows suit and obeys the other rules.
+`legal_cards(observation)` returns a list of the card objects you may play, and the list is never empty on your turn. A card's `"rank"` entry is its face value, so `min(legal, key=lambda c: c["rank"])` selects the lowest-ranked legal card (`rank_of(card)` reads the same value), and `play(card)` turns the card you chose into the integer `act` returns. Because the choice always comes from `legal_cards`, an agent automatically follows suit and obeys the other rules.
 
 The module provides these helpers and constants:
 
@@ -124,7 +124,7 @@ The module provides these helpers and constants:
 
 ## Under the hood
 
-Your first agent never touched a raw action integer or a raw observation array; the helpers handled both. This section is the full reference for what `act` returns and what the observation contains, for when you outgrow the helpers and want to read the table yourself.
+Your first agent didn't have to touch a raw action integer or a raw observation array; the helpers handled both. This section is the full reference for what `act` returns and what the observation contains, for when you outgrow the helpers and want to read the table yourself.
 
 Without the helpers, finding the legal cards means reading all 52 mask entries by hand:
 
