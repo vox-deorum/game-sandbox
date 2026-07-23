@@ -16,5 +16,4 @@ The implementation plan and its per-stage status live under [plans/](plans/READM
 
 ## License
 
-Author: John Chen (with assistance from Codex/Claude Code).
-Assistant Professor, University of Arizona, College of Information Science
+Author: John Chen (with assistance from Codex/Claude Code). Assistant Professor, University of Arizona, College of Information Science
