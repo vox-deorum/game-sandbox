@@ -4,7 +4,7 @@ Status: complete.
 
 Part of [Stage 4](../stage-04-frontend-core.md). This file records the first real renderer module. It covers three things: the Flappy Bird game frame drawn from the per-step state's overlay, the in-game UI that makes it read as a game, and raw device input wired through the WebSocket as actions, per [interaction.md](../../docs/specs/interaction.md). The module implements the contract from [frontend-infrastructure.md](frontend-infrastructure.md) and registers under the metadata key `"flappy-bird"`. The same module runs unchanged from a stored recording, which [replay-and-retention.md](replay-and-retention.md) relies on.
 
-The drawing substrate is PixiJS, inherited from the shared base class. [rendering.md](../../docs/contributors/rendering.md) is the authority for that infrastructure; this file covers what is specific to Flappy Bird.
+The drawing substrate is PixiJS, inherited from the shared base class. [rendering.md](../../docs/contributors/environments/rendering.md) is the authority for that infrastructure; this file covers what is specific to Flappy Bird.
 
 ## Drawing the world from the overlay
 

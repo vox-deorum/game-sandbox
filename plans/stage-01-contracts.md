@@ -19,7 +19,7 @@ The detailed design lives under [stage-01/](stage-01/):
 
 ## Scope
 
-Set up the monorepo with uv workspaces for Python and npm workspaces for TypeScript: `schema/`, `harness/`, and placeholder directories for `environments/`, `backend/`, `frontend/`, `templates/`, and `gateway/`, plus `docs/`, `examples/`, and `scripts/`. Tooling on the Python side is ruff, pytest, and pyright. On the TypeScript side it is Biome, Vitest, and strict tsc. Details in [repo-and-tooling.md](stage-01/repo-and-tooling.md).
+Set up the monorepo with uv workspaces for Python and npm workspaces for TypeScript: `schema/`, `harness/`, and placeholder directories for `environments/`, `backend/`, `frontend/`, `templates/`, and `gateway/`, plus `docs/` and `scripts/`. Tooling on the Python side is ruff, pytest, and pyright. On the TypeScript side it is Biome, Vitest, and strict tsc. Details in [repo-and-tooling.md](stage-01/repo-and-tooling.md).
 
 Define the per-step state object as a JSON Schema (draft 2020-12) with an explicit integer `schema_version`. It covers the fields named in [interaction.md](../docs/specs/interaction.md): tick number, per-agent display observations, actions, rewards, cumulative scores, environment-specific overlay fields, messages, and timing. Messages and overlay fields are present from day one, even though messaging arrives in Stage 8, so the schema needs no breaking revision later. The version bumps only on breaking changes. Additive growth happens in documented open regions. Details in [state-schema.md](stage-01/state-schema.md).
 
@@ -29,7 +29,7 @@ Define the recording format from [recording.md](../docs/specs/recording.md) as J
 
 Stand up the documentation site: topic-based Markdown in `docs/` with separate student and contributor sections. The specification is rendered as a third section directly from `specs/`, so it is never duplicated. Everything is rendered with MkDocs Material, built strictly on PRs, and published to GitHub Pages on merge to main. Details in [docs-site.md](stage-01/docs-site.md).
 
-Build the example and template machinery with a placeholder template, ahead of the real template content in Stage 2. Examples live in the monorepo as overlays holding only their diff against `templates/`. A compose script builds each into a runnable example. CI tests every composed example on every PR, so template changes propagate automatically. A manually triggered workflow publishes the template and the composed examples to the student-facing repository using the same compose script, and tags the release on success. Details in [examples-and-template-publishing.md](stage-01/examples-and-template-publishing.md).
+Build the example and template machinery with an environment-agnostic base layer, ahead of the real environment content in Stage 2. Each environment later keeps its hand-authored template layer and example overlays beside its package under `environments/<env>/`. A compose script combines those tracked layers and generates the environment package, harness, and shared helpers directly in build output. CI tests every composed example on every PR, so template changes propagate automatically. A manually triggered workflow publishes templates and examples to the student-facing repository using the same compose script, and tags the release on success. Details in [examples-and-template-publishing.md](stage-01/examples-and-template-publishing.md).
 
 ## Spec references
 

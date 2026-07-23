@@ -1,4 +1,4 @@
-"""Discover environment packages directly from ``environments/src``.
+"""Discover environment packages directly from ``environments``.
 
 The generator must recognize a newly-created package before the workspace wheel is rebuilt, so this
 module imports packages from source instead of asking installed entry points what they contain.
@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from _paths import ENVIRONMENTS_IGNORE_FILE, ENVIRONMENTS_SRC, TemplateEnvironmentSpec
+from _paths import ENVIRONMENT_PACKAGES_DIR, ENVIRONMENTS_IGNORE_FILE, TemplateEnvironmentSpec
 
 
 @dataclass(frozen=True)
@@ -49,11 +49,13 @@ def _is_ignored(relative: str, patterns: tuple[str, ...]) -> bool:
 
 
 def package_dirs() -> list[Path]:
-    """Return every top-level Python package under the environments source root."""
-    if not ENVIRONMENTS_SRC.is_dir():
+    """Return every top-level Python package under the environments package root."""
+    if not ENVIRONMENT_PACKAGES_DIR.is_dir():
         return []
     return sorted(
-        path for path in ENVIRONMENTS_SRC.iterdir() if path.is_dir() and (path / "__init__.py").is_file()
+        path
+        for path in ENVIRONMENT_PACKAGES_DIR.iterdir()
+        if path.is_dir() and (path / "__init__.py").is_file()
     )
 
 
@@ -74,7 +76,7 @@ def _import_source_package(package_dir: Path) -> Any:
     for name in cached_modules:
         del sys.modules[name]
 
-    source_root = str(ENVIRONMENTS_SRC)
+    source_root = str(ENVIRONMENT_PACKAGES_DIR)
     sys.path.insert(0, source_root)
     try:
         importlib.invalidate_caches()

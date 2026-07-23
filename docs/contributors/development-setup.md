@@ -68,7 +68,9 @@ On launch the command prints the credentials for two example accounts, so the de
 
 By default the e2e run happens only when the source database is missing, so a successful run is reused indefinitely. Pass `--rerun-e2e` (`npm run demo -- --rerun-e2e`) to force a fresh run regardless of any prior result: it discards the existing e2e database and runs the suite again before launching, picking up changes to the specs or the data they produce.
 
-`scripts/generate.py` owns TypeScript schema types, packaged schema copies, environment metadata, template environment copies, the copied `sandbox.harness` package, and golden fixtures. Edit the source, regenerate, and commit both. Do not hand-edit generated files.
+`scripts/generate.py` owns TypeScript schema types, packaged schema copies, environment metadata, environment packaging declarations, and golden fixtures. Edit the source, regenerate, and commit both. Do not hand-edit generated files.
+
+`scripts/compose.py` generates the student-facing environment package, copied `sandbox.harness` package, and shared helpers directly in build output. These files are not tracked under `templates/`.
 
 The local browser export stays outside the template source tree. A release or publish dry run builds `frontend/dist-local/` once, then injects that output into `sandbox/web/` in each staged template and example. Node is therefore required for publication, while ordinary generation and source composition remain bundle-free.
 

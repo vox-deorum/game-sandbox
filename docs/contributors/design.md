@@ -6,7 +6,7 @@ The frontend design system has two layers:
 semantic CSS tokens → Vue UI primitives → feature components → pages
 ```
 
-Read this page before visual work. Use [Frontend](frontend.md) for package mechanics and [Rendering](rendering.md) for game visuals.
+Read this page before visual work. Use [Frontend](frontend.md) for package mechanics and [Rendering](environments/rendering.md) for game visuals.
 
 ## Working rules
 

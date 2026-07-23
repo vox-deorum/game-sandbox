@@ -22,8 +22,6 @@ node_modules/
 # Frontend production build and Vite preview output
 /frontend/dist/
 /frontend/dist-local/
-/templates/*/sandbox/web/
-/examples/*/*/sandbox/web/
 # Frontend end-to-end (Playwright) artifacts and per-run backend data
 /frontend/e2e/.data/
 /frontend/test-results/

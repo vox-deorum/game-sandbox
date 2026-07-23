@@ -2,7 +2,7 @@
 
 The frontend is a Vue 3, Vite, and TypeScript browser app. It displays environments, submissions, sessions, replays, and leaderboards, and communicates with the backend through typed HTTP and WebSocket clients.
 
-Use this page for the frontend development workflow. Read [the frontend specification](../specs/frontend.md) for product behavior, [the interaction specification](../specs/interaction.md) for the browser/server boundary, and [the design system](design.md) before changing visuals. Renderer-specific guidance lives in [Rendering](rendering.md).
+Use this page for the frontend development workflow. Read [the frontend specification](../specs/frontend.md) for product behavior, [the interaction specification](../specs/interaction.md) for the browser/server boundary, and [the design system](design.md) before changing visuals. Renderer-specific guidance lives in [Rendering](environments/rendering.md).
 
 ## Source layout
 
@@ -77,7 +77,7 @@ Global styles are limited to tokens, element defaults, application-shell layout,
 
 Live sessions and replays share renderer and stage presentation, but their transports stay separate. Live pages own sockets and commands; replay pages own immutable recorded states and playback controls. Both use the renderer registry selected by environment metadata.
 
-Do not add environment-specific behavior to shared pages. Implement it in the environment's renderer and follow the contract and checklist in [Rendering](rendering.md).
+Do not add environment-specific behavior to shared pages. Implement it in the environment's renderer and follow the contract and checklist in [Rendering](environments/rendering.md).
 
 ### In-app documentation
 

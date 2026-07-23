@@ -17,11 +17,10 @@ The language split follows the container boundary: Python runs inside sessions, 
 | --- | --- |
 | `schema/` | The canonical JSON Schema contract and the `@game-sandbox/schema` TS package. |
 | `harness/` | The Python harness: schema validation, state builders, the recording store, the session loop. |
-| `environments/` | Environment packages: the single-agent adapter and the Flappy Bird clone. |
+| `environments/` | Environment packages, renderers, hand-authored template layers, and worked examples. |
 | `backend/` | The Node/TypeScript backend: sessions, the execution driver, the WebSocket bridge, and the metered LLM proxy. |
 | `frontend/` | The browser frontend: Vue with Vite, the renderers, and the Better Auth session client. |
-| `templates/` | The student starter kit: an env-agnostic `base/` layer plus one `<env>/` layer per environment. |
-| `examples/` | Example overlays under `<env>/<name>/`, holding only their diff against the composed template. |
+| `templates/` | The environment-agnostic student base layer. |
 | `docs/` | This site. |
 | `scripts/` | Cross-platform Python dev scripts. |
 
@@ -34,8 +33,8 @@ The language split follows the container boundary: Python runs inside sessions, 
 | Choose and run checks | [Testing](test.md) |
 | Write or run browser end-to-end tests | [End-to-end tests](e2e-tests.md) |
 | Change wire or recording data | [State schema](state-schema.md), then [Recordings](recordings.md) |
-| Add a game | [Adding an environment](environments.md), then [Rendering](rendering.md) |
-| Change the student starter kit | [Examples and template](examples-and-template.md) |
+| Add a game | [Adding an environment](environments/index.md), then [Rendering](environments/rendering.md) |
+| Change the student starter kit | [Template product and releases](template.md) |
 | Work on HTTP, storage, submissions, seasons | [Backend](backend.md) |
 | Work on containers, transport, or session lifecycle | [Execution boundary](execution.md) |
 | Work on pages or browser behavior | [Frontend](frontend.md) |

@@ -29,7 +29,7 @@ docs = [
 [tool.ruff]
 target-version = "py312"
 line-length = 110
-src = ["harness/src", "environments/src", "scripts"]
+src = ["harness/src", "environments", "scripts"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
@@ -37,8 +37,9 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 [tool.pyright]
 pythonVersion = "3.12"
 typeCheckingMode = "basic"
-include = ["harness/src", "environments/src", "scripts"]
-exclude = ["environments/src/*/tests"]
+extraPaths = ["scripts"]
+include = ["harness/src", "environments", "scripts"]
+exclude = ["environments/*/tests", "environments/*/template", "environments/*/examples"]
 # The harness is where types pay for themselves, so it is the only strict package: it is
 # basic repo-wide and strict on harness/src. The environment wrappers talk to untyped game
 # internals, where strictness buys suppressions, not safety.
@@ -46,4 +47,5 @@ strict = ["harness/src"]
 reportMissingTypeStubs = false
 
 [tool.pytest.ini_options]
-testpaths = ["harness/tests", "environments/tests", "environments/src", "scripts/tests"]
+testpaths = ["harness/tests", "environments", "scripts/tests"]
+norecursedirs = ["*.egg", ".*", "_darcs", "build", "CVS", "dist", "node_modules", "venv", "{arch}", "template", "examples"]

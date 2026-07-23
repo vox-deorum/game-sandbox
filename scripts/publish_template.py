@@ -12,7 +12,7 @@ clone is byte-identical to what CI tested.
 The student repo (``vox-deorum/game-agent-template``) is a single repository whose branches
 carry the per-environment templates and examples. For tag ``template-v<N>``:
 
-1. Composes the default-environment template and every example from the current ``templates/``.
+1. Composes the default-environment template and every example from the current environment layers.
 2. Publishes the *default* environment's composed template to ``main`` (so "Use this
    template" instantiates it), committed as ``Template v<N> from game-sandbox@<sha>`` with a
    mirrored ``v<N>`` tag.

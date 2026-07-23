@@ -12,7 +12,7 @@ Hearts is not in the PettingZoo classic set, so it is implemented as a custom en
 
 ## What to build
 
-A new top-level environment package under `environments/src/hearts/` (importable as `hearts`), registered as a `game_sandbox.environments` entry point in `environments/pyproject.toml` and added to the wheel `packages` list, mirroring `flappy_bird/__init__.py`. It exposes the standard `EnvironmentEntry` (meta, `make`, `default_action`, optional `overlay`).
+A new top-level environment package under `environments/hearts/` (importable as `hearts`), registered as a `game_sandbox.environments` entry point in `environments/pyproject.toml` and added to the wheel `packages` list, mirroring `flappy_bird/__init__.py`. It exposes the standard `EnvironmentEntry` (meta, `make`, `default_action`, optional `overlay`).
 
 ### Rules to enforce
 

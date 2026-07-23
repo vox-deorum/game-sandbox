@@ -34,7 +34,7 @@ import { stageExampleAgent } from './support/stage-example-agent.js'
  * container also covers the tick badge and a reconnect leaving no duplicate entries, so the whole
  * journey costs exactly one live container.
  *
- * A second dedicated test exercises the multi-seat matchmaking scheduler with the three `examples/spades`
+ * A second dedicated test exercises the multi-seat matchmaking scheduler with the three colocated Spades
  * reference agents, mirroring hearts.spec.ts's season arc; the "partners share a team score" assertion
  * reads the shared cross-environment game-over standings (see the test for the exact DOM surface).
  */
@@ -392,7 +392,7 @@ test('a Spades season: three example agents, a scheduled partnership matchup, th
     // "Partners share the team score": open a scheduled game's replay and read the shared
     // cross-environment game-over standings card (frontend/src/components/GameOverCard.vue, built from
     // lib/standings.ts's buildStandings). Its per-row `.value` cell renders the overlay's
-    // `display_scores[seat]`, which the Python rules engine (environments/src/spades/overlay.py)
+    // `display_scores[seat]`, which the Python rules engine (environments/spades/overlay.py)
     // documents as "each seat carrying its team's score, so partners share" — so the DOM proof is that
     // the P0 and P2 rows (Spades' team_of(seat) = seat % 2 partnership) show the identical value. That
     // is structural in every Spades game, so the first row is the robust pick; because the all-Naive

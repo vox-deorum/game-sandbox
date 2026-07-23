@@ -2,7 +2,7 @@
  * The shared renderer base class. Every environment's renderer is a subclass that supplies only the
  * game (its persistent display objects and the per-state mutation of them); everything common —
  * the PixiJS application lifecycle, the internal→actual scale, resize-in-place, input plumbing, and
- * the headless guard — lives here. See docs/contributors/rendering.md, which is the authority for the
+ * the headless guard — lives here. See docs/contributors/environments/rendering.md, which is the authority for the
  * model this implements.
  *
  * The class is the {@link Renderer} the registry stores: its static side is the `mount` factory, while

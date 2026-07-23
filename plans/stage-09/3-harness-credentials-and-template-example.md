@@ -68,7 +68,7 @@ Extend the existing dispatcher in `templates/base/sandbox/__main__.py` with an `
 
 ## Hearts oracle example
 
-Add `examples/hearts/oracle/`. On each turn it:
+Add `environments/hearts/examples/oracle/`. On each turn it:
 
 1. Reads semantic card data through the template's cards helper.
 2. Sends a compact prompt listing the legal cards and relevant trick state.

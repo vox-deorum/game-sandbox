@@ -2,7 +2,7 @@
 
 Part of [Stage 2](../stage-02-harness-and-first-environment.md). This file replaces the Stage 1 placeholder under `templates/` with the real student starter kit from [submission.md](../../docs/specs/submission.md) and cuts `template-v1`. The composition and publishing machinery is already built and proven ([stage-01/examples-and-template-publishing.md](../stage-01/examples-and-template-publishing.md)); Stage 2 fills it with real content.
 
-`templates/` is organised as two layers so the repo can carry many environments without forking the whole kit: an env-agnostic `templates/base/` and one `templates/<env>/` layer per environment, composed by `scripts/compose.py`. The operator-facing rationale lives in [examples-and-template.md](../../docs/contributors/examples-and-template.md). Stage 2 ships `base/` and the first env layer, `flappy_bird/`.
+The starter kit is organised as two layers so the repo can carry many environments without forking the whole kit: an env-agnostic `templates/base/` and a colocated `environments/<env>/template/` layer per environment, composed by `scripts/compose.py`. The operator-facing rationale lives in [template.md](../../docs/contributors/template.md). Stage 2 ships `base/` and the first env layer, `environments/flappy_bird/template/`.
 
 ## Template inventory
 
@@ -20,23 +20,24 @@ templates/
     requirements-dev.txt    pytest
     conftest.py             keeps the repo root importable under pytest
     tests/                  inherited by every composed example
-  flappy_bird/              the first environment layer
+environments/flappy_bird/
+  template/                 the first hand-authored environment layer
     README.md               the real student-facing walkthrough
     agent.py                interface stubs: reset/act raising NotImplementedError,
                             learn and chat present as commented-out examples
-    sandbox_env/            synced copy of the compatibility wrapper and the
-                            Flappy Bird environment (see below)
-examples/
-  flappy_bird/hello/        the worked heuristic agent, a diff against the composed template
+    sandbox/features.py     student-facing Flappy Bird helper
+    tests/                  template pin tests
+  examples/
+    hello/                  the worked heuristic agent, a diff against the composed template
 ```
 
 `agent.py` stubs the full interface without importing anything of ours. `reset` and `act` raise `NotImplementedError`, and `learn`/`chat` appear as commented-out method bodies rather than live no-ops, so the harness's presence detection sees exactly what the student enabled (see [agent-interface-and-manifest.md](agent-interface-and-manifest.md)). It lives in the env layer because its docstrings are environment-specific: the 12-feature observation and the flap action.
 
 The dependency set is **global**: one `requirements.in`/`requirements.txt` in `base/`, the union of what every environment needs, versioned by the single `template-v<N>` axis. Env layers carry no requirements files, and compose rejects an env layer that does.
 
-## The synced environment code
+## The composed environment code
 
-Students run Flappy Bird locally through the browser protocol and the copied `sandbox.harness` package. `scripts/generate.py` discovers environment packages under `environments/src/`, excluding patterns in `environments/.envignore`, then copies each package's import-self-contained direct modules into `templates/<env>/sandbox/env/<env>/`, writes the generated environment exports, and copies the shared harness. Publication builds the local browser bundle once and injects it into every staged template and example. Generation and composition use the same discovered `TemplateEnvironmentSpec` facts, while the generated-code freshness check catches output drift.
+Students run Flappy Bird locally through the browser protocol and the copied `sandbox.harness` package. `scripts/generate.py` discovers environment packages under `environments/`, excluding patterns in `environments/.envignore`. `scripts/compose.py` uses the same discovered `TemplateEnvironmentSpec` facts to write each package's import-self-contained direct modules and generated exports under `build/templates/<env>/sandbox/env/`, then writes the shared harness and card helpers into that build output. Publication builds the local browser bundle once and injects it into every staged template and example. Generated-code freshness checks schema, registry, and packaging output only, while compose and example tests cover the generated student-kit files.
 
 ## Scripts
 
@@ -58,7 +59,7 @@ The inherited `base/tests/` check what every student repo should satisfy:
 
 They run in seconds, because every composed example runs them on every PR. Because the bare template's `act` raises `NotImplementedError`, a composed example is the only green proof per env, so CI requires every env layer to ship at least one example.
 
-`examples/flappy_bird/hello/` becomes a real scripted Flappy Bird agent: a heuristic that flaps when the bird is below the next gap's center, implemented in `agent.py` over the 12-feature observation, with a test asserting it clearly outperforms noop over a few fixed seeds. It keeps its `requirements.extra.txt` (`wcwidth`, used trivially in a display string) so the extra-pin merge path stays exercised end to end in CI, not only in the compose unit tests. This same heuristic agent, loaded from the composed example's manifest, is what the stage's exit criterion runs through the harness CLI.
+`environments/flappy_bird/examples/hello/` becomes a real scripted Flappy Bird agent: a heuristic that flaps when the bird is below the next gap's center, implemented in `agent.py` over the 12-feature observation, with a test asserting it clearly outperforms noop over a few fixed seeds. It keeps its `requirements.extra.txt` (`wcwidth`, used trivially in a display string) so the extra-pin merge path stays exercised end to end in CI, not only in the compose unit tests. This same heuristic agent, loaded from the composed example's manifest, is what the stage's exit criterion runs through the harness CLI.
 
 ## Cutting template-v1
 

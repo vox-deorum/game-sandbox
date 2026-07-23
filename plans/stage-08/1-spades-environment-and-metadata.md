@@ -12,7 +12,7 @@ Like Hearts, Spades is not in the PettingZoo classic set, so it is implemented a
 
 ## What to build
 
-A top-level environment package under `environments/src/spades/` (importable as `spades`), registered as a `game_sandbox.environments` entry point in `environments/pyproject.toml` and added to the wheel `packages` list, following the [environments contributor guide](../../docs/contributors/environments.md). Its maintained modules are `rules.py`, `env.py`, `overlay.py`, and an `__init__.py` exporting the standard `EnvironmentEntry` (meta, `make`, `default_action`, overlay). Browser rendering and local input use the shared frontend and loopback runner.
+A top-level environment package under `environments/spades/` (importable as `spades`), registered as a `game_sandbox.environments` entry point in `environments/pyproject.toml` and added to the wheel `packages` list, following the [environments contributor guide](../../docs/contributors/environments/). Its maintained modules are `rules.py`, `env.py`, `overlay.py`, and an `__init__.py` exporting the standard `EnvironmentEntry` (meta, `make`, `default_action`, overlay). Browser rendering and local input use the shared frontend and loopback runner.
 
 ### Rules to enforce
 
@@ -47,7 +47,7 @@ The worst achievable team score follows from these rules: both partners bidding 
 Scores are reported two ways, following the Hearts split between display and ranking:
 
 - **Display scores** show per-seat bids and tricks won plus the two team totals, so the renderers can draw `bid/won` badges and a team score line.
-- **Leaderboard scores** are the raw team hand score reported per seat, identical for both partners and higher-is-better, mirroring the raw negated-penalty precedent in `environments/src/hearts/rules.py`. Partners sharing a score is the intended semantics: a seat is ranked by how its team fared.
+- **Leaderboard scores** are the raw team hand score reported per seat, identical for both partners and higher-is-better, mirroring the raw negated-penalty precedent in `environments/hearts/rules.py`. Partners sharing a score is the intended semantics: a seat is ranked by how its team fared.
 
 Rewards are 0.0 during play and the per-seat leaderboard score on the terminal step, so the existing credit loop in `harness/src/game_sandbox_harness/session.py` needs no change. Score leaves use int16, not the int8 that suffices for Hearts penalties, because team scores reach into the hundreds in both directions.
 
@@ -76,7 +76,7 @@ Regenerate `backend/src/generated/environments.json` through `scripts/generate.p
 
 ## Tests
 
-Pure Python unit tests under `environments/src/spades/tests/` mirroring `environments/src/hearts/tests/test_hearts.py`, no Docker, no DB:
+Pure Python unit tests under `environments/spades/tests/` mirroring `environments/hearts/tests/test_hearts.py`, no Docker, no DB:
 
 - Bidding legality: every seat bids exactly once in seat order starting at seat 0, card actions are illegal during bidding, and bid actions are illegal during play.
 - Play legality: follow-suit, spades-not-led-until-broken (including the all-spades exception), and trick-winner resolution each accept legal play and reject illegal play, and `legal_actions` matches the emitted mask in representative fixtures.

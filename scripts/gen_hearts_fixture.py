@@ -22,7 +22,7 @@ QUEEN_OF_SPADES_FACE = {"suit": SPADES, "rank": 12}
 
 
 class DuckAgent:
-    """The 'duck' policy (mirrors examples/hearts/duck): avoid taking points.
+    """The 'duck' policy (mirrors environments/hearts/examples/duck): avoid taking points.
 
     Inlined here so the generator does not depend on the example package layout. It produces a
     livelier game than always-lowest-legal, so the fixture exercises hearts breaking, the queen of

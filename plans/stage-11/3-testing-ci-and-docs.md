@@ -13,7 +13,7 @@ Run the Playwright Hearts, Spades, and session journeys against the reshaped tem
 Run the complete verification matrix:
 
 - `uv run python scripts/ci.py python`, including the guarded PettingZoo `api_test` for all three environments.
-- `uv run python scripts/ci.py generated-code-fresh` and the template version check.
+- `uv run python scripts/ci.py generated-code-fresh` for committed schema and registry artifacts, plus composed-example tests for build-time template helpers and the template version check.
 - `npm run check` and `npm run test`.
 - The Docker-gated backend integration suite.
 - `uv run python scripts/ci.py frontend-e2e`.
@@ -31,7 +31,7 @@ Update `docs/students/agent-interface.md` to explain object-shaped observations 
 
 Update [environment.md](../../docs/specs/environment.md), [interaction.md](../../docs/specs/interaction.md), and [submission.md](../../docs/specs/submission.md) without changing the PettingZoo interface. Describe object-shaped observations carried inside the `{observation, action_mask}` wrapper and simple `Discrete` actions. Require `action_mask` when legality changes with state — Hearts and Spades carry one; Flappy Bird has none. Note the tolerated PettingZoo #1211 api_test bug where the spec or contributor guide explains conformance. Spot-check [recording.md](../../docs/specs/recording.md) for old overlay descriptions.
 
-Update `docs/contributors/environments.md` with the same convention. Renderers should consume semantic overlay objects directly, and action encoding belongs only at the environment and session-input boundaries. Composite action spaces are not the convention because Gymnasium masking cannot express every legal subset. Update `examples-and-template.md` and `rendering.md` where they describe the old representation.
+Update `docs/contributors/environments/package.md` with the same convention. Renderers should consume semantic overlay objects directly, and action encoding belongs only at the environment and session-input boundaries. Composite action spaces are not the convention because Gymnasium masking cannot express every legal subset. Update `docs/contributors/template.md` and `docs/contributors/environments/rendering.md` where they describe the old representation.
 
 Revise the Stage 7 and Stage 8 plans wherever they present old observations or sentinel defaults as current behavior. Plans are living descriptions, so replace superseded instructions directly and retain earlier rationale only when it still explains the current design. Reconcile Stage 11 status and links after implementation.
 

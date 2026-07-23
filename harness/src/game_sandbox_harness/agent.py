@@ -8,9 +8,9 @@ agent look like it learns and chats, and the harness would spend a hook call and
 (hook time counts against the limits, see :mod:`game_sandbox_harness.session`) on agents
 that do nothing. The optional hooks are documented in this class's docstring instead.
 
-The template repo carries its own plain-class copy of this interface, because participants
-develop against vanilla PettingZoo and never install the harness (one stub per environment
-layer, ``templates/<env>/agent.py``). Detection is therefore structural — :func:`is_agent`
+Each environment's template layer carries its own plain-class copy of this interface, because
+participants develop against vanilla PettingZoo and never install the harness
+(``environments/<env>/template/agent.py``). Detection is therefore structural — :func:`is_agent`
 checks that ``reset`` and ``act`` exist and are callable, never ``isinstance`` — and a test
 asserts the two copies agree method-for-method so they cannot drift.
 """

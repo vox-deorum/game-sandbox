@@ -8,7 +8,7 @@
  * source. The renderers draw on a retained PixiJS scene graph (display objects persist and are
  * mutated rather than a surface repainted each frame); that is an implementation detail beneath the
  * deterministic surface, because the reconciliation toward a given state is idempotent. See
- * `renderers/base/` and docs/contributors/rendering.md.
+ * `renderers/base/` and docs/contributors/environments/rendering.md.
  *
  * Second, **the chrome split**: the renderer owns the game frame (the world plus the in-game UI such
  * as score, tick, and status that belongs inside the game) while the hosting page owns the session

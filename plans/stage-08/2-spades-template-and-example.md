@@ -12,13 +12,13 @@ This step ships the template chat-less. The `agent.py` stub documents bidding an
 
 ## What to build
 
-Spades lands as a third environment template on the existing two-layer machinery, described in the [examples and template contributor guide](../../docs/contributors/examples-and-template.md).
+Spades lands as a third environment template on the existing two-layer machinery, described in the [template contributor guide](../../docs/contributors/template.md).
 
-- A `templates/spades/` layer over the shared `templates/base/`: an `agent.py` stub and `README.md` explaining the `Discrete(66)` encoding (cards 0–51, bids as `52 + k`), the two-phase mask, the partnership (your partner is the seat across), the shared browser-local `sandbox/play.py`, and the generated `sandbox/env/`. The copied `sandbox.harness` package owns loading and the live episode loop. It mirrors the structure of `templates/hearts/`.
-- A discovered `TemplateEnvironmentSpec` built from Spades metadata and direct package modules, so generation synchronizes the modules and renders its generated `sandbox.env` exports from the same facts, with no second registration map.
-- A helper module `templates/spades/sandbox/cards.py` (following `templates/hearts/sandbox/cards.py`): `is_bidding`, `legal_bids`, `legal_cards`, `partner_of`, and bid and trick readers, so student code never hand-decodes the combined action space. It imports game-independent semantic-card operations from the dependency-free base `sandbox.semantic_cards` module and re-exports the same public names, while bidding, partnership, legality, scoring, and observation access remain Spades-specific.
+- A colocated `environments/spades/template/` layer over `templates/base/`: an `agent.py` stub, `README.md`, and `sandbox/cards.py` explaining the `Discrete(66)` encoding, the two-phase mask, and partnership.
+- A discovered `TemplateEnvironmentSpec` built from Spades metadata and direct package modules, so composition renders `sandbox.env` exports from the same facts into build output, with no second registration map. It also writes the copied `sandbox.harness` package and shared helpers there.
+- A helper module `environments/spades/template/sandbox/cards.py` (following the Hearts helper): `is_bidding`, `legal_bids`, `legal_cards`, `partner_of`, and bid and trick readers, so student code never hand-decodes the combined action space.
 - A student docs page `docs/students/environments/spades.md` plus its row in `docs/students/environments/index.md`, covering the rules, the action encoding, the observation, and the scoring. `scripts/compose.py` copies the page into the template and fails loudly if it is missing. The page's "Messaging" section is deferred to step 4 with the rest of the chat surface.
-- One worked example, `examples/spades/counter/`: an honest bidder that counts likely tricks (high spades and side-suit aces), bids that number, and plays to make it. It is deliberately chat-less: it is the baseline the chatting examples of step 4 are measured against, and it proves a Spades agent needs nothing beyond the Stage 2 interface.
+- One worked example, `environments/spades/examples/counter/`: an honest bidder that counts likely tricks (high spades and side-suit aces), bids that number, and plays to make it. It is deliberately chat-less: it is the baseline the chatting examples of step 4 are measured against, and it proves a Spades agent needs nothing beyond the Stage 2 interface.
 - The built-in Naive Spades agent at `backend/images/session-base/deps-v1/builtin/spades/` (`agent.py`, `manifest.json`), mirroring the Hearts built-in: additive content in the existing dependency set, so no template-version bump, following the Hearts precedent.
 
 Spades shares the single global dependency set, so this introduces no new `template-v<N>` axis.
@@ -27,12 +27,12 @@ Spades shares the single global dependency set, so this introduces no new `templ
 
 Docker-free:
 
-- The template generation sync check passes for Spades: regenerating `templates/spades/sandbox/env/` from the environment produces no diff.
-- The `examples/spades/counter` example loads through the harness loader and plays a complete local hand against built-in opponents, and its own behavioural test pins the honest-bid heuristic on a fixed deal.
+- The composed Spades template contains freshly generated `sandbox/env/`, `sandbox/harness/`, and shared helpers.
+- The `environments/spades/examples/counter/` example loads through the harness loader and plays a complete local hand against built-in opponents, and its own behavioural test pins the honest-bid heuristic on a fixed deal.
 - `sandbox.play` runs headlessly against the Spades template (`--headless`) and reports final team scores, exercising the bid-then-play live loop without opening a browser.
 - The `cards.py` pin test agrees with the synced rules module.
 - `scripts/ci.py examples`, `python`, `generated-code-fresh`, and `docs` pass locally.
 
 ## Done when
 
-A `templates/spades/` layer exists over `templates/base/`, its environment package is recognized automatically, and it regenerates cleanly. The counter example loads and plays a complete local hand through the harness, and the built-in Naive Spades agent is in place for the session image. A student can run `python -m sandbox play` to watch a hand in a browser, or `python -m sandbox human` to take a seat and click a bid chip and then legal cards against the built-in agents, all locally with no backend. The student docs page exists and composes into the template. The template and example follow the same shape as the Hearts ones, share the single global dependency set, and add no new template-version axis.
+A `environments/spades/template/` layer exists over `templates/base/`, and composition creates its runtime package pieces in build output. The counter example loads and plays a complete local hand through the harness, and the built-in Naive Spades agent is in place for the session image. A student can run `python -m sandbox play` to watch a hand in a browser, or `python -m sandbox human` to take a seat and click a bid chip and then legal cards against the built-in agents, all locally with no backend. The student docs page exists and composes into the template. The template and example follow the same shape as the Hearts ones, share the single global dependency set, and add no new template-version axis.

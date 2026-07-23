@@ -11,15 +11,14 @@ schema/                  canonical JSON Schema files and the TypeScript package
   fixtures/              committed golden recordings (written by Python, read by TypeScript)
   ts/                    npm workspace package @game-sandbox/schema
 harness/                 uv workspace member, Python package game_sandbox_harness
-environments/            placeholder README (filled in Stage 2)
+environments/            packages with colocated template layers and worked examples
 backend/                 placeholder README (filled in Stage 3)
 frontend/                placeholder README (filled in Stage 4)
-templates/               base/ layer + one <env>/ layer per environment (real content in Stage 2)
-examples/                example overlays under <env>/<name>/, starting with flappy_bird/hello/
+templates/               environment-agnostic base/ layer
 gateway/                 placeholder README (filled in Stage 9)
 docs/                    MkDocs source (see docs-site.md)
 scripts/                 cross-platform Python dev scripts
-build/                   gitignored output (composed examples, built docs)
+build/                   gitignored output (composed templates and examples, built docs)
 .github/workflows/       ci.yml, docs.yml, template-publish.yml
 mkdocs.yml
 pyproject.toml           uv workspace root

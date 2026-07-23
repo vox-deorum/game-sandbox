@@ -6,7 +6,7 @@ Naive-filled table behaves identically to a table of timed-out seats. The bid is
 count: the high spades (queen, king, ace) plus extra spade length, off-suit aces, and guarded
 off-suit kings, floored at one so it never silently commits the partnership to a nil. In play it
 clings to its lowest card every turn, the weak baseline a submitted agent is expected to beat (see
-``examples/spades/counter``).
+``environments/spades/examples/counter``).
 
 It reads the Spades observation dict's ``action_mask`` and its semantic ``hand`` (a sequence of
 ``{"suit", "rank"}`` card objects, rank a face value 2..14), so it needs no dependency beyond the
@@ -60,7 +60,7 @@ def _suggested_bid(hand: list[int]) -> int:
 
     This image cannot import ``spades.rules``, so the estimate is vendored verbatim. It is pinned to
     its source over many hands by ``test_builtin_suggested_bid_matches_the_rules_engine`` in
-    ``environments/src/spades/tests/test_spades.py``, which fails if this copy drifts from ``suggested_bid``.
+    ``environments/spades/tests/test_spades.py``, which fails if this copy drifts from ``suggested_bid``.
     """
     estimate = 0
     spades = [card for card in hand if _suit(card) == _SPADES]

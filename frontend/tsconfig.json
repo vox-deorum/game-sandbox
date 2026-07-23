@@ -22,7 +22,7 @@
   "include": [
     "src",
     "test",
-    "../environments/src/*/renderer/**/*.ts",
+    "../environments/*/renderer/**/*.ts",
     "vite.config.ts",
     "vite.local.config.ts",
     "vitest.config.ts"

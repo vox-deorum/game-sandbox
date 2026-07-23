@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { HeartsRenderer } from '../../environments/src/hearts/renderer/index.js'
+import { HeartsRenderer } from '../../environments/hearts/renderer/index.js'
 // The Hearts scene module re-exports the whole shared layer, so importing the frame constants from it
 // must yield the same values as importing them from the shared module (the single-source-of-truth rule
 // both card games rely on). Aliased so the two can be compared.
 import {
   HEIGHT as HEARTS_HEIGHT,
   WIDTH as HEARTS_WIDTH,
-} from '../../environments/src/hearts/renderer/scene.js'
-import { SpadesRenderer } from '../../environments/src/spades/renderer/index.js'
-import { SPADES_GEOMETRY } from '../../environments/src/spades/renderer/scene.js'
+} from '../../environments/hearts/renderer/scene.js'
+import { SpadesRenderer } from '../../environments/spades/renderer/index.js'
+import { SPADES_GEOMETRY } from '../../environments/spades/renderer/scene.js'
 import { PixiRenderer } from '../src/renderers/base/PixiRenderer.js'
 import { CardTableRenderer } from '../src/renderers/cards/CardTableRenderer.js'
 import {

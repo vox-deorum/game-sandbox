@@ -3,7 +3,7 @@
  *
  * The version `N` is one number wearing several hats: the `template-v<N>` release tag, the pinned set
  * compiled into the matching versioned session-image definition, the `…:deps-v<N>` image tag, and
- * the `template_version` an agent manifest targets (see [examples and the template](../../docs/contributors/examples-and-template.md)).
+ * the `template_version` an agent manifest targets (see [template releases](../../docs/contributors/template.md)).
  * This module is the backend registry for those released definitions, so validation accepts only
  * versions the deployment can actually build, and the driver never rebuilds an old tag from the
  * current template dependency set by accident.

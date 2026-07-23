@@ -61,7 +61,7 @@ export function heartsMeta(overrides: Partial<EnvironmentMeta> = {}): Environmen
 
 /**
  * The Spades environment metadata: the stage's messaging-enabled environment. Four partnership seats,
- * turn-based (no pace interval), a 120-code-point message cap, mirroring `environments/src/spades`.
+ * turn-based (no pace interval), a 120-code-point message cap, mirroring `environments/spades`.
  * The chat panel mounts from `messaging`/`message_cap`, so the messaging suites render from it.
  */
 export function spadesMeta(overrides: Partial<EnvironmentMeta> = {}): EnvironmentMeta {

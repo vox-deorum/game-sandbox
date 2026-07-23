@@ -10,7 +10,7 @@ Rendering and on-screen input are pure functions of session state, so they test 
 
 ## What to build
 
-A `hearts` renderer under `environments/src/hearts/renderer/`, extending the shared Pixi base through the `@renderers` alias and default-exporting its definition for automatic discovery, with a pure `computeScene(state)` like `environments/src/flappy_bird/renderer/scene.ts`. The renderer is the `renderer="hearts"` key the environment metadata declares in step 1. It serves both the web app and loopback local play, drawing the recorded state and greying cards from the emitted legal-action mask.
+A `hearts` renderer under `environments/hearts/renderer/`, extending the shared Pixi base through the `@renderers` alias and default-exporting its definition for automatic discovery, with a pure `computeScene(state)` like `environments/flappy_bird/renderer/scene.ts`. The renderer is the `renderer="hearts"` key the environment metadata declares in step 1. It serves both the web app and loopback local play, drawing the recorded state and greying cards from the emitted legal-action mask.
 
 It draws:
 

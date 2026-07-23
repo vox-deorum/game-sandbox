@@ -33,12 +33,14 @@ For documentation:
 uv run python scripts/ci.py docs
 ```
 
-For generated artifacts after changing schemas, environment metadata, or synced template code:
+For committed generated artifacts after changing schemas, environment metadata, or environment packaging:
 
 ```console
 uv run python scripts/generate.py
 uv run python scripts/ci.py generated-code-fresh
 ```
+
+After changing a template layer, example, harness file, or shared template helper, run `uv run python scripts/ci.py examples` to compose and test every student kit.
 
 ## CI job runner
 

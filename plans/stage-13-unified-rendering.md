@@ -49,14 +49,14 @@ Local play uses the same pipeline. A Python relay replaces the Node relay, and a
 
 ### Pygame-free Flappy Bird adaptation
 
-`environments/src/flappy_bird/game.py` becomes a small Gymnasium environment adapted from the non-rendering game logic in `flappy-bird-gymnasium` 0.4.0. It preserves the current action values, screen and collision dimensions, gravity, flap impulse, rotation, pipe movement and recycling, seeded pipe generation, rewards, score-limit truncation, and terminal behavior. Axis-aligned numeric collision checks preserve pygame `Rect.colliderect` edge behavior without importing pygame.
+`environments/flappy_bird/game.py` becomes a small Gymnasium environment adapted from the non-rendering game logic in `flappy-bird-gymnasium` 0.4.0. It preserves the current action values, screen and collision dimensions, gravity, flap impulse, rotation, pipe movement and recycling, seeded pipe generation, rewards, score-limit truncation, and terminal behavior. Axis-aligned numeric collision checks preserve pygame `Rect.colliderect` edge behavior without importing pygame.
 
 The adapted core exposes a public immutable state snapshot used by both `FlappyBirdEnv.observe()` and `extract_overlay()`. This removes the current dependency on private third-party fields. `env.py` constructs the core directly and retains the shared `GymnasiumToAEC` adapter. The core has no render mode, assets, audio, LIDAR, model files, matplotlib, or package-registration side effect.
 
 Provenance is part of the shipped source:
 
 - Each adapted source file keeps the applicable upstream copyright and MIT permission header, names `https://github.com/markub3327/flappy-bird-gymnasium`, and identifies version 0.4.0 as its source.
-- `environments/src/flappy_bird/UPSTREAM_LICENSE.md` records the provenance and carries the complete upstream MIT license text, including the Gabriel Nogueira and Martin Kubovcik notices. It also preserves the upstream acknowledgements of Talendar's `flappy-bird-gym` and sourabhv's `FlapPyBird` work.
+- `environments/flappy_bird/UPSTREAM_LICENSE.md` records the provenance and carries the complete upstream MIT license text, including the Gabriel Nogueira and Martin Kubovcik notices. It also preserves the upstream acknowledgements of Talendar's `flappy-bird-gym` and sourabhv's `FlapPyBird` work.
 - The license file and adapted modules are included in the environment wheel and in the generated student template. The upstream sprites, audio, and models are not copied.
 
 Before removing the package, generate a committed golden trace from 0.4.0 for several fixed seeds and action scripts. The trace covers reset, ordinary flight, ceiling reward, scoring, pipe recycling, ground and pipe crashes, and score-limit truncation. Each frame records the semantic observation, overlay, reward, termination, truncation, score, and pipe state. The adapted core must reproduce the trace, and direct collision tests pin edge-touch and one-pixel-overlap behavior.
@@ -102,11 +102,11 @@ Security boundaries are explicit:
 
 ### Student template and command entry points
 
-`scripts/generate.py` performs one owned-directory wipe-and-copy operation: `harness/src/game_sandbox_harness/` to `templates/base/sandbox/harness/`, including `schema_data`. It does not build the frontend or write an exported bundle into template source.
+`scripts/compose.py` generates the harness from `harness/src/game_sandbox_harness/`, including `schema_data`, into each fresh build output. It does not write generated harness files into template source.
 
-`scripts/publish_template.py` builds `frontend/dist-local/` once for a release or dry run, then injects that directory as `sandbox/web/` into every staged template and example. `templates/base/sandbox/web/` is ignored and absent from tracked template sources. Ordinary generation and composition operate only on tracked source files, while the release workflow provides Node for the one publish-time build.
+`scripts/publish_template.py` builds `frontend/dist-local/` once for a release or dry run, then injects that directory as `sandbox/web/` into every staged template and example. `sandbox/web/` is absent from tracked sources and exists only in build and publish staging output.
 
-The existing base-module sync cannot wipe `templates/base/sandbox/` because that directory also holds hand-authored files. Add an explicit retired-generated-path list for `hidpi.py`, `render_base.py`, `render_cards.py`, and `multiseat_play.py`; generation removes those paths before copying the remaining catalog entries. A generator test seeds each retired output and proves regeneration removes it. The freshness job tracks the harness and checks both `git diff` and `git status`; publish tests verify the staged web directory instead of treating hashed frontend output as a generated repository artifact.
+Compose writes generated base helpers into a fresh build directory, so no owned-directory wipe or retired-generated-path list is needed. The freshness job checks only committed generated schema, fixture, metadata, and packaging outputs. Compose and example tests verify the generated harness, environment package, helpers, and staged web directory.
 
 The generated `sandbox.env.META` is the full registry metadata. `templates/base/sandbox/live_local.py` constructs the environment entry and invokes the relocated runner. `sandbox/evaluate.py` uses a small headless harness helper, so evaluation and server execution share timeout and default-action behavior.
 
@@ -132,7 +132,7 @@ A second Vite config builds only `local.html` to `frontend/dist-local/`. The pro
 
 ## Deletions and dependency updates
 
-- Delete `environments/src/local_play/{render_base,render_cards,hidpi,multiseat_play}.py`; keep the card rules, spaces, and semantic helpers.
+- Delete `environments/local_play/{render_base,render_cards,hidpi,multiseat_play}.py`; keep the card rules, spaces, and semantic helpers.
 - Delete Hearts and Spades `render.py`, `human.py`, and `demo.py`, plus Flappy Bird `human.py`.
 - Remove custom render plumbing and `render_modes` from Hearts and Spades. Their `render()` methods remain harmless `None` returns for the PettingZoo shape. The new Flappy core publishes no renderer.
 - Delete per-game template play overrides, renderer tests, hit-test tests, and pygame import pins.
@@ -181,7 +181,7 @@ Update completed plan text that describes the removed renderers or third-party F
 3. Build the loopback bridge and its safety, lifecycle, attach, and integrated-runner tests.
 4. Build the local frontend entry, Vite config, unit tests, and local Playwright journey.
 5. Rewrite the maintainer play command on the bridge and verify it against the prebuilt local bundle.
-6. Add harness generation, publish-time bundle staging, full metadata, retired-output reconciliation, template shims, generic play and evaluation commands, and template smoke tests.
+6. Add compose-time harness and helper generation, publish-time bundle staging, full metadata, template shims, generic play and evaluation commands, and template smoke tests.
 7. Delete custom pygame sources and dead tests, then update dependencies, generated outputs, docs, completed plans, and comments.
 
 ## Exit criteria

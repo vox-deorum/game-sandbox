@@ -43,7 +43,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-from _envs import discover_environments
 from _paths import (
     BACKEND_GENERATED_DIR,
     BUILD_DIR,
@@ -51,13 +50,7 @@ from _paths import (
     FIXTURES_DIR,
     HARNESS_SCHEMA_DATA,
     REPO_ROOT,
-    RETIRED_TEMPLATE_BASE_PATHS,
-    TEMPLATE_BASE_MODULES,
-    TEMPLATES_DIR,
     TS_GENERATED_DIR,
-    template_sandbox_base,
-    template_sandbox_env,
-    template_sandbox_harness,
 )
 
 _NPM = "npm.cmd" if sys.platform == "win32" else "npm"
@@ -124,36 +117,15 @@ def job_frontend_e2e() -> None:
 
 
 def job_generated_code_fresh() -> None:
-    from generate import is_generated_template_env
-
-    existing_template_envs = (
-        tuple(
-            layer / "sandbox" / "env"
-            for layer in TEMPLATES_DIR.iterdir()
-            if layer.is_dir() and is_generated_template_env(layer / "sandbox" / "env")
-        )
-        if TEMPLATES_DIR.is_dir()
-        else ()
-    )
     _run(["uv", "run", "python", "scripts/generate.py"])
-    # Fail if regeneration changed anything tracked under the generated locations: the schema
-    # mirrors, every per-environment template sandbox/env/, and the shared base-sandbox helpers.
-    # The base helpers are diffed per file (not the whole templates/base/sandbox/ directory, which
-    # also holds hand-written play.py/evaluate.py/etc.). Retired renderer paths are included so this
-    # check verifies that regeneration keeps them absent.
-    base_sandbox = template_sandbox_base()
-    template_envs = set(existing_template_envs)
-    template_envs.update(template_sandbox_env(env) for env in discover_environments())
+    # Fail if schema, registry, or packaging regeneration changed tracked output. Template pieces
+    # are generated only in build output by compose and exercised by the examples and compose tests.
     targets = [
         str(TS_GENERATED_DIR.relative_to(REPO_ROOT)),
         str(HARNESS_SCHEMA_DATA.relative_to(REPO_ROOT)),
         str(FIXTURES_DIR.relative_to(REPO_ROOT)),
         str(BACKEND_GENERATED_DIR.relative_to(REPO_ROOT)),
         str(ENVIRONMENTS_PYPROJECT.relative_to(REPO_ROOT)),
-        *(str(path.relative_to(REPO_ROOT)) for path in sorted(template_envs)),
-        *(str((base_sandbox / name).relative_to(REPO_ROOT)) for name in TEMPLATE_BASE_MODULES),
-        *(str((base_sandbox / name).relative_to(REPO_ROOT)) for name in RETIRED_TEMPLATE_BASE_PATHS),
-        str(template_sandbox_harness().relative_to(REPO_ROOT)),
     ]
     _run(["git", "diff", "--exit-code", "--", *targets])
     status = subprocess.run(
@@ -187,7 +159,8 @@ def job_examples() -> None:
     if missing:
         raise SystemExit(
             f"environment template layer(s) {missing} ship no example; every env layer must "
-            f"have at least one example under examples/<env>/<name>/ to prove it composes."
+            f"have at least one colocated example under environments/<env>/examples/<name>/ "
+            f"to prove it composes."
         )
 
     for env, name in pairs:

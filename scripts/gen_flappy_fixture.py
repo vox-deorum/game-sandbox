@@ -25,7 +25,7 @@ class GapChaserAgent:
     """A deterministic heuristic: flap when the bird is predicted below the next gap's center.
 
     Inlined here so the generator does not depend on the example package layout (mirrors
-    ``examples/flappy_bird/hello``). Reads the object observation directly: ``player`` (x, y,
+    ``environments/flappy_bird/examples/hello``). Reads the object observation directly: ``player`` (x, y,
     vel_y, rot) and ``pipes`` (tuple of ``{"x","gap_top","gap_bottom"}``, nearest-first). It
     predicts the bird's position on the next step (``y + vel_y``) and flaps whenever that would
     put it below the target gap center, producing a lively but not-immortal run that clears a

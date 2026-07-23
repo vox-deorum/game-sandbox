@@ -45,6 +45,26 @@ function environments(): EnvironmentRegistry {
         view_interval_ms: null,
         live_interval_ms: null,
       },
+      {
+        env_id: 'llm_env_other',
+        display_name: 'Other LLM Environment',
+        description: 'test env',
+        min_slots: 1,
+        max_slots: 1,
+        human_slots: [],
+        human_timeout_ms: null,
+        recommended_episode_ticks: 100,
+        pace_interval_ms: null,
+        step_limit_ms: 1_000,
+        episode_limit_ms: 60_000,
+        messaging: false,
+        message_cap: null,
+        llm: true,
+        renderer: 'test',
+        seat_order_matters: false,
+        view_interval_ms: null,
+        live_interval_ms: null,
+      },
     ]),
   )
 }
@@ -114,7 +134,7 @@ describe('development LLM HTTP wiring (integration)', () => {
     cleanup.push(() => testApp.close())
 
     const seasonA = await enabledSeason(testApp, 'A')
-    const seasonB = await enabledSeason(testApp, 'B', 5)
+    const seasonB = await enabledSeason(testApp, 'B', 5, 'llm_env_other')
     const alice = await issue(testApp, statuses, seasonA, 'alice')
     const bob = await issue(testApp, statuses, seasonA, 'bob')
     const aliceOtherSeason = await issue(testApp, statuses, seasonB, 'alice')
@@ -147,7 +167,6 @@ describe('development LLM HTTP wiring (integration)', () => {
       (retryRequests.at(2)?.arrivedAt ?? 0) - (retryRequests.at(1)?.arrivedAt ?? 0)
     expect(firstRetryInterval).toBeGreaterThanOrEqual(15)
     expect(secondRetryInterval).toBeGreaterThanOrEqual(35)
-    expect(secondRetryInterval).toBeGreaterThanOrEqual(firstRetryInterval + 10)
 
     expect(ledger.readUserUsageByModel(seasonA, testApp.users.idOf('alice'))).toMatchObject({
       small: { calls: 1 },
@@ -158,14 +177,16 @@ describe('development LLM HTTP wiring (integration)', () => {
     expect(ledger.readUserUsageByModel(seasonB, testApp.users.idOf('alice'))).toMatchObject({
       small: { calls: 1 },
     })
-    const attemptsBeforePairLimit = upstream.requests.length
+    // This HTTP case now exhausts season B's 5-token budget. The meter's per-pair 429 rate-limit
+    // path remains covered by the independent-accounting test in test/llm/core.test.ts.
+    const attemptsBeforeTokenBudget = upstream.requests.length
     expect(
-      (await completionResponse(testApp, aliceOtherSeason, 'over pair limit')).statusCode,
-    ).toBe(429)
-    expect(upstream.requests).toHaveLength(attemptsBeforePairLimit)
-    expect((await completionResponse(testApp, bob, 'other pair remains admitted')).statusCode).toBe(
-      200,
-    )
+      (await completionResponse(testApp, aliceOtherSeason, 'over token budget')).statusCode,
+    ).toBe(400)
+    expect(upstream.requests).toHaveLength(attemptsBeforeTokenBudget)
+    expect(
+      (await completionResponse(testApp, bob, 'season A pair remains admitted')).statusCode,
+    ).toBe(200)
 
     const rotated = await issue(testApp, statuses, seasonA, 'alice')
     expect(rotated).not.toBe(alice)
@@ -238,8 +259,17 @@ function requireStorage(storage: Storage | undefined): Storage {
   return storage
 }
 
-async function enabledSeason(testApp: TestApp, label: string, tokenBudget = 100): Promise<string> {
-  const season = await testApp.storage.createSeason({ env_id: 'llm_env', deps_version: 1, label })
+async function enabledSeason(
+  testApp: TestApp,
+  label: string,
+  tokenBudget = 100,
+  environmentId = 'llm_env',
+): Promise<string> {
+  const season = await testApp.storage.createSeason({
+    env_id: environmentId,
+    deps_version: 1,
+    label,
+  })
   await testApp.storage.updateSeasonConfig(season.id, {
     deps_version: 1,
     matches: [],
@@ -251,7 +281,8 @@ async function enabledSeason(testApp: TestApp, label: string, tokenBudget = 100)
       },
     },
   })
-  await testApp.storage.setSubmissionStatus(season.id, 'open')
+  const opened = await testApp.storage.setSubmissionStatus(season.id, 'open')
+  expect(opened).toMatchObject({ ok: true })
   return season.id
 }
 

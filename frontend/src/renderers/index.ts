@@ -7,7 +7,7 @@ import { registerRenderer } from './registry.js'
 import type { RendererDefinition } from './types.js'
 
 const modules = import.meta.glob<{ default: RendererDefinition }>(
-  '../../../environments/src/*/renderer/index.ts',
+  '../../../environments/*/renderer/index.ts',
   { eager: true },
 )
 

@@ -1,8 +1,10 @@
 """Compose a runnable template or example from the base layer plus overlays.
 
-A template is two layers: the env-agnostic ``templates/base/`` plus one per-environment
-``templates/<env>/`` layer, combined with whole-file replacement (an env-layer file wins).
-An example is a composed template plus an ``examples/<env>/<name>/`` overlay on top, again
+A template is two layers: the env-agnostic ``templates/base/`` plus one colocated
+``environments/<env>/template/`` layer, combined with whole-file replacement (an env-layer
+file wins). Composition also generates the environment package, relocatable harness, and shared
+helpers into the build output. An example is a composed template plus an
+``environments/<env>/examples/<name>/`` overlay on top, again
 whole-file, with one merge rule for requirements.
 
     uv run python scripts/compose.py                 # list envs and examples
@@ -33,12 +35,14 @@ from _envs import discover_environments
 from _paths import (
     BUILD_DIR,
     DOCS_DIR,
-    EXAMPLES_DIR,
+    ENVIRONMENT_PACKAGES_DIR,
     REPO_ROOT,
     TEMPLATE_BASE_DIR,
-    TEMPLATES_DIR,
     env_docs_page,
+    env_examples_dir,
+    env_template_layer,
 )
+from _template_gen import write_base_helpers, write_env_package, write_harness
 
 _EXTRA_REQUIREMENTS = "requirements.extra.txt"
 _REQUIREMENTS = "requirements.txt"
@@ -215,7 +219,13 @@ def _copy_llm_page(out_dir: Path) -> None:
 
 def _overlay_files(src_dir: Path, out_dir: Path, *, skip_extra: bool = False) -> None:
     """Copy every file under ``src_dir`` onto ``out_dir`` with whole-file replacement."""
-    for src in sorted(p for p in src_dir.rglob("*") if p.is_file()):
+    for src in sorted(
+        p
+        for p in src_dir.rglob("*")
+        if p.is_file()
+        and "__pycache__" not in p.relative_to(src_dir).parts
+        and p.suffix not in (".pyc", ".pyo", ".pyd")
+    ):
         relative = src.relative_to(src_dir)
         if skip_extra and relative.name == _EXTRA_REQUIREMENTS:
             continue
@@ -230,28 +240,55 @@ def list_envs() -> list[str]:
 
 
 def list_examples() -> list[tuple[str, str]]:
-    """Every example as an ``(env, name)`` pair under ``examples/<env>/<name>/``."""
-    if not EXAMPLES_DIR.is_dir():
-        return []
+    """Every example as an ``(env, name)`` pair colocated with its environment."""
     pairs: list[tuple[str, str]] = []
-    for env_dir in sorted(p for p in EXAMPLES_DIR.iterdir() if p.is_dir()):
-        for name_dir in sorted(p for p in env_dir.iterdir() if p.is_dir()):
-            pairs.append((env_dir.name, name_dir.name))
+    for env in list_envs():
+        examples_dir = env_examples_dir(env)
+        if not examples_dir.is_dir():
+            continue
+        for name_dir in sorted(p for p in examples_dir.iterdir() if p.is_dir()):
+            pairs.append((env, name_dir.name))
     return pairs
 
 
-def compose_template(env: str) -> Path:
+def _prepare_output_dir(out_dir: Path) -> Path:
+    """Validate and prepare one composition target without risking source-tree deletion."""
+    target = out_dir.resolve()
+    repo_root = REPO_ROOT.resolve()
+    build_root = BUILD_DIR.resolve()
+
+    if target == repo_root or repo_root.is_relative_to(target):
+        raise ComposeError(f"refusing to replace repository root or its ancestor: {target}")
+
+    if target == build_root:
+        raise ComposeError(f"refusing to replace the build root itself: {target}")
+
+    in_build = target != build_root and target.is_relative_to(build_root)
+    if target.is_relative_to(repo_root) and not in_build:
+        raise ComposeError(f"output directory inside the repository must be under {build_root}: {target}")
+
+    if in_build:
+        if target.exists():
+            shutil.rmtree(target)
+    elif target.exists() and (not target.is_dir() or any(target.iterdir())):
+        raise ComposeError(f"refusing to replace non-empty output directory outside build: {target}")
+
+    target.mkdir(parents=True, exist_ok=True)
+    return target
+
+
+def compose_template(env: str, *, out_dir: Path | None = None) -> Path:
     """Compose the ``env`` template into ``build/templates/<env>/`` and return that path.
 
-    ``templates/base/`` is the base layer; ``templates/<env>/`` overlays it whole-file. The
-    env layer must not carry any ``requirements*`` file — the dependency set is global and
+    ``templates/base/`` is the base layer; the colocated env layer overlays it whole-file. The
+    env layer must not carry any ``requirements*`` file: the dependency set is global and
     lives only in the base layer.
     """
     if not TEMPLATE_BASE_DIR.is_dir():
         raise ComposeError(f"no base template layer under {TEMPLATE_BASE_DIR}")
-    env_dir = TEMPLATES_DIR / env
+    env_dir = env_template_layer(env)
     if env not in list_envs() or not env_dir.is_dir():
-        raise ComposeError(f"no environment template layer named {env!r} under {TEMPLATES_DIR}")
+        raise ComposeError(f"no environment template layer named {env!r} under {ENVIRONMENT_PACKAGES_DIR}")
 
     stray = sorted({p.name for p in env_dir.rglob("requirements*") if p.is_file()})
     if stray:
@@ -260,40 +297,42 @@ def compose_template(env: str) -> Path:
             f"set is global and lives only in templates/base/. Remove them."
         )
 
-    out_dir = BUILD_DIR / "templates" / env
-    if out_dir.exists():
-        shutil.rmtree(out_dir)
-    out_dir.mkdir(parents=True)
+    out_dir = _prepare_output_dir(out_dir or BUILD_DIR / "templates" / env)
 
     # 1. The base layer is the foundation.
-    shutil.copytree(TEMPLATE_BASE_DIR, out_dir, dirs_exist_ok=True)
-    # 2. The env layer overlays it, whole-file.
+    shutil.copytree(
+        TEMPLATE_BASE_DIR,
+        out_dir,
+        dirs_exist_ok=True,
+        ignore=shutil.ignore_patterns("__pycache__", "*.py[cod]"),
+    )
+    # 2. Generated package pieces join the fresh output.
+    discovered = discover_environments()[env]
+    sandbox = out_dir / "sandbox"
+    write_harness(sandbox / "harness")
+    write_base_helpers(sandbox)
+    write_env_package(env, discovered.spec, discovered.entry.meta, sandbox / "env")
+    # 3. The hand-authored env layer overlays it, whole-file.
     _overlay_files(env_dir, out_dir)
-    # 3. Ship the environment's student docs page as environment.md — the local reference the
+    # 4. Ship the environment's student docs page as environment.md: the local reference the
     #    template README and agent.py point at instead of duplicating it.
     _copy_environment_page(env, out_dir)
-    # 4. Ship the shared LLM guide beside the README so students can use it without finding the
+    # 5. Ship the shared LLM guide beside the README so students can use it without finding the
     #    documentation site first.
     _copy_llm_page(out_dir)
-    # 5. Resolve the docs-site link token now that every layer and copied guide is in place.
+    # 6. Resolve the docs-site link token now that every layer and copied guide is in place.
     _substitute_docs_url(out_dir)
     return out_dir
 
 
-def compose_example(env: str, name: str) -> Path:
+def compose_example(env: str, name: str, *, out_dir: Path | None = None) -> Path:
     """Compose example ``env/name`` into ``build/examples/<env>/<name>/`` and return it."""
-    example_dir = EXAMPLES_DIR / env / name
+    example_dir = env_examples_dir(env) / name
     if not example_dir.is_dir():
-        raise ComposeError(f"no example named {name!r} for env {env!r} under {EXAMPLES_DIR}")
+        raise ComposeError(f"no example named {name!r} for env {env!r} under {env_examples_dir(env)}")
 
-    out_dir = BUILD_DIR / "examples" / env / name
-    if out_dir.exists():
-        shutil.rmtree(out_dir)
-    out_dir.mkdir(parents=True)
-
-    # 1. The composed template is the base.
-    template_dir = compose_template(env)
-    shutil.copytree(template_dir, out_dir, dirs_exist_ok=True)
+    # 1. Compose the template directly into the requested example output.
+    out_dir = compose_template(env, out_dir=out_dir or BUILD_DIR / "examples" / env / name)
 
     # 2. Overlay every example file except the extras file, with whole-file replacement.
     _overlay_files(example_dir, out_dir, skip_extra=True)
@@ -318,6 +357,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Compose a template or example.")
     parser.add_argument("env", nargs="?", help="environment id; omit to list envs and examples")
     parser.add_argument("name", nargs="?", help="example name; omit to compose the bare template for <env>")
+    parser.add_argument("--out", type=Path, help="write the composed output to this directory")
     args = parser.parse_args(argv)
 
     if args.env is None:
@@ -331,10 +371,10 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         if args.name is None:
-            out_dir = compose_template(args.env)
+            out_dir = compose_template(args.env, out_dir=args.out)
             print(f"composed template {args.env} -> {out_dir}")
         else:
-            out_dir = compose_example(args.env, args.name)
+            out_dir = compose_example(args.env, args.name, out_dir=args.out)
             print(f"composed example {args.env}/{args.name} -> {out_dir}")
     except ComposeError as error:
         print(f"compose failed: {error}", file=sys.stderr)

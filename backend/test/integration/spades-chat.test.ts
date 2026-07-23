@@ -1,7 +1,7 @@
 /**
  * The Stage 8.7 Docker-gated Spades-chat exit criteria, end to end against a real Docker daemon and
  * the real harness `ChatRouter`. These only mean something with a real container running the real
- * `examples/spades` agents through the real harness chat hook, so they live in this Docker-gated
+ * colocated Spades example agents through the real harness chat hook, so they live in this Docker-gated
  * lane rather than the harness's own (mocked) unit tests:
  *
  * - A real-driver Spades session seating the `daredevil` (broadcast) and `signaler` (targeted)
@@ -17,7 +17,7 @@
  * - The orchestrator resolves a live session's messaging rules from the play-open season's overrides,
  *   so setting them there before starting a session reproduces the same silence live.
  *
- * The daredevil demo hand is pinned against `environments/src/spades/tests/test_spades_chat.py`, the Python-side
+ * The daredevil demo hand is pinned against `environments/spades/tests/test_spades_chat.py`, the Python-side
  * integration test that drives the same examples through the same harness directly: seed 1236 with
  * `daredevil` at seats 0/2 (partners) and the chat-less `counter` at 1/3 scores
  * `{player_0: 121, player_1: 46, player_2: 121, player_3: 46}` with messaging on, and the broadcast
@@ -52,17 +52,29 @@ import { WsClient } from './support/ws-client.js'
 
 const ENV_ID = 'spades'
 const NIL_WARNING = 'nil! cover me'
-/** The exact per-seat scores `environments/src/spades/tests/test_spades_chat.py` pins for daredevil (0/2) vs
+/** The exact per-seat scores `environments/spades/tests/test_spades_chat.py` pins for daredevil (0/2) vs
  * counter (1/3) on seed 1236 with messaging on: the made nil, shared by the partnership. */
 const DAREDEVIL_SCORES_ON = { player_0: 121, player_1: 46, player_2: 121, player_3: 46 }
 
 const BASE_SANDBOX = fileURLToPath(new URL('../../../templates/base/sandbox', import.meta.url))
-const SPADES_SANDBOX = fileURLToPath(new URL('../../../templates/spades/sandbox', import.meta.url))
-const EXAMPLES_DIR = fileURLToPath(new URL('../../../examples/spades', import.meta.url))
+const HARNESS_SOURCE = fileURLToPath(
+  new URL('../../../harness/src/game_sandbox_harness', import.meta.url),
+)
+const LOCAL_PLAY = fileURLToPath(new URL('../../../environments/local_play', import.meta.url))
+const SPADES_SANDBOX = fileURLToPath(
+  new URL('../../../environments/spades/template/sandbox', import.meta.url),
+)
+const EXAMPLES_DIR = fileURLToPath(
+  new URL('../../../environments/spades/examples', import.meta.url),
+)
 
 /** Skip `__pycache__` entries when copying a template/sandbox tree (mirrors hearts-multi-slot). */
 function skipPycache(src: string): boolean {
   return !/[\\/]__pycache__(?:[\\/]|$)/.test(src)
+}
+
+function skipGeneratedEnvironment(src: string): boolean {
+  return skipPycache(src) && !/[\\/]sandbox[\\/]env(?:[\\/]|$)/.test(src)
 }
 
 /** Assemble one example's submission tree: the composed base+spades sandbox overlay, its agent.py,
@@ -70,10 +82,16 @@ function skipPycache(src: string): boolean {
 function composeExampleTree(exampleName: string): string {
   const dir = mkdtempSync(join(tmpdir(), `gs-spades-${exampleName}-`))
   cpSync(BASE_SANDBOX, join(dir, 'sandbox'), { recursive: true, filter: skipPycache })
+  cpSync(HARNESS_SOURCE, join(dir, 'sandbox', 'harness'), { recursive: true, filter: skipPycache })
+  for (const helper of ['card_utils.py', 'card_spaces.py', 'semantic_cards.py']) {
+    copyFileSync(join(LOCAL_PLAY, helper), join(dir, 'sandbox', helper))
+  }
+  // These examples import sandbox helpers only, never sandbox.env. Extend the recipe if that
+  // constraint changes.
   cpSync(SPADES_SANDBOX, join(dir, 'sandbox'), {
     recursive: true,
     force: true,
-    filter: skipPycache,
+    filter: skipGeneratedEnvironment,
   })
   copyFileSync(join(EXAMPLES_DIR, exampleName, 'agent.py'), join(dir, 'agent.py'))
   writeFileSync(
@@ -384,7 +402,7 @@ describe('Spades chat (Docker)', () => {
       }
 
       // Messaging on (default season, no override): the exact pinned demo-hand scores, matching
-      // environments/src/spades/tests/test_spades_chat.py's daredevil score regression.
+      // environments/spades/tests/test_spades_chat.py's daredevil score regression.
       // Partners share their team score, so slots 0 and 2 both read the made-nil +121.
       const on = await runWithOverride(undefined)
       expect(on.messages).toContainEqual({ from: 'player_0', to: null, text: NIL_WARNING })

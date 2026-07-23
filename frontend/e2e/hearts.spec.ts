@@ -31,7 +31,7 @@ import { stageExampleAgent } from './support/stage-example-agent.js'
  * this spec exercises the two things that only Hearts reaches: the multi-seat matchmaking scheduler
  * (the matchup below fills two seats with submissions and two with the Naive baseline, and the
  * `seat_order_matters` scheduler expands that into one game per ordered seating) and the Hearts
- * renderer in a live four-seat session. The agents are the `examples/hearts/*` reference agents, each
+ * renderer in a live four-seat session. The agents are the colocated Hearts reference examples, each
  * a different strategy, submitted into a real season whose released Scoreboard the demo then serves.
  */
 

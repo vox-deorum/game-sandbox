@@ -62,7 +62,7 @@ The operator-configured allowlist from [frontend.md](../../docs/specs/frontend.m
 
 ## The renderer contract and registry
 
-Per [interaction.md](../../docs/specs/interaction.md), each environment registers a frontend module that draws per-step states; live play and replay share it by design. Renderers draw on PixiJS through a shared base class; [rendering.md](../../docs/contributors/rendering.md) is the authority for that infrastructure, and this section records the contract the rest of the frontend depends on. The contract, in `renderers/types.ts`:
+Per [interaction.md](../../docs/specs/interaction.md), each environment registers a frontend module that draws per-step states; live play and replay share it by design. Renderers draw on PixiJS through a shared base class; [rendering.md](../../docs/contributors/environments/rendering.md) is the authority for that infrastructure, and this section records the contract the rest of the frontend depends on. The contract, in `renderers/types.ts`:
 
 ```ts
 interface RendererContext {
@@ -86,7 +86,7 @@ interface RendererModule {
 
 Two rules give the architecture its properties.
 
-First, **determinism**. `render(state)` must draw a frame that is a pure function of the passed state, plus the mount-time header and metadata, with no dependence on what was rendered before. So the live page, the replay player, and the scrubber are all the same call with a different state source. The PixiJS scene graph is retained: display objects persist and are mutated: but the visible frame still depends only on the current state (see [rendering.md](../../docs/contributors/rendering.md)).
+First, **determinism**. `render(state)` must draw a frame that is a pure function of the passed state, plus the mount-time header and metadata, with no dependence on what was rendered before. So the live page, the replay player, and the scrubber are all the same call with a different state source. The PixiJS scene graph is retained: display objects persist and are mutated: but the visible frame still depends only on the current state (see [rendering.md](../../docs/contributors/environments/rendering.md)).
 
 Second, **the chrome split**. The renderer owns the game frame: the world plus the in-game UI (score, tick, status that belongs inside the game). The hosting page owns the session chrome that must work for every environment: start/stop/pause controls, the status banner, the active-timeout display, and later the feedback prompt. That split is what lets [live-session-control.md](live-session-control.md) and [replay-and-retention.md](replay-and-retention.md) build their hosts once, for all future environments.
 

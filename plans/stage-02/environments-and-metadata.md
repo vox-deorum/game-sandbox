@@ -4,7 +4,7 @@ Part of [Stage 2](../stage-02-harness-and-first-environment.md). This file desig
 
 ## Package layout
 
-`environments/` becomes the third uv workspace member, distribution package name `game-sandbox-environments`. Each environment is its own top-level import package under `environments/src/`, named by its env id, for example `flappy_bird`. The distribution depends on `game-sandbox-harness` (for the metadata types below), `pettingzoo`, and `gymnasium`.
+`environments/` becomes the third uv workspace member, distribution package name `game-sandbox-environments`. Each environment is its own top-level import package under `environments/`, named by its env id, for example `flappy_bird`. The distribution depends on `game-sandbox-harness` (for the metadata types below), `pettingzoo`, and `gymnasium`.
 
 ```
 environments/
@@ -18,7 +18,7 @@ environments/
   tests/
 ```
 
-One top-level package per environment, each exporting a module-level `ENTRY`. The wheel build lists each package explicitly in `environments/pyproject.toml`, so adding Hearts in Stage 7 means adding `src/hearts/`, registering its entry point, and adding it to the wheel package list.
+One top-level package per environment, each exporting a module-level `ENTRY`. The wheel build lists each package explicitly in `environments/pyproject.toml`, so adding Hearts in Stage 7 means adding `environments/hearts/`, registering its entry point, and adding it to the wheel package list.
 
 ## The adapter
 

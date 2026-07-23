@@ -18,7 +18,7 @@
  */
 import type { StepState } from '@game-sandbox/schema'
 
-// --- Card encoding (mirrors environments/src/local_play/card_utils.py) ---
+// --- Card encoding (mirrors environments/local_play/card_utils.py) ---
 // A card OBJECT is `{suit, rank}`: suits 0=clubs, 1=diamonds, 2=spades, 3=hearts; rank is the FACE
 // value 2..14 (jack 11, queen 12, king 13, ace 14) — the value printed on the card, not the engine's
 // 0-indexed rank. The engine (integer) card id 0..51 is `suit * 13 + (rank - 2)`; that encoding is used

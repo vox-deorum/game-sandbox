@@ -4,8 +4,8 @@ It always plays its lowest legal card: the lowest-ranked card the legal-action m
 ties broken by suit, exactly the move the environment's own timeout default applies
 (``hearts.rules.lowest_legal_card``). That keeps it trivially legal every turn while clinging to
 the queen of spades and high hearts until they are forced onto it: the weak play a submitted
-agent is expected to beat (see ``examples/hearts/duck``). It reads the Hearts observation dict's
-``action_mask``, so it needs no dependency beyond the standard library.
+agent is expected to beat (see ``environments/hearts/examples/duck``). It reads the Hearts
+observation dict's ``action_mask``, so it needs no dependency beyond the standard library.
 """
 
 from __future__ import annotations

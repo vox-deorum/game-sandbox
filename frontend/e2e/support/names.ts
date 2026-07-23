@@ -22,17 +22,17 @@ export const HEARTS_SEASON = 'Black Lady Open'
 /**
  * The four Hearts agent owners, one per example strategy submitted into the matchup. The owner id is
  * the public agent identity (the scoreboard row links to it), so these read like real handles and are
- * distinct from the flappy {@link OWNERS}. Each maps to an `examples/hearts/<name>/` agent, with
+ * distinct from the flappy {@link OWNERS}. Each maps to an `environments/hearts/examples/<name>/` agent, with
  * Oracle also exercising the season's LLM policy.
  */
 export const HEARTS_OWNERS = {
-  /** examples/hearts/oracle: makes calls through the season's OpenAI-compatible relay. */
+  /** environments/hearts/examples/oracle: makes calls through the season's OpenAI-compatible relay. */
   oracle: 'margaret-hamilton',
-  /** examples/hearts/moonshot: tries to win every trick and shoot the moon. */
+  /** environments/hearts/examples/moonshot: tries to win every trick and shoot the moon. */
   moonshot: 'mae-jemison',
-  /** examples/hearts/assassin: hunts and dumps the queen of spades. */
+  /** environments/hearts/examples/assassin: hunts and dumps the queen of spades. */
   assassin: 'rosalind-franklin',
-  /** examples/hearts/closer: exploits the last seat in a trick. */
+  /** environments/hearts/examples/closer: exploits the last seat in a trick. */
   closer: 'emmy-noether',
   /**
    * The owner of the single submitted seat in the per-seat replay-attribution test. Kept distinct
@@ -68,14 +68,14 @@ export const SPADES_SEASON = 'Partnership Cup'
 /**
  * The three Spades agent owners, one per example strategy submitted into the matchup. The owner id is
  * the public agent identity (the scoreboard row links to it), so these read like real handles and are
- * distinct from {@link OWNERS} and {@link HEARTS_OWNERS}. Each maps to an `examples/spades/<name>/` agent.
+ * distinct from {@link OWNERS} and {@link HEARTS_OWNERS}. Each maps to an `environments/spades/examples/<name>/` agent.
  */
 export const SPADES_OWNERS = {
-  /** examples/spades/counter: bids its hand's honest trick count and plays to make it. */
+  /** environments/spades/examples/counter: bids its hand's honest trick count and plays to make it. */
   counter: 'ada-byron',
-  /** examples/spades/daredevil: hunts nil bids and bags. */
+  /** environments/spades/examples/daredevil: hunts nil bids and bags. */
   daredevil: 'evel-knievel',
-  /** examples/spades/signaler: uses its bid and early plays to signal its hand to its partner. */
+  /** environments/spades/examples/signaler: uses its bid and early plays to signal its hand to its partner. */
   signaler: 'samuel-morse',
 } as const
 

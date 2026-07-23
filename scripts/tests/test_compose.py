@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import sys
 from pathlib import Path, PurePosixPath
+from types import SimpleNamespace
 
 import pytest
 
@@ -25,8 +26,9 @@ def test_compose_template_has_base_and_env_files():
     out = compose_template("flappy_bird")
     # A base-layer file and an env-layer file both land in the composed template.
     assert (out / "sandbox" / "play.py").exists()  # from templates/base/
-    assert (out / "agent.py").exists()  # from templates/flappy_bird/
-    assert (out / "sandbox" / "env" / "__init__.py").exists()  # generated env sync
+    assert (out / "agent.py").exists()  # from the colocated Flappy Bird layer
+    assert (out / "sandbox" / "env" / "__init__.py").exists()  # generated during composition
+    assert (out / "sandbox" / "card_utils.py").exists()  # generated shared helper
 
 
 def test_composed_template_ships_relocated_harness_and_local_shim(monkeypatch: pytest.MonkeyPatch, capsys):
@@ -69,21 +71,122 @@ def test_compose_template_unknown_env_raises():
         compose_template("does-not-exist")
 
 
+def test_compose_template_writes_to_requested_output_directory(tmp_path: Path):
+    out = compose_template("flappy_bird", out_dir=tmp_path / "kit")
+
+    assert out == tmp_path / "kit"
+    assert (out / "sandbox" / "env" / "__init__.py").is_file()
+
+
+def test_compose_example_writes_directly_to_requested_output_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    import compose as compose_mod
+
+    monkeypatch.setattr(compose_mod, "BUILD_DIR", tmp_path / "default-build")
+    default_template = compose_mod.BUILD_DIR / "templates" / "flappy_bird"
+    default_template.mkdir(parents=True, exist_ok=True)
+    marker = default_template / "keep.txt"
+    marker.write_text("unchanged\n", encoding="utf-8")
+
+    requested = compose_mod.BUILD_DIR / "custom" / "example-kit"
+    out = compose_example("flappy_bird", "hello", out_dir=requested)
+
+    assert out == requested
+    assert (out / "tests" / "test_hello.py").is_file()
+    assert marker.read_text(encoding="utf-8") == "unchanged\n"
+
+
+def test_output_safety_accepts_only_safe_replacement_targets(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    import compose as compose_mod
+
+    repo = tmp_path / "repo"
+    build = repo / "build"
+    build.mkdir(parents=True)
+    monkeypatch.setattr(compose_mod, "REPO_ROOT", repo)
+    monkeypatch.setattr(compose_mod, "BUILD_DIR", build)
+
+    inside_repo = repo / "source"
+    inside_repo.mkdir()
+    source_marker = inside_repo / "keep.txt"
+    source_marker.write_text("keep\n", encoding="utf-8")
+    with pytest.raises(ComposeError, match="inside the repository"):
+        compose_mod._prepare_output_dir(inside_repo)
+    with pytest.raises(ComposeError, match="build root"):
+        compose_mod._prepare_output_dir(build)
+    with pytest.raises(ComposeError, match="repository root or its ancestor"):
+        compose_mod._prepare_output_dir(tmp_path)
+    assert source_marker.read_text(encoding="utf-8") == "keep\n"
+
+    build_child = build / "templates" / "example"
+    build_child.mkdir(parents=True)
+    (build_child / "stale.txt").write_text("stale\n", encoding="utf-8")
+    assert compose_mod._prepare_output_dir(build_child) == build_child.resolve()
+    assert not any(build_child.iterdir())
+
+    empty_external = tmp_path / "empty-external"
+    empty_external.mkdir()
+    assert compose_mod._prepare_output_dir(empty_external) == empty_external.resolve()
+
+    nonempty_external = tmp_path / "nonempty-external"
+    nonempty_external.mkdir()
+    external_marker = nonempty_external / "keep.txt"
+    external_marker.write_text("keep\n", encoding="utf-8")
+    with pytest.raises(ComposeError, match="non-empty output directory"):
+        compose_mod._prepare_output_dir(nonempty_external)
+    assert external_marker.read_text(encoding="utf-8") == "keep\n"
+
+
+def test_composition_ignores_bytecode_in_base_and_overlay(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    import compose as compose_mod
+
+    base = tmp_path / "layers" / "base"
+    env = tmp_path / "layers" / "env"
+    base_cache = base / "__pycache__"
+    env_cache = env / "__pycache__"
+    base_cache.mkdir(parents=True)
+    env_cache.mkdir(parents=True)
+    (base / "base.txt").write_text("base\n", encoding="utf-8")
+    (base / "loose.pyc").write_bytes(b"bytecode")
+    (base_cache / "cached.pyc").write_bytes(b"bytecode")
+    (env / "agent.py").write_text("# agent\n", encoding="utf-8")
+    (env / "loose.pyo").write_bytes(b"bytecode")
+    (env_cache / "cached.pyc").write_bytes(b"bytecode")
+
+    discovered = SimpleNamespace(spec=object(), entry=SimpleNamespace(meta=object()))
+    monkeypatch.setattr(compose_mod, "TEMPLATE_BASE_DIR", base)
+    monkeypatch.setattr(compose_mod, "env_template_layer", lambda _: env)
+    monkeypatch.setattr(compose_mod, "discover_environments", lambda: {"example": discovered})
+    monkeypatch.setattr(compose_mod, "write_harness", lambda _: None)
+    monkeypatch.setattr(compose_mod, "write_base_helpers", lambda _: None)
+    monkeypatch.setattr(compose_mod, "write_env_package", lambda *_: None)
+    monkeypatch.setattr(compose_mod, "_copy_environment_page", lambda *_: None)
+    monkeypatch.setattr(compose_mod, "_copy_llm_page", lambda _: None)
+    monkeypatch.setattr(compose_mod, "_substitute_docs_url", lambda _: None)
+
+    out = compose_mod.compose_template("example", out_dir=tmp_path / "composed")
+
+    assert (out / "base.txt").read_text(encoding="utf-8") == "base\n"
+    assert (out / "agent.py").read_text(encoding="utf-8") == "# agent\n"
+    assert not list(out.rglob("__pycache__"))
+    assert not list(out.rglob("*.py[cod]"))
+
+
 def test_env_layer_with_requirements_file_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    # Build a throwaway templates/ tree with an env layer that illegally carries a pin file.
+    # Build a throwaway colocated env layer that illegally carries a pin file.
     import compose as compose_mod
 
     base = tmp_path / "templates" / "base"
     base.mkdir(parents=True)
     (base / "play.py").write_text("# base\n", encoding="utf-8")
-    env = tmp_path / "templates" / "stray"
+    env = tmp_path / "environments" / "stray" / "template"
     env.mkdir(parents=True)
     (env / "agent.py").write_text("# env\n", encoding="utf-8")
     (env / "requirements.txt").write_text("attrs==24.2.0\n", encoding="utf-8")
 
-    monkeypatch.setattr(compose_mod, "TEMPLATES_DIR", tmp_path / "templates")
     monkeypatch.setattr(compose_mod, "TEMPLATE_BASE_DIR", base)
     monkeypatch.setattr(compose_mod, "BUILD_DIR", tmp_path / "build")
+    monkeypatch.setattr(compose_mod, "env_template_layer", lambda _: env)
     monkeypatch.setattr(compose_mod, "discover_environments", lambda: {"stray": object()})
 
     with pytest.raises(ComposeError, match="requirements file"):
@@ -183,14 +286,21 @@ def test_compose_env_without_docs_page_raises(tmp_path: Path, monkeypatch: pytes
     base = tmp_path / "templates" / "base"
     base.mkdir(parents=True)
     (base / "play.py").write_text("# base\n", encoding="utf-8")
-    env = tmp_path / "templates" / "stray"
+    env = tmp_path / "environments" / "stray" / "template"
     env.mkdir(parents=True)
     (env / "agent.py").write_text("# env\n", encoding="utf-8")
 
-    monkeypatch.setattr(compose_mod, "TEMPLATES_DIR", tmp_path / "templates")
     monkeypatch.setattr(compose_mod, "TEMPLATE_BASE_DIR", base)
     monkeypatch.setattr(compose_mod, "BUILD_DIR", tmp_path / "build")
-    monkeypatch.setattr(compose_mod, "discover_environments", lambda: {"stray": object()})
+    monkeypatch.setattr(compose_mod, "env_template_layer", lambda _: env)
+    monkeypatch.setattr(
+        compose_mod,
+        "discover_environments",
+        lambda: {"stray": SimpleNamespace(spec=object(), entry=SimpleNamespace(meta=object()))},
+    )
+    monkeypatch.setattr(compose_mod, "write_harness", lambda _: None)
+    monkeypatch.setattr(compose_mod, "write_base_helpers", lambda _: None)
+    monkeypatch.setattr(compose_mod, "write_env_package", lambda *_: None)
 
     with pytest.raises(ComposeError, match="student docs page"):
         compose_mod.compose_template("stray")
@@ -198,7 +308,7 @@ def test_compose_env_without_docs_page_raises(tmp_path: Path, monkeypatch: pytes
 
 def test_overlay_file_wins_over_template():
     out = compose_example("flappy_bird", "hello")
-    # examples/flappy_bird/hello/agent.py overrides the template placeholder.
+    # The colocated Flappy Bird hello agent overrides the template placeholder.
     assert "hello" in (out / "agent.py").read_text(encoding="utf-8")
     assert "wcwidth" in (out / "agent.py").read_text(encoding="utf-8")
 

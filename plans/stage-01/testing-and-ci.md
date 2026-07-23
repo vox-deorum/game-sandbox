@@ -31,7 +31,7 @@ Python is the producer. The fixtures step of `scripts/generate.py` builds the go
 - `python`: uv sync, ruff check, ruff format --check, pyright, pytest.
 - `typescript`: npm ci, biome check, tsc --noEmit, vitest run.
 - `generated-code-fresh`: run the generate script, then `git diff --exit-code` over the three generated locations.
-- `examples`: discover `examples/<env>/<name>`, compose each with `scripts/compose.py`, install into a fresh venv, run pytest (and fail if any environment layer ships no example). This becomes a matrix when there is more than one example.
+- `examples`: discover `environments/<env>/examples/<name>`, compose each with `scripts/compose.py`, install into a fresh venv, run pytest (and fail if any environment package ships no example). This becomes a matrix when there is more than one example.
 
 Each job's steps are a single call to `scripts/ci.py <job>` after dependency setup, so the workflow YAML carries triggers and caching but no logic. Whatever CI runs, a developer can run with the same command, which is what makes local reproduction below trustworthy. `scripts/ci.py` carries two more jobs that mirror the other two workflows: `docs` (the strict `mkdocs build`) and `publish-dry-run`. It also carries an `all` aggregate that runs every job in order: the full local equivalent of all three workflows, and the one command to run before opening a pull request. The contributor-facing walkthrough is [../../docs/contributors/test.md](../../docs/contributors/test.md).
 

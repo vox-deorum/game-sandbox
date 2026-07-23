@@ -6,7 +6,7 @@ import { getRenderer, registerRenderer, thumbnailFor } from '../src/renderers/re
 import type { Renderer, RendererDefinition } from '../src/renderers/types.js'
 
 const environmentRendererModules = import.meta.glob<{ default: RendererDefinition }>(
-  '../../environments/src/*/renderer/index.ts',
+  '../../environments/*/renderer/index.ts',
   { eager: true },
 )
 

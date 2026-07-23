@@ -11,4 +11,4 @@ npm test
 
 From the repository root, `npm start` builds the frontend and starts the backend on port 8080. Docker is required only when a session launches.
 
-See [Frontend](../docs/contributors/frontend.md), [Rendering](../docs/contributors/rendering.md), and the [design system](../docs/contributors/design.md).
+See [Frontend](../docs/contributors/frontend.md), [Rendering](../docs/contributors/environments/rendering.md), and the [design system](../docs/contributors/design.md).

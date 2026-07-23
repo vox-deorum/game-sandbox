@@ -1,0 +1,39 @@
+# Environment Template and Examples
+
+Each environment owns the student-facing files that differ from the shared starter kit. Keep them beside the environment package so an environment can be understood and changed in one place.
+
+Read [Template product and releases](../template.md) for composition, dependency versions, and publication.
+
+## Hand-authored layers
+
+Put the starting `agent.py`, `README.md`, student helper modules, and pin tests in `environments/<env>/template/`. This directory has no `__init__.py`.
+
+Put each worked overlay in `environments/<env>/examples/<name>/`. An example contains only the files that differ from its composed template, such as an agent, a README, tests, and an optional `requirements.extra.txt`.
+
+The top-level `templates/` directory now contains only `templates/base/`. Generated `sandbox/env/`, `sandbox/harness/`, and shared helper files exist only in a composed tree under `build/`.
+
+## Helpers and pin tests
+
+Give students a small helper module when observations or integer actions need a game-specific bridge. Hearts and Spades ship `sandbox/cards.py`; Flappy Bird ships `sandbox/features.py`.
+
+Keep helpers plain Python and import them at the top of `agent.py`. Do not put hand-authored files under `sandbox/env/`, which compose owns in its build output.
+
+Add a pin test under `template/tests/` when the helper restates environment facts. Composed examples inherit those tests, so the `examples` CI job catches drift.
+
+Hearts and Spades may re-export game-independent names from `sandbox.semantic_cards`, but legality, scoring, bidding, partnership, and observation access remain environment-specific.
+
+## Composed kit
+
+`uv run python scripts/compose.py <env>` writes a complete student repository to `build/templates/<env>/`. Passing an example name writes the example tree under `build/examples/<env>/<name>/`.
+
+Read [Template product and releases](../template.md#composition) for the composition order, generated packages, dependency merge rule, and student-documentation rewrites.
+
+## Student documentation
+
+Add `docs/students/environments/<env>.md` and a row in `docs/students/environments/index.md`. The page should explain the game, starting agent, scoring, helper module, raw contract, time limits, and a first improvement.
+
+The starting `agent.py` body must match the page's starter-agent listing. Its `README.md`, `agent.py`, and helper modules point students to the composed local `environment.md` instead of duplicating the game reference.
+
+Compose copies the student page into each kit as `environment.md` and the shared LLM guide as `llm.md`, then rewrites their relative documentation links to the published docs URL. Links inside `docs/` stay relative in the source page, while links to repository files use stable GitHub URLs.
+
+Every environment must have at least one example. Examples should use the helper module so they demonstrate the style students should adopt, but student pages must not link their source as a solution.
