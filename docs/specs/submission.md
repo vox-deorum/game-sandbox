@@ -41,7 +41,7 @@ Participants develop against PettingZoo on their own computers. The `vox-deorum/
 
 - `main` for the default environment.
 - `templates/<env>` for each additional environment.
-- `examples/<env>/<name>` for complete worked agents.
+- `examples/<env>/<name>` for complete worked agents selected for publication by that environment.
 
 Each starter kit includes:
 

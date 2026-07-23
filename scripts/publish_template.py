@@ -15,7 +15,7 @@ is safe because every push is an idempotent force-push.
 The student repo (``vox-deorum/game-agent-template``) is a single repository whose branches
 carry the per-environment templates and examples. For tag ``template-v<N>``:
 
-1. Composes the default-environment template and every example from the current environment layers.
+1. Composes the default-environment template and each explicitly allowed publication example.
 2. Publishes the *default* environment's composed template to ``main`` (so "Use this
    template" instantiates it), committed as ``Template v<N> from game-sandbox@<sha>`` with a
    mirrored ``v<N>`` tag.
@@ -38,7 +38,7 @@ import sys
 from pathlib import Path
 
 from _paths import BUILD_DIR, DEFAULT_TEMPLATE_ENV, FRONTEND_LOCAL_DIST_DIR, REPO_ROOT
-from compose import compose_example, compose_template, list_envs, list_examples
+from compose import compose_example, compose_template, list_envs, list_examples, list_published_examples
 
 DEFAULT_TARGET_REPO = "vox-deorum/game-agent-template"
 _TAG_PATTERN = re.compile(r"^(?:refs/tags/)?template-v(\d+)$")
@@ -145,6 +145,49 @@ def _publish_orphan_snapshot(dest: Path, *, branch: str, message: str, remote: s
     _git(["push", "-f", remote, f"HEAD:{branch}"], cwd=dest)
 
 
+def _example_ref(env: str, name: str) -> str:
+    """Return the full remote ref used for one published example."""
+    return f"refs/heads/examples/{env}/{name}"
+
+
+def _validate_example_refs(examples: list[tuple[str, str]]) -> None:
+    """Reject invalid example refs before composing or changing any remote branch."""
+    for env, name in examples:
+        ref = _example_ref(env, name)
+        result = subprocess.run(
+            ["git", "check-ref-format", ref],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode:
+            raise PublishError(f"invalid example publication ref {ref!r}")
+
+
+def _remote_example_refs(remote: str) -> list[str]:
+    """Return existing example branch refs, without inspecting any other remote branch."""
+    result = subprocess.run(
+        ["git", "ls-remote", "--heads", remote, "refs/heads/examples/*"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return sorted(
+        fields[1]
+        for line in result.stdout.splitlines()
+        if len(fields := line.split()) >= 2 and fields[1].startswith("refs/heads/examples/")
+    )
+
+
+def _prune_stale_example_refs(remote: str, desired_refs: set[str]) -> None:
+    """Delete remote example branches not present in the current allowlists."""
+    for ref in _remote_example_refs(remote):
+        if ref not in desired_refs:
+            _git(["push", remote, "--delete", ref.removeprefix("refs/heads/")], cwd=REPO_ROOT)
+
+
 def publish(
     *,
     version: int,
@@ -158,9 +201,10 @@ def publish(
         raise PublishError(
             f"default environment {DEFAULT_TEMPLATE_ENV!r} has no template layer; found {envs or '(none)'}."
         )
+    examples = list_published_examples()
+    _validate_example_refs(examples)
     local_bundle = _build_local_frontend()
     templates = {env: compose_template(env) for env in envs}
-    examples = list_examples()
     composed = {(env, name): compose_example(env, name) for env, name in examples}
     _inject_local_frontend(local_bundle, [*templates.values(), *composed.values()])
     print(f"composed {len(templates)} template(s): {', '.join(templates) or '(none)'}")
@@ -196,6 +240,10 @@ def publish(
             print(f"[dry-run] would force-push template {env!r} to branch templates/{env}")
         for env, name in composed:
             print(f"[dry-run] would force-push example to branch examples/{env}/{name}")
+        published = set(examples)
+        for env, name in list_examples():
+            if (env, name) not in published:
+                print(f"[dry-run] would exclude source example {env}/{name} from publication")
         print("[dry-run] no network operations performed")
         return
 
@@ -227,6 +275,8 @@ def publish(
             message=f"{commit_message} (example: {env}/{name})",
             remote=remote,
         )
+
+    _prune_stale_example_refs(remote, {_example_ref(env, name) for env, name in composed})
 
     print(
         f"published template v{version}: {len(templates)} template branch(es) and "

@@ -251,6 +251,15 @@ def list_examples() -> list[tuple[str, str]]:
     return pairs
 
 
+def list_published_examples() -> list[tuple[str, str]]:
+    """Every explicitly allowed publication example as a canonical ``(env, name)`` pair."""
+    return sorted(
+        (env, name)
+        for env, discovered in discover_environments().items()
+        for name in discovered.published_examples
+    )
+
+
 def _prepare_output_dir(out_dir: Path) -> Path:
     """Validate and prepare one composition target without risking source-tree deletion."""
     target = out_dir.resolve()

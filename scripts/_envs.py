@@ -23,6 +23,7 @@ class DiscoveredEnvironment:
     env_id: str
     entry: Any
     spec: TemplateEnvironmentSpec
+    published_examples: tuple[str, ...]
 
 
 def _ignore_patterns(path: Path = ENVIRONMENTS_IGNORE_FILE) -> tuple[str, ...]:
@@ -114,6 +115,42 @@ def _template_spec(package_dir: Path, meta: Any) -> TemplateEnvironmentSpec:
     )
 
 
+def _published_examples(package_dir: Path, module: Any) -> tuple[str, ...]:
+    """Validate and return the environment's explicit publication allowlist."""
+    if not hasattr(module, "PUBLISHED_EXAMPLES"):
+        raise RuntimeError(f"environment package {package_dir.name!r} must export PUBLISHED_EXAMPLES")
+
+    published_examples = module.PUBLISHED_EXAMPLES
+    if not isinstance(published_examples, tuple):
+        raise RuntimeError(f"environment package {package_dir.name!r} PUBLISHED_EXAMPLES must be a tuple")
+
+    seen: set[str] = set()
+    examples_dir = package_dir / "examples"
+    for name in published_examples:
+        if not isinstance(name, str) or not name.strip():
+            raise RuntimeError(
+                f"environment package {package_dir.name!r} PUBLISHED_EXAMPLES must contain nonblank strings"
+            )
+        if name in (".", "..") or "/" in name or "\\" in name:
+            raise RuntimeError(
+                f"environment package {package_dir.name!r} PUBLISHED_EXAMPLES entry {name!r} must name an "
+                "immediate examples child directory"
+            )
+        if name in seen:
+            raise RuntimeError(
+                f"environment package {package_dir.name!r} PUBLISHED_EXAMPLES contains duplicate entry "
+                f"{name!r}"
+            )
+        if not (examples_dir / name).is_dir():
+            raise RuntimeError(
+                f"environment package {package_dir.name!r} PUBLISHED_EXAMPLES entry {name!r} has "
+                "no directory "
+                f"under {examples_dir}"
+            )
+        seen.add(name)
+    return published_examples
+
+
 def discover_environments() -> dict[str, DiscoveredEnvironment]:
     """Import every recognized package and return it keyed by its metadata environment id."""
     discovered: dict[str, DiscoveredEnvironment] = {}
@@ -128,5 +165,10 @@ def discover_environments() -> dict[str, DiscoveredEnvironment]:
             raise RuntimeError(f"environment package {package_dir.name!r} has metadata id {env_id!r}")
         if env_id in discovered:
             raise RuntimeError(f"duplicate environment id {env_id!r}")
-        discovered[env_id] = DiscoveredEnvironment(env_id, entry, _template_spec(package_dir, meta))
+        discovered[env_id] = DiscoveredEnvironment(
+            env_id,
+            entry,
+            _template_spec(package_dir, meta),
+            _published_examples(package_dir, module),
+        )
     return dict(sorted(discovered.items()))

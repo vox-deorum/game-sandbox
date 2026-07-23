@@ -117,3 +117,23 @@ def test_source_import_replaces_a_cached_package(tmp_path: Path, monkeypatch: py
 
     assert imported.VALUE == "source"
     assert Path(imported.__file__).resolve() == (package / "__init__.py").resolve()
+
+
+def test_published_example_declarations_require_valid_immediate_example_directories(tmp_path: Path):
+    package = tmp_path / "example"
+    (package / "examples" / "known").mkdir(parents=True)
+
+    assert _envs._published_examples(package, SimpleNamespace(PUBLISHED_EXAMPLES=("known",))) == ("known",)
+    assert _envs._published_examples(package, SimpleNamespace(PUBLISHED_EXAMPLES=())) == ()
+
+    cases = [
+        (SimpleNamespace(), "must export"),
+        (SimpleNamespace(PUBLISHED_EXAMPLES=["known"]), "must be a tuple"),
+        (SimpleNamespace(PUBLISHED_EXAMPLES=("known", "known")), "duplicate"),
+        (SimpleNamespace(PUBLISHED_EXAMPLES=("known/child",)), "immediate"),
+        (SimpleNamespace(PUBLISHED_EXAMPLES=("missing",)), "has no directory"),
+        (SimpleNamespace(PUBLISHED_EXAMPLES=(" ",)), "nonblank"),
+    ]
+    for module, message in cases:
+        with pytest.raises(RuntimeError, match=message):
+            _envs._published_examples(package, module)

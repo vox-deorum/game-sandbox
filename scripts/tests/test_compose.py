@@ -19,6 +19,8 @@ from compose import (  # noqa: E402
     compose_example,
     compose_template,
     list_envs,
+    list_examples,
+    list_published_examples,
 )
 
 
@@ -348,3 +350,18 @@ def test_flappy_bird_is_a_registered_env():
     # Sanity: the worked example env exists, so the tests above compose against real content.
     assert "flappy_bird" in list_envs()
     assert "base" not in list_envs()
+
+
+def test_published_examples_are_sorted_allowlists_while_source_inventory_stays_complete():
+    assert list_published_examples() == []
+    assert list_examples() == [
+        ("flappy_bird", "hello"),
+        ("hearts", "assassin"),
+        ("hearts", "closer"),
+        ("hearts", "duck"),
+        ("hearts", "moonshot"),
+        ("hearts", "oracle"),
+        ("spades", "counter"),
+        ("spades", "daredevil"),
+        ("spades", "signaler"),
+    ]

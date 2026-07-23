@@ -22,6 +22,8 @@ Read [Environment template and examples](environments/template-and-examples.md) 
 
 Composition replaces whole files. `requirements.extra.txt` is the only merge: it appends pins and may not override one already in `requirements.txt`.
 
+An environment's `PUBLISHED_EXAMPLES` tuple selects which source examples become public branches. It does not affect `compose.py` or examples CI: all checked-in examples remain composable and tested. An empty tuple publishes no example branches for that environment.
+
 Compose copies the student environment page as `environment.md` and the shared LLM guide as `llm.md`, rewrites `{{DOCS_URL}}`, and fails if a required page or token is missing. The local browser bundle is added only to a release or dry-run staging tree.
 
 ## Versioned dependency set
@@ -43,6 +45,6 @@ Dispatch the Publish Template workflow from `main` with version `N`.
 - The current `N` with `republish: true` refreshes an already-tagged release. It re-runs CI on current main, force-pushes the student repository, and leaves this repository's main and `template-v<N>` tag alone. Use it to publish an environment merged after `template-v<N>` shipped.
 - A lower `N` is refused.
 
-The workflow verifies the selected commit, builds the local frontend once, and uses the same compose path as local checks. It then publishes the default template to the student repository's `main` branch, templates to `templates/<env>`, and examples to `examples/<env>/<name>`. A normal release fast-forwards this repository's `main` and writes `template-v<N>` last. A republish skips both operations.
+The workflow verifies the selected commit, builds the local frontend once, and uses the same compose path as local checks. It then publishes the default template to the student repository's `main` branch, templates to `templates/<env>`, and only examples selected by each environment's `PUBLISHED_EXAMPLES` tuple to `examples/<env>/<name>`. After every desired branch is pushed, a real publish removes stale generated `examples/*` branches that are no longer selected. It does not affect other branches. A normal release fast-forwards this repository's `main` and writes `template-v<N>` last. A republish skips both operations.
 
-Use `dry_run: true` to rehearse the full path without pushing to the student repository, `main`, or tags. Combine `dry_run: true` with `republish: true` to rehearse a republish. Run the Docker-gated end-to-end workflow after a release to build and exercise the new session image.
+Use `dry_run: true` to rehearse the full path without contacting or mutating the student repository, `main`, or tags. Combine `dry_run: true` with `republish: true` to rehearse a republish. Run the Docker-gated end-to-end workflow after a release to build and exercise the new session image.

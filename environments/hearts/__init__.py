@@ -15,6 +15,7 @@ from .env import default_action, make_env
 from .overlay import extract_overlay
 
 ENV_ID = "hearts"
+PUBLISHED_EXAMPLES = ()
 
 META = EnvironmentMeta(
     env_id=ENV_ID,

@@ -10,6 +10,8 @@ Put the starting `agent.py`, `README.md`, student helper modules, and pin tests 
 
 Put each worked overlay in `environments/<env>/examples/<name>/`. An example contains only the files that differ from its composed template, such as an agent, a README, tests, and an optional `requirements.extra.txt`.
 
+Every environment package must also declare `PUBLISHED_EXAMPLES`, a tuple of example names that may be published. Use an empty tuple when an environment has no examples to publish. Names must identify immediate directories under that environment's `examples/` directory. This declaration is a publication allowlist, not the source example inventory: every checked-in example remains available to compose and to the examples CI job.
+
 The top-level `templates/` directory now contains only `templates/base/`. Generated `sandbox/env/`, `sandbox/harness/`, and shared helper files exist only in a composed tree under `build/`.
 
 ## Helpers and pin tests
@@ -37,3 +39,5 @@ The starting `agent.py` body must match the page's starter-agent listing. Its `R
 Compose copies the student page into each kit as `environment.md` and the shared LLM guide as `llm.md`, then rewrites their relative documentation links to the published docs URL. Links inside `docs/` stay relative in the source page, while links to repository files use stable GitHub URLs.
 
 Every environment must have at least one example. Examples should use the helper module so they demonstrate the style students should adopt, but student pages must not link their source as a solution.
+
+Only names in `PUBLISHED_EXAMPLES` become student-repository `examples/<env>/<name>` branches. Keep an example in source when it is useful for CI, development, or tests but should not be published.

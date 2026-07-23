@@ -57,7 +57,7 @@ The inherited `base/tests/` check what every student repo should satisfy:
 - the agent instantiates and structurally has `reset` and `act`;
 - a three-step headless episode runs through `play.py`'s loop without error against the synced environment.
 
-They run in seconds, because every composed example runs them on every PR. Because the bare template's `act` raises `NotImplementedError`, a composed example is the only green proof per env, so CI requires every env layer to ship at least one example.
+They run in seconds, because every checked-in composed example runs them on every PR. Because the bare template's `act` raises `NotImplementedError`, a composed example is the only green proof per env, so CI requires every env layer to ship at least one example. Publication selection is independent: an environment's required `PUBLISHED_EXAMPLES` tuple may be empty, and it controls only which example branches reach students.
 
 `environments/flappy_bird/examples/hello/` becomes a real scripted Flappy Bird agent: a heuristic that flaps when the bird is below the next gap's center, implemented in `agent.py` over the 12-feature observation, with a test asserting it clearly outperforms noop over a few fixed seeds. It keeps its `requirements.extra.txt` (`wcwidth`, used trivially in a display string) so the extra-pin merge path stays exercised end to end in CI, not only in the compose unit tests. This same heuristic agent, loaded from the composed example's manifest, is what the stage's exit criterion runs through the harness CLI.
 
@@ -67,7 +67,7 @@ When everything above is green, run the existing `template-publish` workflow wit
 
 - verifies;
 - publishes the default environment's composed template (`flappy_bird`) to `vox-deorum/game-agent-template` main with the mirrored `v1` tag;
-- force-pushes each environment's composed template to its `templates/<env>` branch and each composed example to its `examples/<env>/<name>` branch;
+- force-pushes each environment's composed template to its `templates/<env>` branch and each `PUBLISHED_EXAMPLES`-selected composed example to its `examples/<env>/<name>` branch, then prunes stale generated `examples/*` branches after all desired pushes succeed;
 - stamps `template-v1` on the monorepo.
 
 The student repository's placeholder warning disappears with the content it warned about.
