@@ -32,16 +32,17 @@ One version number `N` identifies the `template-v<N>` tag, `deps-v<N>` session i
 
 Edit `templates/base/requirements.in` to change dependencies, then regenerate `templates/base/requirements.txt` with `uv pip compile`. Do not hand-edit the pinned file.
 
-An active unreleased `deps-v<N>` directory may be regenerated with its matching template. Once `template-v<N>` is published, that snapshot is immutable.
+An active unreleased `deps-v<N>` directory may be regenerated with its matching template. Once `template-v<N>` is published, that snapshot is immutable. A republish reuses the frozen `deps-v<N>` snapshot unchanged because CI pins every dependency touchpoint to it.
 
 ## Cutting a release
 
 Dispatch the Publish Template workflow from `main` with version `N`.
 
 - A greater `N` creates the next dependency snapshot and updates the owned version touchpoints.
-- The current `N` republishes the existing tree after a partial failure.
+- The current `N` retries a release whose `template-v<N>` tag never landed.
+- The current `N` with `republish: true` refreshes an already-tagged release. It re-runs CI on current main, force-pushes the student repository, and leaves this repository's main and `template-v<N>` tag alone. Use it to publish an environment merged after `template-v<N>` shipped.
 - A lower `N` is refused.
 
-The workflow verifies the bumped commit, builds the local frontend once, and uses the same compose path as local checks. It then publishes the default template to the student repository's `main` branch, templates to `templates/<env>`, examples to `examples/<env>/<name>`, fast-forwards this repository's `main`, and writes `template-v<N>` last.
+The workflow verifies the selected commit, builds the local frontend once, and uses the same compose path as local checks. It then publishes the default template to the student repository's `main` branch, templates to `templates/<env>`, and examples to `examples/<env>/<name>`. A normal release fast-forwards this repository's `main` and writes `template-v<N>` last. A republish skips both operations.
 
-Use `dry_run: true` to rehearse the full path without pushing to the student repository, `main`, or tags. Run the Docker-gated end-to-end workflow after a release to build and exercise the new session image.
+Use `dry_run: true` to rehearse the full path without pushing to the student repository, `main`, or tags. Combine `dry_run: true` with `republish: true` to rehearse a republish. Run the Docker-gated end-to-end workflow after a release to build and exercise the new session image.

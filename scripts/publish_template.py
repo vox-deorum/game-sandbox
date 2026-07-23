@@ -3,11 +3,14 @@
 Invoked by the manually dispatched ``template-publish.yml`` workflow (``workflow_dispatch``
 with a ``version`` input N), which calls this script with ``--tag template-v<N>``; it is
 equally runnable locally with the same flag. The ``template-v<N>`` tag is *not* the trigger
-— the workflow stamps it as its last step, after the student repo is fully updated, so a
+because the workflow stamps it as its last step, after the student repo is fully updated, so a
 run that fails partway leaves no dangling release tag to clean up before retrying. The
 workflow is a thin wrapper around this one script and ``scripts/compose.py``, so local
 development, CI verification, and publishing all exercise one code path and a student's
 clone is byte-identical to what CI tested.
+
+The workflow may also dispatch this script for an already-tagged N in republish mode, which
+is safe because every push is an idempotent force-push.
 
 The student repo (``vox-deorum/game-agent-template``) is a single repository whose branches
 carry the per-environment templates and examples. For tag ``template-v<N>``:

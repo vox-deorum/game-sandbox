@@ -11,8 +11,8 @@ Two modes:
 
 - ``--version N`` (apply): move the whole repo to exactly ``N``. ``N`` greater than the current
   version performs the bump; ``N`` equal to it is a validated no-op (the retry / already-bumped
-  path a release re-run takes); ``N`` less than it is refused, because publishing an older label
-  would mislabel the release.
+  path a release re-run takes, or the republish path for an already-tagged current version); ``N``
+  less than it is refused, because publishing an older label would mislabel the release.
 - ``--check``: touch nothing; exit non-zero unless every version touchpoint already agrees. CI runs
   this on every pull request (wired into ``scripts/ci.py``'s generated-code-fresh job), so a manual
   edit that desyncs the manifest, the backend constant, and the frozen image is caught before it

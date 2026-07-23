@@ -37,7 +37,7 @@ Each job's steps are a single call to `scripts/ci.py <job>` after dependency set
 
 `docs.yml` is described in [docs-site.md](docs-site.md): strict builds on docs PRs, Pages deployment on main.
 
-`template-publish.yml` is described in [examples-and-template-publishing.md](examples-and-template-publishing.md): a manually triggered (`workflow_dispatch`) verify, then publish, then tag, reusing the same compose and publish scripts CI runs; the `template-v<N>` tag is the workflow's last step rather than its trigger, so a failed run leaves nothing to clean up.
+`template-publish.yml` is described in [examples-and-template-publishing.md](examples-and-template-publishing.md): a manually triggered (`workflow_dispatch`) verify and publish, followed by a push for a normal release, reusing the same compose and publish scripts CI runs. A normal release writes the `template-v<N>` tag last, so a failed run leaves nothing to clean up. Republish mode skips the push.
 
 CI is Linux-only on purpose. Session containers are Linux, and the dev scripts stay cross-platform by being Python, so a Windows matrix adds cost without catching a class of bug we ship. Workflows use concurrency groups, so superseded PR runs are cancelled.
 

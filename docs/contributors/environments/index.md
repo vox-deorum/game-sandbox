@@ -19,6 +19,7 @@ Read the [environment specification](../../specs/environment.md) for product rul
 4. Add a student helper module and its pin test when raw observations or actions need decoding.
 5. Write the student environment page and add a row to the [student environments index](../../students/environments/index.md).
 6. Run `npm run sync:envs`, compose the template, run the repository checks, and play-test the environment.
+7. Publish the environment's template and example branches by riding the next version bump or by dispatching the [Publish Template workflow](../template.md) with the current N and `republish: true`.
 
 A new environment is not complete when it merely runs. A student must be able to learn, run, and improve an agent without reading the environment source.
 

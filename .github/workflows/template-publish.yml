@@ -4,21 +4,25 @@ name: Publish Template
 #
 # Dispatching `version=N` makes the whole release: the `verify` job bumps the repo to exactly N
 # (scripts/bump_template_version.py: base manifest, e2e fixtures, DEPS_VERSION + registry, and the
-# frozen deps-v<N> image snapshot), commits that bump locally, and runs the full CI suite on it — the
-# ONLY CI that commit ever gets, since a later GITHUB_TOKEN push to main does not trigger ci.yml.
+# frozen deps-v<N> image snapshot), commits any bump locally, and runs the full CI suite on it. This
+# is the only CI that commit gets, since a later GITHUB_TOKEN push to main does not trigger ci.yml.
 # N semantics: N > current bumps; N == current is a validated no-op (the retry / already-bumped path,
-# publishing the tree as-is); N < current is refused. The tag-already-exists check still applies.
+# publishing the tree as-is); N < current is refused. When `republish` is false, the tag must not exist.
 #
-# The bump commit then travels to the later jobs as a git-bundle artifact. `publish` checks it out and
-# force-pushes the composed templates and examples to the student repo, so the student-repo commit's
-# `from game-sandbox@<sha>` names the exact commit that will be tagged. Only AFTER the student repo is
-# fully updated does `push` fast-forward main to that commit and, last of all, tag it `template-v<N>`.
-# Ordering this way means a failure anywhere leaves main and tags untouched — nothing to clean up.
-# Recovery: if main moved during the run the fast-forward push fails and no tag is written, so just
-# dispatch a fresh run; the student-repo publish force-pushes, so a partial previous attempt is
-# overwritten cleanly. `dry_run: true` rehearses the whole path (bump, commit, full CI, local
-# frontend build, and complete publish snapshot staging) while pushing nothing to the student repo,
-# main, or tags.
+# Republish mode requires the tag to exist and N to equal the current version. It re-runs the full CI
+# gate, force-pushes the student repository from current main, and skips the `push` job. On the normal
+# release path, each student-repo commit names the exact monorepo commit that will be tagged. On a
+# republish, it names the current main head, which can be newer than the commit `template-v<N>` names.
+# The dependency set cannot drift at the same N because CI checks every versioned touchpoint.
+#
+# On the normal release path, the bump commit travels to the later jobs as a git-bundle artifact.
+# `publish` checks it out and force-pushes the composed templates and examples to the student repo,
+# so `from game-sandbox@<sha>` names the exact commit that will be tagged. Only after the student
+# repo is fully updated does `push` fast-forward main to that commit and tag it `template-v<N>`.
+# This ordering means a failure leaves main and tags untouched, with nothing to clean up. If main
+# moved during the run, the fast-forward push fails and no tag is written, so dispatch a fresh run.
+# The student-repo publish force-pushes, so a partial previous attempt is overwritten cleanly.
+# `dry_run: true` rehearses the selected path while pushing nothing to the student repo, main, or tags.
 on:
   workflow_dispatch:
     inputs:
@@ -28,6 +32,11 @@ on:
         type: string
       dry_run:
         description: "Rehearse everything, including the local frontend build and complete publish snapshot staging, without pushing."
+        required: false
+        default: false
+        type: boolean
+      republish:
+        description: "Refresh an already-released template-v<N> from current main without changing this repository's main or tags."
         required: false
         default: false
         type: boolean
@@ -63,17 +72,32 @@ jobs:
           # A full clone: the version validation reads origin's tags, and `git bundle` cannot be built
           # from a shallow history.
           fetch-depth: 0
-      - name: Validate the version and fail fast if it is already released
+      - name: Validate the version against the release mode
         env:
           VERSION: ${{ inputs.version }}
+          REPUBLISH: ${{ inputs.republish }}
         run: |
           if ! [[ "$VERSION" =~ ^[0-9]+$ ]]; then
             echo "::error::version must be a non-negative integer, got '${VERSION}'."
             exit 1
           fi
+          current_version="$(jq -r '.template_version' templates/base/manifest.json)"
           tag="template-v${VERSION}"
+          tag_exists=false
           if git ls-remote --tags --exit-code origin "refs/tags/${tag}" >/dev/null 2>&1; then
-            echo "::error::${tag} already exists; bump the version input instead of re-publishing."
+            tag_exists=true
+          fi
+          if [ "$REPUBLISH" = "true" ]; then
+            if [ "$tag_exists" != "true" ]; then
+              echo "::error::${tag} does not exist; drop republish to cut a new release."
+              exit 1
+            fi
+            if [ "$VERSION" -ne "$current_version" ]; then
+              echo "::error::republish can only re-release the current version ${current_version}, got ${VERSION}."
+              exit 1
+            fi
+          elif [ "$tag_exists" = "true" ]; then
+            echo "::error::${tag} already exists; set republish to true or bump the version input."
             exit 1
           fi
       - uses: astral-sh/setup-uv@v5
@@ -104,6 +128,11 @@ jobs:
             echo "bumped=false" >> "$GITHUB_OUTPUT"
           fi
           echo "release_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Assert republishing did not create a bump commit
+        if: inputs.republish == true && steps.commit.outputs.bumped == 'true'
+        run: |
+          echo "::error::republish must not create a version bump commit."
+          exit 1
       # The full non-Docker suite on the exact commit that will ship: python, typescript,
       # generated-code-fresh (which also runs the version --check), examples, docs, and the publish
       # dry-run. Because a later bot push to main does not trigger ci.yml, this is the release commit's
@@ -168,6 +197,7 @@ jobs:
   # so a failed push leaves no tag and re-dispatching is clean.
   push:
     needs: [verify, publish]
+    if: inputs.republish != true
     runs-on: ubuntu-latest
     permissions:
       contents: write

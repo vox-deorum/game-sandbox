@@ -156,13 +156,13 @@ Use `act -l` first to confirm that workflow YAML parses and lists the expected j
 
 ## Rehearse template publishing
 
-The publish workflow has verify, publish, and tag phases. Only verify is safe under `act`:
+The publish workflow has verify and publish phases, followed by a push phase for a normal release. Republish mode skips the push phase. Only verify is safe under `act`:
 
 ```console
 act workflow_dispatch -W .github/workflows/template-publish.yml -j verify --input version=0
 ```
 
-Do not run publish or tag locally with real credentials. They write to the student repository and create a release tag.
+Do not run publish or push locally with real credentials. They write to the student repository or this repository, and a normal push creates the release tag.
 
 To test composition without network writes:
 

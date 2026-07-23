@@ -18,7 +18,7 @@ CI composes every example from the current `templates/` on every pull request an
 
 ## How students consume the results
 
-Students never clone the monorepo. They use a separate student-facing repository, `vox-deorum/game-agent-template`, marked as a GitHub template repository so "Use this template" works. When a maintainer pushes a `template-v<N>` tag on the monorepo, the publish workflow updates that repository:
+Students never clone the monorepo. They use a separate student-facing repository, `vox-deorum/game-agent-template`, marked as a GitHub template repository so "Use this template" works. When a maintainer dispatches the Publish Template workflow for version N, it updates that repository:
 
 - The default environment's composed template becomes its main branch content, so "Use this template" instantiates a runnable kit. It is committed as `Template v<N> from game-sandbox@<sha>` with a mirrored tag `v<N>`.
 - Each environment's composed template is force-pushed to a `templates/<env>` branch, and each example to an `examples/<env>/<name>` branch.
@@ -43,13 +43,13 @@ The project's whole versioning story has three axes and nothing else:
 
 ## The publish workflow
 
-`.github/workflows/template-publish.yml` is triggered manually (`workflow_dispatch`) with a single `version` input N, not by a tag push, and runs three jobs in order. The tag is deliberately the workflow's last action rather than its trigger. If the `template-v<N>` tag were the trigger, a run that failed partway would leave a dangling release tag that has to be deleted before any retry. Inverting it makes the tag a record of a completed publish, so a failure leaves nothing to clean up and recovery is simply to re-run.
+`.github/workflows/template-publish.yml` is triggered manually (`workflow_dispatch`) with a `version` input N and a `republish` flag, not by a tag push, and runs three jobs in order. The tag is deliberately the workflow's last action rather than its trigger. If the `template-v<N>` tag were the trigger, a run that failed partway would leave a dangling release tag that has to be deleted before any retry. Inverting it makes the tag a record of a completed publish, so a failure leaves nothing to clean up and recovery is simply to re-run.
 
 The three jobs are:
 
-1. **Verify.** Reject a non-integer version, or one whose tag already exists (you bump N rather than re-release). Then compose and test all examples at this commit, so a broken or already-released state cannot publish.
+1. **Verify.** Reject a non-integer version. A normal release requires its tag not to exist. A republish requires the tag to exist and N to equal the current version. Then compose and test all examples at this commit, so a broken state cannot publish.
 2. **Publish.** A single `scripts/publish_template.py --tag template-v<N>` run publishes the default environment's composed template to the student repository's main branch with the mirrored `v<N>` tag, then force-pushes each environment's composed template to its `templates/<env>` branch and each composed example to its `examples/<env>/<name>` branch. This is one script invocation sharing the one compose path, so the published artifact is provably identical to what verify tested, and force-pushing means a partial previous attempt is overwritten cleanly.
-3. **Tag.** Only once the student repo is fully updated, stamp this monorepo commit with the `template-v<N>` tag.
+3. **Tag.** Only once the student repo is fully updated, stamp this monorepo commit with the `template-v<N>` tag. A republish skips this job, which lets an environment merged later gain its branches without a version bump.
 
 The two halves of the publish step touch two different repositories' tags. The mirrored `v<N>` on the student repo is part of the published artifact, while the `template-v<N>` on the monorepo is the release marker created by the final job. The student-repo push authenticates with a fine-grained personal access token holding contents write on the target repository. That token is stored as the `TEMPLATE_REPO_TOKEN` secret on a dedicated `template-publish` environment that only the publish job opts into, so it is gated behind environment protection rules and never exposed to the verify or tag jobs. A GitHub App is the documented upgrade if token rotation becomes a burden. The final monorepo tag uses the workflow's own `GITHUB_TOKEN` with contents write scoped to that job alone. Marking the target as a GitHub template repository is a one-time manual setting.
 
