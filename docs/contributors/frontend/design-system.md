@@ -74,6 +74,7 @@ The primitives live in `frontend/src/components/ui/`, PascalCase with a `Ui` pre
 | `UiSlider` | The replay scrubber (keyboard operation and value announcement), wrapping Reka UI Slider. |
 | `UiMeter` | Read-only progress with a required visible text value. First used for LLM development budgets. |
 | `UiCheckboxGroup` | A labelled fieldset for selecting zero or more string options, with options emitted in their declared order. |
+| `UiTooltip` | A quiet underlined trigger with a detail bubble on hover, focus, or click. The bubble teleports to the body, so it escapes a table cell or a scrolling log, and mounts nothing while closed. `inspectable` turns the trigger into an `inspect` emit for a caller that opens a fuller view instead. |
 | `UiEmptyState` | The loading / empty / error message line, muted or danger. |
 
 Simple primitives are local Vue components. Use Reka UI only where safe focus management and ARIA behavior are difficult to implement. Currently, only the dialog and slider use it.

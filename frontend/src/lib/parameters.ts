@@ -67,6 +67,22 @@ export function formatParameterValue(parameter: EnvParameter, value: ParameterVa
 }
 
 /**
+ * The player-facing settings a resolved parameter map represents: one title/value pair per visible
+ * declaration, in declaration order, with a missing entry falling back to its default. Everything that
+ * shows an episode's or a season's settings reads from here, so a season summary and a replay's own
+ * settings name and format the same values the same way.
+ */
+export function describeParameters(
+  declarations: readonly EnvParameter[],
+  values: Readonly<Record<string, ParameterValue>>,
+): { label: string; value: string }[] {
+  return visibleParameters(declarations).map((parameter) => ({
+    label: parameter.title,
+    value: formatParameterValue(parameter, values[parameter.name] ?? parameter.default),
+  }))
+}
+
+/**
  * The seat count a parameter map resolves to, or undefined when its `seats` value does not satisfy the
  * declaration. The value is checked against the declaration rather than merely for integer-ness, so an
  * out-of-range entry is never mistaken for a usable seat count. A caller that renders a seat grid keeps

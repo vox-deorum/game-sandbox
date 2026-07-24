@@ -43,7 +43,7 @@ import UiDialog from '../components/ui/UiDialog.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import { useEnvironmentMeta } from '../composables/useEnvironmentMeta.js'
 import { formatDate, formatSeasonName, slotLabel } from '../lib/format.js'
-import { formatParameterValue, resolvedSeatCount, visibleParameters } from '../lib/parameters.js'
+import { describeParameters, resolvedSeatCount } from '../lib/parameters.js'
 import { handleSessionStartResult } from '../lib/session-start.js'
 import { canParticipate, isAdmin, useMe } from '../me.js'
 import { thumbnailFor } from '../renderers/registry.js'
@@ -244,11 +244,15 @@ function startSingleSeat(input: Omit<StartPayload, 'slots'>): void {
   void submitStart({ slots: { player_0: { kind: 'human' } }, ...input })
 }
 
+// The season's settings, as the quiet summary line under its description. An environment whose
+// parameters are all fixed (or a season that overrides none of the adjustable ones) has nothing to
+// list, and the line says so rather than disappearing: "no special settings" is itself the answer a
+// player wants from that line.
 const visibleSeasonSettings = computed(() => {
   const prefill = playParameters.value
   if (meta.value === null || prefill === null) return []
-  return visibleParameters(meta.value.parameters).map((parameter) =>
-    `${parameter.title} ${formatParameterValue(parameter, prefill.values[parameter.name] ?? parameter.default)}`,
+  return describeParameters(meta.value.parameters, prefill.values).map(
+    (setting) => `${setting.label} ${setting.value}`,
   )
 })
 
@@ -284,15 +288,18 @@ async function submitStart(payload: StartPayload): Promise<void> {
         <div class="env-section-title">
           <h2>{{ playableSeason === null ? 'Open for Play' : 'Open for Play: ' + formatSeasonName(playableSeason) }}</h2>
         </div>
-        <UiButton v-if="showHumanPlay" size="lg" @click="open()" class="tight">Play</UiButton>
+        <UiButton v-if="showHumanPlay" @click="open()" class="tight">Play</UiButton>
       </div>
       <div
         v-if="playableSeason !== null && playableSeason.description_markdown !== null"
       >
         <InlineMarkdown :markdown="playableSeason.description_markdown" />
       </div>
-      <p v-if="visibleSeasonSettings.length > 0" class="play-season-settings">
-        Settings: {{ visibleSeasonSettings.join(' · ') }}
+      <p class="play-season-settings">
+        <template v-if="visibleSeasonSettings.length > 0">
+          Settings: {{ visibleSeasonSettings.join(' · ') }}
+        </template>
+        <template v-else>No special settings.</template>
       </p>
     </section>
 
@@ -409,6 +416,11 @@ async function submitStart(payload: StartPayload): Promise<void> {
 
 .env-section {
   margin-top: var(--space-6);
+}
+
+/* The season's settings summary: a quiet line under the description, never a heading of its own. */
+.play-season-settings {
+  color: var(--color-text-muted);
 }
 
 .env-section-head {

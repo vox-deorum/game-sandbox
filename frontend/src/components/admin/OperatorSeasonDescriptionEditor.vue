@@ -106,7 +106,8 @@ function clear(): Promise<void> {
 
 <style scoped>
 .description-editor {
-  padding: var(--space-4) 0;
+  margin: var(--space-4) 0 0;
+  padding: var(--space-4) 0 0;
   border-top: 1px solid var(--color-border);
 }
 

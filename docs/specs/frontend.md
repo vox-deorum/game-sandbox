@@ -27,7 +27,7 @@ The site uses **Environment** and **Season** as its front-facing names, matching
 | Seasons | Public seasons, active gates, environment, optional description, release time, submission count, session count |
 | My Agents | Signed-in user's current Season submission state and recent submitted-Season results across environments |
 | Replays | Sortable environment recording list |
-| Replay viewer | Renderer, transport, player attribution, chat, public LLM summaries |
+| Replay viewer | Renderer, transport, player attribution, chat, episode settings, public LLM summaries |
 | Live session | Renderer, shared controls, decision log, result, pinning, ratings |
 | Leaderboards | Automated and human-feedback boards for one environment and season |
 | Manage | Operator-only season configuration, deletion of unused private seasons, workflow logs, preview, and release |
@@ -43,13 +43,15 @@ The environment overview targets three potentially different seasons:
 - Watch and play use the current play-open season.
 - My Submissions uses the current submission-open season.
 
-While a season is open for play, the environment overview shows a season section directly above the watch and play section, set apart by its own background. It names the season, labels it **Open for play**, renders its description, and summarizes the visible effective gameplay settings. The **Play Yourself** action lives there because the action uses that season's settings. The watch and play section below is headed **Peer Play and Rate** followed by the same season name, so the listed agents are plainly the ones playable and ratable in that season. When play is closed, the page states that no season is currently open for play.
+While a season is open for play, the environment overview shows a season section directly above the watch and play section. Its heading names the season as open for play, and the section renders the season description and summarizes the visible effective gameplay settings. A season with no visible settings says **No special settings.** rather than dropping the line, so the summary always answers the question. The **Play** action lives there because the action uses that season's settings. The watch and play section below is headed **Play and Rate** followed by the same season name, so the listed agents are plainly the ones playable and ratable in that season. When play is closed, the page states that no season is currently open for play.
 
 An operator may set an optional **Season description** as display-only Markdown metadata. It is independent of run configuration and workflow execution and may be saved, replaced, or cleared at any time. The description becomes public when the season accepts submissions, is open for play, or is released. It remains hidden while all three gates are closed. Cross-game Seasons cards show the description only when it has content, with no placeholder when it is empty.
 
 A Season description is one inline Markdown paragraph of at most 2,000 characters after line endings are normalized and surrounding whitespace is trimmed. Soft-wrapped lines are allowed, but a blank line that creates a second paragraph is rejected. The description supports emphasis, strong text, inline code, and absolute HTTP(S) links. Raw HTML, images, block Markdown, relative links, and other link schemes remain inactive. Links open in a new tab with safe external-link attributes.
 
 The built-in **Naive agent** is always the first watch option. Ready submissions for the play-open season follow it.
+
+The replay viewer's status strip summarizes the settings the episode was played with: the count of settings, with the visible parameter values and the seed behind it in a tooltip. The seed has no slot of its own, since it configures the run like the rest of the settings.
 
 Replays are public and read-only. Each replay belongs to an environment, and a season column shows the season associated with the session that produced it. The replay list shows only the final section of each recording identifier and lists the owner first. In a naturally completed multiplayer replay, one top-ranked player produces the label `player_N won`, while multiple top-ranked players produce `Tied`. A replay without eligible ranking data keeps its general termination label. Owners may pin their own recordings.
 

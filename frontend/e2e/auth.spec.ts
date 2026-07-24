@@ -63,7 +63,7 @@ test('an admin creates a user, who signs in and plays', async ({ page, browser, 
 
     await newcomerPage.goto('/')
     await newcomerPage.getByRole('link', { name: /Flappy Bird/ }).click()
-    await newcomerPage.getByRole('button', { name: 'Play Yourself' }).click()
+    await newcomerPage.getByRole('button', { name: 'Play', exact: true }).click()
     await newcomerPage.getByRole('button', { name: 'Start playing' }).click()
 
     // The session page mounts the renderer — the same live-session proof journey.spec asserts on.
@@ -96,14 +96,14 @@ test('a pending user is gated until an admin approves them', async ({
 
     await pendingPage.goto(`/environments/${ENV_ID}`)
     // AppShell shows this role="status" banner while the account is pending (me.ts's canParticipate is
-    // false for that status). EnvironmentPage's "Play Yourself" only renders at all once canParticipate
+    // false for that status). EnvironmentPage's "Play" button only renders at all once canParticipate
     // is true (`v-if="canStartHumanPlay"`), so a pending account never sees the button in any
     // state — there is no separate disabled affordance to assert against, only its absence.
     // Target the banner by its copy: other components on the environment page also carry role="status",
     // so a bare getByRole('status') would be ambiguous.
     const pendingBanner = pendingPage.getByText('Your account is awaiting approval.')
     await expect(pendingBanner).toBeVisible()
-    await expect(pendingPage.getByRole('button', { name: 'Play Yourself' })).toHaveCount(0)
+    await expect(pendingPage.getByRole('button', { name: 'Play', exact: true })).toHaveCount(0)
 
     // Approve the account as the admin, in the separate `page` browser context.
     await authenticateBrowser(page.context(), admin)
@@ -118,7 +118,7 @@ test('a pending user is gated until an admin approves them', async ({
     // already-open tab on its next navigation — reload to pick it up.
     await pendingPage.reload()
     await expect(pendingPage.getByText('Your account is awaiting approval.')).toHaveCount(0)
-    await expect(pendingPage.getByRole('button', { name: 'Play Yourself' })).toBeVisible()
+    await expect(pendingPage.getByRole('button', { name: 'Play', exact: true })).toBeVisible()
   } finally {
     await pendingContext.close()
   }

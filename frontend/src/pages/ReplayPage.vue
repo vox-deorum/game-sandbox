@@ -45,6 +45,7 @@ import { anonymityState, presentsMasked } from '../lib/anonymity.js'
 import { hasSubmittedAgent } from '../lib/attribution.js'
 import { type ChatEntry } from '../lib/chat.js'
 import { formatDate } from '../lib/format.js'
+import { describeParameters } from '../lib/parameters.js'
 import { playbackIntervalMs } from '../lib/playback.js'
 import { isAdmin, useMe, userId } from '../me.js'
 import { parseRecording, UnsupportedVersionError } from '../replay/parse.js'
@@ -156,11 +157,32 @@ const scrubIndex = computed({
   set: (i) => transport.value?.seek(i),
 })
 
+// What this episode was played with: the visible parameters the recording header carries, resolved
+// against the environment's declarations, plus the seed. The seed no longer has a slot of its own in
+// the strip; it is the last of these settings, since it configures the run like the rest of them.
+const settingsDetails = computed(() => {
+  const recorded = header.value
+  if (recorded === null) return []
+  const declared =
+    meta.value === null ? [] : describeParameters(meta.value.parameters, recorded.parameters)
+  return recorded.seed === undefined
+    ? declared
+    : [...declared, { label: 'Seed', value: String(recorded.seed) }]
+})
+
 // Keep replay facts in the same shape as the ended-session card. The environment and recording id
 // already sit in the context line and URL, and pin state is shown by the pin button — so the strip
 // carries only the run's own facts, not those echoes.
 const metadataItems = computed(() => [
-  { label: 'Seed', value: header.value?.seed },
+  {
+    label: 'Settings',
+    // The strip stays one compact row, so the count is the summary and the values live in its tooltip.
+    value:
+      settingsDetails.value.length === 0
+        ? 'None'
+        : `${settingsDetails.value.length} ${settingsDetails.value.length === 1 ? 'setting' : 'settings'}`,
+    details: settingsDetails.value,
+  },
   { label: 'Ticks', value: finalSummary.value.ticks },
   {
     label: 'Owner',

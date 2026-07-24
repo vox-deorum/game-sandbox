@@ -2,6 +2,7 @@ import type { EnvParameter } from '@game-sandbox/schema/environment'
 import { describe, expect, it } from 'vitest'
 
 import {
+  describeParameters,
   formatParameterValue,
   initializeParameters,
   resolvedSeatCount,
@@ -80,6 +81,20 @@ describe('parameters', () => {
     if (extras === undefined || extrasValue === undefined) throw new Error('extras fixture missing')
     expect(formatParameterValue(extras, extrasValue)).toBe('Wind, Night')
     expect(resolvedSeatCount(PARAMETERS, checked.values, 4)).toBe(1)
+  })
+
+  it('describes only the visible settings, in declaration order, filling gaps with defaults', () => {
+    expect(describeParameters(PARAMETERS, { seats: 1, gap: 90, extras: ['night'] })).toEqual([
+      { label: 'Pipe gap', value: '90' },
+      { label: 'Extras', value: 'Night' },
+    ])
+    // A map missing a declared value still describes it, so a summary never has a blank row.
+    expect(describeParameters(PARAMETERS, {})).toEqual([
+      { label: 'Pipe gap', value: '100' },
+      { label: 'Extras', value: 'None' },
+    ])
+    // Nothing adjustable means nothing to describe; the caller decides what to say instead.
+    expect(describeParameters([PARAMETERS[0] as EnvParameter], { seats: 1 })).toEqual([])
   })
 
   it('treats a seats value the declaration rejects as no answer rather than a seat count', () => {

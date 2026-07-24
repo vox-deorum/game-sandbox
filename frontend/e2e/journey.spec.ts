@@ -21,7 +21,7 @@ import { expect, test } from './support/fixtures.js'
  * differences across runners. This suite needs a Docker daemon (it launches a real session).
  */
 test('play Flappy Bird live, pause/resume, stop, then replay and pin', async ({ page, admin }) => {
-  // Browse as the operator, so Play Yourself starts a session owned by the identity the browser holds.
+  // Browse as the operator, so Play starts a session owned by the identity the browser holds.
   await authenticateBrowser(page.context(), admin)
 
   // Home → the Flappy Bird card → the environment page.
@@ -30,9 +30,9 @@ test('play Flappy Bird live, pause/resume, stop, then replay and pin', async ({ 
   await expect(page.getByRole('heading', { name: 'Flappy Bird' })).toBeVisible()
   await expect(page.getByText('Settings: Pipe gap 100')).toBeVisible()
 
-  // The Play Yourself entry point in the season banner opens the start form; submit it to start a
+  // The Play entry point in the play-season section opens the start form; submit it to start a
   // human session.
-  await page.getByRole('button', { name: 'Play Yourself' }).click()
+  await page.getByRole('button', { name: 'Play', exact: true }).click()
   await expect(page.getByLabel('Pipe gap')).toHaveValue('100')
   await page.getByLabel('Pipe gap').fill('90')
   await page.getByRole('button', { name: 'Start playing' }).click()
@@ -89,6 +89,15 @@ test('play Flappy Bird live, pause/resume, stop, then replay and pin', async ({ 
   await page.getByRole('link', { name: 'Open replay' }).click()
   await expect(page).toHaveURL(/\/replays\//)
   await expect(page.getByRole('button', { name: 'Play' })).toBeVisible()
+  // The run's settings summarize in the status strip and open on hover: the pipe gap chosen above, and
+  // the seed the run was played with.
+  const settings = page.getByRole('button', { name: 'Show settings details' })
+  await expect(settings).toHaveText('2 settings')
+  await settings.hover()
+  const settingsTooltip = page.getByRole('tooltip')
+  await expect(settingsTooltip).toContainText('Pipe gap')
+  await expect(settingsTooltip).toContainText('90')
+  await expect(settingsTooltip).toContainText('Seed')
   const decisionLog = page.locator('.decision-log')
   await expect(decisionLog.getByRole('columnheader', { name: 'LLM cost' })).toBeVisible()
   await expect(decisionLog.getByText('None').first()).toBeVisible()
@@ -111,11 +120,11 @@ test('rejects a start form loaded for a stale play season', async ({ page, admin
   const replacement = await declareSeason(admin, 'Stale season replacement')
   try {
     await page.goto('/environments/flappy_bird')
-    await expect(page.getByRole('button', { name: 'Play Yourself' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeVisible()
     await closePlay(admin, original.playSeasonId)
     await openPlay(admin, replacement.id)
 
-    await page.getByRole('button', { name: 'Play Yourself' }).click()
+    await page.getByRole('button', { name: 'Play', exact: true }).click()
     await page.getByRole('button', { name: 'Start playing' }).click()
     await expect(page.getByText(/The play season changed/)).toBeVisible()
     await expect(page).toHaveURL(/\/environments\/flappy_bird/)

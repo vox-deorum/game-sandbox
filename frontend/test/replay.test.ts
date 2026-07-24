@@ -138,6 +138,36 @@ describe('ReplayPage', () => {
     ).toBe(true)
   })
 
+  it('summarizes the episode settings and puts their values in a tooltip', async () => {
+    vi.mocked(getRecording).mockResolvedValue(
+      recordingText(
+        [0, 1].map((t) => flappyState(t, t)),
+        {
+          seed: 4821,
+          parameters: { seats: 1, pipe_gap: 90 },
+        },
+      ),
+    )
+    await renderReplay()
+
+    // The seed no longer has a slot of its own: it is the last of the run's settings.
+    expect(await screen.findByRole('button', { name: 'Play' })).toBeInTheDocument()
+    expect(screen.getByText('Settings')).toBeInTheDocument()
+    expect(screen.queryByText('Seed')).toBeNull()
+    const trigger = await screen.findByRole('button', { name: 'Show settings details' })
+    expect(trigger).toHaveTextContent('2 settings')
+
+    await fireEvent.focus(trigger)
+    const tooltip = screen.getByRole('tooltip')
+    // Only the visible declarations are named (`seats` is fixed at one for Flappy Bird), each formatted
+    // through its declaration, with the seed alongside them.
+    expect(tooltip).toHaveTextContent('Pipe gap')
+    expect(tooltip).toHaveTextContent('90')
+    expect(tooltip).toHaveTextContent('Seed')
+    expect(tooltip).toHaveTextContent('4821')
+    expect(tooltip).not.toHaveTextContent('Seats')
+  })
+
   it('keeps successful empty telemetry distinct and shows None for decision costs', async () => {
     vi.mocked(getRecording).mockResolvedValue(replayRecording())
     await renderReplay()

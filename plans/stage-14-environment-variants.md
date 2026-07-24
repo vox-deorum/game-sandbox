@@ -106,7 +106,9 @@ A new `frontend/src/lib/parameters.ts` holds the pure logic: the visibility rule
 
 `UiCheckboxGroup` is a new `frontend/src/components/ui/` primitive: a fieldset with a visible legend, labeled options, a string-array model emitted in options order, hint and error wiring mirroring `UiField`, and token-only styling. It appears on the `/styleguide` route and in the design-system inventory, and the season config editor's ad hoc model-alias checkbox fieldset is refactored onto it.
 
-The environment page gains a play-season section directly above the peer play and rate section, shown while a season is open for play: the season name as its heading with an "Open for play" badge, the season's description markdown, and a quiet "Settings:" summary listing only the visible parameter values (omitted when none are visible). It is set apart by a raised background rather than a card border, and owns the "Play Yourself" action shown in the approved mockup. The section below it is headed "Peer Play and Rate" followed by the same season name, so the listed agents are plainly the ones playable and ratable in that season. The play dialog title names the season too. When play is closed, the empty-state copy says that no season is currently open for play. The multi-seat decision reads the resolved seat count instead of `meta.max_slots`. The play-season section and the boolean-as-select control are approved visual patterns.
+The environment page gains a play-season section directly above the play and rate section, shown while a season is open for play: "Open for Play" followed by the season name as its heading, the season's description markdown, and a quiet "Settings:" summary listing only the visible parameter values. A season with nothing visible to list says "No special settings." instead of dropping the line, because a player reading that line wants an answer either way. The section owns the "Play" action. The section below it is headed "Play and Rate" followed by the same season name, so the listed agents are plainly the ones playable and ratable in that season. The play dialog title names the season too. When play is closed, the empty-state copy says that no season is currently open for play. The multi-seat decision reads the resolved seat count instead of `meta.max_slots`. The play-season section and the boolean-as-select control are approved visual patterns.
+
+The replay viewer shows the same settings for the episode it is replaying, read from the recording header's resolved parameter map through the shared `describeParameters` helper. Its status strip trades the "Seed" fact for a "Settings" one summarizing the count, with the visible values and the seed behind it in a tooltip: the strip stays one compact row, and the seed keeps its place as one of the run's settings rather than a fact of its own. The tooltip is the new `UiTooltip` primitive, extracted from `LlmCostTooltip` so cost figures and settings hover, focus, and pin identically; `LlmCostTooltip` becomes that primitive filled with `LlmCostDetails`.
 
 The start flows thread the form through: `StartForm` places it above the seed field and adds the fetched `season_id` and complete resolved `parameters` map to its payload; `SeatAssignmentDialog` places it between the intro sentence and the seat grid, so the `seats` control (when visible) sits above the grid it resizes, and derives its seat ids reactively from the resolved seat count (growing fills new seats with the Naive agent, shrinking reseats the human at the first in-range human-capable seat or disables start); `WatchAgentPicker` keeps its instant single-slot start only when no visible parameters exist and otherwise routes through the dialog. When an unrated agent's **Rate** action opens the dialog, it preselects that agent into every resolved seat and disables the parameters, seat assignments, and seed. The ordinary watch and play paths remain editable. The instant path still submits the complete prefetched map, so Hearts and Spades behavior is unchanged today.
 
@@ -114,17 +116,31 @@ The season config editor gains an "Environment Parameters" card listing every de
 
 #### Mockups (Revise existing UI if needed)
 
-The play-season section, on its own raised background above the peer play and rate section head (which loses its "Season: …" tip). Drop the play section, if any:
+The play-season section above the play and rate section head (which loses its "Season: …" tip). Drop the play section, if any:
 
 ```text
-╭───────────────────────────────────────────────────────╮
-│ Spring 2026                           [Play Yourself] │
-│ A faster season with narrower pipes.     (markdown)   │
-│ Settings: Pipe gap 90                                 │
-╰───────────────────────────────────────────────────────╯
-Peer Play and Rate: Spring 2026
+Open for Play: Spring 2026                        [Play]
+A faster season with narrower pipes.     (markdown)
+Settings: Pipe gap 90
+
+Play and Rate: Spring 2026
   Naive agent  [Built-in]                      [Watch]
   Agent #3     [Not rated]                     [Rate]
+```
+
+A season with no visible parameters keeps the line and answers instead:
+
+```text
+Open for Play: Spring 2026                        [Play]
+No special settings.
+```
+
+The replay viewer's status strip, with the episode's settings summarized and their values on hover:
+
+```text
+[Replay] Settings 2 settings · Ticks 412 · Owner maya · Created 12 Jun 2026 · LLM 1,080 units
+                  ╰─ Pipe gap  90
+                     Seed      4821
 ```
 
 The single-slot play dialog (Flappy Bird), parameters above the seed field:
@@ -186,8 +202,8 @@ The season config editor's Environment Parameters card, one row inheriting and o
 - Environments and templates: Flappy Bird constructed through `entry.make` with an overridden `pipe_gap`; Hearts and Spades accepting and ignoring the required map; every factory seam receiving a resolved map; and a composed Flappy template retaining its parameter declarations and running headlessly with resolved defaults.
 - Schema package: the extended metadata guard plus the TypeScript validator and resolver running the shared Python/TypeScript value fixtures.
 - Backend: season-config and parameter-storage codec round-trips; admin validation for parameter values and exact resolved seat counts; a run-creation regression proving the ready roster, schedule, empty-schedule result, and all snapshots use the transaction's frozen config; orchestrator validation of exact full-map keys and stale season ids; decoded session and run reads; workflow runner threading; and the public play-parameters endpoint.
-- Frontend unit: the parameters library (visibility, initialization, validation, and seat count), including a visible one-option multi-choice; `ParameterFields`; `UiCheckboxGroup`; and updates to the environment page, seat-assignment dialog, watch-picker, API client, and admin console suites.
-- Playwright: the Flappy play dialog prefills the season value, a tweak starts a session whose row and recording header carry it; a changed play season is rejected before launch; the Flappy watch flow opens the dialog; Hearts and Spades journeys are unchanged; and an admin parameter override round-trips to the public play prefill.
+- Frontend unit: the parameters library (visibility, initialization, validation, description, and seat count), including a visible one-option multi-choice; `ParameterFields`; `UiCheckboxGroup`; `UiTooltip` and the `RunMetadata` detail rows built on it; the environment page's settings summary and its no-special-settings line; the replay viewer's settings summary and tooltip; and updates to the seat-assignment dialog, watch-picker, API client, and admin console suites.
+- Playwright: the Flappy play dialog prefills the season value, a tweak starts a session whose row and recording header carry it, and the replay of that session summarizes the same settings and reveals them on hover; a changed play season is rejected before launch; the Flappy watch flow opens the dialog; Hearts and Spades journeys are unchanged; and an admin parameter override round-trips to the public play prefill.
 
 ## Risks
 
@@ -208,7 +224,8 @@ Update the specifications alongside implementation:
 - Revise [Execution](../docs/specs/execution.md): the launch configuration gains the required resolved `parameters` field.
 - Revise [Interaction](../docs/specs/interaction.md): play and watch starts carry the expected play-open season and the complete parameter state loaded by the page.
 - Revise [Recording](../docs/specs/recording.md): the header records the resolved parameters used by the game.
-- Revise [Frontend](../docs/specs/frontend.md): the environment banner, parameter forms, resolved-seat behavior, and season-aware start contract.
+- Revise [Frontend](../docs/specs/frontend.md): the play-season section and its settings line, parameter forms, the replay viewer's episode settings, resolved-seat behavior, and season-aware start contract.
+- Revise the [design system](../docs/contributors/frontend/design-system.md) inventory for `UiCheckboxGroup` and `UiTooltip`.
 
 Revise the contributor environment and template guides for declaring parameters, using the required factory signature, and rebuilding disposable development artifacts. Update `plans/stage-02/environments-and-metadata.md`, `plans/stage-06/1-season-config-and-storage.md`, `plans/stage-06/3-admin-api-and-gating.md`, `plans/stage-07/4-session-start-slots-api.md`, and `plans/stage-13-unified-rendering.md` to describe the required factory, config, session-start, live-runner, and template contracts.
 

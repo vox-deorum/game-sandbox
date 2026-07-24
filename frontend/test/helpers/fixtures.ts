@@ -204,7 +204,8 @@ export function seatState(
 /**
  * A JSONL recording string: a header line then one line per state. `schemaVersion` is loose (a number)
  * so a suite can build a deliberately-unsupported version to exercise the viewer's version check.
- * `players` seeds the header's per-slot attribution so a replay's chat panel can label senders.
+ * `players` seeds the header's per-slot attribution so a replay's chat panel can label senders, and
+ * `parameters` the resolved settings a replay shows for the episode.
  */
 export function recordingText(
   states: StepState[],
@@ -212,6 +213,7 @@ export function recordingText(
     schemaVersion?: number
     environment?: string
     seed?: number
+    parameters?: RecordingHeader['parameters']
     players?: RecordingHeader['players']
   } = {},
 ): string {
@@ -219,7 +221,7 @@ export function recordingText(
     schema_version: opts.schemaVersion ?? 1,
     environment: opts.environment ?? 'flappy_bird',
     seed: opts.seed ?? 0,
-    parameters: {},
+    parameters: opts.parameters ?? {},
   }
   if (opts.players !== undefined) {
     header.players = opts.players

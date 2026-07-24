@@ -3,6 +3,7 @@ import { computed } from 'vue'
 
 import type { RecordingLlmTelemetry } from '../api/client.js'
 import LlmCostTooltip from './LlmCostTooltip.vue'
+import UiTooltip from './ui/UiTooltip.vue'
 
 // Shared display for run facts that can appear on both replay and terminal session screens.
 export interface RunMetadataItem {
@@ -11,6 +12,11 @@ export interface RunMetadataItem {
   code?: boolean
   /** An optional tooltip for the value — e.g. the stable id behind a display-name value. */
   title?: string
+  /**
+   * Rows behind a summarizing value, shown in a tooltip the way the LLM total shows its calls. The
+   * value becomes the tooltip's trigger; an empty or absent list leaves it plain text.
+   */
+  details?: { label: string; value: string }[]
 }
 
 const props = defineProps<{
@@ -32,7 +38,21 @@ const shown = computed(() =>
     <div v-for="item in shown" :key="item.label" class="run-metadata-item">
       <dt>{{ item.label }}</dt>
       <dd :title="item.title">
-        <code v-if="item.code">{{ item.value }}</code>
+        <UiTooltip
+          v-if="item.details !== undefined && item.details.length > 0"
+          :accessible-label="`Show ${item.label.toLowerCase()} details`"
+        >
+          {{ item.value }}
+          <template #content>
+            <dl class="run-metadata-details">
+              <template v-for="detail in item.details" :key="detail.label">
+                <dt>{{ detail.label }}</dt>
+                <dd>{{ detail.value }}</dd>
+              </template>
+            </dl>
+          </template>
+        </UiTooltip>
+        <code v-else-if="item.code">{{ item.value }}</code>
         <template v-else>{{ item.value }}</template>
       </dd>
     </div>
@@ -88,5 +108,23 @@ const shown = computed(() =>
 
 .run-metadata code {
   font-family: var(--font-mono);
+}
+
+/* The tooltip body behind a summarizing value: label and value in two columns, one row per fact. */
+.run-metadata-details {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  font-size: var(--text-xs);
+}
+
+/* The bubble is teleported out of the strip, so the list restates the margin reset above. */
+.run-metadata-details dt {
+  color: var(--color-text-muted);
+}
+
+.run-metadata-details dd {
+  margin: 0;
 }
 </style>

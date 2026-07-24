@@ -23,6 +23,7 @@ import UiSlider from '../components/ui/UiSlider.vue'
 import UiStatusBadge from '../components/ui/UiStatusBadge.vue'
 import UiTabs from '../components/ui/UiTabs.vue'
 import UiTextarea from '../components/ui/UiTextarea.vue'
+import UiTooltip from '../components/ui/UiTooltip.vue'
 
 // The semantic color tokens, named so the swatch grid stays in sync with tokens.css by review.
 const colorTokens = [
@@ -56,6 +57,12 @@ const llmEnablement = ref('default')
 const llmModelsMode = ref('all')
 const llmTokenBudget = ref<number | ''>('')
 const checkboxValues = ref(['moving'])
+const tooltipInspected = ref(0)
+const tooltipSettings = [
+  { label: 'Pipe gap', value: '90' },
+  { label: 'Expansions', value: 'Moving pipes, Night mode' },
+  { label: 'Seed', value: '4821' },
+]
 </script>
 
 <template>
@@ -335,6 +342,30 @@ const checkboxValues = ref(['moving'])
     </section>
 
     <section>
+      <h2>UiTooltip</h2>
+      <p class="row">
+        Hover or focus the trigger for the detail bubble:
+        <UiTooltip label="3 settings" accessible-label="Show settings details">
+          <template #content>
+            <dl class="tooltip-demo">
+              <template v-for="setting in tooltipSettings" :key="setting.label">
+                <dt>{{ setting.label }}</dt>
+                <dd>{{ setting.value }}</dd>
+              </template>
+            </dl>
+          </template>
+        </UiTooltip>
+      </p>
+      <p class="row">
+        An inspectable trigger emits <code>inspect</code> instead of pinning the bubble open:
+        <UiTooltip label="1,080 units" inspectable @inspect="tooltipInspected += 1">
+          <template #content>Activating opens the caller's own dialog.</template>
+        </UiTooltip>
+        <span class="slider-readout">inspected: {{ tooltipInspected }}</span>
+      </p>
+    </section>
+
+    <section>
       <h2>UiEmptyState</h2>
       <UiEmptyState>Loading recent replays…</UiEmptyState>
       <UiEmptyState>No replays yet.</UiEmptyState>
@@ -360,6 +391,22 @@ const checkboxValues = ref(['moving'])
   gap: var(--space-3);
   flex-wrap: wrap;
   margin: var(--space-3) 0;
+}
+
+.tooltip-demo {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  font-size: var(--text-xs);
+}
+
+.tooltip-demo dt {
+  color: var(--color-text-muted);
+}
+
+.tooltip-demo dd {
+  margin: 0;
 }
 
 .swatch-grid {

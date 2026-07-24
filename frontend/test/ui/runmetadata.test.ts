@@ -7,7 +7,7 @@ describe('RunMetadata LLM summary', () => {
   it('shows the authoritative whole-recording cost and full token details without latency or estimates', async () => {
     render(RunMetadata, {
       props: {
-        items: [{ label: 'Seed', value: 4821 }],
+        items: [{ label: 'Settings', value: '1 setting' }],
         llmTelemetry: {
           total_budget_cost_units: 41_600,
           calls: [
@@ -41,8 +41,45 @@ describe('RunMetadata LLM summary', () => {
   })
 
   it('omits the whole-recording total when telemetry is unavailable', () => {
-    render(RunMetadata, { props: { items: [{ label: 'Seed', value: 4821 }] } })
+    render(RunMetadata, { props: { items: [{ label: 'Settings', value: '1 setting' }] } })
     expect(screen.queryByText('LLM')).toBeNull()
     expect(screen.queryByRole('button', { name: /LLM cost/ })).toBeNull()
+  })
+})
+
+describe('RunMetadata detail rows', () => {
+  it('puts an item with details behind a tooltip on its summarizing value', async () => {
+    render(RunMetadata, {
+      props: {
+        items: [
+          {
+            label: 'Settings',
+            value: '2 settings',
+            details: [
+              { label: 'Pipe gap', value: '90' },
+              { label: 'Seed', value: '4821' },
+            ],
+          },
+        ],
+      },
+    })
+
+    const trigger = screen.getByRole('button', { name: 'Show settings details' })
+    expect(trigger).toHaveTextContent('2 settings')
+    expect(screen.queryByRole('tooltip')).toBeNull()
+    await fireEvent.focus(trigger)
+    const tooltip = screen.getByRole('tooltip')
+    expect(tooltip).toHaveTextContent('Pipe gap')
+    expect(tooltip).toHaveTextContent('90')
+    expect(tooltip).toHaveTextContent('Seed')
+    expect(tooltip).toHaveTextContent('4821')
+  })
+
+  it('leaves an item without details as plain text', () => {
+    render(RunMetadata, {
+      props: { items: [{ label: 'Settings', value: 'None', details: [] }] },
+    })
+    expect(screen.getByText('None')).toBeInTheDocument()
+    expect(screen.queryByRole('button')).toBeNull()
   })
 })

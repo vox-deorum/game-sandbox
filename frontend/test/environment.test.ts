@@ -93,7 +93,7 @@ describe('EnvironmentPage', () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('carol', 'pending'))
     await renderPage()
     expect(await screen.findByText(/awaiting approval/)).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Play Yourself' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Play' })).toBeNull()
     // Watching moved to the picker, whose Watch buttons are likewise hidden when the account cannot participate.
     expect(screen.queryByRole('button', { name: 'Watch' })).toBeNull()
     // The operator-only admin entry point is hidden from a non-operator.
@@ -107,13 +107,32 @@ describe('EnvironmentPage', () => {
     ])
     await renderPage()
     // Both entry points render signed-out; there is no separate sign-in prompt in the watch section.
-    expect(await screen.findByRole('button', { name: 'Play Yourself' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Play' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Rate' })).toBeInTheDocument()
     expect(screen.queryByText('Sign in to watch and rate agents.')).toBeNull()
     // Clicking one lands on the sign-in page instead of opening the start dialog.
-    await fireEvent.click(screen.getByRole('button', { name: 'Play Yourself' }))
+    await fireEvent.click(screen.getByRole('button', { name: 'Play' }))
     expect(vi.mocked(startSession)).not.toHaveBeenCalled()
     expect(await screen.findByText('login page')).toBeInTheDocument()
+  })
+
+  it('lists the play season settings under its description', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
+    // The prefill resolves to the environment default, so the summary names the one visible parameter
+    // (`seats` is fixed at one for Flappy Bird and stays out of a player-facing line).
+    await renderPage()
+    expect(await screen.findByText(/Settings: Pipe gap 100/)).toBeInTheDocument()
+    expect(screen.queryByText('No special settings.')).toBeNull()
+  })
+
+  it('says a season has no special settings rather than dropping the line', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
+    // Every Hearts parameter is fixed, so there is nothing to list. The line still answers the question
+    // instead of vanishing and leaving the player to guess.
+    vi.mocked(getEnvironments).mockResolvedValue([heartsMeta()])
+    vi.mocked(getPlayParameters).mockResolvedValue({ season_id: 'iter-1', values: { seats: 4 } })
+    await renderPage('hearts')
+    expect(await screen.findByText('No special settings.')).toBeInTheDocument()
   })
 
   it('names the released season in the boards heading with its release date beside it', async () => {
@@ -171,7 +190,10 @@ describe('EnvironmentPage', () => {
     expect(
       await screen.findByRole('heading', { name: 'Play and Rate: Playground', level: 2 }),
     ).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Playground', level: 2 })).toBeInTheDocument()
+    // And the section above it names the same season as the one open for play.
+    expect(
+      screen.getByRole('heading', { name: 'Open for Play: Playground', level: 2 }),
+    ).toBeInTheDocument()
   })
 
   it('tags the environment name with its slots and pace, and with no submission season', async () => {
@@ -210,10 +232,10 @@ describe('EnvironmentPage', () => {
     vi.mocked(getPlayParameters).mockResolvedValue({ season_id: null, values: {} })
     await renderPage()
     expect(await screen.findByText(/No season is currently open for play/)).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Play Yourself' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Play' })).toBeNull()
   })
 
-  it('opens the play flow from the play-season banner', async () => {
+  it('opens the play flow from the play-season section', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
     vi.mocked(listSeasons).mockResolvedValue([
       {
@@ -232,8 +254,10 @@ describe('EnvironmentPage', () => {
     ])
     await renderPage()
 
-    expect(await screen.findByRole('heading', { name: 'Week 1', level: 2 })).toBeInTheDocument()
-    await fireEvent.click(screen.getByRole('button', { name: 'Play Yourself' }))
+    expect(
+      await screen.findByRole('heading', { name: 'Open for Play: Week 1', level: 2 }),
+    ).toBeInTheDocument()
+    await fireEvent.click(screen.getByRole('button', { name: 'Play' }))
     expect(await screen.findByRole('button', { name: 'Start playing' })).toBeInTheDocument()
   })
 
@@ -243,7 +267,7 @@ describe('EnvironmentPage', () => {
     vi.mocked(getEnvironmentLeaderboards).mockRejectedValue(new Error('network blip'))
     await renderPage()
     expect(await screen.findByText(/No released results/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Play Yourself' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument()
   })
 
   it('keeps play and watch unavailable when the parameter prefill fails, and says so', async () => {
@@ -254,7 +278,7 @@ describe('EnvironmentPage', () => {
     // viewer something about the season that the page never actually learned.
     expect(await screen.findByText(/play settings .* could not be loaded/i)).toBeInTheDocument()
     expect(screen.queryByText(/No season is currently open for play/)).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Play Yourself' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Play' })).toBeNull()
   })
 
   it('reports a genuinely closed play window as closed', async () => {
@@ -262,7 +286,7 @@ describe('EnvironmentPage', () => {
     vi.mocked(getPlayParameters).mockResolvedValue({ season_id: null, values: {} })
     await renderPage()
     expect(await screen.findByText(/No season is currently open for play/)).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Play Yourself' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Play' })).toBeNull()
   })
 
   it('starts a session through the start form and navigates to it', async () => {
@@ -272,8 +296,8 @@ describe('EnvironmentPage', () => {
       session: { id: 's1', wsPath: '/api/sessions/s1/ws' },
     })
     await renderPage()
-    // The season banner's Play Yourself button opens the start form.
-    await fireEvent.click(await screen.findByRole('button', { name: 'Play Yourself' }))
+    // The play-season section's Play button opens the start form.
+    await fireEvent.click(await screen.findByRole('button', { name: 'Play' }))
     await fireEvent.click(await screen.findByRole('button', { name: 'Start playing' }))
     expect(await screen.findByText('s1')).toBeInTheDocument()
     // A single-slot environment fills only the lone human seat; the backend derives the human mode.
@@ -294,7 +318,7 @@ describe('EnvironmentPage', () => {
       session: { id: 's1', wsPath: '/api/sessions/s1/ws' },
     })
     await renderPage()
-    await fireEvent.click(await screen.findByRole('button', { name: 'Play Yourself' }))
+    await fireEvent.click(await screen.findByRole('button', { name: 'Play' }))
     // The paced game's start form exposes the per-step input window as an override field.
     await fireEvent.update(screen.getByPlaceholderText('50'), '250')
     await fireEvent.click(await screen.findByRole('button', { name: 'Start playing' }))
@@ -316,7 +340,7 @@ describe('EnvironmentPage', () => {
       activeSessionId: 'active-9',
     })
     await renderPage()
-    await fireEvent.click(await screen.findByRole('button', { name: 'Play Yourself' }))
+    await fireEvent.click(await screen.findByRole('button', { name: 'Play' }))
     await fireEvent.click(await screen.findByRole('button', { name: 'Start playing' }))
     expect(await screen.findByText('active-9')).toBeInTheDocument()
   })
@@ -331,7 +355,7 @@ describe('EnvironmentPage', () => {
       session: { id: 'h1', wsPath: '/api/sessions/h1/ws' },
     })
     await renderPage('hearts')
-    await fireEvent.click(await screen.findByRole('button', { name: 'Play Yourself' }))
+    await fireEvent.click(await screen.findByRole('button', { name: 'Play' }))
     // The seat grid opens with the human seated and the other seats defaulting to the Naive baseline.
     const start = await screen.findByRole('button', { name: 'Start playing' })
     expect(screen.getByText('You')).toBeInTheDocument()

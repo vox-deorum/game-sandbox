@@ -95,11 +95,11 @@ test('a submitted agent validates to ready and runs in a watch session', async (
   // anonymously under that season's name and highlights that it still needs a rating.
   await page.goto(`/environments/${ENV_ID}`)
   await expect(
-    page.locator('.play-season').getByRole('heading', { name: 'Playground', exact: true }),
+    page.getByRole('heading', { name: 'Open for Play: Playground', exact: true }),
   ).toBeVisible()
   const playSection = page.locator('section#play')
   await expect(
-    playSection.getByRole('heading', { name: 'Peer Play and Rate: Playground' }),
+    playSection.getByRole('heading', { name: 'Play and Rate: Playground' }),
   ).toBeVisible()
   const row0 = page.locator('.agent-row').filter({ hasText: 'Agent 1' })
   await expect(row0).toBeVisible()
