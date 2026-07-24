@@ -2,7 +2,7 @@
 
 The frontend is a Vue 3, Vite, and TypeScript browser app. It displays environments, submissions, sessions, replays, and leaderboards, and communicates with the backend through typed HTTP and WebSocket clients.
 
-Use this page for the frontend development workflow. Read [the frontend specification](../specs/frontend.md) for product behavior, [the interaction specification](../specs/interaction.md) for the browser/server boundary, and [the design system](design.md) before changing visuals. Renderer-specific guidance lives in [Rendering](environments/rendering.md).
+Use this page for the frontend development workflow. Read [the frontend specification](../specs/frontend.md) for product behavior and [the interaction specification](../specs/interaction.md) for the browser/server boundary. Before changing visuals, also read [the design system](design.md). Renderer-specific guidance lives in [Rendering](environments/rendering.md).
 
 ## Source layout
 
@@ -20,7 +20,7 @@ Frontend code lives under `frontend/src/`.
 | `replay/`        | Recording parsing and replay transport          |
 | `styles/`        | Design tokens and global styles                 |
 
-`main.ts` creates the app and registers routes. `App.vue` installs the identity provider and application shell. Shared application-level state, such as the signed-in user and environment catalog, lives in focused modules rather than a state-management library.
+`main.ts` creates the app and registers routes. `App.vue` installs the identity provider and application shell. Focused modules hold shared application state, such as the signed-in user and environment catalog. The project does not use a state-management library.
 
 ## Development workflow
 
@@ -33,7 +33,7 @@ The frontend requires Node.js 22. Run these commands from `frontend/`:
 | `npm test`      | Run the Vitest unit tests                               |
 | `npm run build` | Create the production build in `frontend/dist/`         |
 
-For local development, start `npm run dev` in `backend/` separately. Docker is needed when the backend launches a session. From the repository root, `npm start` builds the frontend and starts the backend on port 8080.
+For local development, run `npm run dev` separately in `backend/`. Docker is required only when the backend launches a session. From the repository root, `npm start` builds the frontend and starts the backend on port 8080.
 
 When making a change:
 
@@ -57,11 +57,11 @@ uv run python scripts/ci.py frontend-e2e
 
 ### API and shared data
 
-Keep HTTP wrappers in `api/client.ts` and session WebSocket behavior in `api/socket.ts`. Expected backend refusals, such as 403 or 409 responses, should return typed results so pages can branch on stable error codes rather than message text.
+Keep HTTP wrappers in `api/client.ts` and session WebSocket behavior in `api/socket.ts`. Represent expected backend refusals, such as 403 or 409 responses, as typed results. Pages can then branch on stable error codes instead of message text.
 
 Protocol and environment metadata types belong in `@game-sandbox/schema`. Do not create frontend-only copies. Reuse application-level loaders such as `environmentCatalog.ts`, `me.ts`, and `useSiteConfig.ts` instead of issuing the same request from multiple pages.
 
-The browser receives identity from the same-origin Better Auth session cookie. Hiding an action in the frontend improves the experience, but the backend remains responsible for authorization.
+The browser receives identity from the same-origin Better Auth session cookie. Hiding an unavailable action improves the frontend experience, but the backend must still enforce authorization.
 
 ### Components and styles
 

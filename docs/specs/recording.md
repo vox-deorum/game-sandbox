@@ -1,6 +1,6 @@
 # Recording and Replay
 
-Recordings store state, not video. A replay draws stored states with the same renderer used for live play. It never re-simulates the environment.
+Recordings store state rather than video. A replay draws the stored states with the same renderer used for live play. It never runs the environment again.
 
 ```text
 Header
@@ -21,9 +21,13 @@ This design means:
 
 Replays are linkable by URL.
 
-At the final frame of a run that finished play, the replay shows the same final-standings card a live session shows when it ends, ranked by each seat's score. Whether a run finished play comes from its termination reason: a session-produced recording reads it from the producing session, while an automated season run has no session and so carries the reason on the recording itself. A run that was stopped, timed out, or crashed shows no final standings.
+When a run finishes play, its final replay frame shows the same final-standings card as the end of a live session. The card ranks each seat by score. The termination reason determines whether the run finished play. A recording produced by a session gets this reason from that session. An automated season run has no session, so its recording stores the reason directly. A stopped, timed-out, or crashed run shows no final standings.
 
-Chat is stored in per-step state. Successful agent-call LLM telemetry is stored in backend-managed SQLite keyed by execution scope, tick, and slot. A recording's producing session or leaderboard run stores durable scope and session associations with the relevant telemetry rows. Recording JSONL remains limited to its header and state lines. Student development calls are metered separately and never appear in recording telemetry. A recording without an LLM association has no calls, while a retained associated scope that cannot be read is unavailable rather than empty. Public replays retain model, token, and budget-cost metadata after the controlling submission is deleted, but only operators may still inspect its stored request and completion bodies. Retention preserves external telemetry while a retained recording references it. See [Communication](communication.md) and [LLM API](llm.md).
+Chat is stored in the state for each step. Successful LLM calls made by agents produce telemetry in backend-managed SQLite, keyed by execution scope, tick, and slot. The session or leaderboard run that produced a recording keeps durable scope and session links to the relevant telemetry rows. The recording's JSONL still contains only its header and state lines.
+
+Student development calls are metered separately and never appear in recording telemetry. A recording with no LLM association had no calls. If its associated execution scope was retained but cannot be read, the telemetry is unavailable rather than empty.
+
+Public replays keep model, token, and budget-cost metadata after the controlling submission is deleted. Only operators may inspect the stored request and completion bodies after deletion. External telemetry is retained as long as a retained recording refers to it. See [Communication](communication.md) and [LLM API](llm.md).
 
 ## Retention
 
@@ -39,6 +43,6 @@ Every session is recorded. Storage remains bounded:
 
 The format is JSON Lines, or JSONL: one JSON object per line. The first line is the header and each later line is one step.
 
-The harness writes the same serialized state bytes to storage and the live transport. Input, pause, resume, stop, and chat commands use separate event envelopes and are not recording lines.
+The harness writes the same serialized state bytes to both storage and the live transport. Input, pause, resume, stop, and chat commands use separate event envelopes and do not become recording lines.
 
 The first storage implementation uses a mounted folder. An S3-compatible implementation may be added behind the same save/load interface.

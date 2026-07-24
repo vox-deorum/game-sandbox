@@ -13,10 +13,10 @@ The source uses JSON Schema draft 2020-12 under `schema/`. This page defines ver
 
 ## The two files
 
-- `schema/step-state.schema.json` is the per-step state object: `schema_version`, `tick`, per-agent observations, actions, rewards and cumulative scores, an open `overlay` for environment-specific fields, optional `messages`, and `timing`. Field names are snake_case throughout, which is JSON-conventional and Python-native, and the generated TypeScript types mirror it.
-- `schema/recording-header.schema.json` is the recording header: `schema_version`, `environment`, an optional `seed` and `created_at`, the `sidecars` array, and an optional `players` map (slot id to `{kind, label, user?, submission_id?}`) that attributes each slot to a human or an agent. The header object stays open (`additionalProperties: true`) so a new optional field like `players` is purely additive, with no `schema_version` bump, and the generated TypeScript field comes for free from `scripts/generate.py`; each `players` entry is itself a closed region (`additionalProperties: false`) so a malformed attribution is loud.
+- `schema/step-state.schema.json` defines the state at one step: `schema_version`, `tick`, per-agent observations, actions, rewards and cumulative scores, an open `overlay` for environment-specific fields, optional `messages`, and `timing`. Field names use snake case because it is natural in Python and conventional in JSON. The generated TypeScript types keep the same names.
+- `schema/recording-header.schema.json` defines the recording header: `schema_version`, `environment`, optional `seed` and `created_at` fields, the `sidecars` array, and an optional `players` map. That map assigns each slot id to a human or agent with `{kind, label, user?, submission_id?}`. The header remains open (`additionalProperties: true`), so adding an optional field such as `players` does not require a `schema_version` change. Running `scripts/generate.py` adds it to the TypeScript type. Each `players` entry remains closed (`additionalProperties: false`) so validation catches malformed attribution.
 
-Closed regions use `additionalProperties: false` so accidental drift fails loudly. `overlay` is the designated open extension region for environment-specific display data.
+Closed regions use `additionalProperties: false` so validation catches accidental changes. `overlay` is the designated open extension for environment-specific display data.
 
 `messages` and `overlay` exist in the initial schema even before every capability uses them. Reserving those extension points avoids a breaking schema revision when messaging or another renderer payload becomes active.
 

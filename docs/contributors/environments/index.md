@@ -1,6 +1,6 @@
 # Adding an Environment
 
-An environment is the package, browser renderer, student template layer, examples, and documentation that let people play one game in Game Sandbox.
+An environment contains everything needed to play one game in Game Sandbox: a Python package, browser renderer, student template layer, examples, and documentation.
 
 Read the [environment specification](../../specs/environment.md) for product rules, then use the focused guides below while you build the environment.
 
@@ -19,13 +19,13 @@ Read the [environment specification](../../specs/environment.md) for product rul
 4. Add a student helper module and its pin test when raw observations or actions need decoding.
 5. Write the student environment page and add a row to the [student environments index](../../students/environments/index.md).
 6. Run `npm run sync:envs`, compose the template, run the repository checks, and play-test the environment.
-7. Publish the environment's template and example branches by riding the next version bump or by dispatching the [Publish Template workflow](../template.md) with the current N and `republish: true`.
+7. Publish the environment's template and example branches with the next version bump, or dispatch the [Publish Template workflow](../template.md) with the current `N` and `republish: true`.
 
 A new environment is not complete when it merely runs. A student must be able to learn, run, and improve an agent without reading the environment source.
 
 ## Directory layout
 
-Each environment is one top-level package under `environments/`, importable by its env id and exporting a module-level `ENTRY`.
+Each environment is a top-level package under `environments/`. It must be importable by its environment id and export a module-level `ENTRY`.
 
 ```text
 environments/
@@ -47,7 +47,7 @@ environments/
 
 `templates/base/` remains the environment-agnostic student layer. Compose generates the environment package, harness, and shared helpers into `build/`, then overlays the hand-authored environment template and, when requested, an example.
 
-The environment directories are the registration source. `npm run sync:envs` discovers environment packages and regenerates registration, wheel packaging, and backend metadata. The shared platform conformance test is `environments/test_conformance.py`, and shared renderer infrastructure remains in `frontend/src/renderers/`.
+The environment directories are the source of registration data. `npm run sync:envs` discovers the packages and regenerates their registration, wheel packaging, and backend metadata. The shared platform conformance test is `environments/test_conformance.py`. Shared renderer infrastructure lives in `frontend/src/renderers/`.
 
 ## Play test
 

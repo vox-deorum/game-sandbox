@@ -4,7 +4,7 @@ There are two leaderboards per environment per season: an automated board and a 
 
 ## Seasons
 
-A **season** is one competition for one environment. It may represent a class assignment, workshop, or round of an open competition. A new season resets both boards while previous released seasons remain available as history.
+A **season** is one competition for one environment. It may be a class assignment, workshop, or round of an open competition. A new season starts both boards from scratch. Previously released seasons remain available as history.
 
 A season has three independent public gates:
 
@@ -23,9 +23,9 @@ Season A: submissions closed | play open  | released
 Season B: submissions open   | play closed | unreleased
 ```
 
-Only one season per environment may have submissions open, and only one may have play open. Releasing results is independent. Operators can preview unreleased boards and rerun a season before publishing the replacement results.
+For each environment, only one season may have submissions open and only one may have play open. Releasing results is independent of both windows. Operators can preview unreleased boards and rerun a season before publishing replacement results.
 
-Keeping the gates independent lets an operator accept the next round's submissions while the previous round remains open for play, or keep released history visible after public play closes. The one-open rule keeps each default submit and play target unambiguous.
+Independent gates let an operator accept submissions for the next round while the previous round remains open for play. They also keep released history visible after public play closes. Allowing only one open submission or play window keeps each default target unambiguous.
 
 ## Per-season configuration
 
@@ -35,23 +35,27 @@ Each season defines:
 - Template dependency version.
 - Optional step and episode limit overrides.
 - Optional messaging overrides.
-- Optional LLM model, token-price, official limit, and student development limit overrides of deployment defaults. Limits set the weighted token budget and per-minute request rate. Creating an automated run freezes its complete resolved official policy, including enabled aliases, upstream model mappings, prices, and per-slot limits.
+- Optional overrides for the deployment's default LLM model, token prices, official limits, and student development limits. Limits set the weighted token budget and request rate per minute. When an automated run is created, it freezes the full resolved official policy, including enabled aliases, upstream model mappings, prices, and limits for each slot.
 - Optional season-wide rating prompt.
-- Optional **Season description** Markdown, which is display metadata rather than run configuration or workflow input. Operators can save, replace, or clear it at any time. It is public whenever submissions or play are open, or results are released; it is otherwise private. The public cross-game Seasons cards show a description only when one exists. The description is one normalized and trimmed inline paragraph of at most 2,000 characters, with soft-wrapped lines allowed and blank-line-separated paragraphs rejected. It supports emphasis, strong text, inline code, and absolute HTTP(S) links. Raw HTML, images, block Markdown, and other link destinations are inactive.
+- An optional **Season description** in Markdown. This description is display metadata, not run configuration or workflow input. Operators may save, replace, or clear it at any time. It is public whenever submissions or play are open or results are released. Otherwise, it is private. Public cross-game Seasons cards show the description only when one exists. The description must be a normalized, trimmed inline paragraph of no more than 2,000 characters. Soft-wrapped lines are allowed, but blank-line-separated paragraphs are rejected. It supports emphasis, strong text, inline code, and absolute HTTP(S) links. Raw HTML, images, block Markdown, and other link destinations remain inactive.
 
-A season's timing, messaging, and official LLM overrides apply not only to its automated games but also to the live watch and play sessions started against the play-open season, so a season's rules hold everywhere its agents run. Student development LLM limits use their own meter keyed to the season and do not consume or contribute to official limits or telemetry.
+A season's timing, messaging, and official LLM overrides apply to both its automated games and its live watch and play sessions. The same season rules therefore apply everywhere its agents run. Student development LLM limits use a separate meter for each season and neither consume nor contribute to official limits or telemetry.
 
-Operators manage seasons through the website's admin console and an operator-only HTTP API. They can declare, configure, describe, open, close, run, rerun, cancel, preview, and release seasons. They may also permanently delete a closed, unreleased season that has no submissions, sessions, runs, ratings, prompts, descriptions, or development keys. The admin console requires explicit confirmation, and the API refuses to cascade through historical activity. The backend runs the workflow and streams logs to the console.
+Operators manage seasons through the website's admin console and an operator-only HTTP API. They can declare, configure, describe, open, close, run, rerun, cancel, preview, and release seasons. They may also permanently delete a closed, unreleased season with no submissions, sessions, runs, ratings, prompts, descriptions, or development keys. The admin console requires explicit confirmation. The API refuses to delete related historical activity. The backend runs these workflows and streams logs to the console.
 
 ## Automated board
 
-The automated board ranks by mean episode score. Higher is always better for ranking, even when the environment also exposes a native lower-is-better display score. The board shows the population standard deviation of episode scores beside the mean.
+The automated board ranks agents by mean episode score. A higher value is always better for ranking, even when the environment also displays a native score where lower is better. The board shows the population standard deviation of episode scores beside the mean.
 
-Each game contributes one episode score per seat: that seat's final score for the game. For an environment that scores all seats only at the end (Hearts settles its penalty on the final trick), every seat's final score is taken from the game's reported result, so a seat that did not act on the final tick is scored on its true outcome rather than a stale interim value.
+Each game contributes one episode score for each seat: that seat's final score for the game. Some environments score every seat only at the end. For example, Hearts settles its penalty on the final trick. In these environments, the reported game result supplies every seat's final score. A seat that did not act on the final tick is therefore scored on its true outcome instead of an outdated intermediate value.
 
-A game a seat does not finish cleanly — its agent crashed, played an illegal move, or overran its budget, or the whole container faulted — is a forfeit. A forfeit takes the environment's worst achievable score, the floor below every honest outcome, so that failing can never out-score honest play. A terminal-scored game makes this necessary: a seat that aborts an unfinished Hearts hand would otherwise bank its interim near-zero, the best possible score. Hearts floors a forfeit at the maximum one-hand penalty; Spades, where a seat is ranked by its partnership's score, floors it below every honest team outcome; an upward-accruing score such as Flappy Bird floors at zero. Each environment registers its own floor.
+A game is a forfeit for any seat that does not finish cleanly because its agent crashed, played an illegal move, or exceeded its budget. A fault in the whole container also causes a forfeit. The environment assigns a forfeiting seat its worst achievable score: a floor below every honest outcome. Failure can therefore never score better than honest play.
 
-Mean compute time per decision is shown separately and breaks only an exact score tie. It includes chargeable `act` and optional-hook time, with official LLM proxy time treated as defined in the [LLM API](llm.md#determinism-and-timing). The mean is weighted by acted ticks across games. The spread shown beside it is the population standard deviation of each game's per-decision compute rate, weighted by that game's acted ticks so it describes the same distribution as the mean. Score and efficiency are never combined.
+This floor is necessary for games scored at the end. Without it, a seat that aborted an unfinished Hearts hand could keep its intermediate score near zero, which is the best possible result. Hearts sets the forfeit floor at the maximum penalty for one hand. In Spades, where a seat is ranked by its partnership's score, the floor is below every honest team outcome. A score that only increases, such as Flappy Bird's, has a floor of zero. Each environment registers its own floor.
+
+Mean compute time per decision is shown separately and breaks only an exact score tie. It includes chargeable time in `act` and optional hooks. The [LLM API](llm.md#determinism-and-timing) defines how official LLM proxy time is counted. The mean is weighted by the number of ticks on which the agent acted across all games.
+
+The displayed spread is the population standard deviation of each game's compute time per decision. It is weighted by that game's acted ticks so it describes the same distribution as the mean. Score and efficiency are never combined.
 
 The operator-triggered workflow:
 
@@ -63,13 +67,13 @@ The operator-triggered workflow:
 - Enforces step and episode limits.
 - Aggregates successful LLM usage by model, including authoritative weighted cost and estimated-call counts.
 
-When a match design fills more than one seat from submissions, the expansion respects whether seat order changes the game (see [Environments](environment.md)). It enumerates each distinct ordered seating where order matters, and each distinct unordered roster where it does not. The built-in baseline still fills every submission seat so each board keeps a comparable reference row.
+When a match design fills more than one seat with submissions, the schedule respects whether seat order changes the game. See [Environments](environment.md). It includes every distinct ordered seating when order matters and every distinct unordered group when it does not. The built-in baseline still fills every submission seat, giving each board a comparable reference row.
 
 Each match runs in its own sandboxed session container. See [Execution](execution.md).
 
 ## Human-feedback board
 
-The human-feedback board shows each agent's mean rating, the population standard deviation of its ratings, and its rating count. An agent needs at least three ratings to be ranked. When an agent's author has set a rating prompt, it is shown beneath the agent's name on the board (truncated, with the full text on hover).
+The human-feedback board shows each agent's mean rating, population standard deviation, and rating count. An agent needs at least three ratings to be ranked. If the agent's author has set a rating prompt, the board shows a shortened version beneath the agent's name and the full text on hover.
 
 Ratings use a 1 to 5 scale. Two optional prompts may guide one rating:
 

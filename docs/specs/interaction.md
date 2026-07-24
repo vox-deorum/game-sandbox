@@ -18,7 +18,7 @@ Live play and replay use the same renderer. See [Recording](recording.md).
 
 Local play uses the same browser renderer and session protocol through a loopback-only Python relay. Its page has no account shell, but start, pause, resume, stop, input, status, and game-over behavior follow this contract.
 
-Structured state keeps bandwidth and latency lower than streamed video and makes replay a first-class interactive view instead of a passive recording. The cost is that each environment must provide a small renderer.
+Structured state uses less bandwidth and adds less latency than streamed video. It also makes replay interactive instead of a passive video. In exchange, each environment must provide a small renderer.
 
 ## Per-step state object
 
@@ -34,7 +34,7 @@ The renderer cannot inspect the live environment. Anything needed on screen must
 
 ## Session loop
 
-There is one PettingZoo agent-environment-cycle for realtime, turn-based, single-agent, and multi-agent environments:
+One PettingZoo agent-environment cycle supports real-time, turn-based, single-agent, and multi-agent environments:
 
 ```text
 Choose acting slot → obtain action or default → step environment → emit state → repeat
@@ -42,20 +42,20 @@ Choose acting slot → obtain action or default → step environment → emit st
 
 The server is authoritative. The browser never simulates ahead. Human inputs include the controlled slot ID.
 
-The transport and state model identify every slot even when an initial product flow connects only one human. Supporting more connected humans later therefore does not change the environment contract.
+The transport and state model identify every slot, even when a product flow connects only one human. This allows more humans to connect later without changing the environment contract.
 
 The environment's [metadata](environment.md) selects timing:
 
 | Mode | Pace interval | Advance rule |
 | --- | --- | --- |
 | Turn-based | None | Advance when the action arrives or the move clock expires. |
-| Realtime | Set | Advance on each cadence, using the latest input or the default action. |
+| Real-time | Set | Advance on each cadence, using the latest input or the default action. |
 
-Realtime input takes effect after a network round trip, so supported games use modest cadences rather than twitch-sensitive timing.
+Real-time input takes effect after a network round trip, so supported games use moderate cadences rather than timing that depends on immediate reactions.
 
-Live sessions may pause. Pausing freezes stepping and timeout accounting. The host page changes its pause control only after the relay echoes an accepted pause or resume command. A paused session reports that state to a newly attached browser. Stop has no echo: terminal UI waits for the result and ended status. Headless leaderboard runs do not pace or pause.
+Live sessions may pause, which freezes both stepping and timeout accounting. The host page changes its pause control only after the relay confirms an accepted pause or resume command. A newly connected browser is told when a session is paused. Stop commands have no confirmation message, so the interface waits for the result and ended status before showing the session as finished. Headless leaderboard runs do not pace or pause.
 
-Human slots use a separate timeout from agent compute limits. In realtime games, the cadence is the deadline. In turn-based games, the timeout is a move clock. A session may override the environment default, and the interface shows the active value when it affects play.
+Human slots have a timeout separate from agent compute limits. In real-time games, the cadence is the deadline. In turn-based games, the timeout is a move clock. A session may override the environment default. The interface shows the active value whenever it affects play.
 
 ## Human input
 
@@ -64,10 +64,14 @@ An environment may expose human-capable slots. Its renderer can accept:
 - Raw device input, such as keyboard, pointer, touch, or gamepad.
 - On-screen controls, such as buttons, board cells, card hands, or sliders.
 
-A renderer may use both. It maps each gesture to an action in the environment's action space and sends the action with the slot ID. Spectators and replay viewers receive no input capability.
+A renderer may use both types of input. It maps each gesture to an action in the environment's action space and sends that action with the slot ID. Spectators and replay viewers cannot send input.
 
-The [environment contract](environment.md#observations-and-actions) defines the object-shaped observation and the binary `action_mask` that marks the currently legal actions. The mask travels in the per-step state so the renderer presents only legal choices, for example by disabling the illegal ones, rather than re-deriving the rules in the browser. Object-shaped overlay data serves the renderer the same way: it draws, animates, and hit-tests semantic values such as a `{"suit", "rank"}` card directly, and encodes a chosen action back to its integer only when sending it. When a human slot's move clock expires, the environment supplies a default legal action (the real integer that gets played, recorded like any other move) so play continues.
+The [environment contract](environment.md#observations-and-actions) defines object-shaped observations and the binary `action_mask` that marks currently legal actions. The mask travels in each step's state. The renderer uses it to present only legal choices, such as by disabling illegal ones, instead of calculating the rules again in the browser.
+
+Object-shaped overlay data works the same way for rendering. The renderer directly draws, animates, and hit-tests meaningful values such as a `{"suit", "rank"}` card. It converts the chosen action back to an integer only when sending it. If a human slot's move clock expires, the environment supplies a default legal action so play continues. That actual integer is played and recorded like any other move.
 
 ## Chat
 
-When messaging is enabled, the host page provides the chat panel as shared session chrome, so every messaging environment uses the same panel and the renderer needs no knowledge of messaging. Broadcasts and messages addressed to the connected user's slots appear there. Outgoing messages follow the same WebSocket path as input, but into a bounded per-slot FIFO queue rather than the coalescing input latch, drained once per stepped tick, so a human message is queued for the next tick, not the human's next turn. See [Communication](communication.md).
+When messaging is enabled, the host page provides a shared chat panel. Every messaging environment uses this panel, so its renderer does not need to know about messaging. The panel shows broadcasts and messages addressed to the connected user's slots.
+
+Outgoing messages follow the same WebSocket path as input, but enter a bounded first-in, first-out queue for each slot instead of the input latch that keeps only the latest action. The harness drains the message queue once per stepped tick. A human message is therefore queued for the next tick, not the human's next turn. See [Communication](communication.md).

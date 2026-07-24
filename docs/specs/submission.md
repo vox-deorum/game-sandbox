@@ -11,11 +11,11 @@ Participants submit Python agents through GitHub. Every accepted submission is t
 | `learn(observation, action, reward, terminated)` | No | Update after a step. |
 | `chat(inbox)` | No | Receive and send messages on the agent's turn. |
 
-`act` receives an object-shaped observation and returns an integer in the environment's flat `Discrete` action space; the template ships a helper module that reads the observation and builds the action, so an agent works with semantic game objects rather than packed arrays. See the [environment contract](environment.md) for the full convention.
+`act` receives an object-shaped observation and returns an integer from the environment's flat `Discrete` action space. The template includes a helper module that reads the observation and builds the action, so agents work with meaningful game objects instead of packed arrays. See the [environment contract](environment.md) for the full convention.
 
 The interface is independent of algorithm style. Agents always run inside the server-side session container. They may also call the optional [LLM API](llm.md).
 
-Learned state may persist across episodes in one leaderboard run, but not across submissions or seasons. Time spent in optional hooks counts toward the same limits as acting. Official-session LLM timing is defined in the [LLM API](llm.md#determinism-and-timing).
+Learned state may persist between episodes in one leaderboard run, but not between submissions or seasons. Time spent in optional hooks counts toward the same limits as time spent acting. The [LLM API](llm.md#determinism-and-timing) defines how official-session LLM calls affect timing.
 
 ## Packaging
 
@@ -29,11 +29,11 @@ Every repository contains `manifest.json` at its root:
 }
 ```
 
-The manifest names the Python module, class, and template dependency version. The `template_version` shown above is illustrative; the authoritative value is whatever the current template release ships.
+The manifest names the Python module, class, and template dependency version. The `template_version` above is only an example. The current template release provides the authoritative value.
 
 Dependencies are set by the template, not by individual submissions. Each template release pins exact package versions, and old versions remain available for reproducibility. Every agent in a season uses the same dependency version, so agents can share a session container without conflicts.
 
-A participant who needs a missing library asks the operator for a new template release rather than adding a private dependency pin. This keeps local development, validation, and official runs on the same package set.
+A participant who needs a missing library asks the operator for a new template release instead of pinning a private dependency. This keeps local development, validation, and official runs on the same package set.
 
 ## Template repos and local development
 
@@ -52,7 +52,9 @@ Each starter kit includes:
 - Local play and evaluation scripts.
 - A minimal LLM API example.
 
-While a season's submission window is open, an active participant requests a development key for an LLM-enabled season from the backend and places the returned credentials in `.env`. Development access ends when that season's submissions close. Rotating a key invalidates the prior credential without resetting that participant's per-season usage. Development usage has its own per-season meter. In an official session, the backend replaces those credentials with a temporary session-and-slot key. Participants do not need the backend to write an agent or run it without LLM calls. See [LLM API](llm.md).
+While submissions are open for an LLM-enabled season, an active participant may request a development key from the backend and place the returned credentials in `.env`. Development access ends when submissions close. Rotating a key invalidates the previous credential without resetting that participant's usage for the season. Development usage has its own meter for each season.
+
+In an official session, the backend replaces development credentials with a temporary key for that session and slot. Participants do not need the backend to write an agent or run it without LLM calls. See [LLM API](llm.md).
 
 Developers may enable a local-folder source to test the validation pipeline without GitHub. It is disabled in normal deployments and is not a participant feature.
 
@@ -68,7 +70,7 @@ Attach signed-in user and open season
 Validate and build
 ```
 
-If no branch, tag, or commit is supplied, the system pins the head of the default branch. Later pushes do not change the existing submission. Resubmitting resolves a new commit.
+If the participant supplies no branch, tag, or commit, the system pins the current head of the default branch. Later pushes do not change an existing submission. Resubmitting resolves and pins a new commit.
 
 Each participant has one active submission per season. A later submission replaces the active one and preserves history. The signed-in account identity is always the submitter identity.
 
@@ -80,20 +82,20 @@ Validation never runs a game:
 
 | Layer | Executes participant code? | Checks |
 | --- | --- | --- |
-| Static | No | Reachable commit, source size within the cap, exact manifest shape, existing entry-point module, supported template version that matches the season |
+| Static | No | Reachable commit, source size within the cap, exact manifest shape, existing entry point module, supported template version that matches the season |
 | Load | Yes, in a sandbox | Module imports, class exists, constructor succeeds, `reset` and `act` are callable |
 
 Every failure has a specific owner-visible reason. A successful submission becomes a runnable overlay image. See [Execution](execution.md).
 
 ### Maximum submission size
 
-The static layer caps the checked-out source size, measured without `.git`/VCS history (a submission is code, not repository history). The cap is a site default (`SUBMISSION_MAX_SIZE_MB`, 25 MB) that a season may override with `overrides.submission_max_size_mb`; the override, when set, takes precedence. An over-cap submission fails the static stage with an owner-visible reason naming the measured size and the limit.
+The static layer caps the size of the checked-out source without `.git` or other version-control history. A submission contains code, not repository history. The site default is 25 MB, configured by `SUBMISSION_MAX_SIZE_MB`. A season may set `overrides.submission_max_size_mb`, which takes precedence when present. If a submission exceeds the cap, the static stage fails and tells the owner both the measured size and the limit.
 
 ## Snapshots and downloads
 
-When a submission passes the size cap and the static checks, the server stores a compressed snapshot of its source tree (the same filtered tree the overlay is built from, excluding `.git`) under `<DATA_DIR>/submissions`. The snapshot is the durable source of truth:
+After a submission passes the size cap and static checks, the server stores a compressed snapshot of its source tree under `<DATA_DIR>/submissions`. This is the same filtered tree used to build the overlay and excludes `.git`. The snapshot becomes the durable source of truth:
 
-- **Re-runs and rebuilds** materialize the overlay from the snapshot rather than re-cloning, so a re-run no longer breaks if the participant force-pushed or deleted the pinned commit. (A submission predating its snapshot falls back to re-cloning the pinned source.)
-- **Operators** can download an individual submission's source, or a whole season as one `.tar.gz` containing each active participant's submission in its own folder plus a `submission.json` metadata file and a top-level `season.json` index. Both downloads are operator-gated under `/api/admin`.
+- **Reruns and rebuilds** create the overlay from the snapshot instead of cloning the repository again. They therefore continue to work if the participant force-pushes or deletes the pinned commit. A submission created before snapshots were available falls back to cloning its pinned source again.
+- **Operators** can download one submission's source or an entire season. A season download is a `.tar.gz` archive with each active participant's submission in a separate folder, a `submission.json` metadata file in each folder, and a top-level `season.json` index. Both download routes are restricted to operators under `/api/admin`.
 
 On-disk snapshot storage is bounded by the size cap times the number of retained submissions.

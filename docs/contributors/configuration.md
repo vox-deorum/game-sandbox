@@ -1,20 +1,20 @@
 # Configuration
 
-Game Sandbox is configured through environment variables. The tracked repository-root `.env.default` is the authoritative source for concrete runtime defaults, while capabilities that require private credentials or external endpoints remain disabled until their values are configured. There is no second set of fallback values in `config.ts` and no secrets manager.
+Game Sandbox uses environment variables for configuration. The tracked `.env.default` file at the repository root defines all concrete runtime defaults. Features that need private credentials or external endpoints remain disabled until configured. `config.ts` has no duplicate fallback values, and the project has no secrets manager.
 
 This page is the full reference for those variables. Read [Backend](backend.md) for how the values are consumed, and [Development setup](development-setup.md) to get a working local environment first.
 
 ## How configuration loads
 
-`loadConfig()` reads configuration once at startup. It loads the required repository-root `.env.default`, overlays a repository-root `.env` when that file exists, then preserves variables supplied by the parent process over both files. The resulting precedence is process environment, `.env`, then `.env.default`. File locations and relative values for `DATA_DIR`, `FRONTEND_DIST`, `DOCS_DIR`, and `DOCS_INDEX_FILE` are resolved from the repository root, so startup does not depend on the current working directory.
+`loadConfig()` reads configuration once at startup. It first loads the required `.env.default`, then an optional `.env`, both from the repository root. Variables from the parent process override both files. The precedence is therefore the process environment, `.env`, then `.env.default`. The paths to these files and relative values for `DATA_DIR`, `FRONTEND_DIST`, `DOCS_DIR`, and `DOCS_INDEX_FILE` are resolved from the repository root, so startup does not depend on the current working directory.
 
-Edit `.env.default` when a tracked default changes. It includes public development credentials that are safe only because insecure development mode binds the backend to loopback; never put a private credential in this file. `.env` is for machine-specific values and private credentials and is ignored by Git. Other `.env.*` files are not loaded automatically.
+Edit `.env.default` when a tracked default changes. It contains public development credentials that are safe only because insecure development mode binds the backend to loopback. Never put private credentials in this file. Use the Git-ignored `.env` for machine-specific values and private credentials. Other `.env.*` files are not loaded automatically.
 
-After loading, `config.ts` validates required values and parses the environment into a single typed `Config` object. It retains only derived behavior, such as `SITE_SHORT_NAME` falling back to `SITE_NAME`, and optional settings that remain absent when unset. Services receive `Config`, or the slice they need, through their constructor. Reading process environment variables from feature modules is banned. An explicit map passed to `loadConfig()` is treated as complete and reads neither file, which keeps tests isolated from a developer's `.env`; tests that exercise defaults seed their map from `.env.default` through the shared test helper.
+After loading, `config.ts` validates required values and parses the environment into one typed `Config` object. The file contains only derived behavior, such as `SITE_SHORT_NAME` falling back to `SITE_NAME`, and optional settings remain absent when unset. Constructors receive either the complete `Config` or the part a service needs. Feature modules must not read process environment variables directly. When passed an explicit map, `loadConfig()` treats it as complete and reads neither file. This keeps tests isolated from a developer's `.env`; tests for defaults use a shared helper to seed their map from `.env.default`.
 
 ## Validation
 
-Dedicated parsers and Zod schemas validate every value, so a missing required setting or malformed value fails fast at startup with a message naming the offending variable instead of surfacing later as a confusing runtime error. The accepted forms are:
+Dedicated parsers and Zod schemas validate every value. A missing or malformed setting therefore fails at startup with a message that names the variable. The accepted forms are:
 
 - Integer settings must be whole numbers. Quotas may allow zero, while ports and timing intervals use setting-specific positive upper and lower bounds. Floats, `NaN`, negatives, and out-of-range values are rejected.
 - Quotas that allow fractions, such as `SANDBOX_CPUS`, must be positive finite numbers.
@@ -70,7 +70,7 @@ Dedicated parsers and Zod schemas validate every value, so a missing required se
 
 ## LLM proxy
 
-The internal OpenAI-compatible proxy starts only when `LLM_UPSTREAM_URL` and at least one model tier are configured. Agents use the stable tiers `large`, `medium`, and `small`. The matching `LLM_MODEL_*` values map those tiers to private upstream models, and the optional upstream credential also stays inside the backend. Development-key responses include the resolved tier prices. `LLM_INTERNAL_PORT` binds on all interfaces so the per-session Docker relay added by Stage 9 can reach it through the host gateway. The listener requires a scoped bearer key on every route.
+The internal OpenAI-compatible proxy starts only when `LLM_UPSTREAM_URL` and at least one model tier are configured. Agents use the stable tiers `large`, `medium`, and `small`; matching `LLM_MODEL_*` variables map these tiers to private upstream models. The optional upstream credential also stays inside the backend. Development-key responses include the resolved tier prices. `LLM_INTERNAL_PORT` binds on all interfaces so the per-session Docker relay can reach it through the host gateway. Every listener route requires a scoped bearer key.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
@@ -110,7 +110,7 @@ The internal OpenAI-compatible proxy starts only when `LLM_UPSTREAM_URL` and at 
 | `OVERLAY_IMAGE_BUDGET` | `50` | Maximum cached submission overlays; active ready images are protected and count |
 | `OVERLAY_IMAGE_SWEEP_INTERVAL_MS` | `3600000` | Overlay sweep interval; sweeps also run at startup and after builds |
 
-`DATA_DIR` also roots the submission-snapshot volume (`<DATA_DIR>/submissions`): one `.tar.gz` per accepted submission, bounded on disk by `SUBMISSION_MAX_SIZE_MB` times the number of retained submissions. See [Backend](backend.md).
+`DATA_DIR` also contains the submission-snapshot volume at `<DATA_DIR>/submissions`. It holds one `.tar.gz` file per accepted submission, so its disk usage is bounded by `SUBMISSION_MAX_SIZE_MB` times the number of retained submissions. See [Backend](backend.md).
 
 ## Deployment notes
 
@@ -120,9 +120,9 @@ Keep `ALLOW_LOCAL_SUBMISSIONS` disabled in real deployments. The gate, not path 
 
 Static frontend serving is wired only when `FRONTEND_DIST` points at an existing directory, so Vite development and tests without a built bundle are unaffected. See [Static frontend](backend.md#static-frontend).
 
-The Documentation page reads the student guides from `DOCS_DIR` at request time, so a guide updates without a frontend rebuild. Set `DOCS_INDEX_FILE` to give a class its own landing page, such as a schedule or grading notes, without editing the shared guides; a configured file that cannot be read fails the landing request loudly rather than silently falling back.
+The Documentation page reads student guides from `DOCS_DIR` at request time, so updating a guide does not require a frontend rebuild. Set `DOCS_INDEX_FILE` to provide a class-specific landing page, such as a schedule or grading notes, without editing the shared guides. If the configured file cannot be read, the landing request fails instead of silently using the default page.
 
-Set `AUTH_SECRET` and the bootstrap `ADMIN_EMAIL`/`ADMIN_PASSWORD` explicitly. A normal startup refuses to run without an explicit `PUBLIC_ORIGIN`, signing secret, and bootstrap credentials, so there is no accidental fallback to the published development values. A deployment from a repository checkout must also set `AUTH_ALLOW_INSECURE_DEFAULTS=false` to override the local `.env.default`; never enable it outside loopback development. In local mode it accepts the published values and restricts the HTTP listener to loopback. When GitHub OAuth is configured, register the callback URL `<PUBLIC_ORIGIN>/api/auth/callback/github` with the OAuth app. That app handles both sign-in and the connect action on My Profile. `GITHUB_TOKEN` stays a submissions-only credential, distinct from the OAuth app's client ID and secret. `sandbox.db` now also holds the Better Auth tables (`user`, `session`, `account`, `verification`), created by a separate programmatic migration rather than the app's own schema.
+Set `PUBLIC_ORIGIN`, `AUTH_SECRET`, and the bootstrap `ADMIN_EMAIL` and `ADMIN_PASSWORD` explicitly in a deployment. A normal startup refuses to run without them, preventing accidental use of the published development values. A deployment from a repository checkout must also set `AUTH_ALLOW_INSECURE_DEFAULTS=false` to override the local `.env.default`. Never enable this setting outside loopback development. In local mode, it accepts the published values and restricts the HTTP listener to loopback. When GitHub OAuth is configured, register `<PUBLIC_ORIGIN>/api/auth/callback/github` as the callback URL. The same OAuth app handles sign-in and the connect action on My Profile. `GITHUB_TOKEN` is separate from the OAuth client ID and secret and is used only for submissions. `sandbox.db` also contains the Better Auth tables (`user`, `session`, `account`, `verification`), which a separate programmatic migration creates outside the application's schema.
 
 ## See also
 

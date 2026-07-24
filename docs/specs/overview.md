@@ -2,15 +2,15 @@
 
 Game Sandbox is a shared playground for game-playing AI. Participants write agents, submit them through GitHub, and use a website to watch, play, rate, and compare them.
 
-Agents may use search, rules, reinforcement learning, language models, or a mix of techniques. The platform judges the game behavior and resource use, not the implementation style.
+Agents may use search, rules, reinforcement learning, language models, or any combination of techniques. The platform evaluates their game behavior and resource use, not how they are implemented.
 
 The system is designed for classes, but it does not depend on GitHub Classroom. The same deployment can serve a workshop, club, or open competition.
 
 ## Core model
 
-PettingZoo is the only environment interface. A compatibility wrapper lifts single-agent Gymnasium games into the same shape as native multi-agent games. See [Environments](environment.md).
+PettingZoo is the only environment interface. A compatibility wrapper makes single-agent Gymnasium games look like native multi-agent games to the rest of the system. See [Environments](environment.md).
 
-Each competition round is a **season** for one environment. Participants submit a GitHub repository pinned to a commit. Sessions run agents and the environment in a sandboxed container, stream state to a browser renderer, and save that same state as a replay.
+Each competition round is a **season** for one environment. Participants submit a GitHub repository pinned to a specific commit. A session runs the agents and environment in a sandboxed container, streams state to a browser renderer, and saves the same state for replay.
 
 Each environment and season has two separate leaderboards:
 
@@ -41,7 +41,7 @@ Game Sandbox must:
 
 ## Future work
 
-Two ideas are deliberately deferred:
+The following ideas are outside the current scope:
 
 - A Unity ML-Agents bridge alongside PettingZoo.
 - Running pure-Python agents in the viewer's browser.

@@ -6,7 +6,7 @@ The frontend design system has two layers:
 semantic CSS tokens → Vue UI primitives → feature components → pages
 ```
 
-Read this page before visual work. Use [Frontend](frontend.md) for package mechanics and [Rendering](environments/rendering.md) for game visuals.
+Read this page before changing the interface. See [Frontend](frontend.md) for package mechanics and [Rendering](environments/rendering.md) for game visuals.
 
 ## Working rules
 
@@ -19,19 +19,19 @@ Read this page before visual work. Use [Frontend](frontend.md) for package mecha
 
 ## Design principles
 
-- **Clarity for data-dense views.** Sessions, replays, and leaderboards are tables and counters first. Favor legibility through a clear type scale, monospace identifiers and numbers, and restrained color.
+- **Clarity for data-dense views.** Sessions, replays, and leaderboards primarily present tables and counters. Keep them legible with a clear type scale, monospace identifiers and numbers, and restrained color.
 - **Accessibility is a rule, not an aspiration.** The baseline below holds for every page and every primitive. It is not a backlog item; a change that regresses it is incomplete.
-- **The game-stage spotlight.** On the session and replay pages the renderer canvas is the star and the chrome around it stays quiet. Renderers own their own visual identity (they are exempt from the token rule); the host owns the calm frame around them.
+- **The game stage is the focus.** On session and replay pages, the renderer canvas is the main visual element and the surrounding controls stay quiet. Renderers own their visual identity and are exempt from the token rule. The host owns the calm frame around them.
 - **Calm motion.** Motion is purposeful and short, expressed through the motion tokens so `prefers-reduced-motion` stills all of it at once. Nothing animates to draw attention to itself.
 - **Be considerate about what to show.** Show the facts that matter and highlight the one that matters most; do not surface everything because it is available.
-- **For agents: confirm before assuming on design decisions.** Inventing a visual pattern or resolving an open design question is the owner's call. Ask.
+- **Ask about new design decisions.** The owner decides new visual patterns and open design questions.
 
 ## The token system
 
 `frontend/src/styles/tokens.css` is the single source of design values, defined as CSS custom properties on `:root` in two tiers.
 
-- The **raw palette** tier (`--palette-*`) holds the literal values and is private: nothing outside `tokens.css` references a `--palette-*` variable. This is what keeps a future light theme a remap of the semantic tier rather than a rewrite of component CSS.
-- The **semantic** tier is the public vocabulary components consume: `--color-*`, `--space-*`, `--text-*`, the font families, `--radius-*`, and the motion tokens.
+- The private **raw palette** tier (`--palette-*`) holds literal values. Nothing outside `tokens.css` may reference a `--palette-*` variable. This boundary would let a future light theme remap the semantic tier without rewriting component CSS.
+- The public **semantic** tier is the vocabulary used by components: `--color-*`, `--space-*`, `--text-*`, font families, `--radius-*`, and motion tokens.
 
 Component CSS uses semantic variables: no raw hex colors and no arbitrary spacing values. Layout dimensions such as column width, maximum width, and breakpoints may use plain values. Renderer modules are exempt because each game owns its visual identity.
 
@@ -42,13 +42,20 @@ The scales:
 - **Radii** `--radius-sm` (4px), `--radius-md` (8px), `--radius-lg` (12px), `--radius-full` (pill).
 - **Motion** `--motion-fast` (~120ms), `--motion-base` (~200ms), `--ease-out`. A global `prefers-reduced-motion: reduce` block in `base.css` zeroes the durations, so any component animating with the tokens calms down automatically.
 
-The global stylesheet is four files imported in order by `main.ts`: `tokens.css` (the tokens), `base.css` (the reset, element defaults, the one global `:focus-visible` style, the reduced-motion block), `app.css` (the app shell layout only), and `season-rows.css` (the compact row, status stripe, date, and visually hidden utilities shared by My Agents and agent profiles). Everything else is scoped component CSS on the tokens.
+`main.ts` imports four global stylesheets in order:
+
+1. `tokens.css` defines the tokens.
+2. `base.css` provides the reset, element defaults, global `:focus-visible` style, and reduced-motion block.
+3. `app.css` contains only the application shell layout.
+4. `season-rows.css` provides the compact row, status stripe, date, and visually hidden utilities shared by My Agents and agent profiles.
+
+All other styles are component-scoped CSS that uses the tokens.
 
 ## Type and color
 
-The fonts: **EB Garamond** for headings (`--font-heading`), **Lato** for body (`--font-body`), and a monospace stack (`--font-mono`) for identifiers, ticks, scores, and other counters. The theme is **dark only**; the semantic names are light-ready (a light theme would remap the palette tier) but none is built.
+The interface uses **EB Garamond** for headings (`--font-heading`), **Lato** for body text (`--font-body`), and a monospace stack (`--font-mono`) for identifiers, ticks, scores, and other counters. Only a dark theme exists. The semantic names could support a light theme by remapping the palette tier, but no light theme is implemented.
 
-The palette is a modern-minimal base with slightly playful accents. The background and surface ramp is a quiet blue-charcoal family (`--color-bg`, `--color-surface`, `--color-surface-raised`, `--color-border`, `--color-border-strong`); text is `--color-text` and `--color-text-muted`. The accent is a bright mint (`--color-accent` on `--color-on-accent`); status colors are `--color-success`, `--color-warning` (amber), and `--color-danger` (coral). `--color-current` is the sky blue used to distinguish a current Season from successful historical rows. `--color-focus-ring` is the focus sky blue, `--color-scrim` the dialog overlay, and `--color-stage-backdrop` the true black behind a renderer canvas. Status is **never** carried by color alone: see the baseline.
+The palette uses a quiet blue-charcoal family for backgrounds, surfaces, and borders (`--color-bg`, `--color-surface`, `--color-surface-raised`, `--color-border`, `--color-border-strong`). Text uses `--color-text` and `--color-text-muted`. The accent is bright mint (`--color-accent` on `--color-on-accent`), while statuses use `--color-success`, amber `--color-warning`, and coral `--color-danger`. Sky blue `--color-current` distinguishes the current Season from successful historical rows, and `--color-focus-ring` provides the focus color. `--color-scrim` is the dialog overlay, and `--color-stage-backdrop` is the black behind a renderer canvas. Color never carries status by itself; follow the accessibility baseline below.
 
 ## Component primitives
 
@@ -68,7 +75,7 @@ The primitives live in `frontend/src/components/ui/`, PascalCase with a `Ui` pre
 | `UiMeter` | Read-only progress with a required visible text value. First used for LLM development budgets. |
 | `UiEmptyState` | The loading / empty / error message line, muted or danger. |
 
-Simple primitives are local Vue components. Use Reka UI only where focus management and ARIA are difficult to implement safely, currently dialog and slider.
+Simple primitives are local Vue components. Use Reka UI only where safe focus management and ARIA behavior are difficult to implement. Currently, only the dialog and slider use it.
 
 Confirmation dialogs use `UiDialog` for the consequence and `UiDialogActions` for their footer. Keep the action text specific, make irreversible actions `danger`, keep cancellation as a ghost button, and preserve any loading or error state in the feature component.
 
@@ -78,7 +85,7 @@ Feature components (`AppShell`, `AppSidebar`, `AccountMenu`, `ExperimentTabs`, `
 
 ## Layout and responsiveness
 
-The **app shell** is a two-tier navigation frame:
+The **application shell** has two levels of navigation:
 
 - A collapsible left sidebar contains Games, Seasons, Documentation, My Agents, and the account block.
 - Environment routes add a contextual tab strip for Overview, Leaderboards, My Submissions, and the operator-only Manage page.
@@ -97,7 +104,7 @@ The design began desktop-first but must remain usable at narrow widths:
 - Session and replay pages stack the canvas and decision log and cap the canvas at the viewport width.
 - The sidebar becomes a drawer behind a mobile bar.
 
-The session, replay, and local-play pages place the decision log beside a portrait canvas (a column is always left free), and beside a landscape one (Hearts) only once the viewport is wide enough to hold both the canvas at a good size and the log column, stacking it below otherwise. The renderer's declared `aspectRatio` chooses the orientation; a viewport-width media query (`useStageLayout`) decides whether a landscape canvas earns the second column. A landscape canvas grows to fill its column, capped so its height never exceeds the fold while preserving its aspect ratio. Local play reuses the shared session frame and controls.
+Session, replay, and local-play pages always leave room to place the decision log beside a portrait canvas. For a landscape canvas such as Hearts, they use two columns only when the viewport can show both the canvas at a useful size and the log; otherwise, the log moves below. The renderer's `aspectRatio` determines its orientation, and the `useStageLayout` media query decides whether a landscape canvas gets a second column. The canvas fills that column while preserving its aspect ratio and staying short enough to fit above the fold. Local play reuses the shared session frame and controls.
 
 ## The accessibility baseline
 

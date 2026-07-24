@@ -7,11 +7,11 @@ line 1: recording header
 line 2+: one StepState per line
 ```
 
-The harness streams and stores the same serialized state lines. Input, pause, resume, stop, and chat commands are event envelopes, not recording lines. See the [recording specification](../specs/recording.md) and [state schema](state-schema.md).
+The harness streams and stores the same serialized state lines. Input, pause, resume, stop, and chat commands use event envelopes and are not part of the recording. See the [recording specification](../specs/recording.md) and [state schema](state-schema.md).
 
 The header may include a `players` map keyed by slot id, using the same keys as a step state's `agents`. Each entry has the shape `{kind: "human" | "agent", label, user?, submission_id?}`.
 
-The harness copies the map from session configuration. The backend assigns:
+The harness copies this map from the session configuration. The backend assigns:
 
 - Human slots to the session owner.
 - Submitted slots to the submission owner and id.
@@ -21,15 +21,15 @@ The field is optional, so older recordings remain readable.
 
 ## External LLM telemetry
 
-LLM telemetry is not a recording sidecar and does not change the JSONL header or step schema. The backend records durable `llm_scope_id` and `llm_session_id` metadata for an LLM-enabled recording, then uses those identifiers to read successful-call rows from the execution-scope SQLite file.
+LLM telemetry is stored separately, not as a recording sidecar, so it does not change the JSONL header or step schema. For an LLM-enabled recording, the backend stores durable `llm_scope_id` and `llm_session_id` metadata. It uses these identifiers to read successful calls from the execution scope's SQLite file.
 
-A live session uses its session ID for both identifiers. Workflow matches share their run ID as `llm_scope_id` and keep the individual match ID as `llm_session_id`. This association allows a retained replay to resolve external telemetry after its producing session or workflow data is pruned.
+A live session uses its session ID for both identifiers. Workflow matches share their run ID as `llm_scope_id` and keep the individual match ID as `llm_session_id`. This association lets a retained replay find its external telemetry after the backend prunes the session or workflow that produced it.
 
-An unassociated recording has no LLM calls. An associated recording whose telemetry file is missing or unreadable reports unavailable telemetry rather than an empty result. Retention preserves a referenced scope until no retained recording needs it, then allows the backend to reclaim the external telemetry.
+An unassociated recording has no LLM calls. An associated recording whose telemetry file is missing or unreadable reports unavailable telemetry rather than an empty result. Retention preserves a referenced scope while any retained recording needs it. The backend can reclaim the external telemetry afterward.
 
 ## The store interface
 
-The harness exposes a small save and load interface, `RecordingStore`, with three members:
+The harness exposes `RecordingStore`, a small interface with three members:
 
 - `create(recording_id, header)` returns a writer context manager. Its `write_step(state)` validates the state, appends exactly one JSONL line, and flushes on every write, so a crashed session leaves a readable prefix rather than a corrupt file.
 - `open(recording_id)` returns a recording holding the parsed, validated header and a lazy iterator of validated states.
@@ -47,6 +47,6 @@ Readers require every state's `schema_version` to match the header. A blank or t
   <declared sidecars>
 ```
 
-One directory maps naturally to one object-storage key prefix. The interface names IDs and streams rather than filesystem paths, so an S3-compatible store can be added later.
+Each directory maps naturally to one object-storage key prefix. The interface uses IDs and streams instead of filesystem paths, allowing a future S3-compatible implementation.
 
 There is no general sidecar writing API yet. Readers tolerate declared unknown sidecars according to [the sidecar rule](state-schema.md#the-sidecar-rule).

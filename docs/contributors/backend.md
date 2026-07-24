@@ -1,6 +1,6 @@
 # Backend
 
-The backend is the Node and TypeScript service outside the session container. It serves the HTTP API and built frontend, authenticates and authorizes users, stores relational data, supervises sessions and leaderboard workflows, and relays WebSocket traffic.
+The backend is the Node and TypeScript service that runs outside session containers. It serves the HTTP API and built frontend, handles authentication and authorization, stores relational data, supervises sessions and leaderboard workflows, and relays WebSocket traffic.
 
 It never steps an environment or runs participant Python. The session container is authoritative for game state.
 
@@ -61,23 +61,23 @@ Tests mirror source domains under `test/`. Shared doubles and fixtures live unde
 
 ## Configuration
 
-The required repository-root `.env.default` is the authority for concrete runtime defaults. `config.ts` loads it once, applies optional `.env` and parent-process overrides, then validates the complete environment without duplicating those defaults in code. Services receive `Config`, or the slice they need, through construction. Do not read process environment variables from feature modules. Dedicated parsers and Zod schemas validate environment variables, manifests, and season configuration.
+The required `.env.default` at the repository root defines all concrete runtime defaults. `config.ts` loads it once, applies an optional `.env` and parent-process overrides, then validates the complete environment without duplicating defaults in code. Each service receives either `Config` or the part it needs through its constructor. Feature modules must not read process environment variables directly. Dedicated parsers and Zod schemas validate environment variables, manifests, and season configuration.
 
 See [Configuration](configuration.md) for the full environment-variable reference and deployment notes.
 
 ## LLM proxy
 
-The backend owns one OpenAI-compatible proxy over a configured upstream. Its shared handler authenticates a scoped grant, maps a public model tier, normalizes the output-token maximum, reserves every accounting scope, calls the upstream through the explicit retry loop, and commits successful-call telemetry before returning the completion. The internal listener is enabled only when an upstream URL and at least one model tier are configured.
+The backend provides one OpenAI-compatible proxy for a configured upstream. Its shared handler authenticates a scoped grant, maps the public model tier to an upstream model, normalizes the output-token maximum, and reserves every accounting scope. It then calls the upstream through an explicit retry loop and commits successful-call telemetry before returning the completion. The internal listener starts only when an upstream URL and at least one model tier are configured.
 
 For an official key, `POST /internal/inflight` returns its accounting scope's cumulative proxy milliseconds as `inflight_ms`. The value includes completed requests, retries, terminal failures, and a bounded contribution from an active request, but not marker or counter reads. The harness uses snapshots around a hook for timing. See [Execution](execution.md#container-side-live-runner).
 
-Each grant binds one or more synchronous committed-usage readers to the durable store updated by its record sink. The meter reads committed usage, checks every limit, and mutates all reservations in one synchronous section. This combines durable successful usage with in-flight reservations and process-lifetime conservative debt without an admission gap.
+Each grant binds one or more synchronous committed-usage readers to the durable store updated by its record sink. In one synchronous section, the meter reads committed usage, checks every limit, and updates all reservations. This prevents a gap in admission checks by combining durable successful usage, in-flight reservations, and conservative debt accumulated during the backend process.
 
 The tokenizer encodes accepted request and completion JSON as ordinary text, so participant content cannot invoke tokenizer control-token behavior. Missing or malformed upstream usage is estimated from the same canonical request and completion retained in telemetry. Successful responses preserve generated content and standard fields, replace structured provider model metadata with public model tiers, and drop nonstandard top-level provider metadata.
 
-An upstream failure releases the reservation and creates no successful-call row. After the upstream succeeds, every failure before the durable record commits converts the reservation to conservative debt, opens each affected accounting breaker, and returns `meter_unavailable`. A single-flight write-health probe can close the breaker, but it never forgives debt during that backend process. See the [LLM specification](../specs/llm.md) for the product rules and [Configuration](configuration.md#llm-proxy) for deployment settings.
+An upstream failure releases the reservation and creates no successful-call row. If the upstream succeeds but the durable record does not commit, the system converts the reservation to conservative debt, opens each affected accounting breaker, and returns `meter_unavailable`. A single-flight write-health probe can close the breaker, but it never forgives debt during that backend process. See the [LLM specification](../specs/llm.md) for product rules and [Configuration](configuration.md#llm-proxy) for deployment settings.
 
-The application exposes the internal listener to session containers through the session relay and the public development completion route to holders of a season development key. `POST /api/seasons/:seasonId/llm-development-key` creates or rotates that participant's key. The same shared handler authenticates both kinds of grant, while the development key service checks the active participant, submission window, and effective season access before issuing or accepting a key.
+The session relay exposes the internal listener to session containers. A public development completion route is available to holders of a season development key. `POST /api/seasons/:seasonId/llm-development-key` creates or rotates a participant's key. The same handler authenticates both grant types. Before issuing or accepting a key, the development key service checks that the participant is active, the submission window is open, and the season has effective LLM access.
 
 Official successful calls are stored in `data/llm/<scopeId>.sqlite`. A live session uses its session ID as the scope, while all matches in a leaderboard run share the run ID and retain a separate session ID for each call. Development calls use a private season ledger per participant. These telemetry and ledger files use their own `PRAGMA user_version` migrations. That is separate from the application's flat initial Kysely schema, which contributors update in place while no deployed application data needs a forward migration.
 
@@ -85,7 +85,7 @@ The record sink commits a call before the completion is returned. Recording tele
 
 Public recording telemetry exposes metadata and authoritative budget costs. Accepted requests and canonical completions are returned only to an operator or the current owner of the controlling submission. Deleting that submission retains public telemetry and costs, but removes the former owner's body access. Retained recording metadata keeps the external telemetry queryable; cleanup reclaims an execution scope only when no retained recording still references it.
 
-Workflow creation stores a fully resolved official LLM policy snapshot. The runner reads that snapshot for every match, including enabled model tiers, upstream model mappings, prices, and per-slot limits. On every LLM-enabled session or workflow exit, the finalizer closes grants to new admission, drains or aborts authenticated requests, waits for their reservation finalizers, and only then aggregates or deletes telemetry, removes relay networking, and completes the lifecycle.
+Workflow creation stores a fully resolved snapshot of the official LLM policy. The runner uses that snapshot for every match, including enabled model tiers, upstream model mappings, prices, and per-slot limits. When an LLM-enabled session or workflow exits, the finalizer blocks new requests, drains or aborts authenticated requests, and waits for their reservations to settle. Only then does it aggregate or delete telemetry, remove relay networking, and complete the lifecycle.
 
 ## Static frontend
 
@@ -98,7 +98,7 @@ When `FRONTEND_DIST` exists, the backend serves it through `@fastify/static`.
 
 ## Storage
 
-Relational data sits behind a domain-shaped `Storage` interface implemented with Kysely and better-sqlite3.
+The `Storage` interface organizes relational data by product domain. Kysely and better-sqlite3 provide its implementation.
 
 Callers use methods such as `createSession`, `markEnded`, `createSubmission`, and `getHumanBoard`. They do not issue SQL.
 
@@ -148,15 +148,15 @@ Deletion tolerates a missing row or directory so an interrupted sweep can recove
 
 ## Identity and authorization
 
-Identity is a Better Auth session cookie, resolved once per request from the cookie by `identity.ts`'s `createRequestIdentity(auth)`; the lookup is memoized per request, so a route that both guards and personalizes resolves the session only once.
+Identity comes from a Better Auth session cookie. `createRequestIdentity(auth)` in `identity.ts` resolves it and caches the result for the request, so a route that both checks access and personalizes its response performs only one session lookup.
 
-`deriveStatus(role)` maps the comma-split Better Auth `role` to one of three statuses: `pending`, `normal`, or `admin`. Admin beats user beats pending, and an unknown, empty, or missing role resolves to `pending`, failing closed.
+`deriveStatus(role)` splits the Better Auth `role` on commas and maps it to `pending`, `normal`, or `admin`. Admin takes precedence over user, and user takes precedence over pending. An unknown, empty, or missing role becomes `pending`, so access fails closed.
 
 Every route states its requirement against the guard trio:
 
-- `requireUser` — any signed-in user; `401 auth_required` when anonymous.
-- `requireActive` — an active (`normal` or `admin`) user; `403 not_active` for a pending user.
-- `requireAdmin` — an `admin` user; `403 not_operator` otherwise. The `/api/admin` plugin still gates through one `onRequest` guard sharing this code, now backed by `status === 'admin'`.
+- `requireUser`: Any signed-in user; returns `401 auth_required` for an anonymous request.
+- `requireActive`: An active (`normal` or `admin`) user; returns `403 not_active` for a pending user.
+- `requireAdmin`: An `admin` user; returns `403 not_operator` otherwise. The `/api/admin` plugin uses the same code through one `onRequest` guard backed by `status === 'admin'`.
 
 Public reads stay open to anonymous visitors. Ban is a standalone Better Auth flag: banning revokes sessions and blocks sign-in, so a banned user never reaches the guards at all.
 

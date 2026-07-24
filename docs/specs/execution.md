@@ -17,13 +17,13 @@ renderer + input ⇄ WebSocket relay ⇄ line transport ⇄ harness + environmen
 - The backend supervises and relays. It does not step the game.
 - The per-step state schema is the container boundary and recording format.
 
-Keeping every slot in one session container avoids a second container boundary inside the per-turn loop and keeps orchestration practical at class scale. Agents act sequentially, so legitimate agent work does not require simultaneous CPU access.
+Keeping every slot in one session container avoids crossing a second container boundary during each turn. It also keeps session management practical for a class-sized deployment. Agents act in sequence, so legitimate agent work does not need simultaneous CPU access.
 
 ## Live sessions
 
 The backend launches a container, relays state to browsers over WebSocket, and forwards authorized commands to the harness. The harness steps the environment, calls agent slots, and routes messages. The container lasts for the session.
 
-When LLM access is enabled, the session uses a private per-session network path whose only reachable service is the backend LLM proxy. Session exit first closes its temporary LLM grants to new admission, then aborts or drains authenticated requests and waits for their accounting to settle. Telemetry cleanup, network removal, and lifecycle completion happen only after that barrier. See [LLM API for Agents](llm.md).
+When LLM access is enabled, the session gets a private network path that can reach only the backend LLM proxy. Before a session exits, it stops accepting new requests under its temporary LLM grants. It then aborts or finishes authenticated requests and waits for their accounting to settle. Only then may telemetry cleanup, network removal, and session completion proceed. See [LLM API for Agents](llm.md).
 
 ## Execution drivers
 
@@ -46,7 +46,7 @@ The backend keeps one base image per template dependency version. Each base cont
 - The environments.
 - The exact dependency set for that version.
 
-A single-agent submission image adds the one pinned repository to the base. A multi-agent session image instead overlays every participating submission, each isolated in its own location so repositories that happen to share a module name do not collide. No build installs new dependencies: every submission in a session uses the season's dependency version, so the shared base already carries everything they need.
+A single-agent submission image adds one pinned repository to the base. A multi-agent session image adds every participating submission, each in a separate location so repositories with the same module name do not conflict. Builds install no new dependencies. Every submission in a session uses the season's dependency version, so the shared base already contains everything it needs.
 
 Before use, the image passes the sandboxed load check from [Submissions](submission.md). Failed builds and checks are reported to the owner and never run in a game.
 
@@ -60,13 +60,13 @@ Session containers have:
 - No general internet access.
 - Access only to the backend's internal LLM proxy when enabled.
 
-General network access stays blocked so an agent cannot secretly outsource decisions or contact an unmetered service. Model use through the backend proxy is an explicit exception because successful calls are shared, budgeted, and logged.
+General network access stays blocked so an agent cannot secretly outsource decisions or contact an unmetered service. The backend LLM proxy is the one exception because successful model calls are shared, budgeted, and logged.
 
 Agents in a multi-agent session share one container and could interfere with one another. This class-scale tradeoff is accepted because submissions are pinned and reviewable, and every official run is recorded.
 
 ## Local development
 
-Contributors can run an environment locally through the same live runner and browser protocol used by a production session. The local bridge starts a caller-supplied Python runner, serves the prebuilt local browser page, and binds only to `127.0.0.1`. It has no authentication shell, Docker dependency, general-purpose server routes, or non-loopback host option.
+Contributors can run an environment locally through the same live runner and browser protocol as a production session. The local bridge starts a Python runner supplied by the caller, serves the prebuilt local browser page, and binds only to `127.0.0.1`. It has no account or sign-in interface, Docker dependency, general-purpose server routes, or option to bind beyond the local machine.
 
 ```text
 Local browser ⇄ loopback Python relay ⇄ live runner + environment + agents
@@ -74,7 +74,7 @@ Local browser ⇄ loopback Python relay ⇄ live runner + environment + agents
                                              └→ scratch recording
 ```
 
-The local relay passes recording header, state, and result lines through unchanged. It validates and forwards commands, retains the accepted pause state, and gives every attachment the header, latest state, session status, and current paused state when applicable. The live runner remains authoritative for stepping, pacing, agent loading, timeouts, and recording.
+The local relay passes recording header, state, and result lines through unchanged. It validates and forwards commands and remembers the accepted pause state. Whenever a browser connects, the relay provides the header, latest state, session status, and current pause state when applicable. The live runner remains authoritative for stepping, pacing, agent loading, timeouts, and recording.
 
 Participants use this local browser loop through the template. They do not need the backend, containers, or a network connection.
 
@@ -90,4 +90,4 @@ The state contract is a versioned JSON Schema. Python validates emitted payloads
 
 ## Future work: in-browser agents
 
-Running pure-Python agents in the browser could reduce latency and container use for casual play. It is deferred because it adds a second runtime and per-submission compatibility checks, and it would execute untrusted code in another user's browser. Browser execution will not produce official leaderboard scores.
+Running pure-Python agents in the browser could reduce latency and container use for casual play. This work is deferred because it would add a second runtime, require compatibility checks for each submission, and run untrusted code in another user's browser. Browser execution will not produce official leaderboard scores.

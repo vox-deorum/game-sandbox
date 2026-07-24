@@ -1,12 +1,12 @@
 # Hearts
 
-Hearts is a four-player card game in which the goal is to finish with as few penalty points as possible. Every heart is worth 1 penalty point, and the queen of spades is worth 13. Your agent controls one of the four players. The [agent interface](../agent-interface.md) explains the parts that work the same in every environment, including the `reset` and `act` methods. This page explains everything specific to Hearts.
+Hearts is a four-player card game. Your goal is to finish with as few penalty points as possible. Each heart is worth 1 point, and the queen of spades is worth 13. Your agent controls one player. The [agent interface](../agent-interface.md) explains the `reset` and `act` methods shared by every environment. This page covers everything specific to Hearts.
 
 ## How the game works
 
-Each player receives 13 cards from a standard 52-card deck. Play happens in **tricks**. One player **leads** by playing the first card of a trick, then the other three players each play one card in clockwise order. The suit of the first card is the **led suit**. The highest card of that suit wins the trick, and that player takes all four cards and leads the next trick.
+Each player receives 13 cards from a standard 52-card deck. Players use those cards in 13 rounds called **tricks**. One player **leads** by playing the first card. The other players each add one card in clockwise order. The first card sets the **led suit**. The highest card of that suit wins the trick, and its player takes all four cards and leads the next trick.
 
-If you have a card of the led suit, you must play one. This is called **following suit**. If you have no card of that suit, you may play a card from another suit. A card from another suit cannot win the trick, so this is often a good chance to discard a dangerous card.
+If you hold a card of the led suit, you must play one. This rule is called **following suit**. If you hold none, you may play another suit. That card cannot win the trick, so this can be a good time to discard a dangerous card.
 
 This environment uses these Hearts rules:
 
@@ -14,25 +14,25 @@ This environment uses these Hearts rules:
 - No heart or queen of spades may be played on the first trick unless the player has no other kind of card.
 - A player may not lead a heart until hearts are **broken**, which means someone played a heart on an earlier trick. The queen of spades does not break hearts in this variant.
 
-You do not need to reproduce these rules in your agent. Every observation includes an action mask that identifies the cards that are legal on the current turn.
+You do not need to program these rules yourself. Every observation contains an **action mask**, an array that marks which cards are legal on the current turn.
 
-If you have never played, the [Wikipedia article about Hearts](https://en.wikipedia.org/wiki/Hearts_%28card_game%29) provides a broader introduction.
+The [Wikipedia article about Hearts](https://en.wikipedia.org/wiki/Hearts_%28card_game%29) provides a broader introduction if the game is new to you.
 
 ## Your first agent
 
-Your template already contains a complete, working agent, the one this section builds. It runs before you change anything, and the rest of this section explains it line by line so you can see exactly how a turn is decided.
+Your template contains a complete working agent. You can run it before changing anything. This section explains how it chooses a card.
 
-On each of your turns the harness calls `act` with an observation of the table, and your job is to return the one card you want to play. You don't have to touch raw numbers to do it: the template's helper module turns the observation into card objects and plain Python values, and this agent uses just two of its helpers.
+On each turn, the game harness calls `act` with an observation of the table. Your agent must return the card it wants to play. The template's helper module converts the observation into card objects and plain Python values, so you do not need to work with raw numbers.
 
-A card is a small object, `{"suit": 0..3, "rank": 2..14}`, where the rank is the face value printed on the card (`11` is the jack, `12` the queen, `13` the king, `14` the ace). So the queen of spades is `{"suit": 2, "rank": 12}`.
+A card is a small object shaped like `{"suit": 0..3, "rank": 2..14}`. The rank matches its face value: `11` is the jack, `12` is the queen, `13` is the king, and `14` is the ace. The queen of spades is therefore `{"suit": 2, "rank": 12}`.
 
-`legal_cards(observation)` gives you the list of card objects you are allowed to play this turn. It already accounts for every rule, following suit, not leading a heart before hearts are broken, and the first-trick restrictions, so every card it returns is a legal move.
+`legal_cards(observation)` returns the cards you may play this turn. It applies every rule, including following suit, not leading hearts before they are broken, and the first-trick restrictions. Every card in the returned list is legal.
 
-A card object's `"rank"` entry is its face-value rank, from the two up to the ace, ignoring its suit. Passing `lambda c: c["rank"]` as the `key` to Python's built-in `min` picks the lowest-ranked card out of a list. The helper module also offers `rank_of(card)`, which reads the same value, if you prefer a named function over the lambda.
+The `"rank"` entry gives a card's face-value rank from two through ace, without considering its suit. Python's built-in `min` can find the lowest rank when you pass `lambda c: c["rank"]` as its `key`. If you prefer a named function, the helper module's `rank_of(card)` reads the same value.
 
-`play(card)` turns a card object into the integer your `act` method must return. You choose with card objects and convert to an action only at the very end, so you don't have to build that integer by hand.
+`play(card)` converts a card object into the integer that `act` must return. Choose a card object first, then convert it at the end instead of building the integer yourself.
 
-The strategy is one idea: always play the lowest-ranked legal card. Low cards rarely win a trick, and in Hearts winning a trick is how you collect the penalty cards you want to avoid, so ducking low is a reasonable default. It is also exactly how the built-in opponents play, so any smarter idea you add is a real edge over them.
+The strategy is simple: always play the lowest-ranked legal card. Low cards rarely win tricks, and winning tricks is how you collect penalty cards. Playing low is therefore a reasonable starting point. The built-in opponents use the same strategy, so any improvement gives your agent a real advantage.
 
 ```python
 from sandbox.cards import legal_cards, play
@@ -64,9 +64,9 @@ class Agent:
         return play(min(legal, key=lambda c: c["rank"]))
 ```
 
-This agent will not make an illegal move, because it only ever plays a card that came from `legal_cards`. You don't have to check the rules yourself; picking from that list is enough.
+This agent cannot make an illegal move because it only chooses from `legal_cards`. You do not need to check the rules again.
 
-With the agent already in place, you can run it straight away from the template folder:
+Run the agent from the template folder:
 
 ```console
 python -m sandbox play    # watch it take a seat, in a window
@@ -74,17 +74,17 @@ python -m sandbox eval    # play several seeded games and report the mean score
 python -m sandbox test    # run the checks, which pass before you change anything
 ```
 
-`eval` reports a score you can read with the [Scoring and rewards](#scoring-and-rewards) section below, and `test` is green on the fresh template because this agent is already complete.
+`eval` reports a score explained in [Scoring and rewards](#scoring-and-rewards). `test` passes in a fresh template because the starting agent is complete.
 
-The `TODO(you)` comment inside `act` marks the one line where you take over. Everything above it is plumbing you can keep; the return statement is the decision to improve. When you are ready, the [Your first improvement](#your-first-improvement) section shows you how to find a smarter one yourself. In your own repository this page is the `environment.md` file, which is what the template's comments point to.
+The `TODO(you)` comment inside `act` marks the line for you to improve. You can keep the setup above it and change the decision in the return statement. [Your first improvement](#your-first-improvement) helps you find a smarter strategy. In your repository, this page is named `environment.md`, which is the file named in the template comments.
 
 ## Scoring and rewards
 
 Each heart taken in a trick adds 1 penalty point, and the queen of spades adds 13. There are 26 penalty points available in one game. Lower is better.
 
-**Shooting the moon** is the exception. If one player takes all 13 hearts and the queen of spades, that player finishes with 0 penalty points and each other player finishes with 26.
+**Shooting the moon** is the exception. If one player takes all 13 hearts and the queen of spades, that player scores 0 penalty points and every other player scores 26.
 
-During play, every player receives a reward of `0.0` after each action. When the game ends, each player's reward is the negative of that player's final penalty score. This converts a lower-is-better card-game score into a higher-is-better reward:
+Every action during play gives all players a reward of `0.0`. At the end, each player's reward is the negative of their final penalty score. This changes a score where lower is better into a reward where higher is better:
 
 | Final penalty score | Final reward |
 | ------------------- | ------------ |
@@ -97,9 +97,9 @@ After a successful moon shot, the shooter receives `0.0` and each other player r
 
 ## The helper module
 
-Your first agent used `sandbox.cards`, the template's plain Python helper module. Import what you need from it at the top of `agent.py`, not inside a method. It reads the observation for you and hands back card objects, lists, and plain Python values, so `act` doesn't have to touch a raw NumPy array or the action mask directly.
+The starting agent uses the template's `sandbox.cards` helper module. Import what you need at the top of `agent.py`, not inside a method. The helpers turn the observation into card objects, lists, and plain Python values. Your `act` method therefore does not need to read a raw NumPy array or action mask.
 
-`legal_cards(observation)` returns a list of the card objects you may play, and the list is never empty on your turn. A card's `"rank"` entry is its face value, so `min(legal, key=lambda c: c["rank"])` selects the lowest-ranked legal card (`rank_of(card)` reads the same value), and `play(card)` turns the card you chose into the integer `act` returns. Because the choice always comes from `legal_cards`, an agent automatically follows suit and obeys the other rules.
+`legal_cards(observation)` returns the card objects you may play. This list is never empty on your turn. A card's `"rank"` entry is its face value, so `min(legal, key=lambda c: c["rank"])` selects the lowest-ranked legal card. `rank_of(card)` reads the same value, and `play(card)` converts the chosen card into the integer returned by `act`. Choosing only from `legal_cards` automatically follows suit and obeys the other rules.
 
 The module provides these helpers and constants:
 
@@ -124,7 +124,7 @@ The module provides these helpers and constants:
 
 ## Under the hood
 
-Your first agent didn't have to touch a raw action integer or a raw observation array; the helpers handled both. This section is the full reference for what `act` returns and what the observation contains, for when you outgrow the helpers and want to read the table yourself.
+The starting agent uses helpers instead of raw action numbers and observation arrays. This section is a complete reference for reading those values yourself.
 
 Without the helpers, finding the legal cards means reading all 52 mask entries by hand:
 
@@ -135,7 +135,7 @@ return min(legal, key=lambda card: card % 13)
 
 ### Actions
 
-Your `act` method returns one integer from `0` through `51`. The integer is a **card ID**, a label that identifies one card. Card IDs count upward through all clubs, then all diamonds, spades, and hearts:
+Your `act` method returns an integer from `0` through `51`. This **card ID** is a label for one card. The IDs count through all clubs first, then diamonds, spades, and hearts:
 
 | Suit | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | J | Q | K | A |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -146,16 +146,16 @@ Your `act` method returns one integer from `0` through `51`. The integer is a **
 
 For example, card `0` is the two of clubs, card `15` is the four of diamonds, card `36` is the queen of spades, and card `51` is the ace of hearts. These numbers are identifiers. Card `0` is not on the left or top of the table, and card `51` is not physically farther right or lower.
 
-The encoding can also be written as `card = suit * 13 + rank`. The suit and rank numbers mean:
+You can calculate a card ID with `card = suit * 13 + rank`. In this formula, suit and rank use these values:
 
 | Kind | Values |
 | --- | --- |
 | Suit | `0` clubs, `1` diamonds, `2` spades, `3` hearts |
 | Rank | `0` two, `1` three, through `8` ten, `9` jack, `10` queen, `11` king, `12` ace |
 
-To decode card `36`, divide by 13: the whole-number result `2` means spades and the remainder `10` means queen. The rank digit inside an ID runs `0`–`12`, while the card objects you read from the observation (and `rank_of`) use the printed face value `2`–`14`. You rarely need either scale: stay in card objects and let `play(card)` build the ID for you.
+To decode card `36`, divide it by 13. The whole-number result, `2`, means spades. The remainder, `10`, means queen. A card ID uses ranks `0` through `12`, while observation card objects and `rank_of` use face values `2` through `14`. You rarely need to convert either scale. Work with card objects and let `play(card)` build the ID.
 
-The card you return must have a `1` in the same position of `observation["action_mask"]`. The environment rejects a card whose mask entry is `0`, including a card you do not hold or a card that breaks a game rule.
+The card you return must have a `1` at the same position in `observation["action_mask"]`. The environment rejects a card whose entry is `0`. This includes cards you do not hold and cards that break a rule.
 
 ### Observations
 
@@ -167,9 +167,9 @@ observation
 └── "observation"    an object with your hand, the trick, the seats, and the scores
 ```
 
-The top-level `action_mask` is a length-52 NumPy array indexed by card ID: `1` means you may play that card now, `0` means you may not. It is the one place indices survive, and `legal_cards` reads it for you.
+The top-level `action_mask` is a 52-entry NumPy array indexed by card ID. `1` means you may play that card now, and `0` means you may not. `legal_cards` reads this array for you.
 
-Everything else lives under the `"observation"` key, and it is **semantic**: cards are objects `{"suit", "rank"}`, your hand and the trick are ordinary sequences of them, and the small numbers are plain categories. Nothing here is a 52-long bitmask.
+Everything else is under the `"observation"` key and uses meaningful structures. Cards are objects shaped like `{"suit", "rank"}`. Your hand and current trick are ordinary sequences of cards, and small numbers represent categories. None of these fields is another 52-entry mask.
 
 | Field | Shape | Values and meaning |
 | --- | --- | --- |
@@ -185,13 +185,13 @@ Read these through `observation["observation"]`, for example `observation["obser
 
 #### How seat numbers work
 
-Seat IDs are player labels, not fixed locations on the screen. Seat `0` controls `player_0`, seat `1` controls `player_1`, and so on. Turns move clockwise in this order:
+Seat IDs label players rather than fixed screen positions. Seat `0` controls `player_0`, seat `1` controls `player_1`, and so on. Turns move clockwise:
 
 ```text
 0 → 1 → 2 → 3 → 0
 ```
 
-The viewer rotates the table so that the player being viewed is at the bottom. From that player's view, the next seat in the sequence is on the left, the seat after that is at the top, and the previous seat is on the right. Therefore, seat `0` is not always the bottom, top, left, or right seat.
+The viewer rotates the table to place the player being watched at the bottom. From that view, the next seat is on the left, the following seat is at the top, and the previous seat is on the right. Seat `0` can therefore appear at any side of the screen.
 
 Suppose `seat` is `2`. Your agent controls seat 2, which the viewer places at the bottom. Seat 3 appears on the left, seat 0 at the top, and seat 1 on the right. If `scores` is `[3, 0, 5, 1]`, then seat 0 has 3 penalty points, seat 1 has 0, your seat 2 has 5, and seat 3 has 1.
 
@@ -199,18 +199,18 @@ Suppose `seat` is `2`. Your agent controls seat 2, which the viewer places at th
 
 ## Time limits
 
-Hearts is turn-based, so there is no fixed delay between moves. Each call to `act` has a 1-second limit, and one game has a 120-second limit on the agent's total measured compute. If `act` returns late, the environment chooses a legal card for the agent. It selects the lowest rank, and if several legal cards have that rank, it selects the one with the lower suit ID. When a human controls a seat, the move deadline is 60 seconds. See [Time limits](../agent-interface.md#time-limits) for how these limits are enforced and measured.
+Hearts is turn-based, so moves have no fixed delay between them. Each call to `act` has a 1-second limit, and the agent may use up to 120 seconds of measured computation during one game. If `act` returns late, the environment plays the legal card with the lowest rank. When several cards have that rank, it chooses the lower suit ID. A human-controlled seat has 60 seconds to move. See [Time limits](../agent-interface.md#time-limits) for how these limits are measured and enforced.
 
 ## Your first improvement
 
-Run `python -m sandbox play` and follow your agent through a full game. Play against it `python -m sandbox` if you like. Sooner or later it wins a trick with a high card and takes penalty points. Was that trick where the game went wrong?
+Run `python -m sandbox play` and watch your agent for a full game. You can also play against it with `python -m sandbox`. Eventually it wins a trick with a high card and takes penalty points. Did the mistake happen on that trick?
 
-> Usually not, the mistake happened earlier. Your agent was trigger-happy, throwing lower cards away even when it does not make sense.
+> Usually not. The mistake happened earlier, when the agent discarded lower cards that it could have saved.
 
-You may have known this fix, **ducking**: playing a high card under one (from another player) that already beats it. Does the observation provide enough information to "duck"?
+One possible improvement is **ducking**: playing a high card below another player's higher card, so yours cannot win. Does the observation provide enough information to duck?
 
 > Scan the table in [The helper module](#the-helper-module) for the rows that describe the current trick.
 
-Record the mean score from `python -m sandbox eval` before the change, make it, and run `eval` again. Ducking pays off a few points at a time over many deals, so you need to evaluate with the mean over more games.
+Record the average score from `python -m sandbox eval` before the change, then run it again afterward. Ducking saves a few points at a time over many deals, so compare averages over several games.
 
 One more thing to notice while you watch: ducking only exists when you must follow suit. Sooner or later you will have no card of the led suit at all, and a card from another suit can never win the trick. What is a turn you cannot possibly win actually _for_?

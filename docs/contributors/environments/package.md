@@ -6,15 +6,15 @@ Read the [environment specification](../../specs/environment.md) before changing
 
 ## Package shape
 
-`env.py` exposes `make_env()`, a zero-argument factory that returns a fresh AEC environment. The seed arrives at `reset`, not at factory construction.
+`env.py` exposes `make_env()`, a factory with no arguments that returns a fresh PettingZoo agent-environment-cycle (AEC) environment. The seed is passed to `reset`, not to the factory.
 
 It also defines `default_action(env, slot_id)`, which returns the legal integer applied when a slot has no action. For example, Flappy Bird returns idle, Hearts returns the lowest legal card, and Spades returns a never-nil bid or the lowest legal card.
 
-Keep every module copied into the composed `sandbox.env` package import-self-contained. It may use relative and third-party imports, but only `__init__.py` may import the harness.
+Every module copied into the composed `sandbox.env` package must be self-contained for imports. It may use relative and third-party imports, but only `__init__.py` may import the harness.
 
 ### Single-agent games
 
-A native `gymnasium.Env` becomes a one-slot AEC environment through `GymnasiumToAEC` in `single_agent.py`. It forwards the reset seed and delegates stepping, observation, and termination bookkeeping.
+`GymnasiumToAEC` in `single_agent.py` adapts a native `gymnasium.Env` into a one-slot AEC environment. It forwards the reset seed and handles stepping, observations, and termination bookkeeping through the wrapped environment.
 
 The single slot id is `player_0`. Slot ids are PettingZoo agent ids verbatim in state objects, metadata, and harness APIs.
 
@@ -46,13 +46,13 @@ The environment owns its display state. Test that every overlay field exists and
 | `seat_order_matters` | Whether scheduler seat order creates a distinct game. |
 | `renderer` | Browser renderer id. |
 
-The session loop reads `pace_interval_ms`, rather than branching on a game type.
+The session loop reads `pace_interval_ms` instead of branching on the game type.
 
 ## Registration and distribution
 
 Do not edit the entry-point table or wheel package list by hand. `npm run sync:envs` discovers packages under `environments/`, reads `ENTRY`, and regenerates `environments/pyproject.toml` and backend metadata.
 
-`environments/.envignore` is the negative catalog for Python packages that are not environments. `local_play/`, for example, contains shared helpers and is excluded from registration.
+`environments/.envignore` lists Python packages that are not environments. For example, `local_play/` contains shared helpers and is excluded from registration.
 
 The wheel excludes `*/renderer`, `*/tests`, `*/template`, and `*/examples`, so browser code and student authoring layers stay in the repository without shipping in the environment wheel.
 
@@ -66,6 +66,6 @@ from pettingzoo.test import api_test
 api_test(make_env(), num_cycles=100)
 ```
 
-The pinned PettingZoo version has a known `api_test` issue for object-shaped composite observations. The shared guard treats only that exact failure as expected, while direct `observation_space.contains()` checks cover a full episode.
+The pinned PettingZoo version has a known `api_test` issue with object-shaped composite observations. The shared guard accepts only that exact failure as expected. Direct `observation_space.contains()` checks still cover a full episode.
 
 The discovery-driven suite also checks determinism, overlay JSON and finite values, and the required colocated template and example shape. Keep game-specific rules and regressions in `environments/<env>/tests/`.

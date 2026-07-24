@@ -1,6 +1,6 @@
 # Rendering
 
-Each environment has one browser renderer shared by live play and replay. Renderers use PixiJS through a common base class, draw from per-step state, and never inspect the live environment.
+Each environment has one browser renderer for both live play and replay. Renderers use PixiJS through a common base class, draw from per-step state, and never inspect the live environment.
 
 Read the [interaction specification](../../specs/interaction.md) for the product contract and [Frontend](../frontend.md) for the pages that host a renderer.
 
@@ -18,7 +18,7 @@ The renderer owns the game frame and environment-specific controls. The host pag
 
 The shared types live in `frontend/src/renderers/types.ts`. A renderer mounts with metadata, a recording header, controlled slots, and an optional action sender, then exposes a fixed internal size, aspect ratio, `render`, and `destroy`.
 
-The registry stores a `PixiRenderer` subclass and its static SVG thumbnail. The frontend discovers every `environments/*/renderer/index.ts` module automatically.
+The registry stores each `PixiRenderer` subclass with its static SVG thumbnail. The frontend automatically discovers every `environments/*/renderer/index.ts` module.
 
 `PixiRenderer` owns PixiJS setup and teardown, high-DPI sizing, resize handling, pending-state caching, input listeners, and the jsdom guard. A subclass creates persistent nodes in `setup(root)`, reconciles them in `update(state)`, and may declare fixed gesture mappings in `inputs()`.
 
@@ -29,7 +29,7 @@ Keep drawing logic in two layers:
 1. `computeScene(state, config)` is a pure function that returns plain scene data.
 2. `update(state)` reconciles persistent PixiJS objects to that data.
 
-The reconciler creates needed nodes, sets every visible property from the current scene, and removes absent nodes. Unit-test `computeScene` with checked-in states, then cover GPU reconciliation and visible canvas behavior in the browser suite.
+The reconciler creates the needed nodes, sets every visible property from the current scene, and removes nodes that are absent. Unit-test `computeScene` with checked-in states, then cover GPU reconciliation and visible canvas behavior in the browser suite.
 
 A renderer may animate between states without weakening determinism. The static scene remains the frame for seeks and scrubs, while `onFrame(dtMs)` advances an optional transition layer.
 
@@ -39,7 +39,7 @@ Input is enabled only for controlled slots with a `sendAction` callback. Spectat
 
 Use `inputs()` for fixed mappings such as Flappy Bird's flap. Make scene objects interactive when their action depends on the clicked card or board cell.
 
-The overlay carries semantic objects. Draw and hit-test those objects directly, then encode the selected action only at the `sendAction` boundary.
+The overlay contains meaningful game objects. Draw and hit-test those objects directly, then convert the selection to an encoded action only at the `sendAction` boundary.
 
 The harness supplies a legal default action when no input arrives.
 

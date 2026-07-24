@@ -8,19 +8,19 @@ Read [Template product and releases](../template.md) for composition, dependency
 
 Put the starting `agent.py`, `README.md`, student helper modules, and pin tests in `environments/<env>/template/`. This directory has no `__init__.py`.
 
-Put each worked overlay in `environments/<env>/examples/<name>/`. An example contains only the files that differ from its composed template, such as an agent, a README, tests, and an optional `requirements.extra.txt`.
+Put each worked example overlay in `environments/<env>/examples/<name>/`. An example contains only the files that differ from its composed template, such as an agent, README, tests, and optional `requirements.extra.txt`.
 
-Every environment package must also declare `PUBLISHED_EXAMPLES`, a tuple of example names that may be published. Use an empty tuple when an environment has no examples to publish. Names must identify immediate directories under that environment's `examples/` directory. This declaration is a publication allowlist, not the source example inventory: every checked-in example remains available to compose and to the examples CI job.
+Every environment package must also declare `PUBLISHED_EXAMPLES`, a tuple of example names that may be published. Use an empty tuple when the environment has no examples to publish. Each name must identify an immediate child directory under that environment's `examples/` directory. This tuple is a publication allowlist, not an inventory: every checked-in example remains available to composition and the examples CI job.
 
 The top-level `templates/` directory now contains only `templates/base/`. Generated `sandbox/env/`, `sandbox/harness/`, and shared helper files exist only in a composed tree under `build/`.
 
 ## Helpers and pin tests
 
-Give students a small helper module when observations or integer actions need a game-specific bridge. Hearts and Spades ship `sandbox/cards.py`; Flappy Bird ships `sandbox/features.py`.
+Give students a small helper module when they need game-specific code to interpret observations or produce integer actions. Hearts and Spades provide `sandbox/cards.py`; Flappy Bird provides `sandbox/features.py`.
 
 Keep helpers plain Python and import them at the top of `agent.py`. Do not put hand-authored files under `sandbox/env/`, which compose owns in its build output.
 
-Add a pin test under `template/tests/` when the helper restates environment facts. Composed examples inherit those tests, so the `examples` CI job catches drift.
+Add a pin test under `template/tests/` when the helper repeats facts defined by the environment. Composed examples inherit these tests, so the `examples` CI job catches inconsistencies.
 
 Hearts and Spades may re-export game-independent names from `sandbox.semantic_cards`, but legality, scoring, bidding, partnership, and observation access remain environment-specific.
 

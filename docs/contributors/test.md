@@ -1,6 +1,6 @@
 # Testing
 
-Use the smallest relevant check while iterating, then run the complete set required by the change.
+While iterating, run the smallest check that covers your change. Before finishing, run every check the change requires.
 
 ## Test layers
 
@@ -25,7 +25,7 @@ npm run check
 npm run test
 ```
 
-These run the normal lint, type, and unit-test loop across the workspaces.
+These commands run the normal lint, type, and unit-test loop across all workspaces.
 
 For documentation:
 
@@ -97,7 +97,7 @@ Integration tests live under `backend/test/integration/`.
 uv run python scripts/ci.py frontend-e2e
 ```
 
-This job is **not** part of the per-push CI. It is too Docker-heavy and slow to run on every push, so it lives in its own manually-dispatched workflow (`.github/workflows/e2e.yml`) — trigger it from the Actions tab (**Run workflow**), or run it locally with the command above.
+This job is not part of per-push CI because it is too slow and Docker-heavy. It has its own manually dispatched workflow at `.github/workflows/e2e.yml`. Trigger it from the Actions tab with **Run workflow**, or run it locally with the command above.
 
 The Playwright journey builds the frontend and session image, starts the real backend, and drives Chromium through:
 
@@ -117,7 +117,7 @@ Any UI change that renames text, changes markup, moves a control, or alters a fl
 
 ## Examples and template checks
 
-The bare student template fails by design until `act` is implemented. A composed example is the green proof that the template and environment work together.
+Each bare student template includes a working `act` method and should pass. A passing composed example confirms that the template and environment work together.
 
 ```console
 uv run python scripts/ci.py examples
@@ -135,7 +135,7 @@ uv run python scripts/ci.py publish-dry-run
 
 Run `scripts/ci.py` inside WSL to execute the same job contents on the same OS family as `ubuntu-latest`. Clone into the WSL filesystem rather than `/mnt/` for better small-file performance.
 
-This reproduces job commands, not workflow triggers or dependency ordering.
+This reproduces each job's commands, but not workflow triggers or dependency ordering.
 
 ## Rehearse workflows with `act`
 

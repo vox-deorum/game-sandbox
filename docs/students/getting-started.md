@@ -1,6 +1,6 @@
 # Getting Started
 
-You write a Game Sandbox agent in Python and test it on your own computer with the environment and PettingZoo tools included in the template. You do not need to run the Game Sandbox website or backend.
+You will write a Game Sandbox agent in Python and test it on your own computer. The project template includes the game environment and the PettingZoo tools that run it. You do not need to run the Game Sandbox website or server.
 
 ## Before you begin
 
@@ -10,20 +10,20 @@ Install:
 - [Git](https://docs.github.com/en/get-started/git-basics/set-up-git)
 - A code editor, such as [Visual Studio Code](https://code.visualstudio.com/)
 
-Git tracks changes to a project. GitHub stores a copy of that project online. A Git project is called a **repository**, often shortened to **repo**. If these ideas are new, GitHub's [Hello World guide](https://docs.github.com/en/get-started/start-your-journey/hello-world) is a friendly introduction.
+Git records changes to a project. GitHub stores a copy of that project online. A project tracked by Git is called a **repository**, often shortened to **repo**. GitHub's [Hello World guide](https://docs.github.com/en/get-started/start-your-journey/hello-world) is a friendly introduction if these ideas are new.
 
 ## 1. Copy the template to your computer
 
-Your instructor will give you a GitHub repository created from the agent template. Copy, or **clone**, it to your computer:
+Your instructor will give you a GitHub repository created from the agent template. To **clone** a repository means to copy it to your computer. Clone yours with:
 
 ```console
 git clone <your-repository-url>
 cd <your-repository-name>
 ```
 
-Replace the angle-bracket placeholders with the URL and folder name your instructor provides. See GitHub's [cloning guide](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) if you need help finding the URL.
+Replace both `<...>` placeholders with the URL and folder name from your instructor. See GitHub's [cloning guide](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) if you need help finding the URL.
 
-## 2. Set up and play with one command
+## 2. Set up the project and play
 
 From the repository folder, run:
 
@@ -31,9 +31,11 @@ From the repository folder, run:
 python -m sandbox
 ```
 
-The first time, this creates a local virtual environment, installs the pinned packages, and opens browser play on your own computer. Select Start when you are ready. The controls depend on your game, and your [environment page](environments/index.md) explains them; in Flappy Bird, for example, **space** or the **up arrow** flaps. There is no separate install step, and you can re-run it any time. The game is served only on your computer and does not need the Game Sandbox website or an internet connection. The other commands in this guide (`python -m sandbox play`, `eval`, `test`) work the same way.
+The first run creates a **virtual environment**, which keeps this project's Python packages separate from other projects. It then installs the exact package versions required by the template and opens the game in your browser. Select **Start** when you are ready. Your [environment page](environments/index.md) explains the controls. In Flappy Bird, for example, press **Space** or the **up arrow** to flap.
 
-Prefer to manage the virtual environment yourself? A **virtual environment** keeps this project's Python packages separate from packages used by other projects. Create one inside the repository.
+There is no separate installation step, and you can run the command again at any time. The game runs only on your computer, so it does not need the Game Sandbox website or an internet connection. The other commands in this guide, such as `python -m sandbox play`, `eval`, and `test`, set up the project in the same way.
+
+If you prefer to manage the virtual environment yourself, create one inside the repository.
 
 On Windows PowerShell:
 
@@ -53,18 +55,18 @@ python -m pip install -r requirements.txt -r requirements-dev.txt
 
 When the environment is active, your terminal usually shows `(.venv)` at the start of the prompt. Python's [virtual environment guide](https://docs.python.org/3/tutorial/venv.html) explains why this isolation is useful.
 
-The two requirements files list the exact package versions used by the template and its tests. Do not edit `requirements.txt` or install a different version into the project. If you need a package that is not included, ask your instructor.
+The two requirements files list the exact package versions used by the template and its tests. Do not edit `requirements.txt` or install different versions in the project. Ask your instructor if you need a package that is not included.
 
 ## 3. Improve your agent
 
-Open `agent.py`. It already contains a small working agent, so the game runs before you change anything; your job is to make it play better. The two required methods are:
+Open `agent.py`. It contains a small working agent, so you can run the game before changing any code. Your job is to make that agent play better. It has two required methods:
 
-- `reset(seed)`, which prepares the agent for a new game.
-- `act(observation)`, which looks at the current state and returns an action. A `TODO(you)` comment marks the line where you take over.
+- `reset(seed)` prepares the agent for a new game.
+- `act(observation)` reads the current game state and returns an action. A `TODO(you)` comment marks the line for you to change.
 
-For Flappy Bird, the observation is an object describing the bird and nearby pipes in real screen pixels, and an action is `0` for do nothing or `1` for flap. For Hearts and Spades, the observation carries your hand and the table as card objects `{"suit", "rank"}` beside a legal-move mask, and an action is the integer for the card (or bid) you chose.
+For Flappy Bird, the observation describes the bird and nearby pipes in screen pixels. An action is `0` to do nothing or `1` to flap. For Hearts and Spades, the observation contains your hand and the cards on the table as objects such as `{"suit", "rank"}`. It also contains a **legal-move mask**, an array that marks which actions are currently allowed. The action is the number for the card or bid you chose.
 
-The meaning of each action number and each observation field is specific to your game. Your [environment page](environments/index.md) walks through that starting agent line by line, then documents each action and observation field in full, along with a `sandbox` helper module (`sandbox.features` for Flappy Bird, `sandbox.cards` for Hearts and Spades) that reads the observation for you so you work with named values and card objects instead of raw arrays.
+Each game gives its action numbers and observation fields different meanings. Your [environment page](environments/index.md) explains the starting agent line by line and documents every value. It also covers a `sandbox` helper module (`sandbox.features` for Flappy Bird or `sandbox.cards` for Hearts and Spades). These helpers let you use named values and card objects instead of reading raw arrays.
 
 See [Agent interface](agent-interface.md) for the complete method contract and a small example.
 
@@ -77,7 +79,9 @@ python -m sandbox eval --episodes 10
 python -m sandbox            # play it yourself
 ```
 
-`play` opens one local browser game with your agent. `--headless` runs without opening a browser. `eval` runs several seeded games and reports the mean score, which is more useful than judging an agent from one lucky run. With no command, `python -m sandbox` lets you play the game yourself (`python -m sandbox human` does the same, and `python -m sandbox setup` prepares the virtual environment without starting a game). The browser page has start, pause, resume, and stop controls shared by every environment.
+`play` opens one game with your agent in a local browser. `--headless` runs the game without opening a browser. `eval` runs several games with repeatable starting conditions, called **seeds**, and reports their average score. An average is more useful than one game that may have been lucky.
+
+With no command, `python -m sandbox` lets you play the game yourself. `python -m sandbox human` does the same, while `python -m sandbox setup` prepares the virtual environment without starting a game. Every environment uses the same browser controls to start, pause, resume, and stop.
 
 ## 5. Run the checks
 
@@ -85,11 +89,11 @@ python -m sandbox            # play it yourself
 python -m sandbox test
 ```
 
-The template tests confirm that the manifest points to a loadable agent and that the agent can drive the environment. They pass on the fresh template because it ships a working starting agent, so keep them passing as you change `agent.py`, and use the test output to find any problems you introduce.
+The tests confirm that the manifest points to an agent that Python can load and that the agent can run the environment. They pass in a fresh template because it includes a working agent. Keep them passing as you edit `agent.py`, and use any failure message to find the problem.
 
 ## 6. Save your work on GitHub
 
-A **commit** is a named snapshot of your repository. Create one and push it to GitHub:
+A **commit** is a named snapshot of your repository. Create a commit, then **push** it to send the commit to GitHub:
 
 ```console
 git status
@@ -98,12 +102,12 @@ git commit -m "Improve my agent"
 git push
 ```
 
-`git status` shows what changed, `git add` selects changes for the snapshot, `git commit` creates it, and `git push` sends your commits to GitHub. Review `git status` before adding files, and never add `.env` or an API key. GitHub's [About Git guide](https://docs.github.com/en/get-started/using-git/about-git) explains these commands in more detail.
+`git status` shows what changed. `git add` selects changes for the commit, `git commit` creates it, and `git push` sends it to GitHub. Check `git status` before adding files. Never add `.env` or an API key. GitHub's [About Git guide](https://docs.github.com/en/get-started/using-git/about-git) explains these commands in more detail.
 
 ## 7. Submit
 
-Submit the repository URL through the course website. The server records one exact commit, so later edits do not silently change an existing submission. See [Submitting](submitting.md) for the validation process and common errors.
+Submit your repository URL through the course website. The server records one exact commit, so later edits do not change an existing submission. See [Submitting](submitting.md) for the validation process and common errors.
 
 ## Optional: use the LLM API
 
-If your environment allows model calls, follow [Using the LLM API](llm.md) to create a season development key and add its endpoint and key to `.env`. Choose `small`, `medium`, or `large`, then run the smoke command with that tier, for example `python -m sandbox llm medium`. The command defaults to `small` when you omit the tier. Use the same literal tier in agent code, and never commit `.env` or an API key to GitHub.
+If your environment allows language model calls, follow [Using the LLM API](llm.md) to create a development key for the season and save its endpoint and key in `.env`. Choose `small`, `medium`, or `large`, then test that tier with a command such as `python -m sandbox llm medium`. The command uses `small` if you omit the tier. Use the same tier name in your agent code. Never commit `.env` or an API key to GitHub.

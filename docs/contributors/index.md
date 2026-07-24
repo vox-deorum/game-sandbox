@@ -11,11 +11,11 @@ Vue frontend ⇄ Node backend ⇄ Python session container
                     └─ recording files
 ```
 
-The language split follows the container boundary: Python runs inside sessions, while TypeScript runs the backend and browser app.
+The container boundary determines the language split: Python runs inside sessions, while TypeScript runs the backend and browser app.
 
 | Directory | What it is |
 | --- | --- |
-| `schema/` | The canonical JSON Schema contract and the `@game-sandbox/schema` TS package ([README](https://github.com/vox-deorum/game-sandbox/blob/main/schema/README.md)). |
+| `schema/` | The canonical JSON Schema contract and the `@game-sandbox/schema` TypeScript package ([README](https://github.com/vox-deorum/game-sandbox/blob/main/schema/README.md)). |
 | `harness/` | The Python harness: schema validation, state builders, the recording store, the session loop. |
 | `environments/` | Environment packages, renderers, hand-authored template layers, and worked examples ([README](https://github.com/vox-deorum/game-sandbox/blob/main/environments/README.md)). |
 | `backend/` | The Node/TypeScript backend: sessions, the execution driver, the WebSocket bridge, and the metered LLM proxy ([README](https://github.com/vox-deorum/game-sandbox/blob/main/backend/README.md)). |
@@ -35,7 +35,7 @@ The language split follows the container boundary: Python runs inside sessions, 
 | Change wire or recording data | [State schema](state-schema.md), then [Recordings](recordings.md) |
 | Add a game | [Adding an environment](environments/index.md), then [Rendering](environments/rendering.md) |
 | Change the student starter kit | [Template product and releases](template.md) |
-| Work on HTTP, storage, submissions, seasons | [Backend](backend.md) |
+| Work on HTTP, storage, submissions, or seasons | [Backend](backend.md) |
 | Work on containers, transport, or session lifecycle | [Execution boundary](execution.md) |
 | Work on pages or browser behavior | [Frontend](frontend.md) |
 | Change visual patterns or components | [Design system](design.md) |
