@@ -83,7 +83,7 @@ const router = createRouter({
   ],
 })
 
-// The styleguide (every primitive in every variant, see design.md) exists only in dev: the DEV
+// The styleguide (every primitive in every variant, see frontend/design-system.md) exists only in dev: the DEV
 // guard is compile-time false in production, so the route and the dynamically imported page are
 // dead code there and the bundle carries neither.
 if (import.meta.env.DEV) {

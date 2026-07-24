@@ -21,6 +21,10 @@ _REFERENCE_DEFINITION = re.compile(r"(?m)^\s{0,3}\[[^\]\n]+\]:\s*(\S.*)$")
 _SAFE_ENV_ID = re.compile(r"[a-z0-9]+(?:_[a-z0-9]+)*\Z")
 _RESERVED_SLUGS = frozenset({"agents", "index", "readme"})
 _DOCS_URL_TOKEN = "{{DOCS_URL}}"
+ENVIRONMENT_CATALOG_PATH = PurePosixPath("students/environments/index.md")
+ENVIRONMENT_CATALOG_MARKER = (
+    '[environment-guide-catalog]: # "Populated dynamically from canonical environment guides."'
+)
 
 
 class EnvironmentGuideError(RuntimeError):
@@ -167,30 +171,47 @@ def render_environment_guide(env_id: str, mode: EnvironmentGuideRenderMode) -> s
     return rendered.rstrip() + "\n"
 
 
-def _catalog_links() -> set[PurePosixPath]:
-    """Read all supported local page links from the hand-authored environment catalog."""
-    catalog = DOCS_DIR / "students" / "environments" / "index.md"
+def _first_heading(markdown: str, *, source: Path) -> str:
+    """Return a guide's first ATX H1, ignoring headings inside fenced code blocks."""
+    fence: str | None = None
+    for line in markdown.splitlines():
+        if fence is not None:
+            closer = rf"^\s{{0,3}}{re.escape(fence)}{{3,}}\s*$"
+            if re.match(closer, line):
+                fence = None
+            continue
+        opening = re.match(r"^\s{0,3}(`{3,}|~{3,})", line)
+        if opening:
+            fence = opening.group(1)[0]
+            continue
+        heading = re.match(r"^\s{0,3}#\s+(.+?)\s*#*\s*$", line)
+        if heading:
+            title = heading.group(1).strip()
+            if "[" in title or "]" in title:
+                raise EnvironmentGuideError(
+                    f"environment guide heading {title!r} in {source} cannot contain brackets"
+                )
+            return title
+    raise EnvironmentGuideError(f"environment guide at {source} must have an ATX H1 heading")
+
+
+def render_environment_catalog(environments: Mapping[str, object] | Iterable[str]) -> str:
+    """Populate the catalog shell from every dynamically discovered canonical guide."""
+    env_ids = _environment_ids(environments)
+    catalog = DOCS_DIR / ENVIRONMENT_CATALOG_PATH
     if not catalog.is_file():
         raise EnvironmentGuideError(f"environment catalog is missing: {catalog}")
-    links: set[PurePosixPath] = set()
-    for match in _MARKDOWN_LINK.finditer(catalog.read_text(encoding="utf-8")):
-        target = match.group(1)
-        if _is_external_or_fragment(target):
-            continue
-        relative, _ = _split_local_target(target, source=catalog, require_existing=False)
-        links.add(relative)
-    return links
-
-
-def validate_environment_guide_catalog(environments: Mapping[str, object] | Iterable[str]) -> list[str]:
-    """Validate guide IDs and require a central catalog link for every environment."""
-    env_ids = _environment_ids(environments)
-    links = _catalog_links()
-    missing = [
-        env_id
-        for env_id in env_ids
-        if PurePosixPath(f"students/environments/{environment_guide_slug(env_id)}.md") not in links
-    ]
-    if missing:
-        raise EnvironmentGuideError(f"environment catalog has no guide link for {missing}")
-    return env_ids
+    shell = catalog.read_text(encoding="utf-8")
+    if shell.count(ENVIRONMENT_CATALOG_MARKER) != 1:
+        raise EnvironmentGuideError(
+            f"environment catalog {catalog} must contain the dynamic catalog marker exactly once"
+        )
+    entries = []
+    for env_id in env_ids:
+        source = env_environment_guide(env_id)
+        if not source.is_file():
+            raise EnvironmentGuideError(f"environment {env_id!r} has no canonical guide at {source}")
+        title = _first_heading(source.read_text(encoding="utf-8"), source=source)
+        entries.append(f"- [{title}]({environment_guide_slug(env_id)}.md)")
+    listing = "\n".join(entries) if entries else "_No environments are available._"
+    return shell.replace(ENVIRONMENT_CATALOG_MARKER, listing).rstrip() + "\n"

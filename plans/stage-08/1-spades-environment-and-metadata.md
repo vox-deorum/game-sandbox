@@ -12,7 +12,7 @@ Like Hearts, Spades is not in the PettingZoo classic set, so it is implemented a
 
 ## What to build
 
-A top-level environment package under `environments/spades/` (importable as `spades`), registered as a `game_sandbox.environments` entry point in `environments/pyproject.toml` and added to the wheel `packages` list, following the [environments contributor guide](../../docs/contributors/environments/). Its maintained modules are `rules.py`, `env.py`, `overlay.py`, and an `__init__.py` exporting the standard `EnvironmentEntry` (meta, `make`, `default_action`, overlay). Browser rendering and local input use the shared frontend and loopback runner.
+A top-level environment package under `environments/spades/` (importable as `spades`), discovered by `npm run sync:envs`, which generates its `game_sandbox.environments` entry point and wheel inclusion, following the [environments contributor guide](../../docs/contributors/environments/). Its maintained modules are `rules.py`, `env.py`, `overlay.py`, and an `__init__.py` exporting the standard `EnvironmentEntry` (meta, `make`, `default_action`, overlay). Browser rendering and local input use the shared frontend and loopback runner.
 
 ### Rules to enforce
 

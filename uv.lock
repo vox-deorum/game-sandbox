@@ -120,6 +120,7 @@ source = { virtual = "." }
 dev = [
     { name = "game-sandbox-environments" },
     { name = "game-sandbox-harness" },
+    { name = "mkdocs" },
     { name = "pyright" },
     { name = "pytest" },
     { name = "ruff" },
@@ -135,6 +136,7 @@ docs = [
 dev = [
     { name = "game-sandbox-environments", editable = "environments" },
     { name = "game-sandbox-harness", editable = "harness" },
+    { name = "mkdocs", specifier = ">=1.6" },
     { name = "pyright", specifier = ">=1.1.380" },
     { name = "pytest", specifier = ">=8" },
     { name = "ruff", specifier = ">=0.6" },

@@ -27,7 +27,7 @@ Use the same names as the product and specification, especially **environment**,
 Link instead of duplicating:
 
 - Shared student task instructions belong under `students/`.
-- Environment-specific student guides belong at `environments/<env>/environment.md`. MkDocs and the in-app documentation API expose them at virtual `students/environments/<slug>.md` paths. The only source file under `students/environments/` is the hand-authored section index.
+- Environment-specific student guides belong at `environments/<env>/environment.md`. MkDocs and the in-app documentation API discover them and expose them at virtual `students/environments/<slug>.md` paths. The source file under `students/environments/` is a hand-authored catalog shell whose dynamic marker is populated from the discovered guides. Do not add environment entries or mirrors by hand.
 - Contributor procedures belong under `contributors/`.
 - Product rules belong under `specs/`.
 - Build order and implementation status belong under `plans/`.

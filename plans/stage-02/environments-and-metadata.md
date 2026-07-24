@@ -18,7 +18,7 @@ environments/
   tests/
 ```
 
-One top-level package per environment, each exporting a module-level `ENTRY`. The wheel build lists each package explicitly in `environments/pyproject.toml`, so adding Hearts in Stage 7 means adding `environments/hearts/`, registering its entry point, and adding it to the wheel package list.
+One top-level package per environment, each exporting a module-level `ENTRY`. Environment discovery generates the entry-point and wheel-package configuration from package directories, so adding Hearts in Stage 7 means adding `environments/hearts/` without maintaining a separate registration or package list.
 
 ## The adapter
 
@@ -53,6 +53,6 @@ The types live in the harness package (`game_sandbox_harness.environment`), beca
 
 `EnvironmentEntry` is the full registration: `meta`, `make()` (a zero-argument factory returning a fresh AEC env; the seed arrives at reset), `default_action(slot_id)` (the environment-provided legal default the loop applies on every timeout path), and an optional `overlay(env)` hook returning the per-step overlay dict. The non-serializable hooks live here, outside `EnvironmentMeta`, which stays pure data.
 
-Discovery uses Python entry points: group `game_sandbox.environments`, name = env id, value = `flappy_bird:ENTRY`. The harness CLI and the Stage 3 container enumerate installed environments through `importlib.metadata`. The harness never imports an environment package by name, which keeps the dependency arrow pointing one way.
+Generated Python entry points use the `game_sandbox.environments` group. The harness CLI and the Stage 3 container enumerate installed environments through `importlib.metadata`. The harness never imports an environment package by name, which keeps the dependency arrow pointing one way.
 
 Proposed Flappy Bird values, to confirm when the stage starts: one slot (`min_slots = max_slots = 1`), `human_slots = ("player_0",)`, `pace_interval_ms = 50` (20 steps per second: flagged for tuning during Stage 4 playtesting), `human_timeout_ms = None` per the [interaction.md](../../docs/specs/interaction.md) rule that a set pace interval is itself the human deadline, `recommended_episode_ticks = 1000`, `step_limit_ms = 1000`, `episode_limit_ms = 120_000`, `messaging = False`, `llm = False`, `renderer = "flappy-bird"`.

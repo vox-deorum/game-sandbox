@@ -32,7 +32,7 @@ Read [Template product and releases](templates.md#composition) for the compositi
 
 ## Student documentation
 
-Write the canonical student guide at `environments/<env>/environment.md`. It should explain the game, starting agent, scoring, helper module, raw contract, time limits, and a first improvement. Add its hyphenated public slug to `docs/students/environments/index.md`. MkDocs discovers the guide and exposes it as the virtual page `students/environments/<slug>.md`; do not create a generated or committed mirror.
+Write the canonical student guide at `environments/<env>/environment.md`. It should explain the game, starting agent, scoring, helper module, raw contract, time limits, and a first improvement. The documentation catalog discovers the guide and exposes it as the virtual page `students/environments/<slug>.md`; do not create a manual catalog entry, generated mirror, or committed mirror.
 
 The starting `agent.py` body must match the canonical guide's starter-agent listing. Its `README.md`, `agent.py`, and helper modules point students to the composed local `environment.md` instead of duplicating the game reference.
 

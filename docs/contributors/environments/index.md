@@ -17,7 +17,7 @@ Read the [environment specification](../../specs/environment.md) for product rul
 2. Add game-rule tests under `environments/<env>/tests/` and renderer tests under `environments/<env>/renderer/`.
 3. Add the hand-authored `template/` layer and at least one `examples/<name>/` directory beside the environment package.
 4. Add a student helper module and its pin test when raw observations or actions need decoding.
-5. Write the canonical `environments/<env>/environment.md` guide and add its public slug to the [student environments index](../../students/environments/index.md). MkDocs discovers the guide as a virtual page, so do not add a mirror or a navigation entry for the environment.
+5. Write the canonical `environments/<env>/environment.md` guide. MkDocs discovers the guide as a virtual page and adds it to the student environment catalog, so do not add a manual catalog entry, mirror, or navigation item for the environment.
 6. Run `npm run sync:envs`, compose the template, run the repository checks, and play-test the environment.
 7. Publish the environment's template and example branches with the next version bump, or dispatch the [Publish Template workflow](templates.md) with the current `N` and `republish: true`.
 

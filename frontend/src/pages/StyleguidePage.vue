@@ -60,7 +60,8 @@ const llmTokenBudget = ref<number | ''>('')
   <div class="styleguide">
     <h1>Styleguide</h1>
     <p class="intro">
-      Tokens and primitives, every variant and state. Dev-only; see docs/contributors/design.md.
+      Tokens and primitives, every variant and state. Dev-only; see
+      docs/contributors/frontend/design-system.md.
     </p>
 
     <section>

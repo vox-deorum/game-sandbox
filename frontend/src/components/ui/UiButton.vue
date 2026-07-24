@@ -2,7 +2,7 @@
   The button primitive: renders a RouterLink when `to` is set, a native link when `href` is set, and
   a button otherwise, so links that look like buttons and real buttons share one look. Variants and
   sizes are the only styling knobs; pages must not restyle buttons with their own CSS (see
-  docs/contributors/design.md).
+  docs/contributors/frontend/design-system.md).
 -->
 <script setup lang="ts">
 import { computed } from 'vue'

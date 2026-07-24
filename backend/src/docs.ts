@@ -54,6 +54,9 @@ const RESERVED_ENVIRONMENT_SLUGS = new Set(['agents', 'index', 'readme'])
 const MARKDOWN_LINK = /(?<!!)\]\(([^()\n]+)\)/g
 const MARKDOWN_IMAGE = /!\[[^\]\n]*\]\(([^()\n]+)\)/g
 const REFERENCE_DEFINITION = /^\s{0,3}\[[^\]\n]+\]:\s*(\S.*)$/gm
+export const ENVIRONMENT_CATALOG_PATH = 'students/environments/index.md'
+export const ENVIRONMENT_CATALOG_MARKER =
+  '[environment-guide-catalog]: # "Populated dynamically from canonical environment guides."'
 
 /** The one subtree of `docs/` served to the website. */
 function studentsRootOf(docsDir: string): string {
@@ -268,6 +271,32 @@ function discoverEnvironmentGuides(docsDir: string, environmentsDir: string): En
   })
 }
 
+function renderEnvironmentCatalog(docsDir: string, guides: EnvironmentGuide[]): string {
+  const source = join(docsDir, ENVIRONMENT_CATALOG_PATH)
+  const shell = readFileSync(source, 'utf8')
+  if (shell.split(ENVIRONMENT_CATALOG_MARKER).length !== 2) {
+    throw new DocsEnvironmentGuideError(
+      `environment catalog ${source} must contain the dynamic catalog marker exactly once`,
+    )
+  }
+  const entries = guides.map((guide) => {
+    const title = firstHeading(guide.content)
+    if (title === null) {
+      throw new DocsEnvironmentGuideError(
+        `environment guide at ${guide.source} must have an ATX H1 heading`,
+      )
+    }
+    if (title.includes('[') || title.includes(']')) {
+      throw new DocsEnvironmentGuideError(
+        `environment guide heading ${JSON.stringify(title)} in ${guide.source} cannot contain brackets`,
+      )
+    }
+    return `- [${title}](${posix.basename(guide.path)})`
+  })
+  const listing = entries.length === 0 ? '_No environments are available._' : entries.join('\n')
+  return `${shell.replace(ENVIRONMENT_CATALOG_MARKER, listing).trimEnd()}\n`
+}
+
 /** A section entry for a subdirectory, landing on its `index.md`; null when it has no `index.md`. */
 function sectionEntry(
   docsDir: string,
@@ -377,9 +406,19 @@ export function readDocsPage(
   relPath: string,
 ): DocsPage | null {
   const normalized = relPath.replace(/\\/g, '/').trim()
-  const environmentGuide = discoverEnvironmentGuides(docsDir, environmentsDir).find(
-    (guide) => guide.path === normalized,
-  )
+  const environmentGuides = discoverEnvironmentGuides(docsDir, environmentsDir)
+  if (normalized === ENVIRONMENT_CATALOG_PATH) {
+    try {
+      return {
+        path: ENVIRONMENT_CATALOG_PATH,
+        content: renderEnvironmentCatalog(docsDir, environmentGuides),
+      }
+    } catch (error) {
+      if (error instanceof DocsEnvironmentGuideError) throw error
+      return null
+    }
+  }
+  const environmentGuide = environmentGuides.find((guide) => guide.path === normalized)
   if (environmentGuide !== undefined) {
     return { path: environmentGuide.path, content: environmentGuide.content }
   }

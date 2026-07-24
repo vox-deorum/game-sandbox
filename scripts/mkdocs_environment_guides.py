@@ -8,17 +8,18 @@ from typing import Any
 from mkdocs.structure.files import File, Files
 
 from _environment_guides import (
+    ENVIRONMENT_CATALOG_PATH,
     EnvironmentGuideError,
     discover_environment_guides,
     environment_guide_virtual_path,
+    render_environment_catalog,
     render_environment_guide,
-    validate_environment_guide_catalog,
 )
 
 
 def _inject_environment_nav(nav: MutableSequence[Any], paths: list[str]) -> None:
     """Place discovered pages after the hand-authored environment catalog."""
-    catalog = "students/environments/index.md"
+    catalog = ENVIRONMENT_CATALOG_PATH.as_posix()
 
     def inject(items: MutableSequence[Any]) -> bool:
         for index, item in enumerate(items):
@@ -36,9 +37,9 @@ def _inject_environment_nav(nav: MutableSequence[Any], paths: list[str]) -> None
 
 
 def on_files(files: Files, *, config) -> Files:
-    """Pre-render and add every dynamic guide without creating a source mirror."""
+    """Pre-render the dynamic catalog and guides without creating source mirrors."""
     env_ids = discover_environment_guides()
-    validate_environment_guide_catalog(env_ids)
+    catalog_content = render_environment_catalog(env_ids)
     rendered = {
         environment_guide_virtual_path(env_id).as_posix(): render_environment_guide(env_id, "docs_site")
         for env_id in env_ids
@@ -52,7 +53,16 @@ def on_files(files: Files, *, config) -> Files:
         )
     if config.nav is None:
         raise EnvironmentGuideError("MkDocs navigation must be explicit")
+    catalog_path = ENVIRONMENT_CATALOG_PATH.as_posix()
+    catalog_file = next((file for file in files if file.src_uri == catalog_path), None)
+    if catalog_file is None:
+        raise EnvironmentGuideError(f"MkDocs files have no environment catalog at {catalog_path}")
+    generated_catalog = File.generated(config, catalog_path, content=catalog_content)
+    generated_guides = [File.generated(config, path, content=content) for path, content in rendered.items()]
+
     _inject_environment_nav(config.nav, list(rendered))
-    for path, content in rendered.items():
-        files.append(File.generated(config, path, content=content))
+    files.remove(catalog_file)
+    files.append(generated_catalog)
+    for generated_guide in generated_guides:
+        files.append(generated_guide)
     return files

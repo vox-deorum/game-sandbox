@@ -14,12 +14,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import _environment_guides as guides  # noqa: E402
 import mkdocs_environment_guides as mkdocs_guides  # noqa: E402
 from _environment_guides import (  # noqa: E402
+    ENVIRONMENT_CATALOG_MARKER,
+    ENVIRONMENT_CATALOG_PATH,
     EnvironmentGuideError,
     discover_environment_guides,
     environment_guide_slug,
     environment_guide_virtual_path,
+    render_environment_catalog,
     render_environment_guide,
-    validate_environment_guide_catalog,
 )
 from _envs import discover_environments  # noqa: E402
 
@@ -28,8 +30,6 @@ def _configure_guide_tree(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     sources: dict[str, str],
-    *,
-    catalog_ids: list[str] | None = None,
 ) -> tuple[Path, Path]:
     docs_dir = tmp_path / "docs"
     pages_dir = docs_dir / "students" / "environments"
@@ -37,9 +37,10 @@ def _configure_guide_tree(
     (docs_dir / "students" / "agent-interface.md").write_text(
         "# Agent Interface\n\n## Time limits\n", encoding="utf-8"
     )
-    catalog_ids = list(sources) if catalog_ids is None else catalog_ids
-    rows = "\n".join(f"- [{env_id}]({env_id.replace('_', '-')}.md)" for env_id in catalog_ids)
-    (pages_dir / "index.md").write_text(f"# Environments\n\n{rows}\n", encoding="utf-8")
+    (pages_dir / "index.md").write_text(
+        f"# Environments\n\n## Available environments\n\n{ENVIRONMENT_CATALOG_MARKER}\n",
+        encoding="utf-8",
+    )
 
     environments_dir = tmp_path / "environments"
     environments_dir.mkdir()
@@ -88,12 +89,20 @@ def test_discovery_finds_new_guides_without_a_hard_coded_environment_list(
 
     assert discover_environment_guides() == ["alpha", "new_game"]
     assert environment_guide_virtual_path("new_game") == PurePosixPath("students/environments/new-game.md")
+    assert "- [New Game](new-game.md)" in render_environment_catalog(discover_environment_guides())
 
 
-def test_catalog_links_every_real_environment_guide():
-    assert validate_environment_guide_catalog(discover_environment_guides()) == sorted(
-        discover_environments()
-    )
+def test_catalog_renders_every_real_environment_without_hard_coded_rows():
+    catalog = render_environment_catalog(discover_environment_guides())
+    shell = (Path("docs") / ENVIRONMENT_CATALOG_PATH).read_text(encoding="utf-8")
+
+    assert ENVIRONMENT_CATALOG_MARKER not in catalog
+    assert ENVIRONMENT_CATALOG_MARKER in shell
+    for env_id in discover_environments():
+        guide = render_environment_guide(env_id, "docs_site")
+        heading = next(line.removeprefix("# ") for line in guide.splitlines() if line.startswith("# "))
+        assert f"- [{heading}]({environment_guide_slug(env_id)}.md)" in catalog
+        assert f"({environment_guide_slug(env_id)}.md)" not in shell
 
 
 @pytest.mark.parametrize("env_id", ["Index", "index", "two__words", "two-words"])
@@ -102,7 +111,7 @@ def test_invalid_or_reserved_guide_slugs_fail(env_id: str):
         environment_guide_slug(env_id)
 
 
-def test_slug_collisions_are_rejected_before_catalog_validation(
+def test_slug_collisions_are_rejected_before_publishing(
     monkeypatch: pytest.MonkeyPatch,
 ):
     monkeypatch.setattr(guides, "environment_guide_slug", lambda _: "same")
@@ -175,16 +184,13 @@ def test_missing_canonical_guide_fails(tmp_path: Path, monkeypatch: pytest.Monke
         render_environment_guide("missing", "docs_site")
 
 
-def test_catalog_must_link_every_discovered_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    _configure_guide_tree(
-        tmp_path,
-        monkeypatch,
-        {"alpha": "# Alpha\n", "beta": "# Beta\n"},
-        catalog_ids=["alpha"],
-    )
+def test_catalog_requires_exactly_one_dynamic_marker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    docs_dir, _ = _configure_guide_tree(tmp_path, monkeypatch, {"alpha": "# Alpha\n"})
+    catalog = docs_dir / ENVIRONMENT_CATALOG_PATH
+    catalog.write_text("# Environments\n", encoding="utf-8")
 
-    with pytest.raises(EnvironmentGuideError, match="beta"):
-        validate_environment_guide_catalog(["alpha", "beta"])
+    with pytest.raises(EnvironmentGuideError, match="marker exactly once"):
+        render_environment_catalog(["alpha"])
 
 
 def test_mkdocs_hook_adds_pre_rendered_virtual_files_and_dynamic_nav(
@@ -220,16 +226,24 @@ def test_mkdocs_hook_adds_pre_rendered_virtual_files_and_dynamic_nav(
     errors, _ = config.validate()
     assert not errors
     config["plugins"]._current_plugin = "test-environment-guide-hook"
-    files = Files([])
+    files = Files(
+        [
+            mkdocs_guides.File(
+                ENVIRONMENT_CATALOG_PATH.as_posix(),
+                str(docs_dir),
+                str(tmp_path / "site"),
+                True,
+            )
+        ]
+    )
 
     result = mkdocs_guides.on_files(files, config=config)
 
-    virtual = {
-        file.src_uri: file.content_string
-        for file in result
-        if file.src_uri != "students/environments/index.md"
-    }
+    virtual = {file.src_uri: file.content_string for file in result}
     assert virtual == {
+        "students/environments/index.md": (
+            "# Environments\n\n## Available environments\n\n- [Alpha](alpha.md)\n- [New Game](new-game.md)\n"
+        ),
         "students/environments/alpha.md": "# Alpha\n\n[interface](../agent-interface.md)\n",
         "students/environments/new-game.md": "# New Game\n",
     }

@@ -18,6 +18,7 @@ dev = [
     "ruff>=0.6",
     "pytest>=8",
     "pyright>=1.1.380",
+    "mkdocs>=1.6",
     # The cross-package CLI smoke test loads the composed hello agent, which imports the
     # example's extra pinned dependency.
     "wcwidth==0.2.13",

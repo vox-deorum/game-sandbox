@@ -1,5 +1,5 @@
 /*
- * Design tokens, the single source of design values (see docs/contributors/design.md and
+ * Design tokens, the single source of design values (see docs/contributors/frontend/design-system.md and
  * plans/stage-04.5/design-foundation.md). Two tiers: the raw palette (--palette-*) is private to
  * this file and never referenced by components; the semantic tier below it is the public
  * vocabulary all component CSS consumes. A future light theme remaps the semantic tier only.

@@ -16,7 +16,13 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { buildApp } from '../src/app.js'
 import type { Auth } from '../src/auth/auth.js'
 import type { UserDirectory } from '../src/auth/users.js'
-import { buildDocsManifest, DocsIndexError, readDocsIndex, readDocsPage } from '../src/docs.js'
+import {
+  buildDocsManifest,
+  DocsIndexError,
+  ENVIRONMENT_CATALOG_MARKER,
+  readDocsIndex,
+  readDocsPage,
+} from '../src/docs.js'
 import { RecordingsStore } from '../src/recordings.js'
 import { Retention } from '../src/retention.js'
 import { Orchestrator } from '../src/session/orchestrator.js'
@@ -50,7 +56,10 @@ function writeFixtureDocs(): { rootDir: string; docsDir: string; environmentsDir
     join(students, 'fenced-only.md'),
     '```python\n# not a heading\n```\n\nProse with no top-level heading.\n',
   )
-  writeFileSync(join(environments, 'index.md'), '# Environments\n\nPick a game.\n')
+  writeFileSync(
+    join(environments, 'index.md'),
+    `# Environments\n\nPick a game.\n\n## Available environments\n\n${ENVIRONMENT_CATALOG_MARKER}\n`,
+  )
   const environmentGuides = {
     flappy_bird:
       '# Flappy Bird\n\n[Agent interface](../../docs/students/agent-interface.md#time-limits)\n',
@@ -141,6 +150,9 @@ describe('docs module', () => {
         path: 'students/environments/new-game.md',
         title: 'New Game',
       })
+      const catalog = readDocsPage(docsDir, environmentsDir, 'students/environments/index.md')
+      expect(catalog?.content).toContain('- [New Game](new-game.md)')
+      expect(catalog?.content).not.toContain(ENVIRONMENT_CATALOG_MARKER)
     })
 
     it('rejects reserved environment guide slugs before publishing any page', () => {
@@ -166,12 +178,28 @@ describe('docs module', () => {
       const nested = readDocsPage(docsDir, environmentsDir, 'students/environments/hearts.md')
       expect(nested?.path).toBe('students/environments/hearts.md')
       expect(nested?.content).toContain('# Hearts')
+      const catalog = readDocsPage(docsDir, environmentsDir, 'students/environments/index.md')
+      expect(catalog?.content).toContain('- [Flappy Bird](flappy-bird.md)')
+      expect(catalog?.content).toContain('- [Hearts](hearts.md)')
+      expect(catalog?.content).toContain('- [Spades](spades.md)')
+      expect(catalog?.content).not.toContain(ENVIRONMENT_CATALOG_MARKER)
     })
 
     it('rebases canonical links from the environment directory to the virtual page path', () => {
       const page = readDocsPage(docsDir, environmentsDir, 'students/environments/flappy-bird.md')
       expect(page?.content).toContain('[Agent interface](../agent-interface.md#time-limits)')
       expect(page?.content).not.toContain('../../docs/')
+    })
+
+    it('rejects an environment catalog without the dynamic marker', () => {
+      writeFileSync(
+        join(docsDir, 'students', 'environments', 'index.md'),
+        '# Environments\n\nNo marker.\n',
+      )
+
+      expect(() =>
+        readDocsPage(docsDir, environmentsDir, 'students/environments/index.md'),
+      ).toThrow(/marker exactly once/)
     })
 
     it('rejects traversal, absolute, non-markdown, and out-of-scope paths', () => {
@@ -227,6 +255,11 @@ describe('real environment documentation sources', () => {
     const environmentSection = buildDocsManifest(docsDir, environmentsDir).pages.find(
       (page) => page.path === 'students/environments/index.md',
     )
+    const catalogSource = readFileSync(
+      join(docsDir, 'students', 'environments', 'index.md'),
+      'utf8',
+    )
+    const catalogPage = readDocsPage(docsDir, environmentsDir, 'students/environments/index.md')
 
     for (const envId of envIds) {
       const slug = envId.replaceAll('_', '-')
@@ -240,7 +273,11 @@ describe('real environment documentation sources', () => {
       expect(page?.content).toContain(heading)
       expect(page?.content).not.toContain('](../../docs/')
       expect(existsSync(join(docsDir, 'students', 'environments', `${slug}.md`))).toBe(false)
+      expect(catalogSource).not.toContain(`(${slug}.md)`)
+      expect(catalogPage?.content).toContain(`(${slug}.md)`)
     }
+    expect(catalogSource).toContain(ENVIRONMENT_CATALOG_MARKER)
+    expect(catalogPage?.content).not.toContain(ENVIRONMENT_CATALOG_MARKER)
   })
 })
 

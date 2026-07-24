@@ -31,7 +31,7 @@ Placeholder directories hold a short README naming the stage that fills them, no
 
 ## Python tooling
 
-The root `pyproject.toml` declares a uv workspace whose members grow stage by stage, starting with `harness/`. Dev dependencies live in root dependency groups: `dev` carries ruff, pytest, and pyright, and `docs` carries mkdocs-material. Python is pinned to 3.12 through `.python-version`, since 3.12 currently has the widest wheel coverage for the game and RL libraries Stage 2 pulls in.
+The root `pyproject.toml` declares a uv workspace whose members grow stage by stage, starting with `harness/`. Dev dependencies live in root dependency groups: `dev` carries ruff, pytest, pyright, and MkDocs core because the Python checks import the documentation hook. The `docs` group carries mkdocs-material for building the site. Python is pinned to 3.12 through `.python-version`, since 3.12 currently has the widest wheel coverage for the game and RL libraries Stage 2 pulls in.
 
 Ruff does both linting and formatting, replacing black, isort, and flake8 with one fast tool. Pytest is the only Python test runner. Pyright type-checks the workspace: basic mode repo-wide, strict on `harness/`, because the contracts package is exactly where types pay for themselves.
 
