@@ -10,7 +10,7 @@ The browser renders the game and sends user commands. The backend authorizes req
 
 Local play reuses the browser protocol and live runner without starting the backend or a container. `game_sandbox_harness.local_server` binds only to `127.0.0.1`. It serves the generated local browser bundle, starts the requested runner command, and relays protocol lines. The server accepts only the local page, environment metadata, static assets, and its WebSocket endpoint. It neither exposes the game to a network nor steps the game itself.
 
-Read [the execution specification](../specs/execution.md) for the architectural rules, [Frontend](frontend.md) for the browser host, and [Backend](backend.md) for storage and HTTP routes.
+Read [the execution specification](../../specs/execution.md) for the architectural rules, [Frontend](../frontend/development.md) for the browser host, and [Backend](backend.md) for storage and HTTP routes.
 
 ## Execution driver
 

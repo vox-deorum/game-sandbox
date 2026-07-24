@@ -12,12 +12,12 @@ This step ships the template chat-less. The `agent.py` stub documents bidding an
 
 ## What to build
 
-Spades lands as a third environment template on the existing two-layer machinery, described in the [template contributor guide](../../docs/contributors/template.md).
+Spades lands as a third environment template on the existing two-layer machinery, described in the [template contributor guide](../../docs/contributors/environments/templates.md).
 
 - A colocated `environments/spades/template/` layer over `templates/base/`: an `agent.py` stub, `README.md`, and `sandbox/cards.py` explaining the `Discrete(66)` encoding, the two-phase mask, and partnership.
 - A discovered `TemplateEnvironmentSpec` built from Spades metadata and direct package modules, so composition renders `sandbox.env` exports from the same facts into build output, with no second registration map. It also writes the copied `sandbox.harness` package and shared helpers there.
 - A helper module `environments/spades/template/sandbox/cards.py` (following the Hearts helper): `is_bidding`, `legal_bids`, `legal_cards`, `partner_of`, and bid and trick readers, so student code never hand-decodes the combined action space.
-- A student docs page `docs/students/environments/spades.md` plus its row in `docs/students/environments/index.md`, covering the rules, the action encoding, the observation, and the scoring. `scripts/compose.py` copies the page into the template and fails loudly if it is missing. The page's "Messaging" section is deferred to step 4 with the rest of the chat surface.
+- A canonical student guide at `environments/spades/environment.md` plus its row in `docs/students/environments/index.md`, covering the rules, the action encoding, the observation, and the scoring. MkDocs and the in-app documentation API publish it at the virtual `students/environments/spades.md` path, and `scripts/compose.py` writes it into the template from the canonical source. Both publishing paths fail loudly when that source is missing. The page's "Messaging" section is deferred to step 4 with the rest of the chat surface.
 - One worked example, `environments/spades/examples/counter/`: an honest bidder that counts likely tricks (high spades and side-suit aces), bids that number, and plays to make it. It is deliberately chat-less: it is the baseline the chatting examples of step 4 are measured against, and it proves a Spades agent needs nothing beyond the Stage 2 interface.
 - The built-in Naive Spades agent at `backend/images/session-base/deps-v1/builtin/spades/` (`agent.py`, `manifest.json`), mirroring the Hearts built-in: additive content in the existing dependency set, so no template-version bump, following the Hearts precedent.
 

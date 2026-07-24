@@ -2,7 +2,7 @@
 
 Part of [Stage 2](../stage-02-harness-and-first-environment.md). This file replaces the Stage 1 placeholder under `templates/` with the real student starter kit from [submission.md](../../docs/specs/submission.md) and cuts `template-v1`. The composition and publishing machinery is already built and proven ([stage-01/examples-and-template-publishing.md](../stage-01/examples-and-template-publishing.md)); Stage 2 fills it with real content.
 
-The starter kit is organised as two layers so the repo can carry many environments without forking the whole kit: an env-agnostic `templates/base/` and a colocated `environments/<env>/template/` layer per environment, composed by `scripts/compose.py`. The operator-facing rationale lives in [template.md](../../docs/contributors/template.md). Stage 2 ships `base/` and the first env layer, `environments/flappy_bird/template/`.
+The starter kit is organised as two layers so the repo can carry many environments without forking the whole kit: an env-agnostic `templates/base/` and a colocated `environments/<env>/template/` layer per environment, composed by `scripts/compose.py`. The operator-facing rationale lives in [templates.md](../../docs/contributors/environments/templates.md). Stage 2 ships `base/` and the first env layer, `environments/flappy_bird/template/`.
 
 ## Template inventory
 

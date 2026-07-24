@@ -9,7 +9,7 @@ JSON Schema → Python validation
             → recording state lines
 ```
 
-The source uses JSON Schema draft 2020-12 under `schema/`. This page defines versioning and sidecar compatibility. See [Execution](execution.md) and [Recordings](recordings.md).
+The source uses JSON Schema draft 2020-12 under `schema/`. This page defines versioning and sidecar compatibility. See [Execution](../runtime/execution.md) and [Recordings](recordings.md).
 
 ## The two files
 

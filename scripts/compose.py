@@ -31,6 +31,7 @@ import shutil
 import sys
 from pathlib import Path, PurePosixPath
 
+from _environment_guides import EnvironmentGuideError, render_environment_guide
 from _envs import discover_environments
 from _paths import (
     BUILD_DIR,
@@ -38,7 +39,6 @@ from _paths import (
     ENVIRONMENT_PACKAGES_DIR,
     REPO_ROOT,
     TEMPLATE_BASE_DIR,
-    env_docs_page,
     env_examples_dir,
     env_template_layer,
 )
@@ -199,14 +199,12 @@ def _ship_docs_page(page: Path, out_dir: Path, dest_name: str) -> None:
 
 
 def _copy_environment_page(env: str, out_dir: Path) -> None:
-    """Copy the environment's student docs page into the composed template as ``environment.md``."""
-    page = env_docs_page(env)
-    if not page.is_file():
-        raise ComposeError(
-            f"environment {env!r} has no student docs page at {page}; the composed template ships "
-            f"it as {_ENVIRONMENT_DOC}. Add the page under docs/students/environments/."
-        )
-    _ship_docs_page(page, out_dir, _ENVIRONMENT_DOC)
+    """Render the environment-root guide into the composed template as ``environment.md``."""
+    try:
+        rendered = render_environment_guide(env, "composed_kit")
+    except EnvironmentGuideError as error:
+        raise ComposeError(str(error)) from error
+    (out_dir / _ENVIRONMENT_DOC).write_text(rendered, encoding="utf-8", newline="\n")
 
 
 def _copy_llm_page(out_dir: Path) -> None:

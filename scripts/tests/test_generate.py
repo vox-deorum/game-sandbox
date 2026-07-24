@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
+import zipfile
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
@@ -92,7 +94,7 @@ def test_ignore_patterns_and_template_modules_follow_authoring_conventions(tmp_p
 
     package = tmp_path / "hearts"
     package.mkdir()
-    for name in ("__init__.py", "env.py", "UPSTREAM_LICENSE.md"):
+    for name in ("__init__.py", "env.py", "environment.md", "UPSTREAM_LICENSE.md"):
         (package / name).write_text("", encoding="utf-8")
     (package / "renderer").mkdir()
     (package / "tests").mkdir()
@@ -100,6 +102,27 @@ def test_ignore_patterns_and_template_modules_follow_authoring_conventions(tmp_p
     spec = _envs._template_spec(package, SimpleNamespace(display_name="Hearts", human_slots=()))
     assert set(spec.modules) == {"hearts/UPSTREAM_LICENSE.md", "hearts/env.py"}
     assert spec.player_slot == "player_0"
+
+
+def test_environment_wheel_excludes_canonical_guides_and_keeps_license(tmp_path: Path):
+    subprocess.run(
+        [
+            "uv",
+            "build",
+            "--package",
+            "game-sandbox-environments",
+            "--wheel",
+            "--out-dir",
+            str(tmp_path),
+        ],
+        check=True,
+    )
+    wheel = next(tmp_path.glob("*.whl"))
+    with zipfile.ZipFile(wheel) as archive:
+        names = set(archive.namelist())
+
+    assert "flappy_bird/UPSTREAM_LICENSE.md" in names
+    assert not any(name.endswith("/environment.md") for name in names)
 
 
 def test_source_import_replaces_a_cached_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

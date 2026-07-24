@@ -1,6 +1,15 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import type { FastifyInstance } from 'fastify'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -20,14 +29,17 @@ import {
   openTestStack,
 } from './support/harness.js'
 
-// A miniature docs/ tree: the students subtree the website serves, plus an out-of-scope contributors
-// file to prove it is never reachable. `fenced-only.md` has no real H1 and a `#` only inside a fence,
-// so it exercises the fence-aware title scan and the humanized-filename fallback.
-function writeFixtureDocs(): string {
-  const docsDir = mkdtempSync(join(tmpdir(), 'gs-docs-'))
+// A miniature repository tree: shared student docs, canonical environment guides, and an
+// out-of-scope contributors file. `fenced-only.md` has no real H1 and a `#` only inside a fence, so
+// it exercises the fence-aware title scan and the humanized-filename fallback.
+function writeFixtureDocs(): { rootDir: string; docsDir: string; environmentsDir: string } {
+  const rootDir = mkdtempSync(join(tmpdir(), 'gs-docs-'))
+  const docsDir = join(rootDir, 'docs')
   const students = join(docsDir, 'students')
   const environments = join(students, 'environments')
+  const environmentsDir = join(rootDir, 'environments')
   mkdirSync(environments, { recursive: true })
+  mkdirSync(environmentsDir, { recursive: true })
   mkdirSync(join(docsDir, 'contributors'), { recursive: true })
 
   writeFileSync(join(students, 'index.md'), '# For Students\n\nThe landing page.\n')
@@ -39,30 +51,37 @@ function writeFixtureDocs(): string {
     '```python\n# not a heading\n```\n\nProse with no top-level heading.\n',
   )
   writeFileSync(join(environments, 'index.md'), '# Environments\n\nPick a game.\n')
-  writeFileSync(
-    join(environments, 'flappy-bird.md'),
-    '# Flappy Bird\n\n```text\n# a comment, not a heading\n```\n',
-  )
-  writeFileSync(join(environments, 'hearts.md'), '# Hearts\n\nAvoid points.\n')
-  writeFileSync(join(environments, 'spades.md'), '# Spades\n\nBid your tricks.\n')
+  const environmentGuides = {
+    flappy_bird:
+      '# Flappy Bird\n\n[Agent interface](../../docs/students/agent-interface.md#time-limits)\n',
+    hearts: '# Hearts\n\nAvoid points.\n',
+    spades: '# Spades\n\nBid your tricks.\n',
+  }
+  for (const [envId, content] of Object.entries(environmentGuides)) {
+    const environmentDir = join(environmentsDir, envId)
+    mkdirSync(environmentDir)
+    writeFileSync(join(environmentDir, 'environment.md'), content)
+  }
   writeFileSync(join(docsDir, 'contributors', 'secret.md'), '# Secret\n\nOut of scope.\n')
-  return docsDir
+  return { rootDir, docsDir, environmentsDir }
 }
 
 describe('docs module', () => {
+  let rootDir: string
   let docsDir: string
+  let environmentsDir: string
 
   beforeEach(() => {
-    docsDir = writeFixtureDocs()
+    ;({ rootDir, docsDir, environmentsDir } = writeFixtureDocs())
   })
 
   afterEach(() => {
-    rmSync(docsDir, { recursive: true, force: true })
+    rmSync(rootDir, { recursive: true, force: true })
   })
 
   describe('buildDocsManifest', () => {
     it('lists student pages in curated order, excluding the landing index', () => {
-      const { pages } = buildDocsManifest(docsDir)
+      const { pages } = buildDocsManifest(docsDir, environmentsDir)
       // Curated first (getting-started, environments, agent-interface, submitting), then the rest
       // alphabetically; students/index.md is the landing and never appears as a nav page.
       expect(pages.map((p) => p.path)).toEqual([
@@ -75,14 +94,14 @@ describe('docs module', () => {
     })
 
     it('titles each page from its first H1', () => {
-      const { pages } = buildDocsManifest(docsDir)
+      const { pages } = buildDocsManifest(docsDir, environmentsDir)
       expect(pages.find((p) => p.path === 'students/getting-started.md')?.title).toBe(
         'Getting Started',
       )
     })
 
     it('nests a directory as a section landing on its index, children ordered', () => {
-      const section = buildDocsManifest(docsDir).pages.find(
+      const section = buildDocsManifest(docsDir, environmentsDir).pages.find(
         (p) => p.path === 'students/environments/index.md',
       )
       expect(section?.title).toBe('Environments')
@@ -94,7 +113,7 @@ describe('docs module', () => {
     })
 
     it('ignores a `#` inside a code fence and falls back to a humanized filename', () => {
-      const page = buildDocsManifest(docsDir).pages.find(
+      const page = buildDocsManifest(docsDir, environmentsDir).pages.find(
         (p) => p.path === 'students/fenced-only.md',
       )
       // The only `#` line lives in a fenced block, so it is not the title; the filename humanizes.
@@ -104,31 +123,69 @@ describe('docs module', () => {
     it('returns no pages when the students tree is absent', () => {
       const empty = mkdtempSync(join(tmpdir(), 'gs-docs-empty-'))
       try {
-        expect(buildDocsManifest(empty)).toEqual({ pages: [] })
+        expect(buildDocsManifest(empty, empty)).toEqual({ pages: [] })
       } finally {
         rmSync(empty, { recursive: true, force: true })
       }
+    })
+
+    it('discovers a new canonical environment guide without a hard-coded page list', () => {
+      const source = join(environmentsDir, 'new_game')
+      mkdirSync(source)
+      writeFileSync(join(source, 'environment.md'), '# New Game\n\nNew rules.\n')
+
+      const section = buildDocsManifest(docsDir, environmentsDir).pages.find(
+        (page) => page.path === 'students/environments/index.md',
+      )
+      expect(section?.children).toContainEqual({
+        path: 'students/environments/new-game.md',
+        title: 'New Game',
+      })
+    })
+
+    it('rejects reserved environment guide slugs before publishing any page', () => {
+      const source = join(environmentsDir, 'index')
+      mkdirSync(source)
+      writeFileSync(join(source, 'environment.md'), '# Reserved\n')
+
+      expect(() => buildDocsManifest(docsDir, environmentsDir)).toThrow(/slug "index" is reserved/)
+    })
+
+    it('rejects a physical page that duplicates a canonical environment guide', () => {
+      writeFileSync(join(docsDir, 'students', 'environments', 'hearts.md'), '# Duplicate Hearts\n')
+
+      expect(() => buildDocsManifest(docsDir, environmentsDir)).toThrow(/two sources/)
     })
   })
 
   describe('readDocsPage', () => {
     it('returns the raw markdown for a flat and a nested page', () => {
-      expect(readDocsPage(docsDir, 'students/getting-started.md')?.content).toContain(
-        '# Getting Started',
-      )
-      const nested = readDocsPage(docsDir, 'students/environments/hearts.md')
+      expect(
+        readDocsPage(docsDir, environmentsDir, 'students/getting-started.md')?.content,
+      ).toContain('# Getting Started')
+      const nested = readDocsPage(docsDir, environmentsDir, 'students/environments/hearts.md')
       expect(nested?.path).toBe('students/environments/hearts.md')
       expect(nested?.content).toContain('# Hearts')
     })
 
+    it('rebases canonical links from the environment directory to the virtual page path', () => {
+      const page = readDocsPage(docsDir, environmentsDir, 'students/environments/flappy-bird.md')
+      expect(page?.content).toContain('[Agent interface](../agent-interface.md#time-limits)')
+      expect(page?.content).not.toContain('../../docs/')
+    })
+
     it('rejects traversal, absolute, non-markdown, and out-of-scope paths', () => {
-      expect(readDocsPage(docsDir, 'students/../contributors/secret.md')).toBeNull()
-      expect(readDocsPage(docsDir, 'students/..\\contributors\\secret.md')).toBeNull()
-      expect(readDocsPage(docsDir, '/etc/passwd')).toBeNull()
-      expect(readDocsPage(docsDir, 'students/getting-started.txt')).toBeNull()
-      expect(readDocsPage(docsDir, 'contributors/secret.md')).toBeNull()
+      expect(
+        readDocsPage(docsDir, environmentsDir, 'students/../contributors/secret.md'),
+      ).toBeNull()
+      expect(
+        readDocsPage(docsDir, environmentsDir, 'students/..\\contributors\\secret.md'),
+      ).toBeNull()
+      expect(readDocsPage(docsDir, environmentsDir, '/etc/passwd')).toBeNull()
+      expect(readDocsPage(docsDir, environmentsDir, 'students/getting-started.txt')).toBeNull()
+      expect(readDocsPage(docsDir, environmentsDir, 'contributors/secret.md')).toBeNull()
       // A well-formed but non-existent page is a miss, not a throw.
-      expect(readDocsPage(docsDir, 'students/nope.md')).toBeNull()
+      expect(readDocsPage(docsDir, environmentsDir, 'students/nope.md')).toBeNull()
     })
   })
 
@@ -154,13 +211,48 @@ describe('docs module', () => {
   })
 })
 
+describe('real environment documentation sources', () => {
+  const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
+  const docsDir = join(repoRoot, 'docs')
+  const environmentsDir = join(repoRoot, 'environments')
+
+  it('publishes every canonical guide at a virtual path without an on-disk mirror', () => {
+    const envIds = readdirSync(environmentsDir, { withFileTypes: true })
+      .filter(
+        (entry) =>
+          entry.isDirectory() && existsSync(join(environmentsDir, entry.name, 'environment.md')),
+      )
+      .map((entry) => entry.name)
+      .sort()
+    const environmentSection = buildDocsManifest(docsDir, environmentsDir).pages.find(
+      (page) => page.path === 'students/environments/index.md',
+    )
+
+    for (const envId of envIds) {
+      const slug = envId.replaceAll('_', '-')
+      const path = `students/environments/${slug}.md`
+      const canonical = readFileSync(join(environmentsDir, envId, 'environment.md'), 'utf8')
+      const heading = canonical.match(/^# .+$/m)?.[0]
+      const page = readDocsPage(docsDir, environmentsDir, path)
+
+      expect(heading).toBeDefined()
+      expect(environmentSection?.children?.map((child) => child.path)).toContain(path)
+      expect(page?.content).toContain(heading)
+      expect(page?.content).not.toContain('](../../docs/')
+      expect(existsSync(join(docsDir, 'students', 'environments', `${slug}.md`))).toBe(false)
+    }
+  })
+})
+
 describe('docs HTTP routes', () => {
   let app: FastifyInstance
   let storage: Storage
   let auth: Auth
   let userDirectory: UserDirectory
   let orchestrator: Orchestrator
+  let docsRootDir: string
   let docsDir: string
+  let environmentsDir: string
   let dataDir: string
 
   async function buildDocsApp(docsIndexFile?: string): Promise<FastifyInstance> {
@@ -180,13 +272,14 @@ describe('docs HTTP routes', () => {
       auth,
       userDirectory,
       llm: config.llm,
+      environmentGuidesDir: environmentsDir,
       docsIndexFile,
       ...makeSubmissionDeps(storage, config),
     })
   }
 
   beforeEach(async () => {
-    docsDir = writeFixtureDocs()
+    ;({ rootDir: docsRootDir, docsDir, environmentsDir } = writeFixtureDocs())
     dataDir = mkdtempSync(join(tmpdir(), 'gs-docs-data-'))
     const stack = await openTestStack()
     storage = stack.storage
@@ -199,7 +292,7 @@ describe('docs HTTP routes', () => {
     await orchestrator.shutdown()
     await app.close()
     await storage.close()
-    rmSync(docsDir, { recursive: true, force: true })
+    rmSync(docsRootDir, { recursive: true, force: true })
     rmSync(dataDir, { recursive: true, force: true })
   })
 

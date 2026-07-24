@@ -1,7 +1,8 @@
 /**
- * The in-app documentation source: the student guides under `docs/students/`, read from disk at
- * request time so the website renders the same markdown the repo and MkDocs build ship. Only the
- * `students/` subtree is exposed; `contributors/` and `specs/` stay repo- and MkDocs-only.
+ * The in-app documentation source: shared student guides under `docs/students/` plus dynamically
+ * discovered environment guides under `environments/<env>/environment.md`. The latter are exposed
+ * at their stable virtual `students/environments/<slug>.md` paths. Only student documentation is
+ * exposed; contributor and specification pages stay repo- and MkDocs-only.
  *
  * Three shapes back the three routes in `app.ts`:
  *  - {@link buildDocsManifest} walks the tree into the navigation the sidebar renders,
@@ -12,7 +13,7 @@
  * the nav tree, so a page updates without a frontend rebuild.
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { join, relative, resolve, sep } from 'node:path'
+import { dirname, isAbsolute, join, posix, relative, resolve, sep } from 'node:path'
 
 /** One navigation entry: a page, or a section whose landing page carries child pages. */
 export interface DocsNavEntry {
@@ -38,12 +39,21 @@ export interface DocsPage {
 /** Raised when the documentation landing page cannot be read; the route maps it to a 500. */
 export class DocsIndexError extends Error {}
 
+/** Raised when a canonical environment guide cannot be published safely at its virtual path. */
+export class DocsEnvironmentGuideError extends Error {}
+
 /**
  * The pedagogical reading order the students index prescribes. Entries not listed here (a new guide,
  * a new environment) sort alphabetically after these, so the nav stays sensible without a code change
  * every time a page is added, mirroring how the MkDocs tree drives its own order.
  */
 const CURATED_ORDER = ['getting-started', 'environments', 'agent-interface', 'submitting']
+
+const SAFE_ENVIRONMENT_ID = /^[a-z0-9]+(?:_[a-z0-9]+)*$/
+const RESERVED_ENVIRONMENT_SLUGS = new Set(['agents', 'index', 'readme'])
+const MARKDOWN_LINK = /(?<!!)\]\(([^()\n]+)\)/g
+const MARKDOWN_IMAGE = /!\[[^\]\n]*\]\(([^()\n]+)\)/g
+const REFERENCE_DEFINITION = /^\s{0,3}\[[^\]\n]+\]:\s*(\S.*)$/gm
 
 /** The one subtree of `docs/` served to the website. */
 function studentsRootOf(docsDir: string): string {
@@ -95,20 +105,197 @@ function titleFor(absPath: string, stem: string): string {
   return humanize(stem)
 }
 
+function titleForMarkdown(markdown: string, stem: string): string {
+  return firstHeading(markdown) ?? humanize(stem)
+}
+
 /** A leaf page entry for a `.md` file in `dir`. */
 function pageEntry(docsDir: string, dir: string, name: string): DocsNavEntry {
   const abs = join(dir, name)
   return { path: toDocsRelative(docsDir, abs), title: titleFor(abs, name.replace(/\.md$/, '')) }
 }
 
+interface EnvironmentGuide {
+  envId: string
+  path: string
+  source: string
+  content: string
+}
+
+function isExternalOrFragment(target: string): boolean {
+  return (
+    target.startsWith('#') ||
+    target.startsWith('//') ||
+    target.startsWith('http://') ||
+    target.startsWith('https://') ||
+    target.startsWith('mailto:')
+  )
+}
+
+function environmentGuideSlug(envId: string): string {
+  if (!SAFE_ENVIRONMENT_ID.test(envId)) {
+    throw new DocsEnvironmentGuideError(
+      `environment guide id ${JSON.stringify(envId)} must use lowercase letters, digits, and single underscores`,
+    )
+  }
+  const slug = envId.replaceAll('_', '-')
+  if (RESERVED_ENVIRONMENT_SLUGS.has(slug)) {
+    throw new DocsEnvironmentGuideError(
+      `environment guide slug ${JSON.stringify(slug)} is reserved`,
+    )
+  }
+  return slug
+}
+
+function docsRelativeTarget(
+  docsDir: string,
+  canonicalDocsDir: string,
+  source: string,
+  target: string,
+): string {
+  if (
+    [...target].some((character) => /\s/.test(character)) ||
+    target.startsWith('<') ||
+    target.includes('\\')
+  ) {
+    throw new DocsEnvironmentGuideError(
+      `unsupported local link syntax ${JSON.stringify(target)} in ${source}; use a plain relative .md link`,
+    )
+  }
+  const hash = target.indexOf('#')
+  const pathText = hash === -1 ? target : target.slice(0, hash)
+  if (isAbsolute(pathText) || pathText.includes('?') || !pathText.endsWith('.md')) {
+    throw new DocsEnvironmentGuideError(
+      `unsupported local link ${JSON.stringify(target)} in ${source}; use a plain relative documentation .md link`,
+    )
+  }
+  const candidate = resolve(dirname(source), pathText)
+  const relativeTarget = relative(resolve(canonicalDocsDir), candidate)
+  if (
+    relativeTarget === '' ||
+    relativeTarget === '..' ||
+    relativeTarget.startsWith(`..${sep}`) ||
+    isAbsolute(relativeTarget)
+  ) {
+    throw new DocsEnvironmentGuideError(
+      `local link ${JSON.stringify(target)} in ${source} must resolve inside ${canonicalDocsDir}`,
+    )
+  }
+  if (!existsSync(resolve(docsDir, relativeTarget))) {
+    throw new DocsEnvironmentGuideError(
+      `local documentation link ${JSON.stringify(target)} in ${source} does not exist`,
+    )
+  }
+  const docsTarget = relativeTarget.split(sep).join('/')
+  const fragment = hash === -1 ? '' : target.slice(hash)
+  return `${docsTarget}${fragment}`
+}
+
+function renderEnvironmentGuide(
+  docsDir: string,
+  canonicalDocsDir: string,
+  source: string,
+  virtualPath: string,
+): string {
+  const markdown = readFileSync(source, 'utf8')
+  for (const match of markdown.matchAll(MARKDOWN_IMAGE)) {
+    const target = match[1]
+    if (target !== undefined && !isExternalOrFragment(target)) {
+      throw new DocsEnvironmentGuideError(
+        `local image ${JSON.stringify(target)} in ${source} is unsupported; use an externally hosted image`,
+      )
+    }
+  }
+  for (const match of markdown.matchAll(REFERENCE_DEFINITION)) {
+    const target = match[1]?.split(/\s+/, 1)[0]?.replace(/^<|>$/g, '')
+    if (target !== undefined && !isExternalOrFragment(target)) {
+      throw new DocsEnvironmentGuideError(
+        `local reference-style link ${JSON.stringify(target)} in ${source} is unsupported; use an inline relative .md link`,
+      )
+    }
+  }
+
+  return markdown.replace(MARKDOWN_LINK, (original, rawTarget: string) => {
+    if (isExternalOrFragment(rawTarget)) return original
+    const target = docsRelativeTarget(docsDir, canonicalDocsDir, source, rawTarget)
+    const hash = target.indexOf('#')
+    const docsPath = hash === -1 ? target : target.slice(0, hash)
+    const fragment = hash === -1 ? '' : target.slice(hash)
+    const rebased = posix.relative(posix.dirname(virtualPath), docsPath)
+    return `](${rebased}${fragment})`
+  })
+}
+
+/**
+ * Discover every immediate environment directory that owns `environment.md`. Discovery validates
+ * all names, virtual paths, and guide links before returning any page, so a bad new environment
+ * cannot leave only part of the documentation tree visible.
+ */
+function discoverEnvironmentGuides(docsDir: string, environmentsDir: string): EnvironmentGuide[] {
+  let entries: import('node:fs').Dirent[]
+  try {
+    entries = readdirSync(environmentsDir, { withFileTypes: true })
+  } catch {
+    return []
+  }
+  const sources = entries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => ({
+      envId: entry.name,
+      source: join(environmentsDir, entry.name, 'environment.md'),
+    }))
+    .filter(({ source }) => existsSync(source))
+    .sort((a, b) => a.envId.localeCompare(b.envId))
+
+  const paths = new Map<string, string>()
+  const canonicalDocsDir = resolve(environmentsDir, '..', 'docs')
+  return sources.map(({ envId, source }) => {
+    const slug = environmentGuideSlug(envId)
+    const path = `students/environments/${slug}.md`
+    const previous = paths.get(path)
+    if (previous !== undefined) {
+      throw new DocsEnvironmentGuideError(
+        `environment guide ids ${JSON.stringify(previous)} and ${JSON.stringify(envId)} both map to ${path}`,
+      )
+    }
+    paths.set(path, envId)
+    return {
+      envId,
+      path,
+      source,
+      content: renderEnvironmentGuide(docsDir, canonicalDocsDir, source, path),
+    }
+  })
+}
+
 /** A section entry for a subdirectory, landing on its `index.md`; null when it has no `index.md`. */
-function sectionEntry(docsDir: string, studentsRoot: string, dirName: string): DocsNavEntry | null {
+function sectionEntry(
+  docsDir: string,
+  studentsRoot: string,
+  dirName: string,
+  environmentGuides: EnvironmentGuide[],
+): DocsNavEntry | null {
   const dirAbs = join(studentsRoot, dirName)
   const indexAbs = join(dirAbs, 'index.md')
   if (!existsSync(indexAbs)) return null
   const children = readdirSync(dirAbs, { withFileTypes: true })
     .filter((e) => e.isFile() && e.name.endsWith('.md') && e.name !== 'index.md')
     .map((e) => pageEntry(docsDir, dirAbs, e.name))
+  if (dirName === 'environments') {
+    const childPaths = new Set(children.map((child) => child.path))
+    for (const guide of environmentGuides) {
+      if (childPaths.has(guide.path)) {
+        throw new DocsEnvironmentGuideError(
+          `environment guide ${guide.envId} has two sources for virtual path ${guide.path}`,
+        )
+      }
+      children.push({
+        path: guide.path,
+        title: titleForMarkdown(guide.content, guide.envId),
+      })
+      childPaths.add(guide.path)
+    }
+  }
   return {
     path: toDocsRelative(docsDir, indexAbs),
     title: titleFor(indexAbs, dirName),
@@ -143,8 +330,9 @@ function sortEntries(entries: DocsNavEntry[]): DocsNavEntry[] {
  * because it is the landing page served by {@link readDocsIndex}. A missing tree yields no pages
  * rather than an error, so an unusual deployment degrades to an empty documentation area.
  */
-export function buildDocsManifest(docsDir: string): DocsManifest {
+export function buildDocsManifest(docsDir: string, environmentsDir: string): DocsManifest {
   const studentsRoot = studentsRootOf(docsDir)
+  const environmentGuides = discoverEnvironmentGuides(docsDir, environmentsDir)
   let entries: import('node:fs').Dirent[]
   try {
     entries = readdirSync(studentsRoot, { withFileTypes: true })
@@ -154,7 +342,7 @@ export function buildDocsManifest(docsDir: string): DocsManifest {
   const pages: DocsNavEntry[] = []
   for (const entry of entries) {
     if (entry.isDirectory()) {
-      const section = sectionEntry(docsDir, studentsRoot, entry.name)
+      const section = sectionEntry(docsDir, studentsRoot, entry.name, environmentGuides)
       if (section !== null) pages.push(section)
     } else if (entry.isFile() && entry.name.endsWith('.md') && entry.name !== 'index.md') {
       pages.push(pageEntry(docsDir, studentsRoot, entry.name))
@@ -183,7 +371,18 @@ function resolveStudentsPath(docsDir: string, relPath: string): string | null {
  * One page's raw markdown by its docs-relative path, or null when the path is out of scope or the file
  * does not exist (the route returns a JSON 404 for null).
  */
-export function readDocsPage(docsDir: string, relPath: string): DocsPage | null {
+export function readDocsPage(
+  docsDir: string,
+  environmentsDir: string,
+  relPath: string,
+): DocsPage | null {
+  const normalized = relPath.replace(/\\/g, '/').trim()
+  const environmentGuide = discoverEnvironmentGuides(docsDir, environmentsDir).find(
+    (guide) => guide.path === normalized,
+  )
+  if (environmentGuide !== undefined) {
+    return { path: environmentGuide.path, content: environmentGuide.content }
+  }
   const abs = resolveStudentsPath(docsDir, relPath)
   if (abs === null) return null
   try {

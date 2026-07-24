@@ -280,9 +280,8 @@ def test_oracle_example_composes_with_its_agent_and_failure_tests():
     assert (out / "llm.md").exists()
 
 
-def test_compose_env_without_docs_page_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    # A template layer whose environment has no docs/students/environments page cannot compose:
-    # there is no source for its environment.md.
+def test_compose_env_without_canonical_guide_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    # A template layer whose environment has no root environment.md cannot compose.
     import compose as compose_mod
 
     base = tmp_path / "templates" / "base"
@@ -304,7 +303,7 @@ def test_compose_env_without_docs_page_raises(tmp_path: Path, monkeypatch: pytes
     monkeypatch.setattr(compose_mod, "write_base_helpers", lambda _: None)
     monkeypatch.setattr(compose_mod, "write_env_package", lambda *_: None)
 
-    with pytest.raises(ComposeError, match="student docs page"):
+    with pytest.raises(ComposeError, match="no canonical guide"):
         compose_mod.compose_template("stray")
 
 

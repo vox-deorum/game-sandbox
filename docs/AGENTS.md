@@ -1,6 +1,6 @@
 # Documentation guide
 
-These instructions apply to public documentation under `docs/`. The repository-level [agents guide](../agents.md) still applies.
+These instructions apply to public documentation under `docs/` and the canonical student guides at `environments/<env>/environment.md`. The repository-level [agents guide](../agents.md) still applies.
 
 ## Write for a named reader
 
@@ -26,7 +26,8 @@ Use the same names as the product and specification, especially **environment**,
 
 Link instead of duplicating:
 
-- Student task instructions belong under `students/`.
+- Shared student task instructions belong under `students/`.
+- Environment-specific student guides belong at `environments/<env>/environment.md`. MkDocs and the in-app documentation API expose them at virtual `students/environments/<slug>.md` paths. The only source file under `students/environments/` is the hand-authored section index.
 - Contributor procedures belong under `contributors/`.
 - Product rules belong under `specs/`.
 - Build order and implementation status belong under `plans/`.

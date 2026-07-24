@@ -41,11 +41,11 @@ A checked-in fixture set is the backbone of the stage's provability and is share
 
 Contributor docs under `docs/contributors/`:
 
-- `docs/contributors/backend.md` - the `seasons`, `submissions`, `session_submissions`, and `submission_checks` tables and the seed, the pending-submission worker and the per-stage validation log it writes, the `SubmissionSource` seam and its config (`GITHUB_TOKEN`, `ALLOW_LOCAL_SUBMISSIONS`, `SUBMISSION_GIT_TIMEOUT_MS`, `DEPS_VERSION`), the static-validator reasons, and the submission/reachability/status endpoints including the validation-log payload.
-- `docs/contributors/execution.md` - the overlay build path, the `submission-overlay` image spec, the load check under the sandbox profile, the driver options that bound and cache it (the caching default and the build/load-check timeouts that keep a hung build from stalling the worker), and the overlay-image eviction sweep with its config (`OVERLAY_IMAGE_BUDGET`, `OVERLAY_IMAGE_SWEEP_INTERVAL_MS`), its active-`ready` exemption, and the two driver-interface additions it needs (overlay-image enumeration and best-effort `removeImage`).
+- `docs/contributors/runtime/backend.md` - the `seasons`, `submissions`, `session_submissions`, and `submission_checks` tables and the seed, the pending-submission worker and the per-stage validation log it writes, the `SubmissionSource` seam and its config (`GITHUB_TOKEN`, `ALLOW_LOCAL_SUBMISSIONS`, `SUBMISSION_GIT_TIMEOUT_MS`, `DEPS_VERSION`), the static-validator reasons, and the submission/reachability/status endpoints including the validation-log payload.
+- `docs/contributors/runtime/execution.md` - the overlay build path, the `submission-overlay` image spec, the load check under the sandbox profile, the driver options that bound and cache it (the caching default and the build/load-check timeouts that keep a hung build from stalling the worker), and the overlay-image eviction sweep with its config (`OVERLAY_IMAGE_BUDGET`, `OVERLAY_IMAGE_SWEEP_INTERVAL_MS`), its active-`ready` exemption, and the two driver-interface additions it needs (overlay-image enumeration and best-effort `removeImage`).
 - The harness contributor docs - the `validate` subcommand and its structured result.
-- `docs/contributors/frontend.md` - `SubmitAgentForm.vue` and its polled per-stage validation timeline, the dev-only local-path gate, the agent profile page (including the stored validation log), and the watch picker.
-- `docs/contributors/test.md` - the new gated coverage and how to run it.
+- `docs/contributors/frontend/development.md` - `SubmitAgentForm.vue` and its polled per-stage validation timeline, the dev-only local-path gate, the agent profile page (including the stored validation log), and the watch picker.
+- `docs/contributors/testing/index.md` - the new gated coverage and how to run it.
 
 Participant-facing docs: this is the first stage that changes anything participant-facing since the template repos shipped, so the student-facing submission instructions (how to paste a repo URL, what gets validated and why a submission might be rejected) are written or updated here, pointing at the manifest/packaging contract.
 

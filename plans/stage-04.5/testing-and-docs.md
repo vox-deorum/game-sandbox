@@ -1,8 +1,8 @@
 # Stage 4.5: Testing and Documentation
 
-Status: implemented. The existing suites survived the refactor: role- and text-based queries are mostly blind to the primitive swap, and the touched copy and the e2e scrubber drive were updated in the same change. The primitive, decision-log, and composable behaviors are covered. The shared `test/helpers/` are extracted and adopted: `fixtures.ts` for the Flappy Bird metadata and recording builders across six suites, `render.ts` for `renderWithMe`/`memoryRouter` across the three page suites, and `fetchStub.ts` for the api-client suite. The three documentation deliverables are written: `docs/contributors/design.md`, the agents.md UI-consistency section, and the `docs/contributors/frontend.md` update.
+Status: implemented. The existing suites survived the refactor: role- and text-based queries are mostly blind to the primitive swap, and the touched copy and the e2e scrubber drive were updated in the same change. The primitive, decision-log, and composable behaviors are covered. The shared `test/helpers/` are extracted and adopted: `fixtures.ts` for the Flappy Bird metadata and recording builders across six suites, `render.ts` for `renderWithMe`/`memoryRouter` across the three page suites, and `fetchStub.ts` for the api-client suite. The three documentation deliverables are written: `docs/contributors/frontend/design-system.md`, the agents.md UI-consistency section, and the `docs/contributors/frontend/development.md` update.
 
-Part of [Stage 4.5](../stage-04.5-ui-restructure.md). This document covers how the existing suites survive the refactor, what new coverage the design system gets, and the three documentation deliverables: `docs/contributors/design.md`, the agents.md consistency section, and the `docs/contributors/frontend.md` update.
+Part of [Stage 4.5](../stage-04.5-ui-restructure.md). This document covers how the existing suites survive the refactor, what new coverage the design system gets, and the three documentation deliverables: `docs/contributors/frontend/design-system.md`, the agents.md consistency section, and the `docs/contributors/frontend/development.md` update.
 
 ## Surviving the refactor
 
@@ -34,7 +34,7 @@ Composables get suites against stubs: `usePinning` against a stubbed client, `us
 
 The verification gates hold for every step of the stage. The Vitest suites, `vue-tsc`, and the Playwright journey stay green. The production build is checked once per foundation change for the styleguide chunk's absence and for Reka UI contributing only the imported components.
 
-## docs/contributors/design.md
+## docs/contributors/frontend/design-system.md
 
 The design system's home, written for contributors and agents. Its sections:
 
@@ -53,9 +53,9 @@ A short UI consistency subsection joins "Working on this repo":
 - Use the semantic tokens, with no raw colors or spacing outside `tokens.css`.
 - Build UI from the `components/ui/` primitives instead of new ad hoc CSS.
 - Put every new variant on the styleguide page.
-- Read `docs/contributors/design.md` before visual work.
+- Read `docs/contributors/frontend/design-system.md` before visual work.
 - Confirm with the owner before inventing new visual patterns or settling open design questions.
 
-## docs/contributors/frontend.md
+## docs/contributors/frontend/development.md
 
 Updated for the new source layout (`styles/`, `components/ui/`, `composables/`, `lib/`, the page naming), the styleguide route and its dev-only mechanics, and a pointer to `design.md` as the design authority. The stage files themselves are kept in sync with implementation choices as they are confirmed, per the plan rules.

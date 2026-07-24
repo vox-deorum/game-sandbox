@@ -12,7 +12,7 @@ environments/<env>/examples/<name>   (optional)
 complete runnable repository
 ```
 
-Read [Environment template and examples](environments/template-and-examples.md) to create an environment layer. This page covers the composed product, its version, and publication.
+Read [Environment template and examples](template-and-examples.md) to create an environment layer. This page covers the composed product, its version, and publication.
 
 ## Composition
 
@@ -24,7 +24,7 @@ Composition replaces whole files. The only merged file is `requirements.extra.tx
 
 An environment's `PUBLISHED_EXAMPLES` tuple selects the source examples published as public branches. It does not affect `compose.py` or examples CI: every checked-in example remains composable and tested. An empty tuple publishes no example branches for that environment.
 
-Compose copies the student environment page as `environment.md` and the shared LLM guide as `llm.md`, rewrites `{{DOCS_URL}}`, and fails if a required page or token is missing. The local browser bundle is added only to a release or dry-run staging tree.
+Compose copies the canonical `environments/<env>/environment.md` guide into each kit as `environment.md`, alongside the shared LLM guide as `llm.md`. It rewrites `{{DOCS_URL}}` and fails if a required guide or token is missing. MkDocs exposes the same guide as a dynamically discovered virtual page under `students/environments/<slug>.md`. The local browser bundle is added only to a release or dry-run staging tree.
 
 ## Versioned dependency set
 

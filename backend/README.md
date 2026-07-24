@@ -9,4 +9,4 @@ npm run test:integration
 npm run build:image
 ```
 
-See the [backend contributor guide](../docs/contributors/backend.md), [execution boundary](../docs/contributors/execution.md), and [implementation plan](../plans/README.md).
+See the [backend contributor guide](../docs/contributors/runtime/backend.md), [execution boundary](../docs/contributors/runtime/execution.md), and [implementation plan](../plans/README.md).

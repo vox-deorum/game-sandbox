@@ -4,7 +4,7 @@ The backend is the Node and TypeScript service that runs outside session contain
 
 It never steps an environment or runs participant Python. The session container is authoritative for game state.
 
-Read [the execution boundary](execution.md) for drivers and session transport, [the backend-facing specifications](../specs/execution.md) for architectural rules, and [Testing](test.md) for the verification matrix.
+Read [the execution boundary](execution.md) for drivers and session transport, [the backend-facing specifications](../../specs/execution.md) for architectural rules, and [Testing](../testing/index.md) for the verification matrix.
 
 ## Request flow
 
@@ -63,7 +63,7 @@ Tests mirror source domains under `test/`. Shared doubles and fixtures live unde
 
 The required `.env.default` at the repository root defines all concrete runtime defaults. `config.ts` loads it once, applies an optional `.env` and parent-process overrides, then validates the complete environment without duplicating defaults in code. Each service receives either `Config` or the part it needs through its constructor. Feature modules must not read process environment variables directly. Dedicated parsers and Zod schemas validate environment variables, manifests, and season configuration.
 
-See [Configuration](configuration.md) for the full environment-variable reference and deployment notes.
+See [Configuration](../setup/configuration.md) for the full environment-variable reference and deployment notes.
 
 ## LLM proxy
 
@@ -75,7 +75,7 @@ Each grant binds one or more synchronous committed-usage readers to the durable 
 
 The tokenizer encodes accepted request and completion JSON as ordinary text, so participant content cannot invoke tokenizer control-token behavior. Missing or malformed upstream usage is estimated from the same canonical request and completion retained in telemetry. Successful responses preserve generated content and standard fields, replace structured provider model metadata with public model tiers, and drop nonstandard top-level provider metadata.
 
-An upstream failure releases the reservation and creates no successful-call row. If the upstream succeeds but the durable record does not commit, the system converts the reservation to conservative debt, opens each affected accounting breaker, and returns `meter_unavailable`. A single-flight write-health probe can close the breaker, but it never forgives debt during that backend process. See the [LLM specification](../specs/llm.md) for product rules and [Configuration](configuration.md#llm-proxy) for deployment settings.
+An upstream failure releases the reservation and creates no successful-call row. If the upstream succeeds but the durable record does not commit, the system converts the reservation to conservative debt, opens each affected accounting breaker, and returns `meter_unavailable`. A single-flight write-health probe can close the breaker, but it never forgives debt during that backend process. See the [LLM specification](../../specs/llm.md) for product rules and [Configuration](../setup/configuration.md#llm-proxy) for deployment settings.
 
 The session relay exposes the internal listener to session containers. A public development completion route is available to holders of a season development key. `POST /api/seasons/:seasonId/llm-development-key` creates or rotates a participant's key. The same handler authenticates both grant types. Before issuing or accepting a key, the development key service checks that the participant is active, the submission window is open, and the season has effective LLM access.
 

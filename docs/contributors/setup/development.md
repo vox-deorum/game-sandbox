@@ -24,7 +24,7 @@ npm run test
 uv run python scripts/ci.py docs
 ```
 
-Use [Testing](test.md) to choose Docker-gated and release-workflow checks.
+Use [Testing](../testing/index.md) to choose Docker-gated and release-workflow checks.
 
 The committed `.env.default` file provides the runtime defaults and enables loopback-only development authentication. You can therefore run the full stack locally without setting environment variables first. Put machine-specific overrides and private credentials in `.env` at the repository root; Git ignores this file. See [Configuration](configuration.md#how-configuration-loads) for precedence and the full variable reference.
 
@@ -74,7 +74,7 @@ By default, the e2e suite runs only when the source database is missing, so late
 
 The local browser export stays outside the template source tree. A release or publish dry run builds `frontend/dist-local/` once, then adds that output to `sandbox/web/` in each staged template and example. Publication therefore requires Node, but ordinary generation and source composition do not require a frontend bundle.
 
-`npm run build:image` runs from `backend/` and rebuilds the current session base image. Use it after changing the Dockerfile, harness, environment, or built-in agent. See [Backend](backend.md#run-and-test).
+`npm run build:image` runs from `backend/` and rebuilds the current session base image. Use it after changing the Dockerfile, harness, environment, or built-in agent. See [Backend](../runtime/backend.md#run-and-test).
 
 ## Windows and WSL
 
@@ -82,4 +82,4 @@ The scripts are Python so Windows and Linux use the same commands. CI runs on Li
 
 To reproduce CI closely, clone into the WSL filesystem and run `scripts/ci.py` there. Avoid `/mnt/` because `node_modules` and template composition perform many small file operations.
 
-[`act`](https://github.com/nektos/act) can run workflow YAML in Docker. It is useful for checking workflow wiring, but GitHub Actions remains the suite of record. See [Testing](test.md).
+[`act`](https://github.com/nektos/act) can run workflow YAML in Docker. It is useful for checking workflow wiring, but GitHub Actions remains the suite of record. See [Testing](../testing/index.md).

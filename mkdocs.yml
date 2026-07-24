@@ -29,6 +29,9 @@ theme:
         icon: material/weather-sunny
         name: Switch to light mode
 
+hooks:
+  - scripts/mkdocs_environment_guides.py
+
 markdown_extensions:
   - admonition
   - toc:
@@ -37,9 +40,9 @@ markdown_extensions:
   - pymdownx.details
 
 # The nav mirrors the "read in this order" progression on each section's index page, so the
-# sidebar presents pages in learning order rather than alphabetically. The validation setting
-# below makes a page that is missing from this list fail the strict docs build, so add new
-# public pages here. AGENTS.md and CLAUDE.md are excluded because they contain authoring
+# sidebar presents pages in learning order rather than alphabetically. The environment-guide
+# hook discovers canonical environment guides as virtual student pages, so do not list each
+# environment here. AGENTS.md and CLAUDE.md are excluded because they contain authoring
 # instructions.
 validation:
   nav:
@@ -52,30 +55,32 @@ nav:
       - students/getting-started.md
       - Environments:
           - students/environments/index.md
-          - students/environments/flappy-bird.md
-          - students/environments/hearts.md
-          - students/environments/spades.md
       - students/agent-interface.md
       - students/llm.md
       - students/submitting.md
   - Contributors:
       - contributors/index.md
-      - contributors/development-setup.md
-      - contributors/configuration.md
-      - contributors/test.md
-      - contributors/e2e-tests.md
-      - contributors/state-schema.md
-      - contributors/recordings.md
-      - contributors/backend.md
-      - contributors/execution.md
-      - contributors/frontend.md
-      - contributors/design.md
-      - contributors/template.md
-      - Adding an environment:
-          - contributors/environments/index.md
-          - contributors/environments/package.md
-          - contributors/environments/rendering.md
-          - contributors/environments/template-and-examples.md
+      - Setup:
+          - Development setup: contributors/setup/development.md
+          - Configuration: contributors/setup/configuration.md
+      - Testing:
+          - Testing: contributors/testing/index.md
+          - Browser end-to-end tests: contributors/testing/browser-e2e.md
+      - Data:
+          - State schema: contributors/data/state-schema.md
+          - Recordings: contributors/data/recordings.md
+      - Runtime:
+          - Backend: contributors/runtime/backend.md
+          - Execution boundary: contributors/runtime/execution.md
+      - Frontend:
+          - Development: contributors/frontend/development.md
+          - Design system: contributors/frontend/design-system.md
+      - Environments:
+          - Adding an environment: contributors/environments/index.md
+          - Environment package: contributors/environments/package.md
+          - Rendering: contributors/environments/rendering.md
+          - Template and examples: contributors/environments/template-and-examples.md
+          - Template product and releases: contributors/environments/templates.md
   - Specification:
       - specs/index.md
       - specs/overview.md

@@ -9,7 +9,7 @@ Read the [environment specification](../../specs/environment.md) for product rul
 | Build, register, and test the Python package | [Environment package](package.md) |
 | Build the shared live and replay renderer | [Rendering](rendering.md) |
 | Create the student kit, examples, and student page | [Template and examples](template-and-examples.md) |
-| Version and publish the student product | [Template product and releases](../template.md) |
+| Version and publish the student product | [Template product and releases](templates.md) |
 
 ## Checklist
 
@@ -17,9 +17,9 @@ Read the [environment specification](../../specs/environment.md) for product rul
 2. Add game-rule tests under `environments/<env>/tests/` and renderer tests under `environments/<env>/renderer/`.
 3. Add the hand-authored `template/` layer and at least one `examples/<name>/` directory beside the environment package.
 4. Add a student helper module and its pin test when raw observations or actions need decoding.
-5. Write the student environment page and add a row to the [student environments index](../../students/environments/index.md).
+5. Write the canonical `environments/<env>/environment.md` guide and add its public slug to the [student environments index](../../students/environments/index.md). MkDocs discovers the guide as a virtual page, so do not add a mirror or a navigation entry for the environment.
 6. Run `npm run sync:envs`, compose the template, run the repository checks, and play-test the environment.
-7. Publish the environment's template and example branches with the next version bump, or dispatch the [Publish Template workflow](../template.md) with the current `N` and `republish: true`.
+7. Publish the environment's template and example branches with the next version bump, or dispatch the [Publish Template workflow](templates.md) with the current `N` and `republish: true`.
 
 A new environment is not complete when it merely runs. A student must be able to learn, run, and improve an agent without reading the environment source.
 
@@ -34,6 +34,7 @@ environments/
     env.py                 # make_env() and default_action()
     overlay.py             # render-data extraction
     single_agent.py        # Gymnasium to AEC adapter when needed
+    environment.md         # canonical student guide
     renderer/              # browser renderer and its tests
     tests/                 # environment-specific rule tests
     template/              # hand-authored student layer, not a Python package

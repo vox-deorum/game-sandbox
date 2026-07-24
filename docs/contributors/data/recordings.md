@@ -7,7 +7,7 @@ line 1: recording header
 line 2+: one StepState per line
 ```
 
-The harness streams and stores the same serialized state lines. Input, pause, resume, stop, and chat commands use event envelopes and are not part of the recording. See the [recording specification](../specs/recording.md) and [state schema](state-schema.md).
+The harness streams and stores the same serialized state lines. Input, pause, resume, stop, and chat commands use event envelopes and are not part of the recording. See the [recording specification](../../specs/recording.md) and [state schema](state-schema.md).
 
 The header may include a `players` map keyed by slot id, using the same keys as a step state's `agents`. Each entry has the shape `{kind: "human" | "agent", label, user?, submission_id?}`.
 

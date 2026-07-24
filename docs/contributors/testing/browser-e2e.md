@@ -2,7 +2,7 @@
 
 The end-to-end suite lives under `frontend/e2e/`. It runs Playwright with Chromium against the real backend, which serves the built frontend from the same origin. This follows the production path: one server with no proxy. Because the backend launches real session containers, the suite requires a Docker daemon, as does `backend:integration`. The Docker-heavy `frontend-e2e` job is too slow for every push, so it has its own manually dispatched workflow at `.github/workflows/e2e.yml`. Run it from the Actions tab with **Run workflow** when a UI change warrants it.
 
-For the wider verification matrix and how this job fits the pipeline, see [Testing](test.md). This page is about the suite itself: how to run it, how its data is set up, and the conventions to follow when you add to it.
+For the wider verification matrix and how this job fits the pipeline, see [Testing](index.md). This page is about the suite itself: how to run it, how its data is set up, and the conventions to follow when you add to it.
 
 ## Running it
 

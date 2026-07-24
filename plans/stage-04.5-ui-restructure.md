@@ -14,7 +14,7 @@ The detailed design lives under [stage-04.5/](stage-04.5/), in build order:
 - [design-foundation.md](stage-04.5/design-foundation.md): the design tokens, the shrink of the global stylesheet to tokens plus reset plus app layout, the Reka UI adoption decision, the `components/ui/` primitives, and the dev-only styleguide route.
 - [page-restructure.md](stage-04.5/page-restructure.md): folder and naming conventions, the composables extracted from the big pages, the app shell and navigation rebuild, and the page-by-page migration with Home as the reference page.
 - [accessibility-and-responsive.md](stage-04.5/accessibility-and-responsive.md): the accessibility baseline (focus, ARIA, keyboard replay transport, color never the sole indicator, reduced motion) and the responsive pass (breakpoints and narrow-screen behavior).
-- [testing-and-docs.md](stage-04.5/testing-and-docs.md): how the existing suites survive the refactor, the shared test utilities, the new primitive and composable suites, end-to-end updates, and the documentation deliverables (`docs/contributors/design.md`, the agents.md consistency section, the frontend.md update).
+- [testing-and-docs.md](stage-04.5/testing-and-docs.md): how the existing suites survive the refactor, the shared test utilities, the new primitive and composable suites, end-to-end updates, and the documentation deliverables (`docs/contributors/frontend/design-system.md`, the agents.md consistency section, the frontend development guide update).
 
 ## Scope
 
@@ -42,7 +42,7 @@ A light theme: the token architecture keeps one possible (semantic names over a 
 
 ## Done when
 
-The owner has approved the IA document and the styleguide plus redesigned Home checkpoint. All four pages run on tokens and `components/ui/` primitives with scoped styles, navigation shows the coming-soon placeholders, and the global stylesheet contains only tokens, reset, and app layout. The session and replay stages show the per-tick decision log built from the agent actions in the state stream, placed beside or below the canvas per the renderer's targeted canvas size. Every primitive variant appears on the dev-only styleguide route, which is absent from the production bundle. The keyboard operates the replay transport, focus is visible everywhere, no status is conveyed by color alone, and the pages are usable at the documented breakpoints. The unit suites, the type check, and the Playwright journey pass. `docs/contributors/design.md` exists, agents.md carries the UI consistency rules, and `docs/contributors/frontend.md` reflects the new layout. No raw color or spacing literals remain outside the token file (renderers exempt).
+The owner has approved the IA document and the styleguide plus redesigned Home checkpoint. All four pages run on tokens and `components/ui/` primitives with scoped styles, navigation shows the coming-soon placeholders, and the global stylesheet contains only tokens, reset, and app layout. The session and replay stages show the per-tick decision log built from the agent actions in the state stream, placed beside or below the canvas per the renderer's targeted canvas size. Every primitive variant appears on the dev-only styleguide route, which is absent from the production bundle. The keyboard operates the replay transport, focus is visible everywhere, no status is conveyed by color alone, and the pages are usable at the documented breakpoints. The unit suites, the type check, and the Playwright journey pass. `docs/contributors/frontend/design-system.md` exists, agents.md carries the UI consistency rules, and `docs/contributors/frontend/development.md` reflects the new layout. No raw color or spacing literals remain outside the token file (renderers exempt).
 
 ## Build order
 
@@ -53,7 +53,7 @@ The owner has approved the IA document and the styleguide plus redesigned Home c
 5. After checkpoint one and step 4: rebuild the app shell and navigation per the approved IA, and redesign Home on the tokens and primitives as the reference page. Owner review of the styleguide and Home is checkpoint two; iterate until approved.
 6. Migrate the remaining pages, one step each. Environment first (the start form becomes a dialog). Then Session (extract the session composables, add the per-tick decision log built from the agent actions already in the state stream, and add the targeted-canvas-size renderer metadata that places the log beside or below the canvas). Then Replay (transport composable, keyboard support, slider scrubber, and the same decision log replayed from the recorded states). Session comes before Replay because they share composables and the decision log component.
 7. The accessibility and responsive audit sweep across all pages, including moving the Flappy Bird renderer's inline canvas styles into CSS.
-8. Delete dead CSS, finish renames, write `docs/contributors/design.md` and the agents.md section, update `docs/contributors/frontend.md`, and sync all stage files. The stage closes here.
+8. Delete dead CSS, finish renames, write `docs/contributors/frontend/design-system.md` and the agents.md section, update `docs/contributors/frontend/development.md`, and sync all stage files. The stage closes here.
 
 ## Open questions
 

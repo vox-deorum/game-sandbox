@@ -1,6 +1,6 @@
 # Flappy Bird
 
-Flappy Bird is a one-button game. A small bird constantly falls, and pressing the button makes it flap upward. Your agent controls this button and tries to fly through gaps in pipes without crashing. The [agent interface](../agent-interface.md) explains the `reset` and `act` methods shared by every environment. This page covers everything specific to Flappy Bird.
+Flappy Bird is a one-button game. A small bird constantly falls, and pressing the button makes it flap upward. Your agent controls this button and tries to fly through gaps in pipes without crashing. The [agent interface](../../docs/students/agent-interface.md) explains the `reset` and `act` methods shared by every environment. This page covers everything specific to Flappy Bird.
 
 ## How the game works
 
@@ -187,7 +187,7 @@ The bird sits at `x = 57`, near the left, with the nearest pipe ahead at `x = 92
 
 ## Time limits
 
-Flappy Bird advances once every 50 milliseconds, or 20 steps per second. This pace is not the agent's timeout. Each call to `act` has a 1-second limit, and the agent may use up to 120 seconds of measured computation during one game. If `act` exceeds its limit, the environment uses action `0`, or `IDLE`, for that step. See [Time limits](../agent-interface.md#time-limits) for how the limits are measured and enforced.
+Flappy Bird advances once every 50 milliseconds, or 20 steps per second. This pace is not the agent's timeout. Each call to `act` has a 1-second limit, and the agent may use up to 120 seconds of measured computation during one game. If `act` exceeds its limit, the environment uses action `0`, or `IDLE`, for that step. See [Time limits](../../docs/students/agent-interface.md#time-limits) for how the limits are measured and enforced.
 
 ## Your first improvement
 

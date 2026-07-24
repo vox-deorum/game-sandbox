@@ -53,6 +53,7 @@ import type { WorkflowRunner } from './workflow/runner.js'
 // values loaded through Config; these fallbacks mirror `.env.default` for app-only callers.
 const DEFAULT_SITE_NAME = 'Game Sandbox'
 const DEFAULT_DOCS_DIR = join(REPO_ROOT, 'docs')
+const DEFAULT_ENVIRONMENTS_DIR = join(REPO_ROOT, 'environments')
 
 export interface AppDeps {
   orchestrator: Orchestrator
@@ -98,12 +99,17 @@ export interface AppDeps {
    */
   frontendDir?: string
   /**
-   * The documentation root the docs routes read the student guides from (its `students/` subtree). The
-   * server passes `config.docsDir` and tests pass a fixture directory; when omitted the routes fall
-   * back to {@link DEFAULT_DOCS_DIR} (the repo's `docs/`), so a caller that does not exercise the docs
-   * area can leave it unset.
+   * The documentation root the docs routes read shared student guides from (its `students/`
+   * subtree). The server passes `config.docsDir` and tests pass a fixture directory; when omitted
+   * the routes fall back to {@link DEFAULT_DOCS_DIR} (the repo's `docs/`), so a caller that does not
+   * exercise the docs area can leave it unset.
    */
   docsDir?: string
+  /**
+   * The package root containing canonical `environment.md` guides. Runtime uses the repository's
+   * `environments/` directory; tests may point this at an isolated fixture.
+   */
+  environmentGuidesDir?: string
   /** Optional class-index override: when set, `GET /api/docs/index` serves this file's markdown. */
   docsIndexFile?: string
   /**
@@ -305,7 +311,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   // the markdown and rewrites links, so these routes only serve the nav tree and raw page bytes. The
   // landing honors the optional class-index override; a page fetch is path-sanitized to `students/`.
   const docsDir = deps.docsDir ?? DEFAULT_DOCS_DIR
-  app.get('/api/docs/manifest', () => buildDocsManifest(docsDir))
+  const environmentGuidesDir = deps.environmentGuidesDir ?? DEFAULT_ENVIRONMENTS_DIR
+  app.get('/api/docs/manifest', () => buildDocsManifest(docsDir, environmentGuidesDir))
 
   app.get('/api/docs/index', (_request, reply) => {
     try {
@@ -319,7 +326,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   })
 
   app.get<{ Params: { '*': string } }>('/api/docs/pages/*', (request, reply) => {
-    const page = readDocsPage(docsDir, request.params['*'])
+    const page = readDocsPage(docsDir, environmentGuidesDir, request.params['*'])
     if (page === null) {
       return reply.code(404).send({ error: 'documentation page not found' })
     }

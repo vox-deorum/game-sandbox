@@ -1,6 +1,6 @@
 # Hearts
 
-Hearts is a four-player card game. Your goal is to finish with as few penalty points as possible. Each heart is worth 1 point, and the queen of spades is worth 13. Your agent controls one player. The [agent interface](../agent-interface.md) explains the `reset` and `act` methods shared by every environment. This page covers everything specific to Hearts.
+Hearts is a four-player card game. Your goal is to finish with as few penalty points as possible. Each heart is worth 1 point, and the queen of spades is worth 13. Your agent controls one player. The [agent interface](../../docs/students/agent-interface.md) explains the `reset` and `act` methods shared by every environment. This page covers everything specific to Hearts.
 
 ## How the game works
 
@@ -199,7 +199,7 @@ Suppose `seat` is `2`. Your agent controls seat 2, which the viewer places at th
 
 ## Time limits
 
-Hearts is turn-based, so moves have no fixed delay between them. Each call to `act` has a 1-second limit, and the agent may use up to 120 seconds of measured computation during one game. If `act` returns late, the environment plays the legal card with the lowest rank. When several cards have that rank, it chooses the lower suit ID. A human-controlled seat has 60 seconds to move. See [Time limits](../agent-interface.md#time-limits) for how these limits are measured and enforced.
+Hearts is turn-based, so moves have no fixed delay between them. Each call to `act` has a 1-second limit, and the agent may use up to 120 seconds of measured computation during one game. If `act` returns late, the environment plays the legal card with the lowest rank. When several cards have that rank, it chooses the lower suit ID. A human-controlled seat has 60 seconds to move. See [Time limits](../../docs/students/agent-interface.md#time-limits) for how these limits are measured and enforced.
 
 ## Your first improvement
 

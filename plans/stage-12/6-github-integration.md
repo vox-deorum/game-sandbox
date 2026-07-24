@@ -36,7 +36,7 @@ Verifying that a submitted repository belongs to the submitter's GitHub account 
 
 ## Docs
 
-The Identity and access section of [frontend.md](../../docs/specs/frontend.md) moves with this plan, as it did for the rest of the stage: one account per person with linking rather than duplicates, admin-entered emails counting as verified, one GitHub connection per user, the explicit connect and disconnect flow, the last-method safeguard, name and avatar coming from GitHub only at GitHub sign-up, and the agent-profile GitHub link. [backend.md](../../docs/contributors/backend.md) adds the username capture and `profilesFor` to the identity section. [configuration.md](../../docs/contributors/configuration.md) needs no new variables; its GitHub OAuth note states that the same OAuth app powers both sign-in and account linking.
+The Identity and access section of [frontend.md](../../docs/specs/frontend.md) moves with this plan, as it did for the rest of the stage: one account per person with linking rather than duplicates, admin-entered emails counting as verified, one GitHub connection per user, the explicit connect and disconnect flow, the last-method safeguard, name and avatar coming from GitHub only at GitHub sign-up, and the agent-profile GitHub link. [backend.md](../../docs/contributors/runtime/backend.md) adds the username capture and `profilesFor` to the identity section. [configuration.md](../../docs/contributors/setup/configuration.md) needs no new variables; its GitHub OAuth note states that the same OAuth app powers both sign-in and account linking.
 
 ## Implementation decisions
 

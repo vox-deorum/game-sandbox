@@ -2,7 +2,7 @@
 
 Each environment owns the student-facing files that differ from the shared starter kit. Keep them beside the environment package so an environment can be understood and changed in one place.
 
-Read [Template product and releases](../template.md) for composition, dependency versions, and publication.
+Read [Template product and releases](templates.md) for composition, dependency versions, and publication.
 
 ## Hand-authored layers
 
@@ -28,15 +28,15 @@ Hearts and Spades may re-export game-independent names from `sandbox.semantic_ca
 
 `uv run python scripts/compose.py <env>` writes a complete student repository to `build/templates/<env>/`. Passing an example name writes the example tree under `build/examples/<env>/<name>/`.
 
-Read [Template product and releases](../template.md#composition) for the composition order, generated packages, dependency merge rule, and student-documentation rewrites.
+Read [Template product and releases](templates.md#composition) for the composition order, generated packages, dependency merge rule, and student-documentation rewrites.
 
 ## Student documentation
 
-Add `docs/students/environments/<env>.md` and a row in `docs/students/environments/index.md`. The page should explain the game, starting agent, scoring, helper module, raw contract, time limits, and a first improvement.
+Write the canonical student guide at `environments/<env>/environment.md`. It should explain the game, starting agent, scoring, helper module, raw contract, time limits, and a first improvement. Add its hyphenated public slug to `docs/students/environments/index.md`. MkDocs discovers the guide and exposes it as the virtual page `students/environments/<slug>.md`; do not create a generated or committed mirror.
 
-The starting `agent.py` body must match the page's starter-agent listing. Its `README.md`, `agent.py`, and helper modules point students to the composed local `environment.md` instead of duplicating the game reference.
+The starting `agent.py` body must match the canonical guide's starter-agent listing. Its `README.md`, `agent.py`, and helper modules point students to the composed local `environment.md` instead of duplicating the game reference.
 
-Compose copies the student page into each kit as `environment.md` and the shared LLM guide as `llm.md`, then rewrites their relative documentation links to the published docs URL. Links inside `docs/` stay relative in the source page, while links to repository files use stable GitHub URLs.
+Compose copies the canonical guide into each kit as `environment.md` and the shared LLM guide as `llm.md`, then rewrites their relative documentation links to the published docs URL. MkDocs exposes the canonical guide as a virtual student page; links inside the canonical guide stay relative in the source page, while links to repository files use stable GitHub URLs.
 
 Every environment must have at least one example. Examples should use the helper module so they demonstrate the style students should adopt, but student pages must not link their source as a solution.
 

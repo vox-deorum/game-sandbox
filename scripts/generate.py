@@ -1,4 +1,4 @@
-"""Regenerate everything derived from the canonical schema.
+"""Regenerate committed artifacts derived from schemas and environment sources.
 
 One script refreshes every generated artifact, run as ``uv run python scripts/generate.py``:
 
@@ -8,8 +8,8 @@ One script refreshes every generated artifact, run as ``uv run python scripts/ge
 4. Environment package metadata for the backend.
 
 The packaged copies are written first, with plain file I/O, so the harness is importable
-before the fixtures step imports it. CI runs this script and then ``git diff --exit-code``
-over the three locations, so any schema edit that was not regenerated fails the build.
+before the fixtures step imports it. CI runs this script and then checks every generated
+target for changes, so an edit that was not regenerated fails the build.
 """
 
 from __future__ import annotations
@@ -235,7 +235,7 @@ def generate_environments_json() -> None:
 
 
 def main() -> int:
-    print("Regenerating schema-derived artifacts:")
+    print("Regenerating derived artifacts:")
     copy_packaged_schema()
     sync_environments_pyproject()
     generate_typescript()

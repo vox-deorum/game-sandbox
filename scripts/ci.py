@@ -118,8 +118,7 @@ def job_frontend_e2e() -> None:
 
 def job_generated_code_fresh() -> None:
     _run(["uv", "run", "python", "scripts/generate.py"])
-    # Fail if schema, registry, or packaging regeneration changed tracked output. Template pieces
-    # are generated only in build output by compose and exercised by the examples and compose tests.
+    # Fail if schema, registry, or packaging regeneration changed tracked output.
     targets = [
         str(TS_GENERATED_DIR.relative_to(REPO_ROOT)),
         str(HARNESS_SCHEMA_DATA.relative_to(REPO_ROOT)),

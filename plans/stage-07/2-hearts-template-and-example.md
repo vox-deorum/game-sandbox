@@ -10,7 +10,7 @@ The environment (step 1) is the game; this step is the participant-facing surfac
 
 ## What to build
 
-Hearts lands as a second environment template on the existing two-layer machinery, described in the [template contributor guide](../../docs/contributors/template.md).
+Hearts lands as a second environment template on the existing two-layer machinery, described in the [template contributor guide](../../docs/contributors/environments/templates.md).
 
 - A colocated `environments/hearts/template/` layer over `templates/base/`: its `agent.py` stub, a Hearts-specific `README.md`, and `sandbox/cards.py`.
 - A discovered `TemplateEnvironmentSpec` built from Hearts metadata and direct package modules, so `scripts/compose.py` writes the generated `sandbox.env` exports into build output from the same facts.

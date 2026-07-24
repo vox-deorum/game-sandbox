@@ -28,14 +28,14 @@ The container boundary determines the language split: Python runs inside session
 
 | Task | Guide |
 | --- | --- |
-| Set up the repository | [Development setup](development-setup.md) |
-| Configure the server, authentication, sandbox, and retention | [Configuration](configuration.md) |
-| Choose and run checks | [Testing](test.md) |
-| Write or run browser end-to-end tests | [End-to-end tests](e2e-tests.md) |
-| Change wire or recording data | [State schema](state-schema.md), then [Recordings](recordings.md) |
+| Set up the repository | [Development setup](setup/development.md) |
+| Configure the server, authentication, sandbox, and retention | [Configuration](setup/configuration.md) |
+| Choose and run checks | [Testing](testing/index.md) |
+| Write or run browser end-to-end tests | [Browser end-to-end tests](testing/browser-e2e.md) |
+| Change wire or recording data | [State schema](data/state-schema.md), then [Recordings](data/recordings.md) |
 | Add a game | [Adding an environment](environments/index.md), then [Rendering](environments/rendering.md) |
-| Change the student starter kit | [Template product and releases](template.md) |
-| Work on HTTP, storage, submissions, or seasons | [Backend](backend.md) |
-| Work on containers, transport, or session lifecycle | [Execution boundary](execution.md) |
-| Work on pages or browser behavior | [Frontend](frontend.md) |
-| Change visual patterns or components | [Design system](design.md) |
+| Change the student starter kit | [Template product and releases](environments/templates.md) |
+| Work on HTTP, storage, submissions, or seasons | [Backend](runtime/backend.md) |
+| Work on containers, transport, or session lifecycle | [Execution boundary](runtime/execution.md) |
+| Work on pages or browser behavior | [Frontend development](frontend/development.md) |
+| Change visual patterns or components | [Design system](frontend/design-system.md) |

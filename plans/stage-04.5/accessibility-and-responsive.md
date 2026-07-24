@@ -20,7 +20,7 @@ The renderer canvas itself is exempt from these rules, because it is the game an
 
 ## Responsive pass
 
-Breakpoints are 480px, 768px, and 1024px. They are documented in `docs/contributors/design.md` and used as plain values in scoped media queries, since CSS custom properties cannot parameterize media queries. The design is desktop-first in origin, but it must remain usable, not merely unbroken, at narrow widths.
+Breakpoints are 480px, 768px, and 1024px. They are documented in `docs/contributors/frontend/design-system.md` and used as plain values in scoped media queries, since CSS custom properties cannot parameterize media queries. The design is desktop-first in origin, but it must remain usable, not merely unbroken, at narrow widths.
 
 Per page:
 

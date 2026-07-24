@@ -8,9 +8,9 @@ The website's Documentation page renders the student guides in-app instead of a 
 
 ## Scope
 
-Serve the `docs/students/` guides from the backend and render them in the Vue app, per the Documentation page row in [frontend.md](../docs/specs/frontend.md). Only the `students/` subtree is on the website; the specification and contributor guides stay in the repository and the MkDocs build, and links to them from a guide open their source on GitHub.
+Serve shared guides from `docs/students/` and game-specific guides from `environments/<env>/environment.md`, then render them in the Vue app per the Documentation page row in [frontend.md](../docs/specs/frontend.md). MkDocs and the backend discover every canonical environment guide dynamically and expose it at the stable virtual `students/environments/<slug>.md` path. No mirror file exists under `docs/`. Only student documentation is served on the website; the specification and contributor guides stay in the repository and the MkDocs build, and links to them from a guide open their source on GitHub.
 
-The backend reads the guides from disk at request time (no frontend rebuild to update a guide) through three unauthenticated read-only routes next to `GET /api/config`: `GET /api/docs/manifest` (the navigation tree), `GET /api/docs/index` (the landing page), and `GET /api/docs/pages/*` (one guide's markdown, path-sanitized to `students/`). The navigation order follows the students index's reading order, with unlisted pages appended alphabetically so a new guide appears without a code change.
+The backend reads both canonical source locations from disk at request time (no frontend rebuild to update a guide) through three unauthenticated read-only routes next to `GET /api/config`: `GET /api/docs/manifest` (the navigation tree), `GET /api/docs/index` (the landing page), and `GET /api/docs/pages/*` (one guide's markdown, path-sanitized to student paths). The navigation order follows the students index's reading order. Newly discovered environment guides are appended alphabetically without a code change.
 
 The landing page is `docs/students/index.md` by default. A deployment can replace it by pointing `DOCS_INDEX_FILE` at a markdown file, so a class can put its schedule, links, or grading on the home page without editing the shared guides. The override keeps the students-index path for link resolution, so relative links in a copied index still work. A configured file that cannot be read fails the landing request loudly rather than falling back silently.
 
@@ -25,7 +25,7 @@ The frontend renders markdown with markdown-it. Because the guides are authored 
 
 ## Spec references
 
-[frontend.md](../docs/specs/frontend.md) (Documentation page, navigation), [configuration.md](../docs/contributors/configuration.md) (`DOCS_DIR`, `DOCS_INDEX_FILE`).
+[frontend.md](../docs/specs/frontend.md) (Documentation page, navigation), [configuration.md](../docs/contributors/setup/configuration.md) (`DOCS_DIR`, `DOCS_INDEX_FILE`).
 
 ## Depends on
 

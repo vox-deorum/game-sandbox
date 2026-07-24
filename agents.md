@@ -12,7 +12,7 @@ Game Sandbox is a classwise playground for Game AI. Participants submit agents t
 
 The full specification lives under [docs/specs/](docs/specs/index.md). Read it before changing anything substantive. The implementation plan lives under [plans/](plans/README.md); implementation work must stay connected to it, so when code diverges from a stage file, revise the stage file in the same change set (see the plan README for the rules).
 
-Public documentation under `docs/` also follows [docs/AGENTS.md](docs/AGENTS.md), including its audience, linking, and beginner-accessibility conventions.
+Public documentation under `docs/` and the canonical student guides at `environments/<env>/environment.md` also follow [docs/AGENTS.md](docs/AGENTS.md), including its audience, linking, and beginner-accessibility conventions.
 
 ## Writing Style
 
@@ -32,7 +32,7 @@ A few defaults that will save back-and-forth:
 
 ### UI consistency
 
-The frontend has a design system; new UI joins it rather than reinventing CSS. Before any visual work, read [docs/contributors/design.md](docs/contributors/design.md), then:
+The frontend has a design system; new UI joins it rather than reinventing CSS. Before any visual work, read [docs/contributors/frontend/design-system.md](docs/contributors/frontend/design-system.md), then:
 
 - Use the semantic tokens. No raw color or spacing literals live outside `frontend/src/styles/tokens.css` (renderer modules under `environments/<env>/renderer/` are the only exemption, since a renderer owns its game's visual identity).
 - Build UI from the `frontend/src/components/ui/` primitives (`UiButton`, `UiCard`, `UiField`, `UiDialog`, …) instead of new ad hoc markup and CSS. Reach for a third-party UI library only where focus and ARIA are genuinely hard (the project uses Reka UI for the dialog and slider, nothing more).

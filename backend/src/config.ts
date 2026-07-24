@@ -181,10 +181,11 @@ export interface Config {
    */
   frontendDir?: string
   /**
-   * The documentation root the backend reads the in-app student guides from at runtime. The default
-   * resolves to the repo's `docs/` regardless of the process working directory (the backend already
-   * runs from the checkout, the same assumption `frontendDir` makes); override with `DOCS_DIR` only
-   * when a deployment relocates the tree. Only `docs/students/**` is served to the website.
+   * The documentation root the backend reads shared in-app student guides from at runtime. The
+   * default resolves to the repo's `docs/` regardless of the process working directory (the backend
+   * already runs from the checkout, the same assumption `frontendDir` makes). Override with
+   * `DOCS_DIR` only when a deployment relocates the shared tree. Canonical environment guides remain
+   * under the checkout's `environments/` directory and are exposed through virtual student paths.
    */
   docsDir: string
   /**

@@ -98,6 +98,7 @@ def test_metadata_round_trips_through_json(env_id: str):
 @pytest.mark.parametrize("env_id", ENVIRONMENTS)
 def test_environment_authoring_shape_is_complete_and_fresh(env_id: str):
     environment_dir = ENVIRONMENT_PACKAGES_DIR / env_id
+    assert (environment_dir / "environment.md").is_file()
     renderer = environment_dir / "renderer"
     assert renderer.is_dir()
     assert (renderer / "index.ts").is_file()

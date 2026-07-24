@@ -32,4 +32,4 @@ build-backend = "hatchling.build"
 packages = ["flappy_bird", "hearts", "local_play", "spades"]
 # END GENERATED WHEEL PACKAGES
 artifacts = ["flappy_bird/UPSTREAM_LICENSE.md"]
-exclude = ["*/renderer", "*/tests", "*/template", "*/examples"]
+exclude = ["*/environment.md", "*/renderer", "*/tests", "*/template", "*/examples"]

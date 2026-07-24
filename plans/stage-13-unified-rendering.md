@@ -170,7 +170,7 @@ Update the specifications alongside implementation:
 - Revise [Execution](../docs/specs/execution.md) to describe the loopback-only Python relay and assign its local relay responsibilities in the implementation-languages table.
 - Revise [Interaction](../docs/specs/interaction.md) to define local browser play and how its input, pause, pacing, and shared session controls follow the browser interaction contract.
 
-Revise the contributor environment, rendering, execution, template, design, and development-setup guides. Revise student getting-started and all three environment pages to describe browser local play. The Flappy Bird contributor and student docs credit the upstream 0.4.0 simulation and point to the shipped MIT notice without implying that upstream art is included.
+Revise the contributor environment, rendering, execution, template, design, and development-setup guides. Revise student getting-started and the canonical `environments/<env>/environment.md` guides to describe browser local play. MkDocs publishes those files directly at their virtual website paths. The Flappy Bird contributor and student docs credit the upstream 0.4.0 simulation and point to the shipped MIT notice without implying that upstream art is included.
 
 Update completed plan text that describes the removed renderers or third-party Flappy package as current architecture. This includes Stage 2, the Stage 3 pygame-banner notes, Stage 7 local play, Stage 8 local play, and Stage 11 template contracts. Keep historical decisions only where they still explain current code.
 

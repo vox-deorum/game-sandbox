@@ -91,14 +91,15 @@ TEMPLATE_BASE_MODULES = {
     "semantic_cards.py": "local_play/semantic_cards.py",
 }
 
-# Each environment's student reference page. scripts/compose.py copies the page for the composed
-# environment into the template as environment.md (rewriting its cross-doc links to absolute
-# docs-site URLs), so the template's README, agent.py, and helper module point students at that
-# local file instead of duplicating the observation/action reference. The page id is the env id
-# with underscores turned into hyphens, matching the filenames MkDocs serves (flappy_bird ->
-# flappy-bird.md); compose fails loudly if the page is missing.
+# Environment-root guides are canonical. MkDocs exposes virtual website pages from them, while
+# scripts/compose.py renders standalone copies for student templates.
 DOCS_DIR = REPO_ROOT / "docs"
-DOCS_STUDENT_ENV_PAGES = DOCS_DIR / "students" / "environments"
+ENVIRONMENT_GUIDE_NAME = "environment.md"
+
+
+def env_environment_guide(env: str) -> Path:
+    """Return an environment's editable, canonical student guide."""
+    return ENVIRONMENT_PACKAGES_DIR / env / ENVIRONMENT_GUIDE_NAME
 
 
 def env_template_layer(env: str) -> Path:
@@ -109,8 +110,3 @@ def env_template_layer(env: str) -> Path:
 def env_examples_dir(env: str) -> Path:
     """Return the directory containing hand-authored examples for ``env``."""
     return ENVIRONMENT_PACKAGES_DIR / env / "examples"
-
-
-def env_docs_page(env: str) -> Path:
-    """The student docs page copied into ``build/templates/<env>`` during composition."""
-    return DOCS_STUDENT_ENV_PAGES / f"{env.replace('_', '-')}.md"

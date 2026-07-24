@@ -2,7 +2,7 @@
 
 Game Sandbox uses environment variables for configuration. The tracked `.env.default` file at the repository root defines all concrete runtime defaults. Features that need private credentials or external endpoints remain disabled until configured. `config.ts` has no duplicate fallback values, and the project has no secrets manager.
 
-This page is the full reference for those variables. Read [Backend](backend.md) for how the values are consumed, and [Development setup](development-setup.md) to get a working local environment first.
+This page is the full reference for those variables. Read [Backend](../runtime/backend.md) for how the values are consumed, and [Development setup](development.md) to get a working local environment first.
 
 ## How configuration loads
 
@@ -57,7 +57,7 @@ Dedicated parsers and Zod schemas validate every value. A missing or malformed s
 | `DOCKER_IMAGE_TAG_PREFIX` | `game-sandbox` | Image prefix |
 | `DOCKER_IMAGE_POLICY` | `reuse` | `reuse` an existing tag or `rebuild` before launch |
 | `FRONTEND_DIST` | `frontend/dist` | Built frontend directory; static serving is disabled when absent |
-| `DOCS_DIR` | `docs` | Documentation root the in-app student guides are read from; only its `students/` subtree is served |
+| `DOCS_DIR` | `docs` | Documentation root for shared in-app student guides; only its `students/` subtree is served |
 | `DOCS_INDEX_FILE` | unset | Optional markdown file that replaces the documentation landing page; unset serves `docs/students/index.md` |
 
 ## Recordings
@@ -95,7 +95,7 @@ The internal OpenAI-compatible proxy starts only when `LLM_UPSTREAM_URL` and at 
 | `LLM_DEVELOPMENT_TOKEN_BUDGET` | `100000` | Successful weighted-token allowance per participant and season |
 | `LLM_DEVELOPMENT_RATE_LIMIT_RPM` | `30` | Successful logical requests per minute per participant and season |
 
-`LLM_DEFAULT_MAX_OUTPUT_TOKENS` may be zero but must not exceed `LLM_MAX_OUTPUT_TOKENS`. Token budgets count input plus total completion tokens at the requested model tier's price. Reasoning tokens are reported separately as a subset of completion usage and are not charged twice. With the default 4:2:1 prices, `large` tokens cost four budget units, `medium` tokens cost two, and `small` tokens cost one. See [Budgets and limits](../specs/llm.md#budgets-and-limits) for the canonical rule.
+`LLM_DEFAULT_MAX_OUTPUT_TOKENS` may be zero but must not exceed `LLM_MAX_OUTPUT_TOKENS`. Token budgets count input plus total completion tokens at the requested model tier's price. Reasoning tokens are reported separately as a subset of completion usage and are not charged twice. With the default 4:2:1 prices, `large` tokens cost four budget units, `medium` tokens cost two, and `small` tokens cost one. See [Budgets and limits](../../specs/llm.md#budgets-and-limits) for the canonical rule.
 
 ## Submissions
 
@@ -110,7 +110,7 @@ The internal OpenAI-compatible proxy starts only when `LLM_UPSTREAM_URL` and at 
 | `OVERLAY_IMAGE_BUDGET` | `50` | Maximum cached submission overlays; active ready images are protected and count |
 | `OVERLAY_IMAGE_SWEEP_INTERVAL_MS` | `3600000` | Overlay sweep interval; sweeps also run at startup and after builds |
 
-`DATA_DIR` also contains the submission-snapshot volume at `<DATA_DIR>/submissions`. It holds one `.tar.gz` file per accepted submission, so its disk usage is bounded by `SUBMISSION_MAX_SIZE_MB` times the number of retained submissions. See [Backend](backend.md).
+`DATA_DIR` also contains the submission-snapshot volume at `<DATA_DIR>/submissions`. It holds one `.tar.gz` file per accepted submission, so its disk usage is bounded by `SUBMISSION_MAX_SIZE_MB` times the number of retained submissions. See [Backend](../runtime/backend.md).
 
 ## Deployment notes
 
@@ -118,14 +118,14 @@ Keep `ALLOW_LOCAL_SUBMISSIONS` disabled in real deployments. The gate, not path 
 
 `GITHUB_TOKEN` authenticates private-repository access and reachability checks only. It is never stored on a submission row or written to logs.
 
-Static frontend serving is wired only when `FRONTEND_DIST` points at an existing directory, so Vite development and tests without a built bundle are unaffected. See [Static frontend](backend.md#static-frontend).
+Static frontend serving is wired only when `FRONTEND_DIST` points at an existing directory, so Vite development and tests without a built bundle are unaffected. See [Static frontend](../runtime/backend.md#static-frontend).
 
-The Documentation page reads student guides from `DOCS_DIR` at request time, so updating a guide does not require a frontend rebuild. Set `DOCS_INDEX_FILE` to provide a class-specific landing page, such as a schedule or grading notes, without editing the shared guides. If the configured file cannot be read, the landing request fails instead of silently using the default page.
+The Documentation page reads shared guides from `DOCS_DIR` and discovers game guides from `environments/<env>/environment.md` at request time, so updating a guide does not require a frontend rebuild. Game guides are served at virtual `students/environments/<slug>.md` paths and have no mirror under `DOCS_DIR`. Set `DOCS_INDEX_FILE` to provide a class-specific landing page, such as a schedule or grading notes, without editing the shared guides. If the configured file cannot be read, the landing request fails instead of silently using the default page.
 
 Set `PUBLIC_ORIGIN`, `AUTH_SECRET`, and the bootstrap `ADMIN_EMAIL` and `ADMIN_PASSWORD` explicitly in a deployment. A normal startup refuses to run without them, preventing accidental use of the published development values. A deployment from a repository checkout must also set `AUTH_ALLOW_INSECURE_DEFAULTS=false` to override the local `.env.default`. Never enable this setting outside loopback development. In local mode, it accepts the published values and restricts the HTTP listener to loopback. When GitHub OAuth is configured, register `<PUBLIC_ORIGIN>/api/auth/callback/github` as the callback URL. The same OAuth app handles sign-in and the connect action on My Profile. `GITHUB_TOKEN` is separate from the OAuth client ID and secret and is used only for submissions. `sandbox.db` also contains the Better Auth tables (`user`, `session`, `account`, `verification`), which a separate programmatic migration creates outside the application's schema.
 
 ## See also
 
-- [Backend](backend.md) builds `Config` and distributes it to services.
-- [Execution boundary](execution.md) applies the sandbox quotas to every session container.
-- [Development setup](development-setup.md) gets a local environment running on the defaults.
+- [Backend](../runtime/backend.md) builds `Config` and distributes it to services.
+- [Execution boundary](../runtime/execution.md) applies the sandbox quotas to every session container.
+- [Development setup](development.md) gets a local environment running on the defaults.

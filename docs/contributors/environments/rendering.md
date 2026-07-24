@@ -2,7 +2,7 @@
 
 Each environment has one browser renderer for both live play and replay. Renderers use PixiJS through a common base class, draw from per-step state, and never inspect the live environment.
 
-Read the [interaction specification](../../specs/interaction.md) for the product contract and [Frontend](../frontend.md) for the pages that host a renderer.
+Read the [interaction specification](../../specs/interaction.md) for the product contract and [Frontend](../frontend/development.md) for the pages that host a renderer.
 
 ## Rendering model
 

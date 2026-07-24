@@ -4,7 +4,11 @@ on:
   pull_request:
     paths:
       - docs/**
+      - environments/*/environment.md
       - mkdocs.yml
+      - scripts/_environment_guides.py
+      - scripts/mkdocs_environment_guides.py
+      - scripts/_paths.py
       - specs/**
   push:
     branches: [main]

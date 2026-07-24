@@ -2,7 +2,7 @@
 
 The frontend is a Vue 3, Vite, and TypeScript browser app. It displays environments, submissions, sessions, replays, and leaderboards, and communicates with the backend through typed HTTP and WebSocket clients.
 
-Use this page for the frontend development workflow. Read [the frontend specification](../specs/frontend.md) for product behavior and [the interaction specification](../specs/interaction.md) for the browser/server boundary. Before changing visuals, also read [the design system](design.md). Renderer-specific guidance lives in [Rendering](environments/rendering.md).
+Use this page for the frontend development workflow. Read [the frontend specification](../../specs/frontend.md) for product behavior and [the interaction specification](../../specs/interaction.md) for the browser/server boundary. Before changing visuals, also read [the design system](design-system.md). Renderer-specific guidance lives in [Rendering](../environments/rendering.md).
 
 ## Source layout
 
@@ -69,7 +69,7 @@ Build features from the primitives in `components/ui/` and use semantic tokens f
 
 For a confirmation dialog, use `UiDialogActions` instead of a feature-local action row. Put the consequential action first, use the `danger` button variant for irreversible work, and follow it with a ghost Cancel button.
 
-Add every new primitive variant to the development-only `/styleguide` route. Follow the accessibility and visual rules in [the design system](design.md), and confirm new visual patterns with the project owner.
+Add every new primitive variant to the development-only `/styleguide` route. Follow the accessibility and visual rules in [the design system](design-system.md), and confirm new visual patterns with the project owner.
 
 Global styles are limited to tokens, element defaults, application-shell layout, and deliberately shared presentation. Keep feature styles scoped to their components.
 
@@ -77,8 +77,8 @@ Global styles are limited to tokens, element defaults, application-shell layout,
 
 Live sessions and replays share renderer and stage presentation, but their transports stay separate. Live pages own sockets and commands; replay pages own immutable recorded states and playback controls. Both use the renderer registry selected by environment metadata.
 
-Do not add environment-specific behavior to shared pages. Implement it in the environment's renderer and follow the contract and checklist in [Rendering](environments/rendering.md).
+Do not add environment-specific behavior to shared pages. Implement it in the environment's renderer and follow the contract and checklist in [Rendering](../environments/rendering.md).
 
 ### In-app documentation
 
-The Documentation page renders student guides from `docs/students/`. Markdown compatibility and link rewriting live in `docs/markdown.ts`. Product documentation outside the student subtree is linked to its source rather than served in the app.
+The Documentation page renders shared guides from `docs/students/` and virtual environment pages backed by `environments/<env>/environment.md`. Markdown compatibility and link rewriting live in `docs/markdown.ts`. Product documentation outside the student collection is linked to its source rather than served in the app.

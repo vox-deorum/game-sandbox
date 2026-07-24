@@ -107,7 +107,7 @@ Keep formatting and behavior consistent through feature components rather than p
 
 The cost tooltip is an approved interaction pattern for this feature. Whether it is a feature component or primitive, it must programmatically associate trigger and content, remain open when the pointer crosses from trigger to content, open from keyboard focus, close on Escape, leave focus on its trigger, support touch access, and avoid relying on the HTML `title` attribute alone. If implementation promotes it to a reusable `UiTooltip` primitive, that primitive also needs typed props and emits and examples for every variant on `/styleguide` in the same change.
 
-All styling uses semantic tokens and existing primitives. Add a read-only `UiMeter` with typed `value`, `max`, and required text-value props. Color is never its only indicator. Add its semantic-token styles, tests, `/styleguide` example, and row in the living primitive inventory at `docs/contributors/design.md` with its first use.
+All styling uses semantic tokens and existing primitives. Add a read-only `UiMeter` with typed `value`, `max`, and required text-value props. Color is never its only indicator. Add its semantic-token styles, tests, `/styleguide` example, and row in the living primitive inventory at `docs/contributors/frontend/design-system.md` with its first use.
 
 ## Tests
 

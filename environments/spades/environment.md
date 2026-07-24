@@ -1,6 +1,6 @@
 # Spades
 
-Spades is a four-player partnership card game. You and the player across the table form a team. Your team bids how many tricks it expects to take, then tries to take that many and score more points than the other team. Your agent controls one player. The [agent interface](../agent-interface.md) explains the `reset` and `act` methods shared by every environment. This page covers everything specific to Spades.
+Spades is a four-player partnership card game. You and the player across the table form a team. Your team bids how many tricks it expects to take, then tries to take that many and score more points than the other team. Your agent controls one player. The [agent interface](../../docs/students/agent-interface.md) explains the `reset` and `act` methods shared by every environment. This page covers everything specific to Spades.
 
 ## How the game works
 
@@ -244,7 +244,7 @@ Suppose `seat` is `2`. Your agent controls seat 2, so your `partner_seat` is 0 a
 
 ## Time limits
 
-Spades is turn-based, so moves have no fixed delay between them. Each call to `act` has a 1-second limit, and the agent may use up to 120 seconds of measured computation during one game. If `act` returns late during bidding, the environment makes a non-nil estimate from the hand. During card play, it chooses the legal card with the lowest rank, breaking ties with the lower suit ID. A human-controlled seat has 60 seconds to move. See [Time limits](../agent-interface.md#time-limits) for how these limits are measured and enforced.
+Spades is turn-based, so moves have no fixed delay between them. Each call to `act` has a 1-second limit, and the agent may use up to 120 seconds of measured computation during one game. If `act` returns late during bidding, the environment makes a non-nil estimate from the hand. During card play, it chooses the legal card with the lowest rank, breaking ties with the lower suit ID. A human-controlled seat has 60 seconds to move. See [Time limits](../../docs/students/agent-interface.md#time-limits) for how these limits are measured and enforced.
 
 ## Messaging
 
@@ -263,7 +263,7 @@ def chat(self, inbox):
 
 `chat` receives the inbox but not the observation. Save anything it needs, such as your seat or hand, in `act`, which runs first on every turn. Your partner is the seat across from you: `player_((your_seat + 2) % 4)`.
 
-A **targeted** message to your partner is delivered only to that seat, while a **broadcast** (`"to": None`) is delivered to the whole table. Every message is recorded and shown in replays, so even a targeted message is not secret. In Spades, each message is limited to **120 Unicode code points**. An emoji counts as one code point, and a season may lower the limit. The [agent interface](../agent-interface.md#chatinbox) explains delivery timing, send limits, and how chat time counts toward your limits.
+A **targeted** message to your partner is delivered only to that seat, while a **broadcast** (`"to": None`) is delivered to the whole table. Every message is recorded and shown in replays, so even a targeted message is not secret. In Spades, each message is limited to **120 Unicode code points**. An emoji counts as one code point, and a season may lower the limit. The [agent interface](../../docs/students/agent-interface.md#chatinbox) explains delivery timing, send limits, and how chat time counts toward your limits.
 
 The two worked examples show both shapes: `signaler` sends its partner a targeted suit signal and leads the suit it is told about, and `daredevil` bids nil, broadcasts a warning, and covers a partner who did the same.
 

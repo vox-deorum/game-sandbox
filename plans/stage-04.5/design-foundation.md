@@ -20,7 +20,7 @@ The semantic tier is the public vocabulary components consume:
 
 The visual direction for the palette is dark only: a modern-minimal base with slightly playful accents, a compromise between playfulness and usefulness. Concretely, the background and surface ramp stays a quiet blue-charcoal family close to Stage 4's, while the accent family gets livelier. The mint accent brightens, and warning amber and danger coral join it as real tokens instead of hardcoded hex. The exact values are expected to move during the checkpoint-two season on the styleguide; this file records them as implemented once the checkpoint passes.
 
-Breakpoints (480px, 768px, 1024px) cannot be custom properties, because CSS variables do not work inside media queries. They are documented constants in `docs/contributors/design.md` and used as plain values in scoped media queries.
+Breakpoints (480px, 768px, 1024px) cannot be custom properties, because CSS variables do not work inside media queries. They are documented constants in `docs/contributors/frontend/design-system.md` and used as plain values in scoped media queries.
 
 The consumption rule is simple: component CSS uses `var(--...)` only, with no raw hex colors or spacing literals outside `tokens.css`. Renderer modules are exempt, because renderers own their visual identity per the game-stage spotlight principle. Biome excludes `.vue` files, so this rule is not lint-enforced. It is enforced by review, stated in `design.md` and agents.md, and backed by a grep check over component sources.
 

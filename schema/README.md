@@ -19,4 +19,4 @@ Generation updates:
 - Python package schema copies
 - Golden fixtures
 
-`ts/` is the `@game-sandbox/schema` npm workspace. See [State schema](../docs/contributors/state-schema.md) for version and sidecar rules.
+`ts/` is the `@game-sandbox/schema` npm workspace. See [State schema](../docs/contributors/data/state-schema.md) for version and sidecar rules.

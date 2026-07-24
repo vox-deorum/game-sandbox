@@ -104,7 +104,9 @@ def _template_spec(package_dir: Path, meta: Any) -> TemplateEnvironmentSpec:
     modules = tuple(
         f"{package_dir.name}/{path.name}"
         for path in sorted(package_dir.iterdir())
-        if path.is_file() and path.name != "__init__.py" and not path.name.endswith((".pyc", ".pyo"))
+        if path.is_file()
+        and path.name not in {"__init__.py", "environment.md"}
+        and not path.name.endswith((".pyc", ".pyo"))
     )
     human_slots = getattr(meta, "human_slots", ())
     return TemplateEnvironmentSpec(

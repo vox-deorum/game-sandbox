@@ -26,7 +26,7 @@ GitHub integration. Step 6 connects a GitHub sign-in to an existing account with
 
 ## Spec references
 
-[frontend.md](../docs/specs/frontend.md) (the Identity section, revised in this change set from a GitHub-OAuth-only sketch to the Better Auth model with statuses and the admin roster), [configuration.md](../docs/contributors/configuration.md) (the auth variables replace the two allowlists), [backend.md](../docs/contributors/backend.md) (the identity and authorization section).
+[frontend.md](../docs/specs/frontend.md) (the Identity section, revised in this change set from a GitHub-OAuth-only sketch to the Better Auth model with statuses and the admin roster), [configuration.md](../docs/contributors/setup/configuration.md) (the auth variables replace the two allowlists), [backend.md](../docs/contributors/runtime/backend.md) (the identity and authorization section).
 
 ## Depends on
 

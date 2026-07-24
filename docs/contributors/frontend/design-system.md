@@ -6,7 +6,7 @@ The frontend design system has two layers:
 semantic CSS tokens → Vue UI primitives → feature components → pages
 ```
 
-Read this page before changing the interface. See [Frontend](frontend.md) for package mechanics and [Rendering](environments/rendering.md) for game visuals.
+Read this page before changing the interface. See [Frontend](development.md) for package mechanics and [Rendering](../environments/rendering.md) for game visuals.
 
 ## Working rules
 
@@ -93,7 +93,7 @@ The **application shell** has two levels of navigation:
 - The main content column is centered and width-limited.
 - Pages use a one-line context label such as `Games / Flappy Bird / …` instead of a breadcrumb component.
 
-See the [frontend contributor guide](frontend.md#navigation).
+See the [frontend contributor guide](development.md#navigation).
 
 The breakpoints are 480px, 768px, and 1024px. They are plain values because CSS custom properties cannot parameterize media queries.
 
@@ -121,5 +121,5 @@ The renderer canvas itself is exempt (it is the game, and renderers own their id
 
 ## See also
 
-- [specs/interaction.md](../specs/interaction.md): the renderer contract and the chrome split this system frames.
-- [frontend.md](frontend.md): the package, the source layout, and the page-by-page mechanics.
+- [specs/interaction.md](../../specs/interaction.md): the renderer contract and the chrome split this system frames.
+- [development.md](development.md): the package, the source layout, and the page-by-page mechanics.

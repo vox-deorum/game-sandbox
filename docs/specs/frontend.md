@@ -35,7 +35,7 @@ The site uses **Environment** and **Season** as its front-facing names, matching
 | My Profile | Signed-in identity and capabilities |
 | Users | Admin-only roster management, approval, bans, roles, and password resets |
 
-The Documentation page renders the student guides from `docs/students/` inside the app, with navigation between sections. It opens the student index by default. A deployment can use its own class home instead by setting `DOCS_INDEX_FILE` to a Markdown file. See [Configuration](../contributors/configuration.md). Links to documentation outside the app, such as specifications or contributor guides, open the source on GitHub.
+The Documentation page renders shared guides from `docs/students/` and dynamically discovered game guides from `environments/<env>/environment.md`, with navigation between sections. Game guides keep the stable virtual `students/environments/<slug>.md` paths used by MkDocs and the frontend routes. It opens the student index by default. A deployment can use its own class home instead by setting `DOCS_INDEX_FILE` to a Markdown file. See [Configuration](../contributors/setup/configuration.md). Links to documentation outside the app, such as specifications or contributor guides, open the source on GitHub.
 
 The environment overview targets three potentially different seasons:
 

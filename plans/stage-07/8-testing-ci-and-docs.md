@@ -26,7 +26,7 @@ Extend the existing CI definition (the Stage 1 [testing and CI](../stage-01/test
 
 - **Specs:** the stage already references [environment.md](../../docs/specs/environment.md), [interaction.md](../../docs/specs/interaction.md), [frontend.md](../../docs/specs/frontend.md), [execution.md](../../docs/specs/execution.md), and [leaderboard.md](../../docs/specs/leaderboard.md). Keep them aligned if implementation changes visible product behavior, especially the unpaced multi-slot loop, on-screen input, the multi-submission session image, and the `slots` start shape.
 - **Plan:** keep the [plans README stage overview](../README.md) Stage 7 line aligned with the parent stage and subplans.
-- **Contributor docs:** update the [template guide](../../docs/contributors/template.md) and any environment or execution contributor docs that the Hearts environment, the multi-submission image, or the multi-slot loop touch.
+- **Contributor docs:** update the [template guide](../../docs/contributors/environments/templates.md) and any environment or execution contributor docs that the Hearts environment, the multi-submission image, or the multi-slot loop touch.
 - **Stage status lines:** flip the Stage 7 parent and each subplan's status from "not started" through "in progress" and "done" as work lands, the same discipline Stages 5 and 6 followed.
 - Run `uv run python scripts/ci.py docs` (the strict documentation build) as the doc gate.
 

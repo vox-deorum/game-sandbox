@@ -46,9 +46,9 @@ The frontend rides the existing workspace-wide jobs with no YAML change. `check:
 
 Contributor docs live under `docs/contributors/`.
 
-- `docs/contributors/frontend.md` covers package layout, how to run the dev server against a local backend, the mock identity and how to act as another user, the renderer contract and registry, how to add a renderer for a new environment, and the replay viewer's transport.
-- `docs/contributors/backend.md` covers the new configuration (`SESSION_ALLOWLIST`, the retention variables, `FRONTEND_DIST`), `GET /api/me`, the recordings table, and the retention sweep.
-- `docs/contributors/execution.md` covers the WS `user` query parameter in the protocol section.
-- `docs/contributors/test.md` covers the `frontend-e2e` job.
+- `docs/contributors/frontend/development.md` covers package layout, how to run the dev server against a local backend, the mock identity and how to act as another user, the renderer contract and registry, how to add a renderer for a new environment, and the replay viewer's transport.
+- `docs/contributors/runtime/backend.md` covers the new configuration (`SESSION_ALLOWLIST`, the retention variables, `FRONTEND_DIST`), `GET /api/me`, the recordings table, and the retention sweep.
+- `docs/contributors/runtime/execution.md` covers the WS `user` query parameter in the protocol section.
+- `docs/contributors/testing/index.md` covers the `frontend-e2e` job.
 
 Student pages stayed untouched: nothing participant-facing changes until submissions arrive in Stage 5.
