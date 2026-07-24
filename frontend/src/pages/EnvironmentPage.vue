@@ -25,6 +25,7 @@ import {
   listReleasedSeasons,
   listSeasons,
   listWatchAgents,
+  type PlayParameters,
   type PublicSeasonView,
   type SeasonView,
   type StartPayload,
@@ -66,10 +67,11 @@ const leaderboards = ref<EnvironmentLeaderboards | null>(null)
 const releasedSeasons = ref<SeasonView[]>([])
 // Public watch/play is enabled only when a season is the game's play-open target. Released history
 // stays readable regardless, so the boards embed below is independent of this gate.
-const playParameters = ref<{
-  season_id: string | null
-  values: Record<string, import('@game-sandbox/schema/environment').ParameterValue>
-} | null>(null)
+const playParameters = ref<PlayParameters | null>(null)
+// A failed prefill read is not the same fact as a closed play window, and saying "no season is open"
+// for a request that never landed would misreport the season's state, so track the failure separately
+// and let the empty state say which one happened.
+const playParametersFailed = ref(false)
 const playOpen = computed(
   () => playParameters.value !== null && playParameters.value.season_id !== null,
 )
@@ -158,9 +160,11 @@ onMounted(() => {
   getPlayParameters(envId).then(
     (values) => {
       playParameters.value = values
+      playParametersFailed.value = false
     },
     () => {
       playParameters.value = null
+      playParametersFailed.value = true
     },
   )
 })
@@ -320,6 +324,9 @@ async function submitStart(payload: StartPayload): Promise<void> {
         :parameters="playParameters.values"
         :season-label="playableSeason === null ? undefined : formatSeasonName(playableSeason)"
       />
+      <UiEmptyState v-else-if="playParametersFailed">
+        The play settings for this environment could not be loaded. Refresh to try again.
+      </UiEmptyState>
       <UiEmptyState v-else>No season is currently open for play.</UiEmptyState>
     </section>
 

@@ -17,7 +17,6 @@
     "pace_interval_ms": 50,
     "parameters": [
       {
-        "choices": [],
         "default": 1,
         "description": "Number of seats in each game.",
         "max": 1,
@@ -27,7 +26,6 @@
         "type": "int"
       },
       {
-        "choices": [],
         "default": 100,
         "description": "Vertical opening between pipes.",
         "max": 200,
@@ -64,7 +62,6 @@
     "pace_interval_ms": null,
     "parameters": [
       {
-        "choices": [],
         "default": 4,
         "description": "Number of seats in each game.",
         "max": 4,
@@ -101,7 +98,6 @@
     "pace_interval_ms": null,
     "parameters": [
       {
-        "choices": [],
         "default": 4,
         "description": "Number of seats in each game.",
         "max": 4,

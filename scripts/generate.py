@@ -314,6 +314,7 @@ def generate_fixtures() -> None:
             {"name": "powerups", "value": ["shield", "shield"], "valid": False},
             {"name": "powerups", "value": ["missing"], "valid": False},
         ],
+        # Layers both implementations accept, so both can assert the same resolved values.
         "resolution_cases": [
             {
                 "layers": [
@@ -329,10 +330,9 @@ def generate_fixtures() -> None:
                     "mode": "normal",
                     "powerups": ["shield", "magnet"],
                 },
-                "issue_names": [],
             },
             {
-                "layers": [{"unknown": "value", "pipe_gap": 0, "mode": "missing"}],
+                "layers": [],
                 "values": {
                     "seats": 4,
                     "pipe_gap": 100,
@@ -342,8 +342,19 @@ def generate_fixtures() -> None:
                     "mode": "normal",
                     "powerups": ["shield"],
                 },
-                "issue_names": ["mode", "pipe_gap", "unknown"],
             },
+        ],
+        # One rejected entry per case, because the two resolvers report rejection differently and only
+        # the set of rejected entries is genuinely shared. TypeScript collects issues and keeps the
+        # default, which the admin API needs so it can name the bad override; Python raises on the
+        # first bad value, which is what the harness wants when a launch configuration is wrong. A
+        # multi-error layer could not describe both, so each case names exactly one bad entry and each
+        # side asserts rejection in its own terms.
+        "rejection_cases": [
+            {"layer": {"pipe_gap": 0}, "name": "pipe_gap"},
+            {"layer": {"mode": "missing"}, "name": "mode"},
+            {"layer": {"powerups": ["missing"]}, "name": "powerups"},
+            {"layer": {"unknown": "value"}, "name": "unknown"},
         ],
     }
     (FIXTURES_DIR / "parameter-values.json").write_text(

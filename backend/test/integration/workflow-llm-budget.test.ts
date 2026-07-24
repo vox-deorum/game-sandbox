@@ -29,6 +29,7 @@ import { SubmissionSnapshotStore } from '../../src/submission/snapshot-store.js'
 import { createSubmissionSource } from '../../src/submission/source/index.js'
 import type { RunEvent, TerminalRunStatus, WorkflowRunner } from '../../src/workflow/runner.js'
 import { createWorkflowRunner } from '../../src/workflow/workflow-runner.js'
+import { createRunOrFail } from '../support/harness.js'
 import { DEPS_VERSION } from './support/base-image.js'
 import { createLlmUpstreamStub, RETRY_SUCCESS_ATTEMPTS } from './support/llm-upstream.js'
 
@@ -210,7 +211,7 @@ describe('workflow LLM budget exhaustion (Docker)', () => {
       { kind: 'builtin-naive' },
       { kind: 'builtin-naive' },
     ]
-    const run = await storage.createRunWithSchedule(season.id, 'operator', () => ({
+    const run = await createRunOrFail(storage, season.id, 'operator', () => ({
       parametersSnapshot: { seats: 4 },
       scheduledGames: seeds.map((seed, gameIndex) => ({
         match_index: 0,
@@ -220,7 +221,6 @@ describe('workflow LLM budget exhaustion (Docker)', () => {
       })),
       llmPolicy: policy,
     }))
-    if (run === undefined) throw new Error('expected a scheduled run')
 
     const terminal = await runToTerminal(runner, run.id)
     expect(terminal.status).toBe('completed')

@@ -157,6 +157,9 @@ export type AgentRef =
   | { kind: 'submission'; submission_id: string; user_id: string }
   | { kind: 'builtin-naive' }
 
+/** The submitted-agent variant of {@link AgentRef}; the only kind a submission snapshot carries. */
+export type SubmissionRef = Extract<AgentRef, { kind: 'submission' }>
+
 /** Shared public usage totals, retained here as a compatibility export for storage consumers. */
 export type LlmModelUsage = SchemaLlmModelUsage
 

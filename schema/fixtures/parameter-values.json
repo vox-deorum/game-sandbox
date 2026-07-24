@@ -86,9 +86,36 @@
       "type": "multi_choice"
     }
   ],
+  "rejection_cases": [
+    {
+      "layer": {
+        "pipe_gap": 0
+      },
+      "name": "pipe_gap"
+    },
+    {
+      "layer": {
+        "mode": "missing"
+      },
+      "name": "mode"
+    },
+    {
+      "layer": {
+        "powerups": [
+          "missing"
+        ]
+      },
+      "name": "powerups"
+    },
+    {
+      "layer": {
+        "unknown": "value"
+      },
+      "name": "unknown"
+    }
+  ],
   "resolution_cases": [
     {
-      "issue_names": [],
       "layers": [
         {
           "pipe_gap": 120,
@@ -117,18 +144,7 @@
       }
     },
     {
-      "issue_names": [
-        "mode",
-        "pipe_gap",
-        "unknown"
-      ],
-      "layers": [
-        {
-          "mode": "missing",
-          "pipe_gap": 0,
-          "unknown": "value"
-        }
-      ],
+      "layers": [],
       "values": {
         "enabled": false,
         "gravity": 1.5,

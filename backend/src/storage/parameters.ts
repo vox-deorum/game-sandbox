@@ -7,6 +7,21 @@ function isParameterValue(value: unknown): value is ParameterValue {
   return Array.isArray(value) && value.every((item) => typeof item === 'string')
 }
 
+/**
+ * Check that a value really is a storable parameter map. Both codecs share it, so an encode and a
+ * decode of the same map can never disagree about what storage accepts.
+ */
+function assertParameterMap(value: unknown): asserts value is Record<string, ParameterValue> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error('parameter map must be a JSON object')
+  }
+  for (const [name, parameter] of Object.entries(value)) {
+    if (!isParameterValue(parameter)) {
+      throw new Error(`parameter map value ${name} is not a JSON-safe parameter value`)
+    }
+  }
+}
+
 export function parseParameterMap(text: string): Record<string, ParameterValue> {
   let value: unknown
   try {
@@ -16,18 +31,13 @@ export function parseParameterMap(text: string): Record<string, ParameterValue> 
       `parameter map is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
     )
   }
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new Error('parameter map must be a JSON object')
-  }
-  for (const [name, parameter] of Object.entries(value)) {
-    if (!isParameterValue(parameter)) {
-      throw new Error(`parameter map value ${name} is not a JSON-safe parameter value`)
-    }
-  }
-  return value as Record<string, ParameterValue>
+  assertParameterMap(value)
+  return value
 }
 
 export function encodeParameterMap(values: Record<string, ParameterValue>): string {
-  const parsed = parseParameterMap(JSON.stringify(values))
-  return JSON.stringify(parsed)
+  // Checked before serializing rather than after, so a value `JSON.stringify` would quietly drop
+  // (an explicit `undefined`) is rejected instead of vanishing from the stored map.
+  assertParameterMap(values)
+  return JSON.stringify(values)
 }

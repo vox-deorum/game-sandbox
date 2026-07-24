@@ -23,6 +23,7 @@ import type {
 } from '../../src/storage/index.js'
 import { decodeSeasonConfig } from '../../src/storage/index.js'
 import { openSqlite } from '../../src/storage/sqlite.js'
+import { createRunOrFail } from '../support/harness.js'
 import { TEST_DISABLED_OFFICIAL_LLM_POLICY } from '../support/llm-options.js'
 
 const ENV = 'flappy_bird'
@@ -98,16 +99,11 @@ describe('leaderboard storage on :memory:', () => {
     _submissions: AgentRef[],
     games: ScheduledGameInput[],
   ): Promise<SeasonRun> {
-    return storage
-      .createRunWithSchedule(seasonId, requestedBy, () => ({
-        parametersSnapshot: { seats: 1 },
-        scheduledGames: games,
-        llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
-      }))
-      .then((run) => {
-        if (run === undefined) throw new Error('expected a scheduled run')
-        return run
-      })
+    return createRunOrFail(storage, seasonId, requestedBy, () => ({
+      parametersSnapshot: { seats: 1 },
+      scheduledGames: games,
+      llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
+    }))
   }
 
   beforeEach(async () => {
@@ -283,7 +279,7 @@ describe('leaderboard storage on :memory:', () => {
       { kind: 'submission', submission_id: submission.id, user_id: submission.user_id },
     ]
     const game: ScheduledGameInput = { ...GAME_ONE, slots: roster }
-    const run = await storage.createRunWithSchedule(season.id, 'dev-user', ({ submissions }) => {
+    const run = await createRunOrFail(storage, season.id, 'dev-user', ({ submissions }) => {
       expect(submissions).toEqual(roster)
       return {
         parametersSnapshot: { seats: 1 },
@@ -291,7 +287,6 @@ describe('leaderboard storage on :memory:', () => {
         llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
       }
     })
-    if (run === undefined) throw new Error('expected a scheduled run')
 
     expect(run.status).toBe('pending')
     expect(run.requested_by).toBe('dev-user')
@@ -304,6 +299,23 @@ describe('leaderboard storage on :memory:', () => {
     expect(JSON.parse(firstOf(games).slots)).toEqual(game.slots)
   })
 
+  it('refuses an empty successful run plan without inserting a run', async () => {
+    const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
+    const outcome = await storage.createRunWithSchedule(season.id, 'dev-user', () => ({
+      ok: true,
+      parametersSnapshot: { seats: 1 },
+      scheduledGames: [],
+      llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
+    }))
+
+    expect(outcome).toEqual({
+      ok: false,
+      code: 'empty_schedule',
+      reason: 'the season resolves to no games',
+    })
+    expect(await storage.listRunsBySeason(season.id)).toEqual([])
+  })
+
   it('freezes a complete official LLM policy at write time and validates it there', async () => {
     const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
     const policy = {
@@ -312,11 +324,10 @@ describe('leaderboard storage on :memory:', () => {
       session: { token_budget: 12_000, rate_limit_rpm: 7 },
     } as const
     // The resolver receives the same config text the transaction freezes into `config_snapshot`.
-    const run = await storage.createRunWithSchedule(season.id, 'dev-user', ({ config }) => {
+    const run = await createRunOrFail(storage, season.id, 'dev-user', ({ config }) => {
       expect(config.deps_version).toBe(1)
       return { parametersSnapshot: { seats: 1 }, scheduledGames: ONE_GAME, llmPolicy: policy }
     })
-    if (run === undefined) throw new Error('expected a scheduled run')
 
     await storage.updateSeasonConfig(season.id, {
       deps_version: 1,
@@ -337,6 +348,7 @@ describe('leaderboard storage on :memory:', () => {
 
     await expect(
       storage.createRunWithSchedule(season.id, 'dev-user', () => ({
+        ok: true,
         parametersSnapshot: { seats: 1 },
         scheduledGames: ONE_GAME,
         llmPolicy: { enabled: false, models: {}, session: { token_budget: 0, rate_limit_rpm: 1 } },

@@ -15,11 +15,10 @@
  */
 
 import type { ScheduledGameInput } from '../storage/index.js'
-import type { AgentRef } from '../storage/schema.js'
+import type { AgentRef, SubmissionRef } from '../storage/schema.js'
 import type { MatchConfig, SlotSpec } from '../storage/season-config.js'
 
-/** The submitted-agent variant of {@link AgentRef}; the only kind a submission snapshot carries. */
-export type SubmissionRef = Extract<AgentRef, { kind: 'submission' }>
+export type { SubmissionRef } from '../storage/schema.js'
 
 /** The shared built-in baseline seat ref. It is not a submission row. */
 const NAIVE: AgentRef = { kind: 'builtin-naive' }

@@ -16,7 +16,7 @@ import type { NewRecordingInput, ScheduledGameInput, Storage } from '../src/stor
 import { DevelopmentLedgerStore, ExecutionTelemetryStore } from '../src/storage/llm/index.js'
 import { openSqliteStorage } from '../src/storage/sqlite.js'
 import { FakeSessionProcess } from './support/fake-driver.js'
-import { flush } from './support/harness.js'
+import { createRunOrFail, flush } from './support/harness.js'
 import { TEST_DISABLED_OFFICIAL_LLM_POLICY } from './support/llm-options.js'
 
 const DAY = 86_400_000
@@ -203,7 +203,7 @@ describe('retention', () => {
       const deleted: string[] = []
       const reclaimer = { deleteScope: (id: string) => deleted.push(id) }
       const season = await storage.createSeason({ env_id: 'flappy_bird', deps_version: 1 })
-      const run = await storage.createRunWithSchedule(season.id, 'operator', () => ({
+      const run = await createRunOrFail(storage, season.id, 'operator', () => ({
         parametersSnapshot: { seats: 1 },
         scheduledGames: [
           { match_index: 0, game_index: 0, seed: 1, slots: [{ kind: 'builtin-naive' }] },
@@ -211,7 +211,6 @@ describe('retention', () => {
         ],
         llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
       }))
-      if (run === undefined) throw new Error('expected a scheduled run')
       const game = (await storage.listRunGames(run.id))[0]
       if (game === undefined) throw new Error('expected a scheduled game')
       await storage.setRunStatus(run.id, 'running')
@@ -427,12 +426,11 @@ describe('retention', () => {
 
     /** Drive a completed run for a season whose single game points at a recording id. */
     async function completedRunWithRecording(seasonId: string, recordingId: string): Promise<void> {
-      const run = await storage.createRunWithSchedule(seasonId, 'op', () => ({
+      const run = await createRunOrFail(storage, seasonId, 'op', () => ({
         parametersSnapshot: { seats: 1 },
         scheduledGames: NAIVE_GAME,
         llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
       }))
-      if (run === undefined) throw new Error('expected a scheduled run')
       const game = (await storage.listRunGames(run.id))[0]
       if (game === undefined) {
         throw new Error('expected a scheduled game')

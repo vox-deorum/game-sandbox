@@ -13,12 +13,13 @@ import asyncio
 import json
 import sys
 import webbrowser
+from collections.abc import Mapping
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 
 from sandbox.env import META, PLAYER_SLOT, default_action, extract_overlay, make_env
-from sandbox.harness.environment import EnvironmentEntry, resolve_parameters
+from sandbox.harness.environment import EnvironmentEntry, ParameterValue, resolve_parameters
 from sandbox.harness.live import UNSET_TIMEOUT, UnsetTimeout
 from sandbox.harness.local_server import LocalServer
 from sandbox.harness.manifest import load_agent as _load_agent
@@ -65,8 +66,15 @@ def play_episode(
     seed: int,
     max_steps: int | None = None,
     slot: str = PLAYER_SLOT,
+    parameters: Mapping[str, ParameterValue] | None = None,
 ) -> float:
-    """Play one headless episode with one supplied agent and legal defaults for every other seat."""
+    """Play one headless episode with one supplied agent and legal defaults for every other seat.
+
+    ``env`` is already built, so the factory below returns it as-is and ignores the map the harness
+    hands it. Pass the same ``parameters`` the environment was built from, otherwise the recording
+    would describe settings the game did not actually run with. Omitting them means plain defaults,
+    which is what ``make_env(resolve_parameters(META))`` produces.
+    """
     slots = {
         slot_id: AgentSlot(agent) if slot_id == slot else ExternalSlot(_DefaultSource())
         for slot_id in possible_slots()
@@ -75,7 +83,7 @@ def play_episode(
         _entry(lambda _parameters: env),
         slots,
         seed=seed,
-        parameters=resolve_parameters(META),
+        parameters=resolve_parameters(META) if parameters is None else parameters,
         max_steps=max_steps,
     )
     return result.scores[slot]
@@ -85,9 +93,19 @@ def run_headless(*, seed: int, max_steps: int | None, seat: int) -> float:
     """Run the selected seat through the harness without local networking or browser rendering."""
     slots = possible_slots()
     slot = slots[seat]
-    env = make_env(resolve_parameters(META))
+    # One resolution feeds both the environment and the episode, so the recorded parameters always
+    # describe the environment that actually ran.
+    parameters = resolve_parameters(META)
+    env = make_env(parameters)
     try:
-        return play_episode(load_agent(REPO_ROOT), env, seed=seed, max_steps=max_steps, slot=slot)
+        return play_episode(
+            load_agent(REPO_ROOT),
+            env,
+            seed=seed,
+            max_steps=max_steps,
+            slot=slot,
+            parameters=parameters,
+        )
     finally:
         env.close()
 

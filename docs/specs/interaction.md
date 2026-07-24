@@ -63,7 +63,9 @@ Before opening a start form, the browser loads the play-open season identifier a
 
 The browser retains hidden parameter values, applies visible player edits, and submits the expected season identifier plus the complete map. A missing or unknown parameter is invalid. If another season became play-open while the page was open, session start returns a typed conflict before a session row or container is created. An edit to the same season does not silently replace values already loaded by the player.
 
-Parameter validation happens before slot-shape validation. The resolved `seats` value determines the required slot identifiers and the size of the seat-assignment grid. Growing a future variable-seat grid fills new seats with the built-in Naive agent. Shrinking it keeps the human in the first remaining human-capable seat when possible and otherwise prevents the session from starting.
+Because the submitted map already carries the season layer, session start validates that map against the current declarations and applies no further layer beneath it. The player is answerable for the values they submitted and for nothing else.
+
+Parameter validation happens before slot-shape validation. The resolved `seats` value determines the required slot identifiers and the size of the seat-assignment grid. The grid follows only a seat count the declaration accepts, so a half-typed entry leaves the current seats in place rather than resizing and discarding assignments. Growing a future variable-seat grid fills new seats with whatever the dialog seats by default, which is the Naive agent when playing and the chosen agent when watching or rating. Shrinking it keeps the human in the first remaining human-capable seat when possible and otherwise prevents the session from starting.
 
 ## Human input
 

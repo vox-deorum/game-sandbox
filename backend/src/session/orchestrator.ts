@@ -11,16 +11,13 @@
 import { randomInt, randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
 
-import {
-  type ParameterValue,
-  resolveParameters,
-  validateCompleteParameters,
-} from '@game-sandbox/schema/environment'
+import { type ParameterValue, validateCompleteParameters } from '@game-sandbox/schema/environment'
 import type { UserDirectory } from '../auth/users.js'
 import type { Config } from '../config.js'
 import { currentSessionBaseImageSpec } from '../deps-version.js'
 import type { ExecutionDriver, ImageRef } from '../driver/index.js'
 import { buildSandboxProfile } from '../driver/sandbox.js'
+import { resolvedSeatCount } from '../environment-parameters.js'
 import type { EnvironmentMeta, EnvironmentRegistry } from '../environments.js'
 import { resolveLlm as defaultResolveLlm } from '../llm/config.js'
 import { optionalField } from '../optional-field.js'
@@ -225,34 +222,25 @@ export class Orchestrator {
       )
     }
     const seasonConfig = decodeSeasonConfig(playSeason.config)
-    const completeParameters = validateCompleteParameters(meta.parameters, request.parameters)
-    if (completeParameters.issues.length > 0) {
+    // The start form prefetched the season's resolved values and applied the player's edits, so the
+    // submitted map already carries the season layer. Validating it against the current declarations
+    // is the whole check: re-applying the stored overrides underneath a complete map could not change
+    // a single value, and would only let an override the environment no longer accepts fail a start
+    // the player got right.
+    const resolvedParameters = validateCompleteParameters(meta.parameters, request.parameters)
+    const parameterIssue = resolvedParameters.issues[0]
+    if (parameterIssue !== undefined) {
       throw new OrchestratorError(
         400,
-        `invalid parameters: ${completeParameters.issues[0]?.name} ${completeParameters.issues[0]?.message}`,
+        `invalid parameters: ${parameterIssue.name} ${parameterIssue.message}`,
         'invalid_parameters',
       )
     }
-    const resolvedParameters = resolveParameters(
-      meta.parameters,
-      seasonConfig.overrides?.parameters ?? {},
-      completeParameters.values,
+    const { assignments, mode } = this.validateSlotShape(
+      meta,
+      request.slots,
+      resolvedSeatCount(resolvedParameters.values),
     )
-    if (resolvedParameters.issues.length > 0) {
-      throw new OrchestratorError(
-        400,
-        `invalid parameters: ${resolvedParameters.issues[0]?.name} ${resolvedParameters.issues[0]?.message}`,
-        'invalid_parameters',
-      )
-    }
-    const seats = resolvedParameters.values.seats
-    if (typeof seats !== 'number' || !Number.isSafeInteger(seats)) {
-      throw new OrchestratorError(
-        500,
-        `environment ${meta.env_id} has no valid resolved seats parameter`,
-      )
-    }
-    const { assignments, mode } = this.validateSlotShape(meta, request.slots, seats)
 
     const activeId = this.registry.activeIdForUser(request.userId)
     if (activeId !== undefined) {

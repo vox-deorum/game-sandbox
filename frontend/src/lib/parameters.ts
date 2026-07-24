@@ -1,6 +1,8 @@
 import {
   type EnvParameter,
   type ParameterValue,
+  resolveParameters,
+  validateCompleteParameters,
   validateParameterValue,
 } from '@game-sandbox/schema/environment'
 
@@ -17,36 +19,33 @@ export function visibleParameters(declarations: readonly EnvParameter[]): EnvPar
   })
 }
 
-/** Start from a complete prefill map while filling any missing value with its declaration default. */
+/**
+ * Start from a complete prefill map, filling any missing or rejected value with its declaration
+ * default. This is the shared resolver's own defaulting behavior, so a form cannot disagree with the
+ * server about what a partial or drifted layer resolves to.
+ */
 export function initializeParameters(
   declarations: readonly EnvParameter[],
   values: Readonly<Record<string, ParameterValue>> = {},
 ): Record<string, ParameterValue> {
-  return Object.fromEntries(
-    declarations.map((parameter) => {
-      const candidate = values[parameter.name] ?? parameter.default
-      const result = validateParameterValue(parameter, candidate)
-      return [parameter.name, result.issue === undefined ? result.value : parameter.default]
-    }),
-  )
+  return resolveParameters(declarations, values).values
 }
 
-/** Validate and normalize the complete form state, preserving valid values for rendering. */
+/**
+ * Validate and normalize the complete form state, keeping the valid values and reporting one message
+ * per rejected field. A thin adapter over the shared complete-map validator, so the rules a form
+ * enforces are literally the rules the server enforces.
+ */
 export function validateParameters(
   declarations: readonly EnvParameter[],
   values: Readonly<Record<string, unknown>>,
 ): { values: Record<string, ParameterValue>; errors: Record<string, string> } {
-  const normalized: Record<string, ParameterValue> = {}
+  const result = validateCompleteParameters(declarations, values)
   const errors: Record<string, string> = {}
-  for (const parameter of declarations) {
-    const result = validateParameterValue(parameter, values[parameter.name])
-    if (result.issue === undefined) {
-      normalized[parameter.name] = result.value
-    } else {
-      errors[parameter.name] = result.issue
-    }
+  for (const issue of result.issues) {
+    errors[issue.name] = issue.message
   }
-  return { values: normalized, errors }
+  return { values: result.values, errors }
 }
 
 /** A compact, user-facing representation for a resolved parameter value. */
@@ -67,15 +66,28 @@ export function formatParameterValue(parameter: EnvParameter, value: ParameterVa
   return String(value)
 }
 
-/** The resolved seat count, with the metadata maximum as a defensive fallback. */
+/**
+ * The seat count a parameter map resolves to, or undefined when its `seats` value does not satisfy the
+ * declaration. The value is checked against the declaration rather than merely for integer-ness, so an
+ * out-of-range entry is never mistaken for a usable seat count. A caller that renders a seat grid keeps
+ * its last defined answer instead of resizing on undefined: a half-typed seats value must not evict
+ * seat assignments before the form's own validation reports it.
+ */
+export function seatCountOf(
+  declarations: readonly EnvParameter[],
+  values: Readonly<Record<string, unknown>>,
+): number | undefined {
+  const seats = declarations.find((parameter) => parameter.name === 'seats')
+  if (seats === undefined) return undefined
+  const result = validateParameterValue(seats, values[seats.name])
+  return typeof result.value === 'number' ? result.value : undefined
+}
+
+/** The resolved seat count, with a caller-supplied fallback for a map carrying no usable value. */
 export function resolvedSeatCount(
   declarations: readonly EnvParameter[],
   values: Readonly<Record<string, ParameterValue>>,
   fallback: number,
 ): number {
-  const seats = declarations.find((parameter) => parameter.name === 'seats')
-  const value = values.seats
-  if (seats?.type === 'int' && typeof value === 'number' && Number.isSafeInteger(value))
-    return value
-  return fallback
+  return seatCountOf(declarations, values) ?? fallback
 }

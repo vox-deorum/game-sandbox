@@ -35,7 +35,12 @@ from typing import Any, Protocol, cast, runtime_checkable
 from .agent import has_chat, has_learn
 from .chat import ChatRouter
 from .clock import Clock, SystemClock
-from .environment import EnvironmentEntry, ParameterValue, resolve_parameters
+from .environment import (
+    EnvironmentEntry,
+    ParameterValue,
+    int_parameter,
+    validate_complete_parameters,
+)
 from .recording import RecordingStore
 from .state import (
     Message,
@@ -244,7 +249,9 @@ class Episode:
             episode_limit_ms if episode_limit_ms is not None else entry.meta.episode_limit_ms
         )
         self._max_steps = max_steps
-        self._parameters = resolve_parameters(entry.meta, parameters)
+        # The launch configuration is produced by a caller that already resolved every value, so a
+        # missing name is an upstream bug rather than a request to substitute a default.
+        self._parameters = validate_complete_parameters(entry.meta, parameters)
 
         # Messaging is enabled only when the environment metadata AND the session config agree, and
         # the effective cap is the minimum of the two, so a config override can disable or tighten but
@@ -291,8 +298,7 @@ class Episode:
             env = self._entry.make(self._parameters)
             self._env = env
             env.reset(seed=self._seed)
-            seat_count = self._parameters["seats"]
-            assert isinstance(seat_count, int)
+            seat_count = int_parameter(self._parameters, "seats")
             if len(env.possible_agents) != seat_count:
                 raise ValueError(
                     "environment factory produced "

@@ -13,7 +13,7 @@ import { join } from 'node:path'
 import fastifyStatic from '@fastify/static'
 import websocket from '@fastify/websocket'
 import type { RecordingHeader } from '@game-sandbox/schema'
-import { type ParameterValue, resolveParameters } from '@game-sandbox/schema/environment'
+import type { ParameterValue } from '@game-sandbox/schema/environment'
 import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify'
 
 import { registerAdminRoutes } from './admin/routes.js'
@@ -23,6 +23,7 @@ import type { UserDirectory } from './auth/users.js'
 import type { LlmOptions } from './config.js'
 import { buildDocsManifest, DocsIndexError, readDocsIndex, readDocsPage } from './docs.js'
 import { REPO_ROOT } from './env-files.js'
+import { resolveSeasonParameters } from './environment-parameters.js'
 import type { EnvironmentRegistry } from './environments.js'
 import { createRequestIdentity } from './identity.js'
 import { registerLeaderboardRoutes } from './leaderboards/routes.js'
@@ -154,13 +155,13 @@ const START_SESSION_SCHEMA = {
       season_id: { type: 'string', minLength: 1 },
       seed: { type: 'integer', minimum: 0 },
       human_slot_timeout_ms: { type: 'integer', minimum: 0 },
-      parameters: {
-        type: 'object',
-        additionalProperties: {
-          type: ['boolean', 'number', 'string', 'array'],
-          items: { type: 'string' },
-        },
-      },
+      // Only the shape is checked here. Which values a parameter accepts is the environment's own
+      // contract, and the orchestrator answers it against the live declarations with a typed
+      // `invalid_parameters` reason. Restating the value types in JSON Schema would duplicate that
+      // rule in a weaker form, and Ajv's request coercion would rewrite values on the way through
+      // (a union branch happily turns the integer 1 into the boolean true) before the real validator
+      // ever saw them.
+      parameters: { type: 'object' },
       slots: {
         type: 'object',
         minProperties: 1,
@@ -287,7 +288,7 @@ function admitSubmissionSource(
 }
 
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
-  const app = Fastify({ logger: false, ajv: { customOptions: { strictTypes: false } } })
+  const app = Fastify({ logger: false })
   await app.register(websocket)
 
   // The one place a request is turned into an acting user: a Better Auth session-cookie lookup,
@@ -314,14 +315,18 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         return reply.code(404).send({ error: 'no such environment' })
       }
       const season = await deps.storage.getPublicPlaySeason(meta.env_id)
-      const resolved = resolveParameters(
-        meta.parameters,
-        season === undefined ? {} : (decodeSeasonConfig(season.config).overrides?.parameters ?? {}),
+      const resolved = resolveSeasonParameters(
+        meta,
+        season === undefined ? {} : decodeSeasonConfig(season.config).overrides?.parameters,
       )
-      if (resolved.issues.length > 0) {
-        return reply
-          .code(500)
-          .send({ error: `environment parameters are invalid: ${resolved.issues[0]?.message}` })
+      // A stored override the current declarations no longer accept is an operator problem, not a
+      // reason to take play offline: the rejected override falls back to the environment default and
+      // the remaining values are unaffected, so serve them and record the drift for the operator.
+      if (resolved.issue !== undefined) {
+        // The app is built with `logger: false`, so `request.log` would discard this.
+        console.warn(
+          `season ${season?.id} parameter override ${resolved.issue.name} ${resolved.issue.message}; using the environment default`,
+        )
       }
       return { season_id: season?.id ?? null, values: resolved.values }
     },

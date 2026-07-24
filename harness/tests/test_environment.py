@@ -131,10 +131,21 @@ def test_parameter_values_match_the_shared_cross_language_fixture():
             with pytest.raises(EnvParameterValueError):
                 declaration.validate_value(case["value"])
 
-    first = fixture["resolution_cases"][0]
-    assert resolve_parameters(meta, *first["layers"]) == first["values"]
-    with pytest.raises(EnvParameterValueError, match="unknown"):
-        resolve_parameters(meta, {"unknown": "value"})
+    # The synthesized `seats` declaration is compared against the fixture's hand-written copy, so the
+    # bounds and the `max_slots` default are pinned by the shared file rather than only by the code
+    # that produces them. `_fixture_meta` drops the fixture entry and sets min_slots/max_slots, so this
+    # really exercises the synthesis.
+    seats_fixture = next(raw for raw in fixture["declarations"] if raw["name"] == "seats")
+    assert declarations["seats"].to_json() == seats_fixture
+
+    for case in fixture["resolution_cases"]:
+        assert resolve_parameters(meta, *case["layers"]) == case["values"]
+
+    # Python raises on a rejected entry where TypeScript collects it as an issue; the shared file names
+    # the same rejected entries and each side asserts rejection in its own terms.
+    for case in fixture["rejection_cases"]:
+        with pytest.raises(EnvParameterValueError):
+            resolve_parameters(meta, case["layer"])
 
 
 def test_parameter_declarations_reject_reserved_names_and_invalid_shapes():

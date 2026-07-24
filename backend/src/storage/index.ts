@@ -34,6 +34,7 @@ import type {
   SessionSubmission,
   Submission,
   SubmissionCheck,
+  SubmissionRef,
   SubmissionSourceKind,
   SubmissionStage,
   SubmissionStatus,
@@ -69,6 +70,7 @@ export type {
   SessionSubmission,
   Submission,
   SubmissionCheck,
+  SubmissionRef,
   SubmissionSourceKind,
   SubmissionStage,
   SubmissionStatus,
@@ -236,16 +238,31 @@ export interface ScheduledGameInput {
 
 export interface FrozenRunInput {
   config: SeasonConfig
-  submissions: AgentRef[]
+  submissions: SubmissionRef[]
 }
 
-export interface FrozenRunPlan {
-  parametersSnapshot: Record<string, ParameterValue>
-  scheduledGames: ScheduledGameInput[]
-  llmPolicy: ResolvedOfficialLlmPolicy
-}
+/** Why a season's frozen inputs produce no run. The trigger route sends these back as typed codes. */
+export type RunRejectionCode = 'empty_schedule' | 'invalid_parameters'
 
-export type FrozenRunBuilder = (input: FrozenRunInput) => FrozenRunPlan | undefined
+export type FrozenRunPlan =
+  | {
+      ok: true
+      parametersSnapshot: Record<string, ParameterValue>
+      scheduledGames: ScheduledGameInput[]
+      llmPolicy: ResolvedOfficialLlmPolicy
+    }
+  | { ok: false; code: RunRejectionCode; reason: string }
+
+/**
+ * Builds a run's frozen artifacts from the season config and roster the creating transaction read.
+ * Returning a rejection rather than throwing keeps "this season cannot run right now" a typed answer
+ * the route can classify, instead of an exception that would surface as an untyped 500.
+ */
+export type FrozenRunBuilder = (input: FrozenRunInput) => FrozenRunPlan
+
+export type CreateRunOutcome =
+  | { ok: true; run: SeasonRun }
+  | { ok: false; code: RunRejectionCode; reason: string }
 
 /** A per-seat game outcome the runner derives from the recording. */
 export interface RecordGameResultInput {
@@ -489,7 +506,7 @@ export interface Storage {
     seasonId: string,
     requestedBy: string,
     builder: FrozenRunBuilder,
-  ): Promise<SeasonRun | undefined>
+  ): Promise<CreateRunOutcome>
   /** Delete a season's runs, their games, results, and placements (the forced config-edit path). */
   deleteRunsForSeason(seasonId: string): Promise<void>
   /** Delete a season's submissions (the forced `deps_version`-change path). */

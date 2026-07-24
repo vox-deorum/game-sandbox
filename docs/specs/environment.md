@@ -64,6 +64,8 @@ Parameter values resolve in layers:
 
 Automated games stop after the second layer. They always use the season values. Every resolved map contains exactly the environment's effective parameter names, including `seats`.
 
+A season override is checked against the environment's declarations when an operator saves it, and is not rechecked afterwards. An environment whose declarations later change can therefore leave a stored override that the current declarations reject. Such an override falls back to the environment default, so resolution always produces a complete, usable map. The public prefill serves those values and the platform records the drift for the operator, rather than reporting a configuration problem to a player or taking the environment out of play. Creating an automated run refuses the drifted override instead, because a run would otherwise freeze values the operator never chose.
+
 An environment factory receives the complete resolved parameter map. A variable-seat environment uses `parameters["seats"]` to size `possible_agents`, and the harness verifies the resulting count after reset. Existing environments remain fixed-seat. How a future variable-seat environment combines seat changes with scheduler Naive fill and `human_slots` is intentionally left open until the first such environment is designed.
 
 The website hides numeric parameters whose minimum equals their maximum and single-choice parameters with one option. A non-empty multi-choice parameter remains visible because choosing none and choosing its one option are distinct values.

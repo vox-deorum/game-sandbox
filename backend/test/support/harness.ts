@@ -20,7 +20,8 @@ import { RecordingsStore } from '../../src/recordings.js'
 import { Retention } from '../../src/retention.js'
 import type { ClientSocket } from '../../src/session/live-session.js'
 import { Orchestrator } from '../../src/session/orchestrator.js'
-import type { Storage } from '../../src/storage/index.js'
+import type { FrozenRunInput, FrozenRunPlan, Storage } from '../../src/storage/index.js'
+import type { SeasonRun } from '../../src/storage/schema.js'
 import { openSqlite } from '../../src/storage/sqlite.js'
 import { SubmissionSnapshotStore } from '../../src/submission/snapshot-store.js'
 import {
@@ -407,6 +408,27 @@ export class FakeSocket implements ClientSocket {
   breakSends(): void {
     this.throwOnSend = true
   }
+}
+
+/**
+ * Create a season run and unwrap the outcome for the many suites that just need a run to exist.
+ * A rejection fails here with its typed code and reason, rather than surfacing later as a confusing
+ * property access. Suites that assert on the rejection itself call `createRunWithSchedule` directly.
+ */
+export async function createRunOrFail(
+  storage: Storage,
+  seasonId: string,
+  requestedBy: string,
+  build: (input: FrozenRunInput) => Omit<Extract<FrozenRunPlan, { ok: true }>, 'ok'>,
+): Promise<SeasonRun> {
+  const outcome = await storage.createRunWithSchedule(seasonId, requestedBy, (input) => ({
+    ok: true,
+    ...build(input),
+  }))
+  if (!outcome.ok) {
+    throw new Error(`expected a scheduled run, got ${outcome.code}: ${outcome.reason}`)
+  }
+  return outcome.run
 }
 
 /** Yield to the event loop so the relay's `for await` loop drains pushed lines. */

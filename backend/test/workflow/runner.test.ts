@@ -19,6 +19,7 @@ import type { SubmissionSource } from '../../src/submission/source/index.js'
 import { createPlaceholderRunner, reconcileInterruptedRuns } from '../../src/workflow/runner.js'
 import { createWorkflowRunner } from '../../src/workflow/workflow-runner.js'
 import { FakeDriver } from '../support/fake-driver.js'
+import { createRunOrFail } from '../support/harness.js'
 
 const ENV_ID = 'flappy_bird'
 
@@ -56,14 +57,13 @@ describe('workflow runner seam', () => {
       deps_version: 1,
       matches: [{ slots: ['submission'], seeds: [1], games: 1 }],
     })
-    const run = await storage.createRunWithSchedule(season.id, 'dev-user', () => ({
+    const run = await createRunOrFail(storage, season.id, 'dev-user', () => ({
       parametersSnapshot,
       scheduledGames: [
         { match_index: 0, game_index: 0, seed: 1, slots: [{ kind: 'builtin-naive' }] },
       ],
       llmPolicy: disabledLlmPolicy(),
     }))
-    if (run === undefined) throw new Error('expected a scheduled run')
     return run.id
   }
 
@@ -159,14 +159,13 @@ describe('workflow runner seam', () => {
       models: { small: { model: 'provider-at-creation', cost_weight: 7 } },
       session: { token_budget: 41, rate_limit_rpm: 3 },
     }
-    const run = await storage.createRunWithSchedule(season.id, 'dev-user', () => ({
+    const run = await createRunOrFail(storage, season.id, 'dev-user', () => ({
       parametersSnapshot: { seats: 1, pipe_gap: 100 },
       scheduledGames: [
         { match_index: 0, game_index: 0, seed: 1, slots: [{ kind: 'builtin-naive' }] },
       ],
       llmPolicy: frozen,
     }))
-    if (run === undefined) throw new Error('expected a scheduled run')
     await storage.updateSeasonConfig(season.id, {
       deps_version: 1,
       matches: [],

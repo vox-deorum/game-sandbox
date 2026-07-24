@@ -126,16 +126,36 @@ function seedFromSeason(): void {
   officialRateLimit.value = llm?.official?.rate_limit_rpm ?? ''
   developmentTokenBudget.value = llm?.development?.token_budget ?? ''
   developmentRateLimit.value = llm?.development?.rate_limit_rpm ?? ''
-  const declarations = props.environmentParameters ?? []
-  parameterValues.value = initializeParameters(declarations, config.overrides?.parameters ?? {})
-  parameterModes.value = Object.fromEntries(
-    declarations.map((parameter) => [parameter.name, config.overrides?.parameters?.[parameter.name] === undefined ? 'inherit' : 'override']),
-  )
+  seedParameters()
   saved.value = false
   error.value = null
 }
 
-watch([() => props.season.id, () => props.environmentParameters], seedFromSeason, { immediate: true })
+/** Seed only the parameter rows, the part of the form that depends on the environment declarations. */
+function seedParameters(): void {
+  const declarations = props.environmentParameters ?? []
+  const overrides = props.season.config.overrides?.parameters
+  parameterValues.value = initializeParameters(declarations, overrides ?? {})
+  parameterModes.value = Object.fromEntries(
+    declarations.map((parameter) => [
+      parameter.name,
+      overrides?.[parameter.name] === undefined ? 'inherit' : 'override',
+    ]),
+  )
+}
+
+watch(() => props.season.id, seedFromSeason, { immediate: true })
+
+// The declarations arrive from a separate environment-metadata request that settles independently of
+// the season. Seed the rows it enables when it lands, but only while they are still empty: re-running
+// the whole `seedFromSeason` here would discard every edit an operator made while that request was in
+// flight, including the match, timeout, and LLM fields that have nothing to do with parameters.
+watch(
+  () => props.environmentParameters,
+  () => {
+    if (Object.keys(parameterModes.value).length === 0) seedParameters()
+  },
+)
 
 function parameterHint(parameter: EnvParameter): string {
   const seatsHint = parameter.name === 'seats' ? " Every match's slot count must equal this value." : ''
@@ -274,12 +294,16 @@ function buildConfig(): { config: SeasonConfig } | { error: string } {
   if (Object.keys(llm).length > 0) overrides.llm = llm
   const declared = props.environmentParameters ?? []
   const parameterOverrides: Record<string, ParameterValue> = {}
-  const checked = validateParameters(declared, parameterValues.value)
+  // The same validation the rows render their inline errors from, so a save can never disagree with
+  // what the form is already showing.
+  const checked = parameterValidation.value
   for (const parameter of declared) {
     if (parameterModes.value[parameter.name] !== 'override') continue
     const value = checked.values[parameter.name]
     if (checked.errors[parameter.name] !== undefined || value === undefined) {
-      return { error: `${parameter.title}: ${checked.errors[parameter.name] ?? 'Enter a valid value.'}` }
+      return {
+        error: `${parameter.title}: ${checked.errors[parameter.name] ?? 'Enter a valid value.'}`,
+      }
     }
     parameterOverrides[parameter.name] = value
   }
@@ -316,18 +340,19 @@ function canonicalOverrides(overrides: SeasonConfig['overrides']): Record<string
   return Object.values(normalized).every((value) => value === null) ? null : normalized
 }
 
-function canonicalParameters(parameters: SeasonOverrides['parameters']): Record<string, ParameterValue> | null {
+/**
+ * Normalize the declared overrides a config actually carries, so dirty tracking compares meaning
+ * rather than representation (multi-choice ordering, integers written as floats).
+ */
+function canonicalParameters(
+  parameters: SeasonOverrides['parameters'],
+): Record<string, ParameterValue> | null {
   if (parameters === undefined) return null
-  const declarations = props.environmentParameters ?? []
-  const result: Record<string, ParameterValue> = {}
-  for (const declaration of declarations) {
-    const value = parameters[declaration.name]
-    if (value === undefined) continue
-    const checked = validateParameters([declaration], { [declaration.name]: value })
-    const normalized = checked.values[declaration.name]
-    if (normalized !== undefined) result[declaration.name] = normalized
-  }
-  return Object.keys(result).length === 0 ? null : result
+  const declarations = (props.environmentParameters ?? []).filter(
+    (declaration) => parameters[declaration.name] !== undefined,
+  )
+  const { values } = validateParameters(declarations, parameters)
+  return Object.keys(values).length === 0 ? null : values
 }
 
 /** Normalize explicit messaging enablement because `true` and inheritance resolve identically. */

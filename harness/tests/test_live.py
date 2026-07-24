@@ -46,9 +46,8 @@ PARAMETERS = {"seats": 1}
 
 
 class FakeEnv:
-    """A one-slot AEC env living for `
-    _steps``, rewarding 1.0 a step, recording nothing the
-        harness does not already record. ``on_step`` fires just before each accepted step."""
+    """A one-slot AEC env living for ``n_steps``, rewarding 1.0 a step, recording nothing the
+    harness does not already record. ``on_step`` fires just before each accepted step."""
 
     def __init__(self, n_steps: int, on_step: Any = None) -> None:
         self._n = n_steps

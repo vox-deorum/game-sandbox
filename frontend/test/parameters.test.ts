@@ -5,6 +5,7 @@ import {
   formatParameterValue,
   initializeParameters,
   resolvedSeatCount,
+  seatCountOf,
   validateParameters,
   visibleParameters,
 } from '../src/lib/parameters.js'
@@ -79,5 +80,27 @@ describe('parameters', () => {
     if (extras === undefined || extrasValue === undefined) throw new Error('extras fixture missing')
     expect(formatParameterValue(extras, extrasValue)).toBe('Wind, Night')
     expect(resolvedSeatCount(PARAMETERS, checked.values, 4)).toBe(1)
+  })
+
+  it('treats a seats value the declaration rejects as no answer rather than a seat count', () => {
+    const variable: EnvParameter[] = [
+      {
+        name: 'seats',
+        title: 'Seats',
+        description: 'Players.',
+        type: 'int',
+        default: 4,
+        min: 2,
+        max: 6,
+      },
+    ]
+    expect(seatCountOf(variable, { seats: 5 })).toBe(5)
+    // Out of range, non-integer, empty (a cleared numeric field), and absent all mean "not a seat
+    // count", so a caller can hold its last valid answer instead of resizing a grid mid-edit.
+    for (const rejected of [99, 1, 4.5, '', '5', true, undefined]) {
+      expect(seatCountOf(variable, { seats: rejected }), String(rejected)).toBeUndefined()
+    }
+    expect(seatCountOf([], {})).toBeUndefined()
+    expect(resolvedSeatCount(variable, { seats: 99 }, 6)).toBe(6)
   })
 })

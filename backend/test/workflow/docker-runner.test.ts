@@ -41,6 +41,7 @@ import {
 } from '../../src/workflow/workflow-runner.js'
 import llmLaunchConfig from '../fixtures/llm-launch-config.json'
 import { FakeDriver, type FakeLaunch, type FakeSessionProcess } from '../support/fake-driver.js'
+import { createRunOrFail } from '../support/harness.js'
 
 const ENV_ID = 'flappy_bird'
 
@@ -176,13 +177,11 @@ async function makeRun(
     matches: [{ slots: ['submission'], seeds: [1], games: 1 }],
     ...(options.overrides ? { overrides: options.overrides } : {}),
   })
-  const run = await storage.createRunWithSchedule(season.id, 'dev-user', () => ({
+  return createRunOrFail(storage, season.id, 'dev-user', () => ({
     parametersSnapshot: { seats: 1, pipe_gap: 100 },
     scheduledGames: schedule,
     llmPolicy: options.llmPolicy ?? disabledLlmPolicy(),
   }))
-  if (run === undefined) throw new Error('expected a scheduled run')
-  return run
 }
 
 /** One scheduled game's resolved slots, the all-Naive single seat by default. */
@@ -1387,12 +1386,11 @@ describe('Docker-backed workflow runner', () => {
     await runToTerminal(handle, first.id)
 
     // A second run for the same season (the re-run).
-    const second = await storage.createRunWithSchedule(first.season_id, 'dev-user', () => ({
+    const second = await createRunOrFail(storage, first.season_id, 'dev-user', () => ({
       parametersSnapshot: { seats: 1, pipe_gap: 100 },
       scheduledGames: [naiveGame(0)],
       llmPolicy: disabledLlmPolicy(),
     }))
-    if (second === undefined) throw new Error('expected a scheduled run')
     await runToTerminal(handle, second.id)
 
     expect(second.id).not.toBe(first.id)

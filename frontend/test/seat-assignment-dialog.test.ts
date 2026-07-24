@@ -301,4 +301,73 @@ describe('SeatAssignmentDialog', () => {
       player_3: { kind: 'builtin-agent' },
     })
   })
+
+  // Every environment today is fixed-seat, so `seats` is hidden and the grid never resizes. These
+  // cover the machinery that exists for the first variable-seat environment, where the seats control
+  // becomes visible and the grid follows it.
+  describe('a visible seat count', () => {
+    /** Hearts with a variable seat range, so the synthesized `seats` control is visible. */
+    function variableSeatMeta() {
+      return heartsMeta({
+        min_slots: 2,
+        max_slots: 6,
+        human_slots: ['player_0', 'player_1', 'player_2', 'player_3', 'player_4', 'player_5'],
+        parameters: [
+          {
+            name: 'seats',
+            title: 'Seats',
+            description: 'Players.',
+            type: 'int',
+            default: 4,
+            min: 2,
+            max: 6,
+          },
+        ],
+      })
+    }
+
+    const CONTEXT = { seasonId: 'season-1', parameters: { seats: 4 } }
+
+    it('fills a seat added by a growing count with the dialog default, not the Naive baseline', async () => {
+      render(SeatAssignmentDialog, {
+        props: {
+          ...CONTEXT,
+          meta: variableSeatMeta(),
+          agents: AGENTS,
+          mode: 'watch',
+          preselect: { kind: 'submission', submissionId: 'sub2' } satisfies SlotAssignmentInput,
+        },
+      })
+      await fireEvent.update(screen.getByLabelText(/Seats/), '6')
+
+      // "Preselect that agent into every seat" has to keep holding for the seats that appear later,
+      // otherwise growing the grid quietly seats Naive in the new rows.
+      for (const name of ['Seat 1', 'Seat 5', 'Seat 6']) {
+        expect(seat(name).value).toBe('submission:sub2')
+      }
+    })
+
+    it('does not resize the grid while the seats field holds a value it rejects', async () => {
+      render(SeatAssignmentDialog, {
+        props: { ...CONTEXT, meta: variableSeatMeta(), agents: AGENTS, mode: 'watch' },
+      })
+      await fireEvent.update(seat('Seat 2'), 'submission:sub1')
+
+      // Out of range, and mid-edit an empty field is momentarily out of range too. Either would
+      // otherwise resolve to nothing, snap the grid back to the environment maximum, and evict the
+      // assignment above before the form had reported the problem.
+      for (const rejected of ['99', '']) {
+        await fireEvent.update(screen.getByLabelText(/Seats/), rejected)
+        expect(screen.getAllByRole('listitem')).toHaveLength(4)
+        expect(seat('Seat 2').value).toBe('submission:sub1')
+        expect(screen.getByRole('button', { name: 'Start watching' })).toBeDisabled()
+      }
+
+      // Back to a value the declaration accepts, and the grid follows again.
+      await fireEvent.update(screen.getByLabelText(/Seats/), '5')
+      expect(screen.getAllByRole('listitem')).toHaveLength(5)
+      expect(seat('Seat 2').value).toBe('submission:sub1')
+      expect(screen.getByRole('button', { name: 'Start watching' })).not.toBeDisabled()
+    })
+  })
 })

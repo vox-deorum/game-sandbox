@@ -19,7 +19,6 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createGzip } from 'node:zlib'
-import { resolveParameters } from '@game-sandbox/schema/environment'
 import { RATING_PROMPT_MAX, SEASON_DESCRIPTION_MAX } from '@game-sandbox/schema/seasons'
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import tar from 'tar-fs'
@@ -28,7 +27,8 @@ import { z } from 'zod'
 import { enrichAgentRef, type UserDirectory } from '../auth/users.js'
 import type { LlmOptions } from '../config.js'
 import { DEPS_VERSION } from '../deps-version.js'
-import type { EnvironmentMeta, EnvironmentRegistry } from '../environments.js'
+import { resolvedSeatCount, resolveSeasonParameters } from '../environment-parameters.js'
+import type { EnvironmentRegistry } from '../environments.js'
 import type { RequestIdentity } from '../identity.js'
 import { officialPolicy, resolveLlm, unavailableLlmAliases } from '../llm/config.js'
 import type { DevelopmentKeyService } from '../llm/development-keys.js'
@@ -40,7 +40,7 @@ import {
 import { asLlmError } from '../llm/errors.js'
 import { modelCostWeights } from '../llm/types.js'
 import { optionalField } from '../optional-field.js'
-import { buildSchedule, type SubmissionRef } from '../scheduler/build-schedule.js'
+import { buildSchedule } from '../scheduler/build-schedule.js'
 import {
   agentOwnerIds,
   gameOwnerIds,
@@ -431,23 +431,18 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
           }
           const meta = deps.environments.get(season.env_id)
           if (meta !== undefined) {
-            const resolvedParameters = resolveParameters(
-              meta.parameters,
-              parsed.data.overrides?.parameters ?? {},
-            )
-            const parameterIssue = resolvedParameters.issues[0]
-            if (parameterIssue !== undefined) {
+            const resolved = resolveSeasonParameters(meta, parsed.data.overrides?.parameters)
+            if (resolved.issue !== undefined) {
               return reply.code(400).send({
                 error: 'invalid season config',
                 code: 'invalid_config',
-                reason: `overrides.parameters.${parameterIssue.name}: ${parameterIssue.message}`,
+                reason: `overrides.parameters.${resolved.issue.name}: ${resolved.issue.message}`,
               })
             }
-            const seats = resolvedParameters.values.seats
-            const slotIssue =
-              typeof seats === 'number' && Number.isSafeInteger(seats)
-                ? validateSlotCounts(parsed.data.matches, meta, seats)
-                : 'parameters.seats must resolve to an integer'
+            const slotIssue = validateSlotCounts(
+              parsed.data.matches,
+              resolvedSeatCount(resolved.values),
+            )
             if (slotIssue !== null) {
               return reply.code(400).send({
                 error: 'invalid season config',
@@ -641,39 +636,52 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
         if (requestedBy === null) {
           return reply.code(401).send({ error: 'authentication required', code: 'auth_required' })
         }
-        const run = await deps.storage.createRunWithSchedule(
+        const outcome = await deps.storage.createRunWithSchedule(
           season.id,
           requestedBy.id,
           ({ config: frozen, submissions }) => {
-            const parameters = resolveParameters(
-              meta.parameters,
-              frozen.overrides?.parameters ?? {},
-            )
-            if (parameters.issues.length > 0) {
-              throw new Error(`invalid frozen parameters: ${parameters.issues[0]?.message}`)
+            const parameters = resolveSeasonParameters(meta, frozen.overrides?.parameters)
+            if (parameters.issue !== undefined) {
+              return {
+                ok: false,
+                code: 'invalid_parameters',
+                reason: `overrides.parameters.${parameters.issue.name}: ${parameters.issue.message}`,
+              }
             }
             const schedule = buildSchedule({
               matches: frozen.matches,
-              submissions: submissions as SubmissionRef[],
+              submissions,
               seatOrderMatters: meta.seat_order_matters,
             })
             if (schedule.length === 0) {
-              return undefined
+              return {
+                ok: false,
+                code: 'empty_schedule',
+                reason: 'the season resolves to no games',
+              }
             }
             return {
+              ok: true,
               parametersSnapshot: parameters.values,
               scheduledGames: schedule,
               llmPolicy: officialPolicy(resolveLlm(deps.llm, meta, frozen)),
             }
           },
         )
-        if (run === undefined) {
-          return reply
-            .code(409)
-            .send({ error: 'the season resolves to an empty schedule', code: 'empty_schedule' })
+        if (!outcome.ok) {
+          // An empty schedule is an ordinary 409; a season override the environment no longer accepts
+          // is an operator-fixable 400 rather than the untyped failure a thrown error would produce.
+          return reply.code(outcome.code === 'empty_schedule' ? 409 : 400).send({
+            error:
+              outcome.code === 'empty_schedule'
+                ? 'the season resolves to an empty schedule'
+                : 'invalid season config',
+            code: outcome.code,
+            reason: outcome.reason,
+          })
         }
-        deps.workflowRunner.enqueue(run.id)
-        return reply.code(201).send({ id: run.id, status: run.status })
+        deps.workflowRunner.enqueue(outcome.run.id)
+        return reply.code(201).send({ id: outcome.run.id, status: outcome.run.status })
       })
 
       // --- Cancel ----------------------------------------------------------------------------
@@ -849,8 +857,7 @@ async function attachLogStream(
 /** Validate each match's total slot count against the environment metadata; the first issue or null. */
 function validateSlotCounts(
   matches: ReadonlyArray<{ slots: readonly string[] }>,
-  meta: EnvironmentMeta,
-  resolvedSeats: number = meta.max_slots,
+  resolvedSeats: number,
 ): string | null {
   for (let i = 0; i < matches.length; i++) {
     const count = matches[i]?.slots.length ?? 0

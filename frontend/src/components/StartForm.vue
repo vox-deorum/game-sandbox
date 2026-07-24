@@ -17,6 +17,7 @@
 import type { EnvironmentMeta, ParameterValue } from '@game-sandbox/schema/environment'
 import { computed, ref } from 'vue'
 
+import type { StartPayload } from '../api/client.js'
 import { optionalNumber } from '../lib/forms.js'
 import { initializeParameters, validateParameters } from '../lib/parameters.js'
 import ParameterFields from './ParameterFields.vue'
@@ -30,7 +31,8 @@ const props = defineProps<{
   parameters: Record<string, ParameterValue>
 }>()
 const emit = defineEmits<{
-  submit: [{ seed?: number; humanSlotTimeoutMs?: number; seasonId: string; parameters: Record<string, ParameterValue> }]
+  /** Everything the start payload carries except the seats, which this form fills with the lone human. */
+  submit: [Omit<StartPayload, 'slots'>]
   cancel: []
 }>()
 

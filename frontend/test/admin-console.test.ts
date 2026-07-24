@@ -318,6 +318,31 @@ describe('AdminConsolePage', () => {
     })
   })
 
+  it('keeps edits made while the environment metadata request was still in flight', async () => {
+    let resolveMeta: ((value: EnvironmentMeta[]) => void) | undefined
+    vi.mocked(getEnvironments).mockReturnValue(
+      new Promise((resolve) => {
+        resolveMeta = resolve
+      }),
+    )
+    await renderConsole()
+    expect(await screen.findByRole('heading', { name: 'Season Week 1' })).toBeInTheDocument()
+
+    // The season form is usable before the environment metadata lands, so an operator can already be
+    // typing. The metadata only decides which parameter rows exist; it must not reach back and reset
+    // the match, timeout, messaging, and LLM fields that have nothing to do with parameters.
+    await fireEvent.update(screen.getByLabelText('Messaging'), 'off')
+    await fireEvent.update(screen.getByLabelText('Step timeout (ms)'), '4321')
+
+    resolveMeta?.([configurableMeta()])
+    expect(
+      await screen.findByRole('heading', { name: 'Environment Parameters' }),
+    ).toBeInTheDocument()
+
+    expect(screen.getByLabelText('Messaging')).toHaveValue('off')
+    expect(screen.getByLabelText('Step timeout (ms)')).toHaveValue(4321)
+  })
+
   it('shows a blank numeric override error and refuses to save it', async () => {
     vi.mocked(getEnvironments).mockResolvedValue([configurableMeta()])
     await renderConsole()

@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import type { Season, Storage } from '../../src/storage/index.js'
 import type { TestUsers } from '../support/auth.js'
-import { openTestApp, type TestApp } from '../support/harness.js'
+import { createRunOrFail, openTestApp, type TestApp } from '../support/harness.js'
 import { TEST_DISABLED_OFFICIAL_LLM_POLICY } from '../support/llm-options.js'
 
 const ENV_ID = 'flappy_bird'
@@ -245,7 +245,7 @@ describe('public leaderboard API', () => {
     // user row (the fallback case).
     const known = await makeSubmission(storage, season.id, aliceId)
     const orphaned = await makeSubmission(storage, season.id, 'ghost-user')
-    const run = await storage.createRunWithSchedule(season.id, 'dev-user', () => ({
+    const run = await createRunOrFail(storage, season.id, 'dev-user', () => ({
       parametersSnapshot: { seats: 1 },
       scheduledGames: [
         { match_index: 0, game_index: 0, seed: 1, slots: [agentRef(known)] },
@@ -253,7 +253,6 @@ describe('public leaderboard API', () => {
       ],
       llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
     }))
-    if (run === undefined) throw new Error('expected a scheduled run')
     const games = await storage.listRunGames(run.id)
     for (const [index, submission] of [known, orphaned].entries()) {
       const game = games[index]
@@ -361,12 +360,11 @@ describe('public leaderboard API', () => {
   it('returns only placements from released seasons', async () => {
     const unreleased = await declare()
     const hidden = await makeSubmission(storage, unreleased.id, 'alice')
-    const hiddenRun = await storage.createRunWithSchedule(unreleased.id, 'dev-user', () => ({
+    const hiddenRun = await createRunOrFail(storage, unreleased.id, 'dev-user', () => ({
       parametersSnapshot: { seats: 1 },
       scheduledGames: [{ match_index: 0, game_index: 0, seed: 1, slots: [agentRef(hidden)] }],
       llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
     }))
-    if (hiddenRun === undefined) throw new Error('expected a scheduled run')
     await storage.replaceAutomatedPlacements(unreleased.id, ENV_ID, hiddenRun.id, [
       {
         rank: 1,
@@ -381,12 +379,11 @@ describe('public leaderboard API', () => {
     const released = await declare()
     await storage.setReleaseStatus(released.id, 'released')
     const visible = await makeSubmission(storage, released.id, 'alice')
-    const visibleRun = await storage.createRunWithSchedule(released.id, 'dev-user', () => ({
+    const visibleRun = await createRunOrFail(storage, released.id, 'dev-user', () => ({
       parametersSnapshot: { seats: 1 },
       scheduledGames: [{ match_index: 0, game_index: 0, seed: 1, slots: [agentRef(visible)] }],
       llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
     }))
-    if (visibleRun === undefined) throw new Error('expected a scheduled run')
     await storage.replaceAutomatedPlacements(released.id, ENV_ID, visibleRun.id, [
       {
         rank: 1,

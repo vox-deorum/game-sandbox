@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import type { NewSessionInput, Storage } from '../../src/storage/index.js'
 import { openSqliteStorage } from '../../src/storage/sqlite.js'
+import { createRunOrFail } from '../support/harness.js'
 import { TEST_DISABLED_OFFICIAL_LLM_POLICY } from '../support/llm-options.js'
 
 function input(overrides: Partial<NewSessionInput> = {}): NewSessionInput {
@@ -131,7 +132,7 @@ describe('storage on :memory:', () => {
     const activity: ReadonlyArray<{ add: (seasonId: string) => Promise<void> }> = [
       {
         add: async (seasonId) => {
-          await storage.createRunWithSchedule(seasonId, 'operator', () => ({
+          await createRunOrFail(storage, seasonId, 'operator', () => ({
             parametersSnapshot: { seats: 1 },
             scheduledGames: [
               { match_index: 0, game_index: 0, seed: 1, slots: [{ kind: 'builtin-naive' }] },

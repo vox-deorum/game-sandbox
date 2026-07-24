@@ -13,7 +13,7 @@ import {
   type Storage,
 } from '../../src/storage/index.js'
 import { openSqliteStorage } from '../../src/storage/sqlite.js'
-import { makeEnvironments } from '../support/harness.js'
+import { createRunOrFail, makeEnvironments } from '../support/harness.js'
 import { TEST_DISABLED_OFFICIAL_LLM_POLICY } from '../support/llm-options.js'
 
 /** A pending git submission input, overridable. The season id is filled per test. */
@@ -332,12 +332,11 @@ describe('submission storage on :memory:', () => {
     // session-only join would miss it entirely — the empty "Recent replays" an automated-only season
     // produced, the regression this guards.
     const game: ScheduledGameInput = { match_index: 0, game_index: 0, seed: 1, slots: [agent] }
-    const run = await storage.createRunWithSchedule(iter, 'dev-user', () => ({
+    const run = await createRunOrFail(storage, iter, 'dev-user', () => ({
       parametersSnapshot: { seats: 1 },
       scheduledGames: [game],
       llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
     }))
-    if (run === undefined) throw new Error('expected a scheduled run')
     const scheduled = (await storage.listRunGames(run.id))[0]
     if (scheduled === undefined) {
       throw new Error('expected a scheduled game')

@@ -26,7 +26,12 @@ import type { SlotAssignmentInput, StartPayload, WatchAgentSummary } from '../ap
 import { maskedSubmissionLabel } from '../lib/attribution.js'
 import { shortId } from '../lib/format.js'
 import { optionalNumber } from '../lib/forms.js'
-import { initializeParameters, resolvedSeatCount } from '../lib/parameters.js'
+import {
+  initializeParameters,
+  resolvedSeatCount,
+  seatCountOf,
+  validateParameters,
+} from '../lib/parameters.js'
 import ParameterFields from './ParameterFields.vue'
 import UiButton from './ui/UiButton.vue'
 import UiField from './ui/UiField.vue'
@@ -67,10 +72,17 @@ function decodeAgent(value: string): SlotAssignmentInput {
     : { kind: 'submission', submissionId: value.slice('submission:'.length) }
 }
 
-// The required seats are player_0 … player_{max_slots-1}, the same ids the backend validates against.
+// The required seats are player_0 … player_{seatCount-1}, the same ids the backend validates against.
 const parameters = ref(initializeParameters(props.meta.parameters, props.parameters))
 const parametersValid = ref(true)
-const seatCount = computed(() => resolvedSeatCount(props.meta.parameters, parameters.value, props.meta.max_slots))
+// The grid follows only a valid seat count. A half-typed value in a visible seats field would otherwise
+// resolve to nothing, snap the grid back to the environment maximum, and evict seat assignments before
+// the form's own validation had a chance to report the problem, so keep the last valid count instead.
+const seatCount = ref(resolvedSeatCount(props.meta.parameters, parameters.value, props.meta.max_slots))
+watch(parameters, (values) => {
+  const next = seatCountOf(props.meta.parameters, values)
+  if (next !== undefined) seatCount.value = next
+})
 const slotIds = computed(() => Array.from({ length: seatCount.value }, (_, i) => `player_${i}`))
 
 // The seats a connected human may occupy, per the environment metadata. Hearts marks all four; a
@@ -91,7 +103,9 @@ const humanSlot = ref<string | null>(
 )
 
 watch(slotIds, (ids) => {
-  for (const slotId of ids) if (agentChoice[slotId] === undefined) agentChoice[slotId] = BUILTIN
+  // A seat added by a growing count gets the same default as the seats present at open, so a watch or
+  // rate dialog still has its chosen agent in every seat rather than Naive in the new ones.
+  for (const slotId of ids) if (agentChoice[slotId] === undefined) agentChoice[slotId] = defaultAgent
   for (const slotId of Object.keys(agentChoice)) if (!ids.includes(slotId)) delete agentChoice[slotId]
   if (props.mode === 'play' && (humanSlot.value === null || !ids.includes(humanSlot.value))) {
     humanSlot.value = ids.find((slotId) => humanCapable.has(slotId)) ?? null
@@ -197,13 +211,17 @@ function onSubmit(): void {
   if (!canStart.value) {
     return
   }
+  // Emit the normalized values, the same way the single-seat start form does, so both start paths put
+  // one canonical representation of the same form state on the wire.
+  const checked = validateParameters(props.meta.parameters, parameters.value)
+  if (Object.keys(checked.errors).length > 0) return
   const slots: Record<string, SlotAssignmentInput> = {}
   for (const slotId of slotIds.value) {
     slots[slotId] = isHuman(slotId) ? { kind: 'human' } : decodeAgent(seatValue(slotId))
   }
   emit('start', {
     seasonId: props.seasonId,
-    parameters: parameters.value,
+    parameters: checked.values,
     slots,
     seed: optionalNumber(seed.value),
     humanSlotTimeoutMs: props.mode === 'play' ? optionalNumber(timeout.value) : undefined,

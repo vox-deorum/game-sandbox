@@ -58,6 +58,44 @@ describe('HTTP API', () => {
     expect(res.json()).toEqual({ season_id: playSeasonId, values: { seats: 1, pipe_gap: 100 } })
   })
 
+  // Season overrides are checked against the environment's declarations when an operator writes them
+  // and never again, so an environment that later tightens a bound (or changes its slot bounds, which
+  // moves the synthesized `seats` range) leaves a stored override the current declarations reject.
+  // That is an operator problem. It must not take public play offline, and above all it must not be
+  // reported to a player as a fault in the settings they submitted.
+  describe('a season override the current declarations reject', () => {
+    beforeEach(async () => {
+      // Written through storage, the way a config saved against older declarations survives: the
+      // storage codec is structure-only, so only the admin API would have refused this.
+      await storage.updateSeasonConfig(playSeasonId, {
+        deps_version: 1,
+        matches: [],
+        overrides: { parameters: { pipe_gap: 9999 } },
+      })
+    })
+
+    it('still serves the prefill, falling back to the environment default', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/environments/flappy_bird/play-parameters',
+      })
+      expect(res.statusCode).toBe(200)
+      expect(res.json()).toEqual({ season_id: playSeasonId, values: { seats: 1, pipe_gap: 100 } })
+    })
+
+    it('still starts a session from a valid submitted map', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/sessions',
+        headers: alice,
+        payload: startPayload({ player_0: { kind: 'builtin-agent' } }),
+      })
+      expect(res.statusCode).toBe(201)
+      const { id } = res.json() as { id: string }
+      expect((await storage.getSession(id))?.parameters).toEqual({ seats: 1, pipe_gap: 100 })
+    })
+  })
+
   it('serves the deployment branding from GET /api/config, defaulting both names', async () => {
     // The app under test wires no site name, so both fall back to the class-scale default. It also
     // wires no GitHub auth, so the login-page capability flag defaults to false.

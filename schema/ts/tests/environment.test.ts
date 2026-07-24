@@ -32,11 +32,16 @@ type ParameterFixtures = {
   resolution_cases: Array<{
     layers: Array<Record<string, unknown>>
     values: Record<string, unknown>
-    issue_names: string[]
   }>
+  rejection_cases: Array<{ layer: Record<string, unknown>; name: string }>
 }
 
 const PARAMETER_FIXTURES = JSON.parse(readFileSync(FIXTURE_PATH, 'utf-8')) as ParameterFixtures
+
+/** The shared declarations keyed by name, for the suites that look one up. */
+const declarations = new Map(
+  PARAMETER_FIXTURES.declarations.map((declaration) => [declaration.name, declaration]),
+)
 
 const VALID: EnvironmentMeta = {
   env_id: 'flappy_bird',
@@ -146,10 +151,6 @@ describe('environment parameter declarations', () => {
 })
 
 describe('validateParameterValue', () => {
-  const declarations = new Map(
-    PARAMETER_FIXTURES.declarations.map((declaration) => [declaration.name, declaration]),
-  )
-
   function declarationFor(name: string): EnvParameter {
     const declaration = declarations.get(name)
     if (declaration === undefined) {
@@ -182,7 +183,25 @@ describe('resolveParameters', () => {
     for (const testCase of PARAMETER_FIXTURES.resolution_cases) {
       const result = resolveParameters(PARAMETER_FIXTURES.declarations, ...testCase.layers)
       expect(result.values).toEqual(testCase.values)
-      expect(result.issues.map((issue) => issue.name)).toEqual(testCase.issue_names)
+      expect(result.issues).toEqual([])
+    }
+  })
+
+  // The Python resolver raises on the same entries this one reports as issues, so the shared file
+  // names the rejected entry and each side asserts rejection in its own terms. Here that also means
+  // the rejected entry keeps its default, which is what lets a public read serve usable values when a
+  // stored season override has drifted from the declarations.
+  it('reports each shared rejection case and keeps that parameter at its default', () => {
+    for (const testCase of PARAMETER_FIXTURES.rejection_cases) {
+      const result = resolveParameters(PARAMETER_FIXTURES.declarations, testCase.layer)
+      expect(
+        result.issues.map((issue) => issue.name),
+        testCase.name,
+      ).toEqual([testCase.name])
+      const declaration = declarations.get(testCase.name)
+      if (declaration !== undefined) {
+        expect(result.values[testCase.name], testCase.name).toEqual(declaration.default)
+      }
     }
   })
 })

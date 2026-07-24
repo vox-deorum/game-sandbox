@@ -149,18 +149,26 @@ class EnvParameter:
         return [choice.value for choice in self.choices if choice.value in value]
 
     def to_json(self) -> dict[str, Any]:
-        """Return the snake_case wire representation served by the registry."""
-        value = self.validate_value(self.default)
-        return {
+        """Return the snake_case wire representation served by the registry.
+
+        Only the keys a declaration's type actually uses are emitted. ``__post_init__`` already rejects
+        bounds on a non-numeric type and choices on a non-choice type, so serialising them as ``null``
+        and ``[]`` would put fields on the wire that the declaration is not allowed to have, and that
+        the consuming TypeScript type does not model.
+        """
+        payload: dict[str, Any] = {
             "name": self.name,
             "title": self.title,
             "description": self.description,
             "type": self.type,
-            "default": value,
-            "min": self.min,
-            "max": self.max,
-            "choices": [choice.to_json() for choice in self.choices],
+            "default": self.validate_value(self.default),
         }
+        if self.type in {"int", "float"}:
+            payload["min"] = self.min
+            payload["max"] = self.max
+        if self.type in {"choice", "multi_choice"}:
+            payload["choices"] = [choice.to_json() for choice in self.choices]
+        return payload
 
 
 def _is_nonempty_string(value: object) -> TypeGuard[str]:
@@ -310,7 +318,13 @@ def effective_parameters(meta: EnvironmentMeta) -> tuple[EnvParameter, ...]:
 def resolve_parameters(
     meta: EnvironmentMeta, *layers: Mapping[str, ParameterValue]
 ) -> dict[str, ParameterValue]:
-    """Fill defaults and apply ordered parameter override layers."""
+    """Fill defaults and apply ordered parameter override layers, raising on the first bad value.
+
+    Use this where a partial layer is expected and a bad one should stop the caller: local play, the
+    CLI, and tests. A boundary that receives an already complete map wants
+    :func:`validate_complete_parameters` instead, so a missing name fails rather than silently
+    resolving to a default nobody chose.
+    """
     declarations = effective_parameters(meta)
     by_name = {parameter.name: parameter for parameter in declarations}
     values = {parameter.name: parameter.validate_value(parameter.default) for parameter in declarations}
@@ -322,6 +336,42 @@ def resolve_parameters(
                 raise EnvParameterValueError(f"unknown environment parameter {name!r}") from None
             values[name] = declaration.validate_value(value)
     return values
+
+
+def validate_complete_parameters(
+    meta: EnvironmentMeta, parameters: Mapping[str, ParameterValue]
+) -> dict[str, ParameterValue]:
+    """Validate and normalize a map that must already carry every effective parameter.
+
+    Unlike :func:`resolve_parameters`, this applies no defaults. A launch configuration is produced by
+    a caller that resolved the values already, so filling a missing name here would let an upstream bug
+    run a game on a value nobody chose and then record it as though it had been chosen.
+    """
+    declarations = effective_parameters(meta)
+    names = {declaration.name for declaration in declarations}
+    for name in parameters:
+        if name not in names:
+            raise EnvParameterValueError(f"unknown environment parameter {name!r}")
+    values: dict[str, ParameterValue] = {}
+    for declaration in declarations:
+        if declaration.name not in parameters:
+            raise EnvParameterValueError(f"missing environment parameter {declaration.name!r}")
+        values[declaration.name] = declaration.validate_value(parameters[declaration.name])
+    return values
+
+
+def int_parameter(parameters: Mapping[str, ParameterValue], name: str) -> int:
+    """Read one integer parameter from a resolved map, narrowing its type for the caller.
+
+    Environment factories use this rather than an ``assert``. An assert is stripped under ``python -O``,
+    so the narrowing it performs would quietly disappear from an optimized run.
+    """
+    if name not in parameters:
+        raise EnvParameterValueError(f"missing environment parameter {name!r}")
+    value = parameters[name]
+    if not _is_json_safe_integer(value):
+        raise EnvParameterValueError(f"{name} must be a JSON-safe integer")
+    return value
 
 
 class EnvironmentLookupError(LookupError):

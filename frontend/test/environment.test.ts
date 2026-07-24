@@ -235,9 +235,20 @@ describe('EnvironmentPage', () => {
     expect(screen.getByRole('button', { name: 'Play Yourself' })).toBeInTheDocument()
   })
 
-  it('keeps play and watch unavailable until the parameter prefill confirms an open season', async () => {
+  it('keeps play and watch unavailable when the parameter prefill fails, and says so', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
     vi.mocked(getPlayParameters).mockRejectedValue(new Error('prefill unavailable'))
+    await renderPage()
+    // A failed read is not the same fact as a closed play window; reporting it as one would tell the
+    // viewer something about the season that the page never actually learned.
+    expect(await screen.findByText(/play settings .* could not be loaded/i)).toBeInTheDocument()
+    expect(screen.queryByText(/No season is currently open for play/)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Play Yourself' })).toBeNull()
+  })
+
+  it('reports a genuinely closed play window as closed', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
+    vi.mocked(getPlayParameters).mockResolvedValue({ season_id: null, values: {} })
     await renderPage()
     expect(await screen.findByText(/No season is currently open for play/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Play Yourself' })).toBeNull()

@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto'
 import type { Kysely, SelectQueryBuilder } from 'kysely'
 import { sql } from 'kysely'
 import { encodeResolvedOfficialLlmPolicy } from '../../llm/config.js'
-import type { AgentRef, FrozenRunBuilder, RecordGameResultInput } from '../index.js'
+import type { CreateRunOutcome, FrozenRunBuilder, RecordGameResultInput } from '../index.js'
 import { encodeParameterMap, parseParameterMap } from '../parameters.js'
 import type {
   Database,
@@ -17,6 +17,7 @@ import type {
   RunStatus,
   SeasonRun,
   SeasonRunGame,
+  SubmissionRef,
 } from '../schema.js'
 import { decodeSeasonConfig } from '../season-config.js'
 import {
@@ -25,6 +26,7 @@ import {
   encodeLlmUsageByModel,
   encodeLlmWeightedCost,
 } from './shared.js'
+import { listActiveSubmissionsBySeason } from './submissions.js'
 
 function decodeGameResult(
   row: Omit<GameResult, 'llm_usage_by_model'> & {
@@ -87,7 +89,7 @@ export async function createRunWithSchedule(
   seasonId: string,
   requestedBy: string,
   builder: FrozenRunBuilder,
-): Promise<SeasonRun | undefined> {
+): Promise<CreateRunOutcome> {
   return await db.transaction().execute(async (trx) => {
     // Freeze the season's already-validated config (incl. deps) and the eligible roster onto the
     // run, then persist the concrete games. The runner reads these, not the mutable source rows.
@@ -99,21 +101,24 @@ export async function createRunWithSchedule(
       .where('id', '=', seasonId)
       .executeTakeFirstOrThrow()
     const config = decodeSeasonConfig(season.config)
-    const ready = await trx
-      .selectFrom('submissions')
-      .select(['id', 'user_id'])
-      .where('season_id', '=', seasonId)
-      .where('status', '=', 'ready')
-      .where('superseded_at', 'is', null)
-      .execute()
-    const submissions: AgentRef[] = ready.map((submission) => ({
+    // The eligible roster comes from the shared query rather than a second copy of its predicate, so
+    // "which submissions may run" has one definition and one ordering wherever it is asked.
+    const ready = await listActiveSubmissionsBySeason(trx, seasonId, 'ready')
+    const submissions: SubmissionRef[] = ready.map((submission) => ({
       kind: 'submission',
       submission_id: submission.id,
       user_id: submission.user_id,
     }))
     const plan = builder({ config, submissions })
-    if (plan === undefined || plan.scheduledGames.length === 0) {
-      return undefined
+    if (!plan.ok) {
+      return plan
+    }
+    if (plan.scheduledGames.length === 0) {
+      return {
+        ok: false,
+        code: 'empty_schedule',
+        reason: 'the season resolves to no games',
+      }
     }
     const runId = randomUUID()
     const now = new Date().toISOString()
@@ -152,7 +157,7 @@ export async function createRunWithSchedule(
         })
         .execute()
     }
-    return decodeRun(run)
+    return { ok: true, run: decodeRun(run) }
   })
 }
 

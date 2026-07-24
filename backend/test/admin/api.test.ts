@@ -28,6 +28,7 @@ import { SubmissionSnapshotStore } from '../../src/submission/snapshot-store.js'
 import type { TestUsers } from '../support/auth.js'
 import { FakeDriver } from '../support/fake-driver.js'
 import {
+  createRunOrFail,
   makeConfig,
   makeEnvironments,
   makeSubmissionDeps,
@@ -115,13 +116,11 @@ describe('admin API', () => {
         await storage.updateSubmissionStatus(submission.submission_id, 'ready')
       }
     }
-    const run = await storage.createRunWithSchedule(seasonId, requestedBy, () => ({
+    return createRunOrFail(storage, seasonId, requestedBy, () => ({
       parametersSnapshot: { seats: 1 },
       scheduledGames: games,
       llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
     }))
-    if (run === undefined) throw new Error('expected a scheduled run')
-    return run
   }
 
   /** Insert a submission row directly, optionally writing it a downloadable snapshot. */
@@ -997,6 +996,26 @@ describe('admin API', () => {
       expect(res.statusCode).toBe(409)
       expect(res.json()).toMatchObject({ code: 'empty_schedule' })
       expect(runner.enqueued).toEqual([])
+    })
+
+    it('rejects a stored override the declarations reject with a typed 400, not an untyped 500', async () => {
+      const id = await declare()
+      // Written through storage, the way a config saved against older declarations survives: only the
+      // admin write path checks values against the environment, and the codec is structure-only.
+      await storage.updateSeasonConfig(
+        id,
+        flappyConfig({ overrides: { parameters: { pipe_gap: 9999 } } }),
+      )
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/admin/seasons/${id}/runs`,
+        headers: OPERATOR,
+      })
+      expect(res.statusCode).toBe(400)
+      expect(res.json()).toMatchObject({ code: 'invalid_parameters' })
+      expect((res.json() as { reason: string }).reason).toContain('pipe_gap')
+      expect(runner.enqueued).toEqual([])
+      expect(await storage.listRunsBySeason(id)).toEqual([])
     })
 
     it('refuses a second trigger while a run is in progress with 409 run_in_progress', async () => {

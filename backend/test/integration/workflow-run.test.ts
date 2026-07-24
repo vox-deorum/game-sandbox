@@ -26,6 +26,7 @@ import { SubmissionSnapshotStore } from '../../src/submission/snapshot-store.js'
 import { createSubmissionSource } from '../../src/submission/source/index.js'
 import type { TerminalRunStatus, WorkflowRunner } from '../../src/workflow/runner.js'
 import { createWorkflowRunner } from '../../src/workflow/workflow-runner.js'
+import { createRunOrFail } from '../support/harness.js'
 import { DEPS_VERSION } from './support/base-image.js'
 
 const ENV_ID = 'flappy_bird'
@@ -124,12 +125,11 @@ describe('workflow run end to end (Docker)', () => {
         slots: [{ kind: 'builtin-naive' } as AgentRef],
       },
     ]
-    const run = await storage.createRunWithSchedule(seasonId, 'dev-user', () => ({
+    const run = await createRunOrFail(storage, seasonId, 'dev-user', () => ({
       parametersSnapshot: { seats: 1 },
       scheduledGames: schedule,
       llmPolicy: disabledLlmPolicy(),
     }))
-    if (run === undefined) throw new Error('expected a scheduled run')
     const status = await new Promise<TerminalRunStatus>((res) => {
       const unsubscribe = runner.subscribe(run.id, (event) => {
         if (event.type === 'terminal') {

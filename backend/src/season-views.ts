@@ -128,10 +128,14 @@ export function runView(
 
 /**
  * A run as the admin runs-list reads it: the run row's identity, status, timestamps, and error plus a
- * game count, with the frozen config/roster snapshots intentionally dropped — the list does not need
- * them, and a single run's details endpoint serves the full {@link RunView} when one is opened.
+ * game count. Every frozen snapshot (config, roster, parameters) is dropped, because the list does not
+ * need them and a single run's details endpoint serves the full {@link RunView} when one is opened.
+ * Adding a snapshot column means adding it here too, or the list silently starts shipping it.
  */
-export type RunSummaryView = Omit<SeasonRun, 'config_snapshot' | 'submission_snapshot'> & {
+export type RunSummaryView = Omit<
+  SeasonRun,
+  'config_snapshot' | 'submission_snapshot' | 'parameters_snapshot'
+> & {
   /** The requester's display name, when the directory resolved one (omitted otherwise). */
   requested_by_name?: string
   game_count: number
@@ -143,7 +147,12 @@ export function runSummaryView(
   gameCount: number,
   names: ReadonlyMap<string, string> = NO_NAMES,
 ): RunSummaryView {
-  const { config_snapshot: _config, submission_snapshot: _submissions, ...rest } = run
+  const {
+    config_snapshot: _config,
+    submission_snapshot: _submissions,
+    parameters_snapshot: _parameters,
+    ...rest
+  } = run
   return {
     ...rest,
     ...optionalField('requested_by_name', names.get(run.requested_by)),

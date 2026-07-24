@@ -13,6 +13,7 @@ import type { Kysely } from 'kysely'
 import type {
   AgentRef,
   AutomatedBoardRow,
+  CreateRunOutcome,
   CreateSeasonInput,
   DeleteSeasonResult,
   FrozenRunBuilder,
@@ -265,7 +266,7 @@ export class KyselyStorage implements Storage {
     seasonId: string,
     requestedBy: string,
     builder: FrozenRunBuilder,
-  ): Promise<SeasonRun | undefined> {
+  ): Promise<CreateRunOutcome> {
     return runs.createRunWithSchedule(this.db, seasonId, requestedBy, builder)
   }
   async deleteRunsForSeason(seasonId: string): Promise<void> {

@@ -17,6 +17,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, cast
 
+from game_sandbox_harness.environment import int_parameter
+
 if TYPE_CHECKING:
     from game_sandbox_harness.environment import ParameterValue
 
@@ -46,8 +48,7 @@ OBS_SPACE = spaces.Dict(
 
 def make_env(parameters: Mapping[str, ParameterValue]) -> FlappyBirdEnv:
     """Create a fresh Flappy Bird AEC environment. The seed arrives at ``reset``."""
-    pipe_gap = parameters["pipe_gap"]
-    assert isinstance(pipe_gap, int) and not isinstance(pipe_gap, bool)
+    pipe_gap = int_parameter(parameters, "pipe_gap")
     return FlappyBirdEnv(FlappyBirdGame(normalize_obs=True, pipe_gap=pipe_gap), name="flappy_bird_v0")
 
 

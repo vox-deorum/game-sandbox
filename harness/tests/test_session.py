@@ -19,6 +19,7 @@ from game_sandbox_harness.environment import (
     EnvironmentEntry,
     EnvironmentMeta,
     EnvParameter,
+    EnvParameterValueError,
     resolve_parameters,
 )
 from game_sandbox_harness.recording.local import FolderRecordingStore
@@ -774,7 +775,7 @@ def test_learn_hook_time_counts_against_budget():
     assert result.ticks == 3
 
 
-def test_episode_defensively_resolves_parameters_before_constructing_the_environment():
+def test_episode_normalizes_a_complete_parameter_map_before_constructing_the_environment():
     meta = replace(
         make_entry().meta,
         parameters=(EnvParameter("pace", "Pace", "A test parameter.", "float", 1.0, min=0.0, max=2.0),),
@@ -786,10 +787,35 @@ def test_episode_defensively_resolves_parameters_before_constructing_the_environ
         default_action=lambda _env, _slot: 0,
     )
 
-    with Episode(entry, {"player_0": ExternalSlot(NoopSource())}, parameters={"pace": 2}, seed=1) as episode:
+    with Episode(
+        entry, {"player_0": ExternalSlot(NoopSource())}, parameters={"seats": 1, "pace": 2}, seed=1
+    ) as episode:
         episode.step_once()
 
     assert received == [{"seats": 1, "pace": 2.0}]
+
+
+def test_episode_rejects_an_incomplete_or_unknown_parameter_map():
+    """A launch configuration is produced by a caller that already resolved every value.
+
+    Filling a missing name with its default here would let the game run on a value nobody chose and
+    then stamp that value into the recording header as though it had been.
+    """
+    meta = replace(
+        make_entry().meta,
+        parameters=(EnvParameter("pace", "Pace", "A test parameter.", "float", 1.0, min=0.0, max=2.0),),
+    )
+    entry = EnvironmentEntry(
+        meta=meta,
+        make=lambda _parameters: FakeEnv(1),
+        default_action=lambda _env, _slot: 0,
+    )
+    slots = {"player_0": ExternalSlot(NoopSource())}
+
+    with pytest.raises(EnvParameterValueError, match="missing environment parameter 'seats'"):
+        Episode(entry, slots, parameters={"pace": 1.0}, seed=1)
+    with pytest.raises(EnvParameterValueError, match="unknown environment parameter 'nope'"):
+        Episode(entry, slots, parameters={"seats": 1, "pace": 1.0, "nope": 1}, seed=1)
 
 
 def test_episode_rejects_a_factory_that_ignores_the_resolved_seat_count():
