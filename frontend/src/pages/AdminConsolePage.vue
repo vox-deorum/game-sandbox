@@ -433,8 +433,6 @@ function closeDevelopmentHistory(): void {
               <p v-if="renameError" class="rename-error" role="alert">{{ renameError }}</p>
               <UiCard class="admin-card">
                 <SeasonLifecycleControls :season="view.season" @changed="refresh" />
-              </UiCard>
-              <UiCard class="admin-card description-card">
                 <OperatorSeasonDescriptionEditor :season="view.season" @changed="refresh" />
               </UiCard>
             </section>

@@ -39,22 +39,19 @@ import StartForm from '../components/StartForm.vue'
 import WatchAgentPicker from '../components/WatchAgentPicker.vue'
 import UiBadge from '../components/ui/UiBadge.vue'
 import UiButton from '../components/ui/UiButton.vue'
-import UiCard from '../components/ui/UiCard.vue'
 import UiDialog from '../components/ui/UiDialog.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import { useEnvironmentMeta } from '../composables/useEnvironmentMeta.js'
 import { formatDate, formatSeasonName, slotLabel } from '../lib/format.js'
 import { formatParameterValue, resolvedSeatCount, visibleParameters } from '../lib/parameters.js'
 import { handleSessionStartResult } from '../lib/session-start.js'
-import { canParticipate, isAdmin, useMe, userId } from '../me.js'
+import { canParticipate, isAdmin, useMe } from '../me.js'
 import { thumbnailFor } from '../renderers/registry.js'
 
 const route = useRoute()
 const router = useRouter()
 const me = useMe()
 const envId = String(route.params.envId)
-// The signed-in user's id (null when anonymous), the "Submittable" badge's agent-profile target.
-const ownerId = computed(() => userId(me.me))
 
 const { meta, notFound, loading } = useEnvironmentMeta(envId)
 const startError = ref<string | null>(null)
@@ -82,20 +79,13 @@ const activePlayParameters = computed(() => {
     : { seasonId: value.season_id, parameters: value.values }
 })
 
-// The play-open season's active `ready` submissions, fetched once on the hub: the watch list rows, the
-// watch/play seat-dropdown options, and the rate-versus-watch framing all read from this one list.
+// The play-open season's active `ready` submissions, fetched once on the hub: the watch list rows and
+// the watch/play seat-dropdown options both read from this one list.
 // Null until it settles (empty when no season is play-open).
 const watchAgents = ref<WatchAgentSummary[] | null>(null)
-// Whether the viewer has something to rate: an active participant, with at least one unrated agent in
-// the list. When true the watch section is framed as rating rather than watching.
-const rateable = computed(
-  () =>
-    canParticipate(me.me) &&
-    (watchAgents.value?.some((agent) => agent.rating_status === 'unrated') ?? false),
-)
 
-// This environment's public seasons, used to enrich the play banner and name the submission-open
-// season in the header. The play prefill remains authoritative if this optional metadata read fails.
+// This environment's public seasons, used to name the play-open season in the season section and in
+// the peer play heading. The play prefill remains authoritative if this optional metadata read fails.
 const publicSeasons = ref<PublicSeasonView[]>([])
 const playableSeason = computed(() => {
   const seasonId = playParameters.value?.season_id
@@ -103,8 +93,12 @@ const playableSeason = computed(() => {
     ? null
     : publicSeasons.value.find((season) => season.id === seasonId) ?? null
 })
-const submittableSeason = computed(
-  () => publicSeasons.value.find((s) => s.submission_status === 'open') ?? null,
+// The peer play and rate section names the season its runs are played under, so the viewer knows
+// which settings and which roster of agents they are watching and rating.
+const playSectionHeading = computed(() =>
+  playableSeason.value === null
+    ? 'Play and Rate'
+    : `Play and Rate: ${formatSeasonName(playableSeason.value)}`,
 )
 
 // The last released season — the one whose boards are embedded below, named in the section heading
@@ -275,45 +269,36 @@ async function submitStart(payload: StartPayload): Promise<void> {
   <section v-else class="env">
     <header class="env-header">
       <div class="env-headline">
-        <div class="env-title-row"><h1>{{ meta.display_name }}</h1></div>
-        <p class="env-description">{{ meta.description }}</p>
-        <div class="env-meta">
+        <div class="env-title-row">
+          <h1>{{ meta.display_name }}</h1>
           <UiBadge>{{ slotLabel(meta) }}</UiBadge>
-          <RouterLink
-            v-if="submittableSeason !== null && ownerId !== null"
-            class="env-meta-link"
-            :to="`/environments/${meta.env_id}/agents/${ownerId}`"
-          >
-            <UiBadge variant="accent">{{ formatSeasonName(submittableSeason) }}: Submittable</UiBadge>
-          </RouterLink>
           <UiBadge v-if="paceLabel !== null">{{ paceLabel }}</UiBadge>
         </div>
+        <p class="env-description">{{ meta.description }}</p>
       </div>
       <img class="env-thumb" :src="thumbnailFor(meta.renderer)" alt="" />
     </header>
 
-    <UiCard v-if="playOpen" class="play-season-banner">
-      <div class="play-season-heading">
-        <div>
-          <h2>{{ playableSeason === null ? 'Season open for play' : formatSeasonName(playableSeason) }}</h2>
-          <UiBadge variant="accent">Open for play</UiBadge>
+    <section v-if="playOpen" class="env-section">
+      <div class="env-section-head">
+        <div class="env-section-title">
+          <h2>{{ playableSeason === null ? 'Open for Play' : 'Open for Play: ' + formatSeasonName(playableSeason) }}</h2>
         </div>
-        <UiButton v-if="showHumanPlay" size="lg" @click="open()">Play Yourself</UiButton>
+        <UiButton v-if="showHumanPlay" size="lg" @click="open()" class="tight">Play</UiButton>
       </div>
       <div
         v-if="playableSeason !== null && playableSeason.description_markdown !== null"
-        class="play-season-description"
       >
         <InlineMarkdown :markdown="playableSeason.description_markdown" />
       </div>
       <p v-if="visibleSeasonSettings.length > 0" class="play-season-settings">
         Settings: {{ visibleSeasonSettings.join(' · ') }}
       </p>
-    </UiCard>
+    </section>
 
     <section id="play" class="env-section">
       <div class="env-section-title">
-        <h2>{{ rateable ? 'Rate an Agent' : 'Watch an Agent' }}</h2>
+        <h2>{{ playSectionHeading }}</h2>
       </div>
       <WatchAgentPicker
         v-if="playOpen && playParameters !== null && playParameters.season_id !== null"
@@ -409,18 +394,8 @@ async function submitStart(payload: StartPayload): Promise<void> {
 }
 
 .env-description {
-  margin: 0 0 var(--space-3);
+  margin: 0;
   color: var(--color-text-muted);
-}
-
-.env-meta {
-  display: flex;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-
-.env-meta-link {
-  display: inline-flex;
 }
 
 .env-thumb {
@@ -435,12 +410,6 @@ async function submitStart(payload: StartPayload): Promise<void> {
 .env-section {
   margin-top: var(--space-6);
 }
-
-.play-season-banner { margin-top: var(--space-6); }
-.play-season-heading { display: flex; justify-content: space-between; align-items: start; gap: var(--space-3); flex-wrap: wrap; }
-.play-season-heading h2 { margin: 0 var(--space-2) 0 0; display: inline; }
-.play-season-description, .play-season-settings { margin: var(--space-3) 0 0; }
-.play-season-description, .play-season-settings { color: var(--color-text-muted); }
 
 .env-section-head {
   display: flex;

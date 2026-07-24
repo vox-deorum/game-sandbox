@@ -69,9 +69,8 @@ Purpose: everything about one environment in one place. At this stage that was t
 |  Flappy Bird   [Overview] [Leaderboards] [Replays] [My Submissions] [Manage*]        |
 |                                                  (* operator-only; the tab strip)     |
 |-------------------------------------------------------------------------------------|
-|  Flappy Bird                                     [thumb, right]                      |
+|  Flappy Bird  [1 slot] [paced 50 ms]             [thumb, right]                      |
 |  Longer description of the environment.                                              |
-|  1 slot   human-playable   paced 50ms                                                |
 |                                                                                      |
 |  [ Play Yourself ]  [ Watch ]                    (hidden when not allowlisted)       |
 |                                                                                      |

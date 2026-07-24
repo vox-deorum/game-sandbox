@@ -13,7 +13,7 @@ Environments declare typed, friendly-labeled gameplay parameters (including seat
 - Parameterized environment factories. Flappy Bird declares one real parameter (`pipe_gap`); Hearts and Spades gain the new factory signature but declare nothing.
 - A `parameters` block in the season config overrides, admin validation against the declarations, and per-run snapshotting.
 - The play-open `season_id` and a complete resolved `parameters` object on session start, followed by orchestrator validation, container threading, and persistence in the session row and recording header.
-- Frontend: a dynamic parameter form in the start and watch flows, a new checkbox-group primitive, a season banner on the environment page, and a parameter-overrides card in the season config editor.
+- Frontend: a dynamic parameter form in the start and watch flows, a new checkbox-group primitive, a play-season section on the environment page, and a parameter-overrides card in the season config editor.
 
 Stage 14 targets a fresh, pre-release checkout. It updates the current source, version 1 template contents, and flat initial database schema in place. `template_version` and `deps_version` stay at 1. Databases, built session images, and composed templates from another checkout are unsupported and must be recreated. There is no data migration or backward-compatibility path.
 
@@ -98,7 +98,7 @@ JSON text remains a storage detail. Shared backend codecs encode normalized para
 
 The template and dependency-set version remain unchanged. The current `deps-v1` image definition already copies the harness and environments from the working source tree, so rebuilding it includes Stage 14. Developers recreate the database, rebuild local session images, and recompose templates after this schema and contract change. The implementation adds no migration, compatibility branch, version gate, or legacy artifact test.
 
-### Frontend: one dynamic form, a season banner, and admin overrides
+### Frontend: one dynamic form, a play-season section, and admin overrides
 
 A new `frontend/src/lib/parameters.ts` holds the pure logic: the visibility rule, form initialization, validation, formatting, and `resolvedSeatCount`. A numeric parameter is hidden when `min` equals `max`, and a scalar `choice` is hidden when it has one option. A non-empty `multi_choice` always stays visible because even one option permits both the empty and selected states.
 
@@ -106,7 +106,7 @@ A new `frontend/src/lib/parameters.ts` holds the pure logic: the visibility rule
 
 `UiCheckboxGroup` is a new `frontend/src/components/ui/` primitive: a fieldset with a visible legend, labeled options, a string-array model emitted in options order, hint and error wiring mirroring `UiField`, and token-only styling. It appears on the `/styleguide` route and in the design-system inventory, and the season config editor's ad hoc model-alias checkbox fieldset is refactored onto it.
 
-The environment page gains a play-season banner directly above the watch and play section head, shown while a season is open for play: the season name as its heading with an "Open for play" badge, the season's description markdown, and a quiet "Settings:" summary listing only the visible parameter values (omitted when none are visible). The banner replaces the section head's existing season labels, so the season is named once, and owns the "Play Yourself" action shown in the approved mockup. The play dialog title names the season. When play is closed, the empty-state copy says that no season is currently open for play. The multi-seat decision reads the resolved seat count instead of `meta.max_slots`. The banner and the boolean-as-select control are approved visual patterns.
+The environment page gains a play-season section directly above the peer play and rate section, shown while a season is open for play: the season name as its heading with an "Open for play" badge, the season's description markdown, and a quiet "Settings:" summary listing only the visible parameter values (omitted when none are visible). It is set apart by a raised background rather than a card border, and owns the "Play Yourself" action shown in the approved mockup. The section below it is headed "Peer Play and Rate" followed by the same season name, so the listed agents are plainly the ones playable and ratable in that season. The play dialog title names the season too. When play is closed, the empty-state copy says that no season is currently open for play. The multi-seat decision reads the resolved seat count instead of `meta.max_slots`. The play-season section and the boolean-as-select control are approved visual patterns.
 
 The start flows thread the form through: `StartForm` places it above the seed field and adds the fetched `season_id` and complete resolved `parameters` map to its payload; `SeatAssignmentDialog` places it between the intro sentence and the seat grid, so the `seats` control (when visible) sits above the grid it resizes, and derives its seat ids reactively from the resolved seat count (growing fills new seats with the Naive agent, shrinking reseats the human at the first in-range human-capable seat or disables start); `WatchAgentPicker` keeps its instant single-slot start only when no visible parameters exist and otherwise routes through the dialog. When an unrated agent's **Rate** action opens the dialog, it preselects that agent into every resolved seat and disables the parameters, seat assignments, and seed. The ordinary watch and play paths remain editable. The instant path still submits the complete prefetched map, so Hearts and Spades behavior is unchanged today.
 
@@ -114,15 +114,15 @@ The season config editor gains an "Environment Parameters" card listing every de
 
 #### Mockups (Revise existing UI if needed)
 
-The play-season banner, above the watch section head (which loses its "Season: …" tip). Drop the play section, if any:
+The play-season section, on its own raised background above the peer play and rate section head (which loses its "Season: …" tip). Drop the play section, if any:
 
 ```text
-┌───────────────────────────────────────────────────────┐
+╭───────────────────────────────────────────────────────╮
 │ Spring 2026                           [Play Yourself] │
 │ A faster season with narrower pipes.     (markdown)   │
 │ Settings: Pipe gap 90                                 │
-└───────────────────────────────────────────────────────┘
-Rate an Agent
+╰───────────────────────────────────────────────────────╯
+Peer Play and Rate: Spring 2026
   Naive agent  [Built-in]                      [Watch]
   Agent #3     [Not rated]                     [Rate]
 ```

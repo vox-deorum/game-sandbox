@@ -146,7 +146,7 @@ describe('EnvironmentPage', () => {
     expect(screen.getByText(/^released /)).toBeInTheDocument()
   })
 
-  it('frames the watch section as "Rate an Agent" when there is an unrated agent', async () => {
+  it('names the play-open season in the season section and in the peer play heading', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
     vi.mocked(listSeasons).mockResolvedValue([
       {
@@ -163,30 +163,41 @@ describe('EnvironmentPage', () => {
         game_count: 0,
       },
     ])
-    // An unrated agent a participating viewer can rate flips the section heading from watch to rate.
     vi.mocked(listWatchAgents).mockResolvedValue([
       { submission_id: 'sub1', anonymous_number: 1, rating_status: 'unrated' },
     ])
     await renderPage()
+    // The section the agents are listed in says which season they are played and rated under.
     expect(
-      await screen.findByRole('heading', { name: 'Rate an Agent', level: 2 }),
+      await screen.findByRole('heading', { name: 'Play and Rate: Playground', level: 2 }),
     ).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Playground', level: 2 })).toBeInTheDocument()
-    expect(screen.getByText('Open for play')).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: 'Watch an Agent' })).toBeNull()
   })
 
-  it('keeps the watch framing when there is nothing unrated to rate', async () => {
+  it('tags the environment name with its slots and pace, and with no submission season', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
-    // Only an already-rated agent: there is something to watch but nothing to rate.
-    vi.mocked(listWatchAgents).mockResolvedValue([
-      { submission_id: 'sub1', anonymous_number: 1, rating_status: 'rated' },
+    // A season taking submissions no longer adds a tag beside the name: the header carries only the
+    // environment's own facts, which now sit on the title line rather than in a row of their own.
+    vi.mocked(listSeasons).mockResolvedValue([
+      {
+        id: 'iter-1',
+        env_id: 'flappy_bird',
+        submission_status: 'open',
+        play_status: 'open',
+        release_status: 'unreleased',
+        label: 'Playground',
+        description_markdown: null,
+        created_at: '2026-06-10T00:00:00Z',
+        released_at: null,
+        submission_count: 1,
+        game_count: 0,
+      },
     ])
     await renderPage()
-    expect(
-      await screen.findByRole('heading', { name: 'Watch an Agent', level: 2 }),
-    ).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: 'Rate an Agent' })).toBeNull()
+    const title = await screen.findByRole('heading', { name: 'Flappy Bird', level: 1 })
+    expect(title.parentElement).toHaveTextContent('1 slot')
+    expect(title.parentElement).toHaveTextContent('paced 50 ms')
+    expect(screen.queryByText(/Submittable/)).toBeNull()
   })
 
   it('disables watch and play when no season is play-open', async () => {

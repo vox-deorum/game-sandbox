@@ -508,11 +508,6 @@ onMounted(async () => {
   margin: var(--space-3) 0;
 }
 
-/* Touch targets: the transport controls clear the 44px minimum (the accessibility baseline). */
-.replay-controls :deep(.ui-button) {
-  min-height: 44px;
-}
-
 .scrubber {
   display: flex;
   align-items: center;

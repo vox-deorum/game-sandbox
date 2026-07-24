@@ -105,6 +105,11 @@ function clear(): Promise<void> {
 </template>
 
 <style scoped>
+.description-editor {
+  padding: var(--space-4) 0;
+  border-top: 1px solid var(--color-border);
+}
+
 .description-sub {
   margin: 0 0 var(--space-3);
   font-size: var(--text-sm);

@@ -100,7 +100,6 @@ ul {
 }
 
 .detail-body {
-  padding-top: var(--space-2);
   font-size: var(--text-xs);
 }
 </style>
