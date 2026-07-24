@@ -867,7 +867,8 @@ describe('AdminConsolePage', () => {
     expect(await screen.findByText(/match design/)).toBeInTheDocument()
   })
 
-  it('disables Run workflow while the match design has unsaved edits', async () => {
+  it('prompts before running while the configuration has unsaved edits', async () => {
+    vi.mocked(triggerRun).mockResolvedValue({ ok: true, id: 'run-1', status: 'pending' })
     await renderConsole()
     // The seeded config matches the persisted season, so the run trigger starts available.
     expect(await screen.findByRole('button', { name: 'Run workflow' })).toBeEnabled()
@@ -875,9 +876,20 @@ describe('AdminConsolePage', () => {
     // Add a match without saving: the design now differs from the persisted config.
     await fireEvent.click(screen.getByRole('button', { name: 'Add match' }))
 
-    expect(screen.getByRole('button', { name: 'Run workflow' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Run workflow' })).toBeEnabled()
     expect(screen.getByText(/Unsaved changes/)).toBeInTheDocument()
-    expect(screen.getByText(/Save the match design before running/)).toBeInTheDocument()
+
+    // The trigger asks first, and cancelling leaves the run unstarted.
+    await fireEvent.click(screen.getByRole('button', { name: 'Run workflow' }))
+    expect(await screen.findByText(/those edits will not apply/)).toBeInTheDocument()
+    await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(vi.mocked(triggerRun)).not.toHaveBeenCalled()
+
+    // Confirming runs the persisted configuration.
+    await fireEvent.click(screen.getByRole('button', { name: 'Run workflow' }))
+    await fireEvent.click(await screen.findByRole('button', { name: 'Run anyway' }))
+    await waitFor(() => expect(vi.mocked(triggerRun)).toHaveBeenCalledWith('iter-1'))
   })
 
   it('navigates to the new run details page after a trigger', async () => {
@@ -894,7 +906,7 @@ describe('AdminConsolePage', () => {
     )
   })
 
-  it('places the run actions above Run Configuration and lists past runs at the end', async () => {
+  it('places the run actions after Save configuration and lists past runs at the end', async () => {
     vi.mocked(listRuns).mockResolvedValue([
       {
         id: 'run-1',
@@ -909,10 +921,16 @@ describe('AdminConsolePage', () => {
     ])
     await renderConsole()
 
-    const actions = await screen.findByRole('button', { name: 'Run workflow' })
-    const config = screen.getByRole('heading', { name: 'Run Configuration' })
-    // The action row precedes the Run Configuration section (DOCUMENT_POSITION_FOLLOWING = 4).
-    expect(actions.compareDocumentPosition(config) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const save = await screen.findByRole('button', { name: 'Save configuration' })
+    const trigger = screen.getByRole('button', { name: 'Run workflow' })
+    const board = screen.getByRole('button', { name: 'Check leaderboard' })
+    // The run controls close the Run Configuration section, after its save button
+    // (DOCUMENT_POSITION_FOLLOWING = 4).
+    expect(save.compareDocumentPosition(trigger) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(trigger.compareDocumentPosition(board) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(trigger.closest('section')).toBe(
+      screen.getByRole('heading', { name: 'Run Configuration' }).closest('section'),
+    )
 
     // The past run is listed and links to its details page.
     const link = screen.getByRole('link', { name: /2026/ })

@@ -47,7 +47,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{
   (e: 'changed', season: SeasonView): void
-  /** Whether the form holds match-design edits not yet persisted; drives the Run gate upstream. */
+  /** Whether the form holds edits not yet persisted; drives the Run confirmation prompt upstream. */
   (e: 'dirty-change', dirty: boolean): void
 }>()
 
@@ -369,7 +369,7 @@ function canonicalMessaging(
 /**
  * Normalize a stored LLM override to the exact key/alias order `buildConfig` emits. The backend
  * accepts any key order and any alias order, so a config saved by a script must not read as a
- * permanent unsaved edit (which would gate the Run button) just because it serialized differently.
+ * permanent unsaved edit (which would prompt on every run) just because it serialized differently.
  */
 function canonicalLlm(llm: SeasonOverrides['llm']): Record<string, unknown> | null {
   if (llm === undefined) return null
@@ -402,7 +402,7 @@ function canonicalLimits(limits: LlmLimitOverride | undefined): Record<string, u
 
 /**
  * Whether the form differs from the saved season config. An incomplete/invalid draft (e.g. a match
- * mid-edit with no seeds yet) counts as dirty: it still needs a save, and a run on it must be blocked.
+ * mid-edit with no seeds yet) counts as dirty: it still needs a save, and a run must warn about it.
  */
 const dirty = computed(() => {
   const result = buildConfig()
@@ -412,7 +412,7 @@ const dirty = computed(() => {
   return canonicalConfig(result.config) !== canonicalConfig(props.season.config)
 })
 
-// Surface the dirty state to the console so it can gate "Run workflow" on a saved design.
+// Surface the dirty state to the console so "Run workflow" can confirm before using the saved design.
 watch(dirty, (value) => emit('dirty-change', value), { immediate: true })
 
 async function save(): Promise<void> {

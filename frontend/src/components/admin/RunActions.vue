@@ -1,13 +1,15 @@
 <!--
   The run controls of the operator console: trigger or re-run the workflow, cancel an in-flight run,
-  and jump to the leaderboard. It is the console's control surface only — the per-run telemetry (games
-  and the live container-log stream) lives on the run-details page (RunDetailsPage.vue). Triggering a
-  run navigates straight to that page so the operator watches it stream; cancelling stays here and
-  emits `changed` so the console reloads the latest-run status and the freshly settled boards.
+  and jump to the leaderboard. They close the run-configuration section, directly after its save
+  button, because a run always uses the configuration that was last saved there. This is the console's
+  control surface only: the per-run telemetry (games and the live container-log stream) lives on the
+  run-details page (RunDetailsPage.vue). Triggering a run navigates straight to that page so the
+  operator watches it stream; cancelling stays here and emits `changed` so the console reloads the
+  latest-run status and the freshly settled boards.
 
   A `409 run_in_progress` surfaces as "a run is already in progress"; a `409 empty_schedule` points
-  back at the match design. Unsaved match-design edits gate the trigger: a run reads the persisted
-  config, so running on an unsaved draft would silently use the old design.
+  back at the match design. Unsaved config edits prompt rather than block: a run reads the persisted
+  config, so the operator confirms that the pending draft will not apply before the run starts.
 -->
 <script setup lang="ts">
 import { computed, ref } from 'vue'
@@ -15,6 +17,8 @@ import { RouterLink, useRouter } from 'vue-router'
 
 import { cancelRun, type RunView, type SeasonView, triggerRun } from '../../api/client.js'
 import UiButton from '../ui/UiButton.vue'
+import UiDialog from '../ui/UiDialog.vue'
+import UiDialogActions from '../ui/UiDialogActions.vue'
 import UiStatusBadge from '../ui/UiStatusBadge.vue'
 
 const props = defineProps<{
@@ -22,7 +26,7 @@ const props = defineProps<{
   latestRun: RunView | null
   envId: string
   boardAvailable: boolean
-  /** The config editor has unsaved match-design edits; a run would use the stale persisted design. */
+  /** The config editor has unsaved edits; a run would use the stale persisted config. */
   configDirty: boolean
 }>()
 const emit = defineEmits<{ (e: 'changed'): void }>()
@@ -32,6 +36,8 @@ const router = useRouter()
 const triggering = ref(false)
 const cancelling = ref(false)
 const error = ref<string | null>(null)
+// Open while the operator confirms a run against a configuration whose edits are not saved yet.
+const unsavedOpen = ref(false)
 
 /** Whether the latest run is still executing, so a re-run is refused and a cancel is offered. */
 const inProgress = computed(
@@ -46,6 +52,21 @@ const STATUS_TONE: Record<RunView['status'], 'neutral' | 'success' | 'danger' | 
   completed: 'success',
   failed: 'danger',
   cancelled: 'neutral',
+}
+
+/** Run at once on a saved configuration; on an unsaved one, ask before running the persisted design. */
+function requestTrigger(): void {
+  if (props.configDirty) {
+    unsavedOpen.value = true
+    return
+  }
+  void trigger()
+}
+
+/** Confirmed from the prompt: run the persisted config, then close so any error is readable. */
+async function triggerUnsaved(): Promise<void> {
+  await trigger()
+  unsavedOpen.value = false
 }
 
 async function trigger(): Promise<void> {
@@ -92,7 +113,7 @@ async function cancel(): Promise<void> {
 <template>
   <div class="run-actions-panel">
     <div class="run-actions">
-      <UiButton :loading="triggering" :disabled="inProgress || configDirty" @click="trigger">
+      <UiButton :loading="triggering" :disabled="inProgress" @click="requestTrigger">
         {{ triggerLabel }}
       </UiButton>
       <UiButton v-if="inProgress" variant="danger" :loading="cancelling" @click="cancel">
@@ -115,15 +136,31 @@ async function cancel(): Promise<void> {
       </RouterLink>
     </div>
 
-    <p v-if="configDirty" class="run-hint" role="status">
-      Save the match design before running — a run uses the last saved configuration.
-    </p>
     <p v-if="error" class="run-error" role="alert">{{ error }}</p>
     <p v-if="latestRun?.error" class="run-error">{{ latestRun.error }}</p>
+
+    <UiDialog v-model:open="unsavedOpen" title="Run with unsaved configuration?">
+      <p class="run-confirm-text">
+        The configuration above has edits that are not saved. A run always uses the last saved
+        configuration, so those edits will not apply to it. Cancel and save them first if the run
+        should use them.
+      </p>
+      <UiDialogActions>
+        <UiButton :loading="triggering" @click="triggerUnsaved">Run anyway</UiButton>
+        <UiButton variant="ghost" :disabled="triggering" @click="unsavedOpen = false">
+          Cancel
+        </UiButton>
+      </UiDialogActions>
+    </UiDialog>
   </div>
 </template>
 
 <style scoped>
+/* The panel follows the config editor's own action row, so it keeps that row's rhythm. */
+.run-actions-panel {
+  margin-top: var(--space-4);
+}
+
 .run-actions {
   display: flex;
   align-items: center;
@@ -147,9 +184,8 @@ async function cancel(): Promise<void> {
   color: var(--color-danger);
 }
 
-.run-hint {
-  margin: var(--space-2) 0 0;
-  font-size: var(--text-sm);
-  color: var(--color-text-muted);
+.run-confirm-text {
+  margin: 0;
+  color: var(--color-text);
 }
 </style>

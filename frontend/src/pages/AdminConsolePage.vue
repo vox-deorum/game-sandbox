@@ -71,8 +71,8 @@ const boardAvailable = computed(
 )
 const declaring = ref(false)
 const newLabel = ref('')
-// Unsaved match-design edits in the config editor gate "Run workflow": a run reads the persisted
-// config, so triggering on an unsaved draft would silently run the old (often empty) design.
+// Unsaved edits in the config editor make "Run workflow" prompt first: a run reads the persisted
+// config, so triggering on an unsaved draft would otherwise silently run the old (often empty) design.
 const configDirty = ref(false)
 // Inline rename of the selected season: opens with the current label, saves through the admin API.
 const renaming = ref(false)
@@ -437,15 +437,6 @@ function closeDevelopmentHistory(): void {
               </UiCard>
             </section>
 
-            <RunActions
-              :season="view.season"
-              :latest-run="view.latest_run"
-              :env-id="envId"
-              :board-available="boardAvailable"
-              :config-dirty="configDirty"
-              @changed="loadDetail"
-            />
-
             <section class="admin-section">
               <h2>Run Configuration</h2>
               <SeasonConfigEditor
@@ -454,6 +445,14 @@ function closeDevelopmentHistory(): void {
                 :environment-parameters="meta?.parameters"
                 @changed="refresh"
                 @dirty-change="configDirty = $event"
+              />
+              <RunActions
+                :season="view.season"
+                :latest-run="view.latest_run"
+                :env-id="envId"
+                :board-available="boardAvailable"
+                :config-dirty="configDirty"
+                @changed="loadDetail"
               />
             </section>
 

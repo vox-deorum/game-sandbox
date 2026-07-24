@@ -202,6 +202,17 @@ test('operator season configuration exposes and validates LLM controls', async (
       runConfiguration.locator('.ui-card').getByRole('button', { name: 'Save configuration' }),
     ).toHaveCount(0)
 
+    // The run controls close the same section, after the save action. The added match is still
+    // unsaved, so the trigger asks before running the persisted configuration.
+    const runWorkflow = runConfiguration.getByRole('button', { name: 'Run workflow' })
+    await expect(runWorkflow).toBeEnabled()
+    await expect(runConfiguration.getByRole('button', { name: 'Check leaderboard' })).toBeVisible()
+    await runWorkflow.click()
+    const unsavedPrompt = page.getByRole('dialog', { name: 'Run with unsaved configuration?' })
+    await expect(unsavedPrompt).toBeVisible()
+    await unsavedPrompt.getByRole('button', { name: 'Cancel' }).click()
+    await expect(unsavedPrompt).toHaveCount(0)
+
     const messaging = page.getByLabel('Messaging')
     await expect(messaging).toHaveValue('default')
     await expect(messaging.locator('option')).toHaveText(['Environment default (off)', 'Off'])
