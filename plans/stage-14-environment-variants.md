@@ -98,15 +98,85 @@ The template and dependency-set version remain unchanged. The current `deps-v1` 
 
 A new `frontend/src/lib/parameters.ts` holds the pure logic: the visibility rule, form initialization, validation, formatting, and `resolvedSeatCount`. A numeric parameter is hidden when `min` equals `max`, and a scalar `choice` is hidden when it has one option. A non-empty `multi_choice` always stays visible because even one option permits both the empty and selected states.
 
-`frontend/src/components/ParameterFields.vue` renders the visible declarations as a form: `int`, `float`, and `string` through `UiField` with `UiInput`; `bool` through `UiSelect` with On and Off options, matching the established messaging-override idiom; `choice` through `UiSelect`; `multi_choice` through a new `UiCheckboxGroup` primitive. It renders nothing when no parameter is visible, exposes parsed values through its model, and reports validity so parents can gate their start buttons. The parent retains hidden values from the prefill response and merges visible edits into that complete map.
+`frontend/src/components/ParameterFields.vue` renders the visible declarations as a form: `int`, `float`, and `string` through `UiField` with `UiInput`; `bool` through `UiSelect` with On and Off options, matching the established messaging-override idiom; `choice` through `UiSelect`; `multi_choice` through a new `UiCheckboxGroup` primitive. A numeric field's hint carries the declaration description and the allowed range. It renders nothing when no parameter is visible, exposes parsed values through its model, and reports validity so parents can gate their start buttons. An invalid value shows its `UiField` error as the user edits, so a disabled start button is always explained by a visible message rather than silently refusing. The parent retains hidden values from the prefill response and merges visible edits into that complete map.
 
 `UiCheckboxGroup` is a new `frontend/src/components/ui/` primitive: a fieldset with a visible legend, labeled options, a string-array model emitted in options order, hint and error wiring mirroring `UiField`, and token-only styling. It appears on the `/styleguide` route and in the design-system inventory, and the season config editor's ad hoc model-alias checkbox fieldset is refactored onto it.
 
-The environment page gains a play-season banner under the watch and play section head, shown while a season is open for play: "Now playing" with the season name, the season's description markdown, a quiet summary of the effective parameter values, and the sentence "Watching and playing use this season's settings; you can adjust them when you start." The play dialog title names the season. When play is closed, the empty-state copy says that no season is currently open for play. The multi-seat decision reads the resolved seat count instead of `meta.max_slots`. The banner and the boolean-as-select control are new visual patterns and need owner sign-off before implementation.
+The environment page gains a play-season banner directly above the watch and play section head, shown while a season is open for play: the season name as its heading with an "Open for play" badge, the season's description markdown, and a quiet "Settings:" summary listing only the visible parameter values (omitted when none are visible). The banner replaces the section head's existing "Season: …" tip, so the season is named once. The play dialog title names the season. When play is closed, the empty-state copy says that no season is currently open for play. The multi-seat decision reads the resolved seat count instead of `meta.max_slots`. The banner and the boolean-as-select control are new visual patterns and need owner sign-off before implementation.
 
-The start flows thread the form through: `StartForm` places it above the seed field and adds the fetched `season_id` and complete resolved `parameters` map to its payload; `SeatAssignmentDialog` derives its seat ids reactively from the resolved seat count (growing fills new seats with the Naive agent, shrinking reseats the human at the first in-range human-capable seat or disables start); `WatchAgentPicker` keeps its instant single-slot start only when no visible parameters exist and otherwise routes through the dialog. The instant path still submits the complete prefetched map, so Hearts and Spades behavior is unchanged today.
+The start flows thread the form through: `StartForm` places it above the seed field and adds the fetched `season_id` and complete resolved `parameters` map to its payload; `SeatAssignmentDialog` places it between the intro sentence and the seat grid, so the `seats` control (when visible) sits above the grid it resizes, and derives its seat ids reactively from the resolved seat count (growing fills new seats with the Naive agent, shrinking reseats the human at the first in-range human-capable seat or disables start); `WatchAgentPicker` keeps its instant single-slot start only when no visible parameters exist and otherwise routes through the dialog. The instant path still submits the complete prefetched map, so Hearts and Spades behavior is unchanged today.
 
-The season config editor gains an "Environment Parameters" card listing every declared parameter, including single-valued ones, since the hide rule is user-facing only and operators may still override. Every row has an explicit inherit-or-override mode so an empty string remains a valid string override and no control needs a sentinel value. Override mode reveals the type-appropriate input, including `UiCheckboxGroup` for multi-choice. Values are validated against the declarations before save and canonicalized for dirty tracking. The editor serializes only declarations from the current registry.
+The season config editor gains an "Environment Parameters" card listing every declared parameter, including single-valued ones, since the hide rule is user-facing only and operators may still override. Every row has an explicit inherit-or-override mode so an empty string remains a valid string override and no control needs a sentinel value; the inherit option is labeled "Environment default (value)", matching the messaging override's `messagingDefaultLabel` idiom. Override mode reveals the type-appropriate input, including `UiCheckboxGroup` for multi-choice. The `seats` row carries the hint "Every match's slot count must equal this value," because a seats override is the one parameter that can invalidate the match design elsewhere on the page. Values are validated against the declarations before save and canonicalized for dirty tracking. The editor serializes only declarations from the current registry.
+
+#### Mockups (Revise existing UI if needed)
+
+The play-season banner, above the watch section head (which loses its "Season: …" tip). Drop the play section, if any:
+
+```text
+┌───────────────────────────────────────────────────────┐
+│ Spring 2026                           [Play Yourself] │
+│ A faster season with narrower pipes.     (markdown)   │
+│ Settings: Pipe gap 90                                 │
+└───────────────────────────────────────────────────────┘
+Rate an Agent
+  Naive agent  [Built-in]                      [Watch]
+  Agent #3     [Not rated]                     [Rate]
+```
+
+The single-slot play dialog (Flappy Bird), parameters above the seed field:
+
+```text
+┌ Play Flappy Bird — Spring 2026 ─────────────────── ✕ ┐
+│ Pipe gap                [ 90            ]             │
+│ Vertical opening between pipes. 60–200.               │
+│ Seed (optional)          [ random        ]            │
+│ Step time limit (ms)    [ 100           ]             │
+│ [Start playing]  [Cancel]                             │
+└───────────────────────────────────────────────────────┘
+```
+
+The multi-seat dialog for a future variable-seat environment, with the parameter form between
+the intro and the seat grid so the `seats` control sits above the grid it resizes (every current
+environment hides `seats`, so today this section shows only any other visible parameters):
+
+```text
+┌ Play Hearts — Autumn 2026 ──────────────────────── ✕ ┐
+│ Pick your seat; assign agents to the rest.            │
+│ Seats                    [ 4 ]                        │
+│ 3–6.                                                  │
+│ Scoring variant          [ Standard ▾ ]               │
+│ ──────────────────────────────────────                │
+│ Seat 1   You  seated                                  │
+│ Seat 2   [ Naive agent ▾ ]  [Sit here]                │
+│ Seat 3   [ Naive agent ▾ ]  [Sit here]                │
+│ Seat 4   [ Naive agent ▾ ]  [Sit here]                │
+│ ──────────────────────────────────────                │
+│ Seed (optional)          [ random ]                   │
+│ Step time limit (ms)     [ 30000  ]                   │
+│ [Start playing]  [Cancel]                             │
+└───────────────────────────────────────────────────────┘
+```
+
+The `UiCheckboxGroup` primitive (legend, options, hint):
+
+```text
+Expansions
+[x] Moving pipes
+[ ] Night mode
+[ ] Wind gusts
+Pick any combination.
+```
+
+The season config editor's Environment Parameters card, one row inheriting and one overriding:
+
+```text
+┌ Environment Parameters ───────────────────────────────┐
+│ Pipe gap   [ Environment default (100) ▾ ]            │
+│                                                       │
+│ Seats       [ 4 (default) ]                           │
+│   1–4. Every match's slot count.                      │
+└───────────────────────────────────────────────────────┘
+```
 
 ## Tests
 
