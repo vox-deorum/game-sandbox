@@ -14,6 +14,8 @@ Every environment package must also declare `PUBLISHED_EXAMPLES`, a tuple of exa
 
 The top-level `templates/` directory now contains only `templates/base/`. Generated `sandbox/env/`, `sandbox/harness/`, and shared helper files exist only in a composed tree under `build/`.
 
+Compose renders an environment's declared `EnvParameter` and `EnvParameterChoice` values into the generated `sandbox.env` registration. It does not copy the synthesized public `seats` declaration back into `EnvironmentMeta`, because slot bounds remain its source of truth.
+
 ## Helpers and pin tests
 
 Give students a small helper module when they need game-specific code to interpret observations or produce integer actions. Hearts and Spades provide `sandbox/cards.py`; Flappy Bird provides `sandbox/features.py`.
@@ -27,6 +29,8 @@ Hearts and Spades may re-export game-independent names from `sandbox.semantic_ca
 ## Composed kit
 
 `uv run python scripts/compose.py <env>` writes a complete student repository to `build/templates/<env>/`. Passing an example name writes the example tree under `build/examples/<env>/<name>/`.
+
+The generated environment factory uses the required `make(parameters)` signature. Local play and evaluation resolve the complete default map before constructing the environment, so a composed kit exercises the same contract as a server session.
 
 Read [Template product and releases](templates.md#composition) for the composition order, generated packages, dependency merge rule, and student-documentation rewrites.
 

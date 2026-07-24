@@ -7,6 +7,8 @@
  * `sqlite.ts` its one wiring today. Swapping engines is a new wiring file against the same schema,
  * queries, and interface.
  */
+
+import type { ParameterValue } from '@game-sandbox/schema/environment'
 import type { ResolvedOfficialLlmPolicy } from '../llm/config.js'
 import type {
   AgentRatingPrompt,
@@ -118,6 +120,8 @@ export interface NewSessionInput {
   messaging_enabled?: number
   message_cap?: number | null
   llm_enabled?: number
+  /** Fully resolved environment parameters, preserved verbatim in the public session projection. */
+  parameters: Record<string, ParameterValue>
   created_at: string
 }
 
@@ -229,6 +233,19 @@ export interface ScheduledGameInput {
   /** One resolved {@link AgentRef} per seat, in slot order. */
   slots: AgentRef[]
 }
+
+export interface FrozenRunInput {
+  config: SeasonConfig
+  submissions: AgentRef[]
+}
+
+export interface FrozenRunPlan {
+  parametersSnapshot: Record<string, ParameterValue>
+  scheduledGames: ScheduledGameInput[]
+  llmPolicy: ResolvedOfficialLlmPolicy
+}
+
+export type FrozenRunBuilder = (input: FrozenRunInput) => FrozenRunPlan | undefined
 
 /** A per-seat game outcome the runner derives from the recording. */
 export interface RecordGameResultInput {
@@ -471,11 +488,8 @@ export interface Storage {
   createRunWithSchedule(
     seasonId: string,
     requestedBy: string,
-    submissionSnapshot: AgentRef[],
-    scheduledGames: ScheduledGameInput[],
-    /** Resolves the frozen LLM policy from the same in-transaction config read as `config_snapshot`. */
-    resolveLlmPolicy: (config: SeasonConfig) => ResolvedOfficialLlmPolicy,
-  ): Promise<SeasonRun>
+    builder: FrozenRunBuilder,
+  ): Promise<SeasonRun | undefined>
   /** Delete a season's runs, their games, results, and placements (the forced config-edit path). */
   deleteRunsForSeason(seasonId: string): Promise<void>
   /** Delete a season's submissions (the forced `deps_version`-change path). */

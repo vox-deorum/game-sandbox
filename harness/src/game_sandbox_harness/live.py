@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import math
 import os
 import sys
 import urllib.request
@@ -31,7 +32,7 @@ from dataclasses import dataclass
 from typing import IO, Any, cast
 
 from .clock import SystemClock
-from .environment import EnvironmentEntry, load_environment
+from .environment import EnvironmentEntry, ParameterValue, load_environment
 from .live_io import (
     PausableClock,
     ProtocolStream,
@@ -105,6 +106,8 @@ class LiveConfig:
     human_timeout_ms: int | None | UnsetTimeout
     recording_dir: str
     recording_id: str | None
+    #: Complete resolved parameter map required by every launch path.
+    parameters: dict[str, ParameterValue]
     #: Per-slot attribution copied verbatim into the recording header (slot id -> attribution
     #: object). It exactly covers the configured slots and agrees with each binding kind.
     players: dict[str, PlayerAttribution] | None = None
@@ -182,6 +185,18 @@ def parse_config(argv: list[str]) -> LiveConfig:
     if recording_id is not None and not isinstance(recording_id, str):
         raise LiveConfigError("config 'recording_id' must be a string or null")
 
+    if "parameters" not in config:
+        raise LiveConfigError("config 'parameters' must be an object")
+    raw_parameters = config["parameters"]
+    parameter_items = cast("dict[object, object]", raw_parameters)
+    if not isinstance(raw_parameters, dict) or not all(
+        isinstance(name, str) and _is_parameter_value(value) for name, value in parameter_items.items()
+    ):
+        raise LiveConfigError(
+            "config 'parameters' must contain booleans, finite numbers, strings, or string lists"
+        )
+    parameters = cast("dict[str, ParameterValue]", raw_parameters)
+
     players = _parse_players(config.get("players"), slots)
     step_timeout_ms = _parse_optional_int(config, "step_timeout_ms")
     episode_timeout_ms = _parse_optional_int(config, "episode_timeout_ms")
@@ -205,6 +220,7 @@ def parse_config(argv: list[str]) -> LiveConfig:
         human_timeout_ms=human_timeout_ms,
         recording_dir=recording_dir,
         recording_id=recording_id,
+        parameters=parameters,
         players=players,
         step_timeout_ms=step_timeout_ms,
         episode_timeout_ms=episode_timeout_ms,
@@ -215,6 +231,15 @@ def parse_config(argv: list[str]) -> LiveConfig:
         start_paused=start_paused,
         max_steps=max_steps,
     )
+
+
+def _is_parameter_value(value: object) -> bool:
+    """Check the shallow JSON shape before environment-aware resolution in ``Episode``."""
+    if isinstance(value, (bool, str)):
+        return True
+    if isinstance(value, (int, float)):
+        return math.isfinite(value)
+    return isinstance(value, list) and all(isinstance(item, str) for item in cast("list[object]", value))
 
 
 def _parse_optional_int(config: dict[str, Any], key: str) -> int | None:
@@ -527,6 +552,7 @@ def run(
             messaging=config.messaging_enabled,
             message_cap=config.message_cap,
             max_steps=config.max_steps,
+            parameters=config.parameters,
         )
         # The effective messaging decision (metadata AND config) is resolved once inside the episode;
         # reuse it to gate the human chat queue, so a frame is accepted only when the loop will route

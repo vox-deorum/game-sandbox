@@ -91,17 +91,23 @@ test('a submitted agent validates to ready and runs in a watch session', async (
   // is exercised end to end.
   await authenticateBrowser(page.context(), await as(JUDGES[1]))
 
-  // The watch picker lists the ready agent anonymously and highlights that it still needs a rating.
+  // The season banner names the play target, while the watch picker lists the ready agent anonymously
+  // and highlights that it still needs a rating.
   await page.goto(`/environments/${ENV_ID}`)
+  await expect(page.getByRole('heading', { name: 'Playground' })).toBeVisible()
   const playSection = page.locator('section#play')
   await expect(playSection.getByRole('heading', { name: 'Rate an Agent' })).toBeVisible()
-  await expect(playSection.getByText('Season: Playground', { exact: true })).toBeVisible()
   const row0 = page.locator('.agent-row').filter({ hasText: 'Agent 1' })
   await expect(row0).toBeVisible()
   await expect(row0.getByText('Not rated')).toBeVisible()
   await expect(row0.getByText(owner)).toHaveCount(0)
   await expect(row0.locator('code')).toHaveCount(0)
   await row0.getByRole('button', { name: 'Rate' }).click()
+  const rateDialog = page.getByRole('dialog', { name: /Rate Flappy Bird/ })
+  await expect(rateDialog.getByRole('spinbutton', { name: 'Pipe gap' })).toBeDisabled()
+  await expect(rateDialog.getByRole('combobox', { name: 'Seat 1' })).toBeDisabled()
+  await expect(rateDialog.getByRole('spinbutton', { name: 'Seed (optional)' })).toBeDisabled()
+  await rateDialog.getByRole('button', { name: 'Start watching' }).click()
 
   // A real scripted session launches with the built overlay and streams into the renderer.
   await expect(page).toHaveURL(/\/sessions\//)

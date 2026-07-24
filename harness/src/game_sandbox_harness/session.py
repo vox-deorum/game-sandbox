@@ -35,7 +35,7 @@ from typing import Any, Protocol, cast, runtime_checkable
 from .agent import has_chat, has_learn
 from .chat import ChatRouter
 from .clock import Clock, SystemClock
-from .environment import EnvironmentEntry
+from .environment import EnvironmentEntry, ParameterValue, resolve_parameters
 from .recording import RecordingStore
 from .state import (
     Message,
@@ -219,6 +219,7 @@ class Episode:
         slots: Mapping[str, Slot],
         *,
         seed: int,
+        parameters: Mapping[str, ParameterValue],
         store: RecordingStore | None = None,
         recording_id: str | None = None,
         clock: Clock | None = None,
@@ -243,6 +244,7 @@ class Episode:
             episode_limit_ms if episode_limit_ms is not None else entry.meta.episode_limit_ms
         )
         self._max_steps = max_steps
+        self._parameters = resolve_parameters(entry.meta, parameters)
 
         # Messaging is enabled only when the environment metadata AND the session config agree, and
         # the effective cap is the minimum of the two, so a config override can disable or tighten but
@@ -286,9 +288,16 @@ class Episode:
         best-effort close and a charged reset crash both keep working.
         """
         try:
-            env = self._entry.make()
+            env = self._entry.make(self._parameters)
             self._env = env
             env.reset(seed=self._seed)
+            seat_count = self._parameters["seats"]
+            assert isinstance(seat_count, int)
+            if len(env.possible_agents) != seat_count:
+                raise ValueError(
+                    "environment factory produced "
+                    f"{len(env.possible_agents)} possible agents, expected {seat_count} from parameters"
+                )
 
             if self._store is not None:
                 created_at_ms = self._clock.now_ms()
@@ -298,6 +307,7 @@ class Episode:
                     environment=self._entry.meta.env_id,
                     seed=self._seed,
                     created_at=_iso_utc(created_at_ms),
+                    parameters=self._parameters,
                     players=dict(self._players) if self._players is not None else None,
                 )
                 self._writer_cm = self._store.create(self._recording_id, header)
@@ -653,6 +663,7 @@ def run_episode(
     slots: Mapping[str, Slot],
     *,
     seed: int,
+    parameters: Mapping[str, ParameterValue],
     store: RecordingStore | None = None,
     recording_id: str | None = None,
     clock: Clock | None = None,
@@ -687,6 +698,7 @@ def run_episode(
         players=players,
         messaging=messaging,
         message_cap=message_cap,
+        parameters=parameters,
     ) as episode:
         while not episode.done:
             episode.step_once()

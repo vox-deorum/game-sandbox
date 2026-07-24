@@ -364,13 +364,12 @@ describe('Spades chat (Docker)', () => {
           ],
           ...(messaging !== undefined ? { overrides: { messaging } } : {}),
         })
-        const run = await stack.storage.createRunWithSchedule(
-          season.id,
-          'dev-user',
-          submissions,
-          [{ match_index: 0, game_index: 0, seed: 1236, slots: submissions }],
-          () => TEST_DISABLED_OFFICIAL_LLM_POLICY,
-        )
+        const run = await stack.storage.createRunWithSchedule(season.id, 'dev-user', () => ({
+          parametersSnapshot: { seats: 4 },
+          scheduledGames: [{ match_index: 0, game_index: 0, seed: 1236, slots: submissions }],
+          llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
+        }))
+        if (run === undefined) throw new Error('expected a scheduled run')
         const status = await new Promise<TerminalRunStatus>((res) => {
           const unsubscribe = runner.subscribe(run.id, (event) => {
             if (event.type === 'terminal') {

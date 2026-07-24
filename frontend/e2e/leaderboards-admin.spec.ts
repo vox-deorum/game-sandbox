@@ -7,6 +7,7 @@ import {
   declareSeason,
   deleteSeason,
   finishedScriptedSession,
+  getSeasonConfig,
   openPlay,
   openSubmissions,
   rateSession,
@@ -166,16 +167,22 @@ test('operator season configuration exposes and validates LLM controls', async (
   admin,
 }) => {
   const season = await declareSeason(admin, 'LLM controls')
+  const original = await activeWindows(admin)
+  let originalPlayClosed = false
+  let configuredPlayOpen = false
   try {
     await authenticateBrowser(page.context(), admin)
     await page.goto(`/environments/${ENV_ID}/admin`)
     await page.getByRole('button', { name: /LLM controls/ }).click()
 
     const runConfiguration = page.getByRole('heading', { name: 'Run Configuration' }).locator('..')
-    await expect(runConfiguration.locator('.ui-card')).toHaveCount(3)
+    await expect(runConfiguration.locator('.ui-card')).toHaveCount(4)
     await expect(runConfiguration.getByRole('heading', { name: 'Match Design' })).toBeVisible()
     await expect(runConfiguration.getByRole('heading', { name: 'Session Behavior' })).toBeVisible()
     await expect(runConfiguration.getByRole('heading', { name: 'LLM Access' })).toBeVisible()
+    await expect(
+      runConfiguration.getByRole('heading', { name: 'Environment Parameters' }),
+    ).toBeVisible()
 
     await runConfiguration.getByRole('button', { name: 'Add match' }).click()
     const flatRegions = [
@@ -215,6 +222,31 @@ test('operator season configuration exposes and validates LLM controls', async (
     await expect(page.getByLabel('Development token budget')).toBeVisible()
     await expect(page.getByLabel('Development rate limit (RPM)')).toBeVisible()
 
+    await page.getByLabel('Pipe gap', { exact: true }).selectOption('override')
+    await page.getByLabel('Pipe gap override').fill('90')
+    await page.getByRole('button', { name: 'Save configuration' }).click()
+    await expect
+      .poll(async () => (await getSeasonConfig(admin, season.id)).overrides?.parameters)
+      .toEqual({
+        pipe_gap: 90,
+      })
+    await expect(page.getByLabel('Pipe gap', { exact: true })).toHaveValue('override')
+    await expect(page.getByLabel('Pipe gap override')).toHaveValue('90')
+
+    if (original.playSeasonId !== null) {
+      await closePlay(admin, original.playSeasonId)
+      originalPlayClosed = true
+    }
+    await openPlay(admin, season.id)
+    configuredPlayOpen = true
+    const prefill = await admin.get(`/api/environments/${ENV_ID}/play-parameters`)
+    const prefillBody = await prefill.text()
+    expect(prefill.status(), prefillBody).toBe(200)
+    expect((JSON.parse(prefillBody) as { values: { pipe_gap: number } }).values).toEqual({
+      seats: 1,
+      pipe_gap: 90,
+    })
+
     await page.getByLabel('Per-slot token budget').fill('0')
     await page.getByRole('button', { name: 'Save configuration' }).click()
     await expect(page.getByText(/official token budget must be a positive integer/)).toBeVisible()
@@ -227,6 +259,10 @@ test('operator season configuration exposes and validates LLM controls', async (
     // The validation is local, so the freshly declared season remains empty and safe to remove.
     expect(season.id).toBeTruthy()
   } finally {
+    if (configuredPlayOpen) await closePlay(admin, season.id).catch(() => {})
+    if (originalPlayClosed && original.playSeasonId !== null) {
+      await openPlay(admin, original.playSeasonId).catch(() => {})
+    }
     await deleteSeason(admin, season.id).catch(() => {})
   }
 })
@@ -335,12 +371,13 @@ test('a full season: submissions, an automated run, several judges rate, then re
 
     // One rating through the browser, exercising the post-session panel and both rating prompts. The
     // operator has not rated the glider (the four API judges did), so its row action reads "Rate"; a
-    // previously-rated agent would read "Watch again". Either way it starts the same scripted watch run,
-    // so match the row's single action button by either label.
+    // previously-rated agent would read "Watch again". Either way it opens the same parameter dialog,
+    // so match the row's single action button by either label and submit the prefilled configuration.
     await page.goto(`/environments/${ENV_ID}`)
     const gliderRow = page.locator('.agent-row').filter({ hasText: OWNERS.glider })
     await expect(gliderRow).toBeVisible()
     await gliderRow.getByRole('button', { name: /Rate|Watch/ }).click()
+    await page.getByRole('button', { name: 'Start watching' }).click()
     await expect(page).toHaveURL(/\/sessions\//)
     await expect(page.locator('canvas.renderer-canvas')).toBeVisible()
     const stop = page.getByRole('button', { name: 'Stop' })

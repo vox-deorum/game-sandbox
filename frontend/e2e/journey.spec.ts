@@ -1,3 +1,12 @@
+import {
+  activeWindows,
+  closePlay,
+  declareSeason,
+  deleteSeason,
+  getRecordingHeader,
+  getSession,
+  openPlay,
+} from './support/api.js'
 import { authenticateBrowser } from './support/auth.js'
 import { expect, test } from './support/fixtures.js'
 
@@ -19,14 +28,25 @@ test('play Flappy Bird live, pause/resume, stop, then replay and pin', async ({ 
   await page.goto('/')
   await page.getByRole('link', { name: /Flappy Bird/ }).click()
   await expect(page.getByRole('heading', { name: 'Flappy Bird' })).toBeVisible()
+  await expect(page.getByText('Settings: Pipe gap 100')).toBeVisible()
 
-  // The Play Yourself entry point (in the page header) opens the start form; submit it to start a
+  // The Play Yourself entry point in the season banner opens the start form; submit it to start a
   // human session.
   await page.getByRole('button', { name: 'Play Yourself' }).click()
+  await expect(page.getByLabel('Pipe gap')).toHaveValue('100')
+  await page.getByLabel('Pipe gap').fill('90')
   await page.getByRole('button', { name: 'Start playing' }).click()
 
   // The session page mounts the renderer and shows the per-step input window while we control a slot.
   await expect(page).toHaveURL(/\/sessions\//)
+  const sessionId = page.url().split('/').at(-1)
+  if (sessionId === undefined) throw new Error('session URL has no id')
+  await expect
+    .poll(async () => (await getSession(admin, sessionId))?.parameters)
+    .toEqual({
+      seats: 1,
+      pipe_gap: 90,
+    })
   await expect(page.locator('canvas.renderer-canvas')).toBeVisible()
 
   // A paced live game steps in real time from launch, so flap from the first frame to keep the bird
@@ -53,6 +73,17 @@ test('play Flappy Bird live, pause/resume, stop, then replay and pin', async ({ 
     await stop.click({ timeout: 5000 }).catch(() => {})
   }
   await expect(page.getByRole('link', { name: 'Open replay' })).toBeVisible()
+  const endedSession = await getSession(admin, sessionId)
+  if (endedSession?.recording_id === null || endedSession?.recording_id === undefined) {
+    throw new Error('ended session has no recording')
+  }
+  const recordingId = endedSession.recording_id
+  await expect
+    .poll(async () => (await getRecordingHeader(admin, recordingId)).parameters)
+    .toEqual({
+      seats: 1,
+      pipe_gap: 90,
+    })
 
   // Open the replay from the ended session and scrub it.
   await page.getByRole('link', { name: 'Open replay' }).click()
@@ -71,4 +102,26 @@ test('play Flappy Bird live, pause/resume, stop, then replay and pin', async ({ 
   // Pin the recording (the viewer owns it).
   await page.getByRole('button', { name: 'Pin recording' }).click()
   await expect(page.getByRole('button', { name: 'Pinned ✓' })).toBeVisible()
+})
+
+test('rejects a start form loaded for a stale play season', async ({ page, admin }) => {
+  await authenticateBrowser(page.context(), admin)
+  const original = await activeWindows(admin)
+  if (original.playSeasonId === null) throw new Error('the seeded play season is missing')
+  const replacement = await declareSeason(admin, 'Stale season replacement')
+  try {
+    await page.goto('/environments/flappy_bird')
+    await expect(page.getByRole('button', { name: 'Play Yourself' })).toBeVisible()
+    await closePlay(admin, original.playSeasonId)
+    await openPlay(admin, replacement.id)
+
+    await page.getByRole('button', { name: 'Play Yourself' }).click()
+    await page.getByRole('button', { name: 'Start playing' }).click()
+    await expect(page.getByText(/The play season changed/)).toBeVisible()
+    await expect(page).toHaveURL(/\/environments\/flappy_bird/)
+  } finally {
+    await closePlay(admin, replacement.id).catch(() => {})
+    await openPlay(admin, original.playSeasonId).catch(() => {})
+    await deleteSeason(admin, replacement.id).catch(() => {})
+  }
 })

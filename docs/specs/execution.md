@@ -25,6 +25,8 @@ The backend launches a container, relays state to browsers over WebSocket, and f
 
 When LLM access is enabled, the session gets a private network path that can reach only the backend LLM proxy. Before a session exits, it stops accepting new requests under its temporary LLM grants. It then aborts or finishes authenticated requests and waits for their accounting to settle. Only then may telemetry cleanup, network removal, and session completion proceed. See [LLM API for Agents](llm.md).
 
+Every container launch includes a complete resolved `parameters` object. The harness validates it against the selected environment before constructing the environment, and the factory receives the normalized map. Live watch and play launches use the values submitted by the season-aware start form. Automated games use the parameter snapshot frozen when the run was created.
+
 ## Execution drivers
 
 The backend uses an execution-driver interface to:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -10,8 +11,13 @@ from game_sandbox_harness.environment import (
     EnvironmentEntry,
     EnvironmentLookupError,
     EnvironmentMeta,
+    EnvParameter,
+    EnvParameterChoice,
+    EnvParameterValueError,
     discover_environments,
+    effective_parameters,
     load_environment,
+    resolve_parameters,
 )
 
 
@@ -46,6 +52,7 @@ def test_meta_to_json_round_trips():
     assert parsed["seat_order_matters"] is False
     assert parsed["view_interval_ms"] is None  # defaulted, present in the serialized shape
     assert parsed["live_interval_ms"] is None  # defaulted, present in the serialized shape
+    assert parsed["parameters"][0]["name"] == "seats"
 
 
 def test_flappy_bird_is_discoverable():
@@ -66,7 +73,7 @@ def test_load_environment_unknown_id_raises():
 def test_discovery_rejects_name_envid_mismatch(monkeypatch):
     from game_sandbox_harness import environment as env_mod
 
-    entry = EnvironmentEntry(meta=_meta(), make=lambda: None, default_action=lambda env, s: 0)
+    entry = EnvironmentEntry(meta=_meta(), make=lambda _parameters: None, default_action=lambda env, s: 0)
 
     class _FakeEP:
         name = "mismatch"  # != meta.env_id ("demo")
@@ -77,3 +84,78 @@ def test_discovery_rejects_name_envid_mismatch(monkeypatch):
     monkeypatch.setattr(env_mod, "entry_points", lambda group: [_FakeEP()])
     with pytest.raises(ValueError, match="meta.env_id"):
         discover_environments()
+
+
+def _fixture_meta() -> EnvironmentMeta:
+    fixture = json.loads(
+        (Path(__file__).resolve().parents[2] / "schema" / "fixtures" / "parameter-values.json").read_text()
+    )
+    declarations = []
+    for raw in fixture["declarations"]:
+        if raw["name"] == "seats":
+            continue
+        choices = tuple(EnvParameterChoice(**choice) for choice in raw.get("choices", []))
+        declarations.append(
+            EnvParameter(
+                name=raw["name"],
+                title=raw["title"],
+                description=raw["description"],
+                type=raw["type"],
+                default=raw["default"],
+                min=raw.get("min"),
+                max=raw.get("max"),
+                choices=choices,
+            )
+        )
+    return EnvironmentMeta(
+        **{
+            **_meta().__dict__,
+            "min_slots": 1,
+            "max_slots": 4,
+            "parameters": tuple(declarations),
+        }
+    )
+
+
+def test_parameter_values_match_the_shared_cross_language_fixture():
+    fixture = json.loads(
+        (Path(__file__).resolve().parents[2] / "schema" / "fixtures" / "parameter-values.json").read_text()
+    )
+    meta = _fixture_meta()
+    declarations = {parameter.name: parameter for parameter in effective_parameters(meta)}
+    for case in fixture["validation_cases"]:
+        declaration = declarations[case["name"]]
+        if case["valid"]:
+            assert declaration.validate_value(case["value"]) == case["normalized"]
+        else:
+            with pytest.raises(EnvParameterValueError):
+                declaration.validate_value(case["value"])
+
+    first = fixture["resolution_cases"][0]
+    assert resolve_parameters(meta, *first["layers"]) == first["values"]
+    with pytest.raises(EnvParameterValueError, match="unknown"):
+        resolve_parameters(meta, {"unknown": "value"})
+
+
+def test_parameter_declarations_reject_reserved_names_and_invalid_shapes():
+    with pytest.raises(ValueError, match="reserved"):
+        EnvironmentMeta(
+            **{
+                **_meta().__dict__,
+                "parameters": (EnvParameter("seats", "Seats", "No.", "int", 1, min=1, max=1),),
+            }
+        )
+    with pytest.raises(ValueError, match="unique"):
+        EnvParameter(
+            "mode",
+            "Mode",
+            "Select.",
+            "choice",
+            "one",
+            choices=(EnvParameterChoice("one", "One"), EnvParameterChoice("one", "Again")),
+        )
+    with pytest.raises(ValueError, match="choices"):
+        EnvParameter("mode", "Mode", "Select.", "choice", "one", choices=("one",))  # type: ignore[arg-type]
+    float_parameter = EnvParameter("weight", "Weight", "Value.", "float", 1.0, min=0.0, max=2.0)
+    with pytest.raises(EnvParameterValueError):
+        float_parameter.validate_value(10**1000)

@@ -12,6 +12,8 @@ from game_sandbox_harness.recording.local import FolderRecordingStore
 from game_sandbox_harness.schema import SchemaValidationError
 from game_sandbox_harness.state import build_agent_step, build_header, build_step_state
 
+FLAPPY_PARAMETERS = {"seats": 1, "pipe_gap": 100}
+
 
 def _step(tick: int):
     return build_step_state(
@@ -24,7 +26,7 @@ def _step(tick: int):
 
 def test_write_then_read_round_trip(tmp_path: Path):
     store = FolderRecordingStore(tmp_path)
-    header = build_header(environment="flappy", seed=1)
+    header = build_header(environment="flappy", parameters=FLAPPY_PARAMETERS, seed=1)
     with store.create("run1", header) as writer:
         writer.write_step(_step(0))
         writer.write_step(_step(1))
@@ -39,7 +41,7 @@ def test_write_then_read_round_trip(tmp_path: Path):
 @pytest.mark.skipif(os.name == "nt", reason="POSIX mode bits only")
 def test_created_recording_permissions_allow_host_cleanup(tmp_path: Path):
     store = FolderRecordingStore(tmp_path)
-    with store.create("run1", build_header(environment="flappy")):
+    with store.create("run1", build_header(environment="flappy", parameters=FLAPPY_PARAMETERS)):
         pass
 
     assert ((tmp_path / "run1").stat().st_mode & 0o777) == 0o777
@@ -48,7 +50,7 @@ def test_created_recording_permissions_allow_host_cleanup(tmp_path: Path):
 
 def test_truncated_file_yields_readable_prefix(tmp_path: Path):
     store = FolderRecordingStore(tmp_path)
-    with store.create("run1", build_header(environment="flappy")) as writer:
+    with store.create("run1", build_header(environment="flappy", parameters=FLAPPY_PARAMETERS)) as writer:
         writer.write_step(_step(0))
         writer.write_step(_step(1))
 
@@ -95,6 +97,7 @@ def test_unknown_sidecar_loads_cleanly(tmp_path: Path):
     store = FolderRecordingStore(tmp_path)
     header = build_header(
         environment="flappy",
+        parameters=FLAPPY_PARAMETERS,
         sidecars=[{"name": "mystery-future-sidecar", "path": "mystery.bin"}],
     )
     with store.create("run1", header) as writer:

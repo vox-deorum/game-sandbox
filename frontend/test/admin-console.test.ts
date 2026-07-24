@@ -1,3 +1,4 @@
+import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
 import { SEASON_DESCRIPTION_MAX } from '@game-sandbox/schema/seasons'
 import { fireEvent, screen, waitFor } from '@testing-library/vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -97,6 +98,43 @@ function adminView(overrides: Partial<AdminSeasonView> = {}): AdminSeasonView {
     board: emptyBoard(),
     ...overrides,
   }
+}
+
+function configurableMeta(): EnvironmentMeta {
+  return flappyMeta({
+    parameters: [
+      {
+        name: 'seats',
+        title: 'Seats',
+        description: 'Players.',
+        type: 'int',
+        default: 1,
+        min: 1,
+        max: 1,
+      },
+      {
+        name: 'pipe_gap',
+        title: 'Pipe gap',
+        description: 'Opening.',
+        type: 'int',
+        default: 100,
+        min: 60,
+        max: 200,
+      },
+      { name: 'tag', title: 'Tag', description: 'Optional label.', type: 'string', default: '' },
+      {
+        name: 'extras',
+        title: 'Extras',
+        description: 'Optional rules.',
+        type: 'multi_choice',
+        default: [],
+        choices: [
+          { value: 'wind', label: 'Wind' },
+          { value: 'night', label: 'Night' },
+        ],
+      },
+    ],
+  })
 }
 
 function runningRun(): RunView {
@@ -218,9 +256,14 @@ describe('AdminConsolePage', () => {
     })
     const runConfiguration = runConfigurationHeading.closest('section')
     expect(runConfiguration).not.toBeNull()
-    expect(runConfiguration?.querySelectorAll('.ui-card')).toHaveLength(3)
+    expect(runConfiguration?.querySelectorAll('.ui-card')).toHaveLength(4)
 
-    for (const title of ['Match Design', 'Session Behavior', 'LLM Access']) {
+    for (const title of [
+      'Match Design',
+      'Session Behavior',
+      'LLM Access',
+      'Environment Parameters',
+    ]) {
       expect(screen.getByRole('heading', { name: title }).closest('.ui-card')).not.toBeNull()
     }
     expect(screen.getByTestId('match')).toHaveClass('match')
@@ -238,6 +281,78 @@ describe('AdminConsolePage', () => {
       ['default', 'Environment default (off)'],
       ['off', 'Off'],
     ])
+  })
+
+  it('re-seeds parameter overrides when environment metadata arrives asynchronously', async () => {
+    let resolveMeta: ((value: EnvironmentMeta[]) => void) | undefined
+    vi.mocked(getEnvironments).mockReturnValue(
+      new Promise((resolve) => {
+        resolveMeta = resolve
+      }),
+    )
+    const configured = season({
+      config: {
+        deps_version: 1,
+        matches: [{ slots: ['submission'], seeds: [0], games: 1 }],
+        overrides: { parameters: { pipe_gap: 90, obsolete: true } },
+      },
+    })
+    vi.mocked(getAdminSeason).mockResolvedValue(adminView({ season: configured }))
+    vi.mocked(configureSeason).mockResolvedValue({ ok: true, season: configured })
+    await renderConsole()
+    expect(await screen.findByRole('heading', { name: 'Season Week 1' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Environment Parameters' })).toBeNull()
+
+    resolveMeta?.([configurableMeta()])
+    expect(
+      await screen.findByRole('heading', { name: 'Environment Parameters' }),
+    ).toBeInTheDocument()
+    expect(screen.getByLabelText('Pipe gap')).toHaveDisplayValue('Override')
+    expect(screen.getByLabelText('Pipe gap override')).toHaveValue(90)
+    expect(screen.getByText(/Every match's slot count must equal this value/)).toBeInTheDocument()
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }))
+    await waitFor(() => expect(vi.mocked(configureSeason)).toHaveBeenCalled())
+    expect(vi.mocked(configureSeason).mock.calls[0]?.[1].overrides?.parameters).toEqual({
+      pipe_gap: 90,
+    })
+  })
+
+  it('shows a blank numeric override error and refuses to save it', async () => {
+    vi.mocked(getEnvironments).mockResolvedValue([configurableMeta()])
+    await renderConsole()
+    await fireEvent.update(await screen.findByLabelText('Pipe gap'), 'override')
+    await fireEvent.update(screen.getByLabelText('Pipe gap override'), '')
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+    await fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }))
+    expect(vi.mocked(configureSeason)).not.toHaveBeenCalled()
+  })
+
+  it('preserves empty strings, normalizes multi-choice order, and excludes unknown stored keys', async () => {
+    vi.mocked(getEnvironments).mockResolvedValue([configurableMeta()])
+    const configured = season({
+      config: {
+        deps_version: 1,
+        matches: [{ slots: ['submission'], seeds: [0], games: 1 }],
+        overrides: {
+          parameters: { tag: '', extras: ['night', 'wind'], obsolete: 'drop me' },
+        },
+      },
+    })
+    vi.mocked(getAdminSeason).mockResolvedValue(adminView({ season: configured }))
+    vi.mocked(configureSeason).mockResolvedValue({ ok: true, season: configured })
+    await renderConsole()
+
+    expect(await screen.findByLabelText('Tag')).toHaveDisplayValue('Override')
+    expect(screen.getByLabelText('Tag override')).toHaveValue('')
+    expect(screen.getByLabelText('Wind')).toBeChecked()
+    expect(screen.getByLabelText('Night')).toBeChecked()
+    await fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }))
+    await waitFor(() => expect(vi.mocked(configureSeason)).toHaveBeenCalled())
+    expect(vi.mocked(configureSeason).mock.calls[0]?.[1].overrides?.parameters).toEqual({
+      tag: '',
+      extras: ['wind', 'night'],
+    })
   })
 
   it('labels an enabled environment default and canonicalizes an explicit true override', async () => {

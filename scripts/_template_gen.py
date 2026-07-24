@@ -28,6 +28,8 @@ def _render_metadata_mapping(metadata: dict[str, object]) -> str:
             lines.append("        ),")
         elif isinstance(value, str):
             lines.append(f"{prefix}{json.dumps(value)},")
+        elif key == "parameters":
+            lines.append(f"{prefix}{_render_parameters(value)},")
         elif isinstance(value, tuple):
             items = ", ".join(json.dumps(item) for item in value)
             trailing_comma = "," if len(value) == 1 else ""
@@ -38,6 +40,15 @@ def _render_metadata_mapping(metadata: dict[str, object]) -> str:
     return "\n".join(lines)
 
 
+def _render_parameters(value: object) -> str:
+    """Render internal parameter declarations without serializing synthesized ``seats``."""
+    from game_sandbox_harness.environment import EnvParameter
+
+    if not isinstance(value, tuple) or not all(isinstance(item, EnvParameter) for item in value):
+        raise TypeError("metadata parameters must be an EnvParameter tuple")
+    return repr(value)
+
+
 def _render_sandbox_init(env_id: str, spec: TemplateEnvironmentSpec, meta: object) -> str:
     """Render the uniform ``sandbox/env/__init__.py`` surface."""
     from game_sandbox_harness.environment import EnvironmentMeta
@@ -46,6 +57,7 @@ def _render_sandbox_init(env_id: str, spec: TemplateEnvironmentSpec, meta: objec
         raise TypeError(f"expected EnvironmentMeta for {env_id!r}, got {type(meta).__name__}")
     metadata = meta.to_json()
     metadata["human_slots"] = tuple(metadata["human_slots"])
+    metadata["parameters"] = meta.parameters
     metadata_text = _render_metadata_mapping(metadata)
     surface_import = f"from .{spec.inner_package} import {spec.default_action}, extract_overlay, make_env"
     return f'''\
@@ -60,7 +72,7 @@ This template targets {spec.display_name}. The provided scripts read the uniform
 stay environment-agnostic across template layers.
 """
 
-from sandbox.harness.environment import EnvironmentMeta
+from sandbox.harness.environment import EnvParameter, EnvParameterChoice, EnvironmentMeta
 
 {surface_import}
 

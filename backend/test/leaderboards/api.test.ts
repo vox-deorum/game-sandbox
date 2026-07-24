@@ -245,16 +245,15 @@ describe('public leaderboard API', () => {
     // user row (the fallback case).
     const known = await makeSubmission(storage, season.id, aliceId)
     const orphaned = await makeSubmission(storage, season.id, 'ghost-user')
-    const run = await storage.createRunWithSchedule(
-      season.id,
-      'dev-user',
-      [agentRef(known), agentRef(orphaned)],
-      [
+    const run = await storage.createRunWithSchedule(season.id, 'dev-user', () => ({
+      parametersSnapshot: { seats: 1 },
+      scheduledGames: [
         { match_index: 0, game_index: 0, seed: 1, slots: [agentRef(known)] },
         { match_index: 0, game_index: 1, seed: 2, slots: [agentRef(orphaned)] },
       ],
-      () => TEST_DISABLED_OFFICIAL_LLM_POLICY,
-    )
+      llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
+    }))
+    if (run === undefined) throw new Error('expected a scheduled run')
     const games = await storage.listRunGames(run.id)
     for (const [index, submission] of [known, orphaned].entries()) {
       const game = games[index]
@@ -362,13 +361,12 @@ describe('public leaderboard API', () => {
   it('returns only placements from released seasons', async () => {
     const unreleased = await declare()
     const hidden = await makeSubmission(storage, unreleased.id, 'alice')
-    const hiddenRun = await storage.createRunWithSchedule(
-      unreleased.id,
-      'dev-user',
-      [agentRef(hidden)],
-      [{ match_index: 0, game_index: 0, seed: 1, slots: [agentRef(hidden)] }],
-      () => TEST_DISABLED_OFFICIAL_LLM_POLICY,
-    )
+    const hiddenRun = await storage.createRunWithSchedule(unreleased.id, 'dev-user', () => ({
+      parametersSnapshot: { seats: 1 },
+      scheduledGames: [{ match_index: 0, game_index: 0, seed: 1, slots: [agentRef(hidden)] }],
+      llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
+    }))
+    if (hiddenRun === undefined) throw new Error('expected a scheduled run')
     await storage.replaceAutomatedPlacements(unreleased.id, ENV_ID, hiddenRun.id, [
       {
         rank: 1,
@@ -383,13 +381,12 @@ describe('public leaderboard API', () => {
     const released = await declare()
     await storage.setReleaseStatus(released.id, 'released')
     const visible = await makeSubmission(storage, released.id, 'alice')
-    const visibleRun = await storage.createRunWithSchedule(
-      released.id,
-      'dev-user',
-      [agentRef(visible)],
-      [{ match_index: 0, game_index: 0, seed: 1, slots: [agentRef(visible)] }],
-      () => TEST_DISABLED_OFFICIAL_LLM_POLICY,
-    )
+    const visibleRun = await storage.createRunWithSchedule(released.id, 'dev-user', () => ({
+      parametersSnapshot: { seats: 1 },
+      scheduledGames: [{ match_index: 0, game_index: 0, seed: 1, slots: [agentRef(visible)] }],
+      llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
+    }))
+    if (visibleRun === undefined) throw new Error('expected a scheduled run')
     await storage.replaceAutomatedPlacements(released.id, ENV_ID, visibleRun.id, [
       {
         rank: 1,

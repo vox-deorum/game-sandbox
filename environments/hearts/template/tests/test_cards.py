@@ -50,7 +50,7 @@ def test_encoding_matches_the_rules_engine():
 
 
 def test_observation_accessors_match_the_raw_observation():
-    env = make_env()
+    env = make_env({"seats": 4})
     try:
         env.reset(seed=0)
         for _ in range(12):

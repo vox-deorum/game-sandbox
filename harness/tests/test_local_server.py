@@ -80,6 +80,7 @@ def test_local_server_receives_real_paused_runner_header_before_any_command(tmp_
         (tmp_path / "local.html").write_text("local", encoding="utf-8")
         config = {
             "env_id": "flappy_bird",
+            "parameters": {"seats": 1, "pipe_gap": 100},
             "seed": 0,
             "slots": {"player_0": {"kind": "external"}},
             "players": {"player_0": {"kind": "human", "label": "Human"}},

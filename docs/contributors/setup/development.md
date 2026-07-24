@@ -72,6 +72,8 @@ By default, the e2e suite runs only when the source database is missing, so late
 
 `scripts/compose.py` generates the student-facing environment package, copied `sandbox.harness` package, and shared helpers directly in build output. These files are not tracked under `templates/`.
 
+The database schema, composed templates, and session images are development artifacts tied to the current checkout. After a flat schema or environment launch-contract change, recreate the local database, recompose templates and examples, and rebuild the current session image. There is no compatibility path for artifacts produced by an older checkout.
+
 The local browser export stays outside the template source tree. A release or publish dry run builds `frontend/dist-local/` once, then adds that output to `sandbox/web/` in each staged template and example. Publication therefore requires Node, but ordinary generation and source composition do not require a frontend bundle.
 
 `npm run build:image` runs from `backend/` and rebuilds the current session base image. Use it after changing the Dockerfile, harness, environment, or built-in agent. See [Backend](../runtime/backend.md#run-and-test).

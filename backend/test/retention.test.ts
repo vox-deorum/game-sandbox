@@ -52,7 +52,12 @@ describe('retention', () => {
   /** Write a recording directory (a header line is enough for the volume listing to find it). */
   async function writeDir(id: string, env = 'flappy_bird'): Promise<void> {
     await mkdir(join(root, id), { recursive: true })
-    const header = JSON.stringify({ schema_version: 1, environment: env, seed: 0 })
+    const header = JSON.stringify({
+      schema_version: 1,
+      environment: env,
+      parameters: { seats: 1 },
+      seed: 0,
+    })
     await writeFile(join(root, id, 'recording.jsonl'), `${header}\n`, 'utf-8')
   }
 
@@ -85,6 +90,7 @@ describe('retention', () => {
         id: 'sess-1',
         user_id: 'alice',
         env_id: 'flappy_bird',
+        parameters: { seats: 1 },
         mode: 'human',
         recording_id: 'flappy_bird-sess-1',
         created_at: ago(0),
@@ -197,16 +203,15 @@ describe('retention', () => {
       const deleted: string[] = []
       const reclaimer = { deleteScope: (id: string) => deleted.push(id) }
       const season = await storage.createSeason({ env_id: 'flappy_bird', deps_version: 1 })
-      const run = await storage.createRunWithSchedule(
-        season.id,
-        'operator',
-        [],
-        [
+      const run = await storage.createRunWithSchedule(season.id, 'operator', () => ({
+        parametersSnapshot: { seats: 1 },
+        scheduledGames: [
           { match_index: 0, game_index: 0, seed: 1, slots: [{ kind: 'builtin-naive' }] },
           { match_index: 0, game_index: 1, seed: 2, slots: [{ kind: 'builtin-naive' }] },
         ],
-        () => TEST_DISABLED_OFFICIAL_LLM_POLICY,
-      )
+        llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
+      }))
+      if (run === undefined) throw new Error('expected a scheduled run')
       const game = (await storage.listRunGames(run.id))[0]
       if (game === undefined) throw new Error('expected a scheduled game')
       await storage.setRunStatus(run.id, 'running')
@@ -257,6 +262,7 @@ describe('retention', () => {
         id: 'ended-session',
         user_id: 'alice',
         env_id: 'flappy_bird',
+        parameters: { seats: 1 },
         mode: 'human',
         recording_id: 'ended-recording',
         created_at: ago(40),
@@ -421,14 +427,13 @@ describe('retention', () => {
 
     /** Drive a completed run for a season whose single game points at a recording id. */
     async function completedRunWithRecording(seasonId: string, recordingId: string): Promise<void> {
-      const run = await storage.createRunWithSchedule(
-        seasonId,
-        'op',
-        [],
-        NAIVE_GAME,
-        () => TEST_DISABLED_OFFICIAL_LLM_POLICY,
-      )
-      const game = run && (await storage.listRunGames(run.id))[0]
+      const run = await storage.createRunWithSchedule(seasonId, 'op', () => ({
+        parametersSnapshot: { seats: 1 },
+        scheduledGames: NAIVE_GAME,
+        llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
+      }))
+      if (run === undefined) throw new Error('expected a scheduled run')
+      const game = (await storage.listRunGames(run.id))[0]
       if (game === undefined) {
         throw new Error('expected a scheduled game')
       }
@@ -534,6 +539,7 @@ describe('retention', () => {
         id: 'sess-ended',
         user_id: 'a',
         env_id: 'flappy_bird',
+        parameters: { seats: 1 },
         mode: 'human',
         recording_id: 'ended',
         season_id: season.id,

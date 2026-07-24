@@ -12,6 +12,8 @@ from game_sandbox_harness.schema import (
 )
 from game_sandbox_harness.state import build_agent_step, build_header, build_step_state
 
+FLAPPY_PARAMETERS = {"seats": 1, "pipe_gap": 100}
+
 
 def test_minimal_step_is_valid():
     state = build_step_state(
@@ -70,13 +72,21 @@ def test_step_with_messages_and_chat_ms_validates():
 
 
 def test_header_builder_is_valid():
-    validate_header(build_header(environment="flappy"))
-    validate_header(build_header(environment="flappy", created_at="2026-06-10T00:00:00Z", seed=9))
+    validate_header(build_header(environment="flappy", parameters=FLAPPY_PARAMETERS))
+    validate_header(
+        build_header(
+            environment="flappy",
+            parameters=FLAPPY_PARAMETERS,
+            created_at="2026-06-10T00:00:00Z",
+            seed=9,
+        )
+    )
 
 
 def test_header_builder_carries_player_attribution():
     header = build_header(
         environment="flappy",
+        parameters=FLAPPY_PARAMETERS,
         players={
             "player_0": {"kind": "human", "label": "alice", "user": "alice"},
             "player_1": {"kind": "agent", "label": "Naive agent"},
@@ -92,6 +102,7 @@ def test_header_rejects_player_attribution_with_empty_label():
         validate_header(
             build_header(
                 environment="flappy",
+                parameters=FLAPPY_PARAMETERS,
                 players={"player_0": {"kind": "agent", "label": ""}},
             )
         )

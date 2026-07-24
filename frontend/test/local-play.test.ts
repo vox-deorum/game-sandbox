@@ -97,6 +97,7 @@ describe('LocalPlayPage', () => {
     handlers.onHeader({
       schema_version: 1,
       environment: 'hearts',
+      parameters: { seats: 4 },
       seed: 0,
       players: {
         player_0: { kind: 'agent', label: 'Naive agent' },

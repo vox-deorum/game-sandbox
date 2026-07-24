@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 from _envs import discover_environments, package_dirs  # noqa: E402
 from _paths import ENVIRONMENT_PACKAGES_DIR, ENVIRONMENTS_PYPROJECT  # noqa: E402
+from game_sandbox_harness.environment import resolve_parameters  # noqa: E402
 
 
 def _api_test_tolerating_1211(env: Any, num_cycles: int = 100) -> None:
@@ -51,7 +52,7 @@ def _json_bytes(value: Any) -> str:
 
 def _rollout(entry: Any, seed: int) -> list[tuple[str, str]]:
     """Drive an environment with its own legal timeout hook, recording observations and overlays."""
-    env = entry.make()
+    env = entry.make(resolve_parameters(entry.meta))
     snapshots: list[tuple[str, str]] = []
     try:
         env.reset(seed=seed)
@@ -79,7 +80,8 @@ ENVIRONMENTS = discover_environments()
 
 @pytest.mark.parametrize("env_id", ENVIRONMENTS)
 def test_passes_pettingzoo_api_test(env_id: str):
-    _api_test_tolerating_1211(ENVIRONMENTS[env_id].entry.make())
+    entry = ENVIRONMENTS[env_id].entry
+    _api_test_tolerating_1211(entry.make(resolve_parameters(entry.meta)))
 
 
 @pytest.mark.parametrize("env_id", ENVIRONMENTS)

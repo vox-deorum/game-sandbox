@@ -33,13 +33,16 @@ Each season defines:
 
 - Match design: which seats use submissions, built-in agents, or opponents, plus seeds and games per configuration.
 - Template dependency version.
+- Optional gameplay parameter overrides. Every match's slot count must equal the resolved `seats` value.
 - Optional step and episode limit overrides.
 - Optional messaging overrides.
 - Optional overrides for the deployment's default LLM model, token prices, official limits, and student development limits. Limits set the weighted token budget and request rate per minute. When an automated run is created, it freezes the full resolved official policy, including enabled aliases, upstream model mappings, prices, and limits for each slot.
 - Optional season-wide rating prompt.
 - An optional **Season description** in Markdown. This description is display metadata, not run configuration or workflow input. Operators may save, replace, or clear it at any time. It is public whenever submissions or play are open or results are released. Otherwise, it is private. Public cross-game Seasons cards show the description only when one exists. The description must be a normalized, trimmed inline paragraph of no more than 2,000 characters. Soft-wrapped lines are allowed, but blank-line-separated paragraphs are rejected. It supports emphasis, strong text, inline code, and absolute HTTP(S) links. Raw HTML, images, block Markdown, and other link destinations remain inactive.
 
-A season's timing, messaging, and official LLM overrides apply to both its automated games and its live watch and play sessions. The same season rules therefore apply everywhere its agents run. Student development LLM limits use a separate meter for each season and neither consume nor contribute to official limits or telemetry.
+A season's gameplay parameters, timing, messaging, and official LLM overrides apply to both its automated games and its live watch and play sessions. Players may tweak gameplay parameters for one live session, while automated games always use the season values. Student development LLM limits use a separate meter for each season and neither consume nor contribute to official limits or telemetry.
+
+Creating an automated run freezes the season config, resolved gameplay parameters, resolved official LLM policy, eligible ready submissions, and concrete schedule from one transactionally consistent read. An empty resolved schedule creates no run. Every game in a run therefore uses the same frozen season-wide parameters and roster even if the operator edits the season or a participant resubmits afterward.
 
 Operators manage seasons through the website's admin console and an operator-only HTTP API. They can declare, configure, describe, open, close, run, rerun, cancel, preview, and release seasons. They may also permanently delete a closed, unreleased season with no submissions, sessions, runs, ratings, prompts, descriptions, or development keys. The admin console requires explicit confirmation. The API refuses to delete related historical activity. The backend runs these workflows and streams logs to the console.
 

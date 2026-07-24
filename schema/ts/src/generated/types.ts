@@ -101,6 +101,12 @@ export interface RecordingHeader {
    */
   environment: string;
   /**
+   * Complete resolved environment parameter map used by this episode.
+   */
+  parameters: {
+    [k: string]: boolean | number | string | string[];
+  };
+  /**
    * When the recording was created.
    */
   created_at?: string;

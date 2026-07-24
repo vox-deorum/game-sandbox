@@ -28,7 +28,7 @@ def test_cards_keeps_conversion_helpers_in_its_wildcard_api():
 
 
 def test_template_play_loop_completes_a_bounded_episode():
-    env = make_env()
+    env = make_env({"seats": 4})
     started = time.monotonic()
     try:
         score = play_episode(FirstLegalAgent(), env, seed=SEED)

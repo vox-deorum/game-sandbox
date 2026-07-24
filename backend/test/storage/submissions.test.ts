@@ -37,6 +37,7 @@ function sessionInput(overrides: Partial<NewSessionInput> = {}): NewSessionInput
     id: 'sess-1',
     user_id: 'alice',
     env_id: 'flappy_bird',
+    parameters: { seats: 1 },
     mode: 'scripted',
     recording_id: 'flappy_bird-sess-1',
     created_at: '2026-06-11T00:00:00.000Z',
@@ -331,13 +332,12 @@ describe('submission storage on :memory:', () => {
     // session-only join would miss it entirely — the empty "Recent replays" an automated-only season
     // produced, the regression this guards.
     const game: ScheduledGameInput = { match_index: 0, game_index: 0, seed: 1, slots: [agent] }
-    const run = await storage.createRunWithSchedule(
-      iter,
-      'dev-user',
-      [agent],
-      [game],
-      () => TEST_DISABLED_OFFICIAL_LLM_POLICY,
-    )
+    const run = await storage.createRunWithSchedule(iter, 'dev-user', () => ({
+      parametersSnapshot: { seats: 1 },
+      scheduledGames: [game],
+      llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
+    }))
+    if (run === undefined) throw new Error('expected a scheduled run')
     const scheduled = (await storage.listRunGames(run.id))[0]
     if (scheduled === undefined) {
       throw new Error('expected a scheduled game')

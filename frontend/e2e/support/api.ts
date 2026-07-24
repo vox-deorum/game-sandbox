@@ -35,7 +35,7 @@ export interface LlmOverride {
 }
 
 /** The season config document the admin config GET/PUT round-trips (mirrors `SeasonConfig`). */
-interface SeasonConfigDoc {
+export interface SeasonConfigDoc {
   deps_version: number
   matches: MatchConfig[]
   overrides?: {
@@ -43,6 +43,7 @@ interface SeasonConfigDoc {
     episode_timeout_ms?: number
     messaging?: MessagingOverride
     llm?: LlmOverride
+    parameters?: Record<string, boolean | number | string | string[]>
   }
 }
 
@@ -52,10 +53,11 @@ interface SubmissionRow {
   checks: { stage: string; status: string; detail: string | null }[]
 }
 
-interface SessionRow {
+export interface SessionRow {
   id: string
   status: 'starting' | 'running' | 'ended'
   recording_id: string | null
+  parameters: Record<string, boolean | number | string | string[]>
 }
 
 /** One match design entry, mirroring the backend's MatchConfig codec. */
@@ -103,7 +105,7 @@ async function flipWindow(admin: APIRequestContext, path: string): Promise<void>
 }
 
 /** Fetch a season's current full config document through the admin detail endpoint. */
-async function getSeasonConfig(
+export async function getSeasonConfig(
   admin: APIRequestContext,
   seasonId: string,
 ): Promise<SeasonConfigDoc> {
@@ -298,6 +300,8 @@ type SlotAssignment =
 interface StartOverrides {
   seed?: number
   humanSlotTimeoutMs?: number
+  seasonId?: string
+  parameters?: Record<string, boolean | number | string | string[]>
 }
 
 /**
@@ -314,11 +318,21 @@ export async function startSession(
   slots: Record<string, SlotAssignment>,
   overrides: StartOverrides = {},
 ): Promise<string> {
+  const prefill = await actor.get(`/api/environments/${envId}/play-parameters`)
+  const prefillBody = await prefill.text()
+  expect(prefill.status(), prefillBody).toBe(200)
+  const play = JSON.parse(prefillBody) as {
+    season_id: string | null
+    values: Record<string, boolean | number | string | string[]>
+  }
+  if (play.season_id === null) throw new Error(`${envId} has no play-open season`)
   const res = await actor.post('/api/sessions', {
     // Only send the overrides the caller set, so an omitted seed/timeout stays the backend's default
     // rather than a literal `undefined` on the wire.
     data: {
       env_id: envId,
+      season_id: overrides.seasonId ?? play.season_id,
+      parameters: overrides.parameters ?? play.values,
       slots,
       ...(overrides.seed !== undefined ? { seed: overrides.seed } : {}),
       ...(overrides.humanSlotTimeoutMs !== undefined
@@ -330,12 +344,30 @@ export async function startSession(
   return ((await res.json()) as { id: string }).id
 }
 
-async function getSession(actor: APIRequestContext, sessionId: string): Promise<SessionRow | null> {
+export async function getSession(
+  actor: APIRequestContext,
+  sessionId: string,
+): Promise<SessionRow | null> {
   const res = await actor.get(`/api/sessions/${sessionId}`)
   if (!res.ok()) {
     return null
   }
   return (await res.json()) as SessionRow
+}
+
+/** Read and parse the first JSONL row from a persisted recording. */
+export async function getRecordingHeader(
+  actor: APIRequestContext,
+  recordingId: string,
+): Promise<{ parameters: Record<string, boolean | number | string | string[]> }> {
+  const res = await actor.get(`/api/recordings/${recordingId}`)
+  const body = await res.text()
+  expect(res.status(), body).toBe(200)
+  const firstLine = body.split(/\r?\n/, 1)[0]
+  if (firstLine === undefined || firstLine === '') throw new Error('recording has no header')
+  return JSON.parse(firstLine) as {
+    parameters: Record<string, boolean | number | string | string[]>
+  }
 }
 
 /**
@@ -404,15 +436,9 @@ export async function finishedScriptedSession(
   watcher: APIRequestContext,
   submissionId: string,
 ): Promise<string> {
-  const res = await watcher.post('/api/sessions', {
-    // The single-seat watch start as a one-slot `slots` assignment (the Stage 7.6 start contract).
-    data: {
-      env_id: ENV_ID,
-      slots: { player_0: { kind: 'submission', submission_id: submissionId } },
-    },
+  const sessionId = await startSession(watcher, ENV_ID, {
+    player_0: { kind: 'submission', submission_id: submissionId },
   })
-  expect(res.status(), await res.text()).toBe(201)
-  const sessionId = ((await res.json()) as { id: string }).id
 
   // Wait until it is past `starting` so a stop is accepted, then stop it (ignoring the case where the
   // game already ended on its own — the ended-state poll below is the real gate either way).

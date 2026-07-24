@@ -55,6 +55,7 @@ function sessionInput(overrides: Partial<NewSessionInput> = {}): NewSessionInput
     id: 'sess-1',
     user_id: 'alice',
     env_id: ENV,
+    parameters: { seats: 1 },
     mode: 'scripted',
     recording_id: null,
     created_at: '2026-06-11T00:00:00.000Z',
@@ -94,16 +95,19 @@ describe('leaderboard storage on :memory:', () => {
   function createRun(
     seasonId: string,
     requestedBy: string,
-    submissions: AgentRef[],
+    _submissions: AgentRef[],
     games: ScheduledGameInput[],
   ): Promise<SeasonRun> {
-    return storage.createRunWithSchedule(
-      seasonId,
-      requestedBy,
-      submissions,
-      games,
-      () => TEST_DISABLED_OFFICIAL_LLM_POLICY,
-    )
+    return storage
+      .createRunWithSchedule(seasonId, requestedBy, () => ({
+        parametersSnapshot: { seats: 1 },
+        scheduledGames: games,
+        llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
+      }))
+      .then((run) => {
+        if (run === undefined) throw new Error('expected a scheduled run')
+        return run
+      })
   }
 
   beforeEach(async () => {
@@ -273,8 +277,21 @@ describe('leaderboard storage on :memory:', () => {
   it('createRunWithSchedule snapshots config and roster and persists deterministic games', async () => {
     const season = await storage.createSeason({ env_id: ENV, deps_version: 3 })
     await storage.updateSeasonConfig(season.id, configWithMatch(3))
-    const roster: AgentRef[] = [{ kind: 'submission', submission_id: 's1', user_id: 'alice' }]
-    const run = await createRun(season.id, 'dev-user', roster, ONE_GAME)
+    const submission = await storage.createSubmission(submissionInput({ season_id: season.id }))
+    await storage.updateSubmissionStatus(submission.id, 'ready')
+    const roster: AgentRef[] = [
+      { kind: 'submission', submission_id: submission.id, user_id: submission.user_id },
+    ]
+    const game: ScheduledGameInput = { ...GAME_ONE, slots: roster }
+    const run = await storage.createRunWithSchedule(season.id, 'dev-user', ({ submissions }) => {
+      expect(submissions).toEqual(roster)
+      return {
+        parametersSnapshot: { seats: 1 },
+        scheduledGames: [game],
+        llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
+      }
+    })
+    if (run === undefined) throw new Error('expected a scheduled run')
 
     expect(run.status).toBe('pending')
     expect(run.requested_by).toBe('dev-user')
@@ -284,7 +301,7 @@ describe('leaderboard storage on :memory:', () => {
     const games = await storage.listRunGames(run.id)
     expect(games).toHaveLength(1)
     expect(games[0]?.game_index).toBe(0)
-    expect(JSON.parse(firstOf(games).slots)).toEqual(GAME_ONE.slots)
+    expect(JSON.parse(firstOf(games).slots)).toEqual(game.slots)
   })
 
   it('freezes a complete official LLM policy at write time and validates it there', async () => {
@@ -295,16 +312,11 @@ describe('leaderboard storage on :memory:', () => {
       session: { token_budget: 12_000, rate_limit_rpm: 7 },
     } as const
     // The resolver receives the same config text the transaction freezes into `config_snapshot`.
-    const run = await storage.createRunWithSchedule(
-      season.id,
-      'dev-user',
-      [],
-      ONE_GAME,
-      (config) => {
-        expect(config.deps_version).toBe(1)
-        return policy
-      },
-    )
+    const run = await storage.createRunWithSchedule(season.id, 'dev-user', ({ config }) => {
+      expect(config.deps_version).toBe(1)
+      return { parametersSnapshot: { seats: 1 }, scheduledGames: ONE_GAME, llmPolicy: policy }
+    })
+    if (run === undefined) throw new Error('expected a scheduled run')
 
     await storage.updateSeasonConfig(season.id, {
       deps_version: 1,
@@ -324,10 +336,10 @@ describe('leaderboard storage on :memory:', () => {
     expect(() => decodeResolvedOfficialLlmPolicy('{}')).toThrow()
 
     await expect(
-      storage.createRunWithSchedule(season.id, 'dev-user', [], ONE_GAME, () => ({
-        enabled: false,
-        models: {},
-        session: { token_budget: 0, rate_limit_rpm: 1 },
+      storage.createRunWithSchedule(season.id, 'dev-user', () => ({
+        parametersSnapshot: { seats: 1 },
+        scheduledGames: ONE_GAME,
+        llmPolicy: { enabled: false, models: {}, session: { token_budget: 0, rate_limit_rpm: 1 } },
       })),
     ).rejects.toThrow()
   })

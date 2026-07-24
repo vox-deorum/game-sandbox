@@ -30,7 +30,7 @@ def _mean_score(policy) -> float:
     # score (higher is better: the negated penalty total).
     scores: list[float] = []
     for seed in _SEEDS:
-        env = make_env()
+        env = make_env({"seats": 4})
         try:
             scores.append(play_episode(policy, env, seed=seed))
         finally:

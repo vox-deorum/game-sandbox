@@ -21,6 +21,7 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 import {
   type EnvironmentLeaderboards,
   getEnvironmentLeaderboards,
+  getPlayParameters,
   listReleasedSeasons,
   listSeasons,
   listWatchAgents,
@@ -31,15 +32,18 @@ import {
   type WatchAgentSummary,
 } from '../api/client.js'
 import LeaderboardBoards from '../components/LeaderboardBoards.vue'
+import InlineMarkdown from '../components/InlineMarkdown.vue'
 import SeatAssignmentDialog from '../components/SeatAssignmentDialog.vue'
 import StartForm from '../components/StartForm.vue'
 import WatchAgentPicker from '../components/WatchAgentPicker.vue'
 import UiBadge from '../components/ui/UiBadge.vue'
 import UiButton from '../components/ui/UiButton.vue'
+import UiCard from '../components/ui/UiCard.vue'
 import UiDialog from '../components/ui/UiDialog.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import { useEnvironmentMeta } from '../composables/useEnvironmentMeta.js'
 import { formatDate, formatSeasonName, slotLabel } from '../lib/format.js'
+import { formatParameterValue, resolvedSeatCount, visibleParameters } from '../lib/parameters.js'
 import { handleSessionStartResult } from '../lib/session-start.js'
 import { canParticipate, isAdmin, useMe, userId } from '../me.js'
 import { thumbnailFor } from '../renderers/registry.js'
@@ -54,16 +58,27 @@ const ownerId = computed(() => userId(me.me))
 const { meta, notFound, loading } = useEnvironmentMeta(envId)
 const startError = ref<string | null>(null)
 
-// The current released boards plus the public play target. The boards embed and the watch/play gate
-// read from this; an unreleased season's boards never appear (the public read only returns released
-// results). Submission now lives on the My Submissions tab (the agent profile), not on this hub.
+// The current released boards for the embed below. An unreleased season's boards never appear because
+// this public read returns released results only. The play gate comes from playParameters separately.
 const leaderboards = ref<EnvironmentLeaderboards | null>(null)
 // The environment's released seasons, newest first — the season record under the boards. Independent
 // of the current-boards read so a failure of either leaves the other intact.
 const releasedSeasons = ref<SeasonView[]>([])
 // Public watch/play is enabled only when a season is the game's play-open target. Released history
 // stays readable regardless, so the boards embed below is independent of this gate.
-const playOpen = computed(() => leaderboards.value?.play_season_id != null)
+const playParameters = ref<{
+  season_id: string | null
+  values: Record<string, import('@game-sandbox/schema/environment').ParameterValue>
+} | null>(null)
+const playOpen = computed(
+  () => playParameters.value !== null && playParameters.value.season_id !== null,
+)
+const activePlayParameters = computed(() => {
+  const value = playParameters.value
+  return value?.season_id === null || value === null
+    ? null
+    : { seasonId: value.season_id, parameters: value.values }
+})
 
 // The play-open season's active `ready` submissions, fetched once on the hub: the watch list rows, the
 // watch/play seat-dropdown options, and the rate-versus-watch framing all read from this one list.
@@ -77,12 +92,15 @@ const rateable = computed(
     (watchAgents.value?.some((agent) => agent.rating_status === 'unrated') ?? false),
 )
 
-// This environment's public seasons, used to name the live play-open and submission-open seasons in
-// the header (their labels aren't on the leaderboards payload, which carries only their ids).
+// This environment's public seasons, used to enrich the play banner and name the submission-open
+// season in the header. The play prefill remains authoritative if this optional metadata read fails.
 const publicSeasons = ref<PublicSeasonView[]>([])
-const playableSeason = computed(
-  () => publicSeasons.value.find((s) => s.play_status === 'open') ?? null,
-)
+const playableSeason = computed(() => {
+  const seasonId = playParameters.value?.season_id
+  return seasonId === null || seasonId === undefined
+    ? null
+    : publicSeasons.value.find((season) => season.id === seasonId) ?? null
+})
 const submittableSeason = computed(
   () => publicSeasons.value.find((s) => s.submission_status === 'open') ?? null,
 )
@@ -96,7 +114,7 @@ const boardsHeading = computed(() =>
     : `Leaderboard: ${formatSeasonName(releasedSeason.value)}`,
 )
 
-// The released history minus the season already shown above (named in the header, boards embedded);
+// The released history minus the season already shown in the embedded boards section;
 // these are the older seasons whose boards you reach by clicking through.
 const pastSeasons = computed(() =>
   releasedSeasons.value.filter((s) => s.id !== releasedSeason.value?.id),
@@ -108,8 +126,7 @@ onMounted(() => {
       leaderboards.value = data
     },
     () => {
-      // A failed read leaves the boards empty rather than breaking the hub, and keeps the play gate at
-      // its safe-closed default (leaderboards stays null).
+      // A failed read leaves only the released boards empty. Play remains governed by its prefill.
     },
   )
   listSeasons(envId).then(
@@ -117,7 +134,7 @@ onMounted(() => {
       publicSeasons.value = seasons
     },
     () => {
-      // A failed read just leaves the play/submit season badges off; the hub is otherwise unaffected.
+      // A failed read leaves optional banner details and the submission-season badge off.
     },
   )
   listReleasedSeasons(envId).then(
@@ -138,6 +155,14 @@ onMounted(() => {
       watchAgents.value = []
     },
   )
+  getPlayParameters(envId).then(
+    (values) => {
+      playParameters.value = values
+    },
+    () => {
+      playParameters.value = null
+    },
+  )
 })
 // The play start dialog's open state. Watch starts through WatchAgentPicker, so this dialog is the
 // human-play entry point only.
@@ -145,7 +170,7 @@ const playFormOpen = ref(false)
 const canStartHumanPlay = computed(
   () => canParticipate(me.me) && Boolean(meta.value?.human_slots.length && playOpen.value),
 )
-// The header button also renders for an anonymous visitor, as the entry point into signing in:
+// The season-banner button also renders for an anonymous visitor, as the entry point into signing in:
 // open() routes them to /login instead of opening the start dialog.
 const showHumanPlay = computed(
   () =>
@@ -154,7 +179,12 @@ const showHumanPlay = computed(
 )
 // A multi-seat environment (Hearts) plays through the seat-assignment grid: the human claims a seat
 // and agents fill the rest. A single-slot environment (Flappy Bird) keeps the minimal start form.
-const multiSeat = computed(() => (meta.value?.max_slots ?? 1) > 1)
+const multiSeat = computed(
+  () =>
+    meta.value !== null &&
+    playParameters.value !== null &&
+    resolvedSeatCount(meta.value.parameters, playParameters.value.values, meta.value.max_slots) > 1,
+)
 
 /** Remove a consumed play deep-link without discarding unrelated query parameters. */
 function clearPlayQuery(): void {
@@ -177,7 +207,13 @@ const dialogOpen = computed({
     }
   },
 })
-const dialogTitle = computed(() => (meta.value === null ? '' : `Play ${meta.value.display_name}`))
+const dialogTitle = computed(() =>
+  meta.value === null
+    ? ''
+    : `Play ${meta.value.display_name}${
+        playableSeason.value === null ? '' : `: ${formatSeasonName(playableSeason.value)}`
+      }`,
+)
 
 const paceLabel = computed(() => {
   const ms = meta.value?.pace_interval_ms
@@ -206,9 +242,17 @@ watch(
 )
 
 /** The single-slot start form fills only the lone human seat; the backend derives the human mode. */
-function startSingleSeat(input: { seed?: number; humanSlotTimeoutMs?: number }): void {
+function startSingleSeat(input: Omit<StartPayload, 'slots'>): void {
   void submitStart({ slots: { player_0: { kind: 'human' } }, ...input })
 }
+
+const visibleSeasonSettings = computed(() => {
+  const prefill = playParameters.value
+  if (meta.value === null || prefill === null) return []
+  return visibleParameters(meta.value.parameters).map((parameter) =>
+    `${parameter.title} ${formatParameterValue(parameter, prefill.values[parameter.name] ?? parameter.default)}`,
+  )
+})
 
 /** Start the human-play session the form (single seat) or seat grid (multi-seat) composed. */
 async function submitStart(payload: StartPayload): Promise<void> {
@@ -227,25 +271,10 @@ async function submitStart(payload: StartPayload): Promise<void> {
   <section v-else class="env">
     <header class="env-header">
       <div class="env-headline">
-        <div class="env-title-row">
-          <h1>{{ meta.display_name }}</h1>
-          <UiButton v-if="showHumanPlay" size="lg" @click="open()">
-            Play Yourself
-          </UiButton>
-        </div>
+        <div class="env-title-row"><h1>{{ meta.display_name }}</h1></div>
         <p class="env-description">{{ meta.description }}</p>
         <div class="env-meta">
           <UiBadge>{{ slotLabel(meta) }}</UiBadge>
-          <RouterLink
-            v-if="playableSeason !== null && canStartHumanPlay"
-            class="env-meta-link"
-            :to="`/environments/${meta.env_id}?play=1`"
-          >
-            <UiBadge variant="accent">{{ formatSeasonName(playableSeason) }}: Playable</UiBadge>
-          </RouterLink>
-          <UiBadge v-else-if="playableSeason !== null" variant="accent">
-            {{ formatSeasonName(playableSeason) }}: Playable
-          </UiBadge>
           <RouterLink
             v-if="submittableSeason !== null && ownerId !== null"
             class="env-meta-link"
@@ -259,15 +288,39 @@ async function submitStart(payload: StartPayload): Promise<void> {
       <img class="env-thumb" :src="thumbnailFor(meta.renderer)" alt="" />
     </header>
 
+    <UiCard v-if="playOpen" class="play-season-banner">
+      <div class="play-season-heading">
+        <div>
+          <h2>{{ playableSeason === null ? 'Season open for play' : formatSeasonName(playableSeason) }}</h2>
+          <UiBadge variant="accent">Open for play</UiBadge>
+        </div>
+        <UiButton v-if="showHumanPlay" size="lg" @click="open()">Play Yourself</UiButton>
+      </div>
+      <div
+        v-if="playableSeason !== null && playableSeason.description_markdown !== null"
+        class="play-season-description"
+      >
+        <InlineMarkdown :markdown="playableSeason.description_markdown" />
+      </div>
+      <p v-if="visibleSeasonSettings.length > 0" class="play-season-settings">
+        Settings: {{ visibleSeasonSettings.join(' · ') }}
+      </p>
+    </UiCard>
+
     <section id="play" class="env-section">
       <div class="env-section-title">
         <h2>{{ rateable ? 'Rate an Agent' : 'Watch an Agent' }}</h2>
-        <span v-if="playableSeason !== null" class="env-section-season">
-          Season: {{ formatSeasonName(playableSeason) }}
-        </span>
       </div>
-      <WatchAgentPicker v-if="playOpen" :env-id="meta.env_id" :meta="meta" :agents="watchAgents" />
-      <UiEmptyState v-else>Public play is closed for this environment right now.</UiEmptyState>
+      <WatchAgentPicker
+        v-if="playOpen && playParameters !== null && playParameters.season_id !== null"
+        :env-id="meta.env_id"
+        :meta="meta"
+        :agents="watchAgents"
+        :season-id="playParameters.season_id"
+        :parameters="playParameters.values"
+        :season-label="playableSeason === null ? undefined : formatSeasonName(playableSeason)"
+      />
+      <UiEmptyState v-else>No season is currently open for play.</UiEmptyState>
     </section>
 
     <section class="env-section">
@@ -305,17 +358,21 @@ async function submitStart(payload: StartPayload): Promise<void> {
 
     <UiDialog v-model:open="dialogOpen" :title="dialogTitle">
       <SeatAssignmentDialog
-        v-if="playFormOpen && multiSeat"
+        v-if="playFormOpen && multiSeat && activePlayParameters !== null"
         :meta="meta"
         :agents="watchAgents ?? []"
         mode="play"
         :is-operator="isAdmin(me.me)"
+        :season-id="activePlayParameters.seasonId"
+        :parameters="activePlayParameters.parameters"
         @start="submitStart"
         @cancel="playFormOpen = false"
       />
       <StartForm
-        v-else-if="playFormOpen"
+        v-else-if="playFormOpen && activePlayParameters !== null"
         :meta="meta"
+        :season-id="activePlayParameters.seasonId"
+        :parameters="activePlayParameters.parameters"
         @submit="startSingleSeat"
         @cancel="playFormOpen = false"
       />
@@ -371,6 +428,12 @@ async function submitStart(payload: StartPayload): Promise<void> {
 .env-section {
   margin-top: var(--space-6);
 }
+
+.play-season-banner { margin-top: var(--space-6); }
+.play-season-heading { display: flex; justify-content: space-between; align-items: start; gap: var(--space-3); flex-wrap: wrap; }
+.play-season-heading h2 { margin: 0 var(--space-2) 0 0; display: inline; }
+.play-season-description, .play-season-settings { margin: var(--space-3) 0 0; }
+.play-season-description, .play-season-settings { color: var(--color-text-muted); }
 
 .env-section-head {
   display: flex;

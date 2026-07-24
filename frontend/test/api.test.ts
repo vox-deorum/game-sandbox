@@ -16,6 +16,7 @@ import {
   getRecording,
   getRecordingLlm,
   getSeasonLeaderboards,
+  getSession,
   getSessionRatings,
   getSiteConfig,
   listAdminLlmDevelopmentCalls,
@@ -158,7 +159,12 @@ describe('api client', () => {
   it('maps a 201 to a started session', async () => {
     stubFetch(async () => jsonResponse({ id: 's1', ws_path: '/api/sessions/s1/ws' }, 201))
     expect(
-      await startSession({ envId: 'flappy_bird', slots: { player_0: { kind: 'human' } } }),
+      await startSession({
+        envId: 'flappy_bird',
+        seasonId: 'season-1',
+        parameters: { seats: 1 },
+        slots: { player_0: { kind: 'human' } },
+      }),
     ).toEqual({
       ok: true,
       session: { id: 's1', wsPath: '/api/sessions/s1/ws' },
@@ -168,7 +174,12 @@ describe('api client', () => {
   it('maps a 403 to not_active', async () => {
     stubFetch(async () => jsonResponse({ error: 'no', code: 'not_active' }, 403))
     expect(
-      await startSession({ envId: 'flappy_bird', slots: { player_0: { kind: 'human' } } }),
+      await startSession({
+        envId: 'flappy_bird',
+        seasonId: 'season-1',
+        parameters: { seats: 1 },
+        slots: { player_0: { kind: 'human' } },
+      }),
     ).toEqual({
       ok: false,
       reason: 'not_active',
@@ -180,7 +191,12 @@ describe('api client', () => {
       jsonResponse({ error: 'busy', code: 'already_active', active_session_id: 'abc' }, 409),
     )
     expect(
-      await startSession({ envId: 'flappy_bird', slots: { player_0: { kind: 'human' } } }),
+      await startSession({
+        envId: 'flappy_bird',
+        seasonId: 'season-1',
+        parameters: { seats: 1 },
+        slots: { player_0: { kind: 'human' } },
+      }),
     ).toEqual({
       ok: false,
       reason: 'already_active',
@@ -194,6 +210,8 @@ describe('api client', () => {
     )
     await startSession({
       envId: 'hearts',
+      seasonId: 'season-1',
+      parameters: { seats: 4 },
       humanSlotTimeoutMs: 2000,
       slots: {
         player_0: { kind: 'human' },
@@ -219,6 +237,27 @@ describe('api client', () => {
     expect(body).not.toHaveProperty('mode')
     expect(body).not.toHaveProperty('submission_id')
     expect(body.slots.player_1).not.toHaveProperty('submissionId')
+  })
+
+  it('reads the complete persisted parameter map on a session row', async () => {
+    const row = {
+      id: 's1',
+      user_id: 'dev-user',
+      env_id: 'flappy_bird',
+      mode: 'human',
+      status: 'running',
+      termination_reason: null,
+      recording_id: null,
+      season_id: 'season-1',
+      parameters: { seats: 1, pipe_gap: 90 },
+      human_timeout_ms: 50,
+      messaging_enabled: 0,
+      message_cap: null,
+      created_at: '2026-07-24T00:00:00Z',
+      ended_at: null,
+    } as const
+    stubFetch(async () => jsonResponse(row))
+    expect((await getSession('s1'))?.parameters).toEqual({ seats: 1, pipe_gap: 90 })
   })
 
   it('fetches a recording as raw text', async () => {

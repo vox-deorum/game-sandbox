@@ -13,6 +13,7 @@ import { join } from 'node:path'
 import fastifyStatic from '@fastify/static'
 import websocket from '@fastify/websocket'
 import type { RecordingHeader } from '@game-sandbox/schema'
+import { type ParameterValue, resolveParameters } from '@game-sandbox/schema/environment'
 import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify'
 
 import { registerAdminRoutes } from './admin/routes.js'
@@ -41,7 +42,7 @@ import {
   OrchestratorError,
   type SlotAssignment,
 } from './session/orchestrator.js'
-import { type Storage, SubmissionConflictError } from './storage/index.js'
+import { decodeSeasonConfig, type Storage, SubmissionConflictError } from './storage/index.js'
 import type { DevelopmentLedgerStore } from './storage/llm/development-ledger/store.js'
 import type { ExecutionTelemetryStore } from './storage/llm/execution-telemetry.js'
 import type { SubmissionSnapshotStore } from './submission/snapshot-store.js'
@@ -146,12 +147,20 @@ export interface AppDeps {
 const START_SESSION_SCHEMA = {
   body: {
     type: 'object',
-    required: ['env_id', 'slots'],
+    required: ['env_id', 'season_id', 'parameters', 'slots'],
     additionalProperties: false,
     properties: {
       env_id: { type: 'string', minLength: 1 },
+      season_id: { type: 'string', minLength: 1 },
       seed: { type: 'integer', minimum: 0 },
       human_slot_timeout_ms: { type: 'integer', minimum: 0 },
+      parameters: {
+        type: 'object',
+        additionalProperties: {
+          type: ['boolean', 'number', 'string', 'array'],
+          items: { type: 'string' },
+        },
+      },
       slots: {
         type: 'object',
         minProperties: 1,
@@ -187,8 +196,10 @@ interface SlotAssignmentBody {
 
 interface StartBody {
   env_id: string
+  season_id: string
   seed?: number
   human_slot_timeout_ms?: number
+  parameters: Record<string, ParameterValue>
   slots: Record<string, SlotAssignmentBody>
 }
 
@@ -276,7 +287,7 @@ function admitSubmissionSource(
 }
 
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
-  const app = Fastify({ logger: false })
+  const app = Fastify({ logger: false, ajv: { customOptions: { strictTypes: false } } })
   await app.register(websocket)
 
   // The one place a request is turned into an acting user: a Better Auth session-cookie lookup,
@@ -294,6 +305,27 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   })
 
   app.get('/api/environments', () => deps.environments.list())
+
+  app.get<{ Params: { envId: string } }>(
+    '/api/environments/:envId/play-parameters',
+    async (request, reply) => {
+      const meta = deps.environments.get(request.params.envId)
+      if (meta === undefined) {
+        return reply.code(404).send({ error: 'no such environment' })
+      }
+      const season = await deps.storage.getPublicPlaySeason(meta.env_id)
+      const resolved = resolveParameters(
+        meta.parameters,
+        season === undefined ? {} : (decodeSeasonConfig(season.config).overrides?.parameters ?? {}),
+      )
+      if (resolved.issues.length > 0) {
+        return reply
+          .code(500)
+          .send({ error: `environment parameters are invalid: ${resolved.issues[0]?.message}` })
+      }
+      return { season_id: season?.id ?? null, values: resolved.values }
+    },
+  )
 
   // The public deployment branding the SPA reads once at startup, so the sidebar brand and the
   // document title reflect the operator's `SITE_NAME` rather than a hardcoded string. Unauthenticated
@@ -368,8 +400,10 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         const result = await deps.orchestrator.start({
           userId: user.id,
           envId: request.body.env_id,
+          seasonId: request.body.season_id,
           seed: request.body.seed,
           humanSlotTimeoutMs: request.body.human_slot_timeout_ms,
+          parameters: request.body.parameters,
           slots: Object.fromEntries(
             Object.entries(request.body.slots).map(([slotId, assignment]) => [
               slotId,

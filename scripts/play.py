@@ -12,7 +12,12 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from _paths import FRONTEND_LOCAL_DIST_DIR, REPO_ROOT
-from game_sandbox_harness.environment import EnvironmentEntry, EnvironmentLookupError, load_environment
+from game_sandbox_harness.environment import (
+    EnvironmentEntry,
+    EnvironmentLookupError,
+    load_environment,
+    resolve_parameters,
+)
 from game_sandbox_harness.live import UNSET_TIMEOUT, UnsetTimeout
 from game_sandbox_harness.local_server import LocalServer
 
@@ -23,7 +28,7 @@ BUILTIN_AGENT_ROOT = REPO_ROOT / "backend" / "images" / "session-base" / "deps-v
 
 def possible_slots(entry: EnvironmentEntry) -> tuple[str, ...]:
     """Return every possible slot from a fresh environment, not only the human-capable ones."""
-    env = entry.make()
+    env = entry.make(resolve_parameters(entry.meta))
     try:
         return tuple(env.possible_agents)
     finally:
@@ -67,6 +72,7 @@ def local_config(
         }
     config: dict[str, object] = {
         "env_id": entry.meta.env_id,
+        "parameters": resolve_parameters(entry.meta),
         "seed": seed,
         "slots": bindings,
         "players": players,

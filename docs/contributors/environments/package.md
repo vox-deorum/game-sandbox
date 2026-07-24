@@ -6,7 +6,7 @@ Read the [environment specification](../../specs/environment.md) before changing
 
 ## Package shape
 
-`env.py` exposes `make_env()`, a factory with no arguments that returns a fresh PettingZoo agent-environment-cycle (AEC) environment. The seed is passed to `reset`, not to the factory.
+`env.py` exposes `make_env(parameters)`, a factory that receives the complete resolved gameplay parameter map and returns a fresh PettingZoo agent-environment-cycle (AEC) environment. The map always contains the synthesized `seats` value. The seed is passed to `reset`, not to the factory.
 
 It also defines `default_action(env, slot_id)`, which returns the legal integer applied when a slot has no action. For example, Flappy Bird returns idle, Hearts returns the lowest legal card, and Spades returns a never-nil bid or the lowest legal card.
 
@@ -37,6 +37,7 @@ The environment owns its display state. Test that every overlay field exists and
 | `env_id` | Stable id and entry-point name. |
 | `display_name`, `description` | Public website text. |
 | `min_slots`, `max_slots`, `human_slots` | Supported seats and human-capable slots. |
+| `parameters` | Typed gameplay parameter declarations. The public JSON also includes synthesized `seats`. |
 | `human_timeout_ms` | Human move clock, or `None` when pacing is the deadline. |
 | `recommended_episode_ticks` | Suggested episode length. |
 | `pace_interval_ms` | Realtime cadence, or `None` for turn-based play. |
@@ -47,6 +48,12 @@ The environment owns its display state. Test that every overlay field exists and
 | `renderer` | Browser renderer id. |
 
 The session loop reads `pace_interval_ms` instead of branching on the game type.
+
+Declare gameplay parameters with the frozen `EnvParameter` and `EnvParameterChoice` dataclasses from `game_sandbox_harness.environment`. Names use snake_case, must be unique, and cannot be `seats`. Numeric parameters declare inclusive bounds. Choice values are stable non-empty strings with separate friendly labels.
+
+The factory must use the values it owns. For example, Flappy Bird passes `int(parameters["pipe_gap"])` to its game constructor. A future variable-seat environment reads `parameters["seats"]` when it creates `possible_agents`. The harness validates and normalizes the map before calling the factory and then verifies that the resulting agent count matches `seats`.
+
+Use `effective_parameters(meta)` when a consumer needs declarations including `seats`, and use `resolve_parameters(meta, overrides)` before constructing an environment outside the session harness. Do not build a partial map by hand.
 
 ## Registration and distribution
 
@@ -63,7 +70,8 @@ Every environment runs PettingZoo conformance through the shared guard in `envir
 ```python
 from pettingzoo.test import api_test
 
-api_test(make_env(), num_cycles=100)
+parameters = resolve_parameters(ENTRY.meta)
+api_test(make_env(parameters), num_cycles=100)
 ```
 
 The pinned PettingZoo version has a known `api_test` issue with object-shaped composite observations. The shared guard accepts only that exact failure as expected. Direct `observation_space.contains()` checks still cover a full episode.

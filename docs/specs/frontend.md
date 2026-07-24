@@ -43,6 +43,8 @@ The environment overview targets three potentially different seasons:
 - Watch and play use the current play-open season.
 - My Submissions uses the current submission-open season.
 
+While a season is open for play, the environment overview shows a season banner directly above the watch and play section. The banner names the season, labels it **Open for play**, renders its description, and summarizes the visible effective gameplay settings. The **Play Yourself** action lives in this banner because the action uses that season's settings. The watch section does not repeat the season name. When play is closed, the page states that no season is currently open for play.
+
 An operator may set an optional **Season description** as display-only Markdown metadata. It is independent of run configuration and workflow execution and may be saved, replaced, or cleared at any time. The description becomes public when the season accepts submissions, is open for play, or is released. It remains hidden while all three gates are closed. Cross-game Seasons cards show the description only when it has content, with no placeholder when it is empty.
 
 A Season description is one inline Markdown paragraph of at most 2,000 characters after line endings are normalized and surrounding whitespace is trimmed. Soft-wrapped lines are allowed, but a blank line that creates a second paragraph is rejected. The description supports emphasis, strong text, inline code, and absolute HTTP(S) links. Raw HTML, images, block Markdown, relative links, and other link schemes remain inactive. Links open in a new tab with safe external-link attributes.
@@ -83,11 +85,20 @@ See [Submissions](submission.md).
 
 | Flow | Configuration |
 | --- | --- |
-| Watch single-agent | Agent, seed, supported overrides |
-| Watch multi-agent | One agent per required seat, seed, supported overrides |
-| Play | Human-capable slot assignment, remaining agents, seed, human timeout, supported overrides |
+| Rate | Intended agent in every resolved seat, season gameplay parameters, and random seed, all locked |
+| Watch single-agent | Agent, gameplay parameters, seed, supported overrides |
+| Watch multi-agent | One agent per resolved seat, gameplay parameters, seed, supported overrides |
+| Play | Human-capable slot assignment, remaining agents, gameplay parameters, seed, human timeout, supported overrides |
 
 Any agent row, whether built-in or submitted, opens the same seat-assignment view. The selected agent is preselected for its seat, and every seat can be reassigned before the session starts. All required seats must be assigned before a multi-agent session starts. The session model identifies every slot even when the first interface supports only one connected human.
+
+The **Rate** action is the exception: it preselects the intended agent into every resolved seat and disables every configuration control. The viewer starts with the season's gameplay parameters and a random seed, then rates that same agent after the session. **Watch again** and ordinary watch actions keep the configuration editable.
+
+Start forms render the environment's visible parameter declarations dynamically. Numeric and string values use labelled inputs, booleans use an explicit On/Off select, choices use a select, and multi-choice values use a labelled checkbox group. Invalid edits show a field error and disable the start action. Hidden parameters stay in the complete submitted map.
+
+A single-slot watch starts immediately only when the environment has no visible parameter. Otherwise it opens the configuration dialog. A multi-seat dialog places gameplay parameters above the seat grid so a future visible `seats` control resizes the grid it governs.
+
+The season config editor lists every effective environment parameter, including values hidden from players. Each row explicitly inherits the environment default or supplies an override, so an empty string remains a valid override. The editor validates and canonicalizes values before saving and serializes only declarations in the current environment registry.
 
 ## On-demand live play
 

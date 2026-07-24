@@ -16,7 +16,22 @@ import type { RecordingHeader, StepState } from './generated/types.js'
 // The shared wire shapes the browser also speaks. These modules are dependency-free (no Node
 // built-ins, no Ajv) so the frontend can import them directly through the subpath exports; the
 // barrel re-exports them for the Node backend, which already pulls in the Ajv-backed readers below.
-export { type EnvironmentMeta, isEnvironmentMeta } from './environment.js'
+export {
+  type EnvironmentMeta,
+  type EnvParameter,
+  type EnvParameterChoice,
+  type EnvParameterType,
+  isEnvironmentMeta,
+  isEnvParameter,
+  isEnvParameterChoice,
+  type ParameterIssue,
+  type ParameterValidation,
+  type ParameterValue,
+  type ResolvedParameters,
+  resolveParameters,
+  validateCompleteParameters,
+  validateParameterValue,
+} from './environment.js'
 export type { AgentStep, Message, RecordingHeader, StepState } from './generated/types.js'
 export type { LlmModelUsage, LlmUsageByModel, ModelAlias } from './llm.js'
 export {

@@ -154,5 +154,7 @@ if TYPE_CHECKING:
 
     _concrete = FolderRecordingStore(".")
     _store: RecordingStore = _concrete
-    _writer: RecordingWriter = _concrete.create("id", {"schema_version": 1, "environment": "x"})
+    _writer: RecordingWriter = _concrete.create(
+        "id", {"schema_version": 1, "environment": "x", "parameters": {"seats": 1}}
+    )
     _recording: Recording = _concrete.open("id")

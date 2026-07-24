@@ -27,6 +27,26 @@ export function flappyMeta(overrides: Partial<EnvironmentMeta> = {}): Environmen
     seat_order_matters: false,
     view_interval_ms: null,
     live_interval_ms: null,
+    parameters: [
+      {
+        name: 'seats',
+        title: 'Seats',
+        description: 'Players.',
+        type: 'int',
+        default: 1,
+        min: 1,
+        max: 1,
+      },
+      {
+        name: 'pipe_gap',
+        title: 'Pipe gap',
+        description: 'Vertical opening between pipes.',
+        type: 'int',
+        default: 100,
+        min: 60,
+        max: 200,
+      },
+    ],
     ...overrides,
   }
 }
@@ -55,6 +75,17 @@ export function heartsMeta(overrides: Partial<EnvironmentMeta> = {}): Environmen
     seat_order_matters: true,
     view_interval_ms: 3000,
     live_interval_ms: 900,
+    parameters: [
+      {
+        name: 'seats',
+        title: 'Seats',
+        description: 'Players.',
+        type: 'int',
+        default: 4,
+        min: 4,
+        max: 4,
+      },
+    ],
     ...overrides,
   }
 }
@@ -84,13 +115,24 @@ export function spadesMeta(overrides: Partial<EnvironmentMeta> = {}): Environmen
     seat_order_matters: true,
     view_interval_ms: 3000,
     live_interval_ms: 900,
+    parameters: [
+      {
+        name: 'seats',
+        title: 'Seats',
+        description: 'Players.',
+        type: 'int',
+        default: 4,
+        min: 4,
+        max: 4,
+      },
+    ],
     ...overrides,
   }
 }
 
 /** A recording header for a Flappy Bird run (schema version 1). */
 export function flappyHeader(overrides: Partial<RecordingHeader> = {}): RecordingHeader {
-  return { schema_version: 1, environment: 'flappy_bird', seed: 0, ...overrides }
+  return { schema_version: 1, environment: 'flappy_bird', seed: 0, parameters: {}, ...overrides }
 }
 
 /**
@@ -118,6 +160,7 @@ export function spadesHeader(overrides: Partial<RecordingHeader> = {}): Recordin
     schema_version: 1,
     environment: 'spades',
     seed: 0,
+    parameters: {},
     players: spadesPlayers(),
     ...overrides,
   }
@@ -176,6 +219,7 @@ export function recordingText(
     schema_version: opts.schemaVersion ?? 1,
     environment: opts.environment ?? 'flappy_bird',
     seed: opts.seed ?? 0,
+    parameters: {},
   }
   if (opts.players !== undefined) {
     header.players = opts.players

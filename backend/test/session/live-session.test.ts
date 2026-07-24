@@ -79,6 +79,7 @@ describe('relay (LiveSession)', () => {
       id: 'sess-1',
       user_id: 'alice',
       env_id: 'flappy_bird',
+      parameters: { seats: 1 },
       mode: 'human',
       recording_id: 'flappy_bird-sess-1',
       created_at: '2026-06-11T00:00:00.000Z',

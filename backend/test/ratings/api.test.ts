@@ -113,7 +113,12 @@ describe('rating API', () => {
   /** Write a recording with a `players` header, returning its id. */
   async function writeRecording(id: string, players: Record<string, PlayerEntry>): Promise<string> {
     await mkdir(join(dir, id), { recursive: true })
-    const header = { schema_version: 1, environment: ENV_ID, players }
+    const header = {
+      schema_version: 1,
+      environment: ENV_ID,
+      parameters: { seats: 1, pipe_gap: 100 },
+      players,
+    }
     await writeFile(join(dir, id, 'recording.jsonl'), `${JSON.stringify(header)}\n`, 'utf-8')
     return id
   }
@@ -131,6 +136,7 @@ describe('rating API', () => {
       id,
       user_id: options.starter ?? 'bob',
       env_id: ENV_ID,
+      parameters: { seats: 1 },
       mode: 'scripted',
       recording_id: options.recordingId,
       season_id: options.seasonId,

@@ -15,6 +15,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+from game_sandbox_harness.environment import resolve_parameters
 from game_sandbox_harness.recording.local import FolderRecordingStore
 from game_sandbox_harness.session import AgentSlot, run_episode
 from spades import ENTRY
@@ -68,7 +69,15 @@ def _play(slots, seed: int, tmp_path: Path, *, messaging=None):
     rewards are credited to every seat but recorded only on the acting seat's line, so the recording
     alone cannot report a non-actor's terminal (for example nil) score."""
     store = FolderRecordingStore(tmp_path)
-    result = run_episode(ENTRY, slots, seed=seed, store=store, recording_id="r", messaging=messaging)
+    result = run_episode(
+        ENTRY,
+        slots,
+        parameters=resolve_parameters(ENTRY.meta),
+        seed=seed,
+        store=store,
+        recording_id="r",
+        messaging=messaging,
+    )
     return list(store.open("r").steps()), result
 
 

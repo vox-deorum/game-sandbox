@@ -10,7 +10,7 @@ State line 2
 ...
 ```
 
-The header identifies who controlled each slot, either a human, the built-in agent, or a submitted agent.
+The header identifies who controlled each slot, either a human, the built-in agent, or a submitted agent. It also records the complete normalized gameplay parameter map used to construct the environment, including the resolved `seats` value.
 
 This design means:
 

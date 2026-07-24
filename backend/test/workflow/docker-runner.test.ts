@@ -83,6 +83,26 @@ function makeEnvironments(): EnvironmentRegistry {
         seat_order_matters: false,
         view_interval_ms: null,
         live_interval_ms: null,
+        parameters: [
+          {
+            name: 'seats',
+            title: 'Seats',
+            description: 'Number of seats.',
+            type: 'int',
+            default: 1,
+            min: 1,
+            max: 1,
+          },
+          {
+            name: 'pipe_gap',
+            title: 'Pipe gap',
+            description: 'Vertical gap between pipes.',
+            type: 'int',
+            default: 100,
+            min: 50,
+            max: 200,
+          },
+        ],
       },
     ]),
   )
@@ -156,13 +176,13 @@ async function makeRun(
     matches: [{ slots: ['submission'], seeds: [1], games: 1 }],
     ...(options.overrides ? { overrides: options.overrides } : {}),
   })
-  return storage.createRunWithSchedule(
-    season.id,
-    'dev-user',
-    options.submissions ?? [],
-    schedule,
-    () => options.llmPolicy ?? disabledLlmPolicy(),
-  )
+  const run = await storage.createRunWithSchedule(season.id, 'dev-user', () => ({
+    parametersSnapshot: { seats: 1, pipe_gap: 100 },
+    scheduledGames: schedule,
+    llmPolicy: options.llmPolicy ?? disabledLlmPolicy(),
+  }))
+  if (run === undefined) throw new Error('expected a scheduled run')
+  return run
 }
 
 /** One scheduled game's resolved slots, the all-Naive single seat by default. */
@@ -213,6 +233,7 @@ function emitRecording(
       JSON.stringify({
         schema_version: 1,
         environment: ENV_ID,
+        parameters: { seats: 1 },
         seed: config.seed,
         created_at: '2026-06-16T00:00:00.000Z',
       }),
@@ -260,6 +281,7 @@ function emitHeader(process: FakeSessionProcess, seed: number): void {
     JSON.stringify({
       schema_version: 1,
       environment: ENV_ID,
+      parameters: { seats: 1 },
       seed,
       created_at: '2026-06-16T00:00:00.000Z',
     }),
@@ -1365,13 +1387,12 @@ describe('Docker-backed workflow runner', () => {
     await runToTerminal(handle, first.id)
 
     // A second run for the same season (the re-run).
-    const second = await storage.createRunWithSchedule(
-      first.season_id,
-      'dev-user',
-      [],
-      [naiveGame(0)],
-      disabledLlmPolicy,
-    )
+    const second = await storage.createRunWithSchedule(first.season_id, 'dev-user', () => ({
+      parametersSnapshot: { seats: 1, pipe_gap: 100 },
+      scheduledGames: [naiveGame(0)],
+      llmPolicy: disabledLlmPolicy(),
+    }))
+    if (second === undefined) throw new Error('expected a scheduled run')
     await runToTerminal(handle, second.id)
 
     expect(second.id).not.toBe(first.id)

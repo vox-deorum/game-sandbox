@@ -124,13 +124,12 @@ describe('workflow run end to end (Docker)', () => {
         slots: [{ kind: 'builtin-naive' } as AgentRef],
       },
     ]
-    const run = await storage.createRunWithSchedule(
-      seasonId,
-      'dev-user',
-      submissions,
-      schedule,
-      disabledLlmPolicy,
-    )
+    const run = await storage.createRunWithSchedule(seasonId, 'dev-user', () => ({
+      parametersSnapshot: { seats: 1 },
+      scheduledGames: schedule,
+      llmPolicy: disabledLlmPolicy(),
+    }))
+    if (run === undefined) throw new Error('expected a scheduled run')
     const status = await new Promise<TerminalRunStatus>((res) => {
       const unsubscribe = runner.subscribe(run.id, (event) => {
         if (event.type === 'terminal') {

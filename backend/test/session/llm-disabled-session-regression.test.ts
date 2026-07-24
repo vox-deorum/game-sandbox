@@ -48,6 +48,7 @@ describe('disabled LLM session regression', () => {
   let orchestrator: Orchestrator
   let recordingsDir: string
   let issuedGrants: number
+  const seasons = new Map<string, string>()
 
   beforeEach(async () => {
     storage = await openSqliteStorage(':memory:')
@@ -67,7 +68,10 @@ describe('disabled LLM session regression', () => {
       },
     })
     const environments = EnvironmentRegistry.load()
-    for (const { envId } of CASES) await storage.ensureOpenSeason(envId, 1)
+    for (const { envId } of CASES) {
+      const season = await storage.ensureOpenSeason(envId, 1)
+      seasons.set(envId, season.id)
+    }
     orchestrator = new Orchestrator({
       driver,
       storage,
@@ -96,7 +100,14 @@ describe('disabled LLM session regression', () => {
     slots,
     messaging,
   }) => {
-    const started = await orchestrator.start({ userId: 'alice', envId, seed: 7, slots })
+    const started = await orchestrator.start({
+      userId: 'alice',
+      envId,
+      seasonId: seasons.get(envId) ?? 'missing',
+      parameters: envId === 'spades' ? { seats: 4 } : { seats: 1, pipe_gap: 100 },
+      seed: 7,
+      slots,
+    })
     const launch = driver.lastLaunch()
     if (launch === undefined) throw new Error('expected a session launch')
     const config = JSON.parse(launch.spec.argv[0] ?? '{}') as Record<string, unknown>

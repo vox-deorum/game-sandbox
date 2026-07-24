@@ -21,8 +21,14 @@ from .environment import (
     EnvironmentEntry,
     EnvironmentLookupError,
     EnvironmentMeta,
+    EnvParameter,
+    EnvParameterChoice,
+    EnvParameterValueError,
+    ParameterValue,
     discover_environments,
+    effective_parameters,
     load_environment,
+    resolve_parameters,
 )
 from .manifest import (
     Manifest,
@@ -84,11 +90,17 @@ __all__ = [
     "ManualClock",
     # environment
     "ENTRY_POINT_GROUP",
+    "ParameterValue",
+    "EnvParameterChoice",
+    "EnvParameter",
+    "EnvParameterValueError",
     "EnvironmentMeta",
     "EnvironmentEntry",
     "EnvironmentLookupError",
     "discover_environments",
     "load_environment",
+    "effective_parameters",
+    "resolve_parameters",
     # manifest
     "Manifest",
     "ManifestError",

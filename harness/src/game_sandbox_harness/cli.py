@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from .clock import SystemClock
-from .environment import EnvironmentEntry, load_environment
+from .environment import EnvironmentEntry, load_environment, resolve_parameters
 from .manifest import load_agent
 from .recording.local import FolderRecordingStore
 from .session import (
@@ -71,6 +71,7 @@ def main(argv: list[str] | None = None) -> int:
         entry,
         {slot_id: slot},
         seed=args.seed,
+        parameters=resolve_parameters(entry.meta),
         store=store,
         clock=SystemClock(),
         max_steps=args.steps,

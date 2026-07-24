@@ -11,6 +11,11 @@
 import { randomInt, randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
 
+import {
+  type ParameterValue,
+  resolveParameters,
+  validateCompleteParameters,
+} from '@game-sandbox/schema/environment'
 import type { UserDirectory } from '../auth/users.js'
 import type { Config } from '../config.js'
 import { currentSessionBaseImageSpec } from '../deps-version.js'
@@ -66,6 +71,10 @@ export interface StartRequest {
   envId: string
   seed?: number
   humanSlotTimeoutMs?: number
+  /** The play-open season the start form was prefetched against. */
+  seasonId: string
+  /** The complete resolved parameter map, including hidden and synthesized values. */
+  parameters: Record<string, ParameterValue>
   /** Per-slot assignment keyed by slot id; must cover exactly the environment's required seats. */
   slots: Record<string, SlotAssignment>
 }
@@ -197,15 +206,6 @@ export class Orchestrator {
     if (meta === undefined) {
       throw new OrchestratorError(400, `unknown environment ${request.envId}`)
     }
-    const { assignments, mode } = this.validateSlotShape(meta, request.slots)
-
-    const activeId = this.registry.activeIdForUser(request.userId)
-    if (activeId !== undefined) {
-      throw new OrchestratorError(409, 'user already has an active session', 'already_active', {
-        active_session_id: activeId,
-      })
-    }
-
     // Every session attaches to a play-open season — ratings hang off it, and each submitted slot must
     // reference an active `ready` submission on it — so a play-closed environment never starts an
     // unattributable session. Resolve and require it once, before any submission or image work.
@@ -216,6 +216,49 @@ export class Orchestrator {
         'no season is open for public play in this environment',
         'no_play_open_season',
       )
+    }
+    if (request.seasonId !== playSeason.id) {
+      throw new OrchestratorError(
+        409,
+        'the play-open season changed while this page was open',
+        'play_season_changed',
+      )
+    }
+    const seasonConfig = decodeSeasonConfig(playSeason.config)
+    const completeParameters = validateCompleteParameters(meta.parameters, request.parameters)
+    if (completeParameters.issues.length > 0) {
+      throw new OrchestratorError(
+        400,
+        `invalid parameters: ${completeParameters.issues[0]?.name} ${completeParameters.issues[0]?.message}`,
+        'invalid_parameters',
+      )
+    }
+    const resolvedParameters = resolveParameters(
+      meta.parameters,
+      seasonConfig.overrides?.parameters ?? {},
+      completeParameters.values,
+    )
+    if (resolvedParameters.issues.length > 0) {
+      throw new OrchestratorError(
+        400,
+        `invalid parameters: ${resolvedParameters.issues[0]?.name} ${resolvedParameters.issues[0]?.message}`,
+        'invalid_parameters',
+      )
+    }
+    const seats = resolvedParameters.values.seats
+    if (typeof seats !== 'number' || !Number.isSafeInteger(seats)) {
+      throw new OrchestratorError(
+        500,
+        `environment ${meta.env_id} has no valid resolved seats parameter`,
+      )
+    }
+    const { assignments, mode } = this.validateSlotShape(meta, request.slots, seats)
+
+    const activeId = this.registry.activeIdForUser(request.userId)
+    if (activeId !== undefined) {
+      throw new OrchestratorError(409, 'user already has an active session', 'already_active', {
+        active_session_id: activeId,
+      })
     }
     const resolvedSlots = await this.resolveSubmissions(assignments, meta, playSeason)
 
@@ -233,7 +276,6 @@ export class Orchestrator {
     // enabled is the environment metadata AND the season override; the cap is the minimum of the two.
     // The same resolved block is handed to all three consumers (the container config, the relay, and
     // the session row) so live and reopened-ended payloads agree, and it is persisted on the row.
-    const seasonConfig = decodeSeasonConfig(playSeason.config)
     const overrides = seasonConfig.overrides
     const messaging = resolveMessaging(meta, overrides?.messaging)
     const llm = this.resolveLiveLlm(this.config.llm, meta, seasonConfig)
@@ -280,6 +322,7 @@ export class Orchestrator {
         messaging_enabled: messaging.enabled ? 1 : 0,
         message_cap: messaging.cap,
         llm_enabled: llm.enabled ? 1 : 0,
+        parameters: resolvedParameters.values,
         created_at: createdAt,
       })
     } catch (error) {
@@ -310,6 +353,7 @@ export class Orchestrator {
         resolvedSlots,
         request.userId,
         overrides,
+        resolvedParameters.values,
         messaging,
         llmLease?.keys ?? {},
       )
@@ -415,9 +459,10 @@ export class Orchestrator {
   private validateSlotShape(
     meta: EnvironmentMeta,
     slots: Record<string, SlotAssignment>,
+    seatCount: number,
   ): { assignments: { slotId: string; assignment: SlotAssignment }[]; mode: SessionMode } {
     const requiredIds: string[] = []
-    for (let i = 0; i < meta.max_slots; i++) {
+    for (let i = 0; i < seatCount; i++) {
       requiredIds.push(`player_${i}`)
     }
     const required = new Set(requiredIds)
@@ -609,6 +654,7 @@ export class Orchestrator {
     resolvedSlots: ResolvedSlot[],
     ownerUserId: string,
     overrides: ReturnType<typeof decodeSeasonConfig>['overrides'],
+    parameters: Record<string, ParameterValue>,
     messaging: { enabled: boolean; cap: number | null },
     llmKeys: Readonly<Record<string, string>>,
   ): Promise<Record<string, unknown>> {
@@ -644,6 +690,7 @@ export class Orchestrator {
       human_timeout_ms: humanTimeoutMs,
       recording_dir: CONTAINER_RECORDINGS_DIR,
       recording_id: recordingId,
+      parameters,
       players,
       // Carry the resolved effective messaging block; the harness re-combines defensively, so this
       // double application is idempotent (AND and min).

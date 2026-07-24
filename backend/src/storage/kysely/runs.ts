@@ -7,11 +7,9 @@ import { randomUUID } from 'node:crypto'
 
 import type { Kysely, SelectQueryBuilder } from 'kysely'
 import { sql } from 'kysely'
-import {
-  encodeResolvedOfficialLlmPolicy,
-  type ResolvedOfficialLlmPolicy,
-} from '../../llm/config.js'
-import type { AgentRef, RecordGameResultInput, ScheduledGameInput } from '../index.js'
+import { encodeResolvedOfficialLlmPolicy } from '../../llm/config.js'
+import type { AgentRef, FrozenRunBuilder, RecordGameResultInput } from '../index.js'
+import { encodeParameterMap, parseParameterMap } from '../parameters.js'
 import type {
   Database,
   GameResult,
@@ -20,7 +18,7 @@ import type {
   SeasonRun,
   SeasonRunGame,
 } from '../schema.js'
-import { decodeSeasonConfig, type SeasonConfig } from '../season-config.js'
+import { decodeSeasonConfig } from '../season-config.js'
 import {
   agentColumns,
   decodeLlmUsageByModel,
@@ -46,6 +44,15 @@ const TERMINAL_GAME_STATUSES: ReadonlySet<GameStatus> = new Set([
   'timed_out',
   'cancelled',
 ])
+
+function decodeRun(
+  row: Omit<SeasonRun, 'parameters_snapshot'> & { parameters_snapshot: string },
+): SeasonRun {
+  return {
+    ...row,
+    parameters_snapshot: parseParameterMap(row.parameters_snapshot),
+  }
+}
 
 /**
  * Delete a season's runs and everything that hangs off them (scheduled games, per-seat results,
@@ -79,10 +86,8 @@ export async function createRunWithSchedule(
   db: Kysely<Database>,
   seasonId: string,
   requestedBy: string,
-  submissionSnapshot: AgentRef[],
-  scheduledGames: ScheduledGameInput[],
-  resolveLlmPolicy: (config: SeasonConfig) => ResolvedOfficialLlmPolicy,
-): Promise<SeasonRun> {
+  builder: FrozenRunBuilder,
+): Promise<SeasonRun | undefined> {
   return await db.transaction().execute(async (trx) => {
     // Freeze the season's already-validated config (incl. deps) and the eligible roster onto the
     // run, then persist the concrete games. The runner reads these, not the mutable source rows.
@@ -93,7 +98,23 @@ export async function createRunWithSchedule(
       .select('config')
       .where('id', '=', seasonId)
       .executeTakeFirstOrThrow()
-    const llmPolicy = resolveLlmPolicy(decodeSeasonConfig(season.config))
+    const config = decodeSeasonConfig(season.config)
+    const ready = await trx
+      .selectFrom('submissions')
+      .select(['id', 'user_id'])
+      .where('season_id', '=', seasonId)
+      .where('status', '=', 'ready')
+      .where('superseded_at', 'is', null)
+      .execute()
+    const submissions: AgentRef[] = ready.map((submission) => ({
+      kind: 'submission',
+      submission_id: submission.id,
+      user_id: submission.user_id,
+    }))
+    const plan = builder({ config, submissions })
+    if (plan === undefined || plan.scheduledGames.length === 0) {
+      return undefined
+    }
     const runId = randomUUID()
     const now = new Date().toISOString()
     const run = await trx
@@ -103,8 +124,9 @@ export async function createRunWithSchedule(
         season_id: seasonId,
         requested_by: requestedBy,
         config_snapshot: season.config,
-        llm_policy_snapshot: encodeResolvedOfficialLlmPolicy(llmPolicy),
-        submission_snapshot: JSON.stringify(submissionSnapshot),
+        parameters_snapshot: encodeParameterMap(plan.parametersSnapshot),
+        llm_policy_snapshot: encodeResolvedOfficialLlmPolicy(plan.llmPolicy),
+        submission_snapshot: JSON.stringify(submissions),
         status: 'pending',
         started_at: now,
         ended_at: null,
@@ -112,7 +134,7 @@ export async function createRunWithSchedule(
       })
       .returningAll()
       .executeTakeFirstOrThrow()
-    for (const game of scheduledGames) {
+    for (const game of plan.scheduledGames) {
       await trx
         .insertInto('season_run_games')
         .values({
@@ -130,7 +152,7 @@ export async function createRunWithSchedule(
         })
         .execute()
     }
-    return run
+    return decodeRun(run)
   })
 }
 
@@ -152,20 +174,22 @@ export async function setRunStatus(
 }
 
 export async function getRun(db: Kysely<Database>, id: string): Promise<SeasonRun | undefined> {
-  return await db.selectFrom('season_runs').selectAll().where('id', '=', id).executeTakeFirst()
+  const row = await db.selectFrom('season_runs').selectAll().where('id', '=', id).executeTakeFirst()
+  return row === undefined ? undefined : decodeRun(row)
 }
 
 export async function listRunsByStatus(
   db: Kysely<Database>,
   status: RunStatus,
 ): Promise<SeasonRun[]> {
-  return await db
+  const rows = await db
     .selectFrom('season_runs')
     .selectAll()
     .where('status', '=', status)
     .orderBy('started_at', 'asc')
     .orderBy(sql`rowid`, 'asc')
     .execute()
+  return rows.map(decodeRun)
 }
 
 /**
@@ -188,9 +212,10 @@ export async function getLatestRun(
   db: Kysely<Database>,
   seasonId: string,
 ): Promise<SeasonRun | undefined> {
-  return await orderByNewestRun(
+  const row = await orderByNewestRun(
     db.selectFrom('season_runs').selectAll().where('season_id', '=', seasonId),
   ).executeTakeFirst()
+  return row === undefined ? undefined : decodeRun(row)
 }
 
 export async function getLatestCompletedRun(
@@ -199,13 +224,14 @@ export async function getLatestCompletedRun(
 ): Promise<SeasonRun | undefined> {
   // The board reads the latest *completed* run, so a later running/failed re-run never blanks a good
   // board; `orderByNewestRun` supplies the deterministic newest-first ordering and its tie-break.
-  return await orderByNewestRun(
+  const row = await orderByNewestRun(
     db
       .selectFrom('season_runs')
       .selectAll()
       .where('season_id', '=', seasonId)
       .where('status', '=', 'completed'),
   ).executeTakeFirst()
+  return row === undefined ? undefined : decodeRun(row)
 }
 
 export async function listRunsBySeason(
@@ -213,9 +239,10 @@ export async function listRunsBySeason(
   seasonId: string,
 ): Promise<SeasonRun[]> {
   // Newest first (the shared `orderByNewestRun` rule), so the first row is always "the latest run".
-  return await orderByNewestRun(
+  const rows = await orderByNewestRun(
     db.selectFrom('season_runs').selectAll().where('season_id', '=', seasonId),
   ).execute()
+  return rows.map(decodeRun)
 }
 
 /** Game count per run for a season, keyed by run id, for the runs-list summaries (one grouped scan). */

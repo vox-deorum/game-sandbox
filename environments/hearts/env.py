@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import importlib
 import random
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -26,6 +27,9 @@ from gymnasium import spaces
 from pettingzoo.utils.env import AECEnv
 
 from . import rules
+
+if TYPE_CHECKING:
+    from game_sandbox_harness.environment import ParameterValue
 
 
 def _shared_card_modules() -> tuple[Any, Any]:
@@ -65,8 +69,9 @@ class IllegalMoveError(ValueError):
     """Raised by :meth:`HeartsEnv.step` when an action is not a legal card."""
 
 
-def make_env() -> HeartsEnv:
+def make_env(parameters: Mapping[str, ParameterValue]) -> HeartsEnv:
     """Return a fresh :class:`HeartsEnv`. The seed arrives later at :meth:`HeartsEnv.reset`."""
+    del parameters
     return HeartsEnv()
 
 

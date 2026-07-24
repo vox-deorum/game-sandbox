@@ -13,7 +13,7 @@ to change.
 
 from __future__ import annotations
 
-from game_sandbox_harness.environment import EnvironmentEntry, EnvironmentMeta
+from game_sandbox_harness.environment import EnvironmentEntry, EnvironmentMeta, EnvParameter
 
 from .env import default_action, make_env
 from .overlay import extract_overlay
@@ -43,6 +43,17 @@ META = EnvironmentMeta(
     renderer="flappy-bird",
     # Single-slot, so seat order is moot; the scheduler never multi-seats this environment.
     seat_order_matters=False,
+    parameters=(
+        EnvParameter(
+            name="pipe_gap",
+            title="Pipe gap",
+            description="Vertical opening between pipes.",
+            type="int",
+            default=100,
+            min=60,
+            max=200,
+        ),
+    ),
 )
 
 

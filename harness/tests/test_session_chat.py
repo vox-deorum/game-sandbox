@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 
 from game_sandbox_harness.clock import ManualClock
-from game_sandbox_harness.environment import EnvironmentEntry, EnvironmentMeta
+from game_sandbox_harness.environment import EnvironmentEntry, EnvironmentMeta, resolve_parameters
 from game_sandbox_harness.recording.local import FolderRecordingStore
 from game_sandbox_harness.session import (
     REASON_EPISODE_LIMIT,
@@ -98,7 +98,7 @@ def make_chat_entry(
     )
     return EnvironmentEntry(
         meta=meta,
-        make=lambda: RoundRobinEnv(list(seats), n_ticks, step_log),
+        make=lambda _parameters: RoundRobinEnv(list(seats), n_ticks, step_log),
         default_action=lambda env, slot_id: 0,
         overlay=None,
     )
@@ -194,7 +194,13 @@ class QueueSource:
 def test_hook_order_is_act_then_chat_then_env_step_then_learn():
     log: list[Any] = []
     entry = make_chat_entry(seats=("player_0",), n_ticks=2, step_log=log)
-    run_episode(entry, {"player_0": AgentSlot(HookOrderAgent(log))}, seed=1, clock=ManualClock())
+    run_episode(
+        entry,
+        {"player_0": AgentSlot(HookOrderAgent(log))},
+        parameters=resolve_parameters(entry.meta),
+        seed=1,
+        clock=ManualClock(),
+    )
     # reset first, then per tick: act, chat, the env step, learn.
     assert log[0] == ("reset", 1)
     first_tick = log[1:5]
@@ -213,6 +219,7 @@ def test_message_is_delivered_next_turn_never_on_the_sending_tick():
     run_episode(
         entry,
         {"player_0": AgentSlot(sender), "player_1": AgentSlot(receiver)},
+        parameters=resolve_parameters(entry.meta),
         seed=1,
         clock=ManualClock(),
     )
@@ -234,6 +241,7 @@ def test_broadcast_reaches_every_other_seat_but_not_the_sender():
             "player_1": AgentSlot(b),
             "player_2": AgentSlot(c),
         },
+        parameters=resolve_parameters(entry.meta),
         seed=1,
         clock=ManualClock(),
     )
@@ -256,6 +264,7 @@ def test_chatless_agent_is_never_called_and_charged_nothing(tmp_path: Path):
     run_episode(
         entry,
         {"player_0": AgentSlot(sender), "player_1": AgentSlot(SilentAgent())},
+        parameters=resolve_parameters(entry.meta),
         seed=1,
         store=store,
         recording_id="r",
@@ -279,6 +288,7 @@ def test_chat_ms_lands_in_recorded_timing(tmp_path: Path):
     run_episode(
         entry,
         {"player_0": AgentSlot(sender), "player_1": AgentSlot(ChattyAgent())},
+        parameters=resolve_parameters(entry.meta),
         seed=1,
         store=store,
         recording_id="r",
@@ -297,6 +307,7 @@ def test_chat_that_busts_the_episode_limit_charges_the_seat():
     result = run_episode(
         entry,
         {"player_0": AgentSlot(slow)},
+        parameters=resolve_parameters(entry.meta),
         seed=1,
         clock=clock,
         episode_limit_ms=2000,
@@ -316,7 +327,13 @@ def test_chat_crash_sets_failed_slot():
             raise RuntimeError("boom")
 
     entry = make_chat_entry(seats=("player_0",), n_ticks=3)
-    episode = Episode(entry, {"player_0": AgentSlot(CrashingChat())}, seed=1, clock=ManualClock())
+    episode = Episode(
+        entry,
+        {"player_0": AgentSlot(CrashingChat())},
+        parameters=resolve_parameters(entry.meta),
+        seed=1,
+        clock=ManualClock(),
+    )
     episode.start()
     with pytest.raises(RuntimeError, match="boom"):
         episode.step_once()
@@ -333,6 +350,7 @@ def test_action_source_is_not_implicitly_used_as_a_message_source():
     run_episode(
         entry,
         {"player_0": ExternalSlot(source)},
+        parameters=resolve_parameters(entry.meta),
         seed=1,
         clock=ManualClock(),
     )
@@ -353,6 +371,7 @@ def test_human_queue_is_drained_once_per_stepped_tick_and_delivered_next(tmp_pat
             "player_0": AgentSlot(receiver),
             "player_1": ExternalSlot(source, message_source=source),
         },
+        parameters=resolve_parameters(entry.meta),
         seed=1,
         store=store,
         recording_id="r",
@@ -381,6 +400,7 @@ def test_agent_batch_is_ordered_before_the_human_batch_in_one_tick(tmp_path: Pat
             "player_0": AgentSlot(sender),
             "player_1": ExternalSlot(source, message_source=source),
         },
+        parameters=resolve_parameters(entry.meta),
         seed=1,
         store=store,
         recording_id="r",
@@ -402,6 +422,7 @@ def _run_recording(root: Path, *, messaging_meta: bool, messaging_cfg: bool | No
     run_episode(
         entry,
         {"player_0": AgentSlot(sender), "player_1": AgentSlot(SilentAgent())},
+        parameters=resolve_parameters(entry.meta),
         seed=7,
         store=store,
         recording_id="r",
@@ -429,6 +450,7 @@ def test_enabled_but_chatless_is_byte_identical_to_disabled(tmp_path: Path):
     run_episode(
         entry,
         {"player_0": AgentSlot(SilentAgent()), "player_1": AgentSlot(SilentAgent())},
+        parameters=resolve_parameters(entry.meta),
         seed=7,
         store=store,
         recording_id="r",
@@ -471,6 +493,7 @@ def test_documented_chat_contract_runs_against_the_real_harness(tmp_path: Path):
     run_episode(
         entry,
         {"player_0": AgentSlot(DocumentedAgent()), "player_1": AgentSlot(replier)},
+        parameters=resolve_parameters(entry.meta),
         seed=1,
         store=store,
         recording_id="r",

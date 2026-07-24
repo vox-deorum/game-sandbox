@@ -73,6 +73,7 @@ The primitives live in `frontend/src/components/ui/`, PascalCase with a `Ui` pre
 | `UiDialogActions` | The shared right-aligned, wrapping footer for dialog actions. Use it for confirmations, with the consequential action first and a ghost Cancel control second. |
 | `UiSlider` | The replay scrubber (keyboard operation and value announcement), wrapping Reka UI Slider. |
 | `UiMeter` | Read-only progress with a required visible text value. First used for LLM development budgets. |
+| `UiCheckboxGroup` | A labelled fieldset for selecting zero or more string options, with options emitted in their declared order. |
 | `UiEmptyState` | The loading / empty / error message line, muted or danger. |
 
 Simple primitives are local Vue components. Use Reka UI only where safe focus management and ARIA behavior are difficult to implement. Currently, only the dialog and slider use it.

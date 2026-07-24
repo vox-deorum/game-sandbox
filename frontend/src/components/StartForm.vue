@@ -14,17 +14,23 @@
   dialog title.
 -->
 <script setup lang="ts">
-import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
+import type { EnvironmentMeta, ParameterValue } from '@game-sandbox/schema/environment'
 import { computed, ref } from 'vue'
 
 import { optionalNumber } from '../lib/forms.js'
+import { initializeParameters, validateParameters } from '../lib/parameters.js'
+import ParameterFields from './ParameterFields.vue'
 import UiButton from './ui/UiButton.vue'
 import UiField from './ui/UiField.vue'
 import UiInput from './ui/UiInput.vue'
 
-const props = defineProps<{ meta: EnvironmentMeta }>()
+const props = defineProps<{
+  meta: EnvironmentMeta
+  seasonId: string
+  parameters: Record<string, ParameterValue>
+}>()
 const emit = defineEmits<{
-  submit: [{ seed?: number; humanSlotTimeoutMs?: number }]
+  submit: [{ seed?: number; humanSlotTimeoutMs?: number; seasonId: string; parameters: Record<string, ParameterValue> }]
   cancel: []
 }>()
 
@@ -40,6 +46,8 @@ const timeout = ref<string | number>(
     ? props.meta.human_timeout_ms
     : '',
 )
+const parameters = ref(initializeParameters(props.meta.parameters, props.parameters))
+const parametersValid = ref(true)
 
 const timeoutLabel = computed(() => (isPaced ? 'Per-step input window (ms)' : 'Move time limit (ms)'))
 const timeoutHint = computed(() =>
@@ -51,7 +59,11 @@ const timeoutHint = computed(() =>
 )
 
 function onSubmit(): void {
+  const checked = validateParameters(props.meta.parameters, parameters.value)
+  if (Object.keys(checked.errors).length > 0) return
   emit('submit', {
+    seasonId: props.seasonId,
+    parameters: checked.values,
     seed: optionalNumber(seed.value),
     humanSlotTimeoutMs: optionalNumber(timeout.value),
   })
@@ -60,6 +72,7 @@ function onSubmit(): void {
 
 <template>
   <form class="start-form" @submit.prevent="onSubmit">
+    <ParameterFields v-model="parameters" :declarations="meta.parameters" @validity="parametersValid = $event" />
     <UiField label="Seed (optional)" hint="Leave blank for a random seed.">
       <template #default="{ id, describedby }">
         <UiInput
@@ -87,7 +100,7 @@ function onSubmit(): void {
     </UiField>
 
     <div class="start-form-actions">
-      <UiButton type="submit">Start playing</UiButton>
+      <UiButton type="submit" :disabled="!parametersValid">Start playing</UiButton>
       <UiButton type="button" variant="ghost" @click="emit('cancel')">Cancel</UiButton>
     </div>
   </form>

@@ -16,5 +16,12 @@ export async function handleSessionStartResult(
     await router.push(`/sessions/${result.activeSessionId}`)
     return null
   }
-  return result.reason === 'not_active' ? PENDING_START_MESSAGE : result.message
+  if (result.reason === 'not_active') return PENDING_START_MESSAGE
+  if (result.reason === 'play_season_changed') {
+    return 'The play season changed. Refresh this page and reopen the start form.'
+  }
+  if (result.reason === 'invalid_parameters') {
+    return 'The game settings changed. Refresh this page and reopen the start form.'
+  }
+  return result.message
 }

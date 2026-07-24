@@ -14,7 +14,11 @@ is copied verbatim into the composed student template's ``sandbox/env/`` by ``sc
 
 from __future__ import annotations
 
-from typing import Any, cast
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from game_sandbox_harness.environment import ParameterValue
 
 import numpy as np
 from gymnasium import spaces
@@ -40,9 +44,11 @@ OBS_SPACE = spaces.Dict(
 )
 
 
-def make_env() -> FlappyBirdEnv:
+def make_env(parameters: Mapping[str, ParameterValue]) -> FlappyBirdEnv:
     """Create a fresh Flappy Bird AEC environment. The seed arrives at ``reset``."""
-    return FlappyBirdEnv(FlappyBirdGame(normalize_obs=True), name="flappy_bird_v0")
+    pipe_gap = parameters["pipe_gap"]
+    assert isinstance(pipe_gap, int) and not isinstance(pipe_gap, bool)
+    return FlappyBirdEnv(FlappyBirdGame(normalize_obs=True, pipe_gap=pipe_gap), name="flappy_bird_v0")
 
 
 class FlappyBirdEnv(GymnasiumToAEC):

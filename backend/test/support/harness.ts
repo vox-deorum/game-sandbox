@@ -299,6 +299,26 @@ function meta(overrides: Record<string, unknown>): Record<string, unknown> {
     seat_order_matters: false,
     view_interval_ms: null,
     live_interval_ms: null,
+    parameters: [
+      {
+        name: 'seats',
+        title: 'Seats',
+        description: 'Number of seats.',
+        type: 'int',
+        default: 1,
+        min: 1,
+        max: 1,
+      },
+      {
+        name: 'pipe_gap',
+        title: 'Pipe gap',
+        description: 'Vertical gap between pipes.',
+        type: 'int',
+        default: 100,
+        min: 50,
+        max: 200,
+      },
+    ],
     ...overrides,
   }
 }
@@ -324,6 +344,17 @@ export function makeEnvironments(): EnvironmentRegistry {
         pace_interval_ms: null,
         renderer: 'hearts',
         seat_order_matters: true,
+        parameters: [
+          {
+            name: 'seats',
+            title: 'Seats',
+            description: 'Number of seats.',
+            type: 'int',
+            default: 4,
+            min: 4,
+            max: 4,
+          },
+        ],
       }),
       // A messaging-enabled partnership env (Spades-shaped) so the messaging-resolution tests have an
       // environment that opts in, with a metadata cap to combine against a season override.
@@ -338,6 +369,17 @@ export function makeEnvironments(): EnvironmentRegistry {
         message_cap: 120,
         renderer: 'spades',
         seat_order_matters: true,
+        parameters: [
+          {
+            name: 'seats',
+            title: 'Seats',
+            description: 'Number of seats.',
+            type: 'int',
+            default: 4,
+            min: 4,
+            max: 4,
+          },
+        ],
       }),
     ]),
   )

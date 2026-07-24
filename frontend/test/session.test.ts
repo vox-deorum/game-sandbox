@@ -100,6 +100,7 @@ function ownerRow() {
     termination_reason: null,
     recording_id: 'flappy_bird-s1',
     season_id: 'flappy_bird-iter-1',
+    parameters: { seats: 1, pipe_gap: 100 },
     human_timeout_ms: null,
     messaging_enabled: 0,
     message_cap: null,
@@ -376,6 +377,7 @@ describe('SessionPage', () => {
     handlers.onHeader({
       schema_version: 1,
       environment: 'hearts',
+      parameters: { seats: 4 },
       seed: 0,
       players: {
         player_0: { kind: 'agent', label: 'Naive agent' },
@@ -405,7 +407,12 @@ describe('SessionPage', () => {
     })
     await renderSession()
     await waitForHandlers()
-    handlers.onHeader({ schema_version: 1, environment: 'hearts', seed: 0 })
+    handlers.onHeader({
+      schema_version: 1,
+      environment: 'hearts',
+      parameters: { seats: 4 },
+      seed: 0,
+    })
 
     expect(mountCtx?.meta.human_timeout_ms).toBe(5000)
   })

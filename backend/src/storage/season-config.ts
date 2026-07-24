@@ -74,6 +74,13 @@ export const LlmOverrideSchema = z.strictObject({
 })
 export type LlmOverride = z.infer<typeof LlmOverrideSchema>
 
+/** The storage codec preserves JSON-safe parameter overrides for environment-aware callers. */
+export const ParameterOverridesSchema = z.record(
+  z.string(),
+  z.union([z.boolean(), z.number().finite(), z.string(), z.array(z.string())]),
+)
+export type ParameterOverrides = z.infer<typeof ParameterOverridesSchema>
+
 /**
  * The optional override block. `step_timeout_ms`/`episode_timeout_ms` are effective this stage (they
  * fall back to the environment defaults when absent). `submission_max_size_mb` overrides the site
@@ -87,6 +94,7 @@ export const OverridesSchema = z.strictObject({
   submission_max_size_mb: z.int().positive().optional(),
   messaging: MessagingOverrideSchema.optional(),
   llm: LlmOverrideSchema.optional(),
+  parameters: ParameterOverridesSchema.optional(),
 })
 export type Overrides = z.infer<typeof OverridesSchema>
 

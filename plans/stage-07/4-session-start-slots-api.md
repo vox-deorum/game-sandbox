@@ -12,7 +12,7 @@ This is a breaking replacement, not a compatibility layer. There is no need to p
 
 ## The new start payload
 
-The session start request changes from a single optional `submission_id` to an explicit `slots` assignment object. The payload is `env_id`, optional `seed`, optional `human_slot_timeout_ms`, and `slots`, keyed by slot id. Each slot assignment has `kind: "human" | "builtin-agent" | "submission"`, plus `submission_id` only for submitted-agent slots.
+The session start request carries `env_id`, required expected `season_id`, the complete resolved `parameters` map loaded by the page, optional `seed`, optional `human_slot_timeout_ms`, and an explicit `slots` object keyed by slot id. Each slot assignment has `kind: "human" | "builtin-agent" | "submission"`, plus `submission_id` only for submitted-agent slots. A changed play-open season returns `409 play_season_changed` before a row or container is created. Missing, unknown, or invalid parameter values return `400 invalid_parameters`.
 
 The human-versus-scripted `mode` is no longer sent: it is **derived** from the assignment (a `human` slot makes it a human session, otherwise scripted) and persisted on the session row. The explicit `slots` object is the single source of truth for what fills each seat, so a redundant `mode` field would only be a second, disagreeable source of truth.
 
@@ -24,6 +24,7 @@ It also lands the multi-submission image **composition seam** so a multi-agent s
 
 Backend validation is authoritative and runs before any container starts:
 
+- Resolve and normalize the complete parameter map before validating slot shape. The resolved `seats` value determines the exact required seat ids.
 - Human assignments are valid only for metadata human slots. For Hearts every seat is human-capable (step 1), so a human is accepted in any seat, and this stage additionally caps the human count at one, with the remaining slots filled by agents. The cap is a session-composition limit that later multi-human play relaxes; it is not a per-seat capability.
 - Submission assignments must reference active `ready` submissions for the requested environment.
 - Built-in agent assignments create no submission attribution row.
@@ -43,4 +44,4 @@ Vitest, in-memory storage, fake driver, no Docker:
 
 ## Done when
 
-The session start API accepts the `slots` assignment payload and rejects the old shape. Backend validation authoritatively rejects missing, incompatible, inactive, wrong-environment, and more-than-one-human assignments before a container starts. A valid start records one `session_submissions` row per submitted slot while built-in and human slots appear only in the recording header `players`. All of this is proven by Docker-free Vitest tests.
+The session start API accepts the expected play-open season, complete normalized parameter state, and `slots` assignment payload. Backend validation rejects stale seasons and invalid parameters before slot-shape errors or side effects. A valid start persists its parameter map and records one `session_submissions` row per submitted slot while built-in and human slots appear only in the recording header `players`. All of this is proven by Docker-free Vitest tests.

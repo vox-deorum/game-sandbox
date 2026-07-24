@@ -13,13 +13,13 @@ vi.mock('../src/api/client.js', () => ({
   startSession: vi.fn(),
   getMe: vi.fn(),
   // The page fetches the environment leaderboards on mount for the boards embed and the watch/play
-  // gate; default it to a play-open, nothing-released payload so the entry points stay enabled.
+  // boards embed; play gating is covered by the separate play-parameters mock.
   getEnvironmentLeaderboards: vi.fn(),
+  getPlayParameters: vi.fn(),
   // The page also fetches the released-season record on mount for the "Past seasons" links; default
   // it to empty so the record stays hidden unless a test sets it.
   listReleasedSeasons: vi.fn().mockResolvedValue([]),
-  // And the cross-game public seasons, to name the live play-open / submission-open seasons in the
-  // header; default to empty so those badges stay off unless a test sets it.
+  // And the cross-game public seasons, to enrich the play banner and submission-open badge.
   listSeasons: vi.fn().mockResolvedValue([]),
   // The WatchAgentPicker lists the active ready agents; default it to empty. Submission moved off the
   // hub to the Submit / My Agent tab (the agent profile), so the hub no longer mounts the submit form.
@@ -30,6 +30,7 @@ import {
   getEnvironmentLeaderboards,
   getEnvironments,
   getMe,
+  getPlayParameters,
   listRecordings,
   listSeasons,
   listWatchAgents,
@@ -62,8 +63,23 @@ describe('EnvironmentPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(getEnvironments).mockResolvedValue([META])
+    vi.mocked(getPlayParameters).mockResolvedValue({ season_id: 'iter-1', values: {} })
     vi.mocked(listRecordings).mockResolvedValue([])
-    vi.mocked(listSeasons).mockResolvedValue([])
+    vi.mocked(listSeasons).mockResolvedValue([
+      {
+        id: 'iter-1',
+        env_id: 'flappy_bird',
+        submission_status: 'closed',
+        play_status: 'open',
+        release_status: 'unreleased',
+        label: 'Playground',
+        description_markdown: null,
+        created_at: '2026-06-10T00:00:00Z',
+        released_at: null,
+        submission_count: 0,
+        game_count: 0,
+      },
+    ])
     // Default: a season is play-open (so the watch/play entry points are enabled) but nothing is
     // released yet. Individual tests override this to exercise the closed-play and released states.
     vi.mocked(getEnvironmentLeaderboards).mockResolvedValue({
@@ -155,7 +171,8 @@ describe('EnvironmentPage', () => {
     expect(
       await screen.findByRole('heading', { name: 'Rate an Agent', level: 2 }),
     ).toBeInTheDocument()
-    expect(document.querySelector('section#play')).toHaveTextContent('Season: Playground')
+    expect(screen.getByRole('heading', { name: 'Playground', level: 2 })).toBeInTheDocument()
+    expect(screen.getByText('Open for play')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Watch an Agent' })).toBeNull()
   })
 
@@ -179,12 +196,13 @@ describe('EnvironmentPage', () => {
       submission_season_id: 'iter-1',
       play_season_id: null,
     })
+    vi.mocked(getPlayParameters).mockResolvedValue({ season_id: null, values: {} })
     await renderPage()
-    expect(await screen.findByText(/Public play is closed/)).toBeInTheDocument()
+    expect(await screen.findByText(/No season is currently open for play/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Play Yourself' })).toBeNull()
   })
 
-  it('opens the play flow from the play-open season badge instead of linking to its boards', async () => {
+  it('opens the play flow from the play-season banner', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
     vi.mocked(listSeasons).mockResolvedValue([
       {
@@ -203,18 +221,25 @@ describe('EnvironmentPage', () => {
     ])
     await renderPage()
 
-    const playable = await screen.findByRole('link', { name: 'Week 1: Playable' })
-    expect(playable).toHaveAttribute('href', '/environments/flappy_bird?play=1')
-    await fireEvent.click(playable)
+    expect(await screen.findByRole('heading', { name: 'Week 1', level: 2 })).toBeInTheDocument()
+    await fireEvent.click(screen.getByRole('button', { name: 'Play Yourself' }))
     expect(await screen.findByRole('button', { name: 'Start playing' })).toBeInTheDocument()
   })
 
-  it('keeps the hub stable when the leaderboards read fails (play stays safe-closed)', async () => {
+  it('keeps the hub stable when the leaderboards read fails without closing confirmed play', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
-    // A transient failure must not crash the hub; the play gate stays at its safe-closed default.
+    // A transient boards failure affects only the released results embed.
     vi.mocked(getEnvironmentLeaderboards).mockRejectedValue(new Error('network blip'))
     await renderPage()
-    expect(await screen.findByText(/Public play is closed/)).toBeInTheDocument()
+    expect(await screen.findByText(/No released results/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Play Yourself' })).toBeInTheDocument()
+  })
+
+  it('keeps play and watch unavailable until the parameter prefill confirms an open season', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
+    vi.mocked(getPlayParameters).mockRejectedValue(new Error('prefill unavailable'))
+    await renderPage()
+    expect(await screen.findByText(/No season is currently open for play/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Play Yourself' })).toBeNull()
   })
 
@@ -225,13 +250,15 @@ describe('EnvironmentPage', () => {
       session: { id: 's1', wsPath: '/api/sessions/s1/ws' },
     })
     await renderPage()
-    // The header's Play Yourself button opens the start form; submitting it starts the session.
+    // The season banner's Play Yourself button opens the start form.
     await fireEvent.click(await screen.findByRole('button', { name: 'Play Yourself' }))
     await fireEvent.click(await screen.findByRole('button', { name: 'Start playing' }))
     expect(await screen.findByText('s1')).toBeInTheDocument()
     // A single-slot environment fills only the lone human seat; the backend derives the human mode.
     expect(vi.mocked(startSession)).toHaveBeenCalledWith({
       envId: 'flappy_bird',
+      seasonId: 'iter-1',
+      parameters: { seats: 1, pipe_gap: 100 },
       slots: { player_0: { kind: 'human' } },
       seed: undefined,
       humanSlotTimeoutMs: undefined,
@@ -251,6 +278,8 @@ describe('EnvironmentPage', () => {
     await fireEvent.click(await screen.findByRole('button', { name: 'Start playing' }))
     expect(vi.mocked(startSession)).toHaveBeenCalledWith({
       envId: 'flappy_bird',
+      seasonId: 'iter-1',
+      parameters: { seats: 1, pipe_gap: 100 },
       slots: { player_0: { kind: 'human' } },
       seed: undefined,
       humanSlotTimeoutMs: 250,
@@ -287,6 +316,8 @@ describe('EnvironmentPage', () => {
     await fireEvent.click(start)
     expect(vi.mocked(startSession)).toHaveBeenCalledWith({
       envId: 'hearts',
+      seasonId: 'iter-1',
+      parameters: { seats: 4 },
       slots: {
         player_0: { kind: 'human' },
         player_1: { kind: 'builtin-agent' },

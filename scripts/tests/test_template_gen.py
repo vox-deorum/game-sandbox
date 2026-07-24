@@ -11,7 +11,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import _template_gen as template_gen  # noqa: E402
 from _paths import TemplateEnvironmentSpec  # noqa: E402
-from game_sandbox_harness.environment import EnvironmentMeta  # noqa: E402
+from game_sandbox_harness.environment import (  # noqa: E402
+    EnvironmentMeta,
+    EnvParameter,
+    EnvParameterChoice,
+)
 
 
 def _meta() -> EnvironmentMeta:
@@ -53,12 +57,39 @@ def test_write_env_package_copies_modules_and_renders_uniform_inits(
 
     assert (dest / "example" / "env.py").read_text(encoding="utf-8") == "VALUE = 1\n"
     rendered = (dest / "__init__.py").read_text(encoding="utf-8")
-    assert "from sandbox.harness.environment import EnvironmentMeta" in rendered
+    assert (
+        "from sandbox.harness.environment import EnvParameter, EnvParameterChoice, EnvironmentMeta"
+        in rendered
+    )
     assert "META = EnvironmentMeta(" in rendered
     for field in _meta().to_json():
         assert f'"{field}"' in rendered
     assert '"META",' in rendered
     assert rendered.startswith("# GAME-SANDBOX-GENERATED-ENV: scripts/compose.py\n")
+
+
+def test_render_parameters_uses_evaluable_dataclass_representation() -> None:
+    parameters = (
+        EnvParameter(
+            name="mode",
+            title="Player's mode",
+            description="Select one mode.",
+            type="choice",
+            default="normal",
+            choices=(EnvParameterChoice(value="normal", label="Normal"),),
+        ),
+    )
+
+    rendered = template_gen._render_parameters(parameters)
+
+    assert rendered == repr(parameters)
+    assert (
+        eval(  # noqa: S307 - the generator output is built only from validated dataclass values
+            rendered,
+            {"EnvParameter": EnvParameter, "EnvParameterChoice": EnvParameterChoice},
+        )
+        == parameters
+    )
 
 
 def test_write_harness_replaces_existing_contents_and_skips_caches(tmp_path: Path):

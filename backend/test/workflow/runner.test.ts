@@ -5,9 +5,8 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-
+import type { ParameterValue } from '@game-sandbox/schema/environment'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-
 import { EnvironmentRegistry } from '../../src/environments.js'
 import {
   decodeResolvedOfficialLlmPolicy,
@@ -45,7 +44,9 @@ describe('workflow runner seam', () => {
   })
 
   /** A declared, configured season plus a created run (status `pending`). */
-  async function makeRun(): Promise<string> {
+  async function makeRun(
+    parametersSnapshot: Record<string, ParameterValue> = { seats: 1, pipe_gap: 100 },
+  ): Promise<string> {
     const season = await storage.createSeason({
       env_id: ENV_ID,
       deps_version: 1,
@@ -55,13 +56,14 @@ describe('workflow runner seam', () => {
       deps_version: 1,
       matches: [{ slots: ['submission'], seeds: [1], games: 1 }],
     })
-    const run = await storage.createRunWithSchedule(
-      season.id,
-      'dev-user',
-      [],
-      [{ match_index: 0, game_index: 0, seed: 1, slots: [{ kind: 'builtin-naive' }] }],
-      disabledLlmPolicy,
-    )
+    const run = await storage.createRunWithSchedule(season.id, 'dev-user', () => ({
+      parametersSnapshot,
+      scheduledGames: [
+        { match_index: 0, game_index: 0, seed: 1, slots: [{ kind: 'builtin-naive' }] },
+      ],
+      llmPolicy: disabledLlmPolicy(),
+    }))
+    if (run === undefined) throw new Error('expected a scheduled run')
     return run.id
   }
 
@@ -97,6 +99,50 @@ describe('workflow runner seam', () => {
     expect((await storage.getRun(runId))?.status).toBe('cancelled')
   })
 
+  it('fails a run with an incomplete frozen parameter snapshot before launching a container', async () => {
+    const runId = await makeRun({ seats: 1 })
+    const root = mkdtempSync(join(tmpdir(), 'gs-runner-invalid-parameters-'))
+    roots.push(root)
+    const driver = new FakeDriver()
+    const runner = createWorkflowRunner({
+      driver,
+      storage,
+      environments: EnvironmentRegistry.load(),
+      source: {
+        verifyReachable: () => {
+          throw new Error('source should not be read for a malformed snapshot')
+        },
+        resolve: () => {
+          throw new Error('source should not be read for a malformed snapshot')
+        },
+        fetchTree: () => {
+          throw new Error('source should not be read for a malformed snapshot')
+        },
+      },
+      snapshots: new SubmissionSnapshotStore(join(root, 'snapshots')),
+      sandbox: { cpus: 1, memoryMb: 512, scratchMb: 256 },
+      recordingsDir: join(root, 'recordings'),
+      imagePolicy: 'reuse',
+      llmInternalPort: 9472,
+      officialGrantIssuer: { issue: async () => ({ keys: {}, revoke: async () => {} }) },
+      officialTelemetry: { aggregateByModel: () => ({}) },
+    })
+    const terminal = new Promise<string>((resolve) => {
+      runner.subscribe(runId, (event) => {
+        if (event.type === 'terminal') resolve(event.status)
+      })
+    })
+
+    runner.enqueue(runId)
+
+    expect(await terminal).toBe('failed')
+    expect((await storage.getRun(runId))?.error).toBe(
+      'run failed: invalid frozen parameter snapshot: pipe_gap is required',
+    )
+    expect(driver.launches).toHaveLength(0)
+    await runner.shutdown()
+  })
+
   it('a recovered real runner consumes the frozen policy after incompatible season changes', async () => {
     const season = await storage.createSeason({
       env_id: ENV_ID,
@@ -113,13 +159,14 @@ describe('workflow runner seam', () => {
       models: { small: { model: 'provider-at-creation', cost_weight: 7 } },
       session: { token_budget: 41, rate_limit_rpm: 3 },
     }
-    const run = await storage.createRunWithSchedule(
-      season.id,
-      'dev-user',
-      [],
-      [{ match_index: 0, game_index: 0, seed: 1, slots: [{ kind: 'builtin-naive' }] }],
-      () => frozen,
-    )
+    const run = await storage.createRunWithSchedule(season.id, 'dev-user', () => ({
+      parametersSnapshot: { seats: 1, pipe_gap: 100 },
+      scheduledGames: [
+        { match_index: 0, game_index: 0, seed: 1, slots: [{ kind: 'builtin-naive' }] },
+      ],
+      llmPolicy: frozen,
+    }))
+    if (run === undefined) throw new Error('expected a scheduled run')
     await storage.updateSeasonConfig(season.id, {
       deps_version: 1,
       matches: [],
@@ -142,6 +189,7 @@ describe('workflow runner seam', () => {
         JSON.stringify({
           schema_version: 1,
           environment: ENV_ID,
+          parameters: { seats: 1, pipe_gap: 100 },
           seed: 1,
           created_at: '2026-07-19T00:00:00.000Z',
         }),
@@ -197,6 +245,10 @@ describe('workflow runner seam', () => {
     })
     recovered.enqueue(run.id)
     expect(await terminal).toBe('completed')
+    const launch = driver.lastLaunch()
+    expect(JSON.parse(launch?.spec.argv[0] ?? '{}')).toMatchObject({
+      parameters: { seats: 1, pipe_gap: 100 },
+    })
     await recovered.shutdown()
 
     expect(issued).toEqual([

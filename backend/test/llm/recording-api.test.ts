@@ -100,7 +100,11 @@ describe('recording LLM telemetry API', () => {
     const missing = await app.inject({ method: 'GET', url: '/api/recordings/missing/llm' })
     expect(missing.statusCode).toBe(404)
 
-    const header: RecordingHeader = { schema_version: 1, environment: 'flappy_bird' }
+    const header: RecordingHeader = {
+      schema_version: 1,
+      environment: 'flappy_bird',
+      parameters: {},
+    }
     await fixture.users.headersFor('recorder')
     await seedRecording('ordinary', header, null)
     const ordinary = await app.inject({ method: 'GET', url: '/api/recordings/ordinary/llm' })
@@ -122,7 +126,11 @@ describe('recording LLM telemetry API', () => {
 
   it('returns telemetry_unavailable for missing, legacy, and incomplete associated telemetry', async () => {
     await fixture.users.headersFor('recorder')
-    const header: RecordingHeader = { schema_version: 1, environment: 'flappy_bird' }
+    const header: RecordingHeader = {
+      schema_version: 1,
+      environment: 'flappy_bird',
+      parameters: {},
+    }
     await seedRecording('missing-file', header, { scopeId: 'gone', sessionId: 'session' })
 
     const legacy = new BetterSqlite3(telemetry.pathForScope('legacy'))
@@ -168,6 +176,7 @@ describe('recording LLM telemetry API', () => {
     const header: RecordingHeader = {
       schema_version: 1,
       environment: 'flappy_bird',
+      parameters: {},
       players: {
         player_0: {
           kind: 'agent',

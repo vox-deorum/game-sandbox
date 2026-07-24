@@ -47,6 +47,17 @@ function llmEnvironments(): EnvironmentRegistry {
         seat_order_matters: false,
         view_interval_ms: null,
         live_interval_ms: null,
+        parameters: [
+          {
+            name: 'seats',
+            title: 'Seats',
+            description: 'Number of seats.',
+            type: 'int',
+            default: 1,
+            min: 1,
+            max: 1,
+          },
+        ],
       },
     ]),
   )

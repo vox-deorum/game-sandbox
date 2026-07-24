@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { SlotAssignmentInput, WatchAgentSummary } from '../src/api/client.js'
 import SeatAssignmentDialog from '../src/components/SeatAssignmentDialog.vue'
-import { heartsMeta } from './helpers/fixtures.js'
+import { flappyMeta, heartsMeta } from './helpers/fixtures.js'
 
 function agent(overrides: Partial<WatchAgentSummary> = {}): WatchAgentSummary {
   return { submission_id: 'sub1', anonymous_number: 1, rating_status: 'unrated', ...overrides }
@@ -13,6 +13,7 @@ const AGENTS: WatchAgentSummary[] = [
   agent({ submission_id: 'sub1', anonymous_number: 1 }),
   agent({ submission_id: 'sub2', anonymous_number: 2 }),
 ]
+const START_CONTEXT = { seasonId: 'season-1', parameters: { seats: 4 } }
 
 interface StartPayload {
   slots: Record<string, SlotAssignmentInput>
@@ -38,6 +39,7 @@ describe('SeatAssignmentDialog', () => {
   it('watch: preselects the clicked agent into every seat and enables Start', async () => {
     const { emitted } = render(SeatAssignmentDialog, {
       props: {
+        ...START_CONTEXT,
         meta: heartsMeta(),
         agents: AGENTS,
         mode: 'watch',
@@ -61,6 +63,8 @@ describe('SeatAssignmentDialog', () => {
       'player_3',
     ])
     expect(payload).toEqual({
+      seasonId: 'season-1',
+      parameters: { seats: 4 },
       slots: {
         player_0: { kind: 'submission', submissionId: 'sub2' },
         player_1: { kind: 'submission', submissionId: 'sub2' },
@@ -72,9 +76,41 @@ describe('SeatAssignmentDialog', () => {
     })
   })
 
+  it('rate: locks the intended agent, season parameters, and seed while keeping Start enabled', async () => {
+    const { emitted } = render(SeatAssignmentDialog, {
+      props: {
+        seasonId: 'season-1',
+        parameters: { seats: 1, pipe_gap: 90 },
+        meta: flappyMeta(),
+        agents: AGENTS,
+        mode: 'rate',
+        preselect: { kind: 'submission', submissionId: 'sub1' } satisfies SlotAssignmentInput,
+      },
+    })
+
+    expect(
+      screen.getByText('This rating run uses the selected agent and season settings.'),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('spinbutton', { name: 'Pipe gap' })).toBeDisabled()
+    expect(seat('Seat 1')).toBeDisabled()
+    expect(seat('Seat 1')).toHaveValue('submission:sub1')
+    expect(screen.getByRole('spinbutton', { name: 'Seed (optional)' })).toBeDisabled()
+    const start = screen.getByRole('button', { name: 'Start watching' })
+    expect(start).not.toBeDisabled()
+
+    await fireEvent.click(start)
+    expect(lastStart(emitted)).toEqual({
+      seasonId: 'season-1',
+      parameters: { seats: 1, pipe_gap: 90 },
+      slots: { player_0: { kind: 'submission', submissionId: 'sub1' } },
+      seed: undefined,
+      humanSlotTimeoutMs: undefined,
+    })
+  })
+
   it('uses compact masked labels for regular viewers', () => {
     render(SeatAssignmentDialog, {
-      props: { meta: heartsMeta(), agents: AGENTS, mode: 'watch' },
+      props: { ...START_CONTEXT, meta: heartsMeta(), agents: AGENTS, mode: 'watch' },
     })
 
     const firstSeat = seat('Seat 1')
@@ -105,6 +141,7 @@ describe('SeatAssignmentDialog', () => {
     ]
     const { emitted } = render(SeatAssignmentDialog, {
       props: {
+        ...START_CONTEXT,
         meta: heartsMeta(),
         agents: operatorAgents,
         mode: 'watch',
@@ -159,6 +196,7 @@ describe('SeatAssignmentDialog', () => {
   it('watch: changing a preselected assignment before Start is reflected in the payload', async () => {
     const { emitted } = render(SeatAssignmentDialog, {
       props: {
+        ...START_CONTEXT,
         meta: heartsMeta(),
         agents: AGENTS,
         mode: 'watch',
@@ -180,7 +218,7 @@ describe('SeatAssignmentDialog', () => {
 
   it('play: seats the human at seat 0, fills the rest with Naive, and sends one human seat', async () => {
     const { emitted } = render(SeatAssignmentDialog, {
-      props: { meta: heartsMeta(), agents: AGENTS, mode: 'play' },
+      props: { ...START_CONTEXT, meta: heartsMeta(), agents: AGENTS, mode: 'play' },
     })
     // Seat 1 is the connected human (no dropdown); the other seats default to the Naive baseline.
     expect(screen.getByText('You')).toBeInTheDocument()
@@ -202,7 +240,7 @@ describe('SeatAssignmentDialog', () => {
 
   it('play: "Sit here" moves the human and resets the vacated seat to the Naive baseline', async () => {
     const { emitted } = render(SeatAssignmentDialog, {
-      props: { meta: heartsMeta(), agents: AGENTS, mode: 'play' },
+      props: { ...START_CONTEXT, meta: heartsMeta(), agents: AGENTS, mode: 'play' },
     })
     const rows = screen.getAllByRole('listitem')
     // Claim seat 3 for the human (rows are zero-indexed: rows[2] is "Seat 3").
@@ -229,6 +267,7 @@ describe('SeatAssignmentDialog', () => {
     // metadata forbids a human from taking.
     render(SeatAssignmentDialog, {
       props: {
+        ...START_CONTEXT,
         meta: heartsMeta({ human_slots: ['player_1', 'player_2'] }),
         agents: AGENTS,
         mode: 'play',
@@ -249,7 +288,7 @@ describe('SeatAssignmentDialog', () => {
 
   it('play: a submission can be assigned to a non-human seat', async () => {
     const { emitted } = render(SeatAssignmentDialog, {
-      props: { meta: heartsMeta(), agents: AGENTS, mode: 'play' },
+      props: { ...START_CONTEXT, meta: heartsMeta(), agents: AGENTS, mode: 'play' },
     })
     await fireEvent.update(seat('Seat 2'), 'submission:sub1')
     await fireEvent.update(seat('Seat 3'), 'submission:sub2')

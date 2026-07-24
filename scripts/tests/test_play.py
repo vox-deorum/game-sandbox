@@ -18,6 +18,9 @@ def _entry() -> EnvironmentEntry:
     class Env:
         possible_agents = ["player_0", "player_1"]
 
+        def __init__(self, _parameters: object) -> None:
+            pass
+
         def close(self) -> None:
             pass
 

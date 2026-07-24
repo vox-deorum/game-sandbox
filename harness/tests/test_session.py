@@ -15,7 +15,12 @@ from typing import Any
 import pytest
 
 from game_sandbox_harness.clock import ManualClock
-from game_sandbox_harness.environment import EnvironmentEntry, EnvironmentMeta
+from game_sandbox_harness.environment import (
+    EnvironmentEntry,
+    EnvironmentMeta,
+    EnvParameter,
+    resolve_parameters,
+)
 from game_sandbox_harness.recording.local import FolderRecordingStore
 from game_sandbox_harness.session import (
     REASON_EPISODE_LIMIT,
@@ -99,7 +104,7 @@ def make_entry(
     overlay = (lambda env: {"i": env._i}) if with_overlay else None
     return EnvironmentEntry(
         meta=meta,
-        make=lambda: FakeEnv(n_steps),
+        make=lambda _parameters: FakeEnv(n_steps),
         default_action=lambda env, slot_id: DEFAULT_ACTION,
         overlay=overlay,
     )
@@ -132,6 +137,7 @@ def test_same_seed_same_agent_byte_identical_recordings(tmp_path: Path):
         run_episode(
             entry,
             {"player_0": AgentSlot(ScriptedAgent([0, 1, 0, 1]))},
+            parameters=resolve_parameters(entry.meta),
             seed=99,
             store=store,
             recording_id="r",
@@ -153,6 +159,7 @@ def test_players_attribution_lands_in_the_recording_header(tmp_path: Path):
     run_episode(
         entry,
         {"player_0": AgentSlot(ScriptedAgent([0, 1]))},
+        parameters=resolve_parameters(entry.meta),
         seed=1,
         store=store,
         recording_id="r",
@@ -162,13 +169,16 @@ def test_players_attribution_lands_in_the_recording_header(tmp_path: Path):
     lines = (tmp_path / "r" / "recording.jsonl").read_text(encoding="utf-8").splitlines()
     header = json.loads(lines[0])
     assert header["players"] == {"player_0": {"kind": "agent", "label": "Naive agent"}}
+    assert header["parameters"] == {"seats": 1}
 
 
 def test_opening_state_returns_the_dealt_overlay_for_a_turn_based_env():
     # A turn-based env with an overlay yields a pre-action opening frame: the dealt overlay, no agent
     # having acted, tick 0. The live runner streams this so a human who leads sees the table at once.
     entry = make_entry(n_steps=3, pace_interval_ms=None, with_overlay=True)
-    with Episode(entry, {"player_0": AgentSlot(ScriptedAgent([0]))}, seed=1) as episode:
+    with Episode(
+        entry, {"player_0": AgentSlot(ScriptedAgent([0]))}, parameters=resolve_parameters(entry.meta), seed=1
+    ) as episode:
         opening = episode.opening_state()
     assert opening is not None
     assert opening["tick"] == 0
@@ -180,10 +190,17 @@ def test_opening_state_is_none_for_paced_or_overlayless_envs():
     # A paced env renders its first frame within an interval, and an env with no overlay has nothing
     # to draw, so neither gets a streamed opening frame.
     paced = make_entry(n_steps=2, pace_interval_ms=16, with_overlay=True)
-    with Episode(paced, {"player_0": AgentSlot(ScriptedAgent([0]))}, seed=1) as episode:
+    with Episode(
+        paced, {"player_0": AgentSlot(ScriptedAgent([0]))}, parameters=resolve_parameters(paced.meta), seed=1
+    ) as episode:
         assert episode.opening_state() is None
     overlayless = make_entry(n_steps=2, pace_interval_ms=None, with_overlay=False)
-    with Episode(overlayless, {"player_0": AgentSlot(ScriptedAgent([0]))}, seed=1) as episode:
+    with Episode(
+        overlayless,
+        {"player_0": AgentSlot(ScriptedAgent([0]))},
+        parameters=resolve_parameters(overlayless.meta),
+        seed=1,
+    ) as episode:
         assert episode.opening_state() is None
 
 
@@ -191,7 +208,9 @@ def test_agent_per_step_timeout_discards_action_and_counts_overage():
     clock = ManualClock()
     entry = make_entry(n_steps=3, step_limit_ms=1000)
     agent = ScriptedAgent([1, 1, 1], clock=clock, cost_ms=5000)  # 5s > 1s limit every step
-    result = run_episode(entry, {"player_0": AgentSlot(agent)}, seed=1, clock=clock)
+    result = run_episode(
+        entry, {"player_0": AgentSlot(agent)}, parameters=resolve_parameters(entry.meta), seed=1, clock=clock
+    )
     assert result.step_timeouts["player_0"] == 3
     assert result.reason == REASON_TERMINATED
 
@@ -210,7 +229,13 @@ def test_learn_hook_time_counts_toward_per_step_overage():
         def learn(self, observation, action, reward, terminated) -> None:
             clock.advance(250)
 
-    result = run_episode(entry, {"player_0": AgentSlot(LearningAgent())}, seed=1, clock=clock)
+    result = run_episode(
+        entry,
+        {"player_0": AgentSlot(LearningAgent())},
+        parameters=resolve_parameters(entry.meta),
+        seed=1,
+        clock=clock,
+    )
     assert result.step_timeouts["player_0"] == 3
     assert result.reason == REASON_TERMINATED
 
@@ -220,7 +245,9 @@ def test_per_episode_budget_truncates():
     # Each act costs 800ms (under the 1000ms step limit) but the cumulative budget is 2000ms.
     entry = make_entry(n_steps=10, step_limit_ms=1000, episode_limit_ms=2000)
     agent = ScriptedAgent([0], clock=clock, cost_ms=800)
-    result = run_episode(entry, {"player_0": AgentSlot(agent)}, seed=1, clock=clock)
+    result = run_episode(
+        entry, {"player_0": AgentSlot(agent)}, parameters=resolve_parameters(entry.meta), seed=1, clock=clock
+    )
     assert result.reason == REASON_EPISODE_LIMIT
     assert result.ticks == 3  # 800*3 = 2400 > 2000, tripped on the third step
     # The seat that overran owns the overage, so it is named for per-seat failure attribution.
@@ -230,7 +257,13 @@ def test_per_episode_budget_truncates():
 def test_external_scripted_source_drives_slot():
     entry = make_entry(n_steps=3)
     source = ScriptedSource([0, 1, 0])
-    result = run_episode(entry, {"player_0": ExternalSlot(source)}, seed=1, clock=ManualClock())
+    result = run_episode(
+        entry,
+        {"player_0": ExternalSlot(source)},
+        parameters=resolve_parameters(entry.meta),
+        seed=1,
+        clock=ManualClock(),
+    )
     assert result.ticks == 3
     # External slots never touch the agent-timeout machinery.
     assert result.step_timeouts["player_0"] == 0
@@ -242,6 +275,7 @@ def test_external_noop_source_falls_back_to_default(tmp_path: Path):
     result = run_episode(
         entry,
         {"player_0": ExternalSlot(NoopSource())},
+        parameters=resolve_parameters(entry.meta),
         seed=1,
         store=store,
         recording_id="r",
@@ -270,6 +304,7 @@ def test_default_action_receives_live_env_and_slot_and_records_result(tmp_path: 
     result = run_episode(
         entry,
         {"player_0": ExternalSlot(NoopSource())},
+        parameters=resolve_parameters(entry.meta),
         seed=1,
         store=store,
         recording_id="r",
@@ -290,6 +325,7 @@ def test_max_steps_caps_episode():
     result = run_episode(
         entry,
         {"player_0": AgentSlot(ScriptedAgent([0]))},
+        parameters=resolve_parameters(entry.meta),
         seed=1,
         clock=ManualClock(),
         max_steps=5,
@@ -306,6 +342,7 @@ def test_max_steps_coinciding_with_termination_reports_terminated():
     result = run_episode(
         entry,
         {"player_0": AgentSlot(ScriptedAgent([0]))},
+        parameters=resolve_parameters(entry.meta),
         seed=1,
         clock=ManualClock(),
         max_steps=3,
@@ -384,7 +421,7 @@ def _team_entry(finals: dict[str, float], *, make: Any = None) -> EnvironmentEnt
     )
     return EnvironmentEntry(
         meta=meta,
-        make=make if make is not None else (lambda: FakeTeamEnv(finals)),
+        make=make if make is not None else (lambda _parameters: FakeTeamEnv(finals)),
         default_action=lambda env, slot_id: DEFAULT_ACTION,
         overlay=None,
     )
@@ -396,7 +433,7 @@ def test_terminal_rewards_credited_to_every_seat_not_just_the_actor():
     finals = {"player_0": -13.0, "player_1": -3.0, "player_2": 0.0}
     entry = _team_entry(finals)
     slots = {p: AgentSlot(ScriptedAgent([0])) for p in ("player_0", "player_1", "player_2")}
-    result = run_episode(entry, slots, seed=1, clock=ManualClock())
+    result = run_episode(entry, slots, parameters=resolve_parameters(entry.meta), seed=1, clock=ManualClock())
     assert result.reason == REASON_TERMINATED
     assert result.scores == finals
     assert result.failed_slot is None  # a clean episode charges no seat
@@ -418,7 +455,7 @@ def test_agent_crash_charges_the_failure_to_its_own_seat():
         "player_1": AgentSlot(Crashing()),
         "player_2": AgentSlot(ScriptedAgent([0])),
     }
-    episode = Episode(entry, slots, seed=1, clock=ManualClock())
+    episode = Episode(entry, slots, parameters=resolve_parameters(entry.meta), seed=1, clock=ManualClock())
     episode.start()
     episode.step_once()  # player_0 acts cleanly
     with pytest.raises(RuntimeError, match="boom"):
@@ -527,7 +564,7 @@ def _masked_entry(**kwargs: Any) -> EnvironmentEntry:
     )
     return EnvironmentEntry(
         meta=meta,
-        make=lambda: MaskedEnv(**kwargs),
+        make=lambda _parameters: MaskedEnv(**kwargs),
         default_action=lambda env, slot_id: 0,  # a legal move on every timeout path
         overlay=None,
     )
@@ -542,7 +579,7 @@ def test_illegal_masked_action_is_charged_to_the_acting_seat():
         "player_0": AgentSlot(ScriptedAgent([0])),  # legal
         "player_1": AgentSlot(ScriptedAgent([2])),  # masked illegal
     }
-    episode = Episode(entry, slots, seed=1, clock=ManualClock())
+    episode = Episode(entry, slots, parameters=resolve_parameters(entry.meta), seed=1, clock=ManualClock())
     episode.start()
     episode.step_once()  # player_0 plays a legal card
     with pytest.raises(IllegalAgentActionError, match="legal-move mask"):
@@ -560,7 +597,7 @@ def test_illegal_action_masked_via_info_is_charged_to_the_acting_seat():
         "player_0": AgentSlot(ScriptedAgent([0])),  # legal
         "player_1": AgentSlot(ScriptedAgent([2])),  # illegal per the info-supplied mask
     }
-    episode = Episode(entry, slots, seed=1, clock=ManualClock())
+    episode = Episode(entry, slots, parameters=resolve_parameters(entry.meta), seed=1, clock=ManualClock())
     episode.start()
     episode.step_once()  # player_0 plays a legal card
     with pytest.raises(IllegalAgentActionError, match="legal-move mask"):
@@ -579,7 +616,7 @@ def test_illegal_external_action_defaults_instead_of_crashing_the_session():
         "player_0": ExternalSlot(ScriptedSource([2])),  # 2 is masked illegal for a human seat
         "player_1": AgentSlot(ScriptedAgent([0])),  # legal
     }
-    episode = Episode(entry, slots, seed=1, clock=ManualClock())
+    episode = Episode(entry, slots, parameters=resolve_parameters(entry.meta), seed=1, clock=ManualClock())
     episode.start()
     # Without the external-path legality check this would raise the env's illegal-move error; with it,
     # the action is defaulted and the step is applied.
@@ -596,7 +633,7 @@ def test_out_of_action_space_action_is_charged_to_the_acting_seat():
         "player_0": AgentSlot(ScriptedAgent([9])),  # 9 is outside Discrete(4)
         "player_1": AgentSlot(ScriptedAgent([0])),
     }
-    episode = Episode(entry, slots, seed=1, clock=ManualClock())
+    episode = Episode(entry, slots, parameters=resolve_parameters(entry.meta), seed=1, clock=ManualClock())
     episode.start()
     with pytest.raises(IllegalAgentActionError, match="action space"):
         episode.step_once()
@@ -612,7 +649,7 @@ def test_environment_fault_on_a_legal_action_is_owned_by_no_seat():
         "player_0": AgentSlot(ScriptedAgent([0])),  # legal, yet the env is rigged to raise on it
         "player_1": AgentSlot(ScriptedAgent([1])),
     }
-    episode = Episode(entry, slots, seed=1, clock=ManualClock())
+    episode = Episode(entry, slots, parameters=resolve_parameters(entry.meta), seed=1, clock=ManualClock())
     episode.start()
     with pytest.raises(ValueError, match="env rejects"):
         episode.step_once()
@@ -638,7 +675,15 @@ def test_agent_reset_crash_is_charged_to_its_seat_over_a_written_recording(tmp_p
         "player_1": AgentSlot(ResetCrashing()),
         "player_2": AgentSlot(ScriptedAgent([0])),
     }
-    episode = Episode(entry, slots, seed=1, store=store, recording_id="r", clock=ManualClock())
+    episode = Episode(
+        entry,
+        slots,
+        parameters=resolve_parameters(entry.meta),
+        seed=1,
+        store=store,
+        recording_id="r",
+        clock=ManualClock(),
+    )
     with pytest.raises(RuntimeError, match="reset boom"):
         episode.start()
     assert episode.failed_slot == "player_1"
@@ -674,7 +719,7 @@ def test_start_failure_through_context_manager_closes_recording_and_env(tmp_path
 
     made: list[ClosingTeamEnv] = []
 
-    def make() -> ClosingTeamEnv:
+    def make(_parameters: object) -> ClosingTeamEnv:
         env = ClosingTeamEnv()
         made.append(env)
         return env
@@ -687,7 +732,15 @@ def test_start_failure_through_context_manager_closes_recording_and_env(tmp_path
         "player_2": AgentSlot(ScriptedAgent([0])),
     }
     with pytest.raises(RuntimeError, match="reset boom"):
-        run_episode(entry, slots, seed=1, store=store, recording_id="r", clock=ManualClock())
+        run_episode(
+            entry,
+            slots,
+            parameters=resolve_parameters(entry.meta),
+            seed=1,
+            store=store,
+            recording_id="r",
+            clock=ManualClock(),
+        )
 
     assert len(made) == 1
     assert made[0].closed is True  # start() closed the env even though __exit__ never ran
@@ -709,7 +762,45 @@ def test_learn_hook_time_counts_against_budget():
         def learn(self, observation, action, reward, terminated) -> None:
             clock.advance(300)
 
-    result = run_episode(entry, {"player_0": AgentSlot(LearningAgent())}, seed=1, clock=clock)
+    result = run_episode(
+        entry,
+        {"player_0": AgentSlot(LearningAgent())},
+        parameters=resolve_parameters(entry.meta),
+        seed=1,
+        clock=clock,
+    )
     # Each step costs 100 (act) + 300 (learn) = 400ms; budget 1000 trips on the third step.
     assert result.reason == REASON_EPISODE_LIMIT
     assert result.ticks == 3
+
+
+def test_episode_defensively_resolves_parameters_before_constructing_the_environment():
+    meta = replace(
+        make_entry().meta,
+        parameters=(EnvParameter("pace", "Pace", "A test parameter.", "float", 1.0, min=0.0, max=2.0),),
+    )
+    received: list[dict[str, object]] = []
+    entry = EnvironmentEntry(
+        meta=meta,
+        make=lambda parameters: received.append(dict(parameters)) or FakeEnv(1),
+        default_action=lambda _env, _slot: 0,
+    )
+
+    with Episode(entry, {"player_0": ExternalSlot(NoopSource())}, parameters={"pace": 2}, seed=1) as episode:
+        episode.step_once()
+
+    assert received == [{"seats": 1, "pace": 2.0}]
+
+
+def test_episode_rejects_a_factory_that_ignores_the_resolved_seat_count():
+    meta = replace(make_entry().meta, min_slots=2, max_slots=2)
+    entry = EnvironmentEntry(
+        meta=meta,
+        make=lambda _parameters: FakeEnv(1),
+        default_action=lambda _env, _slot: 0,
+    )
+
+    with pytest.raises(ValueError, match="possible agents, expected 2"):
+        Episode(
+            entry, {"player_0": ExternalSlot(NoopSource())}, parameters=resolve_parameters(entry.meta), seed=1
+        ).start()

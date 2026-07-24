@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 
 from game_sandbox_harness.clock import ManualClock
-from game_sandbox_harness.environment import EnvironmentEntry, EnvironmentMeta
+from game_sandbox_harness.environment import EnvironmentEntry, EnvironmentMeta, resolve_parameters
 from game_sandbox_harness.live import (
     LiveConfig,
     LiveConfigError,
@@ -97,7 +97,7 @@ def _entry(
             llm=True,
             renderer="fake",
         ),
-        make=lambda: _AlternatingEnv(turns),
+        make=lambda _parameters: _AlternatingEnv(turns),
         default_action=lambda env, slot_id: 0,
     )
 
@@ -105,6 +105,7 @@ def _entry(
 def _payload(llm: object = None) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "env_id": "fake",
+        "parameters": {"seats": 1},
         "slots": {
             "player_0": {"kind": "builtin-agent", "path": "/agents/0"},
             "player_1": {"kind": "builtin-agent", "path": "/agents/1"},
@@ -306,7 +307,9 @@ def test_credentials_and_markers_cover_load_reset_and_every_acting_hook(monkeypa
         PausableClock(ManualClock()),
         _Sleeper(),
     )
-    with Episode(_entry(), slots, seed=9, clock=ManualClock()) as episode:
+    with Episode(
+        _entry(), slots, parameters=resolve_parameters(_entry().meta), seed=9, clock=ManualClock()
+    ) as episode:
         while not episode.done:
             episode.step_once()
 
@@ -439,6 +442,7 @@ def test_model_wait_in_act_is_discounted_from_step_and_episode_limits(monkeypatc
     result = run_episode(
         entry,
         slots,
+        parameters=resolve_parameters(entry.meta),
         seed=1,
         store=store,
         recording_id="model-wait",
@@ -489,6 +493,7 @@ def test_marker_failure_logs_and_does_not_stop_agent_lifecycle(monkeypatch, caps
         human_timeout_ms=None,
         recording_dir="/recordings",
         recording_id=None,
+        parameters={"seats": 1},
         llm=LlmConfig(
             "http://proxy/v1",
             "http://marker/tick",
@@ -507,7 +512,9 @@ def test_marker_failure_logs_and_does_not_stop_agent_lifecycle(monkeypatch, caps
         PausableClock(ManualClock()),
         _Sleeper(),
     )
-    with Episode(one_seat_entry, slots, seed=1, clock=ManualClock()) as episode:
+    with Episode(
+        one_seat_entry, slots, parameters=resolve_parameters(one_seat_entry.meta), seed=1, clock=ManualClock()
+    ) as episode:
         episode.step_once()
 
     assert calls == ["reset", "act"]
@@ -572,6 +579,7 @@ def test_proxy_snapshots_reuse_each_post_hook_baseline_and_exclude_setup(monkeyp
     run_episode(
         entry,
         slots,
+        parameters=resolve_parameters(entry.meta),
         seed=1,
         store=store,
         recording_id="separate-hooks",
@@ -637,6 +645,7 @@ def test_failed_post_hook_snapshot_is_not_reused(monkeypatch, tmp_path: Path, ca
     run_episode(
         entry,
         slots,
+        parameters=resolve_parameters(entry.meta),
         seed=1,
         store=store,
         recording_id="failed-snapshot",
@@ -695,6 +704,7 @@ def test_proxy_discount_cannot_erase_overlapping_agent_cpu(monkeypatch, tmp_path
     result = run_episode(
         entry,
         slots,
+        parameters=resolve_parameters(entry.meta),
         seed=1,
         store=store,
         recording_id="overlapping-cpu",
@@ -747,7 +757,15 @@ def test_bad_proxy_snapshot_fails_closed_to_full_hook_time(monkeypatch, tmp_path
     )
     store = FolderRecordingStore(tmp_path)
 
-    result = run_episode(entry, slots, seed=1, store=store, recording_id="bad-snapshot", clock=clock)
+    result = run_episode(
+        entry,
+        slots,
+        parameters=resolve_parameters(entry.meta),
+        seed=1,
+        store=store,
+        recording_id="bad-snapshot",
+        clock=clock,
+    )
 
     timing = next(store.open("bad-snapshot").steps())["agents"]["player_0"]["timing"]
     assert timing["decision_ms"] == 600
@@ -782,6 +800,7 @@ def test_non_llm_slots_do_not_touch_credentials_or_marker_transport(monkeypatch)
         human_timeout_ms=None,
         recording_dir="/recordings",
         recording_id=None,
+        parameters={"seats": 1},
     )
     entry = _entry(turns=1, messaging=False)
     slots = build_slots(
@@ -791,7 +810,9 @@ def test_non_llm_slots_do_not_touch_credentials_or_marker_transport(monkeypatch)
         PausableClock(ManualClock()),
         _Sleeper(),
     )
-    with Episode(entry, slots, seed=1, clock=ManualClock()) as episode:
+    with Episode(
+        entry, slots, parameters=resolve_parameters(entry.meta), seed=1, clock=ManualClock()
+    ) as episode:
         episode.step_once()
 
     assert seen == [("student-base", "student-key"), ("student-base", "student-key")]

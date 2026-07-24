@@ -12,7 +12,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from sandbox.env import make_env
+from sandbox.env import META, make_env
+from sandbox.harness.environment import resolve_parameters
 from sandbox.play import load_agent, play_episode
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -34,7 +35,7 @@ def test_agent_has_required_interface():
 
 def test_three_step_headless_episode_runs():
     agent = load_agent(REPO_ROOT)
-    env = make_env()
+    env = make_env(resolve_parameters(META))
     try:
         score = play_episode(agent, env, seed=0, max_steps=3)
     finally:

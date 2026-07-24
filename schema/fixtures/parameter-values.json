@@ -1,0 +1,279 @@
+{
+  "declarations": [
+    {
+      "default": 4,
+      "description": "Number of seats in each game.",
+      "max": 4,
+      "min": 1,
+      "name": "seats",
+      "title": "Seats",
+      "type": "int"
+    },
+    {
+      "default": 100,
+      "description": "Vertical space between pipes.",
+      "max": 9007199254740991,
+      "min": 1,
+      "name": "pipe_gap",
+      "title": "Pipe gap",
+      "type": "int"
+    },
+    {
+      "default": 1.5,
+      "description": "Downward acceleration.",
+      "max": 10.0,
+      "min": 0.0,
+      "name": "gravity",
+      "title": "Gravity",
+      "type": "float"
+    },
+    {
+      "default": "default",
+      "description": "A free-form label.",
+      "name": "label",
+      "title": "Label",
+      "type": "string"
+    },
+    {
+      "default": false,
+      "description": "Whether the option is active.",
+      "name": "enabled",
+      "title": "Enabled",
+      "type": "bool"
+    },
+    {
+      "choices": [
+        {
+          "label": "Easy",
+          "value": "easy"
+        },
+        {
+          "label": "Normal",
+          "value": "normal"
+        },
+        {
+          "label": "Hard",
+          "value": "hard"
+        }
+      ],
+      "default": "normal",
+      "description": "One gameplay mode.",
+      "name": "mode",
+      "title": "Mode",
+      "type": "choice"
+    },
+    {
+      "choices": [
+        {
+          "label": "Shield",
+          "value": "shield"
+        },
+        {
+          "label": "Boost",
+          "value": "boost"
+        },
+        {
+          "label": "Magnet",
+          "value": "magnet"
+        }
+      ],
+      "default": [
+        "shield"
+      ],
+      "description": "Enabled power-ups.",
+      "name": "powerups",
+      "title": "Power-ups",
+      "type": "multi_choice"
+    }
+  ],
+  "resolution_cases": [
+    {
+      "issue_names": [],
+      "layers": [
+        {
+          "pipe_gap": 120,
+          "powerups": [
+            "magnet",
+            "shield"
+          ],
+          "seats": 2
+        },
+        {
+          "enabled": true,
+          "pipe_gap": 140
+        }
+      ],
+      "values": {
+        "enabled": true,
+        "gravity": 1.5,
+        "label": "default",
+        "mode": "normal",
+        "pipe_gap": 140,
+        "powerups": [
+          "shield",
+          "magnet"
+        ],
+        "seats": 2
+      }
+    },
+    {
+      "issue_names": [
+        "mode",
+        "pipe_gap",
+        "unknown"
+      ],
+      "layers": [
+        {
+          "mode": "missing",
+          "pipe_gap": 0,
+          "unknown": "value"
+        }
+      ],
+      "values": {
+        "enabled": false,
+        "gravity": 1.5,
+        "label": "default",
+        "mode": "normal",
+        "pipe_gap": 100,
+        "powerups": [
+          "shield"
+        ],
+        "seats": 4
+      }
+    }
+  ],
+  "validation_cases": [
+    {
+      "name": "seats",
+      "normalized": 1,
+      "valid": true,
+      "value": 1
+    },
+    {
+      "name": "seats",
+      "normalized": 4,
+      "valid": true,
+      "value": 4
+    },
+    {
+      "name": "seats",
+      "valid": false,
+      "value": 5
+    },
+    {
+      "name": "pipe_gap",
+      "normalized": 9007199254740991,
+      "valid": true,
+      "value": 9007199254740991
+    },
+    {
+      "name": "pipe_gap",
+      "valid": false,
+      "value": 9007199254740992
+    },
+    {
+      "name": "pipe_gap",
+      "valid": false,
+      "value": 1.5
+    },
+    {
+      "name": "pipe_gap",
+      "valid": false,
+      "value": true
+    },
+    {
+      "name": "gravity",
+      "normalized": 0.0,
+      "valid": true,
+      "value": 0
+    },
+    {
+      "name": "gravity",
+      "normalized": 2.25,
+      "valid": true,
+      "value": 2.25
+    },
+    {
+      "name": "gravity",
+      "valid": false,
+      "value": 10.1
+    },
+    {
+      "name": "gravity",
+      "valid": false,
+      "value": true
+    },
+    {
+      "name": "label",
+      "normalized": "",
+      "valid": true,
+      "value": ""
+    },
+    {
+      "name": "label",
+      "valid": false,
+      "value": 1
+    },
+    {
+      "name": "enabled",
+      "normalized": true,
+      "valid": true,
+      "value": true
+    },
+    {
+      "name": "enabled",
+      "normalized": false,
+      "valid": true,
+      "value": false
+    },
+    {
+      "name": "enabled",
+      "valid": false,
+      "value": 1
+    },
+    {
+      "name": "mode",
+      "normalized": "hard",
+      "valid": true,
+      "value": "hard"
+    },
+    {
+      "name": "mode",
+      "valid": false,
+      "value": "missing"
+    },
+    {
+      "name": "powerups",
+      "normalized": [
+        "shield",
+        "magnet"
+      ],
+      "valid": true,
+      "value": [
+        "magnet",
+        "shield"
+      ]
+    },
+    {
+      "name": "powerups",
+      "normalized": [],
+      "valid": true,
+      "value": []
+    },
+    {
+      "name": "powerups",
+      "valid": false,
+      "value": [
+        "shield",
+        "shield"
+      ]
+    },
+    {
+      "name": "powerups",
+      "valid": false,
+      "value": [
+        "missing"
+      ]
+    }
+  ]
+}

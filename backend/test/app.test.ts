@@ -15,6 +15,7 @@ describe('HTTP API', () => {
   let users: TestUsers
   let dir: string
   let alice: Record<string, string>
+  let playSeasonId: string
 
   beforeEach(async () => {
     fixture = await openTestApp()
@@ -25,18 +26,36 @@ describe('HTTP API', () => {
     alice = await users.headersFor('alice')
     // Plain public sessions attach to the environment's play-open season; seed it so the start
     // routes are exercised against a normal play-open environment.
-    await storage.ensureOpenSeason('flappy_bird', 1)
+    playSeasonId = (await storage.ensureOpenSeason('flappy_bird', 1)).id
   })
 
   afterEach(async () => {
     await fixture.close()
   })
 
+  function startPayload(slots: Record<string, unknown>): Record<string, unknown> {
+    return {
+      env_id: 'flappy_bird',
+      season_id: playSeasonId,
+      parameters: { seats: 1, pipe_gap: 100 },
+      slots,
+    }
+  }
+
   it('lists environments with their public metadata', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/environments' })
     expect(res.statusCode).toBe(200)
     const envs = res.json() as Array<{ env_id: string }>
     expect(envs.map((e) => e.env_id)).toContain('flappy_bird')
+  })
+
+  it('returns the active season and resolved play parameter defaults', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/environments/flappy_bird/play-parameters',
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({ season_id: playSeasonId, values: { seats: 1, pipe_gap: 100 } })
   })
 
   it('serves the deployment branding from GET /api/config, defaulting both names', async () => {
@@ -87,7 +106,7 @@ describe('HTTP API', () => {
       method: 'POST',
       url: '/api/sessions',
       headers: alice,
-      payload: { env_id: 'flappy_bird', slots: { player_0: { kind: 'builtin-agent' } } },
+      payload: startPayload({ player_0: { kind: 'builtin-agent' } }),
     })
     expect(res.statusCode).toBe(201)
     const body = res.json() as { id: string; ws_path: string }
@@ -106,6 +125,7 @@ describe('HTTP API', () => {
     expect(row.json()).not.toHaveProperty('github_username')
     // Attribution carries the Better Auth id, not a fabricated dev identity.
     expect((await storage.getSession(body.id))?.user_id).toBe(users.idOf('alice'))
+    expect((await storage.getSession(body.id))?.parameters).toEqual({ seats: 1, pipe_gap: 100 })
   })
 
   it('omits the session detail user_name when the owner id has no user row', async () => {
@@ -113,6 +133,7 @@ describe('HTTP API', () => {
       id: 'sess-ghost',
       user_id: 'ghost-user',
       env_id: 'flappy_bird',
+      parameters: { seats: 1 },
       mode: 'scripted',
       recording_id: null,
       created_at: new Date().toISOString(),
@@ -168,7 +189,7 @@ describe('HTTP API', () => {
       method: 'POST',
       url: '/api/sessions',
       headers: alice,
-      payload: { env_id: 'flappy_bird', slots: { player_0: { kind: 'builtin-agent' } } },
+      payload: startPayload({ player_0: { kind: 'builtin-agent' } }),
     })
     expect(first.statusCode).toBe(201)
     const { id } = first.json() as { id: string }
@@ -176,7 +197,7 @@ describe('HTTP API', () => {
       method: 'POST',
       url: '/api/sessions',
       headers: alice,
-      payload: { env_id: 'flappy_bird', slots: { player_0: { kind: 'builtin-agent' } } },
+      payload: startPayload({ player_0: { kind: 'builtin-agent' } }),
     })
     expect(second.statusCode).toBe(409)
     // The rejoin path reads the active session's id from the body, keyed by the stable code.
@@ -235,7 +256,7 @@ describe('HTTP API', () => {
         method: 'POST',
         url: '/api/sessions',
         headers: pending,
-        payload: { env_id: 'flappy_bird', slots: { player_0: { kind } } },
+        payload: startPayload({ player_0: { kind } }),
       })
       expect(res.statusCode).toBe(403)
       expect(res.json()).toMatchObject({ code: 'not_active' })
@@ -246,7 +267,7 @@ describe('HTTP API', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/sessions',
-      payload: { env_id: 'flappy_bird', slots: { player_0: { kind: 'builtin-agent' } } },
+      payload: startPayload({ player_0: { kind: 'builtin-agent' } }),
     })
     expect(res.statusCode).toBe(401)
     expect(res.json()).toMatchObject({ code: 'auth_required' })
@@ -267,7 +288,7 @@ describe('HTTP API', () => {
       method: 'POST',
       url: '/api/sessions',
       headers: alice,
-      payload: { env_id: 'flappy_bird', slots: { player_0: { kind: 'builtin-agent' } } },
+      payload: startPayload({ player_0: { kind: 'builtin-agent' } }),
     })
     const { id } = created.json() as { id: string }
 
@@ -296,7 +317,12 @@ describe('HTTP API', () => {
     // Write a recording directory (a header line) plus its retention row, the post-finalize state.
     async function seedRecording(id: string, env: string, user: string): Promise<void> {
       await mkdir(join(dir, id), { recursive: true })
-      const header = JSON.stringify({ schema_version: 1, environment: env, seed: 0 })
+      const header = JSON.stringify({
+        schema_version: 1,
+        environment: env,
+        parameters: {},
+        seed: 0,
+      })
       await writeFile(join(dir, id, 'recording.jsonl'), `${header}\n`, 'utf-8')
       await storage.createRecording({
         id,
@@ -399,6 +425,7 @@ describe('HTTP API', () => {
       const header = {
         schema_version: 1,
         environment: 'flappy_bird',
+        parameters: {},
         seed: 0,
         players: {
           player_0: {
@@ -419,6 +446,7 @@ describe('HTTP API', () => {
         id: `producing-${REC_ID}`,
         user_id: ownerId,
         env_id: 'flappy_bird',
+        parameters: { seats: 1 },
         mode: 'scripted',
         recording_id: REC_ID,
         season_id: season.id,

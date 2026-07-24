@@ -11,6 +11,7 @@
  * to this file.
  */
 
+import type { ParameterValue } from '@game-sandbox/schema/environment'
 import type {
   LlmModelUsage as SchemaLlmModelUsage,
   LlmUsageByModel as SchemaLlmUsageByModel,
@@ -76,6 +77,8 @@ export interface SessionsTable {
   message_cap: number | null
   /** Frozen effective capability flag for this session (SQLite 0/1). */
   llm_enabled: number
+  /** JSON text containing the fully resolved environment parameters that launched this session. */
+  parameters: string
   /** ISO-8601 UTC timestamps. */
   created_at: string
   ended_at: string | null
@@ -250,6 +253,8 @@ export interface SeasonRunsTable {
   requested_by: string
   /** The validated {@link SeasonConfig} JSON, copied from the season when the run is created. */
   config_snapshot: string
+  /** JSON text containing the fully resolved parameters frozen for every game in the run. */
+  parameters_snapshot: string
   /** Fully resolved official LLM policy frozen independently from the season config. */
   llm_policy_snapshot: string
   /** JSON array of the active `ready` submitted-agent {@link AgentRef}s eligible at trigger time. */
@@ -491,7 +496,9 @@ export interface Database {
 }
 
 /** A session row as read back from the database. */
-export type Session = Selectable<SessionsTable>
+export type Session = Omit<Selectable<SessionsTable>, 'parameters'> & {
+  parameters: Record<string, ParameterValue>
+}
 
 /** A session row as inserted. */
 export type NewSession = Insertable<SessionsTable>
@@ -534,7 +541,9 @@ export type SeasonScope = 'released' | 'public' | 'all'
 export type SeasonUpdate = Updateable<SeasonsTable>
 
 /** A season-run row as read back from the database. */
-export type SeasonRun = Selectable<SeasonRunsTable>
+export type SeasonRun = Omit<Selectable<SeasonRunsTable>, 'parameters_snapshot'> & {
+  parameters_snapshot: Record<string, ParameterValue>
+}
 
 /** A scheduled-match row as read back from the database. */
 export type SeasonRunGame = Selectable<SeasonRunGamesTable>

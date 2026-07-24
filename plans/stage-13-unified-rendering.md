@@ -69,6 +69,7 @@ The harness remains `game_sandbox_harness` in the monorepo and is copied to `san
 - Make schema resources package-relative. `schema.py` resolves `schema_data` below `__package__` and never names `game_sandbox_harness.schema_data` literally.
 - Extract `live.run(entry, config, *, protocol, control, clock, sleeper, store)`. `main()` performs stdout claiming, parsing, environment discovery, and dependency construction, then calls `run`. The template shim constructs `EnvironmentEntry` from `sandbox.env` and calls the same function.
 - Add `start_paused` to `LiveConfig`. The runner emits the header and opening state, then waits for a `resume` command before the first step.
+- Require the complete resolved `parameters` map in `LiveConfig`. `Episode` defensively re-resolves it, calls `entry.make(parameters)`, verifies the environment's agent count matches `parameters["seats"]`, and records the normalized map in the header.
 - Give `human_timeout_ms` three wire states: an omitted field uses environment metadata, an integer is an override, and JSON `null` disables the turn-based timeout. Realtime environments continue to use their pace interval as the input deadline.
 - Require `players` in every new live configuration. Its keys exactly equal `slots`; `external` slots are `human`, agent slots are `agent`, and every attribution has a nonempty label. The local launcher builds this map from the selected human seat and agent bindings, so `header.players` is always the authority for browser controls.
 - Local play passes a caller-owned scratch recording directory to the existing tee store. Streaming and recording continue to share the one `Episode._record_step` path.
@@ -108,7 +109,7 @@ Security boundaries are explicit:
 
 Compose writes generated base helpers into a fresh build directory, so no owned-directory wipe or retired-generated-path list is needed. The freshness job checks only committed generated schema, fixture, metadata, and packaging outputs. Compose and example tests verify the generated harness, environment package, helpers, and staged web directory.
 
-The generated `sandbox.env.META` is the full registry metadata. `templates/base/sandbox/live_local.py` constructs the environment entry and invokes the relocated runner. `sandbox/evaluate.py` uses a small headless harness helper, so evaluation and server execution share timeout and default-action behavior.
+The generated `sandbox.env.META` is the full registry metadata, with declared `EnvParameter` and `EnvParameterChoice` constructors preserved and synthesized `seats` left to `EnvironmentMeta.to_json()`. `templates/base/sandbox/live_local.py` constructs the environment entry, resolves pure defaults, and invokes the relocated runner. `sandbox/evaluate.py` uses the same resolved defaults through a small headless harness helper, so evaluation and server execution share parameter, timeout, and default-action behavior.
 
 Add `flappy_bird/game.py` and `flappy_bird/UPSTREAM_LICENSE.md` to the Flappy `TemplateEnvironmentSpec.modules` list, remove `human.py`, and make wheel inclusion explicit. A generation and composition test asserts that both credited source files reach the student repository and that none of the upstream binary asset directories do.
 

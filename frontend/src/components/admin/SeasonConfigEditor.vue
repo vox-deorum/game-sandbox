@@ -15,6 +15,7 @@
     back as `invalid_config` and render inline.
 -->
 <script setup lang="ts">
+import type { EnvParameter, ParameterValue } from '@game-sandbox/schema/environment'
 import { MAX_LLM_COST_WEIGHT, MODEL_ALIASES } from '@game-sandbox/schema/llm'
 import { computed, ref, watch } from 'vue'
 
@@ -28,6 +29,8 @@ import {
   type MatchConfig,
   type SlotSpec,
 } from '../../api/client.js'
+import { formatParameterValue, initializeParameters, validateParameters } from '../../lib/parameters.js'
+import UiCheckboxGroup from '../ui/UiCheckboxGroup.vue'
 import UiButton from '../ui/UiButton.vue'
 import UiCard from '../ui/UiCard.vue'
 import UiDialog from '../ui/UiDialog.vue'
@@ -40,6 +43,7 @@ const props = defineProps<{
   season: SeasonView
   /** The environment capability shown beside the inherited messaging choice. */
   environmentMessagingEnabled?: boolean
+  environmentParameters?: readonly EnvParameter[]
 }>()
 const emit = defineEmits<{
   (e: 'changed', season: SeasonView): void
@@ -80,6 +84,11 @@ const officialTokenBudget = ref<number | ''>('')
 const officialRateLimit = ref<number | ''>('')
 const developmentTokenBudget = ref<number | ''>('')
 const developmentRateLimit = ref<number | ''>('')
+const parameterModes = ref<Record<string, 'inherit' | 'override'>>({})
+const parameterValues = ref<Record<string, ParameterValue>>({})
+const parameterValidation = computed(() =>
+  validateParameters(props.environmentParameters ?? [], parameterValues.value),
+)
 
 const saving = ref(false)
 const saved = ref(false)
@@ -117,11 +126,28 @@ function seedFromSeason(): void {
   officialRateLimit.value = llm?.official?.rate_limit_rpm ?? ''
   developmentTokenBudget.value = llm?.development?.token_budget ?? ''
   developmentRateLimit.value = llm?.development?.rate_limit_rpm ?? ''
+  const declarations = props.environmentParameters ?? []
+  parameterValues.value = initializeParameters(declarations, config.overrides?.parameters ?? {})
+  parameterModes.value = Object.fromEntries(
+    declarations.map((parameter) => [parameter.name, config.overrides?.parameters?.[parameter.name] === undefined ? 'inherit' : 'override']),
+  )
   saved.value = false
   error.value = null
 }
 
-watch(() => props.season.id, seedFromSeason, { immediate: true })
+watch([() => props.season.id, () => props.environmentParameters], seedFromSeason, { immediate: true })
+
+function parameterHint(parameter: EnvParameter): string {
+  const seatsHint = parameter.name === 'seats' ? " Every match's slot count must equal this value." : ''
+  if (parameter.type === 'int' || parameter.type === 'float') {
+    return `${parameter.description} ${parameter.min}–${parameter.max}.${seatsHint}`
+  }
+  return `${parameter.description}${seatsHint}`
+}
+
+function updateParameter(name: string, value: unknown): void {
+  parameterValues.value = { ...parameterValues.value, [name]: value as ParameterValue }
+}
 
 function addMatch(): void {
   matches.value.push({ slots: ['submission'], seedsText: '0', games: 1 })
@@ -246,6 +272,18 @@ function buildConfig(): { config: SeasonConfig } | { error: string } {
   if (official.limits !== undefined) llm.official = official.limits
   if (development.limits !== undefined) llm.development = development.limits
   if (Object.keys(llm).length > 0) overrides.llm = llm
+  const declared = props.environmentParameters ?? []
+  const parameterOverrides: Record<string, ParameterValue> = {}
+  const checked = validateParameters(declared, parameterValues.value)
+  for (const parameter of declared) {
+    if (parameterModes.value[parameter.name] !== 'override') continue
+    const value = checked.values[parameter.name]
+    if (checked.errors[parameter.name] !== undefined || value === undefined) {
+      return { error: `${parameter.title}: ${checked.errors[parameter.name] ?? 'Enter a valid value.'}` }
+    }
+    parameterOverrides[parameter.name] = value
+  }
+  if (Object.keys(parameterOverrides).length > 0) overrides.parameters = parameterOverrides
   const config: SeasonConfig = { deps_version: depsVersion.value, matches: built }
   if (Object.keys(overrides).length > 0) {
     config.overrides = overrides
@@ -273,8 +311,23 @@ function canonicalOverrides(overrides: SeasonConfig['overrides']): Record<string
     episode_timeout_ms: overrides.episode_timeout_ms ?? null,
     messaging: canonicalMessaging(overrides.messaging),
     llm: canonicalLlm(overrides.llm),
+    parameters: canonicalParameters(overrides.parameters),
   }
   return Object.values(normalized).every((value) => value === null) ? null : normalized
+}
+
+function canonicalParameters(parameters: SeasonOverrides['parameters']): Record<string, ParameterValue> | null {
+  if (parameters === undefined) return null
+  const declarations = props.environmentParameters ?? []
+  const result: Record<string, ParameterValue> = {}
+  for (const declaration of declarations) {
+    const value = parameters[declaration.name]
+    if (value === undefined) continue
+    const checked = validateParameters([declaration], { [declaration.name]: value })
+    const normalized = checked.values[declaration.name]
+    if (normalized !== undefined) result[declaration.name] = normalized
+  }
+  return Object.keys(result).length === 0 ? null : result
 }
 
 /** Normalize explicit messaging enablement because `true` and inheritance resolve identically. */
@@ -516,13 +569,12 @@ watch(confirmOpen, (open) => {
         </UiField>
       </div>
 
-      <fieldset v-if="llmModelsMode === 'custom'" class="alias-picker">
-        <legend>Model aliases</legend>
-        <label v-for="alias in LLM_MODEL_ALIASES" :key="alias" class="alias-option">
-          <input v-model="llmModels" type="checkbox" :value="alias" />
-          <span>{{ alias }}</span>
-        </label>
-      </fieldset>
+      <UiCheckboxGroup
+        v-if="llmModelsMode === 'custom'"
+        v-model="llmModels"
+        legend="Model aliases"
+        :options="LLM_MODEL_ALIASES.map((alias) => ({ value: alias, label: alias }))"
+      />
 
       <div class="limit-groups">
         <!--this is likely unnecessary but we keep it for future's sake -->
@@ -631,6 +683,91 @@ watch(confirmOpen, (open) => {
       </div>
     </UiCard>
 
+    <UiCard
+      v-if="(environmentParameters?.length ?? 0) > 0"
+      aria-labelledby="environment-parameters-title"
+    >
+      <h3 id="environment-parameters-title" class="config-title">Environment Parameters</h3>
+      <div v-for="parameter in environmentParameters" :key="parameter.name" class="parameter-row">
+        <UiField :label="parameter.title" :hint="parameterHint(parameter)">
+          <template #default="{ id }">
+            <UiSelect
+              :id="id"
+              :model-value="parameterModes[parameter.name] ?? 'inherit'"
+              @update:model-value="(value) => (parameterModes[parameter.name] = value as 'inherit' | 'override')"
+            >
+              <option value="inherit">
+                Environment default ({{ formatParameterValue(parameter, parameter.default) }})
+              </option>
+              <option value="override">Override</option>
+            </UiSelect>
+          </template>
+        </UiField>
+        <UiField
+          v-if="parameterModes[parameter.name] === 'override' && (parameter.type === 'int' || parameter.type === 'float' || parameter.type === 'string')"
+          :label="`${parameter.title} override`"
+          :error="parameterValidation.errors[parameter.name]"
+        >
+          <template #default="{ id, describedby, invalid }">
+            <UiInput
+              :id="id"
+              :model-value="parameterValues[parameter.name] as string | number"
+              :type="parameter.type === 'string' ? 'text' : 'number'"
+              :min="parameter.type === 'string' ? undefined : parameter.min"
+              :max="parameter.type === 'string' ? undefined : parameter.max"
+              :step="parameter.type === 'float' ? 'any' : undefined"
+              :invalid="invalid"
+              :aria-describedby="describedby"
+              @update:model-value="(value) => updateParameter(parameter.name, parameter.type === 'string' || value === '' ? value : Number(value))"
+            />
+          </template>
+        </UiField>
+        <UiField
+          v-else-if="parameterModes[parameter.name] === 'override' && parameter.type === 'bool'"
+          :label="`${parameter.title} override`"
+        >
+          <template #default="{ id, describedby }">
+            <UiSelect
+              :id="id"
+              :model-value="parameterValues[parameter.name] === true ? 'on' : 'off'"
+              :aria-describedby="describedby"
+              @update:model-value="(value) => updateParameter(parameter.name, value === 'on')"
+            >
+              <option value="on">On</option>
+              <option value="off">Off</option>
+            </UiSelect>
+          </template>
+        </UiField>
+        <UiField
+          v-else-if="parameterModes[parameter.name] === 'override' && parameter.type === 'choice'"
+          :label="`${parameter.title} override`"
+          :error="parameterValidation.errors[parameter.name]"
+        >
+          <template #default="{ id, describedby, invalid }">
+            <UiSelect
+              :id="id"
+              :model-value="String(parameterValues[parameter.name] ?? '')"
+              :invalid="invalid"
+              :aria-describedby="describedby"
+              @update:model-value="(value) => updateParameter(parameter.name, value)"
+            >
+              <option v-for="choice in parameter.choices" :key="choice.value" :value="choice.value">
+                {{ choice.label }}
+              </option>
+            </UiSelect>
+          </template>
+        </UiField>
+        <UiCheckboxGroup
+          v-else-if="parameterModes[parameter.name] === 'override' && parameter.type === 'multi_choice'"
+          :model-value="Array.isArray(parameterValues[parameter.name]) ? parameterValues[parameter.name] as string[] : []"
+          :legend="`${parameter.title} override`"
+          :options="parameter.choices"
+          :error="parameterValidation.errors[parameter.name]"
+          @update:model-value="(value) => updateParameter(parameter.name, value)"
+        />
+      </div>
+    </UiCard>
+
     <div class="config-actions">
       <UiButton :loading="saving" @click="save">Save configuration</UiButton>
       <span v-if="dirty" class="config-dirty" role="status">● Unsaved changes</span>
@@ -729,7 +866,6 @@ watch(confirmOpen, (open) => {
   flex-wrap: wrap;
 }
 
-.alias-picker,
 .limit-group {
   margin: var(--space-4) 0 0;
   padding: var(--space-4) 0 0;
@@ -737,7 +873,6 @@ watch(confirmOpen, (open) => {
   border-top: 1px solid var(--color-border);
 }
 
-.alias-picker legend,
 .limit-group legend {
   padding: 0 var(--space-2);
   color: var(--color-text-muted);
@@ -745,20 +880,8 @@ watch(confirmOpen, (open) => {
   font-weight: 600;
 }
 
-.alias-picker {
-  display: flex;
-  gap: var(--space-4);
-  flex-wrap: wrap;
-}
-
-.alias-option {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  font-family: var(--font-mono);
-}
-
-.limit-groups {
+.limit-groups,
+.parameter-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
   gap: var(--space-4);
@@ -768,6 +891,11 @@ watch(confirmOpen, (open) => {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+}
+
+.parameter-row {
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--color-border);
 }
 
 .config-actions {

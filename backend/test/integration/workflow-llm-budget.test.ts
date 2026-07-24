@@ -210,18 +210,17 @@ describe('workflow LLM budget exhaustion (Docker)', () => {
       { kind: 'builtin-naive' },
       { kind: 'builtin-naive' },
     ]
-    const run = await storage.createRunWithSchedule(
-      season.id,
-      'operator',
-      [submissionRef],
-      seeds.map((seed, gameIndex) => ({
+    const run = await storage.createRunWithSchedule(season.id, 'operator', () => ({
+      parametersSnapshot: { seats: 4 },
+      scheduledGames: seeds.map((seed, gameIndex) => ({
         match_index: 0,
         game_index: gameIndex,
         seed,
         slots,
       })),
-      () => policy,
-    )
+      llmPolicy: policy,
+    }))
+    if (run === undefined) throw new Error('expected a scheduled run')
 
     const terminal = await runToTerminal(runner, run.id)
     expect(terminal.status).toBe('completed')

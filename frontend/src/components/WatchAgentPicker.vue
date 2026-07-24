@@ -5,16 +5,17 @@
   run. Regular users receive numbered anonymous rows plus their own rating state; operators
   additionally receive owner/source details.
 
-  Clicking any row — built-in Naive or a submitted agent — opens the same watch configuration dialog
-  for a multi-seat environment, preselecting that agent into every seat (SeatAssignmentDialog), where
-  the viewer assigns an agent to each seat and a seed before starting. A single-slot environment keeps
-  the Stage 5 shape: the row starts a scripted watch run immediately, now expressed as a one-seat
-  `slots` assignment. The post-session panel takes the rating after the run. An anonymous visitor sees
-  the same actions, but clicking one routes to the sign-in page instead of starting a run; a signed-in
-  but still-pending account browses without actions and sees the awaiting-approval notice.
+  Clicking any row, built-in Naive or a submitted agent, opens the same watch configuration dialog for
+  a multi-seat environment, preselecting that agent into every seat (SeatAssignmentDialog). A Rate
+  action locks the selected agent and every session setting so the resulting feedback applies to the
+  intended agent. Watch actions keep the configuration editable. A single-slot environment with no
+  visible settings starts a scripted watch run immediately, expressed as a one-seat `slots`
+  assignment. The post-session panel takes the rating after the run. An anonymous visitor sees the
+  same actions, but clicking one routes to the sign-in page instead of starting a run; a signed-in but
+  still-pending account browses without actions and sees the awaiting-approval notice.
 -->
 <script setup lang="ts">
-import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
+import type { EnvironmentMeta, ParameterValue } from '@game-sandbox/schema/environment'
 import { computed, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 
@@ -26,6 +27,7 @@ import {
 } from '../api/client.js'
 import { maskedSubmissionLabel } from '../lib/attribution.js'
 import { handleSessionStartResult } from '../lib/session-start.js'
+import { resolvedSeatCount, visibleParameters } from '../lib/parameters.js'
 import { canParticipate, isAdmin, useMe } from '../me.js'
 import SeatAssignmentDialog from './SeatAssignmentDialog.vue'
 import UiBadge from './ui/UiBadge.vue'
@@ -38,6 +40,9 @@ const props = defineProps<{
   meta: EnvironmentMeta
   /** The play-open season's active `ready` agents, fetched once by the hub; null while it loads. */
   agents: WatchAgentSummary[] | null
+  seasonId: string
+  parameters: Record<string, ParameterValue>
+  seasonLabel?: string
 }>()
 
 const router = useRouter()
@@ -54,9 +59,11 @@ const starting = ref<string | null>(null)
 
 // The watch configuration dialog's state (multi-seat environments only). It opens with the clicked
 // agent preselected into every seat, which the viewer can change before starting.
-const multiSeat = computed(() => props.meta.max_slots > 1)
+const multiSeat = computed(() => resolvedSeatCount(props.meta.parameters, props.parameters, props.meta.max_slots) > 1)
+const needsConfiguration = computed(() => multiSeat.value || visibleParameters(props.meta.parameters).length > 0)
 const dialogOpen = ref(false)
 const dialogPreselect = ref<SlotAssignmentInput | null>(null)
+const dialogMode = ref<'rate' | 'watch'>('watch')
 
 // An anonymous visitor keeps the watch/rate actions as the entry point into signing in: clicking
 // one routes to /login instead of starting a run (which the backend would refuse anyway). Only a
@@ -84,31 +91,40 @@ function actionLabel(agent: WatchAgentSummary): string {
 
 /** Watch a submitted agent: open the seat dialog (multi-seat) or start a one-seat run immediately. */
 function watch(agent: WatchAgentSummary): void {
-  chooseAgent({ kind: 'submission', submissionId: agent.submission_id }, agent.submission_id)
+  chooseAgent(
+    { kind: 'submission', submissionId: agent.submission_id },
+    agent.submission_id,
+    agent.rating_status === 'unrated' ? 'rate' : 'watch',
+  )
 }
 
 /** Watch the built-in Naive agent: a scripted run with no submission. */
 function watchBuiltin(): void {
-  chooseAgent({ kind: 'builtin-agent' }, BUILTIN_KEY)
+  chooseAgent({ kind: 'builtin-agent' }, BUILTIN_KEY, 'watch')
 }
 
 /**
- * A clicked agent row resolves to a seat assignment. A multi-seat environment opens the watch dialog
- * with that agent preselected into every seat; a single-slot environment skips the dialog and starts
- * the scripted run right away, as the Stage 5 watch flow did.
+ * A clicked agent row resolves to a seat assignment and intent. A configurable environment opens the
+ * dialog with that agent preselected into every seat; a fixed single-slot environment skips the
+ * dialog and starts the scripted run right away, as the Stage 5 watch flow did.
  */
-function chooseAgent(preselect: SlotAssignmentInput, loadingKey: string): void {
+function chooseAgent(
+  preselect: SlotAssignmentInput,
+  loadingKey: string,
+  mode: 'rate' | 'watch',
+): void {
   if (anonymous.value) {
     void router.push('/login')
     return
   }
-  if (multiSeat.value) {
+  if (needsConfiguration.value) {
     dialogPreselect.value = preselect
+    dialogMode.value = mode
     startError.value = null
     dialogOpen.value = true
     return
   }
-  void startRun({ slots: { player_0: preselect } }, loadingKey)
+  void startRun({ slots: { player_0: preselect }, seasonId: props.seasonId, parameters: props.parameters }, loadingKey)
 }
 
 /**
@@ -187,16 +203,20 @@ async function startRun(payload: StartPayload, loadingKey?: string): Promise<voi
     </UiEmptyState>
     <p v-if="startError !== null" class="agent-error" role="alert">{{ startError }}</p>
 
-    <!-- The watch configuration dialog for a multi-seat environment: assign an agent to every seat,
-         the clicked agent preselected, then start the scripted run from the composed `slots`. -->
-    <UiDialog v-model:open="dialogOpen" :title="`Watch ${meta.display_name}`">
+    <!-- Rate locks the selected agent and all settings. Watch keeps the same configuration editable. -->
+    <UiDialog
+      v-model:open="dialogOpen"
+      :title="`${dialogMode === 'rate' ? 'Rate' : 'Watch'} ${meta.display_name}${seasonLabel ? `: ${seasonLabel}` : ''}`"
+    >
       <SeatAssignmentDialog
         v-if="dialogOpen && dialogPreselect !== null"
         :meta="meta"
         :agents="agents ?? []"
-        mode="watch"
+        :mode="dialogMode"
         :preselect="dialogPreselect"
         :is-operator="isAdmin(me.me)"
+        :season-id="seasonId"
+        :parameters="parameters"
         @start="startRun"
         @cancel="dialogOpen = false"
       />

@@ -4,7 +4,7 @@
   "title": "RecordingHeader",
   "description": "Line 1 of every recording and the first frame of the Stage 3 live stream. Position, not a type field, distinguishes it from state lines.",
   "type": "object",
-  "required": ["schema_version", "environment"],
+  "required": ["schema_version", "environment", "parameters"],
   "additionalProperties": true,
   "properties": {
     "schema_version": {
@@ -14,6 +14,21 @@
     "environment": {
       "type": "string",
       "description": "Name of the environment that produced this recording."
+    },
+    "parameters": {
+      "type": "object",
+      "description": "Complete resolved environment parameter map used by this episode.",
+      "additionalProperties": {
+        "oneOf": [
+          { "type": "boolean" },
+          { "type": "number" },
+          { "type": "string" },
+          {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        ]
+      }
     },
     "created_at": {
       "type": "string",

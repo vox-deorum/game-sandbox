@@ -204,7 +204,11 @@ describe('ReplayPage', () => {
     vi.mocked(listRecordings).mockResolvedValue([
       {
         id: 'rec-1',
-        header: { schema_version: 1, environment: 'flappy_bird' },
+        header: {
+          schema_version: 1,
+          environment: 'flappy_bird',
+          parameters: { seats: 1, pipe_gap: 100 },
+        },
         user_id: 'dev-user',
         created_at: '2026-06-11T00:00:00.000Z',
         pinned: false,
@@ -226,7 +230,11 @@ describe('ReplayPage', () => {
     vi.mocked(listRecordings).mockResolvedValue([
       {
         id: 'rec-1',
-        header: { schema_version: 1, environment: 'flappy_bird' },
+        header: {
+          schema_version: 1,
+          environment: 'flappy_bird',
+          parameters: { seats: 1, pipe_gap: 100 },
+        },
         user_id: 'dev-user',
         created_at: '2026-06-11T00:00:00.000Z',
         pinned: false,
@@ -253,7 +261,11 @@ describe('ReplayPage', () => {
     vi.mocked(listRecordings).mockResolvedValue([
       {
         id: 'rec-1',
-        header: { schema_version: 1, environment: 'flappy_bird' },
+        header: {
+          schema_version: 1,
+          environment: 'flappy_bird',
+          parameters: { seats: 1, pipe_gap: 100 },
+        },
         user_id: 'dev-user',
         created_at: '2026-06-11T00:00:00.000Z',
         pinned: false,
@@ -276,7 +288,11 @@ describe('ReplayPage', () => {
     vi.mocked(listRecordings).mockResolvedValue([
       {
         id: 'rec-1',
-        header: { schema_version: 1, environment: 'flappy_bird' },
+        header: {
+          schema_version: 1,
+          environment: 'flappy_bird',
+          parameters: { seats: 1, pipe_gap: 100 },
+        },
         user_id: 'someone-else',
         created_at: '2026-06-11T00:00:00.000Z',
         pinned: false,
@@ -302,7 +318,11 @@ describe('ReplayPage', () => {
     vi.mocked(listRecordings).mockResolvedValue([
       {
         id: 'rec-1',
-        header: { schema_version: 1, environment: 'flappy_bird' },
+        header: {
+          schema_version: 1,
+          environment: 'flappy_bird',
+          parameters: { seats: 1, pipe_gap: 100 },
+        },
         user_id: 'someone-else',
         created_at: '2026-06-11T00:00:00.000Z',
         pinned: false,
@@ -320,7 +340,11 @@ describe('ReplayPage', () => {
     vi.mocked(listRecordings).mockResolvedValue([
       {
         id: 'rec-1',
-        header: { schema_version: 1, environment: 'flappy_bird' },
+        header: {
+          schema_version: 1,
+          environment: 'flappy_bird',
+          parameters: { seats: 1, pipe_gap: 100 },
+        },
         user_id: 'someone-else',
         user_name: 'Someone Else',
         created_at: '2026-06-11T00:00:00.000Z',
@@ -341,7 +365,11 @@ describe('ReplayPage', () => {
     vi.mocked(listRecordings).mockResolvedValue([
       {
         id: 'rec-1',
-        header: { schema_version: 1, environment: 'flappy_bird' },
+        header: {
+          schema_version: 1,
+          environment: 'flappy_bird',
+          parameters: { seats: 1, pipe_gap: 100 },
+        },
         user_id: 'someone-else',
         created_at: '2026-06-11T00:00:00.000Z',
         pinned: false,
@@ -371,7 +399,11 @@ describe('ReplayPage', () => {
     vi.mocked(listRecordings).mockResolvedValue([
       {
         id: 'rec-1',
-        header: { schema_version: 1, environment: 'flappy_bird' },
+        header: {
+          schema_version: 1,
+          environment: 'flappy_bird',
+          parameters: { seats: 1, pipe_gap: 100 },
+        },
         user_id: 'someone-else',
         user_name: 'Someone Else',
         created_at: '2026-06-11T00:00:00.000Z',
@@ -397,7 +429,11 @@ describe('ReplayPage', () => {
     vi.mocked(listRecordings).mockResolvedValue([
       {
         id: 'rec-1',
-        header: { schema_version: 1, environment: 'flappy_bird' },
+        header: {
+          schema_version: 1,
+          environment: 'flappy_bird',
+          parameters: { seats: 1, pipe_gap: 100 },
+        },
         user_id: 'someone-else',
         user_name: 'Someone Else',
         created_at: '2026-06-11T00:00:00.000Z',
@@ -429,7 +465,11 @@ describe('ReplayPage', () => {
     vi.mocked(listRecordings).mockResolvedValue([
       {
         id: 'rec-1',
-        header: { schema_version: 1, environment: 'flappy_bird' },
+        header: {
+          schema_version: 1,
+          environment: 'flappy_bird',
+          parameters: { seats: 1, pipe_gap: 100 },
+        },
         user_id: 'maya-fledgling',
         created_at: '2026-06-11T00:00:00.000Z',
         pinned: false,
@@ -463,7 +503,11 @@ describe('ReplayPage', () => {
     vi.mocked(listRecordings).mockResolvedValue([
       {
         id: 'rec-1',
-        header: { schema_version: 1, environment: 'flappy_bird' },
+        header: {
+          schema_version: 1,
+          environment: 'flappy_bird',
+          parameters: { seats: 1, pipe_gap: 100 },
+        },
         user_id: 'someone-else',
         created_at: '2026-06-11T00:00:00.000Z',
         pinned: false,
@@ -497,7 +541,11 @@ describe('ReplayPage', () => {
     vi.mocked(listRecordings).mockResolvedValue([
       {
         id: 'rec-1',
-        header: { schema_version: 1, environment: 'flappy_bird' },
+        header: {
+          schema_version: 1,
+          environment: 'flappy_bird',
+          parameters: { seats: 1, pipe_gap: 100 },
+        },
         user_id: 'someone-else',
         created_at: '2026-06-11T00:00:00.000Z',
         pinned: false,
@@ -522,7 +570,11 @@ describe('ReplayPage', () => {
     vi.mocked(listRecordings).mockResolvedValue([
       {
         id: 'rec-1',
-        header: { schema_version: 1, environment: 'flappy_bird' },
+        header: {
+          schema_version: 1,
+          environment: 'flappy_bird',
+          parameters: { seats: 1, pipe_gap: 100 },
+        },
         user_id: 'someone-else',
         user_name: 'dev-user',
         created_at: '2026-06-11T00:00:00.000Z',

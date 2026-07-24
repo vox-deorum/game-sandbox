@@ -8,8 +8,9 @@
   baseline is the default agent (always available, even with no submissions), so a full, valid
   assignment always exists and Start stays enabled.
 
+  - Rate mode: every seat is preselected to the intended agent and all configuration stays disabled.
   - Watch mode: every seat is an agent dropdown. Opening from an agent row preselects that agent into
-    every seat (the parent passes it as `preselect`); the user then changes individual seats.
+    every seat (the parent passes it as `preselect`); the user may change individual seats.
   - Play mode: the connected human seats at the first human-capable seat by default and the rest default
     to Naive. Each non-human row has a "Sit here" button that moves the human to it, exactly one human
     at a time; the vacated row falls back to the Naive default agent.
@@ -18,13 +19,15 @@
   It emits `start` with the resolved `slots` and the supported session overrides, and `cancel`.
 -->
 <script setup lang="ts">
-import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
-import { computed, reactive, ref } from 'vue'
+import type { EnvironmentMeta, ParameterValue } from '@game-sandbox/schema/environment'
+import { computed, reactive, ref, watch } from 'vue'
 
 import type { SlotAssignmentInput, StartPayload, WatchAgentSummary } from '../api/client.js'
 import { maskedSubmissionLabel } from '../lib/attribution.js'
 import { shortId } from '../lib/format.js'
 import { optionalNumber } from '../lib/forms.js'
+import { initializeParameters, resolvedSeatCount } from '../lib/parameters.js'
+import ParameterFields from './ParameterFields.vue'
 import UiButton from './ui/UiButton.vue'
 import UiField from './ui/UiField.vue'
 import UiInput from './ui/UiInput.vue'
@@ -34,12 +37,14 @@ const props = defineProps<{
   meta: EnvironmentMeta
   /** The play-open season's active `ready` submissions, the seat dropdowns' submitted-agent options. */
   agents: WatchAgentSummary[]
-  /** Watch assigns agents to every seat; play seats one connected human among agents. */
-  mode: 'watch' | 'play'
+  /** Rate locks one intended agent; watch assigns agents; play seats one connected human. */
+  mode: 'rate' | 'watch' | 'play'
   /** The clicked agent to preselect into every seat (watch only); defaults to the Naive baseline. */
   preselect?: SlotAssignmentInput
   /** Operators see owner/source labels for submitted agents; everyone else sees anonymous numbers. */
   isOperator?: boolean
+  seasonId: string
+  parameters: Record<string, ParameterValue>
 }>()
 
 const emit = defineEmits<{
@@ -63,7 +68,10 @@ function decodeAgent(value: string): SlotAssignmentInput {
 }
 
 // The required seats are player_0 … player_{max_slots-1}, the same ids the backend validates against.
-const slotIds = Array.from({ length: props.meta.max_slots }, (_, i) => `player_${i}`)
+const parameters = ref(initializeParameters(props.meta.parameters, props.parameters))
+const parametersValid = ref(true)
+const seatCount = computed(() => resolvedSeatCount(props.meta.parameters, parameters.value, props.meta.max_slots))
+const slotIds = computed(() => Array.from({ length: seatCount.value }, (_, i) => `player_${i}`))
 
 // The seats a connected human may occupy, per the environment metadata. Hearts marks all four; a
 // restricted environment may mark only some, so the human default and the "Sit here" affordance must
@@ -73,13 +81,22 @@ const humanCapable = new Set(props.meta.human_slots)
 // Every seat carries a concrete agent under it; the human (play only) simply overrides whichever seat
 // `humanSlot` names. Watch preselects the clicked agent into every seat; play defaults every seat to
 // the Naive baseline and seats the human at the first human-capable seat. There is never an empty seat.
-const defaultAgent = props.mode === 'watch' ? encodeAgent(props.preselect ?? { kind: 'builtin-agent' }) : BUILTIN
+const defaultAgent =
+  props.mode === 'play' ? BUILTIN : encodeAgent(props.preselect ?? { kind: 'builtin-agent' })
 const agentChoice = reactive<Record<string, string>>(
-  Object.fromEntries(slotIds.map((slotId) => [slotId, defaultAgent])),
+  Object.fromEntries(slotIds.value.map((slotId) => [slotId, defaultAgent])),
 )
 const humanSlot = ref<string | null>(
-  props.mode === 'play' ? (slotIds.find((slotId) => humanCapable.has(slotId)) ?? null) : null,
+  props.mode === 'play' ? (slotIds.value.find((slotId) => humanCapable.has(slotId)) ?? null) : null,
 )
+
+watch(slotIds, (ids) => {
+  for (const slotId of ids) if (agentChoice[slotId] === undefined) agentChoice[slotId] = BUILTIN
+  for (const slotId of Object.keys(agentChoice)) if (!ids.includes(slotId)) delete agentChoice[slotId]
+  if (props.mode === 'play' && (humanSlot.value === null || !ids.includes(humanSlot.value))) {
+    humanSlot.value = ids.find((slotId) => humanCapable.has(slotId)) ?? null
+  }
+})
 
 function isHuman(slotId: string): boolean {
   return humanSlot.value === slotId
@@ -143,10 +160,11 @@ const canStart = computed(() => {
   if (props.mode === 'play' && humanSlot.value === null) {
     return false
   }
-  return slotIds.every((slotId) => isHuman(slotId) || seatValue(slotId) !== '')
+  return parametersValid.value && slotIds.value.every((slotId) => isHuman(slotId) || seatValue(slotId) !== '')
 })
 
 const isPaced = props.meta.pace_interval_ms !== null
+const configurationLocked = computed(() => props.mode === 'rate')
 // The move clock is meaningful only with a connected human, so watch (all-agent) shows seed alone.
 const showTimeout = props.mode === 'play'
 
@@ -158,10 +176,15 @@ const timeout = ref<string | number>(
     : '',
 )
 
-const intro = computed(() =>
-  props.mode === 'watch' ? 'Assign an agent to each seat.' : 'Pick your seat; assign agents to the rest.',
-)
-const startLabel = computed(() => (props.mode === 'watch' ? 'Start watching' : 'Start playing'))
+const intro = computed(() => {
+  if (props.mode === 'rate') {
+    return 'This rating run uses the selected agent and season settings.'
+  }
+  return props.mode === 'watch'
+    ? 'Assign an agent to each seat.'
+    : 'Pick your seat; assign agents to the rest.'
+})
+const startLabel = computed(() => (props.mode === 'play' ? 'Start playing' : 'Start watching'))
 const timeoutLabel = computed(() => (isPaced ? 'Per-step input window (ms)' : 'Move time limit (ms)'))
 const timeoutHint = computed(() =>
   isPaced
@@ -175,10 +198,12 @@ function onSubmit(): void {
     return
   }
   const slots: Record<string, SlotAssignmentInput> = {}
-  for (const slotId of slotIds) {
+  for (const slotId of slotIds.value) {
     slots[slotId] = isHuman(slotId) ? { kind: 'human' } : decodeAgent(seatValue(slotId))
   }
   emit('start', {
+    seasonId: props.seasonId,
+    parameters: parameters.value,
     slots,
     seed: optionalNumber(seed.value),
     humanSlotTimeoutMs: props.mode === 'play' ? optionalNumber(timeout.value) : undefined,
@@ -190,63 +215,75 @@ function onSubmit(): void {
   <form class="seat-form" @submit.prevent="onSubmit">
     <p class="seat-intro">{{ intro }}</p>
 
-    <ul class="seat-list">
-      <li v-for="(slotId, index) in slotIds" :key="slotId" class="seat-row">
-        <span :id="`${slotId}-label`" class="seat-label">Seat {{ index + 1 }}</span>
-        <div class="seat-control">
-          <template v-if="isHuman(slotId)">
-            <span class="seat-you">You</span>
-            <span class="seat-seated">seated</span>
-          </template>
-          <template v-else>
-            <UiSelect
-              :model-value="seatValue(slotId)"
-              :aria-labelledby="`${slotId}-label`"
-              @update:model-value="(value: string) => setSeat(slotId, value)"
-            >
-              <option v-for="option in agentOptions" :key="option.value" :value="option.value">
-                {{ option.label }}
-              </option>
-            </UiSelect>
-            <UiButton
-              v-if="canSitHere(slotId)"
-              type="button"
-              variant="ghost"
-              size="tight"
-              @click="sitHere(slotId)"
-            >
-              Sit here
-            </UiButton>
-          </template>
-        </div>
-      </li>
-    </ul>
+    <fieldset
+      class="seat-configuration"
+      :disabled="configurationLocked"
+      aria-label="Session configuration"
+    >
+      <ParameterFields
+        v-model="parameters"
+        :declarations="meta.parameters"
+        @validity="parametersValid = $event"
+      />
 
-    <UiField label="Seed (optional)" hint="Leave blank for a random seed.">
-      <template #default="{ id, describedby }">
-        <UiInput
-          :id="id"
-          v-model="seed"
-          type="number"
-          min="0"
-          placeholder="random"
-          :aria-describedby="describedby"
-        />
-      </template>
-    </UiField>
+      <ul class="seat-list">
+        <li v-for="(slotId, index) in slotIds" :key="slotId" class="seat-row">
+          <span :id="`${slotId}-label`" class="seat-label">Seat {{ index + 1 }}</span>
+          <div class="seat-control">
+            <template v-if="isHuman(slotId)">
+              <span class="seat-you">You</span>
+              <span class="seat-seated">seated</span>
+            </template>
+            <template v-else>
+              <UiSelect
+                :model-value="seatValue(slotId)"
+                :aria-labelledby="`${slotId}-label`"
+                @update:model-value="(value: string) => setSeat(slotId, value)"
+              >
+                <option v-for="option in agentOptions" :key="option.value" :value="option.value">
+                  {{ option.label }}
+                </option>
+              </UiSelect>
+              <UiButton
+                v-if="canSitHere(slotId)"
+                type="button"
+                variant="ghost"
+                size="tight"
+                @click="sitHere(slotId)"
+              >
+                Sit here
+              </UiButton>
+            </template>
+          </div>
+        </li>
+      </ul>
 
-    <UiField v-if="showTimeout" :label="timeoutLabel" :hint="timeoutHint">
-      <template #default="{ id, describedby }">
-        <UiInput
-          :id="id"
-          v-model="timeout"
-          type="number"
-          min="0"
-          :placeholder="isPaced ? String(meta.pace_interval_ms) : 'default'"
-          :aria-describedby="describedby"
-        />
-      </template>
-    </UiField>
+      <UiField label="Seed (optional)" hint="Leave blank for a random seed.">
+        <template #default="{ id, describedby }">
+          <UiInput
+            :id="id"
+            v-model="seed"
+            type="number"
+            min="0"
+            placeholder="random"
+            :aria-describedby="describedby"
+          />
+        </template>
+      </UiField>
+
+      <UiField v-if="showTimeout" :label="timeoutLabel" :hint="timeoutHint">
+        <template #default="{ id, describedby }">
+          <UiInput
+            :id="id"
+            v-model="timeout"
+            type="number"
+            min="0"
+            :placeholder="isPaced ? String(meta.pace_interval_ms) : 'default'"
+            :aria-describedby="describedby"
+          />
+        </template>
+      </UiField>
+    </fieldset>
 
     <div class="seat-form-actions">
       <UiButton type="submit" :disabled="!canStart">{{ startLabel }}</UiButton>
@@ -266,6 +303,15 @@ function onSubmit(): void {
   margin: 0;
   color: var(--color-text-muted);
   font-size: var(--text-sm);
+}
+
+.seat-configuration {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  border: 0;
 }
 
 .seat-list {

@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { RecordingsStore } from '../src/recordings.js'
 
 const HEADER =
-  '{"created_at":"2026-06-11T00:00:00+00:00","environment":"flappy_bird","schema_version":1,"seed":0}'
+  '{"created_at":"2026-06-11T00:00:00+00:00","environment":"flappy_bird","parameters":{"seats":1,"pipe_gap":100},"schema_version":1,"seed":0}'
 const STATE = '{"schema_version":1,"tick":0,"agents":{},"timing":{"started_at":1,"duration_ms":1}}'
 const WIN_STATE = JSON.stringify({
   schema_version: 1,

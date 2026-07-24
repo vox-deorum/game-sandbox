@@ -101,7 +101,7 @@ def generate_typescript() -> None:
 
 
 def generate_fixtures() -> None:
-    """Write the golden recordings the TypeScript test suite reads back.
+    """Write the golden recordings and parameter cases the TypeScript suite reads back.
 
     The valid fixtures go through the real FolderRecordingStore (validating on write), so
     they provably come from current Python code. The deliberately-broken bumped-version
@@ -138,6 +138,7 @@ def generate_fixtures() -> None:
         "two-step",
         build_header(
             environment="flappy",
+            parameters={"seats": 1, "pipe_gap": 100},
             seed=7,
             players={"player_0": {"kind": "agent", "label": "Naive agent"}},
         ),
@@ -152,6 +153,7 @@ def generate_fixtures() -> None:
         "chatty",
         build_header(
             environment="spades",
+            parameters={"seats": 4},
             seed=7,
             players={
                 "player_0": {"kind": "agent", "label": "Signaler"},
@@ -185,6 +187,7 @@ def generate_fixtures() -> None:
         "unknown-sidecar",
         build_header(
             environment="flappy",
+            parameters={"seats": 1, "pipe_gap": 100},
             seed=7,
             sidecars=[{"name": "future-telemetry", "path": "telemetry.jsonl"}],
         ),
@@ -195,7 +198,11 @@ def generate_fixtures() -> None:
     #    raw because the store validates on write and would refuse schema_version 2.
     bumped_dir = FIXTURES_DIR / "bumped-version"
     bumped_dir.mkdir(parents=True, exist_ok=True)
-    bumped_header = {"schema_version": 2, "environment": "flappy"}
+    bumped_header = {
+        "schema_version": 2,
+        "environment": "flappy",
+        "parameters": {"seats": 1, "pipe_gap": 100},
+    }
     bumped_state = {
         "schema_version": 2,
         "tick": 0,
@@ -207,6 +214,140 @@ def generate_fixtures() -> None:
         + "\n"
         + json.dumps(bumped_state, separators=(",", ":"), sort_keys=True)
         + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    parameter_values = {
+        "declarations": [
+            {
+                "name": "seats",
+                "title": "Seats",
+                "description": "Number of seats in each game.",
+                "type": "int",
+                "default": 4,
+                "min": 1,
+                "max": 4,
+            },
+            {
+                "name": "pipe_gap",
+                "title": "Pipe gap",
+                "description": "Vertical space between pipes.",
+                "type": "int",
+                "default": 100,
+                "min": 1,
+                "max": 9007199254740991,
+            },
+            {
+                "name": "gravity",
+                "title": "Gravity",
+                "description": "Downward acceleration.",
+                "type": "float",
+                "default": 1.5,
+                "min": 0.0,
+                "max": 10.0,
+            },
+            {
+                "name": "label",
+                "title": "Label",
+                "description": "A free-form label.",
+                "type": "string",
+                "default": "default",
+            },
+            {
+                "name": "enabled",
+                "title": "Enabled",
+                "description": "Whether the option is active.",
+                "type": "bool",
+                "default": False,
+            },
+            {
+                "name": "mode",
+                "title": "Mode",
+                "description": "One gameplay mode.",
+                "type": "choice",
+                "default": "normal",
+                "choices": [
+                    {"value": "easy", "label": "Easy"},
+                    {"value": "normal", "label": "Normal"},
+                    {"value": "hard", "label": "Hard"},
+                ],
+            },
+            {
+                "name": "powerups",
+                "title": "Power-ups",
+                "description": "Enabled power-ups.",
+                "type": "multi_choice",
+                "default": ["shield"],
+                "choices": [
+                    {"value": "shield", "label": "Shield"},
+                    {"value": "boost", "label": "Boost"},
+                    {"value": "magnet", "label": "Magnet"},
+                ],
+            },
+        ],
+        "validation_cases": [
+            {"name": "seats", "value": 1, "valid": True, "normalized": 1},
+            {"name": "seats", "value": 4, "valid": True, "normalized": 4},
+            {"name": "seats", "value": 5, "valid": False},
+            {"name": "pipe_gap", "value": 9007199254740991, "valid": True, "normalized": 9007199254740991},
+            {"name": "pipe_gap", "value": 9007199254740992, "valid": False},
+            {"name": "pipe_gap", "value": 1.5, "valid": False},
+            {"name": "pipe_gap", "value": True, "valid": False},
+            {"name": "gravity", "value": 0, "valid": True, "normalized": 0.0},
+            {"name": "gravity", "value": 2.25, "valid": True, "normalized": 2.25},
+            {"name": "gravity", "value": 10.1, "valid": False},
+            {"name": "gravity", "value": True, "valid": False},
+            {"name": "label", "value": "", "valid": True, "normalized": ""},
+            {"name": "label", "value": 1, "valid": False},
+            {"name": "enabled", "value": True, "valid": True, "normalized": True},
+            {"name": "enabled", "value": False, "valid": True, "normalized": False},
+            {"name": "enabled", "value": 1, "valid": False},
+            {"name": "mode", "value": "hard", "valid": True, "normalized": "hard"},
+            {"name": "mode", "value": "missing", "valid": False},
+            {
+                "name": "powerups",
+                "value": ["magnet", "shield"],
+                "valid": True,
+                "normalized": ["shield", "magnet"],
+            },
+            {"name": "powerups", "value": [], "valid": True, "normalized": []},
+            {"name": "powerups", "value": ["shield", "shield"], "valid": False},
+            {"name": "powerups", "value": ["missing"], "valid": False},
+        ],
+        "resolution_cases": [
+            {
+                "layers": [
+                    {"seats": 2, "pipe_gap": 120, "powerups": ["magnet", "shield"]},
+                    {"pipe_gap": 140, "enabled": True},
+                ],
+                "values": {
+                    "seats": 2,
+                    "pipe_gap": 140,
+                    "gravity": 1.5,
+                    "label": "default",
+                    "enabled": True,
+                    "mode": "normal",
+                    "powerups": ["shield", "magnet"],
+                },
+                "issue_names": [],
+            },
+            {
+                "layers": [{"unknown": "value", "pipe_gap": 0, "mode": "missing"}],
+                "values": {
+                    "seats": 4,
+                    "pipe_gap": 100,
+                    "gravity": 1.5,
+                    "label": "default",
+                    "enabled": False,
+                    "mode": "normal",
+                    "powerups": ["shield"],
+                },
+                "issue_names": ["mode", "pipe_gap", "unknown"],
+            },
+        ],
+    }
+    (FIXTURES_DIR / "parameter-values.json").write_text(
+        json.dumps(parameter_values, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
         newline="\n",
     )

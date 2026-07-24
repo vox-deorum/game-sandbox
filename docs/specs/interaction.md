@@ -57,6 +57,14 @@ Live sessions may pause, which freezes both stepping and timeout accounting. The
 
 Human slots have a timeout separate from agent compute limits. In real-time games, the cadence is the deadline. In turn-based games, the timeout is a move clock. A session may override the environment default. The interface shows the active value whenever it affects play.
 
+## Starting watch and play sessions
+
+Before opening a start form, the browser loads the play-open season identifier and the complete resolved gameplay parameter map for that environment. When no season is open for play, the endpoint returns pure environment defaults with a null season identifier, but public session start remains unavailable.
+
+The browser retains hidden parameter values, applies visible player edits, and submits the expected season identifier plus the complete map. A missing or unknown parameter is invalid. If another season became play-open while the page was open, session start returns a typed conflict before a session row or container is created. An edit to the same season does not silently replace values already loaded by the player.
+
+Parameter validation happens before slot-shape validation. The resolved `seats` value determines the required slot identifiers and the size of the seat-assignment grid. Growing a future variable-seat grid fills new seats with the built-in Naive agent. Shrinking it keeps the human in the first remaining human-capable seat when possible and otherwise prevents the session from starting.
+
 ## Human input
 
 An environment may expose human-capable slots. Its renderer can accept:

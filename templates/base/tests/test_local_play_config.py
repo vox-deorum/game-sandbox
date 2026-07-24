@@ -87,7 +87,7 @@ def test_local_runner_passes_stdin_to_the_harness_run_seam(monkeypatch, tmp_path
     env.META = SimpleNamespace(env_id="fake")
     env.default_action = lambda environment, slot_id: 0
     env.extract_overlay = lambda environment: {}
-    env.make_env = lambda: object()
+    env.make_env = lambda _parameters: object()
     monkeypatch.delitem(sys.modules, "sandbox.live_local", raising=False)
     monkeypatch.setitem(sys.modules, "sandbox.env", env)
     live_local = importlib.import_module("sandbox.live_local")
@@ -101,6 +101,7 @@ def test_local_runner_passes_stdin_to_the_harness_run_seam(monkeypatch, tmp_path
     monkeypatch.setattr(live_local, "run", fake_run)
     config = {
         "env_id": live_local.META.env_id,
+        "parameters": {"seats": 1},
         "seed": 0,
         "slots": {"player_0": {"kind": "external"}},
         "players": {"player_0": {"kind": "human", "label": "You"}},

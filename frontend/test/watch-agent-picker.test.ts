@@ -1,4 +1,4 @@
-import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
+import type { EnvironmentMeta, ParameterValue } from '@game-sandbox/schema/environment'
 import { fireEvent, screen } from '@testing-library/vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -30,12 +30,15 @@ function summary(overrides: Partial<WatchAgentSummary> = {}): WatchAgentSummary 
 async function renderPicker(
   meta: EnvironmentMeta = flappyMeta(),
   agents: WatchAgentSummary[] = [],
+  parameters: Record<string, ParameterValue> = Object.fromEntries(
+    meta.parameters.map((parameter) => [parameter.name, parameter.default]),
+  ),
 ) {
   const router = memoryRouter([
     {
       path: '/environments/:envId',
       component: WatchAgentPicker,
-      props: { envId: meta.env_id, meta, agents },
+      props: { envId: meta.env_id, meta, agents, seasonId: 'season-1', parameters },
     },
     { path: '/sessions/:id', component: SessionStub },
     { path: '/environments/:envId/agents/:ownerId', component: ProfileStub },
@@ -71,11 +74,18 @@ describe('WatchAgentPicker', () => {
     })
     await renderPicker(flappyMeta(), [summary()])
     await fireEvent.click(await screen.findByRole('button', { name: 'Rate' }))
-    // A single-slot environment skips the seat dialog and starts the one-seat assignment immediately.
+    expect(vi.mocked(startSession)).not.toHaveBeenCalled()
+    expect(screen.getByRole('spinbutton', { name: 'Pipe gap' })).toBeDisabled()
+    expect(screen.getByRole('combobox', { name: 'Seat 1' })).toBeDisabled()
+    expect(screen.getByRole('spinbutton', { name: 'Seed (optional)' })).toBeDisabled()
+    await fireEvent.click(screen.getByRole('button', { name: 'Start watching' }))
     expect(vi.mocked(startSession)).toHaveBeenCalledWith({
       envId: 'flappy_bird',
+      seasonId: 'season-1',
+      parameters: { seats: 1, pipe_gap: 100 },
       slots: { player_0: { kind: 'submission', submissionId: 'sub1' } },
       seed: undefined,
+      humanSlotTimeoutMs: undefined,
     })
     expect(await screen.findByText('session sess-9')).toBeInTheDocument()
   })
@@ -92,10 +102,14 @@ describe('WatchAgentPicker', () => {
     // Watching is the non-primary action: only Rate is highlighted, so this stays secondary.
     expect(watchButton).toHaveClass('secondary')
     await fireEvent.click(watchButton)
+    await fireEvent.click(screen.getByRole('button', { name: 'Start watching' }))
     expect(vi.mocked(startSession)).toHaveBeenCalledWith({
       envId: 'flappy_bird',
+      seasonId: 'season-1',
+      parameters: { seats: 1, pipe_gap: 100 },
       slots: { player_0: { kind: 'builtin-agent' } },
       seed: undefined,
+      humanSlotTimeoutMs: undefined,
     })
     expect(await screen.findByText('session sess-naive')).toBeInTheDocument()
   })
@@ -138,6 +152,15 @@ describe('WatchAgentPicker', () => {
     }
   })
 
+  it('keeps configuration editable when watching a rated agent again', async () => {
+    await renderPicker(flappyMeta(), [summary({ rating_status: 'rated' })])
+    await fireEvent.click(await screen.findByRole('button', { name: 'Watch again' }))
+
+    expect(screen.getByRole('spinbutton', { name: 'Pipe gap' })).not.toBeDisabled()
+    expect(screen.getByRole('combobox', { name: 'Seat 1' })).not.toBeDisabled()
+    expect(screen.getByRole('spinbutton', { name: 'Seed (optional)' })).not.toBeDisabled()
+  })
+
   it('opens the watch dialog with the clicked agent preselected for a multi-seat environment', async () => {
     vi.mocked(startSession).mockResolvedValue({
       ok: true,
@@ -153,11 +176,14 @@ describe('WatchAgentPicker', () => {
     )
     for (const seat of seats) {
       expect(seat.value).toBe('submission:sub1')
+      expect(seat).toBeDisabled()
     }
     // Starting from the dialog sends the full four-seat slots assignment and navigates to the session.
     await fireEvent.click(screen.getByRole('button', { name: 'Start watching' }))
     expect(vi.mocked(startSession)).toHaveBeenCalledWith({
       envId: 'hearts',
+      seasonId: 'season-1',
+      parameters: { seats: 4 },
       slots: {
         player_0: { kind: 'submission', submissionId: 'sub1' },
         player_1: { kind: 'submission', submissionId: 'sub1' },

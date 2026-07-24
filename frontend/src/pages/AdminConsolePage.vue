@@ -453,6 +453,7 @@ function closeDevelopmentHistory(): void {
               <SeasonConfigEditor
                 :season="view.season"
                 :environment-messaging-enabled="meta?.messaging"
+                :environment-parameters="meta?.parameters"
                 @changed="refresh"
                 @dirty-change="configDirty = $event"
               />

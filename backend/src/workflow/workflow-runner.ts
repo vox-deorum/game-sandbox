@@ -32,7 +32,7 @@ import {
   RESULT_KIND,
   readRecording,
 } from '@game-sandbox/schema'
-
+import { type ParameterValue, validateCompleteParameters } from '@game-sandbox/schema/environment'
 import type { UserDirectory } from '../auth/users.js'
 import type { ImagePolicy, SandboxDefaults } from '../config.js'
 import type { ExecutionDriver, ExitInfo, ImageRef, SessionProcess } from '../driver/index.js'
@@ -313,6 +313,15 @@ class DockerWorkflowRunner implements WorkflowRunner {
         return
       }
       const config = decodeSeasonConfig(run.config_snapshot)
+      const resolvedParameters = validateCompleteParameters(
+        meta.parameters,
+        run.parameters_snapshot,
+      )
+      if (resolvedParameters.issues.length > 0) {
+        throw new Error(
+          `invalid frozen parameter snapshot: ${resolvedParameters.issues[0]?.name} ${resolvedParameters.issues[0]?.message}`,
+        )
+      }
       const llmPolicy = decodeResolvedOfficialLlmPolicy(run.llm_policy_snapshot)
       await this.deps.storage.setRunStatus(runId, 'running')
       await ensureRecordingsDir(this.deps.recordingsDir)
@@ -323,7 +332,15 @@ class DockerWorkflowRunner implements WorkflowRunner {
           await this.markGameCancelled(runId, game)
           continue
         }
-        await this.runGame(run, meta, config.deps_version, config.overrides, llmPolicy, game)
+        await this.runGame(
+          run,
+          meta,
+          config.deps_version,
+          config.overrides,
+          resolvedParameters.values,
+          llmPolicy,
+          game,
+        )
       }
 
       if (this.cancelRequested.has(runId)) {
@@ -353,6 +370,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
     meta: EnvironmentMeta,
     depsVersion: number,
     overrides: ReturnType<typeof decodeSeasonConfig>['overrides'],
+    parameters: Record<string, ParameterValue>,
     llmPolicy: ResolvedOfficialLlmPolicy,
     game: SeasonRunGame,
   ): Promise<void> {
@@ -424,6 +442,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
         slots,
         recordingId,
         overrides,
+        parameters,
         llmLease?.keys ?? {},
       )
       if (this.cancelRequested.has(runId)) {
@@ -736,6 +755,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
     slots: readonly AgentRef[],
     recordingId: string,
     overrides: ReturnType<typeof decodeSeasonConfig>['overrides'],
+    parameters: Record<string, ParameterValue>,
     llmKeys: Readonly<Record<string, string>>,
   ): Promise<Record<string, unknown>> {
     // Snapshot each submission owner's display name for the recording header at launch time, one
@@ -767,6 +787,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
       human_timeout_ms: null,
       recording_dir: CONTAINER_RECORDINGS_DIR,
       recording_id: recordingId,
+      parameters,
       headless: true,
       players,
       ...assembleLlmLaunchConfig(this.deps.llmInternalPort ?? 1, llmKeys),

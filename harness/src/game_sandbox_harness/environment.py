@@ -13,13 +13,197 @@ the default-action provider, the overlay extractor) and is what an environment r
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass
+import math
+import re
+from collections.abc import Callable, Mapping
+from dataclasses import InitVar, dataclass
 from importlib.metadata import entry_points
-from typing import Any
+from typing import Any, Literal, TypeGuard, cast
 
 #: The entry-point group every environment registers its ``ENTRY`` under.
 ENTRY_POINT_GROUP = "game_sandbox.environments"
+
+# JSON numbers lose integer precision beyond this range in JavaScript, which is part of every
+# environment parameter's public contract.
+_MAX_JSON_SAFE_INTEGER = 2**53 - 1
+_PARAMETER_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
+
+type ParameterValue = bool | int | float | str | list[str]
+"""A JSON-safe environment parameter value."""
+
+
+class EnvParameterValueError(ValueError):
+    """Raised when a parameter value does not satisfy its declaration."""
+
+
+@dataclass(frozen=True)
+class EnvParameterChoice:
+    """One friendly-labelled option for a choice parameter."""
+
+    value: str
+    label: str
+
+    def __post_init__(self) -> None:
+        if not _is_nonempty_string(self.value):
+            raise ValueError("parameter choice value must be a non-empty string")
+        if not _is_nonempty_string(self.label):
+            raise ValueError("parameter choice label must be a non-empty string")
+
+    def to_json(self) -> dict[str, str]:
+        """Return the public wire representation."""
+        return {"value": self.value, "label": self.label}
+
+
+@dataclass(frozen=True)
+class EnvParameter:
+    """A typed, player-facing gameplay parameter declared by an environment."""
+
+    name: str
+    title: str
+    description: str
+    type: Literal["int", "float", "string", "bool", "choice", "multi_choice"]
+    default: ParameterValue
+    min: int | float | None = None
+    max: int | float | None = None
+    choices: tuple[EnvParameterChoice, ...] = ()
+    _allow_reserved: InitVar[bool] = False
+
+    def __post_init__(self, _allow_reserved: bool) -> None:
+        if not _is_parameter_name(self.name):
+            raise ValueError("parameter name must be a snake_case identifier")
+        if self.name == "seats" and not _allow_reserved:
+            raise ValueError("'seats' is reserved for the synthesized seat-count parameter")
+        if not _is_nonempty_string(self.title):
+            raise ValueError("parameter title must be a non-empty string")
+        if not _is_nonempty_string(self.description):
+            raise ValueError("parameter description must be a non-empty string")
+        if self.type not in {"int", "float", "string", "bool", "choice", "multi_choice"}:
+            raise ValueError(f"unsupported parameter type {self.type!r}")
+
+        numeric = self.type in {"int", "float"}
+        if numeric:
+            if self.min is None or self.max is None:
+                raise ValueError(f"{self.type} parameters require min and max")
+            self._validate_numeric_bound(self.min, "min")
+            self._validate_numeric_bound(self.max, "max")
+            if self.min > self.max:
+                raise ValueError("parameter min must be no greater than max")
+        elif self.min is not None or self.max is not None:
+            raise ValueError("only numeric parameters may declare min or max")
+
+        if self.type in {"choice", "multi_choice"}:
+            if not self.choices:
+                raise ValueError("choice parameters require at least one choice")
+            if not all(_is_parameter_choice(choice) for choice in self.choices):
+                raise ValueError("parameter choices must be EnvParameterChoice instances")
+            values = [choice.value for choice in self.choices]
+            if len(values) != len(set(values)):
+                raise ValueError("parameter choice values must be unique")
+        elif self.choices:
+            raise ValueError("only choice parameters may declare choices")
+
+        # Validate the declaration eagerly, including bounds and choice membership.
+        self.validate_value(self.default)
+
+    def _validate_numeric_bound(self, value: int | float, field: str) -> None:
+        if self.type == "int":
+            if not _is_json_safe_integer(value):
+                raise ValueError(f"int parameter {field} must be a JSON-safe integer")
+        elif not _is_finite_number(value):
+            raise ValueError(f"float parameter {field} must be finite")
+
+    def validate_value(self, value: object) -> ParameterValue:
+        """Validate and normalize one supplied value for this declaration."""
+        if self.type == "int":
+            if not _is_json_safe_integer(value):
+                raise EnvParameterValueError(f"{self.name} must be a JSON-safe integer")
+            assert isinstance(self.min, int) and isinstance(self.max, int)
+            if not self.min <= value <= self.max:
+                raise EnvParameterValueError(f"{self.name} must be between {self.min} and {self.max}")
+            return value
+        if self.type == "float":
+            if not _is_finite_number(value):
+                raise EnvParameterValueError(f"{self.name} must be a finite number")
+            assert self.min is not None and self.max is not None
+            normalized = float(value)
+            if not self.min <= normalized <= self.max:
+                raise EnvParameterValueError(f"{self.name} must be between {self.min} and {self.max}")
+            return normalized
+        if self.type == "string":
+            if not isinstance(value, str):
+                raise EnvParameterValueError(f"{self.name} must be a string")
+            return value
+        if self.type == "bool":
+            if not isinstance(value, bool):
+                raise EnvParameterValueError(f"{self.name} must be a boolean")
+            return value
+        values = {choice.value for choice in self.choices}
+        if self.type == "choice":
+            if not isinstance(value, str) or value not in values:
+                raise EnvParameterValueError(f"{self.name} must be a declared choice value")
+            return value
+        if not _is_string_list(value):
+            raise EnvParameterValueError(f"{self.name} must be a list of declared choice values")
+        if len(value) != len(set(value)) or any(item not in values for item in value):
+            raise EnvParameterValueError(f"{self.name} must be unique declared choice values")
+        return [choice.value for choice in self.choices if choice.value in value]
+
+    def to_json(self) -> dict[str, Any]:
+        """Return the snake_case wire representation served by the registry."""
+        value = self.validate_value(self.default)
+        return {
+            "name": self.name,
+            "title": self.title,
+            "description": self.description,
+            "type": self.type,
+            "default": value,
+            "min": self.min,
+            "max": self.max,
+            "choices": [choice.to_json() for choice in self.choices],
+        }
+
+
+def _is_nonempty_string(value: object) -> TypeGuard[str]:
+    return isinstance(value, str) and bool(value)
+
+
+def _is_parameter_name(value: object) -> TypeGuard[str]:
+    return isinstance(value, str) and _PARAMETER_NAME.fullmatch(value) is not None
+
+
+def _is_parameter_choice(value: object) -> TypeGuard[EnvParameterChoice]:
+    return isinstance(value, EnvParameterChoice)
+
+
+def _is_string_list(value: object) -> TypeGuard[list[str]]:
+    return isinstance(value, list) and all(isinstance(item, str) for item in cast("list[object]", value))
+
+
+def _is_json_safe_integer(value: object) -> TypeGuard[int]:
+    return isinstance(value, int) and not isinstance(value, bool) and abs(value) <= _MAX_JSON_SAFE_INTEGER
+
+
+def _is_finite_number(value: object) -> TypeGuard[int | float]:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    try:
+        return math.isfinite(float(value))
+    except OverflowError:
+        return False
+
+
+def _seat_count_parameter(min_slots: int, max_slots: int) -> EnvParameter:
+    """Build the reserved declaration derived from environment slot bounds."""
+    return EnvParameter(
+        name="seats",
+        title="Seats",
+        description="Number of seats in each game.",
+        type="int",
+        default=max_slots,
+        min=min_slots,
+        max=max_slots,
+        _allow_reserved=True,
+    )
 
 
 @dataclass(frozen=True)
@@ -62,6 +246,15 @@ class EnvironmentMeta:
     #: env like Flappy Bird keeps) means "render every frame on arrival" — today's behaviour. Distinct
     #: from ``view_interval_ms`` (spectator/replay pace, typically slower) and never affects scoring.
     live_interval_ms: int | None = None
+    #: Explicit gameplay parameters. The public ``seats`` parameter is synthesized from slot bounds.
+    parameters: tuple[EnvParameter, ...] = ()
+
+    def __post_init__(self) -> None:
+        names = [parameter.name for parameter in self.parameters]
+        if len(names) != len(set(names)):
+            raise ValueError("environment parameter names must be unique")
+        if "seats" in names:
+            raise ValueError("'seats' is synthesized from min_slots and max_slots")
 
     def to_json(self) -> dict[str, Any]:
         """Return the snake_case JSON-serialisable dict the backend serves verbatim."""
@@ -84,6 +277,7 @@ class EnvironmentMeta:
             "seat_order_matters": self.seat_order_matters,
             "view_interval_ms": self.view_interval_ms,
             "live_interval_ms": self.live_interval_ms,
+            "parameters": [parameter.to_json() for parameter in effective_parameters(self)],
         }
 
 
@@ -92,8 +286,8 @@ class EnvironmentEntry:
     """A full environment registration: metadata plus the harness-facing hooks.
 
     - ``meta`` is the pure data above.
-    - ``make`` is a zero-argument factory returning a fresh AEC env; the seed arrives at
-      ``reset``, not here, so a factory can be called once per episode.
+    - ``make`` receives a fully resolved parameter map and returns a fresh AEC env; the seed
+      arrives at ``reset``, not here, so a factory can be called once per episode.
     - ``default_action(env, slot_id)`` returns the concrete legal action, in that env's action
       space, the loop applies on every timeout path. Passing the live env lets a provider read
       current state (Hearts' lowest legal card, Spades' suggested bid) so the recording holds the
@@ -102,9 +296,32 @@ class EnvironmentEntry:
     """
 
     meta: EnvironmentMeta
-    make: Callable[[], Any]
+    make: Callable[[Mapping[str, ParameterValue]], Any]
     default_action: Callable[[Any, str], Any]
     overlay: Callable[[Any], dict[str, Any]] | None = None
+
+
+def effective_parameters(meta: EnvironmentMeta) -> tuple[EnvParameter, ...]:
+    """Return the environment declarations with synthesized seat count first."""
+    seats = _seat_count_parameter(meta.min_slots, meta.max_slots)
+    return (seats, *meta.parameters)
+
+
+def resolve_parameters(
+    meta: EnvironmentMeta, *layers: Mapping[str, ParameterValue]
+) -> dict[str, ParameterValue]:
+    """Fill defaults and apply ordered parameter override layers."""
+    declarations = effective_parameters(meta)
+    by_name = {parameter.name: parameter for parameter in declarations}
+    values = {parameter.name: parameter.validate_value(parameter.default) for parameter in declarations}
+    for layer in layers:
+        for name, value in layer.items():
+            try:
+                declaration = by_name[name]
+            except KeyError:
+                raise EnvParameterValueError(f"unknown environment parameter {name!r}") from None
+            values[name] = declaration.validate_value(value)
+    return values
 
 
 class EnvironmentLookupError(LookupError):

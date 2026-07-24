@@ -12,7 +12,11 @@
 
 import type { RecordingHeader } from '@game-sandbox/schema'
 import type { BoardAgentRef } from '@game-sandbox/schema/board'
-import { type EnvironmentMeta, isEnvironmentMeta } from '@game-sandbox/schema/environment'
+import {
+  type EnvironmentMeta,
+  isEnvironmentMeta,
+  type ParameterValue,
+} from '@game-sandbox/schema/environment'
 import type {
   ModelAlias,
   LlmModelUsage as SchemaLlmModelUsage,
@@ -92,6 +96,8 @@ export interface SessionRow {
   recording_id: string | null
   /** The competition season this session belongs to; null only for non-competitive legacy rows. */
   season_id: string | null
+  /** The complete normalized gameplay parameter map this session launched with. */
+  parameters: Record<string, ParameterValue>
   /**
    * The resolved per-move budget (ms) for the connected human seat: the session's override or the
    * environment default. The session page shows the move clock from this rather than the env-default
@@ -148,6 +154,8 @@ export type SlotAssignmentInput =
  */
 export interface StartSessionInput {
   envId: string
+  seasonId: string
+  parameters: Record<string, ParameterValue>
   seed?: number
   humanSlotTimeoutMs?: number
   /** Per-slot assignment keyed by slot id; must cover exactly the environment's required seats. */
@@ -162,6 +170,12 @@ export interface StartSessionInput {
  */
 export type StartPayload = Omit<StartSessionInput, 'envId'>
 
+/** The complete parameter state a play-open season exposes to public start forms. */
+export interface PlayParameters {
+  season_id: string | null
+  values: Record<string, ParameterValue>
+}
+
 /** A started session's id and the socket path the live host attaches to. */
 export interface StartedSession {
   id: string
@@ -173,6 +187,8 @@ export type StartSessionResult =
   | { ok: true; session: StartedSession }
   | { ok: false; reason: 'not_active' }
   | { ok: false; reason: 'already_active'; activeSessionId: string }
+  | { ok: false; reason: 'play_season_changed' }
+  | { ok: false; reason: 'invalid_parameters' }
   | { ok: false; reason: 'failed'; status: number; message: string }
 
 /** The environment metadata that drives the Home cards and the Environment page. */
@@ -182,6 +198,14 @@ export async function getEnvironments(): Promise<EnvironmentMeta[]> {
     throw new ApiError(200, 'environment list has an unexpected shape')
   }
   return data
+}
+
+/** Load the season id and complete resolved parameter map that a start request must echo. */
+export async function getPlayParameters(envId: string): Promise<PlayParameters> {
+  return (await json(
+    await request(`/environments/${encodeURIComponent(envId)}/play-parameters`),
+    `GET /environments/${envId}/play-parameters`,
+  )) as PlayParameters
 }
 
 /** The signed-in session user and derived status, or `{ user: null }` for an anonymous visitor. */
@@ -260,6 +284,8 @@ export async function startSession(input: StartSessionInput): Promise<StartSessi
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       env_id: input.envId,
+      season_id: input.seasonId,
+      parameters: input.parameters,
       seed: input.seed,
       human_slot_timeout_ms: input.humanSlotTimeoutMs,
       slots: Object.fromEntries(
@@ -285,6 +311,12 @@ export async function startSession(input: StartSessionInput): Promise<StartSessi
     typeof body.active_session_id === 'string'
   ) {
     return { ok: false, reason: 'already_active', activeSessionId: body.active_session_id }
+  }
+  if (res.status === 409 && body.code === 'play_season_changed') {
+    return { ok: false, reason: 'play_season_changed' }
+  }
+  if (res.status === 400 && body.code === 'invalid_parameters') {
+    return { ok: false, reason: 'invalid_parameters' }
   }
   return { ok: false, reason: 'failed', status: res.status, message: body.error ?? res.statusText }
 }
@@ -824,6 +856,7 @@ export interface SeasonOverrides {
   submission_max_size_mb?: number
   messaging?: MessagingOverride
   llm?: LlmOverride
+  parameters?: Record<string, ParameterValue>
 }
 
 /** The whole season configuration document (the `seasons.config` JSON, decoded). */

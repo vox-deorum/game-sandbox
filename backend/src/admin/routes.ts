@@ -19,7 +19,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createGzip } from 'node:zlib'
-
+import { resolveParameters } from '@game-sandbox/schema/environment'
 import { RATING_PROMPT_MAX, SEASON_DESCRIPTION_MAX } from '@game-sandbox/schema/seasons'
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import tar from 'tar-fs'
@@ -431,7 +431,23 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
           }
           const meta = deps.environments.get(season.env_id)
           if (meta !== undefined) {
-            const slotIssue = validateSlotCounts(parsed.data.matches, meta)
+            const resolvedParameters = resolveParameters(
+              meta.parameters,
+              parsed.data.overrides?.parameters ?? {},
+            )
+            const parameterIssue = resolvedParameters.issues[0]
+            if (parameterIssue !== undefined) {
+              return reply.code(400).send({
+                error: 'invalid season config',
+                code: 'invalid_config',
+                reason: `overrides.parameters.${parameterIssue.name}: ${parameterIssue.message}`,
+              })
+            }
+            const seats = resolvedParameters.values.seats
+            const slotIssue =
+              typeof seats === 'number' && Number.isSafeInteger(seats)
+                ? validateSlotCounts(parsed.data.matches, meta, seats)
+                : 'parameters.seats must resolve to an integer'
             if (slotIssue !== null) {
               return reply.code(400).send({
                 error: 'invalid season config',
@@ -609,7 +625,6 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
             run_id: latest.id,
           })
         }
-        const config = seasonView(season).config
         const meta = deps.environments.get(season.env_id)
         // The environment's `seat_order_matters` decides whether K submission seats expand as ordered
         // permutations or unordered combinations, so a missing environment must fail the trigger rather
@@ -620,22 +635,6 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
             code: 'unknown_environment',
           })
         }
-        const ready = await deps.storage.listActiveSubmissionsBySeason(season.id, 'ready')
-        const submissions: SubmissionRef[] = ready.map((s) => ({
-          kind: 'submission',
-          submission_id: s.id,
-          user_id: s.user_id,
-        }))
-        const schedule = buildSchedule({
-          matches: config.matches,
-          submissions,
-          seatOrderMatters: meta.seat_order_matters,
-        })
-        if (schedule.length === 0) {
-          return reply
-            .code(409)
-            .send({ error: 'the season resolves to an empty schedule', code: 'empty_schedule' })
-        }
         // Non-null under the `requireAdmin` guard; the lookup is memoized, so this is not a second
         // query. The null branch is unreachable but keeps the attribution id honestly typed.
         const requestedBy = await deps.identity.resolveUser(request)
@@ -645,10 +644,34 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
         const run = await deps.storage.createRunWithSchedule(
           season.id,
           requestedBy.id,
-          submissions,
-          schedule,
-          (frozen) => officialPolicy(resolveLlm(deps.llm, meta, frozen)),
+          ({ config: frozen, submissions }) => {
+            const parameters = resolveParameters(
+              meta.parameters,
+              frozen.overrides?.parameters ?? {},
+            )
+            if (parameters.issues.length > 0) {
+              throw new Error(`invalid frozen parameters: ${parameters.issues[0]?.message}`)
+            }
+            const schedule = buildSchedule({
+              matches: frozen.matches,
+              submissions: submissions as SubmissionRef[],
+              seatOrderMatters: meta.seat_order_matters,
+            })
+            if (schedule.length === 0) {
+              return undefined
+            }
+            return {
+              parametersSnapshot: parameters.values,
+              scheduledGames: schedule,
+              llmPolicy: officialPolicy(resolveLlm(deps.llm, meta, frozen)),
+            }
+          },
         )
+        if (run === undefined) {
+          return reply
+            .code(409)
+            .send({ error: 'the season resolves to an empty schedule', code: 'empty_schedule' })
+        }
         deps.workflowRunner.enqueue(run.id)
         return reply.code(201).send({ id: run.id, status: run.status })
       })
@@ -827,14 +850,12 @@ async function attachLogStream(
 function validateSlotCounts(
   matches: ReadonlyArray<{ slots: readonly string[] }>,
   meta: EnvironmentMeta,
+  resolvedSeats: number = meta.max_slots,
 ): string | null {
   for (let i = 0; i < matches.length; i++) {
     const count = matches[i]?.slots.length ?? 0
-    if (count > meta.max_slots) {
-      return `matches.${i}.slots: ${count} slots exceeds the environment maximum of ${meta.max_slots}`
-    }
-    if (count < meta.min_slots) {
-      return `matches.${i}.slots: ${count} slots is below the environment minimum of ${meta.min_slots}`
+    if (count !== resolvedSeats) {
+      return `matches.${i}.slots: ${count} slots must equal the resolved seats value of ${resolvedSeats}`
     }
   }
   return null

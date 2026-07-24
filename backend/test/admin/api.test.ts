@@ -104,19 +104,24 @@ describe('admin API', () => {
     await app.ready()
   }
 
-  function createRun(
+  async function createRun(
     seasonId: string,
     requestedBy: string,
     submissions: AgentRef[],
     games: ScheduledGameInput[],
   ): Promise<SeasonRun> {
-    return storage.createRunWithSchedule(
-      seasonId,
-      requestedBy,
-      submissions,
-      games,
-      () => TEST_DISABLED_OFFICIAL_LLM_POLICY,
-    )
+    for (const submission of submissions) {
+      if (submission.kind === 'submission') {
+        await storage.updateSubmissionStatus(submission.submission_id, 'ready')
+      }
+    }
+    const run = await storage.createRunWithSchedule(seasonId, requestedBy, () => ({
+      parametersSnapshot: { seats: 1 },
+      scheduledGames: games,
+      llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
+    }))
+    if (run === undefined) throw new Error('expected a scheduled run')
+    return run
   }
 
   /** Insert a submission row directly, optionally writing it a downloadable snapshot. */
@@ -518,7 +523,9 @@ describe('admin API', () => {
       })
       expect(res.statusCode).toBe(400)
       expect(res.json()).toMatchObject({ code: 'invalid_config' })
-      expect((res.json() as { reason: string }).reason).toMatch(/exceeds the environment maximum/)
+      expect((res.json() as { reason: string }).reason).toMatch(
+        /must equal the resolved seats value/,
+      )
     })
 
     it('400s a config whose dependency version has no deployment image definition', async () => {

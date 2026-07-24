@@ -32,7 +32,7 @@ def test_valid_state_passes():
 
 
 def test_valid_header_passes():
-    validate_header(build_header(environment="flappy", seed=7))
+    validate_header(build_header(environment="flappy", parameters={"seats": 1, "pipe_gap": 100}, seed=7))
 
 
 def test_closed_region_rejects_unknown_top_level_field():
@@ -89,7 +89,8 @@ def test_relocated_package_loads_packaged_schema_resources():
                 sys.executable,
                 "-c",
                 "from sandbox.harness.schema import validate_header; "
-                "validate_header({'schema_version': 1, 'environment': 'fake', 'seed': 1, 'slots': [], "
+                "validate_header({'schema_version': 1, 'environment': 'fake', "
+                "'parameters': {'seats': 1}, 'seed': 1, 'slots': [], "
                 "'players': {}, 'metadata': {}})",
             ],
             cwd=root,

@@ -15,6 +15,28 @@
     "messaging": false,
     "min_slots": 1,
     "pace_interval_ms": 50,
+    "parameters": [
+      {
+        "choices": [],
+        "default": 1,
+        "description": "Number of seats in each game.",
+        "max": 1,
+        "min": 1,
+        "name": "seats",
+        "title": "Seats",
+        "type": "int"
+      },
+      {
+        "choices": [],
+        "default": 100,
+        "description": "Vertical opening between pipes.",
+        "max": 200,
+        "min": 60,
+        "name": "pipe_gap",
+        "title": "Pipe gap",
+        "type": "int"
+      }
+    ],
     "recommended_episode_ticks": 1000,
     "renderer": "flappy-bird",
     "seat_order_matters": false,
@@ -40,6 +62,18 @@
     "messaging": false,
     "min_slots": 4,
     "pace_interval_ms": null,
+    "parameters": [
+      {
+        "choices": [],
+        "default": 4,
+        "description": "Number of seats in each game.",
+        "max": 4,
+        "min": 4,
+        "name": "seats",
+        "title": "Seats",
+        "type": "int"
+      }
+    ],
     "recommended_episode_ticks": 52,
     "renderer": "hearts",
     "seat_order_matters": true,
@@ -65,6 +99,18 @@
     "messaging": true,
     "min_slots": 4,
     "pace_interval_ms": null,
+    "parameters": [
+      {
+        "choices": [],
+        "default": 4,
+        "description": "Number of seats in each game.",
+        "max": 4,
+        "min": 4,
+        "name": "seats",
+        "title": "Seats",
+        "type": "int"
+      }
+    ],
     "recommended_episode_ticks": 56,
     "renderer": "spades",
     "seat_order_matters": true,

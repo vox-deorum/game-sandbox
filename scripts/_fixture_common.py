@@ -12,7 +12,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from game_sandbox_harness.environment import EnvironmentEntry
+from game_sandbox_harness.environment import EnvironmentEntry, resolve_parameters
 from game_sandbox_harness.recording.local import FolderRecordingStore
 from game_sandbox_harness.session import AgentSlot, run_episode
 from game_sandbox_harness.state import PlayerAttribution
@@ -41,6 +41,7 @@ def run_and_copy(
             entry,
             slots,
             seed=seed,
+            parameters=resolve_parameters(entry.meta),
             store=store,
             recording_id=recording_id,
             players=players,

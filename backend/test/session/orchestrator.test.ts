@@ -120,9 +120,13 @@ function heartsSlots(
 
 /** A full start request with class defaults (alice, flappy_bird, one built-in slot), overridable. */
 function startRequest(overrides: Partial<StartRequest> = {}): StartRequest {
+  const envId = overrides.envId ?? 'flappy_bird'
   return {
     userId: 'alice',
-    envId: 'flappy_bird',
+    envId,
+    seasonId: PLAY_SEASONS.get(envId) ?? 'missing',
+    parameters:
+      envId === 'hearts' || envId === 'chatty' ? { seats: 4 } : { seats: 1, pipe_gap: 100 },
     slots: slots({ kind: 'builtin-agent' }),
     ...overrides,
   }
@@ -130,6 +134,7 @@ function startRequest(overrides: Partial<StartRequest> = {}): StartRequest {
 
 const HEADER = '{"schema_version":1,"environment":"flappy_bird","seed":0}'
 const STATE = '{"schema_version":1,"tick":0,"agents":{},"timing":{"started_at":1,"duration_ms":1}}'
+const PLAY_SEASONS = new Map<string, string>()
 
 /** Flush the finalize chain (kill → markEnded → notify) across its several awaits. */
 async function settle(): Promise<void> {
@@ -188,10 +193,11 @@ describe('orchestrator', () => {
     recordingsDir = mkdtempSync(join(tmpdir(), 'gs-orch-'))
     // A plain public session needs a play-open season to attach to (the seed season is both
     // submission- and play-open); seed it for the environments the plain-session tests exercise.
-    await storage.ensureOpenSeason('flappy_bird', 1)
-    await storage.ensureOpenSeason('turn_based', 1)
-    await storage.ensureOpenSeason('hearts', 1)
-    await storage.ensureOpenSeason('chatty', 1)
+    PLAY_SEASONS.clear()
+    for (const envId of ['flappy_bird', 'turn_based', 'hearts', 'chatty']) {
+      const season = await storage.ensureOpenSeason(envId, 1)
+      PLAY_SEASONS.set(envId, season.id)
+    }
   })
 
   /** Set the play-open season's messaging override for a messaging env, so start() resolves it. */
@@ -372,12 +378,33 @@ describe('orchestrator', () => {
       expect(driver.launches).toHaveLength(0)
     })
 
+    it('rejects a stale season id and parameter maps that do not exactly match the declaration', async () => {
+      const orch = makeOrchestrator()
+      await expect(orch.start(startRequest({ seasonId: 'stale-season' }))).rejects.toMatchObject({
+        status: 409,
+        code: 'play_season_changed',
+      })
+      await expect(orch.start(startRequest({ parameters: {} }))).rejects.toMatchObject({
+        status: 400,
+        code: 'invalid_parameters',
+      })
+      await expect(
+        orch.start(startRequest({ parameters: { seats: 1, extra: 'no' } })),
+      ).rejects.toMatchObject({
+        status: 400,
+        code: 'invalid_parameters',
+      })
+      expect(driver.launches).toHaveLength(0)
+    })
+
     it('rejects an unknown environment and a human in a non-human-capable slot', async () => {
       const orch = makeOrchestrator()
       await expect(orch.start(startRequest({ userId: 'a', envId: 'nope' }))).rejects.toMatchObject({
         status: 400,
       })
       // watch_only marks no slot human-capable, so a human assignment there is rejected.
+      const watchOnlySeason = await storage.ensureOpenSeason('watch_only', 1)
+      PLAY_SEASONS.set('watch_only', watchOnlySeason.id)
       await expect(
         orch.start(
           startRequest({ userId: 'c', envId: 'watch_only', slots: slots({ kind: 'human' }) }),
@@ -390,7 +417,12 @@ describe('orchestrator', () => {
   describe('multi-slot Hearts start', () => {
     /** A Hearts start request: env defaulted, slots built from the four-seat defaults. */
     function startHearts(slots: Record<string, SlotAssignment>): StartRequest {
-      return startRequest({ envId: 'hearts', slots })
+      return startRequest({
+        envId: 'hearts',
+        seasonId: PLAY_SEASONS.get('hearts') ?? 'missing',
+        parameters: { seats: 4 },
+        slots,
+      })
     }
 
     it('rejects a payload missing a required seat before any container starts', async () => {

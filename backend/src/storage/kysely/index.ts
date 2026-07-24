@@ -10,12 +10,12 @@
  */
 import type { Kysely } from 'kysely'
 
-import type { ResolvedOfficialLlmPolicy } from '../../llm/config.js'
 import type {
   AgentRef,
   AutomatedBoardRow,
   CreateSeasonInput,
   DeleteSeasonResult,
+  FrozenRunBuilder,
   HumanBoardRow,
   LlmDevelopmentKey,
   NewRecordingInput,
@@ -25,7 +25,6 @@ import type {
   RatingAggregate,
   RecordGameResultInput,
   RecordingCleanupClaimResult,
-  ScheduledGameInput,
   SetPlayStatusResult,
   SetSubmissionStatusResult,
   Storage,
@@ -265,18 +264,9 @@ export class KyselyStorage implements Storage {
   createRunWithSchedule(
     seasonId: string,
     requestedBy: string,
-    submissionSnapshot: AgentRef[],
-    scheduledGames: ScheduledGameInput[],
-    resolveLlmPolicy: (config: SeasonConfig) => ResolvedOfficialLlmPolicy,
-  ): Promise<SeasonRun> {
-    return runs.createRunWithSchedule(
-      this.db,
-      seasonId,
-      requestedBy,
-      submissionSnapshot,
-      scheduledGames,
-      resolveLlmPolicy,
-    )
+    builder: FrozenRunBuilder,
+  ): Promise<SeasonRun | undefined> {
+    return runs.createRunWithSchedule(this.db, seasonId, requestedBy, builder)
   }
   async deleteRunsForSeason(seasonId: string): Promise<void> {
     await this.db.transaction().execute((trx) => runs.deleteRunsForSeason(trx, seasonId))

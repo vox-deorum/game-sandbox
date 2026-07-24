@@ -52,13 +52,14 @@ describe('my agents API', () => {
   }
 
   async function place(season: Season, submission: Submission, meanScore: number): Promise<void> {
-    const run = await testApp.storage.createRunWithSchedule(
-      season.id,
-      'operator',
-      [],
-      [],
-      () => TEST_DISABLED_OFFICIAL_LLM_POLICY,
-    )
+    const run = await testApp.storage.createRunWithSchedule(season.id, 'operator', () => ({
+      parametersSnapshot: { seats: 1 },
+      scheduledGames: [
+        { match_index: 0, game_index: 0, seed: 1, slots: [{ kind: 'builtin-naive' }] },
+      ],
+      llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
+    }))
+    if (run === undefined) throw new Error('expected a scheduled run')
     await testApp.storage.replaceAutomatedPlacements(season.id, season.env_id, run.id, [
       {
         rank: 1,

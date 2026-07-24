@@ -672,6 +672,7 @@ describe('submission API', () => {
         id: 'sess-1',
         user_id: 'watcher',
         env_id: ENV_ID,
+        parameters: { seats: 1 },
         mode: 'scripted',
         recording_id: `${ENV_ID}-sess-1`,
         created_at: new Date().toISOString(),

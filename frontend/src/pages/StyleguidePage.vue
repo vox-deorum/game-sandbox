@@ -10,6 +10,7 @@ import { ref } from 'vue'
 import UiAvatar from '../components/ui/UiAvatar.vue'
 import UiBadge from '../components/ui/UiBadge.vue'
 import UiButton from '../components/ui/UiButton.vue'
+import UiCheckboxGroup from '../components/ui/UiCheckboxGroup.vue'
 import UiCard from '../components/ui/UiCard.vue'
 import UiDialog from '../components/ui/UiDialog.vue'
 import UiDialogActions from '../components/ui/UiDialogActions.vue'
@@ -54,6 +55,7 @@ const tabsValue = ref('all')
 const llmEnablement = ref('default')
 const llmModelsMode = ref('all')
 const llmTokenBudget = ref<number | ''>('')
+const checkboxValues = ref(['moving'])
 </script>
 
 <template>
@@ -63,6 +65,20 @@ const llmTokenBudget = ref<number | ''>('')
       Tokens and primitives, every variant and state. Dev-only; see
       docs/contributors/frontend/design-system.md.
     </p>
+
+    <section>
+      <h2>Checkbox group</h2>
+      <UiCheckboxGroup
+        v-model="checkboxValues"
+        legend="Expansions"
+        hint="Pick any combination."
+        :options="[
+          { value: 'moving', label: 'Moving pipes' },
+          { value: 'night', label: 'Night mode' },
+          { value: 'wind', label: 'Wind gusts' },
+        ]"
+      />
+    </section>
 
     <section>
       <h2>Color tokens</h2>

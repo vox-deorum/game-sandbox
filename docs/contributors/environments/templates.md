@@ -18,6 +18,8 @@ Read [Environment template and examples](template-and-examples.md) to create an 
 
 `scripts/compose.py <env>` copies `templates/base/` into `build/templates/<env>/`, generates the environment package, harness, and shared helpers into that output, and overlays the environment's `template/` directory.
 
+Composition is intentionally disposable. Recompose every template and example after changing environment metadata, gameplay parameter declarations, the harness launch contract, or the generated factory signature. Outputs composed from another checkout are unsupported.
+
 `scripts/compose.py <env> <name>` then overlays `environments/<env>/examples/<name>/` into `build/examples/<env>/<name>/`.
 
 Composition replaces whole files. The only merged file is `requirements.extra.txt`: it appends pins but cannot override a pin already in `requirements.txt`.

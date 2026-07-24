@@ -18,7 +18,7 @@ from tempfile import TemporaryDirectory
 from typing import Any
 
 from sandbox.env import META, PLAYER_SLOT, default_action, extract_overlay, make_env
-from sandbox.harness.environment import EnvironmentEntry
+from sandbox.harness.environment import EnvironmentEntry, resolve_parameters
 from sandbox.harness.live import UNSET_TIMEOUT, UnsetTimeout
 from sandbox.harness.local_server import LocalServer
 from sandbox.harness.manifest import load_agent as _load_agent
@@ -51,7 +51,7 @@ def _entry(make: Any = make_env) -> EnvironmentEntry:
 
 def possible_slots() -> tuple[str, ...]:
     """Read the environment's complete slot set instead of assuming every slot is human-capable."""
-    env = make_env()
+    env = make_env(resolve_parameters(META))
     try:
         return tuple(env.possible_agents)
     finally:
@@ -72,9 +72,10 @@ def play_episode(
         for slot_id in possible_slots()
     }
     result = run_episode(
-        _entry(lambda: env),
+        _entry(lambda _parameters: env),
         slots,
         seed=seed,
+        parameters=resolve_parameters(META),
         max_steps=max_steps,
     )
     return result.scores[slot]
@@ -84,7 +85,7 @@ def run_headless(*, seed: int, max_steps: int | None, seat: int) -> float:
     """Run the selected seat through the harness without local networking or browser rendering."""
     slots = possible_slots()
     slot = slots[seat]
-    env = make_env()
+    env = make_env(resolve_parameters(META))
     try:
         return play_episode(load_agent(REPO_ROOT), env, seed=seed, max_steps=max_steps, slot=slot)
     finally:
@@ -114,6 +115,7 @@ def local_config(
             players[slot_id] = {"kind": "agent", "label": "Your agent"}
     config: dict[str, object] = {
         "env_id": META.env_id,
+        "parameters": resolve_parameters(META),
         "seed": seed,
         "slots": slots,
         "players": players,

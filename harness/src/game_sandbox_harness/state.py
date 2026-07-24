@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any, NotRequired, TypedDict
 
+from .environment import ParameterValue
 from .schema import SCHEMA_VERSION
 
 
@@ -80,6 +81,7 @@ class RecordingHeader(TypedDict):
 
     schema_version: int
     environment: str
+    parameters: dict[str, ParameterValue]
     created_at: NotRequired[str]
     seed: NotRequired[int]
     sidecars: NotRequired[list[Sidecar]]
@@ -151,6 +153,7 @@ def build_step_state(
 def build_header(
     *,
     environment: str,
+    parameters: dict[str, ParameterValue],
     created_at: str | None = None,
     seed: int | None = None,
     sidecars: list[Sidecar] | None = None,
@@ -160,6 +163,7 @@ def build_header(
     header: RecordingHeader = {
         "schema_version": SCHEMA_VERSION,
         "environment": environment,
+        "parameters": dict(parameters),
     }
     if created_at is not None:
         header["created_at"] = created_at
