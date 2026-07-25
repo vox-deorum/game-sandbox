@@ -55,7 +55,7 @@ The replay viewer's status strip summarizes the settings the episode was played 
 
 Replays are public and read-only. Each replay belongs to an environment, and a season column shows the season associated with the session that produced it. The replay list shows only the final section of each recording identifier and lists the owner first. In a naturally completed multiplayer replay, one top-ranked seat produces the label `seat_N won`, while multiple top-ranked seats produce `Tied`. A replay without eligible ranking data keeps its general termination label. Owners may pin their own recordings.
 
-Result labels and the final-standings card both rank seats rather than players, so a game whose seats cover two players shows two rows and not four. Each standings row leads with the agent that held the seat, using the blind numbered label while the season's play window is open, and names the players it covered as secondary detail.
+Result labels and the final-standings card both rank seats rather than players, so a game whose seats cover two players shows two rows and not four. Each standings row leads with the seat's controller attribution, using the blind numbered labels while the season's play window is open, and names the players it covered as secondary detail. An ordinary agent seat has one agent label. A human wide seat names the human and the selected companion agent.
 
 Human feedback is blind while a season's play window is open. In the watch list, non-operators see numbered submitted agents without owner profiles or source details. An unrated agent has a **Rate** action. An agent that the viewer has already rated, or that belongs to the viewer, has a **Watch again** action. Operators continue to see agent identities.
 
@@ -92,11 +92,13 @@ See [Submissions](submission.md).
 | Rate | Intended agent in every resolved seat, season gameplay parameters, and random seed, all locked |
 | Watch single-agent | Agent, gameplay parameters, seed, supported overrides |
 | Watch multi-agent | One agent per resolved seat, gameplay parameters, seed, supported overrides |
-| Play | Human-capable seat assignment, remaining agents, gameplay parameters, seed, human timeout, supported overrides |
+| Play | Human-capable seat assignment, companion agent for a wide human seat, remaining agents, gameplay parameters, seed, human timeout, supported overrides |
 
 Any agent row, whether built-in or submitted, opens the same seat-assignment view. The selected agent is preselected for its seat, and every seat can be reassigned before the session starts. All required seats must be assigned before a multi-agent session starts. The session model identifies every player even when the first interface supports only one connected human.
 
-Each seat row carries one agent control, followed in the same row by a short hint giving how many players that seat covers. Seats in one plan may be uneven, so the hint can read differently from row to row, as in an environment that seats one hero beside ten villagers. The hint keeps every row the same shape whether a seat covers one player or ten, so the grid stays legible as games get larger. A human who takes a seat controls every player in it. See [Environments](environment.md#players-and-seats).
+Each seat row carries one assignment control, followed in the same row by a short hint giving how many players that seat covers. Seats in one plan may be uneven, so the hint can read differently from row to row, as in an environment that seats one hero beside ten villagers. The hint uses player language because a human wide seat contains both a person and an agent.
+
+Selecting **Human** is allowed when the seat contains a human-capable player. The environment's declared member order chooses the first human-capable member for the person. A wide human seat then reveals a required **Companion agent** control populated from the same built-in and ready-submission choices used by ordinary agent seats. One selected companion drives every remaining player through separate instances. The user must choose it explicitly before starting. A singleton human seat has no companion control. See [Environments](environment.md#players-and-seats).
 
 The **Rate** action is the exception: it preselects the intended agent into every resolved seat and disables every configuration control. The viewer starts with the season's gameplay parameters and a random seed, then rates that same agent after the session. **Watch again** and ordinary watch actions keep the configuration editable.
 

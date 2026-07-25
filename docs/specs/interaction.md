@@ -57,7 +57,7 @@ Live sessions may pause, which freezes both stepping and timeout accounting. The
 
 Human players have a timeout separate from agent compute limits. In real-time games, the cadence is the deadline. In turn-based games, the timeout is a move clock. A session may override the environment default. The interface shows the active value whenever it affects play.
 
-A human occupies a seat and therefore controls every player that seat covers. A seat is human-capable only when every one of its players is human-capable, since a human who takes it will drive all of them. The move clock applies to each of those players' turns rather than being shared between them, so a session whose seats cover two players asks the human to act twice as often as one whose seats cover a single player. Agent compute limits work the same way: a step limit and an episode budget belong to a player rather than to the seat above it, because a wider seat makes proportionally more decisions. See [Environments](environment.md#players-and-seats).
+A human play session designates one human-controlled player. The selected seat must contain at least one player listed in the environment's `human_players`, and the first such member in the seat's declared order is the human player. A singleton seat needs nothing else. A wider seat requires the person to choose one companion agent, which runs as a separately constructed instance for every other player in that seat. The move clock applies only on the designated human player's turns. Step and episode compute limits remain per agent-controlled player. See [Environments](environment.md#players-and-seats).
 
 ## Starting watch and play sessions
 
@@ -67,11 +67,11 @@ The browser retains hidden parameter values, applies visible player edits, and s
 
 Because the submitted map already carries the season layer, session start validates that map against the current declarations and applies no further layer beneath it. The player is answerable for the values they submitted and for nothing else.
 
-Parameter validation happens before seat-shape validation. The resolved seat layout, driven by `players` for a player-bounds environment or by `seat_plan` for an environment with declared plans, determines the required seat identifiers and the size of the seat-assignment grid. The grid follows only a layout the declarations accept, so a half-typed entry leaves the current seats in place rather than resizing and discarding assignments. Growing the grid fills new seats with whatever the dialog seats by default, which is the Naive agent when playing and the chosen agent when watching or rating. Shrinking it keeps the human in the first remaining human-capable seat when possible and otherwise prevents the session from starting.
+Parameter validation happens before seat-shape validation. The resolved seat layout, driven by `players` for a player-bounds environment or by `seat_plan` for an environment with declared plans, determines the required seat identifiers and the size of the seat-assignment grid. The grid follows only a layout the declarations accept, so a half-typed entry leaves the current seats in place rather than resizing and discarding assignments. Growing the grid fills new seats with whatever the dialog seats by default, which is the Naive agent when playing and the chosen agent when watching or rating. Shrinking it keeps a human assignment only when its seat still exists, still contains a human-capable member, and its selected companion remains legal. Otherwise the assignment is cleared and the session cannot start until the missing choices are made.
 
 ## Human input
 
-An environment may expose human-capable players, and a seat is offered to a human only when every player it covers is one of them. Its renderer can accept:
+An environment may expose human-capable players, and a seat is offered to a human when at least one of its members is human-capable. The environment's ordered membership determines which member the person controls. Its renderer can accept:
 
 - Raw device input, such as keyboard, pointer, touch, or gamepad.
 - On-screen controls, such as buttons, board cells, card hands, or sliders.
@@ -84,8 +84,8 @@ Object-shaped overlay data works the same way for rendering. The renderer direct
 
 ## Chat
 
-When messaging is enabled, the host page provides a shared chat panel. Every messaging environment uses this panel, so its renderer does not need to know about messaging. The panel shows broadcasts and messages addressed to any player the connected user controls.
+When messaging is enabled, the host page provides a shared chat panel. Every messaging environment uses this panel, so its renderer does not need to know about messaging. The panel shows broadcasts and messages addressed to the connected user's designated human player.
 
-A human composes a message only while one of the players they control is the acting player, and that player is the message's sender. The panel disables its input at every other moment. This keeps the sender unambiguous for a human who holds several players, and it matches how an agent chats, since the `chat` hook fires on the agent's own turn. Composing therefore shares the move clock with deciding.
+For an external turn, the current state carries chat options for the acting player: the sender, a turn token, the environment's ordered direct-recipient choices, and its default recipient. **Everyone** is always available as a broadcast even when the environment offers no direct recipient. The panel is enabled only when that sender is the session's designated human player. It resets its selection when the token changes and sends the sender and token with the message.
 
-Outgoing messages follow the same WebSocket path as input, but enter a bounded first-in, first-out queue for each player instead of the input latch that keeps only the latest action. The harness drains the message queue once per stepped tick, so a message written on a turn travels with that turn's step. The rule assumes turn-based pacing, which is the only mode a messaging environment uses today. See [Communication](communication.md).
+The browser state is an interface hint, not the authority. The harness accepts a human message only when its sender and token match the current external turn, recomputes the environment's recipient policy against the live pre-step state, and rejects a stale or disallowed message. It drains only the acting human player's bounded first-in, first-out queue, so a message cannot wait under an inactive identity and appear on a later turn. A valid message travels with that turn's step. See [Communication](communication.md).

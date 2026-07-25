@@ -48,7 +48,7 @@ The backend keeps one base image per template dependency version. Each base cont
 - The environments.
 - The exact dependency set for that version.
 
-A single-agent submission image adds one pinned repository to the base. A multi-agent session image adds every participating submission, each in a separate location so repositories with the same module name do not conflict. Staging happens once per seat, so a seat that covers several players still contributes that one pinned repository location rather than a separate copy for each of its players. Builds install no new dependencies. Every submission in a session uses the season's dependency version, so the shared base already contains everything it needs.
+A single-agent submission image adds one pinned repository to the base. A multi-agent session image adds every participating submission, each in a separate location so repositories with the same module name do not conflict. Staging happens once per seat, so an agent assigned across several players contributes one pinned repository location. A submitted companion for a human seat uses that same seat location and is loaded as a separate instance for each nonhuman member. Builds install no new dependencies. Every submission in a session uses the season's dependency version, so the shared base already contains everything it needs.
 
 Before use, the image passes the sandboxed load check from [Submissions](submission.md). Failed builds and checks are reported to the owner and never run in a game.
 

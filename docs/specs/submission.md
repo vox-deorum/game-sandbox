@@ -17,7 +17,7 @@ The interface is independent of algorithm style. Agents always run inside the se
 
 Learned state may persist between episodes in one leaderboard run, but not between submissions or seasons. Time spent in optional hooks counts toward the same limits as time spent acting. The [LLM API](llm.md#determinism-and-timing) defines how official-session LLM calls affect timing.
 
-A submission is bound to a seat, and a seat may cover several players. The four hooks above and the manifest's `template_version` are unchanged by this: each of the seat's players runs a separately constructed instance of the agent, with no platform-provided combined multi-player object or shared-state API. Ordinary shared-container and process-isolation limits still apply, and the seat's reported score is the mean of its players' scores. A participant does not choose how many players a seat covers; the season configuration does.
+A submission is bound to a seat, and a seat may cover several players. In watch and automated play, each of the seat's players runs a separately constructed instance of that submission. In human play, a submitted agent may instead be selected as the companion for a wide human seat, in which case every nonhuman member runs its own instance. The four hooks above and the manifest's `template_version` are unchanged. The platform provides no combined multi-player object or shared-state API. Ordinary shared-container and process-isolation limits still apply, and the seat's reported score is the mean of its players' scores. A participant does not choose how many players a seat covers; the season configuration does.
 
 ## Packaging
 
