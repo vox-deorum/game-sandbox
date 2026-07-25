@@ -9,12 +9,12 @@ Agent code reads:
 - `OPENAI_BASE_URL`
 - `OPENAI_API_KEY`
 
-The same code works locally and on the server. For local development, a participant requests a season-scoped development key from the backend. For a server-run session, the backend creates a temporary key for one session and slot, then revokes it when the container exits. See [Submissions](submission.md).
+The same code works locally and on the server. For local development, a participant requests a season-scoped development key from the backend. For a server-run session, the backend creates a temporary key for one session and player, then revokes it when the container exits. See [Submissions](submission.md).
 
 ## Backend proxy and upstream
 
 ```text
-Agent slot ───────────────┐
+Agent call ───────────────┐
                          ├→ backend LLM proxy → configured OpenAI-compatible endpoint
 Student development call ┘          │
                                     └→ access checks, metering, and telemetry
@@ -42,7 +42,7 @@ The backend commits accounting for a successful call before returning its comple
 
 For each successful agent call, the backend records:
 
-- Session, tick, and slot.
+- Session, tick, and player.
 - Model.
 - Full accepted prompt and the canonical completion returned to the caller.
 - Input, reasoning, and output token counts, with an indication when the backend estimated them.
@@ -56,7 +56,9 @@ Public replay views show summaries of models, tokens, and budget cost. Stored ac
 
 Token budgets use weighted units for each model tier. The cost of a successful call is the tier's configured price multiplied by the sum of its input tokens and total completion tokens. Reasoning tokens are already included in total completion tokens and are not charged twice. Deployment prices default to 4 for `large`, 2 for `medium`, and 1 for `small`. A season may set the price of any enabled tier to a positive finite value no greater than 1,000,000. Official leaderboard runs freeze their resolved prices as part of the run policy. Live sessions and development keys use the season's current resolved prices.
 
-Official execution and student development use separate meters. Each session slot has a weighted token budget and a rate limit. A leaderboard run has no allowance of its own. Each match in the run is a new session with a fresh allowance for each slot. Creating a leaderboard run freezes its resolved official policy, including enabled tiers, upstream model mappings, prices, and per-slot limits. The deployment supplies defaults, and a season may override official and development limits independently.
+Official execution and student development use separate meters. Each player in a session has a weighted token budget and a rate limit. A leaderboard run has no allowance of its own. Each match in the run is a new session with a fresh allowance for each player. Creating a leaderboard run freezes its resolved official policy, including enabled tiers, upstream model mappings, prices, and per-player limits. The deployment supplies defaults, and a season may override official and development limits independently.
+
+Budgets, rate limits, and telemetry stay keyed per player rather than per seat, so a seat that covers several players gets one meter for each of its players and therefore a proportionally larger total allowance, matching its proportionally larger number of decisions. When the leaderboard reduces a seat, it sums LLM usage and weighted cost across the seat's players.
 
 Each admitted request reserves one pending unit of rate capacity. The proxy rejects a new request when recorded events and pending units fill its in-memory sliding window. A concurrent request in progress therefore uses capacity before its result is known. A successful upstream response turns its pending unit into one recorded event, timestamped at the request's start. Rejected requests, errors that cannot be retried, and exhausted retry sequences release their pending units without recording an event. All retries for one request can produce at most the single event for an eventual success.
 
@@ -72,7 +74,7 @@ Successful development calls are recorded in a SQLite ledger keyed by season. Ea
 
 A seed does not make a model response deterministic. Seeded repetitions reduce the effect of stochastic policies but do not remove it.
 
-In an official session, chargeable time for `act`, `chat`, and `learn` excludes verified time in the backend proxy, including retry waits. The harness compares the slot's proxy-time readings before and after each hook, then charges the remaining elapsed time to the step and episode limits. Chargeable time cannot be less than the calling thread's CPU time. If either reading is unavailable or invalid, the full hook time is charged. Model calls and local work must remain on that thread.
+In an official session, chargeable time for `act`, `chat`, and `learn` excludes verified time in the backend proxy, including retry waits. The harness compares the player's proxy-time readings before and after each hook, then charges the remaining elapsed time to the step and episode limits. Chargeable time cannot be less than the calling thread's CPU time. If either reading is unavailable or invalid, the full hook time is charged. Model calls and local work must remain on that thread.
 
 Live-session and workflow timeouts also exclude verified proxy time after they start. The extra allowance for an active request is bounded, so a stuck request cannot extend the deadline indefinitely. Idle timeout always uses wall-clock time.
 

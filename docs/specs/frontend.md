@@ -21,7 +21,7 @@ The site uses **Environment** and **Season** as its front-facing names, matching
 
 | Page | Main content |
 | --- | --- |
-| Environments | Cards with name, description, slot count, human-play support, and thumbnail |
+| Environments | Cards with name, description, player count, human-play support, and thumbnail |
 | Environment overview | Description, current boards, season history, play and watch entry points |
 | Agent profile | Submission history (with each Season's rating prompt), current Season submission state, status, placements, replays, and owner-only development access for the current submission-open season |
 | Seasons | Public seasons, active gates, environment, optional description, release time, submission count, session count |
@@ -51,9 +51,11 @@ A Season description is one inline Markdown paragraph of at most 2,000 character
 
 The built-in **Naive agent** is always the first watch option. Ready submissions for the play-open season follow it.
 
-The replay viewer's status strip summarizes the settings the episode was played with: the count of settings, with the visible parameter values and the seed behind it in a tooltip. The seed has no slot of its own, since it configures the run like the rest of the settings.
+The replay viewer's status strip summarizes the settings the episode was played with: the count of settings, with the visible parameter values and the seed behind it in a tooltip. The seed has no row of its own, since it configures the run like the rest of the settings.
 
-Replays are public and read-only. Each replay belongs to an environment, and a season column shows the season associated with the session that produced it. The replay list shows only the final section of each recording identifier and lists the owner first. In a naturally completed multiplayer replay, one top-ranked player produces the label `player_N won`, while multiple top-ranked players produce `Tied`. A replay without eligible ranking data keeps its general termination label. Owners may pin their own recordings.
+Replays are public and read-only. Each replay belongs to an environment, and a season column shows the season associated with the session that produced it. The replay list shows only the final section of each recording identifier and lists the owner first. In a naturally completed multiplayer replay, one top-ranked seat produces the label `seat_N won`, while multiple top-ranked seats produce `Tied`. A replay without eligible ranking data keeps its general termination label. Owners may pin their own recordings.
+
+Result labels and the final-standings card both rank seats rather than players, so a game whose seats cover two players shows two rows and not four. Each standings row leads with the agent that held the seat, using the blind numbered label while the season's play window is open, and names the players it covered as secondary detail.
 
 Human feedback is blind while a season's play window is open. In the watch list, non-operators see numbered submitted agents without owner profiles or source details. An unrated agent has a **Rate** action. An agent that the viewer has already rated, or that belongs to the viewer, has a **Watch again** action. Operators continue to see agent identities.
 
@@ -90,17 +92,19 @@ See [Submissions](submission.md).
 | Rate | Intended agent in every resolved seat, season gameplay parameters, and random seed, all locked |
 | Watch single-agent | Agent, gameplay parameters, seed, supported overrides |
 | Watch multi-agent | One agent per resolved seat, gameplay parameters, seed, supported overrides |
-| Play | Human-capable slot assignment, remaining agents, gameplay parameters, seed, human timeout, supported overrides |
+| Play | Human-capable seat assignment, remaining agents, gameplay parameters, seed, human timeout, supported overrides |
 
-Any agent row, whether built-in or submitted, opens the same seat-assignment view. The selected agent is preselected for its seat, and every seat can be reassigned before the session starts. All required seats must be assigned before a multi-agent session starts. The session model identifies every slot even when the first interface supports only one connected human.
+Any agent row, whether built-in or submitted, opens the same seat-assignment view. The selected agent is preselected for its seat, and every seat can be reassigned before the session starts. All required seats must be assigned before a multi-agent session starts. The session model identifies every player even when the first interface supports only one connected human.
+
+Each seat row carries one agent control, followed in the same row by a short hint giving how many players that seat covers. Seats in one plan may be uneven, so the hint can read differently from row to row, as in an environment that seats one hero beside ten villagers. The hint keeps every row the same shape whether a seat covers one player or ten, so the grid stays legible as games get larger. A human who takes a seat controls every player in it. See [Environments](environment.md#players-and-seats).
 
 The **Rate** action is the exception: it preselects the intended agent into every resolved seat and disables every configuration control. The viewer starts with the season's gameplay parameters and a random seed, then rates that same agent after the session. **Watch again** and ordinary watch actions keep the configuration editable.
 
 Start forms render the environment's visible parameter declarations dynamically. Numeric and string values use labelled inputs, booleans use an explicit On/Off select, choices use a select, and multi-choice values use a labelled checkbox group. Invalid edits show a field error and disable the start action. Hidden parameters stay in the complete submitted map.
 
-A single-slot watch starts immediately only when the environment has no visible parameter. Otherwise it opens the configuration dialog. A multi-seat dialog places gameplay parameters above the seat grid so a future visible `seats` control resizes the grid it governs.
+A single-seat watch starts immediately only when the environment has no visible parameter. Otherwise it opens the configuration dialog. A multi-seat dialog places gameplay parameters above the seat grid, so the `players` control for a player-bounds environment or the `seat_plan` control for declared plans sits above the grid it governs.
 
-The season config editor lists every effective environment parameter, including values hidden from players. Each row explicitly inherits the environment default or supplies an override, so an empty string remains a valid override. The editor validates and canonicalizes values before saving and serializes only declarations in the current environment registry.
+The season config editor lists every effective environment parameter, including values hidden from players. Each row explicitly inherits the environment default or supplies an override, so an empty string remains a valid override. The editor validates and canonicalizes values before saving and serializes only declarations in the current environment registry. Because the resolved seat layout, selected by `players` for player bounds or `seat_plan` for declared plans, decides how many games a season expands into, the editor also reports the resulting seat count and the projected game count beside the match design.
 
 ## On-demand live play
 

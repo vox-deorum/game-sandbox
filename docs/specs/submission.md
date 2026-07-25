@@ -17,6 +17,8 @@ The interface is independent of algorithm style. Agents always run inside the se
 
 Learned state may persist between episodes in one leaderboard run, but not between submissions or seasons. Time spent in optional hooks counts toward the same limits as time spent acting. The [LLM API](llm.md#determinism-and-timing) defines how official-session LLM calls affect timing.
 
+A submission is bound to a seat, and a seat may cover several players. The four hooks above and the manifest's `template_version` are unchanged by this: each of the seat's players runs a separately constructed instance of the agent, with no platform-provided combined multi-player object or shared-state API. Ordinary shared-container and process-isolation limits still apply, and the seat's reported score is the mean of its players' scores. A participant does not choose how many players a seat covers; the season configuration does.
+
 ## Packaging
 
 Every repository contains `manifest.json` at its root:
@@ -54,7 +56,7 @@ Each starter kit includes:
 
 While submissions are open for an LLM-enabled season, an active participant may request a development key from the backend and place the returned credentials in `.env`. Development access ends when submissions close. Rotating a key invalidates the previous credential without resetting that participant's usage for the season. Development usage has its own meter for each season.
 
-In an official session, the backend replaces development credentials with a temporary key for that session and slot. Participants do not need the backend to write an agent or run it without LLM calls. See [LLM API](llm.md).
+In an official session, the backend replaces development credentials with a temporary key for that session and player. Participants do not need the backend to write an agent or run it without LLM calls. See [LLM API](llm.md).
 
 Developers may enable a local-folder source to test the validation pipeline without GitHub. It is disabled in normal deployments and is not a participant feature.
 

@@ -13,15 +13,15 @@ renderer + input ⇄ WebSocket relay ⇄ line transport ⇄ harness + environmen
 
 - The browser owns rendering and human input.
 - PettingZoo owns environment transitions.
-- One container holds the harness, environment, and every agent slot for one session.
+- One container holds the harness, environment, and an agent instance for every player in one session.
 - The backend supervises and relays. It does not step the game.
 - The per-step state schema is the container boundary and recording format.
 
-Keeping every slot in one session container avoids crossing a second container boundary during each turn. It also keeps session management practical for a class-sized deployment. Agents act in sequence, so legitimate agent work does not need simultaneous CPU access.
+Keeping every player in one session container avoids crossing a second container boundary during each turn. It also keeps session management practical for a class-sized deployment. Agents act in sequence, so legitimate agent work does not need simultaneous CPU access.
 
 ## Live sessions
 
-The backend launches a container, relays state to browsers over WebSocket, and forwards authorized commands to the harness. The harness steps the environment, calls agent slots, and routes messages. The container lasts for the session.
+The backend launches a container, relays state to browsers over WebSocket, and forwards authorized commands to the harness. The harness steps the environment, calls each player's agent, and routes messages. The container lasts for the session.
 
 When LLM access is enabled, the session gets a private network path that can reach only the backend LLM proxy. Before a session exits, it stops accepting new requests under its temporary LLM grants. It then aborts or finishes authenticated requests and waits for their accounting to settle. Only then may telemetry cleanup, network removal, and session completion proceed. See [LLM API for Agents](llm.md).
 
@@ -48,7 +48,7 @@ The backend keeps one base image per template dependency version. Each base cont
 - The environments.
 - The exact dependency set for that version.
 
-A single-agent submission image adds one pinned repository to the base. A multi-agent session image adds every participating submission, each in a separate location so repositories with the same module name do not conflict. Builds install no new dependencies. Every submission in a session uses the season's dependency version, so the shared base already contains everything it needs.
+A single-agent submission image adds one pinned repository to the base. A multi-agent session image adds every participating submission, each in a separate location so repositories with the same module name do not conflict. Staging happens once per seat, so a seat that covers several players still contributes that one pinned repository location rather than a separate copy for each of its players. Builds install no new dependencies. Every submission in a session uses the season's dependency version, so the shared base already contains everything it needs.
 
 Before use, the image passes the sandboxed load check from [Submissions](submission.md). Failed builds and checks are reported to the owner and never run in a game.
 
@@ -61,6 +61,8 @@ Session containers have:
 - A bounded writable scratch directory.
 - No general internet access.
 - Access only to the backend's internal LLM proxy when enabled.
+
+Container memory and the chargeable wall-clock watchdog scale with the player count rather than the seat count, because total agent compute in a game is bounded by the player count times the episode budget and a wide seat loads one agent instance per player.
 
 General network access stays blocked so an agent cannot secretly outsource decisions or contact an unmetered service. The backend LLM proxy is the one exception because successful model calls are shared, budgeted, and logged.
 

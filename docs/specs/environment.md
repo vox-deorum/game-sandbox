@@ -1,6 +1,6 @@
 # Environments
 
-Every environment exposes a [PettingZoo](https://pettingzoo.farama.org/) interface. Native multi-agent games implement this interface directly. A general compatibility wrapper presents a single-agent Gymnasium game as a one-slot PettingZoo environment.
+Every environment exposes a [PettingZoo](https://pettingzoo.farama.org/) interface. Native multi-agent games implement this interface directly. A general compatibility wrapper presents a single-agent Gymnasium game as a one-player PettingZoo environment.
 
 The rest of the system therefore sees one shape:
 
@@ -12,6 +12,28 @@ Native multi-agent game ──────────────┘
 
 Every environment accepts a seed on reset so controlled repetitions can be compared. See [Leaderboards](leaderboard.md).
 
+## Players and seats
+
+A **player** is one PettingZoo position, identified as `player_N`. It is the unit the environment steps, observes, and scores.
+
+A **seat** is what one agent is bound to, identified as `seat_N`. A seat covers one or more players. It is the unit a person picks an agent for, the unit the leaderboard scheduler enumerates, and the unit the boards score. Where every seat covers a single player, as in Hearts and Flappy Bird, the two are the same thing.
+
+A seat's score is the mean of its players' scores. The environment reports one score per player as it always has, and it decides how those player scores relate. Spades gives both partners their partnership score, so their mean is that partnership score. A game that scores each unit on its own contribution gives a seat the average of its units. Taking the mean keeps scores comparable across seat widths, so one board can rank a seat of ten players beside a seat of one.
+
+Every player in a seat runs a separately constructed instance of the bound agent. The platform supplies no combined multi-player object or shared-state API for those instances, although ordinary shared-container and process-isolation limits still apply. An environment that wants one agent reasoning over several units at once therefore gives that agent a single player whose observation and action cover them all, rather than expecting the platform to join them.
+
+An environment describes its seats in one of two ways, and never both.
+
+Most environments declare **player bounds** and nothing else. Every player then gets a seat of its own, which is the canonical `solo` plan, and the player count is an ordinary gameplay parameter that a season or a player may vary within those bounds. Flappy Bird and Hearts work this way and declare nothing new.
+
+An environment that needs wider or uneven seats declares **seat plans** instead. A plan has a key, a title, and its seats, where each seat names the players it covers, so a plan is a complete partition of the players that plan uses. The player count is then derived from the chosen plan rather than chosen separately. Spades declares two plans: `partnership`, whose two seats hold players 0 and 2, and 1 and 3, and `solo`, whose four seats hold one player each. A role-playing environment declares a plan whose seats are deliberately uneven, such as one seat for the hero, one for ten villagers, and one for ten monsters.
+
+Plans in one environment need not cover the same number of players, so an environment that wants several player counts expresses each as its own plan. What an environment cannot do is declare free player bounds and static plans at once, because a plan that names player 3 means nothing in a two-player game. Deriving the count from the plan is what makes that combination unrepresentable rather than merely discouraged.
+
+Seats within a plan need not be the same width. Naming the players of each seat, rather than deriving them from a rule, is what lets a partnership seated across the table and an uneven cast of characters share one declaration.
+
+A season, or a player starting a session, chooses among the declared plans. Seat membership therefore never depends on live state, which matters because the website, the scheduler, and season configuration all need to know it before an environment instance exists.
+
 ## Metadata layers
 
 Metadata has two layers:
@@ -19,14 +41,14 @@ Metadata has two layers:
 | Layer | Examples | Used by |
 | --- | --- | --- |
 | PettingZoo | Action space, observation space, agent IDs, rewards | Agent and environment loop |
-| Game Sandbox | Display text, slot counts, human slots, timing, capabilities, renderer | Website, scheduler, session controls |
+| Game Sandbox | Display text, player counts, seat plans, human-capable players, timing, capabilities, renderer | Website, scheduler, session controls |
 
 Game Sandbox metadata includes:
 
 - Display name and description.
-- Minimum and maximum slots.
+- Either minimum and maximum players, or the seat plans a season may choose between.
 - Typed gameplay parameter declarations and their environment defaults.
-- Human-capable slots and their default timeout.
+- Human-capable players and their default timeout.
 - Recommended episode length.
 - Pace interval, or no interval for turn-based play.
 - Default step and episode compute limits.
@@ -37,9 +59,9 @@ Game Sandbox metadata includes:
 
 A season may override the gameplay parameter, timing, messaging, and LLM defaults. See [Leaderboards](leaderboard.md).
 
-The **pace interval** is the only distinction between real-time and turn-based stepping. When an interval is set, the environment advances on a wall-clock schedule. With no interval, it advances when the acting slot provides an action. See [Interaction](interaction.md).
+The **pace interval** is the only distinction between real-time and turn-based stepping. When an interval is set, the environment advances on a wall-clock schedule. With no interval, it advances when the acting player provides an action. See [Interaction](interaction.md).
 
-**Seat order** records whether swapping two agents between seats creates a meaningfully different game. A positional game enables this setting. For example, in a trick-taking card game where play follows a fixed order, seating agent A before B differs from seating B before A. A symmetric game leaves it disabled because only the set of participants matters. The leaderboard scheduler reads this field when it expands a match design across submissions. See [Leaderboards](leaderboard.md).
+**Seat order** records whether swapping two agents between seats creates a meaningfully different game. A positional game enables this setting. For example, in a trick-taking card game where play follows a fixed order, seating agent A before B differs from seating B before A. A symmetric game leaves it disabled because only the set of participants matters. The leaderboard scheduler reads this field when it expands a match design across submissions, enumerating over seats rather than players. See [Leaderboards](leaderboard.md).
 
 ## Configurable gameplay parameters
 
@@ -54,7 +76,9 @@ The supported parameter types are:
 - `choice`: one declared string value.
 - `multi_choice`: a unique list of declared string values, normalized to declaration order. An empty list is valid.
 
-Every environment also has a synthesized `seats` integer parameter. Its minimum and maximum come from `min_slots` and `max_slots`, and its default is `max_slots`. Environments cannot declare another parameter named `seats`. Slot bounds remain the source of truth, so the parameter cannot drift from the existing scheduling and validation contract.
+Every environment also has exactly one synthesized reserved parameter, matching the way it describes its seats. An environment with player bounds gets the `players` integer parameter, bounded by `min_players` and `max_players` and defaulting to `max_players`. An environment with declared seat plans gets the `seat_plan` choice parameter, whose values are the plan keys and whose labels are their titles, defaulting to the first declared plan. Environments cannot declare a parameter of either name. The metadata remains the source of truth for both, so neither can drift from the existing scheduling and validation contract. An environment with a single seat plan has a one-option choice, which the website hides like any other. A recording may materialize both resolved layout values for replay portability, but only the parameter that matches the environment's declaration is editable.
+
+Two values are always derived rather than declared: the player count and the seat count. Under player bounds both are the resolved `players` value, since every player has its own seat. Under declared plans they are the number of players the resolved plan covers and the number of seats it lists. Every declared plan must have nonempty seats, and its indices must form the exact zero-based range from `0` through `N - 1`, where `N` is the number of distinct players in the plan, with each index occurring once. The platform checks this when it loads an environment rather than when a session starts, so a session can never resolve to a plan with a gap, a nonzero start, an unowned player, or a player assigned to two seats.
 
 Parameter values resolve in layers:
 
@@ -62,11 +86,11 @@ Parameter values resolve in layers:
 2. The play-open or automated-run season's overrides.
 3. Player tweaks for one live watch or play session.
 
-Automated games stop after the second layer. They always use the season values. Every resolved map contains exactly the environment's effective parameter names, including `seats`.
+Automated games stop after the second layer. They always use the season values. Every resolved map contains exactly the environment's effective parameter names, including whichever of `players` and `seat_plan` that environment has.
 
 A season override is checked against the environment's declarations when an operator saves it, and is not rechecked afterwards. An environment whose declarations later change can therefore leave a stored override that the current declarations reject. Such an override falls back to the environment default, so resolution always produces a complete, usable map. The public prefill serves those values and the platform records the drift for the operator, rather than reporting a configuration problem to a player or taking the environment out of play. Creating an automated run refuses the drifted override instead, because a run would otherwise freeze values the operator never chose.
 
-An environment factory receives the complete resolved parameter map. A variable-seat environment uses `parameters["seats"]` to size `possible_agents`, and the harness verifies the resulting count after reset. Existing environments remain fixed-seat. How a future variable-seat environment combines seat changes with scheduler Naive fill and `human_slots` is intentionally left open until the first such environment is designed.
+An environment factory receives the complete resolved parameter map. A variable-player environment uses `parameters["players"]` to size `possible_agents`, and an environment with declared plans uses `parameters["seat_plan"]` and sizes `possible_agents` to the players that plan covers. The harness verifies the resulting count after reset either way. Existing environments have a fixed player count. How a future variable-player environment combines player-count changes with scheduler Naive fill and `human_players` is intentionally left open until the first such environment is designed.
 
 The website hides numeric parameters whose minimum equals their maximum and single-choice parameters with one option. A non-empty multi-choice parameter remains visible because choosing none and choosing its one option are distinct values.
 
@@ -84,4 +108,4 @@ Every environment passes PettingZoo's `api_test`, and `observation_space.contain
 
 ## Environments in the system
 
-The first environment is a Flappy Bird-style single-agent game that uses the compatibility wrapper. It declares a `pipe_gap` integer parameter with a default of 100 and an inclusive range from 60 to 200. The first native multi-agent environment is Hearts, a four-slot, turn-based trick-taking card game implemented directly against PettingZoo. Spades follows as the first environment to enable agent messaging. It is a four-slot partnership trick-taking game in which players seated across the table are partners and share a team score. All three environments use the same registry and session loop. The same machinery therefore runs both a single paced slot and four sequential turn-based slots, including a human slot seated among agents.
+The first environment is a Flappy Bird-style single-agent game that uses the compatibility wrapper. It declares a `pipe_gap` integer parameter with a default of 100 and an inclusive range from 60 to 200. The first native multi-agent environment is Hearts, a four-player, turn-based trick-taking card game implemented directly against PettingZoo. Spades follows as the first environment to enable agent messaging, and the first whose seats can cover more than one player. It is a four-player partnership trick-taking game in which players seated across the table are partners and share a team score. It declares two seat plans, `partnership` first and therefore by default, whose two seats each hold a partnership, and `solo`, whose four seats hold one player each. Flappy Bird and Hearts declare player bounds instead and get the canonical `solo` plan without naming it. All three environments use the same registry and session loop. The same machinery therefore runs a single paced player, four sequential turn-based players, and two seats that each cover two of them, including a human seated among agents.
