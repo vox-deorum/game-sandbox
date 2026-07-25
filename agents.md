@@ -18,7 +18,7 @@ Public documentation under `docs/` and the canonical student guides at `environm
 
 Write everything in natural language: docs, code comments, commit messages, release notes, console output, and the AGENTS.md files themselves. Keep the prose plain and easy to follow. Bullets, subbullets, and tables are encouraged wherever they make the content easier to scan. Do not use em-dashes anywhere. Reach for a colon, a comma, parentheses, or two separate sentences instead. Every agent working in this repo must follow this rule.
 
-Do not produce layered writings (e.g., instead of X we chose to do Y) that document revision histories, unless explicitly instructed to do so.
+Do not produce layered writings (e.g., instead of X we chose to do Y) that document revision histories, unless explicitly instructed to do so. A reader needs the rule, not the case for it. State what is true and stop there, maximize the language efficiency. **Readability is the top priority.**
 
 ## Working on this repo
 

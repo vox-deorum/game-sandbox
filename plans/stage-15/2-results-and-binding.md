@@ -34,7 +34,7 @@ Update `scripts/play.py` and the generated template local runner to emit both ob
 
 ## Stage and attribute once per seat
 
-Rename `CANONICAL_SUBMISSION_SLOT` and `submissionSlotPath` in `backend/src/submission/submission-image.ts` to seat vocabulary. The live orchestrator and workflow runner resolve, build, and stage a submitted overlay once for each assigned seat, then reuse that seat path for every player driven by that submission. A submitted companion uses the human seat's path for all nonhuman members. The same submission assigned to two different seats receives two distinct seat paths and two independent groups of player instances.
+Rename `CANONICAL_SUBMISSION_SLOT` and `submissionSlotPath` in `backend/src/submission/submission-image.ts` to seat vocabulary, and move the canonical constant's value from `player_0` to `seat_0`. `backend/src/submission/worker.ts` imports the constant and follows automatically. `backend/src/submission/validate/load-check.ts` hardcodes its own `player_0` literal, so point it at the shared constant and leave the staged path with one definition. The live orchestrator and workflow runner resolve, build, and stage a submitted overlay once for each assigned seat, then reuse that seat path for every player driven by that submission. A submitted companion uses the human seat's path for all nonhuman members. The same submission assigned to two different seats receives two distinct seat paths and two independent groups of player instances.
 
 Insert one `session_submissions` row per seat containing a submission using `seat_id`, including a submitted companion. Recording player attribution repeats the submission id and label only on the players that submission drives; a mixed human seat records the person on its human player and the companion on every other member. This lets state frames and chat retain exact acting-player identity while the new header map supplies the grouping.
 
@@ -56,27 +56,28 @@ Put the reduction in a pure helper that takes the resolved layout and player res
 
 Treat the harness `EpisodeResult.scores` map as authoritative. Every resolved player must have a finite score before reduction. A missing, extra, or nonfinite player score is an unattributed game fault, not a partial result. A reported `failed_player` must name a player in the layout. An attributed player crash, illegal action, or episode-budget timeout marks only that player's seat failed. An `act` call that exceeds `step_limit_ms` keeps the existing behavior: discard the late action, apply the legal default, count and charge the overrun, and continue without marking the seat failed. A later `chat` or `learn` overrun preserves the chosen action and any validated messages, records and charges the timeout, and likewise does not mark the seat failed. An OOM, malformed result, missing result, or other fault that cannot be attributed to one player marks every seat failed.
 
-In `workflow-runner.ts`, treat the stored `season_run_games.seats` array as one assignment per canonical seat. Zip array index 0 with `seat_0`, index 1 with `seat_1`, and so on after validating its length against `layout.seatCount`. Use that seat id for image staging and `session_submissions`, then expand through the layout for player bindings, LLM grants, telemetry lookups, and reduction. Never derive `player_N` directly from a scheduled array index. A focused test uses the partnership-shaped mapping `seat_0 -> [player_0, player_2]` to pin the noncontiguous expansion.
+In `workflow-runner.ts`, treat the stored `season_run_games.seats` array as one assignment per canonical seat. Zip array index 0 with `seat_0`, index 1 with `seat_1`, and so on, after validating the array's plan key and length against the layout the run resolves. Store the plan key the schedule was built from beside the assignment array, so a plan of equal seat count and different membership cannot zip silently onto the wrong players. Use that seat id for image staging and `session_submissions`, then expand through the layout for player bindings, LLM grants, telemetry lookups, and reduction. Never derive `player_N` directly from a scheduled array index. A focused test uses the partnership-shaped mapping `seat_0 -> [player_0, player_2]` to pin the noncontiguous expansion.
 
 Run seat reduction before `normalizeEpisodeScore` and before applying `forfeitScore`. Persist one `game_results` row per seat with its zero-based `seat_index`. Apply the forfeit floor only to failed seats, leaving every surviving seat's honest reduced score intact. Board aggregation and placement persistence then consume seat rows without inferring partnerships from equal player values.
 
 ## Recording and presentation
 
-Add three required fields to `schema/recording-header.schema.json`, alongside the existing `players` attribution object:
+Add two required fields to `schema/recording-header.schema.json`, alongside the existing `players` attribution object:
 
 - `seats`, keyed by `seat_N`, whose values are nonempty arrays of unique `player_N` ids forming the exact player partition.
-- `player_count`, the resolver's derived count.
 - `seat_plan`, the resolver's canonical plan key, which is `solo` for a player-bounds environment.
 
-All three are required, and a header missing any of them is malformed. Stage 15 targets a fresh pre-release checkout with no backward-compatibility path, so a recording written before this stage is an artifact that gets recreated rather than a shape the reader has to understand. Every supported recording therefore carries all three, and the reader has one code path.
+Both are required, and a header missing either is malformed. Stage 15 targets a fresh pre-release checkout with no backward-compatibility path, so a recording written before this stage is an artifact that gets recreated rather than a shape the reader has to understand. Every supported recording therefore carries both, and the reader has one code path.
 
-Regenerate the TypeScript recording types and update recording fixtures. Recording validation checks `players` and `seats` independently and then their relationship: all and only attributed player ids appear once across the seats, and `player_count` equals that partition's size. Every fixture carries all three fields.
+The player count is the size of the seat partition, so a reader derives it. `schema_version` holds at 1, because Stage 15 supports no recording written before it. Note that in the schema description.
+
+Regenerate the TypeScript recording types and update recording fixtures. Recording validation checks `players` and `seats` independently and then their relationship: all and only attributed player ids appear once across the seats. Every fixture carries both fields.
 
 Update `backend/src/recordings.ts::winnerId` to compare reduced seat scores and return the winning `seat_N`, grouping player scores through the header's `seats` map. Preserve the existing tie sentinel only when two or more seats share the top reduced score.
 
 Refactor `frontend/src/lib/standings.ts`, its Game Over card consumers, and replay rows to produce one row per header seat. A row retains its seat id, ordered controller attribution, member player ids for secondary detail, and reduced score. An ordinary agent seat collapses repeated player attribution to one label. A mixed human seat shows the human followed by the companion agent. Singleton recordings render the same labels and ranks as before.
 
-Local play needs no separate implementation. `scripts/play.py` builds and serves the frontend's local bundle, which renders `GameOverCard.vue` and therefore already consumes `standings.ts`, so seat-ranked standings reach the local runner through that one change. The file header comment in `standings.ts` still calls itself "the web twin of `scripts/play.py` `_standings`", which has been stale since Stage 13 moved rendering into the browser and removed the Python side. Correct that comment here rather than writing a Python ranking helper to match it.
+Local play needs no separate implementation. `scripts/play.py` builds and serves the frontend's local bundle, which renders `GameOverCard.vue` and therefore already consumes `standings.ts`, so seat-ranked standings reach the local runner through that one change. Three comments in `standings.ts` still point at `scripts/play.py` `_standings`, at the file header and again beside two helpers, and that function has not existed since Stage 13 moved rendering into the browser and removed the Python side. Correct all three here rather than writing a Python ranking helper to match them.
 
 ## Resource scaling
 
@@ -88,7 +89,9 @@ Memory and time scale differently, because one container runs a whole game and e
 SANDBOX_MEMORY_MB + SANDBOX_MEMORY_PER_PLAYER_MB * (resolved player count - 1)
 ```
 
-Both values are operator-configurable through the ordinary environment-variable path. Set `SANDBOX_MEMORY_PER_PLAYER_MB=128` in the tracked `.env.default`, so a default four-player session receives 896 MB from the existing 512 MB base. A deployment that runs heavy agents or an unusually wide layout can tune either term without a code change. A one-player session receives exactly what it receives today, which keeps Flappy Bird and submission validation unchanged, and a wide layout grows in proportion to what it actually adds. Keep CPU and scratch limits unchanged. Submission validation still uses the base alone, because it loads one agent in isolation.
+Both values are operator-configurable through the ordinary environment-variable path. Set `SANDBOX_MEMORY_PER_PLAYER_MB=32` in the tracked `.env.default`, so a default four-player session receives 608 MB from the existing 512 MB base. A deployment that runs heavy agents or an unusually wide layout can tune either term without a code change. A one-player session receives exactly what it receives today, which keeps Flappy Bird and submission validation unchanged, and a wide layout grows in proportion to what it actually adds. Keep CPU and scratch limits unchanged. Submission validation still uses the base alone, because it loads one agent in isolation.
+
+Keep the increment small. Season runs are serialized through the workflow queue and submission validation runs one at a time, but concurrent live browser sessions are bounded only by the host, so every megabyte here multiplies across them.
 
 Add the new value to the sandbox configuration type and required integer parsing, `.env.default`, explicit config-test maps, and launch fixtures. `docs/contributors/setup/configuration.md` documents `SANDBOX_MEMORY_MB` as the session memory quota. Revise that row and add the new variable in the same change, since the quota is now a base rather than the whole allowance.
 
@@ -107,10 +110,11 @@ Keep this scaling in small pure helpers covered independently from Docker launch
 This step moves the result, binding, and recording contracts to the seat, so it revises:
 
 - [Leaderboard](../../docs/specs/leaderboard.md): one episode score per seat, the reduction rules from the Stage 15 table, and forfeit scope.
-- [Recording](../../docs/specs/recording.md): the seat-to-player map, mixed human and companion attribution, the materialized player count and plan key, and the seat-ranked standings card.
+- [Recording](../../docs/specs/recording.md): the seat-to-player map, mixed human and companion attribution, the materialized plan key, and the seat-ranked standings card.
 - [Execution](../../docs/specs/execution.md): staging per seat, and the memory and chargeable-time scaling above.
 - [Submissions](../../docs/specs/submission.md): a submission bound across a seat's players or selected as a human seat's companion.
-- [LLM API](../../docs/specs/llm.md): budgets and telemetry staying keyed per player, which is what makes a wide seat carry several meters.
+
+[LLM API](../../docs/specs/llm.md) needs no edit. It already keys budgets, rate limits, and telemetry per player and sums them across a seat, which is what the reduction here implements.
 
 Every one of these uses the word `seats` today to mean one PettingZoo position, so read each occurrence and decide which meaning it now carries instead of replacing the word.
 
@@ -126,7 +130,7 @@ Launch-config and orchestrator tests cover:
 - Per-player LLM keys and grants for every expanded submitted player, including companion players.
 - One `session_submissions` row per seat containing a submission rather than per player.
 
-Harness and local-play tests cover the `player_bindings` and `players` config objects, reject a binding or attribution entry naming a player outside the resolved layout, and inspect the seat map, player count, and plan key the harness derived for itself in the emitted header.
+Harness and local-play tests cover the `player_bindings` and `players` config objects, reject a binding or attribution entry naming a player outside the resolved layout, and inspect the seat map and plan key the harness derived for itself in the emitted header. The existing byte-identical recording tests keep passing unchanged.
 
 Pure reducer tests pin:
 
@@ -137,10 +141,10 @@ Pure reducer tests pin:
 - An episode-budget timeout forfeiting only its seat, while a late `act` applies the default action and later-hook overruns preserve it, with neither step overrun causing a forfeit.
 - Missing scores, unknown failed-player ids, malformed result envelopes, and unattributed process faults forfeiting every seat.
 
-Storage and board tests assert one row per seat, correct `seat_index`, no double counting for a wide submission, and unchanged singleton boards. Recording tests round-trip distinct `players` and `seats` objects, including mixed human and companion attribution, verify the materialized player count and plan key, and reject a header missing any of the three. Backend and frontend replay tests distinguish a decisive partnership winner from a true tie and render the player membership detail.
+Storage and board tests assert one row per seat, correct `seat_index`, no double counting for a wide submission, and unchanged singleton boards. Recording tests round-trip distinct `players` and `seats` objects, including mixed human and companion attribution, verify the materialized plan key and the player count derived from the seat map, and reject a header missing either field. Backend and frontend replay tests distinguish a decisive partnership winner from a true tie and render the player membership detail.
 
 Resource tests cover the exact derived memory for one, two, and four players, including that a one-player session matches today's value exactly, plus watchdog arithmetic, season episode-limit overrides, safe-integer overflow rejection, and the unchanged live session backstop.
 
 ## Done when
 
-A synthetic wide layout runs end to end through both live and workflow launch assembly. An agent seat stages one submission and expands it across its members. A human seat makes one player external, stages its selected companion at most once, and expands that agent across the remaining members. Each seat writes one reduced result row and appears once in standings with accurate controller attribution. Failures affect only the attributable seat when possible, container memory uses the tracked 128 MB per-additional-player default, and chargeable workflow time grows with the resolved player count while a one-player session is untouched.
+A synthetic wide layout runs end to end through both live and workflow launch assembly. An agent seat stages one submission and expands it across its members. A human seat makes one player external, stages its selected companion at most once, and expands that agent across the remaining members. Each seat writes one reduced result row and appears once in standings with accurate controller attribution. Failures affect only the attributable seat when possible, container memory uses the tracked 32 MB per-additional-player default, and chargeable workflow time grows with the resolved player count while a one-player session is untouched.

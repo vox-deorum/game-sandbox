@@ -44,7 +44,7 @@ Add one pure layout resolver in each language:
 
 Each resolver accepts metadata and an already complete, validated parameter map. It returns the canonical plan key, ordered `seat_N` ids, the ordered `player_N` members of every seat, and derived `playerCount` and `seatCount` values. Under player bounds the plan key is `solo`, both counts equal the resolved `players` value, and `seat_N` maps to `player_N`. Under declared plans the counts and membership come only from the selected plan. A missing, wrongly typed, or unknown reserved value is an internal contract error rather than a fallback to a default.
 
-Replace `resolvedSeatCount()` in `backend/src/environment-parameters.ts` and the duplicate count logic in `frontend/src/lib/parameters.ts` with this shared resolver. Parameter resolution always runs before layout resolution. Call sites pass the resulting layout forward rather than deriving `player_${i}` or counting seats independently.
+Replace `resolvedSeatCount(values)` in `backend/src/environment-parameters.ts` and both `resolvedSeatCount(declarations, values, fallback)` and `seatCountOf(declarations, values)` in `frontend/src/lib/parameters.ts` with this shared resolver. Parameter resolution always runs before layout resolution. Call sites pass the resulting layout forward rather than deriving `player_${i}` or counting seats independently.
 
 ## Player-named harness runtime
 
@@ -68,6 +68,9 @@ The browser and backend continue assigning one request entry per assignable unit
 
 - `StartRequest.slots`, `SlotAssignment`, and `validateSlotShape` in `backend/src/session/orchestrator.ts` become `seats`, `SeatAssignment`, and `validateSeatShape`.
 - `MAX_HUMAN_SLOTS` becomes `MAX_HUMAN_PLAYERS`.
+- `StartRequest.humanSlotTimeoutMs` becomes `humanTimeoutMs`, since it is the human move-clock override rather than an id.
+- `LiveSessionInit.externalSlots` in `backend/src/session/live-session.ts` becomes `externalPlayers`, and the relay's `input` gate moves onto it from `humanSlots`. The external set is the players a human actually controls, which is what an input command has to name.
+- `LiveSessionInit.humanSlots` is then removed, because the environment's human-capable list has no other consumer in the live session.
 - Session API payloads, socket authorization state, frontend API types, and `SeatAssignmentDialog.vue` emit `seat_N` keys.
 - An ordinary `SeatAssignment` remains a Naive or submission binding. Its human variant may carry one companion agent binding. The companion is forbidden for a singleton and becomes required for a wide seat in [step 2](2-results-and-binding.md), so the request shape does not change when the first wide layout arrives.
 - The human option is available when the resolved seat contains at least one entry from `human_players`. The first such member in seat order is the human player, and the backend derives and validates it authoritatively rather than trusting a client-provided player id.
@@ -105,7 +108,7 @@ Python metadata and parameter tests cover:
 
 Schema TypeScript tests use shared valid and invalid JSON fixtures to pin the same wire decisions and verify that the exported resolver agrees with Python on canonical solo and uneven layouts.
 
-Backend, storage, scheduler, and frontend tests follow the request and field renames. They verify exact `seat_N` shape validation, singleton human capability, rejection of an unnecessary companion on a singleton, parameter resolution before layout resolution, and unchanged schedules for every existing one-player-per-seat environment.
+Backend, storage, scheduler, and frontend tests follow the request and field renames. They verify exact `seat_N` shape validation, singleton human capability, rejection of an unnecessary companion on a singleton, the relay refusing an `input` command naming a human-capable player the session does not actually expose, parameter resolution before layout resolution, and unchanged schedules for every existing one-player-per-seat environment.
 
 ## Done when
 

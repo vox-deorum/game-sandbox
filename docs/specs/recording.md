@@ -4,13 +4,13 @@ Recordings store state rather than video. A replay draws the stored states with 
 
 ```text
 Header
-  environment, schema version, seed, players, seats, sidecars
+  environment, schema version, seed, players, seats, seat plan, sidecars
 State line 1
 State line 2
 ...
 ```
 
-The header identifies who controlled each player, either a human, the built-in agent, or a submitted agent. It also records which players belonged to each seat, so a replay reads the grouping from the recording instead of re-deriving it from metadata that may have changed since. The player attribution within one seat may be mixed: a wide human seat records the person on its designated player and the selected companion agent on every other member. Every supported recording carries this seat map, the derived player count, and the canonical seat-plan key. Finally it records the complete normalized gameplay parameter map used to construct the environment. Only the reserved parameter that matched the environment's declaration was editable when the game started.
+The header identifies who controlled each player, either a human, the built-in agent, or a submitted agent. It also records which players belonged to each seat, so a replay reads the grouping from the recording instead of re-deriving it from metadata that may have changed since. The player attribution within one seat may be mixed: a wide human seat records the person on its designated player and the selected companion agent on every other member. Every supported recording carries this seat map and the canonical seat-plan key. Finally it records the complete normalized gameplay parameter map used to construct the environment. Only the reserved parameter that matched the environment's declaration was editable when the game started.
 
 This design means:
 
