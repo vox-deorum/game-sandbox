@@ -113,8 +113,9 @@ test('a submitted agent validates to ready and runs in a watch session', async (
   await expect(rateDialog.getByRole('spinbutton', { name: 'Seed (optional)' })).toBeDisabled()
   await rateDialog.getByRole('button', { name: 'Start watching' }).click()
 
-  // A real scripted session launches with the built overlay and streams into the renderer.
-  await expect(page).toHaveURL(/\/sessions\//)
+  // A real scripted session launches with the built overlay and streams into the renderer. Docker can
+  // take longer than the default expect timeout after the earlier container-heavy journeys.
+  await expect(page).toHaveURL(/\/sessions\//, { timeout: 60_000 })
   await expect(page.locator('canvas.renderer-canvas')).toBeVisible()
   await page.getByRole('button', { name: 'Pause' }).click()
   await expect(page.locator('.overlay-banner')).toHaveText('Paused')
