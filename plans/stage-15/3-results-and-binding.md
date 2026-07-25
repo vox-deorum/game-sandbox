@@ -1,8 +1,8 @@
-# Stage 15.2: Results and binding move to the seat
+# Stage 15.3: Results and binding move to the seat
 
 Status: not started.
 
-Part of [Stage 15](../stage-15-wide-seats.md), build-order step 2.
+Part of [Stage 15](../stage-15-wide-seats.md), build-order step 3.
 
 ## Outcome
 
@@ -30,7 +30,7 @@ Update both callers, `backend/src/session/orchestrator.ts` and `backend/src/work
 
 Extend the harness `LiveConfig` parser to validate `player_bindings` and `players` against the player-id set of the layout it resolved. A binding or attribution entry naming a player outside that set is a config error.
 
-Update `scripts/play.py` and the generated template local runner to emit both objects. Harness and local-play fixtures exercise this path directly, so adding the header field does not depend on a backend-launched container.
+`scripts/play.py` and the generated template local runner already emit both objects, so the only change on that path is the layout validation above. Harness and local-play fixtures exercise it directly, so adding the header field does not depend on a backend-launched container.
 
 ## Stage and attribute once per seat
 
@@ -130,7 +130,7 @@ Launch-config and orchestrator tests cover:
 - Per-player LLM keys and grants for every expanded submitted player, including companion players.
 - One `session_submissions` row per seat containing a submission rather than per player.
 
-Harness and local-play tests cover the `player_bindings` and `players` config objects, reject a binding or attribution entry naming a player outside the resolved layout, and inspect the seat map and plan key the harness derived for itself in the emitted header. The existing byte-identical recording tests keep passing unchanged.
+Harness and local-play tests cover the `player_bindings` and `players` config objects, reject a binding or attribution entry naming a player outside the resolved layout, and inspect the seat map and plan key the harness derived for itself in the emitted header. A local-play test also confirms that the maintainer launcher's final standings rank seats, since `scripts/play.py` reaches them through the shared frontend bundle rather than through a Python helper of its own. The existing byte-identical recording tests keep passing unchanged.
 
 Pure reducer tests pin:
 

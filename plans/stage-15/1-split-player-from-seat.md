@@ -60,7 +60,7 @@ Apply the rename through `harness/src/game_sandbox_harness/session.py`, `harness
 
 `Episode.start()` resolves the layout from the complete parameter map and asserts that `env.possible_agents` is the exact ordered `player_0` through `player_N-1` sequence for the derived player count. This assertion covers both metadata styles and catches a factory that ignores its reserved parameter.
 
-Update `schema/recording-header.schema.json`, `schema/step-state.schema.json`, the generated TypeScript types, and Python and TypeScript protocol fixtures for the player-named runtime fields. The existing recording `players` object keeps its name because it already attributes each `player_N`. The new seat-to-player recording header field belongs to [step 2](2-results-and-binding.md).
+Update `schema/recording-header.schema.json`, `schema/step-state.schema.json`, the generated TypeScript types, and Python and TypeScript protocol fixtures for the player-named runtime fields. The existing recording `players` object keeps its name because it already attributes each `player_N`. The new seat-to-player recording header field belongs to [step 3](3-results-and-binding.md).
 
 ## Seat-named platform contracts
 
@@ -72,10 +72,10 @@ The browser and backend continue assigning one request entry per assignable unit
 - `LiveSessionInit.externalSlots` in `backend/src/session/live-session.ts` becomes `externalPlayers`, and the relay's `input` gate moves onto it from `humanSlots`. The external set is the players a human actually controls, which is what an input command has to name.
 - `LiveSessionInit.humanSlots` is then removed, because the environment's human-capable list has no other consumer in the live session.
 - Session API payloads, socket authorization state, frontend API types, and `SeatAssignmentDialog.vue` emit `seat_N` keys.
-- An ordinary `SeatAssignment` remains a Naive or submission binding. Its human variant may carry one companion agent binding. The companion is forbidden for a singleton and becomes required for a wide seat in [step 2](2-results-and-binding.md), so the request shape does not change when the first wide layout arrives.
+- An ordinary `SeatAssignment` remains a Naive or submission binding. Its human variant may carry one companion agent binding. The companion is forbidden for a singleton and becomes required for a wide seat in [step 3](3-results-and-binding.md), so the request shape does not change when the first wide layout arrives.
 - The human option is available when the resolved seat contains at least one entry from `human_players`. The first such member in seat order is the human player, and the backend derives and validates it authoritatively rather than trusting a client-provided player id.
 
-At this step all resolved seats are singletons. Still validate the request against the resolver's exact seat-id set rather than against a numeric count, so [step 2](2-results-and-binding.md) can expand a wide seat without changing the request contract.
+At this step all resolved seats are singletons. Still validate the request against the resolver's exact seat-id set rather than against a numeric count, so [step 3](3-results-and-binding.md) can expand a wide seat without changing the request contract.
 
 Rename the session and season persistence fields in the flat initial schema:
 
@@ -114,4 +114,4 @@ Backend, storage, scheduler, and frontend tests follow the request and field ren
 
 All metadata and session boundaries use player for a PettingZoo position and seat for an assigned unit. Python and TypeScript produce identical canonical layouts, all generated artifacts are fresh, the current environments run with unchanged singleton behavior, and the metadata, harness, schema, backend session, scheduler, and storage roots no longer contain `min_slots`, `max_slots`, `human_slots`, or the reserved `seats` parameter.
 
-Two player-shaped `slot` names deliberately survive this step, because renaming them is inseparable from the work that gives them a seat to sit beside: `SlotConfig` in `backend/src/session/launch-config.ts` and `aggregateSeat` in `backend/src/workflow/aggregate.ts` both move in [step 2](2-results-and-binding.md). Environment, renderer, example, and guide vocabulary is completed in [step 3](3-environment-player-rename.md).
+Two player-shaped `slot` names deliberately survive here, because renaming them is inseparable from the work that gives them a seat to sit beside: `SlotConfig` in `backend/src/session/launch-config.ts` and `aggregateSeat` in `backend/src/workflow/aggregate.ts` both move in [step 3](3-results-and-binding.md). Environment, renderer, example, and guide vocabulary is completed in [step 2](2-environment-player-rename.md).

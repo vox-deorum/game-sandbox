@@ -1,6 +1,6 @@
 # Stage 15: Wide seats
 
-Status: not started.
+Status: in progress. Step 15.1 is complete.
 
 ## Goal
 
@@ -146,13 +146,13 @@ All three follow from the platform ranking players when it should rank seats.
 
 The platform rename, including the storage columns and the session path, the tagged `layout` metadata field with its load-time checks, the `seat_plan` reserved choice parameter beside the renamed `players` one, the derived player and seat counts, one shared plan resolution per language, the TypeScript shape guard, and the regenerated registry JSON. Every environment stays on player bounds and the canonical `solo` plan, so nothing changes behaviorally.
 
-### 15.2 [Results and binding move to the seat](stage-15/2-results-and-binding.md)
+### 15.2 [The environment rename](stage-15/2-environment-player-rename.md)
+
+The mechanical pass across the three environments, their templates, examples, guides, local play, the shared card renderer, and every test that asserts on the old names. It follows the platform rename directly, so the word `seat` stops meaning a table position in one half of the tree while it means an assignable unit in the other. It also lands on its own, so the diff stays reviewable and a failure here cannot be confused with a failure in the result model that follows it.
+
+### 15.3 [Results and binding move to the seat](stage-15/3-results-and-binding.md)
 
 The mean reduction in the runner, one `game_results` row per seat keyed by the renamed `seat_index`, forfeits charged to the seat after the reduction, the seat-to-player map in the recording header, submission staging per seat, `frontend/src/lib/standings.ts` ranking seats, and `winnerId` reporting the winning seat. Local play needs no separate work here: `scripts/play.py` serves the same frontend bundle, so it picks up seat-ranked standings from that one change. Every environment is still one player per seat, so this prepares the result and binding changes that close the three Spades defects when Stage 15.4 adopts the partnership topology. This step also implements the memory and time scaling described above.
-
-### 15.3 [The environment rename](stage-15/3-environment-player-rename.md)
-
-The mechanical pass across the three environments, their templates, examples, guides, local play, the shared card renderer, and every test that asserts on the old names. This lands on its own so the diff stays reviewable and so a failure here cannot be confused with a failure in the model above it.
 
 ### 15.4 [Spades gains the partnership plan](stage-15/4-spades-partnership-plan.md)
 

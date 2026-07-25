@@ -1,12 +1,14 @@
-# Stage 15.3: The environment rename
+# Stage 15.2: The environment rename
 
 Status: not started.
 
-Part of [Stage 15](../stage-15-wide-seats.md), build-order step 3.
+Part of [Stage 15](../stage-15-wide-seats.md), build-order step 2.
 
 ## Outcome
 
 The environments, student APIs, local-play tools, and shared card renderer use player for a PettingZoo position. The renderer separately uses position for a visual location around the table. This is a behavior-preserving vocabulary pass, and Spades still uses four singleton seats until [step 4](4-spades-partnership-plan.md).
+
+It follows the platform rename directly and depends on nothing beyond it. Step 1 left the word `seat` meaning an assignable unit in the backend and the session API while it still meant a table position inside the environments and the shared renderer, so closing that gap before the result model moves keeps one meaning of the word in the tree at a time.
 
 The hands-on check runs every bundled example against its environment, plays Hearts and Spades locally with player-named observation helpers and the seat-aware maintainer launcher, and renders the same four table positions without any seat or slot term standing in for a player.
 
@@ -59,7 +61,7 @@ Renderer modules under `environments/<env>/renderer/` may retain game-specific c
 
 ## Specification and guide edits
 
-This step owns no `docs/specs/` file, and that is deliberate rather than an omission. The specifications describe platform contracts, and this rename touches student-facing and contributor-facing vocabulary only. The nine specification files the Stage 15 overview lists are revised by steps [1](1-split-player-from-seat.md), [2](2-results-and-binding.md), and [4](4-spades-partnership-plan.md), each alongside the contract it changes.
+This step owns no `docs/specs/` file, and that is deliberate rather than an omission. The specifications describe platform contracts, and this rename touches student-facing and contributor-facing vocabulary only. The nine specification files the Stage 15 overview lists are revised by steps [1](1-split-player-from-seat.md), [3](3-results-and-binding.md), and [4](4-spades-partnership-plan.md), each alongside the contract it changes.
 
 ## Tests
 
@@ -67,7 +69,7 @@ Environment tests for Hearts and Spades update every expected observation, trick
 
 Template and example tests import only the new helper names. A repository search test or explicit CI assertion excludes `my_seat`, `partner_seat`, and the old observation keys from current template and public-documentation roots, while allowing historical plans and Stage 15 migration explanations.
 
-Local-play tests cover `--seat`, resolved seat-to-player expansion, construction of the one designated external player plus any companion bindings, human action routing, and seat-ranked final standings from step 2. The base template's player-selected play and evaluate commands receive the same coverage through generated-code freshness.
+Local-play tests cover `--seat`, its resolution through the layout to the one player each singleton seat covers, construction of the designated external player, and human action routing. The base template's player-selected play and evaluate commands receive the same coverage through generated-code freshness. Seat-ranked standings belong to [step 3](3-results-and-binding.md) and the wide-seat companion choice to [step 4](4-spades-partnership-plan.md), so neither is asserted here.
 
 Shared scene tests separately pin:
 
