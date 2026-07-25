@@ -1,8 +1,8 @@
 <!--
   The seat-assignment grid the watch and play flows open inside a UiDialog (Stage 7.6). It builds the
-  explicit per-slot `slots` payload the backend's start contract expects (step 4): one assignment for
+  explicit per-seat `seats` payload the backend's start contract expects: one assignment for
   every required seat. It is the multi-seat replacement for the Stage 5 single-agent watch start, used
-  only for environments with more than one slot; a single-slot environment keeps its minimal forms.
+  only for environments with more than one seat; a single-seat environment keeps its minimal forms.
 
   Every non-human seat always holds a concrete agent — there is no empty seat state. The built-in Naive
   baseline is the default agent (always available, even with no submissions), so a full, valid
@@ -16,22 +16,26 @@
     at a time; the vacated row falls back to the Naive default agent.
 
   It is presentational: the parent owns the UiDialog, the `startSession` call, navigation, and errors.
-  It emits `start` with the resolved `slots` and the supported session overrides, and `cancel`.
+  It emits `start` with the resolved `seats` and the supported session overrides, and `cancel`.
 -->
 <script setup lang="ts">
-import type { EnvironmentMeta, ParameterValue } from '@game-sandbox/schema/environment'
+import {
+  type EnvironmentMeta,
+  type ParameterValue,
+  resolveLayout,
+} from '@game-sandbox/schema/environment'
 import { computed, reactive, ref, watch } from 'vue'
 
-import type { SlotAssignmentInput, StartPayload, WatchAgentSummary } from '../api/client.js'
+import type {
+  AgentAssignmentInput,
+  SeatAssignmentInput,
+  StartPayload,
+  WatchAgentSummary,
+} from '../api/client.js'
 import { maskedSubmissionLabel } from '../lib/attribution.js'
 import { shortId } from '../lib/format.js'
 import { optionalNumber } from '../lib/forms.js'
-import {
-  initializeParameters,
-  resolvedSeatCount,
-  seatCountOf,
-  validateParameters,
-} from '../lib/parameters.js'
+import { initializeParameters, validateParameters } from '../lib/parameters.js'
 import ParameterFields from './ParameterFields.vue'
 import UiButton from './ui/UiButton.vue'
 import UiField from './ui/UiField.vue'
@@ -45,7 +49,7 @@ const props = defineProps<{
   /** Rate locks one intended agent; watch assigns agents; play seats one connected human. */
   mode: 'rate' | 'watch' | 'play'
   /** The clicked agent to preselect into every seat (watch only); defaults to the Naive baseline. */
-  preselect?: SlotAssignmentInput
+  preselect?: AgentAssignmentInput
   /** Operators see owner/source labels for submitted agents; everyone else sees anonymous numbers. */
   isOperator?: boolean
   seasonId: string
@@ -58,85 +62,99 @@ const emit = defineEmits<{
 }>()
 
 // Each seat's agent is a string (a <select> only carries strings): the Naive baseline or
-// `submission:<id>`. The connected human seat is tracked separately by `humanSlot`, so a seat is never
+// `submission:<id>`. The connected human seat is tracked separately by `humanSeat`, so a seat is never
 // in an ambiguous "human-or-agent" string state. Decoded back to the wire union on Start.
 const BUILTIN = 'builtin'
 
-function encodeAgent(assignment: SlotAssignmentInput): string {
+function encodeAgent(assignment: AgentAssignmentInput): string {
   return assignment.kind === 'submission' ? `submission:${assignment.submissionId}` : BUILTIN
 }
 
-function decodeAgent(value: string): SlotAssignmentInput {
+function decodeAgent(value: string): AgentAssignmentInput {
   return value === BUILTIN
     ? { kind: 'builtin-agent' }
     : { kind: 'submission', submissionId: value.slice('submission:'.length) }
 }
 
-// The required seats are player_0 … player_{seatCount-1}, the same ids the backend validates against.
+// A valid parameter map resolves to the exact seat ids and membership the backend validates against.
 const parameters = ref(initializeParameters(props.meta.parameters, props.parameters))
 const parametersValid = ref(true)
-// The grid follows only a valid seat count. A half-typed value in a visible seats field would otherwise
-// resolve to nothing, snap the grid back to the environment maximum, and evict seat assignments before
-// the form's own validation had a chance to report the problem, so keep the last valid count instead.
-const seatCount = ref(resolvedSeatCount(props.meta.parameters, parameters.value, props.meta.max_slots))
+const layout = ref(resolveLayout(props.meta, parameters.value))
 watch(parameters, (values) => {
-  const next = seatCountOf(props.meta.parameters, values)
-  if (next !== undefined) seatCount.value = next
+  const checked = validateParameters(props.meta.parameters, values)
+  if (Object.keys(checked.errors).length === 0) {
+    layout.value = resolveLayout(props.meta, checked.values)
+  }
 })
-const slotIds = computed(() => Array.from({ length: seatCount.value }, (_, i) => `player_${i}`))
+const seatIds = computed(() => layout.value.seats.map((seat) => seat.seatId))
 
 // The seats a connected human may occupy, per the environment metadata. Hearts marks all four; a
 // restricted environment may mark only some, so the human default and the "Sit here" affordance must
 // respect it rather than offering the human every seat.
-const humanCapable = new Set(props.meta.human_slots)
+const humanPlayers = new Set(props.meta.human_players)
+const humanCapableSeats = computed(
+  () =>
+    new Set(
+      layout.value.seats
+        .filter((seat) => seat.players.some((playerId) => humanPlayers.has(playerId)))
+        .map((seat) => seat.seatId),
+    ),
+)
 
 // Every seat carries a concrete agent under it; the human (play only) simply overrides whichever seat
-// `humanSlot` names. Watch preselects the clicked agent into every seat; play defaults every seat to
+// `humanSeat` names. Watch preselects the clicked agent into every seat; play defaults every seat to
 // the Naive baseline and seats the human at the first human-capable seat. There is never an empty seat.
 const defaultAgent =
   props.mode === 'play' ? BUILTIN : encodeAgent(props.preselect ?? { kind: 'builtin-agent' })
 const agentChoice = reactive<Record<string, string>>(
-  Object.fromEntries(slotIds.value.map((slotId) => [slotId, defaultAgent])),
+  Object.fromEntries(seatIds.value.map((seatId) => [seatId, defaultAgent])),
 )
-const humanSlot = ref<string | null>(
-  props.mode === 'play' ? (slotIds.value.find((slotId) => humanCapable.has(slotId)) ?? null) : null,
+const humanSeat = ref<string | null>(
+  props.mode === 'play'
+    ? (seatIds.value.find((seatId) => humanCapableSeats.value.has(seatId)) ?? null)
+    : null,
 )
 
-watch(slotIds, (ids) => {
+watch(seatIds, (ids) => {
   // A seat added by a growing count gets the same default as the seats present at open, so a watch or
   // rate dialog still has its chosen agent in every seat rather than Naive in the new ones.
-  for (const slotId of ids) if (agentChoice[slotId] === undefined) agentChoice[slotId] = defaultAgent
-  for (const slotId of Object.keys(agentChoice)) if (!ids.includes(slotId)) delete agentChoice[slotId]
-  if (props.mode === 'play' && (humanSlot.value === null || !ids.includes(humanSlot.value))) {
-    humanSlot.value = ids.find((slotId) => humanCapable.has(slotId)) ?? null
+  for (const seatId of ids) if (agentChoice[seatId] === undefined) agentChoice[seatId] = defaultAgent
+  for (const seatId of Object.keys(agentChoice)) if (!ids.includes(seatId)) delete agentChoice[seatId]
+  if (
+    props.mode === 'play' &&
+    (humanSeat.value === null ||
+      !ids.includes(humanSeat.value) ||
+      !humanCapableSeats.value.has(humanSeat.value))
+  ) {
+    humanSeat.value = ids.find((seatId) => humanCapableSeats.value.has(seatId)) ?? null
   }
 })
 
-function isHuman(slotId: string): boolean {
-  return humanSlot.value === slotId
+function isHuman(seatId: string): boolean {
+  return humanSeat.value === seatId
 }
 
 /** Whether a "Sit here" affordance belongs on this seat: play mode, and the seat is human-capable. */
-function canSitHere(slotId: string): boolean {
-  return props.mode === 'play' && humanCapable.has(slotId)
+function canSitHere(seatId: string): boolean {
+  return props.mode === 'play' && humanCapableSeats.value.has(seatId)
 }
 
-// The strict index check types `agentChoice[slotId]` as `string | undefined`, but a seat always has a
+// The strict index check types `agentChoice[seatId]` as `string | undefined`, but a seat always has a
 // value, so this read keeps the dropdown binding and the payload typed.
-function seatValue(slotId: string): string {
-  return agentChoice[slotId] ?? BUILTIN
+function seatValue(seatId: string): string {
+  return agentChoice[seatId] ?? BUILTIN
 }
 
-function setSeat(slotId: string, value: string): void {
-  agentChoice[slotId] = value
+function setSeat(seatId: string, value: string): void {
+  agentChoice[seatId] = value
 }
 
 /** Move the connected human to a seat; the seat it leaves falls back to the Naive default agent. */
 function sitHere(target: string): void {
-  if (humanSlot.value !== null) {
-    agentChoice[humanSlot.value] = BUILTIN
+  if (humanSeat.value !== null) {
+    agentChoice[humanSeat.value] = BUILTIN
   }
-  humanSlot.value = target
+  humanSeat.value = target
 }
 
 /** A short, human-friendly label for a submission's pinned source (operator view). */
@@ -171,10 +189,13 @@ const agentOptions = computed<{ value: string; label: string }[]>(() => [
 // Start is gated on a full, valid composition: every seat carries an agent (always true with the
 // no-empty defaults) and a play session has its one human seat. The guard keeps the payload honest.
 const canStart = computed(() => {
-  if (props.mode === 'play' && humanSlot.value === null) {
+  if (props.mode === 'play' && humanSeat.value === null) {
     return false
   }
-  return parametersValid.value && slotIds.value.every((slotId) => isHuman(slotId) || seatValue(slotId) !== '')
+  return (
+    parametersValid.value &&
+    seatIds.value.every((seatId) => isHuman(seatId) || seatValue(seatId) !== '')
+  )
 })
 
 const isPaced = props.meta.pace_interval_ms !== null
@@ -215,16 +236,16 @@ function onSubmit(): void {
   // one canonical representation of the same form state on the wire.
   const checked = validateParameters(props.meta.parameters, parameters.value)
   if (Object.keys(checked.errors).length > 0) return
-  const slots: Record<string, SlotAssignmentInput> = {}
-  for (const slotId of slotIds.value) {
-    slots[slotId] = isHuman(slotId) ? { kind: 'human' } : decodeAgent(seatValue(slotId))
+  const seats: Record<string, SeatAssignmentInput> = {}
+  for (const seatId of seatIds.value) {
+    seats[seatId] = isHuman(seatId) ? { kind: 'human' } : decodeAgent(seatValue(seatId))
   }
   emit('start', {
     seasonId: props.seasonId,
     parameters: checked.values,
-    slots,
+    seats,
     seed: optionalNumber(seed.value),
-    humanSlotTimeoutMs: props.mode === 'play' ? optionalNumber(timeout.value) : undefined,
+    humanTimeoutMs: props.mode === 'play' ? optionalNumber(timeout.value) : undefined,
   })
 }
 </script>
@@ -245,29 +266,29 @@ function onSubmit(): void {
       />
 
       <ul class="seat-list">
-        <li v-for="(slotId, index) in slotIds" :key="slotId" class="seat-row">
-          <span :id="`${slotId}-label`" class="seat-label">Seat {{ index + 1 }}</span>
+        <li v-for="(seatId, index) in seatIds" :key="seatId" class="seat-row">
+          <span :id="`${seatId}-label`" class="seat-label">Seat {{ index + 1 }}</span>
           <div class="seat-control">
-            <template v-if="isHuman(slotId)">
+            <template v-if="isHuman(seatId)">
               <span class="seat-you">You</span>
               <span class="seat-seated">seated</span>
             </template>
             <template v-else>
               <UiSelect
-                :model-value="seatValue(slotId)"
-                :aria-labelledby="`${slotId}-label`"
-                @update:model-value="(value: string) => setSeat(slotId, value)"
+                :model-value="seatValue(seatId)"
+                :aria-labelledby="`${seatId}-label`"
+                @update:model-value="(value: string) => setSeat(seatId, value)"
               >
                 <option v-for="option in agentOptions" :key="option.value" :value="option.value">
                   {{ option.label }}
                 </option>
               </UiSelect>
               <UiButton
-                v-if="canSitHere(slotId)"
+                v-if="canSitHere(seatId)"
                 type="button"
                 variant="ghost"
                 size="tight"
-                @click="sitHere(slotId)"
+                @click="sitHere(seatId)"
               >
                 Sit here
               </UiButton>

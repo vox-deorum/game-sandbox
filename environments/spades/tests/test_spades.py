@@ -24,7 +24,7 @@ import pytest
 
 from game_sandbox_harness.environment import resolve_parameters
 from game_sandbox_harness.manifest import load_agent
-from game_sandbox_harness.session import REASON_TERMINATED, AgentSlot, run_episode
+from game_sandbox_harness.session import REASON_TERMINATED, AgentPlayer, run_episode
 from spades import ENTRY, rules
 from spades.env import IllegalMoveError, card_to_obj, default_action, make_env
 from spades.overlay import extract_overlay
@@ -41,7 +41,7 @@ BUILTIN_SPADES_AGENT_DIR = (
 def test_seat_zero_bids_first_and_leads():
     # The fixed convention the scheduler, examples, and e2e journeys rely on: seat 0 opens the
     # bidding, and once bidding is done seat 0 leads the first trick.
-    env = make_env({"seats": 4})
+    env = make_env({"players": 4})
     env.reset(seed=0)
     assert env.agent_selection == "player_0"
     assert env.state.turn == 0
@@ -53,7 +53,7 @@ def test_seat_zero_bids_first_and_leads():
 
 
 def test_each_seat_bids_once_in_order_and_card_actions_are_illegal():
-    env = make_env({"seats": 4})
+    env = make_env({"players": 4})
     env.reset(seed=0)
     for seat in range(rules.NUM_PLAYERS):
         assert env.state.turn == seat  # strict seat order 0, 1, 2, 3
@@ -68,7 +68,7 @@ def test_each_seat_bids_once_in_order_and_card_actions_are_illegal():
 
 
 def test_bid_actions_are_illegal_during_play():
-    env = make_env({"seats": 4})
+    env = make_env({"players": 4})
     env.reset(seed=0)
     for _ in range(rules.NUM_PLAYERS):
         env.step(default_action(env, env.agent_selection))
@@ -79,14 +79,14 @@ def test_bid_actions_are_illegal_during_play():
 
 
 def test_env_rejects_card_action_during_bidding():
-    env = make_env({"seats": 4})
+    env = make_env({"players": 4})
     env.reset(seed=0)
     with pytest.raises(IllegalMoveError):
         env.step(env.state.hands[0][0])  # a card while still bidding
 
 
 def test_env_rejects_bid_action_during_play():
-    env = make_env({"seats": 4})
+    env = make_env({"players": 4})
     env.reset(seed=0)
     for _ in range(rules.NUM_PLAYERS):
         env.step(default_action(env, env.agent_selection))
@@ -164,7 +164,7 @@ def test_playing_a_spade_breaks_spades():
 
 
 def test_legal_actions_match_emitted_mask_in_both_phases():
-    env = make_env({"seats": 4})
+    env = make_env({"players": 4})
     env.reset(seed=0)
 
     def agree() -> None:
@@ -190,7 +190,7 @@ def test_legal_actions_match_emitted_mask_in_both_phases():
 
 
 def test_observe_masks_only_the_acting_seat():
-    env = make_env({"seats": 4})
+    env = make_env({"players": 4})
     env.reset(seed=0)
     acting = env.agent_selection
     assert int(env.observe(acting)["action_mask"].sum()) > 0
@@ -202,7 +202,7 @@ def test_observe_masks_only_the_acting_seat():
 def test_observation_partnership_bids_and_phase_fields():
     # Pins the object observation contract: partner_seat (not partner arithmetic in the agent),
     # phase 0/1, hand as face-value card objects, and bids using 14 as the "unbid" sentinel.
-    env = make_env({"seats": 4})
+    env = make_env({"players": 4})
     env.reset(seed=0)
     seat = env.state.turn
     inner = env.observe(env.agent_selection)["observation"]
@@ -235,7 +235,7 @@ def test_last_trick_is_empty_until_the_first_trick_completes():
     # Before any trick resolves (through bidding and into the first, still-incomplete trick) the
     # last_trick leaf is an empty tuple and its winner is 4 (the "none" sentinel), so a seat cannot
     # mistake "no trick yet" for a real completed trick.
-    env = make_env({"seats": 4})
+    env = make_env({"players": 4})
     env.reset(seed=0)
     obs = env.observe(env.agent_selection)["observation"]
     assert obs["last_trick"] == ()
@@ -254,7 +254,7 @@ def test_completed_trick_is_observable_to_every_seat_including_the_next_leader()
     # trick was off turn for the plays after its own and would otherwise never see those cards. After
     # a full trick, every seat observes the completed trick (seat -> card) and its winner, and the
     # winner (who leads next) does see the card played after its own move.
-    env = make_env({"seats": 4})
+    env = make_env({"players": 4})
     env.reset(seed=0)
     for _ in range(rules.NUM_PLAYERS):
         env.step(default_action(env, env.agent_selection))
@@ -382,7 +382,7 @@ def test_default_action_returns_real_bid_then_lowest_card():
     # will be applied — a never-nil suggested bid during bidding, the lowest legal card during play
     # — rather than a sentinel, so a timeout recording holds the real action. default_action is a
     # module-level function in env.py and is the same callable as ENTRY.default_action.
-    env = make_env({"seats": 4})
+    env = make_env({"players": 4})
     env.reset(seed=0)
     assert ENTRY.default_action is default_action
 
@@ -422,7 +422,7 @@ def test_suggested_bid_is_never_nil_across_many_deals():
 def _rollout(seed: int):
     """Reset a fresh env and play the env default until terminal, snapshotting observations and
     overlays each turn. Returns (observation snapshots, overlay dicts, the deal's hands)."""
-    env = make_env({"seats": 4})
+    env = make_env({"players": 4})
     env.reset(seed=seed)
     deal = [list(hand) for hand in env.state.hands]
     observations: list = []
@@ -460,7 +460,7 @@ def test_generated_environments_json_includes_spades():
     assert spades["messaging"] is True
     assert spades["message_cap"] == 120
     assert spades["seat_order_matters"] is True
-    assert spades["human_slots"] == ["player_0", "player_1", "player_2", "player_3"]
+    assert spades["human_players"] == ["player_0", "player_1", "player_2", "player_3"]
 
 
 # -- full game through the harness -----------------------------------------------------------
@@ -489,7 +489,7 @@ def _drive_to_terminal(env, choose):
 
 
 def test_full_game_completes_via_run_episode():
-    slots = {f"player_{i}": AgentSlot(FirstLegalAgent()) for i in range(rules.NUM_PLAYERS)}
+    slots = {f"player_{i}": AgentPlayer(FirstLegalAgent()) for i in range(rules.NUM_PLAYERS)}
     result = run_episode(ENTRY, slots, parameters=resolve_parameters(ENTRY.meta), seed=0)
     assert result.reason == REASON_TERMINATED
     assert result.ticks == 56  # four bids plus fifty-two plays
@@ -499,10 +499,10 @@ def test_run_episode_credits_every_seat_and_partners_share():
     # The harness must record each seat's final leaderboard score, not only whoever played the last
     # card. Drive a full game, then replay the identical deterministic policy by hand and assert the
     # per-seat finals match, and that partners carry the identical team score.
-    slots = {f"player_{i}": AgentSlot(FirstLegalAgent()) for i in range(rules.NUM_PLAYERS)}
+    slots = {f"player_{i}": AgentPlayer(FirstLegalAgent()) for i in range(rules.NUM_PLAYERS)}
     result = run_episode(ENTRY, slots, parameters=resolve_parameters(ENTRY.meta), seed=0)
 
-    env = make_env({"seats": 4})
+    env = make_env({"players": 4})
     env.reset(seed=0)
     _drive_to_terminal(env, lambda e: int(np.argmax(e.observe(e.agent_selection)["action_mask"])))
     expected = rules.leaderboard_scores(env.state)
@@ -514,7 +514,7 @@ def test_run_episode_credits_every_seat_and_partners_share():
 
 
 def test_full_game_via_defaults_matches_hand_worked_scores():
-    env = make_env({"seats": 4})
+    env = make_env({"players": 4})
     env.reset(seed=0)
     _drive_to_terminal(env, lambda e: default_action(e, e.agent_selection))
     overlay = extract_overlay(env)
@@ -563,14 +563,16 @@ def test_builtin_spades_agent_plays_a_full_legal_game():
     # the harness loads it (through the manifest loader, as the container does) for every Naive seat.
     # Driving four copies to a clean terminal guards that the per-environment baseline exists, loads,
     # and plays only legal bids and cards to the end of the hand.
-    slots = {f"player_{i}": AgentSlot(load_agent(BUILTIN_SPADES_AGENT_DIR)) for i in range(rules.NUM_PLAYERS)}
-    result = run_episode(ENTRY, slots, parameters=resolve_parameters(ENTRY.meta), seed=0)
+    players = {
+        f"player_{i}": AgentPlayer(load_agent(BUILTIN_SPADES_AGENT_DIR)) for i in range(rules.NUM_PLAYERS)
+    }
+    result = run_episode(ENTRY, players, parameters=resolve_parameters(ENTRY.meta), seed=0)
     assert result.reason == REASON_TERMINATED
     assert result.ticks == 56  # four bids plus fifty-two plays
 
     # The baseline plays the env's own timeout default (a never-nil suggested bid, then the lowest
     # legal card), so a hand driven by that default must reach the identical deterministic finals.
-    env = make_env({"seats": 4})
+    env = make_env({"players": 4})
     env.reset(seed=0)
     _drive_to_terminal(env, lambda e: default_action(e, e.agent_selection))
     expected = rules.leaderboard_scores(env.state)

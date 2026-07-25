@@ -72,7 +72,7 @@ function season(overrides: Partial<SeasonView> = {}): SeasonView {
     play_status: 'closed',
     release_status: 'unreleased',
     label: 'Week 1',
-    config: { deps_version: 1, matches: [{ slots: ['submission'], seeds: [0], games: 1 }] },
+    config: { deps_version: 1, matches: [{ seats: ['submission'], seeds: [0], games: 1 }] },
     rating_prompt: null,
     description_markdown: null,
     created_at: '2026-06-10T00:00:00Z',
@@ -104,8 +104,8 @@ function configurableMeta(): EnvironmentMeta {
   return flappyMeta({
     parameters: [
       {
-        name: 'seats',
-        title: 'Seats',
+        name: 'players',
+        title: 'Players',
         description: 'Players.',
         type: 'int',
         default: 1,
@@ -144,7 +144,7 @@ function runningRun(): RunView {
     requested_by: 'dev-user',
     config_snapshot: {
       deps_version: 1,
-      matches: [{ slots: ['submission'], seeds: [0], games: 1 }],
+      matches: [{ seats: ['submission'], seeds: [0], games: 1 }],
     },
     submission_snapshot: [{ kind: 'submission', submission_id: 's1', user_id: 'alice' }],
     status: 'running',
@@ -158,7 +158,7 @@ function runningRun(): RunView {
         match_index: 0,
         game_index: 0,
         seed: 0,
-        slots: [{ kind: 'submission', submission_id: 's1', user_id: 'alice' }],
+        seats: [{ kind: 'submission', submission_id: 's1', user_id: 'alice' }],
         status: 'pending',
         recording_id: null,
         started_at: null,
@@ -267,7 +267,7 @@ describe('AdminConsolePage', () => {
       expect(screen.getByRole('heading', { name: title }).closest('.ui-card')).not.toBeNull()
     }
     expect(screen.getByTestId('match')).toHaveClass('match')
-    expect(screen.getByRole('group', { name: 'Per-slot limits' })).toHaveClass('limit-group')
+    expect(screen.getByRole('group', { name: 'Per-player limits' })).toHaveClass('limit-group')
     expect(screen.getByRole('group', { name: 'Development per-participant limits' })).toHaveClass(
       'limit-group',
     )
@@ -293,7 +293,7 @@ describe('AdminConsolePage', () => {
     const configured = season({
       config: {
         deps_version: 1,
-        matches: [{ slots: ['submission'], seeds: [0], games: 1 }],
+        matches: [{ seats: ['submission'], seeds: [0], games: 1 }],
         overrides: { parameters: { pipe_gap: 90, obsolete: true } },
       },
     })
@@ -309,7 +309,9 @@ describe('AdminConsolePage', () => {
     ).toBeInTheDocument()
     expect(screen.getByLabelText('Pipe gap')).toHaveDisplayValue('Override')
     expect(screen.getByLabelText('Pipe gap override')).toHaveValue(90)
-    expect(screen.getByText(/Every match's slot count must equal this value/)).toBeInTheDocument()
+    expect(
+      screen.getByText(/Every match's seat count must match the resolved layout/),
+    ).toBeInTheDocument()
 
     await fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }))
     await waitFor(() => expect(vi.mocked(configureSeason)).toHaveBeenCalled())
@@ -358,7 +360,7 @@ describe('AdminConsolePage', () => {
     const configured = season({
       config: {
         deps_version: 1,
-        matches: [{ slots: ['submission'], seeds: [0], games: 1 }],
+        matches: [{ seats: ['submission'], seeds: [0], games: 1 }],
         overrides: {
           parameters: { tag: '', extras: ['night', 'wind'], obsolete: 'drop me' },
         },
@@ -385,7 +387,7 @@ describe('AdminConsolePage', () => {
     const explicitTrue = season({
       config: {
         deps_version: 1,
-        matches: [{ slots: ['submission'], seeds: [0], games: 1 }],
+        matches: [{ seats: ['submission'], seeds: [0], games: 1 }],
         overrides: { messaging: { enabled: true } },
       },
     })
@@ -537,12 +539,12 @@ describe('AdminConsolePage', () => {
     expect(screen.getByRole('button', { name: 'Rename' })).toBeInTheDocument()
   })
 
-  it('refuses to save a match with zero slots', async () => {
+  it('refuses to save a match with zero seats', async () => {
     await renderConsole()
-    // Remove the match's only slot, then attempt to save.
+    // Remove the match's only seat, then attempt to save.
     await fireEvent.click(await screen.findByRole('button', { name: '×' }))
     await fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }))
-    expect(await screen.findByText(/has no slots/)).toBeInTheDocument()
+    expect(await screen.findByText(/has no seats/)).toBeInTheDocument()
     expect(vi.mocked(configureSeason)).not.toHaveBeenCalled()
   })
 
@@ -581,7 +583,7 @@ describe('AdminConsolePage', () => {
     const withLlm = season({
       config: {
         deps_version: 1,
-        matches: [{ slots: ['submission'], seeds: [0], games: 1 }],
+        matches: [{ seats: ['submission'], seeds: [0], games: 1 }],
         overrides: { llm: { enabled: false, cost_weights: { medium: 2.5 } } },
       },
     })
@@ -593,8 +595,8 @@ describe('AdminConsolePage', () => {
     await fireEvent.update(screen.getByLabelText('Allowed model aliases'), 'custom')
     await fireEvent.click(screen.getByLabelText('small'))
     await fireEvent.click(screen.getByLabelText('medium'))
-    await fireEvent.update(screen.getByLabelText('Per-slot token budget'), '10000')
-    await fireEvent.update(screen.getByLabelText('Per-slot rate limit (RPM)'), '30')
+    await fireEvent.update(screen.getByLabelText('Per-player token budget'), '10000')
+    await fireEvent.update(screen.getByLabelText('Per-player rate limit (RPM)'), '30')
     await fireEvent.update(screen.getByLabelText('Development token budget'), '20000')
     await fireEvent.update(screen.getByLabelText('Development rate limit (RPM)'), '15')
     await fireEvent.click(await screen.findByRole('button', { name: 'Save configuration' }))
@@ -638,7 +640,7 @@ describe('AdminConsolePage', () => {
         season: season({
           config: {
             deps_version: 1,
-            matches: [{ slots: ['submission'], seeds: [0], games: 1 }],
+            matches: [{ seats: ['submission'], seeds: [0], games: 1 }],
             overrides: { llm: { cost_weights: { large: 1_000_001 } } },
           },
         }),

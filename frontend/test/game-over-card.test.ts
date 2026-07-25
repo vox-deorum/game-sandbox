@@ -27,7 +27,7 @@ describe('GameOverCard', () => {
     const header: RecordingHeader = {
       schema_version: 1,
       environment: 'spades',
-      parameters: { seats: 4 },
+      parameters: { players: 4 },
       players: {
         player_0: { kind: 'agent', label: 'Naive agent' },
         player_1: { kind: 'agent', label: 'Naive agent' },

@@ -12,7 +12,7 @@ from game_sandbox_harness.recording.local import FolderRecordingStore
 from game_sandbox_harness.schema import SchemaValidationError
 from game_sandbox_harness.state import build_agent_step, build_header, build_step_state
 
-FLAPPY_PARAMETERS = {"seats": 1, "pipe_gap": 100}
+FLAPPY_PARAMETERS = {"players": 1, "pipe_gap": 100}
 
 
 def _step(tick: int):

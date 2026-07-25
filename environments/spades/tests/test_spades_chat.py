@@ -17,7 +17,7 @@ from pathlib import Path
 
 from game_sandbox_harness.environment import resolve_parameters
 from game_sandbox_harness.recording.local import FolderRecordingStore
-from game_sandbox_harness.session import AgentSlot, run_episode
+from game_sandbox_harness.session import AgentPlayer, run_episode
 from spades import ENTRY
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -92,10 +92,10 @@ def test_signaler_exchange_replays_in_the_recording(tmp_path: Path):
     # Signalers partner at 0/2, chat-less counters at 1/3. On seed 2 both signalers speak: seat 0
     # names hearts to seat 2, and seat 2 names diamonds to seat 0, each on its own bidding tick.
     slots = {
-        "player_0": AgentSlot(Signaler()),
-        "player_1": AgentSlot(Counter()),
-        "player_2": AgentSlot(Signaler()),
-        "player_3": AgentSlot(Counter()),
+        "player_0": AgentPlayer(Signaler()),
+        "player_1": AgentPlayer(Counter()),
+        "player_2": AgentPlayer(Signaler()),
+        "player_3": AgentPlayer(Counter()),
     }
     states, _result = _play(slots, seed=2, tmp_path=tmp_path)
 
@@ -110,10 +110,10 @@ def test_daredevil_demo_hand_bids_nil_warns_and_scores(tmp_path: Path):
     # The stage demo hand: on seed 1236 seat 0 qualifies for nil, bids it, and broadcasts the warning
     # its partner covers. The made nil lands in the final team score.
     slots = {
-        "player_0": AgentSlot(Daredevil()),
-        "player_1": AgentSlot(Counter()),
-        "player_2": AgentSlot(Daredevil()),
-        "player_3": AgentSlot(Counter()),
+        "player_0": AgentPlayer(Daredevil()),
+        "player_1": AgentPlayer(Counter()),
+        "player_2": AgentPlayer(Daredevil()),
+        "player_3": AgentPlayer(Counter()),
     }
     states, result = _play(slots, seed=1236, tmp_path=tmp_path)
 
@@ -130,10 +130,10 @@ def test_daredevil_cover_provably_depends_on_the_broadcast(tmp_path: Path):
     # partner and the play sequence differs; without it, no message is ever recorded and the nil is set.
     def run(messaging, sub: str) -> tuple[list[int], list[dict], dict]:
         slots = {
-            "player_0": AgentSlot(Daredevil()),
-            "player_1": AgentSlot(Counter()),
-            "player_2": AgentSlot(Daredevil()),
-            "player_3": AgentSlot(Counter()),
+            "player_0": AgentPlayer(Daredevil()),
+            "player_1": AgentPlayer(Counter()),
+            "player_2": AgentPlayer(Daredevil()),
+            "player_3": AgentPlayer(Counter()),
         }
         states, result = _play(slots, seed=1236, tmp_path=tmp_path / sub, messaging=messaging)
         seat2 = [s["agents"]["player_2"]["action"] for s in states if "player_2" in s["agents"]]

@@ -2,11 +2,11 @@
   "declarations": [
     {
       "default": 4,
-      "description": "Number of seats in each game.",
+      "description": "Number of PettingZoo players in each game.",
       "max": 4,
       "min": 1,
-      "name": "seats",
-      "title": "Seats",
+      "name": "players",
+      "title": "Players",
       "type": "int"
     },
     {
@@ -119,11 +119,11 @@
       "layers": [
         {
           "pipe_gap": 120,
+          "players": 2,
           "powerups": [
             "magnet",
             "shield"
-          ],
-          "seats": 2
+          ]
         },
         {
           "enabled": true,
@@ -136,11 +136,11 @@
         "label": "default",
         "mode": "normal",
         "pipe_gap": 140,
+        "players": 2,
         "powerups": [
           "shield",
           "magnet"
-        ],
-        "seats": 2
+        ]
       }
     },
     {
@@ -151,28 +151,28 @@
         "label": "default",
         "mode": "normal",
         "pipe_gap": 100,
+        "players": 4,
         "powerups": [
           "shield"
-        ],
-        "seats": 4
+        ]
       }
     }
   ],
   "validation_cases": [
     {
-      "name": "seats",
+      "name": "players",
       "normalized": 1,
       "valid": true,
       "value": 1
     },
     {
-      "name": "seats",
+      "name": "players",
       "normalized": 4,
       "valid": true,
       "value": 4
     },
     {
-      "name": "seats",
+      "name": "players",
       "valid": false,
       "value": 5
     },

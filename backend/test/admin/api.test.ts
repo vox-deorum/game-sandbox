@@ -53,7 +53,7 @@ const UNSUPPORTED_DEPS_VERSION = Math.max(...DEFAULT_KNOWN_DEPS_VERSIONS) + 1
 function flappyConfig(overrides: Partial<SeasonConfig> = {}): SeasonConfig {
   return {
     deps_version: 1,
-    matches: [{ slots: ['submission'], seeds: [1, 2], games: 2 }],
+    matches: [{ seats: ['submission'], seeds: [1, 2], games: 2 }],
     ...overrides,
   }
 }
@@ -117,7 +117,7 @@ describe('admin API', () => {
       }
     }
     return createRunOrFail(storage, seasonId, requestedBy, () => ({
-      parametersSnapshot: { seats: 1 },
+      parametersSnapshot: { players: 1 },
       scheduledGames: games,
       llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
     }))
@@ -468,14 +468,14 @@ describe('admin API', () => {
     it('400s an invalid config with a specific reason', async () => {
       const id = await declare()
       const cases: Array<[string, Record<string, unknown>]> = [
-        ['zero slots', { deps_version: 1, matches: [{ slots: [], seeds: [1], games: 1 }] }],
+        ['zero seats', { deps_version: 1, matches: [{ seats: [], seeds: [1], games: 1 }] }],
         [
           'empty seeds',
-          { deps_version: 1, matches: [{ slots: ['submission'], seeds: [], games: 1 }] },
+          { deps_version: 1, matches: [{ seats: ['submission'], seeds: [], games: 1 }] },
         ],
         [
           'non-positive games',
-          { deps_version: 1, matches: [{ slots: ['submission'], seeds: [1], games: 0 }] },
+          { deps_version: 1, matches: [{ seats: ['submission'], seeds: [1], games: 0 }] },
         ],
         ['unknown key', { deps_version: 1, matches: [], bogus: true }],
       ]
@@ -509,7 +509,7 @@ describe('admin API', () => {
       })
     })
 
-    it('400s a match whose slot count mismatches the environment (max 1 for Flappy)', async () => {
+    it('400s a match whose seat count mismatches the resolved layout (max 1 for Flappy)', async () => {
       const id = await declare()
       const res = await app.inject({
         method: 'PUT',
@@ -517,13 +517,13 @@ describe('admin API', () => {
         headers: OPERATOR,
         payload: {
           deps_version: 1,
-          matches: [{ slots: ['submission', 'builtin-naive'], seeds: [1], games: 1 }],
+          matches: [{ seats: ['submission', 'builtin-naive'], seeds: [1], games: 1 }],
         },
       })
       expect(res.statusCode).toBe(400)
       expect(res.json()).toMatchObject({ code: 'invalid_config' })
       expect((res.json() as { reason: string }).reason).toMatch(
-        /must equal the resolved seats value/,
+        /must equal the resolved layout count/,
       )
     })
 
@@ -553,12 +553,12 @@ describe('admin API', () => {
         id,
         'dev-user',
         [agentRef(ready)],
-        [{ match_index: 0, game_index: 0, seed: 1, slots: [agentRef(ready)] }],
+        [{ match_index: 0, game_index: 0, seed: 1, seats: [agentRef(ready)] }],
       )
       const games = await storage.listRunGames(run.id)
       await storage.recordGameResult({
         game_id: first(games).id,
-        slot_index: 0,
+        seat_index: 0,
         agent: agentRef(ready),
         episode_score: 5,
         agent_compute_ms_total: 10,
@@ -580,7 +580,7 @@ describe('admin API', () => {
         method: 'PUT',
         url: `/api/admin/seasons/${id}/config`,
         headers: OPERATOR,
-        payload: flappyConfig({ matches: [{ slots: ['submission'], seeds: [9], games: 1 }] }),
+        payload: flappyConfig({ matches: [{ seats: ['submission'], seeds: [9], games: 1 }] }),
       })
       expect(refused.statusCode).toBe(409)
       expect(refused.json()).toMatchObject({ code: 'season_has_runs' })
@@ -590,7 +590,7 @@ describe('admin API', () => {
         method: 'PUT',
         url: `/api/admin/seasons/${id}/config?force=true`,
         headers: OPERATOR,
-        payload: flappyConfig({ matches: [{ slots: ['submission'], seeds: [9], games: 1 }] }),
+        payload: flappyConfig({ matches: [{ seats: ['submission'], seeds: [9], games: 1 }] }),
       })
       expect(forced.statusCode).toBe(200)
       expect(runner.cancelled).toEqual([run.id])
@@ -632,7 +632,7 @@ describe('admin API', () => {
         id,
         'dev-user',
         [],
-        [{ match_index: 0, game_index: 0, seed: 1, slots: [{ kind: 'builtin-naive' }] }],
+        [{ match_index: 0, game_index: 0, seed: 1, seats: [{ kind: 'builtin-naive' }] }],
       )
       await storage.setReleaseStatus(id, 'released')
 
@@ -743,7 +743,7 @@ describe('admin API', () => {
         id,
         'dev-user',
         [],
-        [{ match_index: 0, game_index: 0, seed: 1, slots: [{ kind: 'builtin-naive' }] }],
+        [{ match_index: 0, game_index: 0, seed: 1, seats: [{ kind: 'builtin-naive' }] }],
       )
       const res = await app.inject({
         method: 'PUT',
@@ -965,7 +965,7 @@ describe('admin API', () => {
         deps_version: 1,
         matches: [
           {
-            slots: ['submission', 'submission', 'builtin-naive', 'builtin-naive'],
+            seats: ['submission', 'submission', 'builtin-naive', 'builtin-naive'],
             seeds: [1],
             games: 1,
           },
@@ -1076,12 +1076,12 @@ describe('admin API', () => {
         id,
         'dev-user',
         [],
-        [{ match_index: 0, game_index: 0, seed: 1, slots: [{ kind: 'builtin-naive' }] }],
+        [{ match_index: 0, game_index: 0, seed: 1, seats: [{ kind: 'builtin-naive' }] }],
       )
       const games = await storage.listRunGames(run.id)
       await storage.recordGameResult({
         game_id: first(games).id,
-        slot_index: 0,
+        seat_index: 0,
         agent: { kind: 'builtin-naive' },
         episode_score: 7,
         agent_compute_ms_total: 4,
@@ -1127,12 +1127,12 @@ describe('admin API', () => {
         id,
         users.idOf('operator'),
         [ref],
-        [{ match_index: 0, game_index: 0, seed: 1, slots: [ref] }],
+        [{ match_index: 0, game_index: 0, seed: 1, seats: [ref] }],
       )
       const games = await storage.listRunGames(run.id)
       await storage.recordGameResult({
         game_id: first(games).id,
-        slot_index: 0,
+        seat_index: 0,
         agent: ref,
         episode_score: 7,
         agent_compute_ms_total: 4,
@@ -1151,11 +1151,11 @@ describe('admin API', () => {
         latest_run: {
           requested_by_name?: string
           submission_snapshot: Array<Record<string, unknown>>
-          games: Array<{ slots: Array<Record<string, unknown>> }>
+          games: Array<{ seats: Array<Record<string, unknown>> }>
         }
         board: {
           automated: Array<{ agent: Record<string, unknown> }>
-          games: Array<{ slots: Array<Record<string, unknown>> }>
+          games: Array<{ seats: Array<Record<string, unknown>> }>
         }
       }
       // The embedded latest run is enriched exactly like the run detail...
@@ -1164,13 +1164,13 @@ describe('admin API', () => {
         user_id: carolId,
         user_name: 'carol',
       })
-      expect(first(first(body.latest_run.games).slots)).toMatchObject({ user_name: 'carol' })
+      expect(first(first(body.latest_run.games).seats)).toMatchObject({ user_name: 'carol' })
       // ...and the board rows plus the matchup table carry the same enriched agent ref.
       expect(first(body.board.automated).agent).toMatchObject({
         user_id: carolId,
         user_name: 'carol',
       })
-      expect(first(first(body.board.games).slots)).toMatchObject({ user_name: 'carol' })
+      expect(first(first(body.board.games).seats)).toMatchObject({ user_name: 'carol' })
     })
   })
 
@@ -1184,15 +1184,15 @@ describe('admin API', () => {
         id,
         'dev-user',
         [],
-        [{ match_index: 0, game_index: 0, seed: 1, slots: [{ kind: 'builtin-naive' }] }],
+        [{ match_index: 0, game_index: 0, seed: 1, seats: [{ kind: 'builtin-naive' }] }],
       )
       const second = await createRun(
         id,
         users.idOf('operator'),
         [],
         [
-          { match_index: 0, game_index: 0, seed: 1, slots: [{ kind: 'builtin-naive' }] },
-          { match_index: 0, game_index: 1, seed: 2, slots: [{ kind: 'builtin-naive' }] },
+          { match_index: 0, game_index: 0, seed: 1, seats: [{ kind: 'builtin-naive' }] },
+          { match_index: 0, game_index: 1, seed: 2, seats: [{ kind: 'builtin-naive' }] },
         ],
       )
 
@@ -1225,7 +1225,7 @@ describe('admin API', () => {
         id,
         'dev-user',
         [],
-        [{ match_index: 0, game_index: 0, seed: 1, slots: [{ kind: 'builtin-naive' }] }],
+        [{ match_index: 0, game_index: 0, seed: 1, seats: [{ kind: 'builtin-naive' }] }],
       )
 
       const res = await app.inject({
@@ -1258,7 +1258,7 @@ describe('admin API', () => {
         id,
         users.idOf('operator'),
         [knownRef, orphanedRef],
-        [{ match_index: 0, game_index: 0, seed: 1, slots: [knownRef, orphanedRef] }],
+        [{ match_index: 0, game_index: 0, seed: 1, seats: [knownRef, orphanedRef] }],
       )
 
       const res = await app.inject({
@@ -1271,7 +1271,7 @@ describe('admin API', () => {
         requested_by: string
         requested_by_name?: string
         submission_snapshot: Array<Record<string, unknown>>
-        games: Array<{ slots: Array<Record<string, unknown>> }>
+        games: Array<{ seats: Array<Record<string, unknown>> }>
       }
       expect(body).toMatchObject({
         requested_by: users.idOf('operator'),
@@ -1279,7 +1279,7 @@ describe('admin API', () => {
       })
       // Both the frozen roster and the scheduled seats carry the owner's name beside the stable id;
       // an owner id with no user row keeps its id and simply omits user_name.
-      for (const refs of [body.submission_snapshot, first(body.games).slots]) {
+      for (const refs of [body.submission_snapshot, first(body.games).seats]) {
         expect(refs.find((ref) => ref.user_id === carolId)).toMatchObject({ user_name: 'carol' })
         expect(refs.find((ref) => ref.user_id === 'ghost-user')).not.toHaveProperty('user_name')
       }
@@ -1292,7 +1292,7 @@ describe('admin API', () => {
         id,
         'dev-user',
         [],
-        [{ match_index: 0, game_index: 0, seed: 1, slots: [{ kind: 'builtin-naive' }] }],
+        [{ match_index: 0, game_index: 0, seed: 1, seats: [{ kind: 'builtin-naive' }] }],
       )
 
       const unknown = await app.inject({
@@ -1369,7 +1369,7 @@ describe('admin API', () => {
         id,
         'dev-user',
         [],
-        [{ match_index: 0, game_index: 0, seed: 1, slots: [{ kind: 'builtin-naive' }] }],
+        [{ match_index: 0, game_index: 0, seed: 1, seats: [{ kind: 'builtin-naive' }] }],
       )
       await storage.setRunStatus(run.id, 'completed')
 

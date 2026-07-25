@@ -408,7 +408,7 @@ describe('LeaderboardsPage', () => {
               match_index: 0,
               game_index: 0,
               seed: 0,
-              slots: [{ kind: 'submission', submission_id: 's1', user_id: 'alice' }],
+              seats: [{ kind: 'submission', submission_id: 's1', user_id: 'alice' }],
               status: 'completed',
               recording_id: 'rec-a',
               started_at: null,

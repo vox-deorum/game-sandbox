@@ -37,7 +37,7 @@ function sessionInput(overrides: Partial<NewSessionInput> = {}): NewSessionInput
     id: 'sess-1',
     user_id: 'alice',
     env_id: 'flappy_bird',
-    parameters: { seats: 1 },
+    parameters: { players: 1 },
     mode: 'scripted',
     recording_id: 'flappy_bird-sess-1',
     created_at: '2026-06-11T00:00:00.000Z',
@@ -331,9 +331,9 @@ describe('submission storage on :memory:', () => {
     // game_results with no session, its (newer) recording attached via the game, not a session. A
     // session-only join would miss it entirely — the empty "Recent replays" an automated-only season
     // produced, the regression this guards.
-    const game: ScheduledGameInput = { match_index: 0, game_index: 0, seed: 1, slots: [agent] }
+    const game: ScheduledGameInput = { match_index: 0, game_index: 0, seed: 1, seats: [agent] }
     const run = await createRunOrFail(storage, iter, 'dev-user', () => ({
-      parametersSnapshot: { seats: 1 },
+      parametersSnapshot: { players: 1 },
       scheduledGames: [game],
       llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
     }))
@@ -350,7 +350,7 @@ describe('submission storage on :memory:', () => {
     await storage.attachRunGameRecording(scheduled.id, 'rec-competition')
     await storage.recordGameResult({
       game_id: scheduled.id,
-      slot_index: 0,
+      seat_index: 0,
       agent,
       episode_score: 7,
       agent_compute_ms_total: 10,

@@ -33,12 +33,12 @@ describe('HTTP API', () => {
     await fixture.close()
   })
 
-  function startPayload(slots: Record<string, unknown>): Record<string, unknown> {
+  function startPayload(seats: Record<string, unknown>): Record<string, unknown> {
     return {
       env_id: 'flappy_bird',
       season_id: playSeasonId,
-      parameters: { seats: 1, pipe_gap: 100 },
-      slots,
+      parameters: { players: 1, pipe_gap: 100 },
+      seats,
     }
   }
 
@@ -55,12 +55,12 @@ describe('HTTP API', () => {
       url: '/api/environments/flappy_bird/play-parameters',
     })
     expect(res.statusCode).toBe(200)
-    expect(res.json()).toEqual({ season_id: playSeasonId, values: { seats: 1, pipe_gap: 100 } })
+    expect(res.json()).toEqual({ season_id: playSeasonId, values: { players: 1, pipe_gap: 100 } })
   })
 
   // Season overrides are checked against the environment's declarations when an operator writes them
   // and never again, so an environment that later tightens a bound (or changes its slot bounds, which
-  // moves the synthesized `seats` range) leaves a stored override the current declarations reject.
+  // moves the synthesized `players` range) leaves a stored override the current declarations reject.
   // That is an operator problem. It must not take public play offline, and above all it must not be
   // reported to a player as a fault in the settings they submitted.
   describe('a season override the current declarations reject', () => {
@@ -80,7 +80,10 @@ describe('HTTP API', () => {
         url: '/api/environments/flappy_bird/play-parameters',
       })
       expect(res.statusCode).toBe(200)
-      expect(res.json()).toEqual({ season_id: playSeasonId, values: { seats: 1, pipe_gap: 100 } })
+      expect(res.json()).toEqual({
+        season_id: playSeasonId,
+        values: { players: 1, pipe_gap: 100 },
+      })
     })
 
     it('still starts a session from a valid submitted map', async () => {
@@ -88,11 +91,11 @@ describe('HTTP API', () => {
         method: 'POST',
         url: '/api/sessions',
         headers: alice,
-        payload: startPayload({ player_0: { kind: 'builtin-agent' } }),
+        payload: startPayload({ seat_0: { kind: 'builtin-agent' } }),
       })
       expect(res.statusCode).toBe(201)
       const { id } = res.json() as { id: string }
-      expect((await storage.getSession(id))?.parameters).toEqual({ seats: 1, pipe_gap: 100 })
+      expect((await storage.getSession(id))?.parameters).toEqual({ players: 1, pipe_gap: 100 })
     })
   })
 
@@ -144,7 +147,7 @@ describe('HTTP API', () => {
       method: 'POST',
       url: '/api/sessions',
       headers: alice,
-      payload: startPayload({ player_0: { kind: 'builtin-agent' } }),
+      payload: startPayload({ seat_0: { kind: 'builtin-agent' } }),
     })
     expect(res.statusCode).toBe(201)
     const body = res.json() as { id: string; ws_path: string }
@@ -163,7 +166,7 @@ describe('HTTP API', () => {
     expect(row.json()).not.toHaveProperty('github_username')
     // Attribution carries the Better Auth id, not a fabricated dev identity.
     expect((await storage.getSession(body.id))?.user_id).toBe(users.idOf('alice'))
-    expect((await storage.getSession(body.id))?.parameters).toEqual({ seats: 1, pipe_gap: 100 })
+    expect((await storage.getSession(body.id))?.parameters).toEqual({ players: 1, pipe_gap: 100 })
   })
 
   it('omits the session detail user_name when the owner id has no user row', async () => {
@@ -171,7 +174,7 @@ describe('HTTP API', () => {
       id: 'sess-ghost',
       user_id: 'ghost-user',
       env_id: 'flappy_bird',
-      parameters: { seats: 1 },
+      parameters: { players: 1 },
       mode: 'scripted',
       recording_id: null,
       created_at: new Date().toISOString(),
@@ -183,29 +186,29 @@ describe('HTTP API', () => {
   })
 
   it('rejects an invalid start body with 400', async () => {
-    // The old single-`submission_id` shape (no `slots`) is rejected outright.
-    const noSlots = await app.inject({
+    // The old single-`submission_id` shape (no `seats`) is rejected outright.
+    const noSeats = await app.inject({
       method: 'POST',
       url: '/api/sessions',
       headers: alice,
       payload: { env_id: 'flappy_bird', mode: 'scripted', submission_id: 'sub-1' },
     })
-    expect(noSlots.statusCode).toBe(400)
+    expect(noSeats.statusCode).toBe(400)
 
     const badKind = await app.inject({
       method: 'POST',
       url: '/api/sessions',
       headers: alice,
-      payload: { env_id: 'flappy_bird', slots: { player_0: { kind: 'spectate' } } },
+      payload: { env_id: 'flappy_bird', seats: { seat_0: { kind: 'spectate' } } },
     })
     expect(badKind.statusCode).toBe(400)
 
-    // `submission_id` is required exactly for a `submission` slot...
+    // `submission_id` is required exactly for a `submission` seat.
     const submissionNoId = await app.inject({
       method: 'POST',
       url: '/api/sessions',
       headers: alice,
-      payload: { env_id: 'flappy_bird', slots: { player_0: { kind: 'submission' } } },
+      payload: { env_id: 'flappy_bird', seats: { seat_0: { kind: 'submission' } } },
     })
     expect(submissionNoId.statusCode).toBe(400)
 
@@ -216,10 +219,25 @@ describe('HTTP API', () => {
       headers: alice,
       payload: {
         env_id: 'flappy_bird',
-        slots: { player_0: { kind: 'builtin-agent', submission_id: 'sub-1' } },
+        seats: { seat_0: { kind: 'builtin-agent', submission_id: 'sub-1' } },
       },
     })
     expect(agentWithId.statusCode).toBe(400)
+  })
+
+  it('accepts the human companion wire shape before singleton layout validation rejects it', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/sessions',
+      headers: alice,
+      payload: startPayload({
+        seat_0: { kind: 'human', companion: { kind: 'builtin-agent' } },
+      }),
+    })
+    expect(res.statusCode).toBe(400)
+    expect((res.json() as { error: string }).error).toContain(
+      'singleton seat seat_0 cannot have a companion',
+    )
   })
 
   it('enforces one active session per user with 409 and returns the active session id', async () => {
@@ -227,7 +245,7 @@ describe('HTTP API', () => {
       method: 'POST',
       url: '/api/sessions',
       headers: alice,
-      payload: startPayload({ player_0: { kind: 'builtin-agent' } }),
+      payload: startPayload({ seat_0: { kind: 'builtin-agent' } }),
     })
     expect(first.statusCode).toBe(201)
     const { id } = first.json() as { id: string }
@@ -235,7 +253,7 @@ describe('HTTP API', () => {
       method: 'POST',
       url: '/api/sessions',
       headers: alice,
-      payload: startPayload({ player_0: { kind: 'builtin-agent' } }),
+      payload: startPayload({ seat_0: { kind: 'builtin-agent' } }),
     })
     expect(second.statusCode).toBe(409)
     // The rejoin path reads the active session's id from the body, keyed by the stable code.
@@ -294,7 +312,7 @@ describe('HTTP API', () => {
         method: 'POST',
         url: '/api/sessions',
         headers: pending,
-        payload: startPayload({ player_0: { kind } }),
+        payload: startPayload({ seat_0: { kind } }),
       })
       expect(res.statusCode).toBe(403)
       expect(res.json()).toMatchObject({ code: 'not_active' })
@@ -305,7 +323,7 @@ describe('HTTP API', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/sessions',
-      payload: startPayload({ player_0: { kind: 'builtin-agent' } }),
+      payload: startPayload({ seat_0: { kind: 'builtin-agent' } }),
     })
     expect(res.statusCode).toBe(401)
     expect(res.json()).toMatchObject({ code: 'auth_required' })
@@ -326,7 +344,7 @@ describe('HTTP API', () => {
       method: 'POST',
       url: '/api/sessions',
       headers: alice,
-      payload: startPayload({ player_0: { kind: 'builtin-agent' } }),
+      payload: startPayload({ seat_0: { kind: 'builtin-agent' } }),
     })
     const { id } = created.json() as { id: string }
 
@@ -484,7 +502,7 @@ describe('HTTP API', () => {
         id: `producing-${REC_ID}`,
         user_id: ownerId,
         env_id: 'flappy_bird',
-        parameters: { seats: 1 },
+        parameters: { players: 1 },
         mode: 'scripted',
         recording_id: REC_ID,
         season_id: season.id,

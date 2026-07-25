@@ -1,8 +1,8 @@
 """The live session runner: ``python -m game_sandbox_harness.live``.
 
 This is the container side of a Stage 3 live session. It reads a single JSON config from argv,
-resolves the environment from the in-image registry, binds each slot to either the transport
-(an external/human slot) or a built-in agent, and drives the Stage 2 :class:`Episode` machinery
+resolves the environment from the in-image registry, binds each player to either the transport
+(an external/human player) or a built-in agent, and drives the Stage 2 :class:`Episode` machinery
 under wall-clock pacing with pause and stop. State lines stream out on the protocol stdout and
 are simultaneously written to the recording on the mounted volume; one ``result`` envelope is
 emitted at the end.
@@ -46,11 +46,11 @@ from .live_io import (
 )
 from .manifest import load_agent
 from .recording import RecordingStore
-from .session import REASON_STOPPED, AgentSlot, Episode, ExternalSlot, Slot
+from .session import REASON_STOPPED, AgentPlayer, Episode, ExternalPlayer, Player
 from .state import PlayerAttribution
 
 #: Where the session base image stages the built-in agents the watch-style runs load, one
-#: per-environment directory beneath this base (``/opt/agents/builtin/<env_id>``). A slot with no
+#: per-environment directory beneath this base (``/opt/agents/builtin/<env_id>``). A player with no
 #: explicit overlay path takes the baseline for the session's own environment, since the Naive
 #: policy is environment-specific (see each baseline's ``agent.py``).
 DEFAULT_BUILTIN_AGENT_BASE = "/opt/agents/builtin"
@@ -73,8 +73,8 @@ UNSET_TIMEOUT = UnsetTimeout()
 
 
 @dataclass(frozen=True)
-class SlotBinding:
-    """How one slot is driven: ``external`` (transport) or ``builtin-agent`` (a loaded agent)."""
+class PlayerBinding:
+    """How one PettingZoo player is driven: transport or a loaded agent."""
 
     kind: str
     path: str | None = None
@@ -96,20 +96,20 @@ class LiveConfig:
 
     Environment facts — pace interval, time limits, the default human timeout — come from the
     in-image registry, so this config carries only the session's own choices and overrides:
-    which environment and seed, how each slot is driven, the resolved human-slot timeout (an
+    which environment and seed, how each player is driven, the resolved human-player timeout (an
     override, or ``None`` to take the metadata default), and where to record.
     """
 
     env_id: str
     seed: int
-    slots: dict[str, SlotBinding]
+    player_bindings: dict[str, PlayerBinding]
     human_timeout_ms: int | None | UnsetTimeout
     recording_dir: str
     recording_id: str | None
     #: Complete resolved parameter map required by every launch path.
     parameters: dict[str, ParameterValue]
-    #: Per-slot attribution copied verbatim into the recording header (slot id -> attribution
-    #: object). It exactly covers the configured slots and agrees with each binding kind.
+    #: Per-player attribution copied verbatim into the recording header (player id -> attribution
+    #: object). It exactly covers the configured players and agrees with each binding kind.
     players: dict[str, PlayerAttribution] | None = None
     #: Optional per-step/per-episode time-limit overrides (the Stage 6 season overrides).
     #: ``None`` takes the environment's metadata default, as a session with no override does.
@@ -122,7 +122,7 @@ class LiveConfig:
     message_cap: int | None = None
     #: Workflow containers set this to run as fast as the agents compute, without live pacing.
     headless: bool = False
-    #: Absent for ordinary sessions. The key map covers agent slots exactly and excludes humans.
+    #: Absent for ordinary sessions. The key map covers agent players exactly and excludes humans.
     llm: LlmConfig | None = None
     #: Emit the header and opening state, then wait for a resume command before the first step.
     start_paused: bool = False
@@ -150,23 +150,24 @@ def parse_config(argv: list[str]) -> LiveConfig:
     if not isinstance(seed, int) or isinstance(seed, bool):
         raise LiveConfigError("config 'seed' must be an integer")
 
-    raw_slots = config.get("slots")
-    if not isinstance(raw_slots, dict) or not raw_slots:
-        raise LiveConfigError("config 'slots' must be a non-empty object keyed by slot id")
-    slots: dict[str, SlotBinding] = {}
-    for slot_id, raw_binding in cast("dict[str, Any]", raw_slots).items():
+    raw_player_bindings = config.get("player_bindings")
+    if not isinstance(raw_player_bindings, dict) or not raw_player_bindings:
+        raise LiveConfigError("config 'player_bindings' must be a non-empty object keyed by player id")
+    player_bindings: dict[str, PlayerBinding] = {}
+    for player_id, raw_binding in cast("dict[str, Any]", raw_player_bindings).items():
         if not isinstance(raw_binding, dict):
-            raise LiveConfigError(f"config slot {slot_id!r} must be an object")
+            raise LiveConfigError(f"config player binding {player_id!r} must be an object")
         binding = cast("dict[str, Any]", raw_binding)
         kind = binding.get("kind")
         if kind not in ("external", "builtin-agent"):
             raise LiveConfigError(
-                f"config slot {slot_id!r} has kind {kind!r}; expected 'external' or 'builtin-agent'"
+                f"config player binding {player_id!r} has kind {kind!r}; expected "
+                "'external' or 'builtin-agent'"
             )
         path = binding.get("path")
         if path is not None and not isinstance(path, str):
-            raise LiveConfigError(f"config slot {slot_id!r} 'path' must be a string when present")
-        slots[slot_id] = SlotBinding(kind=kind, path=path)
+            raise LiveConfigError(f"config player binding {player_id!r} 'path' must be a string when present")
+        player_bindings[player_id] = PlayerBinding(kind=kind, path=path)
 
     if "human_timeout_ms" not in config:
         human_timeout_ms: int | None | UnsetTimeout = UNSET_TIMEOUT
@@ -197,7 +198,7 @@ def parse_config(argv: list[str]) -> LiveConfig:
         )
     parameters = cast("dict[str, ParameterValue]", raw_parameters)
 
-    players = _parse_players(config.get("players"), slots)
+    players = _parse_players(config.get("players"), player_bindings)
     step_timeout_ms = _parse_optional_int(config, "step_timeout_ms")
     episode_timeout_ms = _parse_optional_int(config, "episode_timeout_ms")
     message_cap = _parse_optional_int(config, "message_cap")
@@ -211,12 +212,12 @@ def parse_config(argv: list[str]) -> LiveConfig:
     start_paused = config.get("start_paused", False)
     if not isinstance(start_paused, bool):
         raise LiveConfigError("config 'start_paused' must be a boolean")
-    llm = _parse_llm(config.get("llm"), slots)
+    llm = _parse_llm(config.get("llm"), player_bindings)
 
     return LiveConfig(
         env_id=env_id,
         seed=seed,
-        slots=slots,
+        player_bindings=player_bindings,
         human_timeout_ms=human_timeout_ms,
         recording_dir=recording_dir,
         recording_id=recording_id,
@@ -261,8 +262,8 @@ def _parse_max_steps(value: object) -> int | None:
     return value
 
 
-def _parse_players(raw: object, slots: dict[str, SlotBinding]) -> dict[str, PlayerAttribution]:
-    """Validate the required, binding-aligned per-slot ``players`` attribution map.
+def _parse_players(raw: object, player_bindings: dict[str, PlayerBinding]) -> dict[str, PlayerAttribution]:
+    """Validate the required, binding-aligned per-player ``players`` attribution map.
 
     Each entry must name a ``kind`` of ``human`` or ``agent`` and a non-empty ``label``; ``user``
     and ``submission_id`` are optional strings. The validated entries are passed through verbatim
@@ -270,43 +271,49 @@ def _parse_players(raw: object, slots: dict[str, SlotBinding]) -> dict[str, Play
     well-formed.
     """
     if not isinstance(raw, dict):
-        raise LiveConfigError("config 'players' must be an object keyed by slot id")
+        raise LiveConfigError("config 'players' must be an object keyed by player id")
     raw_players = cast("dict[str, object]", raw)
-    if set(raw_players) != set(slots):
-        missing = sorted(set(slots) - set(raw_players))
-        unknown = sorted(set(raw_players) - set(slots))
+    if set(raw_players) != set(player_bindings):
+        missing = sorted(set(player_bindings) - set(raw_players))
+        unknown = sorted(set(raw_players) - set(player_bindings))
         details: list[str] = []
         if missing:
-            details.append(f"missing slots {missing!r}")
+            details.append(f"missing players {missing!r}")
         if unknown:
-            details.append(f"unknown slots {unknown!r}")
-        raise LiveConfigError(f"config 'players' must exactly cover configured slots ({'; '.join(details)})")
+            details.append(f"unknown players {unknown!r}")
+        raise LiveConfigError(
+            f"config 'players' must exactly cover configured players ({'; '.join(details)})"
+        )
     players: dict[str, PlayerAttribution] = {}
-    for slot_id, raw_entry in raw_players.items():
+    for player_id, raw_entry in raw_players.items():
         if not isinstance(raw_entry, dict):
-            raise LiveConfigError(f"config player {slot_id!r} must be an object")
+            raise LiveConfigError(f"config player {player_id!r} must be an object")
         entry = cast("dict[str, object]", raw_entry)
         kind = entry.get("kind")
         if kind not in ("human", "agent"):
-            raise LiveConfigError(f"config player {slot_id!r} has kind {kind!r}; expected 'human' or 'agent'")
+            raise LiveConfigError(
+                f"config player {player_id!r} has kind {kind!r}; expected 'human' or 'agent'"
+            )
         label = entry.get("label")
         if not isinstance(label, str) or not label:
-            raise LiveConfigError(f"config player {slot_id!r} 'label' must be a non-empty string")
+            raise LiveConfigError(f"config player {player_id!r} 'label' must be a non-empty string")
         for optional in ("user", "submission_id"):
             value = entry.get(optional)
             if value is not None and not isinstance(value, str):
-                raise LiveConfigError(f"config player {slot_id!r} {optional!r} must be a string when present")
-        expected_kind = "human" if slots[slot_id].kind == "external" else "agent"
+                raise LiveConfigError(
+                    f"config player {player_id!r} {optional!r} must be a string when present"
+                )
+        expected_kind = "human" if player_bindings[player_id].kind == "external" else "agent"
         if kind != expected_kind:
             raise LiveConfigError(
-                f"config player {slot_id!r} has kind {kind!r}; expected {expected_kind!r} for its slot"
+                f"config player {player_id!r} has kind {kind!r}; expected {expected_kind!r} for its binding"
             )
-        players[slot_id] = cast("PlayerAttribution", entry)
+        players[player_id] = cast("PlayerAttribution", entry)
     return players
 
 
-def _parse_llm(raw: object, slots: dict[str, SlotBinding]) -> LlmConfig | None:
-    """Validate the optional LLM launch block and its agent-slot key coverage."""
+def _parse_llm(raw: object, player_bindings: dict[str, PlayerBinding]) -> LlmConfig | None:
+    """Validate the optional LLM launch block and its agent-player key coverage."""
     if raw is None:
         return None
     if not isinstance(raw, dict):
@@ -332,24 +339,26 @@ def _parse_llm(raw: object, slots: dict[str, SlotBinding]) -> LlmConfig | None:
             raise LiveConfigError(f"config 'llm' {field_name!r} must be a non-empty string")
     raw_keys = llm["keys"]
     if not isinstance(raw_keys, dict):
-        raise LiveConfigError("config 'llm' 'keys' must be an object keyed by agent slot id")
+        raise LiveConfigError("config 'llm' 'keys' must be an object keyed by agent player id")
     keys = cast("dict[str, Any]", raw_keys)
-    for slot_id, key in keys.items():
+    for player_id, key in keys.items():
         if not isinstance(key, str) or not key:
-            raise LiveConfigError(f"config 'llm' key for {slot_id!r} must be a non-empty string")
+            raise LiveConfigError(f"config 'llm' key for {player_id!r} must be a non-empty string")
 
-    agent_slots = {slot_id for slot_id, binding in slots.items() if binding.kind == "builtin-agent"}
-    supplied_slots = set(keys)
-    if supplied_slots != agent_slots:
-        missing = sorted(agent_slots - supplied_slots)
-        unknown = sorted(supplied_slots - agent_slots)
+    agent_players = {
+        player_id for player_id, binding in player_bindings.items() if binding.kind == "builtin-agent"
+    }
+    supplied_players = set(keys)
+    if supplied_players != agent_players:
+        missing = sorted(agent_players - supplied_players)
+        unknown = sorted(supplied_players - agent_players)
         details: list[str] = []
         if missing:
-            details.append(f"missing agent slots {missing!r}")
+            details.append(f"missing agent players {missing!r}")
         if unknown:
-            details.append(f"unknown or non-agent slots {unknown!r}")
+            details.append(f"unknown or non-agent players {unknown!r}")
         raise LiveConfigError(
-            f"config 'llm' keys must exactly cover configured agent slots ({'; '.join(details)})"
+            f"config 'llm' keys must exactly cover configured agent players ({'; '.join(details)})"
         )
 
     return LlmConfig(
@@ -361,25 +370,25 @@ def _parse_llm(raw: object, slots: dict[str, SlotBinding]) -> LlmConfig | None:
 
 
 class _LlmExecutionScope:
-    """Select a slot credential and best-effort marker immediately before participant work."""
+    """Select a player credential and best-effort marker immediately before participant work."""
 
     def __init__(self, config: LlmConfig) -> None:
         self._config = config
 
-    def setup(self, slot_id: str) -> None:
-        self._activate(slot_id)
-        self._post_marker(slot_id, {"phase": "setup"})
+    def setup(self, player_id: str) -> None:
+        self._activate(player_id)
+        self._post_marker(player_id, {"phase": "setup"})
 
-    def turn(self, slot_id: str, tick: int) -> None:
-        self._activate(slot_id)
-        self._post_marker(slot_id, {"tick": tick})
+    def turn(self, player_id: str, tick: int) -> None:
+        self._activate(player_id)
+        self._post_marker(player_id, {"tick": tick})
 
-    def inflight_ms(self, slot_id: str) -> int | None:
-        """Read the slot's proxy time, including a capped active partial, without making it fatal."""
+    def inflight_ms(self, player_id: str) -> int | None:
+        """Read the player's proxy time, including a capped active partial, without making it fatal."""
         try:
             request = urllib.request.Request(
                 self._config.inflight_url,
-                headers={"Authorization": f"Bearer {self._config.keys[slot_id]}"},
+                headers={"Authorization": f"Bearer {self._config.keys[player_id]}"},
                 method="POST",
             )
             with urllib.request.urlopen(request, timeout=_MARKER_TIMEOUT_SECONDS) as response:
@@ -398,23 +407,23 @@ class _LlmExecutionScope:
             return inflight_ms
         except Exception as error:  # noqa: BLE001 - timing discount must never stop agent lifecycle
             print(
-                f"live: LLM in-flight snapshot failed for slot {slot_id!r}: {error}",
+                f"live: LLM in-flight snapshot failed for player {player_id!r}: {error}",
                 file=sys.stderr,
                 flush=True,
             )
             return None
 
-    def _activate(self, slot_id: str) -> None:
+    def _activate(self, player_id: str) -> None:
         os.environ["OPENAI_BASE_URL"] = self._config.base_url
-        os.environ["OPENAI_API_KEY"] = self._config.keys[slot_id]
+        os.environ["OPENAI_API_KEY"] = self._config.keys[player_id]
 
-    def _post_marker(self, slot_id: str, payload: dict[str, str | int]) -> None:
+    def _post_marker(self, player_id: str, payload: dict[str, str | int]) -> None:
         try:
             request = urllib.request.Request(
                 self._config.tick_url,
                 data=json.dumps(payload, separators=(",", ":")).encode("utf-8"),
                 headers={
-                    "Authorization": f"Bearer {self._config.keys[slot_id]}",
+                    "Authorization": f"Bearer {self._config.keys[player_id]}",
                     "Content-Type": "application/json",
                 },
                 method="POST",
@@ -425,24 +434,24 @@ class _LlmExecutionScope:
                 pass
         except Exception as error:  # noqa: BLE001 - marker telemetry is deliberately best-effort
             print(
-                f"live: LLM marker failed for slot {slot_id!r}: {error}",
+                f"live: LLM marker failed for player {player_id!r}: {error}",
                 file=sys.stderr,
                 flush=True,
             )
 
 
-def build_slots(
+def build_players(
     config: LiveConfig,
     entry: EnvironmentEntry,
     control: SessionControl,
     clock: PausableClock,
     sleeper: Sleeper,
-) -> dict[str, Slot]:
-    """Bind every configured slot to a harness :class:`Slot`.
+) -> dict[str, Player]:
+    """Bind every configured player to a harness :class:`Player`.
 
-    External slots get a :class:`TransportSource` over the command pump and carry the resolved
-    human-slot timeout — the config override when given, otherwise the environment metadata
-    default. Built-in-agent slots are loaded through the same manifest loader Stage 5 uses for
+    External players get a :class:`TransportSource` over the command pump and carry the resolved
+    human-player timeout — the config override when given, otherwise the environment metadata
+    default. Built-in-agent players are loaded through the same manifest loader Stage 5 uses for
     submissions, from ``path`` or the image's default built-in agent location.
     """
     paced = not config.headless and entry.meta.pace_interval_ms is not None
@@ -450,12 +459,12 @@ def build_slots(
     resolved_timeout = (
         entry.meta.human_timeout_ms if isinstance(configured_timeout, UnsetTimeout) else configured_timeout
     )
-    slots: dict[str, Slot] = {}
+    players: dict[str, Player] = {}
     execution_scope = _LlmExecutionScope(config.llm) if config.llm is not None else None
-    for slot_id, binding in config.slots.items():
+    for player_id, binding in config.player_bindings.items():
         if binding.kind == "external":
             source = TransportSource(control, clock=clock, paced=paced, sleeper=sleeper)
-            slots[slot_id] = ExternalSlot(
+            players[player_id] = ExternalPlayer(
                 source,
                 timeout_ms=resolved_timeout,
                 message_source=source,
@@ -465,10 +474,10 @@ def build_slots(
             if execution_scope is not None:
                 # Manifest loading imports the participant module and constructs its agent, so this
                 # boundary must be activated before either operation can capture a client.
-                execution_scope.setup(slot_id)
+                execution_scope.setup(player_id)
             agent = load_agent(agent_path)
-            slots[slot_id] = AgentSlot(agent, execution_scope=execution_scope)
-    return slots
+            players[player_id] = AgentPlayer(agent, execution_scope=execution_scope)
+    return players
 
 
 def run_live_loop(
@@ -538,17 +547,17 @@ def run(
         control.pause()
     episode: Episode | None = None
     try:
-        slots = build_slots(config, entry, control, clock, sleeper)
+        players = build_players(config, entry, control, clock, sleeper)
         episode = Episode(
             entry,
-            slots,
+            players,
             seed=config.seed,
             store=store,
             recording_id=config.recording_id,
             clock=clock,
             step_limit_ms=config.step_timeout_ms,
             episode_limit_ms=config.episode_timeout_ms,
-            players=config.players,
+            player_attribution=config.players,
             messaging=config.messaging_enabled,
             message_cap=config.message_cap,
             max_steps=config.max_steps,
@@ -578,7 +587,7 @@ def run(
     except Exception as error:  # noqa: BLE001 - surfaced to diagnostics; the orchestrator records it
         print(f"live: session failed: {error!r}", file=sys.stderr, flush=True)
         # Emit the partial result so the orchestrator can charge a crashing agent to its own seat
-        # (episode.failed_slot) instead of to every competitor sharing the container. Best-effort: this
+        # (episode.failed_player) instead of to every competitor sharing the container. Best-effort: this
         # advisory note must never mask the original error or change the exit code. The close is
         # idempotent belt-and-suspenders — Episode.start and the `with` already flush the recording on
         # their own failures — and guarantees the writer is closed before result() reads it back.

@@ -55,7 +55,7 @@ describe('retention', () => {
     const header = JSON.stringify({
       schema_version: 1,
       environment: env,
-      parameters: { seats: 1 },
+      parameters: { players: 1 },
       seed: 0,
     })
     await writeFile(join(root, id, 'recording.jsonl'), `${header}\n`, 'utf-8')
@@ -90,7 +90,7 @@ describe('retention', () => {
         id: 'sess-1',
         user_id: 'alice',
         env_id: 'flappy_bird',
-        parameters: { seats: 1 },
+        parameters: { players: 1 },
         mode: 'human',
         recording_id: 'flappy_bird-sess-1',
         created_at: ago(0),
@@ -104,8 +104,7 @@ describe('retention', () => {
         recordingId: 'flappy_bird-sess-1',
         createdAt: ago(0),
         process,
-        humanSlots: ['player_0'],
-        externalSlots: ['player_0'],
+        externalPlayers: ['player_0'],
         messaging: { enabled: true, cap: 120 },
         deps: {
           storage,
@@ -204,10 +203,10 @@ describe('retention', () => {
       const reclaimer = { deleteScope: (id: string) => deleted.push(id) }
       const season = await storage.createSeason({ env_id: 'flappy_bird', deps_version: 1 })
       const run = await createRunOrFail(storage, season.id, 'operator', () => ({
-        parametersSnapshot: { seats: 1 },
+        parametersSnapshot: { players: 1 },
         scheduledGames: [
-          { match_index: 0, game_index: 0, seed: 1, slots: [{ kind: 'builtin-naive' }] },
-          { match_index: 0, game_index: 1, seed: 2, slots: [{ kind: 'builtin-naive' }] },
+          { match_index: 0, game_index: 0, seed: 1, seats: [{ kind: 'builtin-naive' }] },
+          { match_index: 0, game_index: 1, seed: 2, seats: [{ kind: 'builtin-naive' }] },
         ],
         llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
       }))
@@ -261,7 +260,7 @@ describe('retention', () => {
         id: 'ended-session',
         user_id: 'alice',
         env_id: 'flappy_bird',
-        parameters: { seats: 1 },
+        parameters: { players: 1 },
         mode: 'human',
         recording_id: 'ended-recording',
         created_at: ago(40),
@@ -421,13 +420,13 @@ describe('retention', () => {
 
   describe('sweep: leaderboard protection', () => {
     const NAIVE_GAME: ScheduledGameInput[] = [
-      { match_index: 0, game_index: 0, seed: 1, slots: [{ kind: 'builtin-naive' }] },
+      { match_index: 0, game_index: 0, seed: 1, seats: [{ kind: 'builtin-naive' }] },
     ]
 
     /** Drive a completed run for a season whose single game points at a recording id. */
     async function completedRunWithRecording(seasonId: string, recordingId: string): Promise<void> {
       const run = await createRunOrFail(storage, seasonId, 'op', () => ({
-        parametersSnapshot: { seats: 1 },
+        parametersSnapshot: { players: 1 },
         scheduledGames: NAIVE_GAME,
         llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
       }))
@@ -537,7 +536,7 @@ describe('retention', () => {
         id: 'sess-ended',
         user_id: 'a',
         env_id: 'flappy_bird',
-        parameters: { seats: 1 },
+        parameters: { players: 1 },
         mode: 'human',
         recording_id: 'ended',
         season_id: season.id,

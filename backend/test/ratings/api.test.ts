@@ -116,7 +116,7 @@ describe('rating API', () => {
     const header = {
       schema_version: 1,
       environment: ENV_ID,
-      parameters: { seats: 1, pipe_gap: 100 },
+      parameters: { players: 1, pipe_gap: 100 },
       players,
     }
     await writeFile(join(dir, id, 'recording.jsonl'), `${JSON.stringify(header)}\n`, 'utf-8')
@@ -136,7 +136,7 @@ describe('rating API', () => {
       id,
       user_id: options.starter ?? 'bob',
       env_id: ENV_ID,
-      parameters: { seats: 1 },
+      parameters: { players: 1 },
       mode: 'scripted',
       recording_id: options.recordingId,
       season_id: options.seasonId,

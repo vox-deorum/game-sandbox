@@ -84,7 +84,7 @@ export type {
   MatchConfig,
   Overrides,
   SeasonConfig,
-  SlotSpec,
+  SeatSpec,
 } from './season-config.js'
 
 export {
@@ -232,8 +232,8 @@ export interface ScheduledGameInput {
   match_index: number
   game_index: number
   seed: number
-  /** One resolved {@link AgentRef} per seat, in slot order. */
-  slots: AgentRef[]
+  /** One resolved {@link AgentRef} per seat, in seat order. */
+  seats: AgentRef[]
 }
 
 export interface FrozenRunInput {
@@ -267,7 +267,7 @@ export type CreateRunOutcome =
 /** A per-seat game outcome the runner derives from the recording. */
 export interface RecordGameResultInput {
   game_id: string
-  slot_index: number
+  seat_index: number
   agent: AgentRef
   episode_score: number
   agent_compute_ms_total: number
@@ -630,10 +630,10 @@ export interface Storage {
     status: SubmissionCheckOutcome,
     detail?: string,
   ): Promise<void>
-  /** Record which submitted agent ran in which session slot, for agent-profile replay history. */
-  recordSessionSubmission(sessionId: string, submissionId: string, slotId: string): Promise<void>
+  /** Record which submitted agent ran in which session seat, for agent-profile replay history. */
+  recordSessionSubmission(sessionId: string, submissionId: string, seatId: string): Promise<void>
   /**
-   * The submitted-slot links for a session: the fallback the rating route uses to recover the involved
+   * The submitted-seat links for a session: the fallback the rating route uses to recover the involved
    * submitted agents when a recording header cannot be read. It cannot surface a pure-Naive session,
    * which has no link rows; the header is the authoritative source.
    */
@@ -643,7 +643,7 @@ export interface Storage {
   getSubmission(id: string): Promise<Submission | undefined>
   /**
    * Existing submissions from a bounded id set, for request assembly that would otherwise issue one
-   * query per recorded slot. Duplicate ids are collapsed; callers assemble their own response order.
+   * query per recorded seat. Duplicate ids are collapsed; callers assemble their own response order.
    */
   getSubmissionsByIds(ids: readonly string[]): Promise<Submission[]>
   /** The user's active (`superseded_at IS NULL`) submission in a season, regardless of status. */

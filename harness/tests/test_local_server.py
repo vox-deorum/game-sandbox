@@ -12,13 +12,26 @@ from tempfile import TemporaryDirectory
 import pytest
 import websockets
 
-from game_sandbox_harness.environment import EnvironmentEntry, EnvironmentMeta, load_environment
+from game_sandbox_harness.environment import EnvironmentEntry, EnvironmentMeta, PlayerBounds, load_environment
 from game_sandbox_harness.local_server import LocalServer
 
 
 def _entry() -> EnvironmentEntry:
     meta = EnvironmentMeta(
-        "fake", "Fake", "fake", 1, 1, ("player_0",), None, 1, 1, 1, 1, False, None, False, "fake"
+        env_id="fake",
+        display_name="Fake",
+        description="fake",
+        layout=PlayerBounds(1, 1),
+        human_players=("player_0",),
+        human_timeout_ms=None,
+        recommended_episode_ticks=1,
+        pace_interval_ms=1,
+        step_limit_ms=1,
+        episode_limit_ms=1,
+        messaging=False,
+        message_cap=None,
+        llm=False,
+        renderer="fake",
     )
     return EnvironmentEntry(meta, lambda: object(), lambda _env, _slot: 0)
 
@@ -80,9 +93,9 @@ def test_local_server_receives_real_paused_runner_header_before_any_command(tmp_
         (tmp_path / "local.html").write_text("local", encoding="utf-8")
         config = {
             "env_id": "flappy_bird",
-            "parameters": {"seats": 1, "pipe_gap": 100},
+            "parameters": {"players": 1, "pipe_gap": 100},
             "seed": 0,
-            "slots": {"player_0": {"kind": "external"}},
+            "player_bindings": {"player_0": {"kind": "external"}},
             "players": {"player_0": {"kind": "human", "label": "Human"}},
             "recording_dir": str(tmp_path / "recordings"),
             "recording_id": "local",

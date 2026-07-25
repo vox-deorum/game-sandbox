@@ -62,7 +62,7 @@ export interface SessionRow {
 
 /** One match design entry, mirroring the backend's MatchConfig codec. */
 export interface MatchConfig {
-  slots: ('builtin-naive' | 'submission')[]
+  seats: ('builtin-naive' | 'submission')[]
   seeds: number[]
   games: number
 }
@@ -284,38 +284,38 @@ export async function submitReadyAgent(
 // --- Sessions & ratings --------------------------------------------------------------------------
 
 /**
- * One slot's assignment on the session-start wire (snake-case `submission_id`). A discriminated union,
- * so only a `submission` seat carries (and must carry) a `submission_id`; a human or builtin seat has none.
+ * One agent binding on the session-start wire (snake-case `submission_id`).
  */
-type SlotAssignment =
-  | { kind: 'human' | 'builtin-agent' }
-  | { kind: 'submission'; submission_id: string }
+type AgentAssignment = { kind: 'builtin-agent' } | { kind: 'submission'; submission_id: string }
+
+/** One seat assignment, including the companion seam for later wide seats. */
+type SeatAssignment = AgentAssignment | { kind: 'human'; companion?: AgentAssignment }
 
 /**
  * The session overrides the start contract carries alongside the seat assignment (Stage 7.4): an
- * explicit episode `seed` (so a deal is reproducible) and a human-slot move-clock `human_slot_timeout_ms`
+ * explicit episode `seed` (so a deal is reproducible) and a human move-clock `human_timeout_ms`
  * (so a human seat's per-move budget can be tightened from the environment default). Both are optional;
  * omitting one lets the backend pick (a random seed, the environment's `human_timeout_ms`).
  */
 interface StartOverrides {
   seed?: number
-  humanSlotTimeoutMs?: number
+  humanTimeoutMs?: number
   seasonId?: string
   parameters?: Record<string, boolean | number | string | string[]>
 }
 
 /**
- * Start a session from an explicit per-slot assignment, as the `actor` context, and return the new
+ * Start a session from an explicit per-seat assignment, as the `actor` context, and return the new
  * session id. Does not wait for the game to finish; callers that need a rateable recording use
  * {@link finishedScriptedSession}; the render check just needs a started session to watch. The
  * environment must have a play-open season and the actor must be active (`requireActive` gates the
  * start). The optional overrides pin the episode seed (so the deal — and for Hearts the opening 2♣
- * leader — is reproducible) and the human-slot move clock.
+ * leader is reproducible) and the human move clock.
  */
 export async function startSession(
   actor: APIRequestContext,
   envId: string,
-  slots: Record<string, SlotAssignment>,
+  seats: Record<string, SeatAssignment>,
   overrides: StartOverrides = {},
 ): Promise<string> {
   const prefill = await actor.get(`/api/environments/${envId}/play-parameters`)
@@ -333,10 +333,10 @@ export async function startSession(
       env_id: envId,
       season_id: overrides.seasonId ?? play.season_id,
       parameters: overrides.parameters ?? play.values,
-      slots,
+      seats,
       ...(overrides.seed !== undefined ? { seed: overrides.seed } : {}),
-      ...(overrides.humanSlotTimeoutMs !== undefined
-        ? { human_slot_timeout_ms: overrides.humanSlotTimeoutMs }
+      ...(overrides.humanTimeoutMs !== undefined
+        ? { human_timeout_ms: overrides.humanTimeoutMs }
         : {}),
     },
   })
@@ -371,19 +371,19 @@ export async function getRecordingHeader(
 }
 
 /**
- * Start an all-agent (scripted) multi-seat session from an explicit per-slot assignment and let it run
+ * Start an all-agent (scripted) multi-seat session from an explicit per-seat assignment and let it run
  * itself to completion, returning the finalized recording id. Unlike {@link finishedScriptedSession}
  * this never stops the session — a scripted Hearts hand ends on its own once all thirteen tricks are
- * played, so waiting yields a complete, trick-by-trick recording the replay viewer can walk. The slots
+ * played, so waiting yields a complete, trick-by-trick recording the replay viewer can walk. The seats
  * must name no human seat (a human seat would block waiting for input that never comes).
  */
 export async function finishedSeatedSession(
   actor: APIRequestContext,
   envId: string,
-  slots: Record<string, SlotAssignment>,
+  seats: Record<string, SeatAssignment>,
   overrides: StartOverrides = {},
 ): Promise<string> {
-  const sessionId = await startSession(actor, envId, slots, overrides)
+  const sessionId = await startSession(actor, envId, seats, overrides)
   let recordingId: string | null = null
   await expect
     .poll(
@@ -437,7 +437,7 @@ export async function finishedScriptedSession(
   submissionId: string,
 ): Promise<string> {
   const sessionId = await startSession(watcher, ENV_ID, {
-    player_0: { kind: 'submission', submission_id: submissionId },
+    seat_0: { kind: 'submission', submission_id: submissionId },
   })
 
   // Wait until it is past `starting` so a stop is accepted, then stop it (ignoring the case where the

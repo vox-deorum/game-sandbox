@@ -22,7 +22,7 @@ import pytest
 
 from game_sandbox_harness.environment import resolve_parameters
 from game_sandbox_harness.manifest import load_agent
-from game_sandbox_harness.session import REASON_TERMINATED, AgentSlot, run_episode
+from game_sandbox_harness.session import REASON_TERMINATED, AgentPlayer, run_episode
 from hearts import ENTRY, rules
 from hearts.env import IllegalMoveError, card_to_obj, default_action, make_env
 from hearts.overlay import extract_overlay
@@ -171,7 +171,7 @@ def test_queen_of_spades_does_not_break_hearts():
 def test_observe_masks_only_the_acting_seat():
     # The action mask belongs to the seat on turn; an off-turn seat gets an all-zero mask so it never
     # looks like it may act. Only the acting seat's mask carries its legal cards.
-    env = make_env({"seats": 4})
+    env = make_env({"players": 4})
     env.reset(seed=0)
     acting = env.agent_selection
     acting_mask = env.observe(acting)["action_mask"]
@@ -186,7 +186,7 @@ def test_terminal_observation_scores_match_the_overlay_after_a_moon_flip():
     # the shoot-the-moon flip. A raw points_taken leaf would disagree with the flipped overlay on the
     # last step of a moon-shot hand; penalty_scores keeps them equal.
     taken = [list(range(39, 52)) + [rules.QUEEN_OF_SPADES], [], [], []]  # seat 0 shoots the moon
-    env = make_env({"seats": 4})
+    env = make_env({"players": 4})
     env.reset(seed=0)
     env.state = rules.HeartsState(
         hands=[[], [], [], []],
@@ -204,7 +204,7 @@ def test_terminal_observation_scores_match_the_overlay_after_a_moon_flip():
 
 
 def test_env_rejects_illegal_move():
-    env = make_env({"seats": 4})
+    env = make_env({"players": 4})
     env.reset(seed=0)
     # At reset the only legal card is the 2♣; pick any other card the seat actually holds.
     seat = env.state.turn
@@ -214,7 +214,7 @@ def test_env_rejects_illegal_move():
 
 
 def test_legal_mask_matches_overlay_and_rules():
-    env = make_env({"seats": 4})
+    env = make_env({"players": 4})
     env.reset(seed=0)
 
     def agree() -> None:
@@ -248,7 +248,7 @@ def test_observation_shape_and_led_suit_none_encoding():
     # Pins the object observation contract: seat (not position), hand as a tuple of face-value
     # card objects, current_trick as play-ordered {"seat","card"} objects, and led_suit == 4 (not
     # -1) when no card has been played yet in the trick.
-    env = make_env({"seats": 4})
+    env = make_env({"players": 4})
     env.reset(seed=0)
     seat = env.state.turn
     inner = env.observe(env.agent_selection)["observation"]
@@ -352,7 +352,7 @@ def test_default_action_returns_real_lowest_legal_card():
     # The timeout hook now receives the live env and slot id and returns the concrete lowest legal
     # card (a real Discrete(52) action), not a sentinel, so a timeout recording holds the real move.
     # default_action is a module-level function in env.py and is the same callable as ENTRY.default_action.
-    env = make_env({"seats": 4})
+    env = make_env({"players": 4})
     env.reset(seed=0)
     state = _lead_choice_state()
     env.state = state
@@ -378,7 +378,7 @@ def test_default_action_returns_real_lowest_legal_card():
 def _rollout(seed: int) -> tuple[list, list, list]:
     """Reset a fresh env and play the env default until terminal, snapshotting observations and
     overlays each turn. Returns (observation snapshots, overlay dicts, the deal's hands)."""
-    env = make_env({"seats": 4})
+    env = make_env({"players": 4})
     env.reset(seed=seed)
     deal = [list(hand) for hand in env.state.hands]
     observations: list = []
@@ -437,13 +437,13 @@ def _drive_to_terminal(env, choose):
 
 
 def test_full_game_completes_via_run_episode():
-    slots = {f"player_{i}": AgentSlot(LowestLegalAgent()) for i in range(rules.NUM_PLAYERS)}
+    slots = {f"player_{i}": AgentPlayer(LowestLegalAgent()) for i in range(rules.NUM_PLAYERS)}
     result = run_episode(ENTRY, slots, parameters=resolve_parameters(ENTRY.meta), seed=0)
     assert result.reason == REASON_TERMINATED
     assert result.ticks == 52
 
     # Separately drive a manual rollout to inspect the terminal overlay before closing.
-    env = make_env({"seats": 4})
+    env = make_env({"players": 4})
     env.reset(seed=0)
     _drive_to_terminal(env, lambda e: default_action(e, e.agent_selection))
     ov = extract_overlay(env)
@@ -459,10 +459,10 @@ def test_run_episode_scores_credit_every_seat():
     # last card. Drive a full game through run_episode, then replay the identical deterministic
     # policy by hand to recover the per-seat final leaderboard, and assert they match. This is
     # the regression guard for terminal-reward accumulation across all four seats.
-    slots = {f"player_{i}": AgentSlot(LowestLegalAgent()) for i in range(rules.NUM_PLAYERS)}
+    slots = {f"player_{i}": AgentPlayer(LowestLegalAgent()) for i in range(rules.NUM_PLAYERS)}
     result = run_episode(ENTRY, slots, parameters=resolve_parameters(ENTRY.meta), seed=0)
 
-    env = make_env({"seats": 4})
+    env = make_env({"players": 4})
     env.reset(seed=0)
     # The same policy LowestLegalAgent uses: the first (lowest-id) set mask bit.
     _drive_to_terminal(env, lambda e: int(np.argmax(e.observe(e.agent_selection)["action_mask"])))
@@ -485,14 +485,16 @@ def test_builtin_hearts_agent_plays_a_full_legal_game():
     # Driving four copies to a clean terminal is the regression guard for the KeyError the Flappy Bird
     # baseline raised when loaded into Hearts seats: the per-environment baseline must exist, load, and
     # play only legal cards to the end of the hand.
-    slots = {f"player_{i}": AgentSlot(load_agent(BUILTIN_HEARTS_AGENT_DIR)) for i in range(rules.NUM_PLAYERS)}
-    result = run_episode(ENTRY, slots, parameters=resolve_parameters(ENTRY.meta), seed=0)
+    players = {
+        f"player_{i}": AgentPlayer(load_agent(BUILTIN_HEARTS_AGENT_DIR)) for i in range(rules.NUM_PLAYERS)
+    }
+    result = run_episode(ENTRY, players, parameters=resolve_parameters(ENTRY.meta), seed=0)
     assert result.reason == REASON_TERMINATED
     assert result.ticks == 52
 
     # The baseline plays the env's own lowest-legal default (default_action / rules.lowest_legal_card),
     # so a hand driven by that default must reach the identical deterministic terminal scores.
-    env = make_env({"seats": 4})
+    env = make_env({"players": 4})
     env.reset(seed=0)
     _drive_to_terminal(env, lambda e: default_action(e, e.agent_selection))
     expected = rules.leaderboard_scores(env.state)

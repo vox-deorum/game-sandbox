@@ -1,6 +1,6 @@
 <!--
   The start form the environment page's Play entry point opens inside a UiDialog: an optional seed
-  (for reproducible runs) and the human-slot timeout control. Watch starts through WatchAgentPicker
+  (for reproducible runs) and the human timeout control. Watch starts through WatchAgentPicker
   instead, so this form is human-play only. The timeout control's meaning follows the pace interval,
   per interaction.md:
 
@@ -32,7 +32,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{
   /** Everything the start payload carries except the seats, which this form fills with the lone human. */
-  submit: [Omit<StartPayload, 'slots'>]
+  submit: [Omit<StartPayload, 'seats'>]
   cancel: []
 }>()
 
@@ -67,7 +67,7 @@ function onSubmit(): void {
     seasonId: props.seasonId,
     parameters: checked.values,
     seed: optionalNumber(seed.value),
-    humanSlotTimeoutMs: optionalNumber(timeout.value),
+    humanTimeoutMs: optionalNumber(timeout.value),
   })
 }
 </script>

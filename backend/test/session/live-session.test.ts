@@ -29,7 +29,7 @@ describe('relay (LiveSession)', () => {
   function makeSession(
     mode: SessionMode = 'human',
     options: {
-      externalSlots?: readonly string[]
+      externalPlayers?: readonly string[]
       messaging?: { enabled: boolean; cap: number | null }
       llmEnabled?: boolean
       revokeLlm?: () => Promise<void>
@@ -52,8 +52,7 @@ describe('relay (LiveSession)', () => {
       recordingId: 'flappy_bird-sess-1',
       createdAt: '2026-06-11T00:00:00.000Z',
       process,
-      humanSlots: ['player_0'],
-      externalSlots: options.externalSlots ?? (mode === 'human' ? ['player_0'] : []),
+      externalPlayers: options.externalPlayers ?? (mode === 'human' ? ['player_0'] : []),
       messaging: options.messaging ?? { enabled: true, cap: 120 },
       llmEnabled: options.llmEnabled,
       deps: {
@@ -79,7 +78,7 @@ describe('relay (LiveSession)', () => {
       id: 'sess-1',
       user_id: 'alice',
       env_id: 'flappy_bird',
-      parameters: { seats: 1 },
+      parameters: { players: 1 },
       mode: 'human',
       recording_id: 'flappy_bird-sess-1',
       created_at: '2026-06-11T00:00:00.000Z',
@@ -238,8 +237,7 @@ describe('relay (LiveSession)', () => {
       recordingId: 'flappy_bird-sess-1',
       createdAt: '2026-06-11T00:00:00.000Z',
       process,
-      humanSlots: ['player_0'],
-      externalSlots: ['player_0'],
+      externalPlayers: ['player_0'],
       messaging: { enabled: true, cap: 120 },
       deps: {
         storage,
@@ -278,15 +276,15 @@ describe('relay (LiveSession)', () => {
       expect(process.sent).toEqual([])
     })
 
-    it('ignores input in scripted mode and input for an unexposed slot', async () => {
+    it('ignores scripted input and a capable player the session does not expose', async () => {
       const scripted = makeSession('scripted')
       const a = scripted.session.attach(new FakeSocket(), true)
       a.handleMessage('{"kind":"input","slot":"player_0","action":1}')
       expect(scripted.process.sent).toEqual([])
 
-      const human = makeSession('human')
+      const human = makeSession('human', { externalPlayers: ['player_1'] })
       const b = human.session.attach(new FakeSocket(), true)
-      b.handleMessage('{"kind":"input","slot":"player_9","action":1}')
+      b.handleMessage('{"kind":"input","slot":"player_0","action":1}')
       expect(human.process.sent).toEqual([])
     })
 
@@ -344,7 +342,7 @@ describe('relay (LiveSession)', () => {
       spectator: FakeSocket
     }> {
       // player_0 is the human-controlled (external) slot for these human-mode sessions.
-      const { session, process } = makeSession('human', { externalSlots: ['player_0'] })
+      const { session, process } = makeSession('human', { externalPlayers: ['player_0'] })
       const owner = new FakeSocket()
       const spectator = new FakeSocket()
       session.attach(owner, true)
@@ -395,7 +393,7 @@ describe('relay (LiveSession)', () => {
     })
 
     it('treats the owner of a scripted run as a spectator', async () => {
-      const { session, process } = makeSession('scripted', { externalSlots: [] })
+      const { session, process } = makeSession('scripted', { externalPlayers: [] })
       const owner = new FakeSocket()
       session.attach(owner, true) // owner, but a scripted run has no controller
       process.emit(HEADER)
@@ -405,7 +403,7 @@ describe('relay (LiveSession)', () => {
     })
 
     it('gives a late-attaching spectator the audience-filtered stashed line', async () => {
-      const { session, process } = makeSession('human', { externalSlots: ['player_0'] })
+      const { session, process } = makeSession('human', { externalPlayers: ['player_0'] })
       process.emit(HEADER)
       process.emit(stateWith([{ from: 'player_1', to: 'player_0', text: 'psst' }]))
       await flush()
@@ -416,7 +414,7 @@ describe('relay (LiveSession)', () => {
     })
 
     it('passes a state line with no messages through byte-identical', async () => {
-      const { session, process } = makeSession('human', { externalSlots: ['player_0'] })
+      const { session, process } = makeSession('human', { externalPlayers: ['player_0'] })
       const owner = new FakeSocket()
       const spectator = new FakeSocket()
       session.attach(owner, true)
@@ -435,28 +433,28 @@ describe('relay (LiveSession)', () => {
     const CHAT = '{"kind":"chat","slot":"player_0","to":null,"text":"hi"}'
 
     it('forwards an authorized chat frame to the container', () => {
-      const { session, process } = makeSession('human', { externalSlots: ['player_0'] })
+      const { session, process } = makeSession('human', { externalPlayers: ['player_0'] })
       const owner = session.attach(new FakeSocket(), true)
       owner.handleMessage(CHAT)
       expect(process.sent).toEqual([CHAT])
     })
 
     it("drops a spectator's chat frame", () => {
-      const { session, process } = makeSession('human', { externalSlots: ['player_0'] })
+      const { session, process } = makeSession('human', { externalPlayers: ['player_0'] })
       const spectator = session.attach(new FakeSocket(), false)
       spectator.handleMessage(CHAT)
       expect(process.sent).toEqual([])
     })
 
-    it('drops a chat frame for a slot outside externalSlots', () => {
-      const { session, process } = makeSession('human', { externalSlots: ['player_0'] })
+    it('drops a chat frame for a player outside externalPlayers', () => {
+      const { session, process } = makeSession('human', { externalPlayers: ['player_0'] })
       const owner = session.attach(new FakeSocket(), true)
       owner.handleMessage('{"kind":"chat","slot":"player_1","to":null,"text":"hi"}')
       expect(process.sent).toEqual([])
     })
 
     it('drops a chat frame on a scripted session', () => {
-      const { session, process } = makeSession('scripted', { externalSlots: [] })
+      const { session, process } = makeSession('scripted', { externalPlayers: [] })
       const owner = session.attach(new FakeSocket(), true)
       owner.handleMessage(CHAT)
       expect(process.sent).toEqual([])
@@ -464,7 +462,7 @@ describe('relay (LiveSession)', () => {
 
     it('drops a chat frame when messaging is disabled', () => {
       const { session, process } = makeSession('human', {
-        externalSlots: ['player_0'],
+        externalPlayers: ['player_0'],
         messaging: { enabled: false, cap: 120 },
       })
       const owner = session.attach(new FakeSocket(), true)
@@ -474,7 +472,7 @@ describe('relay (LiveSession)', () => {
 
     it('drops an over-cap chat frame and forwards one at exactly the cap (code points)', () => {
       const { session, process } = makeSession('human', {
-        externalSlots: ['player_0'],
+        externalPlayers: ['player_0'],
         messaging: { enabled: true, cap: 3 },
       })
       const owner = session.attach(new FakeSocket(), true)

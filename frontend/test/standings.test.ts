@@ -17,7 +17,7 @@ function stepState(scores: Record<string, number>, overlay?: Record<string, unkn
 }
 
 function header(players: NonNullable<RecordingHeader['players']>): RecordingHeader {
-  return { schema_version: 1, environment: 'hearts', parameters: { seats: 4 }, players }
+  return { schema_version: 1, environment: 'hearts', parameters: { players: 4 }, players }
 }
 
 describe('buildStandings (cross-environment game-over leaderboard)', () => {

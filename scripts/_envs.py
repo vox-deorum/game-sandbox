@@ -108,12 +108,12 @@ def _template_spec(package_dir: Path, meta: Any) -> TemplateEnvironmentSpec:
         and path.name not in {"__init__.py", "environment.md"}
         and not path.name.endswith((".pyc", ".pyo"))
     )
-    human_slots = getattr(meta, "human_slots", ())
+    human_players = getattr(meta, "human_players", ())
     return TemplateEnvironmentSpec(
         display_name=meta.display_name,
         inner_package=package_dir.name,
         modules=modules,
-        player_slot=human_slots[0] if human_slots else "player_0",
+        player_slot=human_players[0] if human_players else "player_0",
     )
 
 

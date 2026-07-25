@@ -16,7 +16,7 @@
 
 import type { ScheduledGameInput } from '../storage/index.js'
 import type { AgentRef, SubmissionRef } from '../storage/schema.js'
-import type { MatchConfig, SlotSpec } from '../storage/season-config.js'
+import type { MatchConfig, SeatSpec } from '../storage/season-config.js'
 
 export type { SubmissionRef } from '../storage/schema.js'
 
@@ -24,7 +24,7 @@ export type { SubmissionRef } from '../storage/schema.js'
 const NAIVE: AgentRef = { kind: 'builtin-naive' }
 
 /** The typed rejection reasons. Each names a structurally invalid match the codec also rejects. */
-export type ScheduleErrorReason = 'zero_slots' | 'empty_seeds' | 'non_positive_games'
+export type ScheduleErrorReason = 'zero_seats' | 'empty_seeds' | 'non_positive_games'
 
 /**
  * Thrown when a match configuration is structurally unrunnable. The {@link SeasonConfig} codec
@@ -77,19 +77,19 @@ export function buildSchedule(input: BuildScheduleInput): ScheduledGameInput[] {
 
   matches.forEach((match, matchIndex) => {
     // Defensive guards; the codec enforces these too (see season-config.ts).
-    if (match.slots.length === 0) throw new ScheduleError('zero_slots', matchIndex)
+    if (match.seats.length === 0) throw new ScheduleError('zero_seats', matchIndex)
     if (match.seeds.length === 0) throw new ScheduleError('empty_seeds', matchIndex)
     if (match.games <= 0) throw new ScheduleError('non_positive_games', matchIndex)
 
-    const k = match.slots.filter((spec) => spec === 'submission').length
+    const k = match.seats.filter((spec) => spec === 'submission').length
 
-    const emit = (slots: AgentRef[]): void => {
+    const emit = (seats: AgentRef[]): void => {
       for (let run = 0; run < match.games; run++) {
         schedule.push({
           match_index: matchIndex,
           game_index: gameIndex++,
           seed: match.seeds[run % match.seeds.length] as number,
-          slots: [...slots],
+          seats: [...seats],
         })
       }
     }
@@ -98,17 +98,17 @@ export function buildSchedule(input: BuildScheduleInput): ScheduledGameInput[] {
     // fewer than K submissions are ready (N < K), both fall through to the baseline-only schedule.
     const seatings =
       k === 0 ? [] : seatOrderMatters ? permutations(roster, k) : combinations(roster, k)
-    for (const seating of seatings) emit(resolveSlots(match.slots, seating))
+    for (const seating of seatings) emit(resolveSeats(match.seats, seating))
 
     // The Naive baseline always runs, after the submitted rows, on the same seeds and count.
-    emit(resolveSlots(match.slots, null))
+    emit(resolveSeats(match.seats, null))
   })
 
   return schedule
 }
 
 /**
- * Resolve one concrete `slots` assignment from a match's seat specs and a chosen seating.
+ * Resolve one concrete seat assignment from a match's seat specs and a chosen seating.
  *
  * `builtin-naive` specs take the baseline ref. `submission` specs are filled left-to-right from
  * `seating`; a `null` seating fills every submission seat with the baseline, which is how the
@@ -119,12 +119,12 @@ export function buildSchedule(input: BuildScheduleInput): ScheduledGameInput[] {
  * across every submission seat, and a self-play seating may repeat one submission across seats. The
  * downstream image build and harness (Stage 7.5) load an independent instance per seat.
  */
-export function resolveSlots(
-  slots: readonly SlotSpec[],
+export function resolveSeats(
+  seats: readonly SeatSpec[],
   seating: readonly SubmissionRef[] | null,
 ): AgentRef[] {
   let submissionIndex = 0
-  return slots.map((spec) => {
+  return seats.map((spec) => {
     if (spec === 'builtin-naive') return NAIVE
     return seating?.[submissionIndex++] ?? NAIVE
   })

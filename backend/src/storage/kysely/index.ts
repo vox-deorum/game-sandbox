@@ -223,8 +223,8 @@ export class KyselyStorage implements Storage {
   ): Promise<void> {
     return submissions.finishSubmissionCheck(this.db, submissionId, stage, status, detail)
   }
-  recordSessionSubmission(sessionId: string, submissionId: string, slotId: string): Promise<void> {
-    return submissions.recordSessionSubmission(this.db, sessionId, submissionId, slotId)
+  recordSessionSubmission(sessionId: string, submissionId: string, seatId: string): Promise<void> {
+    return submissions.recordSessionSubmission(this.db, sessionId, submissionId, seatId)
   }
   listSessionSubmissions(sessionId: string): Promise<SessionSubmission[]> {
     return submissions.listSessionSubmissions(this.db, sessionId)

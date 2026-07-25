@@ -4,15 +4,15 @@
  * No Docker, no DB. The Stage 6.2 contract is the single-submission-seat Flappy Bird case, the
  * always-present Naive baseline, seed round-robin, deterministic re-runs, and the typed guards. The
  * Stage 7 additions are the `seat_order_matters` ordered-vs-unordered expansion over Hearts' real
- * four slots, the `K = 1` reduction to the single-seat path, the `N < K` four-seat baseline-only
+ * four seats, the `K = 1` reduction to the single-seat path, the `N < K` four-seat baseline-only
  * fallthrough, multi-seat determinism, and the repeated-ref self-play property checked on
- * `resolveSlots`.
+ * `resolveSeats`.
  */
 import { describe, expect, it } from 'vitest'
 
 import {
   buildSchedule,
-  resolveSlots,
+  resolveSeats,
   ScheduleError,
   type SubmissionRef,
 } from '../../src/scheduler/build-schedule.js'
@@ -27,13 +27,15 @@ function subs(n: number): SubmissionRef[] {
   }))
 }
 
-/** Compact a resolved slots array into a readable token list for assertions. */
-function ids(slots: readonly { kind: string; submission_id?: string }[]): string[] {
-  return slots.map((s) => (s.kind === 'submission' ? (s.submission_id as string) : 'naive'))
+/** Compact a resolved seats array into a readable token list for assertions. */
+function ids(seats: readonly { kind: string; submission_id?: string }[]): string[] {
+  return seats.map((seat) =>
+    seat.kind === 'submission' ? (seat.submission_id as string) : 'naive',
+  )
 }
 
 describe('buildSchedule - single submission seat (Flappy Bird)', () => {
-  const match: MatchConfig = { slots: ['submission'], seeds: [10, 20], games: 2 }
+  const match: MatchConfig = { seats: ['submission'], seeds: [10, 20], games: 2 }
 
   it('emits two games per submission plus two baseline games, in deterministic order', () => {
     const schedule = buildSchedule({
@@ -47,7 +49,7 @@ describe('buildSchedule - single submission seat (Flappy Bird)', () => {
     // game_index is a contiguous run-global counter.
     expect(schedule.map((g) => g.game_index)).toEqual([0, 1, 2, 3, 4, 5, 6, 7])
     // Submitted rows first (sorted s1, s2, s3), baseline last.
-    expect(schedule.map((g) => ids(g.slots))).toEqual([
+    expect(schedule.map((g) => ids(g.seats))).toEqual([
       ['s1'],
       ['s1'],
       ['s2'],
@@ -71,12 +73,12 @@ describe('buildSchedule - single submission seat (Flappy Bird)', () => {
 
   it('always includes the Naive baseline, even with zero ready submissions', () => {
     const schedule = buildSchedule({ matches: [match], submissions: [], seatOrderMatters: false })
-    expect(schedule.map((g) => ids(g.slots))).toEqual([['naive'], ['naive']])
+    expect(schedule.map((g) => ids(g.seats))).toEqual([['naive'], ['naive']])
     expect(schedule.map((g) => g.seed)).toEqual([10, 20])
   })
 
   it('scales per-assignment run count with games and cycles a longer seed list', () => {
-    const five: MatchConfig = { slots: ['submission'], seeds: [10, 20], games: 5 }
+    const five: MatchConfig = { seats: ['submission'], seeds: [10, 20], games: 5 }
     const schedule = buildSchedule({
       matches: [five],
       submissions: subs(1),
@@ -89,13 +91,13 @@ describe('buildSchedule - single submission seat (Flappy Bird)', () => {
   })
 
   it('fills accompanying builtin-naive seats while expanding the submission seat', () => {
-    const mixed: MatchConfig = { slots: ['submission', 'builtin-naive'], seeds: [1], games: 1 }
+    const mixed: MatchConfig = { seats: ['submission', 'builtin-naive'], seeds: [1], games: 1 }
     const schedule = buildSchedule({
       matches: [mixed],
       submissions: subs(2),
       seatOrderMatters: false,
     })
-    expect(schedule.map((g) => ids(g.slots))).toEqual([
+    expect(schedule.map((g) => ids(g.seats))).toEqual([
       ['s1', 'naive'],
       ['s2', 'naive'],
       ['naive', 'naive'], // baseline
@@ -104,9 +106,9 @@ describe('buildSchedule - single submission seat (Flappy Bird)', () => {
 })
 
 describe('buildSchedule - multi-seat expansion', () => {
-  // The agreed Hearts shape: four fixed slots, two submission seats and two fixed Naive seats.
+  // The agreed Hearts shape: two submission seats and two fixed Naive seats.
   const hearts: MatchConfig = {
-    slots: ['submission', 'submission', 'builtin-naive', 'builtin-naive'],
+    seats: ['submission', 'submission', 'builtin-naive', 'builtin-naive'],
     seeds: [7, 8],
     games: 2,
   }
@@ -121,7 +123,7 @@ describe('buildSchedule - multi-seat expansion', () => {
 
     const submitted = schedule.slice(0, 24)
     // Distinct ordered seatings (ignoring the repeated-per-seed runs): 12 of them, lexicographic.
-    const seatings = submitted.filter((_, i) => i % 2 === 0).map((g) => ids(g.slots))
+    const seatings = submitted.filter((_, i) => i % 2 === 0).map((g) => ids(g.seats))
     expect(seatings).toEqual([
       ['s1', 's2', 'naive', 'naive'],
       ['s1', 's3', 'naive', 'naive'],
@@ -136,8 +138,8 @@ describe('buildSchedule - multi-seat expansion', () => {
       ['s4', 's2', 'naive', 'naive'],
       ['s4', 's3', 'naive', 'naive'],
     ])
-    // Baseline last: every submission seat Naive, so all four slots are Naive.
-    expect(schedule.slice(24).map((g) => ids(g.slots))).toEqual([
+    // Baseline last: every submission seat is Naive.
+    expect(schedule.slice(24).map((g) => ids(g.seats))).toEqual([
       ['naive', 'naive', 'naive', 'naive'],
       ['naive', 'naive', 'naive', 'naive'],
     ])
@@ -153,7 +155,7 @@ describe('buildSchedule - multi-seat expansion', () => {
     const rosters = schedule
       .slice(0, 12)
       .filter((_, i) => i % 2 === 0)
-      .map((g) => ids(g.slots))
+      .map((g) => ids(g.seats))
     // Sorted-id order within each roster; lexicographic across rosters; no mirrored pairs.
     expect(rosters).toEqual([
       ['s1', 's2', 'naive', 'naive'],
@@ -179,11 +181,11 @@ describe('buildSchedule - multi-seat expansion', () => {
   })
 
   it('reduces to the exact Stage 6 schedule for K=1 under either flag', () => {
-    const m: MatchConfig = { slots: ['submission'], seeds: [1, 2], games: 2 }
+    const m: MatchConfig = { seats: ['submission'], seeds: [1, 2], games: 2 }
     const ordered = buildSchedule({ matches: [m], submissions: subs(3), seatOrderMatters: true })
     const unordered = buildSchedule({ matches: [m], submissions: subs(3), seatOrderMatters: false })
     expect(ordered).toEqual(unordered)
-    expect(ordered.map((g) => ids(g.slots))).toEqual([
+    expect(ordered.map((g) => ids(g.seats))).toEqual([
       ['s1'],
       ['s1'],
       ['s2'],
@@ -196,14 +198,14 @@ describe('buildSchedule - multi-seat expansion', () => {
   })
 
   it('runs the all-submission board with no fixed builtin seat', () => {
-    const board: MatchConfig = { slots: ['submission', 'submission'], seeds: [1], games: 1 }
+    const board: MatchConfig = { seats: ['submission', 'submission'], seeds: [1], games: 1 }
     const schedule = buildSchedule({
       matches: [board],
       submissions: subs(3),
       seatOrderMatters: true,
     })
     // P(3,2) = 6 ordered seatings + 1 baseline.
-    expect(schedule.map((g) => ids(g.slots))).toEqual([
+    expect(schedule.map((g) => ids(g.seats))).toEqual([
       ['s1', 's2'],
       ['s1', 's3'],
       ['s2', 's1'],
@@ -219,7 +221,7 @@ describe('buildSchedule - multi-seat expansion', () => {
     // submitted seatings are enumerated and the always-present baseline fills all four seats with
     // Naive. One case pins both the N < K baseline-only fallthrough and the four-seat all-Naive board.
     const board: MatchConfig = {
-      slots: ['submission', 'submission', 'submission', 'submission'],
+      seats: ['submission', 'submission', 'submission', 'submission'],
       seeds: [7, 8],
       games: 2,
     }
@@ -228,19 +230,19 @@ describe('buildSchedule - multi-seat expansion', () => {
       submissions: subs(1),
       seatOrderMatters: true,
     })
-    expect(schedule.map((g) => ids(g.slots))).toEqual([
+    expect(schedule.map((g) => ids(g.seats))).toEqual([
       ['naive', 'naive', 'naive', 'naive'],
       ['naive', 'naive', 'naive', 'naive'],
     ])
   })
 })
 
-describe('resolveSlots - self-play repeated ref', () => {
+describe('resolveSeats - self-play repeated ref', () => {
   it('seats one submission in two seats, without dedup or rejection', () => {
     const [s1] = subs(1) as [SubmissionRef]
     // buildSchedule only enumerates distinct seatings, so the repeated-ref self-play property is
     // proven directly on the seat-resolution primitive: the same agent fills both seats verbatim.
-    expect(ids(resolveSlots(['submission', 'submission'], [s1, s1]))).toEqual(['s1', 's1'])
+    expect(ids(resolveSeats(['submission', 'submission'], [s1, s1]))).toEqual(['s1', 's1'])
   })
 })
 
@@ -252,19 +254,19 @@ describe('buildSchedule - match composition and guards', () => {
   })
 
   it('treats a no-submission-seat match as a single baseline run per game count', () => {
-    const pure: MatchConfig = { slots: ['builtin-naive'], seeds: [5, 6], games: 2 }
+    const pure: MatchConfig = { seats: ['builtin-naive'], seeds: [5, 6], games: 2 }
     const schedule = buildSchedule({
       matches: [pure],
       submissions: subs(3),
       seatOrderMatters: true,
     })
-    expect(schedule.map((g) => ids(g.slots))).toEqual([['naive'], ['naive']])
+    expect(schedule.map((g) => ids(g.seats))).toEqual([['naive'], ['naive']])
     expect(schedule.map((g) => g.seed)).toEqual([5, 6])
   })
 
   it('numbers game_index globally across multiple matches', () => {
-    const m1: MatchConfig = { slots: ['submission'], seeds: [1], games: 1 }
-    const m2: MatchConfig = { slots: ['builtin-naive'], seeds: [1], games: 1 }
+    const m1: MatchConfig = { seats: ['submission'], seeds: [1], games: 1 }
+    const m2: MatchConfig = { seats: ['builtin-naive'], seeds: [1], games: 1 }
     const schedule = buildSchedule({
       matches: [m1, m2],
       submissions: subs(2),
@@ -275,9 +277,9 @@ describe('buildSchedule - match composition and guards', () => {
   })
 
   const badMatches: Array<[string, MatchConfig]> = [
-    ['zero_slots', { slots: [], seeds: [1], games: 1 }],
-    ['empty_seeds', { slots: ['submission'], seeds: [], games: 1 }],
-    ['non_positive_games', { slots: ['submission'], seeds: [1], games: 0 }],
+    ['zero_seats', { seats: [], seeds: [1], games: 1 }],
+    ['empty_seeds', { seats: ['submission'], seeds: [], games: 1 }],
+    ['non_positive_games', { seats: ['submission'], seeds: [1], games: 0 }],
   ]
   it.each(badMatches)('rejects %s with a typed ScheduleError', (reason, badMatch) => {
     const run = () =>

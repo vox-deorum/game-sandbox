@@ -18,7 +18,7 @@
     },
     "agents": {
       "type": "object",
-      "description": "Per-agent step data keyed by slot id (the PettingZoo agent id).",
+      "description": "Per-agent step data keyed by player id (the PettingZoo agent id).",
       "additionalProperties": { "$ref": "#/$defs/agent_step" }
     },
     "overlay": {
@@ -85,11 +85,11 @@
       "properties": {
         "from": {
           "type": "string",
-          "description": "Slot id of the sender."
+          "description": "Player id of the sender."
         },
         "to": {
           "type": ["string", "null"],
-          "description": "Slot id of the recipient, or null for a broadcast."
+          "description": "Player id of the recipient, or null for a broadcast."
         },
         "text": {
           "type": "string"

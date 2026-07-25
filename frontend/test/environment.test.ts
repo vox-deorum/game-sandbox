@@ -63,7 +63,10 @@ describe('EnvironmentPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(getEnvironments).mockResolvedValue([META])
-    vi.mocked(getPlayParameters).mockResolvedValue({ season_id: 'iter-1', values: {} })
+    vi.mocked(getPlayParameters).mockResolvedValue({
+      season_id: 'iter-1',
+      values: { players: 1, pipe_gap: 100 },
+    })
     vi.mocked(listRecordings).mockResolvedValue([])
     vi.mocked(listSeasons).mockResolvedValue([
       {
@@ -119,7 +122,7 @@ describe('EnvironmentPage', () => {
   it('lists the play season settings under its description', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
     // The prefill resolves to the environment default, so the summary names the one visible parameter
-    // (`seats` is fixed at one for Flappy Bird and stays out of a player-facing line).
+    // (`players` is fixed at one for Flappy Bird and stays out of a player-facing line).
     await renderPage()
     expect(await screen.findByText(/Settings: Pipe gap 100/)).toBeInTheDocument()
     expect(screen.queryByText('No special settings.')).toBeNull()
@@ -130,7 +133,7 @@ describe('EnvironmentPage', () => {
     // Every Hearts parameter is fixed, so there is nothing to list. The line still answers the question
     // instead of vanishing and leaving the player to guess.
     vi.mocked(getEnvironments).mockResolvedValue([heartsMeta()])
-    vi.mocked(getPlayParameters).mockResolvedValue({ season_id: 'iter-1', values: { seats: 4 } })
+    vi.mocked(getPlayParameters).mockResolvedValue({ season_id: 'iter-1', values: { players: 4 } })
     await renderPage('hearts')
     expect(await screen.findByText('No special settings.')).toBeInTheDocument()
   })
@@ -196,7 +199,7 @@ describe('EnvironmentPage', () => {
     ).toBeInTheDocument()
   })
 
-  it('tags the environment name with its slots and pace, and with no submission season', async () => {
+  it('tags the environment name with its seats and pace, and with no submission season', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
     // A season taking submissions no longer adds a tag beside the name: the header carries only the
     // environment's own facts, which now sit on the title line rather than in a row of their own.
@@ -217,7 +220,7 @@ describe('EnvironmentPage', () => {
     ])
     await renderPage()
     const title = await screen.findByRole('heading', { name: 'Flappy Bird', level: 1 })
-    expect(title.parentElement).toHaveTextContent('1 slot')
+    expect(title.parentElement).toHaveTextContent('1 seat')
     expect(title.parentElement).toHaveTextContent('paced 50 ms')
     expect(screen.queryByText(/Submittable/)).toBeNull()
   })
@@ -300,18 +303,18 @@ describe('EnvironmentPage', () => {
     await fireEvent.click(await screen.findByRole('button', { name: 'Play' }))
     await fireEvent.click(await screen.findByRole('button', { name: 'Start playing' }))
     expect(await screen.findByText('s1')).toBeInTheDocument()
-    // A single-slot environment fills only the lone human seat; the backend derives the human mode.
+    // A single-seat environment fills only the lone human seat; the backend derives the human mode.
     expect(vi.mocked(startSession)).toHaveBeenCalledWith({
       envId: 'flappy_bird',
       seasonId: 'iter-1',
-      parameters: { seats: 1, pipe_gap: 100 },
-      slots: { player_0: { kind: 'human' } },
+      parameters: { players: 1, pipe_gap: 100 },
+      seats: { seat_0: { kind: 'human' } },
       seed: undefined,
-      humanSlotTimeoutMs: undefined,
+      humanTimeoutMs: undefined,
     })
   })
 
-  it('sends the human-slot timeout override entered in the start form', async () => {
+  it('sends the human timeout override entered in the start form', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
     vi.mocked(startSession).mockResolvedValue({
       ok: true,
@@ -325,10 +328,10 @@ describe('EnvironmentPage', () => {
     expect(vi.mocked(startSession)).toHaveBeenCalledWith({
       envId: 'flappy_bird',
       seasonId: 'iter-1',
-      parameters: { seats: 1, pipe_gap: 100 },
-      slots: { player_0: { kind: 'human' } },
+      parameters: { players: 1, pipe_gap: 100 },
+      seats: { seat_0: { kind: 'human' } },
       seed: undefined,
-      humanSlotTimeoutMs: 250,
+      humanTimeoutMs: 250,
     })
   })
 
@@ -348,6 +351,10 @@ describe('EnvironmentPage', () => {
   it('opens the multi-seat play grid for Hearts and starts with one human seat', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user', 'normal'))
     vi.mocked(getEnvironments).mockResolvedValue([heartsMeta()])
+    vi.mocked(getPlayParameters).mockResolvedValue({
+      season_id: 'iter-1',
+      values: { players: 4 },
+    })
     // The multi-seat play dialog fetches the submitted-agent options for the non-human seats.
     vi.mocked(listWatchAgents).mockResolvedValue([])
     vi.mocked(startSession).mockResolvedValue({
@@ -363,15 +370,15 @@ describe('EnvironmentPage', () => {
     expect(vi.mocked(startSession)).toHaveBeenCalledWith({
       envId: 'hearts',
       seasonId: 'iter-1',
-      parameters: { seats: 4 },
-      slots: {
-        player_0: { kind: 'human' },
-        player_1: { kind: 'builtin-agent' },
-        player_2: { kind: 'builtin-agent' },
-        player_3: { kind: 'builtin-agent' },
+      parameters: { players: 4 },
+      seats: {
+        seat_0: { kind: 'human' },
+        seat_1: { kind: 'builtin-agent' },
+        seat_2: { kind: 'builtin-agent' },
+        seat_3: { kind: 'builtin-agent' },
       },
       seed: undefined,
-      humanSlotTimeoutMs: 60_000,
+      humanTimeoutMs: 60_000,
     })
     expect(await screen.findByText('h1')).toBeInTheDocument()
   })

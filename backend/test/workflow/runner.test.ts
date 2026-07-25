@@ -46,7 +46,7 @@ describe('workflow runner seam', () => {
 
   /** A declared, configured season plus a created run (status `pending`). */
   async function makeRun(
-    parametersSnapshot: Record<string, ParameterValue> = { seats: 1, pipe_gap: 100 },
+    parametersSnapshot: Record<string, ParameterValue> = { players: 1, pipe_gap: 100 },
   ): Promise<string> {
     const season = await storage.createSeason({
       env_id: ENV_ID,
@@ -55,12 +55,12 @@ describe('workflow runner seam', () => {
     })
     await storage.updateSeasonConfig(season.id, {
       deps_version: 1,
-      matches: [{ slots: ['submission'], seeds: [1], games: 1 }],
+      matches: [{ seats: ['submission'], seeds: [1], games: 1 }],
     })
     const run = await createRunOrFail(storage, season.id, 'dev-user', () => ({
       parametersSnapshot,
       scheduledGames: [
-        { match_index: 0, game_index: 0, seed: 1, slots: [{ kind: 'builtin-naive' }] },
+        { match_index: 0, game_index: 0, seed: 1, seats: [{ kind: 'builtin-naive' }] },
       ],
       llmPolicy: disabledLlmPolicy(),
     }))
@@ -100,7 +100,7 @@ describe('workflow runner seam', () => {
   })
 
   it('fails a run with an incomplete frozen parameter snapshot before launching a container', async () => {
-    const runId = await makeRun({ seats: 1 })
+    const runId = await makeRun({ players: 1 })
     const root = mkdtempSync(join(tmpdir(), 'gs-runner-invalid-parameters-'))
     roots.push(root)
     const driver = new FakeDriver()
@@ -151,7 +151,7 @@ describe('workflow runner seam', () => {
     })
     await storage.updateSeasonConfig(season.id, {
       deps_version: 1,
-      matches: [{ slots: ['submission'], seeds: [1], games: 1 }],
+      matches: [{ seats: ['submission'], seeds: [1], games: 1 }],
       overrides: { llm: { enabled: true, models: ['small'] } },
     })
     const frozen: ResolvedOfficialLlmPolicy = {
@@ -160,9 +160,9 @@ describe('workflow runner seam', () => {
       session: { token_budget: 41, rate_limit_rpm: 3 },
     }
     const run = await createRunOrFail(storage, season.id, 'dev-user', () => ({
-      parametersSnapshot: { seats: 1, pipe_gap: 100 },
+      parametersSnapshot: { players: 1, pipe_gap: 100 },
       scheduledGames: [
-        { match_index: 0, game_index: 0, seed: 1, slots: [{ kind: 'builtin-naive' }] },
+        { match_index: 0, game_index: 0, seed: 1, seats: [{ kind: 'builtin-naive' }] },
       ],
       llmPolicy: frozen,
     }))
@@ -188,7 +188,7 @@ describe('workflow runner seam', () => {
         JSON.stringify({
           schema_version: 1,
           environment: ENV_ID,
-          parameters: { seats: 1, pipe_gap: 100 },
+          parameters: { players: 1, pipe_gap: 100 },
           seed: 1,
           created_at: '2026-07-19T00:00:00.000Z',
         }),
@@ -246,7 +246,7 @@ describe('workflow runner seam', () => {
     expect(await terminal).toBe('completed')
     const launch = driver.lastLaunch()
     expect(JSON.parse(launch?.spec.argv[0] ?? '{}')).toMatchObject({
-      parameters: { seats: 1, pipe_gap: 100 },
+      parameters: { players: 1, pipe_gap: 100 },
     })
     await recovered.shutdown()
 

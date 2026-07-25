@@ -1,12 +1,12 @@
 /**
- * The shared launch-config seam: the one place that turns a per-slot seat assignment into the
- * `slots` and `players` blocks of the session config the container reads.
+ * The shared launch-config seam: the one place that turns a per-player seat assignment into the
+ * `player_bindings` and `players` blocks of the session config the container reads.
  *
  * Two callers need this and must not drift. The {@link import('./orchestrator.js').Orchestrator} builds
- * a *live, browser-attached* session: it has human (`external`) slots, a single optional submitted
+ * a *live, browser-attached* session: it has human (`external`) players, a single optional submitted
  * agent, and Naive baselines filling the rest. The Stage 6.4 workflow runner builds a *headless
- * run-to-completion* match: every slot is an agent (a submitted overlay or the Naive baseline), no
- * human, no socket. The differences are how each caller decides what fills a slot; the mapping from
+ * run-to-completion* match: every player is an agent (a submitted overlay or the Naive baseline), no
+ * human, no socket. The differences are how each caller decides what fills a player; the mapping from
  * that decision to the wire shape — `external` vs `builtin-agent`, the path a submitted overlay loads
  * from, and the recording-header attribution — is identical, so it lives here once.
  *
@@ -15,8 +15,8 @@
  */
 
 /**
- * Per-slot attribution copied verbatim into the recording header, so a replay can name who or what
- * drove each slot. Mirrors the `players` value shape in `recording-header.schema.json`.
+ * Per-player attribution copied verbatim into the recording header, so a replay can name who or what
+ * drove each player. Mirrors the `players` value shape in `recording-header.schema.json`.
  */
 export interface PlayerAttribution {
   kind: 'human' | 'agent'
@@ -25,15 +25,15 @@ export interface PlayerAttribution {
   submission_id?: string
 }
 
-/** One slot's binding in the session config argv: an external (human) source or a loaded agent. */
+/** One player's binding in the session config argv: an external (human) source or a loaded agent. */
 export interface SlotConfig {
   kind: 'external' | 'builtin-agent'
-  /** Where a `builtin-agent` slot loads its code from; absent means the image's default Naive agent. */
+  /** Where a `builtin-agent` player loads its code from; absent means the image's default Naive agent. */
   path?: string
 }
 
 /**
- * What fills one slot, in caller-neutral terms: a connected human, the built-in Naive baseline, or a
+ * What fills one player, in caller-neutral terms: a connected human, the built-in Naive baseline, or a
  * submitted agent (which carries the overlay path its code was staged into and its owner attribution).
  * The optional display names are a launch-time snapshot resolved by the caller through the user
  * directory; `player.user` always keeps the stable id, and a missing name falls back to it.
@@ -43,9 +43,9 @@ export type SeatBinding =
   | { driver: 'naive' }
   | { driver: 'submission'; submissionId: string; userId: string; path: string; ownerName?: string }
 
-/** The two session-config blocks derived from a seat assignment, keyed by slot id. */
+/** The two session-config blocks derived from a seat assignment, keyed by player id. */
 export interface AssembledSeats {
-  slots: Record<string, SlotConfig>
+  playerBindings: Record<string, SlotConfig>
   players: Record<string, PlayerAttribution>
 }
 
@@ -83,33 +83,34 @@ export function assembleLlmLaunchConfig(
 }
 
 /**
- * Map a slot-id → seat assignment onto the `slots` and `players` blocks of the session config. A
- * human slot is driven by the transport (`external`); a Naive or submitted slot is a `builtin-agent`,
+ * Map a player-id to a seat assignment onto the `player_bindings` and `players` blocks of the session
+ * config. A human player is driven by the transport (`external`); a Naive or submitted player is a
+ * `builtin-agent`,
  * the submitted one carrying the overlay path its code loads from. The attribution mirrors the seat:
  * the human's display name, the generic "Naive agent", or "<owner>'s agent" tagged with the
  * submission. `user` always carries the stable id; the label falls back to it when the caller
  * resolved no display name, so a recording stays attributable without joining mutable auth data.
  */
 export function assembleSeats(seats: ReadonlyMap<string, SeatBinding>): AssembledSeats {
-  const slots: Record<string, SlotConfig> = {}
+  const playerBindings: Record<string, SlotConfig> = {}
   const players: Record<string, PlayerAttribution> = {}
-  for (const [slotId, seat] of seats) {
+  for (const [playerId, seat] of seats) {
     switch (seat.driver) {
       case 'human':
-        slots[slotId] = { kind: 'external' }
-        players[slotId] = {
+        playerBindings[playerId] = { kind: 'external' }
+        players[playerId] = {
           kind: 'human',
           label: seat.displayName ?? seat.userId,
           user: seat.userId,
         }
         break
       case 'naive':
-        slots[slotId] = { kind: 'builtin-agent' }
-        players[slotId] = { kind: 'agent', label: 'Naive agent' }
+        playerBindings[playerId] = { kind: 'builtin-agent' }
+        players[playerId] = { kind: 'agent', label: 'Naive agent' }
         break
       case 'submission':
-        slots[slotId] = { kind: 'builtin-agent', path: seat.path }
-        players[slotId] = {
+        playerBindings[playerId] = { kind: 'builtin-agent', path: seat.path }
+        players[playerId] = {
           kind: 'agent',
           label: `${seat.ownerName ?? seat.userId}'s agent`,
           user: seat.userId,
@@ -118,5 +119,5 @@ export function assembleSeats(seats: ReadonlyMap<string, SeatBinding>): Assemble
         break
     }
   }
-  return { slots, players }
+  return { playerBindings, players }
 }

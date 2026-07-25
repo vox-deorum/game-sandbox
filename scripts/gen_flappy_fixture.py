@@ -14,7 +14,7 @@ from typing import Any
 
 from _fixture_common import run_and_copy
 from flappy_bird import ENTRY
-from game_sandbox_harness.session import AgentSlot
+from game_sandbox_harness.session import AgentPlayer
 from game_sandbox_harness.state import PlayerAttribution
 
 FLAP = 1
@@ -56,7 +56,7 @@ def main() -> int:
     players: dict[str, PlayerAttribution] = {
         "player_0": {"kind": "human", "label": "you"},
     }
-    slots = {"player_0": AgentSlot(GapChaserAgent())}
+    slots = {"player_0": AgentPlayer(GapChaserAgent())}
     run_and_copy(
         ENTRY,
         slots,

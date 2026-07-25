@@ -76,10 +76,10 @@ test('Spades chat is filtered live and complete in replay', async ({
     // browser authenticates as the same admin actor that starts the session, so it owns and controls the
     // human seat (the composer and Stop).
     sessionId = await startSession(admin, SPADES_ENV_ID, {
-      player_0: { kind: 'human' },
-      player_1: { kind: 'builtin-agent' },
-      player_2: { kind: 'builtin-agent' },
-      player_3: { kind: 'builtin-agent' },
+      seat_0: { kind: 'human' },
+      seat_1: { kind: 'builtin-agent' },
+      seat_2: { kind: 'builtin-agent' },
+      seat_3: { kind: 'builtin-agent' },
     })
     await authenticateBrowser(page.context(), admin)
     await page.goto(`/sessions/${sessionId}`)
@@ -205,10 +205,10 @@ test('an over-cap Spades chat draft disables Send', async ({ page, admin }) => {
   // The browser authenticates as the same admin actor that starts the session, so it owns and controls
   // the human seat's composer.
   const sessionId = await startSession(admin, SPADES_ENV_ID, {
-    player_0: { kind: 'human' },
-    player_1: { kind: 'builtin-agent' },
-    player_2: { kind: 'builtin-agent' },
-    player_3: { kind: 'builtin-agent' },
+    seat_0: { kind: 'human' },
+    seat_1: { kind: 'builtin-agent' },
+    seat_2: { kind: 'builtin-agent' },
+    seat_3: { kind: 'builtin-agent' },
   })
   try {
     await authenticateBrowser(page.context(), admin)
@@ -258,10 +258,10 @@ test('a season-silenced Spades session mounts no chat panel', async ({ page, adm
   let sessionId: string | null = null
   try {
     sessionId = await startSession(admin, SPADES_ENV_ID, {
-      player_0: { kind: 'human' },
-      player_1: { kind: 'builtin-agent' },
-      player_2: { kind: 'builtin-agent' },
-      player_3: { kind: 'builtin-agent' },
+      seat_0: { kind: 'human' },
+      seat_1: { kind: 'builtin-agent' },
+      seat_2: { kind: 'builtin-agent' },
+      seat_3: { kind: 'builtin-agent' },
     })
     await authenticateBrowser(page.context(), admin)
     await page.goto(`/sessions/${sessionId}`)
@@ -342,7 +342,7 @@ test('a Spades season: three example agents, a scheduled partnership matchup, th
     // — it is kept at 0 to match hearts.spec.ts's convention.
     await configureMatches(admin, season.id, [
       {
-        slots: ['submission', 'builtin-naive', 'submission', 'builtin-naive'],
+        seats: ['submission', 'builtin-naive', 'submission', 'builtin-naive'],
         seeds: [0],
         games: 1,
       },

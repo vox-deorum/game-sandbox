@@ -80,7 +80,7 @@ const isOwner = computed(
 )
 // The seat(s) this viewer occupied as a human, from the recording header's attribution. It must be the
 // one seat the human took, not every human-capable seat: the renderer reads `controlled[0]` as the
-// single controlled seat, so passing all of `meta.human_slots` would pin control to seat 0 and lock a
+// single controlled player, so passing all of `meta.human_players` would pin control to player 0 and lock a
 // human seated elsewhere out of play. The recording header's `players` map records which seat the human
 // occupies (`kind: 'human'`), so we narrow to that. Before the header arrives (or on an older header
 // without attribution) we return [] rather than the env's human-capable seats, so a human seated at

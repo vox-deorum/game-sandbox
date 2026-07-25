@@ -37,10 +37,10 @@ import { stageExampleAgent } from './support/stage-example-agent.js'
 
 /** A four-seat, all-Naive Hearts session: no human seat, so it runs itself to completion (scripted). */
 const ALL_BUILTIN_SEATS = {
-  player_0: { kind: 'builtin-agent' as const },
-  player_1: { kind: 'builtin-agent' as const },
-  player_2: { kind: 'builtin-agent' as const },
-  player_3: { kind: 'builtin-agent' as const },
+  seat_0: { kind: 'builtin-agent' as const },
+  seat_1: { kind: 'builtin-agent' as const },
+  seat_2: { kind: 'builtin-agent' as const },
+  seat_3: { kind: 'builtin-agent' as const },
 }
 
 /** Two distinct strategies are enough to exercise both ordered two-submission seatings. */
@@ -130,7 +130,7 @@ test('a Hearts season: two example agents, a scheduled multi-seat matchup, then 
     // seats produce both ordered seatings, followed by the Naive-only baseline.
     await configureMatches(admin, season.id, [
       {
-        slots: ['submission', 'submission', 'builtin-naive', 'builtin-naive'],
+        seats: ['submission', 'submission', 'builtin-naive', 'builtin-naive'],
         seeds: [0],
         games: 1,
       },
@@ -592,12 +592,12 @@ test('an on-screen human seat plays a legal card and an illegal click does not a
     admin,
     HEARTS_ENV_ID,
     {
-      player_0: { kind: 'human' },
-      player_1: { kind: 'builtin-agent' },
-      player_2: { kind: 'builtin-agent' },
-      player_3: { kind: 'builtin-agent' },
+      seat_0: { kind: 'human' },
+      seat_1: { kind: 'builtin-agent' },
+      seat_2: { kind: 'builtin-agent' },
+      seat_3: { kind: 'builtin-agent' },
     },
-    { seed: HEARTS_HUMAN_LEAD_SEED, humanSlotTimeoutMs: 60_000 },
+    { seed: HEARTS_HUMAN_LEAD_SEED, humanTimeoutMs: 60_000 },
   )
   await authenticateBrowser(page.context(), admin)
   await page.goto(`/sessions/${sessionId}`)
@@ -689,10 +689,10 @@ test('a multi-agent Hearts recording replays with per-seat attribution and trick
       admin,
       HEARTS_ENV_ID,
       {
-        player_0: { kind: 'submission', submission_id: submissionId },
-        player_1: { kind: 'builtin-agent' },
-        player_2: { kind: 'builtin-agent' },
-        player_3: { kind: 'builtin-agent' },
+        seat_0: { kind: 'submission', submission_id: submissionId },
+        seat_1: { kind: 'builtin-agent' },
+        seat_2: { kind: 'builtin-agent' },
+        seat_3: { kind: 'builtin-agent' },
       },
       { seed: HEARTS_HUMAN_LEAD_SEED },
     )

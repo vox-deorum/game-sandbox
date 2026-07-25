@@ -9,8 +9,8 @@ import {
   flappyMeta,
   flappyState,
   heartsMeta,
+  playerState,
   recordingText,
-  seatState,
   spadesHeader,
   spadesMeta,
   spadesPlayers,
@@ -100,7 +100,7 @@ function ownerRow() {
     termination_reason: null,
     recording_id: 'flappy_bird-s1',
     season_id: 'flappy_bird-iter-1',
-    parameters: { seats: 1, pipe_gap: 100 },
+    parameters: { players: 1, pipe_gap: 100 },
     human_timeout_ms: null,
     messaging_enabled: 0,
     message_cap: null,
@@ -377,7 +377,7 @@ describe('SessionPage', () => {
     handlers.onHeader({
       schema_version: 1,
       environment: 'hearts',
-      parameters: { seats: 4 },
+      parameters: { players: 4 },
       seed: 0,
       players: {
         player_0: { kind: 'agent', label: 'Naive agent' },
@@ -410,7 +410,7 @@ describe('SessionPage', () => {
     handlers.onHeader({
       schema_version: 1,
       environment: 'hearts',
-      parameters: { seats: 4 },
+      parameters: { players: 4 },
       seed: 0,
     })
 
@@ -950,9 +950,9 @@ describe('SessionPage', () => {
     vi.useFakeTimers()
     try {
       handlers.onHeader(spadesHeader())
-      handlers.onState(seatState(0))
+      handlers.onState(playerState(0))
       handlers.onState(
-        seatState(1, { messages: [{ from: 'player_0', to: null, text: 'hello table' }] }),
+        playerState(1, { messages: [{ from: 'player_0', to: null, text: 'hello table' }] }),
       )
       // Below the lead (150 ms / 50 ms = 3 frames): nothing has drained, so the message is not shown.
       vi.advanceTimersByTime(200)
@@ -961,7 +961,7 @@ describe('SessionPage', () => {
       expect(screen.queryByText('hello table')).toBeNull()
 
       // A third frame fills the lead; playout begins and the first tick drains frame 0 (no message).
-      handlers.onState(seatState(2))
+      handlers.onState(playerState(2))
       vi.advanceTimersByTime(50)
       await nextTick()
       expect(drawn).toHaveLength(1)
@@ -987,13 +987,13 @@ describe('SessionPage', () => {
     handlers.onHeader(spadesHeader())
     handlers.onSessionStatus?.('running')
 
-    const line = seatState(5, { messages: [{ from: 'player_0', to: null, text: 'hello table' }] })
+    const line = playerState(5, { messages: [{ from: 'player_0', to: null, text: 'hello table' }] })
     handlers.onState(line)
     handlers.onState(line) // attach/reconnect replays the relay's latest state line
     expect(await screen.findAllByText('hello table')).toHaveLength(1)
 
     // Accumulation resumes cleanly after the duplicate.
-    handlers.onState(seatState(6, { messages: [{ from: 'player_1', to: null, text: 'my bid' }] }))
+    handlers.onState(playerState(6, { messages: [{ from: 'player_1', to: null, text: 'my bid' }] }))
     expect(await screen.findByText('my bid')).toBeInTheDocument()
     expect(screen.getAllByText('hello table')).toHaveLength(1)
   })
@@ -1011,8 +1011,8 @@ describe('SessionPage', () => {
     vi.mocked(getRecording).mockResolvedValue(
       recordingText(
         [
-          seatState(0, { messages: [{ from: 'player_0', to: null, text: 'good luck' }] }),
-          seatState(1, { messages: [{ from: 'player_1', to: 'player_3', text: 'cover me' }] }),
+          playerState(0, { messages: [{ from: 'player_0', to: null, text: 'good luck' }] }),
+          playerState(1, { messages: [{ from: 'player_1', to: 'player_3', text: 'cover me' }] }),
         ],
         { environment: 'spades', players: spadesPlayers() },
       ),
@@ -1039,8 +1039,8 @@ describe('SessionPage', () => {
     vi.mocked(getRecording).mockResolvedValue(
       recordingText(
         [
-          seatState(0, { messages: [{ from: 'player_2', to: null, text: 'good luck all' }] }),
-          seatState(1, { messages: [{ from: 'player_0', to: 'player_2', text: 'nice bid' }] }),
+          playerState(0, { messages: [{ from: 'player_2', to: null, text: 'good luck all' }] }),
+          playerState(1, { messages: [{ from: 'player_0', to: 'player_2', text: 'nice bid' }] }),
         ],
         { environment: 'spades', players: spadesPlayers() }, // seats the human (this viewer) at player_2
       ),
@@ -1064,7 +1064,7 @@ describe('SessionPage', () => {
     handlers.onHeader(spadesHeader())
     handlers.onSessionStatus?.('running')
     handlers.onState(
-      seatState(1, { messages: [{ from: 'player_0', to: null, text: 'table talk' }] }),
+      playerState(1, { messages: [{ from: 'player_0', to: null, text: 'table talk' }] }),
     )
 
     expect(await screen.findByText('table talk')).toBeInTheDocument()
@@ -1080,7 +1080,9 @@ describe('SessionPage', () => {
     await waitForHandlers()
     handlers.onHeader(spadesHeader())
     handlers.onSessionStatus?.('running')
-    handlers.onState(seatState(1, { messages: [{ from: 'player_0', to: null, text: 'silenced' }] }))
+    handlers.onState(
+      playerState(1, { messages: [{ from: 'player_0', to: null, text: 'silenced' }] }),
+    )
     await nextTick()
 
     expect(screen.queryByText('silenced')).toBeNull()

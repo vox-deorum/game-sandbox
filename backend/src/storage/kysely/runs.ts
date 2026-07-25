@@ -148,7 +148,7 @@ export async function createRunWithSchedule(
           match_index: game.match_index,
           game_index: game.game_index,
           seed: game.seed,
-          slots: JSON.stringify(game.slots),
+          seats: JSON.stringify(game.seats),
           status: 'pending',
           recording_id: null,
           started_at: null,
@@ -315,7 +315,7 @@ export async function recordGameResult(
     .values({
       id: randomUUID(),
       game_id: input.game_id,
-      slot_index: input.slot_index,
+      seat_index: input.seat_index,
       ...agentColumns(input.agent),
       episode_score: input.episode_score,
       agent_compute_ms_total: input.agent_compute_ms_total,

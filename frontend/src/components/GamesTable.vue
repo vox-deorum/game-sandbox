@@ -35,20 +35,20 @@ function gameStatus(gameIndex: number, persisted: GameStatus): GameStatus {
 }
 
 /** A seat's agent label: the owner's display name (or id) for a submission, "Naive" for the builtin baseline. */
-function slotLabel(slot: BoardAgentRef): string {
-  return slot.kind === 'submission' ? (slot.user_name ?? slot.user_id) : 'Naive'
+function seatLabel(seat: BoardAgentRef): string {
+  return seat.kind === 'submission' ? (seat.user_name ?? seat.user_id) : 'Naive'
 }
 
 /** A compact one-line summary of the agents in a game's seats, in seat order. */
-function playersSummary(slots: BoardAgentRef[]): string {
-  return slots.length === 0 ? '—' : slots.map(slotLabel).join(' · ')
+function playersSummary(seats: BoardAgentRef[]): string {
+  return seats.length === 0 ? '—' : seats.map(seatLabel).join(' · ')
 }
 
 /** The stable ids behind a game's submission seats, joined for a tooltip. Blind masking never
  *  applies to GamesTable's payloads (admin run games and released-season matchup tables), so plain
  *  ids are fine; undefined when no seat is a submission (an all-Naive game). */
-function playersTitle(slots: BoardAgentRef[]): string | undefined {
-  const ids = slots.filter((slot) => slot.kind === 'submission').map((slot) => slot.user_id)
+function playersTitle(seats: BoardAgentRef[]): string | undefined {
+  const ids = seats.filter((seat) => seat.kind === 'submission').map((seat) => seat.user_id)
   return ids.length > 0 ? ids.join(' · ') : undefined
 }
 </script>
@@ -66,7 +66,7 @@ function playersTitle(slots: BoardAgentRef[]): string | undefined {
     <tbody>
       <tr v-for="game in games" :key="game.id" data-testid="game-row">
         <td class="game-id">m{{ game.match_index }} · g{{ game.game_index }} · seed {{ game.seed }}</td>
-        <td :title="playersTitle(game.slots)">{{ playersSummary(game.slots) }}</td>
+        <td :title="playersTitle(game.seats)">{{ playersSummary(game.seats) }}</td>
         <td>
           <UiStatusBadge
             :tone="STATUS_TONE[gameStatus(game.game_index, game.status)]"

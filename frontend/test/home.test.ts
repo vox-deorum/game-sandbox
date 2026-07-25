@@ -24,7 +24,7 @@ describe('HomePage', () => {
     render(HomePage, { global: { plugins: [makeRouter()] } })
     expect(await screen.findByText('Flappy Bird')).toBeInTheDocument()
     expect(screen.getByText('A paced single-human clone.')).toBeInTheDocument()
-    expect(screen.getByText('1 slot')).toBeInTheDocument()
+    expect(screen.getByText('1 seat')).toBeInTheDocument()
     expect(screen.getByText('Human playable')).toBeInTheDocument()
     // The card links to the environment page.
     expect(screen.getByRole('link')).toHaveAttribute('href', '/environments/flappy_bird')

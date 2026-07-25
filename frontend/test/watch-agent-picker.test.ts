@@ -82,10 +82,10 @@ describe('WatchAgentPicker', () => {
     expect(vi.mocked(startSession)).toHaveBeenCalledWith({
       envId: 'flappy_bird',
       seasonId: 'season-1',
-      parameters: { seats: 1, pipe_gap: 100 },
-      slots: { player_0: { kind: 'submission', submissionId: 'sub1' } },
+      parameters: { players: 1, pipe_gap: 100 },
+      seats: { seat_0: { kind: 'submission', submissionId: 'sub1' } },
       seed: undefined,
-      humanSlotTimeoutMs: undefined,
+      humanTimeoutMs: undefined,
     })
     expect(await screen.findByText('session sess-9')).toBeInTheDocument()
   })
@@ -106,10 +106,10 @@ describe('WatchAgentPicker', () => {
     expect(vi.mocked(startSession)).toHaveBeenCalledWith({
       envId: 'flappy_bird',
       seasonId: 'season-1',
-      parameters: { seats: 1, pipe_gap: 100 },
-      slots: { player_0: { kind: 'builtin-agent' } },
+      parameters: { players: 1, pipe_gap: 100 },
+      seats: { seat_0: { kind: 'builtin-agent' } },
       seed: undefined,
-      humanSlotTimeoutMs: undefined,
+      humanTimeoutMs: undefined,
     })
     expect(await screen.findByText('session sess-naive')).toBeInTheDocument()
   })
@@ -183,12 +183,12 @@ describe('WatchAgentPicker', () => {
     expect(vi.mocked(startSession)).toHaveBeenCalledWith({
       envId: 'hearts',
       seasonId: 'season-1',
-      parameters: { seats: 4 },
-      slots: {
-        player_0: { kind: 'submission', submissionId: 'sub1' },
-        player_1: { kind: 'submission', submissionId: 'sub1' },
-        player_2: { kind: 'submission', submissionId: 'sub1' },
-        player_3: { kind: 'submission', submissionId: 'sub1' },
+      parameters: { players: 4 },
+      seats: {
+        seat_0: { kind: 'submission', submissionId: 'sub1' },
+        seat_1: { kind: 'submission', submissionId: 'sub1' },
+        seat_2: { kind: 'submission', submissionId: 'sub1' },
+        seat_3: { kind: 'submission', submissionId: 'sub1' },
       },
       seed: undefined,
     })

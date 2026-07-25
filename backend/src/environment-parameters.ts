@@ -1,6 +1,6 @@
 /**
  * The one place that turns an environment's parameter declarations plus a season's stored overrides
- * into resolved values, and the one place that reads the synthesized seat count back out.
+ * into resolved values.
  *
  * Season overrides are validated against the declarations when an operator writes them, and never
  * again. An environment whose declarations later change (a tightened bound, a renamed parameter, or
@@ -34,18 +34,4 @@ export function resolveSeasonParameters(
   const resolved = resolveParameters(meta.parameters, overrides ?? {})
   const issue = resolved.issues[0]
   return issue === undefined ? { values: resolved.values } : { values: resolved.values, issue }
-}
-
-/**
- * The seat count a resolved parameter map carries. `isEnvironmentMeta` requires every environment to
- * publish a synthesized integer `seats` declaration, and resolution fills a value for every
- * declaration, so this is total for any map built from environment metadata. A throw here means the
- * registry itself is malformed, not that a request was bad.
- */
-export function resolvedSeatCount(values: Readonly<Record<string, ParameterValue>>): number {
-  const seats = values.seats
-  if (typeof seats !== 'number' || !Number.isSafeInteger(seats)) {
-    throw new Error('resolved parameters carry no valid synthesized seats value')
-  }
-  return seats
 }

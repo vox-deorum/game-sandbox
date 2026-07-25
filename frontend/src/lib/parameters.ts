@@ -3,7 +3,6 @@ import {
   type ParameterValue,
   resolveParameters,
   validateCompleteParameters,
-  validateParameterValue,
 } from '@game-sandbox/schema/environment'
 
 /** Parameters that need a control in player-facing forms. */
@@ -80,30 +79,4 @@ export function describeParameters(
     label: parameter.title,
     value: formatParameterValue(parameter, values[parameter.name] ?? parameter.default),
   }))
-}
-
-/**
- * The seat count a parameter map resolves to, or undefined when its `seats` value does not satisfy the
- * declaration. The value is checked against the declaration rather than merely for integer-ness, so an
- * out-of-range entry is never mistaken for a usable seat count. A caller that renders a seat grid keeps
- * its last defined answer instead of resizing on undefined: a half-typed seats value must not evict
- * seat assignments before the form's own validation reports it.
- */
-export function seatCountOf(
-  declarations: readonly EnvParameter[],
-  values: Readonly<Record<string, unknown>>,
-): number | undefined {
-  const seats = declarations.find((parameter) => parameter.name === 'seats')
-  if (seats === undefined) return undefined
-  const result = validateParameterValue(seats, values[seats.name])
-  return typeof result.value === 'number' ? result.value : undefined
-}
-
-/** The resolved seat count, with a caller-supplied fallback for a map carrying no usable value. */
-export function resolvedSeatCount(
-  declarations: readonly EnvParameter[],
-  values: Readonly<Record<string, ParameterValue>>,
-  fallback: number,
-): number {
-  return seatCountOf(declarations, values) ?? fallback
 }

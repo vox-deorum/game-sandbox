@@ -41,7 +41,7 @@ import type { ClientSocket } from './session/live-session.js'
 import {
   type Orchestrator,
   OrchestratorError,
-  type SlotAssignment,
+  type SeatAssignment,
 } from './session/orchestrator.js'
 import { decodeSeasonConfig, type Storage, SubmissionConflictError } from './storage/index.js'
 import type { DevelopmentLedgerStore } from './storage/llm/development-ledger/store.js'
@@ -140,21 +140,20 @@ export interface AppDeps {
 
 /**
  * JSON-schema body for POST /api/sessions; Fastify 400s before the handler runs. The body is an
- * explicit per-slot `slots` assignment keyed by slot id; each value names what fills the slot (human,
+ * explicit per-seat assignment keyed by seat id; each value names what fills the seat (human,
  * built-in Naive, or a named submission), with `submission_id` required exactly for a `submission`
- * slot. The orchestrator derives the mode and validates the composition. The old top-level `mode`/
- * `submission_id` shape is rejected: `slots` is required and those fields are not permitted here.
+ * seat. The orchestrator derives the mode and validates the composition.
  */
 const START_SESSION_SCHEMA = {
   body: {
     type: 'object',
-    required: ['env_id', 'season_id', 'parameters', 'slots'],
+    required: ['env_id', 'season_id', 'parameters', 'seats'],
     additionalProperties: false,
     properties: {
       env_id: { type: 'string', minLength: 1 },
       season_id: { type: 'string', minLength: 1 },
       seed: { type: 'integer', minimum: 0 },
-      human_slot_timeout_ms: { type: 'integer', minimum: 0 },
+      human_timeout_ms: { type: 'integer', minimum: 0 },
       // Only the shape is checked here. Which values a parameter accepts is the environment's own
       // contract, and the orchestrator answers it against the live declarations with a typed
       // `invalid_parameters` reason. Restating the value types in JSON Schema would duplicate that
@@ -162,10 +161,10 @@ const START_SESSION_SCHEMA = {
       // (a union branch happily turns the integer 1 into the boolean true) before the real validator
       // ever saw them.
       parameters: { type: 'object' },
-      slots: {
+      seats: {
         type: 'object',
         minProperties: 1,
-        propertyNames: { pattern: '^player_[0-9]+$' },
+        propertyNames: { pattern: '^seat_[0-9]+$' },
         additionalProperties: {
           type: 'object',
           required: ['kind'],
@@ -173,15 +172,41 @@ const START_SESSION_SCHEMA = {
           properties: {
             kind: { type: 'string', enum: ['human', 'builtin-agent', 'submission'] },
             submission_id: { type: 'string', minLength: 1 },
+            companion: {
+              type: 'object',
+              required: ['kind'],
+              additionalProperties: false,
+              properties: {
+                kind: { type: 'string', enum: ['builtin-agent', 'submission'] },
+                submission_id: { type: 'string', minLength: 1 },
+              },
+              oneOf: [
+                {
+                  properties: { kind: { const: 'builtin-agent' } },
+                  not: { required: ['submission_id'] },
+                },
+                {
+                  properties: { kind: { const: 'submission' } },
+                  required: ['submission_id'],
+                },
+              ],
+            },
           },
-          // `submission_id` is present exactly for a `submission` slot — required there, forbidden
-          // elsewhere — so the orchestrator's discriminated union is honest at the trust boundary.
           oneOf: [
             {
-              properties: { kind: { enum: ['human', 'builtin-agent'] } },
+              properties: { kind: { const: 'builtin-agent' } },
+              not: { required: ['submission_id'] },
+              allOf: [{ not: { required: ['companion'] } }],
+            },
+            {
+              properties: { kind: { const: 'human' } },
               not: { required: ['submission_id'] },
             },
-            { properties: { kind: { const: 'submission' } }, required: ['submission_id'] },
+            {
+              properties: { kind: { const: 'submission' } },
+              required: ['submission_id'],
+              allOf: [{ not: { required: ['companion'] } }],
+            },
           ],
         },
       },
@@ -189,30 +214,43 @@ const START_SESSION_SCHEMA = {
   },
 } as const
 
-/** One slot's assignment on the wire: snake-case `submission_id`, mapped to the orchestrator shape. */
-interface SlotAssignmentBody {
-  kind: 'human' | 'builtin-agent' | 'submission'
+interface AgentSeatAssignmentBody {
+  kind: 'builtin-agent' | 'submission'
   submission_id?: string
 }
+
+/** One seat assignment on the wire, including the optional future wide-seat companion. */
+type SeatAssignmentBody =
+  | AgentSeatAssignmentBody
+  | { kind: 'human'; companion?: AgentSeatAssignmentBody }
 
 interface StartBody {
   env_id: string
   season_id: string
   seed?: number
-  human_slot_timeout_ms?: number
+  human_timeout_ms?: number
   parameters: Record<string, ParameterValue>
-  slots: Record<string, SlotAssignmentBody>
+  seats: Record<string, SeatAssignmentBody>
 }
 
-/**
- * Map a wire slot assignment onto the orchestrator's discriminated union. The schema has already
- * guaranteed `submission_id` is present exactly for a `submission` slot, so the boundary cast is safe.
- */
-function toSlotAssignment(body: SlotAssignmentBody): SlotAssignment {
+/** Map one ordinary wire agent assignment onto the orchestrator shape. */
+function toAgentSeatAssignment(
+  body: AgentSeatAssignmentBody,
+): Exclude<SeatAssignment, { kind: 'human' }> {
   if (body.kind === 'submission') {
     return { kind: 'submission', submissionId: body.submission_id as string }
   }
   return { kind: body.kind }
+}
+
+/** Map a wire seat assignment onto the orchestrator's discriminated union. */
+function toSeatAssignment(body: SeatAssignmentBody): SeatAssignment {
+  if (body.kind !== 'human') {
+    return toAgentSeatAssignment(body)
+  }
+  return body.companion === undefined
+    ? { kind: 'human' }
+    : { kind: 'human', companion: toAgentSeatAssignment(body.companion) }
 }
 
 /** The source fields shared by the reachability pre-check and the submit body. */
@@ -407,12 +445,12 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
           envId: request.body.env_id,
           seasonId: request.body.season_id,
           seed: request.body.seed,
-          humanSlotTimeoutMs: request.body.human_slot_timeout_ms,
+          humanTimeoutMs: request.body.human_timeout_ms,
           parameters: request.body.parameters,
-          slots: Object.fromEntries(
-            Object.entries(request.body.slots).map(([slotId, assignment]) => [
-              slotId,
-              toSlotAssignment(assignment),
+          seats: Object.fromEntries(
+            Object.entries(request.body.seats).map(([seatId, assignment]) => [
+              seatId,
+              toSeatAssignment(assignment),
             ]),
           ),
         })

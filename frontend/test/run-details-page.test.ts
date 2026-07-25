@@ -24,7 +24,7 @@ function runView(overrides: Partial<RunView> = {}): RunView {
     requested_by: 'dev-user',
     config_snapshot: {
       deps_version: 1,
-      matches: [{ slots: ['submission'], seeds: [0], games: 1 }],
+      matches: [{ seats: ['submission'], seeds: [0], games: 1 }],
     },
     submission_snapshot: [],
     status: 'running',
@@ -38,7 +38,7 @@ function runView(overrides: Partial<RunView> = {}): RunView {
         match_index: 0,
         game_index: 0,
         seed: 0,
-        slots: [{ kind: 'submission', submission_id: 's1', user_id: 'alice' }],
+        seats: [{ kind: 'submission', submission_id: 's1', user_id: 'alice' }],
         status: 'running',
         recording_id: 'rec-9',
         started_at: null,
@@ -51,7 +51,7 @@ function runView(overrides: Partial<RunView> = {}): RunView {
         match_index: 0,
         game_index: 1,
         seed: 1,
-        slots: [{ kind: 'builtin-naive' }],
+        seats: [{ kind: 'builtin-naive' }],
         status: 'pending',
         recording_id: null,
         started_at: null,
@@ -146,7 +146,7 @@ describe('RunDetailsPage', () => {
             match_index: 0,
             game_index: 0,
             seed: 0,
-            slots: [
+            seats: [
               {
                 kind: 'submission',
                 submission_id: 's1',

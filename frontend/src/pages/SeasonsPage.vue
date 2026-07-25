@@ -66,7 +66,7 @@ function submissionLink(season: PublicSeasonView): string {
 
 function playLink(season: PublicSeasonView): string {
   const environmentPath = `/environments/${season.env_id}`
-  return environments.value.get(season.env_id)?.human_slots.length
+  return environments.value.get(season.env_id)?.human_players.length
     ? `${environmentPath}?play=1`
     : `${environmentPath}#play`
 }

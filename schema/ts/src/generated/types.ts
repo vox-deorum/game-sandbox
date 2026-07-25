@@ -17,7 +17,7 @@ export interface StepState {
    */
   tick: number;
   /**
-   * Per-agent step data keyed by slot id (the PettingZoo agent id).
+   * Per-agent step data keyed by player id (the PettingZoo agent id).
    */
   agents: {
     [k: string]: AgentStep;
@@ -68,11 +68,11 @@ export interface AgentStep {
 }
 export interface Message {
   /**
-   * Slot id of the sender.
+   * Player id of the sender.
    */
   from: string;
   /**
-   * Slot id of the recipient, or null for a broadcast.
+   * Player id of the recipient, or null for a broadcast.
    */
   to: string | null;
   text: string;
@@ -128,12 +128,12 @@ export interface RecordingHeader {
     path: string;
   }[];
   /**
-   * Per-slot attribution: who or what drove each slot this episode, keyed by slot id (the PettingZoo agent id, as in a step state's agents map). Optional and additive; older recordings omit it and readers must tolerate its absence.
+   * Per-player attribution: who or what drove each PettingZoo player this episode, keyed by player id (as in a step state's agents map). Optional and additive; older recordings omit it and readers must tolerate its absence.
    */
   players?: {
     [k: string]: {
       /**
-       * Whether a connected human or an agent drove this slot.
+       * Whether a connected human or an agent drove this player.
        */
       kind: "human" | "agent";
       /**
@@ -141,11 +141,11 @@ export interface RecordingHeader {
        */
       label: string;
       /**
-       * The GitHub username this slot is attributed to: the human player, or the submission owner for a submitted agent. Absent for the built-in Naive agent.
+       * The GitHub username this player is attributed to: the human player, or the submission owner for a submitted agent. Absent for the built-in Naive agent.
        */
       user?: string;
       /**
-       * The submission whose code ran this slot, when it was a submitted agent. Absent for human and built-in slots.
+       * The submission whose code ran this player, when it was a submitted agent. Absent for human and built-in players.
        */
       submission_id?: string;
     };

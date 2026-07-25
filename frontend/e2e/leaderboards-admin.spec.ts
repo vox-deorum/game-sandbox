@@ -187,7 +187,7 @@ test('operator season configuration exposes and validates LLM controls', async (
     await runConfiguration.getByRole('button', { name: 'Add match' }).click()
     const flatRegions = [
       runConfiguration.getByTestId('match').first(),
-      runConfiguration.getByRole('group', { name: 'Per-slot limits' }),
+      runConfiguration.getByRole('group', { name: 'Per-player limits' }),
       runConfiguration.getByRole('group', { name: 'Development per-participant limits' }),
     ]
     for (const region of flatRegions) {
@@ -228,8 +228,8 @@ test('operator season configuration exposes and validates LLM controls', async (
 
     await expect(page.getByLabel('LLM enablement')).toBeVisible()
     await expect(page.getByLabel('Allowed model aliases')).toBeVisible()
-    await expect(page.getByLabel('Per-slot token budget')).toBeVisible()
-    await expect(page.getByLabel('Per-slot rate limit (RPM)')).toBeVisible()
+    await expect(page.getByLabel('Per-player token budget')).toBeVisible()
+    await expect(page.getByLabel('Per-player rate limit (RPM)')).toBeVisible()
     await expect(page.getByLabel('Development token budget')).toBeVisible()
     await expect(page.getByLabel('Development rate limit (RPM)')).toBeVisible()
 
@@ -254,14 +254,14 @@ test('operator season configuration exposes and validates LLM controls', async (
     const prefillBody = await prefill.text()
     expect(prefill.status(), prefillBody).toBe(200)
     expect((JSON.parse(prefillBody) as { values: { pipe_gap: number } }).values).toEqual({
-      seats: 1,
+      players: 1,
       pipe_gap: 90,
     })
 
-    await page.getByLabel('Per-slot token budget').fill('0')
+    await page.getByLabel('Per-player token budget').fill('0')
     await page.getByRole('button', { name: 'Save configuration' }).click()
     await expect(page.getByText(/official token budget must be a positive integer/)).toBeVisible()
-    await page.getByLabel('Per-slot token budget').fill('')
+    await page.getByLabel('Per-player token budget').fill('')
 
     await page.getByLabel('Allowed model aliases').selectOption('custom')
     await page.getByRole('button', { name: 'Save configuration' }).click()
@@ -348,7 +348,7 @@ test('a full season: submissions, an automated run, several judges rate, then re
     await setAuthorPrompt(await as(OWNERS.glider), season.id, AUTHOR_RATING_PROMPT)
 
     // One submission seat per game: the scheduler runs each ready agent and appends the Naive baseline.
-    await configureMatches(admin, season.id, [{ slots: ['submission'], seeds: [0], games: 1 }])
+    await configureMatches(admin, season.id, [{ seats: ['submission'], seeds: [0], games: 1 }])
 
     // Trigger the run from the console; it hands off to the run-details page, which owns the live log
     // stream (the redesigned live-log path).

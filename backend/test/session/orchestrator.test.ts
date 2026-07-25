@@ -9,7 +9,7 @@ import type { IssueOfficialGrantsInput } from '../../src/session/official-grants
 import {
   Orchestrator,
   OrchestratorError,
-  type SlotAssignment,
+  type SeatAssignment,
   type StartRequest,
 } from '../../src/session/orchestrator.js'
 import type { Storage, Submission } from '../../src/storage/index.js'
@@ -82,9 +82,9 @@ async function seedReadySubmission(
   return submission
 }
 
-/** Sugar for a single-slot assignment, the shape most start tests need. */
-function slots(assignment: SlotAssignment): Record<string, SlotAssignment> {
-  return { player_0: assignment }
+/** Sugar for a single-seat assignment, the shape most start tests need. */
+function seats(assignment: SeatAssignment): Record<string, SeatAssignment> {
+  return { seat_0: assignment }
 }
 
 /** A canned {@link UserDirectory} over a fixed id → display-name map; unmapped ids stay absent. */
@@ -105,20 +105,20 @@ function stubDirectory(names: Record<string, string>): UserDirectory {
   }
 }
 
-/** A four-slot Hearts assignment defaulting to built-in agents, overridable per slot. */
-function heartsSlots(
-  overrides: Record<string, SlotAssignment> = {},
-): Record<string, SlotAssignment> {
+/** A four-seat Hearts assignment defaulting to built-in agents, overridable per seat. */
+function heartsSeats(
+  overrides: Record<string, SeatAssignment> = {},
+): Record<string, SeatAssignment> {
   return {
-    player_0: { kind: 'builtin-agent' },
-    player_1: { kind: 'builtin-agent' },
-    player_2: { kind: 'builtin-agent' },
-    player_3: { kind: 'builtin-agent' },
+    seat_0: { kind: 'builtin-agent' },
+    seat_1: { kind: 'builtin-agent' },
+    seat_2: { kind: 'builtin-agent' },
+    seat_3: { kind: 'builtin-agent' },
     ...overrides,
   }
 }
 
-/** A full start request with class defaults (alice, flappy_bird, one built-in slot), overridable. */
+/** A full start request with class defaults (alice, flappy_bird, one built-in seat), overridable. */
 function startRequest(overrides: Partial<StartRequest> = {}): StartRequest {
   const envId = overrides.envId ?? 'flappy_bird'
   return {
@@ -126,8 +126,8 @@ function startRequest(overrides: Partial<StartRequest> = {}): StartRequest {
     envId,
     seasonId: PLAY_SEASONS.get(envId) ?? 'missing',
     parameters:
-      envId === 'hearts' || envId === 'chatty' ? { seats: 4 } : { seats: 1, pipe_gap: 100 },
-    slots: slots({ kind: 'builtin-agent' }),
+      envId === 'hearts' || envId === 'chatty' ? { players: 4 } : { players: 1, pipe_gap: 100 },
+    seats: seats({ kind: 'builtin-agent' }),
     ...overrides,
   }
 }
@@ -222,7 +222,7 @@ describe('orchestrator', () => {
   })
 
   describe('start', () => {
-    it('issues keys only for agent slots and emits the exact live LLM launch block', async () => {
+    it('issues keys only for agent players and emits the exact live LLM launch block', async () => {
       const config = makeConfig({ recordingsDir })
       let issued: IssueOfficialGrantsInput | undefined
       const orch = new Orchestrator({
@@ -240,7 +240,9 @@ describe('orchestrator', () => {
           issue: (input) => {
             issued = input
             return Promise.resolve({
-              keys: Object.fromEntries(input.agentSlots.map((slot) => [slot, `key-${slot}`])),
+              keys: Object.fromEntries(
+                input.agentPlayers.map((playerId) => [playerId, `key-${playerId}`]),
+              ),
               revoke: () => Promise.resolve(),
             })
           },
@@ -249,9 +251,9 @@ describe('orchestrator', () => {
 
       const launched = await start(orch, {
         envId: 'hearts',
-        slots: heartsSlots({ player_0: { kind: 'human' } }),
+        seats: heartsSeats({ seat_0: { kind: 'human' } }),
       })
-      expect(issued?.agentSlots).toEqual(['player_1', 'player_2', 'player_3'])
+      expect(issued?.agentPlayers).toEqual(['player_1', 'player_2', 'player_3'])
       expect(launched.config.llm).toEqual({
         base_url: `http://llm-proxy:${config.llm.internalPort}/v1`,
         tick_url: `http://llm-proxy:${config.llm.internalPort}/internal/tick`,
@@ -269,7 +271,7 @@ describe('orchestrator', () => {
 
     it('inserts a starting row and launches with the sandbox profile and config argv', async () => {
       const orch = makeOrchestrator()
-      const { id, config } = await start(orch, { slots: slots({ kind: 'human' }), seed: 42 })
+      const { id, config } = await start(orch, { seats: seats({ kind: 'human' }), seed: 42 })
 
       const row = await storage.getSession(id)
       expect(row).toMatchObject({
@@ -302,11 +304,11 @@ describe('orchestrator', () => {
       expect(config).toMatchObject({
         env_id: 'flappy_bird',
         seed: 42,
-        slots: { player_0: { kind: 'external' } },
+        player_bindings: { player_0: { kind: 'external' } },
         recording_dir: '/recordings',
         recording_id: `flappy_bird-${id}`,
       })
-      // The human slot is attributed to the session owner in the recording header.
+      // The human player is attributed to the session owner in the recording header.
       expect(config.players).toEqual({
         player_0: { kind: 'human', label: 'alice', user: 'alice' },
       })
@@ -314,10 +316,10 @@ describe('orchestrator', () => {
 
     it('binds the built-in agent for a scripted (watch) session', async () => {
       const { config } = await start(makeOrchestrator(), {
-        slots: slots({ kind: 'builtin-agent' }),
+        seats: seats({ kind: 'builtin-agent' }),
       })
-      expect(config.slots).toEqual({ player_0: { kind: 'builtin-agent' } })
-      // A plain watch run attributes the slot to the built-in Naive agent.
+      expect(config.player_bindings).toEqual({ player_0: { kind: 'builtin-agent' } })
+      // A plain watch run attributes the player to the built-in Naive agent.
       expect(config.players).toEqual({ player_0: { kind: 'agent', label: 'Naive agent' } })
     })
 
@@ -334,23 +336,23 @@ describe('orchestrator', () => {
       }
     })
 
-    it('resolves the human-slot timeout: override wins, else metadata, else null', async () => {
+    it('resolves the human timeout: override wins, else metadata, else null', async () => {
       const orch1 = makeOrchestrator()
       const a = await start(orch1, {
         envId: 'turn_based',
-        slots: slots({ kind: 'human' }),
-        humanSlotTimeoutMs: 2000,
+        seats: seats({ kind: 'human' }),
+        humanTimeoutMs: 2000,
       })
       expect(a.config.human_timeout_ms).toBe(2000)
 
       driver = new FakeDriver()
       const orch2 = makeOrchestrator()
-      const b = await start(orch2, { envId: 'turn_based', slots: slots({ kind: 'human' }) })
+      const b = await start(orch2, { envId: 'turn_based', seats: seats({ kind: 'human' }) })
       expect(b.config.human_timeout_ms).toBe(5000)
 
       driver = new FakeDriver()
       const orch3 = makeOrchestrator()
-      const c = await start(orch3, { envId: 'flappy_bird', slots: slots({ kind: 'human' }) })
+      const c = await start(orch3, { envId: 'flappy_bird', seats: seats({ kind: 'human' }) })
       expect(c.config.human_timeout_ms).toBeNull()
     })
 
@@ -389,7 +391,7 @@ describe('orchestrator', () => {
         code: 'invalid_parameters',
       })
       await expect(
-        orch.start(startRequest({ parameters: { seats: 1, extra: 'no' } })),
+        orch.start(startRequest({ parameters: { players: 1, extra: 'no' } })),
       ).rejects.toMatchObject({
         status: 400,
         code: 'invalid_parameters',
@@ -407,21 +409,21 @@ describe('orchestrator', () => {
       PLAY_SEASONS.set('watch_only', watchOnlySeason.id)
       await expect(
         orch.start(
-          startRequest({ userId: 'c', envId: 'watch_only', slots: slots({ kind: 'human' }) }),
+          startRequest({ userId: 'c', envId: 'watch_only', seats: seats({ kind: 'human' }) }),
         ),
       ).rejects.toMatchObject({ status: 400 })
       expect(driver.launches).toHaveLength(0)
     })
   })
 
-  describe('multi-slot Hearts start', () => {
-    /** A Hearts start request: env defaulted, slots built from the four-seat defaults. */
-    function startHearts(slots: Record<string, SlotAssignment>): StartRequest {
+  describe('multi-seat Hearts start', () => {
+    /** A Hearts start request built from the four-seat defaults. */
+    function startHearts(seats: Record<string, SeatAssignment>): StartRequest {
       return startRequest({
         envId: 'hearts',
         seasonId: PLAY_SEASONS.get('hearts') ?? 'missing',
-        parameters: { seats: 4 },
-        slots,
+        parameters: { players: 4 },
+        seats,
       })
     }
 
@@ -431,28 +433,42 @@ describe('orchestrator', () => {
         // Only three of the four required seats assigned.
         orch.start(
           startHearts({
-            player_0: { kind: 'builtin-agent' },
-            player_1: { kind: 'builtin-agent' },
-            player_2: { kind: 'builtin-agent' },
+            seat_0: { kind: 'builtin-agent' },
+            seat_1: { kind: 'builtin-agent' },
+            seat_2: { kind: 'builtin-agent' },
           }),
         ),
       ).rejects.toMatchObject({ status: 400 })
       expect(driver.launches).toHaveLength(0)
     })
 
-    it('rejects an unknown slot id', async () => {
+    it('rejects an unknown seat id', async () => {
       const orch = makeOrchestrator(60_000, new FakeSource())
       await expect(
-        orch.start(startHearts(heartsSlots({ player_9: { kind: 'builtin-agent' } }))),
+        orch.start(startHearts(heartsSeats({ seat_9: { kind: 'builtin-agent' } }))),
       ).rejects.toMatchObject({ status: 400 })
       expect(driver.launches).toHaveLength(0)
     })
 
-    it("rejects more than this stage's single human slot", async () => {
+    it('rejects an unnecessary companion on a singleton seat', async () => {
       const orch = makeOrchestrator(60_000, new FakeSource())
       await expect(
         orch.start(
-          startHearts(heartsSlots({ player_0: { kind: 'human' }, player_1: { kind: 'human' } })),
+          startHearts(
+            heartsSeats({
+              seat_0: { kind: 'human', companion: { kind: 'builtin-agent' } },
+            }),
+          ),
+        ),
+      ).rejects.toMatchObject({ status: 400 })
+      expect(driver.launches).toHaveLength(0)
+    })
+
+    it("rejects more than this stage's single human player", async () => {
+      const orch = makeOrchestrator(60_000, new FakeSource())
+      await expect(
+        orch.start(
+          startHearts(heartsSeats({ seat_0: { kind: 'human' }, seat_1: { kind: 'human' } })),
         ),
       ).rejects.toMatchObject({ status: 400 })
       expect(driver.launches).toHaveLength(0)
@@ -464,7 +480,7 @@ describe('orchestrator', () => {
       const foreign = await seedReadySubmission(storage, 'eve', 'flappy_bird')
       await expect(
         orch.start(
-          startHearts(heartsSlots({ player_0: { kind: 'submission', submissionId: foreign.id } })),
+          startHearts(heartsSeats({ seat_0: { kind: 'submission', submissionId: foreign.id } })),
         ),
       ).rejects.toMatchObject({ status: 400, code: 'submission_env_mismatch' })
       expect(driver.launches).toHaveLength(0)
@@ -486,13 +502,13 @@ describe('orchestrator', () => {
       })
       await expect(
         orch.start(
-          startHearts(heartsSlots({ player_0: { kind: 'submission', submissionId: pending.id } })),
+          startHearts(heartsSeats({ seat_0: { kind: 'submission', submissionId: pending.id } })),
         ),
       ).rejects.toMatchObject({ status: 409, code: 'submission_not_ready' })
       expect(driver.launches).toHaveLength(0)
     })
 
-    it('writes one session_submissions row per submitted slot, with human and built-in only in players', async () => {
+    it('writes one session_submissions row per submitted seat, with human and built-in only in players', async () => {
       const source = new FakeSource()
       const orch = makeOrchestrator(60_000, source)
       const subA = await seedReadySubmission(storage, 'eve', 'hearts')
@@ -500,10 +516,10 @@ describe('orchestrator', () => {
 
       const result = await orch.start(
         startHearts(
-          heartsSlots({
-            player_0: { kind: 'submission', submissionId: subA.id },
-            player_1: { kind: 'submission', submissionId: subB.id },
-            player_3: { kind: 'human' },
+          heartsSeats({
+            seat_0: { kind: 'submission', submissionId: subA.id },
+            seat_1: { kind: 'submission', submissionId: subB.id },
+            seat_3: { kind: 'human' },
           }),
         ),
       )
@@ -515,36 +531,36 @@ describe('orchestrator', () => {
         season_id: heartsSeason?.id,
       })
 
-      // Exactly one attribution row per submitted slot; the built-in and human slots write none.
+      // Exactly one attribution row per submitted seat; the built-in and human seats write none.
       const links = await storage.listSessionSubmissions(result.id)
       expect(
         links
-          .map((l) => ({ slot_id: l.slot_id, submission_id: l.submission_id }))
-          .sort((x, y) => x.slot_id.localeCompare(y.slot_id)),
+          .map((link) => ({ seat_id: link.seat_id, submission_id: link.submission_id }))
+          .sort((x, y) => x.seat_id.localeCompare(y.seat_id)),
       ).toEqual([
-        { slot_id: 'player_0', submission_id: subA.id },
-        { slot_id: 'player_1', submission_id: subB.id },
+        { seat_id: 'seat_0', submission_id: subA.id },
+        { seat_id: 'seat_1', submission_id: subB.id },
       ])
 
       const launch = driver.lastLaunch()
       const config = JSON.parse(launch?.spec.argv[0] ?? '{}') as {
-        slots: Record<string, unknown>
+        player_bindings: Record<string, unknown>
         players: Record<string, unknown>
       }
-      expect(config.slots).toEqual({
+      expect(config.player_bindings).toEqual({
         player_0: { kind: 'builtin-agent', path: '/opt/agents/submissions/player_0' },
         player_1: { kind: 'builtin-agent', path: '/opt/agents/submissions/player_1' },
         player_2: { kind: 'builtin-agent' },
         player_3: { kind: 'external' },
       })
-      // Built-in and human slots are represented only here in `players`, never as a link row.
+      // Built-in and human players are represented only here, never as a link row.
       expect(config.players).toEqual({
         player_0: { kind: 'agent', label: "eve's agent", user: 'eve', submission_id: subA.id },
         player_1: { kind: 'agent', label: "frank's agent", user: 'frank', submission_id: subB.id },
         player_2: { kind: 'agent', label: 'Naive agent' },
         player_3: { kind: 'human', label: 'alice', user: 'alice' },
       })
-      // The composed session image materialized one tree per submitted slot and disposed each.
+      // The composed session image materialized one tree per submitted player and disposed each.
       expect(source.fetchCount).toBe(2)
       expect(source.disposed).toBe(2)
       expect(launch?.spec.image.ref).toContain('session-overlay')
@@ -563,10 +579,10 @@ describe('orchestrator', () => {
 
       await orch.start(
         startHearts(
-          heartsSlots({
-            player_0: { kind: 'submission', submissionId: subA.id },
-            player_1: { kind: 'submission', submissionId: subB.id },
-            player_3: { kind: 'human' },
+          heartsSeats({
+            seat_0: { kind: 'submission', submissionId: subA.id },
+            seat_1: { kind: 'submission', submissionId: subB.id },
+            seat_3: { kind: 'human' },
           }),
         ),
       )
@@ -596,9 +612,9 @@ describe('orchestrator', () => {
       await expect(
         orch.start(
           startHearts(
-            heartsSlots({
-              player_0: { kind: 'submission', submissionId: subA.id },
-              player_1: { kind: 'submission', submissionId: subB.id },
+            heartsSeats({
+              seat_0: { kind: 'submission', submissionId: subA.id },
+              seat_1: { kind: 'submission', submissionId: subB.id },
             }),
           ),
         ),
@@ -617,7 +633,7 @@ describe('orchestrator', () => {
   describe('submitted-agent watch run', () => {
     /** A single-slot Flappy Bird watch of the given submission. */
     function watch(submissionId: string): StartRequest {
-      return startRequest({ slots: slots({ kind: 'submission', submissionId }) })
+      return startRequest({ seats: seats({ kind: 'submission', submissionId }) })
     }
 
     it('launches from the submission overlay image and binds the agent slot to its path', async () => {
@@ -638,13 +654,13 @@ describe('orchestrator', () => {
       const launch = driver.lastLaunch()
       expect(launch?.spec.image.ref).toBe(overlayRef)
       const config = JSON.parse(launch?.spec.argv[0] ?? '{}') as {
-        slots: Record<string, unknown>
+        player_bindings: Record<string, unknown>
         players: Record<string, unknown>
       }
-      expect(config.slots).toEqual({
+      expect(config.player_bindings).toEqual({
         player_0: { kind: 'builtin-agent', path: '/opt/agents/submissions/player_0' },
       })
-      // The submitted-agent slot is attributed to the submission owner ('eve' from the seed helper).
+      // The submitted-agent player is attributed to the submission owner ('eve' from the seed helper).
       expect(config.players).toEqual({
         player_0: {
           kind: 'agent',
@@ -839,7 +855,7 @@ describe('orchestrator', () => {
       const orch = makeOrchestrator()
       // A human-mode session so an owner `input` command is forwarded to the container; the owner is
       // 'alice' (the startRequest default).
-      const { id, process } = await start(orch, { slots: slots({ kind: 'human' }) })
+      const { id, process } = await start(orch, { seats: seats({ kind: 'human' }) })
       const input = JSON.stringify({ kind: 'input', slot: 'player_0', action: 1 })
 
       // The same input from the owner, a signed-in stranger, and an anonymous (null) socket.
@@ -900,11 +916,11 @@ describe('orchestrator', () => {
   describe('messaging config resolution', () => {
     const chattyRequest = (): Partial<StartRequest> => ({
       envId: 'chatty',
-      slots: {
-        player_0: { kind: 'human' },
-        player_1: { kind: 'builtin-agent' },
-        player_2: { kind: 'builtin-agent' },
-        player_3: { kind: 'builtin-agent' },
+      seats: {
+        seat_0: { kind: 'human' },
+        seat_1: { kind: 'builtin-agent' },
+        seat_2: { kind: 'builtin-agent' },
+        seat_3: { kind: 'builtin-agent' },
       },
     })
 
@@ -918,7 +934,7 @@ describe('orchestrator', () => {
 
     it('disables and does not cap a session on a non-messaging environment', async () => {
       const orch = makeOrchestrator()
-      const { id, config } = await start(orch, { slots: slots({ kind: 'human' }) }) // flappy_bird
+      const { id, config } = await start(orch, { seats: seats({ kind: 'human' }) })
       expect(config).toMatchObject({ messaging_enabled: false, message_cap: null })
       expect(await storage.getSession(id)).toMatchObject({
         messaging_enabled: 0,
@@ -934,7 +950,7 @@ describe('orchestrator', () => {
       const chatty = await start(orch, chattyRequest())
       expect(chatty.config).toMatchObject({ messaging_enabled: false })
 
-      const flappy = await start(makeOrchestrator(), { slots: slots({ kind: 'human' }) })
+      const flappy = await start(makeOrchestrator(), { seats: seats({ kind: 'human' }) })
       expect(flappy.config).toMatchObject({ messaging_enabled: false })
     })
 

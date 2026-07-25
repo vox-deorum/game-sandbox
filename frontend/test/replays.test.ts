@@ -29,7 +29,7 @@ function recording(overrides: Partial<RecordingSummary> = {}): RecordingSummary 
     header: {
       schema_version: 1,
       environment: 'flappy_bird',
-      parameters: { seats: 1, pipe_gap: 100 },
+      parameters: { players: 1, pipe_gap: 100 },
     },
     user_id: 'alice',
     created_at: '2026-06-11T00:00:00.000Z',
@@ -98,7 +98,7 @@ describe('ReplaysPage', () => {
         header: {
           schema_version: 1,
           environment: 'flappy_bird',
-          parameters: { seats: 1, pipe_gap: 100 },
+          parameters: { players: 1, pipe_gap: 100 },
           players: {
             player_0: { kind: 'agent', label: 'Naive agent' },
             player_1: { kind: 'agent', label: 'Naive agent' },
@@ -177,7 +177,7 @@ describe('ReplaysPage', () => {
         header: {
           schema_version: 1,
           environment: 'flappy_bird',
-          parameters: { seats: 1, pipe_gap: 100 },
+          parameters: { players: 1, pipe_gap: 100 },
           players: { player_0: { kind: 'human', label: 'Alice Nguyen', user: 'alice' } },
         },
       }),
@@ -207,7 +207,7 @@ describe('ReplaysPage', () => {
         header: {
           schema_version: 1,
           environment: 'flappy_bird',
-          parameters: { seats: 1, pipe_gap: 100 },
+          parameters: { players: 1, pipe_gap: 100 },
           players: {
             player_0: { kind: 'human', label: 'Alice Chen', user: 'alice-chen' },
             player_1: {
@@ -240,7 +240,7 @@ describe('ReplaysPage', () => {
         header: {
           schema_version: 1,
           environment: 'flappy_bird',
-          parameters: { seats: 1, pipe_gap: 100 },
+          parameters: { players: 1, pipe_gap: 100 },
         },
       }),
     ])
@@ -270,7 +270,7 @@ describe('ReplaysPage', () => {
         header: {
           schema_version: 1,
           environment: 'flappy_bird',
-          parameters: { seats: 1, pipe_gap: 100 },
+          parameters: { players: 1, pipe_gap: 100 },
           players: {
             player_0: {
               kind: 'agent',

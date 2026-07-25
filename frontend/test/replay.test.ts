@@ -6,8 +6,8 @@ import type { RendererContext } from '../src/renderers/types.js'
 import {
   flappyMeta,
   flappyState,
+  playerState,
   recordingText,
-  seatState,
   spadesMeta,
   spadesPlayers,
 } from './helpers/fixtures.js'
@@ -144,7 +144,7 @@ describe('ReplayPage', () => {
         [0, 1].map((t) => flappyState(t, t)),
         {
           seed: 4821,
-          parameters: { seats: 1, pipe_gap: 90 },
+          parameters: { players: 1, pipe_gap: 90 },
         },
       ),
     )
@@ -237,7 +237,7 @@ describe('ReplayPage', () => {
         header: {
           schema_version: 1,
           environment: 'flappy_bird',
-          parameters: { seats: 1, pipe_gap: 100 },
+          parameters: { players: 1, pipe_gap: 100 },
         },
         user_id: 'dev-user',
         created_at: '2026-06-11T00:00:00.000Z',
@@ -263,7 +263,7 @@ describe('ReplayPage', () => {
         header: {
           schema_version: 1,
           environment: 'flappy_bird',
-          parameters: { seats: 1, pipe_gap: 100 },
+          parameters: { players: 1, pipe_gap: 100 },
         },
         user_id: 'dev-user',
         created_at: '2026-06-11T00:00:00.000Z',
@@ -294,7 +294,7 @@ describe('ReplayPage', () => {
         header: {
           schema_version: 1,
           environment: 'flappy_bird',
-          parameters: { seats: 1, pipe_gap: 100 },
+          parameters: { players: 1, pipe_gap: 100 },
         },
         user_id: 'dev-user',
         created_at: '2026-06-11T00:00:00.000Z',
@@ -321,7 +321,7 @@ describe('ReplayPage', () => {
         header: {
           schema_version: 1,
           environment: 'flappy_bird',
-          parameters: { seats: 1, pipe_gap: 100 },
+          parameters: { players: 1, pipe_gap: 100 },
         },
         user_id: 'someone-else',
         created_at: '2026-06-11T00:00:00.000Z',
@@ -351,7 +351,7 @@ describe('ReplayPage', () => {
         header: {
           schema_version: 1,
           environment: 'flappy_bird',
-          parameters: { seats: 1, pipe_gap: 100 },
+          parameters: { players: 1, pipe_gap: 100 },
         },
         user_id: 'someone-else',
         created_at: '2026-06-11T00:00:00.000Z',
@@ -373,7 +373,7 @@ describe('ReplayPage', () => {
         header: {
           schema_version: 1,
           environment: 'flappy_bird',
-          parameters: { seats: 1, pipe_gap: 100 },
+          parameters: { players: 1, pipe_gap: 100 },
         },
         user_id: 'someone-else',
         user_name: 'Someone Else',
@@ -398,7 +398,7 @@ describe('ReplayPage', () => {
         header: {
           schema_version: 1,
           environment: 'flappy_bird',
-          parameters: { seats: 1, pipe_gap: 100 },
+          parameters: { players: 1, pipe_gap: 100 },
         },
         user_id: 'someone-else',
         created_at: '2026-06-11T00:00:00.000Z',
@@ -432,7 +432,7 @@ describe('ReplayPage', () => {
         header: {
           schema_version: 1,
           environment: 'flappy_bird',
-          parameters: { seats: 1, pipe_gap: 100 },
+          parameters: { players: 1, pipe_gap: 100 },
         },
         user_id: 'someone-else',
         user_name: 'Someone Else',
@@ -462,7 +462,7 @@ describe('ReplayPage', () => {
         header: {
           schema_version: 1,
           environment: 'flappy_bird',
-          parameters: { seats: 1, pipe_gap: 100 },
+          parameters: { players: 1, pipe_gap: 100 },
         },
         user_id: 'someone-else',
         user_name: 'Someone Else',
@@ -498,7 +498,7 @@ describe('ReplayPage', () => {
         header: {
           schema_version: 1,
           environment: 'flappy_bird',
-          parameters: { seats: 1, pipe_gap: 100 },
+          parameters: { players: 1, pipe_gap: 100 },
         },
         user_id: 'maya-fledgling',
         created_at: '2026-06-11T00:00:00.000Z',
@@ -536,7 +536,7 @@ describe('ReplayPage', () => {
         header: {
           schema_version: 1,
           environment: 'flappy_bird',
-          parameters: { seats: 1, pipe_gap: 100 },
+          parameters: { players: 1, pipe_gap: 100 },
         },
         user_id: 'someone-else',
         created_at: '2026-06-11T00:00:00.000Z',
@@ -574,7 +574,7 @@ describe('ReplayPage', () => {
         header: {
           schema_version: 1,
           environment: 'flappy_bird',
-          parameters: { seats: 1, pipe_gap: 100 },
+          parameters: { players: 1, pipe_gap: 100 },
         },
         user_id: 'someone-else',
         created_at: '2026-06-11T00:00:00.000Z',
@@ -603,7 +603,7 @@ describe('ReplayPage', () => {
         header: {
           schema_version: 1,
           environment: 'flappy_bird',
-          parameters: { seats: 1, pipe_gap: 100 },
+          parameters: { players: 1, pipe_gap: 100 },
         },
         user_id: 'someone-else',
         user_name: 'dev-user',
@@ -622,10 +622,10 @@ describe('ReplayPage', () => {
     // mockResolvedValueOnce so the spades meta does not leak into later tests' flappy default.
     vi.mocked(getEnvironments).mockResolvedValueOnce([spadesMeta()])
     const states = [
-      seatState(0),
-      seatState(1, { messages: [{ from: 'player_0', to: null, text: 'good luck all' }] }),
-      seatState(2),
-      seatState(3, { messages: [{ from: 'player_1', to: 'player_3', text: 'cover the king' }] }),
+      playerState(0),
+      playerState(1, { messages: [{ from: 'player_0', to: null, text: 'good luck all' }] }),
+      playerState(2),
+      playerState(3, { messages: [{ from: 'player_1', to: 'player_3', text: 'cover the king' }] }),
     ]
     vi.mocked(getRecording).mockResolvedValue(
       recordingText(states, { environment: 'spades', players: spadesPlayers() }),

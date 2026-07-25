@@ -20,27 +20,27 @@ from .environment import EnvironmentEntry, load_environment, resolve_parameters
 from .manifest import load_agent
 from .recording.local import FolderRecordingStore
 from .session import (
-    AgentSlot,
-    ExternalSlot,
+    AgentPlayer,
+    ExternalPlayer,
     NoopSource,
+    Player,
     ScriptedSource,
-    Slot,
     run_episode,
 )
 
 
-def _build_slot(entry: EnvironmentEntry, agent_root: str | None, source: str | None) -> Slot:
+def _build_player(entry: EnvironmentEntry, agent_root: str | None, source: str | None) -> Player:
     """Build the binding for the environment's single human-capable slot."""
     if agent_root is not None:
-        return AgentSlot(load_agent(agent_root))
+        return AgentPlayer(load_agent(agent_root))
     if source == "noop":
-        return ExternalSlot(NoopSource())
+        return ExternalPlayer(NoopSource())
     if source is not None and source.startswith("scripted:"):
         path = Path(source.split(":", 1)[1])
         parsed: object = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(parsed, list):
             raise ValueError(f"scripted source {path} must contain a JSON list of actions")
-        return ExternalSlot(ScriptedSource(cast("list[Any]", parsed)))
+        return ExternalPlayer(ScriptedSource(cast("list[Any]", parsed)))
     raise ValueError(f"unrecognised --source {source!r}; expected 'noop' or 'scripted:<file>'")
 
 
@@ -62,14 +62,14 @@ def main(argv: list[str] | None = None) -> int:
 
     entry = load_environment(args.env)
 
-    # The single slot is the environment's first (only, in Stage 2) declared slot id.
-    slot_id = entry.meta.human_slots[0] if entry.meta.human_slots else "player_0"
-    slot = _build_slot(entry, args.agent, args.source)
+    # The single player is the environment's first human-capable player when one is declared.
+    player_id = entry.meta.human_players[0] if entry.meta.human_players else "player_0"
+    player = _build_player(entry, args.agent, args.source)
 
     store = FolderRecordingStore(args.record) if args.record else None
     result = run_episode(
         entry,
-        {slot_id: slot},
+        {player_id: player},
         seed=args.seed,
         parameters=resolve_parameters(entry.meta),
         store=store,

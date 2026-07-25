@@ -53,9 +53,9 @@ describe('my agents API', () => {
 
   async function place(season: Season, submission: Submission, meanScore: number): Promise<void> {
     const run = await createRunOrFail(testApp.storage, season.id, 'operator', () => ({
-      parametersSnapshot: { seats: 1 },
+      parametersSnapshot: { players: 1 },
       scheduledGames: [
-        { match_index: 0, game_index: 0, seed: 1, slots: [{ kind: 'builtin-naive' }] },
+        { match_index: 0, game_index: 0, seed: 1, seats: [{ kind: 'builtin-naive' }] },
       ],
       llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
     }))

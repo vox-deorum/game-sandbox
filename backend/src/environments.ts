@@ -7,7 +7,7 @@
  * `generated-code-fresh` CI job). This module parses the file once at startup, validates its
  * shape with a small hand-written guard (deliberately not part of the state schema), and
  * exposes typed lookups: the HTTP layer serves the list verbatim and the orchestrator reads
- * pace interval, human-capable slots, and default timeouts from it.
+ * pace interval, human-capable players, and default timeouts from it.
  */
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'

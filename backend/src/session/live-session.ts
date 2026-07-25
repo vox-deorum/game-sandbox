@@ -73,14 +73,11 @@ export interface LiveSessionInit {
   /** The session's start timestamp, reused as the recording's retention `created_at`. */
   createdAt: string
   process: SessionProcess
-  humanSlots: readonly string[]
   /**
-   * The slots whose resolved binding is actually a connected human this session, not every
-   * human-capable seat (that is `humanSlots`), but the ones a human really controls. Message
-   * visibility and the inbound chat gate authorize against these, so a targeted message is shown
-   * live only to the client controlling one of them.
+   * The players whose resolved binding is actually a connected human this session. Input, message
+   * visibility, and the inbound chat gate authorize against these exact players.
    */
-  externalSlots: readonly string[]
+  externalPlayers: readonly string[]
   /** The effective messaging rules resolved once by the orchestrator (metadata AND season override). */
   messaging: { enabled: boolean; cap: number | null }
   /** Stored on the session and copied into the recording's durable telemetry association. */
@@ -101,8 +98,7 @@ export class LiveSession {
   private readonly createdAt: string
 
   private readonly process: SessionProcess
-  private readonly humanSlots: ReadonlySet<string>
-  private readonly externalSlots: ReadonlySet<string>
+  private readonly externalPlayers: ReadonlySet<string>
   private readonly messaging: { enabled: boolean; cap: number | null }
   private readonly llmEnabled: boolean
   private readonly deps: LiveSessionDeps
@@ -131,8 +127,7 @@ export class LiveSession {
     this.recordingId = init.recordingId
     this.createdAt = init.createdAt
     this.process = init.process
-    this.humanSlots = new Set(init.humanSlots)
-    this.externalSlots = new Set(init.externalSlots)
+    this.externalPlayers = new Set(init.externalPlayers)
     this.messaging = init.messaging
     this.llmEnabled = init.llmEnabled ?? false
     this.deps = init.deps
@@ -310,8 +305,8 @@ export class LiveSession {
       return false // spectators never see a targeted message live
     }
     return (
-      (typeof to === 'string' && this.externalSlots.has(to)) ||
-      (typeof from === 'string' && this.externalSlots.has(from))
+      (typeof to === 'string' && this.externalPlayers.has(to)) ||
+      (typeof from === 'string' && this.externalPlayers.has(from))
     )
   }
 
@@ -374,7 +369,7 @@ export class LiveSession {
     }
     const command = parsed.command
     if (command.kind === 'input') {
-      if (this.mode !== 'human' || !this.humanSlots.has(command.slot)) {
+      if (this.mode !== 'human' || !this.externalPlayers.has(command.slot)) {
         return
       }
     }
@@ -385,7 +380,7 @@ export class LiveSession {
       // validates again. A dropped frame is logged like every other rejection.
       if (
         this.mode !== 'human' ||
-        !this.externalSlots.has(command.slot) ||
+        !this.externalPlayers.has(command.slot) ||
         !this.messaging.enabled
       ) {
         return

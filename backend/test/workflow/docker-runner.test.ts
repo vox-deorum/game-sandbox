@@ -69,9 +69,8 @@ function makeEnvironments(): EnvironmentRegistry {
         env_id: ENV_ID,
         display_name: 'Flappy Bird',
         description: 'test env',
-        min_slots: 1,
-        max_slots: 1,
-        human_slots: ['player_0'],
+        layout: { kind: 'player_bounds', min: 1, max: 1 },
+        human_players: ['player_0'],
         human_timeout_ms: null,
         recommended_episode_ticks: 1000,
         pace_interval_ms: 50,
@@ -86,9 +85,9 @@ function makeEnvironments(): EnvironmentRegistry {
         live_interval_ms: null,
         parameters: [
           {
-            name: 'seats',
-            title: 'Seats',
-            description: 'Number of seats.',
+            name: 'players',
+            title: 'Players',
+            description: 'Number of players.',
             type: 'int',
             default: 1,
             min: 1,
@@ -174,19 +173,19 @@ async function makeRun(
   const season = await storage.createSeason({ env_id: ENV_ID, deps_version: 1, label: null })
   await storage.updateSeasonConfig(season.id, {
     deps_version: 1,
-    matches: [{ slots: ['submission'], seeds: [1], games: 1 }],
+    matches: [{ seats: ['submission'], seeds: [1], games: 1 }],
     ...(options.overrides ? { overrides: options.overrides } : {}),
   })
   return createRunOrFail(storage, season.id, 'dev-user', () => ({
-    parametersSnapshot: { seats: 1, pipe_gap: 100 },
+    parametersSnapshot: { players: 1, pipe_gap: 100 },
     scheduledGames: schedule,
     llmPolicy: options.llmPolicy ?? disabledLlmPolicy(),
   }))
 }
 
-/** One scheduled game's resolved slots, the all-Naive single seat by default. */
+/** One scheduled game's resolved seats, the all-Naive single seat by default. */
 function naiveGame(gameIndex: number, seed = 1): ScheduledGameInput {
-  return { match_index: 0, game_index: gameIndex, seed, slots: [{ kind: 'builtin-naive' }] }
+  return { match_index: 0, game_index: gameIndex, seed, seats: [{ kind: 'builtin-naive' }] }
 }
 
 /**
@@ -214,7 +213,7 @@ function emitRecording(
     /** Per-seat scores in the result envelope, overriding the default single-seat `{ slotId: finalScore }`. */
     scores?: Record<string, number>
     /** The seat the harness pins a crash or budget overage to, carried in the result envelope. */
-    failedSlot?: string
+    failedPlayer?: string
   } = {},
 ): void {
   const slotId = options.slotId ?? 'player_0'
@@ -232,7 +231,7 @@ function emitRecording(
       JSON.stringify({
         schema_version: 1,
         environment: ENV_ID,
-        parameters: { seats: 1 },
+        parameters: { players: 1 },
         seed: config.seed,
         created_at: '2026-06-16T00:00:00.000Z',
       }),
@@ -266,7 +265,7 @@ function emitRecording(
           scores: options.scores ?? { [slotId]: finalScore },
           reason,
           step_timeouts: {},
-          ...(options.failedSlot !== undefined ? { failed_slot: options.failedSlot } : {}),
+          ...(options.failedPlayer !== undefined ? { failed_player: options.failedPlayer } : {}),
         }),
       )
     }
@@ -280,7 +279,7 @@ function emitHeader(process: FakeSessionProcess, seed: number): void {
     JSON.stringify({
       schema_version: 1,
       environment: ENV_ID,
-      parameters: { seats: 1 },
+      parameters: { players: 1 },
       seed,
       created_at: '2026-06-16T00:00:00.000Z',
     }),
@@ -631,7 +630,7 @@ describe('Docker-backed workflow runner', () => {
     expect(issued).toEqual({
       sessionId: game?.id,
       scopeId: run.id,
-      agentSlots: ['player_0'],
+      agentPlayers: ['player_0'],
       models: { small: { upstream: 'provider-small', costWeight: 4 } },
       limits: { tokenBudget: 100, requestsPerMinute: 10 },
     })
@@ -988,7 +987,7 @@ describe('Docker-backed workflow runner', () => {
         match_index: 0,
         game_index: 0,
         seed: 1,
-        slots: [{ kind: 'builtin-naive' }, { kind: 'builtin-naive' }],
+        seats: [{ kind: 'builtin-naive' }, { kind: 'builtin-naive' }],
       },
     ])
     handle.driver.onLaunch = (launch): void => {
@@ -996,7 +995,7 @@ describe('Docker-backed workflow runner', () => {
       emitRecording(launch.process, config, {
         ticks: 2,
         scores: { player_0: 9, player_1: 4 },
-        failedSlot: 'player_1',
+        failedPlayer: 'player_1',
         exit: { code: 1, oomKilled: false },
       })
     }
@@ -1007,12 +1006,12 @@ describe('Docker-backed workflow runner', () => {
     expect(games[0]?.status).toBe('failed')
 
     const results = await storage.listGameResultsByRun(run.id)
-    const bySlot = new Map(results.map((r) => [r.slot_index, r]))
+    const bySeat = new Map(results.map((result) => [result.seat_index, result]))
     // The named seat carries the failure and its reason; its co-seat stays clean.
-    expect(bySlot.get(1)?.failed).toBe(1)
-    expect(bySlot.get(1)?.failure_reason).toMatch(/exited with code 1/)
-    expect(bySlot.get(0)?.failed).toBe(0)
-    expect(bySlot.get(0)?.failure_reason).toBeNull()
+    expect(bySeat.get(1)?.failed).toBe(1)
+    expect(bySeat.get(1)?.failure_reason).toMatch(/exited with code 1/)
+    expect(bySeat.get(0)?.failed).toBe(0)
+    expect(bySeat.get(0)?.failure_reason).toBeNull()
   })
 
   it('marks a timed-out agent timed_out with a failed result row', async () => {
@@ -1387,7 +1386,7 @@ describe('Docker-backed workflow runner', () => {
 
     // A second run for the same season (the re-run).
     const second = await createRunOrFail(storage, first.season_id, 'dev-user', () => ({
-      parametersSnapshot: { seats: 1, pipe_gap: 100 },
+      parametersSnapshot: { players: 1, pipe_gap: 100 },
       scheduledGames: [naiveGame(0)],
       llmPolicy: disabledLlmPolicy(),
     }))
@@ -1424,7 +1423,7 @@ describe('Docker-backed workflow runner', () => {
     }
     const run = await makeRun(
       storage,
-      [{ match_index: 0, game_index: 0, seed: 1, slots: [submissionRef] }],
+      [{ match_index: 0, game_index: 0, seed: 1, seats: [submissionRef] }],
       { submissions: [submissionRef] },
     )
     handle.driver.onLaunch = (launch): void => {
@@ -1492,7 +1491,7 @@ describe('Docker-backed workflow runner', () => {
         match_index: 0,
         game_index: index,
         seed: index + 1,
-        slots: [ref],
+        seats: [ref],
       })),
       { submissions: refs },
     )

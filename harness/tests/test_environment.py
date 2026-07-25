@@ -14,11 +14,17 @@ from game_sandbox_harness.environment import (
     EnvParameter,
     EnvParameterChoice,
     EnvParameterValueError,
+    PlayerBounds,
+    SeatPlan,
+    SeatPlans,
     discover_environments,
     effective_parameters,
     load_environment,
+    resolve_layout,
     resolve_parameters,
 )
+
+FIXTURES_DIR = Path(__file__).resolve().parents[2] / "schema" / "fixtures"
 
 
 def _meta() -> EnvironmentMeta:
@@ -26,9 +32,8 @@ def _meta() -> EnvironmentMeta:
         env_id="demo",
         display_name="Demo",
         description="A demo environment.",
-        min_slots=1,
-        max_slots=1,
-        human_slots=("player_0",),
+        layout=PlayerBounds(1, 1),
+        human_players=("player_0",),
         human_timeout_ms=None,
         recommended_episode_ticks=1000,
         pace_interval_ms=50,
@@ -46,13 +51,13 @@ def test_meta_to_json_round_trips():
     blob = json.dumps(meta.to_json())
     parsed = json.loads(blob)
     assert parsed["env_id"] == "demo"
-    assert parsed["human_slots"] == ["player_0"]  # tuple serialized as a JSON array
+    assert parsed["human_players"] == ["player_0"]  # tuple serialized as a JSON array
     assert parsed["human_timeout_ms"] is None
     assert parsed["pace_interval_ms"] == 50
     assert parsed["seat_order_matters"] is False
     assert parsed["view_interval_ms"] is None  # defaulted, present in the serialized shape
     assert parsed["live_interval_ms"] is None  # defaulted, present in the serialized shape
-    assert parsed["parameters"][0]["name"] == "seats"
+    assert parsed["parameters"][0]["name"] == "players"
 
 
 def test_flappy_bird_is_discoverable():
@@ -60,7 +65,7 @@ def test_flappy_bird_is_discoverable():
     assert "flappy_bird" in found
     entry = found["flappy_bird"]
     assert entry.meta.env_id == "flappy_bird"
-    assert entry.meta.human_slots == ("player_0",)
+    assert entry.meta.human_players == ("player_0",)
     # The metadata is serialisable end to end.
     json.dumps(entry.meta.to_json())
 
@@ -92,7 +97,7 @@ def _fixture_meta() -> EnvironmentMeta:
     )
     declarations = []
     for raw in fixture["declarations"]:
-        if raw["name"] == "seats":
+        if raw["name"] == "players":
             continue
         choices = tuple(EnvParameterChoice(**choice) for choice in raw.get("choices", []))
         declarations.append(
@@ -110,8 +115,7 @@ def _fixture_meta() -> EnvironmentMeta:
     return EnvironmentMeta(
         **{
             **_meta().__dict__,
-            "min_slots": 1,
-            "max_slots": 4,
+            "layout": PlayerBounds(1, 4),
             "parameters": tuple(declarations),
         }
     )
@@ -131,12 +135,12 @@ def test_parameter_values_match_the_shared_cross_language_fixture():
             with pytest.raises(EnvParameterValueError):
                 declaration.validate_value(case["value"])
 
-    # The synthesized `seats` declaration is compared against the fixture's hand-written copy, so the
-    # bounds and the `max_slots` default are pinned by the shared file rather than only by the code
-    # that produces them. `_fixture_meta` drops the fixture entry and sets min_slots/max_slots, so this
+    # The synthesized `players` declaration is compared against the fixture's hand-written copy, so the
+    # bounds and the maximum default are pinned by the shared file rather than only by the code
+    # that produces them. `_fixture_meta` drops the fixture entry and sets player bounds, so this
     # really exercises the synthesis.
-    seats_fixture = next(raw for raw in fixture["declarations"] if raw["name"] == "seats")
-    assert declarations["seats"].to_json() == seats_fixture
+    players_fixture = next(raw for raw in fixture["declarations"] if raw["name"] == "players")
+    assert declarations["players"].to_json() == players_fixture
 
     for case in fixture["resolution_cases"]:
         assert resolve_parameters(meta, *case["layers"]) == case["values"]
@@ -148,14 +152,13 @@ def test_parameter_values_match_the_shared_cross_language_fixture():
             resolve_parameters(meta, case["layer"])
 
 
-def test_parameter_declarations_reject_reserved_names_and_invalid_shapes():
+@pytest.mark.parametrize("name", ["players", "seat_plan"])
+def test_parameter_declarations_reject_reserved_names(name):
     with pytest.raises(ValueError, match="reserved"):
-        EnvironmentMeta(
-            **{
-                **_meta().__dict__,
-                "parameters": (EnvParameter("seats", "Seats", "No.", "int", 1, min=1, max=1),),
-            }
-        )
+        EnvParameter(name, "Layout", "No.", "string", "x")
+
+
+def test_parameter_declarations_reject_invalid_shapes():
     with pytest.raises(ValueError, match="unique"):
         EnvParameter(
             "mode",
@@ -170,3 +173,93 @@ def test_parameter_declarations_reject_reserved_names_and_invalid_shapes():
     float_parameter = EnvParameter("weight", "Weight", "Value.", "float", 1.0, min=0.0, max=2.0)
     with pytest.raises(EnvParameterValueError):
         float_parameter.validate_value(10**1000)
+
+
+def test_layout_resolution_covers_player_bounds_and_uneven_seat_plans():
+    bounds = EnvironmentMeta(**{**_meta().__dict__, "layout": PlayerBounds(1, 4)})
+    resolved_bounds = resolve_layout(bounds, resolve_parameters(bounds, {"players": 3}))
+    assert [seat.seat_id for seat in resolved_bounds.seats] == ["seat_0", "seat_1", "seat_2"]
+    assert [seat.players for seat in resolved_bounds.seats] == [
+        ("player_0",),
+        ("player_1",),
+        ("player_2",),
+    ]
+
+    plans = EnvironmentMeta(
+        **{
+            **_meta().__dict__,
+            "layout": SeatPlans((SeatPlan("duo", "Duo", ((0,), (1, 2, 3))),)),
+        }
+    )
+    layout = resolve_layout(plans, resolve_parameters(plans))
+    assert layout.plan_key == "duo"
+    assert layout.player_count == 4
+    assert layout.seat_count == 2
+    assert layout.seats[1].players == ("player_1", "player_2", "player_3")
+
+
+@pytest.mark.parametrize(
+    "layout",
+    [
+        SeatPlans(()),
+        SeatPlans((SeatPlan("x", "X", ((),)),)),
+        SeatPlans((SeatPlan("x", "X", ((0, 0),)),)),
+        SeatPlans((SeatPlan("x", "X", ((0, 2),)),)),
+    ],
+)
+def test_layout_rejects_invalid_partitions(layout):
+    with pytest.raises(ValueError, match="environment 'demo'"):
+        EnvironmentMeta(**{**_meta().__dict__, "layout": layout})
+
+
+def _layout_from_fixture(raw: dict[str, object]) -> PlayerBounds | SeatPlans:
+    if raw["kind"] == "player_bounds":
+        return PlayerBounds(min=raw["min"], max=raw["max"])  # type: ignore[arg-type]
+    plans = tuple(
+        SeatPlan(
+            key=plan["key"],
+            title=plan["title"],
+            seats=tuple(tuple(seat) for seat in plan["seats"]),
+        )
+        for plan in raw["plans"]  # type: ignore[union-attr]
+    )
+    return SeatPlans(plans)
+
+
+def _resolved_layout_json(meta: EnvironmentMeta, parameters: dict[str, object]) -> dict[str, object]:
+    layout = resolve_layout(meta, parameters)  # type: ignore[arg-type]
+    return {
+        "plan_key": layout.plan_key,
+        "seats": [{"seat_id": seat.seat_id, "players": list(seat.players)} for seat in layout.seats],
+        "player_count": layout.player_count,
+        "seat_count": layout.seat_count,
+    }
+
+
+def test_layout_values_match_the_shared_cross_language_fixture():
+    fixture = json.loads((FIXTURES_DIR / "layout-values.json").read_text(encoding="utf-8"))
+
+    for case in fixture["valid"]:
+        meta = EnvironmentMeta(
+            **{
+                **_meta().__dict__,
+                "layout": _layout_from_fixture(case["meta"]["layout"]),
+                "human_players": tuple(case["meta"]["human_players"]),
+            }
+        )
+        assert _resolved_layout_json(meta, case["parameters"]) == case["layout"], case["name"]
+
+    for case in fixture["invalid"]:
+        raw_layout = case["layout"]
+        layout = (
+            _layout_from_fixture(raw_layout)
+            if (
+                raw_layout.get("kind") == "player_bounds"
+                and set(raw_layout) == {"kind", "min", "max"}
+                or raw_layout.get("kind") == "seat_plans"
+                and set(raw_layout) == {"kind", "plans"}
+            )
+            else raw_layout
+        )
+        with pytest.raises(ValueError):
+            EnvironmentMeta(**{**_meta().__dict__, "layout": layout})

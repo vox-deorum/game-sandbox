@@ -80,7 +80,7 @@ describe('official LLM session grant lifecycle', () => {
     const lease = await issuer.issue({
       sessionId,
       scopeId,
-      agentSlots: [SLOT],
+      agentPlayers: [SLOT],
       models: { small: { upstream: 'provider-small', costWeight: 2 } },
       limits: { tokenBudget: 1_000, requestsPerMinute: 20 },
     })

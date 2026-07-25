@@ -2,8 +2,8 @@
   Home: the environment gallery, the reference page for the Stage 4.5 design system. Every environment
   is one card driven by the public metadata from `GET /api/environments`.
 
-  Each card shows the display name, the short description, the slot count from min/max, a
-  human-playable badge from `human_slots`, and the registry thumbnail, exactly the card fields the
+  Each card shows the display name, the short description, the resolved seat range, a
+  human-playable badge from `human_players`, and the registry thumbnail, exactly the card fields the
   frontend spec names. The thumbnail comes from the registered renderer module, with a placeholder for
   an environment whose renderer is not registered yet. The whole card is one link to the environment
   hub; nothing else on the page competes with the cards.
@@ -17,7 +17,7 @@ import UiBadge from '../components/ui/UiBadge.vue'
 import UiCard from '../components/ui/UiCard.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import { loadEnvironmentCatalog } from '../environmentCatalog.js'
-import { slotLabel } from '../lib/format.js'
+import { seatLabel } from '../lib/format.js'
 import { thumbnailFor } from '../renderers/registry.js'
 
 const environments = ref<EnvironmentMeta[] | null>(null)
@@ -56,8 +56,8 @@ onMounted(() => {
             <h2 class="env-title">{{ meta.display_name }}</h2>
             <p class="env-description">{{ meta.description }}</p>
             <div class="env-meta">
-              <UiBadge>{{ slotLabel(meta) }}</UiBadge>
-              <UiBadge v-if="meta.human_slots.length > 0" variant="accent">Human playable</UiBadge>
+              <UiBadge>{{ seatLabel(meta) }}</UiBadge>
+              <UiBadge v-if="meta.human_players.length > 0" variant="accent">Human playable</UiBadge>
             </div>
           </div>
         </UiCard>

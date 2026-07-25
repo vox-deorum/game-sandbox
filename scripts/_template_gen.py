@@ -41,7 +41,7 @@ def _render_metadata_mapping(metadata: dict[str, object]) -> str:
 
 
 def _render_parameters(value: object) -> str:
-    """Render internal parameter declarations without serializing synthesized ``seats``."""
+    """Render internal parameter declarations without serializing the synthesized layout parameter."""
     from game_sandbox_harness.environment import EnvParameter
 
     if not isinstance(value, tuple) or not all(isinstance(item, EnvParameter) for item in value):
@@ -56,7 +56,8 @@ def _render_sandbox_init(env_id: str, spec: TemplateEnvironmentSpec, meta: objec
     if not isinstance(meta, EnvironmentMeta):
         raise TypeError(f"expected EnvironmentMeta for {env_id!r}, got {type(meta).__name__}")
     metadata = meta.to_json()
-    metadata["human_slots"] = tuple(metadata["human_slots"])
+    metadata["layout"] = meta.layout
+    metadata["human_players"] = tuple(metadata["human_players"])
     metadata["parameters"] = meta.parameters
     metadata_text = _render_metadata_mapping(metadata)
     surface_import = f"from .{spec.inner_package} import {spec.default_action}, extract_overlay, make_env"
@@ -72,7 +73,14 @@ This template targets {spec.display_name}. The provided scripts read the uniform
 stay environment-agnostic across template layers.
 """
 
-from sandbox.harness.environment import EnvParameter, EnvParameterChoice, EnvironmentMeta
+from sandbox.harness.environment import (
+    EnvParameter,
+    EnvParameterChoice,
+    EnvironmentMeta,
+    PlayerBounds,
+    SeatPlan,
+    SeatPlans,
+)
 
 {surface_import}
 

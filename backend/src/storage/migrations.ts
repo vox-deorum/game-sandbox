@@ -162,14 +162,14 @@ const initialSchema: Migration = {
       .columns(['user_id', 'env_id'])
       .execute()
 
-    // --- session_submissions: which submitted agent ran in which session slot. ---
+    // --- session_submissions: which submitted agent ran in which session seat. ---
     await db.schema
       .createTable('session_submissions')
       .addColumn('session_id', 'text', (col) => col.notNull())
       .addColumn('submission_id', 'text', (col) => col.notNull())
-      .addColumn('slot_id', 'text', (col) => col.notNull())
+      .addColumn('seat_id', 'text', (col) => col.notNull())
       .addColumn('created_at', 'text', (col) => col.notNull())
-      .addPrimaryKeyConstraint('session_submissions_pk', ['session_id', 'slot_id'])
+      .addPrimaryKeyConstraint('session_submissions_pk', ['session_id', 'seat_id'])
       .execute()
     await db.schema
       .createIndex('session_submissions_submission')
@@ -230,7 +230,7 @@ const initialSchema: Migration = {
       .addColumn('match_index', 'integer', (col) => col.notNull())
       .addColumn('game_index', 'integer', (col) => col.notNull())
       .addColumn('seed', 'integer', (col) => col.notNull())
-      .addColumn('slots', 'text', (col) => col.notNull())
+      .addColumn('seats', 'text', (col) => col.notNull())
       .addColumn('status', 'text', (col) => col.notNull())
       .addColumn('recording_id', 'text')
       .addColumn('started_at', 'text')
@@ -248,7 +248,7 @@ const initialSchema: Migration = {
       .createTable('game_results')
       .addColumn('id', 'text', (col) => col.primaryKey())
       .addColumn('game_id', 'text', (col) => col.notNull())
-      .addColumn('slot_index', 'integer', (col) => col.notNull())
+      .addColumn('seat_index', 'integer', (col) => col.notNull())
       .addColumn('agent_kind', 'text', (col) => col.notNull())
       .addColumn('agent_submission_id', 'text')
       .addColumn('agent_user_id', 'text')

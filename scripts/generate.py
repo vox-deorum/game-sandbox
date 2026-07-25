@@ -138,7 +138,7 @@ def generate_fixtures() -> None:
         "two-step",
         build_header(
             environment="flappy",
-            parameters={"seats": 1, "pipe_gap": 100},
+            parameters={"players": 1, "pipe_gap": 100},
             seed=7,
             players={"player_0": {"kind": "agent", "label": "Naive agent"}},
         ),
@@ -153,7 +153,7 @@ def generate_fixtures() -> None:
         "chatty",
         build_header(
             environment="spades",
-            parameters={"seats": 4},
+            parameters={"players": 4},
             seed=7,
             players={
                 "player_0": {"kind": "agent", "label": "Signaler"},
@@ -187,7 +187,7 @@ def generate_fixtures() -> None:
         "unknown-sidecar",
         build_header(
             environment="flappy",
-            parameters={"seats": 1, "pipe_gap": 100},
+            parameters={"players": 1, "pipe_gap": 100},
             seed=7,
             sidecars=[{"name": "future-telemetry", "path": "telemetry.jsonl"}],
         ),
@@ -201,7 +201,7 @@ def generate_fixtures() -> None:
     bumped_header = {
         "schema_version": 2,
         "environment": "flappy",
-        "parameters": {"seats": 1, "pipe_gap": 100},
+        "parameters": {"players": 1, "pipe_gap": 100},
     }
     bumped_state = {
         "schema_version": 2,
@@ -220,9 +220,9 @@ def generate_fixtures() -> None:
     parameter_values = {
         "declarations": [
             {
-                "name": "seats",
-                "title": "Seats",
-                "description": "Number of seats in each game.",
+                "name": "players",
+                "title": "Players",
+                "description": "Number of PettingZoo players in each game.",
                 "type": "int",
                 "default": 4,
                 "min": 1,
@@ -286,9 +286,9 @@ def generate_fixtures() -> None:
             },
         ],
         "validation_cases": [
-            {"name": "seats", "value": 1, "valid": True, "normalized": 1},
-            {"name": "seats", "value": 4, "valid": True, "normalized": 4},
-            {"name": "seats", "value": 5, "valid": False},
+            {"name": "players", "value": 1, "valid": True, "normalized": 1},
+            {"name": "players", "value": 4, "valid": True, "normalized": 4},
+            {"name": "players", "value": 5, "valid": False},
             {"name": "pipe_gap", "value": 9007199254740991, "valid": True, "normalized": 9007199254740991},
             {"name": "pipe_gap", "value": 9007199254740992, "valid": False},
             {"name": "pipe_gap", "value": 1.5, "valid": False},
@@ -318,11 +318,11 @@ def generate_fixtures() -> None:
         "resolution_cases": [
             {
                 "layers": [
-                    {"seats": 2, "pipe_gap": 120, "powerups": ["magnet", "shield"]},
+                    {"players": 2, "pipe_gap": 120, "powerups": ["magnet", "shield"]},
                     {"pipe_gap": 140, "enabled": True},
                 ],
                 "values": {
-                    "seats": 2,
+                    "players": 2,
                     "pipe_gap": 140,
                     "gravity": 1.5,
                     "label": "default",
@@ -334,7 +334,7 @@ def generate_fixtures() -> None:
             {
                 "layers": [],
                 "values": {
-                    "seats": 4,
+                    "players": 4,
                     "pipe_gap": 100,
                     "gravity": 1.5,
                     "label": "default",
@@ -359,6 +359,140 @@ def generate_fixtures() -> None:
     }
     (FIXTURES_DIR / "parameter-values.json").write_text(
         json.dumps(parameter_values, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    layout_values = {
+        "valid": [
+            {
+                "name": "player bounds solo",
+                "meta": {
+                    "layout": {"kind": "player_bounds", "min": 1, "max": 4},
+                    "human_players": ["player_0"],
+                },
+                "parameters": {"players": 3},
+                "layout": {
+                    "plan_key": "solo",
+                    "seats": [
+                        {"seat_id": "seat_0", "players": ["player_0"]},
+                        {"seat_id": "seat_1", "players": ["player_1"]},
+                        {"seat_id": "seat_2", "players": ["player_2"]},
+                    ],
+                    "player_count": 3,
+                    "seat_count": 3,
+                },
+            },
+            {
+                "name": "uneven seat plan",
+                "meta": {
+                    "layout": {
+                        "kind": "seat_plans",
+                        "plans": [
+                            {"key": "duo", "title": "Duo", "seats": [[0], [1, 2, 3]]},
+                            {"key": "solo", "title": "Solo", "seats": [[0], [1], [2], [3]]},
+                        ],
+                    },
+                    "human_players": ["player_0"],
+                },
+                "parameters": {"seat_plan": "duo"},
+                "layout": {
+                    "plan_key": "duo",
+                    "seats": [
+                        {"seat_id": "seat_0", "players": ["player_0"]},
+                        {"seat_id": "seat_1", "players": ["player_1", "player_2", "player_3"]},
+                    ],
+                    "player_count": 4,
+                    "seat_count": 2,
+                },
+            },
+        ],
+        "invalid": [
+            {
+                "name": "duplicate plan key",
+                "layout": {
+                    "kind": "seat_plans",
+                    "plans": [
+                        {"key": "x", "title": "X", "seats": [[0]]},
+                        {"key": "x", "title": "Again", "seats": [[0]]},
+                    ],
+                },
+            },
+            {"name": "empty plans", "layout": {"kind": "seat_plans", "plans": []}},
+            {
+                "name": "plan with no seats",
+                "layout": {
+                    "kind": "seat_plans",
+                    "plans": [{"key": "x", "title": "X", "seats": []}],
+                },
+            },
+            {
+                "name": "empty seat",
+                "layout": {
+                    "kind": "seat_plans",
+                    "plans": [{"key": "x", "title": "X", "seats": [[]]}],
+                },
+            },
+            {
+                "name": "duplicate index",
+                "layout": {
+                    "kind": "seat_plans",
+                    "plans": [{"key": "x", "title": "X", "seats": [[0, 0]]}],
+                },
+            },
+            {
+                "name": "negative index",
+                "layout": {
+                    "kind": "seat_plans",
+                    "plans": [{"key": "x", "title": "X", "seats": [[-1]]}],
+                },
+            },
+            {
+                "name": "invalid plan key",
+                "layout": {
+                    "kind": "seat_plans",
+                    "plans": [{"key": "Not Snake", "title": "X", "seats": [[0]]}],
+                },
+            },
+            {
+                "name": "empty plan title",
+                "layout": {
+                    "kind": "seat_plans",
+                    "plans": [{"key": "x", "title": "", "seats": [[0]]}],
+                },
+            },
+            {
+                "name": "gap",
+                "layout": {
+                    "kind": "seat_plans",
+                    "plans": [{"key": "x", "title": "X", "seats": [[0, 2]]}],
+                },
+            },
+            {
+                "name": "nonzero start",
+                "layout": {
+                    "kind": "seat_plans",
+                    "plans": [{"key": "x", "title": "X", "seats": [[1]]}],
+                },
+            },
+            {"name": "unknown kind", "layout": {"kind": "unknown"}},
+            {"name": "missing kind", "layout": {"min": 1, "max": 2}},
+            {
+                "name": "foreign player bounds field",
+                "layout": {"kind": "player_bounds", "min": 1, "max": 2, "plans": []},
+            },
+            {
+                "name": "foreign seat plans field",
+                "layout": {
+                    "kind": "seat_plans",
+                    "plans": [{"key": "x", "title": "X", "seats": [[0]]}],
+                    "min": 1,
+                    "max": 1,
+                },
+            },
+        ],
+    }
+    (FIXTURES_DIR / "layout-values.json").write_text(
+        json.dumps(layout_values, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
         newline="\n",
     )

@@ -11,13 +11,16 @@
 import { randomInt, randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
 
-import { type ParameterValue, validateCompleteParameters } from '@game-sandbox/schema/environment'
+import {
+  type ParameterValue,
+  resolveLayout,
+  validateCompleteParameters,
+} from '@game-sandbox/schema/environment'
 import type { UserDirectory } from '../auth/users.js'
 import type { Config } from '../config.js'
 import { currentSessionBaseImageSpec } from '../deps-version.js'
 import type { ExecutionDriver, ImageRef } from '../driver/index.js'
 import { buildSandboxProfile } from '../driver/sandbox.js'
-import { resolvedSeatCount } from '../environment-parameters.js'
 import type { EnvironmentMeta, EnvironmentRegistry } from '../environments.js'
 import { resolveLlm as defaultResolveLlm } from '../llm/config.js'
 import { optionalField } from '../optional-field.js'
@@ -45,54 +48,63 @@ const CONTAINER_RECORDINGS_DIR = '/recordings'
 /** Grace given to a container to end politely before the driver hard-kills it. */
 const KILL_GRACE_MS = 5_000
 /** This stage's single-human session-composition cap; later multi-human play relaxes it. */
-const MAX_HUMAN_SLOTS = 1
+const MAX_HUMAN_PLAYERS = 1
 
-/**
- * One slot's assignment in a start request: a connected human, the built-in Naive baseline, or a
- * named submitted agent. The discriminated union carries `submissionId` only on a `submission` slot,
- * so a human or built-in slot can never reference a submission and vice versa. The HTTP layer maps the
- * wire `slots` object (snake-case `submission_id`) onto this shape; its JSON schema enforces the id is
- * present exactly for a `submission` slot, so the orchestrator trusts the discriminant.
- */
-export type SlotAssignment =
-  | { kind: 'human' | 'builtin-agent' }
+/** One ordinary agent binding accepted for a seat or a future human companion. */
+export type AgentSeatAssignment =
+  | { kind: 'builtin-agent' }
   | { kind: 'submission'; submissionId: string }
 
 /**
+ * One seat's assignment in a start request. A human may carry an ordinary companion binding so the
+ * request contract is ready for wide seats. Singleton seats reject that unnecessary companion.
+ */
+export type SeatAssignment =
+  | AgentSeatAssignment
+  | { kind: 'human'; companion?: AgentSeatAssignment }
+
+/**
  * A start request, already attributed to a user by the HTTP layer's identity resolution. The session
- * shape is an explicit per-slot `slots` assignment (Stage 7.4): every required seat names what fills
- * it, and the human-versus-scripted `mode` is derived from whether any slot is `human`, not sent.
+ * shape is an explicit per-seat assignment: every required seat names what fills it, and the
+ * human-versus-scripted `mode` is derived from whether any seat is `human`, not sent.
  */
 export interface StartRequest {
   userId: string
   envId: string
   seed?: number
-  humanSlotTimeoutMs?: number
+  humanTimeoutMs?: number
   /** The play-open season the start form was prefetched against. */
   seasonId: string
   /** The complete resolved parameter map, including hidden and synthesized values. */
   parameters: Record<string, ParameterValue>
-  /** Per-slot assignment keyed by slot id; must cover exactly the environment's required seats. */
-  slots: Record<string, SlotAssignment>
+  /** Per-seat assignment keyed by seat id; must cover exactly the resolved layout. */
+  seats: Record<string, SeatAssignment>
 }
 
-/** Which submission fills which slot from which container path, threaded into the session config. */
+/** Which submission fills which seat and singleton player in this stage. */
 interface SubmissionBinding {
   submissionId: string
-  slotId: string
+  seatId: string
+  playerId: string
   path: string
-  /** The submission owner, attributed to the slot in the recording header. */
+  /** The submission owner, attributed to the player in the recording header. */
   userId: string
 }
 
 /**
- * A slot after validation, keyed by id. A `submission` slot carries its loaded row; human and
- * built-in slots carry none. The discriminated union lets config assembly and image resolution read
+ * A singleton seat after validation. A `submission` seat carries its loaded row; human and
+ * built-in seats carry none. The discriminated union lets config assembly and image resolution read
  * the submission without a presence check.
  */
-type ResolvedSlot =
-  | { slotId: string; kind: 'human' | 'builtin-agent' }
-  | { slotId: string; kind: 'submission'; submission: Submission }
+type ResolvedSeat =
+  | { seatId: string; playerId: string; kind: 'human' | 'builtin-agent' }
+  | { seatId: string; playerId: string; kind: 'submission'; submission: Submission }
+
+interface ValidatedSeatAssignment {
+  seatId: string
+  playerId: string
+  assignment: SeatAssignment
+}
 
 /** What the HTTP layer returns to a client that started a session. */
 export interface StartResult {
@@ -189,11 +201,11 @@ export class Orchestrator {
   }
 
   /**
-   * Start a session from an explicit per-slot `slots` assignment. Validate the shape authoritatively
+   * Start a session from an explicit per-seat assignment. Validate the shape authoritatively
    * (every required seat assigned, humans only in human-capable seats, at most one human this stage),
    * derive the human-versus-scripted `mode` from it, enforce one per user, resolve the seed and
-   * human-slot timeout, ensure the image, insert the `starting` row, record one `session_submissions`
-   * row per submitted slot, and launch the container. All validation runs before any container starts.
+   * human timeout, ensure the image, insert the `starting` row, record one `session_submissions`
+   * row per submitted seat, and launch the container. All validation runs before any container starts.
    */
   async start(request: StartRequest): Promise<StartResult> {
     // Validate the request first (a malformed start is a 400 regardless of identity), then the
@@ -203,7 +215,7 @@ export class Orchestrator {
     if (meta === undefined) {
       throw new OrchestratorError(400, `unknown environment ${request.envId}`)
     }
-    // Every session attaches to a play-open season — ratings hang off it, and each submitted slot must
+    // Every session attaches to a play-open season. Ratings hang off it, and each submitted seat must
     // reference an active `ready` submission on it — so a play-closed environment never starts an
     // unattributable session. Resolve and require it once, before any submission or image work.
     const playSeason = await this.storage.getPublicPlaySeason(meta.env_id)
@@ -236,11 +248,8 @@ export class Orchestrator {
         'invalid_parameters',
       )
     }
-    const { assignments, mode } = this.validateSlotShape(
-      meta,
-      request.slots,
-      resolvedSeatCount(resolvedParameters.values),
-    )
+    const layout = resolveLayout(meta, resolvedParameters.values)
+    const { assignments, mode } = this.validateSeatShape(meta, request.seats, layout)
 
     const activeId = this.registry.activeIdForUser(request.userId)
     if (activeId !== undefined) {
@@ -248,14 +257,14 @@ export class Orchestrator {
         active_session_id: activeId,
       })
     }
-    const resolvedSlots = await this.resolveSubmissions(assignments, meta, playSeason)
+    const resolvedSeats = await this.resolveSubmissions(assignments, meta, playSeason)
 
     // Resolve the human timeout once, accounting for mode: only a human session has one. This value
     // is used in both the database row and the container config, so they must agree.
     const humanTimeoutMs =
       mode === 'human'
-        ? request.humanSlotTimeoutMs !== undefined
-          ? request.humanSlotTimeoutMs
+        ? request.humanTimeoutMs !== undefined
+          ? request.humanTimeoutMs
           : meta.human_timeout_ms
         : null
     const seed = request.seed ?? randomInt(0, 2 ** 31)
@@ -267,7 +276,9 @@ export class Orchestrator {
     const overrides = seasonConfig.overrides
     const messaging = resolveMessaging(meta, overrides?.messaging)
     const llm = this.resolveLiveLlm(this.config.llm, meta, seasonConfig)
-    const externalSlots = resolvedSlots.filter((s) => s.kind === 'human').map((s) => s.slotId)
+    const externalPlayers = resolvedSeats
+      .filter((seat) => seat.kind === 'human')
+      .map((seat) => seat.playerId)
 
     const id = randomUUID()
     const recordingId = `${meta.env_id}-${id}`
@@ -281,9 +292,9 @@ export class Orchestrator {
         llmLease = await this.officialGrantIssuer.issue({
           sessionId: id,
           scopeId: id,
-          agentSlots: resolvedSlots
-            .filter((slot) => slot.kind !== 'human')
-            .map((slot) => slot.slotId),
+          agentPlayers: resolvedSeats
+            .filter((seat) => seat.kind !== 'human')
+            .map((seat) => seat.playerId),
           models: llm.models,
           limits: llm.official,
         })
@@ -293,12 +304,12 @@ export class Orchestrator {
       }
     }
 
-    // Resolve the launch image from the validated submitted slots: the base image when none, a single
+    // Resolve the launch image from the validated submitted seats: the base image when none, a single
     // submission's cached overlay, or a composed multi-submission session image.
     let image: ImageRef
     let submissionBindings: SubmissionBinding[]
     try {
-      ;({ image, submissionBindings } = await this.resolveImage(resolvedSlots, playSeason))
+      ;({ image, submissionBindings } = await this.resolveImage(resolvedSeats, playSeason))
       await this.storage.createSession({
         id,
         user_id: request.userId,
@@ -338,7 +349,7 @@ export class Orchestrator {
         seed,
         humanTimeoutMs,
         recordingId,
-        resolvedSlots,
+        resolvedSeats,
         request.userId,
         overrides,
         resolvedParameters.values,
@@ -371,12 +382,12 @@ export class Orchestrator {
       throw new OrchestratorError(500, `failed to launch session: ${String(error)}`)
     }
 
-    // The container is running: record one attribution row per submitted slot, so the agent profile
-    // can list each as a recent run. Human and built-in slots are carried only in the recording header
+    // The container is running: record one attribution row per submitted seat, so the agent profile
+    // can list each as a recent run. Human and built-in seats are carried only in the recording header
     // `players`, never here. Done after launch so a failed launch attributes no run to anyone.
     try {
       for (const binding of submissionBindings) {
-        await this.storage.recordSessionSubmission(id, binding.submissionId, binding.slotId)
+        await this.storage.recordSessionSubmission(id, binding.submissionId, binding.seatId)
       }
     } catch (error) {
       // The post-launch writes (attribution rows) failed, but the container is running. Kill it and
@@ -400,8 +411,7 @@ export class Orchestrator {
       recordingId,
       createdAt,
       process,
-      humanSlots: meta.human_slots,
-      externalSlots,
+      externalPlayers,
       messaging,
       llmEnabled: llm.enabled,
       deps: {
@@ -430,78 +440,70 @@ export class Orchestrator {
     }
   }
 
-  /**
-   * Authoritatively validate the `slots` assignment against the environment metadata and derive the
-   * session mode. Rejects (400) a payload that does not assign exactly the environment's required seats
-   * (`player_0…player_{max_slots-1}`), a human in a slot the metadata does not mark human-capable, and
-   * more than this stage's single human slot. The `submission`-id discriminant is guaranteed by the
-   * union and the wire schema, so it is not re-checked here. Returns the assignments ordered by slot
-   * index and the derived mode (`human` when a human slot is present, else `scripted`).
-   *
-   * A live/watch session always composes the full table: exactly `max_slots` seats. `min_slots` is
-   * deliberately not consulted here — it bounds only the per-match slot count an automated season config
-   * may declare (see the admin match-config validation), where a variable-seat environment can schedule
-   * a short table. A session, by contrast, seats every player, so the required set is the full
-   * `player_0…player_{max_slots-1}` regardless of how low `min_slots` sits.
-   */
-  private validateSlotShape(
+  /** Validate an assignment against the resolver's exact ordered seat set and derive session mode. */
+  private validateSeatShape(
     meta: EnvironmentMeta,
-    slots: Record<string, SlotAssignment>,
-    seatCount: number,
-  ): { assignments: { slotId: string; assignment: SlotAssignment }[]; mode: SessionMode } {
-    const requiredIds: string[] = []
-    for (let i = 0; i < seatCount; i++) {
-      requiredIds.push(`player_${i}`)
-    }
+    seats: Record<string, SeatAssignment>,
+    layout: ReturnType<typeof resolveLayout>,
+  ): { assignments: ValidatedSeatAssignment[]; mode: SessionMode } {
+    const requiredIds = layout.seats.map((seat) => seat.seatId)
     const required = new Set(requiredIds)
-    for (const slotId of Object.keys(slots)) {
-      if (!required.has(slotId)) {
-        throw new OrchestratorError(400, `unknown slot ${slotId} for environment ${meta.env_id}`)
+    for (const seatId of Object.keys(seats)) {
+      if (!required.has(seatId)) {
+        throw new OrchestratorError(400, `unknown seat ${seatId} for environment ${meta.env_id}`)
       }
     }
 
-    const humanCapable = new Set(meta.human_slots)
+    const humanCapable = new Set(meta.human_players)
     let humanCount = 0
-    const assignments = requiredIds.map((slotId) => {
-      const assignment = slots[slotId]
+    const assignments = layout.seats.map((seat) => {
+      const assignment = seats[seat.seatId]
       if (assignment === undefined) {
-        throw new OrchestratorError(400, `missing assignment for required slot ${slotId}`)
+        throw new OrchestratorError(400, `missing assignment for required seat ${seat.seatId}`)
+      }
+      const playerId = seat.players[0]
+      if (playerId === undefined) {
+        throw new Error(`resolved seat ${seat.seatId} has no players`)
       }
       if (assignment.kind === 'human') {
-        if (!humanCapable.has(slotId)) {
+        const humanPlayer = seat.players.find((candidate) => humanCapable.has(candidate))
+        if (humanPlayer === undefined) {
           throw new OrchestratorError(
             400,
-            `slot ${slotId} is not human-controllable in environment ${meta.env_id}`,
+            `seat ${seat.seatId} is not human-controllable in environment ${meta.env_id}`,
           )
         }
+        if (seat.players.length === 1 && assignment.companion !== undefined) {
+          throw new OrchestratorError(400, `singleton seat ${seat.seatId} cannot have a companion`)
+        }
         humanCount += 1
+        return { seatId: seat.seatId, playerId: humanPlayer, assignment }
       }
-      return { slotId, assignment }
+      return { seatId: seat.seatId, playerId, assignment }
     })
-    if (humanCount > MAX_HUMAN_SLOTS) {
+    if (humanCount > MAX_HUMAN_PLAYERS) {
       throw new OrchestratorError(
         400,
-        `at most ${MAX_HUMAN_SLOTS} human slot is allowed, got ${humanCount}`,
+        `at most ${MAX_HUMAN_PLAYERS} human player is allowed, got ${humanCount}`,
       )
     }
     return { assignments, mode: humanCount > 0 ? 'human' : 'scripted' }
   }
 
   /**
-   * Load and validate the submission behind each `submission` slot (404 unknown, 400 wrong
+   * Load and validate the submission behind each `submission` seat (404 unknown, 400 wrong
    * environment, 409 not `ready`, 409 not active for the play-open season), leaving human and built-in
-   * slots untouched. Returns the slots in assignment order with the loaded submission attached. The
-   * checks mirror the Stage 5 single-submission watch path, applied per submitted slot.
+   * seats untouched. Returns the seats in assignment order with the loaded submission attached.
    */
   private async resolveSubmissions(
-    assignments: { slotId: string; assignment: SlotAssignment }[],
+    assignments: ValidatedSeatAssignment[],
     meta: EnvironmentMeta,
     playSeason: Season,
-  ): Promise<ResolvedSlot[]> {
-    const resolved: ResolvedSlot[] = []
-    for (const { slotId, assignment } of assignments) {
+  ): Promise<ResolvedSeat[]> {
+    const resolved: ResolvedSeat[] = []
+    for (const { seatId, playerId, assignment } of assignments) {
       if (assignment.kind !== 'submission') {
-        resolved.push({ slotId, kind: assignment.kind })
+        resolved.push({ seatId, playerId, kind: assignment.kind })
         continue
       }
       const submission = await this.storage.getSubmission(assignment.submissionId)
@@ -527,35 +529,32 @@ export class Orchestrator {
           'submission_not_active',
         )
       }
-      resolved.push({ slotId, kind: 'submission', submission })
+      resolved.push({ seatId, playerId, kind: 'submission', submission })
     }
     return resolved
   }
 
   /**
-   * Resolve the launch image and the per-slot submission bindings from the already-validated slots.
-   * With no submitted slot the base image runs, as before. A single submitted slot reuses the cached
-   * per-submission overlay (the Stage 5 watch path), keeping its build-stage image warm. Two or more
-   * submitted slots compose a multi-submission session image, each submission staged into its own
-   * per-slot directory (the driver chains one single-slot overlay per slot). Every submitted slot
-   * yields one binding regardless.
+   * Resolve the launch image and submission attribution from validated singleton seats. Staging stays
+   * player-keyed until Stage 15.2 expands a seat across multiple player bindings.
    */
   private async resolveImage(
-    resolvedSlots: ResolvedSlot[],
+    resolvedSeats: ResolvedSeat[],
     playSeason: Season,
   ): Promise<{ image: ImageRef; submissionBindings: SubmissionBinding[] }> {
     const composed: SessionImageSlot[] = []
     const submissionBindings: SubmissionBinding[] = []
-    for (const slot of resolvedSlots) {
-      if (slot.kind !== 'submission') {
+    for (const seat of resolvedSeats) {
+      if (seat.kind !== 'submission') {
         continue
       }
-      composed.push({ slotId: slot.slotId, submission: slot.submission })
+      composed.push({ slotId: seat.playerId, submission: seat.submission })
       submissionBindings.push({
-        submissionId: slot.submission.id,
-        slotId: slot.slotId,
-        path: submissionSlotPath(slot.slotId),
-        userId: slot.submission.user_id,
+        submissionId: seat.submission.id,
+        seatId: seat.seatId,
+        playerId: seat.playerId,
+        path: submissionSlotPath(seat.playerId),
+        userId: seat.submission.user_id,
       })
     }
 
@@ -627,10 +626,11 @@ export class Orchestrator {
   }
 
   /**
-   * Build the session config the container reads from argv from the validated slot assignments. Each
-   * slot maps to its seat: a connected human (driven by the transport), the built-in Naive baseline,
-   * or a submitted agent carrying the overlay path the harness loads its code from. The shared seam
-   * produces the `slots`/`players` wire blocks the headless workflow runner builds the same way.
+   * Build the session config the container reads from argv from the validated seat assignments. Each
+   * player maps to its seat: a connected human (driven by the transport), the built-in Naive
+   * baseline, or a submitted agent carrying the overlay path the harness loads its code from. The
+   * shared seam produces the `player_bindings`/`players` wire blocks the headless workflow runner
+   * builds the same way.
    * Environment facts (pace, limits, the default human timeout) live in the in-image registry, so only
    * the overrides travel here.
    */
@@ -639,7 +639,7 @@ export class Orchestrator {
     seed: number,
     humanTimeoutMs: number | null,
     recordingId: string,
-    resolvedSlots: ResolvedSlot[],
+    resolvedSeats: ResolvedSeat[],
     ownerUserId: string,
     overrides: ReturnType<typeof decodeSeasonConfig>['overrides'],
     parameters: Record<string, ParameterValue>,
@@ -649,32 +649,32 @@ export class Orchestrator {
     // Snapshot display names for the recording header at launch time: the human seat's user and every
     // submission owner, one batched lookup. Names are cosmetic — the label falls back to the stable id —
     // so a directory failure must never abort a launch (the row is already inserted); degrade to ids.
-    const names = await this.snapshotNames(ownerUserId, resolvedSlots)
+    const names = await this.snapshotNames(ownerUserId, resolvedSeats)
     const seats = new Map<string, SeatBinding>()
-    for (const slot of resolvedSlots) {
-      if (slot.kind === 'human') {
-        seats.set(slot.slotId, {
+    for (const seat of resolvedSeats) {
+      if (seat.kind === 'human') {
+        seats.set(seat.playerId, {
           driver: 'human',
           userId: ownerUserId,
           ...optionalField('displayName', names.get(ownerUserId)),
         })
-      } else if (slot.kind === 'submission') {
-        seats.set(slot.slotId, {
+      } else if (seat.kind === 'submission') {
+        seats.set(seat.playerId, {
           driver: 'submission',
-          submissionId: slot.submission.id,
-          userId: slot.submission.user_id,
-          path: submissionSlotPath(slot.slotId),
-          ...optionalField('ownerName', names.get(slot.submission.user_id)),
+          submissionId: seat.submission.id,
+          userId: seat.submission.user_id,
+          path: submissionSlotPath(seat.playerId),
+          ...optionalField('ownerName', names.get(seat.submission.user_id)),
         })
       } else {
-        seats.set(slot.slotId, { driver: 'naive' })
+        seats.set(seat.playerId, { driver: 'naive' })
       }
     }
-    const { slots, players } = assembleSeats(seats)
+    const { playerBindings, players } = assembleSeats(seats)
     return {
       env_id: meta.env_id,
       seed,
-      slots,
+      player_bindings: playerBindings,
       human_timeout_ms: humanTimeoutMs,
       recording_dir: CONTAINER_RECORDINGS_DIR,
       recording_id: recordingId,
@@ -699,15 +699,15 @@ export class Orchestrator {
    */
   private async snapshotNames(
     ownerUserId: string,
-    resolvedSlots: ResolvedSlot[],
+    resolvedSeats: ResolvedSeat[],
   ): Promise<Map<string, string>> {
     if (this.userDirectory === undefined) {
       return new Map()
     }
     const ids = [
       ownerUserId,
-      ...resolvedSlots.flatMap((slot) =>
-        slot.kind === 'submission' ? [slot.submission.user_id] : [],
+      ...resolvedSeats.flatMap((seat) =>
+        seat.kind === 'submission' ? [seat.submission.user_id] : [],
       ),
     ]
     try {

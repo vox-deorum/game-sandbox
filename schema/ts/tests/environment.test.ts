@@ -8,6 +8,7 @@ import {
   type EnvParameter,
   isEnvironmentMeta,
   isEnvParameter,
+  resolveLayout,
   resolveParameters,
   validateCompleteParameters,
   validateParameterValue,
@@ -19,6 +20,13 @@ const FIXTURE_PATH = join(
   '..',
   'fixtures',
   'parameter-values.json',
+)
+const LAYOUT_FIXTURE_PATH = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '..',
+  'fixtures',
+  'layout-values.json',
 )
 
 type ParameterFixtures = {
@@ -38,6 +46,23 @@ type ParameterFixtures = {
 
 const PARAMETER_FIXTURES = JSON.parse(readFileSync(FIXTURE_PATH, 'utf-8')) as ParameterFixtures
 
+type LayoutFixtures = {
+  valid: Array<{
+    name: string
+    meta: Pick<EnvironmentMeta, 'layout' | 'human_players'>
+    parameters: Record<string, string | number>
+    layout: {
+      plan_key: string
+      seats: Array<{ seat_id: string; players: string[] }>
+      player_count: number
+      seat_count: number
+    }
+  }>
+  invalid: Array<{ name: string; layout: unknown }>
+}
+
+const LAYOUT_FIXTURES = JSON.parse(readFileSync(LAYOUT_FIXTURE_PATH, 'utf-8')) as LayoutFixtures
+
 /** The shared declarations keyed by name, for the suites that look one up. */
 const declarations = new Map(
   PARAMETER_FIXTURES.declarations.map((declaration) => [declaration.name, declaration]),
@@ -47,9 +72,8 @@ const VALID: EnvironmentMeta = {
   env_id: 'flappy_bird',
   display_name: 'Flappy Bird',
   description: 'A paced single-human clone.',
-  min_slots: 1,
-  max_slots: 4,
-  human_slots: ['player_0'],
+  layout: { kind: 'player_bounds', min: 1, max: 4 },
+  human_players: ['player_0'],
   human_timeout_ms: null,
   recommended_episode_ticks: 1000,
   pace_interval_ms: 50,
@@ -100,8 +124,8 @@ describe('isEnvironmentMeta', () => {
     expect(isEnvironmentMeta(withoutRenderer)).toBe(false)
   })
 
-  it('rejects an entry whose human_slots is not a string array', () => {
-    expect(isEnvironmentMeta({ ...VALID, human_slots: [0, 1] })).toBe(false)
+  it('rejects an entry whose human_players is not a string array', () => {
+    expect(isEnvironmentMeta({ ...VALID, human_players: [0, 1] })).toBe(false)
   })
 
   it('rejects an entry without parameter declarations', () => {
@@ -109,12 +133,46 @@ describe('isEnvironmentMeta', () => {
     expect(isEnvironmentMeta(withoutParameters)).toBe(false)
   })
 
-  it('rejects metadata without the synthesized seats declaration', () => {
+  it('rejects metadata without the synthesized players declaration', () => {
     expect(isEnvironmentMeta({ ...VALID, parameters: VALID.parameters.slice(1) })).toBe(false)
   })
 
-  it('rejects a synthesized seats declaration that disagrees with the slot bounds', () => {
-    expect(isEnvironmentMeta({ ...VALID, max_slots: 3 })).toBe(false)
+  it('rejects both reserved names in ordinary parameters', () => {
+    const ordinary = VALID.parameters.slice(1)
+    const stringParameter = {
+      title: 'Layout',
+      description: 'No.',
+      type: 'string' as const,
+      default: 'x',
+    }
+    expect(
+      isEnvironmentMeta({
+        ...VALID,
+        parameters: [VALID.parameters[0], ...ordinary, { name: 'players', ...stringParameter }],
+      }),
+    ).toBe(false)
+    expect(
+      isEnvironmentMeta({
+        ...VALID,
+        parameters: [VALID.parameters[0], ...ordinary, { name: 'seat_plan', ...stringParameter }],
+      }),
+    ).toBe(false)
+  })
+
+  it('rejects a synthesized players declaration that disagrees with the layout bounds', () => {
+    expect(isEnvironmentMeta({ ...VALID, layout: { kind: 'player_bounds', min: 1, max: 3 } })).toBe(
+      false,
+    )
+  })
+
+  it('rejects unknown and mixed layout variants', () => {
+    expect(isEnvironmentMeta({ ...VALID, layout: { kind: 'unknown' } })).toBe(false)
+    expect(
+      isEnvironmentMeta({
+        ...VALID,
+        layout: { kind: 'player_bounds', min: 1, max: 4, plans: [] },
+      }),
+    ).toBe(false)
   })
 
   it('rejects malformed parameter declarations', () => {
@@ -208,7 +266,7 @@ describe('resolveParameters', () => {
 
 describe('validateCompleteParameters', () => {
   const COMPLETE_PARAMETERS = {
-    seats: 2,
+    players: 2,
     pipe_gap: 120,
     gravity: 0.75,
     label: '',
@@ -222,7 +280,7 @@ describe('validateCompleteParameters', () => {
 
     expect(result).toEqual({
       values: {
-        seats: 2,
+        players: 2,
         pipe_gap: 120,
         gravity: 0.75,
         label: '',
@@ -246,5 +304,70 @@ describe('validateCompleteParameters', () => {
     const missing = validateCompleteParameters(PARAMETER_FIXTURES.declarations, withoutPowerups)
     expect(missing.values).not.toHaveProperty('powerups')
     expect(missing.issues).toEqual([{ name: 'powerups', message: 'is required' }])
+  })
+})
+
+describe('resolveLayout', () => {
+  it('builds the canonical singleton solo layout', () => {
+    expect(resolveLayout(VALID, { players: 3 })).toEqual({
+      planKey: 'solo',
+      seats: [
+        { seatId: 'seat_0', players: ['player_0'] },
+        { seatId: 'seat_1', players: ['player_1'] },
+        { seatId: 'seat_2', players: ['player_2'] },
+      ],
+      playerCount: 3,
+      seatCount: 3,
+    })
+  })
+
+  it('matches every valid shared layout fixture', () => {
+    for (const testCase of LAYOUT_FIXTURES.valid) {
+      const layout = testCase.meta.layout
+      const parameter =
+        layout.kind === 'player_bounds'
+          ? {
+              name: 'players',
+              title: 'Players',
+              description: 'Number of PettingZoo players in each game.',
+              type: 'int' as const,
+              default: layout.max,
+              min: layout.min,
+              max: layout.max,
+            }
+          : {
+              name: 'seat_plan',
+              title: 'Seat plan',
+              description: 'Seat-to-player layout for each game.',
+              type: 'choice' as const,
+              default: layout.plans[0]?.key ?? '',
+              choices: layout.plans.map((plan) => ({ value: plan.key, label: plan.title })),
+            }
+      const meta: EnvironmentMeta = {
+        ...VALID,
+        ...testCase.meta,
+        parameters: [parameter],
+      }
+      expect(isEnvironmentMeta(meta), testCase.name).toBe(true)
+      const resolved = resolveLayout(meta, testCase.parameters)
+      expect(
+        {
+          plan_key: resolved.planKey,
+          seats: resolved.seats.map((seat) => ({
+            seat_id: seat.seatId,
+            players: seat.players,
+          })),
+          player_count: resolved.playerCount,
+          seat_count: resolved.seatCount,
+        },
+        testCase.name,
+      ).toEqual(testCase.layout)
+    }
+  })
+
+  it('rejects every invalid shared layout fixture at the metadata guard', () => {
+    for (const testCase of LAYOUT_FIXTURES.invalid) {
+      expect(isEnvironmentMeta({ ...VALID, layout: testCase.layout }), testCase.name).toBe(false)
+    }
   })
 })

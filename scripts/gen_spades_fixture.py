@@ -14,7 +14,7 @@ from __future__ import annotations
 from typing import Any
 
 from _fixture_common import run_and_copy
-from game_sandbox_harness.session import AgentSlot
+from game_sandbox_harness.session import AgentPlayer
 from game_sandbox_harness.state import PlayerAttribution
 from local_play.card_utils import card_from_obj
 from spades import ENTRY, rules
@@ -61,7 +61,7 @@ def main() -> int:
         "player_2": {"kind": "agent", "label": "Naive agent"},
         "player_3": {"kind": "agent", "label": "Naive agent"},
     }
-    slots = {f"player_{i}": AgentSlot(SuggestedBidAgent()) for i in range(rules.NUM_PLAYERS)}
+    slots = {f"player_{i}": AgentPlayer(SuggestedBidAgent()) for i in range(rules.NUM_PLAYERS)}
     run_and_copy(
         ENTRY,
         slots,

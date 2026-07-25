@@ -31,7 +31,7 @@ def _diag(message: str) -> None:
 
 
 class ChatRouter:
-    """Routes and validates messages for one episode's slots.
+    """Routes and validates messages for one episode's players.
 
     Owns the pending inboxes only; the accepted batch for a tick is returned to the caller
     (the :class:`~game_sandbox_harness.session.Episode`), which records it and hands it back to
@@ -39,16 +39,16 @@ class ChatRouter:
     Python ``str``), pinned here so both sides of every boundary agree.
     """
 
-    def __init__(self, slot_ids: Iterable[str], cap: int | None) -> None:
-        self._slots = frozenset(slot_ids)
+    def __init__(self, player_ids: Iterable[str], cap: int | None) -> None:
+        self._players = frozenset(player_ids)
         self._cap = cap
-        self._inboxes: dict[str, list[dict[str, Any]]] = {slot_id: [] for slot_id in self._slots}
+        self._inboxes: dict[str, list[dict[str, Any]]] = {player_id: [] for player_id in self._players}
 
     def validate_outgoing(self, sender: str, batch: object) -> list[Message]:
         """Validate one batch an agent or human returned, stamping ``from`` with ``sender``.
 
         Returns the accepted messages in order. Every rejected message is dropped with a stderr
-        diagnostic and never raises. Enforced, in order: the recipient is a known slot other than
+        diagnostic and never raises. Enforced, in order: the recipient is a known player other than
         the sender or ``None`` for broadcast; the text is a ``str`` within the code-point cap; and a
         batch carries at most one message per distinct recipient plus one broadcast.
         """
@@ -68,7 +68,7 @@ class ChatRouter:
             item = cast("Mapping[str, object]", raw_item)
             to = item.get("to")
             # A bool is an int, never a str, so a bool recipient falls through the str check below.
-            if to is not None and (not isinstance(to, str) or to not in self._slots):
+            if to is not None and (not isinstance(to, str) or to not in self._players):
                 _diag(f"chat: {sender} sent to unknown recipient {to!r}; dropping it")
                 continue
             if to == sender:
@@ -93,7 +93,7 @@ class ChatRouter:
     def deliver(self, messages: list[Message], tick: int) -> None:
         """Deliver a tick's accepted messages to pending inboxes, stamping each with ``tick``.
 
-        A targeted message reaches its recipient's inbox; a broadcast reaches every slot except the
+        A targeted message reaches its recipient's inbox; a broadcast reaches every player except the
         sender. Called at the end of the sending tick, after the acting agent's inbox was drained,
         so a message sent on tick T is first seen strictly after T.
         """
@@ -102,18 +102,18 @@ class ChatRouter:
             recipient = message["to"]
             item = {**message, "tick": tick}
             if recipient is None:
-                for slot_id in self._slots:
-                    if slot_id != sender:
-                        self._inboxes[slot_id].append(dict(item))
+                for player_id in self._players:
+                    if player_id != sender:
+                        self._inboxes[player_id].append(dict(item))
             else:
                 self._inboxes[recipient].append(item)
 
-    def drain(self, slot_id: str) -> list[dict[str, Any]]:
-        """Return and clear a slot's pending inbox.
+    def drain(self, player_id: str) -> list[dict[str, Any]]:
+        """Return and clear a player's pending inbox.
 
-        Called on every acting slot's turn, chat-less agents included, so an inbox can never grow
+        Called on every acting player's turn, chat-less agents included, so an inbox can never grow
         without bound behind an agent that will never read it.
         """
-        inbox = self._inboxes[slot_id]
-        self._inboxes[slot_id] = []
+        inbox = self._inboxes[player_id]
+        self._inboxes[player_id] = []
         return inbox

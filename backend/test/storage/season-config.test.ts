@@ -1,7 +1,7 @@
 /**
  * Unit coverage for the `SeasonConfig` zod codec (Stage 6.1): the single validated gate over the
  * `seasons.config` JSON column. It proves the codec round-trips a valid document, rejects the
- * malformed shapes the admin API relies on it to catch (unknown keys, empty slots, zero games, empty
+ * malformed shapes the admin API relies on it to catch (unknown keys, empty seats, zero games, empty
  * seeds, a malformed match design), and stores the inert `messaging`/`llm` override blocks untouched.
  */
 import { describe, expect, it } from 'vitest'
@@ -18,7 +18,7 @@ import {
 function validConfig(overrides: Partial<SeasonConfig> = {}): SeasonConfig {
   return {
     deps_version: 1,
-    matches: [{ slots: ['submission'], seeds: [1, 2, 3], games: 5 }],
+    matches: [{ seats: ['submission'], seeds: [1, 2, 3], games: 5 }],
     ...overrides,
   }
 }
@@ -26,7 +26,7 @@ function validConfig(overrides: Partial<SeasonConfig> = {}): SeasonConfig {
 describe('SeasonConfig codec', () => {
   it('round-trips a valid document through encode/decode', () => {
     const config = validConfig({
-      matches: [{ slots: ['builtin-naive', 'builtin-naive', 'submission'], seeds: [7], games: 2 }],
+      matches: [{ seats: ['builtin-naive', 'builtin-naive', 'submission'], seeds: [7], games: 2 }],
       overrides: { step_timeout_ms: 50, episode_timeout_ms: 30_000 },
     })
     expect(decodeSeasonConfig(encodeSeasonConfig(config))).toEqual(config)
@@ -45,35 +45,35 @@ describe('SeasonConfig codec', () => {
   it('rejects an unknown key inside a match', () => {
     expect(() =>
       parseSeasonConfig(
-        validConfig({ matches: [{ slots: ['submission'], seeds: [1], games: 1, x: 0 } as never] }),
+        validConfig({ matches: [{ seats: ['submission'], seeds: [1], games: 1, x: 0 } as never] }),
       ),
     ).toThrow(SeasonConfigError)
   })
 
-  it('rejects empty match slots', () => {
+  it('rejects empty match seats', () => {
     expect(() =>
-      parseSeasonConfig(validConfig({ matches: [{ slots: [], seeds: [1], games: 1 }] })),
+      parseSeasonConfig(validConfig({ matches: [{ seats: [], seeds: [1], games: 1 }] })),
     ).toThrow(SeasonConfigError)
   })
 
   it('rejects a non-positive game count', () => {
     expect(() =>
       parseSeasonConfig(
-        validConfig({ matches: [{ slots: ['submission'], seeds: [1], games: 0 }] }),
+        validConfig({ matches: [{ seats: ['submission'], seeds: [1], games: 0 }] }),
       ),
     ).toThrow(SeasonConfigError)
   })
 
   it('rejects an empty seed list', () => {
     expect(() =>
-      parseSeasonConfig(validConfig({ matches: [{ slots: ['submission'], seeds: [], games: 1 }] })),
+      parseSeasonConfig(validConfig({ matches: [{ seats: ['submission'], seeds: [], games: 1 }] })),
     ).toThrow(SeasonConfigError)
   })
 
   it('rejects an unknown slot spec', () => {
     expect(() =>
       parseSeasonConfig(
-        validConfig({ matches: [{ slots: ['robot' as never], seeds: [1], games: 1 }] }),
+        validConfig({ matches: [{ seats: ['robot' as never], seeds: [1], games: 1 }] }),
       ),
     ).toThrow(SeasonConfigError)
   })

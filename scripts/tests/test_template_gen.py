@@ -15,6 +15,7 @@ from game_sandbox_harness.environment import (  # noqa: E402
     EnvironmentMeta,
     EnvParameter,
     EnvParameterChoice,
+    PlayerBounds,
 )
 
 
@@ -23,9 +24,8 @@ def _meta() -> EnvironmentMeta:
         env_id="example",
         display_name="Example",
         description="A complete metadata fixture.",
-        min_slots=1,
-        max_slots=2,
-        human_slots=("player_0", "player_1"),
+        layout=PlayerBounds(1, 2),
+        human_players=("player_0", "player_1"),
         human_timeout_ms=50,
         recommended_episode_ticks=10,
         pace_interval_ms=None,
@@ -57,11 +57,11 @@ def test_write_env_package_copies_modules_and_renders_uniform_inits(
 
     assert (dest / "example" / "env.py").read_text(encoding="utf-8") == "VALUE = 1\n"
     rendered = (dest / "__init__.py").read_text(encoding="utf-8")
-    assert (
-        "from sandbox.harness.environment import EnvParameter, EnvParameterChoice, EnvironmentMeta"
-        in rendered
-    )
+    assert "from sandbox.harness.environment import (" in rendered
+    for name in ("EnvParameter", "EnvParameterChoice", "EnvironmentMeta", "PlayerBounds"):
+        assert f"    {name}," in rendered
     assert "META = EnvironmentMeta(" in rendered
+    assert '"layout": PlayerBounds(min=1, max=2),' in rendered
     for field in _meta().to_json():
         assert f'"{field}"' in rendered
     assert '"META",' in rendered

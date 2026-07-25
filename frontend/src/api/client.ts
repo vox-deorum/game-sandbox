@@ -141,15 +141,20 @@ export interface RecordingSummary {
  * One slot's assignment as the start flow builds it: a connected human, the built-in Naive baseline,
  * or a named submitted agent. The discriminated union carries `submissionId` only on a `submission`
  * slot; {@link startSession} maps it to the wire's snake-case `submission_id`. Mirrors the backend
- * `SlotAssignment` (Stage 7.4), so the frontend payload is honest at the trust boundary.
+ * `SeatAssignment`, so the frontend payload is honest at the trust boundary.
  */
-export type SlotAssignmentInput =
-  | { kind: 'human' | 'builtin-agent' }
+export type AgentAssignmentInput =
+  | { kind: 'builtin-agent' }
   | { kind: 'submission'; submissionId: string }
+
+/** One assignable seat, including the companion seam used when a later stage adds wide seats. */
+export type SeatAssignmentInput =
+  | AgentAssignmentInput
+  | { kind: 'human'; companion?: AgentAssignmentInput }
 
 /**
  * The fields a start request resolves; the seat-assignment flow fills them from the environment
- * metadata. The session is an explicit per-slot `slots` assignment keyed by slot id (Stage 7.6): the
+ * metadata. The session is an explicit per-seat assignment keyed by seat id: the
  * backend derives the human-versus-scripted `mode` from it, so no `mode` is sent.
  */
 export interface StartSessionInput {
@@ -157,14 +162,14 @@ export interface StartSessionInput {
   seasonId: string
   parameters: Record<string, ParameterValue>
   seed?: number
-  humanSlotTimeoutMs?: number
-  /** Per-slot assignment keyed by slot id; must cover exactly the environment's required seats. */
-  slots: Record<string, SlotAssignmentInput>
+  humanTimeoutMs?: number
+  /** Per-seat assignment keyed by seat id; must cover exactly the resolved layout's seats. */
+  seats: Record<string, SeatAssignmentInput>
 }
 
 /**
  * A start request minus the environment it targets: what a seat-assignment dialog resolves (the
- * `slots` assignment plus the session overrides), to be spread into {@link startSession} alongside the
+ * `seats` assignment plus the session overrides), to be spread into {@link startSession} alongside the
  * page's `envId`. Keeping the dialog payload and the API input the same shape removes a layer of
  * per-flow wrapper objects.
  */
@@ -268,13 +273,24 @@ export async function getDocsPage(path: string): Promise<DocsPage> {
 }
 
 /**
- * Map one slot assignment onto the wire shape: snake-case `submission_id`, present only for a
- * `submission` slot so the body matches the backend's `START_SESSION_SCHEMA` exactly.
+ * Map one agent binding onto the wire shape: snake-case `submission_id`, present only for a
+ * submission binding.
  */
-function toSlotBody(assignment: SlotAssignmentInput): Record<string, unknown> {
+function toAgentBody(assignment: AgentAssignmentInput): Record<string, unknown> {
   return assignment.kind === 'submission'
     ? { kind: 'submission', submission_id: assignment.submissionId }
     : { kind: assignment.kind }
+}
+
+/** Map one seat assignment onto the backend wire shape. */
+function toSeatBody(assignment: SeatAssignmentInput): Record<string, unknown> {
+  if (assignment.kind !== 'human') {
+    return toAgentBody(assignment)
+  }
+  return {
+    kind: 'human',
+    ...(assignment.companion === undefined ? {} : { companion: toAgentBody(assignment.companion) }),
+  }
 }
 
 /** Start a live session, mapping the backend's typed 403/409 onto a discriminated result. */
@@ -287,9 +303,9 @@ export async function startSession(input: StartSessionInput): Promise<StartSessi
       season_id: input.seasonId,
       parameters: input.parameters,
       seed: input.seed,
-      human_slot_timeout_ms: input.humanSlotTimeoutMs,
-      slots: Object.fromEntries(
-        Object.entries(input.slots).map(([slotId, assignment]) => [slotId, toSlotBody(assignment)]),
+      human_timeout_ms: input.humanTimeoutMs,
+      seats: Object.fromEntries(
+        Object.entries(input.seats).map(([seatId, assignment]) => [seatId, toSeatBody(assignment)]),
       ),
     }),
   })
@@ -807,11 +823,11 @@ export type RunStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancel
 export type GameStatus = 'pending' | 'running' | 'completed' | 'failed' | 'timed_out' | 'cancelled'
 
 /** One seat in a match composition: the built-in scripted baseline, or a participant submission. */
-export type SlotSpec = 'builtin-naive' | 'submission'
+export type SeatSpec = 'builtin-naive' | 'submission'
 
 /** One match configuration: its seat composition, the seeds every game runs, and the game count. */
 export interface MatchConfig {
-  slots: SlotSpec[]
+  seats: SeatSpec[]
   seeds: number[]
   games: number
 }
@@ -953,7 +969,7 @@ export interface RunGameView {
   match_index: number
   game_index: number
   seed: number
-  slots: BoardAgentRef[]
+  seats: BoardAgentRef[]
   status: GameStatus
   recording_id: string | null
   started_at: string | null

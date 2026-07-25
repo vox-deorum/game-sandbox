@@ -13,7 +13,7 @@ from __future__ import annotations
 from typing import Any
 
 from _fixture_common import run_and_copy
-from game_sandbox_harness.session import AgentSlot
+from game_sandbox_harness.session import AgentPlayer
 from game_sandbox_harness.state import PlayerAttribution
 from hearts import ENTRY, rules
 from local_play.card_utils import HEARTS, SPADES
@@ -80,7 +80,7 @@ def main() -> int:
         "player_2": {"kind": "agent", "label": "Naive agent"},
         "player_3": {"kind": "agent", "label": "duck-hearts"},
     }
-    slots = {f"player_{i}": AgentSlot(DuckAgent()) for i in range(rules.NUM_PLAYERS)}
+    slots = {f"player_{i}": AgentPlayer(DuckAgent()) for i in range(rules.NUM_PLAYERS)}
     run_and_copy(
         ENTRY,
         slots,

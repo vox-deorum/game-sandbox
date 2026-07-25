@@ -16,6 +16,7 @@ from game_sandbox_harness.environment import (
     EnvironmentEntry,
     EnvironmentLookupError,
     load_environment,
+    resolve_layout,
     resolve_parameters,
 )
 from game_sandbox_harness.live import UNSET_TIMEOUT, UnsetTimeout
@@ -27,12 +28,9 @@ BUILTIN_AGENT_ROOT = REPO_ROOT / "backend" / "images" / "session-base" / "deps-v
 
 
 def possible_slots(entry: EnvironmentEntry) -> tuple[str, ...]:
-    """Return every possible slot from a fresh environment, not only the human-capable ones."""
-    env = entry.make(resolve_parameters(entry.meta))
-    try:
-        return tuple(env.possible_agents)
-    finally:
-        env.close()
+    """Return the player ids in the complete default layout without constructing an environment."""
+    layout = resolve_layout(entry.meta, resolve_parameters(entry.meta))
+    return tuple(player for seat in layout.seats for player in seat.players)
 
 
 def builtin_agent_path(env_id: str) -> str:
@@ -59,14 +57,14 @@ def local_config(
     human_slot = slots[seat] if mode == "human" else None
     bindings: dict[str, dict[str, str]] = {}
     players: dict[str, dict[str, str]] = {}
-    for slot_id in slots:
-        if slot_id == human_slot:
-            bindings[slot_id] = {"kind": "external"}
-            players[slot_id] = {"kind": "human", "label": "You"}
+    for player_id in slots:
+        if player_id == human_slot:
+            bindings[player_id] = {"kind": "external"}
+            players[player_id] = {"kind": "human", "label": "You"}
             continue
         path = str(agent_repo) if mode == "agent" else builtin_agent_path(entry.meta.env_id)
-        bindings[slot_id] = {"kind": "builtin-agent", "path": path}
-        players[slot_id] = {
+        bindings[player_id] = {"kind": "builtin-agent", "path": path}
+        players[player_id] = {
             "kind": "agent",
             "label": "Selected agent" if mode == "agent" else "Built-in baseline",
         }
@@ -74,7 +72,7 @@ def local_config(
         "env_id": entry.meta.env_id,
         "parameters": resolve_parameters(entry.meta),
         "seed": seed,
-        "slots": bindings,
+        "player_bindings": bindings,
         "players": players,
         "recording_dir": str(recording_dir),
         "recording_id": "local",
@@ -169,7 +167,7 @@ def main(argv: list[str] | None = None) -> int:
     slots = possible_slots(entry)
     if not 0 <= args.seat < len(slots):
         parser.error(f"--seat must name one of 0..{len(slots) - 1}")
-    if mode == "human" and slots[args.seat] not in entry.meta.human_slots:
+    if mode == "human" and slots[args.seat] not in entry.meta.human_players:
         parser.error(f"seat {args.seat} is not human-playable in {entry.meta.env_id!r}")
 
     timeout: int | None | UnsetTimeout

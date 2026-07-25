@@ -33,9 +33,9 @@ async function play(
     stack,
     {
       env_id: 'flappy_bird',
-      slots: { player_0: { kind: 'human' } },
+      seats: { seat_0: { kind: 'human' } },
       seed: SEED,
-      ...(opts.humanTimeoutMs ? { human_slot_timeout_ms: opts.humanTimeoutMs } : {}),
+      ...(opts.humanTimeoutMs ? { human_timeout_ms: opts.humanTimeoutMs } : {}),
     },
     opts.user,
   )
@@ -126,9 +126,9 @@ describe('live session over WebSocket', () => {
       stack,
       {
         env_id: 'flappy_bird',
-        slots: { player_0: { kind: 'human' } },
+        seats: { seat_0: { kind: 'human' } },
         seed: SEED,
-        human_slot_timeout_ms: 100,
+        human_timeout_ms: 100,
       },
       'carol',
     )

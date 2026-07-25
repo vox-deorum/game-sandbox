@@ -86,14 +86,14 @@ def make_env(parameters: Mapping[str, ParameterValue]) -> SpadesEnv:
     return SpadesEnv()
 
 
-def default_action(env: SpadesEnv, slot_id: str) -> int:
+def default_action(env: SpadesEnv, player_id: str) -> int:
     """The legal default for a timed-out seat: a never-nil suggested bid, or the lowest legal card.
 
     Reads the live env and returns the concrete ``Discrete(66)`` action (not a sentinel) — a
     never-nil suggested bid while bidding, the lowest legal card in play. It mirrors
     ``env.step``'s own resolution, so gameplay is unchanged and the recording holds the real action.
     """
-    seat = env.possible_agents.index(slot_id)
+    seat = env.possible_agents.index(player_id)
     return rules.resolve_auto_action(env.state, seat)
 
 

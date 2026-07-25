@@ -13,13 +13,18 @@ from typing import Any
 import pytest
 
 from game_sandbox_harness.clock import ManualClock
-from game_sandbox_harness.environment import EnvironmentEntry, EnvironmentMeta, resolve_parameters
+from game_sandbox_harness.environment import (
+    EnvironmentEntry,
+    EnvironmentMeta,
+    PlayerBounds,
+    resolve_parameters,
+)
 from game_sandbox_harness.recording.local import FolderRecordingStore
 from game_sandbox_harness.session import (
     REASON_EPISODE_LIMIT,
-    AgentSlot,
+    AgentPlayer,
     Episode,
-    ExternalSlot,
+    ExternalPlayer,
     run_episode,
 )
 
@@ -82,9 +87,8 @@ def make_chat_entry(
         env_id="chat-fake",
         display_name="Chat Fake",
         description="A deterministic round-robin fake with messaging.",
-        min_slots=len(seats),
-        max_slots=len(seats),
-        human_slots=seats,
+        layout=PlayerBounds(len(seats), len(seats)),
+        human_players=seats,
         human_timeout_ms=None,
         recommended_episode_ticks=n_ticks,
         pace_interval_ms=None,
@@ -99,7 +103,7 @@ def make_chat_entry(
     return EnvironmentEntry(
         meta=meta,
         make=lambda _parameters: RoundRobinEnv(list(seats), n_ticks, step_log),
-        default_action=lambda env, slot_id: 0,
+        default_action=lambda env, player_id: 0,
         overlay=None,
     )
 
@@ -171,17 +175,17 @@ class QueueSource:
     """A fake external source exposing ``get_action`` (always default) and ``take_messages``.
 
     ``take_messages`` returns each queued batch once, in order, mirroring the live transport's
-    per-slot FIFO drained once per stepped tick.
+    per-player FIFO drained once per stepped tick.
     """
 
     def __init__(self, frames: list[dict] | None = None) -> None:
         self._frames = list(frames or [])
         self._drained = False
 
-    def get_action(self, slot_id: str, observation: Any, deadline_ms: int | None) -> Any:
+    def get_action(self, player_id: str, observation: Any, deadline_ms: int | None) -> Any:
         return None
 
-    def take_messages(self, slot_id: str) -> list[dict]:
+    def take_messages(self, player_id: str) -> list[dict]:
         if self._drained:
             return []
         self._drained = True
@@ -196,7 +200,7 @@ def test_hook_order_is_act_then_chat_then_env_step_then_learn():
     entry = make_chat_entry(seats=("player_0",), n_ticks=2, step_log=log)
     run_episode(
         entry,
-        {"player_0": AgentSlot(HookOrderAgent(log))},
+        {"player_0": AgentPlayer(HookOrderAgent(log))},
         parameters=resolve_parameters(entry.meta),
         seed=1,
         clock=ManualClock(),
@@ -218,7 +222,7 @@ def test_message_is_delivered_next_turn_never_on_the_sending_tick():
     entry = make_chat_entry(seats=("player_0", "player_1"), n_ticks=4)
     run_episode(
         entry,
-        {"player_0": AgentSlot(sender), "player_1": AgentSlot(receiver)},
+        {"player_0": AgentPlayer(sender), "player_1": AgentPlayer(receiver)},
         parameters=resolve_parameters(entry.meta),
         seed=1,
         clock=ManualClock(),
@@ -237,9 +241,9 @@ def test_broadcast_reaches_every_other_seat_but_not_the_sender():
     run_episode(
         entry,
         {
-            "player_0": AgentSlot(sender),
-            "player_1": AgentSlot(b),
-            "player_2": AgentSlot(c),
+            "player_0": AgentPlayer(sender),
+            "player_1": AgentPlayer(b),
+            "player_2": AgentPlayer(c),
         },
         parameters=resolve_parameters(entry.meta),
         seed=1,
@@ -263,7 +267,7 @@ def test_chatless_agent_is_never_called_and_charged_nothing(tmp_path: Path):
     entry = make_chat_entry(seats=("player_0", "player_1"), n_ticks=4)
     run_episode(
         entry,
-        {"player_0": AgentSlot(sender), "player_1": AgentSlot(SilentAgent())},
+        {"player_0": AgentPlayer(sender), "player_1": AgentPlayer(SilentAgent())},
         parameters=resolve_parameters(entry.meta),
         seed=1,
         store=store,
@@ -272,8 +276,8 @@ def test_chatless_agent_is_never_called_and_charged_nothing(tmp_path: Path):
     )
     recording = store.open("r")
     for state in recording.steps():
-        for slot_id, agent in state["agents"].items():
-            if slot_id == "player_1":
+        for player_id, agent in state["agents"].items():
+            if player_id == "player_1":
                 assert "chat_ms" not in agent.get("timing", {})
 
 
@@ -287,7 +291,7 @@ def test_chat_ms_lands_in_recorded_timing(tmp_path: Path):
     entry = make_chat_entry(seats=("player_0", "player_1"), n_ticks=2)
     run_episode(
         entry,
-        {"player_0": AgentSlot(sender), "player_1": AgentSlot(ChattyAgent())},
+        {"player_0": AgentPlayer(sender), "player_1": AgentPlayer(ChattyAgent())},
         parameters=resolve_parameters(entry.meta),
         seed=1,
         store=store,
@@ -306,17 +310,17 @@ def test_chat_that_busts_the_episode_limit_charges_the_seat():
     entry = make_chat_entry(seats=("player_0",), n_ticks=10)
     result = run_episode(
         entry,
-        {"player_0": AgentSlot(slow)},
+        {"player_0": AgentPlayer(slow)},
         parameters=resolve_parameters(entry.meta),
         seed=1,
         clock=clock,
         episode_limit_ms=2000,
     )
     assert result.reason == REASON_EPISODE_LIMIT
-    assert result.failed_slot == "player_0"
+    assert result.failed_player == "player_0"
 
 
-def test_chat_crash_sets_failed_slot():
+def test_chat_crash_sets_failed_player():
     class CrashingChat:
         def reset(self, seed: int) -> None: ...
 
@@ -329,7 +333,7 @@ def test_chat_crash_sets_failed_slot():
     entry = make_chat_entry(seats=("player_0",), n_ticks=3)
     episode = Episode(
         entry,
-        {"player_0": AgentSlot(CrashingChat())},
+        {"player_0": AgentPlayer(CrashingChat())},
         parameters=resolve_parameters(entry.meta),
         seed=1,
         clock=ManualClock(),
@@ -337,7 +341,7 @@ def test_chat_crash_sets_failed_slot():
     episode.start()
     with pytest.raises(RuntimeError, match="boom"):
         episode.step_once()
-    assert episode.failed_slot == "player_0"
+    assert episode.failed_player == "player_0"
 
 
 # --- human queue --------------------------------------------------------------------------------
@@ -349,7 +353,7 @@ def test_action_source_is_not_implicitly_used_as_a_message_source():
 
     run_episode(
         entry,
-        {"player_0": ExternalSlot(source)},
+        {"player_0": ExternalPlayer(source)},
         parameters=resolve_parameters(entry.meta),
         seed=1,
         clock=ManualClock(),
@@ -368,8 +372,8 @@ def test_human_queue_is_drained_once_per_stepped_tick_and_delivered_next(tmp_pat
     run_episode(
         entry,
         {
-            "player_0": AgentSlot(receiver),
-            "player_1": ExternalSlot(source, message_source=source),
+            "player_0": AgentPlayer(receiver),
+            "player_1": ExternalPlayer(source, message_source=source),
         },
         parameters=resolve_parameters(entry.meta),
         seed=1,
@@ -389,7 +393,7 @@ def test_human_queue_is_drained_once_per_stepped_tick_and_delivered_next(tmp_pat
 
 def test_agent_batch_is_ordered_before_the_human_batch_in_one_tick(tmp_path: Path):
     # On player_0's tick, both its own chat and the human queue produce a message. The recorded order
-    # is deterministic: the acting agent's batch first, then external slots in mapping order.
+    # is deterministic: the acting agent's batch first, then external players in mapping order.
     sender = ChattyAgent([[{"to": None, "text": "agent says"}]])
     source = QueueSource([{"to": None, "text": "human says"}])
     store = FolderRecordingStore(tmp_path)
@@ -397,8 +401,8 @@ def test_agent_batch_is_ordered_before_the_human_batch_in_one_tick(tmp_path: Pat
     run_episode(
         entry,
         {
-            "player_0": AgentSlot(sender),
-            "player_1": ExternalSlot(source, message_source=source),
+            "player_0": AgentPlayer(sender),
+            "player_1": ExternalPlayer(source, message_source=source),
         },
         parameters=resolve_parameters(entry.meta),
         seed=1,
@@ -421,7 +425,7 @@ def _run_recording(root: Path, *, messaging_meta: bool, messaging_cfg: bool | No
     sender = ChattyAgent([[{"to": "player_1", "text": "hi"}]])
     run_episode(
         entry,
-        {"player_0": AgentSlot(sender), "player_1": AgentSlot(SilentAgent())},
+        {"player_0": AgentPlayer(sender), "player_1": AgentPlayer(SilentAgent())},
         parameters=resolve_parameters(entry.meta),
         seed=7,
         store=store,
@@ -449,7 +453,7 @@ def test_enabled_but_chatless_is_byte_identical_to_disabled(tmp_path: Path):
     store = FolderRecordingStore(tmp_path / "on")
     run_episode(
         entry,
-        {"player_0": AgentSlot(SilentAgent()), "player_1": AgentSlot(SilentAgent())},
+        {"player_0": AgentPlayer(SilentAgent()), "player_1": AgentPlayer(SilentAgent())},
         parameters=resolve_parameters(entry.meta),
         seed=7,
         store=store,
@@ -492,7 +496,7 @@ def test_documented_chat_contract_runs_against_the_real_harness(tmp_path: Path):
     replier = ChattyAgent([[{"to": "player_0", "text": "hi back"}]])
     run_episode(
         entry,
-        {"player_0": AgentSlot(DocumentedAgent()), "player_1": AgentSlot(replier)},
+        {"player_0": AgentPlayer(DocumentedAgent()), "player_1": AgentPlayer(replier)},
         parameters=resolve_parameters(entry.meta),
         seed=1,
         store=store,

@@ -36,7 +36,7 @@ describe('idle timeout', () => {
   it('kills a never-attached session and removes its container', async () => {
     const { id } = await startSession(stack, {
       env_id: 'flappy_bird',
-      slots: { player_0: { kind: 'human' } },
+      seats: { seat_0: { kind: 'human' } },
     })
 
     const row = await waitForEnded(stack, id, 30_000)

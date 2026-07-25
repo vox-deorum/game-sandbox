@@ -23,14 +23,14 @@ from sandbox.harness.environment import EnvironmentEntry, ParameterValue, resolv
 from sandbox.harness.live import UNSET_TIMEOUT, UnsetTimeout
 from sandbox.harness.local_server import LocalServer
 from sandbox.harness.manifest import load_agent as _load_agent
-from sandbox.harness.session import AgentSlot, ExternalSlot, run_episode
+from sandbox.harness.session import AgentPlayer, ExternalPlayer, run_episode
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WEB_ROOT = Path(__file__).resolve().parent / "web"
 
 
 class _DefaultSource:
-    """An action source that lets ``ExternalSlot`` select the environment's legal default."""
+    """An action source that lets ``ExternalPlayer`` select the environment's legal default."""
 
     def get_action(self, slot_id: str, observation: object, deadline_ms: int | None) -> None:
         return None
@@ -76,7 +76,7 @@ def play_episode(
     which is what ``make_env(resolve_parameters(META))`` produces.
     """
     slots = {
-        slot_id: AgentSlot(agent) if slot_id == slot else ExternalSlot(_DefaultSource())
+        slot_id: AgentPlayer(agent) if slot_id == slot else ExternalPlayer(_DefaultSource())
         for slot_id in possible_slots()
     }
     result = run_episode(
@@ -135,7 +135,7 @@ def local_config(
         "env_id": META.env_id,
         "parameters": resolve_parameters(META),
         "seed": seed,
-        "slots": slots,
+        "player_bindings": slots,
         "players": players,
         "recording_dir": str(recording_dir),
         "recording_id": "local",
@@ -200,7 +200,7 @@ def main(argv: list[str] | None = None) -> int:
     available_slots = possible_slots()
     if args.seat < 0 or args.seat >= len(available_slots):
         parser.error(f"--seat must name one of 0..{len(available_slots) - 1}")
-    if args.mode == "human" and not args.headless and available_slots[args.seat] not in META.human_slots:
+    if args.mode == "human" and not args.headless and available_slots[args.seat] not in META.human_players:
         parser.error(f"seat {args.seat} is not human-playable in {META.env_id!r}")
     if args.headless:
         score = run_headless(seed=args.seed, max_steps=args.steps, seat=args.seat)

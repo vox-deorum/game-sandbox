@@ -5,8 +5,8 @@
  * operator-gated `/api/admin` prefix.
  *
  * The authoritative source of which agents a session involved is the finished recording's header
- * `players` attribution: it names every slot's driver (human, submission, or the built-in Naive
- * baseline), for both submitted and built-in slots. The header entry shape is the recording schema's;
+ * `players` attribution: it names every player's driver (human, submission, or the built-in Naive
+ * baseline), for both submitted and built-in players. The header entry shape is the recording schema's;
  * this module
  * is the one place it is translated into the `AgentRef` the rest of the stage stores — an `agent`
  * entry with a `submission_id` becomes a `submission` ref (its owner resolved server-side from the
@@ -143,9 +143,10 @@ function fail(status: number, code: string, error: string): { ok: false; failure
 
 /**
  * The rateable agents a session involved. The recording header's `players` map is authoritative; when
- * it cannot be read, fall back to the session's submitted-slot links. Submitted-agent owners are
+ * it cannot be read, fall back to the session's submitted-seat links. Submitted-agent owners are
  * always resolved server-side from
- * the submission row, never trusted from the header. Human slots are skipped — humans are not rateable.
+ * the submission row, never trusted from the header. Human players are skipped because humans are not
+ * rateable.
  */
 async function resolveRateableAgents(deps: RatingDeps, session: Session): Promise<RateableAgent[]> {
   const header =
@@ -163,12 +164,12 @@ async function resolveRateableAgents(deps: RatingDeps, session: Session): Promis
         candidates.push({ kind: 'submission', id: entry.submission_id })
         continue
       }
-      // An agent slot with no submission is the built-in Naive baseline, keyed on the absence of a
-      // submission id — never on the "Naive agent" display label, which is presentation-only.
+      // An agent player with no submission is the built-in Naive baseline, keyed on the absence of a
+      // submission id, never on the "Naive agent" display label, which is presentation-only.
       candidates.push({ kind: 'builtin-naive' })
     }
   } else {
-    // No readable header: recover submitted agents from the slot links.
+    // No readable header: recover submitted agents from the seat links.
     const links = await deps.storage.listSessionSubmissions(session.id)
     for (const link of links) {
       candidates.push({ kind: 'submission', id: link.submission_id })
@@ -198,7 +199,7 @@ async function resolveRateableAgents(deps: RatingDeps, session: Session): Promis
     }
   }
 
-  // De-duplicate by wire key so the same agent across two slots is one rateable entry.
+  // De-duplicate by wire key so the same agent across two players is one rateable entry.
   const seen = new Set<string>()
   const agents: RateableAgent[] = []
   for (const ref of refs) {

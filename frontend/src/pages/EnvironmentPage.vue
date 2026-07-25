@@ -15,6 +15,7 @@
   session instead of dead-ending.
 -->
 <script setup lang="ts">
+import { resolveLayout } from '@game-sandbox/schema/environment'
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 
@@ -42,8 +43,8 @@ import UiButton from '../components/ui/UiButton.vue'
 import UiDialog from '../components/ui/UiDialog.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import { useEnvironmentMeta } from '../composables/useEnvironmentMeta.js'
-import { formatDate, formatSeasonName, slotLabel } from '../lib/format.js'
-import { describeParameters, resolvedSeatCount } from '../lib/parameters.js'
+import { formatDate, formatSeasonName, seatLabel } from '../lib/format.js'
+import { describeParameters } from '../lib/parameters.js'
 import { handleSessionStartResult } from '../lib/session-start.js'
 import { canParticipate, isAdmin, useMe } from '../me.js'
 import { thumbnailFor } from '../renderers/registry.js'
@@ -166,14 +167,14 @@ onMounted(() => {
 // human-play entry point only.
 const playFormOpen = ref(false)
 const canStartHumanPlay = computed(
-  () => canParticipate(me.me) && Boolean(meta.value?.human_slots.length && playOpen.value),
+  () => canParticipate(me.me) && Boolean(meta.value?.human_players.length && playOpen.value),
 )
 // The season-banner button also renders for an anonymous visitor, as the entry point into signing in:
 // open() routes them to /login instead of opening the start dialog.
 const showHumanPlay = computed(
   () =>
     (canParticipate(me.me) || me.me?.user == null) &&
-    Boolean(meta.value?.human_slots.length && playOpen.value),
+    Boolean(meta.value?.human_players.length && playOpen.value),
 )
 // A multi-seat environment (Hearts) plays through the seat-assignment grid: the human claims a seat
 // and agents fill the rest. A single-slot environment (Flappy Bird) keeps the minimal start form.
@@ -181,7 +182,7 @@ const multiSeat = computed(
   () =>
     meta.value !== null &&
     playParameters.value !== null &&
-    resolvedSeatCount(meta.value.parameters, playParameters.value.values, meta.value.max_slots) > 1,
+    resolveLayout(meta.value, playParameters.value.values).seatCount > 1,
 )
 
 /** Remove a consumed play deep-link without discarding unrelated query parameters. */
@@ -239,9 +240,9 @@ watch(
   { immediate: true },
 )
 
-/** The single-slot start form fills only the lone human seat; the backend derives the human mode. */
-function startSingleSeat(input: Omit<StartPayload, 'slots'>): void {
-  void submitStart({ slots: { player_0: { kind: 'human' } }, ...input })
+/** The single-seat start form fills only the lone human seat; the backend derives the human mode. */
+function startSingleSeat(input: Omit<StartPayload, 'seats'>): void {
+  void submitStart({ seats: { seat_0: { kind: 'human' } }, ...input })
 }
 
 // The season's settings, as the quiet summary line under its description. An environment whose
@@ -275,7 +276,7 @@ async function submitStart(payload: StartPayload): Promise<void> {
       <div class="env-headline">
         <div class="env-title-row">
           <h1>{{ meta.display_name }}</h1>
-          <UiBadge>{{ slotLabel(meta) }}</UiBadge>
+          <UiBadge>{{ seatLabel(meta) }}</UiBadge>
           <UiBadge v-if="paceLabel !== null">{{ paceLabel }}</UiBadge>
         </div>
         <p class="env-description">{{ meta.description }}</p>

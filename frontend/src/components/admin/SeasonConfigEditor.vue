@@ -1,17 +1,17 @@
 <!--
   The match-design config editor of the operator console (Stage 6.7). It edits the season's whole
-  SeasonConfig: the match design (each match's slot composition of builtin-naive / submission seats,
+  SeasonConfig: the match design (each match's seat composition of builtin-naive / submission seats,
   its seeds, and its game count), the deps_version (defaulted to the current release at declaration),
   and the override blocks. The per-step / per-episode timeout, messaging, and LLM fields all map to
   the backend's strict season codec. Official and development LLM limits remain separate because
   they apply to different accounting scopes.
 
   Two guards, mirroring the step-3 contract:
-  - A match with zero slots is never saved (the editor refuses it before the request).
+  - A match with zero seats is never saved (the editor refuses it before the request).
   - A config edit once runs exist, or a deps_version change once submissions exist, is destructive. The
     first save attempt goes without `force`; the backend refuses it with a typed conflict, and the
     editor opens a confirmation dialog spelling out exactly what will be deleted before re-sending with
-    `force`. Without that confirmation the edit does not happen. The environment slot-count errors come
+    `force`. Without that confirmation the edit does not happen. The environment seat-count errors come
     back as `invalid_config` and render inline.
 -->
 <script setup lang="ts">
@@ -27,7 +27,7 @@ import {
   type SeasonOverrides,
   type SeasonView,
   type MatchConfig,
-  type SlotSpec,
+  type SeatSpec,
 } from '../../api/client.js'
 import { formatParameterValue, initializeParameters, validateParameters } from '../../lib/parameters.js'
 import UiCheckboxGroup from '../ui/UiCheckboxGroup.vue'
@@ -51,12 +51,12 @@ const emit = defineEmits<{
   (e: 'dirty-change', dirty: boolean): void
 }>()
 
-const SLOT_SPECS: SlotSpec[] = ['submission', 'builtin-naive']
+const SEAT_SPECS: SeatSpec[] = ['submission', 'builtin-naive']
 const LLM_MODEL_ALIASES: readonly LlmModelAlias[] = MODEL_ALIASES
 
 /** One match's editable form state; seeds are free text parsed to ints on save. */
 interface MatchDraft {
-  slots: SlotSpec[]
+  seats: SeatSpec[]
   seedsText: string
   games: number
 }
@@ -106,7 +106,7 @@ function seedFromSeason(): void {
   const config = props.season.config
   depsVersion.value = config.deps_version
   matches.value = config.matches.map((match) => ({
-    slots: [...match.slots],
+    seats: [...match.seats],
     seedsText: match.seeds.join(', '),
     games: match.games,
   }))
@@ -158,7 +158,10 @@ watch(
 )
 
 function parameterHint(parameter: EnvParameter): string {
-  const seatsHint = parameter.name === 'seats' ? " Every match's slot count must equal this value." : ''
+  const seatsHint =
+    parameter.name === 'players' || parameter.name === 'seat_plan'
+      ? " Every match's seat count must match the resolved layout."
+      : ''
   if (parameter.type === 'int' || parameter.type === 'float') {
     return `${parameter.description} ${parameter.min}–${parameter.max}.${seatsHint}`
   }
@@ -170,19 +173,19 @@ function updateParameter(name: string, value: unknown): void {
 }
 
 function addMatch(): void {
-  matches.value.push({ slots: ['submission'], seedsText: '0', games: 1 })
+  matches.value.push({ seats: ['submission'], seedsText: '0', games: 1 })
 }
 
 function removeMatch(index: number): void {
   matches.value.splice(index, 1)
 }
 
-function addSlot(match: MatchDraft): void {
-  match.slots.push('submission')
+function addSeat(match: MatchDraft): void {
+  match.seats.push('submission')
 }
 
-function removeSlot(match: MatchDraft, slotIndex: number): void {
-  match.slots.splice(slotIndex, 1)
+function removeSeat(match: MatchDraft, seatIndex: number): void {
+  match.seats.splice(seatIndex, 1)
 }
 
 /** Parse a free-text seed list ("0, 1 2") into a de-duplicated list of integers. */
@@ -243,8 +246,8 @@ function buildConfig(): { config: SeasonConfig } | { error: string } {
   const built: MatchConfig[] = []
   for (let i = 0; i < matches.value.length; i++) {
     const match = matches.value[i]!
-    if (match.slots.length === 0) {
-      return { error: `Match ${i + 1} has no slots. Every match must assign at least one slot.` }
+    if (match.seats.length === 0) {
+      return { error: `Match ${i + 1} has no seats. Every match must assign at least one seat.` }
     }
     const seeds = parseSeeds(match.seedsText)
     if (seeds.length === 0) {
@@ -253,7 +256,7 @@ function buildConfig(): { config: SeasonConfig } | { error: string } {
     if (!Number.isInteger(match.games) || match.games < 1) {
       return { error: `Match ${i + 1} needs a game count of at least 1.` }
     }
-    built.push({ slots: [...match.slots], seeds, games: match.games })
+    built.push({ seats: [...match.seats], seeds, games: match.games })
   }
   if (!Number.isInteger(depsVersion.value) || depsVersion.value < 1) {
     return { error: 'The dependency-set version must be a positive integer.' }
@@ -322,7 +325,7 @@ function buildConfig(): { config: SeasonConfig } | { error: string } {
 function canonicalConfig(config: SeasonConfig): string {
   return JSON.stringify({
     deps_version: config.deps_version,
-    matches: config.matches.map((m) => ({ slots: m.slots, seeds: m.seeds, games: m.games })),
+    matches: config.matches.map((m) => ({ seats: m.seats, seeds: m.seeds, games: m.games })),
     overrides: canonicalOverrides(config.overrides),
   })
 }
@@ -492,20 +495,20 @@ watch(confirmOpen, (open) => {
           </UiButton>
         </div>
 
-        <div class="slots">
-          <span class="slots-label">Slots</span>
+        <div class="seats">
+          <span class="seats-label">Seats</span>
           <div
-            v-for="(slot, slotIndex) in match.slots"
-            :key="slotIndex"
-            class="slot"
-            data-testid="slot"
+            v-for="(seat, seatIndex) in match.seats"
+            :key="seatIndex"
+            class="seat"
+            data-testid="seat"
           >
-            <select v-model="match.slots[slotIndex]" class="slot-select" aria-label="Slot seat">
-              <option v-for="spec in SLOT_SPECS" :key="spec" :value="spec">{{ spec }}</option>
+            <select v-model="match.seats[seatIndex]" class="seat-select" aria-label="Seat">
+              <option v-for="spec in SEAT_SPECS" :key="spec" :value="spec">{{ spec }}</option>
             </select>
-            <UiButton variant="ghost" size="tight" @click="removeSlot(match, slotIndex)">×</UiButton>
+            <UiButton variant="ghost" size="tight" @click="removeSeat(match, seatIndex)">×</UiButton>
           </div>
-          <UiButton variant="secondary" size="tight" @click="addSlot(match)">Add slot</UiButton>
+          <UiButton variant="secondary" size="tight" @click="addSeat(match)">Add seat</UiButton>
         </div>
 
         <div class="match-fields">
@@ -533,7 +536,7 @@ watch(confirmOpen, (open) => {
           <UiInput :id="id" v-model.number="stepTimeout" type="number" min="1" placeholder="default" />
         </template>
       </UiField>
-      <UiField label="Per-slot timeout (ms)">
+      <UiField label="Per-player timeout (ms)">
         <template #default="{ id }">
           <UiInput
             :id="id"
@@ -653,8 +656,8 @@ watch(confirmOpen, (open) => {
         </fieldset>-->
 
         <fieldset class="limit-group">
-          <legend>Per-slot limits</legend>
-          <UiField label="Per-slot token budget">
+          <legend>Per-player limits</legend>
+          <UiField label="Per-player token budget">
             <template #default="{ id }">
               <UiInput
                 :id="id"
@@ -665,7 +668,7 @@ watch(confirmOpen, (open) => {
               />
             </template>
           </UiField>
-          <UiField label="Per-slot rate limit (RPM)">
+          <UiField label="Per-player rate limit (RPM)">
             <template #default="{ id }">
               <UiInput
                 :id="id"
@@ -857,7 +860,7 @@ watch(confirmOpen, (open) => {
   font-weight: 600;
 }
 
-.slots {
+.seats {
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -865,18 +868,18 @@ watch(confirmOpen, (open) => {
   margin-bottom: var(--space-3);
 }
 
-.slots-label {
+.seats-label {
   font-size: var(--text-sm);
   color: var(--color-text-muted);
 }
 
-.slot {
+.seat {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
 }
 
-.slot-select {
+.seat-select {
   font: inherit;
   padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-sm);

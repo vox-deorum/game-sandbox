@@ -2,7 +2,7 @@
 
 These are the container-side halves of the Stage 3 transport: the inbound command pump and
 its shared control state, the :class:`PausableClock` that freezes time on pause, the
-:class:`TransportSource` that feeds an external slot from latched inputs, the protocol output
+:class:`TransportSource` that feeds an external player from latched inputs, the protocol output
 stream, and the tee that mirrors recording bytes onto that stream. The runner that wires them
 together lives in :mod:`game_sandbox_harness.live`; everything here is independently testable
 on a :class:`~game_sandbox_harness.clock.ManualClock`.
@@ -13,7 +13,7 @@ top-level ``kind``; this stage emits one, ``result``). Inbound command envelopes
 ``kind`` and, where applicable, a ``slot`` and ``action`` or ``text``: ``input``, ``pause``,
 ``resume``, ``stop``, and ``chat`` (a human message, ``slot`` + ``to`` + ``text``). Unknown
 kinds and malformed lines are logged and ignored, so the container never dies because a
-client sent garbage. Human ``chat`` frames enter a bounded per-slot FIFO queue, not the input
+client sent garbage. Human ``chat`` frames enter a bounded per-player FIFO queue, not the input
 latch: inputs coalesce to the latest value, but messages must not swallow each other.
 """
 
@@ -279,8 +279,8 @@ class TransportSource:
     With a pace interval set, the cadence is the world clock and the deadline handed down is the
     cadence instant, so the source returns the latched input (or ``None``) immediately and the
     loop's pacing does the waiting. With no pace interval the slot is turn-based: the source
-    blocks in short slices until an input arrives, the human-slot deadline passes, or a stop is
-    requested. Either way a ``None`` return routes through ``ExternalSlot``'s existing default —
+    blocks in short slices until an input arrives, the human-player deadline passes, or a stop is
+    requested. Either way a ``None`` return routes through ``ExternalPlayer``'s existing default —
     noop for Flappy Bird — with no agent-timeout accounting.
     """
 
@@ -299,31 +299,31 @@ class TransportSource:
         self._sleeper = sleeper or RealSleeper()
         self._slice_ms = slice_ms
 
-    def get_action(self, slot_id: str, observation: Any, deadline_ms: int | None) -> Any:
+    def get_action(self, player_id: str, observation: Any, deadline_ms: int | None) -> Any:
         if self._paced:
-            return self._control.take(slot_id)
+            return self._control.take(player_id)
         while True:
             if self._control.stopping:
                 return None
             if self._control.paused:
                 self._sleeper.sleep_ms(self._slice_ms)
                 continue
-            value = self._control.take(slot_id)
+            value = self._control.take(player_id)
             if value is not None:
                 return value
             if deadline_ms is not None and self._clock.now_ms() >= deadline_ms:
                 return None
             self._sleeper.sleep_ms(self._slice_ms)
 
-    def take_messages(self, slot_id: str) -> list[dict[str, Any]]:
-        """Return the human ``chat`` frames queued for ``slot_id`` since the last drain.
+    def take_messages(self, player_id: str) -> list[dict[str, Any]]:
+        """Return the human ``chat`` frames queued for ``player_id`` since the last drain.
 
         Detected by presence on the source, like the action-source protocol: the session loop finds
         this method with ``getattr`` and drains it once per stepped tick, so it never needs to know
         about :class:`SessionControl`. Non-transport sources (noop, scripted) have no such method and
-        are skipped, so a message can only originate from a real external slot.
+        are skipped, so a message can only originate from a real external player.
         """
-        return self._control.take_chat(slot_id)
+        return self._control.take_chat(player_id)
 
 
 class ProtocolStream:
@@ -381,7 +381,7 @@ def result_envelope(result: EpisodeResult) -> dict[str, Any]:
         "reason": result.reason,
         "step_timeouts": result.step_timeouts,
         "recording_id": result.recording_id,
-        "failed_slot": result.failed_slot,
+        "failed_player": result.failed_player,
     }
 
 

@@ -52,11 +52,15 @@ export function formatSlot(slot: string): string {
     .join(' ')
 }
 
-/** "1 slot", "2 slots", or "1–4 slots" from an environment's slot range. */
-export function slotLabel(meta: EnvironmentMeta): string {
-  return meta.min_slots === meta.max_slots
-    ? `${meta.min_slots} ${meta.min_slots === 1 ? 'slot' : 'slots'}`
-    : `${meta.min_slots}–${meta.max_slots} slots`
+/** "1 seat", "2 seats", or a range from the layouts an environment can resolve. */
+export function seatLabel(meta: EnvironmentMeta): string {
+  const counts =
+    meta.layout.kind === 'player_bounds'
+      ? [meta.layout.min, meta.layout.max]
+      : meta.layout.plans.map((plan) => plan.seats.length)
+  const min = Math.min(...counts)
+  const max = Math.max(...counts)
+  return min === max ? `${min} ${min === 1 ? 'seat' : 'seats'}` : `${min}–${max} seats`
 }
 
 /** A leaderboard mean score, to two decimals (the normalized higher-is-better number). */

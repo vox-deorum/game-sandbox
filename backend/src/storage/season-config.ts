@@ -6,7 +6,7 @@
  * field. Storing it as one JSON column keeps the schema flat and lets the shape grow without a
  * migration per field; this codec is what keeps the column from ever holding unvalidated text. It is
  * defined once here so the admin API and the scheduler share one definition (and one set of rejection
- * reasons). The codec validates structure only — slot counts against an environment's metadata are
+ * reasons). The codec validates structure only. Seat counts against an environment's metadata are
  * the admin API's job in step 3, not this gate.
  *
  * `deps_version` lives inside the document (not its own column) so a run's frozen `config_snapshot`
@@ -20,16 +20,16 @@ import { z } from 'zod'
 import { MAX_LLM_COST_WEIGHT, MODEL_ALIASES } from '../llm/types.js'
 
 /** One seat in a match composition: the built-in scripted baseline, or a participant submission. */
-export const SLOT_SPECS = ['builtin-naive', 'submission'] as const
-export type SlotSpec = (typeof SLOT_SPECS)[number]
+export const SEAT_SPECS = ['builtin-naive', 'submission'] as const
+export type SeatSpec = (typeof SEAT_SPECS)[number]
 
 /**
  * One match configuration: an ordered list of seat specs, the seeds every game in the configuration
  * runs (passed to both env and agents), and the per-configuration game count the scheduler expands.
- * At least one slot and at least one seed are required; `games` is a positive integer.
+ * At least one seat and at least one seed are required; `games` is a positive integer.
  */
 export const MatchConfigSchema = z.strictObject({
-  slots: z.array(z.enum(SLOT_SPECS)).min(1),
+  seats: z.array(z.enum(SEAT_SPECS)).min(1),
   seeds: z.array(z.int()).min(1),
   games: z.int().positive(),
 })

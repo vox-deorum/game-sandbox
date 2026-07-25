@@ -2,7 +2,7 @@
  * Wire-shape helpers for seasons and runs.
  *
  * The storage rows carry their nested documents as JSON text (`seasons.config`, a run's
- * `config_snapshot`/`submission_snapshot`, a scheduled game's `slots`). The admin and public routes
+ * `config_snapshot`/`submission_snapshot`, a scheduled game's `seats`). The admin and public routes
  * return them decoded where configuration is part of the response, so a client reads structured
  * config rather than re-parsing strings. The separate public season-index helper deliberately omits
  * configuration and rating prompts.
@@ -18,22 +18,22 @@ import { decodeSeasonConfig, type SeasonConfig } from './storage/season-config.j
 /** No names resolved: the enrichment no-op the builders default to when a caller passes none. */
 const NO_NAMES: ReadonlyMap<string, string> = new Map()
 
-// A run's roster and each game's slots are JSON columns the routes decode twice: once to collect owner
+// A run's roster and each game's seats are JSON columns the routes decode twice: once to collect owner
 // ids for the batched name lookup, then again to build the view. Memoize the parse per row object (the
 // same instances flow through both passes) so the decode — the single place `AgentRef` JSON is read —
 // happens once. Entries are dropped when the row is unreferenced, so this holds no rows alive.
-const slotsCache = new WeakMap<SeasonRunGame, AgentRef[]>()
+const seatsCache = new WeakMap<SeasonRunGame, AgentRef[]>()
 const snapshotCache = new WeakMap<SeasonRun, AgentRef[]>()
 
-/** Decode a scheduled game's `slots` JSON once per row object. */
-function decodeSlots(game: SeasonRunGame): AgentRef[] {
-  const cached = slotsCache.get(game)
+/** Decode a scheduled game's `seats` JSON once per row object. */
+function decodeSeats(game: SeasonRunGame): AgentRef[] {
+  const cached = seatsCache.get(game)
   if (cached !== undefined) {
     return cached
   }
-  const slots = JSON.parse(game.slots) as AgentRef[]
-  slotsCache.set(game, slots)
-  return slots
+  const seats = JSON.parse(game.seats) as AgentRef[]
+  seatsCache.set(game, seats)
+  return seats
 }
 
 /** Decode a run's frozen `submission_snapshot` JSON once per row object. */
@@ -91,15 +91,15 @@ export function publicSeasonView(season: PublicSeason): PublicSeasonView {
   }
 }
 
-/** A scheduled game with its `slots` JSON decoded into resolved {@link BoardAgentRef}s. */
-export type RunGameView = Omit<SeasonRunGame, 'slots'> & { slots: BoardAgentRef[] }
+/** A scheduled game with its `seats` JSON decoded into resolved {@link BoardAgentRef}s. */
+export type RunGameView = Omit<SeasonRunGame, 'seats'> & { seats: BoardAgentRef[] }
 
-/** Decode a scheduled game's `slots` JSON for the wire, attaching owner display names when resolved. */
+/** Decode a scheduled game's `seats` JSON for the wire, attaching owner display names when resolved. */
 export function runGameView(
   game: SeasonRunGame,
   names: ReadonlyMap<string, string> = NO_NAMES,
 ): RunGameView {
-  return { ...game, slots: decodeSlots(game).map((slot) => enrichAgentRef(slot, names)) }
+  return { ...game, seats: decodeSeats(game).map((seat) => enrichAgentRef(seat, names)) }
 }
 
 /** A run with its frozen snapshots decoded and its scheduled games attached, for the admin status view. */
@@ -165,9 +165,9 @@ export function agentOwnerIds(refs: readonly AgentRef[]): string[] {
   return refs.flatMap((ref) => (ref.kind === 'submission' ? [ref.user_id] : []))
 }
 
-/** Every submission owner id seated in a list of scheduled games (their `slots` are JSON-encoded). */
+/** Every submission owner id seated in a list of scheduled games (their `seats` are JSON-encoded). */
 export function gameOwnerIds(games: readonly SeasonRunGame[]): string[] {
-  return games.flatMap((game) => agentOwnerIds(decodeSlots(game)))
+  return games.flatMap((game) => agentOwnerIds(decodeSeats(game)))
 }
 
 /**

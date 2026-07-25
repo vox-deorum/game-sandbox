@@ -13,7 +13,7 @@ metadata tests pin it from the start.
 
 from __future__ import annotations
 
-from game_sandbox_harness.environment import EnvironmentEntry, EnvironmentMeta
+from game_sandbox_harness.environment import EnvironmentEntry, EnvironmentMeta, PlayerBounds
 
 from .env import default_action, make_env
 from .overlay import extract_overlay
@@ -28,9 +28,8 @@ META = EnvironmentMeta(
         "Four-player partnership Spades: bid the tricks you will take, then follow suit and play "
         "them out with spades trump. Your agent play in teams."
     ),
-    min_slots=4,
-    max_slots=4,
-    human_slots=("player_0", "player_1", "player_2", "player_3"),
+    layout=PlayerBounds(min=4, max=4),
+    human_players=("player_0", "player_1", "player_2", "player_3"),
     # Turn-based, so there is no pace interval; the move clock is the human deadline.
     human_timeout_ms=60_000,
     # Four bids plus fifty-two plays.

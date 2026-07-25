@@ -10,7 +10,7 @@ function input(overrides: Partial<NewSessionInput> = {}): NewSessionInput {
     id: 'sess-1',
     user_id: 'alice',
     env_id: 'flappy_bird',
-    parameters: { seats: 1 },
+    parameters: { players: 1 },
     mode: 'human',
     recording_id: 'flappy_bird-sess-1',
     created_at: '2026-06-11T00:00:00.000Z',
@@ -133,9 +133,9 @@ describe('storage on :memory:', () => {
       {
         add: async (seasonId) => {
           await createRunOrFail(storage, seasonId, 'operator', () => ({
-            parametersSnapshot: { seats: 1 },
+            parametersSnapshot: { players: 1 },
             scheduledGames: [
-              { match_index: 0, game_index: 0, seed: 1, slots: [{ kind: 'builtin-naive' }] },
+              { match_index: 0, game_index: 0, seed: 1, seats: [{ kind: 'builtin-naive' }] },
             ],
             llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
           }))

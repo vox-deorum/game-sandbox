@@ -27,16 +27,16 @@ const DISABLED_POLICY: ResolvedLlm = {
 const CASES = [
   {
     envId: 'flappy_bird',
-    slots: { player_0: { kind: 'builtin-agent' as const } },
+    seats: { seat_0: { kind: 'builtin-agent' as const } },
     messaging: { enabled: false, cap: null },
   },
   {
     envId: 'spades',
-    slots: {
-      player_0: { kind: 'builtin-agent' as const },
-      player_1: { kind: 'builtin-agent' as const },
-      player_2: { kind: 'builtin-agent' as const },
-      player_3: { kind: 'builtin-agent' as const },
+    seats: {
+      seat_0: { kind: 'builtin-agent' as const },
+      seat_1: { kind: 'builtin-agent' as const },
+      seat_2: { kind: 'builtin-agent' as const },
+      seat_3: { kind: 'builtin-agent' as const },
     },
     messaging: { enabled: true, cap: 120 },
   },
@@ -97,20 +97,23 @@ describe('disabled LLM session regression', () => {
     CASES,
   )('keeps $envId on the ordinary sandbox and harness launch contract when access is disabled', async ({
     envId,
-    slots,
+    seats,
     messaging,
   }) => {
     const started = await orchestrator.start({
       userId: 'alice',
       envId,
       seasonId: seasons.get(envId) ?? 'missing',
-      parameters: envId === 'spades' ? { seats: 4 } : { seats: 1, pipe_gap: 100 },
+      parameters: envId === 'spades' ? { players: 4 } : { players: 1, pipe_gap: 100 },
       seed: 7,
-      slots,
+      seats,
     })
     const launch = driver.lastLaunch()
     if (launch === undefined) throw new Error('expected a session launch')
     const config = JSON.parse(launch.spec.argv[0] ?? '{}') as Record<string, unknown>
+    const playerBindings = Object.fromEntries(
+      Object.values(seats).map((assignment, index) => [`player_${index}`, assignment]),
+    )
 
     expect(issuedGrants).toBe(0)
     expect(launch.spec.sandbox.network).toBe('none')
@@ -121,7 +124,7 @@ describe('disabled LLM session regression', () => {
     expect(config).toMatchObject({
       env_id: envId,
       seed: 7,
-      slots,
+      player_bindings: playerBindings,
       recording_dir: '/recordings',
       recording_id: `${envId}-${started.id}`,
       messaging_enabled: messaging.enabled,

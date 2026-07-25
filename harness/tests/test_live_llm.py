@@ -10,13 +10,18 @@ from typing import Any
 import pytest
 
 from game_sandbox_harness.clock import ManualClock
-from game_sandbox_harness.environment import EnvironmentEntry, EnvironmentMeta, resolve_parameters
+from game_sandbox_harness.environment import (
+    EnvironmentEntry,
+    EnvironmentMeta,
+    PlayerBounds,
+    resolve_parameters,
+)
 from game_sandbox_harness.live import (
     LiveConfig,
     LiveConfigError,
     LlmConfig,
-    SlotBinding,
-    build_slots,
+    PlayerBinding,
+    build_players,
     parse_config,
 )
 from game_sandbox_harness.live_io import PausableClock, SessionControl
@@ -53,20 +58,20 @@ class _AlternatingEnv:
     def reset(self, seed: int | None = None, options: Any = None) -> None:
         self.agents = list(self.possible_agents)
         self.agent_selection = "player_0"
-        self.rewards = {slot_id: 0.0 for slot_id in self.possible_agents}
-        self.terminations = {slot_id: False for slot_id in self.possible_agents}
-        self.truncations = {slot_id: False for slot_id in self.possible_agents}
+        self.rewards = {player_id: 0.0 for player_id in self.possible_agents}
+        self.terminations = {player_id: False for player_id in self.possible_agents}
+        self.truncations = {player_id: False for player_id in self.possible_agents}
         self._index = 0
 
     def last(self) -> tuple[int, float, bool, bool, dict[str, Any]]:
-        slot_id = self.agent_selection
-        return self._index, self.rewards[slot_id], False, False, {}
+        player_id = self.agent_selection
+        return self._index, self.rewards[player_id], False, False, {}
 
     def step(self, action: Any) -> None:
         self._index += 1
         if self._index == self._turns:
-            for slot_id in self.possible_agents:
-                self.terminations[slot_id] = True
+            for player_id in self.possible_agents:
+                self.terminations[player_id] = True
             self.agents = []
             return
         self.agent_selection = self.possible_agents[self._index % 2]
@@ -84,9 +89,8 @@ def _entry(
             env_id="fake",
             display_name="Fake",
             description="A deterministic LLM fixture.",
-            min_slots=2,
-            max_slots=2,
-            human_slots=(),
+            layout=PlayerBounds(2, 2),
+            human_players=(),
             human_timeout_ms=None,
             recommended_episode_ticks=turns,
             pace_interval_ms=None,
@@ -98,15 +102,15 @@ def _entry(
             renderer="fake",
         ),
         make=lambda _parameters: _AlternatingEnv(turns),
-        default_action=lambda env, slot_id: 0,
+        default_action=lambda env, player_id: 0,
     )
 
 
 def _payload(llm: object = None) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "env_id": "fake",
-        "parameters": {"seats": 1},
-        "slots": {
+        "parameters": {"players": 1},
+        "player_bindings": {
             "player_0": {"kind": "builtin-agent", "path": "/agents/0"},
             "player_1": {"kind": "builtin-agent", "path": "/agents/1"},
             "human": {"kind": "external"},
@@ -149,7 +153,7 @@ def test_parse_config_matches_backend_llm_launch_fixture_exactly():
     )
     fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
     payload = _payload()
-    payload["slots"] = {
+    payload["player_bindings"] = {
         "player_0": {"kind": "builtin-agent", "path": "/agents/0"},
         "human": {"kind": "external"},
     }
@@ -245,13 +249,13 @@ def test_credentials_and_markers_cover_load_reset_and_every_acting_hook(monkeypa
         return _Response()
 
     class Agent:
-        def __init__(self, slot_id: str) -> None:
-            self.slot_id = slot_id
+        def __init__(self, player_id: str) -> None:
+            self.player_id = player_id
             self.client_key = os.environ.get("OPENAI_API_KEY")
             events.append(
                 (
                     "construct",
-                    slot_id,
+                    player_id,
                     os.environ.get("OPENAI_BASE_URL"),
                     self.client_key,
                 )
@@ -261,7 +265,7 @@ def test_credentials_and_markers_cover_load_reset_and_every_acting_hook(monkeypa
             events.append(
                 (
                     "hook",
-                    self.slot_id,
+                    self.player_id,
                     name,
                     os.environ.get("OPENAI_BASE_URL"),
                     os.environ.get("OPENAI_API_KEY"),
@@ -284,23 +288,23 @@ def test_credentials_and_markers_cover_load_reset_and_every_acting_hook(monkeypa
             self._hook("learn")
 
     def load_agent(path: str) -> Agent:
-        slot_id = "player_0" if path.endswith("0") else "player_1"
+        player_id = "player_0" if path.endswith("0") else "player_1"
         events.append(
             (
                 "load",
-                slot_id,
+                player_id,
                 os.environ.get("OPENAI_BASE_URL"),
                 os.environ.get("OPENAI_API_KEY"),
             )
         )
-        return Agent(slot_id)
+        return Agent(player_id)
 
     monkeypatch.setattr(live.urllib.request, "urlopen", urlopen)
     monkeypatch.setattr(live, "load_agent", load_agent)
     monkeypatch.setenv("OPENAI_BASE_URL", "before-base")
     monkeypatch.setenv("OPENAI_API_KEY", "before-key")
     config = parse_config([json.dumps(_payload(_llm_block()))])
-    slots = build_slots(
+    players = build_players(
         config,
         _entry(),
         SessionControl(),
@@ -308,7 +312,7 @@ def test_credentials_and_markers_cover_load_reset_and_every_acting_hook(monkeypa
         _Sleeper(),
     )
     with Episode(
-        _entry(), slots, parameters=resolve_parameters(_entry().meta), seed=9, clock=ManualClock()
+        _entry(), players, parameters=resolve_parameters(_entry().meta), seed=9, clock=ManualClock()
     ) as episode:
         while not episode.done:
             episode.step_once()
@@ -339,8 +343,8 @@ def test_credentials_and_markers_cover_load_reset_and_every_acting_hook(monkeypa
 
     participant_events = [event for event in events if event[0] in {"load", "construct", "hook"}]
     for event in participant_events:
-        slot_id = event[1]
-        expected_key = "key-0" if slot_id == "player_0" else "key-1"
+        player_id = event[1]
+        expected_key = "key-0" if player_id == "player_0" else "key-1"
         assert event[2 if event[0] != "hook" else 3] == "http://proxy.example/v1"
         assert event[3 if event[0] != "hook" else 4] == expected_key
         if event[0] == "hook":
@@ -351,8 +355,8 @@ def test_credentials_and_markers_cover_load_reset_and_every_acting_hook(monkeypa
     boundaries: list[tuple[Any, ...]] = []
     for event in events:
         if event[0] == "marker":
-            slot_id = "player_0" if event[2] == "Bearer key-0" else "player_1"
-            boundaries.append(("marker", slot_id, event[3]))
+            player_id = "player_0" if event[2] == "Bearer key-0" else "player_1"
+            boundaries.append(("marker", player_id, event[3]))
         elif event[0] in {"load", "construct"}:
             boundaries.append((event[0], event[1]))
         elif event[0] == "hook":
@@ -371,13 +375,13 @@ def test_credentials_and_markers_cover_load_reset_and_every_acting_hook(monkeypa
         ("hook", "player_1", "reset"),
     ]
     for tick in range(4):
-        slot_id = f"player_{tick % 2}"
+        player_id = f"player_{tick % 2}"
         expected_boundaries.extend(
             [
-                ("marker", slot_id, {"tick": tick}),
-                ("hook", slot_id, "act"),
-                ("hook", slot_id, "chat"),
-                ("hook", slot_id, "learn"),
+                ("marker", player_id, {"tick": tick}),
+                ("hook", player_id, "act"),
+                ("hook", player_id, "chat"),
+                ("hook", player_id, "learn"),
             ]
         )
     assert boundaries == expected_boundaries
@@ -406,8 +410,8 @@ def test_model_wait_in_act_is_discounted_from_step_and_episode_limits(monkeypatc
     proxy_ms = {"player_0": 0, "player_1": 0}
 
     class WaitingAgent:
-        def __init__(self, slot_id: str) -> None:
-            self._slot_id = slot_id
+        def __init__(self, player_id: str) -> None:
+            self._player_id = player_id
 
         def reset(self, seed: int) -> None:
             pass
@@ -416,13 +420,13 @@ def test_model_wait_in_act_is_discounted_from_step_and_episode_limits(monkeypatc
             # This deterministic advance represents the blocking model/proxy request, including any
             # backend retry waits, that remains inside the participant's act hook.
             clock.advance(800)
-            proxy_ms[self._slot_id] += 700
+            proxy_ms[self._player_id] += 700
             return 0
 
     def urlopen(request: Any, *, timeout: float) -> _Response:
         if request.full_url.endswith("/inflight"):
-            slot_id = "player_0" if request.headers["Authorization"] == "Bearer key-0" else "player_1"
-            return _Response(json.dumps({"inflight_ms": proxy_ms[slot_id]}).encode())
+            player_id = "player_0" if request.headers["Authorization"] == "Bearer key-0" else "player_1"
+            return _Response(json.dumps({"inflight_ms": proxy_ms[player_id]}).encode())
         return _Response()
 
     monkeypatch.setattr(live.urllib.request, "urlopen", urlopen)
@@ -432,16 +436,16 @@ def test_model_wait_in_act_is_discounted_from_step_and_episode_limits(monkeypatc
         lambda path: WaitingAgent("player_0" if path.endswith("0") else "player_1"),
     )
     payload = _payload(_llm_block())
-    del payload["slots"]["human"]
+    del payload["player_bindings"]["human"]
     del payload["players"]["human"]
     config = parse_config([json.dumps(payload)])
     entry = _entry(turns=10, messaging=False, step_limit_ms=500, episode_limit_ms=1200)
-    slots = build_slots(config, entry, SessionControl(), PausableClock(clock), _Sleeper())
+    players = build_players(config, entry, SessionControl(), PausableClock(clock), _Sleeper())
     store = FolderRecordingStore(tmp_path)
 
     result = run_episode(
         entry,
-        slots,
+        players,
         parameters=resolve_parameters(entry.meta),
         seed=1,
         store=store,
@@ -464,7 +468,7 @@ def test_model_wait_in_act_is_discounted_from_step_and_episode_limits(monkeypatc
     ]
     assert result.step_timeouts == {"player_0": 0, "player_1": 0}
     assert result.reason == "terminated"
-    assert result.failed_slot is None
+    assert result.failed_player is None
     assert result.ticks == 10
 
 
@@ -489,11 +493,11 @@ def test_marker_failure_logs_and_does_not_stop_agent_lifecycle(monkeypatch, caps
     config = LiveConfig(
         env_id="fake",
         seed=1,
-        slots={"player_0": SlotBinding("builtin-agent", "/agents/0")},
+        player_bindings={"player_0": PlayerBinding("builtin-agent", "/agents/0")},
         human_timeout_ms=None,
         recording_dir="/recordings",
         recording_id=None,
-        parameters={"seats": 1},
+        parameters={"players": 1},
         llm=LlmConfig(
             "http://proxy/v1",
             "http://marker/tick",
@@ -505,7 +509,7 @@ def test_marker_failure_logs_and_does_not_stop_agent_lifecycle(monkeypatch, caps
 
     # This fixture environment still names two possible seats, but only the selected seat is needed
     # for the single completed turn under test.
-    slots = build_slots(
+    players = build_players(
         config,
         one_seat_entry,
         SessionControl(),
@@ -513,13 +517,17 @@ def test_marker_failure_logs_and_does_not_stop_agent_lifecycle(monkeypatch, caps
         _Sleeper(),
     )
     with Episode(
-        one_seat_entry, slots, parameters=resolve_parameters(one_seat_entry.meta), seed=1, clock=ManualClock()
+        one_seat_entry,
+        players,
+        parameters=resolve_parameters(one_seat_entry.meta),
+        seed=1,
+        clock=ManualClock(),
     ) as episode:
         episode.step_once()
 
     assert calls == ["reset", "act"]
     diagnostic = capsys.readouterr().err
-    assert "LLM marker failed for slot 'player_0': proxy down" in diagnostic
+    assert "LLM marker failed for player 'player_0': proxy down" in diagnostic
     assert "key-0" not in diagnostic
 
 
@@ -564,10 +572,10 @@ def test_proxy_snapshots_reuse_each_post_hook_baseline_and_exclude_setup(monkeyp
             "keys": {"player_0": "key-0"},
         }
     )
-    payload["slots"] = {"player_0": {"kind": "builtin-agent", "path": "/agents/0"}}
+    payload["player_bindings"] = {"player_0": {"kind": "builtin-agent", "path": "/agents/0"}}
     payload["players"] = {"player_0": {"kind": "agent", "label": "Player 0"}}
     entry = _entry(turns=1, messaging=True)
-    slots = build_slots(
+    players = build_players(
         parse_config([json.dumps(payload)]),
         entry,
         SessionControl(),
@@ -578,7 +586,7 @@ def test_proxy_snapshots_reuse_each_post_hook_baseline_and_exclude_setup(monkeyp
 
     run_episode(
         entry,
-        slots,
+        players,
         parameters=resolve_parameters(entry.meta),
         seed=1,
         store=store,
@@ -630,10 +638,10 @@ def test_failed_post_hook_snapshot_is_not_reused(monkeypatch, tmp_path: Path, ca
             "keys": {"player_0": "key-0"},
         }
     )
-    payload["slots"] = {"player_0": {"kind": "builtin-agent", "path": "/agents/0"}}
+    payload["player_bindings"] = {"player_0": {"kind": "builtin-agent", "path": "/agents/0"}}
     payload["players"] = {"player_0": {"kind": "agent", "label": "Player 0"}}
     entry = _entry(turns=1, messaging=True)
-    slots = build_slots(
+    players = build_players(
         parse_config([json.dumps(payload)]),
         entry,
         SessionControl(),
@@ -644,7 +652,7 @@ def test_failed_post_hook_snapshot_is_not_reused(monkeypatch, tmp_path: Path, ca
 
     run_episode(
         entry,
-        slots,
+        players,
         parameters=resolve_parameters(entry.meta),
         seed=1,
         store=store,
@@ -655,7 +663,7 @@ def test_failed_post_hook_snapshot_is_not_reused(monkeypatch, tmp_path: Path, ca
 
     timing = next(store.open("failed-snapshot").steps())["agents"]["player_0"]["timing"]
     assert timing == {"decision_ms": 20, "chat_ms": 50, "learn_ms": 10}
-    assert "LLM in-flight snapshot failed for slot 'player_0'" in capsys.readouterr().err
+    assert "LLM in-flight snapshot failed for player 'player_0'" in capsys.readouterr().err
 
 
 def test_proxy_discount_cannot_erase_overlapping_agent_cpu(monkeypatch, tmp_path: Path):
@@ -689,10 +697,10 @@ def test_proxy_discount_cannot_erase_overlapping_agent_cpu(monkeypatch, tmp_path
             "keys": {"player_0": "key-0"},
         }
     )
-    payload["slots"] = {"player_0": {"kind": "builtin-agent", "path": "/agents/0"}}
+    payload["player_bindings"] = {"player_0": {"kind": "builtin-agent", "path": "/agents/0"}}
     payload["players"] = {"player_0": {"kind": "agent", "label": "Player 0"}}
     entry = _entry(turns=1, messaging=False, step_limit_ms=50)
-    slots = build_slots(
+    players = build_players(
         parse_config([json.dumps(payload)]),
         entry,
         SessionControl(),
@@ -703,7 +711,7 @@ def test_proxy_discount_cannot_erase_overlapping_agent_cpu(monkeypatch, tmp_path
 
     result = run_episode(
         entry,
-        slots,
+        players,
         parameters=resolve_parameters(entry.meta),
         seed=1,
         store=store,
@@ -745,10 +753,10 @@ def test_bad_proxy_snapshot_fails_closed_to_full_hook_time(monkeypatch, tmp_path
             "keys": {"player_0": "key-0"},
         }
     )
-    payload["slots"] = {"player_0": {"kind": "builtin-agent", "path": "/agents/0"}}
+    payload["player_bindings"] = {"player_0": {"kind": "builtin-agent", "path": "/agents/0"}}
     payload["players"] = {"player_0": {"kind": "agent", "label": "Player 0"}}
     entry = _entry(turns=1, messaging=False, step_limit_ms=500)
-    slots = build_slots(
+    players = build_players(
         parse_config([json.dumps(payload)]),
         entry,
         SessionControl(),
@@ -759,7 +767,7 @@ def test_bad_proxy_snapshot_fails_closed_to_full_hook_time(monkeypatch, tmp_path
 
     result = run_episode(
         entry,
-        slots,
+        players,
         parameters=resolve_parameters(entry.meta),
         seed=1,
         store=store,
@@ -770,10 +778,10 @@ def test_bad_proxy_snapshot_fails_closed_to_full_hook_time(monkeypatch, tmp_path
     timing = next(store.open("bad-snapshot").steps())["agents"]["player_0"]["timing"]
     assert timing["decision_ms"] == 600
     assert result.step_timeouts == {"player_0": 1}
-    assert "LLM in-flight snapshot failed for slot 'player_0'" in capsys.readouterr().err
+    assert "LLM in-flight snapshot failed for player 'player_0'" in capsys.readouterr().err
 
 
-def test_non_llm_slots_do_not_touch_credentials_or_marker_transport(monkeypatch):
+def test_non_llm_players_do_not_touch_credentials_or_marker_transport(monkeypatch):
     import game_sandbox_harness.live as live
 
     seen: list[tuple[str | None, str | None]] = []
@@ -796,14 +804,14 @@ def test_non_llm_slots_do_not_touch_credentials_or_marker_transport(monkeypatch)
     config = LiveConfig(
         env_id="fake",
         seed=1,
-        slots={"player_0": SlotBinding("builtin-agent", "/agents/0")},
+        player_bindings={"player_0": PlayerBinding("builtin-agent", "/agents/0")},
         human_timeout_ms=None,
         recording_dir="/recordings",
         recording_id=None,
-        parameters={"seats": 1},
+        parameters={"players": 1},
     )
     entry = _entry(turns=1, messaging=False)
-    slots = build_slots(
+    players = build_players(
         config,
         entry,
         SessionControl(),
@@ -811,7 +819,7 @@ def test_non_llm_slots_do_not_touch_credentials_or_marker_transport(monkeypatch)
         _Sleeper(),
     )
     with Episode(
-        entry, slots, parameters=resolve_parameters(entry.meta), seed=1, clock=ManualClock()
+        entry, players, parameters=resolve_parameters(entry.meta), seed=1, clock=ManualClock()
     ) as episode:
         episode.step_once()
 

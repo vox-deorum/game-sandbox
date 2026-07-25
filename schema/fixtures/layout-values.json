@@ -1,0 +1,322 @@
+{
+  "invalid": [
+    {
+      "layout": {
+        "kind": "seat_plans",
+        "plans": [
+          {
+            "key": "x",
+            "seats": [
+              [
+                0
+              ]
+            ],
+            "title": "X"
+          },
+          {
+            "key": "x",
+            "seats": [
+              [
+                0
+              ]
+            ],
+            "title": "Again"
+          }
+        ]
+      },
+      "name": "duplicate plan key"
+    },
+    {
+      "layout": {
+        "kind": "seat_plans",
+        "plans": []
+      },
+      "name": "empty plans"
+    },
+    {
+      "layout": {
+        "kind": "seat_plans",
+        "plans": [
+          {
+            "key": "x",
+            "seats": [],
+            "title": "X"
+          }
+        ]
+      },
+      "name": "plan with no seats"
+    },
+    {
+      "layout": {
+        "kind": "seat_plans",
+        "plans": [
+          {
+            "key": "x",
+            "seats": [
+              []
+            ],
+            "title": "X"
+          }
+        ]
+      },
+      "name": "empty seat"
+    },
+    {
+      "layout": {
+        "kind": "seat_plans",
+        "plans": [
+          {
+            "key": "x",
+            "seats": [
+              [
+                0,
+                0
+              ]
+            ],
+            "title": "X"
+          }
+        ]
+      },
+      "name": "duplicate index"
+    },
+    {
+      "layout": {
+        "kind": "seat_plans",
+        "plans": [
+          {
+            "key": "x",
+            "seats": [
+              [
+                -1
+              ]
+            ],
+            "title": "X"
+          }
+        ]
+      },
+      "name": "negative index"
+    },
+    {
+      "layout": {
+        "kind": "seat_plans",
+        "plans": [
+          {
+            "key": "Not Snake",
+            "seats": [
+              [
+                0
+              ]
+            ],
+            "title": "X"
+          }
+        ]
+      },
+      "name": "invalid plan key"
+    },
+    {
+      "layout": {
+        "kind": "seat_plans",
+        "plans": [
+          {
+            "key": "x",
+            "seats": [
+              [
+                0
+              ]
+            ],
+            "title": ""
+          }
+        ]
+      },
+      "name": "empty plan title"
+    },
+    {
+      "layout": {
+        "kind": "seat_plans",
+        "plans": [
+          {
+            "key": "x",
+            "seats": [
+              [
+                0,
+                2
+              ]
+            ],
+            "title": "X"
+          }
+        ]
+      },
+      "name": "gap"
+    },
+    {
+      "layout": {
+        "kind": "seat_plans",
+        "plans": [
+          {
+            "key": "x",
+            "seats": [
+              [
+                1
+              ]
+            ],
+            "title": "X"
+          }
+        ]
+      },
+      "name": "nonzero start"
+    },
+    {
+      "layout": {
+        "kind": "unknown"
+      },
+      "name": "unknown kind"
+    },
+    {
+      "layout": {
+        "max": 2,
+        "min": 1
+      },
+      "name": "missing kind"
+    },
+    {
+      "layout": {
+        "kind": "player_bounds",
+        "max": 2,
+        "min": 1,
+        "plans": []
+      },
+      "name": "foreign player bounds field"
+    },
+    {
+      "layout": {
+        "kind": "seat_plans",
+        "max": 1,
+        "min": 1,
+        "plans": [
+          {
+            "key": "x",
+            "seats": [
+              [
+                0
+              ]
+            ],
+            "title": "X"
+          }
+        ]
+      },
+      "name": "foreign seat plans field"
+    }
+  ],
+  "valid": [
+    {
+      "layout": {
+        "plan_key": "solo",
+        "player_count": 3,
+        "seat_count": 3,
+        "seats": [
+          {
+            "players": [
+              "player_0"
+            ],
+            "seat_id": "seat_0"
+          },
+          {
+            "players": [
+              "player_1"
+            ],
+            "seat_id": "seat_1"
+          },
+          {
+            "players": [
+              "player_2"
+            ],
+            "seat_id": "seat_2"
+          }
+        ]
+      },
+      "meta": {
+        "human_players": [
+          "player_0"
+        ],
+        "layout": {
+          "kind": "player_bounds",
+          "max": 4,
+          "min": 1
+        }
+      },
+      "name": "player bounds solo",
+      "parameters": {
+        "players": 3
+      }
+    },
+    {
+      "layout": {
+        "plan_key": "duo",
+        "player_count": 4,
+        "seat_count": 2,
+        "seats": [
+          {
+            "players": [
+              "player_0"
+            ],
+            "seat_id": "seat_0"
+          },
+          {
+            "players": [
+              "player_1",
+              "player_2",
+              "player_3"
+            ],
+            "seat_id": "seat_1"
+          }
+        ]
+      },
+      "meta": {
+        "human_players": [
+          "player_0"
+        ],
+        "layout": {
+          "kind": "seat_plans",
+          "plans": [
+            {
+              "key": "duo",
+              "seats": [
+                [
+                  0
+                ],
+                [
+                  1,
+                  2,
+                  3
+                ]
+              ],
+              "title": "Duo"
+            },
+            {
+              "key": "solo",
+              "seats": [
+                [
+                  0
+                ],
+                [
+                  1
+                ],
+                [
+                  2
+                ],
+                [
+                  3
+                ]
+              ],
+              "title": "Solo"
+            }
+          ]
+        }
+      },
+      "name": "uneven seat plan",
+      "parameters": {
+        "seat_plan": "duo"
+      }
+    }
+  ]
+}

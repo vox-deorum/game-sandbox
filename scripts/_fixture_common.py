@@ -14,7 +14,7 @@ from pathlib import Path
 
 from game_sandbox_harness.environment import EnvironmentEntry, resolve_parameters
 from game_sandbox_harness.recording.local import FolderRecordingStore
-from game_sandbox_harness.session import AgentSlot, run_episode
+from game_sandbox_harness.session import AgentPlayer, run_episode
 from game_sandbox_harness.state import PlayerAttribution
 
 #: The frontend fixtures directory the generators write into (repo-root relative).
@@ -23,7 +23,7 @@ FIXTURES_DIR = Path(__file__).resolve().parents[1] / "frontend" / "test" / "fixt
 
 def run_and_copy(
     entry: EnvironmentEntry,
-    slots: dict[str, AgentSlot],
+    slots: dict[str, AgentPlayer],
     *,
     seed: int,
     recording_id: str,
@@ -44,7 +44,7 @@ def run_and_copy(
             parameters=resolve_parameters(entry.meta),
             store=store,
             recording_id=recording_id,
-            players=players,
+            player_attribution=players,
         )
         dest = FIXTURES_DIR / dest_name
         shutil.copyfile(Path(tmp) / recording_id / "recording.jsonl", dest)

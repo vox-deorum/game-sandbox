@@ -4,25 +4,28 @@
     "display_name": "Flappy Bird",
     "env_id": "flappy_bird",
     "episode_limit_ms": 120000,
-    "human_slots": [
+    "human_players": [
       "player_0"
     ],
     "human_timeout_ms": null,
+    "layout": {
+      "kind": "player_bounds",
+      "max": 1,
+      "min": 1
+    },
     "live_interval_ms": null,
     "llm": false,
-    "max_slots": 1,
     "message_cap": null,
     "messaging": false,
-    "min_slots": 1,
     "pace_interval_ms": 50,
     "parameters": [
       {
         "default": 1,
-        "description": "Number of seats in each game.",
+        "description": "Number of PettingZoo players in each game.",
         "max": 1,
         "min": 1,
-        "name": "seats",
-        "title": "Seats",
+        "name": "players",
+        "title": "Players",
         "type": "int"
       },
       {
@@ -46,28 +49,31 @@
     "display_name": "Hearts",
     "env_id": "hearts",
     "episode_limit_ms": 120000,
-    "human_slots": [
+    "human_players": [
       "player_0",
       "player_1",
       "player_2",
       "player_3"
     ],
     "human_timeout_ms": 60000,
+    "layout": {
+      "kind": "player_bounds",
+      "max": 4,
+      "min": 4
+    },
     "live_interval_ms": 900,
     "llm": true,
-    "max_slots": 4,
     "message_cap": null,
     "messaging": false,
-    "min_slots": 4,
     "pace_interval_ms": null,
     "parameters": [
       {
         "default": 4,
-        "description": "Number of seats in each game.",
+        "description": "Number of PettingZoo players in each game.",
         "max": 4,
         "min": 4,
-        "name": "seats",
-        "title": "Seats",
+        "name": "players",
+        "title": "Players",
         "type": "int"
       }
     ],
@@ -82,28 +88,31 @@
     "display_name": "Spades",
     "env_id": "spades",
     "episode_limit_ms": 120000,
-    "human_slots": [
+    "human_players": [
       "player_0",
       "player_1",
       "player_2",
       "player_3"
     ],
     "human_timeout_ms": 60000,
+    "layout": {
+      "kind": "player_bounds",
+      "max": 4,
+      "min": 4
+    },
     "live_interval_ms": 900,
     "llm": true,
-    "max_slots": 4,
     "message_cap": 120,
     "messaging": true,
-    "min_slots": 4,
     "pace_interval_ms": null,
     "parameters": [
       {
         "default": 4,
-        "description": "Number of seats in each game.",
+        "description": "Number of PettingZoo players in each game.",
         "max": 4,
         "min": 4,
-        "name": "seats",
-        "title": "Seats",
+        "name": "players",
+        "title": "Players",
         "type": "int"
       }
     ],

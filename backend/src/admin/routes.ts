@@ -19,6 +19,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createGzip } from 'node:zlib'
+import { resolveLayout } from '@game-sandbox/schema/environment'
 import { RATING_PROMPT_MAX, SEASON_DESCRIPTION_MAX } from '@game-sandbox/schema/seasons'
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import tar from 'tar-fs'
@@ -27,7 +28,7 @@ import { z } from 'zod'
 import { enrichAgentRef, type UserDirectory } from '../auth/users.js'
 import type { LlmOptions } from '../config.js'
 import { DEPS_VERSION } from '../deps-version.js'
-import { resolvedSeatCount, resolveSeasonParameters } from '../environment-parameters.js'
+import { resolveSeasonParameters } from '../environment-parameters.js'
 import type { EnvironmentRegistry } from '../environments.js'
 import type { RequestIdentity } from '../identity.js'
 import { officialPolicy, resolveLlm, unavailableLlmAliases } from '../llm/config.js'
@@ -439,15 +440,15 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
                 reason: `overrides.parameters.${resolved.issue.name}: ${resolved.issue.message}`,
               })
             }
-            const slotIssue = validateSlotCounts(
+            const seatIssue = validateSeatCounts(
               parsed.data.matches,
-              resolvedSeatCount(resolved.values),
+              resolveLayout(meta, resolved.values).seatCount,
             )
-            if (slotIssue !== null) {
+            if (seatIssue !== null) {
               return reply.code(400).send({
                 error: 'invalid season config',
                 code: 'invalid_config',
-                reason: slotIssue,
+                reason: seatIssue,
               })
             }
           }
@@ -854,15 +855,15 @@ async function attachLogStream(
   closeable.on('close', () => unsubscribe())
 }
 
-/** Validate each match's total slot count against the environment metadata; the first issue or null. */
-function validateSlotCounts(
-  matches: ReadonlyArray<{ slots: readonly string[] }>,
+/** Validate each match's seat count against the resolved environment layout. */
+function validateSeatCounts(
+  matches: ReadonlyArray<{ seats: readonly string[] }>,
   resolvedSeats: number,
 ): string | null {
   for (let i = 0; i < matches.length; i++) {
-    const count = matches[i]?.slots.length ?? 0
+    const count = matches[i]?.seats.length ?? 0
     if (count !== resolvedSeats) {
-      return `matches.${i}.slots: ${count} slots must equal the resolved seats value of ${resolvedSeats}`
+      return `matches.${i}.seats: ${count} seats must equal the resolved layout count of ${resolvedSeats}`
     }
   }
   return null

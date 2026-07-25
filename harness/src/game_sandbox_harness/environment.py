@@ -27,6 +27,7 @@ ENTRY_POINT_GROUP = "game_sandbox.environments"
 # environment parameter's public contract.
 _MAX_JSON_SAFE_INTEGER = 2**53 - 1
 _PARAMETER_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
+_RESERVED_PARAMETER_NAMES = frozenset({"players", "seat_plan"})
 
 type ParameterValue = bool | int | float | str | list[str]
 """A JSON-safe environment parameter value."""
@@ -71,8 +72,8 @@ class EnvParameter:
     def __post_init__(self, _allow_reserved: bool) -> None:
         if not _is_parameter_name(self.name):
             raise ValueError("parameter name must be a snake_case identifier")
-        if self.name == "seats" and not _allow_reserved:
-            raise ValueError("'seats' is reserved for the synthesized seat-count parameter")
+        if self.name in _RESERVED_PARAMETER_NAMES and not _allow_reserved:
+            raise ValueError(f"{self.name!r} is reserved for the synthesized layout parameter")
         if not _is_nonempty_string(self.title):
             raise ValueError("parameter title must be a non-empty string")
         if not _is_nonempty_string(self.description):
@@ -200,16 +201,74 @@ def _is_finite_number(value: object) -> TypeGuard[int | float]:
         return False
 
 
-def _seat_count_parameter(min_slots: int, max_slots: int) -> EnvParameter:
-    """Build the reserved declaration derived from environment slot bounds."""
+@dataclass(frozen=True)
+class PlayerBounds:
+    """A player-count range where every player receives one assignable seat."""
+
+    min: int
+    max: int
+
+
+@dataclass(frozen=True)
+class SeatPlan:
+    """One named, complete assignment of PettingZoo players to seats."""
+
+    key: str
+    title: str
+    seats: tuple[tuple[int, ...], ...]
+
+
+@dataclass(frozen=True)
+class SeatPlans:
+    """The ordered layouts an environment may select through ``seat_plan``."""
+
+    plans: tuple[SeatPlan, ...]
+
+
+type EnvironmentLayout = PlayerBounds | SeatPlans
+
+
+@dataclass(frozen=True)
+class ResolvedSeat:
+    """One canonical seat and its ordered PettingZoo player members."""
+
+    seat_id: str
+    players: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ResolvedLayout:
+    """The complete, canonical seat-to-player layout for resolved parameters."""
+
+    plan_key: str
+    seats: tuple[ResolvedSeat, ...]
+    player_count: int
+    seat_count: int
+
+
+def _player_count_parameter(bounds: PlayerBounds) -> EnvParameter:
+    """Build the reserved declaration derived from player bounds."""
     return EnvParameter(
-        name="seats",
-        title="Seats",
-        description="Number of seats in each game.",
+        name="players",
+        title="Players",
+        description="Number of PettingZoo players in each game.",
         type="int",
-        default=max_slots,
-        min=min_slots,
-        max=max_slots,
+        default=bounds.max,
+        min=bounds.min,
+        max=bounds.max,
+        _allow_reserved=True,
+    )
+
+
+def _seat_plan_parameter(layout: SeatPlans) -> EnvParameter:
+    """Build the reserved declaration selecting one declared seat plan."""
+    return EnvParameter(
+        name="seat_plan",
+        title="Seat plan",
+        description="Seat-to-player layout for each game.",
+        type="choice",
+        default=layout.plans[0].key,
+        choices=tuple(EnvParameterChoice(plan.key, plan.title) for plan in layout.plans),
         _allow_reserved=True,
     )
 
@@ -226,9 +285,8 @@ class EnvironmentMeta:
     env_id: str
     display_name: str
     description: str
-    min_slots: int
-    max_slots: int
-    human_slots: tuple[str, ...]
+    layout: EnvironmentLayout
+    human_players: tuple[str, ...]
     human_timeout_ms: int | None
     recommended_episode_ticks: int
     pace_interval_ms: int | None
@@ -254,15 +312,17 @@ class EnvironmentMeta:
     #: env like Flappy Bird keeps) means "render every frame on arrival" — today's behaviour. Distinct
     #: from ``view_interval_ms`` (spectator/replay pace, typically slower) and never affects scoring.
     live_interval_ms: int | None = None
-    #: Explicit gameplay parameters. The public ``seats`` parameter is synthesized from slot bounds.
+    #: Explicit gameplay parameters. The public layout parameter is synthesized from ``layout``.
     parameters: tuple[EnvParameter, ...] = ()
 
     def __post_init__(self) -> None:
+        _validate_layout(self.env_id, self.layout)
         names = [parameter.name for parameter in self.parameters]
         if len(names) != len(set(names)):
             raise ValueError("environment parameter names must be unique")
-        if "seats" in names:
-            raise ValueError("'seats' is synthesized from min_slots and max_slots")
+        collisions = sorted(set(names) & _RESERVED_PARAMETER_NAMES)
+        if collisions:
+            raise ValueError(f"{collisions[0]!r} is synthesized from the environment layout")
 
     def to_json(self) -> dict[str, Any]:
         """Return the snake_case JSON-serialisable dict the backend serves verbatim."""
@@ -270,9 +330,8 @@ class EnvironmentMeta:
             "env_id": self.env_id,
             "display_name": self.display_name,
             "description": self.description,
-            "min_slots": self.min_slots,
-            "max_slots": self.max_slots,
-            "human_slots": list(self.human_slots),
+            "layout": _layout_to_json(self.layout),
+            "human_players": list(self.human_players),
             "human_timeout_ms": self.human_timeout_ms,
             "recommended_episode_ticks": self.recommended_episode_ticks,
             "pace_interval_ms": self.pace_interval_ms,
@@ -296,7 +355,7 @@ class EnvironmentEntry:
     - ``meta`` is the pure data above.
     - ``make`` receives a fully resolved parameter map and returns a fresh AEC env; the seed
       arrives at ``reset``, not here, so a factory can be called once per episode.
-    - ``default_action(env, slot_id)`` returns the concrete legal action, in that env's action
+    - ``default_action(env, player_id)`` returns the concrete legal action, in that env's action
       space, the loop applies on every timeout path. Passing the live env lets a provider read
       current state (Hearts' lowest legal card, Spades' suggested bid) so the recording holds the
       action actually played; Flappy Bird just returns its noop (idle).
@@ -310,9 +369,93 @@ class EnvironmentEntry:
 
 
 def effective_parameters(meta: EnvironmentMeta) -> tuple[EnvParameter, ...]:
-    """Return the environment declarations with synthesized seat count first."""
-    seats = _seat_count_parameter(meta.min_slots, meta.max_slots)
-    return (seats, *meta.parameters)
+    """Return the environment declarations with its synthesized layout parameter first."""
+    if isinstance(meta.layout, PlayerBounds):
+        return (_player_count_parameter(meta.layout), *meta.parameters)
+    return (_seat_plan_parameter(meta.layout), *meta.parameters)
+
+
+def resolve_layout(meta: EnvironmentMeta, parameters: Mapping[str, ParameterValue]) -> ResolvedLayout:
+    """Resolve the canonical seat-to-player layout from a complete validated parameter map.
+
+    This deliberately performs no defaulting. A missing, malformed, or unknown reserved value means an
+    upstream caller broke the complete-parameter contract and must not silently run a different layout.
+    """
+    if isinstance(meta.layout, PlayerBounds):
+        value = parameters.get("players")
+        if not _is_json_safe_integer(value) or not meta.layout.min <= value <= meta.layout.max:
+            raise ValueError("resolved parameters carry no valid players value")
+        seats = tuple(
+            ResolvedSeat(seat_id=f"seat_{index}", players=(f"player_{index}",)) for index in range(value)
+        )
+        return ResolvedLayout("solo", seats, value, value)
+
+    selected = parameters.get("seat_plan")
+    if not isinstance(selected, str):
+        raise ValueError("resolved parameters carry no valid seat_plan value")
+    plan = next((plan for plan in meta.layout.plans if plan.key == selected), None)
+    if plan is None:
+        raise ValueError(f"resolved parameters select unknown seat plan {selected!r}")
+    seats = tuple(
+        ResolvedSeat(
+            seat_id=f"seat_{seat_index}",
+            players=tuple(f"player_{player_index}" for player_index in members),
+        )
+        for seat_index, members in enumerate(plan.seats)
+    )
+    player_count = sum(len(members) for members in plan.seats)
+    return ResolvedLayout(plan.key, seats, player_count, len(seats))
+
+
+def _layout_to_json(layout: EnvironmentLayout) -> dict[str, Any]:
+    if isinstance(layout, PlayerBounds):
+        return {"kind": "player_bounds", "min": layout.min, "max": layout.max}
+    return {
+        "kind": "seat_plans",
+        "plans": [
+            {"key": plan.key, "title": plan.title, "seats": [list(seat) for seat in plan.seats]}
+            for plan in layout.plans
+        ],
+    }
+
+
+def _validate_layout(env_id: str, layout: object) -> None:
+    if isinstance(layout, PlayerBounds):
+        if not _is_json_safe_integer(layout.min) or layout.min <= 0:
+            raise ValueError(f"environment {env_id!r} player bounds min must be a positive integer")
+        if not _is_json_safe_integer(layout.max) or layout.max <= 0:
+            raise ValueError(f"environment {env_id!r} player bounds max must be a positive integer")
+        if layout.min > layout.max:
+            raise ValueError(f"environment {env_id!r} player bounds min must be no greater than max")
+        return
+    if not isinstance(layout, SeatPlans):
+        raise ValueError(f"environment {env_id!r} layout must be PlayerBounds or SeatPlans")
+    if not layout.plans:
+        raise ValueError(f"environment {env_id!r} seat plans must not be empty")
+    keys: set[str] = set()
+    for plan in layout.plans:
+        if not _is_parameter_name(plan.key):
+            raise ValueError(f"environment {env_id!r} plan {plan.key!r} key must be snake_case")
+        if plan.key in keys:
+            raise ValueError(f"environment {env_id!r} plan {plan.key!r} key is duplicated")
+        keys.add(plan.key)
+        if not _is_nonempty_string(plan.title):
+            raise ValueError(f"environment {env_id!r} plan {plan.key!r} title must be non-empty")
+        if not plan.seats:
+            raise ValueError(f"environment {env_id!r} plan {plan.key!r} must contain at least one seat")
+        indices: list[int] = []
+        for seat in plan.seats:
+            if not seat:
+                raise ValueError(f"environment {env_id!r} plan {plan.key!r} has an empty seat")
+            if not all(_is_json_safe_integer(index) and index >= 0 for index in seat):
+                raise ValueError(
+                    f"environment {env_id!r} plan {plan.key!r} player indices must be non-negative integers"
+                )
+            indices.extend(seat)
+        if sorted(indices) != list(range(len(indices))):
+            raise ValueError(
+                f"environment {env_id!r} plan {plan.key!r} must partition players from index 0 without gaps"
+            )
 
 
 def resolve_parameters(

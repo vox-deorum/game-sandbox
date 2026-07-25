@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from game_sandbox_harness.environment import EnvironmentEntry, EnvironmentMeta
+from game_sandbox_harness.environment import EnvironmentEntry, EnvironmentMeta, PlayerBounds
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -29,9 +29,8 @@ def _entry() -> EnvironmentEntry:
             env_id="fixture",
             display_name="Fixture",
             description="fixture",
-            min_slots=2,
-            max_slots=2,
-            human_slots=("player_0", "player_1"),
+            layout=PlayerBounds(2, 2),
+            human_players=("player_0", "player_1"),
             human_timeout_ms=1000,
             recommended_episode_ticks=1,
             pace_interval_ms=None,
@@ -59,7 +58,7 @@ def test_local_config_has_complete_slots_and_players(tmp_path: Path, monkeypatch
         recording_dir=tmp_path,
     )
 
-    assert config["slots"] == {
+    assert config["player_bindings"] == {
         "player_0": {"kind": "builtin-agent", "path": str(play.BUILTIN_AGENT_ROOT / "fixture")},
         "player_1": {"kind": "external"},
     }
@@ -142,7 +141,7 @@ def test_agent_repo_without_a_mode_selects_agent_mode(monkeypatch, tmp_path: Pat
     monkeypatch.setattr(play, "launch_browser", launch)
 
     assert play.main(["fixture", "--agent-repo", str(tmp_path / "agent"), "--no-browser"]) == 0
-    assert captured["slots"] == {
+    assert captured["player_bindings"] == {
         "player_0": {"kind": "builtin-agent", "path": str(tmp_path / "agent")},
         "player_1": {"kind": "builtin-agent", "path": str(tmp_path / "agent")},
     }

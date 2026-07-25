@@ -59,7 +59,7 @@
     },
     "players": {
       "type": "object",
-      "description": "Per-slot attribution: who or what drove each slot this episode, keyed by slot id (the PettingZoo agent id, as in a step state's agents map). Optional and additive; older recordings omit it and readers must tolerate its absence.",
+      "description": "Per-player attribution: who or what drove each PettingZoo player this episode, keyed by player id (as in a step state's agents map). Optional and additive; older recordings omit it and readers must tolerate its absence.",
       "additionalProperties": {
         "type": "object",
         "required": ["kind", "label"],
@@ -67,7 +67,7 @@
         "properties": {
           "kind": {
             "enum": ["human", "agent"],
-            "description": "Whether a connected human or an agent drove this slot."
+            "description": "Whether a connected human or an agent drove this player."
           },
           "label": {
             "type": "string",
@@ -76,11 +76,11 @@
           },
           "user": {
             "type": "string",
-            "description": "The GitHub username this slot is attributed to: the human player, or the submission owner for a submitted agent. Absent for the built-in Naive agent."
+            "description": "The GitHub username this player is attributed to: the human player, or the submission owner for a submitted agent. Absent for the built-in Naive agent."
           },
           "submission_id": {
             "type": "string",
-            "description": "The submission whose code ran this slot, when it was a submitted agent. Absent for human and built-in slots."
+            "description": "The submission whose code ran this player, when it was a submitted agent. Absent for human and built-in players."
           }
         }
       }

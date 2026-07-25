@@ -65,12 +65,14 @@ describe('workflow run end to end (Docker)', () => {
   let recordingsDir: string
   let recordings: RecordingsStore
   let runner: WorkflowRunner
+  let runnerLogs: string[]
   const trees: string[] = []
 
   beforeEach(async () => {
     storage = await openSqliteStorage(':memory:')
     recordingsDir = mkdtempSync(join(tmpdir(), 'gs-wf-rec-'))
     recordings = new RecordingsStore(resolve(recordingsDir))
+    runnerLogs = []
     const driver = await createDockerDriver({
       imageTagPrefix: 'game-sandbox',
       imagePolicy: 'reuse',
@@ -90,6 +92,7 @@ describe('workflow run end to end (Docker)', () => {
       sandbox: { cpus: 1, memoryMb: 512, scratchMb: 256 },
       recordingsDir: resolve(recordingsDir),
       imagePolicy: 'reuse',
+      log: (message) => runnerLogs.push(message),
     })
   })
 
@@ -110,23 +113,23 @@ describe('workflow run end to end (Docker)', () => {
     const submissionRef = submissions[0] as AgentRef
     const schedule = [
       // Two submission games (one per seed), then the always-scheduled Naive baseline on each seed.
-      { match_index: 0, game_index: 0, seed: seeds[0] as number, slots: [submissionRef] },
-      { match_index: 0, game_index: 1, seed: seeds[1] as number, slots: [submissionRef] },
+      { match_index: 0, game_index: 0, seed: seeds[0] as number, seats: [submissionRef] },
+      { match_index: 0, game_index: 1, seed: seeds[1] as number, seats: [submissionRef] },
       {
         match_index: 0,
         game_index: 2,
         seed: seeds[0] as number,
-        slots: [{ kind: 'builtin-naive' } as AgentRef],
+        seats: [{ kind: 'builtin-naive' } as AgentRef],
       },
       {
         match_index: 0,
         game_index: 3,
         seed: seeds[1] as number,
-        slots: [{ kind: 'builtin-naive' } as AgentRef],
+        seats: [{ kind: 'builtin-naive' } as AgentRef],
       },
     ]
     const run = await createRunOrFail(storage, seasonId, 'dev-user', () => ({
-      parametersSnapshot: { seats: 1 },
+      parametersSnapshot: { players: 1, pipe_gap: 100 },
       scheduledGames: schedule,
       llmPolicy: disabledLlmPolicy(),
     }))
@@ -154,7 +157,7 @@ describe('workflow run end to end (Docker)', () => {
     })
     await storage.updateSeasonConfig(season.id, {
       deps_version: DEPS_VERSION,
-      matches: [{ slots: ['submission'], seeds, games: 2 }],
+      matches: [{ seats: ['submission'], seeds, games: 2 }],
     })
     const submission = await storage.createSubmission({
       season_id: season.id,
@@ -175,7 +178,7 @@ describe('workflow run end to end (Docker)', () => {
     }
 
     const first = await runOnce(season.id, [submissionRef], seeds)
-    expect(first.status).toBe('completed')
+    expect(first.status, runnerLogs.join('\n')).toBe('completed')
 
     const games = await storage.listRunGames(first.run.id)
     expect(games).toHaveLength(4)

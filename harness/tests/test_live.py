@@ -1,6 +1,6 @@
-"""The live runner: config parsing, slot binding, and the paced/pausable loop.
+"""The live runner: config parsing, player binding, and the paced/pausable loop.
 
-The loop tests run a one-slot fake AEC env under a :class:`PausableClock` over a
+The loop tests run a one-player fake AEC env under a :class:`PausableClock` over a
 :class:`ManualClock`, with an injected sleeper that advances that clock instead of really
 sleeping, so cadence, pause, and stop are all deterministic. Each test asserts behaviour
 (which actions reached the env, that stepping is blocked while paused, that the streamed bytes
@@ -18,13 +18,18 @@ from typing import Any
 import pytest
 
 from game_sandbox_harness.clock import ManualClock
-from game_sandbox_harness.environment import EnvironmentEntry, EnvironmentMeta, resolve_parameters
+from game_sandbox_harness.environment import (
+    EnvironmentEntry,
+    EnvironmentMeta,
+    PlayerBounds,
+    resolve_parameters,
+)
 from game_sandbox_harness.live import (
     UNSET_TIMEOUT,
     LiveConfig,
     LiveConfigError,
-    SlotBinding,
-    build_slots,
+    PlayerBinding,
+    build_players,
     parse_config,
     run_live_loop,
 )
@@ -35,18 +40,18 @@ from game_sandbox_harness.live_io import (
     TransportSource,
     result_envelope,
 )
-from game_sandbox_harness.session import AgentSlot, Episode, ExternalSlot
+from game_sandbox_harness.session import AgentPlayer, Episode, ExternalPlayer
 
 DEFAULT_ACTION = -1
 FLAP = 1
-PARAMETERS = {"seats": 1}
+PARAMETERS = {"players": 1}
 
 
 # --- fakes ------------------------------------------------------------------------------
 
 
 class FakeEnv:
-    """A one-slot AEC env living for ``n_steps``, rewarding 1.0 a step, recording nothing the
+    """A one-player AEC env living for ``n_steps``, rewarding 1.0 a step, recording nothing the
     harness does not already record. ``on_step`` fires just before each accepted step."""
 
     def __init__(self, n_steps: int, on_step: Any = None) -> None:
@@ -93,9 +98,8 @@ def make_entry(
         env_id="fake",
         display_name="Fake",
         description="A deterministic fake.",
-        min_slots=1,
-        max_slots=1,
-        human_slots=("player_0",),
+        layout=PlayerBounds(1, 1),
+        human_players=("player_0",),
         human_timeout_ms=human_timeout_ms,
         recommended_episode_ticks=n_steps,
         pace_interval_ms=pace_interval_ms,
@@ -109,7 +113,7 @@ def make_entry(
     return EnvironmentEntry(
         meta=meta,
         make=lambda _parameters: FakeEnv(n_steps, on_step=on_step),
-        default_action=lambda env, slot_id: DEFAULT_ACTION,
+        default_action=lambda env, player_id: DEFAULT_ACTION,
         overlay=(lambda env: {"i": env._i}) if with_overlay else None,
     )
 
@@ -158,9 +162,9 @@ def test_parse_config_minimal_and_full():
             json.dumps(
                 {
                     "env_id": "flappy_bird",
-                    "parameters": {"seats": 1, "pipe_gap": 100},
+                    "parameters": {"players": 1, "pipe_gap": 100},
                     "seed": 7,
-                    "slots": {"player_0": {"kind": "external"}},
+                    "player_bindings": {"player_0": {"kind": "external"}},
                     "human_timeout_ms": 5000,
                     "recording_dir": "/recordings",
                     "recording_id": "abc",
@@ -172,11 +176,11 @@ def test_parse_config_minimal_and_full():
     assert cfg == LiveConfig(
         env_id="flappy_bird",
         seed=7,
-        slots={"player_0": SlotBinding(kind="external")},
+        player_bindings={"player_0": PlayerBinding(kind="external")},
         human_timeout_ms=5000,
         recording_dir="/recordings",
         recording_id="abc",
-        parameters={"seats": 1, "pipe_gap": 100},
+        parameters={"players": 1, "pipe_gap": 100},
         players={"player_0": {"kind": "human", "label": "alice", "user": "alice"}},
     )
 
@@ -185,7 +189,7 @@ def test_parse_config_requires_players():
     payload = {
         "env_id": "fake",
         "parameters": PARAMETERS,
-        "slots": {"p": {"kind": "external"}},
+        "player_bindings": {"p": {"kind": "external"}},
         "recording_dir": "/r",
     }
     with pytest.raises(LiveConfigError):
@@ -196,7 +200,7 @@ def test_parse_config_defaults_seed_and_optional_fields():
     payload = {
         "env_id": "fake",
         "parameters": PARAMETERS,
-        "slots": {"p": {"kind": "external"}},
+        "player_bindings": {"p": {"kind": "external"}},
         "players": {"p": {"kind": "human", "label": "Human"}},
         "recording_dir": "/r",
     }
@@ -217,7 +221,7 @@ def test_parse_config_reads_workflow_overrides():
     payload = {
         "env_id": "fake",
         "parameters": PARAMETERS,
-        "slots": {"p": {"kind": "builtin-agent"}},
+        "player_bindings": {"p": {"kind": "builtin-agent"}},
         "players": {"p": {"kind": "agent", "label": "Agent"}},
         "recording_dir": "/r",
         "step_timeout_ms": 250,
@@ -234,7 +238,7 @@ def test_parse_config_reads_messaging_keys():
     payload = {
         "env_id": "fake",
         "parameters": PARAMETERS,
-        "slots": {"p": {"kind": "builtin-agent"}},
+        "player_bindings": {"p": {"kind": "builtin-agent"}},
         "players": {"p": {"kind": "agent", "label": "Agent"}},
         "recording_dir": "/r",
         "messaging_enabled": False,
@@ -248,24 +252,29 @@ def test_parse_config_reads_messaging_keys():
 @pytest.mark.parametrize(
     "payload",
     [
-        {"slots": {"p": {"kind": "external"}}, "recording_dir": "/r"},  # no env_id
-        {"env_id": "fake", "parameters": PARAMETERS, "recording_dir": "/r"},  # no slots
-        {"env_id": "fake", "parameters": PARAMETERS, "slots": {}, "recording_dir": "/r"},  # empty slots
+        {"player_bindings": {"p": {"kind": "external"}}, "recording_dir": "/r"},  # no env_id
+        {"env_id": "fake", "parameters": PARAMETERS, "recording_dir": "/r"},  # no players
         {
             "env_id": "fake",
             "parameters": PARAMETERS,
-            "slots": {"p": {"kind": "robot"}},
+            "player_bindings": {},
+            "recording_dir": "/r",
+        },  # empty players
+        {
+            "env_id": "fake",
+            "parameters": PARAMETERS,
+            "player_bindings": {"p": {"kind": "robot"}},
             "recording_dir": "/r",
         },  # bad kind
         {
             "env_id": "fake",
             "parameters": PARAMETERS,
-            "slots": {"p": {"kind": "external"}},
+            "player_bindings": {"p": {"kind": "external"}},
         },  # no recording_dir
         {
             "env_id": "fake",
             "parameters": PARAMETERS,
-            "slots": {"p": {"kind": "ext"}},
+            "player_bindings": {"p": {"kind": "ext"}},
             "recording_dir": "/r",
             "seed": 1.5,
         },
@@ -273,49 +282,49 @@ def test_parse_config_reads_messaging_keys():
         {
             "env_id": "fake",
             "parameters": PARAMETERS,
-            "slots": {"p": {"kind": "external"}},
+            "player_bindings": {"p": {"kind": "external"}},
             "recording_dir": "/r",
             "players": {"p": {"kind": "robot", "label": "x"}},
         },
         {
             "env_id": "fake",
             "parameters": PARAMETERS,
-            "slots": {"p": {"kind": "external"}},
+            "player_bindings": {"p": {"kind": "external"}},
             "recording_dir": "/r",
             "players": {"p": {"kind": "human"}},
         },
         {
             "env_id": "fake",
             "parameters": PARAMETERS,
-            "slots": {"p": {"kind": "external"}},
+            "player_bindings": {"p": {"kind": "external"}},
             "recording_dir": "/r",
             "players": [],
         },
         {  # a non-integer timeout override is rejected
             "env_id": "fake",
             "parameters": PARAMETERS,
-            "slots": {"p": {"kind": "external"}},
+            "player_bindings": {"p": {"kind": "external"}},
             "recording_dir": "/r",
             "step_timeout_ms": "soon",
         },
         {  # a non-boolean headless flag is rejected
             "env_id": "fake",
             "parameters": PARAMETERS,
-            "slots": {"p": {"kind": "external"}},
+            "player_bindings": {"p": {"kind": "external"}},
             "recording_dir": "/r",
             "headless": "yes",
         },
         {  # a non-boolean messaging_enabled is rejected
             "env_id": "fake",
             "parameters": PARAMETERS,
-            "slots": {"p": {"kind": "external"}},
+            "player_bindings": {"p": {"kind": "external"}},
             "recording_dir": "/r",
             "messaging_enabled": "on",
         },
         {  # a non-integer message_cap is rejected
             "env_id": "fake",
             "parameters": PARAMETERS,
-            "slots": {"p": {"kind": "external"}},
+            "player_bindings": {"p": {"kind": "external"}},
             "recording_dir": "/r",
             "message_cap": "lots",
         },
@@ -333,10 +342,10 @@ def test_parse_config_requires_exactly_one_argument():
         parse_config(["{}", "{}"])
 
 
-# --- build_slots ------------------------------------------------------------------------
+# --- build_players ------------------------------------------------------------------------
 
 
-def test_build_slots_external_resolves_timeout_override_then_metadata():
+def test_build_players_external_resolves_timeout_override_then_metadata():
     control = SessionControl()
     clock = PausableClock(ManualClock())
     sleeper = AdvancingSleeper(ManualClock())
@@ -344,28 +353,28 @@ def test_build_slots_external_resolves_timeout_override_then_metadata():
 
     # No override → metadata default.
     cfg = LiveConfig(
-        "fake", 0, {"player_0": SlotBinding("external")}, UNSET_TIMEOUT, "/r", None, {"seats": 1}
+        "fake", 0, {"player_0": PlayerBinding("external")}, UNSET_TIMEOUT, "/r", None, {"players": 1}
     )
-    slots = build_slots(cfg, entry, control, clock, sleeper)
-    slot = slots["player_0"]
-    assert isinstance(slot, ExternalSlot)
-    assert slot.timeout_ms == 8000
-    assert isinstance(slot.source, TransportSource)
+    players = build_players(cfg, entry, control, clock, sleeper)
+    player = players["player_0"]
+    assert isinstance(player, ExternalPlayer)
+    assert player.timeout_ms == 8000
+    assert isinstance(player.source, TransportSource)
 
     # Override wins.
-    cfg = LiveConfig("fake", 0, {"player_0": SlotBinding("external")}, 2000, "/r", None, {"seats": 1})
-    slots = build_slots(cfg, entry, control, clock, sleeper)
-    assert isinstance(slots["player_0"], ExternalSlot)
-    assert slots["player_0"].timeout_ms == 2000
+    cfg = LiveConfig("fake", 0, {"player_0": PlayerBinding("external")}, 2000, "/r", None, {"players": 1})
+    players = build_players(cfg, entry, control, clock, sleeper)
+    assert isinstance(players["player_0"], ExternalPlayer)
+    assert players["player_0"].timeout_ms == 2000
 
     # An explicit null disables the metadata timeout. It is distinct from the absent override.
-    cfg = LiveConfig("fake", 0, {"player_0": SlotBinding("external")}, None, "/r", None, {"seats": 1})
-    slots = build_slots(cfg, entry, control, clock, sleeper)
-    assert isinstance(slots["player_0"], ExternalSlot)
-    assert slots["player_0"].timeout_ms is None
+    cfg = LiveConfig("fake", 0, {"player_0": PlayerBinding("external")}, None, "/r", None, {"players": 1})
+    players = build_players(cfg, entry, control, clock, sleeper)
+    assert isinstance(players["player_0"], ExternalPlayer)
+    assert players["player_0"].timeout_ms is None
 
 
-def test_build_slots_builtin_agent_loads_through_manifest(tmp_path: Path):
+def test_build_players_builtin_agent_loads_through_manifest(tmp_path: Path):
     (tmp_path / "manifest.json").write_text(
         json.dumps({"entry_point": "agent", "class_name": "A", "template_version": 1}),
         encoding="utf-8",
@@ -381,18 +390,18 @@ def test_build_slots_builtin_agent_loads_through_manifest(tmp_path: Path):
     cfg = LiveConfig(
         "fake",
         0,
-        {"player_0": SlotBinding("builtin-agent", path=str(tmp_path))},
+        {"player_0": PlayerBinding("builtin-agent", path=str(tmp_path))},
         None,
         "/r",
         None,
-        {"seats": 1},
+        {"players": 1},
     )
-    slots = build_slots(cfg, entry, control, clock, sleeper)
-    assert isinstance(slots["player_0"], AgentSlot)
+    players = build_players(cfg, entry, control, clock, sleeper)
+    assert isinstance(players["player_0"], AgentPlayer)
 
 
-def test_build_slots_builtin_agent_without_path_resolves_per_env_default(monkeypatch):
-    # A builtin-agent slot with no explicit overlay path loads the per-environment baseline staged at
+def test_build_players_builtin_agent_without_path_resolves_per_env_default(monkeypatch):
+    # A builtin-agent player with no explicit overlay path loads the per-environment baseline staged at
     # /opt/agents/builtin/<env_id>. The directory is env-keyed because the Naive policy differs per
     # environment (Hearts reads the legal-action mask; Flappy Bird reads a flat array), so a flat
     # default would load the wrong baseline into a Hearts seat.
@@ -404,10 +413,12 @@ def test_build_slots_builtin_agent_without_path_resolves_per_env_default(monkeyp
     clock = PausableClock(ManualClock())
     sleeper = AdvancingSleeper(ManualClock())
     entry = make_entry(3, pace_interval_ms=None)
-    cfg = LiveConfig("hearts", 0, {"player_0": SlotBinding("builtin-agent")}, None, "/r", None, {"seats": 1})
-    slots = build_slots(cfg, entry, control, clock, sleeper)
+    cfg = LiveConfig(
+        "hearts", 0, {"player_0": PlayerBinding("builtin-agent")}, None, "/r", None, {"players": 1}
+    )
+    players = build_players(cfg, entry, control, clock, sleeper)
     assert captured == ["/opt/agents/builtin/hearts"]
-    assert isinstance(slots["player_0"], AgentSlot)
+    assert isinstance(players["player_0"], AgentPlayer)
 
 
 # --- the live loop ----------------------------------------------------------------------
@@ -425,7 +436,7 @@ def _run_external(
     human_timeout_ms: int | None = None,
     with_overlay: bool = False,
 ) -> tuple[Any, list[str], Path]:
-    """Wire a one external slot live session over the tee store, run the loop, and emit the
+    """Wire a one external player live session over the tee store, run the loop, and emit the
     result envelope exactly as ``main`` does. Returns (result, streamed_lines, recording_path)."""
     base = base or ManualClock()
     clock = PausableClock(base)
@@ -441,10 +452,10 @@ def _run_external(
     paced = pace_interval_ms is not None
     sleeper = sleeper or AdvancingSleeper(base)
     source = TransportSource(control, clock=clock, paced=paced, sleeper=sleeper)
-    slot = ExternalSlot(source, timeout_ms=human_timeout_ms)
+    player = ExternalPlayer(source, timeout_ms=human_timeout_ms)
     with Episode(
         entry,
-        {"player_0": slot},
+        {"player_0": player},
         parameters=resolve_parameters(entry.meta),
         seed=1,
         store=store,
@@ -467,7 +478,7 @@ def _run_external(
     return result, streamed, tmp_path / "r" / "recording.jsonl"
 
 
-def test_paced_latched_input_drives_the_slot_then_defaults(tmp_path: Path):
+def test_paced_latched_input_drives_the_player_then_defaults(tmp_path: Path):
     # One flap latched before the run: the first step takes it, later steps default (noop).
     result, _streamed, recording = _run_external(
         tmp_path,
@@ -549,11 +560,11 @@ def test_run_starts_command_pump_after_header_and_turn_opening(monkeypatch, tmp_
     config = LiveConfig(
         "fake",
         0,
-        {"player_0": SlotBinding("external")},
+        {"player_0": PlayerBinding("external")},
         None,
         str(tmp_path),
         "r",
-        {"seats": 1},
+        {"players": 1},
         players={"player_0": {"kind": "human", "label": "Human"}},
     )
     protocol = ProtocolStream(_ListSink(streamed))  # type: ignore[arg-type]
@@ -615,10 +626,10 @@ def test_pause_blocks_stepping_until_resume(tmp_path: Path):
     store = build_tee_store(str(tmp_path), ProtocolStream(_ListSink(streamed)))  # type: ignore[arg-type]
     entry = make_entry(2, pace_interval_ms=16, on_step=sample)
     source = TransportSource(control, clock=clock, paced=True, sleeper=sleeper)
-    slots = {"player_0": ExternalSlot(source)}
+    players = {"player_0": ExternalPlayer(source)}
     with Episode(
         entry,
-        slots,
+        players,
         parameters=resolve_parameters(entry.meta),
         seed=1,
         store=store,
@@ -657,7 +668,7 @@ def test_turn_based_blocks_for_input_then_steps(tmp_path: Path):
     source = TransportSource(control, clock=clock, paced=False, sleeper=sleeper, slice_ms=5)
     with Episode(
         entry,
-        {"player_0": ExternalSlot(source, timeout_ms=10_000)},
+        {"player_0": ExternalPlayer(source, timeout_ms=10_000)},
         parameters=resolve_parameters(entry.meta),
         seed=1,
         store=store,
@@ -678,9 +689,8 @@ def _messaging_entry(n_steps: int, *, messaging: bool) -> EnvironmentEntry:
         env_id="fake-chat",
         display_name="Fake Chat",
         description="A deterministic fake with messaging.",
-        min_slots=1,
-        max_slots=1,
-        human_slots=("player_0",),
+        layout=PlayerBounds(1, 1),
+        human_players=("player_0",),
         human_timeout_ms=None,
         recommended_episode_ticks=n_steps,
         pace_interval_ms=16,
@@ -694,7 +704,7 @@ def _messaging_entry(n_steps: int, *, messaging: bool) -> EnvironmentEntry:
     return EnvironmentEntry(
         meta=meta,
         make=lambda _parameters: FakeEnv(n_steps),
-        default_action=lambda env, slot_id: DEFAULT_ACTION,
+        default_action=lambda env, player_id: DEFAULT_ACTION,
         overlay=None,
     )
 
@@ -707,7 +717,7 @@ def _messages_in(recording_path: Path) -> list[list[dict]]:
 
 
 def test_human_chat_frame_over_transport_lands_in_the_recording(tmp_path: Path):
-    # The full wiring: parse config, build the external slot's TransportSource, configure the chat
+    # The full wiring: parse config, build the external player's TransportSource, configure the chat
     # gate from the effective messaging decision, feed a chat frame on stdin, and see it recorded.
     base = ManualClock()
     clock = PausableClock(base)
@@ -721,7 +731,7 @@ def test_human_chat_frame_over_transport_lands_in_the_recording(tmp_path: Path):
     source = TransportSource(control, clock=clock, paced=True, sleeper=sleeper)
     with Episode(
         entry,
-        {"player_0": ExternalSlot(source, message_source=source)},
+        {"player_0": ExternalPlayer(source, message_source=source)},
         parameters=resolve_parameters(entry.meta),
         seed=1,
         store=store,
@@ -751,7 +761,7 @@ def test_human_chat_frame_is_dropped_when_messaging_disabled_by_config(tmp_path:
     source = TransportSource(control, clock=clock, paced=True, sleeper=sleeper)
     with Episode(
         entry,
-        {"player_0": ExternalSlot(source, message_source=source)},
+        {"player_0": ExternalPlayer(source, message_source=source)},
         parameters=resolve_parameters(entry.meta),
         seed=1,
         store=store,
@@ -781,9 +791,9 @@ def test_module_subprocess_keeps_stdout_clean_and_classifiable(tmp_path: Path):
 
     config = {
         "env_id": "flappy_bird",
-        "parameters": {"seats": 1, "pipe_gap": 100},
+        "parameters": {"players": 1, "pipe_gap": 100},
         "seed": 0,
-        "slots": {"player_0": {"kind": "external"}},
+        "player_bindings": {"player_0": {"kind": "external"}},
         "players": {"player_0": {"kind": "human", "label": "Human"}},
         "recording_dir": str(tmp_path),
         "recording_id": "r",
@@ -812,7 +822,7 @@ def test_module_subprocess_keeps_stdout_clean_and_classifiable(tmp_path: Path):
 
 
 def test_module_subprocess_charges_a_crashing_agent_to_its_own_seat(tmp_path: Path):
-    """A builtin-agent slot whose ``act`` raises makes the container exit non-zero AND emit a final
+    """A builtin-agent player whose ``act`` raises makes the container exit non-zero AND emit a final
     ``result`` envelope naming the offending seat, so the orchestrator charges the crash to that seat
     alone instead of to every competitor sharing the container."""
     pytest.importorskip("flappy_bird", reason="environments package not installed")
@@ -832,9 +842,9 @@ def test_module_subprocess_charges_a_crashing_agent_to_its_own_seat(tmp_path: Pa
     )
     config = {
         "env_id": "flappy_bird",
-        "parameters": {"seats": 1, "pipe_gap": 100},
+        "parameters": {"players": 1, "pipe_gap": 100},
         "seed": 0,
-        "slots": {"player_0": {"kind": "builtin-agent", "path": str(agent_dir)}},
+        "player_bindings": {"player_0": {"kind": "builtin-agent", "path": str(agent_dir)}},
         "players": {"player_0": {"kind": "agent", "label": "Agent"}},
         "recording_dir": str(tmp_path),
         "recording_id": "r",
@@ -857,11 +867,11 @@ def test_module_subprocess_charges_a_crashing_agent_to_its_own_seat(tmp_path: Pa
         if obj.get("kind") == "result"
     ]
     assert len(results) == 1, proc.stdout
-    assert results[0]["failed_slot"] == "player_0"
+    assert results[0]["failed_player"] == "player_0"
 
 
 def test_module_subprocess_charges_a_reset_crash_to_its_own_seat(tmp_path: Path):
-    """A builtin-agent slot whose ``reset`` raises (the failure happens during ``start``, before the
+    """A builtin-agent player whose ``reset`` raises (the failure happens during ``start``, before the
     loop) must still name its seat and leave a readable recording — not look like an unowned
     infrastructure fault with no result. The header is opened before participants reset, so the
     container exits non-zero, emits a final ``result`` naming the seat, and persists the recording."""
@@ -883,9 +893,9 @@ def test_module_subprocess_charges_a_reset_crash_to_its_own_seat(tmp_path: Path)
     )
     config = {
         "env_id": "flappy_bird",
-        "parameters": {"seats": 1, "pipe_gap": 100},
+        "parameters": {"players": 1, "pipe_gap": 100},
         "seed": 0,
-        "slots": {"player_0": {"kind": "builtin-agent", "path": str(agent_dir)}},
+        "player_bindings": {"player_0": {"kind": "builtin-agent", "path": str(agent_dir)}},
         "players": {"player_0": {"kind": "agent", "label": "Agent"}},
         "recording_dir": str(tmp_path),
         "recording_id": "r",
@@ -907,7 +917,7 @@ def test_module_subprocess_charges_a_reset_crash_to_its_own_seat(tmp_path: Path)
         if obj.get("kind") == "result"
     ]
     assert len(results) == 1, proc.stdout
-    assert results[0]["failed_slot"] == "player_0"
+    assert results[0]["failed_player"] == "player_0"
     # The recording was opened before the reset crash, so a readable header is on disk: the
     # orchestrator sees an attributable crash, not a recording-less infrastructure fault.
     header = json.loads((tmp_path / "r" / "recording.jsonl").read_text(encoding="utf-8").splitlines()[0])

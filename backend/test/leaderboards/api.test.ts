@@ -246,10 +246,10 @@ describe('public leaderboard API', () => {
     const known = await makeSubmission(storage, season.id, aliceId)
     const orphaned = await makeSubmission(storage, season.id, 'ghost-user')
     const run = await createRunOrFail(storage, season.id, 'dev-user', () => ({
-      parametersSnapshot: { seats: 1 },
+      parametersSnapshot: { players: 1 },
       scheduledGames: [
-        { match_index: 0, game_index: 0, seed: 1, slots: [agentRef(known)] },
-        { match_index: 0, game_index: 1, seed: 2, slots: [agentRef(orphaned)] },
+        { match_index: 0, game_index: 0, seed: 1, seats: [agentRef(known)] },
+        { match_index: 0, game_index: 1, seed: 2, seats: [agentRef(orphaned)] },
       ],
       llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
     }))
@@ -261,7 +261,7 @@ describe('public leaderboard API', () => {
       }
       await storage.recordGameResult({
         game_id: game.id,
-        slot_index: 0,
+        seat_index: 0,
         agent: agentRef(submission),
         episode_score: 5 - index,
         agent_compute_ms_total: 10,
@@ -302,7 +302,7 @@ describe('public leaderboard API', () => {
           board: {
             automated: Array<{ agent: Record<string, unknown>; llm_weighted_cost: number | null }>
             human: Array<{ agent: Record<string, unknown> }>
-            games: Array<{ slots: Array<Record<string, unknown>> }>
+            games: Array<{ seats: Array<Record<string, unknown>> }>
           }
         }
       }
@@ -317,8 +317,8 @@ describe('public leaderboard API', () => {
 
     expect(board.human[0]?.agent).toMatchObject({ user_id: aliceId, user_name: 'alice' })
 
-    const seat = (slots: Array<Record<string, unknown>> | undefined) => slots?.[0]
-    const gameSeats = board.games.map((game) => seat(game.slots))
+    const seat = (seats: Array<Record<string, unknown>> | undefined) => seats?.[0]
+    const gameSeats = board.games.map((game) => seat(game.seats))
     expect(gameSeats.find((s) => s?.user_id === aliceId)).toMatchObject({ user_name: 'alice' })
     expect(gameSeats.find((s) => s?.user_id === 'ghost-user')?.user_name).toBeUndefined()
   })
@@ -361,8 +361,8 @@ describe('public leaderboard API', () => {
     const unreleased = await declare()
     const hidden = await makeSubmission(storage, unreleased.id, 'alice')
     const hiddenRun = await createRunOrFail(storage, unreleased.id, 'dev-user', () => ({
-      parametersSnapshot: { seats: 1 },
-      scheduledGames: [{ match_index: 0, game_index: 0, seed: 1, slots: [agentRef(hidden)] }],
+      parametersSnapshot: { players: 1 },
+      scheduledGames: [{ match_index: 0, game_index: 0, seed: 1, seats: [agentRef(hidden)] }],
       llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
     }))
     await storage.replaceAutomatedPlacements(unreleased.id, ENV_ID, hiddenRun.id, [
@@ -380,8 +380,8 @@ describe('public leaderboard API', () => {
     await storage.setReleaseStatus(released.id, 'released')
     const visible = await makeSubmission(storage, released.id, 'alice')
     const visibleRun = await createRunOrFail(storage, released.id, 'dev-user', () => ({
-      parametersSnapshot: { seats: 1 },
-      scheduledGames: [{ match_index: 0, game_index: 0, seed: 1, slots: [agentRef(visible)] }],
+      parametersSnapshot: { players: 1 },
+      scheduledGames: [{ match_index: 0, game_index: 0, seed: 1, seats: [agentRef(visible)] }],
       llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
     }))
     await storage.replaceAutomatedPlacements(released.id, ENV_ID, visibleRun.id, [

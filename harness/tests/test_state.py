@@ -12,7 +12,7 @@ from game_sandbox_harness.schema import (
 )
 from game_sandbox_harness.state import build_agent_step, build_header, build_step_state
 
-FLAPPY_PARAMETERS = {"seats": 1, "pipe_gap": 100}
+FLAPPY_PARAMETERS = {"players": 1, "pipe_gap": 100}
 
 
 def test_minimal_step_is_valid():

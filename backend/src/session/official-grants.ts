@@ -25,8 +25,8 @@ export interface IssueOfficialGrantsInput {
   sessionId: string
   /** SQLite execution-scope file: the live session id or the containing workflow run id. */
   scopeId: string
-  /** Agent slot ids only. Human slots must be removed by the caller before this seam. */
-  agentSlots: readonly string[]
+  /** Agent player ids only. Human players must be removed by the caller before this seam. */
+  agentPlayers: readonly string[]
   models: Partial<Record<ModelAlias, LlmModelConfig>>
   limits: LlmLimits
 }
@@ -38,8 +38,8 @@ export interface OfficialGrantIssuer {
 
 /**
  * Bind official grants to the same durable store for both admission reads and successful-call writes.
- * Each slot reads only its own rows for the producing session. Workflow matches therefore share one
- * run-scoped SQLite file without accidentally sharing an allowance across games or slots.
+ * Each player reads only its own rows for the producing session. Workflow matches therefore share one
+ * run-scoped SQLite file without accidentally sharing an allowance across games or players.
  */
 export function createOfficialGrantIssuer(
   registry: KeyRegistry,
@@ -51,29 +51,29 @@ export function createOfficialGrantIssuer(
       const keys: Record<string, string> = {}
       const weights = modelCostWeights(input.models)
       try {
-        for (const slot of input.agentSlots) {
+        for (const playerId of input.agentPlayers) {
           const tick = createOfficialTickMarker()
           const grant: LlmGrant = {
             kind: 'official',
             models: input.models,
             accountingScope: {
-              key: `official:${input.sessionId}:${slot}`,
+              key: `official:${input.sessionId}:${playerId}`,
               limits: input.limits,
               weights,
               readCommittedUsage: () =>
-                telemetry.readSessionUsageByModel(input.scopeId, input.sessionId, slot),
+                telemetry.readSessionUsageByModel(input.scopeId, input.sessionId, playerId),
             },
             recordSink: createOfficialRecordSink(telemetry, {
               scopeId: input.scopeId,
               sessionId: input.sessionId,
-              slot,
+              slot: playerId,
               tick,
             }),
           }
-          keys[slot] = registry.issueOfficial(input.sessionId, grant, tick)
+          keys[playerId] = registry.issueOfficial(input.sessionId, grant, tick)
         }
       } catch (error) {
-        // A later slot can fail after earlier keys were registered. Do not let a partially issued
+        // A later player can fail after earlier keys were registered. Do not let a partially issued
         // launch escape until the same revocation barrier used by normal teardown has settled.
         await registry.revokeSession(input.sessionId)
         throw error

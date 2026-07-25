@@ -41,7 +41,7 @@ RUN pip install --no-cache-dir ./harness \
 #    freezes this snapshot beside the requirements. The Naive baseline is
 #    per-environment because the observation (and so the policy) differs: Flappy Bird's reads a flat
 #    array, Hearts' reads the legal-action mask. A slot with no explicit overlay path resolves to
-#    /opt/agents/builtin/<the session's env_id> (see harness `build_slots`). Keeping the versioned copy
+#    /opt/agents/builtin/<the session's env_id> (see harness `build_players`). Keeping the versioned copy
 #    here avoids composing from a later template whose requirements could upgrade the v1 set.
 #
 #    `chmod a+rX` normalizes the tree's permissions: a session container runs as root but with

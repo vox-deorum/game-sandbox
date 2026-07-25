@@ -162,8 +162,8 @@ describe('api client', () => {
       await startSession({
         envId: 'flappy_bird',
         seasonId: 'season-1',
-        parameters: { seats: 1 },
-        slots: { player_0: { kind: 'human' } },
+        parameters: { players: 1 },
+        seats: { seat_0: { kind: 'human' } },
       }),
     ).toEqual({
       ok: true,
@@ -177,8 +177,8 @@ describe('api client', () => {
       await startSession({
         envId: 'flappy_bird',
         seasonId: 'season-1',
-        parameters: { seats: 1 },
-        slots: { player_0: { kind: 'human' } },
+        parameters: { players: 1 },
+        seats: { seat_0: { kind: 'human' } },
       }),
     ).toEqual({
       ok: false,
@@ -194,8 +194,8 @@ describe('api client', () => {
       await startSession({
         envId: 'flappy_bird',
         seasonId: 'season-1',
-        parameters: { seats: 1 },
-        slots: { player_0: { kind: 'human' } },
+        parameters: { players: 1 },
+        seats: { seat_0: { kind: 'human' } },
       }),
     ).toEqual({
       ok: false,
@@ -204,39 +204,63 @@ describe('api client', () => {
     })
   })
 
-  it('sends env_id, the slots assignment, and the human-slot timeout override in the body', async () => {
+  it('sends env_id, the seat assignment, and the human timeout override in the body', async () => {
     const fetchMock = stubFetch(async () =>
       jsonResponse({ id: 's1', ws_path: '/api/sessions/s1/ws' }, 201),
     )
     await startSession({
       envId: 'hearts',
       seasonId: 'season-1',
-      parameters: { seats: 4 },
-      humanSlotTimeoutMs: 2000,
-      slots: {
-        player_0: { kind: 'human' },
-        player_1: { kind: 'submission', submissionId: 'sub-1' },
-        player_2: { kind: 'builtin-agent' },
-        player_3: { kind: 'builtin-agent' },
+      parameters: { players: 4 },
+      humanTimeoutMs: 2000,
+      seats: {
+        seat_0: { kind: 'human' },
+        seat_1: { kind: 'submission', submissionId: 'sub-1' },
+        seat_2: { kind: 'builtin-agent' },
+        seat_3: { kind: 'builtin-agent' },
       },
     })
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit
     const body = JSON.parse(init.body as string)
-    // The new start contract: an explicit per-slot `slots` object, snake-case `submission_id` only on
-    // a `submission` slot, and no derived `mode` field (the backend derives it from the assignment).
+    // The start contract carries exact seat ids, snake-case `submission_id` only on a submission,
+    // and no derived `mode` field because the backend derives it from the assignment.
     expect(body).toMatchObject({
       env_id: 'hearts',
-      human_slot_timeout_ms: 2000,
-      slots: {
-        player_0: { kind: 'human' },
-        player_1: { kind: 'submission', submission_id: 'sub-1' },
-        player_2: { kind: 'builtin-agent' },
-        player_3: { kind: 'builtin-agent' },
+      human_timeout_ms: 2000,
+      seats: {
+        seat_0: { kind: 'human' },
+        seat_1: { kind: 'submission', submission_id: 'sub-1' },
+        seat_2: { kind: 'builtin-agent' },
+        seat_3: { kind: 'builtin-agent' },
       },
     })
     expect(body).not.toHaveProperty('mode')
     expect(body).not.toHaveProperty('submission_id')
-    expect(body.slots.player_1).not.toHaveProperty('submissionId')
+    expect(body.seats.seat_1).not.toHaveProperty('submissionId')
+  })
+
+  it('maps a human seat companion onto the nested wire assignment', async () => {
+    const fetchMock = stubFetch(async () =>
+      jsonResponse({ id: 's1', ws_path: '/api/sessions/s1/ws' }, 201),
+    )
+    await startSession({
+      envId: 'planned',
+      seasonId: 'season-1',
+      parameters: { seat_plan: 'wide' },
+      seats: {
+        seat_0: {
+          kind: 'human',
+          companion: { kind: 'submission', submissionId: 'sub-1' },
+        },
+      },
+    })
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit
+    const body = JSON.parse(init.body as string)
+    expect(body.seats.seat_0).toEqual({
+      kind: 'human',
+      companion: { kind: 'submission', submission_id: 'sub-1' },
+    })
   })
 
   it('reads the complete persisted parameter map on a session row', async () => {
@@ -249,7 +273,7 @@ describe('api client', () => {
       termination_reason: null,
       recording_id: null,
       season_id: 'season-1',
-      parameters: { seats: 1, pipe_gap: 90 },
+      parameters: { players: 1, pipe_gap: 90 },
       human_timeout_ms: 50,
       messaging_enabled: 0,
       message_cap: null,
@@ -257,7 +281,7 @@ describe('api client', () => {
       ended_at: null,
     } as const
     stubFetch(async () => jsonResponse(row))
-    expect((await getSession('s1'))?.parameters).toEqual({ seats: 1, pipe_gap: 90 })
+    expect((await getSession('s1'))?.parameters).toEqual({ players: 1, pipe_gap: 90 })
   })
 
   it('fetches a recording as raw text', async () => {
@@ -482,7 +506,7 @@ describe('api client', () => {
   it('sends ?force=true on a forced config edit and maps the unforced conflict', async () => {
     const config: SeasonConfig = {
       deps_version: 1,
-      matches: [{ slots: ['submission'], seeds: [0], games: 1 }],
+      matches: [{ seats: ['submission'], seeds: [0], games: 1 }],
     }
     const conflictMock = stubFetch(async () =>
       jsonResponse({ error: 'season has runs', code: 'season_has_runs' }, 409),

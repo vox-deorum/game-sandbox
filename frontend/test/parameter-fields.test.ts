@@ -6,8 +6,8 @@ import ParameterFields from '../src/components/ParameterFields.vue'
 
 const DECLARATIONS: EnvParameter[] = [
   {
-    name: 'seats',
-    title: 'Seats',
+    name: 'players',
+    title: 'Players',
     description: 'Players.',
     type: 'int',
     default: 1,
@@ -32,7 +32,7 @@ describe('ParameterFields', () => {
     render(ParameterFields, {
       props: {
         declarations: DECLARATIONS,
-        modelValue: { seats: 1, pipe_gap: 90, enabled: false },
+        modelValue: { players: 1, pipe_gap: 90, enabled: false },
         'onUpdate:modelValue': update,
       },
     })
@@ -40,7 +40,7 @@ describe('ParameterFields', () => {
     expect(screen.getByLabelText('Pipe gap')).toHaveValue(90)
     expect(screen.getByLabelText('Wind')).toHaveDisplayValue('Off')
     await fireEvent.update(screen.getByLabelText('Pipe gap'), '110')
-    expect(update).toHaveBeenLastCalledWith({ seats: 1, pipe_gap: 110, enabled: false })
+    expect(update).toHaveBeenLastCalledWith({ players: 1, pipe_gap: 110, enabled: false })
   })
 
   it('explains a blank numeric value and reports the form invalid', async () => {
@@ -48,7 +48,7 @@ describe('ParameterFields', () => {
     render(ParameterFields, {
       props: {
         declarations: DECLARATIONS,
-        modelValue: { seats: 1, pipe_gap: 90, enabled: false },
+        modelValue: { players: 1, pipe_gap: 90, enabled: false },
         onValidity: validity,
       },
     })

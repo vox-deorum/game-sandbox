@@ -75,13 +75,13 @@ def make_env(parameters: Mapping[str, ParameterValue]) -> HeartsEnv:
     return HeartsEnv()
 
 
-def default_action(env: HeartsEnv, slot_id: str) -> int:
+def default_action(env: HeartsEnv, player_id: str) -> int:
     """The legal default for a timed-out seat: its lowest legal card.
 
     Reads the live env and returns the concrete ``Discrete(52)`` card (not a sentinel), so the
     recording holds the real move. It matches ``env.step``'s own resolution, so gameplay is unchanged.
     """
-    seat = env.possible_agents.index(slot_id)
+    seat = env.possible_agents.index(player_id)
     return rules.lowest_legal_card(env.state, seat)
 
 

@@ -181,11 +181,11 @@ describe('Spades chat (Docker)', () => {
       stack,
       {
         env_id: ENV_ID,
-        slots: {
-          player_0: { kind: 'submission', submission_id: daredevil0 },
-          player_1: { kind: 'submission', submission_id: signaler1 },
-          player_2: { kind: 'submission', submission_id: daredevil2 },
-          player_3: { kind: 'submission', submission_id: signaler3 },
+        seats: {
+          seat_0: { kind: 'submission', submission_id: daredevil0 },
+          seat_1: { kind: 'submission', submission_id: signaler1 },
+          seat_2: { kind: 'submission', submission_id: daredevil2 },
+          seat_3: { kind: 'submission', submission_id: signaler3 },
         },
         seed: 1236,
       },
@@ -237,11 +237,11 @@ describe('Spades chat (Docker)', () => {
       stack,
       {
         env_id: ENV_ID,
-        slots: {
-          player_0: { kind: 'human' },
-          player_1: { kind: 'submission', submission_id: signaler1 },
-          player_2: { kind: 'submission', submission_id: signaler2 },
-          player_3: { kind: 'submission', submission_id: signaler3 },
+        seats: {
+          seat_0: { kind: 'human' },
+          seat_1: { kind: 'submission', submission_id: signaler1 },
+          seat_2: { kind: 'submission', submission_id: signaler2 },
+          seat_3: { kind: 'submission', submission_id: signaler3 },
         },
         seed: 3,
       },
@@ -281,11 +281,11 @@ describe('Spades chat (Docker)', () => {
       stack,
       {
         env_id: ENV_ID,
-        slots: {
-          player_0: { kind: 'builtin-agent' },
-          player_1: { kind: 'builtin-agent' },
-          player_2: { kind: 'builtin-agent' },
-          player_3: { kind: 'builtin-agent' },
+        seats: {
+          seat_0: { kind: 'builtin-agent' },
+          seat_1: { kind: 'builtin-agent' },
+          seat_2: { kind: 'builtin-agent' },
+          seat_3: { kind: 'builtin-agent' },
         },
         seed: 42,
       },
@@ -358,7 +358,7 @@ describe('Spades chat (Docker)', () => {
           deps_version: DEPS_VERSION,
           matches: [
             {
-              slots: ['submission', 'submission', 'submission', 'submission'],
+              seats: ['submission', 'submission', 'submission', 'submission'],
               seeds: [1236],
               games: 1,
             },
@@ -366,8 +366,8 @@ describe('Spades chat (Docker)', () => {
           ...(messaging !== undefined ? { overrides: { messaging } } : {}),
         })
         const run = await createRunOrFail(stack.storage, season.id, 'dev-user', () => ({
-          parametersSnapshot: { seats: 4 },
-          scheduledGames: [{ match_index: 0, game_index: 0, seed: 1236, slots: submissions }],
+          parametersSnapshot: { players: 4 },
+          scheduledGames: [{ match_index: 0, game_index: 0, seed: 1236, seats: submissions }],
           llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
         }))
         const status = await new Promise<TerminalRunStatus>((res) => {
@@ -395,7 +395,7 @@ describe('Spades chat (Docker)', () => {
         const results = await stack.storage.listGameResultsByRun(run.id)
         const scoreBySlot: Record<number, number> = {}
         for (const result of results) {
-          scoreBySlot[result.slot_index] = result.episode_score
+          scoreBySlot[result.seat_index] = result.episode_score
         }
         return { messages: allMessages(states), scoreBySlot }
       }
@@ -450,11 +450,11 @@ describe('Spades chat (Docker)', () => {
       stack,
       {
         env_id: ENV_ID,
-        slots: {
-          player_0: { kind: 'submission', submission_id: daredevil0 },
-          player_1: { kind: 'submission', submission_id: counter1 },
-          player_2: { kind: 'submission', submission_id: daredevil2 },
-          player_3: { kind: 'submission', submission_id: counter3 },
+        seats: {
+          seat_0: { kind: 'submission', submission_id: daredevil0 },
+          seat_1: { kind: 'submission', submission_id: counter1 },
+          seat_2: { kind: 'submission', submission_id: daredevil2 },
+          seat_3: { kind: 'submission', submission_id: counter3 },
         },
         seed: 1236,
       },

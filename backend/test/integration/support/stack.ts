@@ -155,20 +155,33 @@ export async function startSession(
   stack: Stack,
   body: {
     env_id: string
-    slots: Record<
+    seats: Record<
       string,
-      { kind: 'human' | 'builtin-agent' | 'submission'; submission_id?: string }
+      {
+        kind: 'human' | 'builtin-agent' | 'submission'
+        submission_id?: string
+        companion?: { kind: 'builtin-agent' | 'submission'; submission_id?: string }
+      }
     >
     seed?: number
-    human_slot_timeout_ms?: number
+    human_timeout_ms?: number
   },
   user = 'dev-user',
 ): Promise<{ id: string; wsPath: string }> {
   const auth = await stack.users.headersFor(user)
+  const prefill = await fetch(`${stack.httpBase}/api/environments/${body.env_id}/play-parameters`)
+  const context = (await prefill.json()) as {
+    season_id: string | null
+    values: Record<string, unknown>
+  }
   const response = await fetch(`${stack.httpBase}/api/sessions`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', ...auth },
-    body: JSON.stringify(body),
+    body: JSON.stringify({
+      ...body,
+      season_id: context.season_id,
+      parameters: context.values,
+    }),
   })
   if (response.status !== 201) {
     throw new Error(`start session failed: ${response.status} ${await response.text()}`)

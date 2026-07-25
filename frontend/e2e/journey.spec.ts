@@ -44,7 +44,7 @@ test('play Flappy Bird live, pause/resume, stop, then replay and pin', async ({ 
   await expect
     .poll(async () => (await getSession(admin, sessionId))?.parameters)
     .toEqual({
-      seats: 1,
+      players: 1,
       pipe_gap: 90,
     })
   await expect(page.locator('canvas.renderer-canvas')).toBeVisible()
@@ -81,7 +81,7 @@ test('play Flappy Bird live, pause/resume, stop, then replay and pin', async ({ 
   await expect
     .poll(async () => (await getRecordingHeader(admin, recordingId)).parameters)
     .toEqual({
-      seats: 1,
+      players: 1,
       pipe_gap: 90,
     })
 

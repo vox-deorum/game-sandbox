@@ -5,16 +5,14 @@ import {
   describeParameters,
   formatParameterValue,
   initializeParameters,
-  resolvedSeatCount,
-  seatCountOf,
   validateParameters,
   visibleParameters,
 } from '../src/lib/parameters.js'
 
 const PARAMETERS: EnvParameter[] = [
   {
-    name: 'seats',
-    title: 'Seats',
+    name: 'players',
+    title: 'Players',
     description: 'Players.',
     type: 'int',
     default: 1,
@@ -60,9 +58,9 @@ describe('parameters', () => {
   })
 
   it('falls back safely to defaults and reports a blank numeric edit as invalid', () => {
-    expect(initializeParameters(PARAMETERS, { gap: 999 })).toMatchObject({ gap: 100, seats: 1 })
+    expect(initializeParameters(PARAMETERS, { gap: 999 })).toMatchObject({ gap: 100, players: 1 })
     expect(
-      validateParameters(PARAMETERS, { seats: 1, gap: '', mode: 'standard', extras: [] }).errors,
+      validateParameters(PARAMETERS, { players: 1, gap: '', mode: 'standard', extras: [] }).errors,
     ).toEqual({
       gap: expect.any(String),
     })
@@ -70,7 +68,7 @@ describe('parameters', () => {
 
   it('normalizes multi-choice values to declaration order and formats visible settings', () => {
     const checked = validateParameters(PARAMETERS, {
-      seats: 1,
+      players: 1,
       gap: 90,
       mode: 'standard',
       extras: ['night', 'wind'],
@@ -80,11 +78,10 @@ describe('parameters', () => {
     const extrasValue = checked.values.extras
     if (extras === undefined || extrasValue === undefined) throw new Error('extras fixture missing')
     expect(formatParameterValue(extras, extrasValue)).toBe('Wind, Night')
-    expect(resolvedSeatCount(PARAMETERS, checked.values, 4)).toBe(1)
   })
 
   it('describes only the visible settings, in declaration order, filling gaps with defaults', () => {
-    expect(describeParameters(PARAMETERS, { seats: 1, gap: 90, extras: ['night'] })).toEqual([
+    expect(describeParameters(PARAMETERS, { players: 1, gap: 90, extras: ['night'] })).toEqual([
       { label: 'Pipe gap', value: '90' },
       { label: 'Extras', value: 'Night' },
     ])
@@ -94,28 +91,6 @@ describe('parameters', () => {
       { label: 'Extras', value: 'None' },
     ])
     // Nothing adjustable means nothing to describe; the caller decides what to say instead.
-    expect(describeParameters([PARAMETERS[0] as EnvParameter], { seats: 1 })).toEqual([])
-  })
-
-  it('treats a seats value the declaration rejects as no answer rather than a seat count', () => {
-    const variable: EnvParameter[] = [
-      {
-        name: 'seats',
-        title: 'Seats',
-        description: 'Players.',
-        type: 'int',
-        default: 4,
-        min: 2,
-        max: 6,
-      },
-    ]
-    expect(seatCountOf(variable, { seats: 5 })).toBe(5)
-    // Out of range, non-integer, empty (a cleared numeric field), and absent all mean "not a seat
-    // count", so a caller can hold its last valid answer instead of resizing a grid mid-edit.
-    for (const rejected of [99, 1, 4.5, '', '5', true, undefined]) {
-      expect(seatCountOf(variable, { seats: rejected }), String(rejected)).toBeUndefined()
-    }
-    expect(seatCountOf([], {})).toBeUndefined()
-    expect(resolvedSeatCount(variable, { seats: 99 }, 6)).toBe(6)
+    expect(describeParameters([PARAMETERS[0] as EnvParameter], { players: 1 })).toEqual([])
   })
 })

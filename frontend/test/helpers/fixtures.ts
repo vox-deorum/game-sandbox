@@ -12,9 +12,8 @@ export function flappyMeta(overrides: Partial<EnvironmentMeta> = {}): Environmen
     env_id: 'flappy_bird',
     display_name: 'Flappy Bird',
     description: 'A paced single-human clone.',
-    min_slots: 1,
-    max_slots: 1,
-    human_slots: ['player_0'],
+    layout: { kind: 'player_bounds', min: 1, max: 1 },
+    human_players: ['player_0'],
     human_timeout_ms: null,
     recommended_episode_ticks: 1000,
     pace_interval_ms: 50,
@@ -29,8 +28,8 @@ export function flappyMeta(overrides: Partial<EnvironmentMeta> = {}): Environmen
     live_interval_ms: null,
     parameters: [
       {
-        name: 'seats',
-        title: 'Seats',
+        name: 'players',
+        title: 'Players',
         description: 'Players.',
         type: 'int',
         default: 1,
@@ -60,9 +59,8 @@ export function heartsMeta(overrides: Partial<EnvironmentMeta> = {}): Environmen
     env_id: 'hearts',
     display_name: 'Hearts',
     description: 'Four-player trick-taking Hearts.',
-    min_slots: 4,
-    max_slots: 4,
-    human_slots: ['player_0', 'player_1', 'player_2', 'player_3'],
+    layout: { kind: 'player_bounds', min: 4, max: 4 },
+    human_players: ['player_0', 'player_1', 'player_2', 'player_3'],
     human_timeout_ms: 60_000,
     recommended_episode_ticks: 52,
     pace_interval_ms: null,
@@ -77,8 +75,8 @@ export function heartsMeta(overrides: Partial<EnvironmentMeta> = {}): Environmen
     live_interval_ms: 900,
     parameters: [
       {
-        name: 'seats',
-        title: 'Seats',
+        name: 'players',
+        title: 'Players',
         description: 'Players.',
         type: 'int',
         default: 4,
@@ -100,9 +98,8 @@ export function spadesMeta(overrides: Partial<EnvironmentMeta> = {}): Environmen
     env_id: 'spades',
     display_name: 'Spades',
     description: 'Four-player partnership Spades.',
-    min_slots: 4,
-    max_slots: 4,
-    human_slots: ['player_0', 'player_1', 'player_2', 'player_3'],
+    layout: { kind: 'player_bounds', min: 4, max: 4 },
+    human_players: ['player_0', 'player_1', 'player_2', 'player_3'],
     human_timeout_ms: 60_000,
     recommended_episode_ticks: 56,
     pace_interval_ms: null,
@@ -117,8 +114,8 @@ export function spadesMeta(overrides: Partial<EnvironmentMeta> = {}): Environmen
     live_interval_ms: 900,
     parameters: [
       {
-        name: 'seats',
-        title: 'Seats',
+        name: 'players',
+        title: 'Players',
         description: 'Players.',
         type: 'int',
         default: 4,
@@ -136,25 +133,25 @@ export function flappyHeader(overrides: Partial<RecordingHeader> = {}): Recordin
 }
 
 /**
- * Four Spades seats keyed by slot id, one a connected human (default player_2), the rest agents. The
- * human seat's `label` defaults to the same string as `user` ('dev'); pass `humanLabel` to diverge them
+ * Four Spades players keyed by player id, one a connected human (default player_2), the rest agents. The
+ * human player's `label` defaults to the same string as `user` ('dev'); pass `humanLabel` to diverge them
  * (the display-name label vs. the stable id) for a suite proving the label-over-id rendering preference.
  */
 export function spadesPlayers(
-  humanSlot: string | null = 'player_2',
+  humanPlayer: string | null = 'player_2',
   humanLabel = 'dev',
 ): NonNullable<RecordingHeader['players']> {
   const players: NonNullable<RecordingHeader['players']> = {}
-  for (const slot of ['player_0', 'player_1', 'player_2', 'player_3']) {
-    players[slot] =
-      slot === humanSlot
+  for (const player of ['player_0', 'player_1', 'player_2', 'player_3']) {
+    players[player] =
+      player === humanPlayer
         ? { kind: 'human', label: humanLabel, user: 'dev' }
         : { kind: 'agent', label: 'Naive agent' }
   }
   return players
 }
 
-/** A Spades recording header with per-seat attribution (needed for the chat panel's sender labels). */
+/** A Spades recording header with per-player attribution for the chat panel's sender labels. */
 export function spadesHeader(overrides: Partial<RecordingHeader> = {}): RecordingHeader {
   return {
     schema_version: 1,
@@ -178,16 +175,16 @@ export function flappyState(tick: number, score = 0): StepState {
 }
 
 /**
- * One four-seat step state, optionally carrying the messages sent on this tick. The messaging suites
+ * One four-player step state, optionally carrying the messages sent on this tick. The messaging suites
  * build recordings and live frames from it; `messages` is omitted (as the wire omits it) when absent.
  */
-export function seatState(
+export function playerState(
   tick: number,
   opts: { messages?: Message[]; score?: number } = {},
 ): StepState {
   const agents: Record<string, AgentStep> = {}
-  for (const slot of ['player_0', 'player_1', 'player_2', 'player_3']) {
-    agents[slot] = { reward: 0, score: opts.score ?? 0 }
+  for (const player of ['player_0', 'player_1', 'player_2', 'player_3']) {
+    agents[player] = { reward: 0, score: opts.score ?? 0 }
   }
   const state: StepState = {
     schema_version: 1,
@@ -204,7 +201,7 @@ export function seatState(
 /**
  * A JSONL recording string: a header line then one line per state. `schemaVersion` is loose (a number)
  * so a suite can build a deliberately-unsupported version to exercise the viewer's version check.
- * `players` seeds the header's per-slot attribution so a replay's chat panel can label senders, and
+ * `players` seeds the header's per-player attribution so a replay's chat panel can label senders, and
  * `parameters` the resolved settings a replay shows for the episode.
  */
 export function recordingText(

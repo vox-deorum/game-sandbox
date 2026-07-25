@@ -174,17 +174,17 @@ export async function recordSessionSubmission(
   db: Kysely<Database>,
   sessionId: string,
   submissionId: string,
-  slotId: string,
+  seatId: string,
 ): Promise<void> {
   await db
     .insertInto('session_submissions')
     .values({
       session_id: sessionId,
       submission_id: submissionId,
-      slot_id: slotId,
+      seat_id: seatId,
       created_at: new Date().toISOString(),
     })
-    .onConflict((oc) => oc.columns(['session_id', 'slot_id']).doNothing())
+    .onConflict((oc) => oc.columns(['session_id', 'seat_id']).doNothing())
     .execute()
 }
 

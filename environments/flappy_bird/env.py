@@ -97,10 +97,10 @@ class FlappyBirdEnv(GymnasiumToAEC):
         }
 
 
-def default_action(env: Any, slot_id: str) -> int:
+def default_action(env: Any, player_id: str) -> int:
     """The legal default on every timeout path: do nothing (idle).
 
     Idle (integer ``0``) is always legal, so it is already a real ``Discrete(2)`` action; the
-    env and slot id are accepted only for the uniform two-argument hook.
+    env and player id are accepted only for the uniform two-argument hook.
     """
     return 0

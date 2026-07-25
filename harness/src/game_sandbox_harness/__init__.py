@@ -25,9 +25,15 @@ from .environment import (
     EnvParameterChoice,
     EnvParameterValueError,
     ParameterValue,
+    PlayerBounds,
+    ResolvedLayout,
+    ResolvedSeat,
+    SeatPlan,
+    SeatPlans,
     discover_environments,
     effective_parameters,
     load_environment,
+    resolve_layout,
     resolve_parameters,
 )
 from .manifest import (
@@ -44,13 +50,12 @@ from .schema import (
 )
 from .session import (
     ActionSource,
-    AgentSlot,
+    AgentPlayer,
     Episode,
     EpisodeResult,
-    ExternalSlot,
+    ExternalPlayer,
     NoopSource,
     ScriptedSource,
-    Slot,
     run_episode,
 )
 from .state import (
@@ -95,12 +100,18 @@ __all__ = [
     "EnvParameter",
     "EnvParameterValueError",
     "EnvironmentMeta",
+    "PlayerBounds",
+    "SeatPlan",
+    "SeatPlans",
+    "ResolvedSeat",
+    "ResolvedLayout",
     "EnvironmentEntry",
     "EnvironmentLookupError",
     "discover_environments",
     "load_environment",
     "effective_parameters",
     "resolve_parameters",
+    "resolve_layout",
     # manifest
     "Manifest",
     "ManifestError",
@@ -108,9 +119,8 @@ __all__ = [
     "load_agent",
     # session
     "ActionSource",
-    "AgentSlot",
-    "ExternalSlot",
-    "Slot",
+    "AgentPlayer",
+    "ExternalPlayer",
     "NoopSource",
     "ScriptedSource",
     "Episode",

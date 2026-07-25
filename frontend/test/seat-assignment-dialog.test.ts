@@ -1,7 +1,11 @@
 import { fireEvent, render, screen, within } from '@testing-library/vue'
 import { describe, expect, it } from 'vitest'
 
-import type { SlotAssignmentInput, WatchAgentSummary } from '../src/api/client.js'
+import type {
+  AgentAssignmentInput,
+  SeatAssignmentInput,
+  WatchAgentSummary,
+} from '../src/api/client.js'
 import SeatAssignmentDialog from '../src/components/SeatAssignmentDialog.vue'
 import { flappyMeta, heartsMeta } from './helpers/fixtures.js'
 
@@ -13,12 +17,12 @@ const AGENTS: WatchAgentSummary[] = [
   agent({ submission_id: 'sub1', anonymous_number: 1 }),
   agent({ submission_id: 'sub2', anonymous_number: 2 }),
 ]
-const START_CONTEXT = { seasonId: 'season-1', parameters: { seats: 4 } }
+const START_CONTEXT = { seasonId: 'season-1', parameters: { players: 4 } }
 
 interface StartPayload {
-  slots: Record<string, SlotAssignmentInput>
+  seats: Record<string, SeatAssignmentInput>
   seed?: number
-  humanSlotTimeoutMs?: number
+  humanTimeoutMs?: number
 }
 
 /** The combobox for a seat row, addressed by its visible "Seat N" label. */
@@ -43,7 +47,7 @@ describe('SeatAssignmentDialog', () => {
         meta: heartsMeta(),
         agents: AGENTS,
         mode: 'watch',
-        preselect: { kind: 'submission', submissionId: 'sub2' } satisfies SlotAssignmentInput,
+        preselect: { kind: 'submission', submissionId: 'sub2' } satisfies AgentAssignmentInput,
       },
     })
     // Every seat starts preselected to the clicked agent (prefill-all), so Start is enabled at once.
@@ -56,23 +60,18 @@ describe('SeatAssignmentDialog', () => {
     await fireEvent.click(start)
     const payload = lastStart(emitted)
     // The payload covers exactly the environment's required seats, each a valid assignment.
-    expect(Object.keys(payload.slots).sort()).toEqual([
-      'player_0',
-      'player_1',
-      'player_2',
-      'player_3',
-    ])
+    expect(Object.keys(payload.seats).sort()).toEqual(['seat_0', 'seat_1', 'seat_2', 'seat_3'])
     expect(payload).toEqual({
       seasonId: 'season-1',
-      parameters: { seats: 4 },
-      slots: {
-        player_0: { kind: 'submission', submissionId: 'sub2' },
-        player_1: { kind: 'submission', submissionId: 'sub2' },
-        player_2: { kind: 'submission', submissionId: 'sub2' },
-        player_3: { kind: 'submission', submissionId: 'sub2' },
+      parameters: { players: 4 },
+      seats: {
+        seat_0: { kind: 'submission', submissionId: 'sub2' },
+        seat_1: { kind: 'submission', submissionId: 'sub2' },
+        seat_2: { kind: 'submission', submissionId: 'sub2' },
+        seat_3: { kind: 'submission', submissionId: 'sub2' },
       },
       seed: undefined,
-      humanSlotTimeoutMs: undefined,
+      humanTimeoutMs: undefined,
     })
   })
 
@@ -80,11 +79,11 @@ describe('SeatAssignmentDialog', () => {
     const { emitted } = render(SeatAssignmentDialog, {
       props: {
         seasonId: 'season-1',
-        parameters: { seats: 1, pipe_gap: 90 },
+        parameters: { players: 1, pipe_gap: 90 },
         meta: flappyMeta(),
         agents: AGENTS,
         mode: 'rate',
-        preselect: { kind: 'submission', submissionId: 'sub1' } satisfies SlotAssignmentInput,
+        preselect: { kind: 'submission', submissionId: 'sub1' } satisfies AgentAssignmentInput,
       },
     })
 
@@ -101,10 +100,10 @@ describe('SeatAssignmentDialog', () => {
     await fireEvent.click(start)
     expect(lastStart(emitted)).toEqual({
       seasonId: 'season-1',
-      parameters: { seats: 1, pipe_gap: 90 },
-      slots: { player_0: { kind: 'submission', submissionId: 'sub1' } },
+      parameters: { players: 1, pipe_gap: 90 },
+      seats: { seat_0: { kind: 'submission', submissionId: 'sub1' } },
       seed: undefined,
-      humanSlotTimeoutMs: undefined,
+      humanTimeoutMs: undefined,
     })
   })
 
@@ -149,7 +148,7 @@ describe('SeatAssignmentDialog', () => {
         preselect: {
           kind: 'submission',
           submissionId: fallbackSubmissionId,
-        } satisfies SlotAssignmentInput,
+        } satisfies AgentAssignmentInput,
       },
     })
 
@@ -185,11 +184,11 @@ describe('SeatAssignmentDialog', () => {
     expect(firstSeat.value).toBe(`submission:${fallbackSubmissionId}`)
 
     await fireEvent.click(screen.getByRole('button', { name: 'Start watching' }))
-    expect(lastStart(emitted).slots).toEqual({
-      player_0: { kind: 'submission', submissionId: fallbackSubmissionId },
-      player_1: { kind: 'submission', submissionId: fallbackSubmissionId },
-      player_2: { kind: 'submission', submissionId: fallbackSubmissionId },
-      player_3: { kind: 'submission', submissionId: fallbackSubmissionId },
+    expect(lastStart(emitted).seats).toEqual({
+      seat_0: { kind: 'submission', submissionId: fallbackSubmissionId },
+      seat_1: { kind: 'submission', submissionId: fallbackSubmissionId },
+      seat_2: { kind: 'submission', submissionId: fallbackSubmissionId },
+      seat_3: { kind: 'submission', submissionId: fallbackSubmissionId },
     })
   })
 
@@ -200,7 +199,7 @@ describe('SeatAssignmentDialog', () => {
         meta: heartsMeta(),
         agents: AGENTS,
         mode: 'watch',
-        preselect: { kind: 'submission', submissionId: 'sub1' } satisfies SlotAssignmentInput,
+        preselect: { kind: 'submission', submissionId: 'sub1' } satisfies AgentAssignmentInput,
       },
     })
     // Reassign seat 2 to the Naive baseline and seat 3 to the other submission; the rest stay sub1.
@@ -208,11 +207,11 @@ describe('SeatAssignmentDialog', () => {
     await fireEvent.update(seat('Seat 3'), 'submission:sub2')
     await fireEvent.click(screen.getByRole('button', { name: 'Start watching' }))
 
-    expect(lastStart(emitted).slots).toEqual({
-      player_0: { kind: 'submission', submissionId: 'sub1' },
-      player_1: { kind: 'builtin-agent' },
-      player_2: { kind: 'submission', submissionId: 'sub2' },
-      player_3: { kind: 'submission', submissionId: 'sub1' },
+    expect(lastStart(emitted).seats).toEqual({
+      seat_0: { kind: 'submission', submissionId: 'sub1' },
+      seat_1: { kind: 'builtin-agent' },
+      seat_2: { kind: 'submission', submissionId: 'sub2' },
+      seat_3: { kind: 'submission', submissionId: 'sub1' },
     })
   })
 
@@ -227,15 +226,15 @@ describe('SeatAssignmentDialog', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: 'Start playing' }))
     const payload = lastStart(emitted)
-    expect(payload.slots).toEqual({
-      player_0: { kind: 'human' },
-      player_1: { kind: 'builtin-agent' },
-      player_2: { kind: 'builtin-agent' },
-      player_3: { kind: 'builtin-agent' },
+    expect(payload.seats).toEqual({
+      seat_0: { kind: 'human' },
+      seat_1: { kind: 'builtin-agent' },
+      seat_2: { kind: 'builtin-agent' },
+      seat_3: { kind: 'builtin-agent' },
     })
     // Exactly one human seat, and the unpaced move clock is prefilled from the metadata.
-    expect(Object.values(payload.slots).filter((s) => s.kind === 'human')).toHaveLength(1)
-    expect(payload.humanSlotTimeoutMs).toBe(60_000)
+    expect(Object.values(payload.seats).filter((s) => s.kind === 'human')).toHaveLength(1)
+    expect(payload.humanTimeoutMs).toBe(60_000)
   })
 
   it('play: "Sit here" moves the human and resets the vacated seat to the Naive baseline', async () => {
@@ -252,13 +251,13 @@ describe('SeatAssignmentDialog', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: 'Start playing' }))
     const payload = lastStart(emitted)
-    expect(payload.slots).toEqual({
-      player_0: { kind: 'builtin-agent' },
-      player_1: { kind: 'builtin-agent' },
-      player_2: { kind: 'human' },
-      player_3: { kind: 'builtin-agent' },
+    expect(payload.seats).toEqual({
+      seat_0: { kind: 'builtin-agent' },
+      seat_1: { kind: 'builtin-agent' },
+      seat_2: { kind: 'human' },
+      seat_3: { kind: 'builtin-agent' },
     })
-    expect(Object.values(payload.slots).filter((s) => s.kind === 'human')).toHaveLength(1)
+    expect(Object.values(payload.seats).filter((s) => s.kind === 'human')).toHaveLength(1)
   })
 
   it('play: offers "Sit here" only on human-capable seats and seats the human at the first one', async () => {
@@ -268,7 +267,7 @@ describe('SeatAssignmentDialog', () => {
     render(SeatAssignmentDialog, {
       props: {
         ...START_CONTEXT,
-        meta: heartsMeta({ human_slots: ['player_1', 'player_2'] }),
+        meta: heartsMeta({ human_players: ['player_1', 'player_2'] }),
         agents: AGENTS,
         mode: 'play',
       },
@@ -294,28 +293,64 @@ describe('SeatAssignmentDialog', () => {
     await fireEvent.update(seat('Seat 3'), 'submission:sub2')
     await fireEvent.click(screen.getByRole('button', { name: 'Start playing' }))
 
-    expect(lastStart(emitted).slots).toEqual({
-      player_0: { kind: 'human' },
-      player_1: { kind: 'submission', submissionId: 'sub1' },
-      player_2: { kind: 'submission', submissionId: 'sub2' },
-      player_3: { kind: 'builtin-agent' },
+    expect(lastStart(emitted).seats).toEqual({
+      seat_0: { kind: 'human' },
+      seat_1: { kind: 'submission', submissionId: 'sub1' },
+      seat_2: { kind: 'submission', submissionId: 'sub2' },
+      seat_3: { kind: 'builtin-agent' },
     })
   })
 
-  // Every environment today is fixed-seat, so `seats` is hidden and the grid never resizes. These
-  // cover the machinery that exists for the first variable-seat environment, where the seats control
+  it('derives human-capable seats from the resolved seat membership', async () => {
+    const meta = heartsMeta({
+      layout: {
+        kind: 'seat_plans',
+        plans: [{ key: 'uneven', title: 'Uneven', seats: [[0], [1, 2, 3]] }],
+      },
+      human_players: ['player_2'],
+      parameters: [
+        {
+          name: 'seat_plan',
+          title: 'Seat plan',
+          description: 'Assignment layout.',
+          type: 'choice',
+          default: 'uneven',
+          choices: [{ value: 'uneven', label: 'Uneven' }],
+        },
+      ],
+    })
+    const { emitted } = render(SeatAssignmentDialog, {
+      props: {
+        seasonId: 'season-1',
+        parameters: { seat_plan: 'uneven' },
+        meta,
+        agents: AGENTS,
+        mode: 'play',
+      },
+    })
+
+    expect(screen.getByText('You').closest('li')).toHaveTextContent('Seat 2')
+    expect(screen.queryByRole('button', { name: 'Sit here' })).toBeNull()
+    await fireEvent.click(screen.getByRole('button', { name: 'Start playing' }))
+    expect(lastStart(emitted).seats).toEqual({
+      seat_0: { kind: 'builtin-agent' },
+      seat_1: { kind: 'human' },
+    })
+  })
+
+  // Every environment today is fixed-player, so `players` is hidden and the grid never resizes. These
+  // cover the machinery that exists for the first variable-player environment, where the players control
   // becomes visible and the grid follows it.
   describe('a visible seat count', () => {
-    /** Hearts with a variable seat range, so the synthesized `seats` control is visible. */
+    /** Hearts with a variable player range, so the synthesized `players` control is visible. */
     function variableSeatMeta() {
       return heartsMeta({
-        min_slots: 2,
-        max_slots: 6,
-        human_slots: ['player_0', 'player_1', 'player_2', 'player_3', 'player_4', 'player_5'],
+        layout: { kind: 'player_bounds', min: 2, max: 6 },
+        human_players: ['player_0', 'player_1', 'player_2', 'player_3', 'player_4', 'player_5'],
         parameters: [
           {
-            name: 'seats',
-            title: 'Seats',
+            name: 'players',
+            title: 'Players',
             description: 'Players.',
             type: 'int',
             default: 4,
@@ -326,7 +361,7 @@ describe('SeatAssignmentDialog', () => {
       })
     }
 
-    const CONTEXT = { seasonId: 'season-1', parameters: { seats: 4 } }
+    const CONTEXT = { seasonId: 'season-1', parameters: { players: 4 } }
 
     it('fills a seat added by a growing count with the dialog default, not the Naive baseline', async () => {
       render(SeatAssignmentDialog, {
@@ -335,10 +370,10 @@ describe('SeatAssignmentDialog', () => {
           meta: variableSeatMeta(),
           agents: AGENTS,
           mode: 'watch',
-          preselect: { kind: 'submission', submissionId: 'sub2' } satisfies SlotAssignmentInput,
+          preselect: { kind: 'submission', submissionId: 'sub2' } satisfies AgentAssignmentInput,
         },
       })
-      await fireEvent.update(screen.getByLabelText(/Seats/), '6')
+      await fireEvent.update(screen.getByLabelText(/Players/), '6')
 
       // "Preselect that agent into every seat" has to keep holding for the seats that appear later,
       // otherwise growing the grid quietly seats Naive in the new rows.
@@ -347,7 +382,7 @@ describe('SeatAssignmentDialog', () => {
       }
     })
 
-    it('does not resize the grid while the seats field holds a value it rejects', async () => {
+    it('does not resize the grid while the players field holds a value it rejects', async () => {
       render(SeatAssignmentDialog, {
         props: { ...CONTEXT, meta: variableSeatMeta(), agents: AGENTS, mode: 'watch' },
       })
@@ -357,14 +392,14 @@ describe('SeatAssignmentDialog', () => {
       // otherwise resolve to nothing, snap the grid back to the environment maximum, and evict the
       // assignment above before the form had reported the problem.
       for (const rejected of ['99', '']) {
-        await fireEvent.update(screen.getByLabelText(/Seats/), rejected)
+        await fireEvent.update(screen.getByLabelText(/Players/), rejected)
         expect(screen.getAllByRole('listitem')).toHaveLength(4)
         expect(seat('Seat 2').value).toBe('submission:sub1')
         expect(screen.getByRole('button', { name: 'Start watching' })).toBeDisabled()
       }
 
       // Back to a value the declaration accepts, and the grid follows again.
-      await fireEvent.update(screen.getByLabelText(/Seats/), '5')
+      await fireEvent.update(screen.getByLabelText(/Players/), '5')
       expect(screen.getAllByRole('listitem')).toHaveLength(5)
       expect(seat('Seat 2').value).toBe('submission:sub1')
       expect(screen.getByRole('button', { name: 'Start watching' })).not.toBeDisabled()

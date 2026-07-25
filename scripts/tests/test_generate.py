@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import _envs  # noqa: E402
 import generate  # noqa: E402
-from game_sandbox_harness.environment import EnvironmentMeta  # noqa: E402
+from game_sandbox_harness.environment import EnvironmentMeta, PlayerBounds  # noqa: E402
 
 
 def _meta() -> EnvironmentMeta:
@@ -23,9 +23,8 @@ def _meta() -> EnvironmentMeta:
         env_id="example",
         display_name="Example",
         description="A complete metadata fixture.",
-        min_slots=1,
-        max_slots=2,
-        human_slots=("player_0", "player_1"),
+        layout=PlayerBounds(1, 2),
+        human_players=("player_0", "player_1"),
         human_timeout_ms=50,
         recommended_episode_ticks=10,
         pace_interval_ms=None,
@@ -99,7 +98,7 @@ def test_ignore_patterns_and_template_modules_follow_authoring_conventions(tmp_p
     (package / "renderer").mkdir()
     (package / "tests").mkdir()
 
-    spec = _envs._template_spec(package, SimpleNamespace(display_name="Hearts", human_slots=()))
+    spec = _envs._template_spec(package, SimpleNamespace(display_name="Hearts", human_players=()))
     assert set(spec.modules) == {"hearts/UPSTREAM_LICENSE.md", "hearts/env.py"}
     assert spec.player_slot == "player_0"
 

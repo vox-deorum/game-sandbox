@@ -12,7 +12,8 @@ describe('EnvironmentRegistry', () => {
       expect(typeof meta.env_id).toBe('string')
       expect(typeof meta.display_name).toBe('string')
       expect(typeof meta.renderer).toBe('string')
-      expect(Array.isArray(meta.human_slots)).toBe(true)
+      expect(Array.isArray(meta.human_players)).toBe(true)
+      expect(meta.layout.kind === 'player_bounds' || meta.layout.kind === 'seat_plans').toBe(true)
       expect(typeof meta.step_limit_ms).toBe('number')
       expect(typeof meta.episode_limit_ms).toBe('number')
       expect(typeof meta.seat_order_matters).toBe('boolean')
@@ -30,7 +31,7 @@ describe('EnvironmentRegistry', () => {
     const flappy = registry.get('flappy_bird')
     expect(flappy).toBeDefined()
     expect(flappy?.pace_interval_ms).toBe(50)
-    expect(flappy?.human_slots).toContain('player_0')
+    expect(flappy?.human_players).toContain('player_0')
   })
 
   it('returns undefined for an unknown environment', () => {

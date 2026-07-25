@@ -56,14 +56,32 @@ export interface ResolvedParameters {
   issues: ParameterIssue[]
 }
 
+export interface PlayerBoundsLayout {
+  kind: 'player_bounds'
+  min: number
+  max: number
+}
+
+export interface SeatPlan {
+  key: string
+  title: string
+  seats: number[][]
+}
+
+export interface SeatPlansLayout {
+  kind: 'seat_plans'
+  plans: SeatPlan[]
+}
+
+export type EnvironmentLayout = PlayerBoundsLayout | SeatPlansLayout
+
 /** The public-facing metadata for one environment, field-for-field the Python `to_json()`. */
 export interface EnvironmentMeta {
   env_id: string
   display_name: string
   description: string
-  min_slots: number
-  max_slots: number
-  human_slots: string[]
+  layout: EnvironmentLayout
+  human_players: string[]
   human_timeout_ms: number | null
   recommended_episode_ticks: number
   pace_interval_ms: number | null
@@ -92,8 +110,20 @@ export interface EnvironmentMeta {
    * means "render every frame on arrival". Distinct from `view_interval_ms` (spectator/replay pace).
    */
   live_interval_ms: number | null
-  /** The declared gameplay parameters, including the synthesized `seats` declaration. */
+  /** The declared gameplay parameters, including the synthesized layout declaration. */
   parameters: EnvParameter[]
+}
+
+export interface ResolvedSeat {
+  seatId: string
+  players: string[]
+}
+
+export interface ResolvedLayout {
+  planKey: string
+  seats: ResolvedSeat[]
+  playerCount: number
+  seatCount: number
 }
 
 function isStringArray(value: unknown): value is string[] {
@@ -337,23 +367,18 @@ export function isEnvironmentMeta(value: unknown): value is EnvironmentMeta {
   ) {
     return false
   }
-  const seats = parameters[0]
-  if (
-    seats?.name !== 'seats' ||
-    seats.type !== 'int' ||
-    seats.default !== m.max_slots ||
-    seats.min !== m.min_slots ||
-    seats.max !== m.max_slots
-  ) {
+  if (!isEnvironmentLayout(m.layout)) {
     return false
   }
+  const reserved = parameters[0]
+  const ordinaryNames = new Set(parameters.slice(1).map((parameter) => parameter.name))
+  if (ordinaryNames.has('players') || ordinaryNames.has('seat_plan')) return false
+  if (!matchesReservedParameter(m.layout, reserved)) return false
   return (
     typeof m.env_id === 'string' &&
     typeof m.display_name === 'string' &&
     typeof m.description === 'string' &&
-    typeof m.min_slots === 'number' &&
-    typeof m.max_slots === 'number' &&
-    isStringArray(m.human_slots) &&
+    isStringArray(m.human_players) &&
     isIntOrNull(m.human_timeout_ms) &&
     typeof m.recommended_episode_ticks === 'number' &&
     isIntOrNull(m.pace_interval_ms) &&
@@ -367,4 +392,115 @@ export function isEnvironmentMeta(value: unknown): value is EnvironmentMeta {
     isIntOrNull(m.view_interval_ms) &&
     isIntOrNull(m.live_interval_ms)
   )
+}
+
+function hasOnlyKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  return Object.keys(value).every((key) => keys.includes(key))
+}
+
+function isEnvironmentLayout(value: unknown): value is EnvironmentLayout {
+  if (typeof value !== 'object' || value === null) return false
+  const layout = value as Record<string, unknown>
+  if (layout.kind === 'player_bounds') {
+    return (
+      hasOnlyKeys(layout, ['kind', 'min', 'max']) &&
+      typeof layout.min === 'number' &&
+      Number.isSafeInteger(layout.min) &&
+      layout.min > 0 &&
+      typeof layout.max === 'number' &&
+      Number.isSafeInteger(layout.max) &&
+      layout.max >= layout.min
+    )
+  }
+  if (layout.kind !== 'seat_plans' || !hasOnlyKeys(layout, ['kind', 'plans'])) return false
+  if (!Array.isArray(layout.plans) || layout.plans.length === 0) return false
+  const keys = new Set<string>()
+  return layout.plans.every((rawPlan) => {
+    if (typeof rawPlan !== 'object' || rawPlan === null) return false
+    const plan = rawPlan as Record<string, unknown>
+    if (
+      !hasOnlyKeys(plan, ['key', 'title', 'seats']) ||
+      typeof plan.key !== 'string' ||
+      !/^[a-z][a-z0-9_]*$/.test(plan.key) ||
+      keys.has(plan.key) ||
+      typeof plan.title !== 'string' ||
+      plan.title.length === 0 ||
+      !Array.isArray(plan.seats) ||
+      plan.seats.length === 0
+    )
+      return false
+    keys.add(plan.key)
+    const players: number[] = []
+    for (const seat of plan.seats) {
+      if (!Array.isArray(seat) || seat.length === 0) return false
+      for (const player of seat) {
+        if (typeof player !== 'number' || !Number.isSafeInteger(player) || player < 0) return false
+        players.push(player)
+      }
+    }
+    return [...players].sort((a, b) => a - b).every((player, index) => player === index)
+  })
+}
+
+function matchesReservedParameter(
+  layout: EnvironmentLayout,
+  parameter: EnvParameter | undefined,
+): boolean {
+  if (layout.kind === 'player_bounds') {
+    return (
+      parameter?.name === 'players' &&
+      parameter.type === 'int' &&
+      parameter.default === layout.max &&
+      parameter.min === layout.min &&
+      parameter.max === layout.max
+    )
+  }
+  return (
+    parameter?.name === 'seat_plan' &&
+    parameter.type === 'choice' &&
+    parameter.default === layout.plans[0]?.key &&
+    parameter.choices.length === layout.plans.length &&
+    parameter.choices.every(
+      (choice, index) =>
+        choice.value === layout.plans[index]?.key && choice.label === layout.plans[index]?.title,
+    )
+  )
+}
+
+/** Resolve a validated complete parameter map into canonical, ordered seats and players. */
+export function resolveLayout(
+  meta: EnvironmentMeta,
+  parameters: Readonly<Record<string, ParameterValue>>,
+): ResolvedLayout {
+  if (meta.layout.kind === 'player_bounds') {
+    const players = parameters.players
+    if (
+      typeof players !== 'number' ||
+      !Number.isSafeInteger(players) ||
+      players < meta.layout.min ||
+      players > meta.layout.max
+    ) {
+      throw new Error('resolved parameters carry no valid players value')
+    }
+    const seats = Array.from({ length: players }, (_, index) => ({
+      seatId: `seat_${index}`,
+      players: [`player_${index}`],
+    }))
+    return { planKey: 'solo', seats, playerCount: players, seatCount: players }
+  }
+  const key = parameters.seat_plan
+  if (typeof key !== 'string') throw new Error('resolved parameters carry no valid seat_plan value')
+  const plan = meta.layout.plans.find((candidate) => candidate.key === key)
+  if (plan === undefined)
+    throw new Error(`resolved parameters select unknown seat plan ${JSON.stringify(key)}`)
+  const seats = plan.seats.map((members, index) => ({
+    seatId: `seat_${index}`,
+    players: members.map((player) => `player_${player}`),
+  }))
+  return {
+    planKey: plan.key,
+    seats,
+    playerCount: plan.seats.flat().length,
+    seatCount: seats.length,
+  }
 }

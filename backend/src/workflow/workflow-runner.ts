@@ -94,7 +94,7 @@ export interface WorkflowRunnerDeps {
   imagePolicy: ImagePolicy
   /** Internal proxy port emitted into the shared harness launch block. */
   llmInternalPort?: number
-  /** Issues one temporary official key per workflow agent slot. */
+  /** Issues one temporary official key per workflow agent player. */
   officialGrantIssuer?: OfficialGrantIssuer
   /** Reads successful calls from the run-scoped execution telemetry file after grant teardown. */
   officialTelemetry?: Pick<ExecutionTelemetryStore, 'aggregateByModel'> &
@@ -122,11 +122,11 @@ interface ResultEnvelope {
   reason: string | null
   scores: Record<string, number>
   /**
-   * The one seat a failure is chargeable to: the slot whose agent raised, or whose own per-episode
+   * The one seat a failure is chargeable to: the player whose agent raised, or whose own per-episode
    * budget overran. `null` for a clean episode, or a container-level fault (a wall-clock kill, an OOM)
    * no single seat owns. The runner flags only this seat instead of every competitor in the container.
    */
-  failedSlot: string | null
+  failedPlayer: string | null
 }
 
 /** How a finished game's container fared: a clean episode, a crashed agent, or a timed-out agent. */
@@ -376,20 +376,20 @@ class DockerWorkflowRunner implements WorkflowRunner {
   ): Promise<void> {
     const runId = run.id
     const envId = meta.env_id
-    const slots = JSON.parse(game.slots) as AgentRef[]
+    const seats = JSON.parse(game.seats) as AgentRef[]
     await this.deps.storage.setRunGameStatus(game.id, 'running')
     this.emit(runId, { type: 'game_status', game_index: game.game_index, status: 'running' })
     this.gameLog(
       runId,
       game,
-      `game ${game.game_index} started: seed ${game.seed}, ${describeSlots(slots)}`,
+      `game ${game.game_index} started: seed ${game.seed}, ${describeSeats(seats)}`,
     )
 
     // Resolve the launch image: the one submission seat's overlay, or the base image for an all-Naive
     // game. An image-resolution failure is an infrastructure fault, not an agent fault.
     let image: ImageRef
     try {
-      image = await this.resolveImage(slots, depsVersion)
+      image = await this.resolveImage(seats, depsVersion)
     } catch (error) {
       await this.infraFault(runId, game, `image resolution failed: ${errorText(error)}`)
       return
@@ -421,7 +421,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
           llmLease = await this.deps.officialGrantIssuer.issue({
             sessionId: game.id,
             scopeId: runId,
-            agentSlots: slots.map((_, index) => `player_${index}`),
+            agentPlayers: seats.map((_, index) => `player_${index}`),
             models: policyModels(llmPolicy),
             limits: policyLimits(llmPolicy),
           })
@@ -439,7 +439,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
       const sessionConfig = await this.sessionConfig(
         envId,
         game.seed,
-        slots,
+        seats,
         recordingId,
         overrides,
         parameters,
@@ -571,24 +571,26 @@ class DockerWorkflowRunner implements WorkflowRunner {
       // overage) names that seat, so the blame lands there alone and not on every competitor sharing the
       // container. A container-level fault it could not attribute (a wall-clock watchdog kill, an OOM)
       // names no seat: the whole game's seats then carry it, since the culprit is genuinely unknown.
-      const culpritSlot = failure.kind !== null ? (captured.result?.failedSlot ?? null) : null
+      const culpritPlayer = failure.kind !== null ? (captured.result?.failedPlayer ?? null) : null
       const status =
         failure.kind === 'timeout' ? 'timed_out' : failure.kind === 'crash' ? 'failed' : 'completed'
 
       // The revocation barrier above closed admission and awaited every request finalizer. Read every
       // seat from the shared run scope before writing any per-seat result, so all results describe the
       // same settled telemetry state and no delayed successful write can land after aggregation.
-      const llmUsageBySlot = new Map<string, LlmUsageByModel | null>()
+      const llmUsageByPlayer = new Map<string, LlmUsageByModel | null>()
       if (llmPolicy.enabled) {
         const telemetry = this.deps.officialTelemetry
         if (telemetry === undefined) {
           throw new Error('official workflow LLM telemetry is not configured')
         }
-        for (let slotIndex = 0; slotIndex < slots.length; slotIndex++) {
-          const slotId = `player_${slotIndex}`
-          llmUsageBySlot.set(
-            slotId,
-            storedLlmUsage(telemetry.aggregateByModel(runId, { sessionId: game.id, slot: slotId })),
+        for (let seatIndex = 0; seatIndex < seats.length; seatIndex++) {
+          const playerId = `player_${seatIndex}`
+          llmUsageByPlayer.set(
+            playerId,
+            storedLlmUsage(
+              telemetry.aggregateByModel(runId, { sessionId: game.id, slot: playerId }),
+            ),
           )
         }
       }
@@ -599,7 +601,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
       // recognized result-envelope reason (a clean exit lacking one was already faulted above, so we
       // never invent a reason); a crashed or timed-out game stays reasonless so its replay shows no final
       // standings, mirroring a live session that ended badly.
-      const owner = recordingOwner(slots, run.requested_by)
+      const owner = recordingOwner(seats, run.requested_by)
       // Publish the game association before its recording row. Retention can then recognize the
       // active workflow in the first instant the row exists, including for non-LLM recordings that
       // have no execution-scope id of their own.
@@ -618,20 +620,21 @@ class DockerWorkflowRunner implements WorkflowRunner {
         .catch((error) => this.log(`run ${runId}: createRecording failed: ${String(error)}`))
 
       const pricedModels = policyModels(llmPolicy)
-      for (let slotIndex = 0; slotIndex < slots.length; slotIndex++) {
-        const agent = slots[slotIndex] as AgentRef
-        const slotId = `player_${slotIndex}`
-        const aggregate = aggregateSeat(parsed.states, slotId)
+      for (let seatIndex = 0; seatIndex < seats.length; seatIndex++) {
+        const agent = seats[seatIndex] as AgentRef
+        const playerId = `player_${seatIndex}`
+        const aggregate = aggregateSeat(parsed.states, playerId)
         // The result envelope is authoritative for a seat's final episode score: it reports every
         // seat's accumulated score, whereas the recording writes only the acting seat per tick. A
         // turn-based env that pays all seats at the end (Hearts settles its penalty on the final
         // trick) therefore never records the non-acting seats' terminal payout, so their recording
         // `score` reads back as a stale 0. The recording-derived score is the fallback for the rare
         // case the envelope never reported this seat at all.
-        const envelopeScore = captured.result?.scores[slotId]
+        const envelopeScore = captured.result?.scores[playerId]
         const rawScore =
           typeof envelopeScore === 'number' ? envelopeScore : (aggregate.finalScore ?? 0)
-        const seatFailed = failure.kind !== null && (culpritSlot === null || culpritSlot === slotId)
+        const seatFailed =
+          failure.kind !== null && (culpritPlayer === null || culpritPlayer === playerId)
         // A forfeited seat takes the environment's worst-case floor, not the partial score it accrued
         // before failing. Otherwise a terminal-scored game (Hearts pays its penalty only at the final
         // trick) lets an agent that crashes or plays an illegal move bank a ~0 partial — the best
@@ -641,13 +644,13 @@ class DockerWorkflowRunner implements WorkflowRunner {
           : normalizeEpisodeScore(envId, rawScore)
         await this.deps.storage.recordGameResult({
           game_id: game.id,
-          slot_index: slotIndex,
+          seat_index: seatIndex,
           agent,
           episode_score: episodeScore,
           agent_compute_ms_total: aggregate.agentComputeMsTotal,
           acted_tick_count: aggregate.actedTickCount,
-          llm_usage_by_model: llmUsageBySlot.get(slotId) ?? null,
-          llm_weighted_cost: weightedCostOf(llmUsageBySlot.get(slotId) ?? null, pricedModels),
+          llm_usage_by_model: llmUsageByPlayer.get(playerId) ?? null,
+          llm_weighted_cost: weightedCostOf(llmUsageByPlayer.get(playerId) ?? null, pricedModels),
           failed: seatFailed,
           failure_reason: seatFailed ? failure.reason : null,
         })
@@ -715,16 +718,16 @@ class DockerWorkflowRunner implements WorkflowRunner {
   }
 
   /**
-   * Resolve the launch image: the season-pinned base image when no slot is a submission, or, through
+   * Resolve the launch image: the season-pinned base image when no player is a submission, or, through
    * the shared resolver, a single submission's warm overlay or a composed multi-submission session
    * image. Sharing the single-versus-composed decision with the live orchestrator is what keeps a
    * multi-submission matchup game (the Hearts scheduler's ordered seatings) from baking only the first
    * seat's overlay, which would leave the other submitted seats with no code to load.
    */
-  private async resolveImage(slots: readonly AgentRef[], depsVersion: number): Promise<ImageRef> {
+  private async resolveImage(seats: readonly AgentRef[], depsVersion: number): Promise<ImageRef> {
     const composed: SessionImageSlot[] = []
-    for (let i = 0; i < slots.length; i++) {
-      const agent = slots[i] as AgentRef
+    for (let i = 0; i < seats.length; i++) {
+      const agent = seats[i] as AgentRef
       if (agent.kind === 'submission') {
         const submission = await this.deps.storage.getSubmission(agent.submission_id)
         if (submission === undefined) {
@@ -748,11 +751,11 @@ class DockerWorkflowRunner implements WorkflowRunner {
     )
   }
 
-  /** Build the headless session config: every slot an agent, no human source, recording to the volume. */
+  /** Build the headless session config: every player an agent, no human source, recording to the volume. */
   private async sessionConfig(
     envId: string,
     seed: number,
-    slots: readonly AgentRef[],
+    assignedSeats: readonly AgentRef[],
     recordingId: string,
     overrides: ReturnType<typeof decodeSeasonConfig>['overrides'],
     parameters: Record<string, ParameterValue>,
@@ -761,29 +764,29 @@ class DockerWorkflowRunner implements WorkflowRunner {
     // Snapshot each submission owner's display name for the recording header at launch time, one
     // batched lookup. Names are cosmetic — the label falls back to the stable id — so a directory
     // failure degrades to ids rather than aborting the game.
-    const names = await this.snapshotNames(slots)
+    const names = await this.snapshotNames(assignedSeats)
     const seats = new Map<string, SeatBinding>()
-    for (let i = 0; i < slots.length; i++) {
-      const agent = slots[i] as AgentRef
-      const slotId = `player_${i}`
+    for (let i = 0; i < assignedSeats.length; i++) {
+      const agent = assignedSeats[i] as AgentRef
+      const playerId = `player_${i}`
       if (agent.kind === 'submission') {
-        seats.set(slotId, {
+        seats.set(playerId, {
           driver: 'submission',
           submissionId: agent.submission_id,
           userId: agent.user_id,
-          path: submissionSlotPath(slotId),
+          path: submissionSlotPath(playerId),
           ...optionalField('ownerName', names.get(agent.user_id)),
         })
       } else {
-        seats.set(slotId, { driver: 'naive' })
+        seats.set(playerId, { driver: 'naive' })
       }
     }
-    const { slots: slotConfig, players } = assembleSeats(seats)
+    const { playerBindings, players } = assembleSeats(seats)
     return {
       env_id: envId,
       seed,
-      slots: slotConfig,
-      // No human seats in a workflow match, so there is no human-slot timeout to resolve.
+      player_bindings: playerBindings,
+      // No human players in a workflow match, so there is no human-player timeout to resolve.
       human_timeout_ms: null,
       recording_dir: CONTAINER_RECORDINGS_DIR,
       recording_id: recordingId,
@@ -806,13 +809,13 @@ class DockerWorkflowRunner implements WorkflowRunner {
    * or a lookup that throws, degrades to no names so a headless game is never failed over a cosmetic
    * name resolution; the labels fall back to the stable ids.
    */
-  private async snapshotNames(slots: readonly AgentRef[]): Promise<Map<string, string>> {
+  private async snapshotNames(seats: readonly AgentRef[]): Promise<Map<string, string>> {
     if (this.deps.userDirectory === undefined) {
       return new Map()
     }
     try {
       return await this.deps.userDirectory.namesFor(
-        slots.flatMap((agent) => (agent.kind === 'submission' ? [agent.user_id] : [])),
+        seats.flatMap((agent) => (agent.kind === 'submission' ? [agent.user_id] : [])),
       )
     } catch (error) {
       this.log(
@@ -932,16 +935,16 @@ function policyLimits(policy: ResolvedOfficialLlmPolicy): {
 }
 
 /** A human-readable seat summary for the started-game log line. */
-function describeSlots(slots: readonly AgentRef[]): string {
-  const labels = slots.map((agent) =>
+function describeSeats(seats: readonly AgentRef[]): string {
+  const labels = seats.map((agent) =>
     agent.kind === 'submission' ? `submission ${agent.submission_id}` : 'Naive baseline',
   )
   return labels.join(' vs ')
 }
 
 /** The recording's natural owner: the (single) submission seat's owner, else the run's operator. */
-function recordingOwner(slots: readonly AgentRef[], requestedBy: string): string {
-  for (const agent of slots) {
+function recordingOwner(seats: readonly AgentRef[], requestedBy: string): string {
+  for (const agent of seats) {
     if (agent.kind === 'submission') {
       return agent.user_id
     }
@@ -952,17 +955,17 @@ function recordingOwner(slots: readonly AgentRef[], requestedBy: string): string
 /** Validate the harness `result` envelope into the two fields the runner reads. */
 function parseResultEnvelope(value: Record<string, unknown>): ResultEnvelope {
   const reason = typeof value.reason === 'string' ? value.reason : null
-  const failedSlot = typeof value.failed_slot === 'string' ? value.failed_slot : null
+  const failedPlayer = typeof value.failed_player === 'string' ? value.failed_player : null
   const scores: Record<string, number> = {}
   const raw = value.scores
   if (typeof raw === 'object' && raw !== null) {
-    for (const [slotId, score] of Object.entries(raw)) {
+    for (const [playerId, score] of Object.entries(raw)) {
       if (typeof score === 'number') {
-        scores[slotId] = score
+        scores[playerId] = score
       }
     }
   }
-  return { reason, scores, failedSlot }
+  return { reason, scores, failedPlayer }
 }
 
 /** The chargeable-wall-clock watchdog bound for one game, derived from the effective episode timeout. */

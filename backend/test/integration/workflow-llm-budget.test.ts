@@ -170,7 +170,7 @@ describe('workflow LLM budget exhaustion (Docker)', () => {
       deps_version: DEPS_VERSION,
       matches: [
         {
-          slots: ['submission', 'builtin-naive', 'builtin-naive', 'builtin-naive'],
+          seats: ['submission', 'builtin-naive', 'builtin-naive', 'builtin-naive'],
           seeds,
           games: 2,
         },
@@ -205,19 +205,19 @@ describe('workflow LLM budget exhaustion (Docker)', () => {
       submission_id: submission.id,
       user_id: 'alice',
     }
-    const slots: AgentRef[] = [
+    const seats: AgentRef[] = [
       submissionRef,
       { kind: 'builtin-naive' },
       { kind: 'builtin-naive' },
       { kind: 'builtin-naive' },
     ]
     const run = await createRunOrFail(storage, season.id, 'operator', () => ({
-      parametersSnapshot: { seats: 4 },
+      parametersSnapshot: { players: 4 },
       scheduledGames: seeds.map((seed, gameIndex) => ({
         match_index: 0,
         game_index: gameIndex,
         seed,
-        slots,
+        seats,
       })),
       llmPolicy: policy,
     }))

@@ -26,7 +26,7 @@ def test_single_slot_local_config_uses_metadata_timeout_when_omitted(monkeypatch
         step_limit=None,
     )
 
-    assert config["slots"] == {"player_0": {"kind": "external"}}
+    assert config["player_bindings"] == {"player_0": {"kind": "external"}}
     assert config["players"] == {"player_0": {"kind": "human", "label": "You"}}
     assert "human_timeout_ms" not in config
     assert "max_steps" not in config
@@ -46,9 +46,9 @@ def test_four_slot_local_config_covers_every_slot_and_preserves_null_timeout(mon
         human_timeout_ms=None,
     )
 
-    assert set(config["slots"]) == set(slots)
+    assert set(config["player_bindings"]) == set(slots)
     assert set(config["players"]) == set(slots)
-    assert config["slots"]["player_2"] == {"kind": "external"}
+    assert config["player_bindings"]["player_2"] == {"kind": "external"}
     assert config["players"]["player_2"] == {"kind": "human", "label": "You"}
     assert config["human_timeout_ms"] is None
     assert config["max_steps"] == 52
@@ -56,7 +56,7 @@ def test_four_slot_local_config_covers_every_slot_and_preserves_null_timeout(mon
 
 def test_human_mode_rejects_a_slot_excluded_from_metadata(monkeypatch, capsys):
     monkeypatch.setattr(play, "possible_slots", lambda: ("player_0", "player_1"))
-    monkeypatch.setattr(play, "META", replace(play.META, human_slots=("player_0",)))
+    monkeypatch.setattr(play, "META", replace(play.META, human_players=("player_0",)))
 
     with pytest.raises(SystemExit) as error:
         play.main(["human", "--seat", "1"])
@@ -67,7 +67,7 @@ def test_human_mode_rejects_a_slot_excluded_from_metadata(monkeypatch, capsys):
 
 def test_headless_allows_a_valid_seat_excluded_from_human_metadata(monkeypatch, capsys):
     monkeypatch.setattr(play, "possible_slots", lambda: ("player_0", "player_1"))
-    monkeypatch.setattr(play, "META", replace(play.META, human_slots=("player_0",)))
+    monkeypatch.setattr(play, "META", replace(play.META, human_players=("player_0",)))
     monkeypatch.setattr(play, "run_headless", lambda **kwargs: 3.5)
 
     assert play.main(["human", "--headless", "--seat", "1", "--seed", "7"]) == 0
@@ -101,9 +101,9 @@ def test_local_runner_passes_stdin_to_the_harness_run_seam(monkeypatch, tmp_path
     monkeypatch.setattr(live_local, "run", fake_run)
     config = {
         "env_id": live_local.META.env_id,
-        "parameters": {"seats": 1},
+        "parameters": {"players": 1},
         "seed": 0,
-        "slots": {"player_0": {"kind": "external"}},
+        "player_bindings": {"player_0": {"kind": "external"}},
         "players": {"player_0": {"kind": "human", "label": "You"}},
         "recording_dir": str(tmp_path / "recordings"),
         "recording_id": "local",

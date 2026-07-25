@@ -285,9 +285,8 @@ function meta(overrides: Record<string, unknown>): Record<string, unknown> {
     env_id: 'flappy_bird',
     display_name: 'Flappy Bird',
     description: 'test env',
-    min_slots: 1,
-    max_slots: 1,
-    human_slots: ['player_0'],
+    layout: { kind: 'player_bounds', min: 1, max: 1 },
+    human_players: ['player_0'],
     human_timeout_ms: null,
     recommended_episode_ticks: 1000,
     pace_interval_ms: 50,
@@ -302,9 +301,9 @@ function meta(overrides: Record<string, unknown>): Record<string, unknown> {
     live_interval_ms: null,
     parameters: [
       {
-        name: 'seats',
-        title: 'Seats',
-        description: 'Number of seats.',
+        name: 'players',
+        title: 'Players',
+        description: 'Number of players.',
         type: 'int',
         default: 1,
         min: 1,
@@ -335,21 +334,20 @@ export function makeEnvironments(): EnvironmentRegistry {
     JSON.stringify([
       meta({}),
       meta({ env_id: 'turn_based', pace_interval_ms: null, human_timeout_ms: 5000 }),
-      meta({ env_id: 'watch_only', human_slots: [] }),
+      meta({ env_id: 'watch_only', human_players: [] }),
       meta({
         env_id: 'hearts',
-        min_slots: 4,
-        max_slots: 4,
-        human_slots: ['player_0', 'player_1', 'player_2', 'player_3'],
+        layout: { kind: 'player_bounds', min: 4, max: 4 },
+        human_players: ['player_0', 'player_1', 'player_2', 'player_3'],
         human_timeout_ms: 60000,
         pace_interval_ms: null,
         renderer: 'hearts',
         seat_order_matters: true,
         parameters: [
           {
-            name: 'seats',
-            title: 'Seats',
-            description: 'Number of seats.',
+            name: 'players',
+            title: 'Players',
+            description: 'Number of players.',
             type: 'int',
             default: 4,
             min: 4,
@@ -361,9 +359,8 @@ export function makeEnvironments(): EnvironmentRegistry {
       // environment that opts in, with a metadata cap to combine against a season override.
       meta({
         env_id: 'chatty',
-        min_slots: 4,
-        max_slots: 4,
-        human_slots: ['player_0', 'player_1', 'player_2', 'player_3'],
+        layout: { kind: 'player_bounds', min: 4, max: 4 },
+        human_players: ['player_0', 'player_1', 'player_2', 'player_3'],
         human_timeout_ms: 60000,
         pace_interval_ms: null,
         messaging: true,
@@ -372,9 +369,9 @@ export function makeEnvironments(): EnvironmentRegistry {
         seat_order_matters: true,
         parameters: [
           {
-            name: 'seats',
-            title: 'Seats',
-            description: 'Number of seats.',
+            name: 'players',
+            title: 'Players',
+            description: 'Number of players.',
             type: 'int',
             default: 4,
             min: 4,

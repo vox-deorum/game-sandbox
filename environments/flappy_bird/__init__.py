@@ -13,7 +13,7 @@ to change.
 
 from __future__ import annotations
 
-from game_sandbox_harness.environment import EnvironmentEntry, EnvironmentMeta, EnvParameter
+from game_sandbox_harness.environment import EnvironmentEntry, EnvironmentMeta, EnvParameter, PlayerBounds
 
 from .env import default_action, make_env
 from .overlay import extract_overlay
@@ -28,9 +28,8 @@ META = EnvironmentMeta(
         "A Flappy Bird style single-agent game: tap to flap and steer the bird through the "
         "gaps between pipes. Brought in through the single-agent compatibility wrapper."
     ),
-    min_slots=1,
-    max_slots=1,
-    human_slots=("player_0",),
+    layout=PlayerBounds(min=1, max=1),
+    human_players=("player_0",),
     # A pace interval is set, so the interval itself is the human deadline.
     human_timeout_ms=None,
     recommended_episode_ticks=1000,

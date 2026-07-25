@@ -8,26 +8,30 @@
   Clicking any row, built-in Naive or a submitted agent, opens the same watch configuration dialog for
   a multi-seat environment, preselecting that agent into every seat (SeatAssignmentDialog). A Rate
   action locks the selected agent and every session setting so the resulting feedback applies to the
-  intended agent. Watch actions keep the configuration editable. A single-slot environment with no
-  visible settings starts a scripted watch run immediately, expressed as a one-seat `slots`
+  intended agent. Watch actions keep the configuration editable. A single-seat environment with no
+  visible settings starts a scripted watch run immediately, expressed as a one-seat `seats`
   assignment. The post-session panel takes the rating after the run. An anonymous visitor sees the
   same actions, but clicking one routes to the sign-in page instead of starting a run; a signed-in but
   still-pending account browses without actions and sees the awaiting-approval notice.
 -->
 <script setup lang="ts">
-import type { EnvironmentMeta, ParameterValue } from '@game-sandbox/schema/environment'
+import {
+  type EnvironmentMeta,
+  type ParameterValue,
+  resolveLayout,
+} from '@game-sandbox/schema/environment'
 import { computed, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 
 import {
-  type SlotAssignmentInput,
+  type AgentAssignmentInput,
   type StartPayload,
   startSession,
   type WatchAgentSummary,
 } from '../api/client.js'
 import { maskedSubmissionLabel } from '../lib/attribution.js'
 import { handleSessionStartResult } from '../lib/session-start.js'
-import { resolvedSeatCount, visibleParameters } from '../lib/parameters.js'
+import { visibleParameters } from '../lib/parameters.js'
 import { canParticipate, isAdmin, useMe } from '../me.js'
 import SeatAssignmentDialog from './SeatAssignmentDialog.vue'
 import UiBadge from './ui/UiBadge.vue'
@@ -59,10 +63,10 @@ const starting = ref<string | null>(null)
 
 // The watch configuration dialog's state (multi-seat environments only). It opens with the clicked
 // agent preselected into every seat, which the viewer can change before starting.
-const multiSeat = computed(() => resolvedSeatCount(props.meta.parameters, props.parameters, props.meta.max_slots) > 1)
+const multiSeat = computed(() => resolveLayout(props.meta, props.parameters).seatCount > 1)
 const needsConfiguration = computed(() => multiSeat.value || visibleParameters(props.meta.parameters).length > 0)
 const dialogOpen = ref(false)
-const dialogPreselect = ref<SlotAssignmentInput | null>(null)
+const dialogPreselect = ref<AgentAssignmentInput | null>(null)
 const dialogMode = ref<'rate' | 'watch'>('watch')
 
 // An anonymous visitor keeps the watch/rate actions as the entry point into signing in: clicking
@@ -105,11 +109,11 @@ function watchBuiltin(): void {
 
 /**
  * A clicked agent row resolves to a seat assignment and intent. A configurable environment opens the
- * dialog with that agent preselected into every seat; a fixed single-slot environment skips the
+ * dialog with that agent preselected into every seat; a fixed single-seat environment skips the
  * dialog and starts the scripted run right away, as the Stage 5 watch flow did.
  */
 function chooseAgent(
-  preselect: SlotAssignmentInput,
+  preselect: AgentAssignmentInput,
   loadingKey: string,
   mode: 'rate' | 'watch',
 ): void {
@@ -124,12 +128,19 @@ function chooseAgent(
     dialogOpen.value = true
     return
   }
-  void startRun({ slots: { player_0: preselect }, seasonId: props.seasonId, parameters: props.parameters }, loadingKey)
+  void startRun(
+    {
+      seats: { seat_0: preselect },
+      seasonId: props.seasonId,
+      parameters: props.parameters,
+    },
+    loadingKey,
+  )
 }
 
 /**
- * Start a watch run from a composed payload — the seat dialog's full `slots` (with its seed) for a
- * multi-seat environment, or a one-seat assignment for a single-slot one — and navigate to it,
+ * Start a watch run from a composed payload: the seat dialog's full `seats` (with its seed) for a
+ * multi-seat environment, or a one-seat assignment for a single-seat one, then navigate to it,
  * reusing the rejoin / not-active / error handling.
  */
 async function startRun(payload: StartPayload, loadingKey?: string): Promise<void> {
