@@ -26,10 +26,10 @@ class DuckAgent:
 
     Inlined here so the generator does not depend on the example package layout. It produces a
     livelier game than always-lowest-legal, so the fixture exercises hearts breaking, the queen of
-    spades changing hands, and a spread of per-seat penalty scores.
+    spades changing hands, and a spread of per-player penalty scores.
 
     Reads the NEW object observation: ``obs["observation"]["current_trick"]`` (tuple of
-    ``{"seat","card"}`` FACE objects, play order) and ``led_suit`` (int, 4=none). The action mask is
+    ``{"player","card"}`` FACE objects, play order) and ``led_suit`` (int, 4=none). The action mask is
     still indexed by engine card id 0..51, so legal moves are decoded straight from the mask; suit/
     rank comparisons use the FACE values on the hand/trick card objects (queen face rank is 12).
     """
@@ -72,22 +72,22 @@ class DuckAgent:
 
 
 def main() -> int:
-    # A submitted-agent attribution per slot so the fixture header carries a `players` block like a
+    # A submitted-agent attribution per player so the fixture header carries a `players` block like a
     # real multi-agent recording (player_0 a "human", the rest agents) without needing a live session.
-    players: dict[str, PlayerAttribution] = {
+    player_attribution: dict[str, PlayerAttribution] = {
         "player_0": {"kind": "human", "label": "you"},
         "player_1": {"kind": "agent", "label": "Naive agent"},
         "player_2": {"kind": "agent", "label": "Naive agent"},
         "player_3": {"kind": "agent", "label": "duck-hearts"},
     }
-    slots = {f"player_{i}": AgentPlayer(DuckAgent()) for i in range(rules.NUM_PLAYERS)}
+    players = {f"player_{i}": AgentPlayer(DuckAgent()) for i in range(rules.NUM_PLAYERS)}
     run_and_copy(
         ENTRY,
-        slots,
+        players,
         seed=7,
         recording_id="hearts-fixture",
         dest_name="hearts-recording.jsonl",
-        players=players,
+        player_attribution=player_attribution,
     )
     return 0
 

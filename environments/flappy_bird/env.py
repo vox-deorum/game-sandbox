@@ -1,7 +1,7 @@
 """The Flappy Bird environment factory.
 
 Wraps the local pygame-free simulation in the general-purpose
-:class:`GymnasiumToAEC` adapter, so the harness sees a one-slot PettingZoo env. The gym env
+:class:`GymnasiumToAEC` adapter, so the harness sees a one-player PettingZoo env. The gym env
 itself still produces the library's normalized 12-feature vector internally (unused by us),
 but the AEC-facing observation this module exposes is the OBJECT form the semantic contract
 requires: the same unnormalized screen-pixel values the browser overlay reads, structured as
@@ -16,8 +16,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, cast
-
-from game_sandbox_harness.environment import int_parameter
 
 if TYPE_CHECKING:
     from game_sandbox_harness.environment import ParameterValue
@@ -46,9 +44,22 @@ OBS_SPACE = spaces.Dict(
 )
 
 
+def _int_parameter(parameters: Mapping[str, ParameterValue], name: str) -> int:
+    """Read one JSON-safe integer from a resolved parameter map."""
+    if name not in parameters:
+        raise ValueError(f"missing environment parameter {name!r}")
+    value = parameters[name]
+    if isinstance(value, bool) or not isinstance(value, int) or abs(value) > 2**53 - 1:
+        raise ValueError(f"{name} must be a JSON-safe integer")
+    return value
+
+
 def make_env(parameters: Mapping[str, ParameterValue]) -> FlappyBirdEnv:
     """Create a fresh Flappy Bird AEC environment. The seed arrives at ``reset``."""
-    pipe_gap = int_parameter(parameters, "pipe_gap")
+    players = _int_parameter(parameters, "players")
+    if players != 1:
+        raise ValueError("players must be 1 for Flappy Bird")
+    pipe_gap = _int_parameter(parameters, "pipe_gap")
     return FlappyBirdEnv(FlappyBirdGame(normalize_obs=True, pipe_gap=pipe_gap), name="flappy_bird_v0")
 
 

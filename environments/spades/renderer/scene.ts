@@ -1,9 +1,9 @@
 /**
  * The Spades-specific half of the pure scene layer: the parts of the table that are Spades and not
- * generic trick-taking — the per-seat `bid / won` line with its NIL marker and partnership tint, the
+ * generic trick-taking — the per-player `bid / won` line with its NIL marker and partnership tint, the
  * two team scores, the spades-broken status pip, the phase indicator, and — during the opening round —
  * the clickable grid of bid chips (`0..13`, `0` labelled NIL) laid out in the centre well. Everything a
- * Hearts and a Spades table draw identically — the card codec, the felt palette, the seat/trick/hand
+ * Hearts and a Spades table draw identically — the card codec, the felt palette, the player/trick/hand
  * geometry, the legal-mask hand fan, the hit-test, and the fly-in/sweep animation helpers — lives in the
  * shared `@renderers/cards/scene.ts` and is re-exported below so this module stays the single Spades entry point.
  * It draws the recorded overlay from `environments/spades/overlay.py`. `computeScene` is pure in
@@ -16,7 +16,7 @@ import {
   buildHand,
   buildMoveClock,
   buildOpponents,
-  buildSeatsBase,
+  buildPlayersBase,
   buildTrick,
   type CardOverlay,
   type CardTableScene,
@@ -27,7 +27,7 @@ import {
   readCardOverlay,
   resolveView,
   type SceneConfig,
-  type SceneSeatBase,
+  type ScenePlayerBase,
   type TableGeometry,
   type ViewContext,
   WIDTH,
@@ -53,12 +53,12 @@ export const NUM_TRICKS = 13
 export function bidToAction(bid: number): number {
   return BID_OFFSET + bid
 }
-/** The partnership id (0 for seats 0 & 2, 1 for seats 1 & 3) of a seat (rules.team_of). */
-export function teamOf(seat: number): number {
-  return seat % 2
+/** The partnership id (0 for players 0 and 2, 1 for players 1 and 3) of a player (rules.team_of). */
+export function teamOf(player: number): number {
+  return player % 2
 }
-/** The two seats making up a team: (0, 2) for team 0, (1, 3) for team 1 (rules.team_seats). */
-export function teamSeats(team: number): [number, number] {
+/** The two players making up a team: (0, 2) for team 0, (1, 3) for team 1. */
+export function teamPlayers(team: number): [number, number] {
   return [team, team + 2]
 }
 
@@ -76,7 +76,7 @@ export const BID_CHIP_COLS = 7
 
 /**
  * Spades' table geometry relative to the shared Hearts baseline. The badges are a touch taller than
- * Hearts', so the seats and the north opponent row
+ * Hearts', so the player badges and the north opponent row
  * sit a little lower to clear the taller status strip, and the side badges slide further in so the edge
  * card stacks no longer overlay them.
  */
@@ -90,21 +90,21 @@ export const SPADES_GEOMETRY: TableGeometry = {
 
 // --- Spades scene shapes ---
 
-/** One Spades seat badge: the shared core plus this seat's bid, tricks won, nil flag, and partnership. */
-export interface SpadesSceneSeat extends SceneSeatBase {
-  /** This seat's bid (0..13, 0 is nil), or -1 while it has not yet bid. */
+/** One Spades player badge: the shared core plus this player's bid, tricks won, nil flag, and partnership. */
+export interface SpadesScenePlayer extends ScenePlayerBase {
+  /** This player's bid (0..13, 0 is nil), or -1 while it has not yet bid. */
   bid: number
-  /** Tricks this seat has taken so far. */
+  /** Tricks this player has taken so far. */
   won: number
-  /** True when this seat bid nil (bid 0). */
+  /** True when this player bid nil (bid 0). */
   isNil: boolean
-  /** The seat's partnership id (0 or 1). */
+  /** The player's partnership id (0 or 1). */
   team: number
 }
 
 /** One team's score readout on the status strip's second row. */
 export interface SceneTeamScore {
-  /** e.g. `P0+P2 (you)`; "(you)" only on the partnership the controlled seat belongs to. */
+  /** e.g. `P0+P2 (you)`; "(you)" only on the partnership the controlled player belongs to. */
   label: string
   score: number
   team: number
@@ -131,14 +131,14 @@ export interface SceneBidChip {
   h: number
   /** In the emitted legal-action mask for the current turn (drawn lit; else greyed). */
   enabled: boolean
-  /** Clickable: enabled, and the user controls the seat currently on turn. */
+  /** Clickable: enabled, and the user controls the player currently on turn. */
   controllable: boolean
 }
 
 /** The bidding-round centre panel: the prompt line above a grid of 14 bid chips. */
 export interface SceneBidPanel {
   chips: SceneBidChip[]
-  /** e.g. "Choose your bid" on the controlled seat's turn, else "P2 is bidding". */
+  /** e.g. "Choose your bid" on the controlled player's turn, else "P2 is bidding". */
   prompt: string
   promptTone: 'gold' | 'white'
   /** The prompt's centre point (the chips carry their own absolute rects). */
@@ -147,7 +147,7 @@ export interface SceneBidPanel {
 }
 
 /** Everything needed to paint one static frame of the Spades table. */
-export interface SpadesScene extends CardTableScene<SpadesSceneSeat> {
+export interface SpadesScene extends CardTableScene<SpadesScenePlayer> {
   status: SpadesSceneStatus
   phase: 'bidding' | 'play'
   spadesBroken: boolean
@@ -167,7 +167,7 @@ interface SpadesOverlay extends CardOverlay {
   legalBids: number[]
 }
 
-/** Pad a per-seat bids array out to all four seats, defaulting a missing entry to -1 (not yet bid). */
+/** Pad a per-player bids array out to all four players, defaulting a missing entry to -1 (not yet bid). */
 function padBids(bids: number[]): number[] {
   return Array.from({ length: NUM_PLAYERS }, (_, i) => bids[i] ?? -1)
 }
@@ -191,9 +191,9 @@ function readOverlay(state: StepState): SpadesOverlay {
 // --- The scene builder ---
 
 /**
- * Turn one recorded state into the static Spades table scene: the four seat badges with their bid/won
+ * Turn one recorded state into the static Spades table scene: the four player badges with their bid/won
  * lines and partnership tabs, the central trick (or the bid grid during the opening round), the
- * opponents' rows, the view seat's fanned hand with legal cards lit and illegal ones greyed, the status
+ * opponents' rows, the view player's fanned hand with legal cards lit and illegal ones greyed, the status
  * strip with both team scores, and the move-clock chip on the controlled human's turn. Pure in `state`
  * plus `config`, so the same inputs always yield the same scene (the scrubber's same-state-same-frame
  * rule).
@@ -202,9 +202,9 @@ export function computeScene(state: StepState, config: SceneConfig = {}): Spades
   const o = readOverlay(state)
   const view = resolveView(config)
 
-  const seats = buildSeats(o, view)
-  const { trick, trickWinner } = buildTrick(o, view.viewSeat)
-  const opponents = buildOpponents(o, view.viewSeat, view.revealAll, SPADES_GEOMETRY)
+  const players = buildPlayers(o, view)
+  const { trick, trickWinner } = buildTrick(o, view.viewPlayer)
+  const opponents = buildOpponents(o, view.viewPlayer, view.revealAll, SPADES_GEOMETRY)
   // Spades reads the emitted legal-cards overlay verbatim: during bidding it is empty (you cannot play
   // a card until you have bid), so every hand card greys — the correct read
   // This comes directly from the semantic overlay.
@@ -216,10 +216,10 @@ export function computeScene(state: StepState, config: SceneConfig = {}): Spades
   return {
     width: WIDTH,
     height: HEIGHT,
-    viewSeat: view.viewSeat,
+    viewPlayer: view.viewPlayer,
     revealAll: view.revealAll,
     terminal: o.terminal,
-    seats,
+    players,
     trick,
     opponents,
     hand,
@@ -231,23 +231,23 @@ export function computeScene(state: StepState, config: SceneConfig = {}): Spades
   }
 }
 
-/** Build the four seat badges, adding each seat's bid, tricks won, nil flag, and team to the core. */
-function buildSeats(o: SpadesOverlay, view: ViewContext): SpadesSceneSeat[] {
-  return buildSeatsBase(o, view, SPADES_GEOMETRY).map((base) => {
-    const bid = o.bids[base.seat] ?? -1
+/** Build the four player badges, adding each player's bid, tricks won, nil flag, and team to the core. */
+function buildPlayers(o: SpadesOverlay, view: ViewContext): SpadesScenePlayer[] {
+  return buildPlayersBase(o, view, SPADES_GEOMETRY).map((base) => {
+    const bid = o.bids[base.player] ?? -1
     return {
       ...base,
       bid,
-      won: o.tricksWon[base.seat] ?? 0,
+      won: o.tricksWon[base.player] ?? 0,
       isNil: bid === NIL_BID,
-      team: teamOf(base.seat),
+      team: teamOf(base.player),
     }
   })
 }
 
-/** Whether the seat the user controls is the one currently choosing (first-person, clickable). */
+/** Whether the player the user controls is the one currently choosing (first-person, clickable). */
 function isViewTurn(o: SpadesOverlay, view: ViewContext): boolean {
-  return view.controlledSeat !== null && !o.terminal && o.turn === view.controlledSeat
+  return view.controlledPlayer !== null && !o.terminal && o.turn === view.controlledPlayer
 }
 
 /** Build the status strip: phase text, spades-broken flag, the state message, and both team scores. */
@@ -263,8 +263,8 @@ function buildStatus(
       : `trick ${o.tricksPlayed + 1}/${NUM_TRICKS}`
   const { message, messageTone } = statusMessage(o, view, trickWinner)
   const teamScores: SceneTeamScore[] = [0, 1].map((team) => {
-    const [a, b] = teamSeats(team)
-    const mine = view.controlledSeat === a || view.controlledSeat === b
+    const [a, b] = teamPlayers(team)
+    const mine = view.controlledPlayer === a || view.controlledPlayer === b
     return { label: `P${a}+P${b}${mine ? ' (you)' : ''}`, score: o.teamScores[team] ?? 0, team }
   })
   return { phaseText, spadesBroken: o.spadesBroken, message, messageTone, teamScores }
@@ -272,8 +272,8 @@ function buildStatus(
 
 /**
  * The primary-row state message and its tone. First-person ("You", "Your
- * bid", "Your turn") is used only for the seat the user actually controls; a spectator or replay
- * (controlledSeat null) never matches, so the same lines render in the third person ("P2 took the
+ * bid", "Your turn") is used only for the player the user actually controls; a spectator or replay
+ * (controlledPlayer null) never matches, so the same lines render in the third person ("P2 took the
  * trick", "P0 to bid").
  */
 function statusMessage(
@@ -287,11 +287,11 @@ function statusMessage(
   // A just-completed trick is shown statically in the centre: name who took it. The lastTrick guard
   // keeps this off during the opening bid round (lastTrick is null until a trick lands).
   if (o.currentTrick.length === 0 && o.lastTrick !== null && trickWinner !== null) {
-    const who = trickWinner === view.controlledSeat ? 'You' : `P${trickWinner}`
+    const who = trickWinner === view.controlledPlayer ? 'You' : `P${trickWinner}`
     return { message: `${who} took the trick`, messageTone: 'gold' }
   }
   const bidding = o.phase === 'bidding'
-  if (o.turn === view.controlledSeat) {
+  if (o.turn === view.controlledPlayer) {
     return { message: bidding ? 'Your bid' : 'Your turn', messageTone: 'gold' }
   }
   return { message: `P${o.turn} ${bidding ? 'to bid' : 'to play'}`, messageTone: 'white' }
@@ -302,8 +302,8 @@ function statusMessage(
  * with the prompt above it (chip 50 by 52, gap 4, vertical gap 8, prompt 26 pixels
  * above the grid). Returns null once play begins. Every chip carries its absolute rect (for the
  * hit-test), whether it is `enabled` (in the emitted `legal_bids` overlay — verbatim, so a partial list
- * greys the rest), and whether it is `controllable` (enabled and the controlled seat is on turn). The
- * chips draw for everyone so the table reads; only the controlled seat's own turn accepts a click.
+ * greys the rest), and whether it is `controllable` (enabled and the controlled player is on turn). The
+ * chips draw for everyone so the table reads; only the controlled player's own turn accepts a click.
  */
 function buildBidPanel(o: SpadesOverlay, view: ViewContext): SceneBidPanel | null {
   if (o.phase !== 'bidding' || o.terminal) {

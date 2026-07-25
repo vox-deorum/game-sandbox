@@ -51,7 +51,7 @@ class Agent:
     #     ...
 
     # Optional: a messaging hook (only used in environments with messaging enabled). Called
-    # on your turn with the messages addressed to your slot; return messages to send, or
+    # on your turn with the messages addressed to your player; return messages to send, or
     # nothing to stay silent.
     #
     # def chat(self, inbox: list[dict]) -> list[dict] | None:

@@ -42,9 +42,9 @@ describe('outbound line classification', () => {
 })
 
 describe('inbound command parsing', () => {
-  it('accepts input with a slot and passes the action through opaque', () => {
-    const parsed = parseCommand('{"kind":"input","slot":"player_0","action":1}')
-    expect(parsed).toEqual({ ok: true, command: { kind: 'input', slot: 'player_0', action: 1 } })
+  it('accepts input with a player and passes the action through opaque', () => {
+    const parsed = parseCommand('{"kind":"input","player":"player_0","action":1}')
+    expect(parsed).toEqual({ ok: true, command: { kind: 'input', player: 'player_0', action: 1 } })
   })
 
   it('accepts pause, resume, and stop', () => {
@@ -53,12 +53,12 @@ describe('inbound command parsing', () => {
     }
   })
 
-  it('rejects input without a string slot', () => {
+  it('rejects input without a string player', () => {
     expect(parseCommand('{"kind":"input","action":1}').ok).toBe(false)
   })
 
   it('rejects input without an action field', () => {
-    expect(parseCommand('{"kind":"input","slot":"player_0"}').ok).toBe(false)
+    expect(parseCommand('{"kind":"input","player":"player_0"}').ok).toBe(false)
   })
 
   it('rejects an unknown kind and malformed JSON', () => {
@@ -68,26 +68,28 @@ describe('inbound command parsing', () => {
   })
 
   it('accepts a chat command with a targeted or null recipient', () => {
-    expect(parseCommand('{"kind":"chat","slot":"player_0","to":"player_2","text":"hi"}')).toEqual({
+    expect(parseCommand('{"kind":"chat","player":"player_0","to":"player_2","text":"hi"}')).toEqual(
+      {
+        ok: true,
+        command: { kind: 'chat', player: 'player_0', to: 'player_2', text: 'hi' },
+      },
+    )
+    expect(parseCommand('{"kind":"chat","player":"player_0","to":null,"text":"table!"}')).toEqual({
       ok: true,
-      command: { kind: 'chat', slot: 'player_0', to: 'player_2', text: 'hi' },
-    })
-    expect(parseCommand('{"kind":"chat","slot":"player_0","to":null,"text":"table!"}')).toEqual({
-      ok: true,
-      command: { kind: 'chat', slot: 'player_0', to: null, text: 'table!' },
+      command: { kind: 'chat', player: 'player_0', to: null, text: 'table!' },
     })
   })
 
-  it('rejects a chat command with a bad slot, to, or text', () => {
-    expect(parseCommand('{"kind":"chat","to":null,"text":"hi"}').ok).toBe(false) // no slot
-    expect(parseCommand('{"kind":"chat","slot":"player_0","to":5,"text":"hi"}').ok).toBe(false)
-    expect(parseCommand('{"kind":"chat","slot":"player_0","to":null,"text":42}').ok).toBe(false)
+  it('rejects a chat command with a bad player, to, or text', () => {
+    expect(parseCommand('{"kind":"chat","to":null,"text":"hi"}').ok).toBe(false) // no player
+    expect(parseCommand('{"kind":"chat","player":"player_0","to":5,"text":"hi"}').ok).toBe(false)
+    expect(parseCommand('{"kind":"chat","player":"player_0","to":null,"text":42}').ok).toBe(false)
   })
 
   it('pins the exact chat JSON both languages speak', () => {
     // The same literal string the Python live_io test parses into a queued frame.
-    const line = serializeCommand({ kind: 'chat', slot: 'player_0', to: null, text: 'hi' })
-    expect(line).toBe('{"kind":"chat","slot":"player_0","to":null,"text":"hi"}')
+    const line = serializeCommand({ kind: 'chat', player: 'player_0', to: null, text: 'hi' })
+    expect(line).toBe('{"kind":"chat","player":"player_0","to":null,"text":"hi"}')
   })
 })
 
@@ -102,10 +104,10 @@ describe('code-point counter', () => {
 
 describe('serialization', () => {
   it('round-trips a command through parse', () => {
-    const line = serializeCommand({ kind: 'input', slot: 'player_0', action: { flap: true } })
+    const line = serializeCommand({ kind: 'input', player: 'player_0', action: { flap: true } })
     expect(parseCommand(line)).toEqual({
       ok: true,
-      command: { kind: 'input', slot: 'player_0', action: { flap: true } },
+      command: { kind: 'input', player: 'player_0', action: { flap: true } },
     })
   })
 

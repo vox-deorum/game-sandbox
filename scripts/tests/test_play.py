@@ -42,11 +42,11 @@ def _entry() -> EnvironmentEntry:
             renderer="fixture",
         ),
         make=Env,
-        default_action=lambda _env, _slot: 0,
+        default_action=lambda _env, _player: 0,
     )
 
 
-def test_local_config_has_complete_slots_and_players(tmp_path: Path, monkeypatch):
+def test_local_config_resolves_the_selected_seat_to_its_player(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(play, "BUILTIN_AGENT_ROOT", tmp_path / "builtin")
     (play.BUILTIN_AGENT_ROOT / "fixture").mkdir(parents=True)
     config = play.local_config(
@@ -67,6 +67,13 @@ def test_local_config_has_complete_slots_and_players(tmp_path: Path, monkeypatch
     assert set(players) == {"player_0", "player_1"}
     assert config["llm"] is None
     assert config["start_paused"] is True
+
+
+def test_default_layout_exposes_players_and_singleton_seats():
+    entry = _entry()
+
+    assert play.possible_players(entry) == ("player_0", "player_1")
+    assert play.player_for_seat(entry, 1) == "player_1"
 
 
 def test_local_bundle_rebuilds_every_time(tmp_path: Path, monkeypatch):
@@ -144,4 +151,22 @@ def test_agent_repo_without_a_mode_selects_agent_mode(monkeypatch, tmp_path: Pat
     assert captured["player_bindings"] == {
         "player_0": {"kind": "builtin-agent", "path": str(tmp_path / "agent")},
         "player_1": {"kind": "builtin-agent", "path": str(tmp_path / "agent")},
+    }
+
+
+def test_human_cli_routes_the_selected_seat_to_its_player(monkeypatch):
+    monkeypatch.setattr(play, "load_environment", lambda _env_id: _entry())
+    monkeypatch.setattr(play, "builtin_agent_path", lambda _env_id: "builtin")
+    captured: dict[str, object] = {}
+
+    def launch(_entry: EnvironmentEntry, config: dict[str, object], **_kwargs: object) -> int:
+        captured.update(config)
+        return 0
+
+    monkeypatch.setattr(play, "launch_browser", launch)
+
+    assert play.main(["fixture", "human", "--seat", "1", "--no-browser"]) == 0
+    assert captured["player_bindings"] == {
+        "player_0": {"kind": "builtin-agent", "path": "builtin"},
+        "player_1": {"kind": "external"},
     }

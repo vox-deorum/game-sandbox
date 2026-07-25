@@ -6,7 +6,7 @@ import { type ChatEntry, messageKey } from '../lib/chat.js'
 import { isCompletedOutcome, reasonText } from '../replay/reason.js'
 
 interface LiveFramePresentationOptions {
-  controlledSlots: Readonly<Ref<string[]>>
+  viewerPlayers: Readonly<Ref<string[]>>
   status: Readonly<Ref<'starting' | 'running' | 'ended'>>
   paused: Readonly<Ref<boolean>>
   endReason: Readonly<Ref<string | null>>
@@ -17,7 +17,7 @@ interface LiveFramePresentationOptions {
  * this composable keeps their rendered chat, decisions, and status wording consistent.
  */
 export function useLiveFramePresentation({
-  controlledSlots,
+  viewerPlayers,
   status,
   paused,
   endReason,
@@ -38,11 +38,11 @@ export function useLiveFramePresentation({
   }
 
   function toDecision(state: StepState): DecisionEntry {
-    const slot = controlledSlots.value[0] ?? Object.keys(state.agents)[0]
+    const playerId = viewerPlayers.value[0] ?? Object.keys(state.agents)[0]
     return {
       tick: state.tick,
-      slot: slot ?? '',
-      action: slot === undefined ? undefined : state.agents[slot]?.action,
+      slot: playerId ?? '',
+      action: playerId === undefined ? undefined : state.agents[playerId]?.action,
     }
   }
 

@@ -19,8 +19,8 @@ def _bidding_observation(hand: list[dict[str, int]]) -> dict:
     return {
         "action_mask": mask,
         "observation": {
-            "seat": 0,
-            "partner_seat": 2,
+            "player": 0,
+            "partner_player": 2,
             "phase": 0,
             "hand": tuple(hand),
             "bids": (14, 14, 14, 14),

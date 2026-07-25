@@ -1,12 +1,12 @@
 """The 'moonshot' example agent: an aggressive Hearts player that tries to shoot the moon.
 
 Shooting the moon means taking *every* penalty card in a hand, all thirteen hearts and the queen
-of spades. Instead of the usual 26 penalty points that wrecks a score, the seat that takes all of
+of spades. Instead of the usual 26 penalty points that wrecks a score, the player that takes all of
 them scores 0 and each of the other three takes 26. This agent commits to that high-risk line: it
 tries to win every trick it can so the points flow to it rather than away from it. It is the
 deliberate opposite of the points-avoiding ``duck``:
 
-- **Leading**, play your highest legal card, so the trick you open is hard for a later seat to beat.
+- **Leading**, play your highest legal card, so the trick you open is hard for a later player to beat.
 - **Following suit**, if you can still beat the card winning the trick, play your highest card of
   the led suit and take it; if you cannot beat it you cannot win this trick, so play your lowest
   card of the suit and keep your high cards for a trick you can win.
@@ -14,7 +14,7 @@ deliberate opposite of the points-avoiding ``duck``:
   lowest non-point card, hoarding your hearts and the queen for tricks you take yourself.
 
 The moon rarely comes off against careful opponents, since a single stray point card landing on
-another seat ruins it, so this is a showcase of an aggressive idea rather than a strong policy. The
+another player ruins it, so this is a showcase of an aggressive idea rather than a strong policy. The
 example test asserts the signature behaviour: when it can win a trick by following suit it plays
 high to take it, where ``duck`` would shed low.
 """
@@ -39,7 +39,7 @@ class Agent:
         legal = legal_cards(observation)
         led = led_suit(observation)
 
-        # Leading: open with our highest card, hard for a later seat to overtake.
+        # Leading: open with our highest card, hard for a later player to overtake.
         if led is None:
             return play(max(legal, key=lambda card: (rank_of(card), suit_of(card))))
 

@@ -83,15 +83,15 @@ The next two features are optional. An agent can be complete without them. Retur
 
 An agent can implement `chat` when its environment supports messaging. On your turn, the harness calls `chat` immediately after `act` and before applying the action. Your agent therefore knows what it chose but not what happened afterward.
 
-`inbox` is a list of messages sent to your agent slot since its previous turn. Each message is a dictionary shaped like `{"from": slot, "to": slot_or_None, "text": str, "tick": int}`. `"to"` is `None` for a broadcast, and `"tick"` identifies when the message was sent.
+`inbox` is a list of messages sent to your player since its previous turn. Each message is a dictionary shaped like `{"from": player, "to": player_or_None, "text": str, "tick": int}`. `"to"` is `None` for a broadcast, and `"tick"` identifies when the message was sent.
 
-Return a list of messages shaped like `{"to": slot_or_None, "text": str}`, or return nothing to stay silent. Setting `"to": None` sends a broadcast to every other slot. Using a slot ID sends only to that slot.
+Return a list of messages shaped like `{"to": player_or_None, "text": str}`, or return nothing to stay silent. Setting `"to": None` sends a broadcast to every other player. Using a player ID sends only to that player.
 
 On each turn, your agent may send at most one message to each recipient and one broadcast. Messages are plain text, and the environment sets their maximum length in Unicode code points. A season may lower that limit. A message sent on this turn arrives on each recipient's next turn, never on the tick when it was sent. Every message is recorded and shown in replays, so no message is secret. See the [communication specification](../specs/communication.md) for the complete rules.
 
 ### LLM calls
 
-When the environment and season enable the optional LLM API, `act`, `chat`, and `learn` may use the standard OpenAI Python client. On your computer, the client reads a season key from `.env`. Official sessions provide a temporary endpoint and key for the acting agent slot. Every model-assisted path through `act` must be able to return a legal fallback action if the budget runs out, the model service cannot recover from an error, or the response has the wrong format.
+When the environment and season enable the optional LLM API, `act`, `chat`, and `learn` may use the standard OpenAI Python client. On your computer, the client reads a season key from `.env`. Official sessions provide a temporary endpoint and key for the acting player. Every model-assisted path through `act` must be able to return a legal fallback action if the budget runs out, the model service cannot recover from an error, or the response has the wrong format.
 
 Model calls from `act`, `chat`, or `learn` wait for a complete response and do not stream partial text. Make them directly in the method being called. Official sessions exclude verified time spent waiting for the LLM proxy, including retries, from the agent's time limits. Calls made while importing the module, creating the agent, or running `reset` count as setup rather than turn work, but setup should still be lightweight. Follow [Using the LLM API](llm.md) to configure the client and understand timing, budgets, and who can see prompts.
 

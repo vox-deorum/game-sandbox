@@ -29,7 +29,7 @@
   <ellipse cx="160" cy="84" rx="118" ry="66" fill="none" stroke="#3aa873" stroke-width="2" opacity="0.4" />
   <rect width="320" height="180" fill="url(#vignette)" />
 
-  <!-- Four seat chips around the table; the bottom seat is the viewer, highlighted gold. -->
+  <!-- Four player chips around the table; the bottom player is the viewer, highlighted gold. -->
   <g opacity="0.92">
     <rect x="138" y="12" width="44" height="16" rx="8" fill="#0c4f31" stroke="#2f8c5e" stroke-width="1" />
     <circle cx="148" cy="20" r="4" fill="#7fbf9c" />

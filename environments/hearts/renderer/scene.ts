@@ -2,7 +2,7 @@
  * The Hearts-specific half of the pure scene layer: the parts of the table that are Hearts and not
  * generic trick-taking — the penalty-point scores in each badge, the hearts-broken status pip, and the
  * contextual rule hints (opening 2♣, follow-suit, the hearts-not-broken lead restriction). Everything a
- * Hearts and a Spades table draw identically — the card codec, the felt palette, the seat/trick/hand
+ * Hearts and a Spades table draw identically — the card codec, the felt palette, the player/trick/hand
  * geometry, the legal-mask hand fan, the hit-test, and the fly-in/sweep animation helpers — lives in the
  * shared `@renderers/cards/scene.ts` and is re-exported below so this module stays the single Hearts entry point.
  * It draws the recorded overlay from `environments/hearts/overlay.py`. `computeScene` is pure in
@@ -15,7 +15,7 @@ import {
   buildHand,
   buildMoveClock,
   buildOpponents,
-  buildSeatsBase,
+  buildPlayersBase,
   buildTrick,
   type Card,
   type CardOverlay,
@@ -28,7 +28,7 @@ import {
   readCardOverlay,
   resolveView,
   type SceneConfig,
-  type SceneSeatBase,
+  type ScenePlayerBase,
   SPADES,
   type ViewContext,
   WIDTH,
@@ -72,8 +72,8 @@ export const SUIT_SINGULAR: Record<number, string> = {
 
 // --- Hearts scene shapes ---
 
-/** One Hearts seat badge: the shared core plus the seat's running penalty score. */
-export interface SceneSeat extends SceneSeatBase {
+/** One Hearts player badge: the shared core plus the player's running penalty score. */
+export interface ScenePlayer extends ScenePlayerBase {
   score: number
 }
 
@@ -87,7 +87,7 @@ export interface SceneStatus {
 }
 
 /** Everything needed to paint one static frame of the Hearts table. */
-export interface HeartsScene extends CardTableScene<SceneSeat> {
+export interface HeartsScene extends CardTableScene<ScenePlayer> {
   status: SceneStatus
 }
 
@@ -110,9 +110,9 @@ function readOverlay(state: StepState): HeartsOverlay {
 // --- The scene builder ---
 
 /**
- * Turn one recorded state into the static Hearts table scene: the four seat badges with penalty scores,
+ * Turn one recorded state into the static Hearts table scene: the four player badges with penalty scores,
  * the central trick (the in-progress trick, or the just-completed trick with its winner highlighted),
- * the opponents' rows, the view seat's fanned hand with legal cards lit and illegal ones greyed, the
+ * the opponents' rows, the view player's fanned hand with legal cards lit and illegal ones greyed, the
  * status strip, and the move-clock chip on the controlled human's turn. Pure in `state` plus `config`,
  * so the same inputs always yield the same scene (the scrubber's same-state-same-frame rule).
  */
@@ -120,9 +120,9 @@ export function computeScene(state: StepState, config: SceneConfig = {}): Hearts
   const o = readOverlay(state)
   const view = resolveView(config)
 
-  const seats = buildSeats(o, view)
-  const { trick, trickWinner } = buildTrick(o, view.viewSeat)
-  const opponents = buildOpponents(o, view.viewSeat, view.revealAll, DEFAULT_GEOMETRY)
+  const players = buildPlayers(o, view)
+  const { trick, trickWinner } = buildTrick(o, view.viewPlayer)
+  const opponents = buildOpponents(o, view.viewPlayer, view.revealAll, DEFAULT_GEOMETRY)
   // Hearts reads the emitted legal-cards overlay verbatim: every legal card lights by its key.
   const hand = buildHand(o, view, new Set(o.legalCards.map(cardKey)))
   const status = buildStatus(o, view, trickWinner)
@@ -131,10 +131,10 @@ export function computeScene(state: StepState, config: SceneConfig = {}): Hearts
   return {
     width: WIDTH,
     height: HEIGHT,
-    viewSeat: view.viewSeat,
+    viewPlayer: view.viewPlayer,
     revealAll: view.revealAll,
     terminal: o.terminal,
-    seats,
+    players,
     trick,
     opponents,
     hand,
@@ -143,11 +143,11 @@ export function computeScene(state: StepState, config: SceneConfig = {}): Hearts
   }
 }
 
-/** Build the four seat badges, adding each seat's running penalty score to the shared core. */
-function buildSeats(o: HeartsOverlay, view: ViewContext): SceneSeat[] {
-  return buildSeatsBase(o, view, DEFAULT_GEOMETRY).map((base) => ({
+/** Build the four player badges, adding each player's running penalty score to the shared core. */
+function buildPlayers(o: HeartsOverlay, view: ViewContext): ScenePlayer[] {
+  return buildPlayersBase(o, view, DEFAULT_GEOMETRY).map((base) => ({
     ...base,
-    score: o.displayScores[base.seat] ?? 0,
+    score: o.displayScores[base.player] ?? 0,
   }))
 }
 
@@ -163,7 +163,7 @@ function buildStatus(o: HeartsOverlay, view: ViewContext, trickWinner: number | 
 
 /**
  * The primary-row state message and its tone. First-person ("You", "Your
- * turn") is used only for the seat the user actually controls; a spectator or replay (controlledSeat
+ * turn") is used only for the player the user actually controls; a spectator or replay (controlledPlayer
  * null) never matches, so the same lines render in the third person ("P2 took the trick", "P0's turn").
  */
 function statusMessage(
@@ -177,21 +177,21 @@ function statusMessage(
   // A just-completed trick is shown statically in the center: name who took it and the points.
   if (o.currentTrick.length === 0 && o.lastTrick !== null && trickWinner !== null) {
     const points = o.lastTrick.reduce((sum, e) => sum + cardPoints(e.card), 0)
-    const who = trickWinner === view.controlledSeat ? 'You' : `P${trickWinner}`
+    const who = trickWinner === view.controlledPlayer ? 'You' : `P${trickWinner}`
     const suffix = points ? ` (+${points})` : ''
     return { message: `${who} took the trick${suffix}`, messageTone: 'gold' }
   }
-  if (o.turn === view.controlledSeat) {
+  if (o.turn === view.controlledPlayer) {
     return { message: 'Your turn', messageTone: 'gold' }
   }
   return { message: `P${o.turn}'s turn`, messageTone: 'white' }
 }
 
 /**
- * The contextual hint explaining the controlled seat's legal options. On the
- * controlled seat's turn it explains why the legal set is what it is (opening 2♣, follow-suit,
+ * The contextual hint explaining the controlled player's legal options. On the
+ * controlled player's turn it explains why the legal set is what it is (opening 2♣, follow-suit,
  * void/discard, or the hearts-not-broken lead restriction); otherwise — an opponent's turn, or any turn
- * in a spectator/replay view with no controlled seat — it gives third-person table context (never a
+ * in a spectator/replay view with no controlled player — it gives third-person table context (never a
  * "you must..." instruction) so the row is never empty.
  */
 function legalHint(o: HeartsOverlay, view: ViewContext): string {
@@ -200,19 +200,19 @@ function legalHint(o: HeartsOverlay, view: ViewContext): string {
   }
   const turn = o.turn
   const led = o.ledSuit
-  if (view.controlledSeat === null || turn !== view.controlledSeat) {
+  if (view.controlledPlayer === null || turn !== view.controlledPlayer) {
     if (led !== null) {
       return `P${turn} to play  -  ${SUIT_NAMES[led]} were led`
     }
     return `Waiting for P${turn} to lead`
   }
 
-  // It is the controlled seat's turn (which is the bottom view seat), so explain its legal options.
+  // It is the controlled player's turn (which is the bottom view player), so explain its legal options.
   if (o.tricksPlayed === 0 && o.currentTrick.length === 0) {
     return 'Opening lead  -  you must play the 2 of clubs'
   }
 
-  const hand = o.hands[view.viewSeat] ?? []
+  const hand = o.hands[view.viewPlayer] ?? []
   if (led !== null) {
     const canFollow = hand.some((card) => card.suit === led)
     if (canFollow) {

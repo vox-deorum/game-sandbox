@@ -1,3 +1,4 @@
+import type { StepState } from '@game-sandbox/schema'
 import { describe, expect, it } from 'vitest'
 import { HeartsRenderer } from '../../environments/hearts/renderer/index.js'
 // The Hearts scene module re-exports the whole shared layer, so importing the frame constants from it
@@ -12,13 +13,19 @@ import { SPADES_GEOMETRY } from '../../environments/spades/renderer/scene.js'
 import { PixiRenderer } from '../src/renderers/base/PixiRenderer.js'
 import { CardTableRenderer } from '../src/renderers/cards/CardTableRenderer.js'
 import {
+  buildHand,
   cardKey,
   cardToAction,
   DEFAULT_GEOMETRY,
   HEIGHT,
   NUM_PLAYERS,
+  playerOfId,
+  positionAnchor,
+  positionOfPlayer,
   RANK_LABELS,
   rankLabel,
+  readCardOverlay,
+  resolveView,
   WIDTH,
 } from '../src/renderers/cards/scene.js'
 
@@ -77,5 +84,54 @@ describe('the shared card-table renderer layer', () => {
       badgeH: 62,
       sideBadgeInset: 176,
     })
+  })
+
+  it('parses stable player ids and rotates every player around each viewer', () => {
+    expect(playerOfId('player_0')).toBe(0)
+    expect(playerOfId('player_3')).toBe(3)
+
+    expect([0, 1, 2, 3].map((player) => positionOfPlayer(player, 0))).toEqual([0, 1, 2, 3])
+    expect([0, 1, 2, 3].map((player) => positionOfPlayer(player, 1))).toEqual([3, 0, 1, 2])
+    expect([0, 1, 2, 3].map((player) => positionOfPlayer(player, 2))).toEqual([2, 3, 0, 1])
+    expect([0, 1, 2, 3].map((player) => positionOfPlayer(player, 3))).toEqual([1, 2, 3, 0])
+  })
+
+  it('keeps the four visual positions stable and separate from player numbers', () => {
+    expect(positionAnchor(0)).toEqual({ x: WIDTH / 2, y: HEIGHT - 150 })
+    expect(positionAnchor(1)).toEqual({ x: DEFAULT_GEOMETRY.sideBadgeInset, y: HEIGHT / 2 })
+    expect(positionAnchor(2)).toEqual({ x: WIDTH / 2, y: DEFAULT_GEOMETRY.northBadgeY })
+    expect(positionAnchor(3)).toEqual({ x: WIDTH - DEFAULT_GEOMETRY.sideBadgeInset, y: HEIGHT / 2 })
+  })
+
+  it('reads turn_player and trick player payloads, then controls only the resolved player', () => {
+    const state: StepState = {
+      schema_version: 1,
+      tick: 0,
+      agents: {},
+      timing: { started_at: 0, duration_ms: 1 },
+      overlay: {
+        hands: [[], [], [{ suit: 0, rank: 2 }], []],
+        current_trick: [{ player: 1, card: { suit: 2, rank: 14 } }],
+        last_trick: null,
+        last_trick_winner: null,
+        turn: 2,
+        turn_player: 'player_2',
+        trick_leader: 1,
+        led_suit: 2,
+        tricks_played: 1,
+        legal_cards: [{ suit: 0, rank: 2 }],
+        terminal: false,
+      },
+    }
+    const overlay = readCardOverlay(state)
+    expect(overlay.turnPlayerId).toBe('player_2')
+    expect(overlay.currentTrick).toEqual([{ player: 1, card: { suit: 2, rank: 14 } }])
+
+    const view = resolveView({ controlledPlayers: ['player_2'] })
+    expect(view).toEqual({ viewPlayer: 2, controlledPlayer: 2, revealAll: false })
+    expect(buildHand(overlay, view, new Set(['0:2']))[0]?.controllable).toBe(true)
+    expect(
+      buildHand(overlay, { ...view, controlledPlayer: null }, new Set(['0:2']))[0]?.controllable,
+    ).toBe(false)
   })
 })

@@ -25,7 +25,7 @@ describe('ChatPanel', () => {
       props: {
         entries,
         players: PLAYERS,
-        viewerSlots: ['player_2'],
+        viewerPlayers: ['player_2'],
         blind: true,
         viewerId: 'dev',
         anonymousNumbers: { 'sub-1': 4 },
@@ -59,7 +59,7 @@ describe('ChatPanel', () => {
       props: {
         entries: [],
         players: PLAYERS,
-        viewerSlots: ['player_2'],
+        viewerPlayers: ['player_2'],
         sendable: true,
         messageCap: 3,
       },
@@ -85,7 +85,7 @@ describe('ChatPanel', () => {
       props: {
         entries: [],
         players: PLAYERS,
-        viewerSlots: ['player_2'],
+        viewerPlayers: ['player_2'],
         sendable: true,
         messageCap: 120,
       },
@@ -112,7 +112,7 @@ describe('ChatPanel', () => {
     const props = {
       entries: [] as ChatEntry[],
       players: PLAYERS,
-      viewerSlots: ['player_2'],
+      viewerPlayers: ['player_2'],
       sendable: true,
       connected: false,
       messageCap: 120,
@@ -149,7 +149,7 @@ describe('ChatPanel', () => {
       props: {
         entries: [{ tick: 1, from: 'player_0', to: null, text: 'hi' }] as ChatEntry[],
         players: roster,
-        viewerSlots: ['player_2'],
+        viewerPlayers: ['player_2'],
         sendable: true,
         messageCap: 120,
       },
@@ -161,6 +161,6 @@ describe('ChatPanel', () => {
     expect(screen.getByRole('option', { name: 'P3' })).toBeInTheDocument()
     // And a message line carries its sender's seat beside the shared label (queried by the seat cell,
     // since the terse "P0" now also names the recipient option).
-    expect(container.querySelector('.chat-seat')?.textContent).toBe('P0')
+    expect(container.querySelector('.chat-player')?.textContent).toBe('P0')
   })
 })

@@ -648,7 +648,7 @@ test('an on-screen human seat plays a legal card and an illegal click does not a
   // The decision log growing from empty to one row is the DOM-observable proof the on-screen play
   // registered and advanced the hand. The host renders the controlled view seat (here player_0, the
   // seed-chosen 2♣ leader) and attributes every log row to it, so this smoke-tests the seat-0 human;
-  // a per-row seat assertion would be tautological, and narrowing controlledSlots to an arbitrary
+  // a per-row player assertion would be tautological, and narrowing controlledPlayers to an arbitrary
   // assigned seat is step 6's job. The row-count advance is the honest signal.
   await expect(decisionRows.first()).toBeVisible({ timeout: 30_000 })
 

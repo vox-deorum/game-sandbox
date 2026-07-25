@@ -10,8 +10,8 @@ on a :class:`~game_sandbox_harness.clock.ManualClock`.
 The line shapes are defined in the Stage 3 transport plan. Outbound: recording lines
 (header + per-step states, never carrying a top-level ``kind``) and event envelopes (a
 top-level ``kind``; this stage emits one, ``result``). Inbound command envelopes carry a
-``kind`` and, where applicable, a ``slot`` and ``action`` or ``text``: ``input``, ``pause``,
-``resume``, ``stop``, and ``chat`` (a human message, ``slot`` + ``to`` + ``text``). Unknown
+``kind`` and, where applicable, a ``player`` and ``action`` or ``text``: ``input``, ``pause``,
+``resume``, ``stop``, and ``chat`` (a human message, ``player`` + ``to`` + ``text``). Unknown
 kinds and malformed lines are logged and ignored, so the container never dies because a
 client sent garbage. Human ``chat`` frames enter a bounded per-player FIFO queue, not the input
 latch: inputs coalesce to the latest value, but messages must not swallow each other.
@@ -33,7 +33,7 @@ from .session import EpisodeResult
 #: The single outbound event-envelope kind this stage defines.
 RESULT_KIND = "result"
 _DEFAULT_SLICE_MS = 5
-#: The most human ``chat`` frames a single slot may have queued at once. When it is full the
+#: The most human ``chat`` frames a single player may have queued at once. When it is full the
 #: incoming frame is dropped with a diagnostic, so a client flooding the socket costs at most a
 #: fixed amount of memory, the same drop-with-diagnostic rule every other rejection follows.
 CHAT_QUEUE_LIMIT = 16
@@ -129,7 +129,7 @@ class SessionControl:
         kind = command["kind"]
         if kind == "input":
             with self._lock:
-                self._latched[command["slot"]] = command.get("action")
+                self._latched[command["player"]] = command.get("action")
         elif kind == "chat":
             self._dispatch_chat(command, source)
         elif kind == "pause":
@@ -141,16 +141,16 @@ class SessionControl:
                 self._stopping = True
 
     def _dispatch_chat(self, command: dict[str, Any], source: str) -> None:
-        """Queue a human ``chat`` frame into its slot's bounded FIFO, or drop it with a diagnostic.
+        """Queue a human ``chat`` frame into its player's bounded FIFO, or drop it with a diagnostic.
 
-        This is a cheap shape gate only: the slot and text must be strings, messaging must be enabled,
+        This is a cheap shape gate only: the player and text must be strings, messaging must be enabled,
         and the queue must have room. The outbound rules (recipient legality, the cap, the per-turn
         limits) are enforced once at the harness validation point when the queue is drained, so there
         is exactly one enforcement path shared with agent messages.
         """
-        slot = command.get("slot")
-        if not isinstance(slot, str):
-            _diag(f"live: ignoring chat command without a string slot: {source!r}")
+        player_id = command.get("player")
+        if not isinstance(player_id, str):
+            _diag(f"live: ignoring chat command without a string player: {source!r}")
             return
         text = command.get("text")
         if not isinstance(text, str):
@@ -160,34 +160,34 @@ class SessionControl:
             if not self._chat_enabled:
                 _diag(f"live: dropping chat command (messaging disabled): {source!r}")
                 return
-            queue = self._chat_queues.setdefault(slot, [])
+            queue = self._chat_queues.setdefault(player_id, [])
             if len(queue) >= CHAT_QUEUE_LIMIT:
-                _diag(f"live: dropping chat command (queue full for {slot!r}): {source!r}")
+                _diag(f"live: dropping chat command (queue full for {player_id!r}): {source!r}")
                 return
             queue.append({"to": command.get("to"), "text": text})
 
-    def take(self, slot: str) -> Any | None:
-        """Return and clear the latest input latched for ``slot`` since the last call.
+    def take(self, player_id: str) -> Any | None:
+        """Return and clear the latest input latched for ``player_id`` since the last call.
 
         Latching is per step, per [interaction.md]: a step uses the most recent input that
         arrived since the previous step, or ``None`` (the loop applies the default action) when
         none did. Clearing on read is what makes an unrepeated Flappy Bird flap a single flap.
         """
         with self._lock:
-            return self._latched.pop(slot, None)
+            return self._latched.pop(player_id, None)
 
-    def take_chat(self, slot: str) -> list[dict[str, Any]]:
-        """Return and clear the human ``chat`` frames queued for ``slot`` in FIFO order.
+    def take_chat(self, player_id: str) -> list[dict[str, Any]]:
+        """Return and clear the human ``chat`` frames queued for ``player_id`` in FIFO order.
 
         Unlike :meth:`take`, this is a queue, not a latch: every queued frame is returned in the
         order it arrived, because messages must not swallow each other. Drained once per stepped
         tick by the session loop and passed through the same validator as agent messages.
         """
         with self._lock:
-            queue = self._chat_queues.get(slot)
+            queue = self._chat_queues.get(player_id)
             if not queue:
                 return []
-            self._chat_queues[slot] = []
+            self._chat_queues[player_id] = []
             return queue
 
     def pause(self) -> None:
@@ -242,11 +242,11 @@ def parse_commands(raw: str) -> list[dict[str, Any]]:
             continue
         command = cast("dict[str, Any]", value)
         kind = command.get("kind")
-        if kind == "input" and not isinstance(command.get("slot"), str):
-            _diag(f"live: ignoring input command without a string slot: {text!r}")
+        if kind == "input" and not isinstance(command.get("player"), str):
+            _diag(f"live: ignoring input command without a string player: {text!r}")
             continue
-        if kind == "chat" and not isinstance(command.get("slot"), str):
-            _diag(f"live: ignoring chat command without a string slot: {text!r}")
+        if kind == "chat" and not isinstance(command.get("player"), str):
+            _diag(f"live: ignoring chat command without a string player: {text!r}")
             continue
         if kind == "chat" and not isinstance(command.get("text"), str):
             _diag(f"live: ignoring chat command without string text: {text!r}")
@@ -278,7 +278,7 @@ class TransportSource:
 
     With a pace interval set, the cadence is the world clock and the deadline handed down is the
     cadence instant, so the source returns the latched input (or ``None``) immediately and the
-    loop's pacing does the waiting. With no pace interval the slot is turn-based: the source
+    loop's pacing does the waiting. With no pace interval the player is turn-based: the source
     blocks in short slices until an input arrives, the human-player deadline passes, or a stop is
     requested. Either way a ``None`` return routes through ``ExternalPlayer``'s existing default —
     noop for Flappy Bird — with no agent-timeout accounting.

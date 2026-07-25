@@ -263,7 +263,7 @@ export class LiveSession {
 
   /**
    * Return the state line one audience may see. The **controller** (the owner of a human-mode
-   * session) sees broadcasts plus targeted messages where `to` or `from` is a human-bound slot. The
+   * session) sees broadcasts plus targeted messages where `to` or `from` is a human-bound player. The
    * `from` case is the deliberate sender reflection, letting the panel render the owner's own sends
    * from the recorded line with no local echo. Every other attachment (a spectator, including the
    * owner of a scripted run) sees broadcasts only. A line whose visible set equals the original is
@@ -326,7 +326,7 @@ export class LiveSession {
   /**
    * Attach a socket. It immediately receives the buffered header, the latest state, and the
    * current status so a renderer can draw without waiting for the next step. Only the owner's
-   * commands are honored, and `input` only in human mode for a slot the session exposes.
+   * commands are honored, and `input` only in human mode for a player the session exposes.
    */
   attach(socket: ClientSocket, isOwner: boolean): Attachment {
     this.sockets.set(socket, { isOwner })
@@ -369,24 +369,24 @@ export class LiveSession {
     }
     const command = parsed.command
     if (command.kind === 'input') {
-      if (this.mode !== 'human' || !this.externalPlayers.has(command.slot)) {
+      if (this.mode !== 'human' || !this.externalPlayers.has(command.player)) {
         return
       }
     }
     if (command.kind === 'chat') {
-      // Forward a human chat only from the controller of a human-mode session, for a slot it actually
+      // Forward a human chat only from the controller of a human-mode session, for a player it actually
       // controls, when messaging is effectively enabled, and within the effective cap counted in code
       // points. The pre-gate keeps junk off container stdin; the harness stays authoritative and
       // validates again. A dropped frame is logged like every other rejection.
       if (
         this.mode !== 'human' ||
-        !this.externalPlayers.has(command.slot) ||
+        !this.externalPlayers.has(command.player) ||
         !this.messaging.enabled
       ) {
         return
       }
       if (this.messaging.cap !== null && codePointLength(command.text) > this.messaging.cap) {
-        this.deps.log(`session ${this.id}: dropping over-cap chat from ${command.slot}`)
+        this.deps.log(`session ${this.id}: dropping over-cap chat from ${command.player}`)
         return
       }
     }

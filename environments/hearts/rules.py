@@ -8,8 +8,8 @@ encoding below, which downstream code relies on verbatim.
 
 Card encoding (fixed): a card is an int ``0..51`` with ``card = suit * 13 + rank``. Suits are
 ``0=clubs, 1=diamonds, 2=spades, 3=hearts`` and ranks run ``0=2 .. 8=10, 9=J, 10=Q, 11=K,
-12=A``. So ``2♣ == 0`` and ``Q♠ == 36``. Seats are ints ``0..3`` and the next seat clockwise
-is ``(seat + 1) % 4``.
+12=A``. So ``2♣ == 0`` and ``Q♠ == 36``. Players are ints ``0..3`` and the next player clockwise
+is ``(player + 1) % 4``.
 """
 
 from __future__ import annotations
@@ -54,9 +54,9 @@ HEARTS = _cu.HEARTS
 suit_of = _cu.suit_of
 rank_of = _cu.rank_of
 
-#: Number of seats at the table.
+#: Number of players at the table.
 NUM_PLAYERS = 4
-#: Cards dealt to each seat.
+#: Cards dealt to each player.
 HAND_SIZE = 13
 #: Tricks played in a full hand.
 NUM_TRICKS = 13
@@ -80,8 +80,8 @@ def card_points(card: int) -> int:
 class HeartsState:
     """The full mutable game state for one hand of Hearts.
 
-    ``hands`` are kept sorted ascending. ``current_trick`` holds ``(seat, card)`` pairs in
-    play order and is empty between tricks. ``taken`` accumulates the cards each seat has won
+    ``hands`` are kept sorted ascending. ``current_trick`` holds ``(player, card)`` pairs in
+    play order and is empty between tricks. ``taken`` accumulates the cards each player has won
     in resolved tricks, which is all that scoring and shoot-the-moon detection need.
     """
 
@@ -100,8 +100,8 @@ def deal(rng: random.Random) -> HeartsState:
     """Shuffle a fresh deck with ``rng`` and deal a new hand, with 2♣ to lead."""
     deck = list(range(NUM_CARDS))
     rng.shuffle(deck)
-    hands = [sorted(deck[seat * HAND_SIZE : (seat + 1) * HAND_SIZE]) for seat in range(NUM_PLAYERS)]
-    leader = next(seat for seat in range(NUM_PLAYERS) if TWO_OF_CLUBS in hands[seat])
+    hands = [sorted(deck[player * HAND_SIZE : (player + 1) * HAND_SIZE]) for player in range(NUM_PLAYERS)]
+    leader = next(player for player in range(NUM_PLAYERS) if TWO_OF_CLUBS in hands[player])
     return HeartsState(
         hands=hands,
         current_trick=[],
@@ -122,14 +122,14 @@ def led_suit(state: HeartsState) -> int | None:
     return suit_of(state.current_trick[0][1])
 
 
-def legal_moves(state: HeartsState, seat: int) -> list[int]:
-    """Return the sorted list of cards ``seat`` may legally play right now.
+def legal_moves(state: HeartsState, player: int) -> list[int]:
+    """Return the sorted list of cards ``player`` may legally play right now.
 
     Enforces the opening 2♣ lead, following suit, the hearts-not-broken lead restriction, and
     the no-penalty-cards-on-the-first-trick rule, with the standard escape valves so the
-    result is never empty for a seat that still holds cards.
+    result is never empty for a player that still holds cards.
     """
-    hand = state.hands[seat]
+    hand = state.hands[player]
     if not hand:
         return []
 
@@ -156,14 +156,14 @@ def legal_moves(state: HeartsState, seat: int) -> list[int]:
     return sorted(candidates)
 
 
-def is_legal(state: HeartsState, seat: int, card: int) -> bool:
-    """Return whether ``seat`` may legally play ``card`` in the current state."""
-    return card in legal_moves(state, seat)
+def is_legal(state: HeartsState, player: int, card: int) -> bool:
+    """Return whether ``player`` may legally play ``card`` in the current state."""
+    return card in legal_moves(state, player)
 
 
-def lowest_legal_card(state: HeartsState, seat: int) -> int:
+def lowest_legal_card(state: HeartsState, player: int) -> int:
     """Return the legal card with the lowest rank (ties broken by suit). The timeout default."""
-    return min(legal_moves(state, seat), key=lambda card: (rank_of(card), suit_of(card)))
+    return min(legal_moves(state, player), key=lambda card: (rank_of(card), suit_of(card)))
 
 
 def play(state: HeartsState, card: int) -> None:
@@ -172,11 +172,11 @@ def play(state: HeartsState, card: int) -> None:
     The caller is expected to have validated legality; the assertion below is a defensive
     guard, not the primary check.
     """
-    seat = state.turn
-    assert is_legal(state, seat, card), (seat, card)
+    player = state.turn
+    assert is_legal(state, player, card), (player, card)
 
-    state.hands[seat].remove(card)
-    state.current_trick.append((seat, card))
+    state.hands[player].remove(card)
+    state.current_trick.append((player, card))
     # Variant choice: only a heart breaks hearts. Playing the Q♠ does NOT break hearts here, even
     # though it is the highest-penalty card. Some house rules let the Q♠ break hearts too; this
     # engine deliberately follows the more common convention where hearts alone do (test_hearts.py
@@ -208,8 +208,8 @@ def is_terminal(state: HeartsState) -> bool:
 
 
 def points_taken(state: HeartsState) -> list[int]:
-    """Return each seat's raw penalty points from cards taken (no shoot-the-moon flip)."""
-    return [sum(card_points(card) for card in state.taken[seat]) for seat in range(NUM_PLAYERS)]
+    """Return each player's raw penalty points from cards taken (no shoot-the-moon flip)."""
+    return [sum(card_points(card) for card in state.taken[player]) for player in range(NUM_PLAYERS)]
 
 
 def final_penalties(state: HeartsState) -> list[int]:
@@ -221,12 +221,12 @@ def final_penalties(state: HeartsState) -> list[int]:
 
 
 def penalty_scores(state: HeartsState) -> list[int]:
-    """Return the per-seat display score (lower is better): final at terminal, else running."""
+    """Return the per-player display score (lower is better): final at terminal, else running."""
     if is_terminal(state):
         return final_penalties(state)
     return points_taken(state)
 
 
 def leaderboard_scores(state: HeartsState) -> list[int]:
-    """Return per-seat leaderboard scores (higher is better): the negated penalty scores."""
+    """Return per-player leaderboard scores (higher is better): the negated penalty scores."""
     return [-points for points in penalty_scores(state)]

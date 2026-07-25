@@ -17,7 +17,7 @@ def test_extra_dependency_is_usable():
 def _mean_score(policy) -> float:
     scores: list[float] = []
     for seed in _SEEDS:
-        env = make_env({"seats": 1, "pipe_gap": 100})
+        env = make_env({"players": 1, "pipe_gap": 100})
         try:
             scores.append(play_episode(policy, env, seed=seed))
         finally:

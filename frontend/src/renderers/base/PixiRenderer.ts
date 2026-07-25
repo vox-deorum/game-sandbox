@@ -25,7 +25,7 @@ const RESIZE_DEBOUNCE_MS = 100
 
 /**
  * A device-input intent a renderer declares from {@link PixiRenderer.inputs}: a gesture (keys and/or
- * a pointer on the stage) mapped to an action sent for a slot. The base wires the mechanics — the
+ * a pointer on the stage) mapped to an action sent for a player. The base wires the mechanics — the
  * listeners, `preventDefault`, auto-repeat suppression, and teardown — so a renderer says "Space,
  * ArrowUp, or W, and a pointer, all mean flap" and writes no listener bookkeeping.
  */
@@ -34,8 +34,8 @@ export interface InputIntent {
   keys?: readonly string[]
   /** When true, a pointer or touch on the stage triggers this intent. */
   pointer?: boolean
-  /** The slot the action is sent for; wired only when this slot is among the controlled slots. */
-  slot: string
+  /** The player id the action is sent for; wired only when this player is controlled. */
+  playerId: string
   /** The action value sent through the context's `sendAction`. */
   action: unknown
 }
@@ -382,8 +382,10 @@ export abstract class PixiRenderer implements RendererInstance {
     if (sendAction === undefined) {
       return
     }
-    // Only intents whose slot this user controls are live; the rest stay inert (spectator / replay).
-    const active = this.inputs().filter((intent) => this.ctx.controlledSlots.includes(intent.slot))
+    // Only intents whose player this user controls are live; the rest stay inert (spectator / replay).
+    const active = this.inputs().filter((intent) =>
+      this.ctx.controlledPlayers.includes(intent.playerId),
+    )
     if (active.length === 0) {
       return
     }
@@ -407,7 +409,7 @@ export abstract class PixiRenderer implements RendererInstance {
       if (event.repeat) {
         return
       }
-      sendAction(intent.slot, intent.action)
+      sendAction(intent.playerId, intent.action)
     }
     window.addEventListener('keydown', onKeyDown)
 
@@ -416,7 +418,7 @@ export abstract class PixiRenderer implements RendererInstance {
       const onPointer = (event: Event): void => {
         // Prevent pointer/touch from scrolling or zooming the play surface; one gesture is one action.
         event.preventDefault()
-        sendAction(pointerIntent.slot, pointerIntent.action)
+        sendAction(pointerIntent.playerId, pointerIntent.action)
       }
       const target = this.ctx.container
       target.addEventListener('pointerdown', onPointer)

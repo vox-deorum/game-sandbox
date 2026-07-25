@@ -1,7 +1,7 @@
 """Run one local browser session through the same live runner used by production.
 
-``python -m sandbox.play`` opens local browser play. The selected seat is human by default; the
-other seats run the repository's agent through explicit harness bindings. ``--headless`` is a small
+``python -m sandbox.play`` opens local browser play. The selected player is human by default; the
+other players run the repository's agent through explicit harness bindings. ``--headless`` is a small
 test and evaluation escape hatch that drives the same ``Episode`` and default-action paths without a
 relay or browser.
 """
@@ -18,7 +18,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 
-from sandbox.env import META, PLAYER_SLOT, default_action, extract_overlay, make_env
+from sandbox.env import META, PLAYER_ID, default_action, extract_overlay, make_env
 from sandbox.harness.environment import EnvironmentEntry, ParameterValue, resolve_parameters
 from sandbox.harness.live import UNSET_TIMEOUT, UnsetTimeout
 from sandbox.harness.local_server import LocalServer
@@ -32,7 +32,7 @@ WEB_ROOT = Path(__file__).resolve().parent / "web"
 class _DefaultSource:
     """An action source that lets ``ExternalPlayer`` select the environment's legal default."""
 
-    def get_action(self, slot_id: str, observation: object, deadline_ms: int | None) -> None:
+    def get_action(self, player_id: str, observation: object, deadline_ms: int | None) -> None:
         return None
 
 
@@ -50,8 +50,8 @@ def _entry(make: Any = make_env) -> EnvironmentEntry:
     )
 
 
-def possible_slots() -> tuple[str, ...]:
-    """Read the environment's complete slot set instead of assuming every slot is human-capable."""
+def possible_players() -> tuple[str, ...]:
+    """Read every environment player instead of assuming every player is human-capable."""
     env = make_env(resolve_parameters(META))
     try:
         return tuple(env.possible_agents)
@@ -65,34 +65,34 @@ def play_episode(
     *,
     seed: int,
     max_steps: int | None = None,
-    slot: str = PLAYER_SLOT,
+    player_id: str = PLAYER_ID,
     parameters: Mapping[str, ParameterValue] | None = None,
 ) -> float:
-    """Play one headless episode with one supplied agent and legal defaults for every other seat.
+    """Play one headless episode with one supplied agent and legal defaults for every other player.
 
     ``env`` is already built, so the factory below returns it as-is and ignores the map the harness
     hands it. Pass the same ``parameters`` the environment was built from, otherwise the recording
     would describe settings the game did not actually run with. Omitting them means plain defaults,
     which is what ``make_env(resolve_parameters(META))`` produces.
     """
-    slots = {
-        slot_id: AgentPlayer(agent) if slot_id == slot else ExternalPlayer(_DefaultSource())
-        for slot_id in possible_slots()
+    players = {
+        candidate: AgentPlayer(agent) if candidate == player_id else ExternalPlayer(_DefaultSource())
+        for candidate in possible_players()
     }
     result = run_episode(
         _entry(lambda _parameters: env),
-        slots,
+        players,
         seed=seed,
         parameters=resolve_parameters(META) if parameters is None else parameters,
         max_steps=max_steps,
     )
-    return result.scores[slot]
+    return result.scores[player_id]
 
 
-def run_headless(*, seed: int, max_steps: int | None, seat: int) -> float:
-    """Run the selected seat through the harness without local networking or browser rendering."""
-    slots = possible_slots()
-    slot = slots[seat]
+def run_headless(*, seed: int, max_steps: int | None, player: int) -> float:
+    """Run the selected player through the harness without local networking or browser rendering."""
+    player_ids = possible_players()
+    player_id = player_ids[player]
     # One resolution feeds both the environment and the episode, so the recorded parameters always
     # describe the environment that actually ran.
     parameters = resolve_parameters(META)
@@ -103,7 +103,7 @@ def run_headless(*, seed: int, max_steps: int | None, seat: int) -> float:
             env,
             seed=seed,
             max_steps=max_steps,
-            slot=slot,
+            player_id=player_id,
             parameters=parameters,
         )
     finally:
@@ -114,28 +114,28 @@ def local_config(
     *,
     seed: int,
     mode: str,
-    seat: int,
+    player: int,
     recording_dir: Path,
     step_limit: int | None,
     human_timeout_ms: int | None | UnsetTimeout = UNSET_TIMEOUT,
 ) -> dict[str, object]:
     """Build the complete runner config and header attribution for one local launch."""
-    available_slots = possible_slots()
-    human_slot = available_slots[seat] if mode == "human" else None
-    slots: dict[str, dict[str, str]] = {}
+    player_ids = possible_players()
+    human_player = player_ids[player] if mode == "human" else None
+    bindings: dict[str, dict[str, str]] = {}
     players: dict[str, dict[str, str]] = {}
-    for slot_id in available_slots:
-        if slot_id == human_slot:
-            slots[slot_id] = {"kind": "external"}
-            players[slot_id] = {"kind": "human", "label": "You"}
+    for player_id in player_ids:
+        if player_id == human_player:
+            bindings[player_id] = {"kind": "external"}
+            players[player_id] = {"kind": "human", "label": "You"}
         else:
-            slots[slot_id] = {"kind": "builtin-agent", "path": str(REPO_ROOT)}
-            players[slot_id] = {"kind": "agent", "label": "Your agent"}
+            bindings[player_id] = {"kind": "builtin-agent", "path": str(REPO_ROOT)}
+            players[player_id] = {"kind": "agent", "label": "Your agent"}
     config: dict[str, object] = {
         "env_id": META.env_id,
         "parameters": resolve_parameters(META),
         "seed": seed,
-        "player_bindings": slots,
+        "player_bindings": bindings,
         "players": players,
         "recording_dir": str(recording_dir),
         "recording_id": "local",
@@ -184,7 +184,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("mode", nargs="?", choices=("human", "agent"), default="human")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--steps", type=int, help="cap headless steps")
-    parser.add_argument("--seat", type=int, default=0, help="seat index (default 0)")
+    parser.add_argument("--player", type=int, default=0, help="player index (default 0)")
     parser.add_argument("--port", type=int, default=0, help="loopback port, or 0 for an available port")
     parser.add_argument("--no-browser", action="store_true", help="serve without opening a browser")
     parser.add_argument("--headless", action="store_true", help="run one harness episode without a browser")
@@ -197,20 +197,20 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    available_slots = possible_slots()
-    if args.seat < 0 or args.seat >= len(available_slots):
-        parser.error(f"--seat must name one of 0..{len(available_slots) - 1}")
-    if args.mode == "human" and not args.headless and available_slots[args.seat] not in META.human_players:
-        parser.error(f"seat {args.seat} is not human-playable in {META.env_id!r}")
+    player_ids = possible_players()
+    if args.player < 0 or args.player >= len(player_ids):
+        parser.error(f"--player must name one of 0..{len(player_ids) - 1}")
+    if args.mode == "human" and not args.headless and player_ids[args.player] not in META.human_players:
+        parser.error(f"player {args.player} is not human-playable in {META.env_id!r}")
     if args.headless:
-        score = run_headless(seed=args.seed, max_steps=args.steps, seat=args.seat)
+        score = run_headless(seed=args.seed, max_steps=args.steps, player=args.player)
         print(f"seed {args.seed}: score {score:.2f}")
         return 0
     with TemporaryDirectory(prefix="game-sandbox-local-") as recording_dir:
         config = local_config(
             seed=args.seed,
             mode=args.mode,
-            seat=args.seat,
+            player=args.player,
             recording_dir=Path(recording_dir),
             step_limit=args.steps,
             human_timeout_ms=(

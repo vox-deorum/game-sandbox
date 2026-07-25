@@ -6,15 +6,15 @@ Spades is a four-player partnership card game. You and the player across the tab
 
 Each player receives 13 cards from a standard 52-card deck. A hand has two phases: a **bidding round**, followed by 13 rounds of card play called **tricks**.
 
-**Bidding.** Starting with seat 0 and moving clockwise, each player bids once. A bid is a whole number from `0` to `13` that says how many tricks the player expects to take. A bid of `0` is **nil**, a promise to take no tricks. Your team's **contract** is the sum of your bid and your partner's bid.
+**Bidding.** Starting with player 0 and moving clockwise, each player bids once. A bid is a whole number from `0` to `13` that says how many tricks the player expects to take. A bid of `0` is **nil**, a promise to take no tricks. Your team's **contract** is the sum of your bid and your partner's bid.
 
-**Tricks.** Seat 0 starts the first trick. One player **leads** by playing the first card. The other players each add one card in clockwise order. The first card sets the **led suit**. If you hold a card of that suit, you must play one. This rule is called **following suit**. If you hold none, you may play any card.
+**Tricks.** Player 0 starts the first trick. One player **leads** by playing the first card. The other players each add one card in clockwise order. The first card sets the **led suit**. If you hold a card of that suit, you must play one. This rule is called **following suit**. If you hold none, you may play any card.
 
 Spades are always **trump**, which means any spade beats a card from another suit. The highest spade wins a trick. If no one plays a spade, the highest card of the led suit wins. The winner takes the trick and leads the next one.
 
 This environment uses these Spades rules:
 
-- Seat 0 bids first and leads the first trick.
+- Player 0 bids first and leads the first trick.
 - You may not **lead** a spade until spades are **broken**, which means a spade has been played on an earlier trick. The one exception is a hand that holds nothing but spades, which may lead one.
 - There is no blind or double nil: every bid is made with your hand in view.
 
@@ -81,7 +81,7 @@ This agent cannot make an illegal move. Every bid from `0` through `13` is legal
 Run the agent from the template folder:
 
 ```console
-python -m sandbox play    # watch it take a seat in your browser
+python -m sandbox play    # watch it play a player in your browser
 python -m sandbox eval    # play several seeded games and report the mean score
 python -m sandbox test    # run the checks, which pass before you change anything
 ```
@@ -109,13 +109,13 @@ Both partners share the same team score. Every action during play gives all play
 | Set on a contract of 4                    | `-40.0`  |
 | Both partners bid 13 (impossible to make) | `-260.0` |
 
-The lowest possible team score is minus 260 (both partners bidding 13, a contract of 26 that thirteen tricks can never satisfy), so a crashed or timed-out seat can never outscore honest play.
+The lowest possible team score is minus 260 (both partners bidding 13, a contract of 26 that thirteen tricks can never satisfy), so a crashed or timed-out player can never outscore honest play.
 
 ## The helper module
 
 The starting agent uses the template's `sandbox.cards` helper module. Import what you need at the top of `agent.py`, not inside a method. The helpers turn the observation into card objects, bid numbers, lists, and plain Python values. Your `act` method therefore does not need to read a raw NumPy array, action mask, or encoded bid.
 
-`is_bidding(observation)` identifies the phase. `bid(n)` and `play(card)` build the two kinds of action. `legal_bids(observation)` and `legal_cards(observation)` list your legal choices, while `partner_seat(observation)` identifies your teammate. [Under the hood](#under-the-hood) documents the raw fields and encodings, but most agents do not need them.
+`is_bidding(observation)` identifies the phase. `bid(n)` and `play(card)` build the two kinds of action. `legal_bids(observation)` and `legal_cards(observation)` list your legal choices, while `partner_player(observation)` identifies your teammate. [Under the hood](#under-the-hood) documents the raw fields and encodings, but most agents do not need them.
 
 The module provides these helpers and constants:
 
@@ -128,18 +128,18 @@ The module provides these helpers and constants:
 | `play(card)` | The integer action for a card object, the value `act` returns |
 | `action_to_bid(action)` | The bid `k` a bid action `52 + k` names |
 | `hand_cards(observation)` | Every card object in your hand |
-| `my_seat(observation)` | Your seat ID |
-| `partner_seat(observation)` | Your partner's seat, read from the observation |
-| `partner_of(seat)` | A seat's partner, `(seat + 2) % 4`, when you only have a seat number |
-| `bids(observation)` | The four seats' bids indexed by seat (`-1` before a seat bids) |
-| `tricks_won(observation)` | Tricks taken so far, indexed by seat |
+| `my_player(observation)` | Your player ID |
+| `partner_player(observation)` | Your partner's player, read from the observation |
+| `partner_of(player)` | A player's partner, `(player + 2) % 4`, when you only have a player number |
+| `bids(observation)` | The four players' bids indexed by player (`-1` before a player bids) |
+| `tricks_won(observation)` | Tricks taken so far, indexed by player |
 | `team_scores(observation)` | The two teams' running hand scores, `[team of 0/2, team of 1/3]` |
 | `led_suit(observation)` | Led suit ID, or `None` when you are leading |
 | `spades_broken(observation)` | `True` after spades are broken, otherwise `False` |
-| `current_trick(observation)` | `(seat, card)` pairs in the current trick, in play order |
-| `last_trick(observation)` | `(seat, card)` pairs of the most recently completed trick |
-| `last_trick_winner(observation)` | Seat that won the last completed trick, or `None` |
-| `trick_winner_so_far(observation)` | The `(seat, card)` currently winning the trick (spades are trump), or `None` |
+| `current_trick(observation)` | `(player, card)` pairs in the current trick, in play order |
+| `last_trick(observation)` | `(player, card)` pairs of the most recently completed trick |
+| `last_trick_winner(observation)` | Player that won the last completed trick, or `None` |
+| `trick_winner_so_far(observation)` | The `(player, card)` currently winning the trick (spades are trump), or `None` |
 | `beats_current_winner(observation, card)` | Whether playing `card` now would take the trick |
 | `suit_of(card)` / `rank_of(card)` | A card object's suit ID `0..3` / face-value rank `2..14` |
 | `make_card(suit, rank)` | A card object `{"suit": suit, "rank": rank}` from a suit ID and face-value rank |
@@ -208,43 +208,43 @@ observation
 
 The top-level `action_mask` is a 66-entry NumPy array indexed by action. Entries `0..51` are cards, and entries `52..65` are bids (`52 + k`). A `1` marks an action as legal. `legal_cards` and `legal_bids` read this array for you.
 
-Everything else is under the `"observation"` key and uses meaningful structures. Your hand and tricks are sequences of card objects shaped like `{"suit", "rank"}`, and other small numbers represent categories. A few raw fields need a special code for "none yet": `14` means a seat has not bid, and `4` means there is no led suit or completed trick. The matching helpers translate these codes to `None` or `-1`.
+Everything else is under the `"observation"` key and uses meaningful structures. Your hand and tricks are sequences of card objects shaped like `{"suit", "rank"}`, and other small numbers represent categories. A few raw fields need a special code for "none yet": `14` means a player has not bid, and `4` means there is no led suit or completed trick. The matching helpers translate these codes to `None` or `-1`.
 
 | Field | Shape | Values and meaning |
 | --- | --- | --- |
 | `hand` | sequence of cards | The card objects you are holding, in the order dealt. |
 | `phase` | `0` or `1` | `0` during the bidding round, `1` during play. `is_bidding` reads this. |
-| `bids` | 4 categories | Each seat's bid indexed by seat (`0..13`, where `0` is nil); `14` marks a seat that has not bid yet. |
-| `team_scores` | length-2 array | The two teams' running hand scores: `[team of seats 0/2, team of seats 1/3]`. |
-| `current_trick` | sequence of `{seat, card}` | The cards played to the current trick so far, in play order (the leader first). Empty when you are leading a fresh trick. |
-| `last_trick` | sequence of `{seat, card}` | The most recently completed trick, in play order, so a seat that already played still sees it after it is swept away. Empty until the first trick of the hand completes. |
-| `last_trick_winner` | `0..4` | The seat that won the most recently completed trick; `4` means none has completed yet. |
+| `bids` | 4 categories | Each player's bid indexed by player (`0..13`, where `0` is nil); `14` marks a player that has not bid yet. |
+| `team_scores` | length-2 array | The two teams' running hand scores: `[team of players 0/2, team of players 1/3]`. |
+| `current_trick` | sequence of `{player, card}` | The cards played to the current trick so far, in play order (the leader first). Empty when you are leading a fresh trick. |
+| `last_trick` | sequence of `{player, card}` | The most recently completed trick, in play order, so a player that already played still sees it after it is swept away. Empty until the first trick of the hand completes. |
+| `last_trick_winner` | `0..4` | The player that won the most recently completed trick; `4` means none has completed yet. |
 | `led_suit` | `0..4` | `0` clubs, `1` diamonds, `2` spades, `3` hearts; `4` means no card has been led because you are starting the trick. |
 | `spades_broken` | `0` or `1` | `0` means no spade has been played on an earlier trick; `1` means spades have been broken. |
-| `seat` | `0..3` | Your own seat ID. |
-| `partner_seat` | `0..3` | Your partner's seat, `(seat + 2) % 4`, already computed for you. |
-| `trick_leader` | `0..3` | The seat that led the current trick. |
-| `tricks_won` | length-4 array | Tricks taken so far, indexed by seat. |
+| `player` | `0..3` | Your own player ID. |
+| `partner_player` | `0..3` | Your partner's player, `(player + 2) % 4`, already computed for you. |
+| `trick_leader` | `0..3` | The player that led the current trick. |
+| `tricks_won` | length-4 array | Tricks taken so far, indexed by player. |
 
-Read these through `observation["observation"]`, or let the helpers do it: `hand_cards`, `bids`, `team_scores`, `current_trick`, `last_trick`, `my_seat`, `partner_seat`, and the rest each return one of these fields as plain Python values.
+Read these through `observation["observation"]`, or let the helpers do it: `hand_cards`, `bids`, `team_scores`, `current_trick`, `last_trick`, `my_player`, `partner_player`, and the rest each return one of these fields as plain Python values.
 
-#### How seat numbers and partnerships work
+#### How player numbers and partnerships work
 
-Seat IDs label players rather than fixed screen positions. Seat `0` controls `player_0`, seat `1` controls `player_1`, and so on. Turns move clockwise:
+Player IDs label PettingZoo positions rather than fixed screen positions. Player `0` controls `player_0`, player `1` controls `player_1`, and so on. Turns move clockwise. A platform **seat** is a separate assignment unit that currently covers one player in Spades:
 
 ```text
 0 → 1 → 2 → 3 → 0
 ```
 
-**Seats determine partnerships.** Seats `0` and `2` form one team, while seats `1` and `3` form the other. Your partner is always directly across the table at `(your seat + 2) % 4`. The observation provides this value as `partner_seat`. A failed nil bidder's tricks still count for the team, and the team's contract combines both bids, so treat the game as two teams rather than four independent players.
+**Players determine partnerships.** Players `0` and `2` form one team, while players `1` and `3` form the other. Your partner is always directly across the table at `(your player + 2) % 4`. The observation provides this value as `partner_player`. A failed nil bidder's tricks still count for the team, and the team's contract combines both bids, so treat the game as two teams rather than four independent players.
 
-The viewer rotates the table so that the player being viewed is at the bottom, with their partner at the top and the two opponents left and right. Therefore seat `0` is not always the bottom, top, left, or right seat.
+The viewer rotates the table so that the player being viewed is at the bottom, with their partner at the top and the two opponents left and right. Therefore player `0` is not always at a fixed screen position.
 
-Suppose `seat` is `2`. Your agent controls seat 2, so your `partner_seat` is 0 and your opponents are seats 1 and 3. If `bids` is `[3, 0, 4, 5]`, then seat 0 bid 3, seat 1 bid nil, your seat 2 bid 4, and seat 3 bid 5. Your team's contract is `3 + 4 = 7`. `current_trick` carries absolute seat IDs too; because it is already in play order, its first entry is the seat named by `trick_leader`.
+Suppose `player` is `2`. Your agent controls player 2, so your `partner_player` is 0 and your opponents are players 1 and 3. If `bids` is `[3, 0, 4, 5]`, then player 0 bid 3, player 1 bid nil, your player 2 bid 4, and player 3 bid 5. Your team's contract is `3 + 4 = 7`. `current_trick` carries absolute player IDs too; because it is already in play order, its first entry is the player named by `trick_leader`.
 
 ## Time limits
 
-Spades is turn-based, so moves have no fixed delay between them. Each call to `act` has a 1-second limit, and the agent may use up to 120 seconds of measured computation during one game. If `act` returns late during bidding, the environment makes a non-nil estimate from the hand. During card play, it chooses the legal card with the lowest rank, breaking ties with the lower suit ID. A human-controlled seat has 60 seconds to move. See [Time limits](../../docs/students/agent-interface.md#time-limits) for how these limits are measured and enforced.
+Spades is turn-based, so moves have no fixed delay between them. Each call to `act` has a 1-second limit, and the agent may use up to 120 seconds of measured computation during one game. If `act` returns late during bidding, the environment makes a non-nil estimate from the hand. During card play, it chooses the legal card with the lowest rank, breaking ties with the lower suit ID. A human-controlled player has 60 seconds to move. See [Time limits](../../docs/students/agent-interface.md#time-limits) for how these limits are measured and enforced.
 
 ## Messaging
 
@@ -253,17 +253,17 @@ Spades supports messaging, so your agent may talk during a hand. If you add the 
 ```python
 def chat(self, inbox):
     # inbox: messages sent to you since your last turn, each
-    # {"from": slot, "to": slot_or_None, "text": str, "tick": int}.
+    # {"from": player, "to": player_or_None, "text": str, "tick": int}.
     for message in inbox:
         ...  # read what your partner told you
-    # Return messages to send: {"to": slot_or_None, "text": str}.
-    # "to": None broadcasts to the whole table; a slot id is a private line.
+    # Return messages to send: {"to": player_or_None, "text": str}.
+    # "to": None broadcasts to the whole table; a player id is a private line.
     return [{"to": None, "text": "spades are mine"}]
 ```
 
-`chat` receives the inbox but not the observation. Save anything it needs, such as your seat or hand, in `act`, which runs first on every turn. Your partner is the seat across from you: `player_((your_seat + 2) % 4)`.
+`chat` receives the inbox but not the observation. Save anything it needs, such as your player or hand, in `act`, which runs first on every turn. Your partner is the player across from you: `player_((your_player + 2) % 4)`.
 
-A **targeted** message to your partner is delivered only to that seat, while a **broadcast** (`"to": None`) is delivered to the whole table. Every message is recorded and shown in replays, so even a targeted message is not secret. In Spades, each message is limited to **120 Unicode code points**. An emoji counts as one code point, and a season may lower the limit. The [agent interface](../../docs/students/agent-interface.md#chatinbox) explains delivery timing, send limits, and how chat time counts toward your limits.
+A **targeted** message to your partner is delivered only to that player, while a **broadcast** (`"to": None`) is delivered to the whole table. Every message is recorded and shown in replays, so even a targeted message is not secret. In Spades, each message is limited to **120 Unicode code points**. An emoji counts as one code point, and a season may lower the limit. The [agent interface](../../docs/students/agent-interface.md#chatinbox) explains delivery timing, send limits, and how chat time counts toward your limits.
 
 The two worked examples show both shapes: `signaler` sends its partner a targeted suit signal and leads the suit it is told about, and `daredevil` bids nil, broadcasts a warning, and covers a partner who did the same.
 

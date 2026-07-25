@@ -1,7 +1,7 @@
 """One command to set up, run, and human-test your agent: ``python -m sandbox``.
 
     python -m sandbox            # set up if needed, then play it yourself
-    python -m sandbox human      # play a seat in your browser
+    python -m sandbox human      # control a player in your browser
     python -m sandbox play       # watch YOUR agent in your browser
     python -m sandbox eval       # run several seeded episodes, print the mean
     python -m sandbox test       # run the checks
@@ -28,8 +28,8 @@ _USAGE = """\
 usage: python -m sandbox [command] [args...]
 
 commands:
-  (none)   play a seat in your browser (same as `human`)
-  human    play a seat in your browser
+  (none)   control a player in your browser (same as `human`)
+  human    control a player in your browser
   play     watch YOUR agent in your browser
   eval     run several seeded episodes and print the mean
   test     run the checks (pytest)

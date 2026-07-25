@@ -22,7 +22,7 @@ from sandbox.cards import (
     led_suit,
     legal_cards,
     make_card,
-    my_seat,
+    my_player,
     play,
     rank_of,
     scores,
@@ -50,7 +50,7 @@ def test_encoding_matches_the_rules_engine():
 
 
 def test_observation_accessors_match_the_raw_observation():
-    env = make_env({"seats": 4})
+    env = make_env({"players": 4})
     try:
         env.reset(seed=0)
         for _ in range(12):
@@ -63,15 +63,15 @@ def test_observation_accessors_match_the_raw_observation():
             assert legal_cards(observation) == [card_to_obj(card) for card in range(52) if mask[card]]
 
             # The scalar accessors match the raw observation fields.
-            assert my_seat(observation) == int(raw["seat"])
+            assert my_player(observation) == int(raw["player"])
             assert scores(observation) == [int(points) for points in raw["scores"]]
             assert hearts_broken(observation) is bool(raw["hearts_broken"])
             expected_led = int(raw["led_suit"])
             assert led_suit(observation) == (None if expected_led == 4 else expected_led)
 
-            # current_trick reproduces the seat/card mapping, leader first, in play order.
+            # current_trick reproduces the player/card mapping, leader first, in play order.
             played = current_trick(observation)
-            raw_trick = [(int(entry["seat"]), entry["card"]) for entry in raw["current_trick"]]
+            raw_trick = [(int(entry["player"]), entry["card"]) for entry in raw["current_trick"]]
             assert played == raw_trick
             if played:
                 assert played[0][0] == int(raw["trick_leader"])

@@ -70,18 +70,18 @@ def test_pausable_clock_pause_and_resume_are_idempotent():
 
 def test_input_command_latches_latest_and_take_clears():
     control = SessionControl()
-    control.handle_line('{"kind": "input", "slot": "player_0", "action": 1}')
-    control.handle_line('{"kind": "input", "slot": "player_0", "action": 0}')
+    control.handle_line('{"kind": "input", "player": "player_0", "action": 1}')
+    control.handle_line('{"kind": "input", "player": "player_0", "action": 0}')
     # Latest wins within the window...
     assert control.take("player_0") == 0
     # ...and a take clears it, so an unrepeated input is a single input.
     assert control.take("player_0") is None
 
 
-def test_input_routes_per_slot():
+def test_input_routes_per_player():
     control = SessionControl()
-    control.handle_line('{"kind": "input", "slot": "player_0", "action": 7}')
-    control.handle_line('{"kind": "input", "slot": "player_1", "action": 9}')
+    control.handle_line('{"kind": "input", "player": "player_0", "action": 7}')
+    control.handle_line('{"kind": "input", "player": "player_1", "action": 9}')
     assert control.take("player_1") == 9
     assert control.take("player_0") == 7
 
@@ -110,7 +110,7 @@ def test_malformed_and_unknown_commands_are_ignored(capsys: Any):
     control.handle_line("not json at all")
     control.handle_line('{"no_kind": true}')
     control.handle_line('{"kind": "frobnicate"}')
-    control.handle_line('{"kind": "input", "action": 1}')  # missing slot
+    control.handle_line('{"kind": "input", "action": 1}')  # missing player
     control.handle_line("")  # blank
     # None of that mutated state or raised.
     assert control.take("player_0") is None
@@ -128,7 +128,7 @@ def test_attach_hijack_preamble_does_not_swallow_the_first_input(capsys: Any):
     # The exact preamble docker-modem emits, glued to the first real input with no separator —
     # this is the line shape from the live container log that motivated the fix.
     preamble = '{"stream":true,"stdin":true,"stdout":true,"stderr":true,"hijack":true}'
-    command = '{"kind": "input", "slot": "player_0", "action": 1}'
+    command = '{"kind": "input", "player": "player_0", "action": 1}'
     control.handle_line(preamble + command)
 
     # The real input survived the preamble instead of being dropped with it...
@@ -149,16 +149,16 @@ def test_fused_control_commands_on_one_line_all_apply(capsys: Any):
     assert capsys.readouterr().err == ""
 
 
-# --- chat: the bounded per-slot FIFO queue ----------------------------------------------
+# --- chat: the bounded per-player FIFO queue --------------------------------------------
 
 
 def test_chat_frames_queue_in_fifo_order_and_take_clears():
     control = SessionControl()
     control.configure_chat(True)
     # The exact wire shape the TypeScript protocol pins, three in a row to prove order is preserved.
-    control.handle_line('{"kind":"chat","slot":"player_0","to":null,"text":"one"}')
-    control.handle_line('{"kind":"chat","slot":"player_0","to":"player_1","text":"two"}')
-    control.handle_line('{"kind":"chat","slot":"player_0","to":null,"text":"three"}')
+    control.handle_line('{"kind":"chat","player":"player_0","to":null,"text":"one"}')
+    control.handle_line('{"kind":"chat","player":"player_0","to":"player_1","text":"two"}')
+    control.handle_line('{"kind":"chat","player":"player_0","to":null,"text":"three"}')
     assert control.take_chat("player_0") == [
         {"to": None, "text": "one"},
         {"to": "player_1", "text": "two"},
@@ -171,8 +171,8 @@ def test_chat_frames_queue_in_fifo_order_and_take_clears():
 def test_chat_never_touches_the_input_latch_and_vice_versa():
     control = SessionControl()
     control.configure_chat(True)
-    control.handle_line('{"kind":"chat","slot":"player_0","to":null,"text":"hi"}')
-    control.handle_line('{"kind":"input","slot":"player_0","action":5}')
+    control.handle_line('{"kind":"chat","player":"player_0","to":null,"text":"hi"}')
+    control.handle_line('{"kind":"input","player":"player_0","action":5}')
     # Each channel keeps its own value.
     assert control.take("player_0") == 5
     assert control.take_chat("player_0") == [{"to": None, "text": "hi"}]
@@ -181,7 +181,7 @@ def test_chat_never_touches_the_input_latch_and_vice_versa():
 def test_chat_wire_pin_parses_to_the_queued_shape():
     control = SessionControl()
     control.configure_chat(True)
-    control.handle_line('{"kind":"chat","slot":"player_0","to":null,"text":"hi"}')
+    control.handle_line('{"kind":"chat","player":"player_0","to":null,"text":"hi"}')
     assert control.take_chat("player_0") == [{"to": None, "text": "hi"}]
 
 
@@ -189,7 +189,7 @@ def test_seventeenth_chat_frame_is_dropped_and_sixteen_survive(capsys: Any):
     control = SessionControl()
     control.configure_chat(True)
     for i in range(17):
-        control.handle_line(f'{{"kind":"chat","slot":"player_0","to":null,"text":"m{i}"}}')
+        control.handle_line(f'{{"kind":"chat","player":"player_0","to":null,"text":"m{i}"}}')
     queued = control.take_chat("player_0")
     assert len(queued) == 16
     assert [m["text"] for m in queued] == [f"m{i}" for i in range(16)]  # the first sixteen survive
@@ -198,19 +198,19 @@ def test_seventeenth_chat_frame_is_dropped_and_sixteen_survive(capsys: Any):
 
 def test_chat_is_dropped_with_a_diagnostic_when_messaging_disabled(capsys: Any):
     control = SessionControl()  # chat defaults to disabled
-    control.handle_line('{"kind":"chat","slot":"player_0","to":null,"text":"hi"}')
+    control.handle_line('{"kind":"chat","player":"player_0","to":null,"text":"hi"}')
     assert control.take_chat("player_0") == []
     assert "messaging disabled" in capsys.readouterr().err
 
 
-def test_chat_with_malformed_slot_or_text_is_dropped(capsys: Any):
+def test_chat_with_malformed_player_or_text_is_dropped(capsys: Any):
     control = SessionControl()
     control.configure_chat(True)
-    control.handle_line('{"kind":"chat","to":null,"text":"no slot"}')
-    control.handle_line('{"kind":"chat","slot":"player_0","to":null,"text":42}')
+    control.handle_line('{"kind":"chat","to":null,"text":"no player"}')
+    control.handle_line('{"kind":"chat","player":"player_0","to":null,"text":42}')
     assert control.take_chat("player_0") == []
     err = capsys.readouterr().err
-    assert "without a string slot" in err
+    assert "without a string player" in err
     assert "without string text" in err
 
 
@@ -219,7 +219,7 @@ def test_transport_source_take_messages_drains_the_control_queue():
     control.configure_chat(True)
     clock = PausableClock(ManualClock())
     source = TransportSource(control, clock=clock, paced=True)
-    control.handle_line('{"kind":"chat","slot":"player_0","to":null,"text":"hi"}')
+    control.handle_line('{"kind":"chat","player":"player_0","to":null,"text":"hi"}')
     assert source.take_messages("player_0") == [{"to": None, "text": "hi"}]
     assert source.take_messages("player_0") == []
 
@@ -234,7 +234,7 @@ def test_paced_source_returns_latched_or_none_immediately():
 
     # No input yet → None immediately (the loop applies the default action).
     assert source.get_action("player_0", observation=None, deadline_ms=None) is None
-    control.handle_line('{"kind": "input", "slot": "player_0", "action": 1}')
+    control.handle_line('{"kind": "input", "player": "player_0", "action": 1}')
     assert source.get_action("player_0", observation=None, deadline_ms=123) == 1
     # Consumed: the next step with no fresh input defaults again.
     assert source.get_action("player_0", observation=None, deadline_ms=123) is None
@@ -253,7 +253,7 @@ def test_turn_based_source_blocks_until_input_arrives():
             self.calls += 1
             base.advance(ms)
             if self.calls == 2:  # input arrives mid-wait
-                control.handle_line('{"kind": "input", "slot": "p", "action": 42}')
+                control.handle_line('{"kind": "input", "player": "p", "action": 42}')
 
     sleeper = FeedingSleeper()
     source = TransportSource(control, clock=clock, paced=False, sleeper=sleeper, slice_ms=5)
@@ -277,7 +277,7 @@ def test_turn_based_source_holds_latched_input_until_resume():
             if self.calls == 1:
                 control.handle_line('{"kind": "pause"}')
             elif self.calls == 2:
-                control.handle_line('{"kind": "input", "slot": "p", "action": 42}')
+                control.handle_line('{"kind": "input", "player": "p", "action": 42}')
             elif self.calls == 4:
                 control.handle_line('{"kind": "resume"}')
 

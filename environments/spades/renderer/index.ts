@@ -1,14 +1,14 @@
 /**
  * The Spades renderer: a {@link CardTableRenderer} subclass that supplies only what is Spades and not
- * generic trick-taking — the overlay→scene function, the seat badge's partnership tab and `bid / won`
+ * generic trick-taking — the overlay→scene function, the player badge's partnership tab and `bid / won`
  * line, the two-team status strip, the centre grid of clickable bid chips during the opening round, the
  * "won/bid" pill raised over a trick's winner, and the gold pulse plus chosen-chip flash that mark a
- * seat and its bid the instant a bid is placed.
- * The shared card table (felt, seats, trick, hand, opponents, card faces, and the fly-in/sweep
+ * player and its bid the instant a bid is placed.
+ * The shared card table (felt, players, trick, hand, opponents, card faces, and the fly-in/sweep
  * animation) lives in {@link CardTableRenderer}.
  *
  * The same class runs unchanged from a stored recording, where it has no `sendAction` and no controlled
- * slot, so the cards and chips are inert and it is draw-only (what the replay viewer relies on). It
+ * player id, so the cards and chips are inert and it is draw-only (what the replay viewer relies on). It
  * registers under the metadata key `"spades"` (see `renderers/index.ts`).
  *
  * Spades-specific drawing stays here while the shared trick-taking table remains in the base class.
@@ -31,7 +31,7 @@ import {
   SPADES,
   SPADES_GEOMETRY,
   type SpadesScene,
-  type SpadesSceneSeat,
+  type SpadesScenePlayer,
   smoothstep,
   type TableGeometry,
   TEAM_TINT,
@@ -40,16 +40,16 @@ import {
 } from './scene.js'
 import thumbnail from './thumbnail.svg'
 
-/** The natural length (ms) of the gold pulse that marks a seat just after it bids. */
+/** The natural length (ms) of the gold pulse that marks a player just after it bids. */
 const BID_PULSE_NATURAL_MS = 620
 /** The shortest that pulse is ever allowed to run, so a tiny replay budget still reads. */
 const BID_PULSE_MIN_MS = 240
 /** The muted spade-pip colour when spades are not yet broken. */
 const SPADE_MUTED = '#5c7066'
 
-/** A running gold pulse on the seat that just bid: a state-to-state flourish, not an ambient loop. */
+/** A running gold pulse on the player that just bid: a state-to-state flourish, not an ambient loop. */
 interface BidPulse {
-  seat: number
+  player: number
   elapsedMs: number
   durationMs: number
 }
@@ -64,7 +64,7 @@ interface BidFlash {
 export class SpadesRenderer extends CardTableRenderer<SpadesScene> {
   protected readonly geometry: TableGeometry = SPADES_GEOMETRY
 
-  /** The gold pulse on the seat that just placed a bid, or null when no bid is being celebrated. */
+  /** The gold pulse on the player that just placed a bid, or null when no bid is being celebrated. */
   private bidPulse: BidPulse | null = null
 
   /** The gold flash on the chosen chip in the bid grid, or null when no bid is being celebrated. */
@@ -77,39 +77,39 @@ export class SpadesRenderer extends CardTableRenderer<SpadesScene> {
   // Spades declares no base input intents: the shared hand wires on-screen card clicks per card and the
   // bid chips wire their own clicks below, so it inherits the base `inputs()` default of [].
 
-  // --- Seat interior ---
+  // --- Player interior ---
 
   /** The badge interior: the partnership tab, the "(you)"-aware name, and the `bid · won` line. */
-  protected drawSeatContent(container: Container, seat: SpadesSceneSeat): void {
+  protected drawPlayerContent(container: Container, player: SpadesScenePlayer): void {
     const w = this.geometry.badgeW
     const h = this.geometry.badgeH
 
     // A short partnership tab down the badge's left edge, so the two teams read at a glance.
     const tab = new Graphics()
-    tab.roundRect(-w / 2 + 5, -h / 2 + 9, 4, h - 18, 2).fill(TEAM_TINT[seat.team] ?? COLORS.white)
+    tab.roundRect(-w / 2 + 5, -h / 2 + 9, 4, h - 18, 2).fill(TEAM_TINT[player.team] ?? COLORS.white)
     container.addChild(tab)
 
-    const label = this.text(seat.label, 22, COLORS.white, 'center')
+    const label = this.text(player.label, 22, COLORS.white, 'center')
     label.position.set(0, -12)
     container.addChild(label)
 
-    this.drawBidWon(container, seat)
+    this.drawBidWon(container, player)
   }
 
-  /** The seat's `bid · won` line (a waiting note before a bid, NIL for nil) centred at badge y+14. */
-  private drawBidWon(container: Container, seat: SpadesSceneSeat): void {
-    if (seat.bid < 0) {
+  /** The player's `bid · won` line (a waiting note before a bid, NIL for nil) centred at badge y+14. */
+  private drawBidWon(container: Container, player: SpadesScenePlayer): void {
+    if (player.bid < 0) {
       const waiting = this.text('waiting to bid', 16, COLORS.dim, 'center')
       waiting.position.set(0, 14)
       container.addChild(waiting)
       return
     }
-    const bidStr = seat.isNil ? 'NIL' : String(seat.bid)
-    const bidColor = seat.isNil ? NIL_INK : seat.isTurn ? COLORS.gold : COLORS.white
+    const bidStr = player.isNil ? 'NIL' : String(player.bid)
+    const bidColor = player.isNil ? NIL_INK : player.isTurn ? COLORS.gold : COLORS.white
     // Two adjacent pieces (bid tinted, won dim), centred as one line. Left-anchored text tops out at
     // its position, so shift each up by half its height to sit on the y+14 centre line.
     const bidImg = this.text(`bid ${bidStr}`, 16, bidColor, 'left')
-    const wonImg = this.text(`  ·  won ${seat.won}`, 16, COLORS.dim, 'left')
+    const wonImg = this.text(`  ·  won ${player.won}`, 16, COLORS.dim, 'left')
     const startX = -(bidImg.width + wonImg.width) / 2
     bidImg.position.set(startX, 14 - bidImg.height / 2)
     wonImg.position.set(startX + bidImg.width, 14 - wonImg.height / 2)
@@ -197,19 +197,19 @@ export class SpadesRenderer extends CardTableRenderer<SpadesScene> {
     prompt.position.set(panel.x, panel.y)
     this.gameLayer.addChild(prompt)
 
-    // A controllable chip sends its bid for the controlled seat, which is the seat at the bottom view.
-    const slot = `player_${scene.viewSeat}`
+    // A controllable chip sends its bid for the controlled player, which is at the bottom view position.
+    const playerId = `player_${scene.viewPlayer}`
     for (const chip of panel.chips) {
-      this.gameLayer.addChild(this.makeBidChip(chip, slot))
+      this.gameLayer.addChild(this.makeBidChip(chip, playerId))
     }
   }
 
   /**
    * Build one bid chip Container at its rect: the felt body and edge, the bid label (NIL tinted), a grey
    * veil when the chip is not in the mask, and — for a controllable chip — the hover feedback and the
-   * click that sends the bid. Inert chips (a replay, an off-turn seat) are draw-only.
+   * click that sends the bid. Inert chips (a replay, an off-turn player) are draw-only.
    */
-  private makeBidChip(chip: SceneBidChip, slot: string): Container {
+  private makeBidChip(chip: SceneBidChip, playerId: string): Container {
     const c = new Container()
     c.position.set(chip.x, chip.y)
     const radius = 8
@@ -238,7 +238,7 @@ export class SpadesRenderer extends CardTableRenderer<SpadesScene> {
       c.on('pointerout', () => {
         hover.visible = false
       })
-      c.on('pointertap', () => sendAction(slot, chip.action))
+      c.on('pointertap', () => sendAction(playerId, chip.action))
     }
 
     const label = this.text(
@@ -262,10 +262,10 @@ export class SpadesRenderer extends CardTableRenderer<SpadesScene> {
     return c
   }
 
-  // --- Bid pulse (a per-seat flourish the moment a bid is placed) ---
+  // --- Bid pulse (a per-player flourish the moment a bid is placed) ---
 
   /**
-   * Celebrate a bid: a gold pulse on the seat that just moved from "not yet bid" to a bid, and a gold
+   * Celebrate a bid: a gold pulse on the player that just moved from "not yet bid" to a bid, and a gold
    * flash on the chip it chose in the centre grid — so a watcher catches both who bid and what. Both are
    * skipped on a snap (a scrub/seek lands statically, so nothing animates).
    */
@@ -283,17 +283,17 @@ export class SpadesRenderer extends CardTableRenderer<SpadesScene> {
     const before =
       prev === null ? [] : asNumberList((prev.overlay as Record<string, unknown>)?.bids)
     const after = asNumberList((state.overlay as Record<string, unknown>)?.bids)
-    for (let seat = 0; seat < NUM_PLAYERS; seat++) {
-      if ((before[seat] ?? -1) < 0 && (after[seat] ?? -1) >= 0) {
+    for (let player = 0; player < NUM_PLAYERS; player++) {
+      if ((before[player] ?? -1) < 0 && (after[player] ?? -1) >= 0) {
         const dur = bidPulseDuration(options)
-        this.bidPulse = { seat, elapsedMs: 0, durationMs: dur }
-        this.bidFlash = { bid: after[seat] ?? 0, elapsedMs: 0, durationMs: dur }
+        this.bidPulse = { player, elapsedMs: 0, durationMs: dur }
+        this.bidFlash = { bid: after[player] ?? 0, elapsedMs: 0, durationMs: dur }
         break
       }
     }
   }
 
-  /** Drive both bid flourishes each frame (the seat pulse and the chosen-chip flash); alive if either is. */
+  /** Drive both bid flourishes each frame (the player pulse and the chosen-chip flash); alive if either is. */
   protected override onFrameExtra(dtMs: number): boolean {
     // Advance both independently — a bare `||` would short-circuit and starve the flash whenever the
     // pulse is still running.
@@ -302,7 +302,7 @@ export class SpadesRenderer extends CardTableRenderer<SpadesScene> {
     return pulsing || flashing
   }
 
-  /** Drive the bid pulse: a gold ring on the seat badge that expands and fades, then clears itself. */
+  /** Drive the bid pulse: a gold ring on the player badge that expands and fades, then clears itself. */
   private driveBidPulse(dtMs: number): boolean {
     const pulse = this.bidPulse
     if (pulse === null) {
@@ -310,18 +310,18 @@ export class SpadesRenderer extends CardTableRenderer<SpadesScene> {
     }
     pulse.elapsedMs += dtMs
     const t = pulse.elapsedMs / pulse.durationMs
-    // The seat layer is rebuilt each state, so find the current badge fresh and re-draw the ring on it;
+    // The player layer is rebuilt each state, so find the current badge fresh and re-draw the ring on it;
     // a stale ring from a prior frame (or a prior badge) is dropped first so nothing accumulates.
-    const seatNode = this.seatLayer.getChildByLabel?.(`seat-${pulse.seat}`) as Container | null
-    if (seatNode) {
-      seatNode.getChildByLabel?.('bid-pulse')?.destroy()
+    const playerNode = this.playerLayer.getChildByLabel?.(`player-${pulse.player}`) as Container | null
+    if (playerNode) {
+      playerNode.getChildByLabel?.('bid-pulse')?.destroy()
     }
     if (t >= 1) {
       this.bidPulse = null
       return false
     }
-    if (seatNode) {
-      seatNode.addChild(this.makeBidPulseRing(t))
+    if (playerNode) {
+      playerNode.addChild(this.makeBidPulseRing(t))
     }
     return true
   }
@@ -330,7 +330,7 @@ export class SpadesRenderer extends CardTableRenderer<SpadesScene> {
    * Drive the chosen-chip flash: a gold ring on the bid grid's chip that pops out and fades. Drawn into
    * the fly layer (above the chips, and empty during bidding since card fly-ins only happen in play), a
    * single labelled child redrawn each frame so nothing accumulates. If the fourth/last bid has already
-   * ended the bidding round (`bidPanel === null`), there is no chip to flash — the seat pulse carries it.
+   * ended the bidding round (`bidPanel === null`), there is no chip to flash — the player pulse carries it.
    */
   private driveBidFlash(dtMs: number): boolean {
     const flash = this.bidFlash

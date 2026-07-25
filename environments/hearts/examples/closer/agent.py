@@ -1,8 +1,8 @@
-"""The 'closer' example agent: a Hearts player that exploits the last seat in a trick.
+"""The 'closer' example agent: a Hearts player that exploits the last player in a trick.
 
 When you play last in a trick you have perfect information: all three other cards are already on the
 table, so you know exactly which card is winning and whether the trick is safe to win. This agent
-turns that into its one idea, playing very differently in the last seat than in any other:
+turns that into its one idea, playing very differently in the last player position than in any other:
 
 - **Playing last** (three cards already down), read the trick. If you can still duck under the
   winner, shed your highest safe card. If every card you could follow with would win, winning is now
@@ -12,9 +12,9 @@ turns that into its one idea, playing very differently in the last seat than in 
 - **Playing earlier** (a card is still to come after you), fall back to safe, ``duck``-style play:
   lead low, duck under the winner when following, and unload your most dangerous card when void.
 
-Reading the last seat is where Hearts points are quietly saved or spent, so concentrating the whole
+Reading the last player position is where Hearts points are quietly saved or spent, so concentrating the whole
 policy there is a clean, legible idea. The example test asserts the signature behaviour: in the last
-seat, forced to win a trick that carries no points, it dumps its highest card where ``duck`` clings
+player, forced to win a trick that carries no points, it dumps its highest card where ``duck`` clings
 to its lowest.
 """
 
@@ -48,7 +48,7 @@ def _dump(legal: list[dict[str, int]]) -> int:
 
 
 class Agent:
-    """Play safe in early seats; in the last seat, use full information to shed optimally."""
+    """Play safe early; in the last player position, use full information to shed optimally."""
 
     def reset(self, seed: int) -> None:
         # Stateless heuristic: nothing to carry between or within games.
@@ -59,7 +59,7 @@ class Agent:
         led = led_suit(observation)
         played = [card for _, card in current_trick(observation)]
 
-        # Last seat: three cards are down, so we see the whole trick before we commit.
+        # Last player: three cards are down, so we see the whole trick before we commit.
         if led is not None and len(played) == 3:
             followers = [card for card in legal if suit_of(card) == led]
             if followers:
@@ -72,7 +72,7 @@ class Agent:
                 if all(card_points(card) == 0 for card in played):
                     return play(max(followers, key=rank_of))
                 return play(min(followers, key=rank_of))
-            # Void in the last seat: we cannot win, so unload our most dangerous card.
+            # Void in the last player position: we cannot win, so unload our most dangerous card.
             return _dump(legal)
 
         # Not last: play it safe, the duck way.

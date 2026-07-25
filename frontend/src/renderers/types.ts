@@ -24,14 +24,14 @@ import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
 export interface RendererContext {
   /** The region the renderer owns and draws into. */
   container: HTMLElement
-  /** Pace interval, slots, display name, and the rest of the environment's public metadata. */
+  /** Pace interval, players, display name, and the rest of the environment's public metadata. */
   meta: EnvironmentMeta
   /** Environment, schema_version, and seed for the run being drawn. */
   header: RecordingHeader
-  /** The slots this user controls; empty when spectating or replaying. */
-  controlledSlots: readonly string[]
-  /** Send a human action for a controlled slot; absent outside live human play. */
-  sendAction?: (slot: string, action: unknown) => void
+  /** The stable player ids this user controls; empty when spectating or replaying. */
+  controlledPlayers: readonly string[]
+  /** Send a human action for a controlled player; absent outside live human play. */
+  sendAction?: (playerId: string, action: unknown) => void
 }
 
 /**

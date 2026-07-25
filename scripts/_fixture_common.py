@@ -23,12 +23,12 @@ FIXTURES_DIR = Path(__file__).resolve().parents[1] / "frontend" / "test" / "fixt
 
 def run_and_copy(
     entry: EnvironmentEntry,
-    slots: dict[str, AgentPlayer],
+    players: dict[str, AgentPlayer],
     *,
     seed: int,
     recording_id: str,
     dest_name: str,
-    players: dict[str, PlayerAttribution],
+    player_attribution: dict[str, PlayerAttribution],
 ) -> None:
     """Run a seeded episode into a temp store, copy its recording to ``FIXTURES_DIR / dest_name``.
 
@@ -39,12 +39,12 @@ def run_and_copy(
         store = FolderRecordingStore(tmp)
         result = run_episode(
             entry,
-            slots,
+            players,
             seed=seed,
             parameters=resolve_parameters(entry.meta),
             store=store,
             recording_id=recording_id,
-            player_attribution=players,
+            player_attribution=player_attribution,
         )
         dest = FIXTURES_DIR / dest_name
         shutil.copyfile(Path(tmp) / recording_id / "recording.jsonl", dest)

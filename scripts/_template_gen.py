@@ -85,7 +85,7 @@ from sandbox.harness.environment import (
 {surface_import}
 
 ENV_ID = "{env_id}"
-PLAYER_SLOT = "{spec.player_slot}"
+PLAYER_ID = "{spec.player_id}"
 META = EnvironmentMeta(
 {metadata_text}
 )
@@ -95,7 +95,7 @@ __all__ = [
     "extract_overlay",
     "{spec.default_action}",
     "ENV_ID",
-    "PLAYER_SLOT",
+    "PLAYER_ID",
     "META",
 ]
 '''

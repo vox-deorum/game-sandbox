@@ -44,8 +44,8 @@ const props = withDefaults(
     blind?: boolean
     viewerId?: string
     anonymousNumbers?: Record<string, number>
-    /** Slots the viewer controls; empty when spectating a replay (the usual case). */
-    viewerSlots?: string[]
+    /** Players the viewer controls; empty when spectating a replay (the usual case). */
+    viewerPlayers?: string[]
     llmCalls?: RecordingLlmCall[]
     setupLlmCalls?: RecordingLlmCall[]
     llmUnavailable?: boolean
@@ -57,7 +57,7 @@ const props = withDefaults(
     blind: false,
     viewerId: undefined,
     anonymousNumbers: undefined,
-    viewerSlots: () => [],
+    viewerPlayers: () => [],
     llmCalls: () => [],
     setupLlmCalls: () => [],
     llmUnavailable: false,
@@ -71,8 +71,8 @@ const attributionCtx = computed(() => ({
   anonymousNumbers: props.anonymousNumbers,
 }))
 
-function labelFor(slot: string): string {
-  return attributionLabel(slot, props.players?.[slot], attributionCtx.value)
+function labelFor(playerId: string): string {
+  return attributionLabel(playerId, props.players?.[playerId], attributionCtx.value)
 }
 
 const activeIndex = computed(() =>
@@ -110,7 +110,7 @@ interface MessageItem {
   key: string
   kind: 'message'
   state: ThreadState
-  seat: string
+  player: string
   sender: string
   badge: MessageBadge
   text: string
@@ -143,9 +143,9 @@ const items = computed<ThreadItem[]>(() => {
         key: `m-${i}-${messageKey(entry)}`,
         kind: 'message',
         state: state === 'future' ? 'past' : state,
-        seat: formatSlot(entry.from),
+        player: formatSlot(entry.from),
         sender: labelFor(entry.from),
-        badge: messageBadge(entry, props.viewerSlots),
+        badge: messageBadge(entry, props.viewerPlayers),
         text: entry.text,
         tick: entry.tick,
       })
@@ -254,7 +254,7 @@ const scroller = useActiveRowScroll(
         </template>
         <template v-else>
           <div class="thread-meta">
-            <span class="thread-msg-seat">{{ item.seat }}</span>
+            <span class="thread-msg-player">{{ item.player }}</span>
             <span class="thread-from">{{ item.sender }}</span>
             <UiBadge :variant="item.badge.variant">{{ item.badge.text }}</UiBadge>
             <span class="thread-tick">tick {{ item.tick }}</span>
@@ -371,7 +371,7 @@ const scroller = useActiveRowScroll(
   flex-wrap: wrap;
 }
 
-.thread-msg-seat {
+.thread-msg-player {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   color: var(--color-text-muted);

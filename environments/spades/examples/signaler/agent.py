@@ -24,7 +24,7 @@ from sandbox.cards import (
     hand_cards,
     is_bidding,
     legal_cards,
-    partner_seat,
+    partner_player,
     play,
     rank_of,
     suit_of,
@@ -44,7 +44,7 @@ class Agent:
     """Signal your strong side suit to your partner, and lead their strong suit once you know it."""
 
     def reset(self, seed: int) -> None:
-        # Per-hand state: the partner seat and hand are restamped every turn from the observation (so
+        # Per-hand state: the partner player and hand are restamped every turn from the observation (so
         # chat, which sees no observation, can read them); the partner's signalled suit and whether we
         # have already spoken persist across the hand.
         self._partner: int | None = None
@@ -53,7 +53,7 @@ class Agent:
         self._signalled = False
 
     def act(self, observation: Any) -> int:
-        self._partner = partner_seat(observation)
+        self._partner = partner_player(observation)
         self._hand = hand_cards(observation)
         if is_bidding(observation):
             return bid(self._honest_bid())
@@ -61,9 +61,9 @@ class Agent:
 
     def chat(self, inbox: list[dict]) -> list[dict]:
         # Read the partner's signal, if any, and remember the suit for the play phase.
-        partner_slot = f"player_{self._partner}"
+        partner_player_id = f"player_{self._partner}"
         for item in inbox:
-            if item.get("from") == partner_slot:
+            if item.get("from") == partner_player_id:
                 text = item.get("text", "")
                 if text.startswith(SIGNAL_PREFIX):
                     name = text[len(SIGNAL_PREFIX) :]
@@ -74,7 +74,7 @@ class Agent:
             suit = self._strong_side_suit()
             if suit is not None:
                 self._signalled = True
-                return [{"to": partner_slot, "text": f"{SIGNAL_PREFIX}{SUIT_NAMES[suit]}"}]
+                return [{"to": partner_player_id, "text": f"{SIGNAL_PREFIX}{SUIT_NAMES[suit]}"}]
         return []
 
     def _honest_bid(self) -> int:

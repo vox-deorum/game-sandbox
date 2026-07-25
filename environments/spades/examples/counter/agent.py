@@ -29,8 +29,8 @@ from sandbox.cards import (
     hand_cards,
     is_bidding,
     legal_cards,
-    my_seat,
-    partner_seat,
+    my_player,
+    partner_player,
     play,
     rank_of,
     suit_of,
@@ -77,9 +77,9 @@ class Agent:
 
     def _team_still_needs_tricks(self, observation: Any) -> bool:
         """True while the partnership has taken fewer tricks than its combined (non-nil) contract."""
-        seat = my_seat(observation)
-        partner = partner_seat(observation)
+        player = my_player(observation)
+        partner = partner_player(observation)
         placed = bids(observation)
-        contract = sum(placed[s] for s in (seat, partner) if placed[s] > 0)
+        contract = sum(placed[p] for p in (player, partner) if placed[p] > 0)
         won = tricks_won(observation)
-        return won[seat] + won[partner] < contract
+        return won[player] + won[partner] < contract

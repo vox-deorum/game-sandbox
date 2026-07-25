@@ -31,7 +31,7 @@ class SuggestedBidAgent:
     nil, so the NIL badge path is covered by synthetic unit fixtures rather than this recording.
 
     ``rules.suggested_bid`` compares on ENGINE rank (queen = 10), not the FACE value (queen = 12) the
-    object observation carries — so the seat's hand objects are converted back to engine ids via
+    object observation carries, so the player's hand objects are converted back to engine ids via
     :func:`card_from_obj` before being handed to the rules engine. The action mask stays indexed by
     engine action ids (cards 0..51, bids 52..65) regardless of the observation shape, so legal-action
     decoding and the lowest-card fallback are unchanged.
@@ -53,22 +53,22 @@ class SuggestedBidAgent:
 
 
 def main() -> int:
-    # A submitted-agent attribution per slot so the fixture header carries a `players` block like a
+    # A submitted-agent attribution per player so the fixture header carries a `players` block like a
     # real multi-agent recording (player_0 a "human", the rest agents) without needing a live session.
-    players: dict[str, PlayerAttribution] = {
+    player_attribution: dict[str, PlayerAttribution] = {
         "player_0": {"kind": "human", "label": "you"},
         "player_1": {"kind": "agent", "label": "Naive agent"},
         "player_2": {"kind": "agent", "label": "Naive agent"},
         "player_3": {"kind": "agent", "label": "Naive agent"},
     }
-    slots = {f"player_{i}": AgentPlayer(SuggestedBidAgent()) for i in range(rules.NUM_PLAYERS)}
+    players = {f"player_{i}": AgentPlayer(SuggestedBidAgent()) for i in range(rules.NUM_PLAYERS)}
     run_and_copy(
         ENTRY,
-        slots,
+        players,
         seed=7,
         recording_id="spades-fixture",
         dest_name="spades-recording.jsonl",
-        players=players,
+        player_attribution=player_attribution,
     )
     return 0
 

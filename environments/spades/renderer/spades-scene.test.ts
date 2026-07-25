@@ -38,9 +38,9 @@ const TWO_HEARTS: Card = { suit: 3, rank: 2 }
 /** Every bid 0..13, the full bidding legal-bids list. */
 const ALL_BIDS = Array.from({ length: 14 }, (_, k) => k)
 
-/** One `{seat, card}` trick entry, the shape `current_trick`/`last_trick` carry (play order). */
-function entry(seat: number, card: Card): { seat: number; card: Card } {
-  return { seat, card }
+/** One `{player, card}` trick entry, the shape `current_trick`/`last_trick` carry (play order). */
+function entry(player: number, card: Card): { player: number; card: Card } {
+  return { player, card }
 }
 
 /** Build a minimal StepState carrying a Spades overlay, with the required envelope fields. */
@@ -64,7 +64,7 @@ function overlay(over: Record<string, unknown>): Record<string, unknown> {
     last_trick: null,
     last_trick_winner: null,
     turn: 0,
-    turn_slot: 'player_0',
+    turn_player: 'player_0',
     trick_leader: 0,
     led_suit: null,
     spades_broken: false,
@@ -96,7 +96,7 @@ describe('the bidding round: the chip grid and the greyed hand', () => {
         legal_bids: ALL_BIDS,
       }),
     )
-    const scene = computeScene(state, { controlledSlots: ['player_0'] })
+    const scene = computeScene(state, { controlledPlayers: ['player_0'] })
     const panel = scene.bidPanel
     expect(panel).not.toBeNull()
     if (panel === null) {
@@ -112,7 +112,7 @@ describe('the bidding round: the chip grid and the greyed hand', () => {
     // During bidding no card is legal (you cannot play until you have bid), so the hand is all grey.
     expect(litCards(scene)).toEqual([])
     expect(greyCards(scene)).toEqual([TWO_CLUBS, TWO_SPADES, TWO_HEARTS])
-    // The prompt speaks in the first person on the controlled seat's own bidding turn.
+    // The prompt speaks in the first person on the controlled player's own bidding turn.
     expect(panel.prompt).toBe('Choose your bid')
     expect(panel.promptTone).toBe('gold')
   })
@@ -126,12 +126,12 @@ describe('the bidding round: the chip grid and the greyed hand', () => {
         legal_bids: [0, 3],
       }),
     )
-    const panel = computeScene(state, { controlledSlots: ['player_0'] }).bidPanel
+    const panel = computeScene(state, { controlledPlayers: ['player_0'] }).bidPanel
     if (panel === null) {
       throw new Error('no bid panel')
     }
     expect(panel.chips.filter((c) => c.enabled).map((c) => c.bid)).toEqual([0, 3])
-    // A chip outside the mask is not clickable even on the controlled seat's turn.
+    // A chip outside the mask is not clickable even on the controlled player's turn.
     expect(panel.chips.filter((c) => c.controllable).map((c) => c.bid)).toEqual([0, 3])
   })
 })
@@ -148,7 +148,7 @@ describe('the play round: greying the hand from the legal-cards overlay', () => 
         legal_cards: [THREE_CLUBS, FOUR_CLUBS],
       }),
     )
-    const scene = computeScene(state, { controlledSlots: ['player_0'] })
+    const scene = computeScene(state, { controlledPlayers: ['player_0'] })
     expect(litCards(scene)).toEqual([THREE_CLUBS, FOUR_CLUBS])
     expect(greyCards(scene)).toEqual([TWO_SPADES, TWO_HEARTS])
     expect(scene.bidPanel).toBeNull() // no chips during play
@@ -165,31 +165,31 @@ describe('the play round: greying the hand from the legal-cards overlay', () => 
         legal_cards: [FIVE_CLUBS],
       }),
     )
-    const scene = computeScene(state, { controlledSlots: ['player_0'] })
+    const scene = computeScene(state, { controlledPlayers: ['player_0'] })
     expect(litCards(scene)).toEqual([FIVE_CLUBS])
     expect(greyCards(scene)).toEqual([TWO_SPADES, THREE_SPADES])
   })
 
-  it('greys the whole hand when it is not the view seat turn (the mask is the other seat)', () => {
+  it('greys the whole hand when it is not the view player turn (the mask is the other player)', () => {
     const state = mkState(
       overlay({
         hands: [[THREE_CLUBS, FOUR_CLUBS], [FIVE_CLUBS], [], []],
         current_trick: [entry(0, TWO_CLUBS)],
         led_suit: 0,
         turn: 1,
-        turn_slot: 'player_1',
+        turn_player: 'player_1',
         tricks_played: 1,
         legal_cards: [FIVE_CLUBS],
       }),
     )
-    const scene = computeScene(state, { controlledSlots: ['player_0'] })
+    const scene = computeScene(state, { controlledPlayers: ['player_0'] })
     expect(litCards(scene)).toEqual([])
     expect(greyCards(scene)).toEqual([THREE_CLUBS, FOUR_CLUBS])
   })
 })
 
-describe('seat badges: bids, the NIL marker, tricks won, and partnerships', () => {
-  it('reads each seat bid/won, flags a waiting seat and a nil, and assigns partnerships', () => {
+describe('player badges: bids, the NIL marker, tricks won, and partnerships', () => {
+  it('reads each player bid/won, flags a waiting player and a nil, and assigns partnerships', () => {
     const state = mkState(
       overlay({
         phase: 'bidding',
@@ -200,20 +200,20 @@ describe('seat badges: bids, the NIL marker, tricks won, and partnerships', () =
       }),
     )
     const scene = computeScene(state)
-    expect(scene.seats.map((s) => s.bid)).toEqual([-1, 3, 0, 5])
-    expect(scene.seats.map((s) => s.won)).toEqual([0, 1, 2, 3])
-    // Seat 0 has not bid; seat 2 bid nil (bid 0).
-    expect(scene.seats[0]?.bid).toBe(-1)
-    expect(scene.seats.map((s) => s.isNil)).toEqual([false, false, true, false])
-    // Partnerships alternate by seat parity: seats 0 & 2 are team 0, seats 1 & 3 are team 1.
-    expect(scene.seats.map((s) => s.team)).toEqual([0, 1, 0, 1])
+    expect(scene.players.map((p) => p.bid)).toEqual([-1, 3, 0, 5])
+    expect(scene.players.map((p) => p.won)).toEqual([0, 1, 2, 3])
+    // Player 0 has not bid; player 2 bid nil (bid 0).
+    expect(scene.players[0]?.bid).toBe(-1)
+    expect(scene.players.map((p) => p.isNil)).toEqual([false, false, true, false])
+    // Partnerships alternate by player parity: players 0 and 2 are team 0, players 1 and 3 are team 1.
+    expect(scene.players.map((p) => p.team)).toEqual([0, 1, 0, 1])
   })
 
   it('tints and labels the two team scores, tagging the controlled partnership "(you)"', () => {
     const state = mkState(
       overlay({ phase: 'bidding', bids: [-1, -1, -1, -1], team_scores: [10, -20], turn: 0 }),
     )
-    const scene = computeScene(state, { controlledSlots: ['player_0'] })
+    const scene = computeScene(state, { controlledPlayers: ['player_0'] })
     const ts = scene.status.teamScores
     expect(ts.map((t) => t.label)).toEqual(['P0+P2 (you)', 'P1+P3'])
     expect(ts.map((t) => t.score)).toEqual([10, -20])
@@ -229,9 +229,9 @@ describe('seat badges: bids, the NIL marker, tricks won, and partnerships', () =
     expect(scene.spadesBroken).toBe(true)
     expect(scene.status.spadesBroken).toBe(true)
     expect(scene.status.phaseText).toBe('trick 5/13')
-    // A spectator reads a third-person "to play" message and plain P0..P3 seat labels.
+    // A spectator reads a third-person "to play" message and plain P0..P3 player labels.
     expect(scene.status.message).toBe('P2 to play')
-    expect(scene.seats.map((s) => s.label)).toEqual(['P0', 'P1', 'P2', 'P3'])
+    expect(scene.players.map((p) => p.label)).toEqual(['P0', 'P1', 'P2', 'P3'])
   })
 })
 
@@ -240,7 +240,7 @@ describe('hit-testing (bid chips and hand cards)', () => {
     const state = mkState(
       overlay({ phase: 'bidding', bids: [-1, -1, -1, -1], turn: 0, legal_bids: ALL_BIDS }),
     )
-    const panel = computeScene(state, { controlledSlots: ['player_0'] }).bidPanel
+    const panel = computeScene(state, { controlledPlayers: ['player_0'] }).bidPanel
     if (panel === null) {
       throw new Error('no bid panel')
     }
@@ -267,7 +267,7 @@ describe('hit-testing (bid chips and hand cards)', () => {
         legal_cards: [THREE_CLUBS, FOUR_CLUBS],
       }),
     )
-    const scene = computeScene(state, { controlledSlots: ['player_0'] })
+    const scene = computeScene(state, { controlledPlayers: ['player_0'] })
     const last = scene.hand[scene.hand.length - 1]
     if (last === undefined) {
       throw new Error('empty hand')
@@ -279,25 +279,25 @@ describe('hit-testing (bid chips and hand cards)', () => {
 })
 
 describe('controllability and the move clock (live vs replay)', () => {
-  it('makes chips controllable only on the controlled seat turn, and never in replay', () => {
+  it('makes chips controllable only on the controlled player turn, and never in replay', () => {
     const bidding = (over: Record<string, unknown>): Record<string, unknown> =>
       overlay({ phase: 'bidding', bids: [-1, -1, -1, -1], legal_bids: ALL_BIDS, ...over })
 
-    // Controlled seat, its turn: every masked chip is clickable.
+    // Controlled player, its turn: every masked chip is clickable.
     const mine = computeScene(mkState(bidding({ turn: 0 })), {
-      controlledSlots: ['player_0'],
+      controlledPlayers: ['player_0'],
     }).bidPanel
     expect(mine?.chips.every((c) => c.controllable)).toBe(true)
 
-    // Controlled seat, but another seat is bidding: chips draw (enabled) but none is clickable.
-    const other = computeScene(mkState(bidding({ turn: 1, turn_slot: 'player_1' })), {
-      controlledSlots: ['player_0'],
+    // Controlled player, but another player is bidding: chips draw (enabled) but none is clickable.
+    const other = computeScene(mkState(bidding({ turn: 1, turn_player: 'player_1' })), {
+      controlledPlayers: ['player_0'],
     }).bidPanel
     expect(other?.chips.every((c) => c.enabled)).toBe(true)
     expect(other?.chips.some((c) => c.controllable)).toBe(false)
     expect(other?.prompt).toBe('P1 is bidding')
 
-    // Replay / spectator (no controlled slots): the panel still draws but nothing is clickable.
+    // Replay / spectator (no controlled player ids): the panel still draws but nothing is clickable.
     const replay = computeScene(mkState(bidding({ turn: 0 }))).bidPanel
     expect(replay?.chips.some((c) => c.controllable)).toBe(false)
   })
@@ -310,7 +310,7 @@ describe('controllability and the move clock (live vs replay)', () => {
       legal_bids: ALL_BIDS,
     })
     expect(
-      computeScene(mkState(onTurn), { controlledSlots: ['player_0'], humanTimeoutMs: 60_000 })
+      computeScene(mkState(onTurn), { controlledPlayers: ['player_0'], humanTimeoutMs: 60_000 })
         .moveClock?.seconds,
     ).toBe(60)
     expect(computeScene(mkState(onTurn), { humanTimeoutMs: 60_000 }).moveClock).toBeNull()
@@ -322,7 +322,7 @@ describe('the recorded multi-agent Spades replay', () => {
     const biddingFrames = states.filter(
       (s) => (s.overlay as Record<string, unknown>).phase === 'bidding',
     )
-    expect(biddingFrames.length).toBeGreaterThanOrEqual(3) // seats bid in turn before play opens
+    expect(biddingFrames.length).toBeGreaterThanOrEqual(3) // players bid in turn before play opens
     for (const state of biddingFrames) {
       const scene = computeScene(state)
       expect(scene.bidPanel).not.toBeNull()
@@ -350,7 +350,7 @@ describe('the recorded multi-agent Spades replay', () => {
       } else if (o.last_trick !== null) {
         expect(scene.trick).toHaveLength(4)
         expect(scene.trick.filter((c) => c.isWinner)).toHaveLength(1)
-        expect(scene.trick.find((c) => c.isWinner)?.seat).toBe(o.last_trick_winner)
+        expect(scene.trick.find((c) => c.isWinner)?.player).toBe(o.last_trick_winner)
         completedTricks++
       }
     }
@@ -366,10 +366,10 @@ describe('the recorded multi-agent Spades replay', () => {
     expect(scene.terminal).toBe(true)
     expect(scene.status.message).toBe('Game over')
     expect(scene.hand).toHaveLength(0) // every card has been played
-    // Thirteen tricks were taken across the four seats.
-    const wonTotal = scene.seats.reduce((sum, s) => sum + s.won, 0)
+    // Thirteen tricks were taken across the four players.
+    const wonTotal = scene.players.reduce((sum, p) => sum + p.won, 0)
     expect(wonTotal).toBe(13)
-    // Partners share a team score, so the two seats of each team read equal leaderboard scores.
+    // Partners share a team score, so the two players of each team read equal leaderboard scores.
     const lb = (terminal.overlay as Record<string, unknown>).leaderboard_scores as number[]
     expect(lb[0]).toBe(lb[2])
     expect(lb[1]).toBe(lb[3])

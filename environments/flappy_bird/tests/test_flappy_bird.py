@@ -10,14 +10,50 @@ recording determinism test ever runs and might misattribute it.
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from flappy_bird import ENTRY
 from flappy_bird.env import FlappyBirdEnv, default_action, make_env
 from flappy_bird.game import FlappyBirdGame
 from flappy_bird.overlay import extract_overlay
+
+
+@pytest.mark.parametrize(
+    "parameters",
+    [
+        {},
+        {"players": True, "pipe_gap": 100},
+        {"players": 2, "pipe_gap": 100},
+        {"players": 1},
+        {"players": 1, "pipe_gap": True},
+        {"players": 1, "pipe_gap": "100"},
+        {"players": 1, "pipe_gap": 100.0},
+        {"players": 1, "pipe_gap": 2**53},
+    ],
+)
+def test_factory_rejects_invalid_integer_parameters(parameters):
+    with pytest.raises(ValueError):
+        make_env(parameters)
+
+
+def test_factory_rejects_invalid_parameters_under_optimized_python():
+    script = """
+from flappy_bird.env import make_env
+
+for parameters in ({"players": 2, "pipe_gap": 100}, {"players": 1, "pipe_gap": True}):
+    try:
+        make_env(parameters)
+    except ValueError:
+        pass
+    else:
+        raise SystemExit(f"Flappy Bird factory accepted invalid parameters: {parameters!r}")
+"""
+    subprocess.run([sys.executable, "-O", "-c", script], check=True)
 
 
 def _is_scalar_array(value: object, dtype: type) -> bool:
@@ -92,7 +128,7 @@ def test_aabb_collision_matches_pygame_edge_behavior():
 
 
 def _rollout(seed: int, actions: list[int]) -> tuple[list, list]:
-    env = make_env({"seats": 1, "pipe_gap": 100})
+    env = make_env({"players": 1, "pipe_gap": 100})
     env.reset(seed=seed)
     observations: list = []
     overlays: list = []
@@ -118,7 +154,7 @@ def test_different_seeds_diverge():
 def test_observation_is_flat_object_with_no_action_mask_and_nearest_first_pipes():
     # Flappy's observation is a flat Dict (no {"observation","action_mask"} wrapper — there is no
     # mask) with player/pipes/pipes_passed/width/height, and pipes are ordered nearest-first.
-    env = make_env({"seats": 1, "pipe_gap": 100})
+    env = make_env({"players": 1, "pipe_gap": 100})
     env.reset(seed=7)
     observed = env.observe("player_0")
 
@@ -148,10 +184,10 @@ def test_observation_is_flat_object_with_no_action_mask_and_nearest_first_pipes(
 
 
 def test_default_action_is_noop():
-    # The two-argument hook takes the live env and slot id; idle (integer 0) is always legal on a
+    # The two-argument hook takes the live env and player id; idle (integer 0) is always legal on a
     # live turn, so it is already the real action applied on a timeout — no sentinel resolution.
     # default_action is a module-level function in env.py and is the same callable as ENTRY.default_action.
-    env = make_env({"seats": 1, "pipe_gap": 100})
+    env = make_env({"players": 1, "pipe_gap": 100})
     env.reset(seed=0)
     assert ENTRY.default_action is default_action
     assert ENTRY.default_action(env, "player_0") == 0
@@ -159,7 +195,7 @@ def test_default_action_is_noop():
 
 
 def test_factory_uses_the_resolved_pipe_gap():
-    env = make_env({"seats": 1, "pipe_gap": 90})
+    env = make_env({"players": 1, "pipe_gap": 90})
     try:
         assert env.gym_env._pipe_gap == 90
     finally:

@@ -2,13 +2,13 @@
  * The shared retained (PixiJS) layer for a trick-taking card renderer: a {@link PixiRenderer} subclass
  * that reconciles the persistent scene graph toward a {@link CardTableScene} and animates the two
  * transitions that carry real game meaning — the card-play fly-in and the trick-won sweep — off the base
- * class's per-frame ticker. Every four-seat card game (Hearts, Spades) draws the felt, seat badges,
+ * class's per-frame ticker. Every four-player card game (Hearts, Spades) draws the felt, player badges,
  * trick, fanned hand, opponent rows, and card faces identically, so all of that lives here; a game
- * subclass supplies only its overlay→scene function, its geometry, its per-seat badge interior, its
+ * subclass supplies only its overlay→scene function, its geometry, its per-player badge interior, its
  * status strip, and any center extras (Spades' bid chips).
  *
  * This is the canonical retained browser renderer for the shared card table. Game-specific subclasses
- * supply their semantic-overlay scene, seat content, status, and center controls.
+ * supply their semantic-overlay scene, player content, status, and center controls.
  *
  * It keeps the pure/retained split the architecture rests on: a game's `computeScene` (in its own
  * scene.ts) is a pure function of state that produces the static "snapped" table a scrubber lands on, and
@@ -59,7 +59,7 @@ const SWEEP_MIN_MS = 220
 const PLAY_NATURAL_MS = 480
 /** The slowest and fastest a fly-in is ever allowed to run, so a long or tiny budget still reads. */
 const PLAY_MIN_MS = 180
-/** The active-seat glow's breathing period (ms): a gentle pulse, the only ambient animation. */
+/** The active-player glow's breathing period (ms): a gentle pulse, the only ambient animation. */
 const PULSE_PERIOD_MS = 1100
 /** How far (px) a hovered hand card lifts, so the user sees which card is under the cursor. */
 const HOVER_LIFT = 8
@@ -99,15 +99,15 @@ interface ActiveTransition {
 export abstract class CardTableRenderer<
   TScene extends CardTableScene = CardTableScene,
 > extends PixiRenderer {
-  // 960x720 is the pinned table size (see scene.ts), a 4:3 landscape, so the host seats the decision
+  // 960x720 is the pinned table size (see scene.ts), a 4:3 landscape, so the host places the decision
   // log below the canvas rather than beside it.
   readonly internalSize = { width: WIDTH, height: HEIGHT } as const
-  // This renderer animates the trick sweep and an ambient seat-glow pulse off the base's ticker.
+  // This renderer animates the trick sweep and an ambient player-glow pulse off the base's ticker.
   protected override readonly animated = true
 
   /** Persistent layers, painted back-to-front. Built once in {@link setup}. */
   protected bgLayer!: Container
-  protected seatLayer!: Container
+  protected playerLayer!: Container
   protected opponentLayer!: Container
   protected trickLayer!: Container
   /** Center extras a game draws (Spades' bid chips); empty and unused by Hearts. */
@@ -125,7 +125,7 @@ export abstract class CardTableRenderer<
   private lastState: StepState | null = null
   /** The running center transition (a play fly-in and/or trick sweep), or null when drawn statically. */
   private active: ActiveTransition | null = null
-  /** Accumulated wall-clock time driving the ambient active-seat pulse. */
+  /** Accumulated wall-clock time driving the ambient active-player pulse. */
   private pulseMs = 0
   /** Cached gradient for the felt backdrop (one GPU texture, freed in destroy). */
   private feltGradient: FillGradient | null = null
@@ -138,8 +138,11 @@ export abstract class CardTableRenderer<
   /** Turn one recorded state into this game's scene. */
   protected abstract computeSceneFor(state: StepState): TScene
 
-  /** Draw the seat badge interior. The frame, halo, and border come from {@link makeSeat}. */
-  protected abstract drawSeatContent(container: Container, seat: TScene['seats'][number]): void
+  /** Draw the player badge interior. The frame, halo, and border come from {@link makePlayer}. */
+  protected abstract drawPlayerContent(
+    container: Container,
+    player: TScene['players'][number],
+  ): void
 
   /** Draw the top status strip. The layer is cleared first; use {@link makeStatusPanel}. */
   protected abstract reconcileStatus(scene: TScene): void
@@ -169,7 +172,7 @@ export abstract class CardTableRenderer<
   /** The mount-time scene config, assembled from the renderer context; a game's `computeSceneFor` uses it. */
   protected sceneConfig(): SceneConfig {
     return {
-      controlledSlots: this.ctx.controlledSlots,
+      controlledPlayers: this.ctx.controlledPlayers,
       humanTimeoutMs: this.ctx.meta.human_timeout_ms,
     }
   }
@@ -178,7 +181,7 @@ export abstract class CardTableRenderer<
 
   protected setup(root: Container): void {
     this.bgLayer = new Container()
-    this.seatLayer = new Container()
+    this.playerLayer = new Container()
     this.opponentLayer = new Container()
     this.trickLayer = new Container()
     this.gameLayer = new Container()
@@ -189,7 +192,7 @@ export abstract class CardTableRenderer<
     this.pillLayer = new Container()
     for (const layer of [
       this.bgLayer,
-      this.seatLayer,
+      this.playerLayer,
       this.opponentLayer,
       this.trickLayer,
       // Center extras (bid chips) sit above the trick but below the hand and the fly-in's airborne card.
@@ -237,13 +240,13 @@ export abstract class CardTableRenderer<
     // A scrub or seek snaps, so it never animates; otherwise a newly-played card kicks off a fly-in
     // and a newly-completed trick kicks off the sweep.
     const snap = options?.snap === true
-    const play = snap ? null : detectPlay(prev, state, scene.viewSeat, this.geometry)
-    const sweep = snap ? null : detectSweep(prev, state, scene.viewSeat, this.geometry)
+    const play = snap ? null : detectPlay(prev, state, scene.viewPlayer, this.geometry)
+    const sweep = snap ? null : detectSweep(prev, state, scene.viewPlayer, this.geometry)
 
-    // Static layers: rebuilt wholesale each state. Seats, status, clock, and game extras always reflect
+    // Static layers: rebuilt wholesale each state. Players, status, clock, and game extras always reflect
     // the new state; the hand and opponent rows are held at the previous layout during a fly-in (below).
     // The base clears the status and game layers so a subclass hook only adds its own children.
-    this.reconcileSeats(scene)
+    this.reconcilePlayers(scene)
     clear(this.statusLayer)
     this.reconcileStatus(scene)
     this.reconcileClock(scene)
@@ -252,7 +255,7 @@ export abstract class CardTableRenderer<
 
     if (play !== null && prev !== null) {
       // Hold the source hand/row at its previous layout for the fly-in, so the other cards don't
-      // re-fan to close the gap while one card flies out: the played card's slot stays a placeholder
+      // re-fan to close the gap while one card flies out: the played card's position stays a placeholder
       // (the flyer fills it during the hold, then leaves it empty as it slides). The held cards are
       // made inert; the hand re-fans to the new, smaller layout once the fly-in lands (see onFrame).
       const before = this.computeSceneFor(prev)
@@ -263,7 +266,7 @@ export abstract class CardTableRenderer<
         before.hand
           .filter((c) => cardKey(c.card) !== playedKey)
           .map((c) => ({ ...c, controllable: false })),
-        scene.viewSeat,
+        scene.viewPlayer,
       )
       this.reconcileOpponents(before.opponents.filter((c) => cardKey(c.card) !== playedKey))
       // The fourth card resolves the trick in the same step, so its fly-in chains into the sweep;
@@ -288,7 +291,7 @@ export abstract class CardTableRenderer<
       // No fly-in this state: settle the hand/opponents and clear any airborne card from a fly-in that
       // an immediate snap/seek interrupted.
       clear(this.flyLayer)
-      this.reconcileHand(scene.hand, scene.viewSeat)
+      this.reconcileHand(scene.hand, scene.viewPlayer)
       this.reconcileOpponents(scene.opponents)
       if (sweep !== null) {
         const phase: SweepPhase = {
@@ -328,7 +331,7 @@ export abstract class CardTableRenderer<
         // fourth card) or settle the card into the static trick (cards 1–3).
         if (t >= 1) {
           clear(this.flyLayer)
-          this.reconcileHand(this.scene.hand, this.scene.viewSeat)
+          this.reconcileHand(this.scene.hand, this.scene.viewPlayer)
           this.reconcileOpponents(this.scene.opponents)
           if (active.nextSweep !== null) {
             const next = active.nextSweep
@@ -355,8 +358,8 @@ export abstract class CardTableRenderer<
       }
     }
 
-    // Ambient: breathe the active seat's glow. Pulsing keeps the loop alive until the hand ends.
-    this.pulseActiveSeat()
+    // Ambient: breathe the active player's glow. Pulsing keeps the loop alive until the hand ends.
+    this.pulseActivePlayer()
     const extra = this.onFrameExtra(dtMs)
     return this.active !== null || extra || !this.scene.terminal
   }
@@ -392,32 +395,32 @@ export abstract class CardTableRenderer<
     this.bgLayer.addChild(g)
   }
 
-  // --- Seats ---
+  // --- Players ---
 
-  private reconcileSeats(scene: TScene): void {
-    clear(this.seatLayer)
-    for (const seat of scene.seats) {
-      this.seatLayer.addChild(this.makeSeat(seat))
+  private reconcilePlayers(scene: TScene): void {
+    clear(this.playerLayer)
+    for (const player of scene.players) {
+      this.playerLayer.addChild(this.makePlayer(player))
     }
   }
 
   /**
-   * Build a seat badge Container at the seat's anchor: the ambient turn halo, the badge body and border,
-   * and then the game's interior via {@link drawSeatContent}. Named `seat-N` so a game's per-seat
+   * Build a player badge Container at the player's anchor: the ambient turn halo, the badge body and border,
+   * and then the game's interior via {@link drawPlayerContent}. Named `player-N` so a game's per-player
    * animation (Spades' bid pulse) can find it.
    */
-  private makeSeat(seat: TScene['seats'][number]): Container {
+  private makePlayer(player: TScene['players'][number]): Container {
     const c = new Container()
-    c.label = `seat-${seat.seat}`
-    c.position.set(seat.x, seat.y)
+    c.label = `player-${player.player}`
+    c.position.set(player.x, player.y)
     const w = this.geometry.badgeW
     const h = this.geometry.badgeH
     const left = -w / 2
     const top = -h / 2
 
-    // The active seat carries a gold halo whose alpha the per-frame loop breathes; it is named so
-    // pulseActiveSeat can find it. Drawn first so it sits behind the badge body.
-    if (seat.isTurn) {
+    // The active player carries a gold halo whose alpha the per-frame loop breathes; it is named so
+    // pulseActivePlayer can find it. Drawn first so it sits behind the badge body.
+    if (player.isTurn) {
       const halo = new Graphics()
       halo.label = 'halo'
       halo.roundRect(left - 7, top - 7, w + 14, h + 14, 16).fill({ color: COLORS.gold, alpha: 0.6 })
@@ -426,22 +429,22 @@ export abstract class CardTableRenderer<
 
     const g = new Graphics()
     g.roundRect(left + 1, top + 3, w, h, 11).fill(COLORS.badgeShadow)
-    g.roundRect(left, top, w, h, 11).fill(seat.isYou ? COLORS.badgeBgYou : COLORS.badgeBg)
+    g.roundRect(left, top, w, h, 11).fill(player.isYou ? COLORS.badgeBgYou : COLORS.badgeBg)
     g.roundRect(left, top, w, h, 11).stroke({
-      color: seat.isTurn ? COLORS.gold : COLORS.white,
+      color: player.isTurn ? COLORS.gold : COLORS.white,
       width: 2,
     })
     c.addChild(g)
 
-    this.drawSeatContent(c, seat)
+    this.drawPlayerContent(c, player)
     return c
   }
 
-  /** Breathe the active seat's glow (the only ambient animation), found by its 'halo' label. */
-  private pulseActiveSeat(): void {
+  /** Breathe the active player's glow (the only ambient animation), found by its 'halo' label. */
+  private pulseActivePlayer(): void {
     const pulse = 0.5 + 0.5 * Math.sin((this.pulseMs / PULSE_PERIOD_MS) * Math.PI * 2)
-    for (const seatNode of this.seatLayer.children) {
-      const halo = (seatNode as Container).getChildByLabel?.('halo')
+    for (const playerNode of this.playerLayer.children) {
+      const halo = (playerNode as Container).getChildByLabel?.('halo')
       if (halo) {
         halo.alpha = 0.35 + 0.4 * pulse
       }
@@ -512,7 +515,7 @@ export abstract class CardTableRenderer<
       const { x, y, scale } = sweepCardAt(card, phase.sweep, t)
       const w = SMALL_W * scale
       const h = SMALL_H * scale
-      const isWinner = card.seat === phase.sweep.winner
+      const isWinner = card.player === phase.sweep.winner
       const node = this.makeCardFace(card.card, w, h, {
         border: isWinner ? COLORS.winnerGlow : undefined,
         borderW: 4,
@@ -524,7 +527,7 @@ export abstract class CardTableRenderer<
   }
 
   /**
-   * The gold pill above the winner's seat, scaling in during the hold. A
+   * The gold pill above the winner's player badge, scaling in during the hold. A
    * null text draws nothing (a trick that earned no flourish). Games supply the text via
    * {@link sweepPillText}.
    */
@@ -554,17 +557,17 @@ export abstract class CardTableRenderer<
     this.pillLayer.addChild(c)
   }
 
-  // --- The view seat's hand, with click-to-play wiring ---
+  // --- The view player's hand, with click-to-play wiring ---
 
-  private reconcileHand(hand: readonly SceneHandCard[], viewSeat: number): void {
+  private reconcileHand(hand: readonly SceneHandCard[], viewPlayer: number): void {
     clear(this.handLayer)
-    const slot = `player_${viewSeat}`
+    const playerId = `player_${viewPlayer}`
     for (const card of hand) {
-      this.handLayer.addChild(this.makeHandCard(card, slot))
+      this.handLayer.addChild(this.makeHandCard(card, playerId))
     }
   }
 
-  private makeHandCard(card: SceneHandCard, slot: string): Container {
+  private makeHandCard(card: SceneHandCard, playerId: string): Container {
     const node = this.makeCardFace(card.card, card.w, card.h, {
       border: card.legal ? COLORS.legalBorder : undefined,
       borderW: 4,
@@ -573,7 +576,7 @@ export abstract class CardTableRenderer<
     node.position.set(card.x, card.y)
     // Spectators and replays have no sendAction, so the cards stay inert and draw-only — no hover, no
     // clicks. In live play the hand is interactive: every card highlights on hover (so the user sees
-    // which card is under the cursor), and a legal card on the controlled seat's turn is clickable.
+    // which card is under the cursor), and a legal card on the controlled player's turn is clickable.
     const sendAction = this.ctx.sendAction
     if (sendAction !== undefined) {
       node.eventMode = 'static'
@@ -602,7 +605,7 @@ export abstract class CardTableRenderer<
 
       if (card.controllable) {
         node.cursor = 'pointer'
-        node.on('pointertap', () => sendAction(slot, cardToAction(card.card)))
+        node.on('pointertap', () => sendAction(playerId, cardToAction(card.card)))
       }
     }
     return node

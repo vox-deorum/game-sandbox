@@ -122,7 +122,7 @@ describe('ReplayPage', () => {
     expect(screen.getByRole('button', { name: 'Step back' })).toHaveTextContent('←')
     expect(screen.getByRole('button', { name: 'Step forward' })).toHaveTextContent('→')
     // Draw-only: no controlled slots and no input.
-    expect(mountCtx?.controlledSlots).toEqual([])
+    expect(mountCtx?.controlledPlayers).toEqual([])
     expect(mountCtx?.sendAction).toBeUndefined()
     // The first frame draws on load.
     expect(drawn.at(-1)?.tick).toBe(0)

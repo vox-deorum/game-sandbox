@@ -13,7 +13,7 @@ from sandbox.cards import (
     current_trick,
     hearts_broken,
     legal_cards,
-    my_seat,
+    my_player,
     play,
     rank_of,
     suit_of,
@@ -47,11 +47,11 @@ def _parse_choice(text: str, legal: list[dict[str, int]]) -> dict[str, int] | No
 def _prompt(observation: Any, legal: list[dict[str, int]]) -> str:
     """Build the compact legal-card and current-trick prompt."""
     trick = current_trick(observation)
-    trick_text = ", ".join(f"seat {seat}: {card_name(card)}" for seat, card in trick) or "empty"
+    trick_text = ", ".join(f"player {player}: {card_name(card)}" for player, card in trick) or "empty"
     legal_text = " | ".join(card_name(card) for card in legal)
     return (
         "Choose one legal Hearts card. Reply only with its card name.\n"
-        f"You are seat {my_seat(observation)}. Hearts broken: {hearts_broken(observation)}.\n"
+        f"You are player {my_player(observation)}. Hearts broken: {hearts_broken(observation)}.\n"
         f"Trick: {trick_text}.\nLegal: {legal_text}"
     )
 

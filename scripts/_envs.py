@@ -113,7 +113,7 @@ def _template_spec(package_dir: Path, meta: Any) -> TemplateEnvironmentSpec:
         display_name=meta.display_name,
         inner_package=package_dir.name,
         modules=modules,
-        player_slot=human_players[0] if human_players else "player_0",
+        player_id=human_players[0] if human_players else "player_0",
     )
 
 

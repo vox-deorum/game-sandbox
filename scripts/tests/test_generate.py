@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import _envs  # noqa: E402
 import generate  # noqa: E402
+from _paths import REPO_ROOT  # noqa: E402
 from game_sandbox_harness.environment import EnvironmentMeta, PlayerBounds  # noqa: E402
 
 
@@ -100,7 +101,7 @@ def test_ignore_patterns_and_template_modules_follow_authoring_conventions(tmp_p
 
     spec = _envs._template_spec(package, SimpleNamespace(display_name="Hearts", human_players=()))
     assert set(spec.modules) == {"hearts/UPSTREAM_LICENSE.md", "hearts/env.py"}
-    assert spec.player_slot == "player_0"
+    assert spec.player_id == "player_0"
 
 
 def test_environment_wheel_excludes_canonical_guides_and_keeps_license(tmp_path: Path):
@@ -159,3 +160,42 @@ def test_published_example_declarations_require_valid_immediate_example_director
     for module, message in cases:
         with pytest.raises(RuntimeError, match=message):
             _envs._published_examples(package, module)
+
+
+def test_current_student_surfaces_exclude_retired_card_player_names():
+    roots = [
+        REPO_ROOT / "templates" / "base",
+        REPO_ROOT / "environments" / "hearts" / "template",
+        REPO_ROOT / "environments" / "hearts" / "examples",
+        REPO_ROOT / "environments" / "spades" / "template",
+        REPO_ROOT / "environments" / "spades" / "examples",
+        REPO_ROOT / "docs" / "students",
+        REPO_ROOT / "docs" / "contributors" / "environments",
+        REPO_ROOT / "docs" / "contributors" / "testing" / "browser-e2e.md",
+        REPO_ROOT / "environments" / "hearts" / "environment.md",
+        REPO_ROOT / "environments" / "spades" / "environment.md",
+    ]
+    files = [
+        path
+        for root in roots
+        for path in ([root] if root.is_file() else root.rglob("*"))
+        if path.is_file() and path.suffix in {".example", ".md", ".py"}
+    ]
+    retired_names = ("my_seat", "partner_seat", "turn_slot")
+    offenders = {
+        str(path.relative_to(REPO_ROOT)): name
+        for path in files
+        for name in retired_names
+        if name in path.read_text(encoding="utf-8")
+    }
+    assert offenders == {}
+
+    code_files = [path for path in files if path.suffix == ".py"]
+    retired_observation_keys = ('"seat"', "'seat'")
+    key_offenders = {
+        str(path.relative_to(REPO_ROOT)): key
+        for path in code_files
+        for key in retired_observation_keys
+        if key in path.read_text(encoding="utf-8")
+    }
+    assert key_offenders == {}

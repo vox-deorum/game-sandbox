@@ -484,7 +484,7 @@ def test_paced_latched_input_drives_the_player_then_defaults(tmp_path: Path):
         tmp_path,
         n_steps=3,
         pace_interval_ms=16,
-        preload=['{"kind": "input", "slot": "player_0", "action": 1}'],
+        preload=['{"kind": "input", "player": "player_0", "action": 1}'],
     )
     assert result.ticks == 3
     assert result.reason == "terminated"
@@ -650,7 +650,7 @@ def test_turn_based_blocks_for_input_then_steps(tmp_path: Path):
     # env terminates after a single step.
     base = ManualClock()
     control_holder: dict[str, SessionControl] = {}
-    input_line = '{"kind": "input", "slot": "player_0", "action": 5}'
+    input_line = '{"kind": "input", "player": "player_0", "action": 5}'
     sleeper = AdvancingSleeper(
         base,
         at=2,
@@ -740,7 +740,7 @@ def test_human_chat_frame_over_transport_lands_in_the_recording(tmp_path: Path):
         messaging=None,
     ) as episode:
         control.configure_chat(episode.messaging_enabled)
-        control.handle_line('{"kind":"chat","slot":"player_0","to":null,"text":"hello table"}')
+        control.handle_line('{"kind":"chat","player":"player_0","to":null,"text":"hello table"}')
         run_live_loop(episode, pace_interval_ms=16, control=control, clock=clock, sleeper=sleeper)
 
     # The broadcast the human queued was validated and recorded on the first stepped tick.
@@ -770,7 +770,7 @@ def test_human_chat_frame_is_dropped_when_messaging_disabled_by_config(tmp_path:
         messaging=False,  # config disables what the metadata allowed
     ) as episode:
         control.configure_chat(episode.messaging_enabled)
-        control.handle_line('{"kind":"chat","slot":"player_0","to":null,"text":"hello"}')
+        control.handle_line('{"kind":"chat","player":"player_0","to":null,"text":"hello"}')
         run_live_loop(episode, pace_interval_ms=16, control=control, clock=clock, sleeper=sleeper)
 
     # Messaging off: no message line was ever written.

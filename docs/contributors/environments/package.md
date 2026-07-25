@@ -6,17 +6,17 @@ Read the [environment specification](../../specs/environment.md) before changing
 
 ## Package shape
 
-`env.py` exposes `make_env(parameters)`, a factory that receives the complete resolved gameplay parameter map and returns a fresh PettingZoo agent-environment-cycle (AEC) environment. The map always contains the synthesized `seats` value. The seed is passed to `reset`, not to the factory.
+`env.py` exposes `make_env(parameters)`, a factory that receives the complete resolved gameplay parameter map and returns a fresh PettingZoo agent-environment-cycle (AEC) environment. The map contains the synthesized `players` value for player bounds or `seat_plan` for declared plans. The seed is passed to `reset`, not to the factory.
 
-It also defines `default_action(env, slot_id)`, which returns the legal integer applied when a slot has no action. For example, Flappy Bird returns idle, Hearts returns the lowest legal card, and Spades returns a never-nil bid or the lowest legal card.
+It also defines `default_action(env, player_id)`, which returns the legal integer applied when a player has no action. For example, Flappy Bird returns idle, Hearts returns the lowest legal card, and Spades returns a never-nil bid or the lowest legal card.
 
 Every module copied into the composed `sandbox.env` package must be self-contained for imports. It may use relative and third-party imports, but only `__init__.py` may import the harness.
 
 ### Single-agent games
 
-`GymnasiumToAEC` in `single_agent.py` adapts a native `gymnasium.Env` into a one-slot AEC environment. It forwards the reset seed and handles stepping, observations, and termination bookkeeping through the wrapped environment.
+`GymnasiumToAEC` in `single_agent.py` adapts a native `gymnasium.Env` into a one-player AEC environment. It forwards the reset seed and handles stepping, observations, and termination bookkeeping through the wrapped environment.
 
-The single slot id is `player_0`. Slot ids are PettingZoo agent ids verbatim in state objects, metadata, and harness APIs.
+The single player id is `player_0`. Player ids are PettingZoo agent ids verbatim in state objects, metadata, and harness APIs.
 
 Multi-agent games subclass `pettingzoo.AECEnv` directly and do not use the adapter.
 
@@ -36,8 +36,9 @@ The environment owns its display state. Test that every overlay field exists and
 | --- | --- |
 | `env_id` | Stable id and entry-point name. |
 | `display_name`, `description` | Public website text. |
-| `min_slots`, `max_slots`, `human_slots` | Supported seats and human-capable slots. |
-| `parameters` | Typed gameplay parameter declarations. The public JSON also includes synthesized `seats`. |
+| `layout` | Either player bounds or the environment's declared seat plans. |
+| `human_players` | PettingZoo players that a person may control. |
+| `parameters` | Typed gameplay parameter declarations. The public JSON also includes the synthesized `players` or `seat_plan` parameter. |
 | `human_timeout_ms` | Human move clock, or `None` when pacing is the deadline. |
 | `recommended_episode_ticks` | Suggested episode length. |
 | `pace_interval_ms` | Realtime cadence, or `None` for turn-based play. |
@@ -49,11 +50,11 @@ The environment owns its display state. Test that every overlay field exists and
 
 The session loop reads `pace_interval_ms` instead of branching on the game type.
 
-Declare gameplay parameters with the frozen `EnvParameter` and `EnvParameterChoice` dataclasses from `game_sandbox_harness.environment`. Names use snake_case, must be unique, and cannot be `seats`. Numeric parameters declare inclusive bounds. Choice values are stable non-empty strings with separate friendly labels.
+Declare gameplay parameters with the frozen `EnvParameter` and `EnvParameterChoice` dataclasses from `game_sandbox_harness.environment`. Names use snake_case, must be unique, and cannot be `players` or `seat_plan`. Numeric parameters declare inclusive bounds. Choice values are stable non-empty strings with separate friendly labels.
 
-The factory must use the values it owns. For example, Flappy Bird passes `int(parameters["pipe_gap"])` to its game constructor. A future variable-seat environment reads `parameters["seats"]` when it creates `possible_agents`. The harness validates and normalizes the map before calling the factory and then verifies that the resulting agent count matches `seats`.
+The factory must use the values it owns. Read resolved integer parameters with `int_parameter` from `game_sandbox_harness.environment`, which rejects missing values, booleans, non-integers, and integers outside the JSON-safe range at runtime. Do not use `assert` for parameter validation because optimized Python removes assertions. A module copied into the composed `sandbox.env` package cannot import the harness at runtime, so give it an equivalent local helper or a runtime-safe shared helper. A fixed-player factory must explicitly reject a `players` value that disagrees with its construction. For example, Flappy Bird validates that `players` is `1`, narrows `pipe_gap` as an integer, and passes that value to its game constructor. An environment with flexible player bounds reads `players` when it creates `possible_agents`. An environment with declared plans reads `seat_plan` and uses the resolved plan's player count. The harness validates and normalizes the map before calling the factory, then verifies that the resulting agent count matches the resolved layout.
 
-Use `effective_parameters(meta)` when a consumer needs declarations including `seats`, and use `resolve_parameters(meta, overrides)` before constructing an environment outside the session harness. Do not build a partial map by hand.
+Use `effective_parameters(meta)` when a consumer needs declarations including the synthesized layout parameter, and use `resolve_parameters(meta, overrides)` before constructing an environment outside the session harness. Do not build a partial map by hand.
 
 ## Registration and distribution
 

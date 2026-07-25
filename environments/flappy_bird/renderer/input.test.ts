@@ -13,7 +13,7 @@ function context(overrides: Partial<RendererContext>): RendererContext {
     container: document.createElement('div'),
     meta: META,
     header: HEADER,
-    controlledSlots: [],
+    controlledPlayers: [],
     ...overrides,
   }
 }
@@ -36,7 +36,7 @@ describe('flappy-bird input', () => {
   it('sends one flap per keydown (Space, ArrowUp, W), ignoring auto-repeat', () => {
     const sendAction = vi.fn()
     const instance = FlappyBirdRenderer.mount(
-      context({ container, controlledSlots: ['player_0'], sendAction }),
+      context({ container, controlledPlayers: ['player_0'], sendAction }),
     )
 
     for (const code of ['Space', 'ArrowUp', 'KeyW']) {
@@ -59,7 +59,7 @@ describe('flappy-bird input', () => {
   it('sends a flap on pointerdown and touchstart on the stage', () => {
     const sendAction = vi.fn()
     const instance = FlappyBirdRenderer.mount(
-      context({ container, controlledSlots: ['player_0'], sendAction }),
+      context({ container, controlledPlayers: ['player_0'], sendAction }),
     )
     container.dispatchEvent(new Event('pointerdown', { cancelable: true }))
     container.dispatchEvent(new Event('touchstart', { cancelable: true }))
@@ -68,10 +68,10 @@ describe('flappy-bird input', () => {
     instance.destroy()
   })
 
-  it('attaches no input when the slot is not controlled', () => {
+  it('attaches no input when the player is not controlled', () => {
     const sendAction = vi.fn()
     const instance = FlappyBirdRenderer.mount(
-      context({ container, controlledSlots: [], sendAction }),
+      context({ container, controlledPlayers: [], sendAction }),
     )
     window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space' }))
     container.dispatchEvent(new Event('pointerdown'))
@@ -81,7 +81,7 @@ describe('flappy-bird input', () => {
 
   it('attaches no input when sendAction is absent (spectator / replay)', () => {
     // No throw, every input path inert: this is the draw-only path the replay viewer mounts.
-    const instance = FlappyBirdRenderer.mount(context({ container, controlledSlots: ['player_0'] }))
+    const instance = FlappyBirdRenderer.mount(context({ container, controlledPlayers: ['player_0'] }))
     expect(() =>
       window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space' })),
     ).not.toThrow()
@@ -92,7 +92,7 @@ describe('flappy-bird input', () => {
   it('removes its listeners on destroy', () => {
     const sendAction = vi.fn()
     const instance = FlappyBirdRenderer.mount(
-      context({ container, controlledSlots: ['player_0'], sendAction }),
+      context({ container, controlledPlayers: ['player_0'], sendAction }),
     )
     instance.destroy()
     window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space' }))

@@ -1,12 +1,12 @@
 /**
  * The Hearts renderer: a {@link CardTableRenderer} subclass that supplies only what is Hearts and not
- * generic trick-taking — the overlay→scene function, the seat badge's penalty-score line, the
+ * generic trick-taking — the overlay→scene function, the player badge's penalty-score line, the
  * hearts-broken status strip, and the "+N points" pill raised over a trick's winner. The shared card
- * table (felt, seats, trick, hand, opponents, card faces, and the fly-in/sweep animation) lives in
+ * table (felt, players, trick, hand, opponents, card faces, and the fly-in/sweep animation) lives in
  * {@link CardTableRenderer}.
  *
  * The same class runs unchanged from a stored recording, where it has no `sendAction` and no controlled
- * slot, so the cards are inert and it is draw-only (what the replay viewer relies on). It registers under
+ * player id, so the cards are inert and it is draw-only (what the replay viewer relies on). It registers under
  * the metadata key `"hearts"` (see `renderers/index.ts`).
  *
  * Hearts-specific drawing stays here while the shared trick-taking table remains in the base class.
@@ -22,7 +22,7 @@ import {
   DEFAULT_GEOMETRY,
   HEARTS,
   type HeartsScene,
-  type SceneSeat,
+  type ScenePlayer,
   type TableGeometry,
   type TrickSweep,
   WIDTH,
@@ -39,15 +39,15 @@ export class HeartsRenderer extends CardTableRenderer<HeartsScene> {
   // Hearts declares no base input intents: the shared hand wires on-screen card clicks per card, so it
   // inherits the base `inputs()` default of [].
 
-  /** The seat badge interior: the "(you)"-aware name and the seat's running penalty score. */
-  protected drawSeatContent(container: Container, seat: SceneSeat): void {
-    const label = this.text(seat.label, 22, COLORS.white, 'center')
+  /** The player badge interior: the "(you)"-aware name and the player's running penalty score. */
+  protected drawPlayerContent(container: Container, player: ScenePlayer): void {
+    const label = this.text(player.label, 22, COLORS.white, 'center')
     label.position.set(0, -11)
     container.addChild(label)
     const score = this.text(
-      `${seat.score} pts`,
+      `${player.score} pts`,
       18,
-      seat.isTurn ? COLORS.gold : COLORS.dim,
+      player.isTurn ? COLORS.gold : COLORS.dim,
       'center',
     )
     score.position.set(0, 13)

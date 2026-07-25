@@ -1,6 +1,6 @@
 # Stage 15.2: The environment rename
 
-Status: not started.
+Status: complete.
 
 Part of [Stage 15](../stage-15-wide-seats.md), build-order step 2.
 

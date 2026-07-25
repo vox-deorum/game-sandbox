@@ -1,7 +1,7 @@
 /**
  * The Flappy Bird renderer: a {@link PixiRenderer} subclass that draws each state from the per-step
  * overlay and, only during live human play, maps raw device input to the flap action. The same class
- * runs unchanged from a stored recording — with no `sendAction` and no controlled slot the base wires
+ * runs unchanged from a stored recording. With no `sendAction` and no controlled player id, the base wires
  * no input and it is draw-only, which is what the replay viewer relies on.
  *
  * It keeps the pure/retained split the contract's determinism rule rests on: `computeScene` (in
@@ -26,8 +26,8 @@ import {
 } from './scene.js'
 import thumbnail from './thumbnail.svg'
 
-/** The slot Flappy Bird's human plays, and the flap action value the harness latches per pace step. */
-const HUMAN_SLOT = 'player_0'
+/** The player Flappy Bird's human controls, and the flap action the harness latches per pace step. */
+const HUMAN_PLAYER_ID = 'player_0'
 const FLAP_ACTION = 1
 /** Keys that flap; the base ignores auto-repeat so a held key is one flap, not a stream. */
 const FLAP_KEYS = ['Space', 'ArrowUp', 'KeyW'] as const
@@ -106,8 +106,8 @@ export class FlappyBirdRenderer extends PixiRenderer {
   }
 
   protected override inputs(): readonly InputIntent[] {
-    // One intent: Space/ArrowUp/W or a pointer/touch on the stage, all mean flap for the human slot.
-    return [{ keys: FLAP_KEYS, pointer: true, slot: HUMAN_SLOT, action: FLAP_ACTION }]
+    // One intent: Space/ArrowUp/W or a pointer/touch on the stage, all mean flap for the human player.
+    return [{ keys: FLAP_KEYS, pointer: true, playerId: HUMAN_PLAYER_ID, action: FLAP_ACTION }]
   }
 
   /** Reconcile the world shapes: draw each into a pooled Graphics, removing any the scene dropped. */

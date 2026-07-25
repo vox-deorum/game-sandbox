@@ -64,6 +64,8 @@ def test_write_env_package_copies_modules_and_renders_uniform_inits(
     assert '"layout": PlayerBounds(min=1, max=2),' in rendered
     for field in _meta().to_json():
         assert f'"{field}"' in rendered
+    assert 'PLAYER_ID = "player_0"' in rendered
+    assert '"PLAYER_ID",' in rendered
     assert '"META",' in rendered
     assert rendered.startswith("# GAME-SANDBOX-GENERATED-ENV: scripts/compose.py\n")
 

@@ -9,7 +9,7 @@ around it.
 One combined ``Discrete(66)`` action space covers both phases of the hand: actions ``0..51`` are
 cards and action ``52 + k`` is a bid of ``k``. The per-step action mask selects the phase-legal
 subset (only bids during the bidding round, only cards during play), so the agent interface is a
-single integer everywhere, and the on-turn seat's observation carries the mask the renderers grey
+single integer everywhere, and the on-turn player's observation carries the mask the renderers grey
 from.
 
 Determinism is fully seed-driven: ``reset(seed=...)`` constructs a ``random.Random(seed)`` and
@@ -17,8 +17,8 @@ hands it to :func:`spades.rules.deal`, so two resets with the same seed produce 
 therefore identical observation, action-mask, and overlay sequences under a fixed policy.
 
 Reward shape (per the AEC contract): rewards are ``0.0`` for every agent during the hand and become
-the per-seat :func:`spades.rules.leaderboard_scores` (each seat's team hand score, so partners
-share) for every agent on the terminal step. The authoritative per-seat display lives in the
+the per-player :func:`spades.rules.leaderboard_scores` (each player's team hand score, so partners
+share) for every agent on the terminal step. The authoritative per-player display lives in the
 overlay, not in the rewards.
 """
 
@@ -80,21 +80,33 @@ class IllegalMoveError(ValueError):
     """Raised by :meth:`SpadesEnv.step` when an action is not legal in the current phase."""
 
 
+def _int_parameter(parameters: Mapping[str, ParameterValue], name: str) -> int:
+    """Read one JSON-safe integer from a resolved parameter map."""
+    if name not in parameters:
+        raise ValueError(f"missing environment parameter {name!r}")
+    value = parameters[name]
+    if isinstance(value, bool) or not isinstance(value, int) or abs(value) > 2**53 - 1:
+        raise ValueError(f"{name} must be a JSON-safe integer")
+    return value
+
+
 def make_env(parameters: Mapping[str, ParameterValue]) -> SpadesEnv:
     """Return a fresh :class:`SpadesEnv`. The seed arrives later at :meth:`SpadesEnv.reset`."""
-    del parameters
+    players = _int_parameter(parameters, "players")
+    if players != rules.NUM_PLAYERS:
+        raise ValueError(f"players must be {rules.NUM_PLAYERS} for Spades")
     return SpadesEnv()
 
 
 def default_action(env: SpadesEnv, player_id: str) -> int:
-    """The legal default for a timed-out seat: a never-nil suggested bid, or the lowest legal card.
+    """The legal default for a timed-out player: a never-nil suggested bid, or the lowest legal card.
 
     Reads the live env and returns the concrete ``Discrete(66)`` action (not a sentinel) — a
     never-nil suggested bid while bidding, the lowest legal card in play. It mirrors
     ``env.step``'s own resolution, so gameplay is unchanged and the recording holds the real action.
     """
-    seat = env.possible_agents.index(player_id)
-    return rules.resolve_auto_action(env.state, seat)
+    player = env.possible_agents.index(player_id)
+    return rules.resolve_auto_action(env.state, player)
 
 
 class SpadesEnv(AECEnv):
@@ -117,13 +129,13 @@ class SpadesEnv(AECEnv):
         # (api_test asserts space identity). The space mirrors observe()'s structure: the semantic
         # state leaves nested under "observation" alongside a top-level "action_mask", matching the
         # AEC convention. Cards are semantic objects (HAND/TRICK), not integer-indexed arrays. There
-        # is no score leaf beyond team_scores; the full per-seat score view lives in the overlay.
+        # is no score leaf beyond team_scores; the full per-player score view lives in the overlay.
         obs_space = spaces.Dict(
             {
                 "observation": spaces.Dict(
                     {
-                        "seat": spaces.Discrete(4),
-                        "partner_seat": spaces.Discrete(4),
+                        "player": spaces.Discrete(4),
+                        "partner_player": spaces.Discrete(4),
                         "phase": spaces.Discrete(2),
                         "hand": HAND,
                         "bids": spaces.Tuple([spaces.Discrete(15)] * 4),
@@ -151,13 +163,13 @@ class SpadesEnv(AECEnv):
     def action_space(self, agent: str) -> spaces.Space:
         return self.action_spaces[agent]
 
-    def _seat(self, agent: str) -> int:
-        """Return the seat index ``0..3`` for an agent id."""
+    def _player(self, agent: str) -> int:
+        """Return the player index ``0..3`` for an agent id."""
         return self.possible_agents.index(agent)
 
-    def _agent(self, seat: int) -> str:
-        """Return the agent id for a seat index ``0..3``."""
-        return self.possible_agents[seat]
+    def _agent(self, player: int) -> str:
+        """Return the agent id for a player index ``0..3``."""
+        return self.possible_agents[player]
 
     def reset(self, seed: int | None = None, options: dict[str, Any] | None = None) -> None:
         self.state = rules.deal(random.Random(seed))
@@ -170,16 +182,16 @@ class SpadesEnv(AECEnv):
         self.agent_selection = self._agent(self.state.turn)
 
     def observe(self, agent: str) -> dict[str, Any]:
-        seat = self._seat(agent)
+        player = self._player(agent)
         state = self.state
 
-        hand = tuple(card_to_obj(c) for c in state.hands[seat])
-        current_trick = tuple({"seat": int(s), "card": card_to_obj(c)} for s, c in state.current_trick)
+        hand = tuple(card_to_obj(c) for c in state.hands[player])
+        current_trick = tuple({"player": int(p), "card": card_to_obj(c)} for p, c in state.current_trick)
         last_trick: tuple[dict[str, Any], ...]
         if state.last_trick is None:
             last_trick = ()
         else:
-            last_trick = tuple({"seat": int(s), "card": card_to_obj(c)} for s, c in state.last_trick)
+            last_trick = tuple({"player": int(p), "card": card_to_obj(c)} for p, c in state.last_trick)
 
         bids = tuple(UNBID if b == -1 else int(b) for b in state.bids)
         phase = 0 if rules.in_bidding(state) else 1
@@ -191,19 +203,19 @@ class SpadesEnv(AECEnv):
         led = rules.led_suit(state)
         led_suit = 4 if led is None else int(led)
 
-        # The action mask is meaningful only for the seat whose turn it is; an off-turn seat is not
+        # The action mask is meaningful only for the player whose turn it is; an off-turn player is not
         # choosing, so it gets an all-zero mask (matching the overlay, which lists legal actions for
-        # the acting seat alone). The AEC loop reads a seat's observation through last() only on that
-        # seat's turn, where state.turn == seat, so the acting mask is always populated.
+        # the acting player alone). The AEC loop reads a player's observation through last() only on that
+        # player's turn, where state.turn == player, so the acting mask is always populated.
         action_mask = np.zeros(rules.ACTION_SPACE_SIZE, np.int8)
-        if state.turn == seat:
-            for action in rules.legal_actions(state, seat):
+        if state.turn == player:
+            for action in rules.legal_actions(state, player):
                 action_mask[action] = 1
 
         return {
             "observation": {
-                "seat": int(seat),
-                "partner_seat": (seat + 2) % 4,
+                "player": int(player),
+                "partner_player": (player + 2) % 4,
                 "phase": phase,
                 "hand": hand,
                 "bids": bids,
@@ -223,13 +235,13 @@ class SpadesEnv(AECEnv):
         if self.terminations[self.agent_selection] or self.truncations[self.agent_selection]:
             return self._was_dead_step(action)
 
-        seat = self._seat(self.agent_selection)
+        player = self._player(self.agent_selection)
         resolved = int(action)
 
-        if not rules.is_legal_action(self.state, seat, resolved):
+        if not rules.is_legal_action(self.state, player, resolved):
             raise IllegalMoveError(
                 f"{self.agent_selection} cannot take action {resolved}; "
-                f"legal: {rules.legal_actions(self.state, seat)}"
+                f"legal: {rules.legal_actions(self.state, player)}"
             )
 
         if rules.in_bidding(self.state):

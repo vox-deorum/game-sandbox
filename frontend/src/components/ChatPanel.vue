@@ -8,7 +8,7 @@
 
   Each entry is badged for what it is: a broadcast, a message "to you", a message "from you" (the
   relay reflects a controller's own sends back on the recorded line), or, on a replay, a targeted
-  message between other seats. Sender labels come through the shared `attributionLabel`, so the panel
+  message between other players. Sender labels come through the shared `attributionLabel`, so the panel
   honours the same blind policy as the attribution line and the decision log.
 
   When sendable, the composer counts the draft in Unicode code points through the same shared counter
@@ -36,9 +36,9 @@ const props = withDefaults(
     blind?: boolean
     viewerId?: string
     anonymousNumbers?: Record<string, number>
-    /** Slots the connected viewer controls; drives the "to you"/"from you" badges. Empty when spectating. */
-    viewerSlots?: string[]
-    /** Show the composer. The page decides (owner + human mode + running + controls a slot). */
+    /** Players the connected viewer controls; drives the "to you"/"from you" badges. Empty when spectating. */
+    viewerPlayers?: string[]
+    /** Show the composer. The page decides (owner + human mode + running + controls a player). */
     sendable?: boolean
     /** Whether the transport can actually carry a send right now. False during a reconnect, when the
      *  socket silently no-ops: the composer stays mounted (the draft is preserved) but Send is disabled,
@@ -52,7 +52,7 @@ const props = withDefaults(
     blind: false,
     viewerId: undefined,
     anonymousNumbers: undefined,
-    viewerSlots: () => [],
+    viewerPlayers: () => [],
     sendable: false,
     connected: true,
     messageCap: null,
@@ -67,33 +67,33 @@ const attributionCtx = computed(() => ({
   anonymousNumbers: props.anonymousNumbers,
 }))
 
-function labelFor(slot: string): string {
-  return attributionLabel(slot, props.players?.[slot], attributionCtx.value)
+function labelFor(playerId: string): string {
+  return attributionLabel(playerId, props.players?.[playerId], attributionCtx.value)
 }
 
 // Decorate once so the template reads each derived field without recomputing per binding. Identity and
 // the badge come from the shared chat helpers, so this panel and the merged replay thread key and badge
-// a message identically. The seat (`formatSlot`) rides alongside the attribution label the same way
-// PlayerAttribution pairs them, so a roster of same-labelled agents (three "Naive agent" seats in a
+// a message identically. The player (`formatSlot`) rides alongside the attribution label the same way
+// PlayerAttribution pairs them, so a roster of same-labelled agents (three "Naive agent" players in a
 // default Spades table) stays legible.
 const rows = computed(() =>
   props.entries.map((entry) => ({
     key: messageKey(entry),
     tick: entry.tick,
     text: entry.text,
-    seat: formatSlot(entry.from),
+    player: formatSlot(entry.from),
     sender: labelFor(entry.from),
-    badge: messageBadge(entry, props.viewerSlots),
+    badge: messageBadge(entry, props.viewerPlayers),
   })),
 )
 
-// The recipient options: every other seat, labelled by its compact player id ("P1"). The id alone
-// keeps identical agent labels (three "Naive agent" seats) tellable apart, so the terse label suffices.
+// The recipient options: every other player, labelled by its compact player id ("P1"). The id alone
+// keeps identical agent labels (three "Naive agent" players) tellable apart, so the terse label suffices.
 // "Everyone" (a broadcast) is the empty-value option in the template.
 const recipientOptions = computed(() =>
   Object.keys(props.players ?? {})
-    .filter((slot) => !props.viewerSlots.includes(slot))
-    .map((slot) => ({ value: slot, label: formatSlot(slot) })),
+    .filter((playerId) => !props.viewerPlayers.includes(playerId))
+    .map((playerId) => ({ value: playerId, label: formatSlot(playerId) })),
 )
 
 const recipient = ref('') // '' is the "Everyone" broadcast option.
@@ -141,7 +141,7 @@ watch(
       <ul v-if="rows.length > 0" class="chat-list">
         <li v-for="row in rows" :key="row.key" class="chat-entry">
           <div class="chat-meta">
-            <span class="chat-seat">{{ row.seat }}</span>
+            <span class="chat-player">{{ row.player }}</span>
             <span class="chat-from">{{ row.sender }}</span>
             <UiBadge :variant="row.badge.variant">{{ row.badge.text }}</UiBadge>
             <span class="chat-tick">tick {{ row.tick }}</span>
@@ -216,9 +216,9 @@ watch(
   flex-wrap: wrap;
 }
 
-/* The seat rides ahead of the sender label the same way PlayerAttribution pairs them, so same-labelled
+/* The player rides ahead of the sender label the same way PlayerAttribution pairs them, so same-labelled
    agents stay tellable apart. */
-.chat-seat {
+.chat-player {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   color: var(--color-text-muted);

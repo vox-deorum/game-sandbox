@@ -1,7 +1,7 @@
 /**
  * The renderer mount/teardown the session and replay pages share (see
  * plans/stage-04.5/page-restructure.md). It resolves the environment's module from the registry,
- * mounts it into the host element with the controlled slots and optional live `sendAction`, relays
+ * mounts it into the host element with the controlled players and optional live `sendAction`, relays
  * states to it, and tears it down on unmount. It also surfaces the module's aspect ratio so the page
  * can size the stage element and place the decision log beside (portrait) or below (landscape) it.
  *
@@ -18,10 +18,10 @@ import type { RendererInstance, RenderOptions } from '../renderers/types.js'
 export interface UseRendererMountOptions {
   host: Ref<HTMLElement | null>
   meta: Ref<EnvironmentMeta | null>
-  /** The slots this user controls; empty when spectating or replaying. */
-  controlledSlots?: MaybeRefOrGetter<readonly string[]>
+  /** The stable player ids this user controls; empty when spectating or replaying. */
+  controlledPlayers?: MaybeRefOrGetter<readonly string[]>
   /** Live human input forwarder; absent for spectators and replays (draw-only). */
-  sendAction?: (slot: string, action: unknown) => void
+  sendAction?: (playerId: string, action: unknown) => void
 }
 
 export function useRendererMount(options: UseRendererMountOptions) {
@@ -42,14 +42,14 @@ export function useRendererMount(options: UseRendererMountOptions) {
       noRenderer.value = true
       return
     }
-    const slots = toValue(options.controlledSlots ?? [])
+    const players = toValue(options.controlledPlayers ?? [])
     const mounted = renderer.mount({
       container: options.host.value,
       meta: options.meta.value,
       header,
-      controlledSlots: slots,
-      // Input only for the owner of controlled slots; a spectator or replay gets a draw-only renderer.
-      sendAction: slots.length > 0 ? options.sendAction : undefined,
+      controlledPlayers: players,
+      // Input only for the owner of controlled players; a spectator or replay gets a draw-only renderer.
+      sendAction: players.length > 0 ? options.sendAction : undefined,
     })
     // The shape is carried by the instance now; surface it for the page's stage layout.
     aspectRatio.value = mounted.aspectRatio

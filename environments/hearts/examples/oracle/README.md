@@ -18,4 +18,4 @@ python -m sandbox llm small
 python -m sandbox play --headless --seed 7
 ```
 
-For the official check, leave `agent.py` unchanged after the local run, commit and push the composed repository without `.env`, and submit that exact commit to the same LLM-enabled season. Start a session with the ready submission, let the game finish, and confirm its replay shows successful model-call metadata. The official session injects its own endpoint and slot key, so this check must not require an official-only code or configuration edit.
+For the official check, leave `agent.py` unchanged after the local run, commit and push the composed repository without `.env`, and submit that exact commit to the same LLM-enabled season. Start a session with the ready submission, let the game finish, and confirm its replay shows successful model-call metadata. The official session injects its own endpoint and player key, so this check must not require an official-only code or configuration edit.

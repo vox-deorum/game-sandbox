@@ -3,7 +3,7 @@
 The renderer never sees the live :class:`~hearts.env.HeartsEnv`; it draws from the per-step
 overlay produced here. This module reaches into ``env.state`` (a :class:`hearts.rules.HeartsState`)
 and flattens it into a plain JSON-serializable dict — ints, bools, lists, dicts and ``None`` only,
-with every ``(seat, card)`` trick pair turned into a ``{"seat", "card"}`` object (play order) and
+with every ``(player, card)`` trick pair turned into a ``{"player", "card"}`` object (play order) and
 every card turned into the semantic ``{"suit", "rank"}`` object via :func:`card_to_obj`. No numpy
 and no tuples survive, so the result round-trips through ``json`` unchanged. All scoring questions
 are delegated to :mod:`hearts.rules` so the overlay never disagrees with the environment.
@@ -21,25 +21,25 @@ def extract_overlay(env: Any) -> dict[str, Any]:
     """Return the per-step overlay dict from a live :class:`~hearts.env.HeartsEnv`.
 
     The returned dict is fully JSON-serializable (ints, bools, lists, dicts, ``None``): cards are
-    semantic ``{"suit","rank"}`` objects and trick entries are ``{"seat","card"}`` objects in play
+    semantic ``{"suit","rank"}`` objects and trick entries are ``{"player","card"}`` objects in play
     order. ``display_scores`` are penalties (lower better), read by the browser renderer and
-    shown per seat by the browser game-over standings; ``leaderboard_scores`` are their negation
-    (higher better), which that browser standings ranks seats by. ``legal_cards`` is empty once the
+    shown per player by the browser game-over standings; ``leaderboard_scores`` are their negation
+    (higher better), which that browser standings ranks players by. ``legal_cards`` is empty once the
     hand is terminal.
     """
     state = env.state
 
     return {
         "hands": [[card_to_obj(c) for c in state.hands[s]] for s in range(rules.NUM_PLAYERS)],
-        "current_trick": [{"seat": int(s), "card": card_to_obj(c)} for s, c in state.current_trick],
+        "current_trick": [{"player": int(p), "card": card_to_obj(c)} for p, c in state.current_trick],
         "last_trick": (
             None
             if state.last_trick is None
-            else [{"seat": int(s), "card": card_to_obj(c)} for s, c in state.last_trick]
+            else [{"player": int(p), "card": card_to_obj(c)} for p, c in state.last_trick]
         ),
         "last_trick_winner": state.last_trick_winner,
         "turn": int(state.turn),
-        "turn_slot": env.possible_agents[state.turn],
+        "turn_player": env.possible_agents[state.turn],
         "trick_leader": int(state.trick_leader),
         "led_suit": rules.led_suit(state),
         "hearts_broken": bool(state.hearts_broken),

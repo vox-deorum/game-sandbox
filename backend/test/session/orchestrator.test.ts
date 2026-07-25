@@ -856,7 +856,7 @@ describe('orchestrator', () => {
       // A human-mode session so an owner `input` command is forwarded to the container; the owner is
       // 'alice' (the startRequest default).
       const { id, process } = await start(orch, { seats: seats({ kind: 'human' }) })
-      const input = JSON.stringify({ kind: 'input', slot: 'player_0', action: 1 })
+      const input = JSON.stringify({ kind: 'input', player: 'player_0', action: 1 })
 
       // The same input from the owner, a signed-in stranger, and an anonymous (null) socket.
       orch.attach(id, new FakeSocket(), 'alice')?.handleMessage(input)

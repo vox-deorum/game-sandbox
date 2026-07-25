@@ -11,7 +11,7 @@ Three things are pinned here, before any production environment adopts the new o
   below — and satisfies ``observation_space.contains()`` across a full episode and the dead-step
   cycle.
 
-The fixture :class:`SemanticCardEnv` is a throwaway four-seat AEC env that exists only to exercise
+The fixture :class:`SemanticCardEnv` is a throwaway four-player AEC env that exists only to exercise
 the contract; the real environments keep their v1 observation until Stage 11.2 converts them.
 """
 
@@ -94,20 +94,20 @@ def test_hand_space_accepts_empty_and_populated_sequences():
 def test_trick_space_accepts_empty_and_populated_play_ordered_records():
     assert card_spaces.TRICK.contains(())  # between tricks
     trick = (
-        {"seat": 2, "card": card_utils.card_to_obj(0)},
-        {"seat": 3, "card": card_utils.card_to_obj(36)},
+        {"player": 2, "card": card_utils.card_to_obj(0)},
+        {"player": 3, "card": card_utils.card_to_obj(36)},
     )
     assert card_spaces.TRICK.contains(trick)
 
 
 # -- the nested-composite fixture and the PettingZoo #1211 guard ------------------------------
 
-N_SEATS = 4
+N_PLAYERS = 4
 HAND_SIZE = 3  # a short deal so a full episode is a handful of steps
 
 
 class SemanticCardEnv(AECEnv):
-    """A minimal four-seat AEC env carrying the intended nested-composite semantic observation.
+    """A minimal four-player AEC env carrying the intended nested-composite semantic observation.
 
     Existence is limited to this proof: it publishes an object-shaped inner ``observation`` Dict (the
     semantic ``Discrete`` / ``Sequence`` / ``Box`` fields) beside a top-level ``action_mask``, exactly
@@ -120,16 +120,16 @@ class SemanticCardEnv(AECEnv):
     def __init__(self) -> None:
         super().__init__()
         self.render_mode = None
-        self.possible_agents = [f"player_{i}" for i in range(N_SEATS)]
+        self.possible_agents = [f"player_{i}" for i in range(N_PLAYERS)]
         obs_space = spaces.Dict(
             {
                 "observation": spaces.Dict(
                     {
-                        "seat": spaces.Discrete(N_SEATS),
+                        "player": spaces.Discrete(N_PLAYERS),
                         "hand": card_spaces.HAND,
                         "current_trick": card_spaces.TRICK,
                         "led_suit": spaces.Discrete(5),
-                        "scores": spaces.Box(0, 26, shape=(N_SEATS,), dtype=np.int64),
+                        "scores": spaces.Box(0, 26, shape=(N_PLAYERS,), dtype=np.int64),
                     }
                 ),
                 "action_mask": spaces.Box(0, 1, shape=(card_utils.NUM_CARDS,), dtype=np.int8),
@@ -145,7 +145,7 @@ class SemanticCardEnv(AECEnv):
     def action_space(self, agent: str) -> spaces.Space:
         return self.action_spaces[agent]
 
-    def _seat(self, agent: str) -> int:
+    def _player(self, agent: str) -> int:
         return self.possible_agents.index(agent)
 
     def reset(self, seed: int | None = None, options: Any = None) -> None:
@@ -164,10 +164,11 @@ class SemanticCardEnv(AECEnv):
         self.agent_selection = self.agents[0]
 
     def observe(self, agent: str) -> dict[str, Any]:
-        seat = self._seat(agent)
+        player = self._player(agent)
         hand = tuple(card_utils.card_to_obj(card) for card in self.hands[agent])
         trick = tuple(
-            {"seat": played_seat, "card": card_utils.card_to_obj(card)} for played_seat, card in self.trick
+            {"player": played_player, "card": card_utils.card_to_obj(card)}
+            for played_player, card in self.trick
         )
         led = card_utils.suit_of(self.trick[0][1]) if self.trick else 4  # 4 == no suit led
         mask = np.zeros(card_utils.NUM_CARDS, np.int8)
@@ -176,11 +177,11 @@ class SemanticCardEnv(AECEnv):
                 mask[card] = 1
         return {
             "observation": {
-                "seat": seat,
+                "player": player,
                 "hand": hand,
                 "current_trick": trick,
                 "led_suit": led,
-                "scores": np.zeros(N_SEATS, np.int64),
+                "scores": np.zeros(N_PLAYERS, np.int64),
             },
             "action_mask": mask,
         }
@@ -189,11 +190,11 @@ class SemanticCardEnv(AECEnv):
         if self.terminations[self.agent_selection] or self.truncations[self.agent_selection]:
             return self._was_dead_step(action)
         agent = self.agent_selection
-        seat = self._seat(agent)
+        player = self._player(agent)
         card = int(action)
         self.hands[agent].remove(card)
-        self.trick.append((seat, card))
-        if len(self.trick) == N_SEATS:
+        self.trick.append((player, card))
+        if len(self.trick) == N_PLAYERS:
             self.trick = []  # a completed trick clears the centre
         index = self.agents.index(agent)
         self.agent_selection = self.agents[(index + 1) % len(self.agents)]
@@ -283,7 +284,7 @@ def test_observation_space_contains_empty_and_populated_sequences_through_an_epi
 
 
 def test_dead_step_cycle_is_idempotent_and_reports_terminated():
-    # After the last real move every seat is terminated; each then takes exactly one None dead step
+    # After the last real move every player is terminated; each then takes exactly one None dead step
     # and is removed, with last() reporting termination throughout.
     env = SemanticCardEnv()
     env.reset(seed=0)
@@ -303,7 +304,7 @@ def test_dead_step_cycle_is_idempotent_and_reports_terminated():
         assert terminated or truncated
         env.step(None)
         drained += 1
-    assert drained == N_SEATS
+    assert drained == N_PLAYERS
 
 
 if __name__ == "__main__":  # pragma: no cover - convenience for a direct run

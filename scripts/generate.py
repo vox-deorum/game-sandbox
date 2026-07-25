@@ -133,7 +133,7 @@ def generate_fixtures() -> None:
         )
 
     # 1. A two-step recording that must parse into generated types with no casts. It carries a
-    #    per-slot players block so the generated `players` field is exercised by the read-back test.
+    #    per-player attribution block so the generated `players` field is exercised by the read-back test.
     with store.create(
         "two-step",
         build_header(
@@ -148,7 +148,7 @@ def generate_fixtures() -> None:
 
     # 2. A chatty recording whose step carries a `messages` array (one targeted, one broadcast) and
     #    a `chat_ms` timing field, so the TypeScript read-back test pins that the regenerated types
-    #    carry both without a cast. Two slots so the targeted message names a real recipient.
+    #    carry both without a cast. Two players let the targeted message name a real recipient.
     with store.create(
         "chatty",
         build_header(

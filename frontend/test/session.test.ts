@@ -187,7 +187,7 @@ describe('SessionPage', () => {
     await renderSession()
     await waitForHandlers()
 
-    // The header attributes player_0 to the connected human, so controlledSlots narrows to that seat.
+    // The header attributes player_0 to the connected human, so controlledPlayers narrows to that player.
     handlers.onHeader(
       flappyHeader({ players: { player_0: { kind: 'human', label: 'dev', user: 'dev' } } }),
     )
@@ -198,12 +198,12 @@ describe('SessionPage', () => {
       timing: { started_at: 0, duration_ms: 0 },
     })
 
-    expect(mountCtx?.controlledSlots).toEqual(['player_0'])
+    expect(mountCtx?.controlledPlayers).toEqual(['player_0'])
     expect(drawn).toHaveLength(1)
 
     // The owner gets a live sendAction that the page forwards as an input command.
     mountCtx?.sendAction?.('player_0', 1)
-    expect(sent).toContainEqual({ kind: 'input', slot: 'player_0', action: 1 })
+    expect(sent).toContainEqual({ kind: 'input', player: 'player_0', action: 1 })
   })
 
   it("shows the human seat's display-name label in attribution, with the stable id as a tooltip", async () => {
@@ -387,10 +387,10 @@ describe('SessionPage', () => {
       },
     })
 
-    expect(mountCtx?.controlledSlots).toEqual(['player_2'])
-    // The forwarded input carries the human's real seat, so a click plays for player_2, not player_0.
+    expect(mountCtx?.controlledPlayers).toEqual(['player_2'])
+    // The forwarded input carries the human's real player ID, so a click plays for player_2, not player_0.
     mountCtx?.sendAction?.('player_2', 5)
-    expect(sent).toContainEqual({ kind: 'input', slot: 'player_2', action: 5 })
+    expect(sent).toContainEqual({ kind: 'input', player: 'player_2', action: 5 })
   })
 
   it('shows the move clock using the session timeout override, not the env default', async () => {
@@ -682,7 +682,7 @@ describe('SessionPage', () => {
     expect(within(statusBar).getByText('22')).toBeInTheDocument()
     // Pin state is conveyed by the button alone now, not a duplicate metadata row.
     expect(await screen.findByRole('button', { name: 'Pinned ✓' })).toBeInTheDocument()
-    expect(mountCtx?.controlledSlots).toEqual([])
+    expect(mountCtx?.controlledPlayers).toEqual([])
     expect(mountCtx?.sendAction).toBeUndefined()
     expect(drawn.at(-1)).toMatchObject({ tick: 2 })
   })
@@ -695,7 +695,7 @@ describe('SessionPage', () => {
     handlers.onHeader(HEADER)
     handlers.onSessionStatus?.('running')
 
-    expect(mountCtx?.controlledSlots).toEqual([])
+    expect(mountCtx?.controlledPlayers).toEqual([])
     expect(mountCtx?.sendAction).toBeUndefined()
     await waitFor(() => expect(screen.getByText('Live')).toBeInTheDocument())
     expect(screen.queryByRole('button', { name: 'Pause' })).toBeNull()
@@ -878,10 +878,10 @@ describe('SessionPage', () => {
     await fireEvent.update(input, 'lead low')
     await fireEvent.click(screen.getByRole('button', { name: 'Send' }))
 
-    // Exactly the pinned command shape, with the seat the human actually took filled in.
+    // Exactly the pinned command shape, with the player the human actually took filled in.
     expect(sent).toContainEqual({
       kind: 'chat',
-      slot: 'player_2',
+      player: 'player_2',
       to: 'player_0',
       text: 'lead low',
     })
@@ -913,7 +913,7 @@ describe('SessionPage', () => {
     await nextTick()
     expect(send).toBeEnabled()
     await fireEvent.click(send)
-    expect(sent).toContainEqual({ kind: 'chat', slot: 'player_2', to: null, text: 'lead low' })
+    expect(sent).toContainEqual({ kind: 'chat', player: 'player_2', to: null, text: 'lead low' })
   })
 
   it('keys the character counter off the row cap, not the metadata', async () => {

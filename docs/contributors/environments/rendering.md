@@ -16,7 +16,7 @@ The renderer owns the game frame and environment-specific controls. The host pag
 
 ## Shared contract
 
-The shared types live in `frontend/src/renderers/types.ts`. A renderer mounts with metadata, a recording header, controlled slots, and an optional action sender, then exposes a fixed internal size, aspect ratio, `render`, and `destroy`.
+The shared types live in `frontend/src/renderers/types.ts`. A renderer mounts with metadata, a recording header, controlled players, and an optional action sender, then exposes a fixed internal size, aspect ratio, `render`, and `destroy`.
 
 The registry stores each `PixiRenderer` subclass with its static SVG thumbnail. The frontend automatically discovers every `environments/*/renderer/index.ts` module.
 
@@ -35,7 +35,7 @@ A renderer may animate between states without weakening determinism. The static 
 
 ## Input and semantic data
 
-Input is enabled only for controlled slots with a `sendAction` callback. Spectators and replay viewers mount draw-only renderers.
+Input is enabled only for controlled players with a `sendAction` callback. Spectators and replay viewers mount draw-only renderers.
 
 Use `inputs()` for fixed mappings such as Flappy Bird's flap. Make scene objects interactive when their action depends on the clicked card or board cell.
 

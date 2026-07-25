@@ -11,8 +11,8 @@ hands it to :func:`hearts.rules.deal`, so two resets with the same seed produce 
 and therefore identical observation, action-mask, and overlay sequences under a fixed policy.
 
 Reward shape (per the AEC contract): rewards are ``0.0`` for every agent during play and become
-the per-seat :func:`hearts.rules.leaderboard_scores` for every agent on the terminal step. The
-authoritative per-seat penalty/leaderboard display lives in the overlay, not in the rewards.
+the per-player :func:`hearts.rules.leaderboard_scores` for every agent on the terminal step. The
+authoritative per-player penalty/leaderboard display lives in the overlay, not in the rewards.
 """
 
 from __future__ import annotations
@@ -69,20 +69,32 @@ class IllegalMoveError(ValueError):
     """Raised by :meth:`HeartsEnv.step` when an action is not a legal card."""
 
 
+def _int_parameter(parameters: Mapping[str, ParameterValue], name: str) -> int:
+    """Read one JSON-safe integer from a resolved parameter map."""
+    if name not in parameters:
+        raise ValueError(f"missing environment parameter {name!r}")
+    value = parameters[name]
+    if isinstance(value, bool) or not isinstance(value, int) or abs(value) > 2**53 - 1:
+        raise ValueError(f"{name} must be a JSON-safe integer")
+    return value
+
+
 def make_env(parameters: Mapping[str, ParameterValue]) -> HeartsEnv:
     """Return a fresh :class:`HeartsEnv`. The seed arrives later at :meth:`HeartsEnv.reset`."""
-    del parameters
+    players = _int_parameter(parameters, "players")
+    if players != rules.NUM_PLAYERS:
+        raise ValueError(f"players must be {rules.NUM_PLAYERS} for Hearts")
     return HeartsEnv()
 
 
 def default_action(env: HeartsEnv, player_id: str) -> int:
-    """The legal default for a timed-out seat: its lowest legal card.
+    """The legal default for a timed-out player: its lowest legal card.
 
     Reads the live env and returns the concrete ``Discrete(52)`` card (not a sentinel), so the
     recording holds the real move. It matches ``env.step``'s own resolution, so gameplay is unchanged.
     """
-    seat = env.possible_agents.index(player_id)
-    return rules.lowest_legal_card(env.state, seat)
+    player = env.possible_agents.index(player_id)
+    return rules.lowest_legal_card(env.state, player)
 
 
 class HeartsEnv(AECEnv):
@@ -109,7 +121,7 @@ class HeartsEnv(AECEnv):
             {
                 "observation": spaces.Dict(
                     {
-                        "seat": spaces.Discrete(4),
+                        "player": spaces.Discrete(4),
                         "hand": HAND,
                         "current_trick": TRICK,
                         "trick_leader": spaces.Discrete(4),
@@ -130,13 +142,13 @@ class HeartsEnv(AECEnv):
     def action_space(self, agent: str) -> spaces.Space:
         return self.action_spaces[agent]
 
-    def _seat(self, agent: str) -> int:
-        """Return the seat index ``0..3`` for an agent id."""
+    def _player(self, agent: str) -> int:
+        """Return the player index ``0..3`` for an agent id."""
         return self.possible_agents.index(agent)
 
-    def _agent(self, seat: int) -> str:
-        """Return the agent id for a seat index ``0..3``."""
-        return self.possible_agents[seat]
+    def _agent(self, player: int) -> str:
+        """Return the agent id for a player index ``0..3``."""
+        return self.possible_agents[player]
 
     def reset(self, seed: int | None = None, options: dict[str, Any] | None = None) -> None:
         self.state = rules.deal(random.Random(seed))
@@ -149,12 +161,13 @@ class HeartsEnv(AECEnv):
         self.agent_selection = self._agent(self.state.turn)
 
     def observe(self, agent: str) -> dict[str, Any]:
-        seat = self._seat(agent)
+        player = self._player(agent)
         state = self.state
 
-        hand = tuple(card_to_obj(card) for card in state.hands[seat])
+        hand = tuple(card_to_obj(card) for card in state.hands[player])
         current_trick = tuple(
-            {"seat": int(played_seat), "card": card_to_obj(card)} for played_seat, card in state.current_trick
+            {"player": int(played_player), "card": card_to_obj(card)}
+            for played_player, card in state.current_trick
         )
 
         led = rules.led_suit(state)
@@ -167,18 +180,18 @@ class HeartsEnv(AECEnv):
         # renderer draws, so the two never disagree on the last step of a moon-shot hand.
         scores = np.array(rules.penalty_scores(state), dtype=np.int64)
 
-        # The action mask is meaningful only for the seat whose turn it is; an off-turn seat is not
+        # The action mask is meaningful only for the player whose turn it is; an off-turn player is not
         # choosing, so it gets an all-zero mask (matching the overlay, which lists legal actions for
-        # the acting seat alone). The AEC loop reads a seat's observation through last() only on that
-        # seat's turn, where state.turn == seat, so the acting mask is always populated.
+        # the acting player alone). The AEC loop reads a player's observation through last() only on that
+        # player's turn, where state.turn == player, so the acting mask is always populated.
         action_mask = np.zeros(rules.NUM_CARDS, np.int8)
-        if state.turn == seat:
-            for card in rules.legal_moves(state, seat):
+        if state.turn == player:
+            for card in rules.legal_moves(state, player):
                 action_mask[card] = 1
 
         return {
             "observation": {
-                "seat": int(seat),
+                "player": int(player),
                 "hand": hand,
                 "current_trick": current_trick,
                 "trick_leader": trick_leader,
@@ -193,13 +206,13 @@ class HeartsEnv(AECEnv):
         if self.terminations[self.agent_selection] or self.truncations[self.agent_selection]:
             return self._was_dead_step(action)
 
-        seat = self._seat(self.agent_selection)
+        player = self._player(self.agent_selection)
         card = int(action)
 
-        if not rules.is_legal(self.state, seat, card):
+        if not rules.is_legal(self.state, player, card):
             raise IllegalMoveError(
                 f"{self.agent_selection} cannot play card {card}; "
-                f"legal: {rules.legal_moves(self.state, seat)}"
+                f"legal: {rules.legal_moves(self.state, player)}"
             )
 
         rules.play(self.state, card)

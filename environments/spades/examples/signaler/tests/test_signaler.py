@@ -17,14 +17,14 @@ ACE_OF_HEARTS = make_card(3, 14)
 ACE_OF_DIAMONDS = make_card(1, 14)
 
 
-def _bidding_observation(hand: list[dict[str, int]], *, seat: int = 0) -> dict:
-    """A bidding-phase observation carrying ``hand`` at ``seat``: every bid legal, no card."""
+def _bidding_observation(hand: list[dict[str, int]], *, player: int = 0) -> dict:
+    """A bidding-phase observation carrying ``hand`` at ``player``: every bid legal, no card."""
     mask = [1 if 52 <= action < 66 else 0 for action in range(66)]
     return {
         "action_mask": mask,
         "observation": {
-            "seat": seat,
-            "partner_seat": (seat + 2) % 4,
+            "player": player,
+            "partner_player": (player + 2) % 4,
             "phase": 0,
             "hand": tuple(hand),
             "bids": (14, 14, 14, 14),
@@ -40,23 +40,23 @@ def _bidding_observation(hand: list[dict[str, int]], *, seat: int = 0) -> dict:
     }
 
 
-def _leading_observation(hand: list[dict[str, int]], legal: list[dict[str, int]], *, seat: int = 0) -> dict:
-    """A play-phase observation where ``seat`` is on lead (no card down yet)."""
+def _leading_observation(hand: list[dict[str, int]], legal: list[dict[str, int]], *, player: int = 0) -> dict:
+    """A play-phase observation where ``player`` is on lead (no card down yet)."""
     legal_ids = {encode_play(c) for c in legal}
     mask = [1 if action in legal_ids else 0 for action in range(66)]
     return {
         "action_mask": mask,
         "observation": {
-            "seat": seat,
-            "partner_seat": (seat + 2) % 4,
+            "player": player,
+            "partner_player": (player + 2) % 4,
             "phase": 1,
             "hand": tuple(hand),
             "bids": (5, 5, 5, 5),
             "team_scores": [0, 0],
-            "current_trick": (),  # nobody has played: this seat is leading
+            "current_trick": (),  # nobody has played: this player is leading
             "last_trick": (),
             "last_trick_winner": 4,
-            "trick_leader": seat,
+            "trick_leader": player,
             "led_suit": 4,
             "spades_broken": 0,
             "tricks_won": [0, 0, 0, 0],
@@ -65,7 +65,7 @@ def _leading_observation(hand: list[dict[str, int]], legal: list[dict[str, int]]
 
 
 def test_signals_its_strong_side_suit_to_its_partner():
-    # Seat 0 holds the ace of hearts, so its strong side suit is hearts, and its partner is seat 2.
+    # Player 0 holds the ace of hearts, so its strong side suit is hearts, and its partner is player 2.
     hand = [
         ACE_OF_HEARTS,
         make_card(3, 4),
@@ -83,26 +83,26 @@ def test_signals_its_strong_side_suit_to_its_partner():
     ]
     a = agent.Agent()
     a.reset(0)
-    a.act(_bidding_observation(hand, seat=0))  # stamps partner seat and hand
+    a.act(_bidding_observation(hand, player=0))  # stamps partner player and hand
     assert a.chat([]) == [{"to": "player_2", "text": "strong:hearts"}]
 
 
 def test_lead_changes_when_the_partner_signal_arrives():
     hand = [TWO_OF_CLUBS, TWO_OF_DIAMONDS]
     legal = [TWO_OF_CLUBS, TWO_OF_DIAMONDS]
-    lead_obs = _leading_observation(hand, legal, seat=0)
+    lead_obs = _leading_observation(hand, legal, player=0)
 
     # With a partner signal naming diamonds, the agent leads the 2 of diamonds.
     informed = agent.Agent()
     informed.reset(0)
-    informed.act(_bidding_observation(hand, seat=0))  # stamp seat 0 first
+    informed.act(_bidding_observation(hand, player=0))  # stamp player 0 first
     informed.chat([{"from": "player_2", "to": "player_0", "text": "strong:diamonds", "tick": 1}])
     assert informed.act(lead_obs) == encode_play(TWO_OF_DIAMONDS)
 
     # The same agent with no signal falls back to the lowest legal card (2 of clubs).
     uninformed = agent.Agent()
     uninformed.reset(0)
-    uninformed.act(_bidding_observation(hand, seat=0))
+    uninformed.act(_bidding_observation(hand, player=0))
     uninformed.chat([])
     assert uninformed.act(lead_obs) == encode_play(TWO_OF_CLUBS)
 
@@ -126,5 +126,5 @@ def test_stays_silent_without_a_side_ace():
     ]
     a = agent.Agent()
     a.reset(0)
-    a.act(_bidding_observation(hand, seat=0))
+    a.act(_bidding_observation(hand, player=0))
     assert a.chat([]) == []

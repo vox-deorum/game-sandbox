@@ -83,11 +83,11 @@ describe('LocalPlayPage', () => {
 
     startPaused()
     await waitFor(() => expect(mountContext).not.toBeNull())
-    expect(mountContext?.controlledSlots).toEqual(['player_0'])
+    expect(mountContext?.controlledPlayers).toEqual(['player_0'])
     expect(drawn).toHaveLength(1)
 
     mountContext?.sendAction?.('player_0', 1)
-    expect(sent).toContainEqual({ kind: 'input', slot: 'player_0', action: 1 })
+    expect(sent).toContainEqual({ kind: 'input', player: 'player_0', action: 1 })
   })
 
   it('uses the header human seat instead of every human-capable environment seat', async () => {
@@ -107,7 +107,7 @@ describe('LocalPlayPage', () => {
       },
     })
 
-    expect(mountContext?.controlledSlots).toEqual(['player_2'])
+    expect(mountContext?.controlledPlayers).toEqual(['player_2'])
   })
 
   it('starts only by sending resume, then follows pause and resume echoes', async () => {

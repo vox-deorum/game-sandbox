@@ -38,7 +38,7 @@ META = EnvironmentMeta(
     # Turn-based stepping (pace_interval_ms stays None), but watch/replay plays each move out at
     # this cadence so a spectator can follow the bids and cards; it does not affect live human play.
     view_interval_ms=3_000,
-    # Live human play paces the *other* seats' moves at this cadence so a burst of fast AI replies
+    # Live human play paces the *other* players' moves at this cadence so a burst of fast AI replies
     # animates one at a time (the human's own move still renders instantly). Same cadences as Hearts.
     live_interval_ms=900,
     step_limit_ms=1_000,
@@ -49,8 +49,8 @@ META = EnvironmentMeta(
     message_cap=120,
     llm=True,
     renderer="spades",
-    # Partnership assignment and lead position both depend on seating, so seating A before B is not
-    # the same match as B before A: the scheduler enumerates ordered seatings.
+    # Partnership assignment and lead position both depend on player order, so assigning A before B is
+    # not the same match as assigning B before A: the scheduler enumerates ordered seat assignments.
     seat_order_matters=True,
 )
 

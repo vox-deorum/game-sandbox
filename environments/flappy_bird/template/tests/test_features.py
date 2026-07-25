@@ -26,7 +26,7 @@ def test_actions_are_distinct():
 
 
 def test_feature_readers_match_the_raw_observation():
-    env = make_env({"seats": 1, "pipe_gap": 100})
+    env = make_env({"players": 1, "pipe_gap": 100})
     try:
         env.reset(seed=0)
         observation = env.observe(env.agent_selection)

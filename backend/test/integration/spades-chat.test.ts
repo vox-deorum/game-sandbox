@@ -8,7 +8,7 @@
  *   example agents produces messages that appear both in a spectator's streamed lines (the broadcast)
  *   and in the full recording (broadcast and targeted alike).
  * - A `chat` command frame written into the container's stdin by the owner of a human-mode session
- *   is routed by the harness and lands in the recording, attributed to the human's slot.
+ *   is routed by the harness and lands in the recording, attributed to the human player.
  * - The built-in `/opt/agents/builtin/spades` scripted baseline loads and plays a complete game when
  *   every seat is `builtin-agent`.
  * - A season's `overrides.messaging.enabled = false` silences chatty agents with no code change (the
@@ -258,7 +258,7 @@ describe('Spades chat (Docker)', () => {
       await owner.waitFor(() => owner.states().length > 0, 30_000)
       owner.send({
         kind: 'chat',
-        slot: 'player_0',
+        player: 'player_0',
         to: 'player_2',
         text: 'partner, watch the spades',
       })

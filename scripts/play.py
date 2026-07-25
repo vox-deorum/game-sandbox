@@ -15,6 +15,7 @@ from _paths import FRONTEND_LOCAL_DIST_DIR, REPO_ROOT
 from game_sandbox_harness.environment import (
     EnvironmentEntry,
     EnvironmentLookupError,
+    ResolvedLayout,
     load_environment,
     resolve_layout,
     resolve_parameters,
@@ -27,10 +28,26 @@ NPM_COMMAND = "npm.cmd" if sys.platform == "win32" else "npm"
 BUILTIN_AGENT_ROOT = REPO_ROOT / "backend" / "images" / "session-base" / "deps-v1" / "builtin"
 
 
-def possible_slots(entry: EnvironmentEntry) -> tuple[str, ...]:
+def default_layout(entry: EnvironmentEntry) -> ResolvedLayout:
+    """Resolve the environment's default assignment layout."""
+    return resolve_layout(entry.meta, resolve_parameters(entry.meta))
+
+
+def possible_players(entry: EnvironmentEntry) -> tuple[str, ...]:
     """Return the player ids in the complete default layout without constructing an environment."""
-    layout = resolve_layout(entry.meta, resolve_parameters(entry.meta))
+    layout = default_layout(entry)
     return tuple(player for seat in layout.seats for player in seat.players)
+
+
+def player_for_seat(entry: EnvironmentEntry, seat: int) -> str:
+    """Return the sole player covered by a default-layout seat."""
+    players = default_layout(entry).seats[seat].players
+    if len(players) != 1:
+        raise RuntimeError(
+            f"local play cannot select {len(players)} players for seat {seat}; "
+            "wide-seat companion selection is not available yet"
+        )
+    return players[0]
 
 
 def builtin_agent_path(env_id: str) -> str:
@@ -53,12 +70,12 @@ def local_config(
     recording_dir: Path,
 ) -> dict[str, object]:
     """Build the complete live-runner config for one browser session."""
-    slots = possible_slots(entry)
-    human_slot = slots[seat] if mode == "human" else None
+    player_ids = possible_players(entry)
+    human_player = player_for_seat(entry, seat) if mode == "human" else None
     bindings: dict[str, dict[str, str]] = {}
     players: dict[str, dict[str, str]] = {}
-    for player_id in slots:
-        if player_id == human_slot:
+    for player_id in player_ids:
+        if player_id == human_player:
             bindings[player_id] = {"kind": "external"}
             players[player_id] = {"kind": "human", "label": "You"}
             continue
@@ -164,10 +181,11 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--steps must be positive")
     if args.human_timeout_ms is not None and args.human_timeout_ms <= 0:
         parser.error("--human-timeout-ms must be positive")
-    slots = possible_slots(entry)
-    if not 0 <= args.seat < len(slots):
-        parser.error(f"--seat must name one of 0..{len(slots) - 1}")
-    if mode == "human" and slots[args.seat] not in entry.meta.human_players:
+    layout = default_layout(entry)
+    if not 0 <= args.seat < len(layout.seats):
+        parser.error(f"--seat must name one of 0..{len(layout.seats) - 1}")
+    selected_players = layout.seats[args.seat].players
+    if mode == "human" and not any(player in entry.meta.human_players for player in selected_players):
         parser.error(f"seat {args.seat} is not human-playable in {entry.meta.env_id!r}")
 
     timeout: int | None | UnsetTimeout

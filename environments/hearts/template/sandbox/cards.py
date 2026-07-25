@@ -54,7 +54,7 @@ __all__ = [
     "led_suit",
     "legal_cards",
     "make_card",
-    "my_seat",
+    "my_player",
     "play",
     "rank_of",
     "scores",
@@ -99,9 +99,9 @@ def hand_cards(observation: Any) -> list[dict[str, int]]:
     return list(observation["observation"]["hand"])
 
 
-def my_seat(observation: Any) -> int:
-    """Return your own seat id (``0..3``)."""
-    return int(observation["observation"]["seat"])
+def my_player(observation: Any) -> int:
+    """Return your own player id (``0..3``)."""
+    return int(observation["observation"]["player"])
 
 
 def led_suit(observation: Any) -> int | None:
@@ -116,22 +116,22 @@ def hearts_broken(observation: Any) -> bool:
 
 
 def scores(observation: Any) -> list[int]:
-    """Return the running penalty points taken so far by each seat, indexed by seat id."""
+    """Return the running penalty points taken so far by each player, indexed by player id."""
     return [int(points) for points in observation["observation"]["scores"]]
 
 
 def current_trick(observation: Any) -> list[tuple[int, dict[str, int]]]:
-    """Return the cards played so far this trick as ``(seat, card)`` pairs, in play order.
+    """Return the cards played so far this trick as ``(player, card)`` pairs, in play order.
 
-    The list starts with the trick leader and follows the table clockwise, holding only the seats
+    The list starts with the trick leader and follows the table clockwise, holding only the players
     that have already played. It is empty when you are leading a fresh trick.
     """
     trick = observation["observation"]["current_trick"]
-    return [(int(entry["seat"]), entry["card"]) for entry in trick]
+    return [(int(entry["player"]), entry["card"]) for entry in trick]
 
 
 def trick_winner_so_far(observation: Any) -> tuple[int, dict[str, int]] | None:
-    """Return the ``(seat, card)`` currently winning this trick, or ``None`` if no card is down.
+    """Return the ``(player, card)`` currently winning this trick, or ``None`` if no card is down.
 
     The winner is the highest card of the led suit played so far. Cards that did not follow the led
     suit can never win, so they are ignored.
@@ -140,5 +140,5 @@ def trick_winner_so_far(observation: Any) -> tuple[int, dict[str, int]] | None:
     if not played:
         return None
     led = suit_of(played[0][1])
-    following = [(seat, card) for seat, card in played if suit_of(card) == led]
+    following = [(player, card) for player, card in played if suit_of(card) == led]
     return max(following, key=lambda pair: rank_of(pair[1]))

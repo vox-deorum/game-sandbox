@@ -64,14 +64,14 @@ Daredevil = _load_example_agent("daredevil")
 Counter = _load_example_agent("counter")
 
 
-def _play(slots, seed: int, tmp_path: Path, *, messaging=None):
+def _play(players, seed: int, tmp_path: Path, *, messaging=None):
     """Run one episode and return ``(states, result)``. Final scores come from the result: terminal
-    rewards are credited to every seat but recorded only on the acting seat's line, so the recording
+    rewards are credited to every player but recorded only on the acting player's line, so the recording
     alone cannot report a non-actor's terminal (for example nil) score."""
     store = FolderRecordingStore(tmp_path)
     result = run_episode(
         ENTRY,
-        slots,
+        players,
         parameters=resolve_parameters(ENTRY.meta),
         seed=seed,
         store=store,
@@ -89,62 +89,62 @@ def _messages_at(states: list[dict], tick: int) -> list[dict]:
 
 
 def test_signaler_exchange_replays_in_the_recording(tmp_path: Path):
-    # Signalers partner at 0/2, chat-less counters at 1/3. On seed 2 both signalers speak: seat 0
-    # names hearts to seat 2, and seat 2 names diamonds to seat 0, each on its own bidding tick.
-    slots = {
+    # Signalers partner at 0/2, chat-less counters at 1/3. On seed 2 both signalers speak: player 0
+    # names hearts to player 2, and player 2 names diamonds to player 0, each on its own bidding tick.
+    players = {
         "player_0": AgentPlayer(Signaler()),
         "player_1": AgentPlayer(Counter()),
         "player_2": AgentPlayer(Signaler()),
         "player_3": AgentPlayer(Counter()),
     }
-    states, _result = _play(slots, seed=2, tmp_path=tmp_path)
+    states, _result = _play(players, seed=2, tmp_path=tmp_path)
 
     assert _messages_at(states, 0) == [{"from": "player_0", "to": "player_2", "text": "strong:hearts"}]
     assert _messages_at(states, 2) == [{"from": "player_2", "to": "player_0", "text": "strong:diamonds"}]
-    # The chatting seat is charged chat time on the tick it spoke.
+    # The chatting player is charged chat time on the tick it spoke.
     tick0 = next(s for s in states if s["tick"] == 0)
     assert "chat_ms" in tick0["agents"]["player_0"]["timing"]
 
 
 def test_daredevil_demo_hand_bids_nil_warns_and_scores(tmp_path: Path):
-    # The stage demo hand: on seed 1236 seat 0 qualifies for nil, bids it, and broadcasts the warning
+    # The stage demo hand: on seed 1236 player 0 qualifies for nil, bids it, and broadcasts the warning
     # its partner covers. The made nil lands in the final team score.
-    slots = {
+    players = {
         "player_0": AgentPlayer(Daredevil()),
         "player_1": AgentPlayer(Counter()),
         "player_2": AgentPlayer(Daredevil()),
         "player_3": AgentPlayer(Counter()),
     }
-    states, result = _play(slots, seed=1236, tmp_path=tmp_path)
+    states, result = _play(players, seed=1236, tmp_path=tmp_path)
 
     tick0 = next(s for s in states if s["tick"] == 0)
     assert tick0["agents"]["player_0"]["action"] == 52  # the nil bid (bid_to_action(0))
     assert _messages_at(states, 0) == [{"from": "player_0", "to": None, "text": "nil! cover me"}]
 
-    # The made nil, shared by the partnership: +121 for seats 0 and 2.
+    # The made nil, shared by the partnership: +121 for players 0 and 2.
     assert result.scores == {"player_0": 121.0, "player_1": 46.0, "player_2": 121.0, "player_3": 46.0}
 
 
 def test_daredevil_cover_provably_depends_on_the_broadcast(tmp_path: Path):
-    # Same seed, once with messaging and once without. With the warning, seat 2 covers its nil-bidding
+    # Same seed, once with messaging and once without. With the warning, player 2 covers its nil-bidding
     # partner and the play sequence differs; without it, no message is ever recorded and the nil is set.
     def run(messaging, sub: str) -> tuple[list[int], list[dict], dict]:
-        slots = {
+        players = {
             "player_0": AgentPlayer(Daredevil()),
             "player_1": AgentPlayer(Counter()),
             "player_2": AgentPlayer(Daredevil()),
             "player_3": AgentPlayer(Counter()),
         }
-        states, result = _play(slots, seed=1236, tmp_path=tmp_path / sub, messaging=messaging)
-        seat2 = [s["agents"]["player_2"]["action"] for s in states if "player_2" in s["agents"]]
+        states, result = _play(players, seed=1236, tmp_path=tmp_path / sub, messaging=messaging)
+        player2 = [s["agents"]["player_2"]["action"] for s in states if "player_2" in s["agents"]]
         every_message = [m for s in states for m in s.get("messages", [])]
-        return seat2, every_message, result.scores
+        return player2, every_message, result.scores
 
-    seat2_on, messages_on, finals_on = run(True, "on")
-    seat2_off, messages_off, finals_off = run(False, "off")
+    player2_on, messages_on, finals_on = run(True, "on")
+    player2_off, messages_off, finals_off = run(False, "off")
 
     # The partner's play changed because a message arrived.
-    assert seat2_on != seat2_off
+    assert player2_on != player2_off
     # Messaging off records no messages at all, and the uncovered nil is set (the team score drops).
     assert messages_off == []
     assert messages_on  # the broadcast (and any signals) are present with messaging on

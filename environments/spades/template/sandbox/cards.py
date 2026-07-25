@@ -72,9 +72,9 @@ __all__ = [
     "legal_bids",
     "legal_cards",
     "make_card",
-    "my_seat",
+    "my_player",
     "partner_of",
-    "partner_seat",
+    "partner_player",
     "play",
     "rank_of",
     "spades_broken",
@@ -136,7 +136,7 @@ def action_is_bid(action: int) -> bool:
 def is_bidding(observation: Any) -> bool:
     """Return whether it is the bidding round (you must return a bid), not the play phase.
 
-    Read from the phase flag the observation carries, so it is defined for every seat, on turn or
+    Read from the phase flag the observation carries, so it is defined for every player, on turn or
     not. When ``True``, return a bid with :func:`bid`; when ``False``, return a card with
     :func:`play`.
     """
@@ -166,7 +166,7 @@ def legal_cards(observation: Any) -> list[dict[str, int]]:
     return [card_to_obj(i) for i in range(NUM_CARDS) if mask[i]]
 
 
-# -- your hand, seat, and partnership ---------------------------------------------------------
+# -- your hand, player, and partnership -------------------------------------------------------
 
 
 def hand_cards(observation: Any) -> list[dict[str, int]]:
@@ -174,34 +174,34 @@ def hand_cards(observation: Any) -> list[dict[str, int]]:
     return list(observation["observation"]["hand"])
 
 
-def my_seat(observation: Any) -> int:
-    """Return your own seat id (``0..3``)."""
-    return int(observation["observation"]["seat"])
+def my_player(observation: Any) -> int:
+    """Return your own player id (``0..3``)."""
+    return int(observation["observation"]["player"])
 
 
-def partner_seat(observation: Any) -> int:
-    """Return your partner's seat id, read directly from the observation.
+def partner_player(observation: Any) -> int:
+    """Return your partner's player id, read directly from the observation.
 
-    Seats 0 and 2 are one partnership, seats 1 and 3 the other; the environment already computed
+    Players 0 and 2 are one partnership, players 1 and 3 the other; the environment already computed
     this for you, so prefer this accessor over re-deriving it.
     """
-    return int(observation["observation"]["partner_seat"])
+    return int(observation["observation"]["partner_player"])
 
 
-def partner_of(seat: int) -> int:
-    """Return the seat of ``seat``'s partner: the seat directly across the table (``(seat + 2) % 4``).
+def partner_of(player: int) -> int:
+    """Return the player of ``player``'s partner: directly across the table (``(player + 2) % 4``).
 
-    Prefer :func:`partner_seat` when you have an observation in hand; this is for the rare case
-    where you only have a seat id (for example, one read from a trick).
+    Prefer :func:`partner_player` when you have an observation in hand; this is for the rare case
+    where you only have a player id (for example, one read from a trick).
     """
-    return (seat + 2) % 4
+    return (player + 2) % 4
 
 
 # -- bids and tricks --------------------------------------------------------------------------
 
 
 def bids(observation: Any) -> list[int]:
-    """Return the four seats' bids, indexed by seat; ``-1`` for a seat that has not bid yet.
+    """Return the four players' bids, indexed by player; ``-1`` for a player that has not bid yet.
 
     The observation encodes "not yet bid" as ``14``; this accessor remaps that to ``-1`` so
     ``bid < 0`` is the check for "hasn't bid" regardless of encoding. A bid of ``0`` is nil. Once
@@ -211,12 +211,12 @@ def bids(observation: Any) -> list[int]:
 
 
 def tricks_won(observation: Any) -> list[int]:
-    """Return the tricks taken so far by each seat, indexed by seat id."""
+    """Return the tricks taken so far by each player, indexed by player id."""
     return [int(count) for count in observation["observation"]["tricks_won"]]
 
 
 def team_scores(observation: Any) -> list[int]:
-    """Return the two teams' running hand scores: ``[team of seat 0/2, team of seat 1/3]``."""
+    """Return the two teams' running hand scores: ``[team of player 0/2, team of player 1/3]``."""
     return [int(points) for points in observation["observation"]["team_scores"]]
 
 
@@ -232,35 +232,35 @@ def spades_broken(observation: Any) -> bool:
 
 
 def current_trick(observation: Any) -> list[tuple[int, dict[str, int]]]:
-    """Return the cards played so far this trick as ``(seat, card)`` pairs, in play order.
+    """Return the cards played so far this trick as ``(player, card)`` pairs, in play order.
 
-    The list starts with the trick leader and follows the table clockwise, holding only the seats
+    The list starts with the trick leader and follows the table clockwise, holding only the players
     that have already played. It is empty when you are leading a fresh trick.
     """
     trick = observation["observation"]["current_trick"]
-    return [(int(entry["seat"]), entry["card"]) for entry in trick]
+    return [(int(entry["player"]), entry["card"]) for entry in trick]
 
 
 def last_trick(observation: Any) -> list[tuple[int, dict[str, int]]]:
-    """Return the most recently completed trick as ``(seat, card)`` pairs, in play order.
+    """Return the most recently completed trick as ``(player, card)`` pairs, in play order.
 
     A trick is cleared from :func:`current_trick` the instant its fourth card lands, so this is how
-    a seat that already played (or is leading the next trick) still sees every card of the trick
+    a player that already played (or is leading the next trick) still sees every card of the trick
     just finished. Use :func:`last_trick_winner` for who took it. Empty until the first trick of
     the hand completes.
     """
     trick = observation["observation"]["last_trick"]
-    return [(int(entry["seat"]), entry["card"]) for entry in trick]
+    return [(int(entry["player"]), entry["card"]) for entry in trick]
 
 
 def last_trick_winner(observation: Any) -> int | None:
-    """Return the seat that won the most recently completed trick, or ``None`` before any completes."""
+    """Return the player that won the most recently completed trick, or ``None`` before any completes."""
     winner = int(observation["observation"]["last_trick_winner"])
     return None if winner == 4 else winner
 
 
 def trick_winner_so_far(observation: Any) -> tuple[int, dict[str, int]] | None:
-    """Return the ``(seat, card)`` currently winning this trick, or ``None`` if no card is down.
+    """Return the ``(player, card)`` currently winning this trick, or ``None`` if no card is down.
 
     Spades are trump: the winner is the highest spade played so far, or, if no spade has been played,
     the highest card of the led suit. Cards that neither followed the led suit nor are spades can
@@ -282,8 +282,8 @@ def beats_current_winner(observation: Any, card: dict[str, int]) -> bool:
     winner = trick_winner_so_far(observation)
     if winner is None:  # leading: your card is the only one down, so it is "winning".
         return True
-    seat = my_seat(observation)
-    return _winner_of([*current_trick(observation), (seat, card)])[0] == seat
+    player = my_player(observation)
+    return _winner_of([*current_trick(observation), (player, card)])[0] == player
 
 
 # -- internal trick helpers -------------------------------------------------------------------
@@ -292,7 +292,7 @@ def beats_current_winner(observation: Any, card: dict[str, int]) -> bool:
 def _winner_of(
     played: list[tuple[int, dict[str, int]]],
 ) -> tuple[int, dict[str, int]]:
-    """Return the ``(seat, card)`` winning a non-empty (partial or full) trick under spades-trump."""
+    """Return the ``(player, card)`` winning a non-empty (partial or full) trick under spades-trump."""
     led = suit_of(played[0][1])
     spades = [pair for pair in played if suit_of(pair[1]) == SPADES]
     if spades:

@@ -9,13 +9,13 @@ line 2+: one StepState per line
 
 The harness streams and stores the same serialized state lines. Input, pause, resume, stop, and chat commands use event envelopes and are not part of the recording. See the [recording specification](../../specs/recording.md) and [state schema](state-schema.md).
 
-The header may include a `players` map keyed by slot id, using the same keys as a step state's `agents`. Each entry has the shape `{kind: "human" | "agent", label, user?, submission_id?}`.
+The header may include a `players` map keyed by player id, using the same keys as a step state's `agents`. Each entry has the shape `{kind: "human" | "agent", label, user?, submission_id?}`.
 
 The harness copies this map from the session configuration. The backend assigns:
 
-- Human slots to the session owner.
-- Submitted slots to the submission owner and id.
-- Other built-in slots to the "Naive agent".
+- Human players to the session owner.
+- Submitted players to the submission owner and id.
+- Other built-in players to the "Naive agent".
 
 The field is optional, so older recordings remain readable.
 

@@ -264,14 +264,14 @@ describe('relay (LiveSession)', () => {
       const { session, process } = makeSession('human')
       const socket = new FakeSocket()
       const attachment = session.attach(socket, true)
-      attachment.handleMessage('{"kind":"input","slot":"player_0","action":1}')
-      expect(process.sent).toEqual(['{"kind":"input","slot":"player_0","action":1}'])
+      attachment.handleMessage('{"kind":"input","player":"player_0","action":1}')
+      expect(process.sent).toEqual(['{"kind":"input","player":"player_0","action":1}'])
     })
 
     it("ignores a spectator's commands", async () => {
       const { session, process } = makeSession('human')
       const spectator = session.attach(new FakeSocket(), false)
-      spectator.handleMessage('{"kind":"input","slot":"player_0","action":1}')
+      spectator.handleMessage('{"kind":"input","player":"player_0","action":1}')
       spectator.handleMessage('{"kind":"pause"}')
       expect(process.sent).toEqual([])
     })
@@ -279,12 +279,12 @@ describe('relay (LiveSession)', () => {
     it('ignores scripted input and a capable player the session does not expose', async () => {
       const scripted = makeSession('scripted')
       const a = scripted.session.attach(new FakeSocket(), true)
-      a.handleMessage('{"kind":"input","slot":"player_0","action":1}')
+      a.handleMessage('{"kind":"input","player":"player_0","action":1}')
       expect(scripted.process.sent).toEqual([])
 
       const human = makeSession('human', { externalPlayers: ['player_1'] })
       const b = human.session.attach(new FakeSocket(), true)
-      b.handleMessage('{"kind":"input","slot":"player_0","action":1}')
+      b.handleMessage('{"kind":"input","player":"player_0","action":1}')
       expect(human.process.sent).toEqual([])
     })
 
@@ -341,7 +341,7 @@ describe('relay (LiveSession)', () => {
       owner: FakeSocket
       spectator: FakeSocket
     }> {
-      // player_0 is the human-controlled (external) slot for these human-mode sessions.
+      // player_0 is the human-controlled (external) player for these human-mode sessions.
       const { session, process } = makeSession('human', { externalPlayers: ['player_0'] })
       const owner = new FakeSocket()
       const spectator = new FakeSocket()
@@ -363,7 +363,7 @@ describe('relay (LiveSession)', () => {
       ])
     })
 
-    it('shows a targeted message to a human-bound slot only to the controller', async () => {
+    it('shows a targeted message to a human-bound player only to the controller', async () => {
       const { owner, spectator } = await attachOwnerAndSpectator(
         stateWith([{ from: 'player_1', to: 'player_0', text: 'psst' }]),
       )
@@ -385,7 +385,7 @@ describe('relay (LiveSession)', () => {
       const { owner, spectator } = await attachOwnerAndSpectator(
         stateWith([{ from: 'player_0', to: 'player_1', text: 'mine' }]),
       )
-      // `from` is the human-bound slot: the sender reflection shows it to the controller.
+      // `from` is the human-bound player: the sender reflection shows it to the controller.
       expect(messagesIn(owner.received)).toEqual([
         { from: 'player_0', to: 'player_1', text: 'mine' },
       ])
@@ -430,7 +430,7 @@ describe('relay (LiveSession)', () => {
   // --- inbound chat authorization ---
 
   describe('inbound chat authorization', () => {
-    const CHAT = '{"kind":"chat","slot":"player_0","to":null,"text":"hi"}'
+    const CHAT = '{"kind":"chat","player":"player_0","to":null,"text":"hi"}'
 
     it('forwards an authorized chat frame to the container', () => {
       const { session, process } = makeSession('human', { externalPlayers: ['player_0'] })
@@ -449,7 +449,7 @@ describe('relay (LiveSession)', () => {
     it('drops a chat frame for a player outside externalPlayers', () => {
       const { session, process } = makeSession('human', { externalPlayers: ['player_0'] })
       const owner = session.attach(new FakeSocket(), true)
-      owner.handleMessage('{"kind":"chat","slot":"player_1","to":null,"text":"hi"}')
+      owner.handleMessage('{"kind":"chat","player":"player_1","to":null,"text":"hi"}')
       expect(process.sent).toEqual([])
     })
 
@@ -477,8 +477,8 @@ describe('relay (LiveSession)', () => {
       })
       const owner = session.attach(new FakeSocket(), true)
       // An emoji is one code point; three fit, four do not.
-      const atCap = '{"kind":"chat","slot":"player_0","to":null,"text":"😀😀😀"}'
-      const overCap = '{"kind":"chat","slot":"player_0","to":null,"text":"😀😀😀😀"}'
+      const atCap = '{"kind":"chat","player":"player_0","to":null,"text":"😀😀😀"}'
+      const overCap = '{"kind":"chat","player":"player_0","to":null,"text":"😀😀😀😀"}'
       owner.handleMessage(overCap)
       expect(process.sent).toEqual([])
       owner.handleMessage(atCap)

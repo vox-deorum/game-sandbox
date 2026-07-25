@@ -51,19 +51,19 @@ class GapChaserAgent:
 
 
 def main() -> int:
-    # A submitted-agent attribution for the single slot so the fixture header carries a `players`
+    # A submitted-agent attribution for the single player so the fixture header carries a `players`
     # block like the Hearts/Spades fixtures, without needing a live session.
-    players: dict[str, PlayerAttribution] = {
+    player_attribution: dict[str, PlayerAttribution] = {
         "player_0": {"kind": "human", "label": "you"},
     }
-    slots = {"player_0": AgentPlayer(GapChaserAgent())}
+    players = {"player_0": AgentPlayer(GapChaserAgent())}
     run_and_copy(
         ENTRY,
-        slots,
+        players,
         seed=7,
         recording_id="flappy-fixture",
         dest_name="flappy-recording.jsonl",
-        players=players,
+        player_attribution=player_attribution,
     )
     return 0
 

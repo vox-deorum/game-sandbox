@@ -40,7 +40,7 @@ META = EnvironmentMeta(
     message_cap=None,
     llm=False,
     renderer="flappy-bird",
-    # Single-slot, so seat order is moot; the scheduler never multi-seats this environment.
+    # One player means assignment order is moot; the scheduler never has several seats here.
     seat_order_matters=False,
     parameters=(
         EnvParameter(

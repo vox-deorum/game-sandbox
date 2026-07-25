@@ -4,7 +4,7 @@ This repository is a complete starter project for a Hearts agent. You only edit 
 
 An **agent** is a Python class that receives an observation and returns an action. You can play and test it on your computer before submitting the GitHub repository to Game Sandbox.
 
-Hearts is a four-player trick-taking game. Your agent fills one seat; the other three seats are played by a built-in opponent while you develop locally. Other environments and complete worked agents are published as `templates/<env>` and `examples/<env>/<name>` branches of the same student repository.
+Hearts is a four-player trick-taking game. Your agent fills one player position; the other three players are played by a built-in opponent while you develop locally. Other environments and complete worked agents are published as `templates/<env>` and `examples/<env>/<name>` branches of the same student repository.
 
 ## Project files
 
@@ -30,17 +30,17 @@ From the project folder:
 python -m sandbox
 ```
 
-The first time you run it, it creates a local `.venv`, installs the pinned packages, and then opens a window where you take a seat and play Hearts yourself; click a highlighted (legal) card on your turn. There is no separate install step. As you work, the same command gives you everything:
+The first time you run it, it creates a local `.venv`, installs the pinned packages, and then opens a window where you play Hearts yourself; click a highlighted (legal) card on your turn. There is no separate install step. As you work, the same command gives you everything:
 
 ```console
-python -m sandbox            # take a seat and play it yourself
-python -m sandbox play       # watch YOUR agent play a seat (add --headless for no window)
+python -m sandbox            # play it yourself
+python -m sandbox play       # watch YOUR agent play a player (add --headless for no window)
 python -m sandbox eval       # run several seeded games and report the mean score
 python -m sandbox test       # run the checks
 python -m sandbox setup      # just (re)install dependencies into .venv
 ```
 
-Useful extra flags pass straight through, e.g. `python -m sandbox play --seed 7` or `python -m sandbox human --seat 2` to sit in a different seat.
+Useful extra flags pass straight through, e.g. `python -m sandbox play --seed 7` or `python -m sandbox human --player 2` to play a different player.
 
 Prefer to manage the virtual environment yourself? Create and activate one, install the requirements, then use the same commands.
 
@@ -78,7 +78,7 @@ Two optional methods are available:
 
 Leave an optional method out when you do not use it.
 
-The template already plays. `agent.py` ships a small working agent that plays its lowest-ranked legal card, so `python -m sandbox test` passes and `python -m sandbox play` works before you change anything. The `TODO(you)` comment inside `act` marks where to start improving it. Run `python -m sandbox play` to watch your agent take a seat against the built-in opponents, and `python -m sandbox` to play a seat yourself.
+The template already plays. `agent.py` ships a small working agent that plays its lowest-ranked legal card, so `python -m sandbox test` passes and `python -m sandbox play` works before you change anything. The `TODO(you)` comment inside `act` marks where to start improving it. Run `python -m sandbox play` to watch your agent play against the built-in opponents, and `python -m sandbox` to play yourself.
 
 ## Save work to GitHub
 

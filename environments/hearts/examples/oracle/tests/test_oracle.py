@@ -17,11 +17,11 @@ def _observation(legal: list[dict[str, int]]) -> dict:
     return {
         "action_mask": mask,
         "observation": {
-            "seat": 2,
+            "player": 2,
             "hand": tuple(legal),
             "current_trick": (
-                {"seat": 0, "card": {"suit": CLUBS, "rank": 10}},
-                {"seat": 1, "card": {"suit": CLUBS, "rank": 4}},
+                {"player": 0, "card": {"suit": CLUBS, "rank": 10}},
+                {"player": 1, "card": {"suit": CLUBS, "rank": 4}},
             ),
             "trick_leader": 0,
             "led_suit": CLUBS,

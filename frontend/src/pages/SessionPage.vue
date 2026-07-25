@@ -6,7 +6,7 @@
 
   The chrome is composed from small composables: useSessionSocket owns the socket and the state derived
   from its frames, useRendererMount owns the canvas, usePinning owns the pin toggle. Capabilities derive
-  from identity and mode: the owner of a human session controls the human slots and gets a live
+  from identity and mode: the owner of a human session controls the human players and gets a live
   sendAction; everyone else is a spectator (same renderer, no controls). Pause state reflects the
   backend echoes, never a local guess.
 
@@ -67,7 +67,7 @@ const seasonPlayable = ref<boolean | null>(null)
 // Submission id → season-wide anonymous number, so the blind attribution line reads the same
 // "Agent N" the watch picker and post-session rating panel show for the same agent.
 const anonymousNumbers = ref<Record<string, number>>({})
-// The recording header carries per-slot attribution (`players`); retained to show who played.
+// The recording header carries per-player attribution (`players`); retained to show who played.
 const header = ref<RecordingHeader | null>(null)
 // The last frame drawn, kept so the end-of-match leaderboard can read the terminal scores/overlay.
 // shallowRef: a StepState is a large value the card reads whole, not deep-reactive data.
@@ -78,19 +78,14 @@ const gameOverDismissed = ref(false)
 const isOwner = computed(
   () => viewerId.value !== undefined && row.value?.user_id === viewerId.value,
 )
-// The seat(s) this viewer occupied as a human, from the recording header's attribution. It must be the
-// one seat the human took, not every human-capable seat: the renderer reads `controlled[0]` as the
-// single controlled player, so passing all of `meta.human_players` would pin control to player 0 and lock a
-// human seated elsewhere out of play. The recording header's `players` map records which seat the human
-// occupies (`kind: 'human'`), so we narrow to that. Before the header arrives (or on an older header
-// without attribution) we return [] rather than the env's human-capable seats, so a human seated at
-// player_2 never briefly gets player_0's control affordances; by the time the renderer mounts (on the
-// header) the narrowed seat is known.
+// The recording header identifies which player this viewer controlled as a human. Use that attribution
+// instead of every human-capable player because the renderer controls one player at a time. Before the
+// header arrives, return [] so a human controlling player_2 never briefly gets player_0's controls.
 //
 // This is independent of run status on purpose: it is the viewer's *identity* in the match, which the
 // chat panel needs to keep badging their own lines "from you"/"to you" even on an ended session's
 // read-only history. Control (below) is what drops at end, not identity.
-const viewerSeats = computed<string[]>(() => {
+const viewerPlayers = computed<string[]>(() => {
   if (!(isOwner.value && row.value?.mode === 'human')) {
     return []
   }
@@ -98,13 +93,13 @@ const viewerSeats = computed<string[]>(() => {
   if (players === undefined) {
     return [] // Header not yet arrived: fail closed (see above).
   }
-  return Object.keys(players).filter((slot) => players[slot]?.kind === 'human')
+  return Object.keys(players).filter((playerId) => players[playerId]?.kind === 'human')
 })
-// The slots this viewer actively drives: their seats, but only while the session is live. An ended
-// session is read-only history, so control affordances (renderer input, sending, the decision-log slot
-// preference) drop even though the seat identity above persists.
-const controlledSlots = computed<string[]>(() =>
-  status.value === 'ended' ? [] : viewerSeats.value,
+// The players this viewer actively drives, but only while the session is live. An ended session is
+// read-only history, so control affordances (renderer input and sending) drop even though the player
+// identity above persists.
+const controlledPlayers = computed<string[]>(() =>
+  status.value === 'ended' ? [] : viewerPlayers.value,
 )
 const recordingId = computed(() => row.value?.recording_id ?? null)
 // Fail closed: anyone not confirmed an operator (including an unresolved identity) is treated as a
@@ -137,7 +132,7 @@ watch(attributionState, (state) => {
 const { noRenderer, aspectRatio, mount: mountRenderer, render: renderState } = useRendererMount({
   host: hostEl,
   meta,
-  controlledSlots,
+  controlledPlayers,
   sendAction: sendInput,
 })
 const {
@@ -172,34 +167,34 @@ const {
 })
 const { appendMessages, chatLog, completedOutcome, decisions, statusLabel, statusTone, toDecision } =
   useLiveFramePresentation({
-    controlledSlots,
+    viewerPlayers,
     status,
     paused,
     endReason,
   })
 const { pinned, busy: pinBusy, error: pinError, toggle: togglePin } = usePinning(recordingId)
 
-function sendInput(slot: string, action: unknown): void {
-  send({ kind: 'input', slot, action })
+function sendInput(playerId: string, action: unknown): void {
+  send({ kind: 'input', player: playerId, action })
 }
 
-// The chat panel mounts when the session's effective messaging block enables it — resolved once by the
+// The chat panel mounts when the session's effective messaging block enables it, resolved once by the
 // orchestrator from the metadata and the season override, persisted on the row so live and reopened
 // ended payloads agree. A season-silenced session shows no dead panel.
 const messagingEnabled = computed(() => (row.value?.messaging_enabled ?? 0) !== 0)
-// Sending is enabled only for the owner of a running human session who controls a seat; an ended or
+// Sending is enabled only for the owner of a running human session who controls a player; an ended or
 // spectated session's panel is read-only history.
 const chatSendable = computed(
-  () => row.value?.mode === 'human' && controlledSlots.value.length > 0 && status.value === 'running',
+  () => row.value?.mode === 'human' && controlledPlayers.value.length > 0 && status.value === 'running',
 )
 
-/** Forward a human chat message over the session socket as the pinned command with the controlled seat
+/** Forward a human chat message over the session socket as the pinned command with the controlled player
  *  filled in. There is no optimistic echo: the harness records it and the relay reflects it back on the
  *  recorded line, so the panel renders your own message the same way it renders everyone else's. */
 function sendChat(payload: { to: string | null; text: string }): void {
-  const slot = controlledSlots.value[0]
-  if (slot !== undefined) {
-    send({ kind: 'chat', slot, to: payload.to, text: payload.text })
+  const playerId = controlledPlayers.value[0]
+  if (playerId !== undefined) {
+    send({ kind: 'chat', player: playerId, to: payload.to, text: payload.text })
   }
 }
 
@@ -437,7 +432,7 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
               :blind="blindAttribution"
               :viewer-id="viewerId"
               :anonymous-numbers="anonymousNumbers"
-              :viewer-slots="viewerSeats"
+              :viewer-players="viewerPlayers"
               :sendable="chatSendable"
               :connected="connection !== 'reconnecting'"
               :message-cap="row?.message_cap ?? null"
@@ -462,7 +457,7 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
             :blind="blindAttribution"
             :viewer-id="viewerId"
             :anonymous-numbers="anonymousNumbers"
-            :viewer-slots="viewerSeats"
+            :viewer-players="viewerPlayers"
             :sendable="chatSendable"
             :connected="connection !== 'reconnecting'"
             :message-cap="row?.message_cap ?? null"

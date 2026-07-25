@@ -50,13 +50,13 @@ STRONG_HAND = [
 ]
 
 
-def _bidding_observation(hand: list[dict[str, int]], *, seat: int = 0) -> dict:
+def _bidding_observation(hand: list[dict[str, int]], *, player: int = 0) -> dict:
     mask = [1 if 52 <= action < 66 else 0 for action in range(66)]
     return {
         "action_mask": mask,
         "observation": {
-            "seat": seat,
-            "partner_seat": (seat + 2) % 4,
+            "player": player,
+            "partner_player": (player + 2) % 4,
             "phase": 0,
             "hand": tuple(hand),
             "bids": (14, 14, 14, 14),
@@ -76,7 +76,7 @@ def _following_observation(
     hand: list[dict[str, int]],
     legal: list[dict[str, int]],
     *,
-    seat: int = 2,
+    player: int = 2,
     leader: int = 1,
     leader_card: dict[str, int] = FIVE_OF_HEARTS,
 ) -> dict:
@@ -86,13 +86,13 @@ def _following_observation(
     return {
         "action_mask": mask,
         "observation": {
-            "seat": seat,
-            "partner_seat": (seat + 2) % 4,
+            "player": player,
+            "partner_player": (player + 2) % 4,
             "phase": 1,
             "hand": tuple(hand),
             "bids": (5, 5, 5, 5),
             "team_scores": [0, 0],
-            "current_trick": ({"seat": leader, "card": leader_card},),
+            "current_trick": ({"player": leader, "card": leader_card},),
             "last_trick": (),
             "last_trick_winner": 4,
             "trick_leader": leader,
@@ -122,31 +122,31 @@ def test_never_bids_nil_on_a_strong_hand():
 def test_cover_play_depends_on_the_partner_warning():
     legal = [THREE_OF_HEARTS, ACE_OF_HEARTS]
     hand = legal
-    follow = _following_observation(hand, legal, seat=2)
+    follow = _following_observation(hand, legal, player=2)
 
     # Warned by the partner's broadcast, it covers by winning the trick with the ace.
     covering = agent.Agent()
     covering.reset(0)
-    covering.act(_bidding_observation(STRONG_HAND, seat=2))  # a non-nil hand, so it can cover
+    covering.act(_bidding_observation(STRONG_HAND, player=2))  # a non-nil hand, so it can cover
     covering.chat([{"from": "player_0", "to": None, "text": "nil! cover me", "tick": 1}])
     assert covering.act(follow) == encode_play(ACE_OF_HEARTS)
 
     # With no warning, the same agent ducks with its lowest legal card.
     ducking = agent.Agent()
     ducking.reset(0)
-    ducking.act(_bidding_observation(STRONG_HAND, seat=2))
+    ducking.act(_bidding_observation(STRONG_HAND, player=2))
     ducking.chat([])
     assert ducking.act(follow) == encode_play(THREE_OF_HEARTS)
 
 
 def test_ignores_a_nil_warning_from_an_opponent():
-    # Seat 2's partner is seat 0; seat 1 is an opponent. An opponent shouting the same warning must
+    # Player 2's partner is player 0; player 1 is an opponent. An opponent shouting the same warning must
     # not steer the cover, so the agent still ducks with its lowest legal card.
     legal = [THREE_OF_HEARTS, ACE_OF_HEARTS]
-    follow = _following_observation(legal, legal, seat=2)
+    follow = _following_observation(legal, legal, player=2)
 
     a = agent.Agent()
     a.reset(0)
-    a.act(_bidding_observation(STRONG_HAND, seat=2))
+    a.act(_bidding_observation(STRONG_HAND, player=2))
     a.chat([{"from": "player_1", "to": None, "text": "nil! cover me", "tick": 1}])
     assert a.act(follow) == encode_play(THREE_OF_HEARTS)

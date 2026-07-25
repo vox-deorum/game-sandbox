@@ -10,7 +10,7 @@ import { formatSlot } from './format.js'
 export interface ChatEntry {
   tick: number
   from: string
-  /** Recipient slot id, or null for a broadcast. */
+  /** Recipient player ID, or null for a broadcast. */
   to: string | null
   text: string
 }
@@ -33,14 +33,14 @@ export function messageKey(entry: ChatEntry): string {
 
 /**
  * The badge for a message: the viewer's own send wins over the recipient's identity, then a targeted
- * line names its recipient by seat (`formatSlot`) so two seats sharing an agent label stay
- * distinguishable. On a replay `viewerSlots` is empty, so this is broadcast or `to {seat}`.
+ * line names its recipient by player (`formatSlot`) so two players sharing an agent label stay
+ * distinguishable. On a replay `viewerPlayers` is empty, so this is broadcast or `to {player}`.
  */
-export function messageBadge(entry: ChatEntry, viewerSlots: string[]): MessageBadge {
-  if (viewerSlots.includes(entry.from)) {
+export function messageBadge(entry: ChatEntry, viewerPlayers: string[]): MessageBadge {
+  if (viewerPlayers.includes(entry.from)) {
     return { variant: 'accent', text: 'from you' }
   }
-  if (entry.to !== null && viewerSlots.includes(entry.to)) {
+  if (entry.to !== null && viewerPlayers.includes(entry.to)) {
     return { variant: 'accent', text: 'to you' }
   }
   if (entry.to === null) {

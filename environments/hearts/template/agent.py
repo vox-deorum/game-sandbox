@@ -4,7 +4,7 @@ The template starts as a working agent: it plays the lowest-ranked card that is 
 Run ``python -m sandbox play`` to watch it and ``python -m sandbox test`` to check it; both work
 before you change anything. Your job starts at the ``TODO(you)`` comment inside ``act``.
 
-Hearts in one paragraph: four seats, follow suit if you can, you cannot lead a heart until one
+Hearts in one paragraph: four players, follow suit if you can, you cannot lead a heart until one
 has been played ("hearts broken"), the 2 of clubs leads the first trick, and no penalty cards
 land on that first trick. Every heart you take is worth 1 point and the queen of spades is 13;
 a LOWER total is better. The exception is "shooting the moon", taking *every* heart and the queen
@@ -59,7 +59,7 @@ class Agent:
     #     ...
 
     # Optional: a messaging hook (only used in environments with messaging enabled). Called
-    # on your turn with the messages addressed to your slot; return messages to send, or
+    # on your turn with the messages addressed to your player; return messages to send, or
     # nothing to stay silent.
     #
     # def chat(self, inbox: list[dict]) -> list[dict] | None:

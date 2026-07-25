@@ -17,13 +17,13 @@ def main(argv: list[str] | None = None) -> int:
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--seeds", type=int, nargs="+", help="explicit list of seeds")
     group.add_argument("--episodes", type=int, default=5, help="run seeds 0..N-1 (default 5)")
-    parser.add_argument("--seat", type=int, default=0, help="seat index to evaluate (default 0)")
+    parser.add_argument("--player", type=int, default=0, help="player index to evaluate (default 0)")
     args = parser.parse_args(argv)
 
     seeds = args.seeds if args.seeds is not None else list(range(args.episodes))
     scores: list[float] = []
     for seed in seeds:
-        score = run_headless(seed=seed, max_steps=None, seat=args.seat)
+        score = run_headless(seed=seed, max_steps=None, player=args.player)
         scores.append(score)
         print(f"seed {seed}: score {score:.2f}")
 

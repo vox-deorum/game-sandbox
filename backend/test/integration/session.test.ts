@@ -46,7 +46,7 @@ async function play(
   await ws.waitFor(() => ws.envelopes('session').some((e) => e.status === 'running'), 30_000)
 
   const flapTimer = opts.flap
-    ? setInterval(() => ws.send({ kind: 'input', slot: 'player_0', action: 1 }), 20)
+    ? setInterval(() => ws.send({ kind: 'input', player: 'player_0', action: 1 }), 20)
     : undefined
   // Collect a stream of states, stopping early if the episode terminates on its own.
   await ws

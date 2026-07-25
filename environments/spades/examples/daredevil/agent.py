@@ -25,7 +25,7 @@ from sandbox.cards import (
     hand_cards,
     is_bidding,
     legal_cards,
-    partner_seat,
+    partner_player,
     play,
     rank_of,
     suit_of,
@@ -50,7 +50,7 @@ class Agent:
     """Bid nil when the hand is safe, broadcast the dare, and cover a partner who broadcast one."""
 
     def reset(self, seed: int) -> None:
-        # The seat is restamped every turn from the observation so chat, which sees none, can name our
+        # The player is restamped every turn from the observation so chat, which sees none, can name our
         # partner; the nil flags and whether we have warned persist across the hand.
         self._partner: int | None = None
         self._me_nil = False
@@ -58,18 +58,18 @@ class Agent:
         self._warned = False
 
     def act(self, observation: Any) -> int:
-        self._partner = partner_seat(observation)
+        self._partner = partner_player(observation)
         if is_bidding(observation):
             return self._bid(observation)
         return self._play(observation)
 
     def chat(self, inbox: list[dict]) -> list[dict]:
         # Only our partner's broadcast tells us to cover. Opponents sit on the other side, so a nil
-        # warning from them is not ours to protect; keying the cover off the sender's seat stops an
-        # opponent shouting the same text from steering our play. Our partner is the seat across.
-        partner_slot = f"player_{self._partner}"
+        # warning from them is not ours to protect; keying the cover off the sender's player stops an
+        # opponent shouting the same text from steering our play. Our partner is the player across.
+        partner_player_id = f"player_{self._partner}"
         for item in inbox:
-            from_partner = item.get("from") == partner_slot
+            from_partner = item.get("from") == partner_player_id
             if from_partner and item.get("to") is None and item.get("text") == NIL_WARNING:
                 self._partner_nil = True
         if self._me_nil and not self._warned:

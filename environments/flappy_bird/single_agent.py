@@ -2,7 +2,7 @@
 
 No off-the-shelf converter exists in this direction — Shimmy adapts external suites *to*
 Gymnasium/PettingZoo, and PettingZoo's own conversions are AEC<->Parallel — so this small
-adapter is in-house by design. It lifts any single-agent ``gymnasium.Env`` into a one-slot
+adapter is in-house by design. It lifts any single-agent ``gymnasium.Env`` into a one-player
 AEC environment, so the harness only ever sees a PettingZoo interface and any single-agent
 game comes in with the same small adapter. It lives inside each single-agent env package as
 a sibling of that env's modules. The single agent id is ``player_0``, following the
@@ -27,12 +27,12 @@ import numpy as np
 from pettingzoo.utils import AgentSelector
 from pettingzoo.utils.env import AECEnv
 
-#: The id of the single slot every wrapped single-agent game exposes.
+#: The id of the single player every wrapped single-agent game exposes.
 DEFAULT_AGENT_ID = "player_0"
 
 
 class GymnasiumToAEC(AECEnv):
-    """Wrap a single-agent ``gymnasium.Env`` as a one-slot PettingZoo AEC environment."""
+    """Wrap a single-agent ``gymnasium.Env`` as a one-player PettingZoo AEC environment."""
 
     def __init__(
         self,
@@ -79,7 +79,7 @@ class GymnasiumToAEC(AECEnv):
         self.agent_selection = self._agent_selector.reset()
 
     def observe(self, agent: str) -> Any:
-        # The wrapped game is single-agent, so every slot observes the same latest frame.
+        # The wrapped game is single-agent, so every player observes the same latest frame.
         return np.array(self._last_obs, copy=True)
 
     def step(self, action: Any) -> None:

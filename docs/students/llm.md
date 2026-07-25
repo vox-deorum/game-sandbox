@@ -4,7 +4,7 @@ Game Sandbox can give your agent access to an OpenAI-compatible language model A
 
 Before requesting a development key, you need an active account on the course website and the ID of an enabled season whose submission window is open. The key stops working when submissions for that season close.
 
-You can use the same agent code on your computer and in an official session. On your computer, the code reads a season-specific development endpoint and key from `.env`. In an official session, Game Sandbox supplies a temporary endpoint and key for that agent slot. In both cases, your code requests one model tier: `small`, `medium`, or `large`.
+You can use the same agent code on your computer and in an official session. On your computer, the code reads a season-specific development endpoint and key from `.env`. In an official session, Game Sandbox supplies a temporary endpoint and key for that player. In both cases, your code requests one model tier: `small`, `medium`, or `large`.
 
 ## Set up development access
 
@@ -59,7 +59,7 @@ These are the only public model choices. Each season enables one or more tiers. 
 
 Your season may set different prices. The development-key response includes the enabled tiers in `models` and their applied prices in `cost_weights`.
 
-Each participant has a separate development allowance for each season. Development calls do not use an official session's allowance. During an official session, each agent slot receives a temporary key and its own allowance.
+Each participant has a separate development allowance for each season. Development calls do not use an official session's allowance. During an official session, each agent-controlled player receives a temporary key and its own allowance.
 
 Only a call that receives a successful model response and completes accounting deducts from the persistent token budget or creates a usage record. Server retries remain part of one logical request and create at most one record. If accounting fails, the API returns `meter_unavailable` and blocks further model calls until it recovers.
 

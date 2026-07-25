@@ -6,7 +6,7 @@ you can avoid — turned into three rules over the legal-move mask:
 - **Leading**, play your lowest card, so you are unlikely to win the trick.
 - **Following suit**, "duck": play the highest card that still stays *under* the card currently
   winning the trick (shedding a high card safely). If every card you could follow with would win,
-  play your lowest so a later seat can still overtake you.
+  play your lowest so a later player can still overtake you.
 - **Void** in the led suit, you cannot win the trick, so unload your most dangerous card — the
   queen of spades first, then your highest heart, then your highest card.
 
@@ -60,7 +60,7 @@ class Agent:
             if under:
                 # Stay under the current winner, shedding our highest safe card of the suit.
                 return play(max(under, key=rank_of))
-            # We cannot duck — keep our lowest so a later seat can still overtake us.
+            # We cannot duck. Keep our lowest so a later player can still overtake us.
             return play(min(followers, key=rank_of))
 
         # Void in the led suit: we cannot win this trick, so unload the most dangerous card.

@@ -3,8 +3,8 @@
 The renderer never sees the live :class:`~spades.env.SpadesEnv`; it draws from the per-step overlay
 produced here. This module reaches into ``env.state`` (a :class:`spades.rules.SpadesState`) and
 flattens it into a plain JSON-serializable dict (ints, bools, lists, dicts and ``None`` only), with
-every card turned into a semantic ``{"suit","rank"}`` object and every ``(seat, card)`` trick pair
-turned into a ``{"seat","card"}`` object, in play order. No numpy and no tuples survive, so the
+every card turned into a semantic ``{"suit","rank"}`` object and every ``(player, card)`` trick pair
+turned into a ``{"player","card"}`` object, in play order. No numpy and no tuples survive, so the
 result round-trips through ``json`` unchanged. All scoring questions are delegated to
 :mod:`spades.rules` so the overlay never disagrees with the environment.
 """
@@ -44,23 +44,23 @@ card_to_obj = _cu.card_to_obj
 
 
 def _trick_objs(trick: list[tuple[int, int]]) -> list[dict[str, Any]]:
-    """Return ``trick`` (``(seat, card)`` pairs) as play-ordered ``{"seat","card"}`` objects."""
-    return [{"seat": int(s), "card": card_to_obj(c)} for s, c in trick]
+    """Return ``trick`` (``(player, card)`` pairs) as play-ordered ``{"player","card"}`` objects."""
+    return [{"player": int(p), "card": card_to_obj(c)} for p, c in trick]
 
 
 def extract_overlay(env: Any) -> dict[str, Any]:
     """Return the per-step overlay dict from a live :class:`~spades.env.SpadesEnv`.
 
     The returned dict is fully JSON-serializable (ints, bools, lists, dicts, ``None``): cards
-    become ``{"suit","rank"}`` objects and trick pairs become play-ordered ``{"seat","card"}``
-    objects. It carries both the play state and everything the badges/score line draw: per-seat
-    ``bids`` (``-1`` until a seat has bid) and ``tricks_won``, and three views of the score for two
-    surfaces. The two-element ``team_scores`` feeds the browser renderer. The per-seat
+    become ``{"suit","rank"}`` objects and trick pairs become play-ordered ``{"player","card"}``
+    objects. It carries both the play state and everything the badges/score line draw: per-player
+    ``bids`` (``-1`` until a player has bid) and ``tricks_won``, and three views of the score for two
+    surfaces. The two-element ``team_scores`` feeds the browser renderer. The per-player
     ``display_scores`` and ``leaderboard_scores``
-    (each seat carrying its team's score, so partners share) feed the browser game-over standings,
-    which ranks seats by ``leaderboard_scores`` and shows ``display_scores``; the two are equal for
+    (each player carrying its team's score, so partners share) feed the browser game-over standings,
+    which ranks players by ``leaderboard_scores`` and shows ``display_scores``; the two are equal for
     Spades, kept as a pair so the overlay matches the Hearts shape that surface also consumes.
-    ``legal_cards``/``legal_bids`` are the phase-legal sets for the seat on turn, both empty once
+    ``legal_cards``/``legal_bids`` are the phase-legal sets for the player on turn, both empty once
     the hand is terminal, and are what the browser renderer greys from.
     """
     state = env.state
@@ -78,7 +78,7 @@ def extract_overlay(env: Any) -> dict[str, Any]:
         "last_trick": (None if state.last_trick is None else _trick_objs(state.last_trick)),
         "last_trick_winner": state.last_trick_winner,
         "turn": int(state.turn),
-        "turn_slot": env.possible_agents[state.turn],
+        "turn_player": env.possible_agents[state.turn],
         "trick_leader": int(state.trick_leader),
         "led_suit": rules.led_suit(state),
         "spades_broken": bool(state.spades_broken),

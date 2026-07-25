@@ -14,7 +14,7 @@ Every environment package must also declare `PUBLISHED_EXAMPLES`, a tuple of exa
 
 The top-level `templates/` directory now contains only `templates/base/`. Generated `sandbox/env/`, `sandbox/harness/`, and shared helper files exist only in a composed tree under `build/`.
 
-Compose renders an environment's declared `EnvParameter` and `EnvParameterChoice` values into the generated `sandbox.env` registration. It does not copy the synthesized public `seats` declaration back into `EnvironmentMeta`, because slot bounds remain its source of truth.
+Compose renders an environment's declared `EnvParameter` and `EnvParameterChoice` values into the generated `sandbox.env` registration. It does not copy the synthesized public `players` or `seat_plan` declaration back into `EnvironmentMeta`, because the layout remains its source of truth.
 
 ## Helpers and pin tests
 

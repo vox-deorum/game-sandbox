@@ -31,9 +31,9 @@ from sandbox.cards import (
     legal_bids,
     legal_cards,
     make_card,
-    my_seat,
+    my_player,
     partner_of,
-    partner_seat,
+    partner_player,
     play,
     rank_of,
     spades_broken,
@@ -62,15 +62,15 @@ def test_encoding_matches_the_rules_engine():
         assert bid(n) == BID_OFFSET + n
         assert bid_to_action(n) == rules.bid_to_action(n)
         assert action_to_bid(bid_to_action(n)) == n
-    # Partners sit across the table and share a team; the seat itself never partners itself.
-    for seat in range(4):
-        partner = partner_of(seat)
-        assert partner != seat
-        assert rules.team_of(partner) == rules.team_of(seat)
+    # Partners sit across the table and share a team; the player itself never partners itself.
+    for player in range(4):
+        partner = partner_of(player)
+        assert partner != player
+        assert rules.team_of(partner) == rules.team_of(player)
 
 
 def test_observation_accessors_match_the_raw_observation():
-    env = make_env({"seats": 4})
+    env = make_env({"players": 4})
     try:
         env.reset(seed=0)
         # March the whole hand with the environment default (a suggested bid, then lowest legal
@@ -83,17 +83,19 @@ def test_observation_accessors_match_the_raw_observation():
                 env.step(None)
                 continue
             state = env.state
-            seat = my_seat(observation)
-            assert seat == env.possible_agents.index(agent)
-            assert partner_seat(observation) == (seat + 2) % 4
+            player = my_player(observation)
+            assert player == env.possible_agents.index(agent)
+            assert partner_player(observation) == (player + 2) % 4
 
             # Phase, and the phase-split legal sets, agree with the rules engine.
             assert is_bidding(observation) is rules.in_bidding(state)
             if rules.in_bidding(state):
-                assert legal_bids(observation) == rules.legal_bids(state, seat)
+                assert legal_bids(observation) == rules.legal_bids(state, player)
                 assert legal_cards(observation) == []
             else:
-                assert legal_cards(observation) == [card_to_obj(c) for c in rules.legal_actions(state, seat)]
+                assert legal_cards(observation) == [
+                    card_to_obj(c) for c in rules.legal_actions(state, player)
+                ]
                 assert legal_bids(observation) == []
 
             # Scalar / list state accessors match the raw observation. The engine's bids already use
@@ -113,12 +115,12 @@ def test_observation_accessors_match_the_raw_observation():
                 if not rules.in_bidding(state):
                     for card in legal_cards(observation):
                         raw_card = play(card)
-                        expected = rules.trick_winner([*state.current_trick, (seat, raw_card)]) == seat
+                        expected = rules.trick_winner([*state.current_trick, (player, raw_card)]) == player
                         assert beats_current_winner(observation, card) is expected
             else:
                 assert trick_winner_so_far(observation) is None
 
-            # The completed-trick readers mirror the recorded last trick (seat -> card object) and
+            # The completed-trick readers mirror the recorded last trick (player -> card object) and
             # winner.
             if state.last_trick is None:
                 assert last_trick(observation) == []

@@ -76,7 +76,7 @@ class TemplateEnvironmentSpec:
     inner_package: str
     modules: tuple[str, ...]
     default_action: str = "default_action"
-    player_slot: str = "player_0"
+    player_id: str = "player_0"
 
 
 # Shared, import-self-contained sandbox helpers generated from the env source into each composed

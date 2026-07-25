@@ -69,7 +69,7 @@ This agent cannot make an illegal move because it only chooses from `legal_cards
 Run the agent from the template folder:
 
 ```console
-python -m sandbox play    # watch it take a seat, in a window
+python -m sandbox play    # watch it play a player, in a window
 python -m sandbox eval    # play several seeded games and report the mean score
 python -m sandbox test    # run the checks, which pass before you change anything
 ```
@@ -114,11 +114,11 @@ The module provides these helpers and constants:
 | `card_name(card)` | Readable text such as `"Q of spades"` |
 | `card_points(card)` | `13` for the queen of spades, `1` for a heart, or `0` otherwise |
 | `led_suit(observation)` | Led suit ID, or `None` when you are leading |
-| `current_trick(observation)` | `(seat, card)` pairs in the order played |
-| `trick_winner_so_far(observation)` | The currently winning `(seat, card)` pair, or `None` before any card is played |
+| `current_trick(observation)` | `(player, card)` pairs in the order played |
+| `trick_winner_so_far(observation)` | The currently winning `(player, card)` pair, or `None` before any card is played |
 | `hearts_broken(observation)` | `True` after hearts are broken, otherwise `False` |
-| `my_seat(observation)` | Your seat ID |
-| `scores(observation)` | Four running penalty scores indexed by seat |
+| `my_player(observation)` | Your player ID |
+| `scores(observation)` | Four running penalty scores indexed by player |
 | `CLUBS`, `DIAMONDS`, `SPADES`, `HEARTS` | Names for suit IDs `0`, `1`, `2`, and `3` |
 | `TWO_OF_CLUBS`, `QUEEN_OF_SPADES` | The card objects `{"suit": 0, "rank": 2}` and `{"suit": 2, "rank": 12}` |
 
@@ -164,7 +164,7 @@ Your `act` method receives a dictionary with two keys:
 ```text
 observation
 ├── "action_mask"    52 entries that say which card IDs are legal
-└── "observation"    an object with your hand, the trick, the seats, and the scores
+└── "observation"    an object with your hand, the trick, the players, and the scores
 ```
 
 The top-level `action_mask` is a 52-entry NumPy array indexed by card ID. `1` means you may play that card now, and `0` means you may not. `legal_cards` reads this array for you.
@@ -174,32 +174,32 @@ Everything else is under the `"observation"` key and uses meaningful structures.
 | Field | Shape | Values and meaning |
 | --- | --- | --- |
 | `hand` | sequence of cards | The card objects you are holding, in the order dealt. Grows shorter as the hand plays out; some may still be illegal this turn. |
-| `current_trick` | sequence of `{seat, card}` | The cards played to the current trick so far, in play order (the leader first). Empty when you are leading a fresh trick. |
-| `trick_leader` | `0..3` | The seat that led the current trick. |
+| `current_trick` | sequence of `{player, card}` | The cards played to the current trick so far, in play order (the leader first). Empty when you are leading a fresh trick. |
+| `trick_leader` | `0..3` | The player that led the current trick. |
 | `led_suit` | `0..4` | `0` clubs, `1` diamonds, `2` spades, `3` hearts; `4` means no card has been led yet because you are starting the trick. |
 | `hearts_broken` | `0` or `1` | `0` means no heart has been played on an earlier trick; `1` means hearts have been broken. |
-| `seat` | `0..3` | Your own seat ID. |
-| `scores` | length-4 array | Running penalty points indexed by seat. Each value is from `0` through `26`, and lower is better. |
+| `player` | `0..3` | Your own player ID. |
+| `scores` | length-4 array | Running penalty points indexed by player. Each value is from `0` through `26`, and lower is better. |
 
-Read these through `observation["observation"]`, for example `observation["observation"]["seat"]`, or let the helpers do it: `hand_cards`, `current_trick`, `led_suit`, `my_seat`, and `scores` each return one of these fields as plain Python values.
+Read these through `observation["observation"]`, for example `observation["observation"]["player"]`, or let the helpers do it: `hand_cards`, `current_trick`, `led_suit`, `my_player`, and `scores` each return one of these fields as plain Python values.
 
-#### How seat numbers work
+#### How player numbers work
 
-Seat IDs label players rather than fixed screen positions. Seat `0` controls `player_0`, seat `1` controls `player_1`, and so on. Turns move clockwise:
+Player IDs label the PettingZoo positions rather than fixed screen positions. Player `0` controls `player_0`, player `1` controls `player_1`, and so on. Turns move clockwise. A platform **seat** is a separate assignment unit that currently covers one player in Hearts:
 
 ```text
 0 → 1 → 2 → 3 → 0
 ```
 
-The viewer rotates the table to place the player being watched at the bottom. From that view, the next seat is on the left, the following seat is at the top, and the previous seat is on the right. Seat `0` can therefore appear at any side of the screen.
+The viewer rotates the table to place the player being watched at the bottom. From that view, the next player is on the left, the following player is at the top, and the previous player is on the right. Player `0` can therefore appear at any side of the screen.
 
-Suppose `seat` is `2`. Your agent controls seat 2, which the viewer places at the bottom. Seat 3 appears on the left, seat 0 at the top, and seat 1 on the right. If `scores` is `[3, 0, 5, 1]`, then seat 0 has 3 penalty points, seat 1 has 0, your seat 2 has 5, and seat 3 has 1.
+Suppose `player` is `2`. Your agent controls player 2, which the viewer places at the bottom. Player 3 appears on the left, player 0 at the top, and player 1 on the right. If `scores` is `[3, 0, 5, 1]`, then player 0 has 3 penalty points, player 1 has 0, your player 2 has 5, and player 3 has 1.
 
-`current_trick` carries absolute seat IDs too. If it is `[{"seat": 0, "card": {"suit": 1, "rank": 4}}, {"seat": 1, "card": {"suit": 1, "rank": 13}}]`, then seat 0 led the four of diamonds and seat 1 followed with the king of diamonds; seats 2 and 3 have not played yet. Because the list is already in play order, its first entry is the seat named by `trick_leader`.
+`current_trick` carries absolute player IDs too. If it is `[{"player": 0, "card": {"suit": 1, "rank": 4}}, {"player": 1, "card": {"suit": 1, "rank": 13}}]`, then player 0 led the four of diamonds and player 1 followed with the king of diamonds; players 2 and 3 have not played yet. Because the list is already in play order, its first entry is the player named by `trick_leader`.
 
 ## Time limits
 
-Hearts is turn-based, so moves have no fixed delay between them. Each call to `act` has a 1-second limit, and the agent may use up to 120 seconds of measured computation during one game. If `act` returns late, the environment plays the legal card with the lowest rank. When several cards have that rank, it chooses the lower suit ID. A human-controlled seat has 60 seconds to move. See [Time limits](../../docs/students/agent-interface.md#time-limits) for how these limits are measured and enforced.
+Hearts is turn-based, so moves have no fixed delay between them. Each call to `act` has a 1-second limit, and the agent may use up to 120 seconds of measured computation during one game. If `act` returns late, the environment plays the legal card with the lowest rank. When several cards have that rank, it chooses the lower suit ID. A human-controlled player has 60 seconds to move. See [Time limits](../../docs/students/agent-interface.md#time-limits) for how these limits are measured and enforced.
 
 ## Your first improvement
 

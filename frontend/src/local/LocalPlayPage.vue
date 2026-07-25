@@ -27,20 +27,20 @@ const gameOverDismissed = ref(false)
 const started = ref(false)
 const startRequested = ref(false)
 
-const controlledSlots = computed(() =>
+const controlledPlayers = computed(() =>
   Object.entries(header.value?.players ?? {})
     .filter(([, player]) => player.kind === 'human')
-    .map(([slot]) => slot),
+    .map(([playerId]) => playerId),
 )
 
-function sendInput(slot: string, action: unknown): void {
-  send({ kind: 'input', slot, action })
+function sendInput(playerId: string, action: unknown): void {
+  send({ kind: 'input', player: playerId, action })
 }
 
 const { noRenderer, aspectRatio, mount: mountRenderer, render: renderState } = useRendererMount({
   host: hostEl,
   meta,
-  controlledSlots,
+  controlledPlayers,
   sendAction: sendInput,
 })
 const {
@@ -72,7 +72,7 @@ const {
 })
 const { appendMessages, chatLog, completedOutcome, decisions, statusLabel, statusTone, toDecision } =
   useLiveFramePresentation({
-    controlledSlots,
+    viewerPlayers: controlledPlayers,
     status,
     paused,
     endReason,
@@ -177,7 +177,7 @@ onMounted(async () => {
           v-if="messagingEnabled"
           :entries="chatLog"
           :players="header?.players"
-          :viewer-slots="controlledSlots"
+          :viewer-players="controlledPlayers"
         />
         <DecisionLog v-else :entries="decisions" />
       </template>
@@ -195,7 +195,7 @@ onMounted(async () => {
           <ChatPanel
             :entries="chatLog"
             :players="header?.players"
-            :viewer-slots="controlledSlots"
+            :viewer-players="controlledPlayers"
           />
         </details>
       </template>

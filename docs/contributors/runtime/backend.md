@@ -85,7 +85,7 @@ The record sink commits a call before the completion is returned. Recording tele
 
 Public recording telemetry exposes metadata and authoritative budget costs. Accepted requests and canonical completions are returned only to an operator or the current owner of the controlling submission. Deleting that submission retains public telemetry and costs, but removes the former owner's body access. Retained recording metadata keeps the external telemetry queryable; cleanup reclaims an execution scope only when no retained recording still references it.
 
-Workflow creation stores a fully resolved snapshot of the official LLM policy. The runner uses that snapshot for every match, including enabled model tiers, upstream model mappings, prices, and per-slot limits. When an LLM-enabled session or workflow exits, the finalizer blocks new requests, drains or aborts authenticated requests, and waits for their reservations to settle. Only then does it aggregate or delete telemetry, remove relay networking, and complete the lifecycle.
+Workflow creation stores a fully resolved snapshot of the official LLM policy. The runner uses that snapshot for every match, including enabled model tiers, upstream model mappings, prices, and per-player limits. When an LLM-enabled session or workflow exits, the finalizer blocks new requests, drains or aborts authenticated requests, and waits for their reservations to settle. Only then does it aggregate or delete telemetry, remove relay networking, and complete the lifecycle.
 
 ## Static frontend
 
@@ -185,7 +185,7 @@ GitHub's numeric provider account id is not a public profile handle. The GitHub 
 
 The canonical registry lives in Python. `scripts/generate.py` writes committed `src/generated/environments.json`, and the generated-code check prevents drift.
 
-`environments.ts` parses the artifact once through the shared `EnvironmentMeta` guard. The API serves the metadata, and the orchestrator reads slot, pace, and timeout settings from the same object.
+`environments.ts` parses the artifact once through the shared `EnvironmentMeta` guard. The API serves the metadata, and the orchestrator reads layout, player, pace, and timeout settings from the same object.
 
 ## Submission pipeline
 

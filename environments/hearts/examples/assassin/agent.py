@@ -9,7 +9,7 @@ as possible, and to draw the queen out of opponents' hands by leading spades:
   has to come down; if you hold no such spade, lead your lowest card instead.
 - **Following suit**, shed your highest card that still stays under the card winning the trick
   (dumping the king or ace of spades safely when spades are led); if every card you hold would win,
-  play your lowest so a later seat can still overtake you.
+  play your lowest so a later player can still overtake you.
 - **Void** in the led suit, you cannot win, so unload your single most dangerous card: the queen of
   spades first, then the ace or king of spades, then your highest heart, then your highest card.
 
@@ -74,7 +74,7 @@ class Agent:
             if under:
                 # Stay under the winner, shedding our highest safe card (a high spade when led).
                 return play(max(under, key=rank_of))
-            # We cannot duck; keep our lowest so a later seat can still overtake us.
+            # We cannot duck; keep our lowest so a later player can still overtake us.
             return play(min(followers, key=rank_of))
 
         # Void: dump the most dangerous card, queen and high spades first.

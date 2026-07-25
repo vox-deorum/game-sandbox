@@ -4,7 +4,7 @@ The template starts as a working agent: it bids one trick, then always plays its
 legal card. Run ``python -m sandbox play`` to watch it and ``python -m sandbox test`` to check it;
 both work before you change anything. Your job starts at the ``TODO(you)`` comment inside ``act``.
 
-Spades in one paragraph: four seats in two partnerships, you and the seat across from you (seat
+Spades in one paragraph: four players in two partnerships, you and the player across from you (player
 ``(you + 2) % 4``) are a team, against the other two. A hand has two phases. First everyone **bids**
 the number of tricks they expect to take, an integer ``0..13`` where ``0`` is *nil* (a promise to
 take none, worth a hundred points won or lost). Then thirteen **tricks** are played: follow the led
@@ -71,12 +71,12 @@ class Agent:
 
     # Optional: messaging. Spades enables it, so you may talk to the table. On your turn, right
     # after act and before the trick resolves, the harness calls chat with your inbox: a list of
-    # {"from": slot, "to": slot_or_None, "text": str, "tick": int} messages sent to you since your
-    # last turn. Return a list of {"to": slot_or_None, "text": str} to send ("to": None broadcasts
-    # to the whole table, a slot id sends only to that seat), with at most one message per recipient
+    # {"from": player, "to": player_or_None, "text": str, "tick": int} messages sent to you since your
+    # last turn. Return a list of {"to": player_or_None, "text": str} to send ("to": None broadcasts
+    # to the whole table, a player id sends only to that player), with at most one message per recipient
     # plus one broadcast per turn. Text is plain and capped at 120 Unicode code points. Your partner
-    # is the seat across, player_((your_seat + 2) % 4); cards.partner_seat(observation) returns that
-    # seat index during act. Every message is recorded and shown in replays, so nothing you send is
+    # is the player across, player_((your_player + 2) % 4); cards.partner_player(observation) returns that
+    # player index during act. Every message is recorded and shown in replays, so nothing you send is
     # ever secret. Return nothing to stay silent.
     #
     # def chat(self, inbox: list[dict]) -> list[dict] | None:

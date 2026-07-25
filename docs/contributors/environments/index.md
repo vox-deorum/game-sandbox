@@ -56,4 +56,4 @@ The environment directories are the source of registration data. `npm run sync:e
 
 It needs no backend, Docker, or external network connection. `mode` is `human` by default, `agent` to watch the bundled example agent, or `watch` to use the built-in baseline.
 
-Every mode starts paused at the first frame. Use Start when ready, then use the shared pause, resume, and stop controls. Pass `--seat` for a multi-slot seat or `--agent-repo <path>` for an agent repository with a `manifest.json`.
+Every mode starts paused at the first frame. Use Start when ready, then use the shared pause, resume, and stop controls. Pass `--seat` to select a seat from the environment's resolved layout or `--agent-repo <path>` for an agent repository with a `manifest.json`. Each current seat covers one player. A later environment plan may assign several players to one seat.

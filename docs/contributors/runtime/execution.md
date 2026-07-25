@@ -135,7 +135,8 @@ Recording lines pass through unchanged into the recording. Event envelopes carry
 Inbound commands are:
 
 ```json
-{"kind":"input","slot":"player_0","action":1}
+{"kind":"input","player":"player_0","action":1}
+{"kind":"chat","player":"player_0","to":null,"text":"hello"}
 {"kind":"pause"}
 {"kind":"resume"}
 {"kind":"stop"}
@@ -158,7 +159,7 @@ When a browser attaches, the backend immediately sends the buffered header, late
 
 The browser sends the same command envelopes used on the container side. The backend validates shape and authority, then forwards without interpreting environment actions.
 
-Only the session owner can issue commands. Input also requires human mode and a human-capable slot. A slow socket is dropped instead of blocking the relay.
+Only the session owner can issue commands. Input also requires human mode and a human-capable player. A slow socket is dropped instead of blocking the relay.
 
 ## Orchestrator lifecycle
 
@@ -172,7 +173,7 @@ Only the session owner can issue commands. Input also requires human mode and a 
 6. Launch the container.
 7. Relay output through `LiveSession`.
 
-The session configuration includes a `players` map for recording attribution. Human slots name the session owner, submitted slots name the submission and owner, and remaining agent slots name the built-in agent.
+The session configuration includes a `players` map for recording attribution. Human players name the session owner, submitted players name the submission and owner, and remaining agent players name the built-in agent.
 
 Every exit path enters the same idempotent finalizer. The first termination reason wins.
 

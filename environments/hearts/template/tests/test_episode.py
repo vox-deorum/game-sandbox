@@ -1,4 +1,4 @@
-"""Environment-layer full-episode coverage for the shared multi-seat play loop."""
+"""Environment-layer full-episode coverage for the shared multi-player play loop."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ def test_cards_keeps_conversion_helpers_in_its_wildcard_api():
 
 
 def test_template_play_loop_completes_a_bounded_episode():
-    env = make_env({"seats": 4})
+    env = make_env({"players": 4})
     started = time.monotonic()
     try:
         score = play_episode(FirstLegalAgent(), env, seed=SEED)

@@ -9,8 +9,8 @@
  *
  * Outbound (container → backend → browser) this stage defines one envelope kind, `result`, plus the
  * backend-originated `session` status frame and the relayed `pause`/`resume` echoes. Inbound
- * (browser → backend → container) the command envelopes are `input` (with a slot and action),
- * `pause`, `resume`, `stop`, and `chat` (a human message: a slot, a recipient `to` or null for a
+ * (browser → backend → container) the command envelopes are `input` (with a player and action),
+ * `pause`, `resume`, `stop`, and `chat` (a human message: a player, a recipient `to` or null for a
  * broadcast, and plain text). The backend validates a command's shape and the sender's authority,
  * then forwards it, and never interprets an action, because the container is authoritative.
  *
@@ -25,8 +25,8 @@ export const SESSION_KIND = 'session'
 
 /** A validated inbound command, ready to forward to the container or echo to clients. */
 export type Command =
-  | { kind: 'input'; slot: string; action: unknown }
-  | { kind: 'chat'; slot: string; to: string | null; text: string }
+  | { kind: 'input'; player: string; action: unknown }
+  | { kind: 'chat'; player: string; to: string | null; text: string }
   | { kind: 'pause' }
   | { kind: 'resume' }
   | { kind: 'stop' }
@@ -94,17 +94,17 @@ export function parseCommand(raw: string): CommandParse {
   }
   switch (object.kind) {
     case 'input': {
-      if (typeof object.slot !== 'string') {
-        return { ok: false, reason: 'input command needs a string slot' }
+      if (typeof object.player !== 'string') {
+        return { ok: false, reason: 'input command needs a string player' }
       }
       if (!hasOwn(object, 'action')) {
         return { ok: false, reason: 'input command needs an action' }
       }
-      return { ok: true, command: { kind: 'input', slot: object.slot, action: object.action } }
+      return { ok: true, command: { kind: 'input', player: object.player, action: object.action } }
     }
     case 'chat': {
-      if (typeof object.slot !== 'string') {
-        return { ok: false, reason: 'chat command needs a string slot' }
+      if (typeof object.player !== 'string') {
+        return { ok: false, reason: 'chat command needs a string player' }
       }
       if (object.to !== null && typeof object.to !== 'string') {
         return { ok: false, reason: 'chat command needs a string or null to' }
@@ -114,7 +114,7 @@ export function parseCommand(raw: string): CommandParse {
       }
       return {
         ok: true,
-        command: { kind: 'chat', slot: object.slot, to: object.to, text: object.text },
+        command: { kind: 'chat', player: object.player, to: object.to, text: object.text },
       }
     }
     case 'pause':

@@ -26,11 +26,11 @@ class Baseline:
 
 
 def _mean_score(policy) -> float:
-    # play_episode seats `policy` against three built-in opponents and returns its leaderboard
+    # play_episode matches `policy` against three built-in opponents and returns its leaderboard
     # score (higher is better: the negated penalty total).
     scores: list[float] = []
     for seed in _SEEDS:
-        env = make_env({"seats": 4})
+        env = make_env({"players": 4})
         try:
             scores.append(play_episode(policy, env, seed=seed))
         finally:
@@ -39,6 +39,6 @@ def _mean_score(policy) -> float:
 
 
 def test_duck_takes_fewer_points_than_the_baseline():
-    # Same deals, same opponents, only seat 0 differs: the duck heuristic should out-score the
+    # Same deals, same opponents, only player 0 differs: the duck heuristic should out-score the
     # lowest-legal-card baseline it replaces (a higher leaderboard score means fewer points taken).
     assert _mean_score(agent.Agent()) > _mean_score(Baseline()) + 1.0

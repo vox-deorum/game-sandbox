@@ -231,7 +231,7 @@ function readOverlay(state: StepState): Overlay {
   }
 }
 
-/** The cumulative score for the human slot, the one number that matters in the HUD. */
+/** The cumulative score for the human player, the one number that matters in the HUD. */
 function readScore(state: StepState): number {
   return num(state.agents?.player_0?.score, 0)
 }
