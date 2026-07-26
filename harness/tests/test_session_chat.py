@@ -1,7 +1,7 @@
 """The chat loop integration: hook order, next-turn delivery, budgets, and the human queue.
 
-Own multi-seat fixtures so ``test_session.py`` stays untouched. A round-robin AEC env cycles the
-seats for a fixed number of ticks, so a seat gets several turns and a message sent on tick T can be
+Own multiplayer fixtures so ``test_session.py`` stays untouched. A round-robin AEC env cycles the
+players for a fixed number of ticks, so a player gets several turns and a message sent on tick T can be
 observed on the recipient's *next* turn. All on ``ManualClock``.
 """
 
@@ -30,14 +30,14 @@ from game_sandbox_harness.session import (
 
 
 class RoundRobinEnv:
-    """An N-seat round-robin AEC env that lives for ``n_ticks`` steps, then terminates every seat.
+    """An N-player round-robin AEC env that lives for ``n_ticks`` steps, then terminates every player.
 
     The observation is the tick index. An optional ``step_log`` records ``("step",)`` on each real
     step so a test can prove the environment stepped between ``chat`` and ``learn``.
     """
 
-    def __init__(self, seats: list[str], n_ticks: int, step_log: list[Any] | None = None) -> None:
-        self.possible_agents = list(seats)
+    def __init__(self, players: list[str], n_ticks: int, step_log: list[Any] | None = None) -> None:
+        self.possible_agents = list(players)
         self._n = n_ticks
         self._log = step_log
 
@@ -76,7 +76,7 @@ class RoundRobinEnv:
 
 
 def make_chat_entry(
-    seats: tuple[str, ...] = ("player_0", "player_1"),
+    players: tuple[str, ...] = ("player_0", "player_1"),
     n_ticks: int = 4,
     *,
     messaging: bool = True,
@@ -87,8 +87,8 @@ def make_chat_entry(
         env_id="chat-fake",
         display_name="Chat Fake",
         description="A deterministic round-robin fake with messaging.",
-        layout=PlayerBounds(len(seats), len(seats)),
-        human_players=seats,
+        layout=PlayerBounds(len(players), len(players)),
+        human_players=players,
         human_timeout_ms=None,
         recommended_episode_ticks=n_ticks,
         pace_interval_ms=None,
@@ -102,7 +102,7 @@ def make_chat_entry(
     )
     return EnvironmentEntry(
         meta=meta,
-        make=lambda _parameters: RoundRobinEnv(list(seats), n_ticks, step_log),
+        make=lambda _parameters: RoundRobinEnv(list(players), n_ticks, step_log),
         default_action=lambda env, player_id: 0,
         overlay=None,
     )
@@ -197,7 +197,7 @@ class QueueSource:
 
 def test_hook_order_is_act_then_chat_then_env_step_then_learn():
     log: list[Any] = []
-    entry = make_chat_entry(seats=("player_0",), n_ticks=2, step_log=log)
+    entry = make_chat_entry(players=("player_0",), n_ticks=2, step_log=log)
     run_episode(
         entry,
         {"player_0": AgentPlayer(HookOrderAgent(log))},
@@ -219,7 +219,7 @@ def test_message_is_delivered_next_turn_never_on_the_sending_tick():
     # does not act then); it sees it on its own next turn, tagged with the sending tick.
     sender = ChattyAgent([[{"to": "player_1", "text": "hi partner"}]])
     receiver = ChattyAgent()
-    entry = make_chat_entry(seats=("player_0", "player_1"), n_ticks=4)
+    entry = make_chat_entry(players=("player_0", "player_1"), n_ticks=4)
     run_episode(
         entry,
         {"player_0": AgentPlayer(sender), "player_1": AgentPlayer(receiver)},
@@ -233,11 +233,11 @@ def test_message_is_delivered_next_turn_never_on_the_sending_tick():
     assert all(item == [] for item in sender.inboxes)
 
 
-def test_broadcast_reaches_every_other_seat_but_not_the_sender():
+def test_broadcast_reaches_every_other_player_but_not_the_sender():
     sender = ChattyAgent([[{"to": None, "text": "table!"}]])
     b = ChattyAgent()
     c = ChattyAgent()
-    entry = make_chat_entry(seats=("player_0", "player_1", "player_2"), n_ticks=6)
+    entry = make_chat_entry(players=("player_0", "player_1", "player_2"), n_ticks=6)
     run_episode(
         entry,
         {
@@ -259,12 +259,12 @@ def test_broadcast_reaches_every_other_seat_but_not_the_sender():
 
 
 def test_chatless_agent_is_never_called_and_charged_nothing(tmp_path: Path):
-    # player_1 is chat-less; player_0 sends it a message every one of its turns. The chat-less seat's
+    # player_1 is chat-less; player_0 sends it a message every one of its turns. The chat-less player's
     # recorded steps carry no chat_ms, and its inbox is drained (never accumulated) on every turn,
     # because the loop calls drain unconditionally before the has_chat check.
     sender = ChattyAgent([[{"to": "player_1", "text": "a"}], [{"to": "player_1", "text": "b"}]])
     store = FolderRecordingStore(tmp_path)
-    entry = make_chat_entry(seats=("player_0", "player_1"), n_ticks=4)
+    entry = make_chat_entry(players=("player_0", "player_1"), n_ticks=4)
     run_episode(
         entry,
         {"player_0": AgentPlayer(sender), "player_1": AgentPlayer(SilentAgent())},
@@ -288,7 +288,7 @@ def test_chat_ms_lands_in_recorded_timing(tmp_path: Path):
     clock = ManualClock()
     sender = ChattyAgent([[{"to": "player_1", "text": "x"}]], clock=clock, cost_ms=7)
     store = FolderRecordingStore(tmp_path)
-    entry = make_chat_entry(seats=("player_0", "player_1"), n_ticks=2)
+    entry = make_chat_entry(players=("player_0", "player_1"), n_ticks=2)
     run_episode(
         entry,
         {"player_0": AgentPlayer(sender), "player_1": AgentPlayer(ChattyAgent())},
@@ -303,11 +303,11 @@ def test_chat_ms_lands_in_recorded_timing(tmp_path: Path):
     assert first["agents"]["player_0"]["timing"]["chat_ms"] == 7
 
 
-def test_chat_that_busts_the_episode_limit_charges_the_seat():
+def test_chat_that_busts_the_episode_limit_charges_the_player():
     clock = ManualClock()
     # Each chat costs 800ms; the cumulative budget is 2000ms, so the third turn trips the limit.
     slow = ChattyAgent(clock=clock, cost_ms=800)
-    entry = make_chat_entry(seats=("player_0",), n_ticks=10)
+    entry = make_chat_entry(players=("player_0",), n_ticks=10)
     result = run_episode(
         entry,
         {"player_0": AgentPlayer(slow)},
@@ -330,7 +330,7 @@ def test_chat_crash_sets_failed_player():
         def chat(self, inbox: Any) -> list:
             raise RuntimeError("boom")
 
-    entry = make_chat_entry(seats=("player_0",), n_ticks=3)
+    entry = make_chat_entry(players=("player_0",), n_ticks=3)
     episode = Episode(
         entry,
         {"player_0": AgentPlayer(CrashingChat())},
@@ -349,7 +349,7 @@ def test_chat_crash_sets_failed_player():
 
 def test_action_source_is_not_implicitly_used_as_a_message_source():
     source = QueueSource([{"to": None, "text": "must stay queued"}])
-    entry = make_chat_entry(seats=("player_0",), n_ticks=1)
+    entry = make_chat_entry(players=("player_0",), n_ticks=1)
 
     run_episode(
         entry,
@@ -363,12 +363,12 @@ def test_action_source_is_not_implicitly_used_as_a_message_source():
 
 
 def test_human_queue_is_drained_once_per_stepped_tick_and_delivered_next(tmp_path: Path):
-    # A human seat (player_1) queues a message; it is drained on the tick player_0 acts (not player_1's
+    # A human player (player_1) queues a message; it is drained on the tick player_0 acts (not player_1's
     # turn), recorded there, and delivered to the agent on the agent's next turn.
     receiver = ChattyAgent()
     source = QueueSource([{"to": "player_0", "text": "from the human"}])
     store = FolderRecordingStore(tmp_path)
-    entry = make_chat_entry(seats=("player_0", "player_1"), n_ticks=4)
+    entry = make_chat_entry(players=("player_0", "player_1"), n_ticks=4)
     run_episode(
         entry,
         {
@@ -397,7 +397,7 @@ def test_agent_batch_is_ordered_before_the_human_batch_in_one_tick(tmp_path: Pat
     sender = ChattyAgent([[{"to": None, "text": "agent says"}]])
     source = QueueSource([{"to": None, "text": "human says"}])
     store = FolderRecordingStore(tmp_path)
-    entry = make_chat_entry(seats=("player_0", "player_1"), n_ticks=2)
+    entry = make_chat_entry(players=("player_0", "player_1"), n_ticks=2)
     run_episode(
         entry,
         {
@@ -419,7 +419,7 @@ def test_agent_batch_is_ordered_before_the_human_batch_in_one_tick(tmp_path: Pat
 
 
 def _run_recording(root: Path, *, messaging_meta: bool, messaging_cfg: bool | None) -> bytes:
-    entry = make_chat_entry(seats=("player_0", "player_1"), n_ticks=4, messaging=messaging_meta)
+    entry = make_chat_entry(players=("player_0", "player_1"), n_ticks=4, messaging=messaging_meta)
     store = FolderRecordingStore(root)
     # A chatting agent that WOULD send if messaging were on, to prove the off path is inert.
     sender = ChattyAgent([[{"to": "player_1", "text": "hi"}]])
@@ -449,7 +449,7 @@ def test_enabled_but_chatless_is_byte_identical_to_disabled(tmp_path: Path):
     # proving the hook is free for a chat-less roster.
     disabled = _run_recording(tmp_path / "off", messaging_meta=False, messaging_cfg=None)
 
-    entry = make_chat_entry(seats=("player_0", "player_1"), n_ticks=4, messaging=True)
+    entry = make_chat_entry(players=("player_0", "player_1"), n_ticks=4, messaging=True)
     store = FolderRecordingStore(tmp_path / "on")
     run_episode(
         entry,
@@ -491,7 +491,7 @@ def test_documented_chat_contract_runs_against_the_real_harness(tmp_path: Path):
             return None
 
     store = FolderRecordingStore(tmp_path)
-    entry = make_chat_entry(seats=("player_0", "player_1"), n_ticks=4)
+    entry = make_chat_entry(players=("player_0", "player_1"), n_ticks=4)
     # player_1 replies to player_0, so the documented agent actually receives an inbox item to inspect.
     replier = ChattyAgent([[{"to": "player_0", "text": "hi back"}]])
     run_episode(

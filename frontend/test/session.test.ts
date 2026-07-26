@@ -360,10 +360,11 @@ describe('SessionPage', () => {
     expect(attribution).toHaveAttribute('title', 'alice-chen')
   })
 
-  it('controls the seat the human actually took, not always seat 0', async () => {
-    // A four-seat Hearts session where the human sits at player_2. The renderer keys first-person
-    // control off the single controlled slot, so the page must narrow to the seat the header attributes
-    // to the human rather than handing it every human-capable seat (which would pin control to seat 0).
+  it('controls the player the human actually plays, not always player 0', async () => {
+    // A four-player Hearts session where the human plays player_2. The renderer keys first-person
+    // control off the single controlled player, so the page must narrow to the player the header
+    // attributes to the human rather than handing it every human-capable player (which would pin
+    // control to player_0).
     vi.mocked(getEnvironments).mockResolvedValue([heartsMeta()])
     vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
     vi.mocked(getSession).mockResolvedValue({

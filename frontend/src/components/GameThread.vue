@@ -100,10 +100,10 @@ interface DecisionItem {
   key: string
   kind: 'decision'
   state: ThreadState
-  seat: string
+  player: string
   action: string
   tick: number
-  slot: string
+  playerId: string
 }
 
 interface MessageItem {
@@ -131,10 +131,10 @@ const items = computed<ThreadItem[]>(() => {
       key: `d-${decision.tick}-${i}`,
       kind: 'decision',
       state,
-      seat: decision.slot ? `P${formatPlayer(decision.slot)}` : 'None',
+      player: decision.player ? formatPlayer(decision.player) : 'None',
       action: formatAction(decision.action),
       tick: decision.tick,
-      slot: decision.slot,
+      playerId: decision.player,
     })
     for (const entry of chatByTick.value.get(decision.tick) ?? []) {
       result.push({
@@ -156,19 +156,19 @@ const items = computed<ThreadItem[]>(() => {
 
 const setupRows = computed(() => {
   if (props.llmUnavailable) return []
-  const bySlot = new Map<string, RecordingLlmCall[]>()
+  const byPlayer = new Map<string, RecordingLlmCall[]>()
   for (const call of props.setupLlmCalls) {
-    const calls = bySlot.get(call.slot) ?? []
+    const calls = byPlayer.get(call.player) ?? []
     calls.push(call)
-    bySlot.set(call.slot, calls)
+    byPlayer.set(call.player, calls)
   }
-  return [...bySlot.entries()]
+  return [...byPlayer.entries()]
     .sort(([left], [right]) => left.localeCompare(right))
-    .map(([slot, calls]) => ({ slot, calls }))
+    .map(([player, calls]) => ({ player, calls }))
 })
 
 function decisionCalls(item: DecisionItem): RecordingLlmCall[] {
-  return props.llmCalls.filter((call) => call.tick === item.tick && call.slot === item.slot)
+  return props.llmCalls.filter((call) => call.tick === item.tick && call.player === item.playerId)
 }
 
 function totalCost(calls: RecordingLlmCall[]): number {
@@ -206,11 +206,11 @@ const scroller = useActiveRowScroll(
     <ul v-if="items.length > 0 || setupRows.length > 0" class="thread-list">
       <li
         v-for="row in setupRows"
-        :key="`setup:${row.slot}`"
+        :key="`setup:${row.player}`"
         class="thread-item thread-item--decision"
-        :data-row-id="`setup:${row.slot}`"
+        :data-row-id="`setup:${row.player}`"
       >
-        <span class="thread-seat">{{ row.slot ? `P${formatPlayer(row.slot)}` : 'None' }}</span>
+        <span class="thread-player">{{ row.player ? formatPlayer(row.player) : 'None' }}</span>
         <span class="thread-tick">Setup</span>
         <span class="thread-action">Setup</span>
         <span class="thread-cost">
@@ -235,7 +235,7 @@ const scroller = useActiveRowScroll(
         :aria-current="item.kind === 'decision' && item.state === 'current' ? 'true' : undefined"
       >
         <template v-if="item.kind === 'decision'">
-          <span class="thread-seat">{{ item.seat }}</span>
+          <span class="thread-player">{{ item.player }}</span>
           <span class="thread-tick">tick {{ item.tick }}</span>
           <span class="thread-action">{{ item.action }}</span>
           <span class="thread-cost">
@@ -329,7 +329,7 @@ const scroller = useActiveRowScroll(
   border-top: none;
 }
 
-/* A decision is a terse mono line — seat · action · tick — like the decision log's cells. */
+/* A decision is a terse mono line: player, action, and tick, like the decision log's cells. */
 .thread-item--decision {
   padding: var(--space-1) var(--space-3);
   font-family: var(--font-mono);
@@ -351,7 +351,7 @@ const scroller = useActiveRowScroll(
   margin-top: var(--space-4);
 }
 
-.thread-seat {
+.thread-player {
   color: var(--color-text-muted);
 }
 

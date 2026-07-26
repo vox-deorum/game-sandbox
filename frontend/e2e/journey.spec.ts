@@ -37,7 +37,7 @@ test('play Flappy Bird live, pause/resume, stop, then replay and pin', async ({ 
   await page.getByLabel('Pipe gap').fill('90')
   await page.getByRole('button', { name: 'Start playing' }).click()
 
-  // The session page mounts the renderer and shows the per-step input window while we control a slot.
+  // The session page mounts the renderer and shows the per-step input window while we control a player.
   await expect(page).toHaveURL(/\/sessions\//)
   const sessionId = page.url().split('/').at(-1)
   if (sessionId === undefined) throw new Error('session URL has no id')

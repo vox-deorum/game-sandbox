@@ -68,7 +68,7 @@ export interface SessionOverlayImageSpec {
   seats: SessionOverlaySeat[]
 }
 
-/** One submission-filled slot of a {@link SessionOverlayImageSpec}: whose code goes in which seat. */
+/** One submission-filled seat of a {@link SessionOverlayImageSpec}: whose code goes in which seat. */
 export interface SessionOverlaySeat {
   /** The seat id whose directory the tree is copied into: `/opt/agents/submissions/<seatId>`. */
   seatId: string

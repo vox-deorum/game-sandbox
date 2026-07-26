@@ -30,7 +30,7 @@ test('watch a scripted session, and a spectator gets no controls', async ({
   await expect(page.locator('canvas.renderer-canvas')).toBeVisible()
   const sessionUrl = page.url()
 
-  // A scripted session's owner gets controls (stop) but no input window (no controlled slot).
+  // A scripted session's owner gets controls (stop) but no input window (no controlled player).
   await expect(page.getByText(/Per-step input window/)).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Stop' })).toBeVisible()
   // Hold the scripted run open before a second context attaches. The built-in agent can naturally

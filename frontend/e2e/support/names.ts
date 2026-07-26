@@ -31,7 +31,7 @@ export const HEARTS_OWNERS = {
   /** environments/hearts/examples/moonshot: tries to win every trick and shoot the moon. */
   moonshot: 'mae-jemison',
   /**
-   * The owner of the single submitted seat in the per-seat replay-attribution test. Kept distinct
+   * The owner of the single submitted player in the per-player replay-attribution test. Kept distinct
    * from the matchup owners above so its `players` line in that recording is unambiguous and the
    * agent profile it leaves behind shows exactly this one submission.
    */

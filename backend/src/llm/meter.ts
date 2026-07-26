@@ -118,7 +118,7 @@ export class LlmMeter {
   recordRateEvent(reservation: LlmReservation): void {
     if (!reservation.active) throw new Error('LLM rate reservation was already finalized')
     const state = this.state(reservation.scope.key)
-    // Set membership is the single source of pending truth: a slot already converted, or expired by
+    // Set membership is the single source of pending truth: a reservation already converted, or expired by
     // the prune, records nothing. A duplicate call on a live reservation is likewise a no-op.
     if (!state.pendingRateEvents.delete(reservation)) return
     if (this.now() - reservation.rateStartedAt >= RATE_WINDOW_MS) return

@@ -95,9 +95,9 @@ describe('overlay removeImage', () => {
 describe('ensureSessionOverlayImage chaining', () => {
   const PREFIX = 'gs-test'
   const DEPS = 3
-  // One real (empty) source tree, shared by every composed slot: `buildContext` walks it with
+  // One real (empty) source tree, shared by every composed seat: `buildContext` walks it with
   // `tar.pack`, so it must exist for the whole file (the fake docker never consumes the stream, and
-  // the composition tag keys off slot id + submission id, not the tree path).
+  // the composition tag keys off seat id + submission id, not the tree path).
   let tree = ''
 
   beforeAll(() => {
@@ -111,7 +111,7 @@ describe('ensureSessionOverlayImage chaining', () => {
   function spec(n: number): { seats: SessionOverlaySeat[] } {
     const seats: SessionOverlaySeat[] = []
     for (let i = 0; i < n; i++) {
-      seats.push({ seatId: `player_${i}`, submissionId: `sub-${i}`, sourceTreePath: tree })
+      seats.push({ seatId: `seat_${i}`, submissionId: `sub-${i}`, sourceTreePath: tree })
     }
     return { seats }
   }
@@ -135,7 +135,7 @@ describe('ensureSessionOverlayImage chaining', () => {
     expect([...log.existing]).toEqual([finalTag])
   })
 
-  it('builds a single-slot composition straight to the final tag with no scratch tags', async () => {
+  it('builds a single-seat composition straight to the final tag with no scratch tags', async () => {
     const { docker, log } = fakeBuildDocker()
     const composed = spec(1)
     const finalTag = sessionOverlayImageTag(PREFIX, DEPS, composed.seats)

@@ -399,7 +399,7 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
       })
 
       // --- Configure -------------------------------------------------------------------------
-      // Replace the whole SeasonConfig through the typed codec, validating slot counts against the
+      // Replace the whole SeasonConfig through the typed codec, validating player counts against the
       // environment metadata. A config edit once runs exist (or a deps_version change once submissions
       // exist) is destructive, so it needs an explicit `?force=true` after the console's confirmation.
       admin.put<{ Params: { id: string }; Querystring: { force?: string }; Body: unknown }>(

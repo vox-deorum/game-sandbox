@@ -172,7 +172,7 @@ export const closePlay = (admin: APIRequestContext, id: string): Promise<void> =
 export const release = (admin: APIRequestContext, id: string): Promise<void> =>
   flipWindow(admin, `/api/admin/seasons/${id}/release`)
 
-/** The seasons that currently hold the env's open submission and play windows (the unique-per-env slots). */
+/** The seasons that currently hold the environment's unique open submission and play windows. */
 export async function activeWindows(
   actor: APIRequestContext,
   envId: string = ENV_ID,
@@ -408,10 +408,10 @@ export async function finishedSeatedSession(
 
 /**
  * Stop a live session as the `owner` context and wait until the backend has freed that user's single
- * active-session slot, so an immediately following start for the same user cannot race a 409 already-active.
+ * active-session reservation, so a following start for the same user cannot race a 409 already-active.
  * Deletes the session, then polls until it reports `ended` (or is already gone). Mirrors
- * {@link finishedScriptedSession}'s stop-then-wait, but returns nothing: the caller only needs the slot
- * released, not a recording.
+ * {@link finishedScriptedSession}'s stop-then-wait, but returns nothing: the caller only needs the
+ * reservation released, not a recording.
  */
 export async function stopSessionAndAwaitFree(
   owner: APIRequestContext,

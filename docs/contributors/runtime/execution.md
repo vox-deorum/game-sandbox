@@ -84,7 +84,7 @@ A validated submission adds source code to the season's base image. It never ins
 
 `submission/submission-image.ts`:
 
-- Copies source to `/opt/agents/submissions/<slotId>`.
+- Copies source to `/opt/agents/submissions/<seatId>`.
 - Selects the matching `deps-v<N>` base.
 - Tags the overlay from dependency version and submission ID.
 - Applies `SUBMISSION_BUILD_TIMEOUT_MS`.

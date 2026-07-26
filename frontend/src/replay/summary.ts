@@ -27,16 +27,20 @@ export function formatScoreMap(scores: Record<string, unknown>): string | null {
     const first = entries[0]
     return first === undefined ? null : formatNumber(first[1])
   }
-  return entries.map(([slot, score]) => `${formatPlayer(slot)}: ${formatNumber(score)}`).join(', ')
+  return entries
+    .map(([playerId, score]) => `${formatPlayer(playerId)}: ${formatNumber(score)}`)
+    .join(', ')
 }
 
 export function summarizeStates(states: readonly StepState[]): RunSummary {
   const last = states.at(-1)
-  // Agent state stores scores inside each slot object, while live result envelopes use slot -> score.
+  // Agent state stores scores inside each player object, while live result envelopes use player -> score.
   const scores =
     last === undefined
       ? {}
-      : Object.fromEntries(Object.entries(last.agents).map(([slot, agent]) => [slot, agent.score]))
+      : Object.fromEntries(
+          Object.entries(last.agents).map(([playerId, agent]) => [playerId, agent.score]),
+        )
   return {
     score: formatScoreMap(scores),
     ticks: states.length > 0 ? states.length : null,

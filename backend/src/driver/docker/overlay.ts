@@ -246,7 +246,7 @@ export function sessionOverlayImageTag(
  * The image is built by chaining one single-seat overlay per seat (each a
  * `FROM <previous> ; COPY tree /opt/agents/submissions/<seatId>`), so it reuses the *exact*
  * deterministic single-seat build context (same ignore filter, same `sort`) that the per-submission
- * overlay uses, and each seat's code lands only in its own directory. Slots are staged in sorted
+ * overlay uses, and each seat's code lands only in its own directory. Seats are staged in sorted
  * seat-id order. The same submission may fill more than one seat; each seat is staged independently
  * from its own source tree, so two seats backed by one repo are as isolated on disk as two different
  * repos.

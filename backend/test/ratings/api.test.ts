@@ -133,7 +133,7 @@ describe('rating API', () => {
     seasonId: string | null
     recordingId: string | null
     ended?: boolean
-    submissionLinks?: Array<{ submissionId: string; slotId: string }>
+    submissionLinks?: Array<{ submissionId: string; seatId: string }>
   }): Promise<string> {
     const id = `sess-${Math.abs(hash(JSON.stringify(options)))}`
     await storage.createSession({
@@ -151,7 +151,7 @@ describe('rating API', () => {
       await storage.markEnded(id, 'terminated', new Date().toISOString())
     }
     for (const link of options.submissionLinks ?? []) {
-      await storage.recordSessionSubmission(id, link.submissionId, link.slotId)
+      await storage.recordSessionSubmission(id, link.submissionId, link.seatId)
     }
     return id
   }
@@ -451,7 +451,7 @@ describe('rating API', () => {
     }
     expect(body.season_prompt).toBe('Rate the overall fun')
     expect(body.read_only).toBe(false)
-    // The human slot is skipped; the submitted agent and Naive remain.
+    // The human seat is skipped; the submitted agent and Naive remain.
     expect(body.agents).toHaveLength(2)
     const submitted = body.agents.find((a) => a.agent.kind === 'submission')
     expect(submitted).toMatchObject({

@@ -69,7 +69,7 @@ const EXAMPLES_DIR = fileURLToPath(
   new URL('../../../environments/spades/examples', import.meta.url),
 )
 
-/** Skip `__pycache__` entries when copying a template/sandbox tree (mirrors hearts-multi-slot). */
+/** Skip `__pycache__` entries when copying a template/sandbox tree (mirrors hearts-multi-player). */
 function skipPycache(src: string): boolean {
   return !/[\\/]__pycache__(?:[\\/]|$)/.test(src)
 }
@@ -347,7 +347,7 @@ describe('Spades chat (Docker)', () => {
         messaging: { enabled?: boolean; message_cap?: number } | undefined,
       ): Promise<{
         messages: ReturnType<typeof allMessages>
-        scoreBySlot: Record<number, number>
+        scoreBySeat: Record<number, number>
       }> {
         const season = await stack.storage.createSeason({
           env_id: ENV_ID,
@@ -391,38 +391,38 @@ describe('Spades chat (Docker)', () => {
         const { states } = readRecording(text)
         // The authoritative per-seat final score is the game-result row's episode_score (the
         // normalized higher-is-better leaderboard score the runner derives from the recording),
-        // keyed by slot index. The recording's per-tick cumulative `score` field is NOT a reliable
+        // keyed by seat index. The recording's per-tick cumulative `score` field is NOT a reliable
         // source: Spades credits its terminal team reward on the final actor's line only, so a seat's
         // own step lines never carry its team total.
         const results = await stack.storage.listGameResultsByRun(run.id)
-        const scoreBySlot: Record<number, number> = {}
+        const scoreBySeat: Record<number, number> = {}
         for (const result of results) {
-          scoreBySlot[result.seat_index] = result.episode_score
+          scoreBySeat[result.seat_index] = result.episode_score
         }
-        return { messages: allMessages(states), scoreBySlot }
+        return { messages: allMessages(states), scoreBySeat }
       }
 
       // Messaging on (default season, no override): the exact pinned demo-hand scores, matching
       // environments/spades/tests/test_spades_chat.py's daredevil score regression.
-      // Partners share their team score, so slots 0 and 2 both read the made-nil +121.
+      // Partners share their team score, so seats 0 and 2 both read the made-nil +121.
       const on = await runWithOverride(undefined)
       expect(on.messages).toContainEqual({ from: 'player_0', to: null, text: NIL_WARNING })
-      expect(on.scoreBySlot[0]).toBe(DAREDEVIL_SCORES_ON.player_0)
-      expect(on.scoreBySlot[2]).toBe(DAREDEVIL_SCORES_ON.player_2)
+      expect(on.scoreBySeat[0]).toBe(DAREDEVIL_SCORES_ON.player_0)
+      expect(on.scoreBySeat[2]).toBe(DAREDEVIL_SCORES_ON.player_2)
 
       // Messaging disabled by the season override: no code change to the agents, yet the broadcast
       // never arrives, the partner never covers, and the nil is set — a strictly worse team score
       // than the made-nil case above (the same qualitative consequence the Python harness test pins).
       const off = await runWithOverride({ enabled: false })
       expect(off.messages).toEqual([])
-      expect(off.scoreBySlot[0]).toBeLessThan(DAREDEVIL_SCORES_ON.player_0)
+      expect(off.scoreBySeat[0]).toBeLessThan(DAREDEVIL_SCORES_ON.player_0)
 
       // Messaging enabled but the cap lowered below every example message's length (13-15 code
       // points): validate_outgoing drops every send, so the recording again has zero messages and
       // the nil is set exactly as with messaging off.
       const cappedLow = await runWithOverride({ message_cap: 5 })
       expect(cappedLow.messages).toEqual([])
-      expect(cappedLow.scoreBySlot[0]).toBeLessThan(DAREDEVIL_SCORES_ON.player_0)
+      expect(cappedLow.scoreBySeat[0]).toBeLessThan(DAREDEVIL_SCORES_ON.player_0)
     } finally {
       rmSync(snapshotsDir, { recursive: true, force: true })
     }

@@ -337,22 +337,26 @@ class DockerWorkflowRunner implements WorkflowRunner {
       const llmPolicy = decodeResolvedOfficialLlmPolicy(run.llm_policy_snapshot)
       const layout = resolveLayout(meta, resolvedParameters.values)
       const games = await this.deps.storage.listRunGames(runId)
+      const preparedGames: Array<{ game: SeasonRunGame; seats: AgentRef[] }> = []
 
-      // Both checks below read only run-level facts: every game shares this layout, and the schedule
-      // stamped one plan key across all of them. So they settle once, before the run is marked running
-      // and before any container starts, rather than repeating as the same fault on every game.
-      const mismatch = games.find(
-        (game) =>
+      // These checks read only run-level facts: every game shares this layout, and the schedule
+      // stamped one plan key across all of them. Settle them before the run is marked running and
+      // before any container starts, rather than repeating the same fault on every game.
+      for (const game of games) {
+        const seats = parseStoredSeats(game.seats)
+        if (
           game.seat_plan !== layout.planKey ||
-          (JSON.parse(game.seats) as AgentRef[]).length !== layout.seatCount,
-      )
-      if (mismatch !== undefined) {
-        await this.finishRun(
-          runId,
-          'failed',
-          `game ${mismatch.game_index}: stored assignment does not match the resolved seat layout`,
-        )
-        return
+          seats === null ||
+          seats.length !== layout.seatCount
+        ) {
+          await this.finishRun(
+            runId,
+            'failed',
+            `game ${game.game_index}: stored assignment does not match the resolved seat layout`,
+          )
+          return
+        }
+        preparedGames.push({ game, seats })
       }
       // Derived here rather than per game so an unusable bound refuses the run instead of throwing
       // after a container is already live, which would strand that game at `running`.
@@ -366,7 +370,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
       await this.deps.storage.setRunStatus(runId, 'running')
       await ensureRecordingsDir(this.deps.recordingsDir)
 
-      for (const game of games) {
+      for (const { game, seats } of preparedGames) {
         if (this.cancelRequested.has(runId)) {
           await this.markGameCancelled(runId, game)
           continue
@@ -381,6 +385,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
           llmPolicy,
           watchdogMs,
           game,
+          seats,
         )
       }
 
@@ -416,11 +421,10 @@ class DockerWorkflowRunner implements WorkflowRunner {
     llmPolicy: ResolvedOfficialLlmPolicy,
     watchdogMs: number,
     game: SeasonRunGame,
+    seats: readonly AgentRef[],
   ): Promise<void> {
     const runId = run.id
     const envId = meta.env_id
-    // The run-start check already matched this array against the layout's plan key and seat count.
-    const seats = JSON.parse(game.seats) as AgentRef[]
     await this.deps.storage.setRunGameStatus(game.id, 'running')
     this.emit(runId, { type: 'game_status', game_index: game.game_index, status: 'running' })
     this.gameLog(
@@ -619,7 +623,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
           llmUsageByPlayer.set(
             playerId,
             storedLlmUsage(
-              telemetry.aggregateByModel(runId, { sessionId: game.id, slot: playerId }),
+              telemetry.aggregateByModel(runId, { sessionId: game.id, player: playerId }),
             ),
           )
         }
@@ -985,6 +989,33 @@ function describeSeats(seats: readonly AgentRef[]): string {
     agent.kind === 'submission' ? `submission ${agent.submission_id}` : 'Naive baseline',
   )
   return labels.join(' vs ')
+}
+
+/** Decode one stored assignment at the run boundary, rejecting malformed or foreign agent shapes. */
+function parseStoredSeats(value: string): AgentRef[] | null {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(value)
+  } catch {
+    return null
+  }
+  return Array.isArray(parsed) && parsed.every(isAgentRef) ? parsed : null
+}
+
+function isAgentRef(value: unknown): value is AgentRef {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const agent = value as Record<string, unknown>
+  if (agent.kind === 'builtin-naive') {
+    return Object.keys(agent).length === 1
+  }
+  return (
+    agent.kind === 'submission' &&
+    Object.keys(agent).length === 3 &&
+    typeof agent.submission_id === 'string' &&
+    agent.submission_id.length > 0 &&
+    typeof agent.user_id === 'string' &&
+    agent.user_id.length > 0
+  )
 }
 
 /** The recording's natural owner: the (single) submission seat's owner, else the run's operator. */

@@ -13,7 +13,7 @@ describe('RunMetadata LLM summary', () => {
           calls: [
             {
               tick: 12,
-              slot: 'player_0',
+              player: 'player_0',
               model: 'small',
               input_tokens: 100,
               reasoning_tokens: 20,

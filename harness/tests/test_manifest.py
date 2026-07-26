@@ -167,8 +167,8 @@ class Agent:
 
 
 def test_two_instances_held_at_once_keep_isolated_module_state(tmp_path: Path):
-    # The same-submission-in-two-slots path: the SAME code is copied into two per-slot directories,
-    # and a multi-slot session loads every slot up front and only then steps them. Loading the second
+    # The same-submission-for-two-players path: the SAME code is copied into two per-player directories,
+    # and a multiplayer session loads every player up front and only then steps them. Loading the second
     # root evicts the first's `agent` module from sys.modules, so this proves each instance keeps its
     # own module-level state afterwards (interleaved acts must not share the module global).
     repo_a = tmp_path / "player_0"
@@ -176,7 +176,7 @@ def test_two_instances_held_at_once_keep_isolated_module_state(tmp_path: Path):
     repo_a.mkdir()
     repo_b.mkdir()
     manifest = {"entry_point": "agent", "class_name": "Agent", "template_version": 1}
-    # A module-level counter act() bumps and returns: a shared module would interleave the two seats.
+    # A module-level counter act() bumps and returns: a shared module would interleave the two players.
     source = """
 calls = 0
 
@@ -194,7 +194,7 @@ class Agent:
     try:
         agent_a = load_agent(repo_a)
         agent_b = load_agent(repo_b)  # evicts repo_a's `agent` from sys.modules
-        # Interleave the two seats: independent module state keeps each counter on its own track.
+        # Interleave the two players: independent module state keeps each counter on its own track.
         assert agent_a.act(None) == 1
         assert agent_b.act(None) == 1
         assert agent_a.act(None) == 2
@@ -248,12 +248,12 @@ class Agent:
         sys.modules.pop("helper", None)
 
 
-def test_act_time_lazy_import_is_not_isolated_across_slots(tmp_path: Path):
+def test_act_time_lazy_import_is_not_isolated_across_players(tmp_path: Path):
     # A KNOWN LIMITATION, pinned so it stays visible (see the manifest module docstring). Load-time
     # isolation covers helpers imported at module top; a helper imported LAZILY inside act() is not
-    # isolated, because every loaded root stays on sys.path and sys.modules is shared. Two seats that
-    # each lazily `import helper` share whichever imported first. When this is ever fixed (per-slot
-    # namespacing or a subinterpreter per slot), flip this to assert "a" and "b" and drop the note.
+    # isolated, because every loaded root stays on sys.path and sys.modules is shared. Two players that
+    # each lazily `import helper` share whichever imported first. When this is ever fixed (per-player
+    # namespacing or a subinterpreter per player), flip this to assert "a" and "b" and drop the note.
     repo_a = tmp_path / "player_0"
     repo_b = tmp_path / "player_1"
     repo_a.mkdir()
@@ -277,7 +277,7 @@ class Agent:
         agent_a = load_agent(repo_a)
         agent_b = load_agent(repo_b)
         # repo_b was loaded last, so its directory leads sys.path; the first lazy import of "helper"
-        # wins and is cached under that bare name, and both seats then read the same value.
+        # wins and is cached under that bare name, and both players then read the same value.
         first = agent_a.act(None)
         second = agent_b.act(None)
         assert first == second == "b"

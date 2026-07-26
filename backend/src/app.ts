@@ -673,7 +673,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         return reply.code(202).send({ id: submission.id, status: submission.status })
       } catch (error) {
         if (error instanceof SubmissionConflictError) {
-          // A concurrent resubmit won the active slot; the client may retry.
+          // A concurrent resubmit became active; the client may retry.
           return reply.code(409).send({ error: error.message, code: 'resubmit_conflict' })
         }
         throw error

@@ -66,7 +66,7 @@ class StepState(TypedDict):
 
 
 class PlayerAttribution(TypedDict, total=False):
-    """Who or what drove one slot: a connected human or an agent. ``kind`` and ``label`` are
+    """Who or what drove one player: a connected human or an agent. ``kind`` and ``label`` are
     always present on a written entry (the schema requires them); ``user`` and ``submission_id``
     are optional. ``total=False`` keeps the builders ergonomic; the store validates on write."""
 

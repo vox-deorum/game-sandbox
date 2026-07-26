@@ -49,7 +49,7 @@ class _Response:
 
 
 class _AlternatingEnv:
-    """A minimal two-seat AEC environment that ends after a fixed number of acting turns."""
+    """A minimal two-player AEC environment that ends after a fixed number of acting turns."""
 
     def __init__(self, turns: int, player_count: int = 2) -> None:
         self._turns = turns
@@ -508,21 +508,21 @@ def test_marker_failure_logs_and_does_not_stop_agent_lifecycle(monkeypatch, caps
             {"player_0": "key-0"},
         ),
     )
-    one_seat_entry = _entry(turns=1, messaging=False)
+    one_player_entry = _entry(turns=1, messaging=False)
 
-    # This fixture environment still names two possible seats, but only the selected seat is needed
+    # This fixture environment still names two possible players, but only the selected player is needed
     # for the single completed turn under test.
     players = build_players(
         config,
-        one_seat_entry,
+        one_player_entry,
         SessionControl(),
         PausableClock(ManualClock()),
         _Sleeper(),
     )
     with Episode(
-        one_seat_entry,
+        one_player_entry,
         players,
-        parameters=resolve_parameters(one_seat_entry.meta),
+        parameters=resolve_parameters(one_player_entry.meta),
         seed=1,
         clock=ManualClock(),
     ) as episode:

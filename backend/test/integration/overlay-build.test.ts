@@ -55,7 +55,7 @@ function overlaySpec(submissionId: string, sourceTreePath: string): SubmissionOv
     depsVersion: DEPS_VERSION,
     submissionId,
     sourceTreePath,
-    seatId: 'player_0',
+    seatId: 'seat_0',
   }
 }
 

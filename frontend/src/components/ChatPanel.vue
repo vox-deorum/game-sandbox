@@ -4,7 +4,7 @@
   environment gets it for free. It is a pure function of the message entries the caller accumulates
   (from the state stream on the session page, from the parsed recording on the replay page) plus the
   attribution context the rest of the session chrome already threads, so it needs no transport of its
-  own — it emits `send` and lets the page own the socket.
+  own, it emits `send` and lets the page own the socket.
 
   Each entry is badged for what it is: a broadcast, a message "to you", a message "from you" (the
   relay reflects a controller's own sends back on the recorded line), or, on a replay, a targeted

@@ -908,10 +908,10 @@ def test_module_subprocess_keeps_stdout_clean_and_classifiable(tmp_path: Path):
     assert json.loads(out_lines[0])["environment"] == "flappy_bird"
 
 
-def test_module_subprocess_charges_a_crashing_agent_to_its_own_seat(tmp_path: Path):
+def test_module_subprocess_charges_a_crashing_agent_to_its_own_player(tmp_path: Path):
     """A builtin-agent player whose ``act`` raises makes the container exit non-zero AND emit a final
-    ``result`` envelope naming the offending seat, so the orchestrator charges the crash to that seat
-    alone instead of to every competitor sharing the container."""
+    ``result`` envelope naming the offending player, so workflow reduction charges the crash to that
+    player's seat instead of to every competitor sharing the container."""
     pytest.importorskip("flappy_bird", reason="environments package not installed")
 
     agent_dir = tmp_path / "agent"
@@ -944,7 +944,7 @@ def test_module_subprocess_charges_a_crashing_agent_to_its_own_seat(tmp_path: Pa
         timeout=60,
     )
 
-    # A crashing agent fails the container (non-zero exit), but still names its seat in a result line.
+    # A crashing agent fails the container (non-zero exit), but still names its player in a result line.
     assert proc.returncode == 1, proc.stderr
     results = [
         obj
@@ -957,11 +957,11 @@ def test_module_subprocess_charges_a_crashing_agent_to_its_own_seat(tmp_path: Pa
     assert results[0]["failed_player"] == "player_0"
 
 
-def test_module_subprocess_charges_a_reset_crash_to_its_own_seat(tmp_path: Path):
+def test_module_subprocess_charges_a_reset_crash_to_its_own_player(tmp_path: Path):
     """A builtin-agent player whose ``reset`` raises (the failure happens during ``start``, before the
-    loop) must still name its seat and leave a readable recording — not look like an unowned
+    loop) must still name its player and leave a readable recording, not look like an unowned
     infrastructure fault with no result. The header is opened before participants reset, so the
-    container exits non-zero, emits a final ``result`` naming the seat, and persists the recording."""
+    container exits non-zero, emits a final ``result`` naming the player, and persists the recording."""
     pytest.importorskip("flappy_bird", reason="environments package not installed")
 
     agent_dir = tmp_path / "agent"

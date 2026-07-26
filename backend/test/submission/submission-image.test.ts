@@ -24,7 +24,7 @@ import {
 } from '../../src/submission/submission-image.js'
 import { FakeDriver } from '../support/fake-driver.js'
 
-const SLOT = 'seat_0'
+const SEAT = 'seat_0'
 
 /** A git submission row with the fields the rebuild path reads. */
 function gitSubmission(id: string): Submission {
@@ -96,7 +96,7 @@ describe('ensureSubmissionImage rebuild path', () => {
       { driver, snapshots: store, source, imagePolicy: 'reuse' },
       gitSubmission('sub-1'),
       1,
-      SLOT,
+      SEAT,
     )
 
     expect(image.ref).toContain('submission-overlay')
@@ -114,7 +114,7 @@ describe('ensureSubmissionImage rebuild path', () => {
       { driver, snapshots: store, source, imagePolicy: 'reuse' },
       gitSubmission('sub-2'),
       1,
-      SLOT,
+      SEAT,
     )
 
     expect(image.ref).toContain('sub-2')
@@ -122,7 +122,7 @@ describe('ensureSubmissionImage rebuild path', () => {
   })
 })
 
-describe('resolveSubmissionLaunchImage slot routing', () => {
+describe('resolveSubmissionLaunchImage seat routing', () => {
   const dirs: string[] = []
 
   afterEach(() => {
@@ -154,14 +154,14 @@ describe('resolveSubmissionLaunchImage slot routing', () => {
     return { verifyReachable: fail, resolve: fail, fetchTree: fail }
   }
 
-  /** Seed a warm per-submission overlay (built for the canonical slot) the reuse path can find by id. */
+  /** Seed a warm per-submission overlay (built for the canonical seat) the reuse path can find by id. */
   function seedWarmOverlay(driver: FakeDriver, id: string): string {
     const ref = `game-sandbox/submission-overlay:deps-v1-${id}`
     driver.overlayImages.set(ref, { ref, submissionId: id, createdAtMs: 1 })
     return ref
   }
 
-  it('reuses the warm per-submission overlay for a lone submission in the canonical slot', async () => {
+  it('reuses the warm per-submission overlay for a lone submission in the canonical seat', async () => {
     const driver = new FakeDriver()
     const warmRef = seedWarmOverlay(driver, 'sub-1')
     const image = await resolveSubmissionLaunchImage(
@@ -180,10 +180,10 @@ describe('resolveSubmissionLaunchImage slot routing', () => {
     expect(driver.imageRequests).toHaveLength(0)
   })
 
-  it('composes a per-slot session image for a lone submission seated outside the canonical slot', async () => {
+  it('composes a per-seat session image for a lone submission outside the canonical seat', async () => {
     const driver = new FakeDriver()
     // The warm overlay is present, but it was built for seat_0; a seat_1 seating must not reuse it,
-    // or the launched image would carry the agent's code under the wrong slot directory.
+    // or the launched image would carry the agent's code under the wrong seat directory.
     const warmRef = seedWarmOverlay(driver, 'sub-1')
     const image = await resolveSubmissionLaunchImage(
       {
@@ -206,7 +206,7 @@ describe('resolveSubmissionLaunchImage slot routing', () => {
     ])
   })
 
-  it('rejects an empty slot set rather than silently composing an empty image', async () => {
+  it('rejects an empty seat set rather than silently composing an empty image', async () => {
     const driver = new FakeDriver()
     await expect(
       resolveSubmissionLaunchImage(

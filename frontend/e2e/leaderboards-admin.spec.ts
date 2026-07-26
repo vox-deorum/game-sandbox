@@ -305,7 +305,7 @@ test('a full season: submissions, an automated run, several judges rate, then re
   // throughout this spec.
   await authenticateBrowser(page.context(), admin)
 
-  // Free the env's single open-submission and open-play slots, held by the seeded Playground season.
+  // Free the environment's open submission and play windows, held by the seeded Playground season.
   const original = await activeWindows(admin)
   if (original.submissionSeasonId !== null) {
     await closeSubmissions(admin, original.submissionSeasonId)

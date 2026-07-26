@@ -7,7 +7,7 @@ import DecisionLog from '../../src/components/DecisionLog.vue'
 function call(overrides: Partial<RecordingLlmCall> = {}): RecordingLlmCall {
   return {
     tick: 5,
-    slot: 'player_0',
+    player: 'player_0',
     model: 'small',
     input_tokens: 2,
     reasoning_tokens: 1,
@@ -24,15 +24,15 @@ describe('DecisionLog', () => {
     const { container } = render(DecisionLog, {
       props: {
         entries: [
-          { tick: 5, slot: 'player_0', action: 0 },
-          { tick: 6, slot: 'player_0', action: 1 },
-          { tick: 7, slot: 'player_0', action: { flap: true } },
+          { tick: 5, player: 'player_0', action: 0 },
+          { tick: 6, player: 'player_0', action: 1 },
+          { tick: 7, player: 'player_0', action: { flap: true } },
         ],
       },
     })
     // One header row plus a row per tick.
     expect(screen.getAllByRole('row')).toHaveLength(4)
-    // The Player column shows the formatted slot label.
+    // The Player column shows the formatted player label.
     const playerCells = container.querySelectorAll('tbody td.player-col')
     expect([...playerCells].map((c) => c.textContent)).toEqual(['P0', 'P0', 'P0'])
     // A structured action is formatted generically as key=value.
@@ -49,9 +49,9 @@ describe('DecisionLog', () => {
     render(DecisionLog, {
       props: {
         entries: [
-          { tick: 5, slot: 'player_0', action: 0 },
-          { tick: 6, slot: 'player_0', action: 1 },
-          { tick: 7, slot: 'player_0', action: 0 },
+          { tick: 5, player: 'player_0', action: 0 },
+          { tick: 6, player: 'player_0', action: 1 },
+          { tick: 7, player: 'player_0', action: 0 },
         ],
         currentIndex: 1,
       },
@@ -67,19 +67,19 @@ describe('DecisionLog', () => {
     expect(screen.getByText('No decisions yet.')).toBeInTheDocument()
   })
 
-  it('groups exact tick and slot matches and sums multiple successful calls', async () => {
+  it('groups exact tick and player matches and sums multiple successful calls', async () => {
     render(DecisionLog, {
       props: {
         entries: [
-          { tick: 5, slot: 'player_0', action: 0 },
-          { tick: 5, slot: 'player_1', action: 1 },
-          { tick: 6, slot: 'player_0', action: 0 },
+          { tick: 5, player: 'player_0', action: 0 },
+          { tick: 5, player: 'player_1', action: 1 },
+          { tick: 6, player: 'player_0', action: 0 },
         ],
         llmCalls: [
           call(),
           call({ model: 'medium', budget_cost_units: 20, cost_weight: 2 }),
-          call({ slot: 'player_1', budget_cost_units: 4 }),
-          call({ tick: 6, slot: 'player_1', budget_cost_units: 100 }),
+          call({ player: 'player_1', budget_cost_units: 4 }),
+          call({ tick: 6, player: 'player_1', budget_cost_units: 100 }),
         ],
       },
     })
@@ -102,18 +102,18 @@ describe('DecisionLog', () => {
     expect(within(firstDetails as HTMLElement).getByText(/medium: 1/)).toBeInTheDocument()
   })
 
-  it('renders setup calls from a separate prop in slot order without shifting the active decision', () => {
+  it('renders setup calls from a separate prop in player order without shifting the active decision', () => {
     const { container } = render(DecisionLog, {
       props: {
         entries: [
-          { tick: 5, slot: 'player_0', action: 0 },
-          { tick: 6, slot: 'player_0', action: 1 },
+          { tick: 5, player: 'player_0', action: 0 },
+          { tick: 6, player: 'player_0', action: 1 },
         ],
         currentIndex: 1,
         setupLlmCalls: [
-          call({ tick: null, slot: 'player_1', budget_cost_units: 8 }),
-          call({ tick: null, slot: 'player_0', budget_cost_units: 3 }),
-          call({ tick: null, slot: 'player_0', budget_cost_units: 4 }),
+          call({ tick: null, player: 'player_1', budget_cost_units: 8 }),
+          call({ tick: null, player: 'player_0', budget_cost_units: 3 }),
+          call({ tick: null, player: 'player_0', budget_cost_units: 4 }),
         ],
       },
     })
@@ -134,8 +134,8 @@ describe('DecisionLog', () => {
     const view = render(DecisionLog, {
       props: {
         entries: [
-          { tick: 5, slot: 'player_0', action: 0 },
-          { tick: 6, slot: 'player_0', action: 1 },
+          { tick: 5, player: 'player_0', action: 0 },
+          { tick: 6, player: 'player_0', action: 1 },
         ],
         currentIndex: 1,
         setupLlmCalls: [],
@@ -148,13 +148,13 @@ describe('DecisionLog', () => {
 
     await view.rerender({
       entries: [
-        { tick: 5, slot: 'player_0', action: 0 },
-        { tick: 6, slot: 'player_0', action: 1 },
+        { tick: 5, player: 'player_0', action: 0 },
+        { tick: 6, player: 'player_0', action: 1 },
       ],
       currentIndex: 1,
       setupLlmCalls: [
-        call({ tick: null, slot: 'player_0' }),
-        call({ tick: null, slot: 'player_1' }),
+        call({ tick: null, player: 'player_0' }),
+        call({ tick: null, player: 'player_1' }),
       ],
     })
 
@@ -165,8 +165,8 @@ describe('DecisionLog', () => {
     const { container } = render(DecisionLog, {
       props: {
         entries: [
-          { tick: 5, slot: 'player_0', action: 0 },
-          { tick: 6, slot: 'player_0', action: 1 },
+          { tick: 5, player: 'player_0', action: 0 },
+          { tick: 6, player: 'player_0', action: 1 },
         ],
         setupLlmCalls: [call({ tick: null })],
         llmUnavailable: true,
@@ -181,7 +181,7 @@ describe('DecisionLog', () => {
   it('shows Loading on decisions and invents no setup rows while telemetry is pending', () => {
     const { container } = render(DecisionLog, {
       props: {
-        entries: [{ tick: 5, slot: 'player_0', action: 0 }],
+        entries: [{ tick: 5, player: 'player_0', action: 0 }],
         setupLlmCalls: [call({ tick: null })],
         llmPending: true,
       },
@@ -194,7 +194,7 @@ describe('DecisionLog', () => {
 
   it('omits replay-only LLM cost data when live callers supply no telemetry', () => {
     render(DecisionLog, {
-      props: { entries: [{ tick: 5, slot: 'player_0', action: 0 }] },
+      props: { entries: [{ tick: 5, player: 'player_0', action: 0 }] },
     })
 
     expect(screen.queryByRole('columnheader', { name: 'LLM cost' })).toBeNull()
@@ -208,7 +208,7 @@ describe('DecisionLog', () => {
     })
     const view = render(DecisionLog, {
       props: {
-        entries: [{ tick: 5, slot: 'player_0', action: 0 }],
+        entries: [{ tick: 5, player: 'player_0', action: 0 }],
         llmCalls: [authorized],
       },
     })
@@ -232,7 +232,7 @@ describe('DecisionLog', () => {
     expect(screen.getByRole('dialog', { name: 'Inspect request and response' })).toBeInTheDocument()
     await fireEvent.click(screen.getByRole('button', { name: 'Close' }))
     await view.rerender({
-      entries: [{ tick: 5, slot: 'player_0', action: 0 }],
+      entries: [{ tick: 5, player: 'player_0', action: 0 }],
       llmCalls: [call()],
     })
     expect(screen.queryByRole('button', { name: 'Inspect request and response' })).toBeNull()

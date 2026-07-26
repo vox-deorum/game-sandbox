@@ -70,7 +70,7 @@ describe('SeasonConfig codec', () => {
     ).toThrow(SeasonConfigError)
   })
 
-  it('rejects an unknown slot spec', () => {
+  it('rejects an unknown seat spec', () => {
     expect(() =>
       parseSeasonConfig(
         validConfig({ matches: [{ seats: ['robot' as never], seeds: [1], games: 1 }] }),

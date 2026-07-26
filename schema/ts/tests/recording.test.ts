@@ -33,7 +33,7 @@ describe('readRecording', () => {
     expect(agent?.score).toBe(0)
     expect(second?.tick).toBe(1)
 
-    // Per-slot attribution round-trips through the real store into the generated `players` field.
+    // Per-player attribution round-trips through the real store into the generated `players` field.
     expect(header.players.player_0?.kind).toBe('agent')
     expect(header.players.player_0?.label).toBe('Naive agent')
     expect(header.seats).toEqual({ seat_0: ['player_0'] })

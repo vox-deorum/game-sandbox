@@ -6,7 +6,7 @@ Part of [Stage 11](../stage-11-semantic-contract.md). This final step verifies t
 
 ## Full-stack verification (Passed)
 
-Run the Docker-gated backend integration suite. `hearts-multi-slot.test.ts` should already expect the real timeout action from step 2. `spades-chat.test.ts` exercises the migrated examples and built-ins rather than carrying a separate observation decoder. Flappy session input remains `{kind: "input", slot: "player_0", action: 1}`.
+Run the Docker-gated backend integration suite. `hearts-multi-player.test.ts` should already expect the real timeout action from step 2. `spades-chat.test.ts` exercises the migrated examples and built-ins rather than carrying a separate observation decoder. Flappy session input remains `{kind: "input", player: "player_0", action: 1}`.
 
 Run the Playwright Hearts, Spades, and session journeys against the reshaped template image (kept at version 1). Verify live watch, human play, replay, card and bid input, legal-choice greying, timeouts, standings, Flappy taps, and chat. Renderers should receive only semantic game objects; session actions should remain integers.
 

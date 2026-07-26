@@ -3,7 +3,7 @@
  * browser) plays Flappy Bird through the real backend and a real sandboxed container. It receives
  * schema-valid states at the pace cadence, its flap inputs visibly change the game versus an
  * input-less run, and the recording lands on the shared volume and round-trips through the schema
- * reader. A second test proves a short human-slot timeout keeps the session advancing on noop.
+ * reader. A second test proves a short human-player timeout keeps the session advancing on noop.
  */
 import { readRecording } from '@game-sandbox/schema'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -121,7 +121,7 @@ describe('live session over WebSocket', () => {
     expect(parsed.states.length).toBeGreaterThan(3)
   })
 
-  it('keeps advancing on the noop fallback under a short human-slot timeout', async () => {
+  it('keeps advancing on the noop fallback under a short human-player timeout', async () => {
     const { id, wsPath } = await startSession(
       stack,
       {

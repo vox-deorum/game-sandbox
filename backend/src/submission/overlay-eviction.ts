@@ -90,9 +90,9 @@ export class OverlayEviction {
       .filter((image) => !exempt.has(image.submissionId))
       .sort((a, b) => b.createdAtMs - a.createdAtMs)
     const exemptCount = images.length - nonExempt.length
-    const slotsLeft = Math.max(0, this.config.overlayImageBudget - exemptCount)
+    const remainingCapacity = Math.max(0, this.config.overlayImageBudget - exemptCount)
 
-    for (const image of nonExempt.slice(slotsLeft)) {
+    for (const image of nonExempt.slice(remainingCapacity)) {
       try {
         await this.driver.removeImage(image.ref)
       } catch (error) {

@@ -65,7 +65,7 @@ Only a call that receives a successful model response and completes accounting d
 
 In official sessions, verified time spent waiting for the model proxy during `act`, `chat`, or `learn` does not count toward the hook, step, or episode time limits. This includes retry waits. Other work inside these methods still counts. Calls made while Python imports the module, creates the agent, or runs `reset` happen before turn timing. See [Agent interface](agent-interface.md#llm-calls).
 
-Rate limits count successful logical request starts. A request that is still running temporarily reserves a slot. A successful call records one event at its original start time, while a failed call releases the slot. Server retries do not add events.
+Rate limits count successful logical request starts. A request that is still running temporarily reserves capacity. A successful call records one event at its original start time, while a failed call releases its reservation. Server retries do not add events.
 
 Your agent must always have a legal fallback action for an error it cannot recover from. Examples include `budget_exceeded`, `model_not_allowed`, a request or model error that cannot be retried, and an error that remains after the server finishes retrying. Create the standard client with `OpenAI(max_retries=0)`, as shown in the template. This leaves retries to the Game Sandbox server and keeps each turn to one logical request. Do not add another retry loop inside each turn unless your instructor designed the agent to handle the extra delay and rate-limit use.
 

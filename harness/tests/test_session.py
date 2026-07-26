@@ -267,7 +267,7 @@ def test_per_episode_budget_truncates():
     )
     assert result.reason == REASON_EPISODE_LIMIT
     assert result.ticks == 3  # 800*3 = 2400 > 2000, tripped on the third step
-    # The seat that overran owns the overage, so it is named for per-seat failure attribution.
+    # The player that overran owns the overage, so it is named for per-player failure attribution.
     assert result.failed_player == "player_0"
 
 
@@ -369,12 +369,12 @@ def test_max_steps_coinciding_with_termination_reports_terminated():
 
 
 class FakeTeamEnv:
-    """A 3-seat turn-based AEC env that pays every seat a final reward on the last actor's step.
+    """A 3-player turn-based AEC env that pays every player a final reward on the last actor's step.
 
-    This mirrors how Hearts settles: rewards stay 0 while seats take turns, then on the final
-    actor's step every seat is assigned its terminal reward at once and all seats terminate.
-    The non-final seats are then collected through AEC dead-steps. It exists to prove the loop
-    credits all seats' terminal rewards, not only the acting one.
+    This mirrors how Hearts settles: rewards stay 0 while players take turns, then on the final
+    actor's step every player is assigned its terminal reward at once and all players terminate.
+    The non-final players are then collected through AEC dead-steps. It exists to prove the loop
+    credits all players' terminal rewards, not only the acting one.
     """
 
     def __init__(self, finals: dict[str, float]) -> None:
@@ -399,8 +399,8 @@ class FakeTeamEnv:
     def step(self, action: Any) -> None:
         a = self.agent_selection
         if self.terminations[a] or self.truncations[a]:
-            # Dead-step: collect the terminated seat (PettingZoo would also _clear_rewards here,
-            # which is exactly why a non-final seat's terminal reward must be read earlier).
+            # Dead-step: collect the terminated player (PettingZoo would also _clear_rewards here,
+            # which is exactly why a non-final player's terminal reward must be read earlier).
             self.agents.remove(a)
             self.rewards = {x: 0.0 for x in self.agents}
             if self.agents:
@@ -408,7 +408,7 @@ class FakeTeamEnv:
             return
         self._idx += 1
         if self._idx >= len(self.possible_agents):
-            # Final actor: pay out every seat at once and terminate all of them.
+            # Final actor: pay out every player at once and terminate all of them.
             self.rewards = dict(self._finals)
             self.terminations = {x: True for x in self.possible_agents}
             self.agent_selection = self.possible_agents[0]
@@ -421,7 +421,7 @@ def _team_entry(finals: dict[str, float], *, make: Any = None) -> EnvironmentEnt
     meta = EnvironmentMeta(
         env_id="team",
         display_name="Team",
-        description="A deterministic 3-seat fake with a terminal payout.",
+        description="A deterministic 3-player fake with a terminal payout.",
         layout=PlayerBounds(3, 3),
         human_players=("player_0", "player_1", "player_2"),
         human_timeout_ms=None,
@@ -443,8 +443,8 @@ def _team_entry(finals: dict[str, float], *, make: Any = None) -> EnvironmentEnt
     )
 
 
-def test_terminal_rewards_credited_to_every_seat_not_just_the_actor():
-    # Only player_2 acts last, but all three seats are paid at the terminal step. A loop that
+def test_terminal_rewards_credited_to_every_player_not_just_the_actor():
+    # Only player_2 acts last, but all three players are paid at the terminal step. A loop that
     # read only the acting player would leave player_0/player_1 at 0.0 and mis-rank the episode.
     finals = {"player_0": -13.0, "player_1": -3.0, "player_2": 0.0}
     entry = _team_entry(finals)
@@ -454,13 +454,13 @@ def test_terminal_rewards_credited_to_every_seat_not_just_the_actor():
     )
     assert result.reason == REASON_TERMINATED
     assert result.scores == finals
-    assert result.failed_player is None  # a clean episode charges no seat
+    assert result.failed_player is None  # a clean episode charges no player
 
 
-def test_agent_crash_charges_the_failure_to_its_own_seat():
-    # In a three-seat game only player_1's agent raises. The crash must be charged to player_1 alone,
+def test_agent_crash_charges_the_failure_to_its_own_player():
+    # In a three-player game only player_1's agent raises. The crash must be charged to player_1 alone,
     # so the orchestrator never marks player_0 or player_2 failed for a competitor's bug. The exception
-    # still propagates (the container exits non-zero); the loop only records which seat was at fault.
+    # still propagates (the container exits non-zero); the loop only records which player was at fault.
     class Crashing:
         def reset(self, seed: int) -> None: ...
 
@@ -497,7 +497,7 @@ class _Discrete:
 
 
 class MaskedEnv:
-    """A 2-seat AEC env that exposes a Discrete action space and a per-step ``action_mask``, the way
+    """A 2-player AEC env that exposes a Discrete action space and a per-step ``action_mask``, the way
     Hearts does, and rejects an illegal card from ``step`` (its ``IllegalMoveError`` analogue).
 
     Legal moves are the masked-1 indices. ``step`` raises on a masked-0 or out-of-range action — so a
@@ -565,7 +565,7 @@ def _masked_entry(**kwargs: Any) -> EnvironmentEntry:
     meta = EnvironmentMeta(
         env_id="masked",
         display_name="Masked",
-        description="A 2-seat fake with an action mask and illegal-move rejection.",
+        description="A 2-player fake with an action mask and illegal-move rejection.",
         layout=PlayerBounds(2, 2),
         human_players=("player_0", "player_1"),
         human_timeout_ms=None,
@@ -587,10 +587,10 @@ def _masked_entry(**kwargs: Any) -> EnvironmentEntry:
     )
 
 
-def test_illegal_masked_action_is_charged_to_the_acting_seat():
+def test_illegal_masked_action_is_charged_to_the_acting_player():
     # player_1 returns a card the action mask flags illegal. The loop must reject it at the boundary
-    # and charge player_1 alone, so a co-seat is never marked failed for player_1's illegal move. The
-    # rejection still aborts the episode (an illegal action is a fault), it just owns the right seat.
+    # and charge player_1 alone, so another player is never marked failed for player_1's illegal move.
+    # The rejection still aborts the episode, but the right player owns the fault.
     entry = _masked_entry(legal=(0, 1))
     players = {
         "player_0": AgentPlayer(ScriptedAgent([0])),  # legal
@@ -605,10 +605,10 @@ def test_illegal_masked_action_is_charged_to_the_acting_seat():
     assert episode.result().failed_player == "player_1"
 
 
-def test_illegal_action_masked_via_info_is_charged_to_the_acting_seat():
+def test_illegal_action_masked_via_info_is_charged_to_the_acting_player():
     # Some environments (Shimmy's OpenSpiel wrapper) publish the action mask in env.last()'s `info`
     # rather than the observation. The boundary must consult both, or an OpenSpiel illegal move slips
-    # past unattributed and marks every seat failed. Same outcome as the observation-masked case.
+    # past unattributed and marks every player failed. Same outcome as the observation-masked case.
     entry = _masked_entry(legal=(0, 1), mask_in_info=True)
     players = {
         "player_0": AgentPlayer(ScriptedAgent([0])),  # legal
@@ -624,13 +624,13 @@ def test_illegal_action_masked_via_info_is_charged_to_the_acting_seat():
 
 
 def test_illegal_external_action_defaults_instead_of_crashing_the_session():
-    # A human seat is not charged like an agent. An illegal action from a hand-rolled transport client
+    # A human player is not charged like an agent. An illegal action from a hand-rolled transport client
     # (the UI only sends legal cards) must fall back to the environment default rather than reaching
-    # env.step and taking down every co-seat in the container. player_0 (external) sends a masked-out
-    # card; the loop swaps in the legal default (0) so the step lands cleanly and no seat is charged.
+    # env.step and taking down every other player in the container. player_0 (external) sends a
+    # masked-out card; the loop swaps in the legal default (0) so the step lands cleanly.
     entry = _masked_entry(legal=(0, 1))
     players = {
-        "player_0": ExternalPlayer(ScriptedSource([2])),  # 2 is masked illegal for a human seat
+        "player_0": ExternalPlayer(ScriptedSource([2])),  # 2 is masked illegal for a human player
         "player_1": AgentPlayer(ScriptedAgent([0])),  # legal
     }
     episode = Episode(entry, players, parameters=resolve_parameters(entry.meta), seed=1, clock=ManualClock())
@@ -642,7 +642,7 @@ def test_illegal_external_action_defaults_instead_of_crashing_the_session():
     assert episode.failed_player is None
 
 
-def test_out_of_action_space_action_is_charged_to_the_acting_seat():
+def test_out_of_action_space_action_is_charged_to_the_acting_player():
     # An action outside the player's Discrete space (the agent contract is an in-space action) is the
     # agent's fault, named even when the env publishes no per-card mask reason for it.
     entry = _masked_entry(n=4, legal=(0, 1, 2, 3))
@@ -657,10 +657,10 @@ def test_out_of_action_space_action_is_charged_to_the_acting_seat():
     assert episode.failed_player == "player_0"
 
 
-def test_environment_fault_on_a_legal_action_is_owned_by_no_seat():
+def test_environment_fault_on_a_legal_action_is_owned_by_no_player():
     # The agent returns a perfectly legal move, but the environment itself raises while applying it.
-    # That is a genuine environment fault, not the agent's: it must propagate with no seat charged,
-    # so the orchestrator falls back to the whole-game fault rather than blaming the acting seat.
+    # That is a genuine environment fault, not the agent's: it must propagate with no player charged,
+    # so the orchestrator falls back to the whole-game fault rather than blaming the acting player.
     entry = _masked_entry(legal=(0, 1), raise_on_legal=0)
     players = {
         "player_0": AgentPlayer(ScriptedAgent([0])),  # legal, yet the env is rigged to raise on it
@@ -674,8 +674,8 @@ def test_environment_fault_on_a_legal_action_is_owned_by_no_seat():
     assert episode.result().failed_player is None
 
 
-def test_agent_reset_crash_is_charged_to_its_seat_over_a_written_recording(tmp_path: Path):
-    # An agent whose reset() raises must be charged to its own seat, not reported as an unowned
+def test_agent_reset_crash_is_charged_to_its_player_over_a_written_recording(tmp_path: Path):
+    # An agent whose reset() raises must be charged to its own player, not reported as an unowned
     # infrastructure fault. The header is opened before the participants reset, so the crash still
     # leaves a readable recording for the orchestrator to attribute over (instead of no result row).
     class ResetCrashing:
@@ -834,7 +834,7 @@ def test_episode_rejects_an_incomplete_or_unknown_parameter_map():
         Episode(entry, players, parameters={"players": 1, "pace": 1.0, "nope": 1}, seed=1)
 
 
-def test_episode_rejects_a_factory_that_ignores_the_resolved_seat_count():
+def test_episode_rejects_a_factory_that_ignores_the_resolved_player_count():
     meta = replace(make_entry().meta, layout=PlayerBounds(2, 2))
     entry = EnvironmentEntry(
         meta=meta,

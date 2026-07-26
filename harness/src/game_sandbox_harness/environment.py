@@ -299,7 +299,7 @@ class EnvironmentMeta:
     #: Whether two agents swapping seats produce a genuinely different game. ``True`` for a
     #: positional game (Hearts: seat order is part of play), ``False`` for a symmetric one
     #: where only the participant set matters. The Stage 6/7 multi-seat scheduler reads this to
-    #: choose ordered (permutation) versus unordered (combination) seat expansion; single-slot
+    #: choose ordered (permutation) versus unordered (combination) seat expansion; single-player
     #: environments leave it ``False``. Defaulted so additive declaration never breaks a caller.
     seat_order_matters: bool = False
     #: Optional viewing cadence (ms) for watch/replay playback, independent of ``pace_interval_ms`` so a

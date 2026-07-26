@@ -128,7 +128,7 @@ describe('submission storage on :memory:', () => {
     ])
     const active = await storage.listActiveSubmissionsBySeason(iter)
     expect(active.filter((s) => s.user_id === 'alice')).toHaveLength(1)
-    // Both attempts are preserved as history regardless of which won the active slot.
+    // Both attempts are preserved as history regardless of which became active.
     expect(await storage.listSubmissionsByUser('alice')).toHaveLength(2)
   })
 

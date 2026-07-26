@@ -151,7 +151,7 @@ async function verify(): Promise<void> {
 
 const REASON_MESSAGE: Record<string, string> = {
   no_open_season: 'Submissions are closed for this environment.',
-  resubmit_conflict: 'Another submission just took the slot — please try again.',
+  resubmit_conflict: 'Another submission just took the seat. Please try again.',
   local_disabled: 'Local submissions are disabled on this deployment.',
   invalid_source: 'Enter a repository URL (or a local folder path).',
 }

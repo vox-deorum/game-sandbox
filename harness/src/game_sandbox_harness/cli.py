@@ -2,7 +2,7 @@
 
 A thin argument-parsing shell — anything the CLI does, Stage 3 does programmatically through
 the same ``run_episode`` API, which is the whole point. It resolves an environment through
-the entry-point registry, binds the single slot to either a manifest-loaded agent or an
+the entry-point registry, binds the single player to either a manifest-loaded agent or an
 external action source, plays one seeded episode, optionally records it, and prints the
 result summary.
 """
@@ -30,7 +30,7 @@ from .session import (
 
 
 def _build_player(entry: EnvironmentEntry, agent_root: str | None, source: str | None) -> Player:
-    """Build the binding for the environment's single human-capable slot."""
+    """Build the binding for the environment's single human-capable player."""
     if agent_root is not None:
         return AgentPlayer(load_agent(agent_root))
     if source == "noop":

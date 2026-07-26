@@ -5,7 +5,7 @@ import type { DecisionEntry } from '../../src/components/DecisionLog.vue'
 import GameThread from '../../src/components/GameThread.vue'
 import type { ChatEntry } from '../../src/lib/chat.js'
 
-// A four-seat Spades roster: three agents sharing a label plus the viewer's human seat.
+// A four-player Spades roster: three agents sharing a label plus the viewer's human player.
 const PLAYERS = {
   player_0: { kind: 'agent' as const, label: 'Naive agent' },
   player_1: { kind: 'agent' as const, label: 'Naive agent' },
@@ -15,10 +15,10 @@ const PLAYERS = {
 
 function decisions(): DecisionEntry[] {
   return [
-    { tick: 0, slot: 'player_0', action: 'bid 3' },
-    { tick: 1, slot: 'player_1', action: 'bid 2' },
-    { tick: 2, slot: 'player_2', action: 'play QS' },
-    { tick: 3, slot: 'player_3', action: 'play KS' },
+    { tick: 0, player: 'player_0', action: 'bid 3' },
+    { tick: 1, player: 'player_1', action: 'bid 2' },
+    { tick: 2, player: 'player_2', action: 'play QS' },
+    { tick: 3, player: 'player_3', action: 'play KS' },
   ]
 }
 
@@ -37,6 +37,12 @@ describe('GameThread', () => {
     expect(rows).toHaveLength(4)
     expect(screen.getByText('bid 3')).toBeInTheDocument()
     expect(screen.getByText('play KS')).toBeInTheDocument()
+    expect(rows.map((row) => row.querySelector('.thread-player')?.textContent)).toEqual([
+      'P0',
+      'P1',
+      'P2',
+      'P3',
+    ])
 
     // Index 1 is the current tick (marked, aria-current); 2 and 3 sit ahead (dimmed); 0 is past.
     const [past, current, futureA, futureB] = rows
@@ -48,7 +54,7 @@ describe('GameThread', () => {
     expect(past?.classList.contains('is-future')).toBe(false)
   })
 
-  it("weaves each tick's messages in right after its decision, badged by seat", () => {
+  it("weaves each tick's messages in right after its decision, badged by player", () => {
     const chat: ChatEntry[] = [
       { tick: 1, from: 'player_0', to: null, text: 'good luck' },
       { tick: 3, from: 'player_1', to: 'player_3', text: 'cover the king' },
@@ -60,7 +66,7 @@ describe('GameThread', () => {
     expect(screen.getByText('good luck')).toBeInTheDocument()
     expect(screen.getByText('cover the king')).toBeInTheDocument()
     expect(screen.getByText('broadcast')).toBeInTheDocument()
-    // A targeted line names its recipient by seat, so a same-labelled roster stays unambiguous.
+    // A targeted line names its recipient by player, so a same-labelled roster stays unambiguous.
     expect(screen.getByText('to P3')).toBeInTheDocument()
 
     // The broadcast rode tick 1, so it sits between the tick-1 and tick-2 decisions.
@@ -97,15 +103,15 @@ describe('GameThread', () => {
     expect(screen.getByText('No decisions yet.')).toBeInTheDocument()
   })
 
-  it('uses None for an empty decision slot', () => {
+  it('uses None for an empty decision player', () => {
     const { container } = render(GameThread, {
       props: {
-        decisions: [{ tick: 0, slot: '', action: 'wait' }],
+        decisions: [{ tick: 0, player: '', action: 'wait' }],
         chat: [],
       },
     })
 
-    expect(container.querySelector('.thread-seat')).toHaveTextContent('None')
+    expect(container.querySelector('.thread-player')).toHaveTextContent('None')
   })
 
   it('keeps setup costs, exact decision costs, and authorized inspection in chat replays', async () => {
@@ -116,7 +122,7 @@ describe('GameThread', () => {
         setupLlmCalls: [
           {
             tick: null,
-            slot: 'player_1',
+            player: 'player_1',
             model: 'small',
             input_tokens: 2,
             reasoning_tokens: 0,
@@ -129,7 +135,7 @@ describe('GameThread', () => {
         llmCalls: [
           {
             tick: 0,
-            slot: 'player_0',
+            player: 'player_0',
             model: 'medium',
             input_tokens: 3,
             reasoning_tokens: 1,
@@ -144,7 +150,11 @@ describe('GameThread', () => {
       },
     })
 
+    expect(container.querySelector('[data-row-id="setup:player_1"]')).toHaveTextContent('P1')
     expect(container.querySelector('[data-row-id="setup:player_1"]')).toHaveTextContent('3 units')
+    expect(
+      container.querySelector('.thread-item--decision:not([data-row-id]) .thread-player'),
+    ).toHaveTextContent('P0')
     expect(screen.getByText('thinking')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Inspect request and response' })).toHaveTextContent(
       '10 units',

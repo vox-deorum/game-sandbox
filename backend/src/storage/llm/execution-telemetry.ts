@@ -12,12 +12,12 @@ import BetterSqlite3 from 'better-sqlite3'
 import type { LlmUsage } from '../../llm/types.js'
 import { totalTokens } from '../../llm/types.js'
 
-const CURRENT_SCHEMA_VERSION = 2
+const CURRENT_SCHEMA_VERSION = 1
 const SCOPE_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/
 
 export interface ExecutionTelemetryCallInput {
   sessionId: string
-  slot: string
+  player: string
   tick: number | null
   model: string
   costWeight: number
@@ -38,7 +38,7 @@ export interface ExecutionTelemetryCall extends Required<ExecutionTelemetryCallI
 
 export interface TelemetryCallFilter {
   sessionId?: string
-  slot?: string
+  player?: string
   model?: string
 }
 
@@ -52,7 +52,7 @@ export type ExecutionUsageByModel = Record<string, ExecutionModelUsage>
 interface CallRow {
   id: number
   session_id: string
-  slot: string
+  player: string
   tick: number | null
   model: string
   cost_weight: number | null
@@ -143,7 +143,7 @@ function decodeCall(row: CallRow): ExecutionTelemetryCall {
   return {
     id: row.id,
     sessionId: row.session_id,
-    slot: row.slot,
+    player: row.player,
     tick: row.tick,
     model: row.model,
     costWeight: row.cost_weight,
@@ -173,7 +173,7 @@ function validateCostBasis(
   }
 }
 
-function migrate(db: BetterSqlite3.Database): void {
+function initializeSchema(db: BetterSqlite3.Database): void {
   const version = db.pragma('user_version', { simple: true }) as number
   if (version > CURRENT_SCHEMA_VERSION) {
     throw new Error(
@@ -182,59 +182,33 @@ function migrate(db: BetterSqlite3.Database): void {
   }
 
   if (version < 1) {
-    const hasCalls =
-      db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'calls'").get() !==
-      undefined
-    if (!hasCalls) {
-      db.transaction(() => {
-        db.exec(`
-          CREATE TABLE calls (
-            id                INTEGER PRIMARY KEY,
-            session_id        TEXT NOT NULL,
-            slot              TEXT NOT NULL,
-            tick              INTEGER,
-            model             TEXT NOT NULL,
-            cost_weight       REAL NOT NULL,
-            budget_cost_units REAL NOT NULL,
-            request_json      TEXT NOT NULL,
-            completion_json   TEXT NOT NULL,
-            input_tokens      INTEGER NOT NULL,
-            reasoning_tokens  INTEGER NOT NULL,
-            output_tokens     INTEGER NOT NULL,
-            usage_estimated   INTEGER NOT NULL,
-            latency_ms        INTEGER NOT NULL,
-            created_at        TEXT NOT NULL
-          );
-          CREATE INDEX calls_session_slot ON calls (session_id, slot);
-          CREATE INDEX calls_created_at ON calls (created_at);
-          CREATE TABLE meter_health (
-            id         INTEGER PRIMARY KEY CHECK (id = 1),
-            checked_at TEXT NOT NULL
-          );
-        `)
-        db.pragma('user_version = 2')
-      }).immediate()
-      return
-    }
     db.transaction(() => {
       db.exec(`
-        CREATE INDEX IF NOT EXISTS calls_session_slot ON calls (session_id, slot);
-        CREATE INDEX IF NOT EXISTS calls_created_at ON calls (created_at);
-        CREATE TABLE IF NOT EXISTS meter_health (
+        CREATE TABLE calls (
+          id                INTEGER PRIMARY KEY,
+          session_id        TEXT NOT NULL,
+          player            TEXT NOT NULL,
+          tick              INTEGER,
+          model             TEXT NOT NULL,
+          cost_weight       REAL NOT NULL,
+          budget_cost_units REAL NOT NULL,
+          request_json      TEXT NOT NULL,
+          completion_json   TEXT NOT NULL,
+          input_tokens      INTEGER NOT NULL,
+          reasoning_tokens  INTEGER NOT NULL,
+          output_tokens     INTEGER NOT NULL,
+          usage_estimated   INTEGER NOT NULL,
+          latency_ms        INTEGER NOT NULL,
+          created_at        TEXT NOT NULL
+        );
+        CREATE INDEX calls_session_player ON calls (session_id, player);
+        CREATE INDEX calls_created_at ON calls (created_at);
+        CREATE TABLE meter_health (
           id         INTEGER PRIMARY KEY CHECK (id = 1),
           checked_at TEXT NOT NULL
         );
       `)
       db.pragma('user_version = 1')
-    }).immediate()
-  }
-  if (version < 2) {
-    db.transaction(() => {
-      db.exec(`
-        ALTER TABLE calls ADD COLUMN cost_weight REAL;
-        ALTER TABLE calls ADD COLUMN budget_cost_units REAL;
-      `)
-      db.pragma('user_version = 2')
     }).immediate()
   }
 }
@@ -279,7 +253,7 @@ export class ExecutionTelemetryStore {
     return join(this.rootDir, `${scopeId}.sqlite`)
   }
 
-  /** Open, migrate, and write-probe a scope before returning it to admission or query code. */
+  /** Open, initialize, and write-probe a scope before returning it to admission or query code. */
   open(scopeId: string): void {
     this.handle(scopeId)
   }
@@ -287,7 +261,7 @@ export class ExecutionTelemetryStore {
   /** Commit one successful logical request in a transaction and return its durable row id. */
   insert(scopeId: string, input: ExecutionTelemetryCallInput): number {
     assertNonEmpty(input.sessionId, 'sessionId')
-    assertNonEmpty(input.slot, 'slot')
+    assertNonEmpty(input.player, 'player')
     assertNonEmpty(input.model, 'model')
     if (input.tick !== null) {
       assertNonNegativeInteger(input.tick, 'tick')
@@ -306,7 +280,7 @@ export class ExecutionTelemetryStore {
     const handle = this.handle(scopeId)
     const values = {
       session_id: input.sessionId,
-      slot: input.slot,
+      player: input.player,
       tick: input.tick,
       model: input.model,
       cost_weight: input.costWeight,
@@ -329,13 +303,13 @@ export class ExecutionTelemetryStore {
     return this.insert(scopeId, input)
   }
 
-  /** Successful committed usage for one slot, grouped by every model name present in telemetry. */
+  /** Successful committed usage for one player, grouped by every model name present in telemetry. */
   readSessionUsageByModel(
     scopeId: string,
     sessionId: string,
-    slot: string,
+    player: string,
   ): Record<string, LlmUsage> {
-    const rows = this.handle(scopeId).sessionUsageByModel.all(sessionId, slot) as Array<
+    const rows = this.handle(scopeId).sessionUsageByModel.all(sessionId, player) as Array<
       UsageRow & { model: string }
     >
     return Object.fromEntries(rows.map((row) => [row.model, decodeUsage(row)]))
@@ -472,17 +446,17 @@ export class ExecutionTelemetryStore {
     const db = new BetterSqlite3(this.pathForScope(scopeId))
     try {
       db.pragma('journal_mode = WAL')
-      migrate(db)
+      initializeSchema(db)
       writeHealth(db, this.now().toISOString())
       const handle: ScopeHandle = {
         db,
         insertCall: db.prepare(`
           INSERT INTO calls (
-            session_id, slot, tick, model, cost_weight, budget_cost_units,
+            session_id, player, tick, model, cost_weight, budget_cost_units,
             request_json, completion_json,
             input_tokens, reasoning_tokens, output_tokens, usage_estimated, latency_ms, created_at
           ) VALUES (
-            @session_id, @slot, @tick, @model, @cost_weight, @budget_cost_units,
+            @session_id, @player, @tick, @model, @cost_weight, @budget_cost_units,
             @request_json, @completion_json,
             @input_tokens, @reasoning_tokens, @output_tokens, @usage_estimated, @latency_ms, @created_at
           )
@@ -493,7 +467,7 @@ export class ExecutionTelemetryStore {
                  COALESCE(SUM(input_tokens), 0) AS input_tokens,
                  COALESCE(SUM(reasoning_tokens), 0) AS reasoning_tokens,
                  COALESCE(SUM(output_tokens), 0) AS output_tokens
-          FROM calls WHERE session_id = ? AND slot = ?
+          FROM calls WHERE session_id = ? AND player = ?
           GROUP BY model ORDER BY model
         `),
       }
@@ -514,7 +488,7 @@ function filteredQuery(
   const values: string[] = []
   for (const [column, value] of [
     ['session_id', filter.sessionId],
-    ['slot', filter.slot],
+    ['player', filter.player],
     ['model', filter.model],
   ] as const) {
     if (value !== undefined) {

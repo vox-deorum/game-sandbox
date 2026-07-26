@@ -25,7 +25,7 @@ const props = defineProps<{
   llmTelemetry?: RecordingLlmTelemetry
 }>()
 
-// A compact inline strip: only the facts that have a value, so the row never carries empty slots.
+// A compact inline strip: only the facts that have a value, so the row never carries empty cells.
 const shown = computed(() =>
   props.items.filter(
     (item) => item.value !== null && item.value !== undefined && item.value !== '',

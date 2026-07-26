@@ -19,7 +19,7 @@ export interface RecordingLlmRouteDeps {
 
 export interface RecordingPublicLlmCall {
   tick: number | null
-  slot: string
+  player: string
   model: string
   input_tokens: number
   reasoning_tokens: number
@@ -68,7 +68,7 @@ export function registerRecordingLlmRoutes(
     const operator = caller?.status === 'admin'
     return {
       calls: calls.map((call) => {
-        const submissionId = header?.players?.[call.slot]?.submission_id
+        const submissionId = header?.players?.[call.player]?.submission_id
         const canReadBodies =
           operator ||
           (caller !== null &&
@@ -99,7 +99,7 @@ async function ownersForHeader(
 function publicCall(call: ExecutionTelemetryCall, includeBodies: boolean): RecordingPublicLlmCall {
   return {
     tick: call.tick,
-    slot: call.slot,
+    player: call.player,
     model: call.model,
     input_tokens: call.inputTokens,
     reasoning_tokens: call.reasoningTokens,

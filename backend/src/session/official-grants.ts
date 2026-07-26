@@ -66,7 +66,7 @@ export function createOfficialGrantIssuer(
             recordSink: createOfficialRecordSink(telemetry, {
               scopeId: input.scopeId,
               sessionId: input.sessionId,
-              slot: playerId,
+              player: playerId,
               tick,
             }),
           }

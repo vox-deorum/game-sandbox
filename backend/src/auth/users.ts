@@ -60,7 +60,7 @@ export function createUserStatusReader(
 
 /**
  * Build the directory over the shared raw connection. The interface is Promise-based so a later
- * engine (or a remote roster) can slot in, even though better-sqlite3 itself is synchronous.
+ * engine (or a remote roster) can replace it, even though better-sqlite3 itself is synchronous.
  */
 export function createUserDirectory(sqlite: BetterSqlite3.Database): UserDirectory {
   // Prepared statements keyed by placeholder count, so the read hot path (every public session,

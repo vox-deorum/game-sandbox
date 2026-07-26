@@ -130,7 +130,7 @@ describe('disabled LLM session regression', () => {
       messaging_enabled: messaging.enabled,
       message_cap: messaging.cap,
     })
-    // The public launch config has no hook-order field. Its ordinary slot/messaging/recording
+    // The public launch config has no hook-order field. Its ordinary player/messaging/recording
     // shape is therefore the observable contract this test can pin without inventing a hook seam.
     expect(Object.hasOwn(config, 'hooks')).toBe(false)
     expect((await storage.getSession(started.id))?.llm_enabled).toBe(0)

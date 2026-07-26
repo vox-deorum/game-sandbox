@@ -311,14 +311,14 @@ async function createWideSubmissionRefs(
 
 /**
  * Emit a canned recording over the fake process's stdout — a header, `ticks` per-step states each
- * carrying the slot's timing, and the final `result` envelope — then finish with `exit`. Mirrors what
+ * carrying the player's timing, and the final `result` envelope, then finish with `exit`. Mirrors what
  * the harness's tee store and result envelope put on the protocol stream.
  */
 function emitRecording(
   process: FakeSessionProcess,
   config: { seed: number },
   options: {
-    slotId?: string
+    playerId?: string
     ticks?: number
     decisionMs?: number
     learnMs?: number
@@ -331,16 +331,16 @@ function emitRecording(
      * that exits without fulfilling its output contract. */
     omitResult?: boolean
     diagnostics?: string[]
-    /** Per-seat scores in the result envelope, overriding the default single-seat `{ slotId: finalScore }`. */
+    /** Per-player scores in the result envelope, overriding the default `{ playerId: finalScore }`. */
     scores?: Record<string, number>
     players?: number
-    /** The seat the harness pins a crash or budget overage to, carried in the result envelope. */
+    /** The player the harness pins a crash or budget overage to in the result envelope. */
     failedPlayer?: unknown
     /** Keep the process open after emitting the result so the runner's watchdog kills it. */
     finish?: boolean
   } = {},
 ): void {
-  const slotId = options.slotId ?? 'player_0'
+  const playerId = options.playerId ?? 'player_0'
   const ticks = options.ticks ?? 3
   const decisionMs = options.decisionMs ?? 10
   const learnMs = options.learnMs
@@ -378,7 +378,7 @@ function emitRecording(
           schema_version: 1,
           tick,
           agents: {
-            [slotId]: {
+            [playerId]: {
               reward: 1,
               score,
               timing: {
@@ -397,7 +397,7 @@ function emitRecording(
         JSON.stringify({
           kind: 'result',
           ticks,
-          scores: options.scores ?? { [slotId]: finalScore },
+          scores: options.scores ?? { [playerId]: finalScore },
           reason,
           step_timeouts: {},
           ...(options.failedPlayer !== undefined ? { failed_player: options.failedPlayer } : {}),
@@ -577,7 +577,7 @@ describe('Docker-backed workflow runner', () => {
         aggregateByModel: (scopeId, filter) => {
           expect(scopeId).toBe(run.id)
           expect(filter?.sessionId).toBe(game?.id)
-          const playerId = filter?.slot ?? ''
+          const playerId = filter?.player ?? ''
           telemetryPlayers.push(playerId)
           return wideUsage[playerId] ?? {}
         },
@@ -817,6 +817,34 @@ describe('Docker-backed workflow runner', () => {
     expect(await storage.listGameResultsByRun(run.id)).toEqual([])
   })
 
+  it('rejects a stored seat object with a matching length before any game starts', async () => {
+    const handle = makeRunner(storage, new FakeDriver(), {
+      environments: makeWideEnvironments(),
+    })
+    const naiveSeats = [{ kind: 'builtin-naive' as const }, { kind: 'builtin-naive' as const }]
+    const run = await makeRun(
+      storage,
+      [{ match_index: 0, game_index: 0, seed: 7, seats: naiveSeats, seat_plan: 'partnership' }],
+      { envId: WIDE_ENV_ID, parameters: { seat_plan: 'partnership' } },
+    )
+    const listRunGames = storage.listRunGames.bind(storage)
+    vi.spyOn(storage, 'listRunGames').mockImplementation(async (runId) =>
+      (await listRunGames(runId)).map((game) => ({
+        ...game,
+        seats: JSON.stringify({ length: 2 }),
+      })),
+    )
+
+    const { status } = await runToTerminal(handle, run.id)
+    expect(status).toBe('failed')
+    expect((await storage.getRun(run.id))?.error).toMatch(
+      /stored assignment does not match the resolved seat layout/,
+    )
+    expect(handle.driver.launches).toHaveLength(0)
+    expect((await listRunGames(run.id)).map((game) => game.status)).toEqual(['pending'])
+    expect(await storage.listGameResultsByRun(run.id)).toEqual([])
+  })
+
   it('includes delayed successful writes by aggregating only after the revocation barrier', async () => {
     const ordering: string[] = []
     let usage: ExecutionUsageByModel = {}
@@ -844,7 +872,7 @@ describe('Docker-backed workflow runner', () => {
         aggregateByModel: (scopeId, filter) => {
           expect(revocationSettled).toBe(true)
           expect(scopeId).toBe(run.id)
-          expect(filter).toEqual({ sessionId: game?.id, slot: 'player_0' })
+          expect(filter).toEqual({ sessionId: game?.id, player: 'player_0' })
           ordering.push('aggregate')
           return usage
         },
@@ -987,7 +1015,7 @@ describe('Docker-backed workflow runner', () => {
     expect(await storage.listGameResultsByRun(run.id)).toEqual([])
   })
 
-  it('persists only each settled game session and slot from the real telemetry store', async () => {
+  it('persists only each settled game session and player from the real telemetry store', async () => {
     const telemetryRoot = mkdtempSync(join(tmpdir(), 'gs-workflow-telemetry-'))
     const telemetry = new ExecutionTelemetryStore(telemetryRoot)
     try {
@@ -1019,7 +1047,7 @@ describe('Docker-backed workflow runner', () => {
       const insert = (
         scopeId: string,
         sessionId: string,
-        slot: string,
+        player: string,
         model: string,
         inputTokens: number,
         reasoningTokens: number,
@@ -1029,7 +1057,7 @@ describe('Docker-backed workflow runner', () => {
       ): void => {
         telemetry.insert(scopeId, {
           sessionId,
-          slot,
+          player,
           tick: 1,
           model,
           costWeight: 1,
@@ -1044,8 +1072,8 @@ describe('Docker-backed workflow runner', () => {
         })
       }
 
-      // The first game has two successful player_0 calls across models. Rows for another slot,
-      // another game with the same slot name, and another run scope must not enter its result.
+      // The first game has two successful player_0 calls across models. Rows for another player,
+      // another game with the same player name, and another run scope must not enter its result.
       insert(run.id, firstGame.id, 'player_0', 'small', 3, 1, 2, false, 11)
       insert(run.id, firstGame.id, 'player_0', 'medium', 5, 2, 4, true, 13)
       insert(run.id, firstGame.id, 'player_1', 'small', 100, 100, 100, false, 100)
@@ -1242,10 +1270,10 @@ describe('Docker-backed workflow runner', () => {
     await expect(secondTerminal).resolves.toMatchObject({ status: 'completed' })
   })
 
-  it('records the envelope score, not a stale recording score, for a non-terminal-acting seat', async () => {
-    // A turn-based env pays its seats only at the terminal tick, and the recording writes only the
-    // acting seat per tick, so a seat that did not act last reads back a stale 0 in the recording. The
-    // result envelope carries every seat's true final score, so the runner must trust it over the
+  it('records the envelope score, not a stale recording score, for a non-terminal-acting player', async () => {
+    // A turn-based env pays its players only at the terminal tick, and the recording writes only the
+    // acting player per tick, so a player that did not act last reads back a stale 0 in the recording.
+    // The result envelope carries every player's true final score, so the runner must trust it over the
     // recording-derived value. Here the recording reports 0 each tick but the envelope reports 42.
     const handle = makeRunner(storage)
     const run = await makeRun(storage, [naiveGame(0, 7)])
@@ -1253,7 +1281,7 @@ describe('Docker-backed workflow runner', () => {
       const config = JSON.parse(launch.spec.argv[0] ?? '{}') as { seed: number }
       emitRecording(launch.process, config, {
         ticks: 3,
-        finalScore: 0, // the recording's per-tick score for this seat stays 0 (it never acted last)
+        finalScore: 0, // this player's per-tick recording score stays 0 (it never acted last)
         scores: { player_0: 42 }, // the envelope's authoritative final score
       })
     }

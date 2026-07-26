@@ -30,7 +30,7 @@ export interface LlmLimits {
 
 export type MaybePromise<T> = T | Promise<T>
 
-/** One independently enforced meter, such as a session slot or a development key. */
+/** One independently enforced meter, such as a session player or a development key. */
 export interface LlmAccountingScope {
   key: string
   limits: LlmLimits

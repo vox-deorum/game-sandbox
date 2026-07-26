@@ -25,7 +25,7 @@ import {
 } from './support/llm-upstream.js'
 
 const SCOPE_ID = 'official-session'
-const SLOT = 'player_2'
+const PLAYER = 'player_2'
 
 describe('official LLM session grant lifecycle', () => {
   let root: string
@@ -80,13 +80,13 @@ describe('official LLM session grant lifecycle', () => {
     const lease = await issuer.issue({
       sessionId,
       scopeId,
-      agentPlayers: [SLOT],
+      agentPlayers: [PLAYER],
       models: { small: { upstream: 'provider-small', costWeight: 2 } },
       limits: { tokenBudget: 1_000, requestsPerMinute: 20 },
     })
     leases.push(lease)
-    const key = lease.keys[SLOT]
-    if (key === undefined) throw new Error('expected a slot key')
+    const key = lease.keys[PLAYER]
+    if (key === undefined) throw new Error('expected a player key')
     return key
   }
 
@@ -108,7 +108,7 @@ describe('official LLM session grant lifecycle', () => {
     })
   }
 
-  it('writes setup and turn rows for the issuing slot, then rejects its saved key after exit', async () => {
+  it('writes setup and turn rows for the issuing player, then rejects its saved key after exit', async () => {
     const key = await issue()
     expect((await markTick(key, { phase: 'setup' })).status).toBe(200)
     expect(
@@ -130,8 +130,8 @@ describe('official LLM session grant lifecycle', () => {
     ).toBe(200)
 
     expect(telemetry.listCalls(SCOPE_ID)).toEqual([
-      expect.objectContaining({ sessionId: SCOPE_ID, slot: SLOT, tick: null, model: 'small' }),
-      expect.objectContaining({ sessionId: SCOPE_ID, slot: SLOT, tick: 17, model: 'small' }),
+      expect.objectContaining({ sessionId: SCOPE_ID, player: PLAYER, tick: null, model: 'small' }),
+      expect.objectContaining({ sessionId: SCOPE_ID, player: PLAYER, tick: 17, model: 'small' }),
     ])
 
     const lease = leases[0]
@@ -156,7 +156,7 @@ describe('official LLM session grant lifecycle', () => {
     expect(response.status).toBe(expectedStatus)
     expect(upstream.requests).toHaveLength(attempts)
     expect(telemetry.listCalls(scopeId)).toEqual([])
-    expect(meter.inspect(`official:${scopeId}:${SLOT}`)).toMatchObject({
+    expect(meter.inspect(`official:${scopeId}:${PLAYER}`)).toMatchObject({
       rateEvents: [],
       reservedWeightedTokens: 0,
     })

@@ -32,7 +32,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{ dismiss: [] }>()
 
-// The labels honour the same blind policy as the per-slot attribution line, via the shared helper.
+// The labels honour the same blind policy as the per-player attribution line, via the shared helper.
 const standings = computed(() =>
   buildStandings(props.state, props.header, {
     blind: props.blind,

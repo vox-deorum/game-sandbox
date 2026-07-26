@@ -51,8 +51,8 @@ export function formatSeat(seat: string): string {
 }
 
 /** "player_0" → "P0": the compact player id used in human-facing labels. */
-export function formatPlayer(slot: string): string {
-  return compactId(slot, /^player_(\d+)$/, 'P')
+export function formatPlayer(playerId: string): string {
+  return compactId(playerId, /^player_(\d+)$/, 'P')
 }
 
 /** A numbered id as its one-letter short form, or a readable title-cased fallback for any other name. */

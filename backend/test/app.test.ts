@@ -59,7 +59,7 @@ describe('HTTP API', () => {
   })
 
   // Season overrides are checked against the environment's declarations when an operator writes them
-  // and never again, so an environment that later tightens a bound (or changes its slot bounds, which
+  // and never again, so an environment that later tightens a bound (or changes its player bounds, which
   // moves the synthesized `players` range) leaves a stored override the current declarations reject.
   // That is an operator problem. It must not take public play offline, and above all it must not be
   // reported to a player as a fault in the settings they submitted.

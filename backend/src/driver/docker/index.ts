@@ -93,8 +93,8 @@ export class DockerDriver implements ExecutionDriver {
         spec,
       )
     }
-    // A composed multi-agent session image: one single-slot COPY chained per submitted slot, each
-    // into its own per-slot directory (see ensureSessionOverlayImage).
+    // A composed multi-agent session image: one COPY chained per submitted seat, each
+    // into its own per-seat directory (see ensureSessionOverlayImage).
     return ensureSessionOverlayImage(
       this.docker,
       imageTagPrefix,

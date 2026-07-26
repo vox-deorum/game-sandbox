@@ -33,7 +33,7 @@ def _entry() -> EnvironmentEntry:
         llm=False,
         renderer="fake",
     )
-    return EnvironmentEntry(meta, lambda: object(), lambda _env, _slot: 0)
+    return EnvironmentEntry(meta, lambda: object(), lambda _env, _player: 0)
 
 
 async def _http(port: int, method: str, path: str) -> tuple[str, dict[str, str], bytes]:

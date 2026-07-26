@@ -737,7 +737,7 @@ describe('generic admission and recovery', () => {
     expect(weightedCommittedTokens(byModel, { medium: 2, small: 1 })).toBe(10)
   })
 
-  it('keeps official slot and development-shaped accounting keys independent', async () => {
+  it('keeps official player and development-shaped accounting keys independent', async () => {
     const meter = new LlmMeter({ recoveryIntervalMs: 10 })
     const makeScope = (key: string): LlmAccountingScope => ({
       key,
@@ -810,7 +810,7 @@ describe('generic admission and recovery', () => {
     expect(meter.inspect(scope.key).rateEvents).toEqual([1_010])
     expect(meter.inspect(scope.key).pendingRateEvents.size).toBe(0)
     const admitted = await meter.reserve(scope, 'small', 1, 1)
-    // The freed capacity is really occupied again: one recorded event plus the new pending slot.
+    // The freed capacity is occupied again: one recorded event plus the new pending reservation.
     expect(meter.inspect(scope.key).rateEvents).toEqual([1_010])
     expect(meter.inspect(scope.key).pendingRateEvents.size).toBe(1)
     meter.release(admitted)

@@ -138,9 +138,9 @@ export interface RecordingSummary {
 }
 
 /**
- * One slot's assignment as the start flow builds it: a connected human, the built-in Naive baseline,
+ * One seat's assignment as the start flow builds it: a connected human, the built-in Naive baseline,
  * or a named submitted agent. The discriminated union carries `submissionId` only on a `submission`
- * slot; {@link startSession} maps it to the wire's snake-case `submission_id`. Mirrors the backend
+ * seat; {@link startSession} maps it to the wire's snake-case `submission_id`. Mirrors the backend
  * `SeatAssignment`, so the frontend payload is honest at the trust boundary.
  */
 export type AgentAssignmentInput =
@@ -372,7 +372,7 @@ export async function getRecording(id: string): Promise<string> {
 /** Public metadata for one successful official model call, with bodies only when authorized. */
 export interface RecordingLlmCall {
   tick: number | null
-  slot: string
+  player: string
   model: string
   input_tokens: number
   reasoning_tokens: number
@@ -806,7 +806,7 @@ export async function setAuthorPrompt(
 // --- Seasons, boards, and the admin console (Stage 6.7) -----------------------------------
 
 /**
- * An agent identity as the boards, placements, and scheduled slots carry it. Unlike {@link AgentRefWire}
+ * An agent identity as the boards, placements, and scheduled seats carry it. Unlike {@link AgentRefWire}
  * (the rating write shape, which omits `user_id` for the backend to resolve), a board row carries the
  * `user_id` so the UI can link a submitted-agent row to its profile. The Naive baseline has no owner.
  * The shape is shared with the backend enrichment through the schema package, so both wire ends agree.

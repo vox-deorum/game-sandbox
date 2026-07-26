@@ -362,7 +362,7 @@ describe('orchestrator', () => {
         id,
         user_id: 'alice',
         env_id: 'flappy_bird',
-        // A human slot makes the derived mode `human`.
+        // A human seat makes the derived mode `human`.
         mode: 'human',
         status: 'starting',
         recording_id: `flappy_bird-${id}`,
@@ -483,12 +483,12 @@ describe('orchestrator', () => {
       expect(driver.launches).toHaveLength(0)
     })
 
-    it('rejects an unknown environment and a human in a non-human-capable slot', async () => {
+    it('rejects an unknown environment and a human in a non-human-capable seat', async () => {
       const orch = makeOrchestrator()
       await expect(orch.start(startRequest({ userId: 'a', envId: 'nope' }))).rejects.toMatchObject({
         status: 400,
       })
-      // watch_only marks no slot human-capable, so a human assignment there is rejected.
+      // watch_only marks no player human-capable, so a human assignment there is rejected.
       const watchOnlySeason = await storage.ensureOpenSeason('watch_only', 1)
       PLAY_SEASONS.set('watch_only', watchOnlySeason.id)
       await expect(
@@ -801,7 +801,7 @@ describe('orchestrator', () => {
         ),
       )
 
-      // A human slot present, so the derived mode is `human`, attributed to the hearts play season.
+      // A human seat is present, so the derived mode is `human`, attributed to the Hearts play season.
       const heartsSeason = await storage.getPublicPlaySeason('hearts')
       expect(await storage.getSession(result.id)).toMatchObject({
         mode: 'human',
@@ -908,12 +908,12 @@ describe('orchestrator', () => {
   })
 
   describe('submitted-agent watch run', () => {
-    /** A single-slot Flappy Bird watch of the given submission. */
+    /** A single-seat Flappy Bird watch of the given submission. */
     function watch(submissionId: string): StartRequest {
       return startRequest({ seats: seats({ kind: 'submission', submissionId }) })
     }
 
-    it('launches from the submission overlay image and binds the agent slot to its path', async () => {
+    it('launches from the submission overlay image and binds the agent player to its path', async () => {
       const source = new FakeSource()
       const orch = makeOrchestrator(60_000, source)
       const submission = await seedReadySubmission(storage)

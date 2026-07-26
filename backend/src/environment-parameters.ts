@@ -4,7 +4,7 @@
  *
  * Season overrides are validated against the declarations when an operator writes them, and never
  * again. An environment whose declarations later change (a tightened bound, a renamed parameter, or
- * new slot bounds moving the synthesized `seats` range) therefore leaves a stored override the
+ * new player bounds moving the synthesized `players` range) therefore leaves a stored override the
  * current declarations reject. `resolveParameters` already handles that case correctly: a rejected
  * override keeps the environment default, so `values` is always complete and usable. Callers decide
  * what to do with `issue`: an operator write refuses it, a public read serves the values and reports

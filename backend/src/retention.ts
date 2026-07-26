@@ -195,7 +195,7 @@ export class Retention {
           break
         }
         // Missing, active, newly protected, and successfully claimed rows all leave this sweep's
-        // evictable population, so each frees a quota slot. A concurrent pin still counts toward
+        // evictable population, so each frees quota capacity. A concurrent pin still counts toward
         // quota, and a transient error is retried by a later sweep — neither counts as progress.
         if (this.wasEvicted(await this.evict(row))) over -= 1
       }

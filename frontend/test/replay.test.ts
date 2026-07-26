@@ -121,7 +121,7 @@ describe('ReplayPage', () => {
     expect(await screen.findByRole('button', { name: 'Play' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Step back' })).toHaveTextContent('←')
     expect(screen.getByRole('button', { name: 'Step forward' })).toHaveTextContent('→')
-    // Draw-only: no controlled slots and no input.
+    // Draw-only: no controlled players and no input.
     expect(mountCtx?.controlledPlayers).toEqual([])
     expect(mountCtx?.sendAction).toBeUndefined()
     // The first frame draws on load.
@@ -150,7 +150,7 @@ describe('ReplayPage', () => {
     )
     await renderReplay()
 
-    // The seed no longer has a slot of its own: it is the last of the run's settings.
+    // The seed is the last of the run's settings.
     expect(await screen.findByRole('button', { name: 'Play' })).toBeInTheDocument()
     expect(screen.getByText('Settings')).toBeInTheDocument()
     expect(screen.queryByText('Seed')).toBeNull()
@@ -159,13 +159,13 @@ describe('ReplayPage', () => {
 
     await fireEvent.focus(trigger)
     const tooltip = screen.getByRole('tooltip')
-    // Only the visible declarations are named (`seats` is fixed at one for Flappy Bird), each formatted
+    // Only the visible declarations are named (`players` is fixed at one for Flappy Bird), each formatted
     // through its declaration, with the seed alongside them.
     expect(tooltip).toHaveTextContent('Pipe gap')
     expect(tooltip).toHaveTextContent('90')
     expect(tooltip).toHaveTextContent('Seed')
     expect(tooltip).toHaveTextContent('4821')
-    expect(tooltip).not.toHaveTextContent('Seats')
+    expect(tooltip).not.toHaveTextContent('Players')
   })
 
   it('keeps successful empty telemetry distinct and shows None for decision costs', async () => {

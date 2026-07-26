@@ -16,10 +16,10 @@ describe('formatDate', () => {
 })
 
 describe('formatPlayer', () => {
-  it('uses compact player ids and keeps a readable fallback for other slot names', () => {
+  it('uses compact player ids and keeps a readable fallback for other names', () => {
     expect(formatPlayer('player_0')).toBe('P0')
     expect(formatPlayer('player_12')).toBe('P12')
-    expect(formatPlayer('observer_slot')).toBe('Observer Slot')
+    expect(formatPlayer('observer_player')).toBe('Observer Player')
   })
 
   it('uses compact player ids in multiplayer score summaries', () => {

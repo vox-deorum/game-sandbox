@@ -1,11 +1,11 @@
 import type { LlmRecordSink, LlmSuccessfulRecord, OfficialTickMarkerRef } from '../../llm/types.js'
 import type { ExecutionTelemetryStore } from './execution-telemetry.js'
 
-/** Official identity captured when a session slot's grant is constructed. */
+/** Official identity captured when a session player's grant is constructed. */
 export interface OfficialRecordSinkScope {
   scopeId: string
   sessionId: string
-  slot: string
+  player: string
   tick: OfficialTickMarkerRef
 }
 
@@ -22,7 +22,7 @@ export function createOfficialRecordSink(
     record(record: LlmSuccessfulRecord): void {
       store.record(scope.scopeId, {
         sessionId: scope.sessionId,
-        slot: scope.slot,
+        player: scope.player,
         tick: scope.tick.current,
         model: record.model,
         costWeight: record.costWeight,

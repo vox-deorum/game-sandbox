@@ -41,7 +41,7 @@ export function useLiveFramePresentation({
     const playerId = viewerPlayers.value[0] ?? Object.keys(state.agents)[0]
     return {
       tick: state.tick,
-      slot: playerId ?? '',
+      player: playerId ?? '',
       action: playerId === undefined ? undefined : state.agents[playerId]?.action,
     }
   }

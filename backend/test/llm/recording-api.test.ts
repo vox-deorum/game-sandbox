@@ -10,7 +10,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import type { RecordingPublicLlmCall } from '../../src/llm/recording-routes.js'
 import type { NewSubmissionInput, Storage } from '../../src/storage/index.js'
-import { ExecutionTelemetryStore } from '../../src/storage/llm/execution-telemetry.js'
+import {
+  EXECUTION_TELEMETRY_SCHEMA_VERSION,
+  ExecutionTelemetryStore,
+} from '../../src/storage/llm/execution-telemetry.js'
 import { openTestApp, type TestApp } from '../support/harness.js'
 
 describe('recording LLM telemetry API', () => {
@@ -80,7 +83,7 @@ describe('recording LLM telemetry API', () => {
   ): void {
     telemetry.insert(scopeId, {
       sessionId,
-      slot: 'player_0',
+      player: 'player_0',
       tick: null,
       model: 'small',
       costWeight: 1.5,
@@ -147,7 +150,7 @@ describe('recording LLM telemetry API', () => {
     const incomplete = new BetterSqlite3(telemetry.pathForScope('incomplete'))
     incomplete.exec(`
       CREATE TABLE calls (
-        id INTEGER PRIMARY KEY, session_id TEXT NOT NULL, slot TEXT NOT NULL,
+        id INTEGER PRIMARY KEY, session_id TEXT NOT NULL, player TEXT NOT NULL,
         tick INTEGER, model TEXT NOT NULL, request_json TEXT NOT NULL, completion_json TEXT NOT NULL,
         input_tokens INTEGER NOT NULL, reasoning_tokens INTEGER NOT NULL, output_tokens INTEGER NOT NULL,
         usage_estimated INTEGER NOT NULL, latency_ms INTEGER NOT NULL, created_at TEXT NOT NULL
@@ -157,9 +160,8 @@ describe('recording LLM telemetry API', () => {
         '2026-07-19T00:00:00.000Z'
       );
     `)
+    incomplete.pragma(`user_version = ${EXECUTION_TELEMETRY_SCHEMA_VERSION}`)
     incomplete.close()
-    telemetry.open('incomplete')
-    telemetry.closeScope('incomplete')
     await seedRecording('incomplete-file', header, {
       scopeId: 'incomplete',
       sessionId: 'session',
@@ -208,7 +210,7 @@ describe('recording LLM telemetry API', () => {
     }
     await seedRecording('multi', header, { scopeId: 'run-scope', sessionId: 'game-1' })
     insertCall('run-scope', 'game-1', {
-      slot: 'player_1',
+      player: 'player_1',
       model: 'medium',
       costWeight: 2,
       budgetCostUnits: 20,
@@ -221,12 +223,12 @@ describe('recording LLM telemetry API', () => {
     })
     insertCall('run-scope', 'game-1', { tick: 9 })
     insertCall('run-scope', 'game-1', {
-      slot: 'player_2',
+      player: 'player_2',
       tick: 10,
       request: { model: 'small', messages: ['former owner prompt'] },
       completion: { model: 'small', choices: ['former owner answer'] },
     })
-    insertCall('run-scope', 'another-game', { slot: 'player_0' })
+    insertCall('run-scope', 'another-game', { player: 'player_0' })
 
     const anonymous = await app.inject({ method: 'GET', url: '/api/recordings/multi/llm' })
     expect(anonymous.statusCode).toBe(200)
@@ -234,7 +236,7 @@ describe('recording LLM telemetry API', () => {
       calls: [
         {
           tick: null,
-          slot: 'player_1',
+          player: 'player_1',
           model: 'medium',
           input_tokens: 3,
           reasoning_tokens: 2,
@@ -245,7 +247,7 @@ describe('recording LLM telemetry API', () => {
         },
         {
           tick: 9,
-          slot: 'player_0',
+          player: 'player_0',
           model: 'small',
           input_tokens: 2,
           reasoning_tokens: 1,
@@ -256,7 +258,7 @@ describe('recording LLM telemetry API', () => {
         },
         {
           tick: 10,
-          slot: 'player_2',
+          player: 'player_2',
           model: 'small',
           input_tokens: 2,
           reasoning_tokens: 1,

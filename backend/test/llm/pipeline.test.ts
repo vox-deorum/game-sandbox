@@ -13,7 +13,7 @@ import { ExecutionTelemetryStore } from '../../src/storage/llm/execution-telemet
 import { createOfficialRecordSink } from '../../src/storage/llm/official-record-sink.js'
 
 const SESSION_ID = 'session-1'
-const SLOT = 'player_0'
+const PLAYER = 'player_0'
 
 function statusError(status: number): APIError {
   return APIError.generate(
@@ -59,15 +59,15 @@ describe('LLM retry, accounting, and telemetry pipeline', () => {
       kind: 'official',
       models: { small: { upstream: 'provider-small', costWeight: 1 } },
       accountingScope: {
-        key: `session:${SESSION_ID}:${SLOT}`,
+        key: `session:${SESSION_ID}:${PLAYER}`,
         limits: { tokenBudget: 100, requestsPerMinute: 10 },
         weights: { small: 1 },
-        readCommittedUsage: () => store.readSessionUsageByModel(SESSION_ID, SESSION_ID, SLOT),
+        readCommittedUsage: () => store.readSessionUsageByModel(SESSION_ID, SESSION_ID, PLAYER),
       },
       recordSink: createOfficialRecordSink(store, {
         scopeId: SESSION_ID,
         sessionId: SESSION_ID,
-        slot: SLOT,
+        player: PLAYER,
         tick,
       }),
     }
@@ -103,7 +103,7 @@ describe('LLM retry, accounting, and telemetry pipeline', () => {
     })
 
     expect(client.create).toHaveBeenCalledTimes(2)
-    expect(store.readSessionUsageByModel(SESSION_ID, SESSION_ID, SLOT)).toEqual({
+    expect(store.readSessionUsageByModel(SESSION_ID, SESSION_ID, PLAYER)).toEqual({
       small: {
         calls: 1,
         inputTokens: 2,
@@ -114,7 +114,7 @@ describe('LLM retry, accounting, and telemetry pipeline', () => {
     expect(store.listCalls(SESSION_ID)).toEqual([
       expect.objectContaining({
         sessionId: SESSION_ID,
-        slot: SLOT,
+        player: PLAYER,
         tick: 7,
         completion: response,
       }),
@@ -131,8 +131,8 @@ describe('LLM retry, accounting, and telemetry pipeline', () => {
     await handler.handle(grant, { model: 'small', messages: [] })
 
     expect(store.listCalls(SESSION_ID)).toEqual([
-      expect.objectContaining({ sessionId: SESSION_ID, slot: SLOT, tick: null }),
-      expect.objectContaining({ sessionId: SESSION_ID, slot: SLOT, tick: 12 }),
+      expect.objectContaining({ sessionId: SESSION_ID, player: PLAYER, tick: null }),
+      expect.objectContaining({ sessionId: SESSION_ID, player: PLAYER, tick: 12 }),
     ])
   })
 
@@ -148,7 +148,7 @@ describe('LLM retry, accounting, and telemetry pipeline', () => {
     })
 
     expect(client.create).toHaveBeenCalledTimes(attempts)
-    expect(store.readSessionUsageByModel(SESSION_ID, SESSION_ID, SLOT)).toEqual({})
+    expect(store.readSessionUsageByModel(SESSION_ID, SESSION_ID, PLAYER)).toEqual({})
     expect(store.listCalls(SESSION_ID)).toEqual([])
     expect(meter.inspect(grant.accountingScope.key)).toMatchObject({
       rateEvents: [],

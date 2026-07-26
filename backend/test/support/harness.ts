@@ -326,8 +326,9 @@ function meta(overrides: Record<string, unknown>): Record<string, unknown> {
 /**
  * A controlled registry with the shapes the tests need: the paced single-human Flappy env, a
  * turn-based env with a metadata human timeout (to prove the override flows into the config), a
- * watch-only env with no human slot (to prove a human assignment is rejected), and a four-slot,
- * all-human-capable, turn-based Hearts env (the multi-slot start-validation and attribution tests).
+ * watch-only env with no human-capable player (to prove a human assignment is rejected), and a
+ * four-player, all-human-capable, turn-based Hearts env (the multiplayer validation and attribution
+ * tests).
  */
 export function makeEnvironments(): EnvironmentRegistry {
   return EnvironmentRegistry.parse(

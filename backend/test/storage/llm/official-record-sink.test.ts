@@ -51,7 +51,7 @@ describe('createOfficialRecordSink', () => {
     const sink = createOfficialRecordSink(store, {
       scopeId: 'run-1',
       sessionId: 'game-1',
-      slot: 'player_2',
+      player: 'player_2',
       tick,
     })
 
@@ -63,7 +63,7 @@ describe('createOfficialRecordSink', () => {
       {
         id: 1,
         sessionId: 'game-1',
-        slot: 'player_2',
+        player: 'player_2',
         tick: null,
         model: 'medium',
         costWeight: 2.5,
@@ -80,7 +80,7 @@ describe('createOfficialRecordSink', () => {
       {
         id: 2,
         sessionId: 'game-1',
-        slot: 'player_2',
+        player: 'player_2',
         tick: 14,
         model: 'medium',
         costWeight: 2.5,
@@ -102,7 +102,7 @@ describe('createOfficialRecordSink', () => {
     const sink = createOfficialRecordSink(store, {
       scopeId: 'live-session',
       sessionId: 'live-session',
-      slot: 'player_0',
+      player: 'player_0',
       tick: { current: null },
     })
 
@@ -111,7 +111,7 @@ describe('createOfficialRecordSink', () => {
 
     expect(store.listCalls('live-session')[0]).toMatchObject({
       sessionId: 'live-session',
-      slot: 'player_0',
+      player: 'player_0',
       model: 'medium',
     })
     expect(probe).toHaveBeenCalledOnce()

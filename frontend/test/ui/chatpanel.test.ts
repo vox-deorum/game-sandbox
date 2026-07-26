@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import ChatPanel from '../../src/components/ChatPanel.vue'
 import type { ChatEntry } from '../../src/lib/chat.js'
 
-// A four-seat Spades attribution map: two plain agents, the viewer's human seat, and a submitted
+// A four-player Spades attribution map: two plain agents, the viewer's human player, and a submitted
 // agent whose ownership a blind viewer must not see.
 const PLAYERS = {
   player_0: { kind: 'agent' as const, label: 'Naive agent' },
@@ -136,9 +136,9 @@ describe('ChatPanel', () => {
     expect(emitted('send')?.[0]).toEqual([{ to: null, text: 'lead low' }])
   })
 
-  it('tells same-labelled seats apart by seat number in options and sender lines', () => {
-    // Three opponents share the "Naive agent" label — the common default Spades table. Attribution
-    // alone would render three identical recipient options; the seat prefix keeps them distinct.
+  it('tells same-labelled players apart by player number in options and sender lines', () => {
+    // Three opponents share the "Naive agent" label, the common default Spades table. Attribution
+    // alone would render three identical recipient options; the player prefix keeps them distinct.
     const roster = {
       player_0: { kind: 'agent' as const, label: 'Naive agent' },
       player_1: { kind: 'agent' as const, label: 'Naive agent' },
@@ -159,7 +159,7 @@ describe('ChatPanel', () => {
     expect(screen.getByRole('option', { name: 'P0' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'P1' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'P3' })).toBeInTheDocument()
-    // And a message line carries its sender's seat beside the shared label (queried by the seat cell,
+    // And a message line carries its sender's player beside the shared label (queried by the player cell,
     // since the terse "P0" now also names the recipient option).
     expect(container.querySelector('.chat-player')?.textContent).toBe('P0')
   })

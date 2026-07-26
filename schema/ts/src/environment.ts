@@ -93,7 +93,7 @@ export interface EnvironmentMeta {
   renderer: string
   /**
    * Whether two agents swapping seats produce a genuinely different game. `true` for a positional
-   * game (Hearts), `false` for a symmetric one or a single-slot environment. The multi-seat
+   * game (Hearts), `false` for a symmetric one or a single-player environment. The multi-seat
    * scheduler reads this to choose ordered (permutation) versus unordered (combination) expansion.
    */
   seat_order_matters: boolean

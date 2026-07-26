@@ -1,7 +1,7 @@
 <!--
   The per-tick decision log shared by the live and replay stages (see
   plans/stage-04.5/information-architecture.md). A two-column table, Tick | Decision, of the agent's
-  action each tick — data already in the state stream (`StepState.agents[slot].action`), so the log
+  action each tick, data already in the state stream (`StepState.agents[player].action`), so the log
   needs no new transport. It scrolls independently and follows the active row: the latest tick on a
   live session, the scrubbed tick on a replay. The caller provides the section label (a heading beside
   the canvas, or a disclosure summary below it), so this component is just the table.
@@ -23,7 +23,7 @@ import UiDialog from './ui/UiDialog.vue'
 
 export interface DecisionEntry {
   tick: number
-  slot: string
+  player: string
   action: unknown
 }
 
@@ -45,26 +45,26 @@ const props = withDefaults(
 )
 
 interface SetupRow {
-  slot: string
+  player: string
   calls: RecordingLlmCall[]
 }
 
 const setupRows = computed<SetupRow[]>(() => {
   if (props.llmUnavailable || props.llmPending) return []
-  const bySlot = new Map<string, RecordingLlmCall[]>()
+  const byPlayer = new Map<string, RecordingLlmCall[]>()
   for (const call of props.setupLlmCalls ?? []) {
-    const calls = bySlot.get(call.slot) ?? []
+    const calls = byPlayer.get(call.player) ?? []
     calls.push(call)
-    bySlot.set(call.slot, calls)
+    byPlayer.set(call.player, calls)
   }
-  return [...bySlot.entries()]
+  return [...byPlayer.entries()]
     .sort(([left], [right]) => left.localeCompare(right))
-    .map(([slot, calls]) => ({ slot, calls }))
+    .map(([player, calls]) => ({ player, calls }))
 })
 
 function decisionCalls(entry: DecisionEntry): RecordingLlmCall[] {
   return (props.llmCalls ?? []).filter(
-    (call) => call.tick === entry.tick && call.slot === entry.slot,
+    (call) => call.tick === entry.tick && call.player === entry.player,
   )
 }
 
@@ -122,11 +122,11 @@ const scroller = useActiveRowScroll(
       <tbody v-if="setupRows.length > 0" class="setup-rows">
         <tr
           v-for="row in setupRows"
-          :key="`setup:${row.slot}`"
-          :data-row-id="`setup:${row.slot}`"
+          :key="`setup:${row.player}`"
+          :data-row-id="`setup:${row.player}`"
         >
           <td class="player-col">
-            {{ row.slot ? formatPlayer(row.slot) : 'None' }}
+            {{ row.player ? formatPlayer(row.player) : 'None' }}
           </td>
           <td class="tick-col">Setup</td>
           <td>Setup</td>
@@ -149,7 +149,7 @@ const scroller = useActiveRowScroll(
           :aria-current="i === activeIndex ? 'true' : undefined"
         >
           <td class="player-col">
-            {{ entry.slot ? formatPlayer(entry.slot) : 'None' }}
+            {{ entry.player ? formatPlayer(entry.player) : 'None' }}
           </td>
           <td class="tick-col">{{ entry.tick }}</td>
           <td>{{ formatAction(entry.action) }}</td>

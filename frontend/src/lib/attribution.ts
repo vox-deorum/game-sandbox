@@ -1,7 +1,7 @@
 /**
- * The one place a slot's attribution label is decided, so every surface that names "who or what drove
- * a slot" — the per-slot attribution line, the end-of-game leaderboard — reads identically and honours
- * the same blind policy. A human slot names the user; an agent slot shows its label, unless a non-
+ * The one place a player's attribution label is decided, so every surface that names "who or what drove
+ * a player", the per-player attribution line and end-of-game leaderboard, reads identically and honours
+ * the same blind policy. A human player names the user; an agent player shows its label, unless a non-
  * operator is viewing a playable season, when a submitted agent is anonymized to "Agent N"
  * (the viewer's own agent reads "Your agent" so they can still find themselves).
  */
@@ -33,9 +33,9 @@ function blindAgentLabel(submissionId: string, anonymousNumbers?: Record<string,
 }
 
 /**
- * Whether `player`'s row is the current viewer's own seat: both ids must be defined and equal. An
+ * Whether `player`'s row is the current viewer's own player: both ids must be defined and equal. An
  * anonymous viewer (`ctx.viewerId === undefined`) must never match a header entry that also carries no
- * `user` (schema-optional, absent on some agent slots and on older recordings) — `undefined ===
+ * `user` (schema-optional, absent on some agent players and on older recordings), `undefined ===
  * undefined` is not "the same person," so the exemption below fails closed rather than granting an
  * anonymous viewer somebody else's identity.
  */
@@ -44,9 +44,9 @@ function isOwnRow(player: Player, ctx: AttributionContext): boolean {
 }
 
 /**
- * Whether blind policy hides `player`'s identity from the current viewer: true for another seat's
- * human or submitted agent while a season is playable, false for the viewer's own seat (still shown —
- * relabeled "Your agent" for a submission, see `attributionLabel` — not hidden), and false whenever
+ * Whether blind policy hides `player`'s identity from the current viewer: true for another player's
+ * human or submitted agent while a season is playable, false for the viewer's own player (still shown,
+ * relabeled "Your agent" for a submission, see `attributionLabel`, not hidden), and false whenever
  * blind does not apply at all. Exposed so a caller that also surfaces the stable id as a tooltip can
  * suppress it under the exact same test `attributionLabel` uses to decide the label, rather than
  * duplicating (and risking drifting from) that policy.
@@ -61,8 +61,8 @@ export function isBlindMasked(player: Player, ctx: AttributionContext = {}): boo
   return player.submission_id !== undefined && !isOwnRow(player, ctx)
 }
 
-/** Whether a players map contains a submitted (non-builtin) agent slot — the only case blind
- *  ownership masking has anything to protect. A slot map with none (an all-human or all-Naive
+/** Whether a players map contains a submitted (non-builtin) agent player, the only case blind
+ *  ownership masking has anything to protect. A player map with none (an all-human or all-Naive
  *  recording) needs no masking regardless of season state. */
 export function hasSubmittedAgent(players: RecordingHeader['players'] | undefined): boolean {
   return Object.values(players ?? {}).some(
@@ -71,17 +71,17 @@ export function hasSubmittedAgent(players: RecordingHeader['players'] | undefine
 }
 
 /**
- * The identity to show for `slot`, given its header entry (absent on older recordings → a slot
+ * The identity to show for `playerId`, given its header entry (absent on older recordings, a player
  * fallback) and the viewer's attribution context. The bare identity, with no "Human:" affordance —
  * a caller that wants to mark the kind adds its own prefix.
  */
 export function attributionLabel(
-  slot: string,
+  playerId: string,
   player: Player | undefined,
   ctx: AttributionContext = {},
 ): string {
   if (player === undefined) {
-    return formatPlayer(slot)
+    return formatPlayer(playerId)
   }
   // A viewer's own submitted agent is never hidden (so isBlindMasked is false for it) but is relabeled
   // "Your agent" while blind, so they can still find themselves. This self-identification is the one
@@ -90,7 +90,7 @@ export function attributionLabel(
     return 'Your agent'
   }
   // Every other "hide this identity?" case goes through isBlindMasked, the single owner of the blind
-  // policy, rather than re-deriving it here. Blind hides a human seat's identity too, not just the
+  // policy, rather than re-deriving it here. Blind hides a human player's identity too, not just the
   // display name: public payloads already pair a submitted agent's user_id with its user_name, so an
   // opaque id would be trivially reversible to a name.
   if (isBlindMasked(player, ctx)) {

@@ -964,11 +964,11 @@ describe('leaderboard storage on :memory:', () => {
       [fast, 100, 10], // 10 ms / decision
       [NAIVE, 0, 0], // no contributing ticks -> null compute
     ]
-    let slot = 0
+    let seatIndex = 0
     for (const [agent, compute, ticks] of seats) {
       await storage.recordGameResult({
         game_id: game.id,
-        seat_index: slot++,
+        seat_index: seatIndex++,
         agent,
         episode_score: 10,
         agent_compute_ms_total: compute,

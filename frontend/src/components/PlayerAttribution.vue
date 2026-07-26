@@ -1,6 +1,6 @@
 <!--
-  The per-slot attribution line: who or what played each slot, read from the recording header's
-  `players` map. A human slot names the user; an agent slot shows its label (the Naive agent, or a
+  The per-player attribution line: who or what played each player, read from the recording header's
+  `players` map. A human player names the user; an agent player shows its label (the Naive agent, or a
   submission owner's agent). Older recordings have no `players` block, so this renders nothing,
   the same tolerate-absence rule the header's other optional fields follow.
 -->
@@ -30,7 +30,7 @@ const props = withDefaults(
 )
 
 // The shared attribution helper (also used by the end-of-game leaderboard) owns the blind policy and
-// the labels; this line keeps the "Human:" affordance that marks a human slot here.
+// the labels; this line keeps the "Human:" affordance that marks a human player here.
 const items = computed(() => {
   const players = props.players
   if (players === undefined) {
@@ -41,8 +41,8 @@ const items = computed(() => {
     viewerId: props.viewerId,
     anonymousNumbers: props.anonymousNumbers,
   }
-  return Object.entries(players).map(([slot, player]) => {
-    const label = attributionLabel(slot, player, ctx)
+  return Object.entries(players).map(([playerId, player]) => {
+    const label = attributionLabel(playerId, player, ctx)
     const masked = isBlindMasked(player, ctx)
     // The stable id rides as a tooltip whenever this row's identity isn't blind-masked — on either
     // kind now, not just human. A masked row (someone else's identity hidden while the season plays)
@@ -52,15 +52,15 @@ const items = computed(() => {
     // so adding the "Human:" prefix here would double up into "Human: Human" — only add it once the
     // real name is showing.
     const text = player.kind === 'human' && !masked ? `Human: ${label}` : label
-    return { slot, text, title }
+    return { playerId, text, title }
   })
 })
 </script>
 
 <template>
   <ul v-if="items.length > 0" class="players">
-    <li v-for="item in items" :key="item.slot" class="player">
-      <span class="player-slot">{{ formatPlayer(item.slot) }}</span>
+    <li v-for="item in items" :key="item.playerId" class="player">
+      <span class="player-id">{{ formatPlayer(item.playerId) }}</span>
       <span class="player-who" :title="item.title">{{ item.text }}</span>
     </li>
   </ul>
@@ -84,7 +84,7 @@ const items = computed(() => {
   gap: var(--space-2);
 }
 
-.player-slot {
+.player-id {
   color: var(--color-text-muted);
 }
 

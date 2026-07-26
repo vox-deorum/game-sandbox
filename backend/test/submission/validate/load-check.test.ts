@@ -2,7 +2,7 @@
  * Unit coverage for the sandboxed load-check runner (Stage 5.4), Docker-free: it drives the real
  * {@link runLoadCheck} against the {@link FakeDriver}, hand-emitting the `validate-result` envelope
  * the harness command would print and finishing the fake process. It proves the launch shape (the
- * `validate` entrypoint, the slot repo root, the passed-through sandbox profile), the success and
+ * `validate` entrypoint, the seat repo root, the passed-through sandbox profile), the success and
  * structured-failure mappings, the no-result case, and the timeout-kills path. The real container
  * run rides the Docker-gated suite.
  */
@@ -28,7 +28,7 @@ function envelope(payload: Record<string, unknown>): string {
 }
 
 describe('runLoadCheck', () => {
-  it('launches the validate command against the slot repo root under the given sandbox', async () => {
+  it('launches the validate command against the seat repo root under the given sandbox', async () => {
     const driver = new FakeDriver()
     driver.onLaunch = (launch) => {
       launch.process.emit(envelope({ ok: true, hooks: { learn: false, chat: false } }))
@@ -125,7 +125,7 @@ describe('runLoadCheck', () => {
     }
   })
 
-  it('honors an explicit slot id in the repo root path', async () => {
+  it('honors an explicit seat id in the repo root path', async () => {
     const driver = new FakeDriver()
     driver.onLaunch = (launch) => {
       launch.process.emit(envelope({ ok: true }))
@@ -136,9 +136,9 @@ describe('runLoadCheck', () => {
       sandbox: SANDBOX,
       sessionId: 'sub-1',
       timeoutMs: 5_000,
-      seatId: 'player_1',
+      seatId: 'seat_1',
     })
 
-    expect(driver.lastLaunch()?.spec.argv).toEqual(['/opt/agents/submissions/player_1'])
+    expect(driver.lastLaunch()?.spec.argv).toEqual(['/opt/agents/submissions/seat_1'])
   })
 })

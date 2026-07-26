@@ -175,7 +175,7 @@ export interface NewSubmissionInput {
  * this into a retryable 409 rather than a 500.
  */
 export class SubmissionConflictError extends Error {
-  constructor(message = 'a concurrent submission won the active-submission slot') {
+  constructor(message = 'a concurrent submission became active first') {
     super(message)
     this.name = 'SubmissionConflictError'
   }

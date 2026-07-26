@@ -35,7 +35,7 @@ class AgentBase(ABC):
     - ``learn(observation, action, reward, terminated)`` is called after each environment
       step with that step's transition, so a reinforcement-learning agent can keep updating
       during play. Its time counts against the per-step and per-episode limits.
-    - ``chat(inbox)`` is called on the agent's turn with the messages addressed to its slot;
+    - ``chat(inbox)`` is called on the agent's turn with the messages addressed to its player;
       it returns messages to send, or nothing to stay silent. Defined and detected in Stage
       2 but never called until messaging routing arrives in Stage 8.
     """

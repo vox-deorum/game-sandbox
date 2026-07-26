@@ -54,7 +54,7 @@ export function useTargetedAction(fallbackMessage: string) {
       }
       return 'success'
     } finally {
-      // Only the request that still owns the in-flight slot clears it; a newer request for another
+      // Only the request that still owns the in-flight state clears it; a newer request for another
       // row (started after a cancel + reopen) has already taken ownership and must keep running.
       if (inFlightId.value === targetId) {
         inFlightId.value = null

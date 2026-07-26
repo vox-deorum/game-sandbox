@@ -177,7 +177,7 @@ const showHumanPlay = computed(
     Boolean(meta.value?.human_players.length && playOpen.value),
 )
 // A multi-seat environment (Hearts) plays through the seat-assignment grid: the human claims a seat
-// and agents fill the rest. A single-slot environment (Flappy Bird) keeps the minimal start form.
+// and agents fill the rest. A single-player environment (Flappy Bird) keeps the minimal start form.
 const multiSeat = computed(
   () =>
     meta.value !== null &&

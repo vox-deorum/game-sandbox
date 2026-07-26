@@ -13,7 +13,7 @@ import {
 
 const CALL: ExecutionTelemetryCallInput = {
   sessionId: 'game-1',
-  slot: 'player_0',
+  player: 'player_0',
   tick: null,
   model: 'small',
   costWeight: 1.5,
@@ -56,44 +56,12 @@ describe('ExecutionTelemetryStore', () => {
         )
         .pluck()
         .all(),
-    ).toEqual(['calls_created_at', 'calls_session_slot'])
+    ).toEqual(['calls_created_at', 'calls_session_player'])
     expect(db.prepare('SELECT * FROM meter_health').get()).toEqual({
       id: 1,
       checked_at: '2026-07-15T12:34:56.000Z',
     })
     db.close()
-  })
-
-  it('migrates a user-version-zero fixture without losing its call', () => {
-    const path = join(root, 'old.sqlite')
-    const old = new BetterSqlite3(path)
-    old.exec(`
-      CREATE TABLE calls (
-        id INTEGER PRIMARY KEY, session_id TEXT NOT NULL, slot TEXT NOT NULL,
-        tick INTEGER, model TEXT NOT NULL, request_json TEXT NOT NULL, completion_json TEXT NOT NULL,
-        input_tokens INTEGER NOT NULL, reasoning_tokens INTEGER NOT NULL, output_tokens INTEGER NOT NULL,
-        usage_estimated INTEGER NOT NULL, latency_ms INTEGER NOT NULL, created_at TEXT NOT NULL
-      );
-      INSERT INTO calls VALUES (1, 'old-game', 'player_0', NULL, 'large', '{}', '{}',
-        1, 0, 2, 0, 3, '2026-07-01T00:00:00.000Z');
-    `)
-    old.close()
-    store.open('old')
-    expect(store.readSessionUsageByModel('old', 'old-game', 'player_0')).toEqual({
-      large: {
-        calls: 1,
-        inputTokens: 1,
-        reasoningTokens: 0,
-        outputTokens: 2,
-      },
-    })
-    const migrated = new BetterSqlite3(path, { readonly: true })
-    expect(migrated.pragma('user_version', { simple: true })).toBe(2)
-    expect(
-      migrated.prepare("SELECT name FROM sqlite_master WHERE name = 'meter_health'").get(),
-    ).toBeDefined()
-    migrated.close()
-    expect(() => store.listCalls('old')).toThrow('no authoritative cost basis')
   })
 
   it('rejects newer schemas', () => {
@@ -120,7 +88,7 @@ describe('ExecutionTelemetryStore', () => {
     })
     store.insert('run', {
       ...CALL,
-      slot: 'player_1',
+      player: 'player_1',
       model: 'large',
       inputTokens: 100,
       reasoningTokens: 20,
@@ -128,7 +96,7 @@ describe('ExecutionTelemetryStore', () => {
       budgetCostUnits: 195,
     })
 
-    expect(store.listCalls('run', { sessionId: 'game-1', slot: 'player_0' })[0]).toEqual({
+    expect(store.listCalls('run', { sessionId: 'game-1', player: 'player_0' })[0]).toEqual({
       id: 1,
       ...CALL,
     })
@@ -242,18 +210,17 @@ describe('ExecutionTelemetryStore', () => {
     const legacy = new BetterSqlite3(legacyPath)
     legacy.exec(`
       CREATE TABLE calls (
-        id INTEGER PRIMARY KEY, session_id TEXT NOT NULL, slot TEXT NOT NULL,
+        id INTEGER PRIMARY KEY, session_id TEXT NOT NULL, player TEXT NOT NULL,
         tick INTEGER, model TEXT NOT NULL, request_json TEXT NOT NULL, completion_json TEXT NOT NULL,
         input_tokens INTEGER NOT NULL, reasoning_tokens INTEGER NOT NULL, output_tokens INTEGER NOT NULL,
         usage_estimated INTEGER NOT NULL, latency_ms INTEGER NOT NULL, created_at TEXT NOT NULL
       );
     `)
-    legacy.pragma('user_version = 1')
     legacy.close()
 
     expect(() => store.readAssociatedCalls('legacy', 'game-1')).toThrow('unavailable')
     const unchanged = new BetterSqlite3(legacyPath, { readonly: true })
-    expect(unchanged.pragma('user_version', { simple: true })).toBe(1)
+    expect(unchanged.pragma('user_version', { simple: true })).toBe(0)
     expect(unchanged.prepare('PRAGMA table_info(calls)').all()).not.toEqual(
       expect.arrayContaining([expect.objectContaining({ name: 'cost_weight' })]),
     )

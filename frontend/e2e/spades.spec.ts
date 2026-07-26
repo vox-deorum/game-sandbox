@@ -311,7 +311,7 @@ test('a Spades season: three example agents, a scheduled partnership matchup, th
     staged[agent] = dir
   }
 
-  // Free the Spades env's single open-submission and open-play slots, held by the seeded Playground.
+  // Free the Spades environment's open submission and play windows, held by the seeded Playground.
   const original = await activeWindows(admin, SPADES_ENV_ID)
   if (original.submissionSeasonId !== null) {
     await closeSubmissions(admin, original.submissionSeasonId)
@@ -332,13 +332,14 @@ test('a Spades season: three example agents, a scheduled partnership matchup, th
       ),
     )
 
-    // The matchup: submission seats at 0 and 2 — Spades' own partnership pairing (`team_of(seat) = seat
-    // % 2`), so every scheduled game seats two of the three submissions as PARTNERS against the Naive
-    // baseline holding the other partnership (seats 1 and 3). Spades is a four-seat env, so the config
-    // must name exactly four slots; `seat_order_matters` makes the scheduler emit one game per ordered
+    // The matchup assigns submissions to seats 0 and 2. Those map to Spades players 0 and 2, whose
+    // partnership pairing is `team_of(player) = player % 2`, so every scheduled game places two of
+    // the three submissions together against the Naive baseline players 1 and 3. Spades is a four-seat
+    // env, so the config
+    // must name exactly four seats; `seat_order_matters` makes the scheduler emit one game per ordered
     // pairing of the ready submissions across the two submission seats, plus the appended Naive baseline.
-    // Seed 0 is used throughout: which seat opens the bidding is a property of the deal (seat 0 always
-    // opens, independent of who is seated there), so the choice of seed does not affect determinism here
+    // Seed 0 is used throughout: which player opens the bidding is a property of the deal (player 0
+    // always opens, independent of who is seated there), so the choice of seed does not affect determinism here
     // — it is kept at 0 to match hearts.spec.ts's convention.
     await configureMatches(admin, season.id, [
       {
@@ -392,8 +393,8 @@ test('a Spades season: three example agents, a scheduled partnership matchup, th
     // "Partners share the team score": open a scheduled game's replay and read the shared
     // cross-environment game-over standings card (frontend/src/components/GameOverCard.vue, built from
     // lib/standings.ts's buildStandings). Its per-row `.value` cell renders the overlay's
-    // `display_scores[seat]`, which the Python rules engine (environments/spades/overlay.py)
-    // documents as "each seat carrying its team's score, so partners share", so the DOM proof is that
+    // `display_scores[player]`, which the Python rules engine (environments/spades/overlay.py)
+    // documents as each player carrying its team's score, so the DOM proof is that
     // the S0 and S2 rows show the identical value. Stage 15.3 still resolves Spades to singleton
     // seats, so seat N covers player N here, and the matching values retain the existing
     // partnership-score behavior. That

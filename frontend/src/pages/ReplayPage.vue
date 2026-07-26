@@ -6,7 +6,7 @@
   friendly "needs a newer viewer" message.
 
   The viewer is draw-only by construction: the renderer mounts with no sendAction and no controlled
-  slots. The transport is fully keyboard operable from the stage region (space toggles play, the arrows
+  players. The transport is fully keyboard operable from the stage region (space toggles play, the arrows
   step, Home and End jump), and the scrubber exposes its position to assistive tech. The decision log
   replays from the same recorded states the transport walks, staying in sync with the scrubber.
 -->
@@ -158,7 +158,7 @@ const scrubIndex = computed({
 })
 
 // What this episode was played with: the visible parameters the recording header carries, resolved
-// against the environment's declarations, plus the seed. The seed no longer has a slot of its own in
+// against the environment's declarations, plus the seed. The seed no longer has a row of its own in
 // the strip; it is the last of these settings, since it configures the run like the rest of them.
 const settingsDetails = computed(() => {
   const recorded = header.value
@@ -211,11 +211,11 @@ function onStageKeydown(event: KeyboardEvent): void {
 
 /** One decision-log row per state: the first agent's action (single-agent today). */
 function toDecision(state: StepState): DecisionEntry {
-  const slot = Object.keys(state.agents)[0]
+  const playerId = Object.keys(state.agents)[0]
   return {
     tick: state.tick,
-    slot: slot ?? '',
-    action: slot === undefined ? undefined : state.agents[slot]?.action,
+    player: playerId ?? '',
+    action: playerId === undefined ? undefined : state.agents[playerId]?.action,
   }
 }
 

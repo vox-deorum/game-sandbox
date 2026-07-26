@@ -65,10 +65,10 @@ REASON_STOPPED = "stopped"
 class IllegalAgentActionError(RuntimeError):
     """Raised when an agent returns an action the environment would reject as an illegal move.
 
-    The loop rejects it at the action boundary and charges the fault to the acting seat, instead of
-    letting ``env.step`` raise with no attribution — which would smear the failure across every seat
+    The loop rejects it at the action boundary and charges the fault to the acting player, instead of
+    letting ``env.step`` raise with no attribution, which would smear the failure across every player
     sharing the container. A move that passes the boundary but still makes ``env.step`` raise is a
-    genuine environment fault, owned by no seat.
+    genuine environment fault, owned by no player.
     """
 
 
@@ -165,9 +165,8 @@ class EpisodeResult:
     step_timeouts: dict[str, int]
     recording_id: str | None = None
     #: The one player a failure is chargeable to: the player whose agent raised, or whose own per-episode
-    #: budget overran. ``None`` for a clean episode, or a container-level fault no single seat owns. The
-    #: orchestrator reads it to charge a crash or budget overage to that seat alone, never to every
-    #: competitor sharing the container.
+    #: budget overran. ``None`` for a clean episode, or a container-level fault no single player owns.
+    #: The orchestrator maps it to that player's seat instead of charging every competitor.
     failed_player: str | None = None
 
 
@@ -289,10 +288,10 @@ class Episode:
         run; callers using the context-manager form get that for free.
 
         The recording header is opened *after* the environment resets but *before* the participants
-        reset, and each participant ``reset`` is charged to its own seat. So an agent whose ``reset``
-        raises is attributed to that one seat (:attr:`failed_player`) over a readable recording, rather
+        reset, and each participant ``reset`` is charged to its own player. So an agent whose ``reset``
+        raises is attributed to that player (:attr:`failed_player`) over a readable recording, rather
         than looking like an unowned infrastructure fault that yields no recording at all. A failure
-        in ``env.reset`` itself, before any seat has been touched, stays unowned by design.
+        in ``env.reset`` itself, before any player has been touched, stays unowned by design.
 
         Any startup failure closes the half-opened recording writer and the constructed env before
         re-raising: a context-manager caller (``run_episode``) never reaches ``__exit__`` when
@@ -332,12 +331,12 @@ class Episode:
                         if binding.execution_scope is not None:
                             binding.execution_scope.setup(player_id)
                         binding.agent.reset(self._seed)
-                    except Exception:  # noqa: BLE001 - charge a reset crash to this seat, then re-raise
+                    except Exception:  # noqa: BLE001 - charge a reset crash to this player, then re-raise
                         self._failed_player = player_id
                         raise
         except Exception:  # noqa: BLE001 - release the half-opened recording/env, then re-raise as-is
             # Suppress any close fault so it never masks the original startup error (which the headless
-            # caller still receives and which carries the seat attribution set just above).
+            # caller still receives and which carries the player attribution set just above).
             with contextlib.suppress(Exception):
                 self.close()
             raise
@@ -366,11 +365,11 @@ class Episode:
 
     @property
     def failed_player(self) -> str | None:
-        """The seat at fault, or ``None``: the player whose agent raised, or whose budget overran.
+        """The player at fault, or ``None``: the player whose agent raised, or whose budget overran.
 
-        Set the instant a seat is to blame so the live runner can name it in the result envelope even
-        while a crashing agent's exception is propagating out of the loop. The orchestrator charges the
-        failure to that one seat instead of to every competitor sharing the container.
+        Set the instant a player is to blame so the live runner can name it in the result envelope even
+        while a crashing agent's exception is propagating out of the loop. Workflow reduction maps the
+        failure to that player's seat instead of to every competitor sharing the container.
         """
         return self._failed_player
 
@@ -460,7 +459,7 @@ class Episode:
                     context.player_id,
                     lambda: binding.agent.act(context.observation),
                 )
-            except Exception:  # noqa: BLE001 - charge the crash to this seat, then re-raise unchanged
+            except Exception:  # noqa: BLE001 - charge the crash to this player, then re-raise unchanged
                 self._failed_player = context.player_id
                 raise
             context.agent_compute_ms += context.decision_ms
@@ -518,7 +517,7 @@ class Episode:
                     context.player_id,
                     lambda: binding.agent.chat(inbox),
                 )
-            except Exception:  # noqa: BLE001 - charge the crash to this seat, then re-raise unchanged
+            except Exception:  # noqa: BLE001 - charge the crash to this player, then re-raise unchanged
                 self._failed_player = context.player_id
                 raise
             context.agent_compute_ms += context.chat_ms
@@ -534,7 +533,7 @@ class Episode:
         """Apply the selected action and credit every reward published for the cycle."""
         context.env.step(context.action)
         context.reward = float(context.env.rewards[context.player_id])
-        # Terminal rewards in an AEC environment can be published for every seat on the final
+        # Terminal rewards in an AEC environment can be published for every player on the final
         # actor's step and then cleared by dead steps, so credit the entire reward mapping here.
         for rewarded_player, player_reward in context.env.rewards.items():
             rewarded_state = self._state.get(rewarded_player)
@@ -559,7 +558,7 @@ class Episode:
                         terminated_now,
                     ),
                 )
-            except Exception:  # noqa: BLE001 - charge the crash to this seat, then re-raise unchanged
+            except Exception:  # noqa: BLE001 - charge the crash to this player, then re-raise unchanged
                 self._failed_player = context.player_id
                 raise
             context.agent_compute_ms += context.learn_ms
@@ -743,7 +742,7 @@ def _illegal_action_reason(env: Any, player_id: str, observation: Any, info: Any
 
     Anything this cannot disprove — an environment exposing no action space or publishing no mask, or
     an action that does not index the mask — is deliberately left for ``env.step`` to judge, so a
-    genuine fault on an otherwise-legal action stays owned by no seat rather than blamed on this one.
+    genuine fault on an otherwise-legal action stays owned by no player rather than blamed on this one.
     """
     space_fn: Any = getattr(env, "action_space", None)
     if space_fn is not None:

@@ -82,7 +82,7 @@ test('a four-seat Hearts session renders in the browser', async ({ page, admin }
   await page.goto(`/sessions/${sessionId}`)
   await expect(page.locator('canvas.renderer-canvas')).toBeVisible({ timeout: 60_000 })
 
-  // Free the user's single active-session slot (the scripted game also ends on its own).
+  // Free the user's active-session reservation (the scripted game also ends on its own).
   await admin.delete(`/api/sessions/${sessionId}`).catch(() => {})
 })
 
@@ -113,7 +113,7 @@ test('a Hearts season: two example agents, a scheduled multi-seat matchup, then 
   const other = await as(LLM_PERSONAS.other)
   const ownerId = await userIdOf(owner)
 
-  // Free the Hearts env's single open-submission and open-play slots, held by the seeded Playground.
+  // Free the Hearts environment's open submission and play windows, held by the seeded Playground.
   const original = await activeWindows(admin, HEARTS_ENV_ID)
   if (original.submissionSeasonId !== null) {
     await closeSubmissions(admin, original.submissionSeasonId)
@@ -299,8 +299,8 @@ test('a Hearts season: two example agents, a scheduled multi-seat matchup, then 
     })
     await expect(nonLlmBoardRow.locator('.llm-usage')).toHaveText('None')
 
-    // The Mean score column must show real Hearts scores, not the stale zeros a per-seat capture bug
-    // once produced (only the seat acting on the final trick recorded its score; every other seat
+    // The Mean score column must show real Hearts scores, not the stale zeros a per-player capture bug
+    // once produced (only the player acting on the final trick recorded its score; every other player
     // banked a best-possible 0). A Hearts leaderboard score is the negated penalty total, so each
     // agent's mean lives in the closed range [-26, 0] — a legitimate season that took all 26 penalty
     // points every game sits exactly at the -26 floor, which coincides with the forfeit floor, so the
@@ -527,7 +527,7 @@ test('the watch seat dialog starts a session with the chosen seed reaching the s
   await authenticateBrowser(page.context(), admin)
 
   // Hearts is a four-seat environment, so the watch flow opens the multi-seat SeatAssignmentDialog
-  // (WatchAgentPicker routes a single-slot env straight to a start instead). The seeded Hearts
+  // (WatchAgentPicker routes a single-seat environment straight to a start instead). The seeded Hearts
   // Playground is play-open on a fresh backend, so the watch picker renders for the signed-in admin.
   await page.goto(`/environments/${HEARTS_ENV_ID}`)
 
@@ -566,7 +566,7 @@ test('the watch seat dialog starts a session with the chosen seed reaching the s
   await expect(page).toHaveURL(/\/sessions\//)
   await expect(page.locator('canvas.renderer-canvas')).toBeVisible({ timeout: 60_000 })
 
-  // Free the user's single active-session slot (the scripted game also ends on its own).
+  // Free the user's active-session reservation (the scripted game also ends on its own).
   const sessionId = page.url().split('/sessions/')[1]
   if (sessionId !== undefined) {
     await admin.delete(`/api/sessions/${sessionId}`).catch(() => {})
@@ -603,7 +603,7 @@ test('an on-screen human seat plays a legal card and an illegal click does not a
   await page.goto(`/sessions/${sessionId}`)
 
   // The renderer mounts and, because the admin owns this human session, the bottom (player_0) hand is
-  // interactive: the renderer wires a click-to-play per legal card on the controlled seat's turn.
+  // interactive: the renderer wires a click-to-play per legal card on the controlled player's turn.
   const canvas = page.locator('canvas.renderer-canvas')
   await expect(canvas).toBeVisible({ timeout: 60_000 })
 
@@ -633,7 +633,7 @@ test('an on-screen human seat plays a legal card and an illegal click does not a
   const illegalCard = at(888, 656)
 
   // An illegal click first: a greyed card is not wired clickable (the renderer only binds a play handler
-  // to a legal card on the controlled seat's turn), so clicking it sends nothing and the game does not
+  // to a legal card on the controlled player's turn), so clicking it sends nothing and the game does not
   // advance. The log must still be empty a moment later — the negative control for the legal click.
   await canvas.click({ position: illegalCard })
   // Give any (wrongly) dispatched action time to round-trip and stream a state before asserting no-op.
@@ -641,23 +641,23 @@ test('an on-screen human seat plays a legal card and an illegal click does not a
   await expect(decisionRows).toHaveCount(0)
 
   // The legal play: clicking the 2♣ sends its play action for player_0 (the only legal opening card).
-  // The backend applies it and the three agent seats follow, so the live stream delivers acted states
+  // The backend applies it and the three agent players follow, so the live stream delivers acted states
   // and the decision log grows — the DOM-observable proof that the on-screen human play registered and
   // advanced the hand.
   await canvas.click({ position: twoOfClubs })
   // The decision log growing from empty to one row is the DOM-observable proof the on-screen play
-  // registered and advanced the hand. The host renders the controlled view seat (here player_0, the
-  // seed-chosen 2♣ leader) and attributes every log row to it, so this smoke-tests the seat-0 human;
+  // registered and advanced the hand. The host renders the controlled player (here player_0, the
+  // seed-chosen 2♣ leader) and attributes every log row to it, so this smoke-tests player_0;
   // a per-row player assertion would be tautological, and narrowing controlledPlayers to an arbitrary
-  // assigned seat is step 6's job. The row-count advance is the honest signal.
+  // assigned player is step 6's job. The row-count advance is the honest signal.
   await expect(decisionRows.first()).toBeVisible({ timeout: 30_000 })
 
   // Stop the still-running human session and wait until the backend frees this user's single active
-  // slot, so the next test's start for the same admin cannot race a 409 already-active.
+  // reservation, so the next test's start for the same admin cannot race a 409 already-active.
   await stopSessionAndAwaitFree(admin, sessionId)
 })
 
-test('a multi-agent Hearts recording replays with per-seat attribution and trick-by-trick playback', async ({
+test('a multi-agent Hearts recording replays with per-player attribution and trick-by-trick playback', async ({
   page,
   admin,
   as,
@@ -669,7 +669,7 @@ test('a multi-agent Hearts recording replays with per-seat attribution and trick
   // The browser views the replay as the bootstrap admin, the operator throughout this spec.
   await authenticateBrowser(page.context(), admin)
 
-  // Stage and submit one example Hearts agent under its own owner, so its seat carries a real owner
+  // Stage and submit one example Hearts agent under its own owner, so its player carries a real owner
   // attribution ("<owner>'s agent") in the recording header rather than the generic Naive label. It
   // attaches to the seeded Playground, which is both submission-open and play-open on a fresh backend.
   const stagedDir = stageExampleAgent('hearts', 'duck')
@@ -682,8 +682,8 @@ test('a multi-agent Hearts recording replays with per-seat attribution and trick
 
     // A scripted four-seat hand: the submitted agent in seat 0, the Naive baseline in the other three.
     // No human seat, so it runs itself to completion and finalizes a trick-by-trick recording. The mixed
-    // roster gives the recording header a per-seat `players` map with one owner-attributed seat and three
-    // Naive seats — the four-seat attribution this test asserts. The admin is the operator, so the
+    // roster gives the recording header a per-player `players` map with one owner-attributed player and
+    // three Naive players. The admin is the operator, so the
     // replay shows real owner labels (the blind-anonymization path applies only to non-operators).
     const recordingId = await finishedSeatedSession(
       admin,
@@ -704,10 +704,10 @@ test('a multi-agent Hearts recording replays with per-seat attribution and trick
     await expect(decisionLog.getByRole('columnheader', { name: 'LLM cost' })).toBeVisible()
     await expect(decisionLog.getByText('None').first()).toBeVisible()
 
-    // Per-seat attribution: the PlayerAttribution line carries one entry per seat, each naming the slot
-    // and who drove it. A four-seat Hearts recording shows all four seats; the submitted seat reads the
-    // owner's-agent label and the rest read the Naive agent. (Both the per-slot line and, on the final
-    // frame, the game-over leaderboard read the same header `players` map.)
+    // Per-player attribution: the PlayerAttribution line names every player and who drove it. A
+    // four-player Hearts recording shows all four players; the submitted player reads the owner's-agent
+    // label and the rest read the Naive agent. The final game-over leaderboard reduces those players
+    // through the header's seat map.
     const attribution = page.locator('.players')
     await expect(attribution.locator('.player')).toHaveCount(4)
     await expect(attribution.getByText(`${HEARTS_OWNERS.replay}'s agent`)).toBeVisible()

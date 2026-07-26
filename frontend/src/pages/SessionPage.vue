@@ -269,7 +269,7 @@ onMounted(async () => {
   // A watch run (scripted) plays paced so a container that streams faster than real time still
   // animates at the environment's cadence and reveals game over only once the frames have played
   // out. A human session renders its owner's own move on arrival for immediate feedback, but a
-  // turn-based env's `live_interval_ms` throttles the other seats' burst so it animates card-by-card.
+  // turn-based env's `live_interval_ms` throttles the other players' burst so it animates card-by-card.
   connect({
     pace: fetched.mode === 'scripted',
     // A realtime env paces by its step interval; a turn-based one (Hearts) declares a viewing cadence

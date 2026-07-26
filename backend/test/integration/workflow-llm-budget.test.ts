@@ -260,7 +260,7 @@ describe('workflow LLM budget exhaustion (Docker)', () => {
     let attemptedSubmissionTurns = 0
     for (const game of games) {
       expect(game.status).toBe('completed')
-      const gameCalls = telemetry.listCalls(run.id, { sessionId: game.id, slot: 'player_0' })
+      const gameCalls = telemetry.listCalls(run.id, { sessionId: game.id, player: 'player_0' })
       expect(gameCalls).toHaveLength(SUCCESSFUL_CALLS_PER_GAME)
       expect(gameCalls.every((call) => call.model === 'small')).toBe(true)
 
@@ -274,7 +274,7 @@ describe('workflow LLM budget exhaustion (Docker)', () => {
       expect(submissionResult.acted_tick_count).toBeGreaterThan(SUCCESSFUL_CALLS_PER_GAME)
       attemptedSubmissionTurns += submissionResult.acted_tick_count
       expect(submissionResult.llm_usage_by_model).toEqual(
-        storedUsage(telemetry.aggregateByModel(run.id, { sessionId: game.id, slot: 'player_0' })),
+        storedUsage(telemetry.aggregateByModel(run.id, { sessionId: game.id, player: 'player_0' })),
       )
       expect(submissionResult.llm_weighted_cost).toBe(
         SUCCESSFUL_CALLS_PER_GAME * SUCCESSFUL_TOKENS_PER_CALL * SMALL_MODEL_COST_WEIGHT,
@@ -293,7 +293,7 @@ describe('workflow LLM budget exhaustion (Docker)', () => {
       new Set(games.map((game) => game.id)),
     )
 
-    const runUsage = storedUsage(telemetry.aggregateByModel(run.id, { slot: 'player_0' }))
+    const runUsage = storedUsage(telemetry.aggregateByModel(run.id, { player: 'player_0' }))
     expect(runUsage).not.toBeNull()
     const board = await storage.getAutomatedBoard(season.id, run)
     const submissionBoard = board.find(

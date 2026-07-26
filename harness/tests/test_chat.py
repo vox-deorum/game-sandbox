@@ -9,11 +9,11 @@ from __future__ import annotations
 
 from game_sandbox_harness.chat import ChatRouter
 
-SLOTS = ("player_0", "player_1", "player_2", "player_3")
+PLAYERS = ("player_0", "player_1", "player_2", "player_3")
 
 
 def _router(cap: int | None = None) -> ChatRouter:
-    return ChatRouter(SLOTS, cap)
+    return ChatRouter(PLAYERS, cap)
 
 
 def test_targeted_message_routes_to_its_recipient_only():

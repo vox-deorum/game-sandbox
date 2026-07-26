@@ -1,7 +1,7 @@
 /**
  * The live-session socket wrapper the session page composes (see
  * plans/stage-04.5/page-restructure.md). It owns the SessionSocket lifecycle and the session chrome
- * state derived from its frames — connection, status, paused, end reason, final result — and exposes
+ * state derived from its frames: connection, status, paused, end reason, final result, and exposes
  * the pause/stop/input actions. The renderer frames (header and state) are handed back to the caller
  * through `frames`, because mounting the renderer is the page's concern, not the socket's.
  *
@@ -9,7 +9,7 @@
  * the UI cannot disagree with the container.
  *
  * A watch (scripted) run plays through a client-side jitter buffer. The container runs as fast as it
- * can and the carrier delivers frames unevenly — in bursts, with stalls — so rendering them on arrival
+ * can and the carrier delivers frames unevenly, in bursts with stalls, so rendering them on arrival
  * makes the animation race ahead and snap to the result. Instead the client buffers frames, waits for
  * a small lead to accumulate (so a late or bursty frame does not starve playback), then plays them out
  * one per cadence tick; an underrun simply holds the last frame until more arrive rather than
@@ -18,7 +18,7 @@
  * reveals game over.
  *
  * A human session renders its owner's own move the instant it arrives — the owner needs immediate
- * feedback to their input. But when a turn-based env declares a `live_interval_ms`, the *other* seats'
+ * feedback to their input. But when a turn-based env declares a `live_interval_ms`, the *other* players'
  * moves are throttled: the backend streams the AI replies in a burst (they compute in milliseconds),
  * which would otherwise race the renderer and snap all the cards down at once. A leading-edge throttle
  * renders the first frame after an idle gap (the human's own move, or the opening deal) immediately,
@@ -57,10 +57,10 @@ export interface ConnectOptions {
   /** The environment's pace interval; falls back to {@link DEFAULT_WATCH_CADENCE_MS} when unset. */
   paceMs?: number | null
   /**
-   * A live human session's cadence (ms) for throttling the *other* seats' moves, so a burst of fast AI
+   * A live human session's cadence (ms) for throttling the *other* players' moves, so a burst of fast AI
    * replies animates one at a time. The owner's own move still renders on arrival. Absent/`null`/`0`
    * (a realtime env, or any env with no `live_interval_ms`) keeps the unbuffered on-arrival behaviour.
-   * Ignored when {@link pace} is set — a session is at most one of the two paced modes.
+   * Ignored when {@link pace} is set. A session is at most one of the two paced modes.
    */
   liveMs?: number | null
 }

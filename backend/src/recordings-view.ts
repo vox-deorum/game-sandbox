@@ -53,26 +53,26 @@ export function isBlindRecording(
 }
 
 /**
- * Mask a header's `players` for a blind viewer: a non-own human seat becomes the neutral "Human", a
+ * Mask a header's `players` for a blind viewer: a non-own human player becomes the neutral "Human", a
  * non-own submitted agent keeps its opaque `submission_id` but loses the owner `user` id and its
- * "<owner>'s agent" label, and the built-in Naive agent (no owner) is left as-is. The viewer's own seat
+ * "<owner>'s agent" label, and the built-in Naive agent (no owner) is left as-is. The viewer's own player
  * (matched by the stable `user` id) is returned untouched so they can still recognize it.
  */
 export function maskPlayers(players: Players, callerId: string | undefined): Players {
   const masked: Players = {}
-  for (const [slot, player] of Object.entries(players)) {
+  for (const [playerId, player] of Object.entries(players)) {
     if (player.user !== undefined && player.user === callerId) {
-      masked[slot] = player
+      masked[playerId] = player
     } else if (player.kind === 'human') {
-      masked[slot] = { kind: 'human', label: 'Human' }
+      masked[playerId] = { kind: 'human', label: 'Human' }
     } else if (player.submission_id !== undefined) {
-      masked[slot] = {
+      masked[playerId] = {
         kind: 'agent',
         label: 'Agent',
         submission_id: player.submission_id,
       }
     } else {
-      masked[slot] = player
+      masked[playerId] = player
     }
   }
   return masked

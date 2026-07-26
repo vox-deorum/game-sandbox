@@ -118,8 +118,8 @@ describe('RunDetailsPage', () => {
     const replay = screen.getByRole('link', { name: 'Replay' })
     expect(replay).toHaveAttribute('href', '/replays/rec-9')
     expect(screen.getAllByRole('link', { name: 'Replay' })).toHaveLength(1)
-    // No user_name on either game's slots, so the players summary falls back to the stable id (the
-    // second game's lone slot is the ownerless Naive baseline, in its own row).
+    // No user_name on either game's seats, so the players summary falls back to the stable id (the
+    // second game's lone seat is the ownerless Naive baseline, in its own row).
     const playersCell = screen.getByText('alice')
     expect(playersCell).toBeInTheDocument()
     // GamesTable never applies blind masking (admin run games), so the cell also carries the

@@ -178,7 +178,7 @@ describe('WatchAgentPicker', () => {
       expect(seat.value).toBe('submission:sub1')
       expect(seat).toBeDisabled()
     }
-    // Starting from the dialog sends the full four-seat slots assignment and navigates to the session.
+    // Starting from the dialog sends the full four-seat assignment and navigates to the session.
     await fireEvent.click(screen.getByRole('button', { name: 'Start watching' }))
     expect(vi.mocked(startSession)).toHaveBeenCalledWith({
       envId: 'hearts',
