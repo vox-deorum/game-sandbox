@@ -16,7 +16,7 @@ function stepState(overlay: Record<string, unknown>): StepState {
 }
 
 describe('GameOverCard', () => {
-  it('labels each finisher by seat number and agent name, so identical agent labels stay apart', () => {
+  it('tags each ranked row with its seat id', () => {
     // A Spades board where every seat is the same baseline: without the seat tag the four rows would
     // all read "Naive agent" with no way to tell which is which.
     const state = stepState({
@@ -34,13 +34,50 @@ describe('GameOverCard', () => {
         player_2: { kind: 'agent', label: 'Naive agent' },
         player_3: { kind: 'agent', label: 'Naive agent' },
       },
+      seats: {
+        seat_0: ['player_0'],
+        seat_1: ['player_1'],
+        seat_2: ['player_2'],
+        seat_3: ['player_3'],
+      },
+      seat_plan: 'solo',
     }
 
     render(GameOverCard, { props: { state, header } })
 
-    // Ranked best-first, each row carries its seat tag (P0…P3) alongside the shared agent name.
-    const seats = screen.getAllByText(/^P\d$/).map((el) => el.textContent)
-    expect(seats).toEqual(['P0', 'P1', 'P2', 'P3'])
+    // Ranked best-first. Rows are seats, so they carry seat tags ("S0") rather than player tags
+    // ("P0"): the two are numbered independently and a seat may cover more than one player.
+    const seats = screen.getAllByText(/^S\d$/).map((el) => el.textContent)
+    expect(seats).toEqual(['S0', 'S1', 'S2', 'S3'])
     expect(screen.getAllByText('Naive agent')).toHaveLength(4)
+  })
+
+  it('labels a wide seat and shows its player membership', () => {
+    const state = stepState({
+      leaderboard_scores: [10, 5, 6],
+      display_scores: [10, 5, 6],
+      terminal: true,
+    })
+    const header: RecordingHeader = {
+      schema_version: 1,
+      environment: 'synthetic',
+      parameters: { seat_plan: 'uneven' },
+      players: {
+        player_0: { kind: 'agent', label: "Alice's agent" },
+        player_1: { kind: 'agent', label: 'Naive agent' },
+        player_2: { kind: 'agent', label: "Alice's agent" },
+      },
+      seats: {
+        seat_0: ['player_0', 'player_2'],
+        seat_1: ['player_1'],
+      },
+      seat_plan: 'uneven',
+    }
+
+    render(GameOverCard, { props: { state, header } })
+
+    expect(screen.getByText('S0')).toBeInTheDocument()
+    expect(screen.getByText('P0, P2')).toBeInTheDocument()
+    expect(screen.getByText("Alice's agent")).toBeInTheDocument()
   })
 })

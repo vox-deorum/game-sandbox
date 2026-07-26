@@ -13,7 +13,7 @@ import { Trophy } from '@lucide/vue'
 import { computed } from 'vue'
 
 import UiButton from './ui/UiButton.vue'
-import { formatSlot } from '../lib/format.js'
+import { formatSeat, formatPlayer } from '../lib/format.js'
 import { buildStandings } from '../lib/standings.js'
 
 const props = withDefaults(
@@ -69,15 +69,20 @@ function onKeydown(event: KeyboardEvent): void {
       <ol class="board">
         <li
           v-for="row in standings"
-          :key="row.slot"
+          :key="row.seat"
           class="row"
           :class="{ podium: row.medal !== null }"
         >
           <span class="cup" :class="row.medal" aria-hidden="true">
             <Trophy v-if="row.medal !== null" :size="20" />
           </span>
-          <span class="seat">{{ formatSlot(row.slot) }}</span>
-          <span class="who">{{ row.label }}</span>
+          <span class="seat">{{ formatSeat(row.seat) }}</span>
+          <span class="who">
+            <span>{{ row.label }}</span>
+            <span v-if="row.players.length > 1" class="members">
+              {{ row.players.map(formatPlayer).join(', ') }}
+            </span>
+          </span>
           <span class="value">{{ row.value }}</span>
         </li>
       </ol>
@@ -139,8 +144,8 @@ function onKeydown(event: KeyboardEvent): void {
   color: var(--color-text-muted);
 }
 
-/* The seat tag (P0…P3) disambiguates rows when several seats share one agent name; it stays a
-   compact, muted secondary read so the agent name remains primary. */
+/* The compact seat tag disambiguates rows when several seats share one agent name; singleton seats
+   retain their established player label while wide seats use the materialized seat id. */
 .seat {
   color: var(--color-text-muted);
   font-weight: 600;
@@ -172,7 +177,15 @@ function onKeydown(event: KeyboardEvent): void {
 .who {
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.members {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
 }
 
 .value {

@@ -385,6 +385,13 @@ describe('SessionPage', () => {
         player_2: { kind: 'human', label: 'dev', user: 'dev' },
         player_3: { kind: 'agent', label: 'Naive agent' },
       },
+      seats: {
+        seat_0: ['player_0'],
+        seat_1: ['player_1'],
+        seat_2: ['player_2'],
+        seat_3: ['player_3'],
+      },
+      seat_plan: 'solo',
     })
 
     expect(mountCtx?.controlledPlayers).toEqual(['player_2'])
@@ -411,6 +418,19 @@ describe('SessionPage', () => {
       schema_version: 1,
       environment: 'hearts',
       parameters: { players: 4 },
+      players: {
+        player_0: { kind: 'agent', label: 'Naive agent' },
+        player_1: { kind: 'agent', label: 'Naive agent' },
+        player_2: { kind: 'human', label: 'dev', user: 'dev' },
+        player_3: { kind: 'agent', label: 'Naive agent' },
+      },
+      seats: {
+        seat_0: ['player_0'],
+        seat_1: ['player_1'],
+        seat_2: ['player_2'],
+        seat_3: ['player_3'],
+      },
+      seat_plan: 'solo',
       seed: 0,
     })
 

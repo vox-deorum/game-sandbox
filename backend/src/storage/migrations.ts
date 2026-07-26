@@ -231,6 +231,7 @@ const initialSchema: Migration = {
       .addColumn('game_index', 'integer', (col) => col.notNull())
       .addColumn('seed', 'integer', (col) => col.notNull())
       .addColumn('seats', 'text', (col) => col.notNull())
+      .addColumn('seat_plan', 'text', (col) => col.notNull())
       .addColumn('status', 'text', (col) => col.notNull())
       .addColumn('recording_id', 'text')
       .addColumn('started_at', 'text')

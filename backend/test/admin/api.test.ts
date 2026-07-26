@@ -553,7 +553,7 @@ describe('admin API', () => {
         id,
         'dev-user',
         [agentRef(ready)],
-        [{ match_index: 0, game_index: 0, seed: 1, seats: [agentRef(ready)] }],
+        [{ match_index: 0, game_index: 0, seed: 1, seats: [agentRef(ready)], seat_plan: 'solo' }],
       )
       const games = await storage.listRunGames(run.id)
       await storage.recordGameResult({
@@ -632,7 +632,15 @@ describe('admin API', () => {
         id,
         'dev-user',
         [],
-        [{ match_index: 0, game_index: 0, seed: 1, seats: [{ kind: 'builtin-naive' }] }],
+        [
+          {
+            match_index: 0,
+            game_index: 0,
+            seed: 1,
+            seats: [{ kind: 'builtin-naive' }],
+            seat_plan: 'solo',
+          },
+        ],
       )
       await storage.setReleaseStatus(id, 'released')
 
@@ -743,7 +751,15 @@ describe('admin API', () => {
         id,
         'dev-user',
         [],
-        [{ match_index: 0, game_index: 0, seed: 1, seats: [{ kind: 'builtin-naive' }] }],
+        [
+          {
+            match_index: 0,
+            game_index: 0,
+            seed: 1,
+            seats: [{ kind: 'builtin-naive' }],
+            seat_plan: 'solo',
+          },
+        ],
       )
       const res = await app.inject({
         method: 'PUT',
@@ -1076,7 +1092,15 @@ describe('admin API', () => {
         id,
         'dev-user',
         [],
-        [{ match_index: 0, game_index: 0, seed: 1, seats: [{ kind: 'builtin-naive' }] }],
+        [
+          {
+            match_index: 0,
+            game_index: 0,
+            seed: 1,
+            seats: [{ kind: 'builtin-naive' }],
+            seat_plan: 'solo',
+          },
+        ],
       )
       const games = await storage.listRunGames(run.id)
       await storage.recordGameResult({
@@ -1127,7 +1151,7 @@ describe('admin API', () => {
         id,
         users.idOf('operator'),
         [ref],
-        [{ match_index: 0, game_index: 0, seed: 1, seats: [ref] }],
+        [{ match_index: 0, game_index: 0, seed: 1, seats: [ref], seat_plan: 'solo' }],
       )
       const games = await storage.listRunGames(run.id)
       await storage.recordGameResult({
@@ -1184,15 +1208,35 @@ describe('admin API', () => {
         id,
         'dev-user',
         [],
-        [{ match_index: 0, game_index: 0, seed: 1, seats: [{ kind: 'builtin-naive' }] }],
+        [
+          {
+            match_index: 0,
+            game_index: 0,
+            seed: 1,
+            seats: [{ kind: 'builtin-naive' }],
+            seat_plan: 'solo',
+          },
+        ],
       )
       const second = await createRun(
         id,
         users.idOf('operator'),
         [],
         [
-          { match_index: 0, game_index: 0, seed: 1, seats: [{ kind: 'builtin-naive' }] },
-          { match_index: 0, game_index: 1, seed: 2, seats: [{ kind: 'builtin-naive' }] },
+          {
+            match_index: 0,
+            game_index: 0,
+            seed: 1,
+            seats: [{ kind: 'builtin-naive' }],
+            seat_plan: 'solo',
+          },
+          {
+            match_index: 0,
+            game_index: 1,
+            seed: 2,
+            seats: [{ kind: 'builtin-naive' }],
+            seat_plan: 'solo',
+          },
         ],
       )
 
@@ -1225,7 +1269,15 @@ describe('admin API', () => {
         id,
         'dev-user',
         [],
-        [{ match_index: 0, game_index: 0, seed: 1, seats: [{ kind: 'builtin-naive' }] }],
+        [
+          {
+            match_index: 0,
+            game_index: 0,
+            seed: 1,
+            seats: [{ kind: 'builtin-naive' }],
+            seat_plan: 'solo',
+          },
+        ],
       )
 
       const res = await app.inject({
@@ -1258,7 +1310,15 @@ describe('admin API', () => {
         id,
         users.idOf('operator'),
         [knownRef, orphanedRef],
-        [{ match_index: 0, game_index: 0, seed: 1, seats: [knownRef, orphanedRef] }],
+        [
+          {
+            match_index: 0,
+            game_index: 0,
+            seed: 1,
+            seats: [knownRef, orphanedRef],
+            seat_plan: 'solo',
+          },
+        ],
       )
 
       const res = await app.inject({
@@ -1292,7 +1352,15 @@ describe('admin API', () => {
         id,
         'dev-user',
         [],
-        [{ match_index: 0, game_index: 0, seed: 1, seats: [{ kind: 'builtin-naive' }] }],
+        [
+          {
+            match_index: 0,
+            game_index: 0,
+            seed: 1,
+            seats: [{ kind: 'builtin-naive' }],
+            seat_plan: 'solo',
+          },
+        ],
       )
 
       const unknown = await app.inject({
@@ -1369,7 +1437,15 @@ describe('admin API', () => {
         id,
         'dev-user',
         [],
-        [{ match_index: 0, game_index: 0, seed: 1, seats: [{ kind: 'builtin-naive' }] }],
+        [
+          {
+            match_index: 0,
+            game_index: 0,
+            seed: 1,
+            seats: [{ kind: 'builtin-naive' }],
+            seat_plan: 'solo',
+          },
+        ],
       )
       await storage.setRunStatus(run.id, 'completed')
 

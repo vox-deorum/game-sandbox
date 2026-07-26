@@ -35,17 +35,17 @@ import { decodeSeasonConfig } from '../storage/index.js'
 import type { SubmissionSnapshotStore } from './snapshot-store.js'
 import type { ResolvedSource, SourceInput, SubmissionSource, TreeHandle } from './source/index.js'
 import { SourceError } from './source/index.js'
-import { CANONICAL_SUBMISSION_SLOT } from './submission-image.js'
+import { CANONICAL_SUBMISSION_SEAT } from './submission-image.js'
 import { measureTreeSize } from './tree-filter.js'
 import { runLoadCheck, validateStatic } from './validate/index.js'
 
 /**
- * The slot the build and load stages stage a submission's code into. It must be the canonical slot the
- * warm overlay is later reused for ({@link CANONICAL_SUBMISSION_SLOT}), since the overlay's cache
- * identity is the submission id alone — building or load-checking a different slot would silently
+ * The seat the build and load stages stage a submission's code into. It must be the canonical seat the
+ * warm overlay is later reused for ({@link CANONICAL_SUBMISSION_SEAT}), since the overlay's cache
+ * identity is the submission id alone — building or load-checking a different seat would silently
  * disagree with every later reuse of that warm image.
  */
-const SLOT_ID = CANONICAL_SUBMISSION_SLOT
+const SEAT_ID = CANONICAL_SUBMISSION_SEAT
 
 /** The minimal enqueue capability the submission route depends on, so a fake satisfies it in tests. */
 export interface SubmissionEnqueuer {
@@ -258,7 +258,7 @@ export class ValidationWorker implements SubmissionEnqueuer {
           depsVersion,
           submissionId,
           sourceTreePath: tree.path,
-          slotId: SLOT_ID,
+          seatId: SEAT_ID,
         })
       } catch (error) {
         await this.fail(submissionId, 'build', errorText(error))
@@ -276,7 +276,7 @@ export class ValidationWorker implements SubmissionEnqueuer {
         sandbox: buildSandboxProfile(this.deps.sandbox, []),
         sessionId: submissionId,
         timeoutMs: this.deps.loadCheckTimeoutMs,
-        slotId: SLOT_ID,
+        seatId: SEAT_ID,
       })
       if (!loadResult.ok) {
         await this.fail(submissionId, 'load', `${loadResult.code}: ${loadResult.detail}`)

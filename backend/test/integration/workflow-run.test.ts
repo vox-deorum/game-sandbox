@@ -89,7 +89,7 @@ describe('workflow run end to end (Docker)', () => {
         submissionMaxSizeBytes: 25 * 1024 * 1024,
       }),
       snapshots: new SubmissionSnapshotStore(resolve(join(recordingsDir, 'submissions'))),
-      sandbox: { cpus: 1, memoryMb: 512, scratchMb: 256 },
+      sandbox: { cpus: 1, memoryMb: 512, memoryPerPlayerMb: 32, scratchMb: 256 },
       recordingsDir: resolve(recordingsDir),
       imagePolicy: 'reuse',
       log: (message) => runnerLogs.push(message),
@@ -113,19 +113,33 @@ describe('workflow run end to end (Docker)', () => {
     const submissionRef = submissions[0] as AgentRef
     const schedule = [
       // Two submission games (one per seed), then the always-scheduled Naive baseline on each seed.
-      { match_index: 0, game_index: 0, seed: seeds[0] as number, seats: [submissionRef] },
-      { match_index: 0, game_index: 1, seed: seeds[1] as number, seats: [submissionRef] },
+      {
+        match_index: 0,
+        game_index: 0,
+        seed: seeds[0] as number,
+        seats: [submissionRef],
+        seat_plan: 'solo',
+      },
+      {
+        match_index: 0,
+        game_index: 1,
+        seed: seeds[1] as number,
+        seats: [submissionRef],
+        seat_plan: 'solo',
+      },
       {
         match_index: 0,
         game_index: 2,
         seed: seeds[0] as number,
         seats: [{ kind: 'builtin-naive' } as AgentRef],
+        seat_plan: 'solo',
       },
       {
         match_index: 0,
         game_index: 3,
         seed: seeds[1] as number,
         seats: [{ kind: 'builtin-naive' } as AgentRef],
+        seat_plan: 'solo',
       },
     ]
     const run = await createRunOrFail(storage, seasonId, 'dev-user', () => ({

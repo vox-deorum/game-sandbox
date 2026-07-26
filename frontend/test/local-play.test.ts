@@ -105,6 +105,13 @@ describe('LocalPlayPage', () => {
         player_2: { kind: 'human', label: 'Local player' },
         player_3: { kind: 'agent', label: 'Naive agent' },
       },
+      seats: {
+        seat_0: ['player_0'],
+        seat_1: ['player_1'],
+        seat_2: ['player_2'],
+        seat_3: ['player_3'],
+      },
+      seat_plan: 'solo',
     })
 
     expect(mountContext?.controlledPlayers).toEqual(['player_2'])

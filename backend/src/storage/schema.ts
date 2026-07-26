@@ -288,6 +288,8 @@ export interface SeasonRunGamesTable {
   seed: number
   /** JSON array of resolved {@link AgentRef} values, one per seat. */
   seats: string
+  /** Canonical resolver plan key used when this assignment array was scheduled. */
+  seat_plan: string
   status: GameStatus
   /** FK into the Stage 4 recordings, set when the run records; the board's per-row replay link. */
   recording_id: string | null

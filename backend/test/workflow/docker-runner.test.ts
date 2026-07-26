@@ -44,6 +44,7 @@ import { FakeDriver, type FakeLaunch, type FakeSessionProcess } from '../support
 import { createRunOrFail } from '../support/harness.js'
 
 const ENV_ID = 'flappy_bird'
+const WIDE_ENV_ID = 'synthetic_wide'
 
 function disabledLlmPolicy(): ResolvedOfficialLlmPolicy {
   return {
@@ -61,16 +62,16 @@ function enabledLlmPolicy(): ResolvedOfficialLlmPolicy {
   }
 }
 
-/** A field-complete single-slot Flappy registry, like the shared harness but local to this suite. */
-function makeEnvironments(): EnvironmentRegistry {
+/** A field-complete player-bounds registry, like the shared harness but local to this suite. */
+function makeEnvironments(playerCount = 1): EnvironmentRegistry {
   return EnvironmentRegistry.parse(
     JSON.stringify([
       {
         env_id: ENV_ID,
         display_name: 'Flappy Bird',
         description: 'test env',
-        layout: { kind: 'player_bounds', min: 1, max: 1 },
-        human_players: ['player_0'],
+        layout: { kind: 'player_bounds', min: 1, max: playerCount },
+        human_players: Array.from({ length: playerCount }, (_, index) => `player_${index}`),
         human_timeout_ms: null,
         recommended_episode_ticks: 1000,
         pace_interval_ms: 50,
@@ -89,9 +90,9 @@ function makeEnvironments(): EnvironmentRegistry {
             title: 'Players',
             description: 'Number of players.',
             type: 'int',
-            default: 1,
+            default: playerCount,
             min: 1,
-            max: 1,
+            max: playerCount,
           },
           {
             name: 'pipe_gap',
@@ -101,6 +102,66 @@ function makeEnvironments(): EnvironmentRegistry {
             default: 100,
             min: 50,
             max: 200,
+          },
+        ],
+      },
+    ]),
+  )
+}
+
+/** A synthetic noncontiguous two-seat layout used only to exercise the wide runner path. */
+function makeWideEnvironments(): EnvironmentRegistry {
+  return EnvironmentRegistry.parse(
+    JSON.stringify([
+      {
+        env_id: WIDE_ENV_ID,
+        display_name: 'Synthetic Wide',
+        description: 'test-only wide-seat environment',
+        layout: {
+          kind: 'seat_plans',
+          plans: [
+            {
+              key: 'partnership',
+              title: 'Partnership',
+              seats: [
+                [0, 2],
+                [1, 3],
+              ],
+            },
+            {
+              key: 'adjacent',
+              title: 'Adjacent',
+              seats: [
+                [0, 1],
+                [2, 3],
+              ],
+            },
+          ],
+        },
+        human_players: [],
+        human_timeout_ms: null,
+        recommended_episode_ticks: 4,
+        pace_interval_ms: null,
+        step_limit_ms: 1000,
+        episode_limit_ms: 120_000,
+        messaging: false,
+        message_cap: null,
+        llm: true,
+        renderer: 'synthetic-wide',
+        seat_order_matters: true,
+        view_interval_ms: null,
+        live_interval_ms: null,
+        parameters: [
+          {
+            name: 'seat_plan',
+            title: 'Seat plan',
+            description: 'Resolved synthetic layout.',
+            type: 'choice',
+            default: 'partnership',
+            choices: [
+              { value: 'partnership', label: 'Partnership' },
+              { value: 'adjacent', label: 'Adjacent' },
+            ],
           },
         ],
       },
@@ -124,6 +185,25 @@ const unusedSource: SubmissionSource = {
   },
 }
 
+/** Source materialization for composed synthetic images. The fake driver never reads the tree. */
+const wideSource: SubmissionSource = {
+  verifyReachable: () => Promise.resolve({ reachable: true }),
+  resolve: (input) =>
+    Promise.resolve({
+      kind: input.kind,
+      repoUrl: input.kind === 'git' ? input.repoUrl : null,
+      commitSha: input.kind === 'git' ? 'synthetic-wide-sha' : null,
+      ref: input.kind === 'git' ? input.ref : null,
+      resolvedRef: null,
+      localPath: input.kind === 'local' ? input.localPath : null,
+    }),
+  fetchTree: () =>
+    Promise.resolve({
+      path: join(tmpdir(), 'gs-wide-source'),
+      dispose: () => Promise.resolve(),
+    }),
+}
+
 interface RunnerHandle {
   driver: FakeDriver
   storage: Storage
@@ -140,18 +220,22 @@ function makeRunner(
     officialGrantIssuer?: OfficialGrantIssuer
     officialTelemetry?: WorkflowRunnerDeps['officialTelemetry']
     llmInternalPort?: number
+    playerCount?: number
+    environments?: EnvironmentRegistry
+    source?: SubmissionSource
   } = {},
 ): RunnerHandle {
+  const { playerCount, environments, source, ...runnerOptions } = options
   const runner = createWorkflowRunner({
     driver,
     storage,
-    environments: makeEnvironments(),
-    source: unusedSource,
+    environments: environments ?? makeEnvironments(playerCount),
+    source: source ?? unusedSource,
     snapshots: unusedSnapshots,
-    sandbox: { cpus: 1, memoryMb: 512, scratchMb: 256 },
+    sandbox: { cpus: 1, memoryMb: 512, memoryPerPlayerMb: 32, scratchMb: 256 },
     recordingsDir: './data/recordings',
     imagePolicy: 'reuse',
-    ...options,
+    ...runnerOptions,
   })
   return { driver, storage, runner }
 }
@@ -168,16 +252,22 @@ async function makeRun(
     submissions?: AgentRef[]
     overrides?: Record<string, unknown>
     llmPolicy?: ResolvedOfficialLlmPolicy
+    parameters?: Record<string, number | string>
+    envId?: string
   } = {},
 ): Promise<SeasonRun> {
-  const season = await storage.createSeason({ env_id: ENV_ID, deps_version: 1, label: null })
+  const season = await storage.createSeason({
+    env_id: options.envId ?? ENV_ID,
+    deps_version: 1,
+    label: null,
+  })
   await storage.updateSeasonConfig(season.id, {
     deps_version: 1,
     matches: [{ seats: ['submission'], seeds: [1], games: 1 }],
     ...(options.overrides ? { overrides: options.overrides } : {}),
   })
   return createRunOrFail(storage, season.id, 'dev-user', () => ({
-    parametersSnapshot: { players: 1, pipe_gap: 100 },
+    parametersSnapshot: options.parameters ?? { players: 1, pipe_gap: 100 },
     scheduledGames: schedule,
     llmPolicy: options.llmPolicy ?? disabledLlmPolicy(),
   }))
@@ -185,7 +275,38 @@ async function makeRun(
 
 /** One scheduled game's resolved seats, the all-Naive single seat by default. */
 function naiveGame(gameIndex: number, seed = 1): ScheduledGameInput {
-  return { match_index: 0, game_index: gameIndex, seed, seats: [{ kind: 'builtin-naive' }] }
+  return {
+    match_index: 0,
+    game_index: gameIndex,
+    seed,
+    seats: [{ kind: 'builtin-naive' }],
+    seat_plan: 'solo',
+  }
+}
+
+async function createWideSubmissionRefs(
+  storage: Storage,
+): Promise<Extract<AgentRef, { kind: 'submission' }>[]> {
+  const refs: Extract<AgentRef, { kind: 'submission' }>[] = []
+  for (const owner of ['wide-owner-a', 'wide-owner-b']) {
+    const submission = await storage.createSubmission({
+      season_id: 'placeholder',
+      env_id: WIDE_ENV_ID,
+      user_id: owner,
+      source_kind: 'git',
+      repo_url: `https://example.com/${owner}.git`,
+      commit_sha: `${owner}-sha`,
+      local_path: null,
+      ref: null,
+      created_at: '2026-06-16T00:00:00.000Z',
+    })
+    refs.push({
+      kind: 'submission',
+      submission_id: submission.id,
+      user_id: owner,
+    })
+  }
+  return refs
 }
 
 /**
@@ -212,8 +333,11 @@ function emitRecording(
     diagnostics?: string[]
     /** Per-seat scores in the result envelope, overriding the default single-seat `{ slotId: finalScore }`. */
     scores?: Record<string, number>
+    players?: number
     /** The seat the harness pins a crash or budget overage to, carried in the result envelope. */
-    failedPlayer?: string
+    failedPlayer?: unknown
+    /** Keep the process open after emitting the result so the runner's watchdog kills it. */
+    finish?: boolean
   } = {},
 ): void {
   const slotId = options.slotId ?? 'player_0'
@@ -223,6 +347,7 @@ function emitRecording(
   const chatMs = options.chatMs
   const finalScore = options.finalScore ?? ticks
   const reason = options.reason ?? 'terminated'
+  const players = options.players ?? 1
   for (const line of options.diagnostics ?? []) {
     process.emitDiagnostic(line)
   }
@@ -231,7 +356,17 @@ function emitRecording(
       JSON.stringify({
         schema_version: 1,
         environment: ENV_ID,
-        parameters: { players: 1 },
+        parameters: { players },
+        players: Object.fromEntries(
+          Array.from({ length: players }, (_, index) => [
+            `player_${index}`,
+            { kind: 'agent', label: 'Naive agent' },
+          ]),
+        ),
+        seats: Object.fromEntries(
+          Array.from({ length: players }, (_, index) => [`seat_${index}`, [`player_${index}`]]),
+        ),
+        seat_plan: 'solo',
         seed: config.seed,
         created_at: '2026-06-16T00:00:00.000Z',
       }),
@@ -270,7 +405,7 @@ function emitRecording(
       )
     }
   }
-  process.finish(options.exit ?? { code: 0, oomKilled: false })
+  if (options.finish !== false) process.finish(options.exit ?? { code: 0, oomKilled: false })
 }
 
 /** Emit just the recording header, enough to attribute a watchdog kill to the seat. */
@@ -280,10 +415,69 @@ function emitHeader(process: FakeSessionProcess, seed: number): void {
       schema_version: 1,
       environment: ENV_ID,
       parameters: { players: 1 },
+      players: { player_0: { kind: 'agent', label: 'Naive agent' } },
+      seats: { seat_0: ['player_0'] },
+      seat_plan: 'solo',
       seed,
       created_at: '2026-06-16T00:00:00.000Z',
     }),
   )
+}
+
+/** Emit a complete four-player recording and result for the synthetic noncontiguous layout. */
+function emitWideRecording(
+  process: FakeSessionProcess,
+  config: {
+    seed: number
+    parameters: Record<string, number | string>
+    players: Record<string, unknown>
+  },
+  options: { failedPlayer?: string; exit?: ExitInfo } = {},
+): void {
+  process.emit(
+    JSON.stringify({
+      schema_version: 1,
+      environment: WIDE_ENV_ID,
+      parameters: config.parameters,
+      players: config.players,
+      seats: {
+        seat_0: ['player_0', 'player_2'],
+        seat_1: ['player_1', 'player_3'],
+      },
+      seat_plan: 'partnership',
+      seed: config.seed,
+      created_at: '2026-06-16T00:00:00.000Z',
+    }),
+  )
+  const scores = { player_0: 10, player_1: 6, player_2: 14, player_3: 8 }
+  const computeMs = { player_0: 2, player_1: 3, player_2: 4, player_3: 5 }
+  for (const [tick, playerId] of Object.keys(scores).entries()) {
+    process.emit(
+      JSON.stringify({
+        schema_version: 1,
+        tick,
+        agents: {
+          [playerId]: {
+            reward: 0,
+            score: scores[playerId as keyof typeof scores],
+            timing: { decision_ms: computeMs[playerId as keyof typeof computeMs] },
+          },
+        },
+        timing: { started_at: tick, duration_ms: 1 },
+      }),
+    )
+  }
+  process.emit(
+    JSON.stringify({
+      kind: 'result',
+      ticks: 4,
+      scores,
+      reason: options.failedPlayer === undefined ? 'terminated' : 'crash',
+      step_timeouts: {},
+      ...(options.failedPlayer === undefined ? {} : { failed_player: options.failedPlayer }),
+    }),
+  )
+  process.finish(options.exit ?? { code: 0, oomKilled: false })
 }
 
 /** Subscribe, enqueue, and resolve with the collected events once the run reaches its terminal. */
@@ -314,6 +508,313 @@ describe('Docker-backed workflow runner', () => {
   afterEach(async () => {
     vi.useRealTimers()
     await storage.close()
+  })
+
+  it('expands, stages, grants, and reduces a synthetic noncontiguous wide layout', async () => {
+    const submissions = await createWideSubmissionRefs(storage)
+    let issued: IssueOfficialGrantsInput | undefined
+    const telemetryPlayers: string[] = []
+    const wideUsage: Record<string, ExecutionUsageByModel> = {
+      player_0: {
+        small: {
+          calls: 1,
+          estimatedCalls: 0,
+          inputTokens: 1,
+          reasoningTokens: 1,
+          outputTokens: 2,
+          latencyMs: 3,
+        },
+      },
+      player_1: {
+        small: {
+          calls: 3,
+          estimatedCalls: 2,
+          inputTokens: 2,
+          reasoningTokens: 0,
+          outputTokens: 1,
+          latencyMs: 7,
+        },
+      },
+      player_2: {
+        small: {
+          calls: 2,
+          estimatedCalls: 1,
+          inputTokens: 3,
+          reasoningTokens: 2,
+          outputTokens: 4,
+          latencyMs: 5,
+        },
+      },
+      player_3: {
+        small: {
+          calls: 4,
+          estimatedCalls: 0,
+          inputTokens: 4,
+          reasoningTokens: 1,
+          outputTokens: 2,
+          latencyMs: 11,
+        },
+      },
+    }
+    const keys = {
+      player_0: 'key-0',
+      player_1: 'key-1',
+      player_2: 'key-2',
+      player_3: 'key-3',
+    }
+    const issuer: OfficialGrantIssuer = {
+      issue: (input) => {
+        issued = input
+        return Promise.resolve({ keys, revoke: () => Promise.resolve() })
+      },
+    }
+    const driver = new FakeDriver()
+    const handle = makeRunner(storage, driver, {
+      environments: makeWideEnvironments(),
+      source: wideSource,
+      officialGrantIssuer: issuer,
+      officialTelemetry: {
+        aggregateByModel: (scopeId, filter) => {
+          expect(scopeId).toBe(run.id)
+          expect(filter?.sessionId).toBe(game?.id)
+          const playerId = filter?.slot ?? ''
+          telemetryPlayers.push(playerId)
+          return wideUsage[playerId] ?? {}
+        },
+      },
+      llmInternalPort: 9472,
+    })
+    const run = await makeRun(
+      storage,
+      [
+        {
+          match_index: 0,
+          game_index: 0,
+          seed: 7,
+          seats: submissions,
+          seat_plan: 'partnership',
+        },
+      ],
+      {
+        envId: WIDE_ENV_ID,
+        parameters: { seat_plan: 'partnership' },
+        submissions,
+        llmPolicy: enabledLlmPolicy(),
+      },
+    )
+    const [game] = await storage.listRunGames(run.id)
+    driver.onLaunch = (launch): void => {
+      const config = JSON.parse(launch.spec.argv[0] ?? '{}') as {
+        seed: number
+        parameters: Record<string, number | string>
+        player_bindings: Record<string, { kind: string; path?: string }>
+        players: Record<string, unknown>
+        llm: { keys: Record<string, string> }
+      }
+      expect(config.player_bindings).toEqual({
+        player_0: { kind: 'builtin-agent', path: '/opt/agents/submissions/seat_0' },
+        player_1: { kind: 'builtin-agent', path: '/opt/agents/submissions/seat_1' },
+        player_2: { kind: 'builtin-agent', path: '/opt/agents/submissions/seat_0' },
+        player_3: { kind: 'builtin-agent', path: '/opt/agents/submissions/seat_1' },
+      })
+      expect(config.llm.keys).toEqual(keys)
+      expect(launch.spec.sandbox.memoryMb).toBe(608)
+      emitWideRecording(launch.process, config)
+    }
+
+    await expect(runToTerminal(handle, run.id)).resolves.toMatchObject({ status: 'completed' })
+    expect((await storage.listRunGames(run.id))[0]).toMatchObject({ status: 'completed' })
+    expect(issued).toEqual({
+      sessionId: game?.id,
+      scopeId: run.id,
+      agentPlayers: ['player_0', 'player_2', 'player_1', 'player_3'],
+      models: { small: { upstream: 'provider-small', costWeight: 4 } },
+      limits: { tokenBudget: 100, requestsPerMinute: 10 },
+    })
+    expect(telemetryPlayers).toEqual(['player_0', 'player_2', 'player_1', 'player_3'])
+    const composed = driver.imageRequests.filter((request) => request.kind === 'session-overlay')
+    expect(composed).toHaveLength(1)
+    const [composedImage] = composed
+    expect(composedImage?.kind === 'session-overlay' ? composedImage.seats : []).toEqual([
+      expect.objectContaining({
+        seatId: 'seat_0',
+        submissionId: submissions[0]?.submission_id,
+      }),
+      expect.objectContaining({
+        seatId: 'seat_1',
+        submissionId: submissions[1]?.submission_id,
+      }),
+    ])
+
+    const results = await storage.listGameResultsByRun(run.id)
+    expect(results).toHaveLength(2)
+    expect(results[0]).toMatchObject({
+      seat_index: 0,
+      agent_submission_id: submissions[0]?.submission_id,
+      episode_score: 12,
+      agent_compute_ms_total: 6,
+      acted_tick_count: 2,
+      llm_usage_by_model: {
+        small: {
+          calls: 3,
+          estimated_calls: 1,
+          input_tokens: 4,
+          reasoning_tokens: 3,
+          output_tokens: 6,
+          latency_ms: 8,
+        },
+      },
+      llm_weighted_cost: 40,
+      failed: 0,
+    })
+    expect(results[1]).toMatchObject({
+      seat_index: 1,
+      agent_submission_id: submissions[1]?.submission_id,
+      episode_score: 7,
+      agent_compute_ms_total: 8,
+      acted_tick_count: 2,
+      llm_usage_by_model: {
+        small: {
+          calls: 7,
+          estimated_calls: 2,
+          input_tokens: 6,
+          reasoning_tokens: 1,
+          output_tokens: 3,
+          latency_ms: 18,
+        },
+      },
+      llm_weighted_cost: 36,
+      failed: 0,
+    })
+  })
+
+  it('fails only the wide seat containing an attributed failed player', async () => {
+    const handle = makeRunner(storage, new FakeDriver(), {
+      environments: makeWideEnvironments(),
+    })
+    const run = await makeRun(
+      storage,
+      [
+        {
+          match_index: 0,
+          game_index: 0,
+          seed: 7,
+          seats: [{ kind: 'builtin-naive' }, { kind: 'builtin-naive' }],
+          seat_plan: 'partnership',
+        },
+      ],
+      { envId: WIDE_ENV_ID, parameters: { seat_plan: 'partnership' } },
+    )
+    handle.driver.onLaunch = (launch): void => {
+      const config = JSON.parse(launch.spec.argv[0] ?? '{}') as {
+        seed: number
+        parameters: Record<string, number | string>
+        players: Record<string, unknown>
+      }
+      emitWideRecording(launch.process, config, {
+        failedPlayer: 'player_2',
+        exit: { code: 1, oomKilled: false },
+      })
+    }
+
+    await runToTerminal(handle, run.id)
+    const results = await storage.listGameResultsByRun(run.id)
+    expect(results).toHaveLength(2)
+    expect(results[0]).toMatchObject({
+      seat_index: 0,
+      episode_score: forfeitScore(WIDE_ENV_ID),
+      failed: 1,
+    })
+    expect(results[0]?.failure_reason).toMatch(/player player_2/)
+    expect(results[1]).toMatchObject({
+      seat_index: 1,
+      episode_score: 7,
+      agent_compute_ms_total: 8,
+      acted_tick_count: 2,
+      failed: 0,
+      failure_reason: null,
+    })
+  })
+
+  it('forfeits every persisted wide seat after an unattributed OOM', async () => {
+    const handle = makeRunner(storage, new FakeDriver(), {
+      environments: makeWideEnvironments(),
+    })
+    const run = await makeRun(
+      storage,
+      [
+        {
+          match_index: 0,
+          game_index: 0,
+          seed: 7,
+          seats: [{ kind: 'builtin-naive' }, { kind: 'builtin-naive' }],
+          seat_plan: 'partnership',
+        },
+      ],
+      { envId: WIDE_ENV_ID, parameters: { seat_plan: 'partnership' } },
+    )
+    handle.driver.onLaunch = (launch): void => {
+      const config = JSON.parse(launch.spec.argv[0] ?? '{}') as {
+        seed: number
+        parameters: Record<string, number | string>
+        players: Record<string, unknown>
+      }
+      emitWideRecording(launch.process, config, {
+        failedPlayer: 'player_2',
+        exit: { code: 137, oomKilled: true },
+      })
+    }
+
+    await runToTerminal(handle, run.id)
+    expect((await storage.listRunGames(run.id))[0]).toMatchObject({ status: 'failed' })
+    const results = await storage.listGameResultsByRun(run.id)
+    expect(results).toHaveLength(2)
+    expect(results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          seat_index: 0,
+          episode_score: forfeitScore(WIDE_ENV_ID),
+          failed: 1,
+        }),
+        expect.objectContaining({
+          seat_index: 1,
+          episode_score: forfeitScore(WIDE_ENV_ID),
+          failed: 1,
+        }),
+      ]),
+    )
+    expect(results.every((result) => result.failure_reason?.includes('oom_killed'))).toBe(true)
+  })
+
+  // The plan key and seat count are run-level facts: every game in a run shares them. So a mismatch
+  // fails the run once, before any game is marked running and before any container starts, rather
+  // than repeating as the same fault on each game in turn.
+  it('fails the whole run for a different stored valid seat plan with the same seat count', async () => {
+    const handle = makeRunner(storage, new FakeDriver(), {
+      environments: makeWideEnvironments(),
+    })
+    const naiveSeats = [{ kind: 'builtin-naive' as const }, { kind: 'builtin-naive' as const }]
+    const run = await makeRun(
+      storage,
+      [
+        { match_index: 0, game_index: 0, seed: 7, seats: naiveSeats, seat_plan: 'adjacent' },
+        { match_index: 0, game_index: 1, seed: 8, seats: naiveSeats, seat_plan: 'adjacent' },
+      ],
+      { envId: WIDE_ENV_ID, parameters: { seat_plan: 'partnership' } },
+    )
+
+    const { status } = await runToTerminal(handle, run.id)
+    expect(status).toBe('failed')
+    expect((await storage.getRun(run.id))?.error).toMatch(
+      /stored assignment does not match the resolved seat layout/,
+    )
+    expect(handle.driver.launches).toHaveLength(0)
+    // No game was touched: neither the first nor the second is left mid-flight.
+    expect((await storage.listRunGames(run.id)).map((game) => game.status)).toEqual([
+      'pending',
+      'pending',
+    ])
+    expect(await storage.listGameResultsByRun(run.id)).toEqual([])
   })
 
   it('includes delayed successful writes by aggregating only after the revocation barrier', async () => {
@@ -977,25 +1478,15 @@ describe('Docker-backed workflow runner', () => {
     )
   })
 
-  it('charges a multi-seat crash to the offending seat alone, not its co-seats', async () => {
+  it('charges a crash to its only seat', async () => {
     const handle = makeRunner(storage)
-    // A two-seat game, the shape the composed multi-submission path now schedules. The harness names
-    // the seat whose agent raised (player_1); the co-seat (player_0) must not inherit a false failure,
-    // which would pollute an innocent competitor's public failure count.
-    const run = await makeRun(storage, [
-      {
-        match_index: 0,
-        game_index: 0,
-        seed: 1,
-        seats: [{ kind: 'builtin-naive' }, { kind: 'builtin-naive' }],
-      },
-    ])
+    const run = await makeRun(storage, [naiveGame(0)])
     handle.driver.onLaunch = (launch): void => {
       const config = JSON.parse(launch.spec.argv[0] ?? '{}') as { seed: number }
       emitRecording(launch.process, config, {
         ticks: 2,
-        scores: { player_0: 9, player_1: 4 },
-        failedPlayer: 'player_1',
+        scores: { player_0: 9 },
+        failedPlayer: 'player_0',
         exit: { code: 1, oomKilled: false },
       })
     }
@@ -1006,12 +1497,8 @@ describe('Docker-backed workflow runner', () => {
     expect(games[0]?.status).toBe('failed')
 
     const results = await storage.listGameResultsByRun(run.id)
-    const bySeat = new Map(results.map((result) => [result.seat_index, result]))
-    // The named seat carries the failure and its reason; its co-seat stays clean.
-    expect(bySeat.get(1)?.failed).toBe(1)
-    expect(bySeat.get(1)?.failure_reason).toMatch(/exited with code 1/)
-    expect(bySeat.get(0)?.failed).toBe(0)
-    expect(bySeat.get(0)?.failure_reason).toBeNull()
+    expect(results[0]?.failed).toBe(1)
+    expect(results[0]?.failure_reason).toMatch(/exited with code 1/)
   })
 
   it('marks a timed-out agent timed_out with a failed result row', async () => {
@@ -1067,9 +1554,8 @@ describe('Docker-backed workflow runner', () => {
     const games = await storage.listRunGames(run.id)
     expect(games[0]?.status).toBe('failed')
     expect(games[0]?.error).toMatch(/without a valid result envelope/)
-    // No invented result row and no recording row, exactly like a missing-recording infrastructure fault.
-    expect(await storage.listGameResultsByRun(run.id)).toHaveLength(0)
-    expect(await storage.listRecordings()).toHaveLength(0)
+    expect(await storage.listGameResultsByRun(run.id)).toHaveLength(1)
+    expect(await storage.listRecordings()).toHaveLength(1)
   })
 
   it('relays container diagnostics and game-status transitions as live events', async () => {
@@ -1423,7 +1909,7 @@ describe('Docker-backed workflow runner', () => {
     }
     const run = await makeRun(
       storage,
-      [{ match_index: 0, game_index: 0, seed: 1, seats: [submissionRef] }],
+      [{ match_index: 0, game_index: 0, seed: 1, seats: [submissionRef], seat_plan: 'solo' }],
       { submissions: [submissionRef] },
     )
     handle.driver.onLaunch = (launch): void => {
@@ -1492,6 +1978,7 @@ describe('Docker-backed workflow runner', () => {
         game_index: index,
         seed: index + 1,
         seats: [ref],
+        seat_plan: 'solo',
       })),
       { submissions: refs },
     )

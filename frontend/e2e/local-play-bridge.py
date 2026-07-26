@@ -79,8 +79,11 @@ def run_scripted_runner() -> int:
         {
             "schema_version": 1,
             "environment": META.env_id,
+            "parameters": {"players": 1},
             "seed": 0,
             "players": {"player_0": {"kind": "human", "label": "Local player"}},
+            "seats": {"seat_0": ["player_0"]},
+            "seat_plan": "solo",
         }
     )
     _write(_state(0))

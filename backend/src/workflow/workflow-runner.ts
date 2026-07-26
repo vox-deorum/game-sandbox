@@ -4,11 +4,11 @@
  *
  * It is the second caller of the Stage 3 execution driver. Where the live session is browser-attached
  * and human-paced, this is **headless run-to-completion**: each scheduled game launches one container
- * through the shared launch-config seam ({@link assembleSeats}), the runner drains its stdout protocol
+ * through the shared launch-config seam ({@link assembleLaunch}), the runner drains its stdout protocol
  * (the recording, tee'd live, plus the final `result` envelope) and its stderr diagnostics, waits for
- * the container to exit, then attributes each seat: the `result` envelope is authoritative for the
- * final scores, while the recording it produced supplies the per-tick compute timing (and a score
- * fallback for a seat the envelope omits).
+ * the container to exit, then attributes each seat: the `result` envelope is the only source of final
+ * scores, while the recording it produced supplies the per-tick compute timing. An envelope that does
+ * not cover every resolved player forfeits the whole game rather than leaving a partial result.
  * No socket, no human timeout, no relay. The container drives itself to its episode's end and exits.
  *
  * For each game the runner: registers the produced recording (owned by the seat's natural owner) and
@@ -32,11 +32,15 @@ import {
   RESULT_KIND,
   readRecording,
 } from '@game-sandbox/schema'
-import { type ParameterValue, validateCompleteParameters } from '@game-sandbox/schema/environment'
+import {
+  type ParameterValue,
+  resolveLayout,
+  validateCompleteParameters,
+} from '@game-sandbox/schema/environment'
 import type { UserDirectory } from '../auth/users.js'
 import type { ImagePolicy, SandboxDefaults } from '../config.js'
 import type { ExecutionDriver, ExitInfo, ImageRef, SessionProcess } from '../driver/index.js'
-import { buildSandboxProfile } from '../driver/sandbox.js'
+import { buildSandboxProfile, sandboxResourcesForPlayers } from '../driver/sandbox.js'
 import type { EnvironmentMeta, EnvironmentRegistry } from '../environments.js'
 import { forfeitScore, normalizeEpisodeScore } from '../leaderboards/score.js'
 import { decodeResolvedOfficialLlmPolicy, type ResolvedOfficialLlmPolicy } from '../llm/config.js'
@@ -45,8 +49,8 @@ import { optionalField } from '../optional-field.js'
 import { coerceResultReason } from '../result-reason.js'
 import { createChargeableTimer } from '../session/chargeable-timer.js'
 import {
+  assembleLaunch,
   assembleLlmLaunchConfig,
-  assembleSeats,
   type SeatBinding,
 } from '../session/launch-config.js'
 import { ensureRecordingsDir } from '../session/live-session.js'
@@ -58,10 +62,16 @@ import type { SubmissionSnapshotStore } from '../submission/snapshot-store.js'
 import type { SubmissionSource } from '../submission/source/index.js'
 import {
   resolveSubmissionLaunchImage,
-  type SessionImageSlot,
-  submissionSlotPath,
+  type SessionImageSeat,
+  submissionSeatPath,
 } from '../submission/submission-image.js'
-import { aggregateSeat } from './aggregate.js'
+import {
+  aggregatePlayer,
+  failAllSeats,
+  type PlayerResult,
+  reducePlayersToSeats,
+  type SeatResult,
+} from './aggregate.js'
 import type {
   RunEvent,
   RunEventListener,
@@ -118,19 +128,21 @@ export interface WorkflowRunnerDeps {
 }
 
 /** The `result` envelope the harness emits once at episode end, as the runner reads it back. */
-interface ResultEnvelope {
+export interface ResultEnvelope {
   reason: string | null
   scores: Record<string, number>
   /**
    * The one seat a failure is chargeable to: the player whose agent raised, or whose own per-episode
-   * budget overran. `null` for a clean episode, or a container-level fault (a wall-clock kill, an OOM)
-   * no single seat owns. The runner flags only this seat instead of every competitor in the container.
+   * budget overran. `null` for a clean episode. Container-level faults are classified from the process
+   * outcome, not this potentially stale envelope field.
    */
   failedPlayer: string | null
+  /** A present `failed_player` must be a string or null. Other values invalidate the envelope. */
+  failedPlayerMalformed: boolean
 }
 
 /** How a finished game's container fared: a clean episode, a crashed agent, or a timed-out agent. */
-type FailureKind = 'crash' | 'timeout' | null
+export type FailureKind = 'crash' | 'timeout' | null
 
 /**
  * Create the Docker-backed workflow runner. Runs execute sequentially through an in-process queue
@@ -323,10 +335,37 @@ class DockerWorkflowRunner implements WorkflowRunner {
         )
       }
       const llmPolicy = decodeResolvedOfficialLlmPolicy(run.llm_policy_snapshot)
+      const layout = resolveLayout(meta, resolvedParameters.values)
+      const games = await this.deps.storage.listRunGames(runId)
+
+      // Both checks below read only run-level facts: every game shares this layout, and the schedule
+      // stamped one plan key across all of them. So they settle once, before the run is marked running
+      // and before any container starts, rather than repeating as the same fault on every game.
+      const mismatch = games.find(
+        (game) =>
+          game.seat_plan !== layout.planKey ||
+          (JSON.parse(game.seats) as AgentRef[]).length !== layout.seatCount,
+      )
+      if (mismatch !== undefined) {
+        await this.finishRun(
+          runId,
+          'failed',
+          `game ${mismatch.game_index}: stored assignment does not match the resolved seat layout`,
+        )
+        return
+      }
+      // Derived here rather than per game so an unusable bound refuses the run instead of throwing
+      // after a container is already live, which would strand that game at `running`.
+      const watchdogMs = gameWatchdogMs(
+        meta,
+        config.overrides,
+        layout.playerCount,
+        this.gameWatchdogGraceMs,
+      )
+
       await this.deps.storage.setRunStatus(runId, 'running')
       await ensureRecordingsDir(this.deps.recordingsDir)
 
-      const games = await this.deps.storage.listRunGames(runId)
       for (const game of games) {
         if (this.cancelRequested.has(runId)) {
           await this.markGameCancelled(runId, game)
@@ -338,7 +377,9 @@ class DockerWorkflowRunner implements WorkflowRunner {
           config.deps_version,
           config.overrides,
           resolvedParameters.values,
+          layout,
           llmPolicy,
+          watchdogMs,
           game,
         )
       }
@@ -371,11 +412,14 @@ class DockerWorkflowRunner implements WorkflowRunner {
     depsVersion: number,
     overrides: ReturnType<typeof decodeSeasonConfig>['overrides'],
     parameters: Record<string, ParameterValue>,
+    layout: ReturnType<typeof resolveLayout>,
     llmPolicy: ResolvedOfficialLlmPolicy,
+    watchdogMs: number,
     game: SeasonRunGame,
   ): Promise<void> {
     const runId = run.id
     const envId = meta.env_id
+    // The run-start check already matched this array against the layout's plan key and seat count.
     const seats = JSON.parse(game.seats) as AgentRef[]
     await this.deps.storage.setRunGameStatus(game.id, 'running')
     this.emit(runId, { type: 'game_status', game_index: game.game_index, status: 'running' })
@@ -389,7 +433,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
     // game. An image-resolution failure is an infrastructure fault, not an agent fault.
     let image: ImageRef
     try {
-      image = await this.resolveImage(seats, depsVersion)
+      image = await this.resolveImage(seats, layout, depsVersion)
     } catch (error) {
       await this.infraFault(runId, game, `image resolution failed: ${errorText(error)}`)
       return
@@ -421,7 +465,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
           llmLease = await this.deps.officialGrantIssuer.issue({
             sessionId: game.id,
             scopeId: runId,
-            agentPlayers: seats.map((_, index) => `player_${index}`),
+            agentPlayers: layout.seats.flatMap((seat) => seat.players),
             models: policyModels(llmPolicy),
             limits: policyLimits(llmPolicy),
           })
@@ -443,6 +487,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
         recordingId,
         overrides,
         parameters,
+        layout,
         llmLease?.keys ?? {},
       )
       if (this.cancelRequested.has(runId)) {
@@ -456,7 +501,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
           image,
           argv: [JSON.stringify(sessionConfig)],
           sandbox: buildSandboxProfile(
-            this.deps.sandbox,
+            sandboxResourcesForPlayers(this.deps.sandbox, layout.playerCount),
             [
               {
                 hostPath: this.deps.recordingsDir,
@@ -469,7 +514,9 @@ class DockerWorkflowRunner implements WorkflowRunner {
           sessionId: game.id,
         })
       } catch (error) {
-        await this.infraFault(runId, game, `container failed to start: ${errorText(error)}`)
+        // Covers both a rejected sandbox quota (derived above) and a driver that could not start the
+        // container, so the message names the launch rather than the container specifically.
+        await this.infraFault(runId, game, `container launch failed: ${errorText(error)}`)
         return
       }
       this.inFlight.set(runId, process)
@@ -481,13 +528,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
         await llmLease?.revoke()
         await this.cleanupProcess(process)
       }
-      const watchdog = this.startGameWatchdog(
-        runId,
-        game,
-        process,
-        gameWatchdogMs(meta, overrides, this.gameWatchdogGraceMs),
-        llmLease,
-      )
+      const watchdog = this.startGameWatchdog(runId, game, process, watchdogMs, llmLease)
 
       // Drain stderr as live log lines, and stdout for the recording stream and the final result
       // envelope. Both must finish before the recording is read so no line is missed.
@@ -556,24 +597,14 @@ class DockerWorkflowRunner implements WorkflowRunner {
       // nothing trustworthy to attribute. Treat it as an infrastructure fault rather than inventing a
       // `terminated` ending and a standings card built from stale recording scores. A non-clean exit
       // (crash, OOM, or watchdog kill) is classified below from the exit itself and needs no envelope.
-      const cleanExit = !watchdog.timedOut() && !exit.oomKilled && exit.code === 0
-      if (cleanExit && coerceResultReason(captured.result?.reason) === null) {
-        await this.infraFault(
-          runId,
-          game,
-          `game exited cleanly without a valid result envelope (container exit code ${exit.code})`,
-        )
-        return
-      }
-
-      const failure = classifyFailure(exit, captured.result, watchdog.timedOut())
-      // A failure the harness could pin to one seat (an agent crash, or a per-seat episode-budget
-      // overage) names that seat, so the blame lands there alone and not on every competitor sharing the
-      // container. A container-level fault it could not attribute (a wall-clock watchdog kill, an OOM)
-      // names no seat: the whole game's seats then carry it, since the culprit is genuinely unknown.
-      const culpritPlayer = failure.kind !== null ? (captured.result?.failedPlayer ?? null) : null
-      const status =
-        failure.kind === 'timeout' ? 'timed_out' : failure.kind === 'crash' ? 'failed' : 'completed'
+      const resolvedPlayerIds = layout.seats.flatMap((seat) => seat.players)
+      const attribution = resolveFailureAttribution(
+        exit,
+        captured.result,
+        watchdog.timedOut(),
+        resolvedPlayerIds,
+      )
+      const status = attribution.status
 
       // The revocation barrier above closed admission and awaited every request finalizer. Read every
       // seat from the shared run scope before writing any per-seat result, so all results describe the
@@ -584,8 +615,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
         if (telemetry === undefined) {
           throw new Error('official workflow LLM telemetry is not configured')
         }
-        for (let seatIndex = 0; seatIndex < seats.length; seatIndex++) {
-          const playerId = `player_${seatIndex}`
+        for (const playerId of resolvedPlayerIds) {
           llmUsageByPlayer.set(
             playerId,
             storedLlmUsage(
@@ -620,50 +650,57 @@ class DockerWorkflowRunner implements WorkflowRunner {
         .catch((error) => this.log(`run ${runId}: createRecording failed: ${String(error)}`))
 
       const pricedModels = policyModels(llmPolicy)
-      for (let seatIndex = 0; seatIndex < seats.length; seatIndex++) {
+      const playerResults: PlayerResult[] = resolvedPlayerIds.map((playerId) => {
+        const aggregate = aggregatePlayer(parsed.states, playerId)
+        const usage = llmUsageByPlayer.get(playerId) ?? null
+        const culprit = attribution.scope === 'attributed' ? attribution.culprit : null
+        const failed = culprit?.playerId === playerId
+        return {
+          playerId,
+          // Zero under `all-failed`: every seat takes the forfeit floor below, so the value is unused.
+          episodeScore:
+            attribution.scope === 'attributed' ? (attribution.scores[playerId] ?? 0) : 0,
+          agentComputeMsTotal: aggregate.agentComputeMsTotal,
+          actedTickCount: aggregate.actedTickCount,
+          llmUsageByModel: usage,
+          llmWeightedCost: weightedCostOf(usage, pricedModels),
+          failed,
+          failureReason: failed ? (culprit?.reason ?? null) : null,
+        }
+      })
+      const reduced = reducePlayersToSeats(layout, playerResults)
+      const seatResults =
+        attribution.scope === 'attributed' ? reduced : failAllSeats(reduced, attribution.gameReason)
+      for (let seatIndex = 0; seatIndex < seatResults.length; seatIndex++) {
+        const result = seatResults[seatIndex] as SeatResult
         const agent = seats[seatIndex] as AgentRef
-        const playerId = `player_${seatIndex}`
-        const aggregate = aggregateSeat(parsed.states, playerId)
-        // The result envelope is authoritative for a seat's final episode score: it reports every
-        // seat's accumulated score, whereas the recording writes only the acting seat per tick. A
-        // turn-based env that pays all seats at the end (Hearts settles its penalty on the final
-        // trick) therefore never records the non-acting seats' terminal payout, so their recording
-        // `score` reads back as a stale 0. The recording-derived score is the fallback for the rare
-        // case the envelope never reported this seat at all.
-        const envelopeScore = captured.result?.scores[playerId]
-        const rawScore =
-          typeof envelopeScore === 'number' ? envelopeScore : (aggregate.finalScore ?? 0)
-        const seatFailed =
-          failure.kind !== null && (culpritPlayer === null || culpritPlayer === playerId)
-        // A forfeited seat takes the environment's worst-case floor, not the partial score it accrued
-        // before failing. Otherwise a terminal-scored game (Hearts pays its penalty only at the final
-        // trick) lets an agent that crashes or plays an illegal move bank a ~0 partial — the best
-        // possible score — and lead the board despite failing every game. A clean seat keeps its score.
-        const episodeScore = seatFailed
+        const episodeScore = result.failed
           ? forfeitScore(envId)
-          : normalizeEpisodeScore(envId, rawScore)
+          : normalizeEpisodeScore(envId, result.episodeScore)
         await this.deps.storage.recordGameResult({
           game_id: game.id,
           seat_index: seatIndex,
           agent,
           episode_score: episodeScore,
-          agent_compute_ms_total: aggregate.agentComputeMsTotal,
-          acted_tick_count: aggregate.actedTickCount,
-          llm_usage_by_model: llmUsageByPlayer.get(playerId) ?? null,
-          llm_weighted_cost: weightedCostOf(llmUsageByPlayer.get(playerId) ?? null, pricedModels),
-          failed: seatFailed,
-          failure_reason: seatFailed ? failure.reason : null,
+          agent_compute_ms_total: result.agentComputeMsTotal,
+          acted_tick_count: result.actedTickCount,
+          llm_usage_by_model: result.llmUsageByModel,
+          llm_weighted_cost: result.llmWeightedCost,
+          failed: result.failed,
+          failure_reason: result.failureReason,
         })
       }
 
-      await this.deps.storage.setRunGameStatus(game.id, status, failure.reason ?? undefined)
+      await this.deps.storage.setRunGameStatus(game.id, status, attribution.gameReason ?? undefined)
       this.emit(runId, { type: 'game_status', game_index: game.game_index, status })
       const level: RunLogLevel =
         status === 'completed' ? 'success' : status === 'timed_out' ? 'warning' : 'error'
       this.gameLog(
         runId,
         game,
-        `game ${game.game_index} finished: ${status}${failure.reason ? ` (${failure.reason})` : ''}`,
+        `game ${game.game_index} finished: ${status}${
+          attribution.gameReason === null ? '' : ` (${attribution.gameReason})`
+        }`,
         level,
       )
     } finally {
@@ -724,8 +761,12 @@ class DockerWorkflowRunner implements WorkflowRunner {
    * multi-submission matchup game (the Hearts scheduler's ordered seatings) from baking only the first
    * seat's overlay, which would leave the other submitted seats with no code to load.
    */
-  private async resolveImage(seats: readonly AgentRef[], depsVersion: number): Promise<ImageRef> {
-    const composed: SessionImageSlot[] = []
+  private async resolveImage(
+    seats: readonly AgentRef[],
+    layout: ReturnType<typeof resolveLayout>,
+    depsVersion: number,
+  ): Promise<ImageRef> {
+    const composed: SessionImageSeat[] = []
     for (let i = 0; i < seats.length; i++) {
       const agent = seats[i] as AgentRef
       if (agent.kind === 'submission') {
@@ -733,7 +774,9 @@ class DockerWorkflowRunner implements WorkflowRunner {
         if (submission === undefined) {
           throw new Error(`submission ${agent.submission_id} no longer exists`)
         }
-        composed.push({ slotId: `player_${i}`, submission })
+        const seat = layout.seats[i]
+        if (seat === undefined) throw new Error(`missing resolved seat ${i}`)
+        composed.push({ seatId: seat.seatId, submission })
       }
     }
     if (composed.length === 0) {
@@ -759,6 +802,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
     recordingId: string,
     overrides: ReturnType<typeof decodeSeasonConfig>['overrides'],
     parameters: Record<string, ParameterValue>,
+    layout: ReturnType<typeof resolveLayout>,
     llmKeys: Readonly<Record<string, string>>,
   ): Promise<Record<string, unknown>> {
     // Snapshot each submission owner's display name for the recording header at launch time, one
@@ -768,20 +812,21 @@ class DockerWorkflowRunner implements WorkflowRunner {
     const seats = new Map<string, SeatBinding>()
     for (let i = 0; i < assignedSeats.length; i++) {
       const agent = assignedSeats[i] as AgentRef
-      const playerId = `player_${i}`
+      const resolvedSeat = layout.seats[i]
+      if (resolvedSeat === undefined) throw new Error(`missing resolved seat ${i}`)
       if (agent.kind === 'submission') {
-        seats.set(playerId, {
+        seats.set(resolvedSeat.seatId, {
           driver: 'submission',
           submissionId: agent.submission_id,
           userId: agent.user_id,
-          path: submissionSlotPath(playerId),
+          path: submissionSeatPath(resolvedSeat.seatId),
           ...optionalField('ownerName', names.get(agent.user_id)),
         })
       } else {
-        seats.set(playerId, { driver: 'naive' })
+        seats.set(resolvedSeat.seatId, { driver: 'naive' })
       }
     }
-    const { playerBindings, players } = assembleSeats(seats)
+    const { playerBindings, players } = assembleLaunch(seats, layout)
     return {
       env_id: envId,
       seed,
@@ -952,10 +997,15 @@ function recordingOwner(seats: readonly AgentRef[], requestedBy: string): string
   return requestedBy
 }
 
-/** Validate the harness `result` envelope into the two fields the runner reads. */
-function parseResultEnvelope(value: Record<string, unknown>): ResultEnvelope {
+/** Validate the harness `result` envelope into the fields used for score and fault attribution. */
+export function parseResultEnvelope(value: Record<string, unknown>): ResultEnvelope {
   const reason = typeof value.reason === 'string' ? value.reason : null
-  const failedPlayer = typeof value.failed_player === 'string' ? value.failed_player : null
+  const rawFailedPlayer = value.failed_player
+  const failedPlayer = typeof rawFailedPlayer === 'string' ? rawFailedPlayer : null
+  const failedPlayerMalformed =
+    Object.hasOwn(value, 'failed_player') &&
+    rawFailedPlayer !== null &&
+    typeof rawFailedPlayer !== 'string'
   const scores: Record<string, number> = {}
   const raw = value.scores
   if (typeof raw === 'object' && raw !== null) {
@@ -965,22 +1015,113 @@ function parseResultEnvelope(value: Record<string, unknown>): ResultEnvelope {
       }
     }
   }
-  return { reason, scores, failedPlayer }
-}
-
-/** The chargeable-wall-clock watchdog bound for one game, derived from the effective episode timeout. */
-function gameWatchdogMs(
-  meta: EnvironmentMeta,
-  overrides: ReturnType<typeof decodeSeasonConfig>['overrides'],
-  graceMs: number,
-): number {
-  return (overrides?.episode_timeout_ms ?? meta.episode_limit_ms) + graceMs
+  return { reason, scores, failedPlayer, failedPlayerMalformed }
 }
 
 /**
- * Decide how a finished game's container fared. A non-zero exit or an OOM kill is an attributable
- * agent crash; a clean exit whose recorded reason is `episode_limit` is a timed-out agent (it
- * exhausted its episode compute budget). Anything else is a clean completion.
+ * How a finished game's outcome is charged. Either the envelope is trustworthy and the fault (if any)
+ * belongs to one named player, or there is no per-player attribution worth keeping and every seat
+ * forfeits under one reason.
+ */
+export type FailureAttribution = {
+  /** The game row's terminal status. */
+  status: 'completed' | 'failed' | 'timed_out'
+  /** The reason stamped on the game row; null only for a clean completion. */
+  gameReason: string | null
+} & (
+  | {
+      scope: 'attributed'
+      /** One finite score per resolved player, already checked against the layout. */
+      scores: Readonly<Record<string, number>>
+      /** The one player charged for the fault, or null when the game finished clean. */
+      culprit: { playerId: string; reason: string } | null
+    }
+  | { scope: 'all-failed'; gameReason: string }
+)
+
+/**
+ * Resolve the scope of a finished game's fault. OOM and watchdog outcomes come from the container, so
+ * a result envelope cannot attribute them to a single player. A malformed `failed_player`, an
+ * unknown one, or a score map that does not cover every resolved player likewise leaves nothing
+ * trustworthy to charge, so the whole game forfeits rather than keeping a partial result.
+ *
+ * A player is charged only when the process outcome agrees that something failed. An envelope that
+ * names a `failed_player` after a clean, recognized ending describes no fault this runner can act on.
+ */
+export function resolveFailureAttribution(
+  exit: ExitInfo,
+  result: ResultEnvelope | null,
+  watchdogTimedOut: boolean,
+  resolvedPlayerIds: readonly string[],
+): FailureAttribution {
+  const failure = classifyFailure(exit, result, watchdogTimedOut)
+  const cleanExit = !watchdogTimedOut && !exit.oomKilled && exit.code === 0
+  const reportedScores = result?.scores ?? {}
+  // `parseResultEnvelope` already dropped every nonfinite value, so equal key sets is the whole check.
+  const validScores =
+    resolvedPlayerIds.every((playerId) => Number.isFinite(reportedScores[playerId])) &&
+    Object.keys(reportedScores).every((playerId) => resolvedPlayerIds.includes(playerId))
+  const reportedFailure = result?.failedPlayer ?? null
+  const resultReason = coerceResultReason(result?.reason)
+  const containerFault = watchdogTimedOut || exit.oomKilled
+  const gameReason = containerFault
+    ? failure.reason
+    : cleanExit && resultReason === null
+      ? `game exited without a valid result envelope (container exit code ${exit.code})`
+      : result?.failedPlayerMalformed === true
+        ? 'harness result failed_player must be a string or null'
+        : failure.kind !== null && reportedFailure === null
+          ? failure.reason
+          : !validScores
+            ? 'harness result did not report one finite score for every resolved player'
+            : reportedFailure !== null && !resolvedPlayerIds.includes(reportedFailure)
+              ? `harness reported unknown failed player ${reportedFailure}`
+              : null
+  if (gameReason !== null) {
+    return {
+      scope: 'all-failed',
+      status: failure.kind === 'timeout' ? 'timed_out' : 'failed',
+      gameReason,
+    }
+  }
+  // Past this point the envelope covers every resolved player and any named culprit is one of them.
+  const culprit =
+    failure.kind !== null && reportedFailure !== null
+      ? { playerId: reportedFailure, reason: failure.reason ?? 'failed' }
+      : null
+  return {
+    scope: 'attributed',
+    status: culprit === null ? 'completed' : failure.kind === 'timeout' ? 'timed_out' : 'failed',
+    gameReason: culprit === null ? null : failure.reason,
+    scores: reportedScores,
+    culprit,
+  }
+}
+
+/** The chargeable-wall-clock watchdog bound for one game, derived from the effective episode timeout. */
+export function gameWatchdogMs(
+  meta: EnvironmentMeta,
+  overrides: ReturnType<typeof decodeSeasonConfig>['overrides'],
+  playerCount: number,
+  graceMs: number,
+): number {
+  const episodeLimit = overrides?.episode_timeout_ms ?? meta.episode_limit_ms
+  const watchdogMs = episodeLimit * playerCount + graceMs
+  if (
+    !Number.isSafeInteger(playerCount) ||
+    playerCount < 1 ||
+    !Number.isSafeInteger(watchdogMs) ||
+    watchdogMs <= 0
+  ) {
+    throw new Error('workflow watchdog is not a positive safe integer')
+  }
+  return watchdogMs
+}
+
+/**
+ * Decide how a finished game's container fared. A non-zero exit is an agent crash if a valid envelope
+ * identifies the player. OOM and watchdog outcomes remain container-level faults during attribution.
+ * A clean exit whose recorded reason is `episode_limit` is a timed-out agent. Anything else is clean.
  */
 function classifyFailure(
   exit: ExitInfo,

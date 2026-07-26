@@ -22,6 +22,8 @@ from game_sandbox_harness.environment import (
     EnvironmentEntry,
     EnvironmentMeta,
     PlayerBounds,
+    SeatPlan,
+    SeatPlans,
     resolve_parameters,
 )
 from game_sandbox_harness.live import (
@@ -182,6 +184,7 @@ def test_parse_config_minimal_and_full():
         recording_id="abc",
         parameters={"players": 1, "pipe_gap": 100},
         players={"player_0": {"kind": "human", "label": "alice", "user": "alice"}},
+        layout=cfg.layout,
     )
 
 
@@ -196,12 +199,65 @@ def test_parse_config_requires_players():
         parse_config([json.dumps(payload)])
 
 
+def test_parse_config_resolves_a_wide_layout_and_rejects_missing_or_foreign_players(monkeypatch):
+    import game_sandbox_harness.live as live
+
+    wide_entry = EnvironmentEntry(
+        meta=EnvironmentMeta(
+            env_id="wide",
+            display_name="Wide",
+            description="A synthetic wide layout.",
+            layout=SeatPlans((SeatPlan("uneven", "Uneven", ((0, 2), (1,))),)),
+            human_players=("player_0",),
+            human_timeout_ms=None,
+            recommended_episode_ticks=1,
+            pace_interval_ms=None,
+            step_limit_ms=1000,
+            episode_limit_ms=1000,
+            messaging=False,
+            message_cap=None,
+            llm=False,
+            renderer="fake",
+        ),
+        make=lambda _parameters: FakeEnv(1),
+        default_action=lambda _env, _player_id: DEFAULT_ACTION,
+    )
+    monkeypatch.setattr(live, "load_environment", lambda _env_id: wide_entry)
+    payload = {
+        "env_id": "wide",
+        "parameters": {"seat_plan": "uneven"},
+        "player_bindings": {
+            "player_0": {"kind": "builtin-agent"},
+            "player_1": {"kind": "builtin-agent"},
+            "player_2": {"kind": "builtin-agent"},
+        },
+        "players": {
+            "player_0": {"kind": "agent", "label": "A"},
+            "player_1": {"kind": "agent", "label": "B"},
+            "player_2": {"kind": "agent", "label": "A"},
+        },
+        "recording_dir": "/r",
+    }
+    config = parse_config([json.dumps(payload)])
+    assert config.layout is not None
+    assert config.layout.plan_key == "uneven"
+    assert config.layout.seats[0].players == ("player_0", "player_2")
+
+    payload["player_bindings"].pop("player_2")
+    with pytest.raises(LiveConfigError, match="missing players"):
+        parse_config([json.dumps(payload)])
+    payload["player_bindings"]["player_2"] = {"kind": "builtin-agent"}
+    payload["players"]["player_9"] = payload["players"].pop("player_2")
+    with pytest.raises(LiveConfigError, match="unknown players"):
+        parse_config([json.dumps(payload)])
+
+
 def test_parse_config_defaults_seed_and_optional_fields():
     payload = {
-        "env_id": "fake",
-        "parameters": PARAMETERS,
-        "player_bindings": {"p": {"kind": "external"}},
-        "players": {"p": {"kind": "human", "label": "Human"}},
+        "env_id": "flappy_bird",
+        "parameters": {"players": 1, "pipe_gap": 100},
+        "player_bindings": {"player_0": {"kind": "external"}},
+        "players": {"player_0": {"kind": "human", "label": "Human"}},
         "recording_dir": "/r",
     }
     cfg = parse_config([json.dumps(payload)])
@@ -219,10 +275,10 @@ def test_parse_config_defaults_seed_and_optional_fields():
 
 def test_parse_config_reads_workflow_overrides():
     payload = {
-        "env_id": "fake",
-        "parameters": PARAMETERS,
-        "player_bindings": {"p": {"kind": "builtin-agent"}},
-        "players": {"p": {"kind": "agent", "label": "Agent"}},
+        "env_id": "flappy_bird",
+        "parameters": {"players": 1, "pipe_gap": 100},
+        "player_bindings": {"player_0": {"kind": "builtin-agent"}},
+        "players": {"player_0": {"kind": "agent", "label": "Agent"}},
         "recording_dir": "/r",
         "step_timeout_ms": 250,
         "episode_timeout_ms": 60_000,
@@ -236,10 +292,10 @@ def test_parse_config_reads_workflow_overrides():
 
 def test_parse_config_reads_messaging_keys():
     payload = {
-        "env_id": "fake",
-        "parameters": PARAMETERS,
-        "player_bindings": {"p": {"kind": "builtin-agent"}},
-        "players": {"p": {"kind": "agent", "label": "Agent"}},
+        "env_id": "flappy_bird",
+        "parameters": {"players": 1, "pipe_gap": 100},
+        "player_bindings": {"player_0": {"kind": "builtin-agent"}},
+        "players": {"player_0": {"kind": "agent", "label": "Agent"}},
         "recording_dir": "/r",
         "messaging_enabled": False,
         "message_cap": 80,
@@ -419,6 +475,37 @@ def test_build_players_builtin_agent_without_path_resolves_per_env_default(monke
     players = build_players(cfg, entry, control, clock, sleeper)
     assert captured == ["/opt/agents/builtin/hearts"]
     assert isinstance(players["player_0"], AgentPlayer)
+
+
+def test_build_players_constructs_distinct_agents_for_repeated_paths(monkeypatch):
+    import game_sandbox_harness.live as live
+
+    constructed: list[object] = []
+    monkeypatch.setattr(live, "load_agent", lambda _path: constructed.append(object()) or constructed[-1])
+    entry = make_entry(1, pace_interval_ms=None)
+    config = LiveConfig(
+        "fake",
+        0,
+        {
+            "player_0": PlayerBinding("builtin-agent", "/agents/seat_0"),
+            "player_1": PlayerBinding("builtin-agent", "/agents/seat_0"),
+        },
+        None,
+        "/r",
+        None,
+        {"players": 1},
+    )
+    players = build_players(
+        config,
+        entry,
+        SessionControl(),
+        PausableClock(ManualClock()),
+        AdvancingSleeper(ManualClock()),
+    )
+    assert len(constructed) == 2
+    assert isinstance(players["player_0"], AgentPlayer)
+    assert isinstance(players["player_1"], AgentPlayer)
+    assert players["player_0"].agent is not players["player_1"].agent
 
 
 # --- the live loop ----------------------------------------------------------------------

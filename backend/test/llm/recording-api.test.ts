@@ -104,6 +104,9 @@ describe('recording LLM telemetry API', () => {
       schema_version: 1,
       environment: 'flappy_bird',
       parameters: {},
+      players: { player_0: { kind: 'agent', label: 'Naive agent' } },
+      seats: { seat_0: ['player_0'] },
+      seat_plan: 'solo',
     }
     await fixture.users.headersFor('recorder')
     await seedRecording('ordinary', header, null)
@@ -130,6 +133,9 @@ describe('recording LLM telemetry API', () => {
       schema_version: 1,
       environment: 'flappy_bird',
       parameters: {},
+      players: { player_0: { kind: 'agent', label: 'Naive agent' } },
+      seats: { seat_0: ['player_0'] },
+      seat_plan: 'solo',
     }
     await seedRecording('missing-file', header, { scopeId: 'gone', sessionId: 'session' })
 
@@ -197,6 +203,8 @@ describe('recording LLM telemetry API', () => {
           submission_id: 'deleted-submission',
         },
       },
+      seats: { seat_0: ['player_0'], seat_1: ['player_1'], seat_2: ['player_2'] },
+      seat_plan: 'solo',
     }
     await seedRecording('multi', header, { scopeId: 'run-scope', sessionId: 'game-1' })
     insertCall('run-scope', 'game-1', {

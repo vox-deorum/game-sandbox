@@ -331,7 +331,13 @@ describe('submission storage on :memory:', () => {
     // game_results with no session, its (newer) recording attached via the game, not a session. A
     // session-only join would miss it entirely — the empty "Recent replays" an automated-only season
     // produced, the regression this guards.
-    const game: ScheduledGameInput = { match_index: 0, game_index: 0, seed: 1, seats: [agent] }
+    const game: ScheduledGameInput = {
+      match_index: 0,
+      game_index: 0,
+      seed: 1,
+      seats: [agent],
+      seat_plan: 'solo',
+    }
     const run = await createRunOrFail(storage, iter, 'dev-user', () => ({
       parametersSnapshot: { players: 1 },
       scheduledGames: [game],

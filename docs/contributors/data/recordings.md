@@ -9,7 +9,7 @@ line 2+: one StepState per line
 
 The harness streams and stores the same serialized state lines. Input, pause, resume, stop, and chat commands use event envelopes and are not part of the recording. See the [recording specification](../../specs/recording.md) and [state schema](state-schema.md).
 
-The header may include a `players` map keyed by player id, using the same keys as a step state's `agents`. Each entry has the shape `{kind: "human" | "agent", label, user?, submission_id?}`.
+The header contains a `players` map keyed by player id, using the same keys as a step state's `agents`. Each entry has the shape `{kind: "human" | "agent", label, user?, submission_id?}`.
 
 The harness copies this map from the session configuration. The backend assigns:
 
@@ -17,7 +17,9 @@ The harness copies this map from the session configuration. The backend assigns:
 - Submitted players to the submission owner and id.
 - Other built-in players to the "Naive agent".
 
-The field is optional, so older recordings remain readable.
+The required `seats` map groups those player ids under canonical `seat_N` ids. Its nonempty arrays form an exact partition of `players`, so every player belongs to exactly one seat. The required `seat_plan` field records the canonical plan key that produced the partition. Readers use these fields directly instead of resolving current environment metadata.
+
+This pre-release format supports only headers that carry all three fields. Recordings produced before this contract are recreated.
 
 ## External LLM telemetry
 

@@ -1,2 +1,2 @@
-{"environment":"flappy","parameters":{"pipe_gap":100,"players":1},"schema_version":2}
+{"environment":"flappy","parameters":{"pipe_gap":100,"players":1},"players":{"player_0":{"kind":"agent","label":"Naive agent"}},"schema_version":2,"seat_plan":"solo","seats":{"seat_0":["player_0"]}}
 {"agents":{"player_0":{"reward":0.0,"score":0.0}},"schema_version":2,"tick":0,"timing":{"duration_ms":1.0,"started_at":1700000000000}}

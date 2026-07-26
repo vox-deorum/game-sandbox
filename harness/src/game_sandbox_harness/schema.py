@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 from importlib import resources
-from typing import Any
+from typing import Any, cast
 
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
@@ -65,3 +65,25 @@ def validate_step(payload: Any) -> None:
 def validate_header(payload: Any) -> None:
     """Validate a recording header, raising :class:`SchemaValidationError` on failure."""
     _validate(_header_validator, payload, "recording header")
+    if not isinstance(payload, dict):
+        raise SchemaValidationError("recording header must be an object")
+    header = cast("dict[str, object]", payload)
+    players = header.get("players")
+    seats = header.get("seats")
+    seat_plan = header.get("seat_plan")
+    if not isinstance(players, dict) or not isinstance(seats, dict) or not isinstance(seat_plan, str):
+        raise SchemaValidationError("recording header must contain players, seats, and seat_plan")
+    player_map = cast("dict[str, object]", players)
+    seat_map = cast("dict[str, object]", seats)
+    members: list[str] = []
+    for _seat_id, seat_players in seat_map.items():
+        if not isinstance(seat_players, list):
+            raise SchemaValidationError("recording header seats must map seat ids to player lists")
+        player_ids = cast("list[object]", seat_players)
+        if not player_ids or not all(isinstance(player_id, str) for player_id in player_ids):
+            raise SchemaValidationError("recording header seats must contain non-empty player lists")
+        members.extend(cast("list[str]", player_ids))
+    if len(members) != len(set(members)):
+        raise SchemaValidationError("recording header seats must not assign a player to multiple seats")
+    if set(player_map) != set(members):
+        raise SchemaValidationError("recording header players must exactly match the seat partition")

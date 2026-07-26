@@ -14,7 +14,7 @@ import { computed, ref } from 'vue'
 
 import type { RecordingLlmCall } from '../api/client.js'
 import { useActiveRowScroll } from '../composables/useActiveRowScroll.js'
-import { formatAction, formatSlot } from '../lib/format.js'
+import { formatAction, formatPlayer } from '../lib/format.js'
 import LlmCostDetails from './LlmCostDetails.vue'
 import LlmCostTooltip from './LlmCostTooltip.vue'
 import RequestResponseView from './RequestResponseView.vue'
@@ -126,7 +126,7 @@ const scroller = useActiveRowScroll(
           :data-row-id="`setup:${row.slot}`"
         >
           <td class="player-col">
-            {{ row.slot ? formatSlot(row.slot) : 'None' }}
+            {{ row.slot ? formatPlayer(row.slot) : 'None' }}
           </td>
           <td class="tick-col">Setup</td>
           <td>Setup</td>
@@ -149,7 +149,7 @@ const scroller = useActiveRowScroll(
           :aria-current="i === activeIndex ? 'true' : undefined"
         >
           <td class="player-col">
-            {{ entry.slot ? formatSlot(entry.slot) : 'None' }}
+            {{ entry.slot ? formatPlayer(entry.slot) : 'None' }}
           </td>
           <td class="tick-col">{{ entry.tick }}</td>
           <td>{{ formatAction(entry.action) }}</td>

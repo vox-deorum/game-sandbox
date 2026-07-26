@@ -129,7 +129,16 @@ export function spadesMeta(overrides: Partial<EnvironmentMeta> = {}): Environmen
 
 /** A recording header for a Flappy Bird run (schema version 1). */
 export function flappyHeader(overrides: Partial<RecordingHeader> = {}): RecordingHeader {
-  return { schema_version: 1, environment: 'flappy_bird', seed: 0, parameters: {}, ...overrides }
+  return {
+    schema_version: 1,
+    environment: 'flappy_bird',
+    seed: 0,
+    parameters: {},
+    players: { player_0: { kind: 'agent', label: 'Naive agent' } },
+    seats: { seat_0: ['player_0'] },
+    seat_plan: 'solo',
+    ...overrides,
+  }
 }
 
 /**
@@ -159,6 +168,13 @@ export function spadesHeader(overrides: Partial<RecordingHeader> = {}): Recordin
     seed: 0,
     parameters: {},
     players: spadesPlayers(),
+    seats: {
+      seat_0: ['player_0'],
+      seat_1: ['player_1'],
+      seat_2: ['player_2'],
+      seat_3: ['player_3'],
+    },
+    seat_plan: 'solo',
     ...overrides,
   }
 }
@@ -212,16 +228,21 @@ export function recordingText(
     seed?: number
     parameters?: RecordingHeader['parameters']
     players?: RecordingHeader['players']
+    seats?: RecordingHeader['seats']
+    seatPlan?: RecordingHeader['seat_plan']
   } = {},
 ): string {
+  const players = opts.players ?? { player_0: { kind: 'agent' as const, label: 'Naive agent' } }
   const header: Record<string, unknown> = {
     schema_version: opts.schemaVersion ?? 1,
     environment: opts.environment ?? 'flappy_bird',
     seed: opts.seed ?? 0,
     parameters: opts.parameters ?? {},
-  }
-  if (opts.players !== undefined) {
-    header.players = opts.players
+    players,
+    seats:
+      opts.seats ??
+      Object.fromEntries(Object.keys(players).map((player, index) => [`seat_${index}`, [player]])),
+    seat_plan: opts.seatPlan ?? 'solo',
   }
   return `${[JSON.stringify(header), ...states.map((s) => JSON.stringify(s))].join('\n')}\n`
 }

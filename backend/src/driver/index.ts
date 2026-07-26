@@ -20,7 +20,7 @@
  * dependency-set version per [execution.md](../../../docs/specs/execution.md); the
  * submission-overlay image (Stage 5.4) layers a single fetched submission's code onto that base for
  * a single-submission watch run; the session-overlay image (Stage 7.4) composes several submissions,
- * each in its own per-slot directory, for a multi-agent session. Every kind carries `depsVersion`.
+ * each in its own per-seat directory, for a multi-agent session. Every kind carries `depsVersion`.
  */
 export type ImageSpec = SessionBaseImageSpec | SubmissionOverlayImageSpec | SessionOverlayImageSpec
 
@@ -33,7 +33,7 @@ export interface SessionBaseImageSpec {
 
 /**
  * A submission's overlay image (Stage 5.4): the base image for {@link depsVersion} with the
- * submitted code copied into its per-slot directory under `/opt/agents/submissions`. The overlay is
+ * submitted code copied into its per-seat directory under `/opt/agents/submissions`. The overlay is
  * **code-only** — there is no per-submission dependency installation, since dependencies come
  * entirely from the versioned base image — so the build is fast. The tag is derived deterministically
  * from the driver's prefix, {@link depsVersion}, and {@link submissionId}, so a built image's
@@ -47,32 +47,32 @@ export interface SubmissionOverlayImageSpec {
   submissionId: string
   /** Absolute host path to the prepared source tree (the step-2 checkout or a local-folder copy). */
   sourceTreePath: string
-  /** The slot id whose directory the tree is copied into: `/opt/agents/submissions/<slotId>`. */
-  slotId: string
+  /** The seat id whose directory the tree is copied into: `/opt/agents/submissions/<seatId>`. */
+  seatId: string
 }
 
 /**
  * A multi-agent session's composed image: the base image for {@link depsVersion} with every
- * participating submission's code copied into its own per-slot directory under
+ * participating submission's code copied into its own per-seat directory under
  * `/opt/agents/submissions`, so one container hosts several submitted agents in isolation. Unlike
  * {@link SubmissionOverlayImageSpec} it is session-scoped, not a per-submission cache entry, so it
- * sits outside the overlay-eviction pool. The same submission may fill more than one slot, each staged
- * independently. The Docker driver composes it by chaining one single-slot overlay per slot onto the
+ * sits outside the overlay-eviction pool. The same submission may fill more than one seat, each staged
+ * independently. The Docker driver composes it by chaining one single-seat overlay per seat onto the
  * base; a Kubernetes driver would map the same spec to its own build.
  */
 export interface SessionOverlayImageSpec {
   kind: 'session-overlay'
   /** The dependency-set version whose base image this overlay is built on. */
   depsVersion: number
-  /** The submission-filled slots, each staged into its own per-slot directory. */
-  slots: SessionOverlaySlot[]
+  /** The submission-filled seats, each staged into its own per-seat directory. */
+  seats: SessionOverlaySeat[]
 }
 
-/** One submission-filled slot of a {@link SessionOverlayImageSpec}: whose code goes in which slot. */
-export interface SessionOverlaySlot {
-  /** The slot id whose directory the tree is copied into: `/opt/agents/submissions/<slotId>`. */
-  slotId: string
-  /** The submission whose code fills this slot. */
+/** One submission-filled slot of a {@link SessionOverlayImageSpec}: whose code goes in which seat. */
+export interface SessionOverlaySeat {
+  /** The seat id whose directory the tree is copied into: `/opt/agents/submissions/<seatId>`. */
+  seatId: string
+  /** The submission whose code fills this seat. */
   submissionId: string
   /** Absolute host path to the prepared source tree (the snapshot materialization or a fresh clone). */
   sourceTreePath: string

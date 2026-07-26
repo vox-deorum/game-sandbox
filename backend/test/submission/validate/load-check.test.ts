@@ -45,7 +45,7 @@ describe('runLoadCheck', () => {
     const spec = driver.lastLaunch()?.spec
     expect(spec?.image).toEqual(IMAGE)
     expect(spec?.entrypoint).toEqual(['python', '-m', 'game_sandbox_harness.validate'])
-    expect(spec?.argv).toEqual(['/opt/agents/submissions/player_0'])
+    expect(spec?.argv).toEqual(['/opt/agents/submissions/seat_0'])
     expect(spec?.sandbox).toBe(SANDBOX)
     expect(spec?.sessionId).toBe('sub-1')
   })
@@ -136,7 +136,7 @@ describe('runLoadCheck', () => {
       sandbox: SANDBOX,
       sessionId: 'sub-1',
       timeoutMs: 5_000,
-      slotId: 'player_1',
+      seatId: 'player_1',
     })
 
     expect(driver.lastLaunch()?.spec.argv).toEqual(['/opt/agents/submissions/player_1'])

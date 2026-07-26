@@ -7,10 +7,10 @@
  */
 import type { RecordingHeader } from '@game-sandbox/schema'
 
-import { formatSlot } from './format.js'
+import { formatPlayer } from './format.js'
 
 /** One entry of a recording header's `players` map. */
-type Player = NonNullable<RecordingHeader['players']>[string]
+type Player = RecordingHeader['players'][string]
 
 /** How a viewer sees attribution: blind hides submitted-agent ownership while a season is playable. */
 export interface AttributionContext {
@@ -81,7 +81,7 @@ export function attributionLabel(
   ctx: AttributionContext = {},
 ): string {
   if (player === undefined) {
-    return formatSlot(slot)
+    return formatPlayer(slot)
   }
   // A viewer's own submitted agent is never hidden (so isBlindMasked is false for it) but is relabeled
   // "Your agent" while blind, so they can still find themselves. This self-identification is the one
@@ -100,4 +100,28 @@ export function attributionLabel(
       : blindAgentLabel(player.submission_id ?? '', ctx.anonymousNumbers)
   }
   return player.kind === 'human' ? (player.label ?? player.user) : player.label
+}
+
+/**
+ * How one seat's controllers read as a single label, wherever a seat is named: the standings card and
+ * the replay list's summary. Members are ordered human first, so a mixed seat leads with the person,
+ * and identical labels collapse, so an ordinary wide seat driven by one repeated agent reads as that
+ * one agent rather than listing it once per player.
+ *
+ * Shared so the two surfaces cannot describe the same recording differently, which is exactly what a
+ * wide seat would expose: one would say "Alice's agent" while the other said it twice.
+ */
+export function seatControllerLabel(
+  players: readonly string[],
+  attributions: RecordingHeader['players'] | undefined,
+  ctx: AttributionContext = {},
+): string {
+  const ordered = [...players].sort((a, b) => {
+    const aHuman = attributions?.[a]?.kind === 'human'
+    const bHuman = attributions?.[b]?.kind === 'human'
+    return Number(bHuman) - Number(aHuman)
+  })
+  return [
+    ...new Set(ordered.map((player) => attributionLabel(player, attributions?.[player], ctx))),
+  ].join(', ')
 }

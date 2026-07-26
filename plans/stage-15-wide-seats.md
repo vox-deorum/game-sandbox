@@ -1,6 +1,6 @@
 # Stage 15: Wide seats
 
-Status: in progress. Step 15.1 is complete.
+Status: in progress. Steps 15.1 through 15.3 are complete. Step 15.4 is not started.
 
 ## Goal
 

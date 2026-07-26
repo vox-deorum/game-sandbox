@@ -28,6 +28,7 @@ export type ImagePolicy = 'reuse' | 'rebuild'
 export interface SandboxDefaults {
   cpus: number
   memoryMb: number
+  memoryPerPlayerMb: number
   scratchMb: number
 }
 
@@ -591,6 +592,7 @@ export function loadConfig(env?: NodeJS.ProcessEnv): Config {
     sandbox: {
       cpus: numberVar(env, 'SANDBOX_CPUS'),
       memoryMb: intVar(env, 'SANDBOX_MEMORY_MB'),
+      memoryPerPlayerMb: intVar(env, 'SANDBOX_MEMORY_PER_PLAYER_MB'),
       scratchMb: intVar(env, 'SANDBOX_SCRATCH_MB'),
     },
     executionDriver: 'docker',

@@ -32,7 +32,14 @@ from dataclasses import dataclass
 from typing import IO, Any, cast
 
 from .clock import SystemClock
-from .environment import EnvironmentEntry, ParameterValue, load_environment
+from .environment import (
+    EnvironmentEntry,
+    ParameterValue,
+    ResolvedLayout,
+    load_environment,
+    resolve_layout,
+    validate_complete_parameters,
+)
 from .live_io import (
     PausableClock,
     ProtocolStream,
@@ -108,6 +115,8 @@ class LiveConfig:
     recording_id: str | None
     #: Complete resolved parameter map required by every launch path.
     parameters: dict[str, ParameterValue]
+    #: The layout resolved from the installed environment metadata and complete parameters.
+    layout: ResolvedLayout | None = None
     #: Per-player attribution copied verbatim into the recording header (player id -> attribution
     #: object). It exactly covers the configured players and agrees with each binding kind.
     players: dict[str, PlayerAttribution] | None = None
@@ -149,6 +158,11 @@ def parse_config(argv: list[str]) -> LiveConfig:
     seed = config.get("seed", 0)
     if not isinstance(seed, int) or isinstance(seed, bool):
         raise LiveConfigError("config 'seed' must be an integer")
+
+    try:
+        entry = load_environment(env_id)
+    except Exception as error:  # noqa: BLE001 - normalize registry failures at the config boundary
+        raise LiveConfigError(f"config environment {env_id!r} could not be loaded: {error}") from error
 
     raw_player_bindings = config.get("player_bindings")
     if not isinstance(raw_player_bindings, dict) or not raw_player_bindings:
@@ -196,9 +210,19 @@ def parse_config(argv: list[str]) -> LiveConfig:
         raise LiveConfigError(
             "config 'parameters' must contain booleans, finite numbers, strings, or string lists"
         )
-    parameters = cast("dict[str, ParameterValue]", raw_parameters)
+    try:
+        parameters = validate_complete_parameters(
+            entry.meta, cast("dict[str, ParameterValue]", raw_parameters)
+        )
+        layout = resolve_layout(entry.meta, parameters)
+    except ValueError as error:
+        raise LiveConfigError(
+            f"config 'parameters' do not resolve for environment {env_id!r}: {error}"
+        ) from error
+    expected_players = {player_id for seat in layout.seats for player_id in seat.players}
+    _validate_player_ids("player_bindings", set(player_bindings), expected_players)
 
-    players = _parse_players(config.get("players"), player_bindings)
+    players = _parse_players(config.get("players"), player_bindings, expected_players)
     step_timeout_ms = _parse_optional_int(config, "step_timeout_ms")
     episode_timeout_ms = _parse_optional_int(config, "episode_timeout_ms")
     message_cap = _parse_optional_int(config, "message_cap")
@@ -222,6 +246,7 @@ def parse_config(argv: list[str]) -> LiveConfig:
         recording_dir=recording_dir,
         recording_id=recording_id,
         parameters=parameters,
+        layout=layout,
         players=players,
         step_timeout_ms=step_timeout_ms,
         episode_timeout_ms=episode_timeout_ms,
@@ -262,7 +287,25 @@ def _parse_max_steps(value: object) -> int | None:
     return value
 
 
-def _parse_players(raw: object, player_bindings: dict[str, PlayerBinding]) -> dict[str, PlayerAttribution]:
+def _validate_player_ids(name: str, actual: set[str], expected: set[str]) -> None:
+    """Require one config map to exactly cover the layout's canonical player ids."""
+    if actual == expected:
+        return
+    missing = sorted(expected - actual)
+    unknown = sorted(actual - expected)
+    details: list[str] = []
+    if missing:
+        details.append(f"missing players {missing!r}")
+    if unknown:
+        details.append(f"unknown players {unknown!r}")
+    raise LiveConfigError(f"config {name!r} must exactly cover resolved players ({'; '.join(details)})")
+
+
+def _parse_players(
+    raw: object,
+    player_bindings: dict[str, PlayerBinding],
+    expected_players: set[str],
+) -> dict[str, PlayerAttribution]:
     """Validate the required, binding-aligned per-player ``players`` attribution map.
 
     Each entry must name a ``kind`` of ``human`` or ``agent`` and a non-empty ``label``; ``user``
@@ -273,17 +316,7 @@ def _parse_players(raw: object, player_bindings: dict[str, PlayerBinding]) -> di
     if not isinstance(raw, dict):
         raise LiveConfigError("config 'players' must be an object keyed by player id")
     raw_players = cast("dict[str, object]", raw)
-    if set(raw_players) != set(player_bindings):
-        missing = sorted(set(player_bindings) - set(raw_players))
-        unknown = sorted(set(raw_players) - set(player_bindings))
-        details: list[str] = []
-        if missing:
-            details.append(f"missing players {missing!r}")
-        if unknown:
-            details.append(f"unknown players {unknown!r}")
-        raise LiveConfigError(
-            f"config 'players' must exactly cover configured players ({'; '.join(details)})"
-        )
+    _validate_player_ids("players", set(raw_players), expected_players)
     players: dict[str, PlayerAttribution] = {}
     for player_id, raw_entry in raw_players.items():
         if not isinstance(raw_entry, dict):
@@ -562,6 +595,7 @@ def run(
             message_cap=config.message_cap,
             max_steps=config.max_steps,
             parameters=config.parameters,
+            layout=config.layout,
         )
         # The effective messaging decision (metadata AND config) is resolved once inside the episode;
         # reuse it to gate the human chat queue, so a frame is accepted only when the loop will route

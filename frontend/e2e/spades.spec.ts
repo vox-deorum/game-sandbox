@@ -393,8 +393,10 @@ test('a Spades season: three example agents, a scheduled partnership matchup, th
     // cross-environment game-over standings card (frontend/src/components/GameOverCard.vue, built from
     // lib/standings.ts's buildStandings). Its per-row `.value` cell renders the overlay's
     // `display_scores[seat]`, which the Python rules engine (environments/spades/overlay.py)
-    // documents as "each seat carrying its team's score, so partners share" — so the DOM proof is that
-    // the P0 and P2 rows (Spades' team_of(seat) = seat % 2 partnership) show the identical value. That
+    // documents as "each seat carrying its team's score, so partners share", so the DOM proof is that
+    // the S0 and S2 rows show the identical value. Stage 15.3 still resolves Spades to singleton
+    // seats, so seat N covers player N here, and the matching values retain the existing
+    // partnership-score behavior. That
     // is structural in every Spades game, so the first row is the robust pick; because the all-Naive
     // baseline is appended last, that first row is also one of the permutation games seating the example
     // agents at 0 and 2. The replay viewer's transport has no "jump to end" button, so the terminal
@@ -417,13 +419,15 @@ test('a Spades season: three example agents, a scheduled partnership matchup, th
     const gameOver = page.getByRole('dialog', { name: 'Game over' })
     await expect(gameOver).toBeVisible({ timeout: 30_000 })
 
-    const p0Row = gameOver.locator('.row').filter({ hasText: 'P0' })
-    const p2Row = gameOver.locator('.row').filter({ hasText: 'P2' })
-    await expect(p0Row).toBeVisible()
-    await expect(p2Row).toBeVisible()
-    const p0Value = await p0Row.locator('.value').innerText()
-    const p2Value = await p2Row.locator('.value').innerText()
-    expect(p2Value, 'partner seats P0 and P2 share their team score').toBe(p0Value)
+    const seat0 = gameOver.locator('.row').filter({ hasText: 'S0' })
+    const seat2 = gameOver.locator('.row').filter({ hasText: 'S2' })
+    await expect(seat0).toBeVisible()
+    await expect(seat2).toBeVisible()
+    await expect(seat0.locator('.members')).toHaveCount(0)
+    await expect(seat2.locator('.members')).toHaveCount(0)
+    const seat0Value = await seat0.locator('.value').innerText()
+    const seat2Value = await seat2.locator('.value').innerText()
+    expect(seat2Value, 'Spades partners share their team score').toBe(seat0Value)
   } finally {
     // Restore the seeded Playground as the env's open submission+play season for any later spec.
     await closeSubmissions(admin, season.id).catch(() => {})

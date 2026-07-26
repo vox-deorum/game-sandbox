@@ -126,6 +126,24 @@ export interface ResolvedLayout {
   seatCount: number
 }
 
+/**
+ * One seat's score from its members', per [leaderboard.md](../../../docs/specs/leaderboard.md): the
+ * arithmetic mean. A mean rather than a sum keeps seats of different widths on one scale, which
+ * matters as soon as a game seats a one-player unit beside a three-player one. A singleton seat
+ * reports its only member's score unchanged.
+ *
+ * Shared because three surfaces reduce the same way and must not diverge: the stored workflow result,
+ * the replay list's winning seat, and the final-standings card. If they disagreed, a replay could be
+ * labelled for a seat the board did not rank first.
+ *
+ * `memberScores` is the seat's members in declared order and must be nonempty, which every caller
+ * gets for free: a resolved layout's seats and a recording header's seat map are both nonempty by
+ * construction.
+ */
+export function reduceSeatScore(memberScores: readonly number[]): number {
+  return memberScores.reduce((total, score) => total + score, 0) / memberScores.length
+}
+
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === 'string')
 }

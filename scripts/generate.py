@@ -108,6 +108,7 @@ def generate_fixtures() -> None:
     fixture is written raw, since the store would (correctly) refuse to produce it.
     """
     # Import the harness only after the packaged schema exists.
+    from game_sandbox_harness.environment import ResolvedLayout, ResolvedSeat
     from game_sandbox_harness.recording.local import FolderRecordingStore
     from game_sandbox_harness.state import build_agent_step, build_header, build_step_state
 
@@ -132,15 +133,29 @@ def generate_fixtures() -> None:
             overlay={"pipes": [{"x": 100 - tick, "gap_y": 50}]},
         )
 
+    def header_with_seats(*, seats: dict[str, list[str]], seat_plan: str, **kwargs):
+        resolved_seats = tuple(ResolvedSeat(seat_id, tuple(players)) for seat_id, players in seats.items())
+        return build_header(
+            **kwargs,
+            layout=ResolvedLayout(
+                seat_plan,
+                resolved_seats,
+                sum(len(seat.players) for seat in resolved_seats),
+                len(resolved_seats),
+            ),
+        )
+
     # 1. A two-step recording that must parse into generated types with no casts. It carries a
     #    per-player attribution block so the generated `players` field is exercised by the read-back test.
     with store.create(
         "two-step",
-        build_header(
+        header_with_seats(
             environment="flappy",
             parameters={"players": 1, "pipe_gap": 100},
             seed=7,
             players={"player_0": {"kind": "agent", "label": "Naive agent"}},
+            seats={"seat_0": ["player_0"]},
+            seat_plan="solo",
         ),
     ) as writer:
         writer.write_step(step(0))
@@ -151,14 +166,23 @@ def generate_fixtures() -> None:
     #    carry both without a cast. Two players let the targeted message name a real recipient.
     with store.create(
         "chatty",
-        build_header(
+        header_with_seats(
             environment="spades",
             parameters={"players": 4},
             seed=7,
             players={
                 "player_0": {"kind": "agent", "label": "Signaler"},
                 "player_1": {"kind": "agent", "label": "Naive agent"},
+                "player_2": {"kind": "agent", "label": "Naive agent"},
+                "player_3": {"kind": "agent", "label": "Naive agent"},
             },
+            seats={
+                "seat_0": ["player_0"],
+                "seat_1": ["player_1"],
+                "seat_2": ["player_2"],
+                "seat_3": ["player_3"],
+            },
+            seat_plan="solo",
         ),
     ) as writer:
         writer.write_step(
@@ -185,11 +209,14 @@ def generate_fixtures() -> None:
     # 3. A recording whose header declares an unknown sidecar that must load cleanly.
     with store.create(
         "unknown-sidecar",
-        build_header(
+        header_with_seats(
             environment="flappy",
             parameters={"players": 1, "pipe_gap": 100},
             seed=7,
             sidecars=[{"name": "future-telemetry", "path": "telemetry.jsonl"}],
+            players={"player_0": {"kind": "agent", "label": "Naive agent"}},
+            seats={"seat_0": ["player_0"]},
+            seat_plan="solo",
         ),
     ) as writer:
         writer.write_step(step(0))
@@ -202,6 +229,9 @@ def generate_fixtures() -> None:
         "schema_version": 2,
         "environment": "flappy",
         "parameters": {"players": 1, "pipe_gap": 100},
+        "players": {"player_0": {"kind": "agent", "label": "Naive agent"}},
+        "seats": {"seat_0": ["player_0"]},
+        "seat_plan": "solo",
     }
     bumped_state = {
         "schema_version": 2,

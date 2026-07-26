@@ -203,7 +203,7 @@ export function makeConfig(overrides: Partial<Config> = {}): Config {
     recordingSweepIntervalMs: 3_600_000,
     overlayImageBudget: 50,
     overlayImageSweepIntervalMs: 3_600_000,
-    sandbox: { cpus: 1, memoryMb: 512, scratchMb: 256 },
+    sandbox: { cpus: 1, memoryMb: 512, memoryPerPlayerMb: 32, scratchMb: 256 },
     executionDriver: 'docker',
     docker: {
       imageTagPrefix: 'game-sandbox',

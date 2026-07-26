@@ -378,6 +378,9 @@ describe('HTTP API', () => {
         environment: env,
         parameters: {},
         seed: 0,
+        players: { player_0: { kind: 'agent', label: 'Naive agent' } },
+        seats: { seat_0: ['player_0'] },
+        seat_plan: 'solo',
       })
       await writeFile(join(dir, id, 'recording.jsonl'), `${header}\n`, 'utf-8')
       await storage.createRecording({
@@ -491,6 +494,8 @@ describe('HTTP API', () => {
             submission_id: 'sub-a',
           },
         },
+        seats: { seat_0: ['player_0'] },
+        seat_plan: 'solo',
       }
       await mkdir(join(dir, REC_ID), { recursive: true })
       await writeFile(

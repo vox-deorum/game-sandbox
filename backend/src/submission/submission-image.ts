@@ -22,21 +22,21 @@ import type { Submission } from '../storage/index.js'
 import { SnapshotMissingError, type SubmissionSnapshotStore } from './snapshot-store.js'
 import type { SourceInput, SubmissionSource, TreeHandle } from './source/index.js'
 
-/** Where the base image expects each slot's repo root; lockstep with the overlay Dockerfile and harness. */
-const SUBMISSION_SLOT_BASE = '/opt/agents/submissions'
+/** Where the base image expects each seat's repo root; lockstep with the overlay Dockerfile and harness. */
+export const SUBMISSION_SEAT_BASE = '/opt/agents/submissions'
 
 /**
- * The one slot the warm per-submission overlay is built for during validation (the build/load stages
- * stage a submission's code into this slot alone). The overlay's cache identity is the submission id
- * by itself, so the warm overlay is *only ever* this slot's image; reusing it for any other slot is
+ * The one seat the warm per-submission overlay is built for during validation (the build/load stages
+ * stage a submission's code into this seat alone). The overlay's cache identity is the submission id
+ * by itself, so the warm overlay is *only ever* this seat's image; reusing it for any other seat is
  * what {@link resolveSubmissionLaunchImage} guards against. Lockstep with the validation worker's
- * build slot — the two must name the same slot or the cache lookup and the build would disagree.
+ * build seat — the two must name the same seat or the cache lookup and the build would disagree.
  */
-export const CANONICAL_SUBMISSION_SLOT = 'player_0'
+export const CANONICAL_SUBMISSION_SEAT = 'seat_0'
 
-/** The container path the overlay copies a slot's submitted code into: `/opt/agents/submissions/<slot>`. */
-export function submissionSlotPath(slotId: string): string {
-  return `${SUBMISSION_SLOT_BASE}/${slotId}`
+/** The container path the overlay copies a seat's submitted code into: `/opt/agents/submissions/<seat>`. */
+export function submissionSeatPath(seatId: string): string {
+  return `${SUBMISSION_SEAT_BASE}/${seatId}`
 }
 
 /** Reconstruct the source seam's input from a stored submission row, the same mapping the worker uses. */
@@ -77,7 +77,7 @@ export async function ensureSubmissionImage(
   deps: SubmissionImageDeps,
   submission: Submission,
   depsVersion: number,
-  slotId: string,
+  seatId: string,
 ): Promise<ImageRef> {
   if (deps.imagePolicy === 'reuse') {
     const cached = (await deps.driver.listOverlayImages()).find(
@@ -97,43 +97,43 @@ export async function ensureSubmissionImage(
       depsVersion,
       submissionId: submission.id,
       sourceTreePath: tree.path,
-      slotId,
+      seatId,
     })
   } finally {
     await tree.dispose()
   }
 }
 
-/** One submission-filled slot of a composed session image: whose code goes in which slot. */
-export interface SessionImageSlot {
-  slotId: string
+/** One submission-filled seat of a composed session image: whose code goes in which seat. */
+export interface SessionImageSeat {
+  seatId: string
   submission: Submission
 }
 
 /**
  * Resolve a multi-agent session's composed image: the base image for {@link depsVersion} with every
- * submitted slot's code staged into its own per-slot directory. Each submission's tree is materialized
+ * submitted seat's code staged into its own per-seat directory. Each submission's tree is materialized
  * (durable snapshot first, a pinned clone only for a pre-snapshot row) and disposed in a `finally`,
- * even on failure. The image is session-scoped: its driver tag is a content digest of the slot →
+ * even on failure. The image is session-scoped: its driver tag is a content digest of the seat →
  * submission composition, so an identical seating reuses the image while any change recomposes it. A
- * submission may fill more than one slot; each entry stages independently, keeping the slots isolated.
+ * submission may fill more than one seat; each entry stages independently, keeping the seats isolated.
  */
 export async function ensureSessionImage(
   deps: SubmissionImageDeps,
-  slots: readonly SessionImageSlot[],
+  seats: readonly SessionImageSeat[],
   depsVersion: number,
 ): Promise<ImageRef> {
-  const trees: { slotId: string; submissionId: string; tree: TreeHandle }[] = []
+  const trees: { seatId: string; submissionId: string; tree: TreeHandle }[] = []
   try {
-    for (const { slotId, submission } of slots) {
+    for (const { seatId, submission } of seats) {
       const tree = await materializeTree(deps, submission)
-      trees.push({ slotId, submissionId: submission.id, tree })
+      trees.push({ seatId, submissionId: submission.id, tree })
     }
     return await deps.driver.ensureImage({
       kind: 'session-overlay',
       depsVersion,
-      slots: trees.map(({ slotId, submissionId, tree }) => ({
-        slotId,
+      seats: trees.map(({ seatId, submissionId, tree }) => ({
+        seatId,
         submissionId,
         sourceTreePath: tree.path,
       })),
@@ -146,40 +146,40 @@ export async function ensureSessionImage(
 }
 
 /**
- * Resolve the launch image for a non-empty set of submission-filled slots. A single submission *in the
- * canonical slot* reuses its warm per-submission overlay (the Stage 5 watch path, kept build-stage
- * warm). Anything else — a single submission seated in a different slot, or two or more submissions —
- * composes a session image instead, each submission staged into its own per-slot directory.
+ * Resolve the launch image for a non-empty set of submission-filled seats. A single submission *in the
+ * canonical seat* reuses its warm per-submission overlay (the Stage 5 watch path, kept build-stage
+ * warm). Anything else — a single submission seated in a different seat, or two or more submissions —
+ * composes a session image instead, each submission staged into its own per-seat directory.
  *
  * This is the one place that decision lives, so the live orchestrator and the workflow runner cannot
- * drift on it. An earlier drift had the runner bake only the first submitted slot's overlay, leaving
+ * drift on it. An earlier drift had the runner bake only the first submitted seat's overlay, leaving
  * the other submitted seats with no code to load.
  *
- * The canonical-slot guard matters because the warm overlay's cache identity is the submission id
+ * The canonical-seat guard matters because the warm overlay's cache identity is the submission id
  * alone ({@link ensureSubmissionImage} matches a cached overlay by id only), and the build stage only
- * ever stages it into {@link CANONICAL_SUBMISSION_SLOT}. A single submission seated elsewhere — a
+ * ever stages it into {@link CANONICAL_SUBMISSION_SEAT}. A single submission seated elsewhere, a
  * Hearts watch with a human in seat 0, or a workflow game that rotates one submission through the
  * other seats — would otherwise launch that seat-0 image and find no code under its own
- * `/opt/agents/submissions/<slot>` directory. Composing a one-slot session image (whose tag is keyed
- * by the slot-to-submission pair, not the id alone) stages the code into the right slot and avoids
+ * `/opt/agents/submissions/<seat>` directory. Composing a one-seat session image (whose tag is keyed
+ * by the seat-to-submission pair, not the id alone) stages the code into the right seat and avoids
  * colliding on the id-keyed overlay tag.
  *
- * `slots` must be non-empty; the no-submission base image stays each caller's own concern, because
+ * `seats` must be non-empty; the no-submission base image stays each caller's own concern, because
  * they legitimately differ there (live play takes the current base, a workflow run pins the base to
  * the season's deps version).
  */
 export async function resolveSubmissionLaunchImage(
   deps: SubmissionImageDeps,
-  slots: readonly SessionImageSlot[],
+  seats: readonly SessionImageSeat[],
   depsVersion: number,
 ): Promise<ImageRef> {
-  const [first] = slots
+  const [first] = seats
   if (first === undefined) {
-    throw new Error('resolveSubmissionLaunchImage requires at least one submitted slot')
+    throw new Error('resolveSubmissionLaunchImage requires at least one submitted seat')
   }
-  return slots.length === 1 && first.slotId === CANONICAL_SUBMISSION_SLOT
-    ? ensureSubmissionImage(deps, first.submission, depsVersion, first.slotId)
-    : ensureSessionImage(deps, slots, depsVersion)
+  return seats.length === 1 && first.seatId === CANONICAL_SUBMISSION_SEAT
+    ? ensureSubmissionImage(deps, first.submission, depsVersion, first.seatId)
+    : ensureSessionImage(deps, seats, depsVersion)
 }
 
 /** The submission's source tree for a rebuild: the snapshot when present, else a fresh pinned clone. */

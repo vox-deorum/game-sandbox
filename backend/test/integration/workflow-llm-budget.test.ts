@@ -148,7 +148,7 @@ describe('workflow LLM budget exhaustion (Docker)', () => {
         submissionMaxSizeBytes: 25 * 1024 * 1024,
       }),
       snapshots: new SubmissionSnapshotStore(resolve(root, 'submissions')),
-      sandbox: { cpus: 1, memoryMb: 512, scratchMb: 256 },
+      sandbox: { cpus: 1, memoryMb: 512, memoryPerPlayerMb: 32, scratchMb: 256 },
       recordingsDir: resolve(root, 'recordings'),
       imagePolicy: 'reuse',
       llmInternalPort: internalPort,
@@ -218,6 +218,7 @@ describe('workflow LLM budget exhaustion (Docker)', () => {
         game_index: gameIndex,
         seed,
         seats,
+        seat_plan: 'solo',
       })),
       llmPolicy: policy,
     }))

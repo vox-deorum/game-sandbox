@@ -14,7 +14,7 @@ The source uses JSON Schema draft 2020-12 under `schema/`. This page defines ver
 ## The two files
 
 - `schema/step-state.schema.json` defines the state at one step: `schema_version`, `tick`, per-agent observations, actions, rewards and cumulative scores, an open `overlay` for environment-specific fields, optional `messages`, and `timing`. Field names use snake case because it is natural in Python and conventional in JSON. The generated TypeScript types keep the same names.
-- `schema/recording-header.schema.json` defines the recording header: `schema_version`, `environment`, optional `seed` and `created_at` fields, the `sidecars` array, and an optional `players` map. That map assigns each player id to a human or agent with `{kind, label, user?, submission_id?}`. The header remains open (`additionalProperties: true`), so adding an optional field such as `players` does not require a `schema_version` change. Running `scripts/generate.py` adds it to the TypeScript type. Each `players` entry remains closed (`additionalProperties: false`) so validation catches malformed attribution.
+- `schema/recording-header.schema.json` defines the recording header: `schema_version`, `environment`, optional `seed` and `created_at` fields, the `sidecars` array, and the required `players`, `seats`, and `seat_plan` fields. `players` assigns each player id to a human or agent with `{kind, label, user?, submission_id?}`. `seats` forms an exact nonempty partition of those player ids, and `seat_plan` records the canonical plan key. The header remains open (`additionalProperties: true`) while each attribution entry remains closed (`additionalProperties: false`). Running `scripts/generate.py` refreshes the TypeScript type.
 
 Closed regions use `additionalProperties: false` so validation catches accidental changes. `overlay` is the designated open extension for environment-specific display data.
 
@@ -29,6 +29,8 @@ Closed regions use `additionalProperties: false` so validation catches accidenta
 - Changing a field's meaning.
 
 Adding an optional field or sidecar does not require a new version.
+
+The current pre-release checkout supports only recordings with the complete required header. Its schema version remains 1 because earlier artifacts are recreated instead of read.
 
 A reader built for version N accepts exactly version N and reports a clear error for another version. At the first real bump, retain old schemas under versioned directories.
 

@@ -17,6 +17,7 @@ import {
   type RecordingHeader,
   type StepState,
 } from '@game-sandbox/schema'
+import { reduceSeatScore } from '@game-sandbox/schema/environment'
 
 const RECORDING_FILE = 'recording.jsonl'
 /** Headers are tiny; cap the header read so a huge recording never loads into memory for a listing. */
@@ -27,7 +28,7 @@ const TAIL_READ_SIZE = 64 * 1024
 export interface RecordingSummary {
   id: string
   header: RecordingHeader
-  /** The winning player id (`P0`, `P1`, ...), -1 for a tie, or null without eligible ranking data. */
+  /** The winning seat id (`seat_0`, `seat_1`, ...), -1 for a tie, or null without ranking data. */
   winner_id: string | -1 | null
 }
 
@@ -51,7 +52,7 @@ export class RecordingsStore {
       const header = await this.readHeader(entry.name)
       if (header !== undefined) {
         const finalState = await this.lastState(entry.name)
-        summaries.push({ id: entry.name, header, winner_id: winnerId(finalState) })
+        summaries.push({ id: entry.name, header, winner_id: winnerId(finalState, header) })
       }
     }
     summaries.sort((a, b) => a.id.localeCompare(b.id))
@@ -166,18 +167,30 @@ function parseStateLine(line: string): StepState | null {
 }
 
 /**
- * Resolve a winner or the -1 tie sentinel from the complete seat-indexed leaderboard. Recordings
- * without that multiplayer ranking data are not eligible for a result label in the replay list.
+ * Resolve a winner or the -1 tie sentinel by reducing each seat's player scores. Recordings without
+ * complete player ranking data are not eligible for a result label in the replay list.
  */
-function winnerId(state: StepState | null): string | -1 | null {
+function winnerId(state: StepState | null, header: RecordingHeader): string | -1 | null {
   const scores = state?.overlay?.leaderboard_scores
   if (
     Array.isArray(scores) &&
     scores.length > 0 &&
     scores.every((score) => typeof score === 'number' && Number.isFinite(score))
   ) {
-    const best = Math.max(...scores)
-    const winners = scores.flatMap((score, seat) => (score === best ? [`P${seat}`] : []))
+    const reduced = Object.entries(header.seats).flatMap(([seat, players]) => {
+      const playerScores = players.map((player) => {
+        const match = /^player_(\d+)$/.exec(player)
+        return match === null ? undefined : scores[Number(match[1])]
+      })
+      return playerScores.every((score): score is number => typeof score === 'number')
+        ? [[seat, reduceSeatScore(playerScores)] as const]
+        : []
+    })
+    if (reduced.length !== Object.keys(header.seats).length) {
+      return null
+    }
+    const best = Math.max(...reduced.map(([, score]) => score))
+    const winners = reduced.flatMap(([seat, score]) => (score === best ? [seat] : []))
     return winners.length === 1 ? (winners[0] ?? null) : -1
   }
 

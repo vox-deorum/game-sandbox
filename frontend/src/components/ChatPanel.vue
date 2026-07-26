@@ -21,7 +21,7 @@ import { computed, ref, useId, watch } from 'vue'
 
 import { attributionLabel } from '../lib/attribution.js'
 import { type ChatEntry, messageBadge, messageKey } from '../lib/chat.js'
-import { formatSlot } from '../lib/format.js'
+import { formatPlayer } from '../lib/format.js'
 import UiBadge from './ui/UiBadge.vue'
 import UiButton from './ui/UiButton.vue'
 import UiInput from './ui/UiInput.vue'
@@ -73,7 +73,7 @@ function labelFor(playerId: string): string {
 
 // Decorate once so the template reads each derived field without recomputing per binding. Identity and
 // the badge come from the shared chat helpers, so this panel and the merged replay thread key and badge
-// a message identically. The player (`formatSlot`) rides alongside the attribution label the same way
+// a message identically. The player (`formatPlayer`) rides alongside the attribution label the same way
 // PlayerAttribution pairs them, so a roster of same-labelled agents (three "Naive agent" players in a
 // default Spades table) stays legible.
 const rows = computed(() =>
@@ -81,7 +81,7 @@ const rows = computed(() =>
     key: messageKey(entry),
     tick: entry.tick,
     text: entry.text,
-    player: formatSlot(entry.from),
+    player: formatPlayer(entry.from),
     sender: labelFor(entry.from),
     badge: messageBadge(entry, props.viewerPlayers),
   })),
@@ -93,7 +93,7 @@ const rows = computed(() =>
 const recipientOptions = computed(() =>
   Object.keys(props.players ?? {})
     .filter((playerId) => !props.viewerPlayers.includes(playerId))
-    .map((playerId) => ({ value: playerId, label: formatSlot(playerId) })),
+    .map((playerId) => ({ value: playerId, label: formatPlayer(playerId) })),
 )
 
 const recipient = ref('') // '' is the "Everyone" broadcast option.

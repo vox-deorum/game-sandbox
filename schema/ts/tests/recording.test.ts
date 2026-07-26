@@ -34,8 +34,10 @@ describe('readRecording', () => {
     expect(second?.tick).toBe(1)
 
     // Per-slot attribution round-trips through the real store into the generated `players` field.
-    expect(header.players?.player_0?.kind).toBe('agent')
-    expect(header.players?.player_0?.label).toBe('Naive agent')
+    expect(header.players.player_0?.kind).toBe('agent')
+    expect(header.players.player_0?.label).toBe('Naive agent')
+    expect(header.seats).toEqual({ seat_0: ['player_0'] })
+    expect(header.seat_plan).toBe('solo')
   })
 
   it('rejects a recording whose schema_version was bumped', () => {
@@ -88,8 +90,25 @@ describe('parseHeader', () => {
       parseHeader({
         schema_version: 1,
         environment: 'flappy',
+        parameters: {},
         players: { player_0: { kind: 'agent', label: '' } },
+        seats: { seat_0: ['player_0'] },
+        seat_plan: 'solo',
       }),
     ).toThrow(SchemaValidationError)
+  })
+
+  it('requires the seat map and plan, then rejects a seat map that is not an exact player partition', () => {
+    const header = {
+      schema_version: 1,
+      environment: 'flappy',
+      parameters: {},
+      players: { player_0: { kind: 'agent', label: 'Naive agent' } },
+      seats: { seat_0: ['player_1'] },
+      seat_plan: 'solo',
+    }
+    expect(() => parseHeader({ ...header, seats: undefined })).toThrow(SchemaValidationError)
+    expect(() => parseHeader({ ...header, seat_plan: undefined })).toThrow(SchemaValidationError)
+    expect(() => parseHeader(header)).toThrow(SchemaValidationError)
   })
 })

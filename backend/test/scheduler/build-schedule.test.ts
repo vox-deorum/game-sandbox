@@ -42,6 +42,7 @@ describe('buildSchedule - single submission seat (Flappy Bird)', () => {
       matches: [match],
       submissions: subs(3),
       seatOrderMatters: false,
+      seatPlan: 'solo',
     })
 
     // 3 submissions x 2 games + 1 baseline x 2 games = 8.
@@ -66,13 +67,28 @@ describe('buildSchedule - single submission seat (Flappy Bird)', () => {
   it('is deterministic regardless of snapshot order and across re-runs', () => {
     const ordered = subs(3)
     const shuffled = [ordered[2], ordered[0], ordered[1]] as SubmissionRef[]
-    const a = buildSchedule({ matches: [match], submissions: shuffled, seatOrderMatters: false })
-    const b = buildSchedule({ matches: [match], submissions: ordered, seatOrderMatters: false })
+    const a = buildSchedule({
+      matches: [match],
+      submissions: shuffled,
+      seatOrderMatters: false,
+      seatPlan: 'solo',
+    })
+    const b = buildSchedule({
+      matches: [match],
+      submissions: ordered,
+      seatOrderMatters: false,
+      seatPlan: 'solo',
+    })
     expect(a).toEqual(b)
   })
 
   it('always includes the Naive baseline, even with zero ready submissions', () => {
-    const schedule = buildSchedule({ matches: [match], submissions: [], seatOrderMatters: false })
+    const schedule = buildSchedule({
+      matches: [match],
+      submissions: [],
+      seatOrderMatters: false,
+      seatPlan: 'solo',
+    })
     expect(schedule.map((g) => ids(g.seats))).toEqual([['naive'], ['naive']])
     expect(schedule.map((g) => g.seed)).toEqual([10, 20])
   })
@@ -83,6 +99,7 @@ describe('buildSchedule - single submission seat (Flappy Bird)', () => {
       matches: [five],
       submissions: subs(1),
       seatOrderMatters: false,
+      seatPlan: 'solo',
     })
     // One submission + baseline, 5 games each = 10.
     expect(schedule).toHaveLength(10)
@@ -96,6 +113,7 @@ describe('buildSchedule - single submission seat (Flappy Bird)', () => {
       matches: [mixed],
       submissions: subs(2),
       seatOrderMatters: false,
+      seatPlan: 'solo',
     })
     expect(schedule.map((g) => ids(g.seats))).toEqual([
       ['s1', 'naive'],
@@ -118,6 +136,7 @@ describe('buildSchedule - multi-seat expansion', () => {
       matches: [hearts],
       submissions: subs(4),
       seatOrderMatters: true,
+      seatPlan: 'solo',
     })
     expect(schedule).toHaveLength(26)
 
@@ -150,6 +169,7 @@ describe('buildSchedule - multi-seat expansion', () => {
       matches: [hearts],
       submissions: subs(4),
       seatOrderMatters: false,
+      seatPlan: 'solo',
     })
     expect(schedule).toHaveLength(14)
     const rosters = schedule
@@ -170,20 +190,45 @@ describe('buildSchedule - multi-seat expansion', () => {
   it('is deterministic for the multi-seat case regardless of snapshot order and across re-runs', () => {
     const ordered = subs(4)
     const shuffled = [ordered[3], ordered[1], ordered[0], ordered[2]] as SubmissionRef[]
-    const a = buildSchedule({ matches: [hearts], submissions: shuffled, seatOrderMatters: true })
-    const b = buildSchedule({ matches: [hearts], submissions: ordered, seatOrderMatters: true })
+    const a = buildSchedule({
+      matches: [hearts],
+      submissions: shuffled,
+      seatOrderMatters: true,
+      seatPlan: 'solo',
+    })
+    const b = buildSchedule({
+      matches: [hearts],
+      submissions: ordered,
+      seatOrderMatters: true,
+      seatPlan: 'solo',
+    })
     // Identical across re-runs and independent of the snapshot's incoming order.
     expect(a).toEqual(b)
     // Calling twice with the very same inputs is byte-for-byte identical too.
     expect(
-      buildSchedule({ matches: [hearts], submissions: ordered, seatOrderMatters: true }),
+      buildSchedule({
+        matches: [hearts],
+        submissions: ordered,
+        seatOrderMatters: true,
+        seatPlan: 'solo',
+      }),
     ).toEqual(a)
   })
 
   it('reduces to the exact Stage 6 schedule for K=1 under either flag', () => {
     const m: MatchConfig = { seats: ['submission'], seeds: [1, 2], games: 2 }
-    const ordered = buildSchedule({ matches: [m], submissions: subs(3), seatOrderMatters: true })
-    const unordered = buildSchedule({ matches: [m], submissions: subs(3), seatOrderMatters: false })
+    const ordered = buildSchedule({
+      matches: [m],
+      submissions: subs(3),
+      seatOrderMatters: true,
+      seatPlan: 'solo',
+    })
+    const unordered = buildSchedule({
+      matches: [m],
+      submissions: subs(3),
+      seatOrderMatters: false,
+      seatPlan: 'solo',
+    })
     expect(ordered).toEqual(unordered)
     expect(ordered.map((g) => ids(g.seats))).toEqual([
       ['s1'],
@@ -203,6 +248,7 @@ describe('buildSchedule - multi-seat expansion', () => {
       matches: [board],
       submissions: subs(3),
       seatOrderMatters: true,
+      seatPlan: 'solo',
     })
     // P(3,2) = 6 ordered seatings + 1 baseline.
     expect(schedule.map((g) => ids(g.seats))).toEqual([
@@ -229,6 +275,7 @@ describe('buildSchedule - multi-seat expansion', () => {
       matches: [board],
       submissions: subs(1),
       seatOrderMatters: true,
+      seatPlan: 'solo',
     })
     expect(schedule.map((g) => ids(g.seats))).toEqual([
       ['naive', 'naive', 'naive', 'naive'],
@@ -248,9 +295,14 @@ describe('resolveSeats - self-play repeated ref', () => {
 
 describe('buildSchedule - match composition and guards', () => {
   it('returns an empty schedule for an empty match list', () => {
-    expect(buildSchedule({ matches: [], submissions: subs(3), seatOrderMatters: false })).toEqual(
-      [],
-    )
+    expect(
+      buildSchedule({
+        matches: [],
+        submissions: subs(3),
+        seatOrderMatters: false,
+        seatPlan: 'solo',
+      }),
+    ).toEqual([])
   })
 
   it('treats a no-submission-seat match as a single baseline run per game count', () => {
@@ -259,6 +311,7 @@ describe('buildSchedule - match composition and guards', () => {
       matches: [pure],
       submissions: subs(3),
       seatOrderMatters: true,
+      seatPlan: 'solo',
     })
     expect(schedule.map((g) => ids(g.seats))).toEqual([['naive'], ['naive']])
     expect(schedule.map((g) => g.seed)).toEqual([5, 6])
@@ -271,6 +324,7 @@ describe('buildSchedule - match composition and guards', () => {
       matches: [m1, m2],
       submissions: subs(2),
       seatOrderMatters: false,
+      seatPlan: 'solo',
     })
     expect(schedule.map((g) => g.game_index)).toEqual([0, 1, 2, 3])
     expect(schedule.map((g) => g.match_index)).toEqual([0, 0, 0, 1])
@@ -283,7 +337,12 @@ describe('buildSchedule - match composition and guards', () => {
   ]
   it.each(badMatches)('rejects %s with a typed ScheduleError', (reason, badMatch) => {
     const run = () =>
-      buildSchedule({ matches: [badMatch], submissions: subs(1), seatOrderMatters: false })
+      buildSchedule({
+        matches: [badMatch],
+        submissions: subs(1),
+        seatOrderMatters: false,
+        seatPlan: 'solo',
+      })
     expect(run).toThrow(ScheduleError)
     try {
       run()

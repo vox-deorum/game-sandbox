@@ -93,7 +93,7 @@ export interface StepTiming {
  */
 export interface RecordingHeader {
   /**
-   * Integer schema version. Authoritative for the recording or stream; every state line must match it.
+   * Integer schema version. Authoritative for the recording or stream; every state line must match it. Version 1 requires the player attribution, seat partition, and materialized seat plan because pre-release recordings are recreated rather than supported.
    */
   schema_version: 1;
   /**
@@ -128,9 +128,9 @@ export interface RecordingHeader {
     path: string;
   }[];
   /**
-   * Per-player attribution: who or what drove each PettingZoo player this episode, keyed by player id (as in a step state's agents map). Optional and additive; older recordings omit it and readers must tolerate its absence.
+   * Per-player attribution: who or what drove each PettingZoo player this episode, keyed by player id (as in a step state's agents map).
    */
-  players?: {
+  players: {
     [k: string]: {
       /**
        * Whether a connected human or an agent drove this player.
@@ -150,5 +150,18 @@ export interface RecordingHeader {
       submission_id?: string;
     };
   };
+  /**
+   * The resolved seat-to-player map, keyed by seat id. Together with players this is an exact player partition.
+   */
+  seats: {
+    /**
+     * @minItems 1
+     */
+    [k: string]: [string, ...string[]];
+  };
+  /**
+   * Canonical key of the resolved seat plan, or solo for a player-bounds environment.
+   */
+  seat_plan: string;
   [k: string]: unknown;
 }

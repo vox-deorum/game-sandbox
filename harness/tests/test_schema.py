@@ -10,12 +10,15 @@ from tempfile import TemporaryDirectory
 
 import pytest
 
+from game_sandbox_harness.environment import ResolvedLayout, ResolvedSeat
 from game_sandbox_harness.schema import (
     SchemaValidationError,
     validate_header,
     validate_step,
 )
 from game_sandbox_harness.state import build_agent_step, build_header, build_step_state
+
+SINGLE_LAYOUT = ResolvedLayout("solo", (ResolvedSeat("seat_0", ("player_0",)),), 1, 1)
 
 
 def _valid_state():
@@ -32,7 +35,34 @@ def test_valid_state_passes():
 
 
 def test_valid_header_passes():
-    validate_header(build_header(environment="flappy", parameters={"players": 1, "pipe_gap": 100}, seed=7))
+    validate_header(
+        build_header(
+            environment="flappy",
+            parameters={"players": 1, "pipe_gap": 100},
+            seed=7,
+            players={"player_0": {"kind": "agent", "label": "Naive agent"}},
+            layout=SINGLE_LAYOUT,
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    "seats",
+    [
+        {"seat_0": ["player_0"], "seat_1": ["player_0"]},
+        {"seat_0": ["player_1"]},
+    ],
+)
+def test_header_rejects_a_seat_partition_that_disagrees_with_players(seats: dict[str, list[str]]):
+    header = build_header(
+        environment="flappy",
+        parameters={"players": 1, "pipe_gap": 100},
+        players={"player_0": {"kind": "agent", "label": "Naive agent"}},
+        layout=SINGLE_LAYOUT,
+    )
+    header["seats"] = seats
+    with pytest.raises(SchemaValidationError):
+        validate_header(header)
 
 
 def test_closed_region_rejects_unknown_top_level_field():
@@ -90,8 +120,9 @@ def test_relocated_package_loads_packaged_schema_resources():
                 "-c",
                 "from sandbox.harness.schema import validate_header; "
                 "validate_header({'schema_version': 1, 'environment': 'fake', "
-                "'parameters': {'players': 1}, 'seed': 1, 'player_bindings': [], "
-                "'players': {}, 'metadata': {}})",
+                "'parameters': {'players': 1}, 'seed': 1, "
+                "'players': {'player_0': {'kind': 'agent', 'label': 'Agent'}}, "
+                "'seats': {'seat_0': ['player_0']}, 'seat_plan': 'solo'})",
             ],
             cwd=root,
             check=False,

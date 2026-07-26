@@ -149,6 +149,7 @@ export async function createRunWithSchedule(
           game_index: game.game_index,
           seed: game.seed,
           seats: JSON.stringify(game.seats),
+          seat_plan: game.seat_plan,
           status: 'pending',
           recording_id: null,
           started_at: null,

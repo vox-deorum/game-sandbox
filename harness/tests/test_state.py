@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from game_sandbox_harness.environment import ResolvedLayout, ResolvedSeat
 from game_sandbox_harness.schema import (
     SCHEMA_VERSION,
     SchemaValidationError,
@@ -13,6 +14,13 @@ from game_sandbox_harness.schema import (
 from game_sandbox_harness.state import build_agent_step, build_header, build_step_state
 
 FLAPPY_PARAMETERS = {"players": 1, "pipe_gap": 100}
+SINGLE_LAYOUT = ResolvedLayout("solo", (ResolvedSeat("seat_0", ("player_0",)),), 1, 1)
+TWO_PLAYER_LAYOUT = ResolvedLayout(
+    "duo",
+    (ResolvedSeat("seat_0", ("player_0",)), ResolvedSeat("seat_1", ("player_1",))),
+    2,
+    2,
+)
 
 
 def test_minimal_step_is_valid():
@@ -72,11 +80,20 @@ def test_step_with_messages_and_chat_ms_validates():
 
 
 def test_header_builder_is_valid():
-    validate_header(build_header(environment="flappy", parameters=FLAPPY_PARAMETERS))
     validate_header(
         build_header(
             environment="flappy",
             parameters=FLAPPY_PARAMETERS,
+            players={"player_0": {"kind": "agent", "label": "Naive agent"}},
+            layout=SINGLE_LAYOUT,
+        )
+    )
+    validate_header(
+        build_header(
+            environment="flappy",
+            parameters=FLAPPY_PARAMETERS,
+            players={"player_0": {"kind": "agent", "label": "Naive agent"}},
+            layout=SINGLE_LAYOUT,
             created_at="2026-06-10T00:00:00Z",
             seed=9,
         )
@@ -91,6 +108,7 @@ def test_header_builder_carries_player_attribution():
             "player_0": {"kind": "human", "label": "alice", "user": "alice"},
             "player_1": {"kind": "agent", "label": "Naive agent"},
         },
+        layout=TWO_PLAYER_LAYOUT,
     )
     validate_header(header)
     assert header["players"]["player_0"]["user"] == "alice"
@@ -104,5 +122,6 @@ def test_header_rejects_player_attribution_with_empty_label():
                 environment="flappy",
                 parameters=FLAPPY_PARAMETERS,
                 players={"player_0": {"kind": "agent", "label": ""}},
+                layout=SINGLE_LAYOUT,
             )
         )

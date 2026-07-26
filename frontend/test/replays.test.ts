@@ -23,21 +23,30 @@ import {
 } from '../src/api/client.js'
 import ReplaysPage from '../src/pages/ReplaysPage.vue'
 
-function recording(overrides: Partial<RecordingSummary> = {}): RecordingSummary {
+function recording(
+  overrides: Omit<Partial<RecordingSummary>, 'header'> & {
+    header?: Partial<RecordingSummary['header']>
+  } = {},
+): RecordingSummary {
+  const { header: headerOverrides, ...rest } = overrides
+  const header = {
+    schema_version: 1 as const,
+    environment: 'flappy_bird',
+    parameters: { players: 1, pipe_gap: 100 },
+    players: { player_0: { kind: 'agent' as const, label: 'Naive agent' } },
+    seats: { seat_0: ['player_0'] as [string] },
+    seat_plan: 'solo',
+  }
   return {
     id: 'flappy_bird-1',
-    header: {
-      schema_version: 1,
-      environment: 'flappy_bird',
-      parameters: { players: 1, pipe_gap: 100 },
-    },
+    header: { ...header, ...headerOverrides },
     user_id: 'alice',
     created_at: '2026-06-11T00:00:00.000Z',
     pinned: false,
     termination_reason: 'terminated',
     winner_id: null,
     season_id: null,
-    ...overrides,
+    ...rest,
   }
 }
 
@@ -89,12 +98,12 @@ describe('ReplaysPage', () => {
     vi.mocked(listSeasons).mockResolvedValue([season()])
   })
 
-  it('renders a row per replay with the season label, outcome, owner, and player summary', async () => {
+  it('renders a row per replay with the season label, outcome, owner, and seat summary', async () => {
     vi.mocked(listRecordings).mockResolvedValue([
       recording({
         id: 'flappy_bird-12345678-abcd-ef01-2345-6789abcdef01',
         season_id: 'season-1',
-        winner_id: 'P2',
+        winner_id: 'seat_2',
         header: {
           schema_version: 1,
           environment: 'flappy_bird',
@@ -104,6 +113,12 @@ describe('ReplaysPage', () => {
             player_1: { kind: 'agent', label: 'Naive agent' },
             player_2: { kind: 'agent', label: 'Naive agent' },
           },
+          seats: {
+            seat_0: ['player_0'],
+            seat_1: ['player_1'],
+            seat_2: ['player_2'],
+          },
+          seat_plan: 'solo',
         },
       }),
     ])
@@ -120,8 +135,10 @@ describe('ReplaysPage', () => {
 
     const row = link.closest('tr') as HTMLElement
     expect(within(row).getByText('Week 1')).toBeInTheDocument() // season label, not the raw id
-    expect(within(row).getByText('P2 won')).toBeInTheDocument()
-    expect(within(row).getByText(/P0: Naive agent/)).toBeInTheDocument()
+    // The outcome and the controller summary both name seats, so the row cannot describe a different
+    // number of competitors in two adjacent cells.
+    expect(within(row).getByText('S2 won')).toBeInTheDocument()
+    expect(within(row).getByText(/S0: Naive agent/)).toBeInTheDocument()
     // No user_name on this fixture, so the Owner cell falls back to the stable user_id, kept as its
     // own tooltip.
     const ownerCell = within(row).getByText('alice')
@@ -141,6 +158,33 @@ describe('ReplaysPage', () => {
 
     const row = (await screen.findByRole('link', { name: 'tied' })).closest('tr') as HTMLElement
     expect(within(row).getByText('Tied')).toBeInTheDocument()
+  })
+
+  it('names a decisive wide-seat winner by seat', async () => {
+    vi.mocked(listRecordings).mockResolvedValue([
+      recording({
+        id: 'synthetic-wide',
+        winner_id: 'seat_0',
+        header: {
+          environment: 'synthetic',
+          parameters: { seat_plan: 'partners' },
+          players: {
+            player_0: { kind: 'agent', label: "Alice's agent" },
+            player_1: { kind: 'agent', label: 'Naive agent' },
+            player_2: { kind: 'agent', label: "Alice's agent" },
+          },
+          seats: {
+            seat_0: ['player_0', 'player_2'],
+            seat_1: ['player_1'],
+          },
+          seat_plan: 'partners',
+        },
+      }),
+    ])
+    await renderPage()
+
+    const row = (await screen.findByRole('link', { name: 'wide' })).closest('tr') as HTMLElement
+    expect(within(row).getByText('S0 won')).toBeInTheDocument()
   })
 
   it('keeps the termination label when final ranking data is unavailable', async () => {
@@ -184,11 +228,11 @@ describe('ReplaysPage', () => {
     ])
     await renderPage()
 
-    const playersCell = await screen.findByText(/Human \(Alice Nguyen\)/)
-    expect(playersCell).toBeInTheDocument()
+    const seatsCell = await screen.findByText(/Human \(Alice Nguyen\)/)
+    expect(seatsCell).toBeInTheDocument()
     expect(screen.queryByText(/Human \(alice\)/)).toBeNull()
     // Not blind (no season), so the stable id still rides as the cell's tooltip.
-    expect(playersCell).toHaveAttribute('title', 'alice')
+    expect(seatsCell).toHaveAttribute('title', 'alice')
   })
 
   it("masks a blind replay's human player to the neutral label, with no name and no tooltip", async () => {
@@ -217,6 +261,9 @@ describe('ReplaysPage', () => {
               submission_id: 'sub-maya',
             },
           },
+          // Both players need seats: the header's seat map is what the summary iterates, and a map
+          // covering only one of them would not be a valid partition of the attributed players.
+          seats: { seat_0: ['player_0'], seat_1: ['player_1'] },
         },
       }),
     ])
@@ -224,14 +271,14 @@ describe('ReplaysPage', () => {
     await renderPage()
 
     const row = (await screen.findByRole('link', { name: 'human' })).closest('tr') as HTMLElement
-    const playersCell = within(row).getByText(/: Human,/)
-    expect(playersCell.textContent).not.toContain('Alice Chen')
-    expect(playersCell.textContent).not.toContain('alice-chen')
-    expect(playersCell.textContent).not.toMatch(/Human \(/) // no parenthetical under blind
-    expect(playersCell).not.toHaveAttribute('title')
+    const seatsCell = within(row).getByText(/: Human,/)
+    expect(seatsCell.textContent).not.toContain('Alice Chen')
+    expect(seatsCell.textContent).not.toContain('alice-chen')
+    expect(seatsCell.textContent).not.toMatch(/Human \(/) // no parenthetical under blind
+    expect(seatsCell).not.toHaveAttribute('title')
   })
 
-  it('shows an em dash for a replay with no season, owner, or players', async () => {
+  it('shows an em dash for a replay with no season or owner', async () => {
     vi.mocked(listRecordings).mockResolvedValue([
       recording({
         id: 'orphan',
@@ -247,8 +294,8 @@ describe('ReplaysPage', () => {
     await renderPage()
 
     const row = (await screen.findByRole('link', { name: 'orphan' })).closest('tr') as HTMLElement
-    // Owner, Season, and Players all fall back to the em dash.
-    expect(within(row).getAllByText('—').length).toBeGreaterThanOrEqual(3)
+    // Owner and Season fall back to the em dash. Every supported recording has player attribution.
+    expect(within(row).getAllByText(String.fromCodePoint(0x2014)).length).toBeGreaterThanOrEqual(2)
   })
 
   it('masks submitted-agent players and owner while their season is playable', async () => {
@@ -287,11 +334,11 @@ describe('ReplaysPage', () => {
     await renderPage()
 
     const row = (await screen.findByRole('link', { name: 'blind' })).closest('tr') as HTMLElement
-    const playersCell = within(row).getByText(/Agent 1/)
-    expect(playersCell).toBeInTheDocument()
+    const seatsCell = within(row).getByText(/Agent 1/)
+    expect(seatsCell).toBeInTheDocument()
     expect(within(row).queryByText('maya-fledgling')).toBeNull()
     // The masked row's identity is hidden outright, so the cell carries no id tooltip either.
-    expect(playersCell).not.toHaveAttribute('title')
+    expect(seatsCell).not.toHaveAttribute('title')
     // The page leans on the public scope (which includes play-open seasons), not the operator path.
     expect(vi.mocked(listSeasons)).toHaveBeenCalledWith('flappy_bird', { includeUnreleased: false })
     expect(vi.mocked(watchAgentNumbers)).toHaveBeenCalledWith('flappy_bird')

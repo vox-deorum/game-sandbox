@@ -69,6 +69,7 @@ const GAME_ONE: ScheduledGameInput = {
   game_index: 0,
   seed: 1,
   seats: [{ kind: 'submission', submission_id: 's1', user_id: 'alice' }],
+  seat_plan: 'solo',
 }
 const ONE_GAME: ScheduledGameInput[] = [GAME_ONE]
 
@@ -239,8 +240,8 @@ describe('leaderboard storage on :memory:', () => {
 
     // A completed two-game run: the count the released Scoreboard aggregates.
     const twoGames: ScheduledGameInput[] = [
-      { match_index: 0, game_index: 0, seed: 1, seats: [NAIVE] },
-      { match_index: 0, game_index: 1, seed: 2, seats: [NAIVE] },
+      { match_index: 0, game_index: 0, seed: 1, seats: [NAIVE], seat_plan: 'solo' },
+      { match_index: 0, game_index: 1, seed: 2, seats: [NAIVE], seat_plan: 'solo' },
     ]
     const run = await createRun(season.id, 'dev-user', [], twoGames)
     await storage.setRunStatus(run.id, 'completed')
@@ -644,8 +645,20 @@ describe('leaderboard storage on :memory:', () => {
   it('getHumanBoard carries the automated board representative replay per agent', async () => {
     const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
     const games: ScheduledGameInput[] = [
-      { match_index: 0, game_index: 0, seed: 1, seats: [{ kind: 'builtin-naive' }] },
-      { match_index: 0, game_index: 1, seed: 2, seats: [{ kind: 'builtin-naive' }] },
+      {
+        match_index: 0,
+        game_index: 0,
+        seed: 1,
+        seats: [{ kind: 'builtin-naive' }],
+        seat_plan: 'solo',
+      },
+      {
+        match_index: 0,
+        game_index: 1,
+        seed: 2,
+        seats: [{ kind: 'builtin-naive' }],
+        seat_plan: 'solo',
+      },
     ]
     const run = await createRun(season.id, 'dev-user', [], games)
     const [g0, g1] = await storage.listRunGames(run.id)
@@ -770,8 +783,20 @@ describe('leaderboard storage on :memory:', () => {
   it('getAutomatedBoard aggregates per agent over the latest completed run with a deterministic order', async () => {
     const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
     const twoGames: ScheduledGameInput[] = [
-      { match_index: 0, game_index: 0, seed: 1, seats: [{ kind: 'builtin-naive' }] },
-      { match_index: 0, game_index: 1, seed: 2, seats: [{ kind: 'builtin-naive' }] },
+      {
+        match_index: 0,
+        game_index: 0,
+        seed: 1,
+        seats: [{ kind: 'builtin-naive' }],
+        seat_plan: 'solo',
+      },
+      {
+        match_index: 0,
+        game_index: 1,
+        seed: 2,
+        seats: [{ kind: 'builtin-naive' }],
+        seat_plan: 'solo',
+      },
     ]
     const run = await createRun(season.id, 'dev-user', [], twoGames)
     const games = await storage.listRunGames(run.id)
@@ -834,8 +859,8 @@ describe('leaderboard storage on :memory:', () => {
       'dev-user',
       [agent],
       [
-        { match_index: 0, game_index: 0, seed: 1, seats: [agent] },
-        { match_index: 0, game_index: 1, seed: 2, seats: [agent] },
+        { match_index: 0, game_index: 0, seed: 1, seats: [agent], seat_plan: 'solo' },
+        { match_index: 0, game_index: 1, seed: 2, seats: [agent], seat_plan: 'solo' },
       ],
     )
     const games = await storage.listRunGames(run.id)
@@ -920,7 +945,13 @@ describe('leaderboard storage on :memory:', () => {
   it('getAutomatedBoard breaks an exact score tie by lower mean compute, with null compute last', async () => {
     const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
     const oneGame: ScheduledGameInput[] = [
-      { match_index: 0, game_index: 0, seed: 1, seats: [{ kind: 'builtin-naive' }] },
+      {
+        match_index: 0,
+        game_index: 0,
+        seed: 1,
+        seats: [{ kind: 'builtin-naive' }],
+        seat_plan: 'solo',
+      },
     ]
     const run = await createRun(season.id, 'dev-user', [], oneGame)
     const game = firstOf(await storage.listRunGames(run.id))
@@ -954,7 +985,9 @@ describe('leaderboard storage on :memory:', () => {
   it('persistPlacementsForCompletedRun snapshots ranked placements and a re-run rewrites them', async () => {
     const season = await storage.createSeason({ env_id: ENV, deps_version: 1 })
     const s1: AgentRef = { kind: 'submission', submission_id: 's1', user_id: 'alice' }
-    const oneGame: ScheduledGameInput[] = [{ match_index: 0, game_index: 0, seed: 1, seats: [s1] }]
+    const oneGame: ScheduledGameInput[] = [
+      { match_index: 0, game_index: 0, seed: 1, seats: [s1], seat_plan: 'solo' },
+    ]
 
     const run1 = await createRun(season.id, 'dev-user', [s1], oneGame)
     const game1 = firstOf(await storage.listRunGames(run1.id))
@@ -1054,7 +1087,7 @@ describe('leaderboard storage on :memory:', () => {
       season.id,
       'dev-user',
       [s1],
-      [{ match_index: 0, game_index: 0, seed: 1, seats: [s1] }],
+      [{ match_index: 0, game_index: 0, seed: 1, seats: [s1], seat_plan: 'solo' }],
     )
     const game = firstOf(await storage.listRunGames(run.id))
     await storage.recordGameResult({

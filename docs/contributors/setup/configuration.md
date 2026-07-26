@@ -33,7 +33,8 @@ Dedicated parsers and Zod schemas validate every value. A missing or malformed s
 | `SESSION_IDLE_TIMEOUT_MS` | `60000` | Lifetime with no attached socket, or no human command in human mode |
 | `SESSION_MAX_DURATION_MS` | `600000` | Wall-clock backstop |
 | `SANDBOX_CPUS` | `1` | Session CPU quota |
-| `SANDBOX_MEMORY_MB` | `512` | Session memory quota |
+| `SANDBOX_MEMORY_MB` | `512` | Base session memory quota |
+| `SANDBOX_MEMORY_PER_PLAYER_MB` | `32` | Additional memory quota for each player after the first |
 | `SANDBOX_SCRATCH_MB` | `256` | Writable scratch quota |
 
 ## Authentication

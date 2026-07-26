@@ -33,8 +33,8 @@ from .manifest import ManifestError, describe_agent_hooks, load_agent
 #: The single outbound event-envelope kind this command defines (cf. ``result`` for the runner).
 RESULT_KIND = "validate-result"
 
-#: Where the overlay build stages a submission's repo root for the single-slot Flappy Bird stage.
-DEFAULT_REPO_ROOT = "/opt/agents/submissions/player_0"
+#: Where the overlay build stages a submission's repo root for the canonical validation seat.
+DEFAULT_REPO_ROOT = "/opt/agents/submissions/seat_0"
 
 
 def _claim_stdout() -> IO[str]:

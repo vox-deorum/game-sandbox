@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from game_sandbox_harness.clock import ManualClock
+from game_sandbox_harness.environment import ResolvedLayout, ResolvedSeat
 from game_sandbox_harness.live_io import (
     PausableClock,
     ProtocolStream,
@@ -331,7 +332,13 @@ def test_tee_store_streams_the_exact_bytes_it_stores(tmp_path: Path):
     protocol = ProtocolStream(_Sink())  # type: ignore[arg-type]
     store = build_tee_store(str(tmp_path), protocol)
 
-    header = build_header(environment="fake", parameters={"players": 1}, seed=1)
+    header = build_header(
+        environment="fake",
+        parameters={"players": 1},
+        seed=1,
+        players={"player_0": {"kind": "agent", "label": "Agent"}},
+        layout=ResolvedLayout("solo", (ResolvedSeat("seat_0", ("player_0",)),), 1, 1),
+    )
     with store.create("r", header) as writer:
         writer.write_step(build_step_state(tick=0, agents={}, started_at=0, duration_ms=1))
         writer.write_step(build_step_state(tick=1, agents={}, started_at=1, duration_ms=1))

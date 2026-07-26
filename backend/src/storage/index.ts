@@ -234,6 +234,8 @@ export interface ScheduledGameInput {
   seed: number
   /** One resolved {@link AgentRef} per seat, in seat order. */
   seats: AgentRef[]
+  /** Canonical resolver plan key materialized when this game was scheduled. */
+  seat_plan: string
 }
 
 export interface FrozenRunInput {

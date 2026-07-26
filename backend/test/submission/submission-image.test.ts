@@ -18,13 +18,13 @@ import type {
   TreeHandle,
 } from '../../src/submission/source/index.js'
 import {
-  CANONICAL_SUBMISSION_SLOT,
+  CANONICAL_SUBMISSION_SEAT,
   ensureSubmissionImage,
   resolveSubmissionLaunchImage,
 } from '../../src/submission/submission-image.js'
 import { FakeDriver } from '../support/fake-driver.js'
 
-const SLOT = 'player_0'
+const SLOT = 'seat_0'
 
 /** A git submission row with the fields the rebuild path reads. */
 function gitSubmission(id: string): Submission {
@@ -171,7 +171,7 @@ describe('resolveSubmissionLaunchImage slot routing', () => {
         source: unusedSource(),
         imagePolicy: 'reuse',
       },
-      [{ slotId: CANONICAL_SUBMISSION_SLOT, submission: gitSubmission('sub-1') }],
+      [{ seatId: CANONICAL_SUBMISSION_SEAT, submission: gitSubmission('sub-1') }],
       1,
     )
 
@@ -182,7 +182,7 @@ describe('resolveSubmissionLaunchImage slot routing', () => {
 
   it('composes a per-slot session image for a lone submission seated outside the canonical slot', async () => {
     const driver = new FakeDriver()
-    // The warm overlay is present, but it was built for player_0; a player_1 seating must NOT reuse it,
+    // The warm overlay is present, but it was built for seat_0; a seat_1 seating must not reuse it,
     // or the launched image would carry the agent's code under the wrong slot directory.
     const warmRef = seedWarmOverlay(driver, 'sub-1')
     const image = await resolveSubmissionLaunchImage(
@@ -192,17 +192,17 @@ describe('resolveSubmissionLaunchImage slot routing', () => {
         source: unusedSource(),
         imagePolicy: 'reuse',
       },
-      [{ slotId: 'player_1', submission: gitSubmission('sub-1') }],
+      [{ seatId: 'seat_1', submission: gitSubmission('sub-1') }],
       1,
     )
 
     expect(image.ref).not.toBe(warmRef)
     expect(image.ref).toContain('session-overlay')
-    // It composed a one-slot session image staging the code into player_1's own directory.
+    // It composed a one-seat session image staging the code into seat_1's own directory.
     const spec = driver.imageRequests.at(-1)
     expect(spec?.kind).toBe('session-overlay')
-    expect(spec?.kind === 'session-overlay' && spec.slots).toEqual([
-      expect.objectContaining({ slotId: 'player_1', submissionId: 'sub-1' }),
+    expect(spec?.kind === 'session-overlay' && spec.seats).toEqual([
+      expect.objectContaining({ seatId: 'seat_1', submissionId: 'sub-1' }),
     ])
   })
 
@@ -219,7 +219,7 @@ describe('resolveSubmissionLaunchImage slot routing', () => {
         [],
         1,
       ),
-    ).rejects.toThrow(/at least one submitted slot/)
+    ).rejects.toThrow(/at least one submitted seat/)
     expect(driver.imageRequests).toHaveLength(0)
   })
 })

@@ -128,14 +128,20 @@ def job_generated_code_fresh() -> None:
     ]
     _run(["git", "diff", "--exit-code", "--", *targets])
     status = subprocess.run(
-        ["git", "status", "--short", "--", *targets],
+        ["git", "status", "--porcelain", "--", *targets],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
         check=True,
     )
-    if status.stdout:
-        raise SystemExit(f"generated output has untracked or removed paths:\n{status.stdout}")
+    # The diff above already proved every tracked generated file matches what regeneration produced.
+    # What it cannot see is a file regeneration created but nobody tracked, or one that disappeared.
+    # Those are the two states to fail on. A staged modification is neither: it is this very change
+    # set, correctly regenerated and waiting to be committed, so flagging it would make the check
+    # impossible to pass from a working tree.
+    stranded = [line for line in status.stdout.splitlines() if line.startswith("??") or "D" in line[:2]]
+    if stranded:
+        raise SystemExit("generated output has untracked or removed paths:\n" + "\n".join(stranded))
     # Not generated, but the same idea: the version touchpoints (base manifest, DEPS_VERSION, the
     # frozen deps-v<N> snapshot, e2e fixtures) are derived state that must agree. --check fails the
     # PR if a manual edit desynced them, before a release can inherit the drift.

@@ -53,6 +53,8 @@ export interface BuildScheduleInput {
    * id order (symmetric games). For a single submission seat the two coincide.
    */
   seatOrderMatters: boolean
+  /** The resolved layout key persisted beside every scheduled assignment. */
+  seatPlan: string
 }
 
 /**
@@ -66,7 +68,7 @@ export interface BuildScheduleInput {
  * seat is just that baseline. `game_index` is a single deterministic counter across the whole run.
  */
 export function buildSchedule(input: BuildScheduleInput): ScheduledGameInput[] {
-  const { matches, submissions, seatOrderMatters } = input
+  const { matches, submissions, seatOrderMatters, seatPlan } = input
 
   // Sort by stable submission id once; every seat expansion below enumerates over this order, so the
   // concrete schedule is identical across re-runs regardless of snapshot season order.
@@ -90,6 +92,7 @@ export function buildSchedule(input: BuildScheduleInput): ScheduledGameInput[] {
           game_index: gameIndex++,
           seed: match.seeds[run % match.seeds.length] as number,
           seats: [...seats],
+          seat_plan: seatPlan,
         })
       }
     }

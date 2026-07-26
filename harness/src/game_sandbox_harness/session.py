@@ -38,6 +38,7 @@ from .clock import Clock, SystemClock
 from .environment import (
     EnvironmentEntry,
     ParameterValue,
+    ResolvedLayout,
     resolve_layout,
     validate_complete_parameters,
 )
@@ -235,6 +236,7 @@ class Episode:
         player_attribution: Mapping[str, PlayerAttribution] | None = None,
         messaging: bool | None = None,
         message_cap: int | None = None,
+        layout: ResolvedLayout | None = None,
     ) -> None:
         self._entry = entry
         self._players = players
@@ -252,6 +254,10 @@ class Episode:
         # The launch configuration is produced by a caller that already resolved every value, so a
         # missing name is an upstream bug rather than a request to substitute a default.
         self._parameters = validate_complete_parameters(entry.meta, parameters)
+        resolved_layout = resolve_layout(entry.meta, self._parameters)
+        if layout is not None and layout != resolved_layout:
+            raise ValueError("episode layout does not match the environment's resolved parameters")
+        self._layout = resolved_layout
 
         # Messaging is enabled only when the environment metadata AND the session config agree, and
         # the effective cap is the minimum of the two, so a config override can disable or tighten but
@@ -298,8 +304,7 @@ class Episode:
             env = self._entry.make(self._parameters)
             self._env = env
             env.reset(seed=self._seed)
-            layout = resolve_layout(self._entry.meta, self._parameters)
-            expected_players = [f"player_{index}" for index in range(layout.player_count)]
+            expected_players = [f"player_{index}" for index in range(self._layout.player_count)]
             if env.possible_agents != expected_players:
                 raise ValueError(
                     "environment factory produced possible_agents "
@@ -315,7 +320,8 @@ class Episode:
                     seed=self._seed,
                     created_at=_iso_utc(created_at_ms),
                     parameters=self._parameters,
-                    players=dict(self._player_attribution) if self._player_attribution is not None else None,
+                    players=self._recording_players(),
+                    layout=self._layout,
                 )
                 self._writer_cm = self._store.create(self._recording_id, header)
                 self._writer = self._writer_cm.__enter__()
@@ -335,6 +341,18 @@ class Episode:
             with contextlib.suppress(Exception):
                 self.close()
             raise
+
+    def _recording_players(self) -> dict[str, PlayerAttribution]:
+        """Return the supplied attributions, or complete defaults for direct harness callers."""
+        if self._player_attribution is not None:
+            return dict(self._player_attribution)
+        return {
+            player_id: {
+                "kind": "human" if isinstance(player, ExternalPlayer) else "agent",
+                "label": "Human" if isinstance(player, ExternalPlayer) else "Agent",
+            }
+            for player_id, player in self._players.items()
+        }
 
     @property
     def done(self) -> bool:

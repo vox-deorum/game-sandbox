@@ -248,8 +248,8 @@ describe('public leaderboard API', () => {
     const run = await createRunOrFail(storage, season.id, 'dev-user', () => ({
       parametersSnapshot: { players: 1 },
       scheduledGames: [
-        { match_index: 0, game_index: 0, seed: 1, seats: [agentRef(known)] },
-        { match_index: 0, game_index: 1, seed: 2, seats: [agentRef(orphaned)] },
+        { match_index: 0, game_index: 0, seed: 1, seats: [agentRef(known)], seat_plan: 'solo' },
+        { match_index: 0, game_index: 1, seed: 2, seats: [agentRef(orphaned)], seat_plan: 'solo' },
       ],
       llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
     }))
@@ -362,7 +362,9 @@ describe('public leaderboard API', () => {
     const hidden = await makeSubmission(storage, unreleased.id, 'alice')
     const hiddenRun = await createRunOrFail(storage, unreleased.id, 'dev-user', () => ({
       parametersSnapshot: { players: 1 },
-      scheduledGames: [{ match_index: 0, game_index: 0, seed: 1, seats: [agentRef(hidden)] }],
+      scheduledGames: [
+        { match_index: 0, game_index: 0, seed: 1, seats: [agentRef(hidden)], seat_plan: 'solo' },
+      ],
       llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
     }))
     await storage.replaceAutomatedPlacements(unreleased.id, ENV_ID, hiddenRun.id, [
@@ -381,7 +383,9 @@ describe('public leaderboard API', () => {
     const visible = await makeSubmission(storage, released.id, 'alice')
     const visibleRun = await createRunOrFail(storage, released.id, 'dev-user', () => ({
       parametersSnapshot: { players: 1 },
-      scheduledGames: [{ match_index: 0, game_index: 0, seed: 1, seats: [agentRef(visible)] }],
+      scheduledGames: [
+        { match_index: 0, game_index: 0, seed: 1, seats: [agentRef(visible)], seat_plan: 'solo' },
+      ],
       llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
     }))
     await storage.replaceAutomatedPlacements(released.id, ENV_ID, visibleRun.id, [

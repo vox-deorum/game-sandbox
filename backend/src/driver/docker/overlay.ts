@@ -3,7 +3,7 @@
  * session base image, enumerate the overlays the driver manages, and remove one.
  *
  * The overlay is the base image for a dependency-set version with the fetched submission tree copied
- * into its per-slot directory under `/opt/agents/submissions`. There is **no per-submission
+ * into its per-seat directory under `/opt/agents/submissions`. There is **no per-submission
  * dependency install** — the deps come entirely from the base image — so the build is just a `COPY`
  * and is fast. The tag is derived deterministically from the prefix, deps version, and submission id,
  * so the submission id is recoverable from the tag (the eviction sweep relies on it). Caching honors
@@ -20,12 +20,13 @@ import tar from 'tar-fs'
 import type { Pack } from 'tar-stream'
 
 import type { ImagePolicy } from '../../config.js'
+import { SUBMISSION_SEAT_BASE } from '../../submission/submission-image.js'
 import { submissionTarIgnore } from '../../submission/tree-filter.js'
 import type {
   ImageRef,
   OverlayImage,
   SessionOverlayImageSpec,
-  SessionOverlaySlot,
+  SessionOverlaySeat,
   SubmissionOverlayImageSpec,
 } from '../index.js'
 
@@ -38,8 +39,6 @@ const OVERLAY_REPO_SUFFIX = 'submission-overlay'
  * exactly as the driver interface promises.
  */
 const SESSION_OVERLAY_REPO_SUFFIX = 'session-overlay'
-/** Where the base image expects each slot's repo root; lockstep with the harness `validate` default. */
-const SUBMISSION_SLOT_BASE = '/opt/agents/submissions'
 
 /** Raised when an overlay build exceeds its configured timeout, so the worker records a timeout reason. */
 export class OverlayBuildTimeoutError extends Error {
@@ -121,13 +120,13 @@ function buildContext(sourceTreePath: string, dockerfile: string): NodeJS.Readab
 }
 
 /**
- * The overlay Dockerfile. `COPY tree <dest>` lays the submission's repo root into its slot
+ * The overlay Dockerfile. `COPY tree <dest>` lays the submission's repo root into its seat
  * directory; the `chmod -R a+rX` mirrors the base image's normalization so a tree packed from a host
  * without Unix execute bits (a Windows checkout) still has the directory search bit a CapDrop-ALL
  * container needs to stat the manifest.
  */
-function overlayDockerfile(baseTag: string, slotId: string): string {
-  const dest = `${SUBMISSION_SLOT_BASE}/${slotId}`
+function overlayDockerfile(baseTag: string, seatId: string): string {
+  const dest = `${SUBMISSION_SEAT_BASE}/${seatId}`
   return [`FROM ${baseTag}`, `COPY tree ${dest}`, `RUN chmod -R a+rX ${dest}`, ''].join('\n')
 }
 
@@ -206,7 +205,7 @@ export async function ensureOverlayImage(
   if (policy === 'reuse' && (await imageExists(docker, tag))) {
     return { ref: tag }
   }
-  const dockerfile = overlayDockerfile(baseTag, spec.slotId)
+  const dockerfile = overlayDockerfile(baseTag, spec.seatId)
   const context = buildContext(spec.sourceTreePath, dockerfile)
   await runBuild(docker, context, tag, timeoutMs)
   return { ref: tag }
@@ -219,20 +218,20 @@ function sessionOverlayRepo(prefix: string): string {
 
 /**
  * The deterministic tag for a composed session image:
- * `<prefix>/session-overlay:deps-v<N>-<hash>`. The hash is a content digest of the slot-to-submission
- * composition over the entries sorted by slot id, so it is independent of the order the slots were
+ * `<prefix>/session-overlay:deps-v<N>-<hash>`. The hash is a content digest of the seat-to-submission
+ * composition over the entries sorted by seat id, so it is independent of the order the seats were
  * supplied. An identical seating therefore resolves to the same tag (so `reuse` policy hits the cache
  * and a re-run of the same match reuses the image), while any change to which submission fills which
- * slot yields a different tag. Hashing keeps the tag a fixed, registry-legal length even though a
+ * seat yields a different tag. Hashing keeps the tag a fixed, registry-legal length even though a
  * submission id is a UUID.
  */
 export function sessionOverlayImageTag(
   prefix: string,
   depsVersion: number,
-  slots: readonly SessionOverlaySlot[],
+  seats: readonly SessionOverlaySeat[],
 ): string {
-  const composition = slots
-    .map((slot) => `${slot.slotId}=${slot.submissionId}`)
+  const composition = seats
+    .map((seat) => `${seat.seatId}=${seat.submissionId}`)
     .sort()
     .join('\n')
   const hash = createHash('sha256').update(composition).digest('hex').slice(0, 32)
@@ -241,14 +240,14 @@ export function sessionOverlayImageTag(
 
 /**
  * Resolve a {@link SessionOverlayImageSpec} to a launch-ready composed {@link ImageRef}: the base
- * image for the deps version with every submitted slot's tree copied into its own per-slot directory
+ * image for the deps version with every submitted seat's tree copied into its own per-seat directory
  * under `/opt/agents/submissions`, so one container hosts several submitted agents in isolation.
  *
- * The image is built by chaining one single-slot overlay per slot (each a
- * `FROM <previous> ; COPY tree /opt/agents/submissions/<slotId>`), so it reuses the *exact*
- * deterministic single-slot build context (same ignore filter, same `sort`) that the per-submission
- * overlay uses, and each slot's code lands only in its own directory. Slots are staged in sorted
- * slot-id order. The same submission may fill more than one slot; each slot is staged independently
+ * The image is built by chaining one single-seat overlay per seat (each a
+ * `FROM <previous> ; COPY tree /opt/agents/submissions/<seatId>`), so it reuses the *exact*
+ * deterministic single-seat build context (same ignore filter, same `sort`) that the per-submission
+ * overlay uses, and each seat's code lands only in its own directory. Slots are staged in sorted
+ * seat-id order. The same submission may fill more than one seat; each seat is staged independently
  * from its own source tree, so two seats backed by one repo are as isolated on disk as two different
  * repos.
  *
@@ -274,27 +273,27 @@ export async function ensureSessionOverlayImage(
   baseTag: string,
   spec: SessionOverlayImageSpec,
 ): Promise<ImageRef> {
-  if (spec.slots.length === 0) {
-    throw new Error('a session-overlay image needs at least one submitted slot')
+  if (spec.seats.length === 0) {
+    throw new Error('a session-overlay image needs at least one submitted seat')
   }
-  const tag = sessionOverlayImageTag(prefix, spec.depsVersion, spec.slots)
+  const tag = sessionOverlayImageTag(prefix, spec.depsVersion, spec.seats)
   if (policy === 'reuse' && (await imageExists(docker, tag))) {
     return { ref: tag }
   }
-  const slots = [...spec.slots].sort((a, b) =>
-    a.slotId < b.slotId ? -1 : a.slotId > b.slotId ? 1 : 0,
+  const seats = [...spec.seats].sort((a, b) =>
+    a.seatId < b.seatId ? -1 : a.seatId > b.seatId ? 1 : 0,
   )
   const scratchTags: string[] = []
   let fromTag = baseTag
   try {
-    for (let i = 0; i < slots.length; i++) {
-      const slot = slots[i] as SessionOverlaySlot
-      const isLast = i === slots.length - 1
+    for (let i = 0; i < seats.length; i++) {
+      const seat = seats[i] as SessionOverlaySeat
+      const isLast = i === seats.length - 1
       // Intermediate rounds build under `<tag>-stage<i>`; only the last round writes the final tag,
       // so the final tag names a complete image or nothing at all.
       const roundTag = isLast ? tag : `${tag}-stage${i}`
-      const dockerfile = overlayDockerfile(fromTag, slot.slotId)
-      const context = buildContext(slot.sourceTreePath, dockerfile)
+      const dockerfile = overlayDockerfile(fromTag, seat.seatId)
+      const context = buildContext(seat.sourceTreePath, dockerfile)
       await runBuild(docker, context, roundTag, timeoutMs)
       if (!isLast) {
         scratchTags.push(roundTag)

@@ -91,7 +91,20 @@ export function parseStepState(value: unknown): StepState {
 
 /** Parse and validate one recording header, narrowing to {@link RecordingHeader}. */
 export function parseHeader(value: unknown): RecordingHeader {
-  return narrow(validateHeader, value, 'recording header')
+  const header = narrow(validateHeader, value, 'recording header')
+  const attributedPlayers = Object.keys(header.players)
+  const seatedPlayers = Object.values(header.seats).flat()
+  if (
+    seatedPlayers.length !== attributedPlayers.length ||
+    new Set(seatedPlayers).size !== seatedPlayers.length ||
+    seatedPlayers.some((player) => !Object.hasOwn(header.players, player)) ||
+    attributedPlayers.some((player) => !seatedPlayers.includes(player))
+  ) {
+    throw new SchemaValidationError(
+      'recording header seats must partition attributed players exactly',
+    )
+  }
+  return header
 }
 
 export interface ParsedRecording {

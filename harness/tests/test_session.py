@@ -171,6 +171,8 @@ def test_players_attribution_lands_in_the_recording_header(tmp_path: Path):
     header = json.loads(lines[0])
     assert header["players"] == {"player_0": {"kind": "agent", "label": "Naive agent"}}
     assert header["parameters"] == {"players": 1}
+    assert header["seats"] == {"seat_0": ["player_0"]}
+    assert header["seat_plan"] == "solo"
 
 
 def test_opening_state_returns_the_dealt_overlay_for_a_turn_based_env():

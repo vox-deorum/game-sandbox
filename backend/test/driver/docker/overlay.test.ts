@@ -14,7 +14,7 @@ import {
   removeImage,
   sessionOverlayImageTag,
 } from '../../../src/driver/docker/overlay.js'
-import type { SessionOverlaySlot } from '../../../src/driver/index.js'
+import type { SessionOverlaySeat } from '../../../src/driver/index.js'
 
 function dockerRemoveRejects(error: unknown): Docker {
   return {
@@ -107,24 +107,24 @@ describe('ensureSessionOverlayImage chaining', () => {
     rmSync(tree, { recursive: true, force: true })
   })
 
-  /** A composed spec over `n` slots, all staged from the shared source tree. */
-  function spec(n: number): { slots: SessionOverlaySlot[] } {
-    const slots: SessionOverlaySlot[] = []
+  /** A composed spec over `n` seats, all staged from the shared source tree. */
+  function spec(n: number): { seats: SessionOverlaySeat[] } {
+    const seats: SessionOverlaySeat[] = []
     for (let i = 0; i < n; i++) {
-      slots.push({ slotId: `player_${i}`, submissionId: `sub-${i}`, sourceTreePath: tree })
+      seats.push({ seatId: `player_${i}`, submissionId: `sub-${i}`, sourceTreePath: tree })
     }
-    return { slots }
+    return { seats }
   }
 
   it('applies the final reuse-cache tag only on the last round, staging the rest under scratch tags', async () => {
     const { docker, log } = fakeBuildDocker()
     const composed = spec(3)
-    const finalTag = sessionOverlayImageTag(PREFIX, DEPS, composed.slots)
+    const finalTag = sessionOverlayImageTag(PREFIX, DEPS, composed.seats)
 
     const ref = await ensureSessionOverlayImage(docker, PREFIX, 'reuse', 60_000, 'base:tag', {
       kind: 'session-overlay',
       depsVersion: DEPS,
-      slots: composed.slots,
+      seats: composed.seats,
     })
 
     expect(ref.ref).toBe(finalTag)
@@ -138,12 +138,12 @@ describe('ensureSessionOverlayImage chaining', () => {
   it('builds a single-slot composition straight to the final tag with no scratch tags', async () => {
     const { docker, log } = fakeBuildDocker()
     const composed = spec(1)
-    const finalTag = sessionOverlayImageTag(PREFIX, DEPS, composed.slots)
+    const finalTag = sessionOverlayImageTag(PREFIX, DEPS, composed.seats)
 
     await ensureSessionOverlayImage(docker, PREFIX, 'reuse', 60_000, 'base:tag', {
       kind: 'session-overlay',
       depsVersion: DEPS,
-      slots: composed.slots,
+      seats: composed.seats,
     })
 
     expect(log.built).toEqual([finalTag])
@@ -152,7 +152,7 @@ describe('ensureSessionOverlayImage chaining', () => {
 
   it('leaves the final tag unwritten and cleans up scratch tags when a later round fails', async () => {
     const composed = spec(3)
-    const finalTag = sessionOverlayImageTag(PREFIX, DEPS, composed.slots)
+    const finalTag = sessionOverlayImageTag(PREFIX, DEPS, composed.seats)
     // Fail the second round (the first scratch stage succeeds, so there is an intermediate to clean up).
     const { docker, log } = fakeBuildDocker((tag) => tag === `${finalTag}-stage1`)
 
@@ -160,7 +160,7 @@ describe('ensureSessionOverlayImage chaining', () => {
       ensureSessionOverlayImage(docker, PREFIX, 'reuse', 60_000, 'base:tag', {
         kind: 'session-overlay',
         depsVersion: DEPS,
-        slots: composed.slots,
+        seats: composed.seats,
       }),
     ).rejects.toThrow(/failed/)
 
@@ -174,13 +174,13 @@ describe('ensureSessionOverlayImage chaining', () => {
   it('returns the cached image untouched under reuse when the final tag already exists', async () => {
     const { docker, log } = fakeBuildDocker()
     const composed = spec(2)
-    const finalTag = sessionOverlayImageTag(PREFIX, DEPS, composed.slots)
+    const finalTag = sessionOverlayImageTag(PREFIX, DEPS, composed.seats)
     log.existing.add(finalTag)
 
     const ref = await ensureSessionOverlayImage(docker, PREFIX, 'reuse', 60_000, 'base:tag', {
       kind: 'session-overlay',
       depsVersion: DEPS,
-      slots: composed.slots,
+      seats: composed.seats,
     })
 
     expect(ref.ref).toBe(finalTag)

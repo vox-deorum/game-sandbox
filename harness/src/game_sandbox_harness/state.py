@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any, NotRequired, TypedDict
 
-from .environment import ParameterValue
+from .environment import ParameterValue, ResolvedLayout
 from .schema import SCHEMA_VERSION
 
 
@@ -85,7 +85,9 @@ class RecordingHeader(TypedDict):
     created_at: NotRequired[str]
     seed: NotRequired[int]
     sidecars: NotRequired[list[Sidecar]]
-    players: NotRequired[dict[str, PlayerAttribution]]
+    players: dict[str, PlayerAttribution]
+    seats: dict[str, list[str]]
+    seat_plan: str
 
 
 class Sidecar(TypedDict):
@@ -157,13 +159,20 @@ def build_header(
     created_at: str | None = None,
     seed: int | None = None,
     sidecars: list[Sidecar] | None = None,
-    players: dict[str, PlayerAttribution] | None = None,
+    players: dict[str, PlayerAttribution],
+    layout: ResolvedLayout,
 ) -> RecordingHeader:
-    """Build a recording header stamped with the current schema version."""
+    """Build a recording header stamped with the current schema version and resolved layout."""
+    seat_members = [player_id for seat in layout.seats for player_id in seat.players]
+    if set(players) != set(seat_members) or len(seat_members) != len(set(seat_members)):
+        raise ValueError("recording players must exactly match the resolved seat partition")
     header: RecordingHeader = {
         "schema_version": SCHEMA_VERSION,
         "environment": environment,
         "parameters": dict(parameters),
+        "players": dict(players),
+        "seats": {seat.seat_id: list(seat.players) for seat in layout.seats},
+        "seat_plan": layout.plan_key,
     }
     if created_at is not None:
         header["created_at"] = created_at
@@ -171,6 +180,4 @@ def build_header(
         header["seed"] = seed
     if sidecars is not None:
         header["sidecars"] = sidecars
-    if players is not None:
-        header["players"] = players
     return header

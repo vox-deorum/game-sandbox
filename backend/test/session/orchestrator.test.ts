@@ -4,6 +4,7 @@ import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { UserDirectory } from '../../src/auth/users.js'
+import { EnvironmentRegistry } from '../../src/environments.js'
 import { ensureRecordingsDir } from '../../src/session/live-session.js'
 import type { IssueOfficialGrantsInput } from '../../src/session/official-grants.js'
 import {
@@ -132,9 +133,60 @@ function startRequest(overrides: Partial<StartRequest> = {}): StartRequest {
   }
 }
 
-const HEADER = '{"schema_version":1,"environment":"flappy_bird","seed":0}'
+const HEADER = JSON.stringify({
+  schema_version: 1,
+  environment: 'flappy_bird',
+  parameters: { players: 1, pipe_gap: 100 },
+  players: { player_0: { kind: 'agent', label: 'Naive agent' } },
+  seats: { seat_0: ['player_0'] },
+  seat_plan: 'solo',
+  seed: 0,
+})
 const STATE = '{"schema_version":1,"tick":0,"agents":{},"timing":{"started_at":1,"duration_ms":1}}'
 const PLAY_SEASONS = new Map<string, string>()
+const WIDE_ENV_ID = 'synthetic_wide'
+
+/** A registry fixture whose noncontiguous wide seat exercises expansion without changing production metadata. */
+function wideEnvironments(): EnvironmentRegistry {
+  return EnvironmentRegistry.parse(
+    JSON.stringify([
+      ...makeEnvironments().list(),
+      {
+        env_id: WIDE_ENV_ID,
+        display_name: 'Synthetic wide',
+        description: 'A four-player synthetic layout for orchestrator tests.',
+        layout: {
+          kind: 'seat_plans',
+          plans: [{ key: 'uneven', title: 'Uneven', seats: [[0, 2, 3], [1]] }],
+        },
+        human_players: ['player_0'],
+        human_timeout_ms: 5_000,
+        recommended_episode_ticks: 10,
+        pace_interval_ms: null,
+        step_limit_ms: 1_000,
+        episode_limit_ms: 120_000,
+        messaging: false,
+        message_cap: null,
+        llm: true,
+        renderer: 'fake',
+        seat_order_matters: true,
+        view_interval_ms: null,
+        live_interval_ms: null,
+        parameters: [
+          {
+            name: 'seat_plan',
+            title: 'Seat plan',
+            description: 'Seat-to-player layout for each game.',
+            type: 'choice',
+            default: 'uneven',
+            choices: [{ value: 'uneven', label: 'Uneven' }],
+          },
+        ],
+      },
+    ]),
+    'synthetic-wide-test',
+  )
+}
 
 /** Flush the finalize chain (kill → markEnded → notify) across its several awaits. */
 async function settle(): Promise<void> {
@@ -168,6 +220,38 @@ describe('orchestrator', () => {
       submissionSource: source,
       submissionSnapshots: snapshots,
       userDirectory,
+    })
+  }
+
+  function makeWideOrchestrator(
+    source: SubmissionSource,
+    onIssue: (input: IssueOfficialGrantsInput) => void,
+  ): Orchestrator {
+    const config = makeConfig({ recordingsDir })
+    return new Orchestrator({
+      driver,
+      storage,
+      environments: wideEnvironments(),
+      config,
+      submissionSource: source,
+      submissionSnapshots: new SubmissionSnapshotStore(join(recordingsDir, 'submissions')),
+      resolveLiveLlm: () => ({
+        enabled: true,
+        models: { small: { upstream: 'upstream-small', costWeight: 1 } },
+        official: { tokenBudget: 1_000, requestsPerMinute: 5 },
+        development: { tokenBudget: 2_000, requestsPerMinute: 10 },
+      }),
+      officialGrantIssuer: {
+        issue: (input) => {
+          onIssue(input)
+          return Promise.resolve({
+            keys: Object.fromEntries(
+              input.agentPlayers.map((playerId) => [playerId, `key-${playerId}`]),
+            ),
+            revoke: () => Promise.resolve(),
+          })
+        },
+      },
     })
   }
 
@@ -416,6 +500,199 @@ describe('orchestrator', () => {
     })
   })
 
+  describe('synthetic wide-seat start', () => {
+    it('stages one submitted wide seat and expands independent player bindings and grants', async () => {
+      const source = new FakeSource()
+      let issued: IssueOfficialGrantsInput | undefined
+      const orch = makeWideOrchestrator(source, (input) => {
+        issued = input
+      })
+      const submission = await seedReadySubmission(storage, 'eve', WIDE_ENV_ID)
+      const season = await storage.getPublicPlaySeason(WIDE_ENV_ID)
+      if (season === undefined) throw new Error('synthetic wide season was not created')
+
+      const result = await orch.start({
+        userId: 'alice',
+        envId: WIDE_ENV_ID,
+        seasonId: season.id,
+        parameters: { seat_plan: 'uneven' },
+        seats: {
+          seat_0: { kind: 'submission', submissionId: submission.id },
+          seat_1: { kind: 'builtin-agent' },
+        },
+      })
+
+      const launch = driver.lastLaunch()
+      const launchConfig = JSON.parse(launch?.spec.argv[0] ?? '{}') as {
+        player_bindings: Record<string, unknown>
+        players: Record<string, unknown>
+        llm: { keys: Record<string, string> }
+      }
+      expect(launchConfig.player_bindings).toEqual({
+        player_0: { kind: 'builtin-agent', path: '/opt/agents/submissions/seat_0' },
+        player_2: { kind: 'builtin-agent', path: '/opt/agents/submissions/seat_0' },
+        player_3: { kind: 'builtin-agent', path: '/opt/agents/submissions/seat_0' },
+        player_1: { kind: 'builtin-agent' },
+      })
+      expect(launchConfig.players).toEqual({
+        player_0: {
+          kind: 'agent',
+          label: "eve's agent",
+          user: 'eve',
+          submission_id: submission.id,
+        },
+        player_2: {
+          kind: 'agent',
+          label: "eve's agent",
+          user: 'eve',
+          submission_id: submission.id,
+        },
+        player_3: {
+          kind: 'agent',
+          label: "eve's agent",
+          user: 'eve',
+          submission_id: submission.id,
+        },
+        player_1: { kind: 'agent', label: 'Naive agent' },
+      })
+      expect(issued?.agentPlayers).toEqual(['player_0', 'player_2', 'player_3', 'player_1'])
+      expect(launchConfig.llm.keys).toEqual({
+        player_0: 'key-player_0',
+        player_2: 'key-player_2',
+        player_3: 'key-player_3',
+        player_1: 'key-player_1',
+      })
+      expect(launch?.spec.sandbox.memoryMb).toBe(608)
+      expect(source.fetchCount).toBe(1)
+      expect(source.disposed).toBe(1)
+      expect(
+        driver.imageRequests.find((request) => request.kind === 'submission-overlay'),
+      ).toMatchObject({ submissionId: submission.id, seatId: 'seat_0' })
+      expect(await storage.listSessionSubmissions(result.id)).toMatchObject([
+        { submission_id: submission.id, seat_id: 'seat_0' },
+      ])
+      await orch.stop(result.id, 'alice')
+    })
+
+    it('expands a submitted human companion once across the nonhuman members of its seat', async () => {
+      const source = new FakeSource()
+      let issued: IssueOfficialGrantsInput | undefined
+      const orch = makeWideOrchestrator(source, (input) => {
+        issued = input
+      })
+      const companion = await seedReadySubmission(storage, 'eve', WIDE_ENV_ID)
+      const season = await storage.getPublicPlaySeason(WIDE_ENV_ID)
+      if (season === undefined) throw new Error('synthetic wide season was not created')
+
+      const result = await orch.start({
+        userId: 'alice',
+        envId: WIDE_ENV_ID,
+        seasonId: season.id,
+        parameters: { seat_plan: 'uneven' },
+        seats: {
+          seat_0: {
+            kind: 'human',
+            companion: { kind: 'submission', submissionId: companion.id },
+          },
+          seat_1: { kind: 'builtin-agent' },
+        },
+      })
+
+      const launch = driver.lastLaunch()
+      const launchConfig = JSON.parse(launch?.spec.argv[0] ?? '{}') as {
+        player_bindings: Record<string, unknown>
+        players: Record<string, unknown>
+        llm: { keys: Record<string, string> }
+      }
+      expect(launchConfig.player_bindings).toEqual({
+        player_0: { kind: 'external' },
+        player_2: { kind: 'builtin-agent', path: '/opt/agents/submissions/seat_0' },
+        player_3: { kind: 'builtin-agent', path: '/opt/agents/submissions/seat_0' },
+        player_1: { kind: 'builtin-agent' },
+      })
+      expect(launchConfig.players).toEqual({
+        player_0: { kind: 'human', label: 'alice', user: 'alice' },
+        player_2: {
+          kind: 'agent',
+          label: "eve's agent",
+          user: 'eve',
+          submission_id: companion.id,
+        },
+        player_3: {
+          kind: 'agent',
+          label: "eve's agent",
+          user: 'eve',
+          submission_id: companion.id,
+        },
+        player_1: { kind: 'agent', label: 'Naive agent' },
+      })
+      expect(issued?.agentPlayers).toEqual(['player_2', 'player_3', 'player_1'])
+      expect(launchConfig.llm.keys).toEqual({
+        player_2: 'key-player_2',
+        player_3: 'key-player_3',
+        player_1: 'key-player_1',
+      })
+      expect(launch?.spec.sandbox.memoryMb).toBe(608)
+      expect(source.fetchCount).toBe(1)
+      expect(source.disposed).toBe(1)
+      expect(await storage.listSessionSubmissions(result.id)).toMatchObject([
+        { submission_id: companion.id, seat_id: 'seat_0' },
+      ])
+      await orch.stop(result.id, 'alice')
+    })
+
+    it('stages the same submission independently when it fills two seats', async () => {
+      const source = new FakeSource()
+      const orch = makeWideOrchestrator(source, () => undefined)
+      const submission = await seedReadySubmission(storage, 'eve', WIDE_ENV_ID)
+      const season = await storage.getPublicPlaySeason(WIDE_ENV_ID)
+      if (season === undefined) throw new Error('synthetic wide season was not created')
+
+      const result = await orch.start({
+        userId: 'alice',
+        envId: WIDE_ENV_ID,
+        seasonId: season.id,
+        parameters: { seat_plan: 'uneven' },
+        seats: {
+          seat_0: { kind: 'submission', submissionId: submission.id },
+          seat_1: { kind: 'submission', submissionId: submission.id },
+        },
+      })
+
+      const launch = driver.lastLaunch()
+      const launchConfig = JSON.parse(launch?.spec.argv[0] ?? '{}') as {
+        player_bindings: Record<string, unknown>
+      }
+      expect(launchConfig.player_bindings).toEqual({
+        player_0: { kind: 'builtin-agent', path: '/opt/agents/submissions/seat_0' },
+        player_2: { kind: 'builtin-agent', path: '/opt/agents/submissions/seat_0' },
+        player_3: { kind: 'builtin-agent', path: '/opt/agents/submissions/seat_0' },
+        player_1: { kind: 'builtin-agent', path: '/opt/agents/submissions/seat_1' },
+      })
+      expect(
+        driver.imageRequests.filter((request) => request.kind === 'session-overlay'),
+      ).toMatchObject([
+        {
+          seats: [
+            { seatId: 'seat_0', submissionId: submission.id },
+            { seatId: 'seat_1', submissionId: submission.id },
+          ],
+        },
+      ])
+      expect(source.fetchCount).toBe(2)
+      expect(source.disposed).toBe(2)
+      expect(
+        (await storage.listSessionSubmissions(result.id))
+          .map((link) => ({ seat_id: link.seat_id, submission_id: link.submission_id }))
+          .sort((a, b) => a.seat_id.localeCompare(b.seat_id)),
+      ).toEqual([
+        { seat_id: 'seat_0', submission_id: submission.id },
+        { seat_id: 'seat_1', submission_id: submission.id },
+      ])
+      await orch.stop(result.id, 'alice')
+    })
+  })
+
   describe('multi-seat Hearts start', () => {
     /** A Hearts start request built from the four-seat defaults. */
     function startHearts(seats: Record<string, SeatAssignment>): StartRequest {
@@ -548,8 +825,8 @@ describe('orchestrator', () => {
         players: Record<string, unknown>
       }
       expect(config.player_bindings).toEqual({
-        player_0: { kind: 'builtin-agent', path: '/opt/agents/submissions/player_0' },
-        player_1: { kind: 'builtin-agent', path: '/opt/agents/submissions/player_1' },
+        player_0: { kind: 'builtin-agent', path: '/opt/agents/submissions/seat_0' },
+        player_1: { kind: 'builtin-agent', path: '/opt/agents/submissions/seat_1' },
         player_2: { kind: 'builtin-agent' },
         player_3: { kind: 'external' },
       })
@@ -658,7 +935,7 @@ describe('orchestrator', () => {
         players: Record<string, unknown>
       }
       expect(config.player_bindings).toEqual({
-        player_0: { kind: 'builtin-agent', path: '/opt/agents/submissions/player_0' },
+        player_0: { kind: 'builtin-agent', path: '/opt/agents/submissions/seat_0' },
       })
       // The submitted-agent player is attributed to the submission owner ('eve' from the seed helper).
       expect(config.players).toEqual({
@@ -706,7 +983,7 @@ describe('orchestrator', () => {
       expect(source.fetchCount).toBe(1)
       expect(source.disposed).toBe(1)
       const overlaySpec = driver.imageRequests.find((spec) => spec.kind === 'submission-overlay')
-      expect(overlaySpec).toMatchObject({ submissionId: submission.id, slotId: 'player_0' })
+      expect(overlaySpec).toMatchObject({ submissionId: submission.id, seatId: 'seat_0' })
       const launch = driver.lastLaunch()
       expect(launch?.spec.image.ref).toContain(submission.id)
     })

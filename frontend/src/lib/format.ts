@@ -40,13 +40,28 @@ export function formatDateOnly(value: string | null | undefined): string | null 
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(value))
 }
 
+/**
+ * "seat_0" → "S0": the compact seat id, used wherever seats are ranked (the standings card and the
+ * replay list's result label). Seats and players are numbered independently and a seat may cover
+ * several players, so a seat carries its own letter. A row reading "S0" can never be mistaken for
+ * the player "P0", which on a wide layout is not even the same thing.
+ */
+export function formatSeat(seat: string): string {
+  return compactId(seat, /^seat_(\d+)$/, 'S')
+}
+
 /** "player_0" → "P0": the compact player id used in human-facing labels. */
-export function formatSlot(slot: string): string {
-  const player = slot.match(/^player_(\d+)$/)
-  if (player !== null) {
-    return `P${player[1]}`
+export function formatPlayer(slot: string): string {
+  return compactId(slot, /^player_(\d+)$/, 'P')
+}
+
+/** A numbered id as its one-letter short form, or a readable title-cased fallback for any other name. */
+function compactId(id: string, pattern: RegExp, letter: string): string {
+  const numbered = pattern.exec(id)
+  if (numbered !== null) {
+    return `${letter}${numbered[1]}`
   }
-  return slot
+  return id
     .split('_')
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ')

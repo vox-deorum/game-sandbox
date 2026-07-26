@@ -55,7 +55,13 @@ describe('my agents API', () => {
     const run = await createRunOrFail(testApp.storage, season.id, 'operator', () => ({
       parametersSnapshot: { players: 1 },
       scheduledGames: [
-        { match_index: 0, game_index: 0, seed: 1, seats: [{ kind: 'builtin-naive' }] },
+        {
+          match_index: 0,
+          game_index: 0,
+          seed: 1,
+          seats: [{ kind: 'builtin-naive' }],
+          seat_plan: 'solo',
+        },
       ],
       llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
     }))

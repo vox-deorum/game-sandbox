@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { RecordingsStore } from '../src/recordings.js'
 
 const HEADER =
-  '{"created_at":"2026-06-11T00:00:00+00:00","environment":"flappy_bird","parameters":{"seats":1,"pipe_gap":100},"schema_version":1,"seed":0}'
+  '{"created_at":"2026-06-11T00:00:00+00:00","environment":"hearts","parameters":{"players":3},"players":{"player_0":{"kind":"agent","label":"Naive agent"},"player_1":{"kind":"agent","label":"Naive agent"},"player_2":{"kind":"agent","label":"Naive agent"}},"schema_version":1,"seat_plan":"solo","seats":{"seat_0":["player_0"],"seat_1":["player_1"],"seat_2":["player_2"]},"seed":0}'
 const STATE = '{"schema_version":1,"tick":0,"agents":{},"timing":{"started_at":1,"duration_ms":1}}'
 const WIN_STATE = JSON.stringify({
   schema_version: 1,
@@ -48,7 +48,7 @@ describe('recordings store over the volume layout', () => {
     await writeRecording('flappy_bird-a', [HEADER])
     const summaries = await store.list()
     expect(summaries.map((s) => s.id)).toEqual(['flappy_bird-a', 'flappy_bird-b'])
-    expect(summaries[0]?.header).toMatchObject({ schema_version: 1, environment: 'flappy_bird' })
+    expect(summaries[0]?.header).toMatchObject({ schema_version: 1, environment: 'hearts' })
   })
 
   it('skips a directory whose header is missing or invalid', async () => {
@@ -63,13 +63,40 @@ describe('recordings store over the volume layout', () => {
     await writeRecording('tie', [HEADER, TIED_STATE])
 
     const byId = new Map((await store.list()).map((summary) => [summary.id, summary]))
-    expect(byId.get('winner')?.winner_id).toBe('P1')
+    expect(byId.get('winner')?.winner_id).toBe('seat_1')
     expect(byId.get('tie')?.winner_id).toBe(-1)
   })
 
   it('uses the newest complete state when the recording ends with a partial line', async () => {
     await writeRecording('partial', [HEADER, WIN_STATE, '{"schema_version":1'])
-    expect((await store.list())[0]?.winner_id).toBe('P1')
+    expect((await store.list())[0]?.winner_id).toBe('seat_1')
+  })
+
+  it('reduces partnership player scores before choosing a winner', async () => {
+    const partnershipHeader = JSON.stringify({
+      schema_version: 1,
+      environment: 'spades',
+      parameters: { seat_plan: 'partnership' },
+      players: Object.fromEntries(
+        Array.from({ length: 4 }, (_, index) => [
+          `player_${index}`,
+          { kind: 'agent', label: 'Naive agent' },
+        ]),
+      ),
+      seats: { seat_0: ['player_0', 'player_2'], seat_1: ['player_1', 'player_3'] },
+      seat_plan: 'partnership',
+    })
+    await writeRecording('partnership', [
+      partnershipHeader,
+      JSON.stringify({
+        schema_version: 1,
+        tick: 1,
+        agents: {},
+        overlay: { leaderboard_scores: [12, 3, 12, 3] },
+        timing: { started_at: 2, duration_ms: 1 },
+      }),
+    ])
+    expect((await store.list())[0]?.winner_id).toBe('seat_0')
   })
 
   it('returns no recordings when the volume does not exist yet', async () => {

@@ -20,7 +20,7 @@ import type { UserDirectory } from '../auth/users.js'
 import type { Config } from '../config.js'
 import { currentSessionBaseImageSpec } from '../deps-version.js'
 import type { ExecutionDriver, ImageRef } from '../driver/index.js'
-import { buildSandboxProfile } from '../driver/sandbox.js'
+import { buildSandboxProfile, sandboxResourcesForPlayers } from '../driver/sandbox.js'
 import type { EnvironmentMeta, EnvironmentRegistry } from '../environments.js'
 import { resolveLlm as defaultResolveLlm } from '../llm/config.js'
 import { optionalField } from '../optional-field.js'
@@ -30,10 +30,10 @@ import type { SubmissionSnapshotStore } from '../submission/snapshot-store.js'
 import type { SubmissionSource } from '../submission/source/index.js'
 import {
   resolveSubmissionLaunchImage,
-  type SessionImageSlot,
-  submissionSlotPath,
+  type SessionImageSeat,
+  submissionSeatPath,
 } from '../submission/submission-image.js'
-import { assembleLlmLaunchConfig, assembleSeats, type SeatBinding } from './launch-config.js'
+import { assembleLaunch, assembleLlmLaunchConfig, type SeatBinding } from './launch-config.js'
 import {
   type Attachment,
   type ClientSocket,
@@ -85,25 +85,30 @@ export interface StartRequest {
 interface SubmissionBinding {
   submissionId: string
   seatId: string
-  playerId: string
   path: string
   /** The submission owner, attributed to the player in the recording header. */
   userId: string
 }
 
 /**
- * A singleton seat after validation. A `submission` seat carries its loaded row; human and
- * built-in seats carry none. The discriminated union lets config assembly and image resolution read
- * the submission without a presence check.
+ * A seat after validation. A `submission` seat carries its loaded row; human and built-in seats carry
+ * none. The discriminated union lets config assembly and image resolution read the submission without
+ * a presence check. A human seat also carries the one player the person controls, chosen once during
+ * seat validation so no later stage repeats the choice.
  */
+type ResolvedAgentBinding =
+  | { kind: 'builtin-agent' }
+  | { kind: 'submission'; submission: Submission }
+
 type ResolvedSeat =
-  | { seatId: string; playerId: string; kind: 'human' | 'builtin-agent' }
-  | { seatId: string; playerId: string; kind: 'submission'; submission: Submission }
+  | { seatId: string; kind: 'human'; playerId: string; companion?: ResolvedAgentBinding }
+  | ({ seatId: string } & ResolvedAgentBinding)
 
 interface ValidatedSeatAssignment {
   seatId: string
-  playerId: string
   assignment: SeatAssignment
+  /** Set only for a human assignment: the seat's first human-capable member, in declared order. */
+  humanPlayer?: string
 }
 
 /** What the HTTP layer returns to a client that started a session. */
@@ -276,9 +281,9 @@ export class Orchestrator {
     const overrides = seasonConfig.overrides
     const messaging = resolveMessaging(meta, overrides?.messaging)
     const llm = this.resolveLiveLlm(this.config.llm, meta, seasonConfig)
-    const externalPlayers = resolvedSeats
-      .filter((seat) => seat.kind === 'human')
-      .map((seat) => seat.playerId)
+    const externalPlayers = resolvedSeats.flatMap((seat) =>
+      seat.kind === 'human' ? [seat.playerId] : [],
+    )
 
     const id = randomUUID()
     const recordingId = `${meta.env_id}-${id}`
@@ -292,9 +297,9 @@ export class Orchestrator {
         llmLease = await this.officialGrantIssuer.issue({
           sessionId: id,
           scopeId: id,
-          agentPlayers: resolvedSeats
-            .filter((seat) => seat.kind !== 'human')
-            .map((seat) => seat.playerId),
+          agentPlayers: layout.seats.flatMap((seat) =>
+            seat.players.filter((playerId) => !externalPlayers.includes(playerId)),
+          ),
           models: llm.models,
           limits: llm.official,
         })
@@ -334,7 +339,7 @@ export class Orchestrator {
     let sessionConfig: Record<string, unknown>
     try {
       sandbox = buildSandboxProfile(
-        this.config.sandbox,
+        sandboxResourcesForPlayers(this.config.sandbox, layout.playerCount),
         [
           {
             hostPath: this.recordingsHostDir(),
@@ -350,6 +355,7 @@ export class Orchestrator {
         humanTimeoutMs,
         recordingId,
         resolvedSeats,
+        layout,
         request.userId,
         overrides,
         resolvedParameters.values,
@@ -461,10 +467,6 @@ export class Orchestrator {
       if (assignment === undefined) {
         throw new OrchestratorError(400, `missing assignment for required seat ${seat.seatId}`)
       }
-      const playerId = seat.players[0]
-      if (playerId === undefined) {
-        throw new Error(`resolved seat ${seat.seatId} has no players`)
-      }
       if (assignment.kind === 'human') {
         const humanPlayer = seat.players.find((candidate) => humanCapable.has(candidate))
         if (humanPlayer === undefined) {
@@ -476,10 +478,13 @@ export class Orchestrator {
         if (seat.players.length === 1 && assignment.companion !== undefined) {
           throw new OrchestratorError(400, `singleton seat ${seat.seatId} cannot have a companion`)
         }
+        if (seat.players.length > 1 && assignment.companion === undefined) {
+          throw new OrchestratorError(400, `wide seat ${seat.seatId} requires a companion`)
+        }
         humanCount += 1
-        return { seatId: seat.seatId, playerId: humanPlayer, assignment }
+        return { seatId: seat.seatId, assignment, humanPlayer }
       }
-      return { seatId: seat.seatId, playerId, assignment }
+      return { seatId: seat.seatId, assignment }
     })
     if (humanCount > MAX_HUMAN_PLAYERS) {
       throw new OrchestratorError(
@@ -501,60 +506,86 @@ export class Orchestrator {
     playSeason: Season,
   ): Promise<ResolvedSeat[]> {
     const resolved: ResolvedSeat[] = []
-    for (const { seatId, playerId, assignment } of assignments) {
-      if (assignment.kind !== 'submission') {
-        resolved.push({ seatId, playerId, kind: assignment.kind })
+    for (const { seatId, assignment, humanPlayer } of assignments) {
+      if (assignment.kind === 'human') {
+        if (humanPlayer === undefined) {
+          throw new Error(`human seat ${seatId} was validated without a player`)
+        }
+        const companion =
+          assignment.companion === undefined
+            ? undefined
+            : await this.resolveAgentBinding(assignment.companion, meta, playSeason)
+        resolved.push({
+          seatId,
+          kind: 'human',
+          playerId: humanPlayer,
+          ...optionalField('companion', companion),
+        })
         continue
       }
-      const submission = await this.storage.getSubmission(assignment.submissionId)
-      if (submission === undefined) {
-        throw new OrchestratorError(404, `no such submission ${assignment.submissionId}`)
-      }
-      if (submission.env_id !== meta.env_id) {
-        throw new OrchestratorError(
-          400,
-          'submission is for a different environment',
-          'submission_env_mismatch',
-        )
-      }
-      if (submission.status !== 'ready') {
-        throw new OrchestratorError(409, 'submission is not ready to run', 'submission_not_ready')
-      }
-      // Only the play-open season's active submissions are runnable choices. The submission window may
-      // already point at the next round, while the previous round remains the public play target.
-      if (submission.season_id !== playSeason.id || submission.superseded_at !== null) {
-        throw new OrchestratorError(
-          409,
-          'submission is not active for the play-open season',
-          'submission_not_active',
-        )
-      }
-      resolved.push({ seatId, playerId, kind: 'submission', submission })
+      resolved.push({ seatId, ...(await this.resolveAgentBinding(assignment, meta, playSeason)) })
     }
     return resolved
   }
 
+  private async resolveAgentBinding(
+    assignment: AgentSeatAssignment,
+    meta: EnvironmentMeta,
+    playSeason: Season,
+  ): Promise<ResolvedAgentBinding> {
+    if (assignment.kind === 'builtin-agent') return { kind: 'builtin-agent' }
+    const submission = await this.storage.getSubmission(assignment.submissionId)
+    if (submission === undefined) {
+      throw new OrchestratorError(404, `no such submission ${assignment.submissionId}`)
+    }
+    if (submission.env_id !== meta.env_id) {
+      throw new OrchestratorError(
+        400,
+        'submission is for a different environment',
+        'submission_env_mismatch',
+      )
+    }
+    if (submission.status !== 'ready') {
+      throw new OrchestratorError(409, 'submission is not ready to run', 'submission_not_ready')
+    }
+    // Only the play-open season's active submissions are runnable choices. The submission window may
+    // already point at the next round, while the previous round remains the public play target.
+    if (submission.season_id !== playSeason.id || submission.superseded_at !== null) {
+      throw new OrchestratorError(
+        409,
+        'submission is not active for the play-open season',
+        'submission_not_active',
+      )
+    }
+    return { kind: 'submission', submission }
+  }
+
   /**
-   * Resolve the launch image and submission attribution from validated singleton seats. Staging stays
-   * player-keyed until Stage 15.2 expands a seat across multiple player bindings.
+   * Resolve the launch image and submission attribution once per submitted seat. A human companion
+   * is part of its human seat and shares that seat's staged overlay across its nonhuman players.
    */
   private async resolveImage(
     resolvedSeats: ResolvedSeat[],
     playSeason: Season,
   ): Promise<{ image: ImageRef; submissionBindings: SubmissionBinding[] }> {
-    const composed: SessionImageSlot[] = []
+    const composed: SessionImageSeat[] = []
     const submissionBindings: SubmissionBinding[] = []
     for (const seat of resolvedSeats) {
-      if (seat.kind !== 'submission') {
+      const submission =
+        seat.kind === 'submission'
+          ? seat.submission
+          : seat.kind === 'human' && seat.companion?.kind === 'submission'
+            ? seat.companion.submission
+            : undefined
+      if (submission === undefined) {
         continue
       }
-      composed.push({ slotId: seat.playerId, submission: seat.submission })
+      composed.push({ seatId: seat.seatId, submission })
       submissionBindings.push({
-        submissionId: seat.submission.id,
+        submissionId: submission.id,
         seatId: seat.seatId,
-        playerId: seat.playerId,
-        path: submissionSlotPath(seat.playerId),
-        userId: seat.submission.user_id,
+        path: submissionSeatPath(seat.seatId),
+        userId: submission.user_id,
       })
     }
 
@@ -640,6 +671,7 @@ export class Orchestrator {
     humanTimeoutMs: number | null,
     recordingId: string,
     resolvedSeats: ResolvedSeat[],
+    layout: ReturnType<typeof resolveLayout>,
     ownerUserId: string,
     overrides: ReturnType<typeof decodeSeasonConfig>['overrides'],
     parameters: Record<string, ParameterValue>,
@@ -653,24 +685,40 @@ export class Orchestrator {
     const seats = new Map<string, SeatBinding>()
     for (const seat of resolvedSeats) {
       if (seat.kind === 'human') {
-        seats.set(seat.playerId, {
+        const companion = seat.companion
+        seats.set(seat.seatId, {
           driver: 'human',
+          playerId: seat.playerId,
           userId: ownerUserId,
           ...optionalField('displayName', names.get(ownerUserId)),
+          ...optionalField(
+            'companion',
+            companion === undefined
+              ? undefined
+              : companion.kind === 'submission'
+                ? {
+                    driver: 'submission' as const,
+                    submissionId: companion.submission.id,
+                    userId: companion.submission.user_id,
+                    path: submissionSeatPath(seat.seatId),
+                    ...optionalField('ownerName', names.get(companion.submission.user_id)),
+                  }
+                : { driver: 'naive' as const },
+          ),
         })
       } else if (seat.kind === 'submission') {
-        seats.set(seat.playerId, {
+        seats.set(seat.seatId, {
           driver: 'submission',
           submissionId: seat.submission.id,
           userId: seat.submission.user_id,
-          path: submissionSlotPath(seat.playerId),
+          path: submissionSeatPath(seat.seatId),
           ...optionalField('ownerName', names.get(seat.submission.user_id)),
         })
       } else {
-        seats.set(seat.playerId, { driver: 'naive' })
+        seats.set(seat.seatId, { driver: 'naive' })
       }
     }
-    const { playerBindings, players } = assembleSeats(seats)
+    const { playerBindings, players } = assembleLaunch(seats, layout)
     return {
       env_id: meta.env_id,
       seed,
@@ -707,7 +755,11 @@ export class Orchestrator {
     const ids = [
       ownerUserId,
       ...resolvedSeats.flatMap((seat) =>
-        seat.kind === 'submission' ? [seat.submission.user_id] : [],
+        seat.kind === 'submission'
+          ? [seat.submission.user_id]
+          : seat.kind === 'human' && seat.companion?.kind === 'submission'
+            ? [seat.companion.submission.user_id]
+            : [],
       ),
     ]
     try {

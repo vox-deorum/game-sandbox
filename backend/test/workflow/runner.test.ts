@@ -60,7 +60,13 @@ describe('workflow runner seam', () => {
     const run = await createRunOrFail(storage, season.id, 'dev-user', () => ({
       parametersSnapshot,
       scheduledGames: [
-        { match_index: 0, game_index: 0, seed: 1, seats: [{ kind: 'builtin-naive' }] },
+        {
+          match_index: 0,
+          game_index: 0,
+          seed: 1,
+          seats: [{ kind: 'builtin-naive' }],
+          seat_plan: 'solo',
+        },
       ],
       llmPolicy: disabledLlmPolicy(),
     }))
@@ -120,7 +126,7 @@ describe('workflow runner seam', () => {
         },
       },
       snapshots: new SubmissionSnapshotStore(join(root, 'snapshots')),
-      sandbox: { cpus: 1, memoryMb: 512, scratchMb: 256 },
+      sandbox: { cpus: 1, memoryMb: 512, memoryPerPlayerMb: 32, scratchMb: 256 },
       recordingsDir: join(root, 'recordings'),
       imagePolicy: 'reuse',
       llmInternalPort: 9472,
@@ -162,7 +168,13 @@ describe('workflow runner seam', () => {
     const run = await createRunOrFail(storage, season.id, 'dev-user', () => ({
       parametersSnapshot: { players: 1, pipe_gap: 100 },
       scheduledGames: [
-        { match_index: 0, game_index: 0, seed: 1, seats: [{ kind: 'builtin-naive' }] },
+        {
+          match_index: 0,
+          game_index: 0,
+          seed: 1,
+          seats: [{ kind: 'builtin-naive' }],
+          seat_plan: 'solo',
+        },
       ],
       llmPolicy: frozen,
     }))
@@ -225,7 +237,7 @@ describe('workflow runner seam', () => {
       environments: EnvironmentRegistry.load(),
       source: unusedSource,
       snapshots: new SubmissionSnapshotStore(join(root, 'snapshots')),
-      sandbox: { cpus: 1, memoryMb: 512, scratchMb: 256 },
+      sandbox: { cpus: 1, memoryMb: 512, memoryPerPlayerMb: 32, scratchMb: 256 },
       recordingsDir: join(root, 'recordings'),
       imagePolicy: 'reuse',
       llmInternalPort: 9472,

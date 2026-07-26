@@ -118,6 +118,10 @@ describe('rating API', () => {
       environment: ENV_ID,
       parameters: { players: 1, pipe_gap: 100 },
       players,
+      seats: Object.fromEntries(
+        Object.keys(players).map((player, index) => [`seat_${index}`, [player]]),
+      ),
+      seat_plan: 'solo',
     }
     await writeFile(join(dir, id, 'recording.jsonl'), `${JSON.stringify(header)}\n`, 'utf-8')
     return id

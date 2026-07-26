@@ -51,9 +51,9 @@ class _Response:
 class _AlternatingEnv:
     """A minimal two-seat AEC environment that ends after a fixed number of acting turns."""
 
-    def __init__(self, turns: int) -> None:
+    def __init__(self, turns: int, player_count: int = 2) -> None:
         self._turns = turns
-        self.possible_agents = ["player_0", "player_1"]
+        self.possible_agents = [f"player_{index}" for index in range(player_count)]
 
     def reset(self, seed: int | None = None, options: Any = None) -> None:
         self.agents = list(self.possible_agents)
@@ -89,7 +89,7 @@ def _entry(
             env_id="fake",
             display_name="Fake",
             description="A deterministic LLM fixture.",
-            layout=PlayerBounds(2, 2),
+            layout=PlayerBounds(1, 2),
             human_players=(),
             human_timeout_ms=None,
             recommended_episode_ticks=turns,
@@ -101,7 +101,7 @@ def _entry(
             llm=True,
             renderer="fake",
         ),
-        make=lambda _parameters: _AlternatingEnv(turns),
+        make=lambda parameters: _AlternatingEnv(turns, int(parameters["players"])),
         default_action=lambda env, player_id: 0,
     )
 
@@ -109,22 +109,27 @@ def _entry(
 def _payload(llm: object = None) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "env_id": "fake",
-        "parameters": {"players": 1},
+        "parameters": {"players": 2},
         "player_bindings": {
             "player_0": {"kind": "builtin-agent", "path": "/agents/0"},
             "player_1": {"kind": "builtin-agent", "path": "/agents/1"},
-            "human": {"kind": "external"},
         },
         "players": {
             "player_0": {"kind": "agent", "label": "Player 0"},
             "player_1": {"kind": "agent", "label": "Player 1"},
-            "human": {"kind": "human", "label": "Human"},
         },
         "recording_dir": "/recordings",
     }
     if llm is not None:
         payload["llm"] = llm
     return payload
+
+
+@pytest.fixture(autouse=True)
+def _resolve_fake_environment(monkeypatch: pytest.MonkeyPatch):
+    import game_sandbox_harness.live as live
+
+    monkeypatch.setattr(live, "load_environment", lambda _env_id: _entry())
 
 
 def _llm_block() -> dict[str, Any]:
@@ -155,11 +160,11 @@ def test_parse_config_matches_backend_llm_launch_fixture_exactly():
     payload = _payload()
     payload["player_bindings"] = {
         "player_0": {"kind": "builtin-agent", "path": "/agents/0"},
-        "human": {"kind": "external"},
+        "player_1": {"kind": "external"},
     }
     payload["players"] = {
         "player_0": {"kind": "agent", "label": "Player 0"},
-        "human": {"kind": "human", "label": "Human"},
+        "player_1": {"kind": "human", "label": "Human"},
     }
     payload.update(fixture)
 
@@ -436,8 +441,6 @@ def test_model_wait_in_act_is_discounted_from_step_and_episode_limits(monkeypatc
         lambda path: WaitingAgent("player_0" if path.endswith("0") else "player_1"),
     )
     payload = _payload(_llm_block())
-    del payload["player_bindings"]["human"]
-    del payload["players"]["human"]
     config = parse_config([json.dumps(payload)])
     entry = _entry(turns=10, messaging=False, step_limit_ms=500, episode_limit_ms=1200)
     players = build_players(config, entry, SessionControl(), PausableClock(clock), _Sleeper())
@@ -572,6 +575,7 @@ def test_proxy_snapshots_reuse_each_post_hook_baseline_and_exclude_setup(monkeyp
             "keys": {"player_0": "key-0"},
         }
     )
+    payload["parameters"] = {"players": 1}
     payload["player_bindings"] = {"player_0": {"kind": "builtin-agent", "path": "/agents/0"}}
     payload["players"] = {"player_0": {"kind": "agent", "label": "Player 0"}}
     entry = _entry(turns=1, messaging=True)
@@ -587,7 +591,7 @@ def test_proxy_snapshots_reuse_each_post_hook_baseline_and_exclude_setup(monkeyp
     run_episode(
         entry,
         players,
-        parameters=resolve_parameters(entry.meta),
+        parameters={"players": 1},
         seed=1,
         store=store,
         recording_id="separate-hooks",
@@ -638,6 +642,7 @@ def test_failed_post_hook_snapshot_is_not_reused(monkeypatch, tmp_path: Path, ca
             "keys": {"player_0": "key-0"},
         }
     )
+    payload["parameters"] = {"players": 1}
     payload["player_bindings"] = {"player_0": {"kind": "builtin-agent", "path": "/agents/0"}}
     payload["players"] = {"player_0": {"kind": "agent", "label": "Player 0"}}
     entry = _entry(turns=1, messaging=True)
@@ -653,7 +658,7 @@ def test_failed_post_hook_snapshot_is_not_reused(monkeypatch, tmp_path: Path, ca
     run_episode(
         entry,
         players,
-        parameters=resolve_parameters(entry.meta),
+        parameters={"players": 1},
         seed=1,
         store=store,
         recording_id="failed-snapshot",
@@ -697,6 +702,7 @@ def test_proxy_discount_cannot_erase_overlapping_agent_cpu(monkeypatch, tmp_path
             "keys": {"player_0": "key-0"},
         }
     )
+    payload["parameters"] = {"players": 1}
     payload["player_bindings"] = {"player_0": {"kind": "builtin-agent", "path": "/agents/0"}}
     payload["players"] = {"player_0": {"kind": "agent", "label": "Player 0"}}
     entry = _entry(turns=1, messaging=False, step_limit_ms=50)
@@ -712,7 +718,7 @@ def test_proxy_discount_cannot_erase_overlapping_agent_cpu(monkeypatch, tmp_path
     result = run_episode(
         entry,
         players,
-        parameters=resolve_parameters(entry.meta),
+        parameters={"players": 1},
         seed=1,
         store=store,
         recording_id="overlapping-cpu",
@@ -753,6 +759,7 @@ def test_bad_proxy_snapshot_fails_closed_to_full_hook_time(monkeypatch, tmp_path
             "keys": {"player_0": "key-0"},
         }
     )
+    payload["parameters"] = {"players": 1}
     payload["player_bindings"] = {"player_0": {"kind": "builtin-agent", "path": "/agents/0"}}
     payload["players"] = {"player_0": {"kind": "agent", "label": "Player 0"}}
     entry = _entry(turns=1, messaging=False, step_limit_ms=500)
@@ -768,7 +775,7 @@ def test_bad_proxy_snapshot_fails_closed_to_full_hook_time(monkeypatch, tmp_path
     result = run_episode(
         entry,
         players,
-        parameters=resolve_parameters(entry.meta),
+        parameters={"players": 1},
         seed=1,
         store=store,
         recording_id="bad-snapshot",

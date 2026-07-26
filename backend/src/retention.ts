@@ -49,7 +49,7 @@ export interface RecordingListing {
    * session. Null when neither carries one (foreign debris, or a session still running when listed).
    */
   termination_reason: string | null
-  /** The winning player id (`P0`, `P1`, ...), -1 for a tie, or null without eligible ranking data. */
+  /** The winning seat id (`seat_0`, `seat_1`, ...), -1 for a tie, or null without ranking data. */
   winner_id: string | -1 | null
   /**
    * The season the producing session competed in, joined from the session row, so a replay carries

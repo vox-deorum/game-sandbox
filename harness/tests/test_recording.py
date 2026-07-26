@@ -2,17 +2,30 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
 import pytest
 
+from game_sandbox_harness.environment import ResolvedLayout, ResolvedSeat
 from game_sandbox_harness.recording import RecordingError
 from game_sandbox_harness.recording.local import FolderRecordingStore
 from game_sandbox_harness.schema import SchemaValidationError
 from game_sandbox_harness.state import build_agent_step, build_header, build_step_state
 
 FLAPPY_PARAMETERS = {"players": 1, "pipe_gap": 100}
+SINGLE_LAYOUT = ResolvedLayout("solo", (ResolvedSeat("seat_0", ("player_0",)),), 1, 1)
+
+
+def _header(**kwargs: object):
+    return build_header(
+        environment="flappy",
+        parameters=FLAPPY_PARAMETERS,
+        players={"player_0": {"kind": "agent", "label": "Naive agent"}},
+        layout=SINGLE_LAYOUT,
+        **kwargs,
+    )
 
 
 def _step(tick: int):
@@ -26,7 +39,7 @@ def _step(tick: int):
 
 def test_write_then_read_round_trip(tmp_path: Path):
     store = FolderRecordingStore(tmp_path)
-    header = build_header(environment="flappy", parameters=FLAPPY_PARAMETERS, seed=1)
+    header = _header(seed=1)
     with store.create("run1", header) as writer:
         writer.write_step(_step(0))
         writer.write_step(_step(1))
@@ -41,7 +54,7 @@ def test_write_then_read_round_trip(tmp_path: Path):
 @pytest.mark.skipif(os.name == "nt", reason="POSIX mode bits only")
 def test_created_recording_permissions_allow_host_cleanup(tmp_path: Path):
     store = FolderRecordingStore(tmp_path)
-    with store.create("run1", build_header(environment="flappy", parameters=FLAPPY_PARAMETERS)):
+    with store.create("run1", _header()):
         pass
 
     assert ((tmp_path / "run1").stat().st_mode & 0o777) == 0o777
@@ -50,7 +63,7 @@ def test_created_recording_permissions_allow_host_cleanup(tmp_path: Path):
 
 def test_truncated_file_yields_readable_prefix(tmp_path: Path):
     store = FolderRecordingStore(tmp_path)
-    with store.create("run1", build_header(environment="flappy", parameters=FLAPPY_PARAMETERS)) as writer:
+    with store.create("run1", _header()) as writer:
         writer.write_step(_step(0))
         writer.write_step(_step(1))
 
@@ -95,9 +108,7 @@ def test_state_line_version_mismatch_rejected(tmp_path: Path):
 
 def test_unknown_sidecar_loads_cleanly(tmp_path: Path):
     store = FolderRecordingStore(tmp_path)
-    header = build_header(
-        environment="flappy",
-        parameters=FLAPPY_PARAMETERS,
+    header = _header(
         sidecars=[{"name": "mystery-future-sidecar", "path": "mystery.bin"}],
     )
     with store.create("run1", header) as writer:
@@ -107,6 +118,17 @@ def test_unknown_sidecar_loads_cleanly(tmp_path: Path):
     # The unknown sidecar is preserved in the header and ignored; the recording loads.
     assert recording.header["sidecars"][0]["name"] == "mystery-future-sidecar"
     assert [s["tick"] for s in recording.steps()] == [0]
+
+
+def test_reader_rejects_a_header_with_duplicate_seat_members(tmp_path: Path):
+    store = FolderRecordingStore(tmp_path)
+    jsonl_dir = tmp_path / "run1"
+    jsonl_dir.mkdir()
+    header = _header()
+    header["seats"] = {"seat_0": ["player_0"], "seat_1": ["player_0"]}
+    (jsonl_dir / "recording.jsonl").write_text(f"{json.dumps(header)}\n", encoding="utf-8")
+    with pytest.raises(SchemaValidationError, match="multiple seats"):
+        store.open("run1")
 
 
 def test_open_missing_recording_raises(tmp_path: Path):

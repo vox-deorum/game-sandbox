@@ -9,7 +9,7 @@ import type { RecordingHeader } from '@game-sandbox/schema'
 import { computed } from 'vue'
 
 import { attributionLabel, isBlindMasked } from '../lib/attribution.js'
-import { formatSlot } from '../lib/format.js'
+import { formatPlayer } from '../lib/format.js'
 
 const props = withDefaults(
   defineProps<{
@@ -60,7 +60,7 @@ const items = computed(() => {
 <template>
   <ul v-if="items.length > 0" class="players">
     <li v-for="item in items" :key="item.slot" class="player">
-      <span class="player-slot">{{ formatSlot(item.slot) }}</span>
+      <span class="player-slot">{{ formatPlayer(item.slot) }}</span>
       <span class="player-who" :title="item.title">{{ item.text }}</span>
     </li>
   </ul>

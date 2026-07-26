@@ -20,9 +20,14 @@ import {
 } from '../api/client.js'
 import UiBadge from '../components/ui/UiBadge.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
-import { type AttributionContext, attributionLabel, hasSubmittedAgent, isBlindMasked } from '../lib/attribution.js'
+import {
+  type AttributionContext,
+  hasSubmittedAgent,
+  isBlindMasked,
+  seatControllerLabel,
+} from '../lib/attribution.js'
 import { anonymityState, presentsMasked } from '../lib/anonymity.js'
-import { formatDateOnly, formatSeasonName, formatSlot } from '../lib/format.js'
+import { formatDateOnly, formatSeasonName, formatSeat } from '../lib/format.js'
 import { isAdmin, useMe, userId } from '../me.js'
 import { isCompletedOutcome, reasonText } from '../replay/reason.js'
 
@@ -51,19 +56,22 @@ function attributionCtx(replay: RecordingSummary): AttributionContext {
   }
 }
 
-/** A compact one-line summary of who played, read from the recording header's `players` map. */
-function playersSummary(replay: RecordingSummary): string {
-  const players = replay.header.players
-  if (players === undefined) {
-    return '—'
-  }
+/**
+ * A compact one-line summary of who played, one entry per seat. Seats rather than players because the
+ * platform ranks seats: listing a wide seat's repeated agent once per position would read as several
+ * competitors where the outcome column and the standings card both show one.
+ */
+function seatsSummary(replay: RecordingSummary): string {
+  const { players, seats } = replay.header
   const ctx = attributionCtx(replay)
-  const parts = Object.entries(players).map(([slot, player]) => {
-    const label = attributionLabel(slot, player, ctx)
+  const parts = Object.entries(seats).map(([seat, members]) => {
+    const label = seatControllerLabel(members, players, ctx)
     // A masked human already reads as the bare neutral "Human" (attributionLabel's blind branch); the
-    // "Human (name)" parenthetical only applies once the real name is showing.
-    const text = player.kind === 'human' && !isBlindMasked(player, ctx) ? `Human (${label})` : label
-    return `${formatSlot(slot)}: ${text}`
+    // "Human (name)" parenthetical only applies once the real name is showing. A seat is human when
+    // any member is, which is the one the collapsed label leads with.
+    const human = members.map((member) => players[member]).find((entry) => entry?.kind === 'human')
+    const text = human !== undefined && !isBlindMasked(human, ctx) ? `Human (${label})` : label
+    return `${formatSeat(seat)}: ${text}`
   })
   return parts.length > 0 ? parts.join(', ') : '—'
 }
@@ -74,11 +82,7 @@ function playersTitle(replay: RecordingSummary): string | undefined {
   if (isBlindReplay(replay)) {
     return undefined
   }
-  const players = replay.header.players
-  if (players === undefined) {
-    return undefined
-  }
-  const ids = Object.values(players)
+  const ids = Object.values(replay.header.players)
     .map((player) => player.user)
     .filter((id): id is string => id !== undefined)
   return ids.length > 0 ? ids.join(', ') : undefined
@@ -97,7 +101,7 @@ function outcomeText(replay: RecordingSummary): string {
       return 'Tied'
     }
     if (typeof replay.winner_id === 'string') {
-      return `${formatSlot(replay.winner_id)} won`
+      return `${formatSeat(replay.winner_id)} won`
     }
   }
   return reasonText(replay.termination_reason)
@@ -210,7 +214,7 @@ watch(envId, (id) => void load(id), { immediate: true })
           <th scope="col" :aria-sort="ariaSort('id')">
             <button type="button" class="sort-head" @click="sortBy('id')">Replay</button>
           </th>
-          <th scope="col">Players</th>
+          <th scope="col">Seats</th>
           <th scope="col" :aria-sort="ariaSort('season')">
             <button type="button" class="sort-head" @click="sortBy('season')">Season</button>
           </th>
@@ -231,7 +235,7 @@ watch(envId, (id) => void load(id), { immediate: true })
             <RouterLink class="replay-id" :to="`/replays/${replay.id}`">{{ displayId(replay) }}</RouterLink>
             <UiBadge v-if="showsPin(replay)" variant="accent">Pinned</UiBadge>
           </td>
-          <td class="replay-players" :title="playersTitle(replay)">{{ playersSummary(replay) }}</td>
+          <td class="replay-seats" :title="playersTitle(replay)">{{ seatsSummary(replay) }}</td>
           <td>{{ seasonText(replay) }}</td>
           <td>{{ outcomeText(replay) }}</td>
           <td>{{ formatDateOnly(replay.created_at) ?? '—' }}</td>
@@ -299,7 +303,7 @@ watch(envId, (id) => void load(id), { immediate: true })
   color: var(--color-accent);
 }
 
-.replay-players {
+.replay-seats {
   color: var(--color-text-muted);
 }
 </style>

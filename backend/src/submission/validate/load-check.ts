@@ -15,9 +15,8 @@
  * (step 5) is what records the `load` stage of the validation log from this result.
  */
 import type { ImageRef, LaunchSpec, SandboxProfile, SessionProcess } from '../../driver/index.js'
+import { CANONICAL_SUBMISSION_SEAT, SUBMISSION_SEAT_BASE } from '../submission-image.js'
 
-/** Where the overlay build stages each slot's repo root; lockstep with the harness `validate` default. */
-const SUBMISSION_SLOT_BASE = '/opt/agents/submissions'
 /** The `validate` command, run as the container entrypoint in place of the live runner. */
 const VALIDATE_ENTRYPOINT = ['python', '-m', 'game_sandbox_harness.validate']
 /** The outbound envelope kind the command emits (lockstep with `validate.py`'s `RESULT_KIND`). */
@@ -57,8 +56,8 @@ export interface LoadCheckOptions {
   sessionId: string
   /** Wall-clock ceiling; a load check that does not finish in time fails as `timeout`. */
   timeoutMs: number
-  /** The slot whose repo root is validated; defaults to the single-slot Flappy Bird `player_0`. */
-  slotId?: string
+  /** The seat whose repo root is validated; defaults to the canonical singleton `seat_0`. */
+  seatId?: string
 }
 
 /** The shape of the `validate` command's result envelope. */
@@ -116,8 +115,8 @@ export async function runLoadCheck(
   image: ImageRef,
   options: LoadCheckOptions,
 ): Promise<LoadCheckResult> {
-  const slotId = options.slotId ?? 'player_0'
-  const repoRoot = `${SUBMISSION_SLOT_BASE}/${slotId}`
+  const seatId = options.seatId ?? CANONICAL_SUBMISSION_SEAT
+  const repoRoot = `${SUBMISSION_SEAT_BASE}/${seatId}`
 
   let timer: ReturnType<typeof setTimeout> | undefined
   let timedOut = false

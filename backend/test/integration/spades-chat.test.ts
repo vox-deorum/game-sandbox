@@ -324,7 +324,7 @@ describe('Spades chat (Docker)', () => {
         submissionMaxSizeBytes: 25 * 1024 * 1024,
       }),
       snapshots: new SubmissionSnapshotStore(resolve(join(snapshotsDir, 'submissions'))),
-      sandbox: { cpus: 1, memoryMb: 512, scratchMb: 256 },
+      sandbox: { cpus: 1, memoryMb: 512, memoryPerPlayerMb: 32, scratchMb: 256 },
       recordingsDir: stack.recordingsDir,
       imagePolicy: 'reuse',
     })
@@ -367,7 +367,9 @@ describe('Spades chat (Docker)', () => {
         })
         const run = await createRunOrFail(stack.storage, season.id, 'dev-user', () => ({
           parametersSnapshot: { players: 4 },
-          scheduledGames: [{ match_index: 0, game_index: 0, seed: 1236, seats: submissions }],
+          scheduledGames: [
+            { match_index: 0, game_index: 0, seed: 1236, seats: submissions, seat_plan: 'solo' },
+          ],
           llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
         }))
         const status = await new Promise<TerminalRunStatus>((res) => {

@@ -649,10 +649,12 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
                 reason: `overrides.parameters.${parameters.issue.name}: ${parameters.issue.message}`,
               }
             }
+            const layout = resolveLayout(meta, parameters.values)
             const schedule = buildSchedule({
               matches: frozen.matches,
               submissions,
               seatOrderMatters: meta.seat_order_matters,
+              seatPlan: layout.planKey,
             })
             if (schedule.length === 0) {
               return {

@@ -56,6 +56,9 @@ describe('retention', () => {
       schema_version: 1,
       environment: env,
       parameters: { players: 1 },
+      players: { player_0: { kind: 'agent', label: 'Naive agent' } },
+      seats: { seat_0: ['player_0'] },
+      seat_plan: 'solo',
       seed: 0,
     })
     await writeFile(join(root, id, 'recording.jsonl'), `${header}\n`, 'utf-8')
@@ -115,7 +118,17 @@ describe('retention', () => {
           killGraceMs: 10,
         },
       })
-      process.emit(JSON.stringify({ schema_version: 1, environment: 'flappy_bird', seed: 0 }))
+      process.emit(
+        JSON.stringify({
+          schema_version: 1,
+          environment: 'flappy_bird',
+          parameters: { players: 1 },
+          players: { player_0: { kind: 'human', label: 'alice', user: 'alice' } },
+          seats: { seat_0: ['player_0'] },
+          seat_plan: 'solo',
+          seed: 0,
+        }),
+      )
       await flush()
       await session.finalize('stopped')
       await flush()
@@ -205,8 +218,20 @@ describe('retention', () => {
       const run = await createRunOrFail(storage, season.id, 'operator', () => ({
         parametersSnapshot: { players: 1 },
         scheduledGames: [
-          { match_index: 0, game_index: 0, seed: 1, seats: [{ kind: 'builtin-naive' }] },
-          { match_index: 0, game_index: 1, seed: 2, seats: [{ kind: 'builtin-naive' }] },
+          {
+            match_index: 0,
+            game_index: 0,
+            seed: 1,
+            seats: [{ kind: 'builtin-naive' }],
+            seat_plan: 'solo',
+          },
+          {
+            match_index: 0,
+            game_index: 1,
+            seed: 2,
+            seats: [{ kind: 'builtin-naive' }],
+            seat_plan: 'solo',
+          },
         ],
         llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
       }))
@@ -420,7 +445,13 @@ describe('retention', () => {
 
   describe('sweep: leaderboard protection', () => {
     const NAIVE_GAME: ScheduledGameInput[] = [
-      { match_index: 0, game_index: 0, seed: 1, seats: [{ kind: 'builtin-naive' }] },
+      {
+        match_index: 0,
+        game_index: 0,
+        seed: 1,
+        seats: [{ kind: 'builtin-naive' }],
+        seat_plan: 'solo',
+      },
     ]
 
     /** Drive a completed run for a season whose single game points at a recording id. */

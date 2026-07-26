@@ -1,5 +1,5 @@
 /**
- * The shared launch-config seam: the one place that turns a per-player seat assignment into the
+ * The shared launch-config seam: the one place that expands a per-seat assignment into the
  * `player_bindings` and `players` blocks of the session config the container reads.
  *
  * Two callers need this and must not drift. The {@link import('./orchestrator.js').Orchestrator} builds
@@ -13,6 +13,7 @@
  * The output shape is lockstep with `harness/live.py`'s `parse_config`/`_parse_players` and the
  * `recording-header.schema.json` `players` block; changing either side without the other breaks a run.
  */
+import type { ResolvedLayout } from '@game-sandbox/schema/environment'
 
 /**
  * Per-player attribution copied verbatim into the recording header, so a replay can name who or what
@@ -26,7 +27,7 @@ export interface PlayerAttribution {
 }
 
 /** One player's binding in the session config argv: an external (human) source or a loaded agent. */
-export interface SlotConfig {
+export interface PlayerConfig {
   kind: 'external' | 'builtin-agent'
   /** Where a `builtin-agent` player loads its code from; absent means the image's default Naive agent. */
   path?: string
@@ -39,13 +40,31 @@ export interface SlotConfig {
  * directory; `player.user` always keeps the stable id, and a missing name falls back to it.
  */
 export type SeatBinding =
-  | { driver: 'human'; userId: string; displayName?: string }
+  | {
+      driver: 'human'
+      /**
+       * The one player the person controls. Seat validation picks it (the first human-capable member
+       * in declared order) and it travels here, so nothing downstream re-derives the choice.
+       */
+      playerId: string
+      userId: string
+      displayName?: string
+      /**
+       * Required for a wide human seat and used for every nonhuman player in that seat. Typed to the
+       * agent drivers alone, so a human companion is unrepresentable rather than rejected at runtime.
+       */
+      companion?: AgentBinding
+    }
+  | AgentBinding
+
+/** The seat drivers that load an agent, which is everything a companion is allowed to be. */
+export type AgentBinding =
   | { driver: 'naive' }
   | { driver: 'submission'; submissionId: string; userId: string; path: string; ownerName?: string }
 
 /** The two session-config blocks derived from a seat assignment, keyed by player id. */
-export interface AssembledSeats {
-  playerBindings: Record<string, SlotConfig>
+export interface AssembledLaunch {
+  playerBindings: Record<string, PlayerConfig>
   players: Record<string, PlayerAttribution>
 }
 
@@ -91,33 +110,77 @@ export function assembleLlmLaunchConfig(
  * submission. `user` always carries the stable id; the label falls back to it when the caller
  * resolved no display name, so a recording stays attributable without joining mutable auth data.
  */
-export function assembleSeats(seats: ReadonlyMap<string, SeatBinding>): AssembledSeats {
-  const playerBindings: Record<string, SlotConfig> = {}
+export function assembleLaunch(
+  seats: ReadonlyMap<string, SeatBinding>,
+  layout: ResolvedLayout,
+): AssembledLaunch {
+  const playerBindings: Record<string, PlayerConfig> = {}
   const players: Record<string, PlayerAttribution> = {}
-  for (const [playerId, seat] of seats) {
-    switch (seat.driver) {
-      case 'human':
-        playerBindings[playerId] = { kind: 'external' }
-        players[playerId] = {
-          kind: 'human',
-          label: seat.displayName ?? seat.userId,
-          user: seat.userId,
-        }
-        break
-      case 'naive':
-        playerBindings[playerId] = { kind: 'builtin-agent' }
-        players[playerId] = { kind: 'agent', label: 'Naive agent' }
-        break
-      case 'submission':
-        playerBindings[playerId] = { kind: 'builtin-agent', path: seat.path }
-        players[playerId] = {
-          kind: 'agent',
-          label: `${seat.ownerName ?? seat.userId}'s agent`,
-          user: seat.userId,
-          submission_id: seat.submissionId,
-        }
-        break
+  const expectedSeats = new Set(layout.seats.map((seat) => seat.seatId))
+  for (const seatId of seats.keys()) {
+    if (!expectedSeats.has(seatId)) throw new Error(`unexpected seat binding ${seatId}`)
+  }
+  for (const resolvedSeat of layout.seats) {
+    const seat = seats.get(resolvedSeat.seatId)
+    if (seat === undefined) throw new Error(`missing seat binding ${resolvedSeat.seatId}`)
+    for (const playerId of resolvedSeat.players) {
+      const binding = bindingFor(seat, resolvedSeat.seatId, resolvedSeat.players, playerId)
+      addPlayer(playerBindings, players, playerId, binding)
     }
   }
   return { playerBindings, players }
+}
+
+/**
+ * Which binding drives one player of a seat. An agent seat repeats its own binding across every
+ * member; a human seat puts the person on the player it named and its companion on the rest. The
+ * caller has already accepted the assignment, so the checks here are the ones expansion itself owns:
+ * the named player must belong to this seat, and a seat wider than that player needs a companion.
+ */
+function bindingFor(
+  seat: SeatBinding,
+  seatId: string,
+  members: readonly string[],
+  playerId: string,
+): SeatBinding {
+  if (seat.driver !== 'human') return seat
+  if (!members.includes(seat.playerId)) {
+    throw new Error(`human seat ${seatId} names player ${seat.playerId} outside it`)
+  }
+  if (playerId === seat.playerId) return seat
+  if (seat.companion === undefined) throw new Error(`wide human seat ${seatId} needs a companion`)
+  return seat.companion
+}
+
+function addPlayer(
+  playerBindings: Record<string, PlayerConfig>,
+  players: Record<string, PlayerAttribution>,
+  playerId: string,
+  seat: SeatBinding,
+): void {
+  if (playerBindings[playerId] !== undefined)
+    throw new Error(`duplicate player binding ${playerId}`)
+  switch (seat.driver) {
+    case 'human':
+      playerBindings[playerId] = { kind: 'external' }
+      players[playerId] = {
+        kind: 'human',
+        label: seat.displayName ?? seat.userId,
+        user: seat.userId,
+      }
+      break
+    case 'naive':
+      playerBindings[playerId] = { kind: 'builtin-agent' }
+      players[playerId] = { kind: 'agent', label: 'Naive agent' }
+      break
+    case 'submission':
+      playerBindings[playerId] = { kind: 'builtin-agent', path: seat.path }
+      players[playerId] = {
+        kind: 'agent',
+        label: `${seat.ownerName ?? seat.userId}'s agent`,
+        user: seat.userId,
+        submission_id: seat.submissionId,
+      }
+      break
+  }
 }

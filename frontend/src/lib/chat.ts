@@ -4,7 +4,7 @@
  * stream. Keeping the identity tuple and the badge policy here means the three surfaces cannot drift
  * out of agreement: a change to how a message is keyed or badged lands in one place.
  */
-import { formatSlot } from './format.js'
+import { formatPlayer } from './format.js'
 
 /** One message as the panels render it: the wire message plus the tick of the state it rode in on. */
 export interface ChatEntry {
@@ -33,7 +33,7 @@ export function messageKey(entry: ChatEntry): string {
 
 /**
  * The badge for a message: the viewer's own send wins over the recipient's identity, then a targeted
- * line names its recipient by player (`formatSlot`) so two players sharing an agent label stay
+ * line names its recipient by player (`formatPlayer`) so two players sharing an agent label stay
  * distinguishable. On a replay `viewerPlayers` is empty, so this is broadcast or `to {player}`.
  */
 export function messageBadge(entry: ChatEntry, viewerPlayers: string[]): MessageBadge {
@@ -46,5 +46,5 @@ export function messageBadge(entry: ChatEntry, viewerPlayers: string[]): Message
   if (entry.to === null) {
     return { variant: 'neutral', text: 'broadcast' }
   }
-  return { variant: 'neutral', text: `to ${formatSlot(entry.to)}` }
+  return { variant: 'neutral', text: `to ${formatPlayer(entry.to)}` }
 }

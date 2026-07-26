@@ -29,7 +29,12 @@ describe('loadConfig', () => {
     expect(config.executionDriver).toBe('docker')
     expect(config.docker.imagePolicy).toBe('reuse')
     expect(config.docker.imageTagPrefix).toBe('game-sandbox')
-    expect(config.sandbox).toEqual({ cpus: 1, memoryMb: 512, scratchMb: 256 })
+    expect(config.sandbox).toEqual({
+      cpus: 1,
+      memoryMb: 512,
+      memoryPerPlayerMb: 32,
+      scratchMb: 256,
+    })
     // The db and recordings paths are derived from the data dir.
     expect(config.dbPath.endsWith('sandbox.db')).toBe(true)
     expect(config.recordingsDir.endsWith('recordings')).toBe(true)
