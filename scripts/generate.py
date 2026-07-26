@@ -161,50 +161,76 @@ def generate_fixtures() -> None:
         writer.write_step(step(0))
         writer.write_step(step(1))
 
-    # 2. A chatty recording whose step carries a `messages` array (one targeted, one broadcast) and
-    #    a `chat_ms` timing field, so the TypeScript read-back test pins that the regenerated types
-    #    carry both without a cast. Two players let the targeted message name a real recipient.
-    with store.create(
-        "chatty",
-        header_with_seats(
-            environment="spades",
-            parameters={"players": 4},
-            seed=7,
-            players={
-                "player_0": {"kind": "agent", "label": "Signaler"},
-                "player_1": {"kind": "agent", "label": "Naive agent"},
-                "player_2": {"kind": "agent", "label": "Naive agent"},
-                "player_3": {"kind": "agent", "label": "Naive agent"},
-            },
-            seats={
+    # 2. Spades recordings for both declared plans. The partnership fixture also carries a
+    #    `messages` array (one targeted, one broadcast) and a `chat_ms` timing field, so the
+    #    TypeScript read-back test pins those generated fields without a cast.
+    spades_players = {
+        "player_0": {"kind": "agent", "label": "Signaler"},
+        "player_1": {"kind": "agent", "label": "Naive agent"},
+        "player_2": {"kind": "agent", "label": "Signaler"},
+        "player_3": {"kind": "agent", "label": "Naive agent"},
+    }
+    spades_plans = (
+        (
+            "chatty",
+            "partnership",
+            {"seat_0": ["player_0", "player_2"], "seat_1": ["player_1", "player_3"]},
+        ),
+        (
+            "chatty-solo",
+            "solo",
+            {
                 "seat_0": ["player_0"],
                 "seat_1": ["player_1"],
                 "seat_2": ["player_2"],
                 "seat_3": ["player_3"],
             },
-            seat_plan="solo",
         ),
-    ) as writer:
-        writer.write_step(
-            build_step_state(
-                tick=0,
-                agents={
-                    "player_0": build_agent_step(
-                        reward=0.0,
-                        score=0.0,
-                        action=57,
-                        decision_ms=0.5,
-                        chat_ms=0.25,
-                    )
-                },
-                started_at=1_700_000_000_000,
-                duration_ms=1.0,
-                messages=[
-                    {"from": "player_0", "to": "player_1", "text": "strong:hearts"},
-                    {"from": "player_0", "to": None, "text": "good luck"},
-                ],
+    )
+    for fixture_name, seat_plan, seats in spades_plans:
+        with store.create(
+            fixture_name,
+            header_with_seats(
+                environment="spades",
+                parameters={"seat_plan": seat_plan},
+                seed=7,
+                players=spades_players,
+                seats=seats,
+                seat_plan=seat_plan,
+            ),
+        ) as writer:
+            writer.write_step(
+                build_step_state(
+                    tick=0,
+                    agents={
+                        "player_0": build_agent_step(
+                            reward=0.0,
+                            score=0.0,
+                            action=57,
+                            decision_ms=0.5,
+                            chat_ms=0.25,
+                        )
+                    },
+                    started_at=1_700_000_000_000,
+                    duration_ms=1.0,
+                    messages=[
+                        {"from": "player_0", "to": "player_2", "text": "strong:hearts"},
+                        {"from": "player_0", "to": None, "text": "good luck"},
+                    ],
+                    # This compact schema fixture intentionally puts sent messages and the next
+                    # chat opportunity on one synthetic tick. A real episode collects messages
+                    # before the step and publishes options for the following actor after it.
+                    chat_options=(
+                        {
+                            "sender": "player_0",
+                            "target_recipients": ["player_2", "player_1", "player_3"],
+                            "default_recipient": "player_2",
+                        }
+                        if seat_plan == "partnership"
+                        else None
+                    ),
+                )
             )
-        )
 
     # 3. A recording whose header declares an unknown sidecar that must load cleanly.
     with store.create(

@@ -70,7 +70,7 @@ def test_encoding_matches_the_rules_engine():
 
 
 def test_observation_accessors_match_the_raw_observation():
-    env = make_env({"players": 4})
+    env = make_env({"seat_plan": "partnership"})
     try:
         env.reset(seed=0)
         # March the whole hand with the environment default (a suggested bid, then lowest legal

@@ -30,7 +30,7 @@ import UiSelect from './ui/UiSelect.vue'
 const props = withDefaults(
   defineProps<{
     entries: ChatEntry[]
-    /** The recording header's players map: sender labels and the recipient options. */
+    /** The recording header's players map: sender labels for the log. */
     players?: RecordingHeader['players']
     /** Attribution context, threaded from the page exactly as PlayerAttribution takes it. */
     blind?: boolean
@@ -46,6 +46,14 @@ const props = withDefaults(
     connected?: boolean
     /** Effective code-point cap from the session row; null is uncapped. */
     messageCap?: number | null
+    /** The state-authoritative external sender for this turn. */
+    sender?: string
+    /** The state tick the current draft is composed against. */
+    tick?: number
+    /** Ordered direct recipients allowed by the environment for this turn. */
+    targetRecipients?: string[]
+    /** The direct recipient selected when this turn opens, or null for Everyone. */
+    defaultRecipient?: string | null
   }>(),
   {
     players: undefined,
@@ -56,10 +64,16 @@ const props = withDefaults(
     sendable: false,
     connected: true,
     messageCap: null,
+    sender: undefined,
+    tick: undefined,
+    targetRecipients: () => [],
+    defaultRecipient: null,
   },
 )
 
-const emit = defineEmits<{ send: [payload: { to: string | null; text: string }] }>()
+const emit = defineEmits<{
+  send: [payload: { sender: string; tick: number; to: string | null; text: string }]
+}>()
 
 const attributionCtx = computed(() => ({
   blind: props.blind,
@@ -87,23 +101,27 @@ const rows = computed(() =>
   })),
 )
 
-// The recipient options: every other player, labelled by its compact player id ("P1"). The id alone
-// keeps identical agent labels (three "Naive agent" players) tellable apart, so the terse label suffices.
-// "Everyone" (a broadcast) is the empty-value option in the template.
+// The recipient options come verbatim from the live policy, labelled by compact player id ("P1").
+// "Everyone" (a broadcast) remains available independently of that ordered direct-recipient list.
 const recipientOptions = computed(() =>
-  Object.keys(props.players ?? {})
-    .filter((playerId) => !props.viewerPlayers.includes(playerId))
-    .map((playerId) => ({ value: playerId, label: formatPlayer(playerId) })),
+  props.targetRecipients.map((playerId) => ({ value: playerId, label: formatPlayer(playerId) })),
 )
 
 const recipient = ref('') // '' is the "Everyone" broadcast option.
 const draft = ref('')
 const count = computed(() => codePointLength(draft.value))
 const overCap = computed(() => props.messageCap !== null && count.value > props.messageCap)
+const authorizedTurn = computed(() =>
+  props.sender === undefined || props.tick === undefined
+    ? null
+    : { sender: props.sender, tick: props.tick },
+)
 // The draft is sendable only when the transport can carry it: gating on `connected` here means a
 // reconnect (when the socket silently no-ops) both disables Send and blocks the submit path, so the
 // draft is never cleared into a dropped send.
-const canSend = computed(() => count.value > 0 && !overCap.value && props.connected)
+const canSend = computed(
+  () => count.value > 0 && !overCap.value && props.connected && authorizedTurn.value !== null,
+)
 // The code-point count against the cap, shown on the composer's action row. Bare when uncapped.
 const counterText = computed(() =>
   props.messageCap === null ? String(count.value) : `${count.value}/${props.messageCap}`,
@@ -113,12 +131,29 @@ const counterText = computed(() =>
 const counterId = useId()
 
 function submit(): void {
-  if (!canSend.value) {
+  const authorization = authorizedTurn.value
+  if (!canSend.value || authorization === null) {
     return
   }
-  emit('send', { to: recipient.value === '' ? null : recipient.value, text: draft.value })
+  emit('send', {
+    sender: authorization.sender,
+    tick: authorization.tick,
+    to: recipient.value === '' ? null : recipient.value,
+    text: draft.value,
+  })
   draft.value = ''
 }
+
+// One turn-based external opportunity belongs to one tick. Reset exactly when that tick changes, so a
+// choice made for the previous player never leaks into the next human turn.
+watch(
+  () => props.tick,
+  () => {
+    recipient.value = props.defaultRecipient ?? ''
+    draft.value = ''
+  },
+  { immediate: true },
+)
 
 // Follow the latest message. Best-effort — jsdom has no layout so this is a no-op there, but it never
 // throws (mirrors DecisionLog's scroll-follow).

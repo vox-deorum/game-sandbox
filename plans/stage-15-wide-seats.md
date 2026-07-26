@@ -1,6 +1,6 @@
 # Stage 15: Wide seats
 
-Status: in progress. Steps 15.1 through 15.3 are complete. Step 15.4 is not started.
+Status: complete. Steps 15.1 through 15.4 are complete.
 
 ## Goal
 
@@ -16,7 +16,7 @@ Seats within a plan may be uneven, which is what lets a future role-playing envi
 - The matching rename inside the environments, their student guides, and the shared card renderer, where "seat" currently means a table position and "slot" means a PettingZoo agent id.
 - One shared seat-plan resolution per language, and one `game_results` row per seat with the reduction rules below.
 - The seat-to-player map in the recording header, submission staging per seat, seat-ranked standings, and the replay result label.
-- Spades declaring a partnership plan and a solo plan, its renderer marking the partnerships, a human-plus-companion assignment for a wide seat, dynamic chat recipients, and the seat grid and standings detail that follow.
+- Spades declaring a partnership plan and a solo plan, the shared card renderer marking wide seats, a human-plus-companion assignment for a wide seat, dynamic chat recipients, and the seat grid and standings detail that follow.
 - The contributor guides that mirror the metadata names, the local-play flags, or the sandbox resource variables, which are `docs/contributors/environments/package.md`, `docs/contributors/environments/template-and-examples.md`, `docs/contributors/environments/index.md`, `docs/contributors/testing/browser-e2e.md`, and `docs/contributors/setup/configuration.md`.
 
 Stage 15 targets a fresh, pre-release checkout, exactly as Stage 14 did. It updates the current source, version 1 template contents, and the flat initial database schema in place. `template_version` and `deps_version` stay at 1 even though the student-facing helper names change, because no deployed submission needs to keep working. Databases, built session images, and composed templates from another checkout are unsupported and must be recreated. There is no data migration or backward-compatibility path.
@@ -128,7 +128,7 @@ Settled with the owner before implementation.
 - **Final standings and replay list.** Rows rank seats. Each row leads with the seat's controller attribution, uses blind numbered labels while a play window is open, and shows the players it covered as secondary detail. A mixed human seat shows the human and companion.
 - **Human play.** A human assignment controls the first human-capable member in the seat's declared order. One selected companion agent is instantiated separately for every other member. Only the human player's turns use `human_timeout_ms`. One human player per session still holds, under the renamed `MAX_HUMAN_PLAYERS`.
 - **Chat.** The environment may derive ordered direct-recipient choices and a default from live game state. Broadcast remains available in every messaging environment. The harness, not the browser, enforces the sender, the tick, and the current policy for human messages, and applies the same recipient policy to agent output. An invalid message is dropped with a diagnostic rather than charged as an illegal move.
-- **Spades renderer.** The table marks the partnerships, so a viewer can see that two positions belong to one seat. A renderer owns its game's visual identity, so this stays inside `environments/spades/renderer/`.
+- **Card renderer.** The shared card table marks every wide seat, so a viewer can see which positions belong to one assignment. It uses a compact seat label, a colored badge tab, and a generic accessibility label with the environment display name and "Wide seats". Spades retains only its game-specific team, bid, score, and status behavior.
 
 Every one of these touches existing UI, so the jsdom unit tests under `frontend/test/` and the Playwright journeys under `frontend/e2e/` that assert on the seat dialog, the standings card, and the replay list are revised in the same change set.
 
@@ -176,4 +176,4 @@ Spades declares its two seat plans with the partnership plan first, and a test p
 - A Spades submission's board row on the partnership plan shows one game per game played rather than double-counting its two positions.
 - No occurrence of `my_seat`, `partner_seat`, `min_slots`, `max_slots`, `human_slots`, or the reserved `seats` parameter remains in active implementation, schemas, templates, or current public and contributor documentation. Plan migration explanations and historical plans are excluded. The word `slot` is gone from the storage schema and the session path, and the shared card renderer's screen-position field is named `position`.
 - `uv run python scripts/play.py spades --parameter seat_plan=partnership` and the corresponding `seat_plan=solo` command both run locally, and `uv run python scripts/ci.py frontend-e2e` passes after the seat dialog, standings, and replay-label changes.
-- A Spades season runs end to end on each plan through the admin console, the projected game counts match the figures above, and the partnership replay list shows a winner rather than "Tied". A human session on each plan shows the seat-grid hint, the explicit companion choice for a wide seat, mixed standings attribution, turn-authoritative chat with partner and broadcast targets, and the renderer's partnership marking.
+- A Spades season runs end to end on each plan through the admin console, the projected game counts match the figures above, and the partnership replay list shows a winner rather than "Tied". A human session on each plan shows the seat-grid hint, the explicit companion choice for a wide seat, mixed standings attribution, turn-authoritative chat with partner and broadcast targets, and the shared card renderer's wide-seat marking.

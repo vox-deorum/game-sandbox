@@ -8,6 +8,7 @@
  * fallthrough, multi-seat determinism, and the repeated-ref self-play property checked on
  * `resolveSeats`.
  */
+import { projectSchedule } from '@game-sandbox/schema/schedule'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -294,6 +295,36 @@ describe('resolveSeats - self-play repeated ref', () => {
 })
 
 describe('buildSchedule - match composition and guards', () => {
+  it.each([
+    false,
+    true,
+  ])('matches the shared projection for each mixed match when seat order matters is %s', (seatOrderMatters) => {
+    const matches: MatchConfig[] = [
+      { seats: ['submission', 'builtin-naive'], seeds: [1, 2], games: 2 },
+      { seats: ['submission', 'submission'], seeds: [3], games: 1 },
+      { seats: ['builtin-naive', 'builtin-naive'], seeds: [4, 5], games: 3 },
+    ]
+    const schedule = buildSchedule({
+      matches,
+      submissions: subs(3),
+      seatOrderMatters,
+      seatPlan: 'solo',
+    })
+    const projection = projectSchedule({
+      matches,
+      eligibleSubmissionCount: 3,
+      seatCount: 2,
+      seatOrderMatters,
+    })
+
+    expect(projection.matches.map((match) => match.totalGames)).toEqual(
+      matches.map(
+        (_, matchIndex) => schedule.filter((game) => game.match_index === matchIndex).length,
+      ),
+    )
+    expect(projection.totalGames).toBe(schedule.length)
+  })
+
   it('returns an empty schedule for an empty match list', () => {
     expect(
       buildSchedule({

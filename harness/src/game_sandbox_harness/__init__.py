@@ -18,6 +18,8 @@ from .agent import (
 from .clock import Clock, ManualClock, SystemClock
 from .environment import (
     ENTRY_POINT_GROUP,
+    ChatPolicy,
+    ChatPolicySource,
     EnvironmentEntry,
     EnvironmentLookupError,
     EnvironmentMeta,
@@ -53,13 +55,16 @@ from .session import (
     AgentPlayer,
     Episode,
     EpisodeResult,
+    ExternalChatFrame,
     ExternalPlayer,
+    MessageSource,
     NoopSource,
     ScriptedSource,
     run_episode,
 )
 from .state import (
     AgentStep,
+    ChatOptions,
     Message,
     RecordingHeader,
     StepState,
@@ -77,6 +82,7 @@ __all__ = [
     "validate_step",
     # state
     "AgentStep",
+    "ChatOptions",
     "Message",
     "RecordingHeader",
     "StepState",
@@ -105,6 +111,8 @@ __all__ = [
     "SeatPlans",
     "ResolvedSeat",
     "ResolvedLayout",
+    "ChatPolicy",
+    "ChatPolicySource",
     "EnvironmentEntry",
     "EnvironmentLookupError",
     "discover_environments",
@@ -119,6 +127,8 @@ __all__ = [
     "load_agent",
     # session
     "ActionSource",
+    "MessageSource",
+    "ExternalChatFrame",
     "AgentPlayer",
     "ExternalPlayer",
     "NoopSource",

@@ -40,6 +40,11 @@ const standings = computed(() =>
     anonymousNumbers: props.anonymousNumbers,
   }),
 )
+const winnerText = computed(() => {
+  if (standings.value.length < 2) return null
+  const winners = standings.value.filter((row) => row.medal === 'gold')
+  return winners.length === 1 ? `${formatSeat(winners[0]?.seat ?? '')} won` : 'Tied'
+})
 
 /**
  * The card is a non-modal overlay over the final frame, not a focus-trapping modal: the board beneath
@@ -66,6 +71,7 @@ function onKeydown(event: KeyboardEvent): void {
   >
     <div class="card">
       <h2 class="title">Game over</h2>
+      <p v-if="winnerText !== null" class="winner">{{ winnerText }}</p>
       <ol class="board">
         <li
           v-for="row in standings"
@@ -120,6 +126,13 @@ function onKeydown(event: KeyboardEvent): void {
   font-weight: 700;
   letter-spacing: 0.04em;
   color: var(--color-text);
+}
+
+.winner {
+  margin: calc(var(--space-3) * -1) 0 0;
+  color: var(--color-text);
+  font-size: var(--text-md);
+  font-weight: 600;
 }
 
 .board {

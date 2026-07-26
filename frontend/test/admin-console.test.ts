@@ -1,6 +1,6 @@
 import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
 import { SEASON_DESCRIPTION_MAX } from '@game-sandbox/schema/seasons'
-import { fireEvent, screen, waitFor } from '@testing-library/vue'
+import { fireEvent, screen, waitFor, within } from '@testing-library/vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type {
@@ -10,7 +10,7 @@ import type {
   RunView,
   SeasonView,
 } from '../src/api/client.js'
-import { flappyMeta } from './helpers/fixtures.js'
+import { flappyMeta, spadesMeta } from './helpers/fixtures.js'
 import { signedInMe } from './helpers/me.js'
 import { memoryRouter, renderWithMe } from './helpers/render.js'
 
@@ -94,6 +94,7 @@ function emptyBoard(): Board {
 function adminView(overrides: Partial<AdminSeasonView> = {}): AdminSeasonView {
   return {
     season: season(),
+    eligible_submission_count: 0,
     latest_run: null,
     board: emptyBoard(),
     ...overrides,
@@ -218,6 +219,44 @@ describe('AdminConsolePage', () => {
     expect(await screen.findByText('Unreleased')).toBeInTheDocument()
     expect(screen.getByText('Submissions closed')).toBeInTheDocument()
     expect(screen.getByText('Play closed')).toBeInTheDocument()
+  })
+
+  it('projects the advisory roster snapshot and explains a stale layout', async () => {
+    vi.mocked(getEnvironments).mockResolvedValue([spadesMeta({ env_id: 'flappy_bird' })])
+    const configured = season({
+      config: {
+        deps_version: 1,
+        matches: [{ seats: ['submission', 'submission'], seeds: [0], games: 2 }],
+        overrides: { parameters: { seat_plan: 'partnership' } },
+      },
+    })
+    vi.mocked(getAdminSeason).mockResolvedValue(
+      adminView({ season: configured, eligible_submission_count: 20 }),
+    )
+    await renderConsole()
+
+    expect(await screen.findByText('Projected games: 762')).toBeInTheDocument()
+    expect(screen.getByText('Resolved layout: 2 seats.')).toBeInTheDocument()
+    expect(screen.getByTestId('match-projection')).toHaveTextContent(
+      '380 submitted assignments and 1 all-Naive assignment',
+    )
+    expect(screen.getByText(/20 eligible submissions as of page load/)).toBeInTheDocument()
+
+    await fireEvent.update(screen.getByLabelText('Seat plan override'), 'solo')
+    expect(screen.queryByText(/Projected games:/)).toBeNull()
+    expect(screen.getByTestId('projection-error')).toHaveTextContent(
+      'Match 1 has 2 seats, but the resolved layout has 4',
+    )
+
+    const match = screen.getByTestId('match')
+    const addSeat = within(match).getByRole('button', { name: 'Add seat' })
+    await fireEvent.click(addSeat)
+    await fireEvent.click(addSeat)
+    expect(screen.getByText('Projected games: 232,562')).toBeInTheDocument()
+    expect(screen.queryByTestId('projection-error')).toBeNull()
+
+    await fireEvent.update(within(match).getByRole('spinbutton', { name: 'Games' }), '0')
+    expect(screen.queryByText(/Projected games:/)).toBeNull()
   })
 
   it('shows development totals and opens the shared history dialog from a participant row', async () => {

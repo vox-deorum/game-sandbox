@@ -19,7 +19,7 @@
  *
  * The daredevil demo hand is pinned against `environments/spades/tests/test_spades_chat.py`, the Python-side
  * integration test that drives the same examples through the same harness directly: seed 1236 with
- * `daredevil` at seats 0/2 (partners) and the chat-less `counter` at 1/3 scores
+ * `daredevil` at players 0/2 (partners) and the chat-less `counter` at 1/3 scores
  * `{player_0: 121, player_1: 46, player_2: 121, player_3: 46}` with messaging on, and the broadcast
  * text is exactly `"nil! cover me"`. The messaging-override test below asserts exactly those scores.
  *
@@ -53,9 +53,8 @@ import { WsClient } from './support/ws-client.js'
 
 const ENV_ID = 'spades'
 const NIL_WARNING = 'nil! cover me'
-/** The exact per-seat scores `environments/spades/tests/test_spades_chat.py` pins for daredevil (0/2) vs
- * counter (1/3) on seed 1236 with messaging on: the made nil, shared by the partnership. */
-const DAREDEVIL_SCORES_ON = { player_0: 121, player_1: 46, player_2: 121, player_3: 46 }
+/** The exact partnership-seat scores on the pinned daredevil-versus-counter hand with messaging on. */
+const DAREDEVIL_SCORES_ON = { seat_0: 121, seat_1: 46 }
 
 const BASE_SANDBOX = fileURLToPath(new URL('../../../templates/base/sandbox', import.meta.url))
 const HARNESS_SOURCE = fileURLToPath(
@@ -117,6 +116,14 @@ function allMessages(states: ReturnType<typeof readRecording>['states']): Array<
   return out
 }
 
+/** Read the optional live chat contract without coupling this Docker-gated test to generated types. */
+function chatOptions(state: object): { sender: string } | undefined {
+  const value = (state as { chat_options?: unknown }).chat_options
+  if (typeof value !== 'object' || value === null) return undefined
+  const sender = (value as { sender?: unknown }).sender
+  return typeof sender === 'string' ? { sender } : undefined
+}
+
 describe('Spades chat (Docker)', () => {
   let stack: Stack
   const trees: string[] = []
@@ -172,20 +179,16 @@ describe('Spades chat (Docker)', () => {
   }
 
   it('plays a real-driver Spades session with two chatting example agents whose messages appear in the streamed lines and the recording', async () => {
-    const daredevil0 = await seedExample('daredevil_0', 'daredevil')
-    const daredevil2 = await seedExample('daredevil_2', 'daredevil')
-    const signaler1 = await seedExample('signaler_1', 'signaler')
-    const signaler3 = await seedExample('signaler_3', 'signaler')
+    const daredevil = await seedExample('daredevil', 'daredevil')
+    const signaler = await seedExample('signaler', 'signaler')
 
     const { id, wsPath } = await startSession(
       stack,
       {
         env_id: ENV_ID,
         seats: {
-          seat_0: { kind: 'submission', submission_id: daredevil0 },
-          seat_1: { kind: 'submission', submission_id: signaler1 },
-          seat_2: { kind: 'submission', submission_id: daredevil2 },
-          seat_3: { kind: 'submission', submission_id: signaler3 },
+          seat_0: { kind: 'submission', submission_id: daredevil },
+          seat_1: { kind: 'submission', submission_id: signaler },
         },
         seed: 1236,
       },
@@ -222,26 +225,26 @@ describe('Spades chat (Docker)', () => {
   }, 180_000)
 
   it('routes a `chat` frame written into container stdin through to the harness queue', async () => {
-    // A human-mode session (player_0 human) with three signalers filling the rest. player_2 is the
-    // human's partner across the table, so the owner sends a targeted chat frame to player_2. Messaging
+    // A human-mode partnership session has player_0 as the deterministic human and player_2 as its
+    // companion. The owner sends the companion a targeted chat frame. Messaging
     // is on and the frame is well within the Spades cap (120), so the relay's pre-gate forwards it to
     // container stdin and the harness accepts it. The recording is the observable proof the frame
     // reached the harness queue: a message attributed from player_0 to player_2 can only exist if the
     // frame traversed stdin -> command pump -> chat queue -> router (per-turn inbox delivery itself is
     // covered by the harness's own unit tests, which can inspect the in-process queue this test cannot).
-    const signaler1 = await seedExample('signaler_1', 'signaler')
-    const signaler2 = await seedExample('signaler_2', 'signaler')
-    const signaler3 = await seedExample('signaler_3', 'signaler')
+    const companion = await seedExample('signaler_companion', 'signaler')
+    const opponent = await seedExample('signaler_opponent', 'signaler')
 
     const { id, wsPath } = await startSession(
       stack,
       {
         env_id: ENV_ID,
         seats: {
-          seat_0: { kind: 'human' },
-          seat_1: { kind: 'submission', submission_id: signaler1 },
-          seat_2: { kind: 'submission', submission_id: signaler2 },
-          seat_3: { kind: 'submission', submission_id: signaler3 },
+          seat_0: {
+            kind: 'human',
+            companion: { kind: 'submission', submission_id: companion },
+          },
+          seat_1: { kind: 'submission', submission_id: opponent },
         },
         seed: 3,
       },
@@ -253,12 +256,18 @@ describe('Spades chat (Docker)', () => {
       (await stack.users.headersFor('dev-user')).cookie,
     )
     try {
-      // Wait for the session to actually be running (at least one state streamed) before sending,
-      // so the container's stdin reader is up.
-      await owner.waitFor(() => owner.states().length > 0, 30_000)
+      // Send against the live human turn, carrying that state tick. The harness validates the tick
+      // when it drains the queue, so an earlier opening frame is not enough.
+      await owner.waitFor(
+        () => owner.states().some((state) => chatOptions(state)?.sender === 'player_0'),
+        30_000,
+      )
+      const chatState = owner.states().find((state) => chatOptions(state)?.sender === 'player_0')
+      if (chatState === undefined) throw new Error('expected a human chat opportunity')
       owner.send({
         kind: 'chat',
         player: 'player_0',
+        tick: chatState.tick,
         to: 'player_2',
         text: 'partner, watch the spades',
       })
@@ -276,11 +285,12 @@ describe('Spades chat (Docker)', () => {
     }
   }, 180_000)
 
-  it('loads the built-in /opt/agents/builtin/spades scripted baseline in an all-Naive session', async () => {
+  it('loads the built-in /opt/agents/builtin/spades baseline under the explicit four-seat solo plan', async () => {
     const { id } = await startSession(
       stack,
       {
         env_id: ENV_ID,
+        parameters: { seat_plan: 'solo' },
         seats: {
           seat_0: { kind: 'builtin-agent' },
           seat_1: { kind: 'builtin-agent' },
@@ -330,25 +340,31 @@ describe('Spades chat (Docker)', () => {
     })
 
     try {
-      const daredevil0 = await seedExample('daredevil_0', 'daredevil')
-      const daredevil2 = await seedExample('daredevil_2', 'daredevil')
-      const counter1 = await seedExample('counter_1', 'counter')
-      const counter3 = await seedExample('counter_3', 'counter')
+      const daredevil = await seedExample('daredevil', 'daredevil')
+      const counter = await seedExample('counter', 'counter')
       const submissions: AgentRef[] = [
-        { kind: 'submission', submission_id: daredevil0, user_id: 'daredevil_0' },
-        { kind: 'submission', submission_id: counter1, user_id: 'counter_1' },
-        { kind: 'submission', submission_id: daredevil2, user_id: 'daredevil_2' },
-        { kind: 'submission', submission_id: counter3, user_id: 'counter_3' },
+        { kind: 'submission', submission_id: daredevil, user_id: 'daredevil' },
+        { kind: 'submission', submission_id: counter, user_id: 'counter' },
       ]
 
       /** Run a fresh season with the given messaging override and return the one game's recording
        * plus its per-seat final scores, via the real workflow runner. */
       async function runWithOverride(
         messaging: { enabled?: boolean; message_cap?: number } | undefined,
+        seatPlan: 'partnership' | 'solo' = 'partnership',
       ): Promise<{
         messages: ReturnType<typeof allMessages>
         scoreBySeat: Record<number, number>
       }> {
+        const scheduledSeats =
+          seatPlan === 'partnership'
+            ? submissions
+            : [
+                submissions[0] as AgentRef,
+                submissions[1] as AgentRef,
+                submissions[0] as AgentRef,
+                submissions[1] as AgentRef,
+              ]
         const season = await stack.storage.createSeason({
           env_id: ENV_ID,
           deps_version: DEPS_VERSION,
@@ -358,7 +374,7 @@ describe('Spades chat (Docker)', () => {
           deps_version: DEPS_VERSION,
           matches: [
             {
-              seats: ['submission', 'submission', 'submission', 'submission'],
+              seats: scheduledSeats.map(() => 'submission' as const),
               seeds: [1236],
               games: 1,
             },
@@ -366,9 +382,15 @@ describe('Spades chat (Docker)', () => {
           ...(messaging !== undefined ? { overrides: { messaging } } : {}),
         })
         const run = await createRunOrFail(stack.storage, season.id, 'dev-user', () => ({
-          parametersSnapshot: { players: 4 },
+          parametersSnapshot: { seat_plan: seatPlan },
           scheduledGames: [
-            { match_index: 0, game_index: 0, seed: 1236, seats: submissions, seat_plan: 'solo' },
+            {
+              match_index: 0,
+              game_index: 0,
+              seed: 1236,
+              seats: scheduledSeats,
+              seat_plan: seatPlan,
+            },
           ],
           llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
         }))
@@ -404,25 +426,32 @@ describe('Spades chat (Docker)', () => {
 
       // Messaging on (default season, no override): the exact pinned demo-hand scores, matching
       // environments/spades/tests/test_spades_chat.py's daredevil score regression.
-      // Partners share their team score, so seats 0 and 2 both read the made-nil +121.
+      // The partnership reducer preserves the team score as its mean.
       const on = await runWithOverride(undefined)
       expect(on.messages).toContainEqual({ from: 'player_0', to: null, text: NIL_WARNING })
-      expect(on.scoreBySeat[0]).toBe(DAREDEVIL_SCORES_ON.player_0)
-      expect(on.scoreBySeat[2]).toBe(DAREDEVIL_SCORES_ON.player_2)
+      expect(on.scoreBySeat[0]).toBe(DAREDEVIL_SCORES_ON.seat_0)
+      expect(on.scoreBySeat[1]).toBe(DAREDEVIL_SCORES_ON.seat_1)
 
       // Messaging disabled by the season override: no code change to the agents, yet the broadcast
       // never arrives, the partner never covers, and the nil is set — a strictly worse team score
       // than the made-nil case above (the same qualitative consequence the Python harness test pins).
       const off = await runWithOverride({ enabled: false })
       expect(off.messages).toEqual([])
-      expect(off.scoreBySeat[0]).toBeLessThan(DAREDEVIL_SCORES_ON.player_0)
+      expect(off.scoreBySeat[0]).toBeLessThan(DAREDEVIL_SCORES_ON.seat_0)
 
       // Messaging enabled but the cap lowered below every example message's length (13-15 code
       // points): validate_outgoing drops every send, so the recording again has zero messages and
       // the nil is set exactly as with messaging off.
       const cappedLow = await runWithOverride({ message_cap: 5 })
       expect(cappedLow.messages).toEqual([])
-      expect(cappedLow.scoreBySeat[0]).toBeLessThan(DAREDEVIL_SCORES_ON.player_0)
+      expect(cappedLow.scoreBySeat[0]).toBeLessThan(DAREDEVIL_SCORES_ON.seat_0)
+
+      // The same real workflow path also expands and reduces the explicit four-seat solo plan.
+      const solo = await runWithOverride({ enabled: false }, 'solo')
+      expect(solo.messages).toEqual([])
+      expect(Object.keys(solo.scoreBySeat).sort()).toEqual(['0', '1', '2', '3'])
+      expect(solo.scoreBySeat[0]).toBe(solo.scoreBySeat[2])
+      expect(solo.scoreBySeat[1]).toBe(solo.scoreBySeat[3])
     } finally {
       rmSync(snapshotsDir, { recursive: true, force: true })
     }
@@ -443,20 +472,16 @@ describe('Spades chat (Docker)', () => {
     })
     expect(result.ok).toBe(true)
 
-    const daredevil0 = await seedExample('daredevil_0', 'daredevil')
-    const daredevil2 = await seedExample('daredevil_2', 'daredevil')
-    const counter1 = await seedExample('counter_1', 'counter')
-    const counter3 = await seedExample('counter_3', 'counter')
+    const daredevil = await seedExample('daredevil', 'daredevil')
+    const counter = await seedExample('counter', 'counter')
 
     const { id } = await startSession(
       stack,
       {
         env_id: ENV_ID,
         seats: {
-          seat_0: { kind: 'submission', submission_id: daredevil0 },
-          seat_1: { kind: 'submission', submission_id: counter1 },
-          seat_2: { kind: 'submission', submission_id: daredevil2 },
-          seat_3: { kind: 'submission', submission_id: counter3 },
+          seat_0: { kind: 'submission', submission_id: daredevil },
+          seat_1: { kind: 'submission', submission_id: counter },
         },
         seed: 1236,
       },

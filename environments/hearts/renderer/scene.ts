@@ -120,7 +120,7 @@ export function computeScene(state: StepState, config: SceneConfig = {}): Hearts
   const o = readOverlay(state)
   const view = resolveView(config)
 
-  const players = buildPlayers(o, view)
+  const players = buildPlayers(o, view, config.seats)
   const { trick, trickWinner } = buildTrick(o, view.viewPlayer)
   const opponents = buildOpponents(o, view.viewPlayer, view.revealAll, DEFAULT_GEOMETRY)
   // Hearts reads the emitted legal-cards overlay verbatim: every legal card lights by its key.
@@ -144,8 +144,12 @@ export function computeScene(state: StepState, config: SceneConfig = {}): Hearts
 }
 
 /** Build the four player badges, adding each player's running penalty score to the shared core. */
-function buildPlayers(o: HeartsOverlay, view: ViewContext): ScenePlayer[] {
-  return buildPlayersBase(o, view, DEFAULT_GEOMETRY).map((base) => ({
+function buildPlayers(
+  o: HeartsOverlay,
+  view: ViewContext,
+  seats: SceneConfig['seats'],
+): ScenePlayer[] {
+  return buildPlayersBase(o, view, DEFAULT_GEOMETRY, seats).map((base) => ({
     ...base,
     score: o.displayScores[base.player] ?? 0,
   }))

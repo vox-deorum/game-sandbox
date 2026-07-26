@@ -250,6 +250,9 @@ export class KyselyStorage implements Storage {
   ): Promise<Submission[]> {
     return submissions.listActiveSubmissionsBySeason(this.db, seasonId, status)
   }
+  countActiveSubmissionsBySeason(seasonId: string, status?: SubmissionStatus): Promise<number> {
+    return submissions.countActiveSubmissionsBySeason(this.db, seasonId, status)
+  }
   listSubmissionChecks(submissionId: string): Promise<SubmissionCheck[]> {
     return submissions.listSubmissionChecks(this.db, submissionId)
   }

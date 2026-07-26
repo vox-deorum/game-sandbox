@@ -716,6 +716,13 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
         }
         const latest = await deps.storage.getLatestRun(season.id)
         const games = latest === undefined ? [] : await deps.storage.listRunGames(latest.id)
+        // This is the same active-ready roster predicate the run transaction snapshots through
+        // `createRunWithSchedule`. The count lets the browser project a draft without exposing the
+        // roster or inventing a second eligibility rule.
+        const eligibleSubmissionCount = await deps.storage.countActiveSubmissionsBySeason(
+          season.id,
+          'ready',
+        )
         // The board's matchup table mirrors the public read: the latest completed run's games (decoded),
         // the same run the automated board aggregates. This differs from `latest` when the most recent
         // run failed, so the preview's matchups always match the board it sits beside. Resolve that run
@@ -735,6 +742,7 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
         ])
         return reply.code(200).send({
           season: seasonView(season),
+          eligible_submission_count: eligibleSubmissionCount,
           latest_run: latest === undefined ? null : runView(latest, games, names),
           board: {
             automated: automated.map((row) => ({

@@ -656,6 +656,8 @@ export interface Storage {
   listSubmissionsByUser(userId: string, envId?: string): Promise<Submission[]>
   /** Active (`superseded_at IS NULL`) submissions in a season, optionally narrowed by status. */
   listActiveSubmissionsBySeason(seasonId: string, status?: SubmissionStatus): Promise<Submission[]>
+  /** Count active submissions in a season without materializing their rows. */
+  countActiveSubmissionsBySeason(seasonId: string, status?: SubmissionStatus): Promise<number>
   /** A submission's per-stage validation log, ordered by pipeline-stage sequence. */
   listSubmissionChecks(submissionId: string): Promise<SubmissionCheck[]>
   /**

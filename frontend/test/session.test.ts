@@ -202,6 +202,7 @@ describe('SessionPage', () => {
     expect(drawn).toHaveLength(1)
 
     // The owner gets a live sendAction that the page forwards as an input command.
+    handlers.onConnectionChange?.('open')
     mountCtx?.sendAction?.('player_0', 1)
     expect(sent).toContainEqual({ kind: 'input', player: 'player_0', action: 1 })
   })
@@ -397,6 +398,7 @@ describe('SessionPage', () => {
 
     expect(mountCtx?.controlledPlayers).toEqual(['player_2'])
     // The forwarded input carries the human's real player ID, so a click plays for player_2, not player_0.
+    handlers.onConnectionChange?.('open')
     mountCtx?.sendAction?.('player_2', 5)
     expect(sent).toContainEqual({ kind: 'input', player: 'player_2', action: 5 })
   })
@@ -885,30 +887,7 @@ describe('SessionPage', () => {
     expect(await screen.findByText('No such session.')).toBeInTheDocument()
   })
 
-  it('mounts the chat panel and forwards a chat command with the controlled seat', async () => {
-    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
-    vi.mocked(getEnvironments).mockResolvedValue([spadesMeta()])
-    vi.mocked(getSession).mockResolvedValue(spadesOwnerRow())
-    await renderSession()
-    await waitForHandlers()
-    handlers.onHeader(spadesHeader()) // seats the human at player_2
-    handlers.onSessionStatus?.('running')
-
-    const input = await screen.findByRole('textbox')
-    await fireEvent.update(screen.getByRole('combobox'), 'player_0')
-    await fireEvent.update(input, 'lead low')
-    await fireEvent.click(screen.getByRole('button', { name: 'Send' }))
-
-    // Exactly the pinned command shape, with the player the human actually took filled in.
-    expect(sent).toContainEqual({
-      kind: 'chat',
-      player: 'player_2',
-      to: 'player_0',
-      text: 'lead low',
-    })
-  })
-
-  it('disables Send during a reconnect and keeps the draft until the socket returns', async () => {
+  it('mounts chat for the designated sender and closes it once that turn sends an action', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
     vi.mocked(getEnvironments).mockResolvedValue([spadesMeta()])
     vi.mocked(getSession).mockResolvedValue(spadesOwnerRow())
@@ -916,6 +895,77 @@ describe('SessionPage', () => {
     await waitForHandlers()
     handlers.onHeader(spadesHeader())
     handlers.onSessionStatus?.('running')
+    handlers.onConnectionChange?.('open')
+    handlers.onState(
+      playerState(7, {
+        chatOptions: {
+          sender: 'player_1',
+          target_recipients: ['player_3'],
+          default_recipient: 'player_3',
+        },
+      }),
+    )
+    await nextTick()
+    expect(screen.queryByRole('textbox')).toBeNull()
+    handlers.onState(
+      playerState(8, {
+        chatOptions: {
+          sender: 'player_0',
+          target_recipients: ['player_2', 'player_1'],
+          default_recipient: 'player_2',
+        },
+      }),
+    )
+
+    const input = await screen.findByRole('textbox')
+    await fireEvent.update(input, 'lead low')
+    await fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+
+    expect(sent).toContainEqual({
+      kind: 'chat',
+      player: 'player_0',
+      tick: 8,
+      to: 'player_2',
+      text: 'lead low',
+    })
+
+    await fireEvent.update(input, 'draft from the previous turn')
+    mountCtx?.sendAction?.('player_0', 12)
+    await nextTick()
+    expect(screen.queryByRole('textbox')).toBeNull()
+    expect(sent).toContainEqual({ kind: 'input', player: 'player_0', action: 12 })
+
+    handlers.onState(
+      playerState(12, {
+        chatOptions: {
+          sender: 'player_0',
+          target_recipients: ['player_2'],
+          default_recipient: 'player_2',
+        },
+      }),
+    )
+    const nextInput = (await screen.findByRole('textbox')) as HTMLInputElement
+    expect(nextInput.value).toBe('')
+  })
+
+  it('does not consume the chat opportunity when a reconnect drops a renderer action', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
+    vi.mocked(getEnvironments).mockResolvedValue([spadesMeta()])
+    vi.mocked(getSession).mockResolvedValue(spadesOwnerRow())
+    await renderSession()
+    await waitForHandlers()
+    handlers.onHeader(spadesHeader())
+    handlers.onSessionStatus?.('running')
+    handlers.onState(
+      playerState(3, {
+        chatOptions: {
+          sender: 'player_0',
+          target_recipients: ['player_2'],
+          default_recipient: null,
+        },
+      }),
+    )
+    handlers.onConnectionChange?.('open')
 
     const input = (await screen.findByRole('textbox')) as HTMLInputElement
     await fireEvent.update(input, 'lead low')
@@ -929,12 +979,26 @@ describe('SessionPage', () => {
     expect(sent).toHaveLength(0)
     expect(input.value).toBe('lead low')
 
-    // The connection returns: the preserved draft forwards as the pinned command.
+    // Renderer input takes the same path as chat. A reconnect drops the action, so it must not close
+    // this turn's composer or consume its opportunity.
+    mountCtx?.sendAction?.('player_0', 12)
+    await nextTick()
+    expect(sent).toHaveLength(0)
+    expect(screen.getByRole('textbox')).toBeInTheDocument()
+    expect(input.value).toBe('lead low')
+
+    // Once the socket is open, the same renderer action forwards and closes the composer.
     handlers.onConnectionChange?.('open')
     await nextTick()
     expect(send).toBeEnabled()
-    await fireEvent.click(send)
-    expect(sent).toContainEqual({ kind: 'chat', player: 'player_2', to: null, text: 'lead low' })
+    mountCtx?.sendAction?.('player_0', 12)
+    await nextTick()
+    expect(sent).toContainEqual({
+      kind: 'input',
+      player: 'player_0',
+      action: 12,
+    })
+    expect(screen.queryByRole('textbox')).toBeNull()
   })
 
   it('keys the character counter off the row cap, not the metadata', async () => {
@@ -946,6 +1010,16 @@ describe('SessionPage', () => {
     await waitForHandlers()
     handlers.onHeader(spadesHeader())
     handlers.onSessionStatus?.('running')
+    handlers.onConnectionChange?.('open')
+    handlers.onState(
+      playerState(4, {
+        chatOptions: {
+          sender: 'player_0',
+          target_recipients: ['player_2'],
+          default_recipient: 'player_2',
+        },
+      }),
+    )
 
     const input = await screen.findByRole('textbox')
     await fireEvent.update(input, 'hello') // 5 code points: exactly the row cap
@@ -1063,7 +1137,7 @@ describe('SessionPage', () => {
           playerState(0, { messages: [{ from: 'player_2', to: null, text: 'good luck all' }] }),
           playerState(1, { messages: [{ from: 'player_0', to: 'player_2', text: 'nice bid' }] }),
         ],
-        { environment: 'spades', players: spadesPlayers() }, // seats the human (this viewer) at player_2
+        { environment: 'spades', players: spadesPlayers('player_2') },
       ),
     )
     await renderSession()

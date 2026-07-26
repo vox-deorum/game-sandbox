@@ -9,6 +9,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./protocol": "./src/protocol.ts",
+    "./schedule": "./src/schedule.ts",
     "./environment": "./src/environment.ts",
     "./accounts": "./src/accounts.ts",
     "./board": "./src/board.ts",

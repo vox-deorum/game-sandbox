@@ -7,7 +7,7 @@ import type {
   WatchAgentSummary,
 } from '../src/api/client.js'
 import SeatAssignmentDialog from '../src/components/SeatAssignmentDialog.vue'
-import { flappyMeta, heartsMeta } from './helpers/fixtures.js'
+import { flappyMeta, heartsMeta, spadesMeta } from './helpers/fixtures.js'
 
 function agent(overrides: Partial<WatchAgentSummary> = {}): WatchAgentSummary {
   return { submission_id: 'sub1', anonymous_number: 1, rating_status: 'unrated', ...overrides }
@@ -330,12 +330,108 @@ describe('SeatAssignmentDialog', () => {
     })
 
     expect(screen.getByText('You').closest('li')).toHaveTextContent('Seat 2')
+    expect(screen.getByText('3 players')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Sit here' })).toBeNull()
-    await fireEvent.click(screen.getByRole('button', { name: 'Start playing' }))
+    const start = screen.getByRole('button', { name: 'Start playing' })
+    expect(start).toBeDisabled()
+    await fireEvent.update(
+      screen.getByRole('combobox', { name: 'Companion agent for Seat 2' }),
+      'submission:sub1',
+    )
+    await fireEvent.click(start)
     expect(lastStart(emitted).seats).toEqual({
       seat_0: { kind: 'builtin-agent' },
-      seat_1: { kind: 'human' },
+      seat_1: { kind: 'human', companion: { kind: 'submission', submissionId: 'sub1' } },
     })
+  })
+
+  it('shows resolved player counts and requires an explicit companion for a wide human seat', async () => {
+    const { emitted } = render(SeatAssignmentDialog, {
+      props: {
+        seasonId: 'season-1',
+        parameters: { seat_plan: 'partnership' },
+        meta: spadesMeta(),
+        agents: AGENTS,
+        mode: 'play',
+      },
+    })
+
+    expect(screen.getAllByText('2 players')).toHaveLength(2)
+    const start = screen.getByRole('button', { name: 'Start playing' })
+    expect(start).toBeDisabled()
+    const companion = screen.getByRole('combobox', { name: 'Companion agent for Seat 1' })
+    expect(companion).toHaveValue('')
+    await fireEvent.update(companion, 'submission:sub2')
+    expect(start).toBeEnabled()
+    await fireEvent.click(start)
+
+    expect(lastStart(emitted)).toMatchObject({
+      parameters: { seat_plan: 'partnership' },
+      seats: {
+        seat_0: {
+          kind: 'human',
+          companion: { kind: 'submission', submissionId: 'sub2' },
+        },
+        seat_1: { kind: 'builtin-agent' },
+      },
+    })
+  })
+
+  it('removes a wide-seat companion when the human moves away and does not restore it later', async () => {
+    render(SeatAssignmentDialog, {
+      props: {
+        seasonId: 'season-1',
+        parameters: { seat_plan: 'partnership' },
+        meta: spadesMeta(),
+        agents: AGENTS,
+        mode: 'play',
+      },
+    })
+
+    await fireEvent.update(
+      screen.getByRole('combobox', { name: 'Companion agent for Seat 1' }),
+      'submission:sub1',
+    )
+    const rows = screen.getAllByRole('listitem')
+    await fireEvent.click(within(rows[1] as HTMLElement).getByRole('button', { name: 'Sit here' }))
+    expect(screen.getByRole('combobox', { name: 'Companion agent for Seat 2' })).toHaveValue('')
+
+    await fireEvent.click(within(rows[0] as HTMLElement).getByRole('button', { name: 'Sit here' }))
+    expect(screen.getByRole('combobox', { name: 'Companion agent for Seat 1' })).toHaveValue('')
+    expect(screen.getByRole('button', { name: 'Start playing' })).toBeDisabled()
+  })
+
+  it('rebuilds exact seats on plan changes and clears a companion that is illegal in solo', async () => {
+    const { emitted } = render(SeatAssignmentDialog, {
+      props: {
+        seasonId: 'season-1',
+        parameters: { seat_plan: 'partnership' },
+        meta: spadesMeta(),
+        agents: AGENTS,
+        mode: 'play',
+      },
+    })
+
+    await fireEvent.update(
+      screen.getByRole('combobox', { name: 'Companion agent for Seat 1' }),
+      'submission:sub1',
+    )
+    await fireEvent.update(screen.getByRole('combobox', { name: 'Seat 2' }), 'submission:sub2')
+    await fireEvent.update(screen.getByRole('combobox', { name: 'Seat plan' }), 'solo')
+
+    expect(screen.getAllByText('1 player')).toHaveLength(4)
+    expect(screen.queryByRole('combobox', { name: /Companion agent/ })).toBeNull()
+    await fireEvent.click(screen.getByRole('button', { name: 'Start playing' }))
+    expect(lastStart(emitted).seats).toEqual({
+      seat_0: { kind: 'human' },
+      seat_1: { kind: 'submission', submissionId: 'sub2' },
+      seat_2: { kind: 'builtin-agent' },
+      seat_3: { kind: 'builtin-agent' },
+    })
+
+    await fireEvent.update(screen.getByRole('combobox', { name: 'Seat plan' }), 'partnership')
+    expect(screen.getByRole('combobox', { name: 'Companion agent for Seat 1' })).toHaveValue('')
+    expect(screen.getByRole('button', { name: 'Start playing' })).toBeDisabled()
   })
 
   // Every environment today is fixed-player, so `players` is hidden and the grid never resizes. These

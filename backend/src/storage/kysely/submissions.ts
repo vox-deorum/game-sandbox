@@ -256,20 +256,41 @@ export async function listSubmissionsByUser(
   return await query.orderBy('created_at', 'desc').execute()
 }
 
-export async function listActiveSubmissionsBySeason(
+function activeSubmissionsBySeason(
   db: Kysely<Database>,
   seasonId: string,
   status?: SubmissionStatus,
-): Promise<Submission[]> {
+) {
   let query = db
     .selectFrom('submissions')
-    .selectAll()
     .where('season_id', '=', seasonId)
     .where('superseded_at', 'is', null)
   if (status !== undefined) {
     query = query.where('status', '=', status)
   }
-  return await query.orderBy('created_at', 'desc').execute()
+  return query
+}
+
+export async function listActiveSubmissionsBySeason(
+  db: Kysely<Database>,
+  seasonId: string,
+  status?: SubmissionStatus,
+): Promise<Submission[]> {
+  return await activeSubmissionsBySeason(db, seasonId, status)
+    .selectAll()
+    .orderBy('created_at', 'desc')
+    .execute()
+}
+
+export async function countActiveSubmissionsBySeason(
+  db: Kysely<Database>,
+  seasonId: string,
+  status?: SubmissionStatus,
+): Promise<number> {
+  const row = await activeSubmissionsBySeason(db, seasonId, status)
+    .select((eb) => eb.fn.countAll<number>().as('count'))
+    .executeTakeFirst()
+  return Number(row?.count ?? 0)
 }
 
 export async function listSubmissionChecks(

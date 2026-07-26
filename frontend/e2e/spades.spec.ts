@@ -1,6 +1,6 @@
 import { rmSync } from 'node:fs'
 
-import type { BrowserContext, Locator } from '@playwright/test'
+import type { BrowserContext, Locator, Page } from '@playwright/test'
 import {
   activeWindows,
   closePlay,
@@ -57,6 +57,58 @@ async function bidOne(canvas: Locator): Promise<void> {
   })
 }
 
+/** Play one currently legal card from the controlled player's raised hand. */
+async function playLegalCard(page: Page, canvas: Locator, cardCount: number): Promise<void> {
+  const box = await canvas.boundingBox()
+  expect(box, 'Spades canvas bounding box').not.toBeNull()
+  if (box === null) {
+    throw new Error('no Spades canvas bounding box')
+  }
+  const cardWidth = 64
+  const availableWidth = 880
+  const step =
+    cardCount > 1
+      ? Math.min(cardWidth + 6, Math.floor((availableWidth - cardWidth) / (cardCount - 1)))
+      : 0
+  const run = step * (cardCount - 1) + cardWidth
+  const startX = Math.floor((960 - run) / 2)
+  const composer = page.getByRole('group', { name: 'Chat', exact: true })
+
+  // Legal cards are raised to internal y=600 while illegal cards begin at y=610. Clicking y=604
+  // therefore reaches only a legal card, without duplicating the rules in the test.
+  for (let index = 0; index < cardCount; index += 1) {
+    await canvas.click({
+      position: {
+        x: ((startX + index * step + cardWidth / 2) / 960) * box.width,
+        y: (604 / 720) * box.height,
+      },
+    })
+    try {
+      await composer.waitFor({ state: 'detached', timeout: 1_200 })
+      return
+    } catch {
+      // This card was not raised, so the renderer emitted no action. Try the next card.
+    }
+  }
+  throw new Error(`no legal card click advanced a ${cardCount}-card Spades hand`)
+}
+
+/** Drive player 0 through bidding and all thirteen tricks, waiting for every external turn. */
+async function completeHumanSpadesHand(page: Page, canvas: Locator): Promise<void> {
+  const composer = page.getByRole('group', { name: 'Chat', exact: true })
+  await expect(composer).toBeVisible({ timeout: 30_000 })
+  await bidOne(canvas)
+  await expect(composer).toHaveCount(0)
+
+  for (let cardCount = 13; cardCount >= 1; cardCount -= 1) {
+    await expect(composer).toBeVisible({ timeout: 30_000 })
+    // The chat contract follows the newest state immediately, while the canvas finishes the prior
+    // opponent card's 900 ms live animation. Wait for that documented cadence before hit-testing.
+    await page.waitForTimeout(1_000)
+    await playLegalCard(page, canvas, cardCount)
+  }
+}
+
 test('Spades chat is filtered live and complete in replay', async ({
   page,
   browser,
@@ -76,15 +128,18 @@ test('Spades chat is filtered live and complete in replay', async ({
     // browser authenticates as the same admin actor that starts the session, so it owns and controls the
     // human seat (the composer and Stop).
     sessionId = await startSession(admin, SPADES_ENV_ID, {
-      seat_0: { kind: 'human' },
+      seat_0: { kind: 'human', companion: { kind: 'builtin-agent' } },
       seat_1: { kind: 'builtin-agent' },
-      seat_2: { kind: 'builtin-agent' },
-      seat_3: { kind: 'builtin-agent' },
     })
     await authenticateBrowser(page.context(), admin)
     await page.goto(`/sessions/${sessionId}`)
     const canvas = page.locator('canvas.renderer-canvas')
     await expect(canvas).toBeVisible({ timeout: 60_000 })
+    await expect(
+      page.getByRole('img', {
+        name: 'Spades table. Wide seats: S0 includes P0 and P2; S1 includes P1 and P3.',
+      }),
+    ).toBeVisible()
     const controllerChat = page.getByRole('group', { name: 'Chat', exact: true })
     await expect(controllerChat).toBeVisible()
 
@@ -112,9 +167,12 @@ test('Spades chat is filtered live and complete in replay', async ({
     await expect(spectatorTwoChat).toBeVisible()
     await expect(spectatorTwoChat.getByRole('textbox')).toHaveCount(0)
 
+    // The state policy defaults the recipient to the current sender's partner.
+    const recipient = controllerChat.getByLabel('Recipient')
+    await expect(recipient).toHaveValue('player_2')
+
     // Queue one broadcast and one private line for player_2 through the same composer. There is no local
     // echo, so neither appears until bid 1 advances the turn and the harness records both on tick 0.
-    const recipient = controllerChat.getByLabel('Recipient')
     const message = controllerChat.getByLabel('Message')
     await recipient.selectOption('')
     await message.fill(BROADCAST)
@@ -142,11 +200,11 @@ test('Spades chat is filtered live and complete in replay', async ({
     await spectatorTwoContext.close()
     spectatorTwoContext = null
 
-    // Reload the controller page mid-session: the socket reattaches. Live chat history is best-effort —
+    // Reload the controller page mid-session: the socket reattaches. Live chat history is best-effort:
     // the relay replays only its latest state line on attach (LiveSession.attach), and the hand has
     // advanced past the tick that carried these messages, so the resumed live panel legitimately shows
     // none of them (they live in the recording, surfaced by the replay and reopen below). What must hold
-    // is that the panel comes back as a live, sendable composer without erroring or duplicating — the
+    // is that the panel comes back as a live, sendable composer without erroring or duplicating. The
     // deterministic "resumes without duplicating a message" proof is the reopened ended session further
     // down, which rebuilds the full log from the recording archive and shows each message exactly once.
     await page.reload()
@@ -167,6 +225,11 @@ test('Spades chat is filtered live and complete in replay', async ({
     const openReplay = page.getByRole('link', { name: 'Open replay' })
     await expect(openReplay).toBeVisible({ timeout: 60_000 })
     await openReplay.click()
+    await expect(
+      page.getByRole('img', {
+        name: 'Spades table. Wide seats: S0 includes P0 and P2; S1 includes P1 and P3.',
+      }),
+    ).toBeVisible()
 
     // The replay merges decisions and chat into one "Game thread"; both messages rode tick 0, where the
     // replay opens, so they show at once, interleaved with the tick's decision and still read-only.
@@ -198,6 +261,77 @@ test('Spades chat is filtered live and complete in replay', async ({
   }
 })
 
+test('human Spades completes with seat-ranked results on partnership and solo plans', async ({
+  page,
+  admin,
+}) => {
+  test.setTimeout(900_000)
+  await authenticateBrowser(page.context(), admin)
+
+  for (const seatPlan of ['partnership', 'solo'] as const) {
+    const seats =
+      seatPlan === 'partnership'
+        ? {
+            seat_0: { kind: 'human' as const, companion: { kind: 'builtin-agent' as const } },
+            seat_1: { kind: 'builtin-agent' as const },
+          }
+        : {
+            seat_0: { kind: 'human' as const },
+            seat_1: { kind: 'builtin-agent' as const },
+            seat_2: { kind: 'builtin-agent' as const },
+            seat_3: { kind: 'builtin-agent' as const },
+          }
+    const sessionId = await startSession(admin, SPADES_ENV_ID, seats, {
+      seed: 0,
+      humanTimeoutMs: 30_000,
+      parameters: { seat_plan: seatPlan },
+    })
+    try {
+      await page.goto(`/sessions/${sessionId}`)
+      const canvas = page.locator('canvas.renderer-canvas')
+      await expect(canvas).toBeVisible({ timeout: 60_000 })
+      const rendererHost = page.locator('.renderer-host')
+      if (seatPlan === 'partnership') {
+        await expect(rendererHost).toHaveAttribute(
+          'aria-label',
+          'Spades table. Wide seats: S0 includes P0 and P2; S1 includes P1 and P3.',
+        )
+      } else {
+        await expect(rendererHost).not.toHaveAttribute('role', 'img')
+        await expect(rendererHost).not.toHaveAttribute('aria-label', /Wide seats/)
+      }
+
+      await completeHumanSpadesHand(page, canvas)
+      const gameOver = page.getByRole('dialog', { name: 'Game over' })
+      await expect(gameOver).toBeVisible({ timeout: 60_000 })
+      if (seatPlan === 'partnership') {
+        await expect(gameOver.locator('.row')).toHaveCount(2)
+        const mixedSeat = gameOver.locator('.row').filter({ hasText: 'S0' })
+        await expect(mixedSeat.locator('.members')).toHaveText('P0, P2')
+        await expect(mixedSeat.locator('.who > span').first()).toHaveText(/.+, Naive agent/)
+        await expect(gameOver.locator('.winner')).toHaveText(/S[01] won/)
+      } else {
+        await expect(gameOver.locator('.row')).toHaveCount(4)
+        await expect(gameOver.locator('.members')).toHaveCount(0)
+        await expect(gameOver.locator('.winner')).toHaveText('Tied')
+      }
+
+      await page.getByRole('link', { name: 'Open replay' }).click()
+      const stage = page.getByRole('group', { name: 'Replay stage' })
+      await stage.click()
+      await stage.press('End')
+      const replayGameOver = page.getByRole('dialog', { name: 'Game over' })
+      await expect(replayGameOver).toBeVisible({ timeout: 30_000 })
+      await expect(replayGameOver.locator('.row')).toHaveCount(seatPlan === 'partnership' ? 2 : 4)
+      await expect(replayGameOver.locator('.winner')).toHaveText(
+        seatPlan === 'partnership' ? /S[01] won/ : 'Tied',
+      )
+    } finally {
+      await stopSessionAndAwaitFree(admin, sessionId).catch(() => {})
+    }
+  }
+})
+
 test('an over-cap Spades chat draft disables Send', async ({ page, admin }) => {
   // Container launch for a single-composer DOM check.
   test.setTimeout(120_000)
@@ -205,10 +339,8 @@ test('an over-cap Spades chat draft disables Send', async ({ page, admin }) => {
   // The browser authenticates as the same admin actor that starts the session, so it owns and controls
   // the human seat's composer.
   const sessionId = await startSession(admin, SPADES_ENV_ID, {
-    seat_0: { kind: 'human' },
+    seat_0: { kind: 'human', companion: { kind: 'builtin-agent' } },
     seat_1: { kind: 'builtin-agent' },
-    seat_2: { kind: 'builtin-agent' },
-    seat_3: { kind: 'builtin-agent' },
   })
   try {
     await authenticateBrowser(page.context(), admin)
@@ -257,15 +389,24 @@ test('a season-silenced Spades session mounts no chat panel', async ({ page, adm
   await setMessagingOverride(admin, seasonId, false)
   let sessionId: string | null = null
   try {
-    sessionId = await startSession(admin, SPADES_ENV_ID, {
-      seat_0: { kind: 'human' },
-      seat_1: { kind: 'builtin-agent' },
-      seat_2: { kind: 'builtin-agent' },
-      seat_3: { kind: 'builtin-agent' },
-    })
+    sessionId = await startSession(
+      admin,
+      SPADES_ENV_ID,
+      {
+        seat_0: { kind: 'human' },
+        seat_1: { kind: 'builtin-agent' },
+        seat_2: { kind: 'builtin-agent' },
+        seat_3: { kind: 'builtin-agent' },
+      },
+      {
+        parameters: { seat_plan: 'solo' },
+      },
+    )
     await authenticateBrowser(page.context(), admin)
     await page.goto(`/sessions/${sessionId}`)
     await expect(page.locator('canvas.renderer-canvas')).toBeVisible({ timeout: 60_000 })
+    await expect(page.locator('.renderer-host')).not.toHaveAttribute('role', 'img')
+    await expect(page.locator('.renderer-host')).not.toHaveAttribute('aria-label', /Wide seats/)
 
     // SessionPage.vue guards both the beside and stacked chat panels with `v-if="messagingEnabled"`
     // (reading the session row's resolved `messaging_enabled`): neither the sendable "Chat" composer
@@ -332,18 +473,16 @@ test('a Spades season: three example agents, a scheduled partnership matchup, th
       ),
     )
 
-    // The matchup assigns submissions to seats 0 and 2. Those map to Spades players 0 and 2, whose
-    // partnership pairing is `team_of(player) = player % 2`, so every scheduled game places two of
-    // the three submissions together against the Naive baseline players 1 and 3. Spades is a four-seat
-    // env, so the config
-    // must name exactly four seats; `seat_order_matters` makes the scheduler emit one game per ordered
-    // pairing of the ready submissions across the two submission seats, plus the appended Naive baseline.
+    // The matchup assigns submissions to both partnership seats. Each assignment controls the two
+    // players named by its resolved seat, so every scheduled game pits two of the three submissions
+    // against one another. `seat_order_matters` makes the scheduler emit one game per ordered pairing
+    // of the ready submissions across the two seats, plus the appended Naive baseline.
     // Seed 0 is used throughout: which player opens the bidding is a property of the deal (player 0
     // always opens, independent of who is seated there), so the choice of seed does not affect determinism here
     // — it is kept at 0 to match hearts.spec.ts's convention.
     await configureMatches(admin, season.id, [
       {
-        seats: ['submission', 'builtin-naive', 'submission', 'builtin-naive'],
+        seats: ['submission', 'submission'],
         seeds: [0],
         games: 1,
       },
@@ -354,6 +493,7 @@ test('a Spades season: three example agents, a scheduled partnership matchup, th
     await page.goto(`/environments/${SPADES_ENV_ID}/admin`)
     await page.getByRole('button', { name: new RegExp(SPADES_SEASON) }).click()
     await expect(page.getByRole('heading', { name: `Season ${SPADES_SEASON}` })).toBeVisible()
+    await expect(page.getByText('Projected games: 7', { exact: true })).toBeVisible()
     await page.getByRole('button', { name: 'Run workflow' }).click()
     await expect(page).toHaveURL(
       new RegExp(`/environments/${SPADES_ENV_ID}/admin/seasons/${season.id}/runs/`),
@@ -392,16 +532,10 @@ test('a Spades season: three example agents, a scheduled partnership matchup, th
 
     // "Partners share the team score": open a scheduled game's replay and read the shared
     // cross-environment game-over standings card (frontend/src/components/GameOverCard.vue, built from
-    // lib/standings.ts's buildStandings). Its per-row `.value` cell renders the overlay's
-    // `display_scores[player]`, which the Python rules engine (environments/spades/overlay.py)
-    // documents as each player carrying its team's score, so the DOM proof is that
-    // the S0 and S2 rows show the identical value. Stage 15.3 still resolves Spades to singleton
-    // seats, so seat N covers player N here, and the matching values retain the existing
-    // partnership-score behavior. That
-    // is structural in every Spades game, so the first row is the robust pick; because the all-Naive
-    // baseline is appended last, that first row is also one of the permutation games seating the example
-    // agents at 0 and 2. The replay viewer's transport has no "jump to end" button, so the terminal
-    // frame is reached with the documented End keyboard shortcut on the stage region.
+    // lib/standings.ts's buildStandings). The card has one row per resolved assignment seat, and each
+    // row lists both player members. This proves the two game-rule partners are represented by one
+    // assignment and one team score. The replay viewer's transport has no "jump to end" button, so the
+    // terminal frame is reached with the documented End keyboard shortcut on the stage region.
     const submissionGameRow = gameRows.first()
     await expect(submissionGameRow).toBeVisible()
     const replayLink = submissionGameRow.getByRole('link', { name: 'Replay' })
@@ -421,14 +555,13 @@ test('a Spades season: three example agents, a scheduled partnership matchup, th
     await expect(gameOver).toBeVisible({ timeout: 30_000 })
 
     const seat0 = gameOver.locator('.row').filter({ hasText: 'S0' })
-    const seat2 = gameOver.locator('.row').filter({ hasText: 'S2' })
+    const seat1 = gameOver.locator('.row').filter({ hasText: 'S1' })
     await expect(seat0).toBeVisible()
-    await expect(seat2).toBeVisible()
-    await expect(seat0.locator('.members')).toHaveCount(0)
-    await expect(seat2.locator('.members')).toHaveCount(0)
-    const seat0Value = await seat0.locator('.value').innerText()
-    const seat2Value = await seat2.locator('.value').innerText()
-    expect(seat2Value, 'Spades partners share their team score').toBe(seat0Value)
+    await expect(seat1).toBeVisible()
+    await expect(seat0.locator('.members')).toHaveText('P0, P2')
+    await expect(seat1.locator('.members')).toHaveText('P1, P3')
+    await expect(gameOver.locator('.row')).toHaveCount(2)
+    await expect(gameOver.locator('.winner')).toHaveText(/S[01] won/)
   } finally {
     // Restore the seeded Playground as the env's open submission+play season for any later spec.
     await closeSubmissions(admin, season.id).catch(() => {})

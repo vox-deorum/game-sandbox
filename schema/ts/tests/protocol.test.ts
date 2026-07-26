@@ -68,28 +68,44 @@ describe('inbound command parsing', () => {
   })
 
   it('accepts a chat command with a targeted or null recipient', () => {
-    expect(parseCommand('{"kind":"chat","player":"player_0","to":"player_2","text":"hi"}')).toEqual(
-      {
-        ok: true,
-        command: { kind: 'chat', player: 'player_0', to: 'player_2', text: 'hi' },
-      },
-    )
-    expect(parseCommand('{"kind":"chat","player":"player_0","to":null,"text":"table!"}')).toEqual({
+    expect(
+      parseCommand('{"kind":"chat","player":"player_0","tick":7,"to":"player_2","text":"hi"}'),
+    ).toEqual({
       ok: true,
-      command: { kind: 'chat', player: 'player_0', to: null, text: 'table!' },
+      command: { kind: 'chat', player: 'player_0', tick: 7, to: 'player_2', text: 'hi' },
+    })
+    expect(
+      parseCommand('{"kind":"chat","player":"player_0","tick":7,"to":null,"text":"table!"}'),
+    ).toEqual({
+      ok: true,
+      command: { kind: 'chat', player: 'player_0', tick: 7, to: null, text: 'table!' },
     })
   })
 
-  it('rejects a chat command with a bad player, to, or text', () => {
-    expect(parseCommand('{"kind":"chat","to":null,"text":"hi"}').ok).toBe(false) // no player
-    expect(parseCommand('{"kind":"chat","player":"player_0","to":5,"text":"hi"}').ok).toBe(false)
-    expect(parseCommand('{"kind":"chat","player":"player_0","to":null,"text":42}').ok).toBe(false)
+  it('rejects a chat command with a bad player, tick, to, or text', () => {
+    expect(parseCommand('{"kind":"chat","tick":0,"to":null,"text":"hi"}').ok).toBe(false)
+    expect(parseCommand('{"kind":"chat","player":"player_0","to":null,"text":"hi"}').ok).toBe(false)
+    expect(
+      parseCommand('{"kind":"chat","player":"player_0","tick":-1,"to":null,"text":"hi"}').ok,
+    ).toBe(false)
+    expect(parseCommand('{"kind":"chat","player":"player_0","tick":0,"to":5,"text":"hi"}').ok).toBe(
+      false,
+    )
+    expect(
+      parseCommand('{"kind":"chat","player":"player_0","tick":0,"to":null,"text":42}').ok,
+    ).toBe(false)
   })
 
   it('pins the exact chat JSON both languages speak', () => {
     // The same literal string the Python live_io test parses into a queued frame.
-    const line = serializeCommand({ kind: 'chat', player: 'player_0', to: null, text: 'hi' })
-    expect(line).toBe('{"kind":"chat","player":"player_0","to":null,"text":"hi"}')
+    const line = serializeCommand({
+      kind: 'chat',
+      player: 'player_0',
+      tick: 3,
+      to: null,
+      text: 'hi',
+    })
+    expect(line).toBe('{"kind":"chat","player":"player_0","tick":3,"to":null,"text":"hi"}')
   })
 })
 

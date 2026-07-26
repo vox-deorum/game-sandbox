@@ -32,6 +32,7 @@ export interface StepState {
    * Messages sent on this tick. Absent when empty to keep lines small. Lit up in Stage 8.
    */
   messages?: Message[];
+  chat_options?: ChatOptions;
   timing: StepTiming;
 }
 export interface AgentStep {
@@ -76,6 +77,23 @@ export interface Message {
    */
   to: string | null;
   text: string;
+}
+/**
+ * The current external player's allowed direct recipients and default recipient. Absent when no external messaging turn is open.
+ */
+export interface ChatOptions {
+  /**
+   * Player id of the external actor allowed to send on this state.
+   */
+  sender: string;
+  /**
+   * Ordered direct-message recipients. Broadcast is always available separately.
+   */
+  target_recipients: string[];
+  /**
+   * The selected direct recipient, or null when broadcast is the default.
+   */
+  default_recipient: string | null;
 }
 export interface StepTiming {
   /**

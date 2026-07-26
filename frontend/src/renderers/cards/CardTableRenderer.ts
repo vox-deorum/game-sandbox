@@ -20,7 +20,7 @@ import type { StepState } from '@game-sandbox/schema'
 import { Container, FillGradient, Graphics, Rectangle, Text } from 'pixi.js'
 
 import { PixiRenderer } from '../base/PixiRenderer.js'
-import type { RenderOptions } from '../types.js'
+import type { RendererContext, RenderOptions } from '../types.js'
 import {
   type Card,
   type CardTableScene,
@@ -49,6 +49,7 @@ import {
   type TableGeometry,
   type TrickSweep,
   WIDTH,
+  wideSeatsAccessibilityLabel,
 } from './scene.js'
 
 /** The natural trick-won sweep length in live play (ms); a replay scales it to fit its cadence. */
@@ -63,6 +64,8 @@ const PLAY_MIN_MS = 180
 const PULSE_PERIOD_MS = 1100
 /** How far (px) a hovered hand card lifts, so the user sees which card is under the cursor. */
 const HOVER_LIFT = 8
+/** Shared wide-seat accent colors. They repeat for layouts with more than four wide seats. */
+const WIDE_SEAT_TINTS = ['#6cc4ec', '#ec9c78', '#b7d67a', '#d2a8ff'] as const
 
 /** A card-play fly-in phase: one card sliding from its player's hand into the center. */
 interface PlayPhase {
@@ -129,6 +132,17 @@ export abstract class CardTableRenderer<
   private pulseMs = 0
   /** Cached gradient for the felt backdrop (one GPU texture, freed in destroy). */
   private feltGradient: FillGradient | null = null
+  /** The accessibility label this renderer owns when the table has wide seats. */
+  private readonly wideSeatsLabel: string | null
+
+  constructor(ctx: RendererContext) {
+    super(ctx)
+    this.wideSeatsLabel = wideSeatsAccessibilityLabel(ctx.meta.display_name, ctx.header.seats)
+    if (this.wideSeatsLabel !== null) {
+      ctx.container.setAttribute('role', 'img')
+      ctx.container.setAttribute('aria-label', this.wideSeatsLabel)
+    }
+  }
 
   // --- Subclass hooks ---
 
@@ -174,6 +188,7 @@ export abstract class CardTableRenderer<
     return {
       controlledPlayers: this.ctx.controlledPlayers,
       humanTimeoutMs: this.ctx.meta.human_timeout_ms,
+      seats: this.ctx.header.seats,
     }
   }
 
@@ -228,6 +243,13 @@ export abstract class CardTableRenderer<
     this.feltGradient?.destroy()
     this.feltGradient = null
     super.destroy()
+    if (
+      this.wideSeatsLabel !== null &&
+      this.ctx.container.getAttribute('aria-label') === this.wideSeatsLabel
+    ) {
+      this.ctx.container.removeAttribute('aria-label')
+      this.ctx.container.removeAttribute('role')
+    }
   }
 
   // --- The per-state reconcile and per-frame animation loop ---
@@ -435,6 +457,14 @@ export abstract class CardTableRenderer<
       width: 2,
     })
     c.addChild(g)
+
+    if (player.assignmentGroup !== null) {
+      const tab = new Graphics()
+      tab
+        .roundRect(left + 5, top + 9, 4, h - 18, 2)
+        .fill(WIDE_SEAT_TINTS[player.assignmentGroup % WIDE_SEAT_TINTS.length] ?? COLORS.white)
+      c.addChild(tab)
+    }
 
     this.drawPlayerContent(c, player)
     return c

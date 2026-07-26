@@ -22,6 +22,7 @@ import sys
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any, cast
 
+from .environment import ChatPolicy
 from .state import Message
 
 
@@ -40,17 +41,66 @@ class ChatRouter:
     """
 
     def __init__(self, player_ids: Iterable[str], cap: int | None) -> None:
-        self._players = frozenset(player_ids)
+        self._player_order = tuple(
+            sorted(player_ids, key=lambda player_id: int(player_id.removeprefix("player_")))
+        )
+        self._players = frozenset(self._player_order)
         self._cap = cap
         self._inboxes: dict[str, list[dict[str, Any]]] = {player_id: [] for player_id in self._players}
 
-    def validate_outgoing(self, sender: str, batch: object) -> list[Message]:
+    def default_policy(self, sender: str) -> ChatPolicy:
+        """Allow every other resolved player in canonical order, defaulting to broadcast."""
+        return ChatPolicy(
+            target_recipients=tuple(player for player in self._player_order if player != sender),
+            default_recipient=None,
+        )
+
+    def validate_policy(self, sender: str, policy: object) -> ChatPolicy:
+        """Validate an environment policy, falling back to the generic contract on any defect."""
+        fallback = self.default_policy(sender)
+        try:
+            if isinstance(policy, ChatPolicy):
+                recipients_value = policy.target_recipients
+                default_recipient = policy.default_recipient
+            elif isinstance(policy, Mapping):
+                policy_map = cast("Mapping[str, object]", policy)
+                if "target_recipients" not in policy_map or "default_recipient" not in policy_map:
+                    raise ValueError("missing policy field")
+                recipients_value = policy_map["target_recipients"]
+                default_recipient = policy_map["default_recipient"]
+            else:
+                raise TypeError("wrong policy shape")
+            if isinstance(recipients_value, (str, bytes)) or not isinstance(recipients_value, Sequence):
+                raise TypeError("target_recipients is not a sequence")
+            recipients = tuple(cast("Sequence[object]", recipients_value))
+            if (
+                not all(isinstance(recipient, str) for recipient in recipients)
+                or len(recipients) != len(set(recipients))
+                or any(recipient not in self._players or recipient == sender for recipient in recipients)
+                or (
+                    default_recipient is not None
+                    and (not isinstance(default_recipient, str) or default_recipient not in recipients)
+                )
+            ):
+                raise ValueError("invalid policy value")
+        except Exception:  # noqa: BLE001 - any invalid hook result uses the generic default policy
+            _diag(f"chat: {sender} environment policy is invalid; using the default policy")
+            return fallback
+        return ChatPolicy(cast("tuple[str, ...]", tuple(recipients)), default_recipient)
+
+    def validate_outgoing(
+        self,
+        sender: str,
+        batch: object,
+        policy: ChatPolicy | None = None,
+    ) -> list[Message]:
         """Validate one batch an agent or human returned, stamping ``from`` with ``sender``.
 
         Returns the accepted messages in order. Every rejected message is dropped with a stderr
         diagnostic and never raises. Enforced, in order: the recipient is a known player other than
-        the sender or ``None`` for broadcast; the text is a ``str`` within the code-point cap; and a
-        batch carries at most one message per distinct recipient plus one broadcast.
+        the sender or ``None`` for broadcast; a direct recipient is permitted by the active policy;
+        the text is a ``str`` within the code-point cap; and a batch carries at most one message per
+        distinct recipient plus one broadcast.
         """
         # "returns messages or nothing": None or an empty batch is silent, not an error.
         if batch is None:
@@ -59,6 +109,8 @@ class ChatRouter:
             _diag(f"chat: {sender} returned a non-list batch {type(batch).__name__}; dropping it")
             return []
 
+        active_policy = policy or self.default_policy(sender)
+        allowed_direct = frozenset(active_policy.target_recipients)
         accepted: list[Message] = []
         seen: set[str | None] = set()
         for raw_item in cast("Sequence[object]", batch):
@@ -73,6 +125,9 @@ class ChatRouter:
                 continue
             if to == sender:
                 _diag(f"chat: {sender} sent to itself; dropping it")
+                continue
+            if to is not None and to not in allowed_direct:
+                _diag(f"chat: {sender} sent to policy-disallowed recipient {to!r}; dropping it")
                 continue
             text = item.get("text")
             # A non-str text (including a bool, which is an int, not a str) is dropped here.

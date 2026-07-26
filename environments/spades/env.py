@@ -75,26 +75,25 @@ TRICK = _card_spaces.TRICK
 #: ``-1``); this is the single place that offset is applied.
 UNBID = 14
 
+#: The assignment layouts accepted by the factory and published through metadata. Keeping this
+#: harness-free lets the same environment module run inside the student template.
+SEAT_PLAN_SPECS = (
+    ("partnership", "Partnership", ((0, 2), (1, 3))),
+    ("solo", "Solo", ((0,), (1,), (2,), (3,))),
+)
+
 
 class IllegalMoveError(ValueError):
     """Raised by :meth:`SpadesEnv.step` when an action is not legal in the current phase."""
 
 
-def _int_parameter(parameters: Mapping[str, ParameterValue], name: str) -> int:
-    """Read one JSON-safe integer from a resolved parameter map."""
-    if name not in parameters:
-        raise ValueError(f"missing environment parameter {name!r}")
-    value = parameters[name]
-    if isinstance(value, bool) or not isinstance(value, int) or abs(value) > 2**53 - 1:
-        raise ValueError(f"{name} must be a JSON-safe integer")
-    return value
-
-
 def make_env(parameters: Mapping[str, ParameterValue]) -> SpadesEnv:
     """Return a fresh :class:`SpadesEnv`. The seed arrives later at :meth:`SpadesEnv.reset`."""
-    players = _int_parameter(parameters, "players")
-    if players != rules.NUM_PLAYERS:
-        raise ValueError(f"players must be {rules.NUM_PLAYERS} for Spades")
+    seat_plan = parameters.get("seat_plan")
+    plan_keys = tuple(key for key, _title, _seats in SEAT_PLAN_SPECS)
+    if seat_plan not in plan_keys:
+        choices = ", ".join(repr(key) for key in plan_keys)
+        raise ValueError(f"seat_plan must be one of {choices} for Spades")
     return SpadesEnv()
 
 
@@ -170,6 +169,21 @@ class SpadesEnv(AECEnv):
     def _agent(self, player: int) -> str:
         """Return the agent id for a player index ``0..3``."""
         return self.possible_agents[player]
+
+    def chat_policy(self, sender: str) -> dict[str, object]:
+        """Put the sender's partner first and make it the default direct recipient."""
+        player = self._player(sender)
+        team = rules.team_players(rules.team_of(player))
+        partner = next(member for member in team if member != player)
+        partner_id = self._agent(partner)
+        recipients = (
+            partner_id,
+            *(player_id for player_id in self.possible_agents if player_id not in {sender, partner_id}),
+        )
+        return {
+            "target_recipients": recipients,
+            "default_recipient": partner_id,
+        }
 
     def reset(self, seed: int | None = None, options: dict[str, Any] | None = None) -> None:
         self.state = rules.deal(random.Random(seed))

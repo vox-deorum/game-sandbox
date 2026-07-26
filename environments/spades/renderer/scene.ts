@@ -1,6 +1,6 @@
 /**
  * The Spades-specific half of the pure scene layer: the parts of the table that are Spades and not
- * generic trick-taking — the per-player `bid / won` line with its NIL marker and partnership tint, the
+ * generic trick-taking: the per-player `bid / won` line with its NIL marker and team tint, the
  * two team scores, the spades-broken status pip, the phase indicator, and — during the opening round —
  * the clickable grid of bid chips (`0..13`, `0` labelled NIL) laid out in the centre well. Everything a
  * Hearts and a Spades table draw identically — the card codec, the felt palette, the player/trick/hand
@@ -192,7 +192,7 @@ function readOverlay(state: StepState): SpadesOverlay {
 
 /**
  * Turn one recorded state into the static Spades table scene: the four player badges with their bid/won
- * lines and partnership tabs, the central trick (or the bid grid during the opening round), the
+ * lines, the central trick (or the bid grid during the opening round), the
  * opponents' rows, the view player's fanned hand with legal cards lit and illegal ones greyed, the status
  * strip with both team scores, and the move-clock chip on the controlled human's turn. Pure in `state`
  * plus `config`, so the same inputs always yield the same scene (the scrubber's same-state-same-frame
@@ -202,7 +202,7 @@ export function computeScene(state: StepState, config: SceneConfig = {}): Spades
   const o = readOverlay(state)
   const view = resolveView(config)
 
-  const players = buildPlayers(o, view)
+  const players = buildPlayers(o, view, config.seats)
   const { trick, trickWinner } = buildTrick(o, view.viewPlayer)
   const opponents = buildOpponents(o, view.viewPlayer, view.revealAll, SPADES_GEOMETRY)
   // Spades reads the emitted legal-cards overlay verbatim: during bidding it is empty (you cannot play
@@ -232,8 +232,12 @@ export function computeScene(state: StepState, config: SceneConfig = {}): Spades
 }
 
 /** Build the four player badges, adding each player's bid, tricks won, nil flag, and team to the core. */
-function buildPlayers(o: SpadesOverlay, view: ViewContext): SpadesScenePlayer[] {
-  return buildPlayersBase(o, view, SPADES_GEOMETRY).map((base) => {
+function buildPlayers(
+  o: SpadesOverlay,
+  view: ViewContext,
+  seats: SceneConfig['seats'],
+): SpadesScenePlayer[] {
+  return buildPlayersBase(o, view, SPADES_GEOMETRY, seats).map((base) => {
     const bid = o.bids[base.player] ?? -1
     return {
       ...base,

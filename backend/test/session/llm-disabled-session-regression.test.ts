@@ -104,7 +104,7 @@ describe('disabled LLM session regression', () => {
       userId: 'alice',
       envId,
       seasonId: seasons.get(envId) ?? 'missing',
-      parameters: envId === 'spades' ? { players: 4 } : { players: 1, pipe_gap: 100 },
+      parameters: envId === 'spades' ? { seat_plan: 'solo' } : { players: 1, pipe_gap: 100 },
       seed: 7,
       seats,
     })

@@ -31,6 +31,10 @@
       "description": "Messages sent on this tick. Absent when empty to keep lines small. Lit up in Stage 8.",
       "items": { "$ref": "#/$defs/message" }
     },
+    "chat_options": {
+      "$ref": "#/$defs/chat_options",
+      "description": "The current external player's allowed direct recipients and default recipient. Absent when no external messaging turn is open."
+    },
     "timing": { "$ref": "#/$defs/step_timing" }
   },
   "$defs": {
@@ -93,6 +97,27 @@
         },
         "text": {
           "type": "string"
+        }
+      }
+    },
+    "chat_options": {
+      "type": "object",
+      "required": ["sender", "target_recipients", "default_recipient"],
+      "additionalProperties": false,
+      "properties": {
+        "sender": {
+          "type": "string",
+          "description": "Player id of the external actor allowed to send on this state."
+        },
+        "target_recipients": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string" },
+          "description": "Ordered direct-message recipients. Broadcast is always available separately."
+        },
+        "default_recipient": {
+          "type": ["string", "null"],
+          "description": "The selected direct recipient, or null when broadcast is the default."
         }
       }
     },

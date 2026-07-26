@@ -2,6 +2,11 @@ import type { StepState } from '@game-sandbox/schema'
 import { getRenderer } from '@renderers/registry.js'
 import { describe, expect, it } from 'vitest'
 import {
+  type SceneConfig,
+  wideSeatLabel,
+  wideSeatsAccessibilityLabel,
+} from '../../../frontend/src/renderers/cards/scene.js'
+import {
   bidChipAt,
   bidToAction,
   type Card,
@@ -37,6 +42,18 @@ const TWO_HEARTS: Card = { suit: 3, rank: 2 }
 
 /** Every bid 0..13, the full bidding legal-bids list. */
 const ALL_BIDS = Array.from({ length: 14 }, (_, k) => k)
+
+const PARTNERSHIP_SEATS: NonNullable<SceneConfig['seats']> = {
+  seat_0: ['player_0', 'player_2'],
+  seat_1: ['player_1', 'player_3'],
+}
+
+const SOLO_SEATS: NonNullable<SceneConfig['seats']> = {
+  seat_0: ['player_0'],
+  seat_1: ['player_1'],
+  seat_2: ['player_2'],
+  seat_3: ['player_3'],
+}
 
 /** One `{player, card}` trick entry, the shape `current_trick`/`last_trick` carry (play order). */
 function entry(player: number, card: Card): { player: number; card: Card } {
@@ -232,6 +249,48 @@ describe('player badges: bids, the NIL marker, tricks won, and partnerships', ()
     // A spectator reads a third-person "to play" message and plain P0..P3 player labels.
     expect(scene.status.message).toBe('P2 to play')
     expect(scene.players.map((p) => p.label)).toEqual(['P0', 'P1', 'P2', 'P3'])
+  })
+
+  it.each([
+    'player_0',
+    'player_1',
+    'player_2',
+    'player_3',
+  ])('derives partnership assignment marks from the recording header for a %s view', (viewer) => {
+    const scene = computeScene(mkState(overlay({})), {
+      controlledPlayers: [viewer],
+      seats: PARTNERSHIP_SEATS,
+    })
+    const byPlayer = new Map(scene.players.map((player) => [player.player, player]))
+
+    expect(byPlayer.get(0)).toMatchObject({ assignmentSeat: 'seat_0', assignmentGroup: 0 })
+    expect(byPlayer.get(2)).toMatchObject({ assignmentSeat: 'seat_0', assignmentGroup: 0 })
+    expect(byPlayer.get(1)).toMatchObject({ assignmentSeat: 'seat_1', assignmentGroup: 1 })
+    expect(byPlayer.get(3)).toMatchObject({ assignmentSeat: 'seat_1', assignmentGroup: 1 })
+    expect(scene.players.map((player) => player.team).sort()).toEqual([0, 0, 1, 1])
+  })
+
+  it.each([
+    'player_0',
+    'player_1',
+    'player_2',
+    'player_3',
+  ])('omits assignment marks for a singleton-only plan from a %s view', (viewer) => {
+    const scene = computeScene(mkState(overlay({})), {
+      controlledPlayers: [viewer],
+      seats: SOLO_SEATS,
+    })
+    expect(scene.players.every((player) => player.assignmentSeat === null)).toBe(true)
+    expect(scene.players.every((player) => player.assignmentGroup === null)).toBe(true)
+  })
+
+  it('inherits the shared compact seat labels and wide-seat accessibility description', () => {
+    expect(wideSeatLabel('seat_12')).toBe('S12')
+    expect(wideSeatLabel('north')).toBe('north')
+    expect(wideSeatsAccessibilityLabel('Spades', PARTNERSHIP_SEATS)).toBe(
+      'Spades table. Wide seats: S0 includes P0 and P2; S1 includes P1 and P3.',
+    )
+    expect(wideSeatsAccessibilityLabel('Spades', SOLO_SEATS)).toBeNull()
   })
 })
 

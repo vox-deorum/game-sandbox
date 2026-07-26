@@ -827,7 +827,7 @@ def test_human_chat_frame_over_transport_lands_in_the_recording(tmp_path: Path):
         messaging=None,
     ) as episode:
         control.configure_chat(episode.messaging_enabled)
-        control.handle_line('{"kind":"chat","player":"player_0","to":null,"text":"hello table"}')
+        control.handle_line('{"kind":"chat","player":"player_0","tick":0,"to":null,"text":"hello table"}')
         run_live_loop(episode, pace_interval_ms=16, control=control, clock=clock, sleeper=sleeper)
 
     # The broadcast the human queued was validated and recorded on the first stepped tick.
@@ -857,7 +857,7 @@ def test_human_chat_frame_is_dropped_when_messaging_disabled_by_config(tmp_path:
         messaging=False,  # config disables what the metadata allowed
     ) as episode:
         control.configure_chat(episode.messaging_enabled)
-        control.handle_line('{"kind":"chat","player":"player_0","to":null,"text":"hello"}')
+        control.handle_line('{"kind":"chat","player":"player_0","tick":0,"to":null,"text":"hello"}')
         run_live_loop(episode, pace_interval_ms=16, control=control, clock=clock, sleeper=sleeper)
 
     # Messaging off: no message line was ever written.

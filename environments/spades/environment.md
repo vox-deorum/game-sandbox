@@ -230,7 +230,7 @@ Read these through `observation["observation"]`, or let the helpers do it: `hand
 
 #### How player numbers and partnerships work
 
-Player IDs label PettingZoo positions rather than fixed screen positions. Player `0` controls `player_0`, player `1` controls `player_1`, and so on. Turns move clockwise. A platform **seat** is a separate assignment unit that currently covers one player in Spades:
+Player IDs label PettingZoo positions rather than fixed screen positions. Player `0` controls `player_0`, player `1` controls `player_1`, and so on. Turns move clockwise. A platform **seat** is a separate assignment unit. The default `partnership` plan gives one seat to players 0 and 2 and another to players 1 and 3. The `solo` plan gives each player a separate seat:
 
 ```text
 0 → 1 → 2 → 3 → 0
@@ -263,7 +263,7 @@ def chat(self, inbox):
 
 `chat` receives the inbox but not the observation. Save anything it needs, such as your player or hand, in `act`, which runs first on every turn. Your partner is the player across from you: `player_((your_player + 2) % 4)`.
 
-A **targeted** message to your partner is delivered only to that player, while a **broadcast** (`"to": None`) is delivered to the whole table. Every message is recorded and shown in replays, so even a targeted message is not secret. In Spades, each message is limited to **120 Unicode code points**. An emoji counts as one code point, and a season may lower the limit. The [agent interface](../../docs/students/agent-interface.md#chatinbox) explains delivery timing, send limits, and how chat time counts toward your limits.
+A **targeted** message is delivered only to the selected player, while a **broadcast** (`"to": None`) is delivered to the whole table. Direct choices come from the live game state. Your partner is listed first and is the default direct target on your turn. Broadcast to everyone is always available. Every message is recorded and shown in replays, so even a targeted message is not secret. In Spades, each message is limited to **120 Unicode code points**. An emoji counts as one code point, and a season may lower the limit. The [agent interface](../../docs/students/agent-interface.md#chatinbox) explains delivery timing, send limits, and how chat time counts toward your limits.
 
 The two worked examples show both shapes: `signaler` sends its partner a targeted suit signal and leads the suit it is told about, and `daredevil` bids nil, broadcasts a warning, and covers a partner who did the same.
 

@@ -66,6 +66,8 @@ export interface BuildScheduleInput {
  * Naive baseline (every submission seat filled with `builtin-naive`) is always appended once, so the
  * board has a comparable baseline row even with zero ready submissions. A match with no submission
  * seat is just that baseline. `game_index` is a single deterministic counter across the whole run.
+ * Keep enumeration changes aligned with `projectSchedule`; the shared-projection test in
+ * `backend/test/scheduler/build-schedule.test.ts` cross-checks their per-match and total counts.
  */
 export function buildSchedule(input: BuildScheduleInput): ScheduledGameInput[] {
   const { matches, submissions, seatOrderMatters, seatPlan } = input

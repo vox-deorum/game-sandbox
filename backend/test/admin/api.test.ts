@@ -1084,6 +1084,38 @@ describe('admin API', () => {
   })
 
   describe('status and list', () => {
+    it('reports the same active ready-submission roster count a run would snapshot', async () => {
+      const id = await declare()
+      await users.headersFor('bob')
+      await users.headersFor('alice')
+      await users.headersFor('dave')
+      const ready = await makeReadySubmission(storage, id, { user: users.idOf('bob') })
+      await seedSubmission(id, users.idOf('carol'), { withSnapshot: false })
+
+      // Replacing Alice's ready submission supersedes it, so it must not remain eligible.
+      await makeReadySubmission(storage, id, { user: users.idOf('alice') })
+      await seedSubmission(id, users.idOf('alice'), { withSnapshot: false })
+
+      const otherSeason = await declare()
+      await makeReadySubmission(storage, otherSeason, { user: users.idOf('dave') })
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/admin/seasons/${id}`,
+        headers: OPERATOR,
+      })
+
+      expect(res.statusCode).toBe(200)
+      expect((res.json() as { eligible_submission_count: number }).eligible_submission_count).toBe(
+        1,
+      )
+      expect(
+        (await storage.listActiveSubmissionsBySeason(id, 'ready')).map(
+          (submission) => submission.id,
+        ),
+      ).toEqual([ready.id])
+    })
+
     it('returns the admin view, including an unreleased season board after a completed run', async () => {
       const id = await declare()
       await storage.updateSeasonConfig(id, flappyConfig())

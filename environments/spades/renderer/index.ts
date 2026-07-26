@@ -1,7 +1,7 @@
 /**
  * The Spades renderer: a {@link CardTableRenderer} subclass that supplies only what is Spades and not
- * generic trick-taking — the overlay→scene function, the player badge's partnership tab and `bid / won`
- * line, the two-team status strip, the centre grid of clickable bid chips during the opening round, the
+ * generic trick-taking: the overlay→scene function, the player badge's `bid / won` line, the two-team
+ * status strip, the centre grid of clickable bid chips during the opening round, the
  * "won/bid" pill raised over a trick's winner, and the gold pulse plus chosen-chip flash that mark a
  * player and its bid the instant a bid is placed.
  * The shared card table (felt, players, trick, hand, opponents, card faces, and the fly-in/sweep
@@ -79,16 +79,8 @@ export class SpadesRenderer extends CardTableRenderer<SpadesScene> {
 
   // --- Player interior ---
 
-  /** The badge interior: the partnership tab, the "(you)"-aware name, and the `bid · won` line. */
+  /** The badge interior: the "(you)"-aware name and the bid/won line. */
   protected drawPlayerContent(container: Container, player: SpadesScenePlayer): void {
-    const w = this.geometry.badgeW
-    const h = this.geometry.badgeH
-
-    // A short partnership tab down the badge's left edge, so the two teams read at a glance.
-    const tab = new Graphics()
-    tab.roundRect(-w / 2 + 5, -h / 2 + 9, 4, h - 18, 2).fill(TEAM_TINT[player.team] ?? COLORS.white)
-    container.addChild(tab)
-
     const label = this.text(player.label, 22, COLORS.white, 'center')
     label.position.set(0, -12)
     container.addChild(label)
@@ -312,7 +304,9 @@ export class SpadesRenderer extends CardTableRenderer<SpadesScene> {
     const t = pulse.elapsedMs / pulse.durationMs
     // The player layer is rebuilt each state, so find the current badge fresh and re-draw the ring on it;
     // a stale ring from a prior frame (or a prior badge) is dropped first so nothing accumulates.
-    const playerNode = this.playerLayer.getChildByLabel?.(`player-${pulse.player}`) as Container | null
+    const playerNode = this.playerLayer.getChildByLabel?.(
+      `player-${pulse.player}`,
+    ) as Container | null
     if (playerNode) {
       playerNode.getChildByLabel?.('bid-pulse')?.destroy()
     }

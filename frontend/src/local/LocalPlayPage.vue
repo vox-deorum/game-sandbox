@@ -15,6 +15,7 @@ import { useRendererMount } from '../composables/useRendererMount.js'
 import { useSessionSocket } from '../composables/useSessionSocket.js'
 import { useStageLayout } from '../composables/useStageLayout.js'
 import { useLiveFramePresentation } from '../composables/useLiveFramePresentation.js'
+import { useLiveChat } from '../composables/useLiveChat.js'
 import { loadEnvironmentCatalog } from '../environmentCatalog.js'
 
 const meta = ref<EnvironmentMeta | null>(null)
@@ -34,6 +35,10 @@ const controlledPlayers = computed(() =>
 )
 
 function sendInput(playerId: string, action: unknown): void {
+  if (connection.value !== 'open') {
+    return
+  }
+  consumeChatAction(playerId)
   send({ kind: 'input', player: playerId, action })
 }
 
@@ -89,6 +94,18 @@ watch(paused, (value) => {
 const { logBeside } = useStageLayout(aspectRatio)
 const stageLoading = computed(() => meta.value === null || (aspectRatio.value === null && !noRenderer.value))
 const messagingEnabled = computed(() => meta.value?.messaging === true)
+const liveChatEnabled = computed(() => status.value === 'running')
+const {
+  chatOptions,
+  chatSendable,
+  consumeAction: consumeChatAction,
+  sendChat,
+} = useLiveChat({
+  state: lastState,
+  controlledPlayers,
+  enabled: liveChatEnabled,
+  send,
+})
 const showStartGate = computed(() => paused.value && !started.value)
 const controlsReady = computed(() => header.value !== null && status.value === 'running')
 
@@ -178,6 +195,14 @@ onMounted(async () => {
           :entries="chatLog"
           :players="header?.players"
           :viewer-players="controlledPlayers"
+          :sendable="chatSendable"
+          :connected="connection === 'open'"
+          :message-cap="meta?.message_cap ?? null"
+          :sender="chatOptions?.sender"
+          :tick="lastState?.tick"
+          :target-recipients="chatOptions?.target_recipients"
+          :default-recipient="chatOptions?.default_recipient"
+          @send="sendChat"
         />
         <DecisionLog v-else :entries="decisions" />
       </template>
@@ -196,6 +221,14 @@ onMounted(async () => {
             :entries="chatLog"
             :players="header?.players"
             :viewer-players="controlledPlayers"
+            :sendable="chatSendable"
+            :connected="connection === 'open'"
+            :message-cap="meta?.message_cap ?? null"
+            :sender="chatOptions?.sender"
+            :tick="lastState?.tick"
+            :target-recipients="chatOptions?.target_recipients"
+            :default-recipient="chatOptions?.default_recipient"
+            @send="sendChat"
           />
         </details>
       </template>

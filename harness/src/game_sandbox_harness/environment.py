@@ -18,7 +18,7 @@ import re
 from collections.abc import Callable, Mapping
 from dataclasses import InitVar, dataclass
 from importlib.metadata import entry_points
-from typing import Any, Literal, TypeGuard, cast
+from typing import Any, Literal, Protocol, TypeGuard, cast, runtime_checkable
 
 #: The entry-point group every environment registers its ``ENTRY`` under.
 ENTRY_POINT_GROUP = "game_sandbox.environments"
@@ -244,6 +244,27 @@ class ResolvedLayout:
     seats: tuple[ResolvedSeat, ...]
     player_count: int
     seat_count: int
+
+
+@dataclass(frozen=True)
+class ChatPolicy:
+    """One acting player's live direct-message choices.
+
+    ``target_recipients`` is ordered for presentation and limits direct messages only. Broadcast is
+    always allowed. ``default_recipient`` is ``None`` for broadcast or one member of that tuple. The
+    harness validates an environment hook's returned policy against the resolved players before
+    using it.
+    """
+
+    target_recipients: tuple[str, ...]
+    default_recipient: str | None
+
+
+@runtime_checkable
+class ChatPolicySource(Protocol):
+    """A running environment that supplies live direct-message choices."""
+
+    def chat_policy(self, sender: str) -> object: ...
 
 
 def _player_count_parameter(bounds: PlayerBounds) -> EnvParameter:

@@ -229,6 +229,8 @@ describe('submission storage on :memory:', () => {
     expect(all.map((s) => s.id).sort()).toEqual([alice.id, bob.id].sort())
     const ready = await storage.listActiveSubmissionsBySeason(iter, 'ready')
     expect(ready.map((s) => s.id)).toEqual([alice.id])
+    expect(await storage.countActiveSubmissionsBySeason(iter)).toBe(2)
+    expect(await storage.countActiveSubmissionsBySeason(iter, 'ready')).toBe(1)
   })
 
   it('listActiveReadySubmissionIds returns only active ready ids across seasons', async () => {

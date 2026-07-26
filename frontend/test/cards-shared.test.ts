@@ -1,4 +1,5 @@
 import type { StepState } from '@game-sandbox/schema'
+import type { RendererContext } from '@renderers/types.js'
 import { describe, expect, it } from 'vitest'
 import { HeartsRenderer } from '../../environments/hearts/renderer/index.js'
 // The Hearts scene module re-exports the whole shared layer, so importing the frame constants from it
@@ -27,7 +28,11 @@ import {
   readCardOverlay,
   resolveView,
   WIDTH,
+  wideSeatAssignments,
+  wideSeatLabel,
+  wideSeatsAccessibilityLabel,
 } from '../src/renderers/cards/scene.js'
+import { heartsMeta, spadesHeader } from './helpers/fixtures.js'
 
 // The shared card-table layer is a single source both card renderers extend, its codec agrees with the
 // rules encoding, and the per-game geometry
@@ -133,5 +138,44 @@ describe('the shared card-table renderer layer', () => {
     expect(
       buildHand(overlay, { ...view, controlledPlayer: null }, new Set(['0:2']))[0]?.controllable,
     ).toBe(false)
+  })
+
+  it('derives only wide-seat groups and uses neutral compact and accessible labels', () => {
+    const seats: NonNullable<Parameters<typeof wideSeatAssignments>[0]> = {
+      seat_0: ['player_0', 'player_2'],
+      seat_1: ['player_1'],
+      seat_2: ['player_3'],
+    }
+    expect([...wideSeatAssignments(seats)]).toEqual([
+      ['player_0', { seat: 'seat_0', group: 0 }],
+      ['player_2', { seat: 'seat_0', group: 0 }],
+    ])
+    expect(wideSeatLabel('seat_12')).toBe('S12')
+    expect(wideSeatLabel('captain')).toBe('captain')
+    expect(wideSeatsAccessibilityLabel('Hearts', seats)).toBe(
+      'Hearts table. Wide seats: S0 includes P0 and P2.',
+    )
+    expect(wideSeatsAccessibilityLabel('Hearts', { seat_0: ['player_0'] })).toBeNull()
+  })
+
+  it('gives every card renderer the shared wide-seat accessibility lifecycle', () => {
+    const container = document.createElement('div')
+    const context: RendererContext = {
+      container,
+      meta: heartsMeta(),
+      header: spadesHeader(),
+      controlledPlayers: [],
+    }
+    const renderer = HeartsRenderer.mount(context)
+
+    expect(container).toHaveAttribute('role', 'img')
+    expect(container).toHaveAttribute(
+      'aria-label',
+      'Hearts table. Wide seats: S0 includes P0 and P2; S1 includes P1 and P3.',
+    )
+
+    renderer.destroy()
+    expect(container).not.toHaveAttribute('role')
+    expect(container).not.toHaveAttribute('aria-label')
   })
 })

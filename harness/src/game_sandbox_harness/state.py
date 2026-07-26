@@ -54,6 +54,14 @@ Message = TypedDict(
 )
 
 
+class ChatOptions(TypedDict):
+    """The live messaging choices for the external player who may act on this state."""
+
+    sender: str
+    target_recipients: list[str]
+    default_recipient: str | None
+
+
 class StepState(TypedDict):
     """One per-step state object."""
 
@@ -62,6 +70,7 @@ class StepState(TypedDict):
     agents: dict[str, AgentStep]
     overlay: NotRequired[dict[str, Any]]
     messages: NotRequired[list[Message]]
+    chat_options: NotRequired[ChatOptions]
     timing: StepTiming
 
 
@@ -137,6 +146,7 @@ def build_step_state(
     duration_ms: float,
     overlay: dict[str, Any] | None = None,
     messages: list[Message] | None = None,
+    chat_options: ChatOptions | None = None,
 ) -> StepState:
     """Build a per-step state object stamped with the current schema version."""
     state: StepState = {
@@ -149,6 +159,8 @@ def build_step_state(
         state["overlay"] = overlay
     if messages:
         state["messages"] = messages
+    if chat_options is not None:
+        state["chat_options"] = chat_options
     return state
 
 

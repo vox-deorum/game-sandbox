@@ -15,8 +15,19 @@
     back as `invalid_config` and render inline.
 -->
 <script setup lang="ts">
-import type { EnvParameter, ParameterValue } from '@game-sandbox/schema/environment'
+import {
+  type EnvironmentMeta,
+  type EnvParameter,
+  type ParameterValue,
+  resolveLayout,
+} from '@game-sandbox/schema/environment'
 import { MAX_LLM_COST_WEIGHT, MODEL_ALIASES } from '@game-sandbox/schema/llm'
+import {
+  projectSchedule,
+  type ScheduleProjection,
+  ScheduleProjectionError,
+  SEAT_SPECS,
+} from '@game-sandbox/schema/schedule'
 import { computed, ref, watch } from 'vue'
 
 import {
@@ -35,12 +46,15 @@ import UiButton from '../ui/UiButton.vue'
 import UiCard from '../ui/UiCard.vue'
 import UiDialog from '../ui/UiDialog.vue'
 import UiDialogActions from '../ui/UiDialogActions.vue'
+import UiEmptyState from '../ui/UiEmptyState.vue'
 import UiField from '../ui/UiField.vue'
 import UiInput from '../ui/UiInput.vue'
 import UiSelect from '../ui/UiSelect.vue'
 
 const props = defineProps<{
   season: SeasonView
+  eligibleSubmissionCount: number
+  environment?: EnvironmentMeta
   /** The environment capability shown beside the inherited messaging choice. */
   environmentMessagingEnabled?: boolean
   environmentParameters?: readonly EnvParameter[]
@@ -51,7 +65,7 @@ const emit = defineEmits<{
   (e: 'dirty-change', dirty: boolean): void
 }>()
 
-const SEAT_SPECS: SeatSpec[] = ['submission', 'builtin-naive']
+const EDITABLE_SEAT_SPECS: SeatSpec[] = [...SEAT_SPECS]
 const LLM_MODEL_ALIASES: readonly LlmModelAlias[] = MODEL_ALIASES
 
 /** One match's editable form state; seeds are free text parsed to ints on save. */
@@ -89,6 +103,64 @@ const parameterValues = ref<Record<string, ParameterValue>>({})
 const parameterValidation = computed(() =>
   validateParameters(props.environmentParameters ?? [], parameterValues.value),
 )
+const resolvedLayout = computed(() => {
+  if (props.environment === undefined || Object.keys(parameterValidation.value.errors).length > 0) {
+    return null
+  }
+  try {
+    return resolveLayout(props.environment, parameterValidation.value.values)
+  } catch {
+    return null
+  }
+})
+
+function projectionErrorMessage(error: ScheduleProjectionError, seatCount: number): string {
+  const matchNumber = error.matchIndex === null ? null : error.matchIndex + 1
+  switch (error.reason) {
+    case 'seat_count_mismatch': {
+      const draftSeats =
+        error.matchIndex === null ? null : matches.value[error.matchIndex]?.seats.length
+      return `Schedule projection unavailable: Match ${matchNumber} has ${draftSeats} seats, but the resolved layout has ${seatCount}.`
+    }
+    case 'unsafe_integer':
+      return `Schedule projection unavailable: Match ${matchNumber} creates too many games to count safely.`
+    case 'invalid_games':
+      return `Schedule projection unavailable: Match ${matchNumber} has an invalid game count.`
+    case 'invalid_eligible_submission_count':
+      return 'Schedule projection unavailable: the eligible submission count is invalid.'
+    case 'invalid_seat_count':
+      return 'Schedule projection unavailable: the resolved seat count is invalid.'
+  }
+}
+
+const projectionState = computed<{ projection: ScheduleProjection | null; error: string | null }>(
+  () => {
+    const layout = resolvedLayout.value
+    const environment = props.environment
+    if (layout === null || environment === undefined) return { projection: null, error: null }
+    const built = buildConfig()
+    if ('error' in built) return { projection: null, error: null }
+    try {
+      return {
+        projection: projectSchedule({
+          matches: built.config.matches,
+          eligibleSubmissionCount: props.eligibleSubmissionCount,
+          seatCount: layout.seatCount,
+          seatOrderMatters: environment.seat_order_matters,
+        }),
+        error: null,
+      }
+    } catch (error) {
+      if (error instanceof ScheduleProjectionError) {
+        return { projection: null, error: projectionErrorMessage(error, layout.seatCount) }
+      }
+      throw error
+    }
+  },
+)
+const projection = computed(() => projectionState.value.projection)
+const projectionError = computed(() => projectionState.value.error)
+const projectedSeatCount = computed(() => resolvedLayout.value?.seatCount ?? null)
 
 const saving = ref(false)
 const saved = ref(false)
@@ -504,7 +576,9 @@ watch(confirmOpen, (open) => {
             data-testid="seat"
           >
             <select v-model="match.seats[seatIndex]" class="seat-select" aria-label="Seat">
-              <option v-for="spec in SEAT_SPECS" :key="spec" :value="spec">{{ spec }}</option>
+              <option v-for="spec in EDITABLE_SEAT_SPECS" :key="spec" :value="spec">
+                {{ spec }}
+              </option>
             </select>
             <UiButton variant="ghost" size="tight" @click="removeSeat(match, seatIndex)">×</UiButton>
           </div>
@@ -525,6 +599,37 @@ watch(confirmOpen, (open) => {
         </div>
       </li>
     </ol>
+    <div v-if="projection !== null" class="schedule-projection" aria-live="polite">
+      <strong>Projected games: {{ projection.totalGames.toLocaleString() }}</strong>
+      <span v-if="projectedSeatCount !== null">
+        Resolved layout: {{ projectedSeatCount }}
+        {{ projectedSeatCount === 1 ? 'seat' : 'seats' }}.
+      </span>
+      <span
+        v-for="(matchProjection, matchIndex) in projection.matches"
+        :key="matchIndex"
+        data-testid="match-projection"
+      >
+        Match {{ matchIndex + 1 }}:
+        {{ matchProjection.submittedAssignments.toLocaleString() }} submitted assignments and
+        {{ matchProjection.naiveAssignments }} all-Naive assignment;
+        {{ matchProjection.submittedGames.toLocaleString() }} submitted games and
+        {{ matchProjection.naiveGames.toLocaleString() }} all-Naive games.
+      </span>
+      <span>
+        Uses {{ eligibleSubmissionCount.toLocaleString() }} eligible
+        {{ eligibleSubmissionCount === 1 ? 'submission' : 'submissions' }} as of page load. A run
+        freezes a fresh roster when triggered.
+      </span>
+    </div>
+    <UiEmptyState
+      v-else-if="projectionError !== null"
+      tone="danger"
+      role="alert"
+      data-testid="projection-error"
+    >
+      {{ projectionError }}
+    </UiEmptyState>
       <UiButton variant="secondary" size="tight" @click="addMatch">Add match</UiButton>
     </UiCard>
 
@@ -886,6 +991,20 @@ watch(confirmOpen, (open) => {
   border: 1px solid var(--color-border);
   background: var(--color-bg);
   color: var(--color-text);
+}
+
+.schedule-projection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-bottom: var(--space-3);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.schedule-projection strong {
+  color: var(--color-text);
+  font-size: var(--text-md);
 }
 
 .match-fields {

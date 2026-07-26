@@ -15,13 +15,14 @@
  * remains inert (validated to be an object and round-tripped unchanged) until Stage 9 gives it a
  * concrete shape.
  */
+import { SEAT_SPECS, type SeatSpec as SharedSeatSpec } from '@game-sandbox/schema/schedule'
 import { z } from 'zod'
 
 import { MAX_LLM_COST_WEIGHT, MODEL_ALIASES } from '../llm/types.js'
 
 /** One seat in a match composition: the built-in scripted baseline, or a participant submission. */
-export const SEAT_SPECS = ['builtin-naive', 'submission'] as const
-export type SeatSpec = (typeof SEAT_SPECS)[number]
+export { SEAT_SPECS }
+export type SeatSpec = SharedSeatSpec
 
 /**
  * One match configuration: an ordered list of seat specs, the seeds every game in the configuration

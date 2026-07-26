@@ -12,9 +12,10 @@ import {
   handCardAt,
   PLAY_HOLD,
   playCardAt,
-  SWEEP_HOLD,
   positionAnchor,
   positionOfPlayer,
+  type SceneConfig,
+  SWEEP_HOLD,
   sweepCardAt,
   trickOffset,
   WIDTH,
@@ -43,6 +44,12 @@ const TWO_DIAMONDS: Card = { suit: 1, rank: 2 }
 const TWO_SPADES: Card = { suit: 2, rank: 2 }
 const TWO_HEARTS: Card = { suit: 3, rank: 2 }
 const THREE_HEARTS: Card = { suit: 3, rank: 3 }
+
+const WIDE_SEATS: NonNullable<SceneConfig['seats']> = {
+  seat_0: ['player_0', 'player_2'],
+  seat_1: ['player_1'],
+  seat_2: ['player_3'],
+}
 
 /** Build a minimal StepState carrying a Hearts overlay, with the required envelope fields. */
 function mkState(overlay: Record<string, unknown>, tick = 0): StepState {
@@ -165,7 +172,12 @@ describe('computeScene greying from the legal-action mask', () => {
 describe('computeScene scores, players, and the turn indicator', () => {
   it('renders the per-player penalty scores and highlights the active player', () => {
     const state = mkState(
-      overlay({ display_scores: [2, 17, 2, 5], turn: 2, turn_player: 'player_2', tricks_played: 5 }),
+      overlay({
+        display_scores: [2, 17, 2, 5],
+        turn: 2,
+        turn_player: 'player_2',
+        tricks_played: 5,
+      }),
     )
     const scene = computeScene(state) // spectator: no controlled player ids
     expect(scene.players.map((p) => p.score)).toEqual([2, 17, 2, 5])
@@ -181,6 +193,27 @@ describe('computeScene scores, players, and the turn indicator', () => {
     expect(scene.players[0]?.label).toBe('P0 (you)')
     expect(scene.players[0]?.isYou).toBe(true)
     expect(scene.status.message).toBe('Your turn')
+  })
+
+  it('inherits shared wide-seat labels and grouping for a synthetic Hearts layout', () => {
+    const scene = computeScene(mkState(overlay({})), {
+      controlledPlayers: ['player_0'],
+      seats: WIDE_SEATS,
+    })
+
+    expect(scene.players.map((player) => player.label)).toEqual([
+      'S0 · P0 (you)',
+      'P1',
+      'S0 · P2',
+      'P3',
+    ])
+    expect(scene.players.map((player) => player.assignmentSeat)).toEqual([
+      'seat_0',
+      null,
+      'seat_0',
+      null,
+    ])
+    expect(scene.players.map((player) => player.assignmentGroup)).toEqual([0, null, 0, null])
   })
 
   it('shows the move clock only on the controlled human turn, never in replay', () => {

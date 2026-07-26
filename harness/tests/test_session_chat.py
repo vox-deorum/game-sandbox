@@ -7,6 +7,7 @@ observed on the recipient's *next* turn. All on ``ManualClock``.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,7 @@ import pytest
 
 from game_sandbox_harness.clock import ManualClock
 from game_sandbox_harness.environment import (
+    ChatPolicy,
     EnvironmentEntry,
     EnvironmentMeta,
     PlayerBounds,
@@ -24,6 +26,7 @@ from game_sandbox_harness.session import (
     REASON_EPISODE_LIMIT,
     AgentPlayer,
     Episode,
+    ExternalChatFrame,
     ExternalPlayer,
     run_episode,
 )
@@ -75,6 +78,23 @@ class RoundRobinEnv:
             self.agent_selection = self.possible_agents[self._idx]
 
 
+class PolicyRoundRobinEnv(RoundRobinEnv):
+    """The round-robin fixture with an explicitly typed live chat policy hook."""
+
+    def __init__(
+        self,
+        players: list[str],
+        n_ticks: int,
+        policy: Callable[[RoundRobinEnv, str], object],
+        step_log: list[Any] | None = None,
+    ) -> None:
+        super().__init__(players, n_ticks, step_log)
+        self._policy = policy
+
+    def chat_policy(self, sender: str) -> object:
+        return self._policy(self, sender)
+
+
 def make_chat_entry(
     players: tuple[str, ...] = ("player_0", "player_1"),
     n_ticks: int = 4,
@@ -82,6 +102,7 @@ def make_chat_entry(
     messaging: bool = True,
     message_cap: int | None = None,
     step_log: list[Any] | None = None,
+    chat_policy: Callable[[RoundRobinEnv, str], object] | None = None,
 ) -> EnvironmentEntry:
     meta = EnvironmentMeta(
         env_id="chat-fake",
@@ -100,9 +121,15 @@ def make_chat_entry(
         renderer="fake",
         seat_order_matters=True,
     )
+
+    def make(_parameters):
+        if chat_policy is not None:
+            return PolicyRoundRobinEnv(list(players), n_ticks, chat_policy, step_log)
+        return RoundRobinEnv(list(players), n_ticks, step_log)
+
     return EnvironmentEntry(
         meta=meta,
-        make=lambda _parameters: RoundRobinEnv(list(players), n_ticks, step_log),
+        make=make,
         default_action=lambda env, player_id: 0,
         overlay=None,
     )
@@ -178,18 +205,20 @@ class QueueSource:
     per-player FIFO drained once per stepped tick.
     """
 
-    def __init__(self, frames: list[dict] | None = None) -> None:
+    def __init__(self, frames: list[ExternalChatFrame] | None = None) -> None:
         self._frames = list(frames or [])
         self._drained = False
+
+    def queue(self, frame: ExternalChatFrame) -> None:
+        self._frames.append(frame)
 
     def get_action(self, player_id: str, observation: Any, deadline_ms: int | None) -> Any:
         return None
 
-    def take_messages(self, player_id: str) -> list[dict]:
-        if self._drained:
-            return []
+    def take_messages(self, player_id: str) -> list[ExternalChatFrame]:
         self._drained = True
-        return self._frames
+        frames, self._frames = self._frames, []
+        return frames
 
 
 # --- hook order ---------------------------------------------------------------------------------
@@ -348,7 +377,7 @@ def test_chat_crash_sets_failed_player():
 
 
 def test_action_source_is_not_implicitly_used_as_a_message_source():
-    source = QueueSource([{"to": None, "text": "must stay queued"}])
+    source = QueueSource([{"player": "player_0", "tick": 0, "to": None, "text": "must stay queued"}])
     entry = make_chat_entry(players=("player_0",), n_ticks=1)
 
     run_episode(
@@ -363,10 +392,19 @@ def test_action_source_is_not_implicitly_used_as_a_message_source():
 
 
 def test_human_queue_is_drained_once_per_stepped_tick_and_delivered_next(tmp_path: Path):
-    # A human player (player_1) queues a message; it is drained on the tick player_0 acts (not player_1's
-    # turn), recorded there, and delivered to the agent on the agent's next turn.
+    # A human player (player_1) queues a message against the state published after player_0 acts. It is
+    # drained only when player_1 becomes the current external actor, then delivered on player_0's turn.
     receiver = ChattyAgent()
-    source = QueueSource([{"to": "player_0", "text": "from the human"}])
+    source = QueueSource(
+        [
+            {
+                "player": "player_1",
+                "tick": 0,
+                "to": "player_0",
+                "text": "from the human",
+            }
+        ]
+    )
     store = FolderRecordingStore(tmp_path)
     entry = make_chat_entry(players=("player_0", "player_1"), n_ticks=4)
     run_episode(
@@ -383,21 +421,90 @@ def test_human_queue_is_drained_once_per_stepped_tick_and_delivered_next(tmp_pat
     )
     recording = store.open("r")
     states = list(recording.steps())
-    # The human message was recorded on tick 0 (player_0's turn), stamped from player_1.
-    assert states[0]["messages"] == [{"from": "player_1", "to": "player_0", "text": "from the human"}]
-    # Delivered to the agent on its next turn (tick 2), tagged with tick 0.
+    assert "messages" not in states[0]
+    assert states[0]["chat_options"] == {
+        "sender": "player_1",
+        "target_recipients": ["player_0"],
+        "default_recipient": None,
+    }
+    # The human message is recorded on its own turn, then delivered to the agent on tick 2.
+    assert states[1]["messages"] == [{"from": "player_1", "to": "player_0", "text": "from the human"}]
     assert receiver.inboxes[1] == [
-        {"from": "player_1", "to": "player_0", "text": "from the human", "tick": 0}
+        {"from": "player_1", "to": "player_0", "text": "from the human", "tick": 1}
     ]
 
 
-def test_agent_batch_is_ordered_before_the_human_batch_in_one_tick(tmp_path: Path):
-    # On player_0's tick, both its own chat and the human queue produce a message. The recorded order
-    # is deterministic: the acting agent's batch first, then external players in mapping order.
-    sender = ChattyAgent([[{"to": None, "text": "agent says"}]])
-    source = QueueSource([{"to": None, "text": "human says"}])
+def test_human_chat_accepts_the_previous_opportunity_once_when_it_races_the_drain(
+    tmp_path: Path,
+    capsys: Any,
+):
+    receiver = ChattyAgent()
+    source = QueueSource()
     store = FolderRecordingStore(tmp_path)
-    entry = make_chat_entry(players=("player_0", "player_1"), n_ticks=2)
+    entry = make_chat_entry(players=("player_0", "player_1"), n_ticks=5)
+    episode = Episode(
+        entry,
+        {
+            "player_0": ExternalPlayer(source, message_source=source),
+            "player_1": AgentPlayer(receiver),
+        },
+        parameters=resolve_parameters(entry.meta),
+        seed=1,
+        store=store,
+        recording_id="r",
+        clock=ManualClock(),
+    )
+    episode.start()
+    episode.step_once()
+    source.queue(
+        {
+            "player": "player_0",
+            "tick": 0,
+            "to": "player_1",
+            "text": "arrived after the drain",
+        }
+    )
+    episode.step_once()
+    episode.step_once()
+
+    # The one-drain grace is consumed there. Replaying the same tick afterward remains stale.
+    source.queue(
+        {
+            "player": "player_0",
+            "tick": 0,
+            "to": "player_1",
+            "text": "arrived two drains late",
+        }
+    )
+    episode.step_once()
+    episode.step_once()
+    episode.close()
+
+    states = list(store.open("r").steps())
+    assert states[2]["messages"] == [
+        {
+            "from": "player_0",
+            "to": "player_1",
+            "text": "arrived after the drain",
+        }
+    ]
+    assert "messages" not in states[4]
+    assert receiver.inboxes[1] == [
+        {
+            "from": "player_0",
+            "to": "player_1",
+            "text": "arrived after the drain",
+            "tick": 2,
+        }
+    ]
+    assert "stale external message" in capsys.readouterr().err
+
+
+def test_human_queue_is_not_drained_on_an_agent_turn(tmp_path: Path):
+    sender = ChattyAgent([[{"to": None, "text": "agent says"}]])
+    source = QueueSource([{"player": "player_1", "tick": 0, "to": None, "text": "human says"}])
+    store = FolderRecordingStore(tmp_path)
+    entry = make_chat_entry(players=("player_0", "player_1"), n_ticks=1)
     run_episode(
         entry,
         {
@@ -412,7 +519,274 @@ def test_agent_batch_is_ordered_before_the_human_batch_in_one_tick(tmp_path: Pat
     )
     recording = store.open("r")
     first = next(recording.steps())
-    assert [m["text"] for m in first["messages"]] == ["agent says", "human says"]
+    assert [m["text"] for m in first["messages"]] == ["agent says"]
+    assert source._drained is False
+
+
+def test_no_hook_chat_options_use_canonical_recipients_and_broadcast_default():
+    source = QueueSource()
+    entry = make_chat_entry(players=("player_0", "player_1", "player_2"), n_ticks=2)
+    episode = Episode(
+        entry,
+        {
+            "player_0": ExternalPlayer(source, message_source=source),
+            "player_1": AgentPlayer(SilentAgent()),
+            "player_2": AgentPlayer(SilentAgent()),
+        },
+        parameters=resolve_parameters(entry.meta),
+        seed=1,
+        clock=ManualClock(),
+    )
+    episode.start()
+    assert episode.opening_state()["chat_options"] == {  # type: ignore[index]
+        "sender": "player_0",
+        "target_recipients": ["player_1", "player_2"],
+        "default_recipient": None,
+    }
+    episode.close()
+
+
+def test_human_chat_checks_sender_tick_and_announced_policy_at_drain(
+    tmp_path: Path,
+    capsys: Any,
+):
+    source = QueueSource(
+        [
+            {"player": "player_0", "tick": 0, "to": "player_1", "text": "partner"},
+            {"player": "player_0", "tick": 0, "to": None, "text": "table"},
+            {"player": "player_0", "tick": 9, "to": "player_1", "text": "stale"},
+            {"player": "player_2", "tick": 0, "to": "player_1", "text": "spoofed"},
+            {"player": "player_0", "tick": 0, "to": "player_2", "text": "disallowed"},
+        ]
+    )
+    store = FolderRecordingStore(tmp_path)
+    entry = make_chat_entry(
+        players=("player_0", "player_1", "player_2"),
+        n_ticks=1,
+        chat_policy=lambda _env, _sender: {
+            "target_recipients": ("player_1",),
+            "default_recipient": "player_1",
+        },
+    )
+    run_episode(
+        entry,
+        {
+            "player_0": ExternalPlayer(source, message_source=source),
+            "player_1": AgentPlayer(SilentAgent()),
+            "player_2": AgentPlayer(SilentAgent()),
+        },
+        parameters=resolve_parameters(entry.meta),
+        seed=1,
+        store=store,
+        recording_id="r",
+        clock=ManualClock(),
+    )
+    first = next(store.open("r").steps())
+    assert [message["text"] for message in first["messages"]] == ["partner", "table"]
+    diagnostic = capsys.readouterr().err
+    assert "stale external message" in diagnostic
+    assert "spoofed or inactive" in diagnostic
+    assert "policy-disallowed" in diagnostic
+
+
+def test_external_chat_enforces_the_policy_announced_for_the_turn_once(
+    tmp_path: Path,
+    capsys: Any,
+):
+    calls: list[str] = []
+
+    def alternating_policy(_env: RoundRobinEnv, sender: str) -> object:
+        calls.append(sender)
+        recipient = "player_1" if len(calls) == 1 else "player_2"
+        return {
+            "target_recipients": (recipient,),
+            "default_recipient": recipient,
+        }
+
+    source = QueueSource(
+        [
+            {"player": "player_0", "tick": 0, "to": "player_1", "text": "announced"},
+            {"player": "player_0", "tick": 0, "to": "player_2", "text": "would be next"},
+        ]
+    )
+    store = FolderRecordingStore(tmp_path)
+    entry = make_chat_entry(
+        players=("player_0", "player_1", "player_2"),
+        n_ticks=1,
+        chat_policy=alternating_policy,
+    )
+    episode = Episode(
+        entry,
+        {
+            "player_0": ExternalPlayer(source, message_source=source),
+            "player_1": AgentPlayer(SilentAgent()),
+            "player_2": AgentPlayer(SilentAgent()),
+        },
+        parameters=resolve_parameters(entry.meta),
+        seed=1,
+        store=store,
+        recording_id="r",
+        clock=ManualClock(),
+    )
+
+    episode.start()
+    assert episode.opening_state()["chat_options"] == {  # type: ignore[index]
+        "sender": "player_0",
+        "target_recipients": ["player_1"],
+        "default_recipient": "player_1",
+    }
+    episode.step_once()
+    episode.close()
+
+    first = next(store.open("r").steps())
+    assert [message["text"] for message in first["messages"]] == ["announced"]
+    assert calls == ["player_0"]
+    assert "policy-disallowed recipient 'player_2'" in capsys.readouterr().err
+
+
+def test_agent_output_uses_the_same_live_recipient_policy(tmp_path: Path, capsys: Any):
+    sender = ChattyAgent(
+        [
+            [
+                {"to": "player_1", "text": "allowed"},
+                {"to": "player_2", "text": "disallowed"},
+                {"to": None, "text": "broadcast"},
+            ]
+        ]
+    )
+    entry = make_chat_entry(
+        players=("player_0", "player_1", "player_2"),
+        n_ticks=1,
+        chat_policy=lambda _env, _sender: {
+            "target_recipients": ("player_1",),
+            "default_recipient": "player_1",
+        },
+    )
+    store = FolderRecordingStore(tmp_path)
+    run_episode(
+        entry,
+        {
+            "player_0": AgentPlayer(sender),
+            "player_1": AgentPlayer(SilentAgent()),
+            "player_2": AgentPlayer(SilentAgent()),
+        },
+        parameters=resolve_parameters(entry.meta),
+        seed=1,
+        store=store,
+        recording_id="r",
+        clock=ManualClock(),
+    )
+    first = next(store.open("r").steps())
+    assert [message["text"] for message in first["messages"]] == ["allowed", "broadcast"]
+    assert "policy-disallowed" in capsys.readouterr().err
+
+
+def test_raising_policy_hook_uses_the_generic_default_without_failing(
+    tmp_path: Path,
+    capsys: Any,
+):
+    def raising_policy(_env: RoundRobinEnv, _sender: str) -> object:
+        raise RuntimeError("broken hook")
+
+    sender = ChattyAgent([[{"to": "player_1", "text": "fallback"}]])
+    store = FolderRecordingStore(tmp_path)
+    entry = make_chat_entry(
+        players=("player_0", "player_1"),
+        n_ticks=1,
+        chat_policy=raising_policy,
+    )
+    result = run_episode(
+        entry,
+        {
+            "player_0": AgentPlayer(sender),
+            "player_1": AgentPlayer(SilentAgent()),
+        },
+        parameters=resolve_parameters(entry.meta),
+        seed=1,
+        store=store,
+        recording_id="r",
+        clock=ManualClock(),
+    )
+
+    first = next(store.open("r").steps())
+    assert first["messages"] == [{"from": "player_0", "to": "player_1", "text": "fallback"}]
+    assert result.failed_player is None
+    diagnostic = capsys.readouterr().err
+    assert "environment policy failed" in diagnostic
+    assert "using the default policy" in diagnostic
+
+
+def test_malformed_policy_falls_back_for_agent_output_and_external_options(
+    tmp_path: Path,
+    capsys: Any,
+):
+    entry = make_chat_entry(
+        players=("player_0", "player_1"),
+        n_ticks=2,
+        chat_policy=lambda _env, _sender: {
+            "target_recipients": ("player_0", "player_0"),
+            "default_recipient": "missing",
+        },
+    )
+    source = QueueSource()
+    episode = Episode(
+        entry,
+        {
+            "player_0": ExternalPlayer(source, message_source=source),
+            "player_1": AgentPlayer(ChattyAgent([[{"to": "player_0", "text": "fallback"}]])),
+        },
+        parameters=resolve_parameters(entry.meta),
+        seed=1,
+        store=FolderRecordingStore(tmp_path),
+        recording_id="r",
+        clock=ManualClock(),
+    )
+    episode.start()
+    opening = episode.opening_state()
+    assert opening is not None
+    assert opening["chat_options"]["target_recipients"] == ["player_1"]
+    assert opening["chat_options"]["default_recipient"] is None
+    episode.step_once()
+    episode.step_once()
+    episode.close()
+    states = list(FolderRecordingStore(tmp_path).open("r").steps())
+    assert states[1]["messages"][0]["text"] == "fallback"
+    assert "using the default policy" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "policy",
+    [
+        ChatPolicy(target_recipients=None, default_recipient=None),  # type: ignore[arg-type]
+        {"target_recipients": ("player_1",)},
+    ],
+)
+def test_malformed_policy_objects_never_end_the_episode(policy: object, capsys: Any):
+    entry = make_chat_entry(
+        players=("player_0", "player_1"),
+        n_ticks=1,
+        chat_policy=lambda _env, _sender: policy,
+    )
+    source = QueueSource()
+    episode = Episode(
+        entry,
+        {
+            "player_0": ExternalPlayer(source, message_source=source),
+            "player_1": AgentPlayer(SilentAgent()),
+        },
+        parameters=resolve_parameters(entry.meta),
+        seed=1,
+        clock=ManualClock(),
+    )
+    episode.start()
+    assert episode.opening_state()["chat_options"] == {  # type: ignore[index]
+        "sender": "player_0",
+        "target_recipients": ["player_1"],
+        "default_recipient": None,
+    }
+    episode.step_once()
+    episode.close()
+    assert "using the default policy" in capsys.readouterr().err
 
 
 # --- messaging off is byte-identical ------------------------------------------------------------

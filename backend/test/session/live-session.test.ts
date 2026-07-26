@@ -430,13 +430,20 @@ describe('relay (LiveSession)', () => {
   // --- inbound chat authorization ---
 
   describe('inbound chat authorization', () => {
-    const CHAT = '{"kind":"chat","player":"player_0","to":null,"text":"hi"}'
+    const CHAT = '{"kind":"chat","player":"player_0","tick":7,"to":null,"text":"hi"}'
 
     it('forwards an authorized chat frame to the container', () => {
       const { session, process } = makeSession('human', { externalPlayers: ['player_0'] })
       const owner = session.attach(new FakeSocket(), true)
       owner.handleMessage(CHAT)
       expect(process.sent).toEqual([CHAT])
+    })
+
+    it('drops a chat frame without the required composed-against tick', () => {
+      const { session, process } = makeSession('human', { externalPlayers: ['player_0'] })
+      const owner = session.attach(new FakeSocket(), true)
+      owner.handleMessage('{"kind":"chat","player":"player_0","to":null,"text":"hi"}')
+      expect(process.sent).toEqual([])
     })
 
     it("drops a spectator's chat frame", () => {
@@ -449,7 +456,7 @@ describe('relay (LiveSession)', () => {
     it('drops a chat frame for a player outside externalPlayers', () => {
       const { session, process } = makeSession('human', { externalPlayers: ['player_0'] })
       const owner = session.attach(new FakeSocket(), true)
-      owner.handleMessage('{"kind":"chat","player":"player_1","to":null,"text":"hi"}')
+      owner.handleMessage('{"kind":"chat","player":"player_1","tick":7,"to":null,"text":"hi"}')
       expect(process.sent).toEqual([])
     })
 
@@ -477,8 +484,8 @@ describe('relay (LiveSession)', () => {
       })
       const owner = session.attach(new FakeSocket(), true)
       // An emoji is one code point; three fit, four do not.
-      const atCap = '{"kind":"chat","player":"player_0","to":null,"text":"😀😀😀"}'
-      const overCap = '{"kind":"chat","player":"player_0","to":null,"text":"😀😀😀😀"}'
+      const atCap = '{"kind":"chat","player":"player_0","tick":7,"to":null,"text":"😀😀😀"}'
+      const overCap = '{"kind":"chat","player":"player_0","tick":7,"to":null,"text":"😀😀😀😀"}'
       owner.handleMessage(overCap)
       expect(process.sent).toEqual([])
       owner.handleMessage(atCap)

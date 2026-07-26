@@ -22,6 +22,7 @@ import type {
   LlmModelUsage as SchemaLlmModelUsage,
   LlmUsageByModel as SchemaLlmUsageByModel,
 } from '@game-sandbox/schema/llm'
+import type { SeatSpec as SharedSeatSpec } from '@game-sandbox/schema/schedule'
 
 const API_BASE = '/api'
 
@@ -823,7 +824,7 @@ export type RunStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancel
 export type GameStatus = 'pending' | 'running' | 'completed' | 'failed' | 'timed_out' | 'cancelled'
 
 /** One seat in a match composition: the built-in scripted baseline, or a participant submission. */
-export type SeatSpec = 'builtin-naive' | 'submission'
+export type SeatSpec = SharedSeatSpec
 
 /** One match configuration: its seat composition, the seeds every game runs, and the game count. */
 export interface MatchConfig {
@@ -1010,6 +1011,8 @@ export interface RunSummaryView {
 /** The full admin view of one season: its config and gates, the latest run, and both boards. */
 export interface AdminSeasonView {
   season: SeasonView
+  /** Ready active submissions that a workflow triggered now would freeze into its roster. */
+  eligible_submission_count: number
   latest_run: RunView | null
   board: Board
 }

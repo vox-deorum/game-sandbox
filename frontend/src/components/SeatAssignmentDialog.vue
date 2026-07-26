@@ -87,6 +87,9 @@ watch(parameters, (values) => {
   }
 })
 const seatIds = computed(() => layout.value.seats.map((seat) => seat.seatId))
+const seatsById = computed(
+  () => new Map(layout.value.seats.map((seat) => [seat.seatId, seat] as const)),
+)
 
 // The seats a connected human may occupy, per the environment metadata. Hearts marks all four; a
 // restricted environment may mark only some, so the human default and the "Sit here" affordance must
@@ -109,26 +112,14 @@ const defaultAgent =
 const agentChoice = reactive<Record<string, string>>(
   Object.fromEntries(seatIds.value.map((seatId) => [seatId, defaultAgent])),
 )
+// A companion must be an explicit choice. Keep it separately from the ordinary assignment beneath
+// the human seat, because the two values have different wire meanings and different default rules.
+const companionChoice = reactive<Record<string, string>>({})
 const humanSeat = ref<string | null>(
   props.mode === 'play'
     ? (seatIds.value.find((seatId) => humanCapableSeats.value.has(seatId)) ?? null)
     : null,
 )
-
-watch(seatIds, (ids) => {
-  // A seat added by a growing count gets the same default as the seats present at open, so a watch or
-  // rate dialog still has its chosen agent in every seat rather than Naive in the new ones.
-  for (const seatId of ids) if (agentChoice[seatId] === undefined) agentChoice[seatId] = defaultAgent
-  for (const seatId of Object.keys(agentChoice)) if (!ids.includes(seatId)) delete agentChoice[seatId]
-  if (
-    props.mode === 'play' &&
-    (humanSeat.value === null ||
-      !ids.includes(humanSeat.value) ||
-      !humanCapableSeats.value.has(humanSeat.value))
-  ) {
-    humanSeat.value = ids.find((seatId) => humanCapableSeats.value.has(seatId)) ?? null
-  }
-})
 
 function isHuman(seatId: string): boolean {
   return humanSeat.value === seatId
@@ -149,12 +140,30 @@ function setSeat(seatId: string, value: string): void {
   agentChoice[seatId] = value
 }
 
+function companionValue(seatId: string): string {
+  return companionChoice[seatId] ?? ''
+}
+
+function setCompanion(seatId: string, value: string): void {
+  companionChoice[seatId] = value
+}
+
+function seatPlayerCount(seatId: string): number {
+  return seatsById.value.get(seatId)?.players.length ?? 0
+}
+
+function playerCountHint(seatId: string): string {
+  const count = seatPlayerCount(seatId)
+  return `${count} ${count === 1 ? 'player' : 'players'}`
+}
+
 /** Move the connected human to a seat; the seat it leaves falls back to the Naive default agent. */
 function sitHere(target: string): void {
   if (humanSeat.value !== null) {
     agentChoice[humanSeat.value] = BUILTIN
   }
   humanSeat.value = target
+  sanitizeChoices()
 }
 
 /** A short, human-friendly label for a submission's pinned source (operator view). */
@@ -185,6 +194,46 @@ const agentOptions = computed<{ value: string; label: string }[]>(() => [
     label: agentOptionLabel(agent),
   })),
 ])
+const legalAgentValues = computed(() => new Set(agentOptions.value.map((option) => option.value)))
+
+function sanitizeChoices(
+  resolved = layout.value,
+  legal = legalAgentValues.value,
+): void {
+  const ids = resolved.seats.map((seat) => seat.seatId)
+  // A seat added by a growing count gets the same default as the seats present at open, so a watch or
+  // rate dialog still has its chosen agent in every seat rather than Naive in the new ones.
+  for (const seatId of ids) if (agentChoice[seatId] === undefined) agentChoice[seatId] = defaultAgent
+  for (const seatId of Object.keys(agentChoice)) if (!ids.includes(seatId)) delete agentChoice[seatId]
+  for (const [seatId, value] of Object.entries(agentChoice)) {
+    if (!legal.has(value)) agentChoice[seatId] = ''
+  }
+  for (const seatId of Object.keys(companionChoice)) {
+    const seat = resolved.seats.find((candidate) => candidate.seatId === seatId)
+    const value = companionChoice[seatId]
+    if (
+      seat === undefined ||
+      !isHuman(seatId) ||
+      seat.players.length === 1 ||
+      !legal.has(value ?? '')
+    ) {
+      delete companionChoice[seatId]
+    }
+  }
+}
+
+watch([layout, legalAgentValues], ([resolved, legal]) => {
+  const ids = resolved.seats.map((seat) => seat.seatId)
+  if (
+    props.mode === 'play' &&
+    (humanSeat.value === null ||
+      !ids.includes(humanSeat.value) ||
+      !humanCapableSeats.value.has(humanSeat.value))
+  ) {
+    humanSeat.value = ids.find((seatId) => humanCapableSeats.value.has(seatId)) ?? null
+  }
+  sanitizeChoices(resolved, legal)
+})
 
 // Start is gated on a full, valid composition: every seat carries an agent (always true with the
 // no-empty defaults) and a play session has its one human seat. The guard keeps the payload honest.
@@ -194,7 +243,15 @@ const canStart = computed(() => {
   }
   return (
     parametersValid.value &&
-    seatIds.value.every((seatId) => isHuman(seatId) || seatValue(seatId) !== '')
+    seatIds.value.every((seatId) => {
+      if (!isHuman(seatId)) {
+        return legalAgentValues.value.has(seatValue(seatId))
+      }
+      return (
+        seatPlayerCount(seatId) === 1 ||
+        legalAgentValues.value.has(companionValue(seatId))
+      )
+    })
   )
 })
 
@@ -238,7 +295,15 @@ function onSubmit(): void {
   if (Object.keys(checked.errors).length > 0) return
   const seats: Record<string, SeatAssignmentInput> = {}
   for (const seatId of seatIds.value) {
-    seats[seatId] = isHuman(seatId) ? { kind: 'human' } : decodeAgent(seatValue(seatId))
+    if (!isHuman(seatId)) {
+      seats[seatId] = decodeAgent(seatValue(seatId))
+      continue
+    }
+    const companion = companionValue(seatId)
+    seats[seatId] =
+      seatPlayerCount(seatId) === 1
+        ? { kind: 'human' }
+        : { kind: 'human', companion: decodeAgent(companion) }
   }
   emit('start', {
     seasonId: props.seasonId,
@@ -268,31 +333,55 @@ function onSubmit(): void {
       <ul class="seat-list">
         <li v-for="(seatId, index) in seatIds" :key="seatId" class="seat-row">
           <span :id="`${seatId}-label`" class="seat-label">Seat {{ index + 1 }}</span>
-          <div class="seat-control">
-            <template v-if="isHuman(seatId)">
-              <span class="seat-you">You</span>
-              <span class="seat-seated">seated</span>
-            </template>
-            <template v-else>
-              <UiSelect
-                :model-value="seatValue(seatId)"
-                :aria-labelledby="`${seatId}-label`"
-                @update:model-value="(value: string) => setSeat(seatId, value)"
-              >
-                <option v-for="option in agentOptions" :key="option.value" :value="option.value">
-                  {{ option.label }}
-                </option>
-              </UiSelect>
-              <UiButton
-                v-if="canSitHere(seatId)"
-                type="button"
-                variant="ghost"
-                size="tight"
-                @click="sitHere(seatId)"
-              >
-                Sit here
-              </UiButton>
-            </template>
+          <div class="seat-body">
+            <div class="seat-control">
+              <template v-if="isHuman(seatId)">
+                <span class="seat-you">You</span>
+                <span class="seat-seated">seated</span>
+              </template>
+              <template v-else>
+                <UiSelect
+                  :model-value="seatValue(seatId)"
+                  :aria-labelledby="`${seatId}-label`"
+                  @update:model-value="(value: string) => setSeat(seatId, value)"
+                >
+                  <option v-if="seatValue(seatId) === ''" value="" disabled>Select an agent</option>
+                  <option v-for="option in agentOptions" :key="option.value" :value="option.value">
+                    {{ option.label }}
+                  </option>
+                </UiSelect>
+                <UiButton
+                  v-if="canSitHere(seatId)"
+                  type="button"
+                  variant="ghost"
+                  size="tight"
+                  @click="sitHere(seatId)"
+                >
+                  Sit here
+                </UiButton>
+              </template>
+              <span class="player-count">{{ playerCountHint(seatId) }}</span>
+            </div>
+            <UiField
+              v-if="isHuman(seatId) && seatPlayerCount(seatId) > 1"
+              :label="`Companion agent for Seat ${index + 1}`"
+              hint="Required. A separate instance controls each remaining player."
+            >
+              <template #default="{ id, describedby }">
+                <UiSelect
+                  :id="id"
+                  :model-value="companionValue(seatId)"
+                  required
+                  :aria-describedby="describedby"
+                  @update:model-value="(value: string) => setCompanion(seatId, value)"
+                >
+                  <option value="" disabled>Select a companion</option>
+                  <option v-for="option in agentOptions" :key="option.value" :value="option.value">
+                    {{ option.label }}
+                  </option>
+                </UiSelect>
+              </template>
+            </UiField>
           </div>
         </li>
       </ul>
@@ -363,9 +452,9 @@ function onSubmit(): void {
 }
 
 .seat-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
   gap: var(--space-3);
 }
 
@@ -374,9 +463,18 @@ function onSubmit(): void {
   font-size: var(--text-sm);
 }
 
+.seat-body {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+}
+
 .seat-control {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
   gap: var(--space-2);
 }
 
@@ -388,6 +486,12 @@ function onSubmit(): void {
 .seat-seated {
   color: var(--color-text-muted);
   font-size: var(--text-xs);
+}
+
+.player-count {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  white-space: nowrap;
 }
 
 .seat-form-actions {

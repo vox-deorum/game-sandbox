@@ -13,13 +13,22 @@ metadata tests pin it from the start.
 
 from __future__ import annotations
 
-from game_sandbox_harness.environment import EnvironmentEntry, EnvironmentMeta, PlayerBounds
+from game_sandbox_harness.environment import (
+    EnvironmentEntry,
+    EnvironmentMeta,
+    SeatPlan,
+    SeatPlans,
+)
 
-from .env import default_action, make_env
+from .env import SEAT_PLAN_SPECS, default_action, make_env
 from .overlay import extract_overlay
 
 ENV_ID = "spades"
 PUBLISHED_EXAMPLES = ()
+
+SPADES_SEAT_PLANS = tuple(
+    SeatPlan(key=key, title=title, seats=seats) for key, title, seats in SEAT_PLAN_SPECS
+)
 
 META = EnvironmentMeta(
     env_id=ENV_ID,
@@ -28,7 +37,7 @@ META = EnvironmentMeta(
         "Four-player partnership Spades: bid the tricks you will take, then follow suit and play "
         "them out with spades trump. Your agent play in teams."
     ),
-    layout=PlayerBounds(min=4, max=4),
+    layout=SeatPlans(SPADES_SEAT_PLANS),
     human_players=("player_0", "player_1", "player_2", "player_3"),
     # Turn-based, so there is no pace interval; the move clock is the human deadline.
     human_timeout_ms=60_000,

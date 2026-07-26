@@ -79,6 +79,22 @@ def test_step_with_messages_and_chat_ms_validates():
     assert state["agents"]["player_0"]["timing"]["chat_ms"] == 0.25
 
 
+def test_step_with_live_chat_options_validates():
+    state = build_step_state(
+        tick=4,
+        agents={},
+        started_at=100,
+        duration_ms=0,
+        chat_options={
+            "sender": "player_0",
+            "target_recipients": ["player_2", "player_1", "player_3"],
+            "default_recipient": "player_2",
+        },
+    )
+    validate_step(state)
+    assert state["chat_options"]["default_recipient"] == "player_2"
+
+
 def test_header_builder_is_valid():
     validate_header(
         build_header(

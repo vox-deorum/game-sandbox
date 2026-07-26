@@ -310,6 +310,7 @@ describe('LeaderboardsPage', () => {
         release_status: 'unreleased',
         released_at: null,
       }),
+      eligible_submission_count: 0,
       latest_run: null,
       board: board(),
     })

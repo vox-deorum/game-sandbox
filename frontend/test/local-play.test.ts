@@ -3,7 +3,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { SessionSocketHandlers } from '../src/api/socket.js'
 import type { RendererContext } from '../src/renderers/types.js'
-import { flappyHeader, flappyMeta, flappyState, heartsMeta } from './helpers/fixtures.js'
+import {
+  flappyHeader,
+  flappyMeta,
+  flappyState,
+  heartsMeta,
+  playerState,
+  spadesHeader,
+  spadesMeta,
+} from './helpers/fixtures.js'
 
 let handlers: SessionSocketHandlers
 let sent: unknown[]
@@ -86,6 +94,7 @@ describe('LocalPlayPage', () => {
     expect(mountContext?.controlledPlayers).toEqual(['player_0'])
     expect(drawn).toHaveLength(1)
 
+    handlers.onConnectionChange?.('open')
     mountContext?.sendAction?.('player_0', 1)
     expect(sent).toContainEqual({ kind: 'input', player: 'player_0', action: 1 })
   })
@@ -174,6 +183,82 @@ describe('LocalPlayPage', () => {
     handlers.onSessionStatus?.('ended', 'terminated')
 
     expect(await screen.findByRole('dialog', { name: 'Game over' })).toBeInTheDocument()
+  })
+
+  it('sends local chat and closes the composer once that turn sends an action', async () => {
+    vi.mocked(getEnvironments).mockResolvedValue([spadesMeta()])
+    await renderLocal()
+    handlers.onHeader(spadesHeader())
+    handlers.onSessionStatus?.('running')
+    handlers.onConnectionChange?.('open')
+    handlers.onState(
+      playerState(9, {
+        chatOptions: {
+          sender: 'player_0',
+          target_recipients: ['player_2'],
+          default_recipient: 'player_2',
+        },
+      }),
+    )
+
+    const input = await screen.findByRole('textbox')
+    await fireEvent.update(input, 'cover the ace')
+    await fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+    expect(sent).toContainEqual({
+      kind: 'chat',
+      player: 'player_0',
+      tick: 9,
+      to: 'player_2',
+      text: 'cover the ace',
+    })
+
+    await fireEvent.update(input, 'draft from the previous turn')
+    mountContext?.sendAction?.('player_0', 12)
+    await waitFor(() => expect(screen.queryByRole('textbox')).toBeNull())
+    expect(sent).toContainEqual({ kind: 'input', player: 'player_0', action: 12 })
+
+    handlers.onState(
+      playerState(13, {
+        chatOptions: {
+          sender: 'player_0',
+          target_recipients: ['player_2'],
+          default_recipient: 'player_2',
+        },
+      }),
+    )
+    const nextInput = (await screen.findByRole('textbox')) as HTMLInputElement
+    expect(nextInput.value).toBe('')
+  })
+
+  it('does not consume local chat when a reconnect drops a renderer action', async () => {
+    vi.mocked(getEnvironments).mockResolvedValue([spadesMeta()])
+    await renderLocal()
+    handlers.onHeader(spadesHeader())
+    handlers.onSessionStatus?.('running')
+    handlers.onState(
+      playerState(9, {
+        chatOptions: {
+          sender: 'player_0',
+          target_recipients: ['player_2'],
+          default_recipient: 'player_2',
+        },
+      }),
+    )
+    handlers.onConnectionChange?.('open')
+
+    const input = (await screen.findByRole('textbox')) as HTMLInputElement
+    await fireEvent.update(input, 'cover the ace')
+    handlers.onConnectionChange?.('reconnecting')
+
+    mountContext?.sendAction?.('player_0', 12)
+    await waitFor(() => expect(sent).toHaveLength(0))
+    expect(screen.getByRole('textbox')).toBeInTheDocument()
+    expect(input.value).toBe('cover the ace')
+
+    handlers.onConnectionChange?.('open')
+    mountContext?.sendAction?.('player_0', 12)
+    await waitFor(() => expect(screen.queryByRole('textbox')).toBeNull())
+    expect(sent).toContainEqual({ kind: 'input', player: 'player_0', action: 12 })
   })
 
   it('shows an error when the bridge metadata is absent', async () => {

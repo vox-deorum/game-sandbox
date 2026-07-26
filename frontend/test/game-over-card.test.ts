@@ -50,6 +50,7 @@ describe('GameOverCard', () => {
     const seats = screen.getAllByText(/^S\d$/).map((el) => el.textContent)
     expect(seats).toEqual(['S0', 'S1', 'S2', 'S3'])
     expect(screen.getAllByText('Naive agent')).toHaveLength(4)
+    expect(screen.getByText('S0 won')).toBeInTheDocument()
   })
 
   it('labels a wide seat and shows its player membership', () => {
@@ -79,5 +80,26 @@ describe('GameOverCard', () => {
     expect(screen.getByText('S0')).toBeInTheDocument()
     expect(screen.getByText('P0, P2')).toBeInTheDocument()
     expect(screen.getByText("Alice's agent")).toBeInTheDocument()
+  })
+
+  it('keeps the canonical tie copy when opposing seats share the top score', () => {
+    const state = stepState({
+      leaderboard_scores: [10, 10],
+      display_scores: [10, 10],
+      terminal: true,
+    })
+    const header: RecordingHeader = {
+      schema_version: 1,
+      environment: 'synthetic',
+      parameters: { players: 2 },
+      players: {
+        player_0: { kind: 'agent', label: 'A' },
+        player_1: { kind: 'agent', label: 'B' },
+      },
+      seats: { seat_0: ['player_0'], seat_1: ['player_1'] },
+      seat_plan: 'solo',
+    }
+    render(GameOverCard, { props: { state, header } })
+    expect(screen.getByText('Tied')).toBeInTheDocument()
   })
 })

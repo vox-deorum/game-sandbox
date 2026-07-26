@@ -1,8 +1,7 @@
 /**
- * The three golden fixtures are the stage's exit criteria made executable: a two-step
- * recording that parses into the generated types with no casts, a bumped-version
- * recording that must be rejected, and an unknown-sidecar recording that must load
- * cleanly. The fixtures are written by Python through the real recording store.
+ * Golden fixtures make the recording exit criteria executable: typed state fields,
+ * partnership and solo seat maps, version rejection, and unknown-sidecar tolerance.
+ * Python writes every supported fixture through the real recording store.
  */
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -50,20 +49,41 @@ describe('readRecording', () => {
     expect(states).toHaveLength(1)
   })
 
-  it('parses a chatty recording carrying messages and chat_ms with no casts', () => {
-    const { states } = readRecording(fixture('chatty'))
-    const [first] = states
+  it('parses partnership and solo Spades recordings with their exact seat maps', () => {
+    const partnership = readRecording(fixture('chatty'))
+    const solo = readRecording(fixture('chatty-solo'))
+    const [first] = partnership.states
+
+    expect(partnership.header.parameters).toEqual({ seat_plan: 'partnership' })
+    expect(partnership.header.seat_plan).toBe('partnership')
+    expect(partnership.header.seats).toEqual({
+      seat_0: ['player_0', 'player_2'],
+      seat_1: ['player_1', 'player_3'],
+    })
+    expect(solo.header.parameters).toEqual({ seat_plan: 'solo' })
+    expect(solo.header.seat_plan).toBe('solo')
+    expect(solo.header.seats).toEqual({
+      seat_0: ['player_0'],
+      seat_1: ['player_1'],
+      seat_2: ['player_2'],
+      seat_3: ['player_3'],
+    })
 
     // The regenerated types carry chat_ms alongside decision_ms, so no cast below.
     const timing = first?.agents.player_0?.timing
     expect(timing?.decision_ms).toBe(0.5)
     expect(timing?.chat_ms).toBe(0.25)
+    expect(first?.chat_options).toEqual({
+      sender: 'player_0',
+      target_recipients: ['player_2', 'player_1', 'player_3'],
+      default_recipient: 'player_2',
+    })
 
     // The messages array: one targeted, one broadcast (to === null), typed straight through.
     expect(first?.messages).toHaveLength(2)
     expect(first?.messages?.[0]).toEqual({
       from: 'player_0',
-      to: 'player_1',
+      to: 'player_2',
       text: 'strong:hearts',
     })
     expect(first?.messages?.[1]?.to).toBeNull()

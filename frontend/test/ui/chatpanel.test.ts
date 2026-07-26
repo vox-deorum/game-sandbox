@@ -12,6 +12,12 @@ const PLAYERS = {
   player_2: { kind: 'human' as const, label: 'dev', user: 'dev' },
   player_3: { kind: 'agent' as const, label: "maya's agent", user: 'maya', submission_id: 'sub-1' },
 }
+const POLICY = {
+  sender: 'player_2',
+  tick: 7,
+  targetRecipients: ['player_0', 'player_1', 'player_3'],
+  defaultRecipient: 'player_0',
+}
 
 describe('ChatPanel', () => {
   it('badges broadcasts, to-you, from-you, and blind-labels senders', () => {
@@ -62,6 +68,7 @@ describe('ChatPanel', () => {
         viewerPlayers: ['player_2'],
         sendable: true,
         messageCap: 3,
+        ...POLICY,
       },
     })
     const input = screen.getByRole('textbox')
@@ -88,6 +95,7 @@ describe('ChatPanel', () => {
         viewerPlayers: ['player_2'],
         sendable: true,
         messageCap: 120,
+        ...POLICY,
       },
     })
     const recipient = screen.getByRole('combobox')
@@ -97,7 +105,9 @@ describe('ChatPanel', () => {
     await fireEvent.update(recipient, 'player_0')
     await fireEvent.update(input, 'hello')
     await fireEvent.click(screen.getByRole('button', { name: 'Send' }))
-    expect(emitted('send')?.[0]).toEqual([{ to: 'player_0', text: 'hello' }])
+    expect(emitted('send')?.[0]).toEqual([
+      { sender: 'player_2', tick: 7, to: 'player_0', text: 'hello' },
+    ])
     // No optimistic echo: the draft clears and the panel waits for the recorded line.
     expect(input.value).toBe('')
 
@@ -105,7 +115,9 @@ describe('ChatPanel', () => {
     await fireEvent.update(recipient, '')
     await fireEvent.update(input, 'table!')
     await fireEvent.click(screen.getByRole('button', { name: 'Send' }))
-    expect(emitted('send')?.[1]).toEqual([{ to: null, text: 'table!' }])
+    expect(emitted('send')?.[1]).toEqual([
+      { sender: 'player_2', tick: 7, to: null, text: 'table!' },
+    ])
   })
 
   it('disables Send and keeps the draft while the transport is disconnected', async () => {
@@ -116,6 +128,7 @@ describe('ChatPanel', () => {
       sendable: true,
       connected: false,
       messageCap: 120,
+      ...POLICY,
     }
     const { container, emitted, rerender } = render(ChatPanel, { props })
     const input = screen.getByRole('textbox') as HTMLInputElement
@@ -133,7 +146,9 @@ describe('ChatPanel', () => {
     await rerender({ ...props, connected: true })
     expect(send).toBeEnabled()
     await fireEvent.click(send)
-    expect(emitted('send')?.[0]).toEqual([{ to: null, text: 'lead low' }])
+    expect(emitted('send')?.[0]).toEqual([
+      { sender: 'player_2', tick: 7, to: 'player_0', text: 'lead low' },
+    ])
   })
 
   it('tells same-labelled players apart by player number in options and sender lines', () => {
@@ -152,6 +167,7 @@ describe('ChatPanel', () => {
         viewerPlayers: ['player_2'],
         sendable: true,
         messageCap: 120,
+        ...POLICY,
       },
     })
 
@@ -162,5 +178,43 @@ describe('ChatPanel', () => {
     // And a message line carries its sender's player beside the shared label (queried by the player cell,
     // since the terse "P0" now also names the recipient option).
     expect(container.querySelector('.chat-player')?.textContent).toBe('P0')
+  })
+
+  it('renders only policy recipients and resets composer state when the tick changes', async () => {
+    const props = {
+      entries: [] as ChatEntry[],
+      players: PLAYERS,
+      viewerPlayers: ['player_2'],
+      sendable: true,
+      messageCap: 120,
+      sender: 'player_2',
+      tick: 7,
+      targetRecipients: ['player_0', 'player_3'],
+      defaultRecipient: 'player_0',
+    }
+    const { rerender } = render(ChatPanel, { props })
+    const recipient = screen.getByRole('combobox')
+    const input = screen.getByRole('textbox') as HTMLInputElement
+    expect(screen.getByRole('option', { name: 'Everyone' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'P0' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'P3' })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: 'P1' })).toBeNull()
+    expect(recipient).toHaveValue('player_0')
+
+    await fireEvent.update(recipient, '')
+    await fireEvent.update(input, 'message for the previous turn')
+    await rerender({ ...props, sendable: false })
+    expect(screen.queryByRole('textbox')).toBeNull()
+    await rerender({
+      ...props,
+      sendable: true,
+      tick: 11,
+      targetRecipients: ['player_1'],
+      defaultRecipient: 'player_1',
+    })
+    expect(screen.getByRole('combobox')).toHaveValue('player_1')
+    expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('')
+    expect(screen.getByRole('option', { name: 'P1' })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: 'P0' })).toBeNull()
   })
 })

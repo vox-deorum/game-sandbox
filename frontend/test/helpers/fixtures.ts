@@ -89,7 +89,7 @@ export function heartsMeta(overrides: Partial<EnvironmentMeta> = {}): Environmen
 }
 
 /**
- * The Spades environment metadata: the stage's messaging-enabled environment. Four partnership seats,
+ * The Spades environment metadata: the stage's messaging-enabled environment. Two partnership seats,
  * turn-based (no pace interval), a 120-code-point message cap, mirroring `environments/spades`.
  * The chat panel mounts from `messaging`/`message_cap`, so the messaging suites render from it.
  */
@@ -98,7 +98,20 @@ export function spadesMeta(overrides: Partial<EnvironmentMeta> = {}): Environmen
     env_id: 'spades',
     display_name: 'Spades',
     description: 'Four-player partnership Spades.',
-    layout: { kind: 'player_bounds', min: 4, max: 4 },
+    layout: {
+      kind: 'seat_plans',
+      plans: [
+        {
+          key: 'partnership',
+          title: 'Partnership',
+          seats: [
+            [0, 2],
+            [1, 3],
+          ],
+        },
+        { key: 'solo', title: 'Solo', seats: [[0], [1], [2], [3]] },
+      ],
+    },
     human_players: ['player_0', 'player_1', 'player_2', 'player_3'],
     human_timeout_ms: 60_000,
     recommended_episode_ticks: 56,
@@ -114,13 +127,15 @@ export function spadesMeta(overrides: Partial<EnvironmentMeta> = {}): Environmen
     live_interval_ms: 900,
     parameters: [
       {
-        name: 'players',
-        title: 'Players',
-        description: 'Players.',
-        type: 'int',
-        default: 4,
-        min: 4,
-        max: 4,
+        name: 'seat_plan',
+        title: 'Seat plan',
+        description: 'Seat-to-player layout for each game.',
+        type: 'choice',
+        default: 'partnership',
+        choices: [
+          { value: 'partnership', label: 'Partnership' },
+          { value: 'solo', label: 'Solo' },
+        ],
       },
     ],
     ...overrides,
@@ -142,12 +157,12 @@ export function flappyHeader(overrides: Partial<RecordingHeader> = {}): Recordin
 }
 
 /**
- * Four Spades players keyed by player id, one a connected human (default player_2), the rest agents. The
+ * Four Spades players keyed by player id, one a connected human (default player_0), the rest agents. The
  * human player's `label` defaults to the same string as `user` ('dev'); pass `humanLabel` to diverge them
  * (the display-name label vs. the stable id) for a suite proving the label-over-id rendering preference.
  */
 export function spadesPlayers(
-  humanPlayer: string | null = 'player_2',
+  humanPlayer: string | null = 'player_0',
   humanLabel = 'dev',
 ): NonNullable<RecordingHeader['players']> {
   const players: NonNullable<RecordingHeader['players']> = {}
@@ -166,15 +181,13 @@ export function spadesHeader(overrides: Partial<RecordingHeader> = {}): Recordin
     schema_version: 1,
     environment: 'spades',
     seed: 0,
-    parameters: {},
+    parameters: { seat_plan: 'partnership' },
     players: spadesPlayers(),
     seats: {
-      seat_0: ['player_0'],
-      seat_1: ['player_1'],
-      seat_2: ['player_2'],
-      seat_3: ['player_3'],
+      seat_0: ['player_0', 'player_2'],
+      seat_1: ['player_1', 'player_3'],
     },
-    seat_plan: 'solo',
+    seat_plan: 'partnership',
     ...overrides,
   }
 }
@@ -196,7 +209,15 @@ export function flappyState(tick: number, score = 0): StepState {
  */
 export function playerState(
   tick: number,
-  opts: { messages?: Message[]; score?: number } = {},
+  opts: {
+    messages?: Message[]
+    score?: number
+    chatOptions?: {
+      sender: string
+      target_recipients: string[]
+      default_recipient: string | null
+    }
+  } = {},
 ): StepState {
   const agents: Record<string, AgentStep> = {}
   for (const player of ['player_0', 'player_1', 'player_2', 'player_3']) {
@@ -210,6 +231,9 @@ export function playerState(
   }
   if (opts.messages !== undefined) {
     state.messages = opts.messages
+  }
+  if (opts.chatOptions !== undefined) {
+    state.chat_options = opts.chatOptions
   }
   return state
 }

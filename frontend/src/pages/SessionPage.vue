@@ -40,6 +40,7 @@ import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import UiStatusBadge from '../components/ui/UiStatusBadge.vue'
 import { usePinning } from '../composables/usePinning.js'
 import { useLiveFramePresentation } from '../composables/useLiveFramePresentation.js'
+import { useLiveChat } from '../composables/useLiveChat.js'
 import { useRendererMount } from '../composables/useRendererMount.js'
 import { useSessionSocket } from '../composables/useSessionSocket.js'
 import { useStageLayout } from '../composables/useStageLayout.js'
@@ -175,6 +176,10 @@ const { appendMessages, chatLog, completedOutcome, decisions, statusLabel, statu
 const { pinned, busy: pinBusy, error: pinError, toggle: togglePin } = usePinning(recordingId)
 
 function sendInput(playerId: string, action: unknown): void {
+  if (connection.value !== 'open') {
+    return
+  }
+  consumeChatAction(playerId)
   send({ kind: 'input', player: playerId, action })
 }
 
@@ -182,21 +187,20 @@ function sendInput(playerId: string, action: unknown): void {
 // orchestrator from the metadata and the season override, persisted on the row so live and reopened
 // ended payloads agree. A season-silenced session shows no dead panel.
 const messagingEnabled = computed(() => (row.value?.messaging_enabled ?? 0) !== 0)
-// Sending is enabled only for the owner of a running human session who controls a player; an ended or
-// spectated session's panel is read-only history.
-const chatSendable = computed(
-  () => row.value?.mode === 'human' && controlledPlayers.value.length > 0 && status.value === 'running',
+const liveChatEnabled = computed(
+  () => row.value?.mode === 'human' && status.value === 'running',
 )
-
-/** Forward a human chat message over the session socket as the pinned command with the controlled player
- *  filled in. There is no optimistic echo: the harness records it and the relay reflects it back on the
- *  recorded line, so the panel renders your own message the same way it renders everyone else's. */
-function sendChat(payload: { to: string | null; text: string }): void {
-  const playerId = controlledPlayers.value[0]
-  if (playerId !== undefined) {
-    send({ kind: 'chat', player: playerId, to: payload.to, text: payload.text })
-  }
-}
+const {
+  chatOptions,
+  chatSendable,
+  consumeAction: consumeChatAction,
+  sendChat,
+} = useLiveChat({
+  state: lastState,
+  controlledPlayers,
+  enabled: liveChatEnabled,
+  send,
+})
 
 // The decision log sits beside a portrait canvas (a column is left free) and below a landscape one
 // until the viewport is wide enough to hold both (see useStageLayout).
@@ -434,8 +438,12 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
               :anonymous-numbers="anonymousNumbers"
               :viewer-players="viewerPlayers"
               :sendable="chatSendable"
-              :connected="connection !== 'reconnecting'"
+              :connected="connection === 'open'"
               :message-cap="row?.message_cap ?? null"
+              :sender="chatOptions?.sender"
+              :tick="lastState?.tick"
+              :target-recipients="chatOptions?.target_recipients"
+              :default-recipient="chatOptions?.default_recipient"
               @send="sendChat"
             />
             <DecisionLog v-else :entries="decisions" />
@@ -459,8 +467,12 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
             :anonymous-numbers="anonymousNumbers"
             :viewer-players="viewerPlayers"
             :sendable="chatSendable"
-            :connected="connection !== 'reconnecting'"
+            :connected="connection === 'open'"
             :message-cap="row?.message_cap ?? null"
+            :sender="chatOptions?.sender"
+            :tick="lastState?.tick"
+            :target-recipients="chatOptions?.target_recipients"
+            :default-recipient="chatOptions?.default_recipient"
             @send="sendChat"
           />
         </details>

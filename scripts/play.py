@@ -8,6 +8,7 @@ import json
 import subprocess
 import sys
 import webbrowser
+from collections.abc import Mapping
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -15,7 +16,10 @@ from _paths import FRONTEND_LOCAL_DIST_DIR, REPO_ROOT
 from game_sandbox_harness.environment import (
     EnvironmentEntry,
     EnvironmentLookupError,
+    EnvParameter,
+    ParameterValue,
     ResolvedLayout,
+    effective_parameters,
     load_environment,
     resolve_layout,
     resolve_parameters,
@@ -28,26 +32,66 @@ NPM_COMMAND = "npm.cmd" if sys.platform == "win32" else "npm"
 BUILTIN_AGENT_ROOT = REPO_ROOT / "backend" / "images" / "session-base" / "deps-v1" / "builtin"
 
 
-def default_layout(entry: EnvironmentEntry) -> ResolvedLayout:
-    """Resolve the environment's default assignment layout."""
-    return resolve_layout(entry.meta, resolve_parameters(entry.meta))
+def default_layout(
+    entry: EnvironmentEntry,
+    parameters: Mapping[str, ParameterValue] | None = None,
+) -> ResolvedLayout:
+    """Resolve the environment's assignment layout, using defaults when values are omitted."""
+    values = resolve_parameters(entry.meta) if parameters is None else parameters
+    return resolve_layout(entry.meta, values)
 
 
-def possible_players(entry: EnvironmentEntry) -> tuple[str, ...]:
-    """Return the player ids in the complete default layout without constructing an environment."""
-    layout = default_layout(entry)
-    return tuple(player for seat in layout.seats for player in seat.players)
+def possible_players(
+    entry: EnvironmentEntry,
+    parameters: Mapping[str, ParameterValue] | None = None,
+) -> tuple[str, ...]:
+    """Return the player ids in the resolved layout without constructing an environment."""
+    layout = default_layout(entry, parameters)
+    players = (player for seat in layout.seats for player in seat.players)
+    return tuple(sorted(players, key=lambda player: int(player.removeprefix("player_"))))
 
 
-def player_for_seat(entry: EnvironmentEntry, seat: int) -> str:
-    """Return the sole player covered by a default-layout seat."""
-    players = default_layout(entry).seats[seat].players
-    if len(players) != 1:
-        raise RuntimeError(
-            f"local play cannot select {len(players)} players for seat {seat}; "
-            "wide-seat companion selection is not available yet"
-        )
-    return players[0]
+def player_for_seat(
+    entry: EnvironmentEntry,
+    seat: int,
+    parameters: Mapping[str, ParameterValue] | None = None,
+) -> str:
+    """Return the first human-capable player in a resolved seat."""
+    players = default_layout(entry, parameters).seats[seat].players
+    human_players = frozenset(entry.meta.human_players)
+    try:
+        return next(player for player in players if player in human_players)
+    except StopIteration:
+        raise RuntimeError(f"seat {seat} is not human-playable in {entry.meta.env_id!r}") from None
+
+
+def _parse_parameter_value(declaration: EnvParameter, raw: str) -> ParameterValue:
+    """Parse one CLI value into the JSON-shaped type its declaration validates."""
+    if declaration.type in {"string", "choice"}:
+        value: object = raw
+    else:
+        try:
+            value = json.loads(raw)
+        except json.JSONDecodeError as error:
+            raise ValueError(
+                f"--parameter {declaration.name} needs a valid {declaration.type} value"
+            ) from error
+    return declaration.validate_value(value)
+
+
+def resolve_cli_parameters(entry: EnvironmentEntry, raw_parameters: list[str]) -> dict[str, ParameterValue]:
+    """Apply repeatable ``NAME=VALUE`` CLI overrides through the environment declarations."""
+    declarations = {declaration.name: declaration for declaration in effective_parameters(entry.meta)}
+    overrides: dict[str, ParameterValue] = {}
+    for raw in raw_parameters:
+        name, separator, value = raw.partition("=")
+        if not separator or not name:
+            raise ValueError("--parameter must use NAME=VALUE")
+        declaration = declarations.get(name)
+        if declaration is None:
+            raise ValueError(f"unknown environment parameter {name!r}")
+        overrides[name] = _parse_parameter_value(declaration, value)
+    return resolve_parameters(entry.meta, overrides)
 
 
 def builtin_agent_path(env_id: str) -> str:
@@ -67,11 +111,30 @@ def local_config(
     max_steps: int | None,
     human_timeout_ms: int | None | UnsetTimeout = UNSET_TIMEOUT,
     agent_repo: Path | None = None,
+    companion: str | None = None,
+    parameters: Mapping[str, ParameterValue] | None = None,
     recording_dir: Path,
 ) -> dict[str, object]:
     """Build the complete live-runner config for one browser session."""
-    player_ids = possible_players(entry)
-    human_player = player_for_seat(entry, seat) if mode == "human" else None
+    resolved_parameters = resolve_parameters(entry.meta) if parameters is None else dict(parameters)
+    layout = default_layout(entry, resolved_parameters)
+    player_ids = possible_players(entry, resolved_parameters)
+    selected_players = layout.seats[seat].players
+    human_player = player_for_seat(entry, seat, resolved_parameters) if mode == "human" else None
+    if mode == "human" and len(selected_players) > 1 and companion is None:
+        raise RuntimeError("a wide human seat requires --companion naive or a local agent manifest path")
+    if companion is not None and (mode != "human" or len(selected_players) == 1):
+        raise RuntimeError("--companion is only valid for a wide human seat")
+    companion_path: str | None = None
+    if companion is not None:
+        if companion == "naive":
+            companion_path = builtin_agent_path(entry.meta.env_id)
+        else:
+            supplied = Path(companion)
+            repo = supplied.parent if supplied.name == "manifest.json" else supplied
+            if not (repo / "manifest.json").is_file():
+                raise RuntimeError(f"companion agent has no manifest.json at {repo}")
+            companion_path = str(repo)
     bindings: dict[str, dict[str, str]] = {}
     players: dict[str, dict[str, str]] = {}
     for player_id in player_ids:
@@ -79,15 +142,25 @@ def local_config(
             bindings[player_id] = {"kind": "external"}
             players[player_id] = {"kind": "human", "label": "You"}
             continue
-        path = str(agent_repo) if mode == "agent" else builtin_agent_path(entry.meta.env_id)
+        is_companion = mode == "human" and player_id in selected_players and player_id != human_player
+        path = (
+            companion_path
+            if is_companion
+            else str(agent_repo)
+            if mode == "agent"
+            else builtin_agent_path(entry.meta.env_id)
+        )
+        assert path is not None
         bindings[player_id] = {"kind": "builtin-agent", "path": path}
         players[player_id] = {
             "kind": "agent",
-            "label": "Selected agent" if mode == "agent" else "Built-in baseline",
+            "label": (
+                "Companion" if is_companion else "Selected agent" if mode == "agent" else "Built-in baseline"
+            ),
         }
     config: dict[str, object] = {
         "env_id": entry.meta.env_id,
-        "parameters": resolve_parameters(entry.meta),
+        "parameters": resolved_parameters,
         "seed": seed,
         "player_bindings": bindings,
         "players": players,
@@ -154,6 +227,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("mode", nargs="?", choices=MODES, default=None)
     parser.add_argument("--agent-repo", type=Path, help="manifest.json agent repository for agent mode")
     parser.add_argument("--seat", type=int, default=0, help="human seat index")
+    parser.add_argument(
+        "--companion",
+        help="wide-seat companion: naive, a manifest.json path, or its repository directory",
+    )
+    parser.add_argument(
+        "--parameter",
+        action="append",
+        default=[],
+        metavar="NAME=VALUE",
+        help="typed environment parameter override; repeat for several values",
+    )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--steps", type=int, help="positive local episode step cap")
     parser.add_argument("--port", type=int, default=0, help="loopback port, or 0 for an available port")
@@ -181,12 +265,13 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--steps must be positive")
     if args.human_timeout_ms is not None and args.human_timeout_ms <= 0:
         parser.error("--human-timeout-ms must be positive")
-    layout = default_layout(entry)
+    try:
+        parameters = resolve_cli_parameters(entry, args.parameter)
+        layout = default_layout(entry, parameters)
+    except ValueError as error:
+        parser.error(str(error))
     if not 0 <= args.seat < len(layout.seats):
         parser.error(f"--seat must name one of 0..{len(layout.seats) - 1}")
-    selected_players = layout.seats[args.seat].players
-    if mode == "human" and not any(player in entry.meta.human_players for player in selected_players):
-        parser.error(f"seat {args.seat} is not human-playable in {entry.meta.env_id!r}")
 
     timeout: int | None | UnsetTimeout
     if args.no_human_timeout:
@@ -196,16 +281,21 @@ def main(argv: list[str] | None = None) -> int:
     else:
         timeout = UNSET_TIMEOUT
     with TemporaryDirectory(prefix="game-sandbox-local-") as scratch:
-        config = local_config(
-            entry,
-            mode=mode,
-            seat=args.seat,
-            seed=args.seed,
-            max_steps=args.steps,
-            human_timeout_ms=timeout,
-            agent_repo=args.agent_repo,
-            recording_dir=Path(scratch),
-        )
+        try:
+            config = local_config(
+                entry,
+                mode=mode,
+                seat=args.seat,
+                seed=args.seed,
+                max_steps=args.steps,
+                human_timeout_ms=timeout,
+                agent_repo=args.agent_repo,
+                companion=args.companion,
+                parameters=parameters,
+                recording_dir=Path(scratch),
+            )
+        except RuntimeError as error:
+            parser.error(str(error))
         return launch_browser(entry, config, port=args.port, open_browser=not args.no_browser)
 
 

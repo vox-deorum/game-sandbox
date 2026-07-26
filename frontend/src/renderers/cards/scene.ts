@@ -16,7 +16,7 @@
  * pure functions the retained renderer drives from its own clock; a game's `computeScene` always returns
  * the static "snapped" frame a scrubber lands on.
  */
-import type { StepState } from '@game-sandbox/schema'
+import type { RecordingHeader, StepState } from '@game-sandbox/schema'
 
 // --- Card encoding (mirrors environments/local_play/card_utils.py) ---
 // A card OBJECT is `{suit, rank}`: suits 0=clubs, 1=diamonds, 2=spades, 3=hearts; rank is the FACE
@@ -157,6 +157,10 @@ export interface ScenePlayerBase {
   position: number
   x: number
   y: number
+  /** The wide assignment seat this player shares, or null for a singleton seat. */
+  assignmentSeat: string | null
+  /** Stable wide-seat order, used to choose the shared grouping cue's color. */
+  assignmentGroup: number | null
   label: string
   /** Whose turn it is now (gold highlight); false at terminal. */
   isTurn: boolean
@@ -225,6 +229,8 @@ export interface SceneConfig {
   controlledPlayers?: readonly string[]
   /** The session's human move-clock budget in ms (meta.human_timeout_ms or its override). */
   humanTimeoutMs?: number | null
+  /** The recording or live-session seat map, used to group players sharing a wide assignment. */
+  seats?: RecordingHeader['seats']
 }
 
 /** One play in a trick: who played (player) and what (a card object), in play order. */
@@ -415,30 +421,90 @@ export function resolveView(config: SceneConfig): ViewContext {
   return { viewPlayer: player, controlledPlayer: player, revealAll: false }
 }
 
+/** One non-singleton assignment seat and its stable display order. */
+export interface WideSeatAssignment {
+  seat: string
+  group: number
+}
+
+/** Map only non-singleton assignment seats onto their member players. */
+export function wideSeatAssignments(seats: SceneConfig['seats']): Map<string, WideSeatAssignment> {
+  const assignments = new Map<string, WideSeatAssignment>()
+  if (seats === undefined) {
+    return assignments
+  }
+  Object.entries(seats)
+    .filter(([, players]) => players.length > 1)
+    .forEach(([seat, players], group) => {
+      for (const player of players) {
+        assignments.set(player, { seat, group })
+      }
+    })
+  return assignments
+}
+
+/** Compact assignment-seat label used in a player badge, matching the host's `SN` language. */
+export function wideSeatLabel(seat: string): string {
+  const match = /^seat_(\d+)$/.exec(seat)
+  return match === null ? seat : `S${match[1]}`
+}
+
+/** Accessible description of the wide assignment seats, absent when every seat is a singleton. */
+export function wideSeatsAccessibilityLabel(
+  displayName: string,
+  seats: SceneConfig['seats'],
+): string | null {
+  if (seats === undefined) {
+    return null
+  }
+  const groups = Object.entries(seats).filter(([, players]) => players.length > 1)
+  if (groups.length === 0) {
+    return null
+  }
+  const details = groups
+    .map(
+      ([seat, players]) =>
+        `${wideSeatLabel(seat)} includes ${players
+          .map((player) => player.replace(/^player_(\d+)$/, 'P$1'))
+          .join(' and ')}`,
+    )
+    .join('; ')
+  return `${displayName} table. Wide seats: ${details}.`
+}
+
 // --- The shared scene builders (a game composes these in its own computeScene) ---
 
 /**
  * The geometric core of the four player badges: player, screen position, badge center, "(you)"-aware label,
  * and the active-turn flag. A game maps over these to add its own per-player
- * fields (Hearts' running score, Spades' bid/won and partnership).
+ * fields (Hearts' running score, Spades' bid/won and team).
  */
 export function buildPlayersBase(
   o: CardOverlay,
   view: ViewContext,
   geom: TableGeometry,
+  seats?: SceneConfig['seats'],
 ): ScenePlayerBase[] {
+  const assignments = wideSeatAssignments(seats)
   return Array.from({ length: NUM_PLAYERS }, (_, player) => {
     const position = positionOfPlayer(player, view.viewPlayer)
     const { x, y } = positionAnchor(position, geom)
     // "(you)" tags the player the user actually controls, which is null (so never matched) when
     // spectating or replaying even though that player still sits at the bottom.
     const isYou = player === view.controlledPlayer
+    const assignment = assignments.get(`player_${player}`)
+    const playerLabel = isYou ? `P${player} (you)` : `P${player}`
     return {
       player,
       position,
       x,
       y,
-      label: isYou ? `P${player} (you)` : `P${player}`,
+      assignmentSeat: assignment?.seat ?? null,
+      assignmentGroup: assignment?.group ?? null,
+      label:
+        assignment === undefined
+          ? playerLabel
+          : `${wideSeatLabel(assignment.seat)} · ${playerLabel}`,
       isTurn: !o.terminal && player === o.turn,
       isYou,
     }

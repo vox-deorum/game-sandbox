@@ -30,12 +30,14 @@ import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any, Protocol, cast, runtime_checkable
+from typing import Any, Protocol, TypedDict, cast, runtime_checkable
 
 from .agent import has_chat, has_learn
 from .chat import ChatRouter
 from .clock import Clock, SystemClock
 from .environment import (
+    ChatPolicy,
+    ChatPolicySource,
     EnvironmentEntry,
     ParameterValue,
     ResolvedLayout,
@@ -44,6 +46,7 @@ from .environment import (
 )
 from .recording import RecordingStore
 from .state import (
+    ChatOptions,
     Message,
     PlayerAttribution,
     StepState,
@@ -88,7 +91,16 @@ class ActionSource(Protocol):
 class MessageSource(Protocol):
     """A source of queued outgoing messages for an external player."""
 
-    def take_messages(self, player_id: str) -> list[dict[str, Any]]: ...
+    def take_messages(self, player_id: str) -> list[ExternalChatFrame]: ...
+
+
+class ExternalChatFrame(TypedDict):
+    """One tick-bound human chat frame queued by the live transport."""
+
+    player: str
+    tick: int
+    to: str | None
+    text: str
 
 
 @runtime_checkable
@@ -195,6 +207,7 @@ class _StepContext:
     agent_compute_ms: float = 0.0
     chat_ms: float | None = None
     messages: list[Message] = field(default_factory=list[Message])
+    chat_options: ChatOptions | None = None
     reward: float = 0.0
     learn_ms: float | None = None
 
@@ -279,6 +292,13 @@ class Episode:
         self._stopped = False
         self._failed_player: str | None = None
         self._inflight_snapshots: dict[str, int] = {}
+        # Each external player keeps its current announced tick and, until its next drain, the
+        # immediately preceding one. This one-drain grace covers a chat frame that raced the prior
+        # drain without allowing an arbitrarily old frame to reappear on a later turn. The latest
+        # announced policy is cached too, so the matching drain enforces exactly the options shown.
+        self._external_chat_ticks: dict[str, tuple[int, ...]] = {}
+        self._external_chat_policies: dict[str, ChatPolicy] = {}
+        self._opening_chat_options: ChatOptions | None = None
 
     def start(self) -> None:
         """Reset the environment, open the recording, then reset the agents.
@@ -309,6 +329,8 @@ class Episode:
                     "environment factory produced possible_agents "
                     f"{env.possible_agents!r}, expected {expected_players!r} from resolved layout"
                 )
+            self._opening_chat_options = self._external_chat_options()
+            self._record_external_chat_opportunity(0, self._opening_chat_options)
 
             if self._store is not None:
                 created_at_ms = self._clock.now_ms()
@@ -390,20 +412,25 @@ class Episode:
         client with an empty table and nothing to render. The live runner streams this one frame
         right after :meth:`start`, so the table (and the human's own hand) is visible immediately and
         the human can play. Returns ``None`` for a paced environment, which steps on its own cadence
-        and renders its first frame within an interval, or one with no overlay to draw.
+        and renders its first frame within an interval, or one with neither an overlay nor chat
+        options to publish.
 
         This is a live-presentation aid only and is never written through the recording: recordings
         and the headless path are byte-for-byte unchanged, so a replay still begins at the first play.
         Valid only after :meth:`start` (the env must be reset); the live runner calls it there.
         """
-        if self._entry.meta.pace_interval_ms is not None or self._entry.overlay is None:
+        if self._entry.meta.pace_interval_ms is not None:
+            return None
+        overlay = self._entry.overlay(self._env) if self._entry.overlay is not None else None
+        if overlay is None and self._opening_chat_options is None:
             return None
         return build_step_state(
             tick=0,
             agents={},
             started_at=self._clock.now_ms(),
             duration_ms=0,
-            overlay=self._entry.overlay(self._env),
+            overlay=overlay,
+            chat_options=self._opening_chat_options,
         )
 
     def stop(self, reason: str = REASON_STOPPED) -> None:
@@ -511,6 +538,7 @@ class Episode:
         inbox = self._chat.drain(context.player_id)
         binding = context.binding
         if isinstance(binding, AgentPlayer) and has_chat(binding.agent):
+            policy = self._chat_policy(context.player_id)
             try:
                 outgoing, context.chat_ms = self._timed_llm_hook(
                     binding.execution_scope,
@@ -522,15 +550,111 @@ class Episode:
                 raise
             context.agent_compute_ms += context.chat_ms
             context.player.budget_used_ms += context.chat_ms
-            context.messages.extend(self._chat.validate_outgoing(context.player_id, outgoing))
+            context.messages.extend(self._chat.validate_outgoing(context.player_id, outgoing, policy))
 
-        for other_id, other_binding in self._players.items():
-            if isinstance(other_binding, ExternalPlayer) and other_binding.message_source is not None:
-                outgoing = other_binding.message_source.take_messages(other_id)
-                context.messages.extend(self._chat.validate_outgoing(other_id, outgoing))
+        if isinstance(binding, ExternalPlayer) and binding.message_source is not None:
+            queued = binding.message_source.take_messages(context.player_id)
+            outgoing = self._validate_external_messages(context.player_id, queued)
+            policy = self._external_chat_policies.get(context.player_id)
+            if policy is None:
+                policy = self._chat.default_policy(context.player_id)
+            context.messages.extend(self._chat.validate_outgoing(context.player_id, outgoing, policy))
+
+    def _chat_policy(self, sender: str) -> ChatPolicy:
+        """Resolve and validate the sender's policy against the current live environment state."""
+        assert self._chat is not None
+        if not isinstance(self._env, ChatPolicySource):
+            return self._chat.default_policy(sender)
+        try:
+            policy = self._env.chat_policy(sender)
+        except Exception as error:  # noqa: BLE001 - a policy bug must not end the game
+            print(
+                f"chat: {sender} environment policy failed ({error!r}); using the default policy",
+                file=sys.stderr,
+                flush=True,
+            )
+            return self._chat.default_policy(sender)
+        return self._chat.validate_policy(sender, policy)
+
+    def _validate_external_messages(
+        self,
+        current_player: str,
+        queued: object,
+    ) -> list[dict[str, object]]:
+        """Drop stale, spoofed, or inactive external frames before ordinary message validation."""
+        if not isinstance(queued, list):
+            print(
+                f"chat: external player {current_player} returned a non-list queue; dropping it",
+                file=sys.stderr,
+                flush=True,
+            )
+            return []
+        expected_ticks = self._external_chat_ticks.get(current_player, ())
+        # The prior opportunity is valid for this drain only. A frame that misses two drains remains
+        # stale even if the sender has not composed anything newer.
+        if expected_ticks:
+            self._external_chat_ticks[current_player] = expected_ticks[-1:]
+        accepted: list[dict[str, object]] = []
+        for raw_frame in cast("list[object]", queued):
+            frame = raw_frame
+            if not isinstance(frame, Mapping):
+                print(
+                    f"chat: external player {current_player} queued a non-object frame; dropping it",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                continue
+            frame_map = cast("Mapping[str, object]", frame)
+            sender = frame_map.get("player")
+            if sender != current_player:
+                print(
+                    f"chat: dropping spoofed or inactive external sender {sender!r}; "
+                    f"current player is {current_player!r}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                continue
+            tick = frame_map.get("tick")
+            if tick not in expected_ticks:
+                print(
+                    f"chat: dropping stale external message for {current_player!r} "
+                    f"at tick {tick!r}; expected one of {expected_ticks!r}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                continue
+            accepted.append({"to": frame_map.get("to"), "text": frame_map.get("text")})
+        return accepted
+
+    def _external_chat_options(self) -> ChatOptions | None:
+        """Compute and cache the next external actor's publishable messaging choices."""
+        if self._chat is None or not self._env.agents:
+            return None
+        sender = self._env.agent_selection
+        binding = self._players.get(sender)
+        if not isinstance(binding, ExternalPlayer):
+            return None
+        if self._env.terminations.get(sender, False) or self._env.truncations.get(sender, False):
+            return None
+        policy = self._chat_policy(sender)
+        self._external_chat_policies[sender] = policy
+        return {
+            "sender": sender,
+            "target_recipients": list(policy.target_recipients),
+            "default_recipient": policy.default_recipient,
+        }
+
+    def _record_external_chat_opportunity(self, tick: int, options: ChatOptions | None) -> None:
+        """Remember one announced opportunity and retain at most its sender's previous tick."""
+        if options is None:
+            return
+        sender = options["sender"]
+        ticks = self._external_chat_ticks.get(sender, ())
+        if not ticks or ticks[-1] != tick:
+            self._external_chat_ticks[sender] = (*ticks, tick)[-2:]
 
     def _apply_environment_step(self, context: _StepContext) -> None:
-        """Apply the selected action and credit every reward published for the cycle."""
+        """Apply the action, credit rewards, and publish the next external chat opportunity."""
         context.env.step(context.action)
         context.reward = float(context.env.rewards[context.player_id])
         # Terminal rewards in an AEC environment can be published for every player on the final
@@ -539,6 +663,8 @@ class Episode:
             rewarded_state = self._state.get(rewarded_player)
             if rewarded_state is not None:
                 rewarded_state.score += float(player_reward)
+        context.chat_options = self._external_chat_options()
+        self._record_external_chat_opportunity(self._tick, context.chat_options)
 
     def _run_learning(self, context: _StepContext) -> None:
         """Run the post-step learning hook and finish per-step compute accounting."""
@@ -629,6 +755,7 @@ class Episode:
                 duration_ms=self._clock.now_ms() - context.started_at,
                 overlay=overlay,
                 messages=context.messages or None,
+                chat_options=context.chat_options,
             )
         )
 

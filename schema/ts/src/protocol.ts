@@ -10,9 +10,10 @@
  * Outbound (container → backend → browser) this stage defines one envelope kind, `result`, plus the
  * backend-originated `session` status frame and the relayed `pause`/`resume` echoes. Inbound
  * (browser → backend → container) the command envelopes are `input` (with a player and action),
- * `pause`, `resume`, `stop`, and `chat` (a human message: a player, a recipient `to` or null for a
- * broadcast, and plain text). The backend validates a command's shape and the sender's authority,
- * then forwards it, and never interprets an action, because the container is authoritative.
+ * `pause`, `resume`, `stop`, and `chat` (a human message: a player, the state tick it was composed
+ * against, a recipient `to` or null for a broadcast, and plain text). The backend validates a
+ * command's shape and the sender's authority, then forwards it, and never interprets an action,
+ * because the container is authoritative.
  *
  * This module is dependency-free on purpose: the browser imports it directly (no Node built-ins, no
  * Ajv) so the line-classification rule lives in exactly one place for both sides of the socket.
@@ -26,7 +27,7 @@ export const SESSION_KIND = 'session'
 /** A validated inbound command, ready to forward to the container or echo to clients. */
 export type Command =
   | { kind: 'input'; player: string; action: unknown }
-  | { kind: 'chat'; player: string; to: string | null; text: string }
+  | { kind: 'chat'; player: string; tick: number; to: string | null; text: string }
   | { kind: 'pause' }
   | { kind: 'resume' }
   | { kind: 'stop' }
@@ -106,6 +107,13 @@ export function parseCommand(raw: string): CommandParse {
       if (typeof object.player !== 'string') {
         return { ok: false, reason: 'chat command needs a string player' }
       }
+      if (
+        typeof object.tick !== 'number' ||
+        !Number.isSafeInteger(object.tick) ||
+        object.tick < 0
+      ) {
+        return { ok: false, reason: 'chat command needs a non-negative safe-integer tick' }
+      }
       if (object.to !== null && typeof object.to !== 'string') {
         return { ok: false, reason: 'chat command needs a string or null to' }
       }
@@ -114,7 +122,13 @@ export function parseCommand(raw: string): CommandParse {
       }
       return {
         ok: true,
-        command: { kind: 'chat', player: object.player, to: object.to, text: object.text },
+        command: {
+          kind: 'chat',
+          player: object.player,
+          tick: object.tick,
+          to: object.to,
+          text: object.text,
+        },
       }
     }
     case 'pause':

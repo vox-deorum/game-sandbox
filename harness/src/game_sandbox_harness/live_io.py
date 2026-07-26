@@ -11,7 +11,7 @@ The line shapes are defined in the Stage 3 transport plan. Outbound: recording l
 (header + per-step states, never carrying a top-level ``kind``) and event envelopes (a
 top-level ``kind``; this stage emits one, ``result``). Inbound command envelopes carry a
 ``kind`` and, where applicable, a ``player`` and ``action`` or ``text``: ``input``, ``pause``,
-``resume``, ``stop``, and ``chat`` (a human message, ``player`` + ``to`` + ``text``). Unknown
+``resume``, ``stop``, and ``chat`` (a human message, ``player`` + ``tick`` + ``to`` + ``text``). Unknown
 kinds and malformed lines are logged and ignored, so the container never dies because a
 client sent garbage. Human ``chat`` frames enter a bounded per-player FIFO queue, not the input
 latch: inputs coalesce to the latest value, but messages must not swallow each other.
@@ -28,7 +28,7 @@ from typing import IO, TYPE_CHECKING, Any, Protocol, cast, runtime_checkable
 
 from .clock import Clock
 from .recording.local import FolderRecordingStore
-from .session import EpisodeResult
+from .session import EpisodeResult, ExternalChatFrame
 
 #: The single outbound event-envelope kind this stage defines.
 RESULT_KIND = "result"
@@ -37,6 +37,7 @@ _DEFAULT_SLICE_MS = 5
 #: incoming frame is dropped with a diagnostic, so a client flooding the socket costs at most a
 #: fixed amount of memory, the same drop-with-diagnostic rule every other rejection follows.
 CHAT_QUEUE_LIMIT = 16
+_MAX_JSON_SAFE_INTEGER = 2**53 - 1
 
 
 def _diag(message: str) -> None:
@@ -91,7 +92,7 @@ class SessionControl:
     def __init__(self, clock: PausableClock | None = None) -> None:
         self._lock = threading.Lock()
         self._latched: dict[str, Any] = {}
-        self._chat_queues: dict[str, list[dict[str, Any]]] = {}
+        self._chat_queues: dict[str, list[ExternalChatFrame]] = {}
         self._chat_enabled = False
         self._paused = False
         self._stopping = False
@@ -143,19 +144,11 @@ class SessionControl:
     def _dispatch_chat(self, command: dict[str, Any], source: str) -> None:
         """Queue a human ``chat`` frame into its player's bounded FIFO, or drop it with a diagnostic.
 
-        This is a cheap shape gate only: the player and text must be strings, messaging must be enabled,
-        and the queue must have room. The outbound rules (recipient legality, the cap, the per-turn
-        limits) are enforced once at the harness validation point when the queue is drained, so there
-        is exactly one enforcement path shared with agent messages.
+        :func:`parse_commands` is the shared shape gate for stdin and the local relay. This method only
+        applies the enabled and queue-capacity checks. Recipient legality, the text cap, and per-turn
+        limits are enforced once at the harness validation point shared with agent messages.
         """
-        player_id = command.get("player")
-        if not isinstance(player_id, str):
-            _diag(f"live: ignoring chat command without a string player: {source!r}")
-            return
-        text = command.get("text")
-        if not isinstance(text, str):
-            _diag(f"live: ignoring chat command without string text: {source!r}")
-            return
+        player_id = cast("str", command["player"])
         with self._lock:
             if not self._chat_enabled:
                 _diag(f"live: dropping chat command (messaging disabled): {source!r}")
@@ -164,7 +157,14 @@ class SessionControl:
             if len(queue) >= CHAT_QUEUE_LIMIT:
                 _diag(f"live: dropping chat command (queue full for {player_id!r}): {source!r}")
                 return
-            queue.append({"to": command.get("to"), "text": text})
+            queue.append(
+                {
+                    "player": player_id,
+                    "tick": cast("int", command["tick"]),
+                    "to": cast("str | None", command["to"]),
+                    "text": cast("str", command["text"]),
+                }
+            )
 
     def take(self, player_id: str) -> Any | None:
         """Return and clear the latest input latched for ``player_id`` since the last call.
@@ -176,7 +176,7 @@ class SessionControl:
         with self._lock:
             return self._latched.pop(player_id, None)
 
-    def take_chat(self, player_id: str) -> list[dict[str, Any]]:
+    def take_chat(self, player_id: str) -> list[ExternalChatFrame]:
         """Return and clear the human ``chat`` frames queued for ``player_id`` in FIFO order.
 
         Unlike :meth:`take`, this is a queue, not a latch: every queued frame is returned in the
@@ -251,6 +251,17 @@ def parse_commands(raw: str) -> list[dict[str, Any]]:
         if kind == "chat" and not isinstance(command.get("text"), str):
             _diag(f"live: ignoring chat command without string text: {text!r}")
             continue
+        if kind == "chat" and (
+            "to" not in command or (command.get("to") is not None and not isinstance(command.get("to"), str))
+        ):
+            _diag(f"live: ignoring chat command without a string or null to: {text!r}")
+            continue
+        tick = command.get("tick")
+        if kind == "chat" and (
+            not isinstance(tick, int) or isinstance(tick, bool) or not 0 <= tick <= _MAX_JSON_SAFE_INTEGER
+        ):
+            _diag(f"live: ignoring chat command without a non-negative safe-integer tick: {text!r}")
+            continue
         if kind not in ("input", "chat", "pause", "resume", "stop"):
             _diag(f"live: ignoring unknown command kind {kind!r}")
             continue
@@ -315,7 +326,7 @@ class TransportSource:
                 return None
             self._sleeper.sleep_ms(self._slice_ms)
 
-    def take_messages(self, player_id: str) -> list[dict[str, Any]]:
+    def take_messages(self, player_id: str) -> list[ExternalChatFrame]:
         """Return the human ``chat`` frames queued for ``player_id`` since the last drain.
 
         Detected by presence on the source, like the action-source protocol: the session loop finds
@@ -417,6 +428,11 @@ def start_command_pump(lines: Iterable[str], control: SessionControl) -> threadi
 # pyright under TYPE_CHECKING only (this block never runs).
 if TYPE_CHECKING:
     from .clock import SystemClock
-    from .session import ActionSource
+    from .session import ActionSource, MessageSource
 
     _source: ActionSource = TransportSource(SessionControl(), clock=SystemClock(), paced=True)
+    _message_source: MessageSource = TransportSource(
+        SessionControl(),
+        clock=SystemClock(),
+        paced=True,
+    )

@@ -163,6 +163,7 @@ export async function startSession(
         companion?: { kind: 'builtin-agent' | 'submission'; submission_id?: string }
       }
     >
+    parameters?: Record<string, unknown>
     seed?: number
     human_timeout_ms?: number
   },
@@ -180,7 +181,7 @@ export async function startSession(
     body: JSON.stringify({
       ...body,
       season_id: context.season_id,
-      parameters: context.values,
+      parameters: { ...context.values, ...body.parameters },
     }),
   })
   if (response.status !== 201) {

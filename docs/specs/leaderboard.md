@@ -76,7 +76,7 @@ The operator-triggered workflow:
 
 When a match design fills more than one seat with submissions, the schedule respects whether seat order changes the game. See [Environments](environment.md). It includes every distinct ordered seating when order matters and every distinct unordered group when it does not. The built-in baseline still fills every submission seat, giving each board a comparable reference row.
 
-The schedule expands over seats, not players, so a plan whose seats cover several players produces far fewer games than a plan of one player each. The resolved seat layout, selected by `players` for player bounds or `seat_plan` for declared plans, is therefore the main lever on how long a season takes to run, and the operator console reports the projected game count before a run starts.
+The schedule expands over seats, not players, so a plan whose seats cover several players produces far fewer games than a plan of one player each. The resolved seat layout, selected by `players` for player bounds or `seat_plan` for declared plans, is therefore the main lever on how long a season takes to run, and the operator console reports the projected game count before a run starts. The projection labels its eligible roster count as a page-load snapshot. Triggering the run performs a fresh transactionally consistent read, so the frozen schedule may differ if submission eligibility changed after the page loaded.
 
 Each match runs in its own sandboxed session container. See [Execution](execution.md).
 

@@ -1,6 +1,6 @@
 # Stage 15.4: Spades gains the partnership plan
 
-Status: not started.
+Status: complete.
 
 Part of [Stage 15](../stage-15-wide-seats.md), build-order step 4.
 
@@ -8,7 +8,7 @@ Part of [Stage 15](../stage-15-wide-seats.md), build-order step 4.
 
 Spades offers a default two-seat partnership layout and an explicit four-seat solo layout. The session form, automated scheduler, workflow, standings, recordings, local play, and renderer all use the selected topology. One submission can control both players of a partnership without changing the environment's four-player PettingZoo contract. A human partnership seat instead has one designated human player and one explicitly chosen companion agent.
 
-The hands-on check starts and completes one human session and one season run on each plan. The partnership plan asks for two seat assignments, requires a companion choice for a human seat, produces two result rows, marks partners across the table, and labels a decisive replay with its winning seat rather than as tied.
+The hands-on check starts and completes one human session and one season run on each plan. The partnership plan asks for two seat assignments, requires a companion choice for a human seat, produces two result rows, marks its wide seats across the table, and labels a decisive replay with its winning seat rather than as tied.
 
 ## Spades metadata and factory
 
@@ -60,9 +60,9 @@ Add an optional live-state `chat_policy(sender)` hook on the running environment
 
 Expose the current messaging contract for an external turn in step state as optional `chat_options` with `sender`, `target_recipients`, and `default_recipient`. The state's `tick` identifies the turn, since a turn-based messaging environment opens exactly one external opportunity per tick. Extend `schema/step-state.schema.json`, the generated state types, the shared command protocol, and the Python live-command parser together. Adding one optional object needs no `schema_version` bump. A human chat command carries the sender and the tick it was composed against, both required. `frontend/src/pages/SessionPage.vue` enables the composer only when `chat_options.sender` is the designated human player and the state is nonterminal. `ChatPanel` renders exactly the allowed direct recipients plus `Everyone`, resets its selection to the new default when the tick changes, and sends the sender and that tick with the message.
 
-The harness is authoritative. It accepts human chat only from the current designated external actor on the current tick, applies the environment policy at drain time, and drops stale, spoofed, and disallowed messages with a diagnostic rather than charging an illegal move. It drains only the current human player's queue. The relay's membership and message-cap checks remain an earlier validation layer, not proof that the message is legal in the current turn. Apply the same live recipient policy to agent chat output before relay delivery.
+The harness is authoritative. It accepts human chat only from the current designated external actor. It accepts the current announced tick plus that sender's immediately preceding announced tick for one drain, which preserves a message that arrived just after its original drain while rejecting anything older. It applies the environment policy at drain time and drops stale, spoofed, and disallowed messages with a diagnostic rather than charging an illegal move. It drains only the current human player's queue. The browser disables the composer as soon as it sends the turn's action. The relay's membership and message-cap checks remain an earlier validation layer, not proof that the message is legal in the current turn. Apply the same live recipient policy to agent chat output before relay delivery.
 
-Unit tests advance through the human, companion, and opposing players' turns. They verify that browser actions and chat are available only for the designated human player, that the companion agent acts independently, that partner-direct and broadcast messages are accepted, that stale, spoofed, inactive-player, and policy-disallowed messages are dropped without failing a seat, and that a hook returning an illegal recipient set degrades to the no-hook default.
+Unit tests advance through the human, companion, and opposing players' turns. They verify that browser actions and chat are available only for the designated human player, that sending an action closes that chat opportunity, that the companion agent acts independently, that partner-direct and broadcast messages are accepted, that one frame racing its drain receives the one-turn grace, that older, spoofed, inactive-player, and policy-disallowed messages are dropped without failing a seat, and that a hook returning an illegal recipient set degrades to the no-hook default.
 
 ## Standings, recordings, and replay labels
 
@@ -78,13 +78,13 @@ Spades reports the same team score for both partners. The partnership reducer th
 
 Local play needs no separate work. `scripts/play.py` serves the frontend's local bundle, so the same standings change reaches it. Add recording fixtures for both plans, each carrying the `players` attribution object, the `seats` membership object, and the plan key.
 
-## Partnership renderer
+## Wide-seat card renderer
 
-Extend only `environments/spades/renderer/` to mark the two seats declared by the resolved partnership plan. Derive the grouping from the recording or live-session seat map rather than from hard-coded opposite-player arithmetic. The solo plan renders no partnership grouping.
+Extend `frontend/src/renderers/cards/` to mark every non-singleton seat declared by the recording or live-session seat map. The shared scene derives the groups and compact seat labels, and the retained table renderer draws the common colored tab and text cue. Its generic accessibility label uses the environment display name and the term "Wide seats". A singleton-only plan carries no grouping cue.
 
-Use the renderer's existing visual language and game-owned color freedom. The mark must remain legible from every rotated viewer position, must not obscure cards, bids, scores, or current-turn state, and must have a textual or structural cue available to screen-reader-facing surrounding UI rather than relying on color alone.
+Spades supplies only its game-specific team, bid, score, and status behavior. Its partnership plan exercises the shared grouping path without hard-coded opposite-player arithmetic. Hearts inherits the same behavior for a future wide-seat layout.
 
-Scene tests cover partnership and solo maps from each viewer rotation. Browser snapshots or locator-based assertions cover the visible grouping without coupling to raw coordinates.
+Shared scene tests cover group derivation, compact labels, and the accessibility lifecycle. Hearts has a synthetic wide-seat scene case. Spades scene tests cover partnership and solo maps from each viewer rotation, and browser snapshots or locator-based assertions cover the visible grouping without coupling to raw coordinates.
 
 ## Exact schedule projection
 
@@ -98,9 +98,9 @@ Put the pure projection helper in a dependency-free module within the shared sch
 
 For each match, count only its `submission` seat specs as `K`. Use falling permutations for ordered seats and combinations for unordered seats, matching `buildSchedule` exactly. A mixed match with one submission seat and one Naive seat therefore uses `P(N, 1)` or `C(N, 1)`, and a match with no submission seat has only its appended baseline. Compute the counts without materializing assignment arrays, use safe-integer checks, and return a typed validation error if an exact result cannot be represented. Tests compare each match and total projection with the actual schedule length over small rosters, including mixed and multiple match rows, and pin the 20-submission Spades figures for the all-submission match.
 
-Add the eligible submission count to the admin season payload `frontend/src/pages/AdminConsolePage.vue` already fetches and passes down. The backend computes it through the same season and dependency filters the run trigger uses, so the number an operator reads is the roster a run would actually draw from. It is a count, not a roster listing, and it does not depend on the draft.
+Add the eligible submission count to the admin season payload `frontend/src/pages/AdminConsolePage.vue` already fetches and passes down. The backend computes it with a count query through the same season and dependency filters the run trigger uses. It is an advisory page-load snapshot rather than the transactionally frozen run roster, it is not a roster listing, and it does not depend on the draft.
 
-`frontend/src/components/admin/SeasonConfigEditor.vue` receives that count as a prop and recomputes the projection locally whenever the draft changes, which covers the environment, any layout-affecting parameter including `players` or `seat_plan`, a seat spec, a seed list, and a games value. The editor already validates its draft against the environment's parameter declarations and already resolves the layout for the seat-spec controls, so no new validation path appears. Display the exact total near the match controls, with per-match submitted-assignment and all-Naive components in supporting text. An invalid draft shows no total rather than a stale one, and a roster change is reflected the next time the editor opens. Nothing here creates a run, freezes a snapshot, or stages a submission, because the draft never leaves the browser.
+`frontend/src/components/admin/SeasonConfigEditor.vue` receives that count as a prop and recomputes the projection locally whenever the draft changes, which covers the environment, any layout-affecting parameter including `players` or `seat_plan`, a seat spec, a seed list, and a games value. The editor already validates its draft against the environment's parameter declarations and already resolves the layout for the seat-spec controls, so no new validation path appears. Display the exact total near the match controls, with per-match submitted-assignment and all-Naive components in supporting text. A draft that is not ready shows no total. A typed projection error, including a stale match seat count, renders its reason. The supporting text labels eligibility as of page load and explains that triggering freezes a fresh roster. Nothing here creates a run, freezes a snapshot, or stages a submission, because the draft never leaves the browser.
 
 ## Specification edits
 
@@ -120,16 +120,16 @@ Backend and scheduler tests cover:
 - Exact request shapes, companion requirements, deterministic human-player designation, and human capability for both plans.
 - Ordered schedule contents for two and four seats, the all-Naive assignment, game repetition, and the pinned roster-20 totals.
 - Projection equality with materialized schedules across small ordered and unordered cases, including mixed Naive/submission seats and multiple match rows.
-- The eligible submission count in the admin season payload matching the roster a run trigger would draw, and safe-integer failure in the projection helper.
+- The eligible submission count query matching the run trigger's eligibility predicate at read time, the browser labelling it as an advisory page-load snapshot, visible typed projection failures, and safe-integer failure in the projection helper.
 - One staged submission and one result per partnership seat despite two player instances.
 - A partner crash forfeiting only its seat, while an unattributed fault forfeits both seats.
 - Correct board game counts, summed telemetry, mean score, winner id, and true-tie handling.
 
-Frontend unit tests cover plan switching, grid row counts, count hints, companion selection and invalidation, any-member human eligibility, mixed attribution, seat-ranked standings, member-player detail, blind labels, winner copy, the projected total updating as the draft changes and clearing when the draft is invalid, and designated-player chat gating.
+Frontend unit tests cover plan switching, grid row counts, count hints, companion selection and invalidation, any-member human eligibility, mixed attribution, seat-ranked standings, member-player detail, blind labels, winner copy, the projected total updating as the draft changes, typed projection error reasons, the advisory roster note, and designated-player chat gating.
 
-Environment and renderer tests cover metadata-to-rule agreement, both local-play plans, `--seat` on a wide seat with its required `--companion` choice and the independent companion instance that follows, the Spades live-state chat policy, partnership marks, solo rendering, and all viewer rotations. Harness tests cover the human sender and tick checks, policy evaluation at drain time, broadcast, the same recipient checks for agent output, and a byte-identical recording across two runs of the same seeded session. A synthetic messaging environment with no hook pins every other resolved player in canonical player order as the direct choices and broadcast as the default in human `chat_options`, then exercises the same fallback against agent output. Regenerated recording fixtures cover both header maps and both result topologies.
+Environment and renderer tests cover metadata-to-rule agreement, both local-play plans, `--seat` on a wide seat with its required `--companion` choice and the independent companion instance that follows, the Spades live-state chat policy, shared wide-seat marks, solo rendering, and all viewer rotations. Harness tests cover the human sender and tick checks, policy evaluation at drain time, broadcast, the same recipient checks for agent output, and a byte-identical recording across two runs of the same seeded session. A synthetic messaging environment with no hook pins every other resolved player in canonical player order as the direct choices and broadcast as the default in human `chat_options`, then exercises the same fallback against agent output. Regenerated recording fixtures cover both header maps and both result topologies.
 
-Revise the existing Playwright Hearts and Spades journeys for the renamed contracts. Add Spades journeys that start a human session on both plans, exercise the designated human turn and companion-controlled partner turn, send a partner-direct message and a broadcast, inspect mixed final standings and replay winner text, and verify the partnership mark. Run the real Docker-backed workflow integration on each plan and the full frontend end-to-end suite.
+Revise the existing Playwright Hearts and Spades journeys for the renamed contracts. Add Spades journeys that start a human session on both plans, exercise the designated human turn and companion-controlled partner turn, send a partner-direct message and a broadcast, inspect mixed final standings and replay winner text, and verify the shared wide-seat mark. Run the real Docker-backed workflow integration on each plan and the full frontend end-to-end suite.
 
 ## Done when
 
