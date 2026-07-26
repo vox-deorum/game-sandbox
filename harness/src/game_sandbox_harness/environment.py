@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import math
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import InitVar, dataclass
 from importlib.metadata import entry_points
 from typing import Any, Literal, Protocol, TypeGuard, cast, runtime_checkable
@@ -108,7 +108,7 @@ class EnvParameter:
 
     def _validate_numeric_bound(self, value: int | float, field: str) -> None:
         if self.type == "int":
-            if not _is_json_safe_integer(value):
+            if not is_json_safe_integer(value):
                 raise ValueError(f"int parameter {field} must be a JSON-safe integer")
         elif not _is_finite_number(value):
             raise ValueError(f"float parameter {field} must be finite")
@@ -116,7 +116,7 @@ class EnvParameter:
     def validate_value(self, value: object) -> ParameterValue:
         """Validate and normalize one supplied value for this declaration."""
         if self.type == "int":
-            if not _is_json_safe_integer(value):
+            if not is_json_safe_integer(value):
                 raise EnvParameterValueError(f"{self.name} must be a JSON-safe integer")
             assert isinstance(self.min, int) and isinstance(self.max, int)
             if not self.min <= value <= self.max:
@@ -188,7 +188,7 @@ def _is_string_list(value: object) -> TypeGuard[list[str]]:
     return isinstance(value, list) and all(isinstance(item, str) for item in cast("list[object]", value))
 
 
-def _is_json_safe_integer(value: object) -> TypeGuard[int]:
+def is_json_safe_integer(value: object) -> TypeGuard[int]:
     return isinstance(value, int) and not isinstance(value, bool) and abs(value) <= _MAX_JSON_SAFE_INTEGER
 
 
@@ -244,6 +244,17 @@ class ResolvedLayout:
     seats: tuple[ResolvedSeat, ...]
     player_count: int
     seat_count: int
+
+
+def canonical_player_order(player_ids: Iterable[str]) -> tuple[str, ...]:
+    """Sort player ids into their canonical numeric order.
+
+    :func:`resolve_layout` names every player ``player_<index>``, but callers reach them through
+    orderings that do not preserve that numbering: a mapping's key order, or a wide seat plan whose
+    seats group non-adjacent players. Anything that presents players to a human or an environment
+    sorts through here so one convention is applied in one place.
+    """
+    return tuple(sorted(player_ids, key=lambda player_id: int(player_id.removeprefix("player_"))))
 
 
 @dataclass(frozen=True)
@@ -404,7 +415,7 @@ def resolve_layout(meta: EnvironmentMeta, parameters: Mapping[str, ParameterValu
     """
     if isinstance(meta.layout, PlayerBounds):
         value = parameters.get("players")
-        if not _is_json_safe_integer(value) or not meta.layout.min <= value <= meta.layout.max:
+        if not is_json_safe_integer(value) or not meta.layout.min <= value <= meta.layout.max:
             raise ValueError("resolved parameters carry no valid players value")
         seats = tuple(
             ResolvedSeat(seat_id=f"seat_{index}", players=(f"player_{index}",)) for index in range(value)
@@ -442,9 +453,9 @@ def _layout_to_json(layout: EnvironmentLayout) -> dict[str, Any]:
 
 def _validate_layout(env_id: str, layout: object) -> None:
     if isinstance(layout, PlayerBounds):
-        if not _is_json_safe_integer(layout.min) or layout.min <= 0:
+        if not is_json_safe_integer(layout.min) or layout.min <= 0:
             raise ValueError(f"environment {env_id!r} player bounds min must be a positive integer")
-        if not _is_json_safe_integer(layout.max) or layout.max <= 0:
+        if not is_json_safe_integer(layout.max) or layout.max <= 0:
             raise ValueError(f"environment {env_id!r} player bounds max must be a positive integer")
         if layout.min > layout.max:
             raise ValueError(f"environment {env_id!r} player bounds min must be no greater than max")
@@ -468,7 +479,7 @@ def _validate_layout(env_id: str, layout: object) -> None:
         for seat in plan.seats:
             if not seat:
                 raise ValueError(f"environment {env_id!r} plan {plan.key!r} has an empty seat")
-            if not all(_is_json_safe_integer(index) and index >= 0 for index in seat):
+            if not all(is_json_safe_integer(index) and index >= 0 for index in seat):
                 raise ValueError(
                     f"environment {env_id!r} plan {plan.key!r} player indices must be non-negative integers"
                 )
@@ -533,7 +544,7 @@ def int_parameter(parameters: Mapping[str, ParameterValue], name: str) -> int:
     if name not in parameters:
         raise EnvParameterValueError(f"missing environment parameter {name!r}")
     value = parameters[name]
-    if not _is_json_safe_integer(value):
+    if not is_json_safe_integer(value):
         raise EnvParameterValueError(f"{name} must be a JSON-safe integer")
     return value
 

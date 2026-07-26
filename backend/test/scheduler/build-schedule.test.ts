@@ -317,12 +317,40 @@ describe('buildSchedule - match composition and guards', () => {
       seatOrderMatters,
     })
 
-    expect(projection.matches.map((match) => match.totalGames)).toEqual(
-      matches.map(
-        (_, matchIndex) => schedule.filter((game) => game.match_index === matchIndex).length,
-      ),
-    )
-    expect(projection.totalGames).toBe(schedule.length)
+    // Derive the expected submitted-versus-naive split directly from the real schedule instead of
+    // trusting projectSchedule's own totalGames, so a wrong split that happens to preserve the total
+    // still fails this test. buildSchedule appends exactly one all-Naive assignment per match, after
+    // its submitted rows, and a game is that appended assignment exactly when every seat the match
+    // config marks 'submission' resolved to the builtin-naive ref.
+    const isNaiveGame = (match: MatchConfig, game: (typeof schedule)[number]): boolean =>
+      match.seats.every(
+        (seat, seatIndex) =>
+          seat !== 'submission' || game.seats[seatIndex]?.kind === 'builtin-naive',
+      )
+
+    const expectedPerMatch = matches.map((match, matchIndex) => {
+      const games = schedule.filter((game) => game.match_index === matchIndex)
+      const naiveGames = games.filter((game) => isNaiveGame(match, game)).length
+      const submittedGames = games.length - naiveGames
+      return {
+        submittedAssignments: submittedGames / match.games,
+        naiveAssignments: naiveGames / match.games,
+        submittedGames,
+        naiveGames,
+        totalGames: games.length,
+      }
+    })
+
+    expect(projection.matches).toEqual(expectedPerMatch)
+
+    const sumField = (field: keyof (typeof expectedPerMatch)[number]): number =>
+      expectedPerMatch.reduce((total, match) => total + match[field], 0)
+
+    expect(projection.submittedAssignments).toBe(sumField('submittedAssignments'))
+    expect(projection.naiveAssignments).toBe(sumField('naiveAssignments'))
+    expect(projection.submittedGames).toBe(sumField('submittedGames'))
+    expect(projection.naiveGames).toBe(sumField('naiveGames'))
+    expect(projection.totalGames).toBe(sumField('totalGames'))
   })
 
   it('returns an empty schedule for an empty match list', () => {

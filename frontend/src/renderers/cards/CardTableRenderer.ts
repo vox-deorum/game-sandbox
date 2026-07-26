@@ -48,6 +48,7 @@ import {
   sweepCardAt,
   type TableGeometry,
   type TrickSweep,
+  WIDE_SEAT_TINTS,
   WIDTH,
   wideSeatsAccessibilityLabel,
 } from './scene.js'
@@ -64,8 +65,6 @@ const PLAY_MIN_MS = 180
 const PULSE_PERIOD_MS = 1100
 /** How far (px) a hovered hand card lifts, so the user sees which card is under the cursor. */
 const HOVER_LIFT = 8
-/** Shared wide-seat accent colors. They repeat for layouts with more than four wide seats. */
-const WIDE_SEAT_TINTS = ['#6cc4ec', '#ec9c78', '#b7d67a', '#d2a8ff'] as const
 
 /** A card-play fly-in phase: one card sliding from its player's hand into the center. */
 interface PlayPhase {

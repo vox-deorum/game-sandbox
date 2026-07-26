@@ -19,15 +19,9 @@ import {
   type EnvironmentMeta,
   type EnvParameter,
   type ParameterValue,
-  resolveLayout,
 } from '@game-sandbox/schema/environment'
 import { MAX_LLM_COST_WEIGHT, MODEL_ALIASES } from '@game-sandbox/schema/llm'
-import {
-  projectSchedule,
-  type ScheduleProjection,
-  ScheduleProjectionError,
-  SEAT_SPECS,
-} from '@game-sandbox/schema/schedule'
+import { type ScheduleMatchConfig, SEAT_SPECS } from '@game-sandbox/schema/schedule'
 import { computed, ref, watch } from 'vue'
 
 import {
@@ -41,6 +35,7 @@ import {
   type SeatSpec,
 } from '../../api/client.js'
 import { formatParameterValue, initializeParameters, validateParameters } from '../../lib/parameters.js'
+import SchedulePreview from './SchedulePreview.vue'
 import UiCheckboxGroup from '../ui/UiCheckboxGroup.vue'
 import UiButton from '../ui/UiButton.vue'
 import UiCard from '../ui/UiCard.vue'
@@ -54,18 +49,21 @@ import UiSelect from '../ui/UiSelect.vue'
 const props = defineProps<{
   season: SeasonView
   eligibleSubmissionCount: number
+  /** The registry entry for the season's environment: its messaging capability, its declared
+   *  parameters, and the seat-order rule the schedule projection needs. */
   environment?: EnvironmentMeta
-  /** The environment capability shown beside the inherited messaging choice. */
-  environmentMessagingEnabled?: boolean
-  environmentParameters?: readonly EnvParameter[]
 }>()
+
+/** The environment's declared parameters, empty until the registry entry arrives. */
+const environmentParameters = computed<readonly EnvParameter[]>(
+  () => props.environment?.parameters ?? [],
+)
 const emit = defineEmits<{
   (e: 'changed', season: SeasonView): void
   /** Whether the form holds edits not yet persisted; drives the Run confirmation prompt upstream. */
   (e: 'dirty-change', dirty: boolean): void
 }>()
 
-const EDITABLE_SEAT_SPECS: SeatSpec[] = [...SEAT_SPECS]
 const LLM_MODEL_ALIASES: readonly LlmModelAlias[] = MODEL_ALIASES
 
 /** One match's editable form state; seeds are free text parsed to ints on save. */
@@ -83,9 +81,9 @@ const episodeTimeout = ref<number | ''>('')
 // has the same runtime meaning as inheritance, so the editor canonicalizes it back to "default".
 const messagingEnabled = ref<'default' | 'off'>('default')
 const messagingDefaultLabel = computed(() =>
-  props.environmentMessagingEnabled === undefined
+  props.environment === undefined
     ? 'Environment default'
-    : `Environment default (${props.environmentMessagingEnabled ? 'on' : 'off'})`,
+    : `Environment default (${props.environment.messaging ? 'on' : 'off'})`,
 )
 const messageCap = ref<number | ''>('')
 const llmEnabled = ref<'default' | 'on' | 'off'>('default')
@@ -101,66 +99,12 @@ const developmentRateLimit = ref<number | ''>('')
 const parameterModes = ref<Record<string, 'inherit' | 'override'>>({})
 const parameterValues = ref<Record<string, ParameterValue>>({})
 const parameterValidation = computed(() =>
-  validateParameters(props.environmentParameters ?? [], parameterValues.value),
+  validateParameters(environmentParameters.value, parameterValues.value),
 )
-const resolvedLayout = computed(() => {
-  if (props.environment === undefined || Object.keys(parameterValidation.value.errors).length > 0) {
-    return null
-  }
-  try {
-    return resolveLayout(props.environment, parameterValidation.value.values)
-  } catch {
-    return null
-  }
-})
-
-function projectionErrorMessage(error: ScheduleProjectionError, seatCount: number): string {
-  const matchNumber = error.matchIndex === null ? null : error.matchIndex + 1
-  switch (error.reason) {
-    case 'seat_count_mismatch': {
-      const draftSeats =
-        error.matchIndex === null ? null : matches.value[error.matchIndex]?.seats.length
-      return `Schedule projection unavailable: Match ${matchNumber} has ${draftSeats} seats, but the resolved layout has ${seatCount}.`
-    }
-    case 'unsafe_integer':
-      return `Schedule projection unavailable: Match ${matchNumber} creates too many games to count safely.`
-    case 'invalid_games':
-      return `Schedule projection unavailable: Match ${matchNumber} has an invalid game count.`
-    case 'invalid_eligible_submission_count':
-      return 'Schedule projection unavailable: the eligible submission count is invalid.'
-    case 'invalid_seat_count':
-      return 'Schedule projection unavailable: the resolved seat count is invalid.'
-  }
-}
-
-const projectionState = computed<{ projection: ScheduleProjection | null; error: string | null }>(
-  () => {
-    const layout = resolvedLayout.value
-    const environment = props.environment
-    if (layout === null || environment === undefined) return { projection: null, error: null }
-    const built = buildConfig()
-    if ('error' in built) return { projection: null, error: null }
-    try {
-      return {
-        projection: projectSchedule({
-          matches: built.config.matches,
-          eligibleSubmissionCount: props.eligibleSubmissionCount,
-          seatCount: layout.seatCount,
-          seatOrderMatters: environment.seat_order_matters,
-        }),
-        error: null,
-      }
-    } catch (error) {
-      if (error instanceof ScheduleProjectionError) {
-        return { projection: null, error: projectionErrorMessage(error, layout.seatCount) }
-      }
-      throw error
-    }
-  },
+/** The draft rows the schedule preview projects over: seat composition and game count only. */
+const draftMatches = computed<ScheduleMatchConfig[]>(() =>
+  matches.value.map((match) => ({ seats: match.seats, games: match.games })),
 )
-const projection = computed(() => projectionState.value.projection)
-const projectionError = computed(() => projectionState.value.error)
-const projectedSeatCount = computed(() => resolvedLayout.value?.seatCount ?? null)
 
 const saving = ref(false)
 const saved = ref(false)
@@ -205,7 +149,7 @@ function seedFromSeason(): void {
 
 /** Seed only the parameter rows, the part of the form that depends on the environment declarations. */
 function seedParameters(): void {
-  const declarations = props.environmentParameters ?? []
+  const declarations = environmentParameters.value
   const overrides = props.season.config.overrides?.parameters
   parameterValues.value = initializeParameters(declarations, overrides ?? {})
   parameterModes.value = Object.fromEntries(
@@ -223,7 +167,7 @@ watch(() => props.season.id, seedFromSeason, { immediate: true })
 // the whole `seedFromSeason` here would discard every edit an operator made while that request was in
 // flight, including the match, timeout, and LLM fields that have nothing to do with parameters.
 watch(
-  () => props.environmentParameters,
+  () => environmentParameters.value,
   () => {
     if (Object.keys(parameterModes.value).length === 0) seedParameters()
   },
@@ -367,7 +311,7 @@ function buildConfig(): { config: SeasonConfig } | { error: string } {
   if (official.limits !== undefined) llm.official = official.limits
   if (development.limits !== undefined) llm.development = development.limits
   if (Object.keys(llm).length > 0) overrides.llm = llm
-  const declared = props.environmentParameters ?? []
+  const declared = environmentParameters.value
   const parameterOverrides: Record<string, ParameterValue> = {}
   // The same validation the rows render their inline errors from, so a save can never disagree with
   // what the form is already showing.
@@ -423,7 +367,7 @@ function canonicalParameters(
   parameters: SeasonOverrides['parameters'],
 ): Record<string, ParameterValue> | null {
   if (parameters === undefined) return null
-  const declarations = (props.environmentParameters ?? []).filter(
+  const declarations = (environmentParameters.value).filter(
     (declaration) => parameters[declaration.name] !== undefined,
   )
   const { values } = validateParameters(declarations, parameters)
@@ -576,7 +520,7 @@ watch(confirmOpen, (open) => {
             data-testid="seat"
           >
             <select v-model="match.seats[seatIndex]" class="seat-select" aria-label="Seat">
-              <option v-for="spec in EDITABLE_SEAT_SPECS" :key="spec" :value="spec">
+              <option v-for="spec in SEAT_SPECS" :key="spec" :value="spec">
                 {{ spec }}
               </option>
             </select>
@@ -599,37 +543,12 @@ watch(confirmOpen, (open) => {
         </div>
       </li>
     </ol>
-    <div v-if="projection !== null" class="schedule-projection" aria-live="polite">
-      <strong>Projected games: {{ projection.totalGames.toLocaleString() }}</strong>
-      <span v-if="projectedSeatCount !== null">
-        Resolved layout: {{ projectedSeatCount }}
-        {{ projectedSeatCount === 1 ? 'seat' : 'seats' }}.
-      </span>
-      <span
-        v-for="(matchProjection, matchIndex) in projection.matches"
-        :key="matchIndex"
-        data-testid="match-projection"
-      >
-        Match {{ matchIndex + 1 }}:
-        {{ matchProjection.submittedAssignments.toLocaleString() }} submitted assignments and
-        {{ matchProjection.naiveAssignments }} all-Naive assignment;
-        {{ matchProjection.submittedGames.toLocaleString() }} submitted games and
-        {{ matchProjection.naiveGames.toLocaleString() }} all-Naive games.
-      </span>
-      <span>
-        Uses {{ eligibleSubmissionCount.toLocaleString() }} eligible
-        {{ eligibleSubmissionCount === 1 ? 'submission' : 'submissions' }} as of page load. A run
-        freezes a fresh roster when triggered.
-      </span>
-    </div>
-    <UiEmptyState
-      v-else-if="projectionError !== null"
-      tone="danger"
-      role="alert"
-      data-testid="projection-error"
-    >
-      {{ projectionError }}
-    </UiEmptyState>
+    <SchedulePreview
+      :matches="draftMatches"
+      :environment="environment"
+      :parameter-values="parameterValidation.values"
+      :eligible-submission-count="eligibleSubmissionCount"
+    />
       <UiButton variant="secondary" size="tight" @click="addMatch">Add match</UiButton>
     </UiCard>
 
@@ -817,7 +736,7 @@ watch(confirmOpen, (open) => {
     </UiCard>
 
     <UiCard
-      v-if="(environmentParameters?.length ?? 0) > 0"
+      v-if="environmentParameters.length > 0"
       aria-labelledby="environment-parameters-title"
     >
       <h3 id="environment-parameters-title" class="config-title">Environment Parameters</h3>
@@ -991,20 +910,6 @@ watch(confirmOpen, (open) => {
   border: 1px solid var(--color-border);
   background: var(--color-bg);
   color: var(--color-text);
-}
-
-.schedule-projection {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  margin-bottom: var(--space-3);
-  color: var(--color-text-muted);
-  font-size: var(--text-sm);
-}
-
-.schedule-projection strong {
-  color: var(--color-text);
-  font-size: var(--text-md);
 }
 
 .match-fields {

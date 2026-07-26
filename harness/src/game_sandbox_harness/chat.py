@@ -22,13 +22,28 @@ import sys
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any, cast
 
-from .environment import ChatPolicy
+from .environment import ChatPolicy, ChatPolicySource, canonical_player_order
 from .state import Message
 
 
-def _diag(message: str) -> None:
+def diag(message: str) -> None:
     """Write a chat diagnostic to stderr (the harness never configures logging)."""
     print(message, file=sys.stderr, flush=True)
+
+
+def _policy_fields(policy: object) -> tuple[object, object] | None:
+    """Read the two policy fields from a :class:`ChatPolicy` or an equivalent mapping.
+
+    Returns ``None`` when the hook returned something that is neither, which is the one defect that
+    is about shape rather than about the values themselves.
+    """
+    if isinstance(policy, ChatPolicy):
+        return policy.target_recipients, policy.default_recipient
+    if isinstance(policy, Mapping):
+        fields = cast("Mapping[str, object]", policy)
+        if "target_recipients" in fields and "default_recipient" in fields:
+            return fields["target_recipients"], fields["default_recipient"]
+    return None
 
 
 class ChatRouter:
@@ -41,9 +56,7 @@ class ChatRouter:
     """
 
     def __init__(self, player_ids: Iterable[str], cap: int | None) -> None:
-        self._player_order = tuple(
-            sorted(player_ids, key=lambda player_id: int(player_id.removeprefix("player_")))
-        )
+        self._player_order = canonical_player_order(player_ids)
         self._players = frozenset(self._player_order)
         self._cap = cap
         self._inboxes: dict[str, list[dict[str, Any]]] = {player_id: [] for player_id in self._players}
@@ -55,38 +68,58 @@ class ChatRouter:
             default_recipient=None,
         )
 
-    def validate_policy(self, sender: str, policy: object) -> ChatPolicy:
-        """Validate an environment policy, falling back to the generic contract on any defect."""
-        fallback = self.default_policy(sender)
+    def policy_from(self, env: Any, sender: str) -> ChatPolicy:
+        """Resolve one sender's policy from the live environment, validated and never raising.
+
+        An environment without the hook, a hook that raises, and a hook that returns something
+        unusable all resolve to :meth:`default_policy`, so a policy bug never ends the episode.
+        """
+        if not isinstance(env, ChatPolicySource):
+            return self.default_policy(sender)
         try:
-            if isinstance(policy, ChatPolicy):
-                recipients_value = policy.target_recipients
-                default_recipient = policy.default_recipient
-            elif isinstance(policy, Mapping):
-                policy_map = cast("Mapping[str, object]", policy)
-                if "target_recipients" not in policy_map or "default_recipient" not in policy_map:
-                    raise ValueError("missing policy field")
-                recipients_value = policy_map["target_recipients"]
-                default_recipient = policy_map["default_recipient"]
-            else:
-                raise TypeError("wrong policy shape")
-            if isinstance(recipients_value, (str, bytes)) or not isinstance(recipients_value, Sequence):
-                raise TypeError("target_recipients is not a sequence")
-            recipients = tuple(cast("Sequence[object]", recipients_value))
-            if (
-                not all(isinstance(recipient, str) for recipient in recipients)
-                or len(recipients) != len(set(recipients))
-                or any(recipient not in self._players or recipient == sender for recipient in recipients)
-                or (
-                    default_recipient is not None
-                    and (not isinstance(default_recipient, str) or default_recipient not in recipients)
-                )
-            ):
-                raise ValueError("invalid policy value")
-        except Exception:  # noqa: BLE001 - any invalid hook result uses the generic default policy
-            _diag(f"chat: {sender} environment policy is invalid; using the default policy")
-            return fallback
-        return ChatPolicy(cast("tuple[str, ...]", tuple(recipients)), default_recipient)
+            declared = env.chat_policy(sender)
+        except Exception as error:  # noqa: BLE001 - a policy bug must not end the game
+            diag(f"chat: {sender} environment policy failed ({error!r}); using the default policy")
+            return self.default_policy(sender)
+        return self.validate_policy(sender, declared)
+
+    def validate_policy(self, sender: str, policy: object) -> ChatPolicy:
+        """Validate an environment policy, falling back to the generic contract on any defect.
+
+        The diagnostic names the specific defect, because the reader is an environment author
+        debugging their own hook. Any defect at all yields :meth:`default_policy`, so a broken hook
+        widens the recipient list rather than ending the episode.
+        """
+        try:
+            fields = _policy_fields(policy)
+            checked = "has the wrong shape" if fields is None else self._checked_policy(sender, *fields)
+        except Exception as error:  # noqa: BLE001 - a hook may return an object that fails on access
+            checked = f"could not be read ({error!r})"
+        if isinstance(checked, str):
+            diag(f"chat: {sender} environment policy {checked}; using the default policy")
+            return self.default_policy(sender)
+        return checked
+
+    def _checked_policy(self, sender: str, recipients: object, default_recipient: object) -> ChatPolicy | str:
+        """Return the validated policy, or a phrase naming the first defect that makes it unusable."""
+        if isinstance(recipients, (str, bytes)) or not isinstance(recipients, Sequence):
+            return "declares target_recipients that is not a sequence"
+        listed = tuple(cast("Sequence[object]", recipients))
+        if not all(isinstance(recipient, str) for recipient in listed):
+            return "declares a non-string recipient"
+        named = cast("tuple[str, ...]", listed)
+        if len(named) != len(set(named)):
+            return "declares the same recipient twice"
+        for recipient in named:
+            if recipient == sender:
+                return "declares the sender as one of its own recipients"
+            if recipient not in self._players:
+                return f"declares unknown recipient {recipient!r}"
+        if default_recipient is None:
+            return ChatPolicy(named, None)
+        if not isinstance(default_recipient, str) or default_recipient not in named:
+            return f"defaults to {default_recipient!r}, which it does not offer"
+        return ChatPolicy(named, default_recipient)
 
     def validate_outgoing(
         self,
@@ -106,40 +139,54 @@ class ChatRouter:
         if batch is None:
             return []
         if isinstance(batch, (str, bytes)) or not isinstance(batch, Sequence):
-            _diag(f"chat: {sender} returned a non-list batch {type(batch).__name__}; dropping it")
+            diag(f"chat: {sender} returned a non-list batch {type(batch).__name__}; dropping it")
             return []
 
         active_policy = policy or self.default_policy(sender)
-        allowed_direct = frozenset(active_policy.target_recipients)
+        items = ((raw_item, active_policy) for raw_item in cast("Sequence[object]", batch))
+        return self.validate_outgoing_items(sender, items)
+
+    def validate_outgoing_items(
+        self,
+        sender: str,
+        items: Iterable[tuple[object, ChatPolicy]],
+    ) -> list[Message]:
+        """Validate one ordered batch whose items may carry different announced policies.
+
+        External frames can span the current opportunity and its one-drain grace predecessor. Their
+        policies differ, but arrival order and the batch-wide duplicate-recipient limit still apply
+        once across the drain.
+        """
         accepted: list[Message] = []
         seen: set[str | None] = set()
-        for raw_item in cast("Sequence[object]", batch):
+        for raw_item, active_policy in items:
             if not isinstance(raw_item, Mapping):
-                _diag(f"chat: {sender} sent a non-object message {raw_item!r}; dropping it")
+                diag(f"chat: {sender} sent a non-object message {raw_item!r}; dropping it")
                 continue
             item = cast("Mapping[str, object]", raw_item)
+            allowed_direct = frozenset(active_policy.target_recipients)
             to = item.get("to")
             # A bool is an int, never a str, so a bool recipient falls through the str check below.
             if to is not None and (not isinstance(to, str) or to not in self._players):
-                _diag(f"chat: {sender} sent to unknown recipient {to!r}; dropping it")
+                diag(f"chat: {sender} sent to unknown recipient {to!r}; dropping it")
                 continue
             if to == sender:
-                _diag(f"chat: {sender} sent to itself; dropping it")
+                diag(f"chat: {sender} sent to itself; dropping it")
                 continue
             if to is not None and to not in allowed_direct:
-                _diag(f"chat: {sender} sent to policy-disallowed recipient {to!r}; dropping it")
+                diag(f"chat: {sender} sent to policy-disallowed recipient {to!r}; dropping it")
                 continue
             text = item.get("text")
             # A non-str text (including a bool, which is an int, not a str) is dropped here.
             if not isinstance(text, str):
-                _diag(f"chat: {sender} sent non-string text {text!r}; dropping it")
+                diag(f"chat: {sender} sent non-string text {text!r}; dropping it")
                 continue
             if self._cap is not None and len(text) > self._cap:
-                _diag(f"chat: {sender} sent {len(text)} code points over the cap of {self._cap}; dropping it")
+                diag(f"chat: {sender} sent {len(text)} code points over the cap of {self._cap}; dropping it")
                 continue
             if to in seen:
                 where = "broadcast" if to is None else f"message to {to}"
-                _diag(f"chat: {sender} sent a second {where} in one turn; dropping it")
+                diag(f"chat: {sender} sent a second {where} in one turn; dropping it")
                 continue
             seen.add(to)
             accepted.append({"from": sender, "to": to, "text": text})

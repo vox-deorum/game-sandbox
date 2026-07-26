@@ -108,9 +108,9 @@ export function projectSchedule(input: ScheduleProjectionInput): ScheduleProject
         ? 0
         : seatingCount(eligibleSubmissionCount, submissionSeats, seatOrderMatters, matchIndex)
     const naiveAssignments = 1 as const
-    const submittedGames = multiply(submittedAssignments, match.games, matchIndex)
+    const submittedGames = checkedInteger(submittedAssignments * match.games, matchIndex)
     const naiveGames = match.games
-    const totalGames = add(submittedGames, naiveGames, matchIndex)
+    const totalGames = checkedInteger(submittedGames + naiveGames, matchIndex)
 
     projection.matches.push({
       submittedAssignments,
@@ -119,16 +119,19 @@ export function projectSchedule(input: ScheduleProjectionInput): ScheduleProject
       naiveGames,
       totalGames,
     })
-    projection.submittedAssignments = add(
-      projection.submittedAssignments,
-      submittedAssignments,
-      matchIndex,
-    )
-    projection.naiveAssignments = add(projection.naiveAssignments, naiveAssignments, matchIndex)
-    projection.submittedGames = add(projection.submittedGames, submittedGames, matchIndex)
-    projection.naiveGames = add(projection.naiveGames, naiveGames, matchIndex)
-    projection.totalGames = add(projection.totalGames, totalGames, matchIndex)
   })
+
+  // A running total is a property of the whole projection, not of any one match, so an overflow
+  // here is attributed to the projection as a whole (`matchIndex: null`) rather than to whichever
+  // match happened to push the sum over the safe-integer limit.
+  projection.submittedAssignments = sumMatchField(
+    projection.matches,
+    (match) => match.submittedAssignments,
+  )
+  projection.naiveAssignments = sumMatchField(projection.matches, (match) => match.naiveAssignments)
+  projection.submittedGames = sumMatchField(projection.matches, (match) => match.submittedGames)
+  projection.naiveGames = sumMatchField(projection.matches, (match) => match.naiveGames)
+  projection.totalGames = sumMatchField(projection.matches, (match) => match.totalGames)
 
   return projection
 }
@@ -154,16 +157,19 @@ function seatingCount(
   return Number(result)
 }
 
-function add(left: number, right: number, matchIndex: number): number {
-  const result = left + right
-  if (!Number.isSafeInteger(result)) throw new ScheduleProjectionError('unsafe_integer', matchIndex)
-  return result
+/** Check that an arithmetic result is still an exact JS integer, or throw with the given match index. */
+function checkedInteger(value: number, matchIndex: number | null): number {
+  if (!Number.isSafeInteger(value)) throw new ScheduleProjectionError('unsafe_integer', matchIndex)
+  return value
 }
 
-function multiply(left: number, right: number, matchIndex: number): number {
-  const result = left * right
-  if (!Number.isSafeInteger(result)) throw new ScheduleProjectionError('unsafe_integer', matchIndex)
-  return result
+/** Sum one field across every match's projection, with a single safe-integer check for the total. */
+function sumMatchField(
+  matches: readonly MatchScheduleProjection[],
+  select: (match: MatchScheduleProjection) => number,
+): number {
+  const total = matches.reduce((sum, match) => sum + select(match), 0)
+  return checkedInteger(total, null)
 }
 
 function isNonNegativeSafeInteger(value: number): boolean {

@@ -12,12 +12,15 @@ const PLAYERS = {
   player_2: { kind: 'human' as const, label: 'dev', user: 'dev' },
   player_3: { kind: 'agent' as const, label: "maya's agent", user: 'maya', submission_id: 'sub-1' },
 }
-const POLICY = {
+// One published external turn: the state names the sender, the tick it was published on, the
+// recipients the environment allows, and the recipient selected by default.
+const OPPORTUNITY = {
   sender: 'player_2',
   tick: 7,
   targetRecipients: ['player_0', 'player_1', 'player_3'],
   defaultRecipient: 'player_0',
 }
+const TURN = { opportunity: OPPORTUNITY }
 
 describe('ChatPanel', () => {
   it('badges broadcasts, to-you, from-you, and blind-labels senders', () => {
@@ -68,7 +71,7 @@ describe('ChatPanel', () => {
         viewerPlayers: ['player_2'],
         sendable: true,
         messageCap: 3,
-        ...POLICY,
+        ...TURN,
       },
     })
     const input = screen.getByRole('textbox')
@@ -95,7 +98,7 @@ describe('ChatPanel', () => {
         viewerPlayers: ['player_2'],
         sendable: true,
         messageCap: 120,
-        ...POLICY,
+        ...TURN,
       },
     })
     const recipient = screen.getByRole('combobox')
@@ -128,7 +131,7 @@ describe('ChatPanel', () => {
       sendable: true,
       connected: false,
       messageCap: 120,
-      ...POLICY,
+      ...TURN,
     }
     const { container, emitted, rerender } = render(ChatPanel, { props })
     const input = screen.getByRole('textbox') as HTMLInputElement
@@ -167,7 +170,7 @@ describe('ChatPanel', () => {
         viewerPlayers: ['player_2'],
         sendable: true,
         messageCap: 120,
-        ...POLICY,
+        ...TURN,
       },
     })
 
@@ -180,17 +183,19 @@ describe('ChatPanel', () => {
     expect(container.querySelector('.chat-player')?.textContent).toBe('P0')
   })
 
-  it('renders only policy recipients and resets composer state when the tick changes', async () => {
+  it('renders only policy recipients and resets composer state on a new opportunity', async () => {
     const props = {
       entries: [] as ChatEntry[],
       players: PLAYERS,
       viewerPlayers: ['player_2'],
       sendable: true,
       messageCap: 120,
-      sender: 'player_2',
-      tick: 7,
-      targetRecipients: ['player_0', 'player_3'],
-      defaultRecipient: 'player_0',
+      opportunity: {
+        sender: 'player_2',
+        tick: 7,
+        targetRecipients: ['player_0', 'player_3'],
+        defaultRecipient: 'player_0',
+      },
     }
     const { rerender } = render(ChatPanel, { props })
     const recipient = screen.getByRole('combobox')
@@ -208,13 +213,50 @@ describe('ChatPanel', () => {
     await rerender({
       ...props,
       sendable: true,
-      tick: 11,
-      targetRecipients: ['player_1'],
-      defaultRecipient: 'player_1',
+      opportunity: {
+        sender: 'player_2',
+        tick: 11,
+        targetRecipients: ['player_1'],
+        defaultRecipient: 'player_1',
+      },
     })
     expect(screen.getByRole('combobox')).toHaveValue('player_1')
     expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('')
     expect(screen.getByRole('option', { name: 'P1' })).toBeInTheDocument()
     expect(screen.queryByRole('option', { name: 'P0' })).toBeNull()
+  })
+
+  // The opening frame and the first recorded step both carry tick 0, so a tick alone does not name
+  // an opportunity. Resetting on the sender and tick together keeps one player's draft and recipient
+  // from carrying into another player's turn.
+  it('resets when a new sender is announced on the same tick', async () => {
+    const props = {
+      entries: [] as ChatEntry[],
+      players: PLAYERS,
+      viewerPlayers: ['player_2'],
+      sendable: true,
+      messageCap: 120,
+      opportunity: {
+        sender: 'player_2',
+        tick: 0,
+        targetRecipients: ['player_0'],
+        defaultRecipient: 'player_0',
+      },
+    }
+    const { rerender } = render(ChatPanel, { props })
+    await fireEvent.update(screen.getByRole('combobox'), '')
+    await fireEvent.update(screen.getByRole('textbox'), 'meant for player_2')
+
+    await rerender({
+      ...props,
+      opportunity: {
+        sender: 'player_3',
+        tick: 0,
+        targetRecipients: ['player_1'],
+        defaultRecipient: 'player_1',
+      },
+    })
+    expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('')
+    expect(screen.getByRole('combobox')).toHaveValue('player_1')
   })
 })

@@ -30,6 +30,7 @@ import {
   type ScenePlayerBase,
   type TableGeometry,
   type ViewContext,
+  WIDE_SEAT_TINTS,
   WIDTH,
 } from '@renderers/cards/scene.js'
 
@@ -65,8 +66,10 @@ export function teamPlayers(team: number): [number, number] {
 // --- Spades palette (shared card and table colours live in cards/scene.ts) ---
 /** The ink for a nil bid, so a NIL chip and a nil badge read apart from an ordinary bid. */
 export const NIL_INK = '#f0b060'
-/** The two partnership accent colours, so the team scores and badges read as two teams. */
-export const TEAM_TINT: Record<number, string> = { 0: '#6cc4ec', 1: '#ec9c78' }
+/** The two partnership accent colours, so the team scores and badges read as two teams: the first two
+ *  entries of the shared wide-seat palette, so a partnership's score tint always matches its wide-seat
+ *  badge tab. */
+export const TEAM_TINT: Record<number, string> = { 0: WIDE_SEAT_TINTS[0], 1: WIDE_SEAT_TINTS[1] }
 /** A bid chip's felt-green body, its hover body, and its edge. */
 export const CHIP_BG = '#12422d'
 export const CHIP_BG_HOVER = '#1e6042'

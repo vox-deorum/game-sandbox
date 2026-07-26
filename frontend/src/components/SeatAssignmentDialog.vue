@@ -106,7 +106,8 @@ const humanCapableSeats = computed(
 
 // Every seat carries a concrete agent under it; the human (play only) simply overrides whichever seat
 // `humanSeat` names. Watch preselects the clicked agent into every seat; play defaults every seat to
-// the Naive baseline and seats the human at the first human-capable seat. There is never an empty seat.
+// the Naive baseline and seats the human at the first human-capable seat. A seat goes blank only when
+// its chosen agent stops being offered, and `sanitizeChoices` then makes the operator pick again.
 const defaultAgent =
   props.mode === 'play' ? BUILTIN : encodeAgent(props.preselect ?? { kind: 'builtin-agent' })
 const agentChoice = reactive<Record<string, string>>(

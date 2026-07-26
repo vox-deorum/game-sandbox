@@ -34,19 +34,12 @@ const controlledPlayers = computed(() =>
     .map(([playerId]) => playerId),
 )
 
-function sendInput(playerId: string, action: unknown): void {
-  if (connection.value !== 'open') {
-    return
-  }
-  consumeChatAction(playerId)
-  send({ kind: 'input', player: playerId, action })
-}
-
 const { noRenderer, aspectRatio, mount: mountRenderer, render: renderState } = useRendererMount({
   host: hostEl,
   meta,
   controlledPlayers,
-  sendAction: sendInput,
+  // Deferred so the renderer and the chat composable can be wired in either order.
+  sendAction: (playerId, action) => sendInput(playerId, action),
 })
 const {
   connection,
@@ -95,15 +88,11 @@ const { logBeside } = useStageLayout(aspectRatio)
 const stageLoading = computed(() => meta.value === null || (aspectRatio.value === null && !noRenderer.value))
 const messagingEnabled = computed(() => meta.value?.messaging === true)
 const liveChatEnabled = computed(() => status.value === 'running')
-const {
-  chatOptions,
-  chatSendable,
-  consumeAction: consumeChatAction,
-  sendChat,
-} = useLiveChat({
+const { chatProps, sendInput, sendChat } = useLiveChat({
   state: lastState,
   controlledPlayers,
   enabled: liveChatEnabled,
+  connection,
   send,
 })
 const showStartGate = computed(() => paused.value && !started.value)
@@ -195,13 +184,8 @@ onMounted(async () => {
           :entries="chatLog"
           :players="header?.players"
           :viewer-players="controlledPlayers"
-          :sendable="chatSendable"
-          :connected="connection === 'open'"
           :message-cap="meta?.message_cap ?? null"
-          :sender="chatOptions?.sender"
-          :tick="lastState?.tick"
-          :target-recipients="chatOptions?.target_recipients"
-          :default-recipient="chatOptions?.default_recipient"
+          v-bind="chatProps"
           @send="sendChat"
         />
         <DecisionLog v-else :entries="decisions" />
@@ -221,13 +205,8 @@ onMounted(async () => {
             :entries="chatLog"
             :players="header?.players"
             :viewer-players="controlledPlayers"
-            :sendable="chatSendable"
-            :connected="connection === 'open'"
             :message-cap="meta?.message_cap ?? null"
-            :sender="chatOptions?.sender"
-            :tick="lastState?.tick"
-            :target-recipients="chatOptions?.target_recipients"
-            :default-recipient="chatOptions?.default_recipient"
+            v-bind="chatProps"
             @send="sendChat"
           />
         </details>

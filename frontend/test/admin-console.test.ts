@@ -257,6 +257,32 @@ describe('AdminConsolePage', () => {
 
     await fireEvent.update(within(match).getByRole('spinbutton', { name: 'Games' }), '0')
     expect(screen.queryByText(/Projected games:/)).toBeNull()
+    expect(screen.getByTestId('projection-error')).toHaveTextContent(
+      'Match 1 has an invalid game count',
+    )
+  })
+
+  // The projection depends only on the seat composition and the game counts, so an invalid field
+  // elsewhere in the editor must not blank it. It used to be gated on the whole config validating,
+  // which silently removed the preview with nothing to explain why.
+  it('keeps the projection while an unrelated field is invalid', async () => {
+    vi.mocked(getEnvironments).mockResolvedValue([spadesMeta({ env_id: 'flappy_bird' })])
+    const configured = season({
+      config: {
+        deps_version: 1,
+        matches: [{ seats: ['submission', 'submission'], seeds: [0], games: 2 }],
+        overrides: { parameters: { seat_plan: 'partnership' } },
+      },
+    })
+    vi.mocked(getAdminSeason).mockResolvedValue(
+      adminView({ season: configured, eligible_submission_count: 20 }),
+    )
+    await renderConsole()
+    expect(await screen.findByText('Projected games: 762')).toBeInTheDocument()
+
+    await fireEvent.update(screen.getByLabelText('Dependency-set version'), '0')
+    expect(screen.getByText('Projected games: 762')).toBeInTheDocument()
+    expect(screen.queryByTestId('projection-error')).toBeNull()
   })
 
   it('shows development totals and opens the shared history dialog from a participant row', async () => {
@@ -387,9 +413,11 @@ describe('AdminConsolePage', () => {
   it('shows a blank numeric override error and refuses to save it', async () => {
     vi.mocked(getEnvironments).mockResolvedValue([configurableMeta()])
     await renderConsole()
+    expect(await screen.findByText('Projected games: 1')).toBeInTheDocument()
     await fireEvent.update(await screen.findByLabelText('Pipe gap'), 'override')
     await fireEvent.update(screen.getByLabelText('Pipe gap override'), '')
     expect(await screen.findByRole('alert')).toBeInTheDocument()
+    expect(screen.getByText('Projected games: 1')).toBeInTheDocument()
     await fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }))
     expect(vi.mocked(configureSeason)).not.toHaveBeenCalled()
   })

@@ -1,9 +1,9 @@
 import type { StepState } from '@game-sandbox/schema'
 import { getRenderer } from '@renderers/registry.js'
 import { describe, expect, it } from 'vitest'
+import { formatSeat } from '../../../frontend/src/lib/format.js'
 import {
   type SceneConfig,
-  wideSeatLabel,
   wideSeatsAccessibilityLabel,
 } from '../../../frontend/src/renderers/cards/scene.js'
 import {
@@ -285,8 +285,10 @@ describe('player badges: bids, the NIL marker, tricks won, and partnerships', ()
   })
 
   it('inherits the shared compact seat labels and wide-seat accessibility description', () => {
-    expect(wideSeatLabel('seat_12')).toBe('S12')
-    expect(wideSeatLabel('north')).toBe('north')
+    expect(formatSeat('seat_12')).toBe('S12')
+    // The wide-seat badge label is formatSeat itself, so a bare (non-numbered) seat name falls back to
+    // formatSeat's own readable title-casing rather than a bespoke identity fallback.
+    expect(formatSeat('north')).toBe('North')
     expect(wideSeatsAccessibilityLabel('Spades', PARTNERSHIP_SEATS)).toBe(
       'Spades table. Wide seats: S0 includes P0 and P2; S1 includes P1 and P3.',
     )

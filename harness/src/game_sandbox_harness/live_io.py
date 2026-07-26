@@ -27,6 +27,7 @@ from collections.abc import Iterable, Mapping
 from typing import IO, TYPE_CHECKING, Any, Protocol, cast, runtime_checkable
 
 from .clock import Clock
+from .environment import is_json_safe_integer
 from .recording.local import FolderRecordingStore
 from .session import EpisodeResult, ExternalChatFrame
 
@@ -37,7 +38,6 @@ _DEFAULT_SLICE_MS = 5
 #: incoming frame is dropped with a diagnostic, so a client flooding the socket costs at most a
 #: fixed amount of memory, the same drop-with-diagnostic rule every other rejection follows.
 CHAT_QUEUE_LIMIT = 16
-_MAX_JSON_SAFE_INTEGER = 2**53 - 1
 
 
 def _diag(message: str) -> None:
@@ -215,6 +215,27 @@ class SessionControl:
             return self._stopping
 
 
+def _chat_command_error(command: dict[str, Any]) -> str | None:
+    """Return the reason a ``chat`` command envelope is malformed, or ``None`` when it is well-shaped.
+
+    Checked in one place so the four distinct shape rules (player, text, ``to``, ``tick``) each
+    keep their own diagnostic without repeating the ``kind == "chat"`` guard four times. This is
+    only the shape gate shared by stdin and the local relay: recipient legality, the text cap, and
+    per-turn limits are enforced once at the harness validation point shared with agent messages.
+    """
+    if not isinstance(command.get("player"), str):
+        return "a string player"
+    if not isinstance(command.get("text"), str):
+        return "string text"
+    to = command.get("to")
+    if "to" not in command or (to is not None and not isinstance(to, str)):
+        return "a string or null to"
+    tick = command.get("tick")
+    if not is_json_safe_integer(tick) or tick < 0:
+        return "a non-negative safe-integer tick"
+    return None
+
+
 def parse_commands(raw: str) -> list[dict[str, Any]]:
     """Decode and cheaply validate inbound commands shared by stdin and the local relay."""
     text = raw.strip()
@@ -242,29 +263,17 @@ def parse_commands(raw: str) -> list[dict[str, Any]]:
             continue
         command = cast("dict[str, Any]", value)
         kind = command.get("kind")
-        if kind == "input" and not isinstance(command.get("player"), str):
-            _diag(f"live: ignoring input command without a string player: {text!r}")
-            continue
-        if kind == "chat" and not isinstance(command.get("player"), str):
-            _diag(f"live: ignoring chat command without a string player: {text!r}")
-            continue
-        if kind == "chat" and not isinstance(command.get("text"), str):
-            _diag(f"live: ignoring chat command without string text: {text!r}")
-            continue
-        if kind == "chat" and (
-            "to" not in command or (command.get("to") is not None and not isinstance(command.get("to"), str))
-        ):
-            _diag(f"live: ignoring chat command without a string or null to: {text!r}")
-            continue
-        tick = command.get("tick")
-        if kind == "chat" and (
-            not isinstance(tick, int) or isinstance(tick, bool) or not 0 <= tick <= _MAX_JSON_SAFE_INTEGER
-        ):
-            _diag(f"live: ignoring chat command without a non-negative safe-integer tick: {text!r}")
-            continue
         if kind not in ("input", "chat", "pause", "resume", "stop"):
             _diag(f"live: ignoring unknown command kind {kind!r}")
             continue
+        if kind == "input" and not isinstance(command.get("player"), str):
+            _diag(f"live: ignoring input command without a string player: {text!r}")
+            continue
+        if kind == "chat":
+            reason = _chat_command_error(command)
+            if reason is not None:
+                _diag(f"live: ignoring chat command without {reason}: {text!r}")
+                continue
         accepted.append(command)
     return accepted
 

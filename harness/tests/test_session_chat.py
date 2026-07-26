@@ -644,6 +644,66 @@ def test_external_chat_enforces_the_policy_announced_for_the_turn_once(
     assert "policy-disallowed recipient 'player_2'" in capsys.readouterr().err
 
 
+def test_external_chat_grace_uses_each_announced_policy(
+    tmp_path: Path,
+    capsys: Any,
+):
+    calls: list[str] = []
+
+    def alternating_policy(_env: RoundRobinEnv, sender: str) -> object:
+        calls.append(sender)
+        recipient = "player_1" if len(calls) == 1 else "player_2"
+        return {
+            "target_recipients": (recipient,),
+            "default_recipient": recipient,
+        }
+
+    source = QueueSource()
+    store = FolderRecordingStore(tmp_path)
+    entry = make_chat_entry(
+        players=("player_0", "player_1", "player_2"),
+        n_ticks=4,
+        chat_policy=alternating_policy,
+    )
+    episode = Episode(
+        entry,
+        {
+            "player_0": ExternalPlayer(source, message_source=source),
+            "player_1": AgentPlayer(SilentAgent()),
+            "player_2": AgentPlayer(SilentAgent()),
+        },
+        parameters=resolve_parameters(entry.meta),
+        seed=1,
+        store=store,
+        recording_id="r",
+        clock=ManualClock(),
+    )
+
+    episode.start()
+    episode.step_once()
+    episode.step_once()
+    episode.step_once()
+    source.queue({"player": "player_0", "tick": 2, "to": "player_2", "text": "new allowed"})
+    source.queue({"player": "player_0", "tick": 0, "to": "player_1", "text": "old allowed"})
+    source.queue({"player": "player_0", "tick": 2, "to": "player_1", "text": "new denied"})
+    source.queue({"player": "player_0", "tick": 0, "to": "player_2", "text": "old denied"})
+    source.queue({"player": "player_0", "tick": 2, "to": None, "text": "new broadcast"})
+    source.queue({"player": "player_0", "tick": 0, "to": None, "text": "old broadcast"})
+    episode.step_once()
+    episode.close()
+
+    states = list(store.open("r").steps())
+    assert [message["text"] for message in states[3]["messages"]] == [
+        "new allowed",
+        "old allowed",
+        "new broadcast",
+    ]
+    assert calls == ["player_0", "player_0"]
+    diagnostic = capsys.readouterr().err
+    assert diagnostic.count("policy-disallowed") == 2
+    assert "sent a second broadcast" in diagnostic
+
+
 def test_agent_output_uses_the_same_live_recipient_policy(tmp_path: Path, capsys: Any):
     sender = ChattyAgent(
         [

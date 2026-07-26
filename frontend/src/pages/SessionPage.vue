@@ -134,7 +134,8 @@ const { noRenderer, aspectRatio, mount: mountRenderer, render: renderState } = u
   host: hostEl,
   meta,
   controlledPlayers,
-  sendAction: sendInput,
+  // Deferred so the renderer and the chat composable can be wired in either order.
+  sendAction: (playerId, action) => sendInput(playerId, action),
 })
 const {
   connection,
@@ -175,30 +176,16 @@ const { appendMessages, chatLog, completedOutcome, decisions, statusLabel, statu
   })
 const { pinned, busy: pinBusy, error: pinError, toggle: togglePin } = usePinning(recordingId)
 
-function sendInput(playerId: string, action: unknown): void {
-  if (connection.value !== 'open') {
-    return
-  }
-  consumeChatAction(playerId)
-  send({ kind: 'input', player: playerId, action })
-}
-
 // The chat panel mounts when the session's effective messaging block enables it, resolved once by the
 // orchestrator from the metadata and the season override, persisted on the row so live and reopened
 // ended payloads agree. A season-silenced session shows no dead panel.
 const messagingEnabled = computed(() => (row.value?.messaging_enabled ?? 0) !== 0)
-const liveChatEnabled = computed(
-  () => row.value?.mode === 'human' && status.value === 'running',
-)
-const {
-  chatOptions,
-  chatSendable,
-  consumeAction: consumeChatAction,
-  sendChat,
-} = useLiveChat({
+const liveChatEnabled = computed(() => row.value?.mode === 'human' && status.value === 'running')
+const { chatProps, sendInput, sendChat } = useLiveChat({
   state: lastState,
   controlledPlayers,
   enabled: liveChatEnabled,
+  connection,
   send,
 })
 
@@ -437,13 +424,8 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
               :viewer-id="viewerId"
               :anonymous-numbers="anonymousNumbers"
               :viewer-players="viewerPlayers"
-              :sendable="chatSendable"
-              :connected="connection === 'open'"
               :message-cap="row?.message_cap ?? null"
-              :sender="chatOptions?.sender"
-              :tick="lastState?.tick"
-              :target-recipients="chatOptions?.target_recipients"
-              :default-recipient="chatOptions?.default_recipient"
+              v-bind="chatProps"
               @send="sendChat"
             />
             <DecisionLog v-else :entries="decisions" />
@@ -466,13 +448,8 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
             :viewer-id="viewerId"
             :anonymous-numbers="anonymousNumbers"
             :viewer-players="viewerPlayers"
-            :sendable="chatSendable"
-            :connected="connection === 'open'"
             :message-cap="row?.message_cap ?? null"
-            :sender="chatOptions?.sender"
-            :tick="lastState?.tick"
-            :target-recipients="chatOptions?.target_recipients"
-            :default-recipient="chatOptions?.default_recipient"
+            v-bind="chatProps"
             @send="sendChat"
           />
         </details>

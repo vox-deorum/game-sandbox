@@ -19,6 +19,7 @@ import type { RecordingHeader } from '@game-sandbox/schema'
 import { codePointLength } from '@game-sandbox/schema/text'
 import { computed, ref, useId, watch } from 'vue'
 
+import type { LiveChatOpportunity } from '../composables/useLiveChat.js'
 import { attributionLabel } from '../lib/attribution.js'
 import { type ChatEntry, messageBadge, messageKey } from '../lib/chat.js'
 import { formatPlayer } from '../lib/format.js'
@@ -46,14 +47,8 @@ const props = withDefaults(
     connected?: boolean
     /** Effective code-point cap from the session row; null is uncapped. */
     messageCap?: number | null
-    /** The state-authoritative external sender for this turn. */
-    sender?: string
-    /** The state tick the current draft is composed against. */
-    tick?: number
-    /** Ordered direct recipients allowed by the environment for this turn. */
-    targetRecipients?: string[]
-    /** The direct recipient selected when this turn opens, or null for Everyone. */
-    defaultRecipient?: string | null
+    /** This turn's messaging choices, straight from the state that published them. Null off-turn. */
+    opportunity?: LiveChatOpportunity | null
   }>(),
   {
     players: undefined,
@@ -64,10 +59,7 @@ const props = withDefaults(
     sendable: false,
     connected: true,
     messageCap: null,
-    sender: undefined,
-    tick: undefined,
-    targetRecipients: () => [],
-    defaultRecipient: null,
+    opportunity: null,
   },
 )
 
@@ -104,23 +96,21 @@ const rows = computed(() =>
 // The recipient options come verbatim from the live policy, labelled by compact player id ("P1").
 // "Everyone" (a broadcast) remains available independently of that ordered direct-recipient list.
 const recipientOptions = computed(() =>
-  props.targetRecipients.map((playerId) => ({ value: playerId, label: formatPlayer(playerId) })),
+  (props.opportunity?.targetRecipients ?? []).map((playerId) => ({
+    value: playerId,
+    label: formatPlayer(playerId),
+  })),
 )
 
 const recipient = ref('') // '' is the "Everyone" broadcast option.
 const draft = ref('')
 const count = computed(() => codePointLength(draft.value))
 const overCap = computed(() => props.messageCap !== null && count.value > props.messageCap)
-const authorizedTurn = computed(() =>
-  props.sender === undefined || props.tick === undefined
-    ? null
-    : { sender: props.sender, tick: props.tick },
-)
 // The draft is sendable only when the transport can carry it: gating on `connected` here means a
 // reconnect (when the socket silently no-ops) both disables Send and blocks the submit path, so the
 // draft is never cleared into a dropped send.
 const canSend = computed(
-  () => count.value > 0 && !overCap.value && props.connected && authorizedTurn.value !== null,
+  () => count.value > 0 && !overCap.value && props.connected && props.opportunity !== null,
 )
 // The code-point count against the cap, shown on the composer's action row. Bare when uncapped.
 const counterText = computed(() =>
@@ -131,25 +121,25 @@ const counterText = computed(() =>
 const counterId = useId()
 
 function submit(): void {
-  const authorization = authorizedTurn.value
-  if (!canSend.value || authorization === null) {
+  const turn = props.opportunity
+  if (!canSend.value || turn === null || turn === undefined) {
     return
   }
   emit('send', {
-    sender: authorization.sender,
-    tick: authorization.tick,
+    sender: turn.sender,
+    tick: turn.tick,
     to: recipient.value === '' ? null : recipient.value,
     text: draft.value,
   })
   draft.value = ''
 }
 
-// One turn-based external opportunity belongs to one tick. Reset exactly when that tick changes, so a
-// choice made for the previous player never leaks into the next human turn.
+// Reset when the sender or tick changes, so a choice made for the previous player never leaks into
+// the next human turn. Watching the tick alone would miss a new sender announced on the same tick.
 watch(
-  () => props.tick,
+  [() => props.opportunity?.sender, () => props.opportunity?.tick],
   () => {
-    recipient.value = props.defaultRecipient ?? ''
+    recipient.value = props.opportunity?.defaultRecipient ?? ''
     draft.value = ''
   },
   { immediate: true },

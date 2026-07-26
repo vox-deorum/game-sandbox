@@ -149,7 +149,7 @@ describe('projectSchedule', () => {
     }
   })
 
-  it('rejects unsafe exact results', () => {
+  it('rejects unsafe exact results, attributing the overflow to the match that produced it', () => {
     expect(() =>
       projectSchedule({
         matches: [{ seats: ['submission', 'submission'], games: 1 }],
@@ -167,6 +167,35 @@ describe('projectSchedule', () => {
       })
     } catch (error) {
       expect(error).toMatchObject({ reason: 'unsafe_integer', matchIndex: 0 })
+    }
+  })
+
+  it('rejects an unsafe running total, attributing the overflow to the whole projection', () => {
+    // Each match alone is safe: its games count is exactly Number.MAX_SAFE_INTEGER, a safe integer.
+    // Only the sum across the two matches overflows, so the failure belongs to the projection as a
+    // whole rather than to either match.
+    const hugeBaseline: ScheduleMatchConfig = {
+      seats: ['builtin-naive'],
+      games: Number.MAX_SAFE_INTEGER,
+    }
+
+    expect(() =>
+      projectSchedule({
+        matches: [hugeBaseline, hugeBaseline],
+        eligibleSubmissionCount: 0,
+        seatCount: 1,
+        seatOrderMatters: true,
+      }),
+    ).toThrow(ScheduleProjectionError)
+    try {
+      projectSchedule({
+        matches: [hugeBaseline, hugeBaseline],
+        eligibleSubmissionCount: 0,
+        seatCount: 1,
+        seatOrderMatters: true,
+      })
+    } catch (error) {
+      expect(error).toMatchObject({ reason: 'unsafe_integer', matchIndex: null })
     }
   })
 })

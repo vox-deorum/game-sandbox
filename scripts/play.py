@@ -13,6 +13,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from _paths import FRONTEND_LOCAL_DIST_DIR, REPO_ROOT
+from game_sandbox_harness import canonical_player_order
 from game_sandbox_harness.environment import (
     EnvironmentEntry,
     EnvironmentLookupError,
@@ -48,7 +49,7 @@ def possible_players(
     """Return the player ids in the resolved layout without constructing an environment."""
     layout = default_layout(entry, parameters)
     players = (player for seat in layout.seats for player in seat.players)
-    return tuple(sorted(players, key=lambda player: int(player.removeprefix("player_"))))
+    return canonical_player_order(players)
 
 
 def player_for_seat(
@@ -143,21 +144,15 @@ def local_config(
             players[player_id] = {"kind": "human", "label": "You"}
             continue
         is_companion = mode == "human" and player_id in selected_players and player_id != human_player
-        path = (
-            companion_path
-            if is_companion
-            else str(agent_repo)
-            if mode == "agent"
-            else builtin_agent_path(entry.meta.env_id)
-        )
+        if is_companion:
+            path, label = companion_path, "Companion"
+        elif mode == "agent":
+            path, label = str(agent_repo), "Selected agent"
+        else:
+            path, label = builtin_agent_path(entry.meta.env_id), "Built-in baseline"
         assert path is not None
         bindings[player_id] = {"kind": "builtin-agent", "path": path}
-        players[player_id] = {
-            "kind": "agent",
-            "label": (
-                "Companion" if is_companion else "Selected agent" if mode == "agent" else "Built-in baseline"
-            ),
-        }
+        players[player_id] = {"kind": "agent", "label": label}
     config: dict[str, object] = {
         "env_id": entry.meta.env_id,
         "parameters": resolved_parameters,

@@ -11,6 +11,7 @@ import {
 } from '../../environments/hearts/renderer/scene.js'
 import { SpadesRenderer } from '../../environments/spades/renderer/index.js'
 import { SPADES_GEOMETRY } from '../../environments/spades/renderer/scene.js'
+import { formatSeat } from '../src/lib/format.js'
 import { PixiRenderer } from '../src/renderers/base/PixiRenderer.js'
 import { CardTableRenderer } from '../src/renderers/cards/CardTableRenderer.js'
 import {
@@ -19,6 +20,7 @@ import {
   cardToAction,
   DEFAULT_GEOMETRY,
   HEIGHT,
+  handFanGeometry,
   NUM_PLAYERS,
   playerOfId,
   positionAnchor,
@@ -29,7 +31,6 @@ import {
   resolveView,
   WIDTH,
   wideSeatAssignments,
-  wideSeatLabel,
   wideSeatsAccessibilityLabel,
 } from '../src/renderers/cards/scene.js'
 import { heartsMeta, spadesHeader } from './helpers/fixtures.js'
@@ -70,6 +71,11 @@ describe('the shared card-table renderer layer', () => {
     // The Hearts entry point forwards the shared constants unchanged.
     expect(HEARTS_WIDTH).toBe(WIDTH)
     expect(HEARTS_HEIGHT).toBe(HEIGHT)
+  })
+
+  it('uses one stable fan geometry for every view-player hand', () => {
+    expect(handFanGeometry(1)).toEqual({ startX: 448, step: 0 })
+    expect(handFanGeometry(13)).toEqual({ startX: 40, step: 68 })
   })
 
   it('keeps table geometry a per-game hook with each game overriding the same fields', () => {
@@ -140,7 +146,7 @@ describe('the shared card-table renderer layer', () => {
     ).toBe(false)
   })
 
-  it('derives only wide-seat groups and uses neutral compact and accessible labels', () => {
+  it('derives only wide-seat groups and uses the shared compact and accessible labels', () => {
     const seats: NonNullable<Parameters<typeof wideSeatAssignments>[0]> = {
       seat_0: ['player_0', 'player_2'],
       seat_1: ['player_1'],
@@ -150,8 +156,10 @@ describe('the shared card-table renderer layer', () => {
       ['player_0', { seat: 'seat_0', group: 0 }],
       ['player_2', { seat: 'seat_0', group: 0 }],
     ])
-    expect(wideSeatLabel('seat_12')).toBe('S12')
-    expect(wideSeatLabel('captain')).toBe('captain')
+    // The wide-seat badge label is formatSeat itself now, not a bespoke copy, so a bare (non-numbered)
+    // seat name gets formatSeat's own readable title-cased fallback rather than passing through as-is.
+    expect(formatSeat('seat_12')).toBe('S12')
+    expect(formatSeat('captain')).toBe('Captain')
     expect(wideSeatsAccessibilityLabel('Hearts', seats)).toBe(
       'Hearts table. Wide seats: S0 includes P0 and P2.',
     )

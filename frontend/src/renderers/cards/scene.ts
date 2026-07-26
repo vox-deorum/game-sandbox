@@ -18,6 +18,8 @@
  */
 import type { RecordingHeader, StepState } from '@game-sandbox/schema'
 
+import { formatPlayer, formatSeat } from '../../lib/format.js'
+
 // --- Card encoding (mirrors environments/local_play/card_utils.py) ---
 // A card OBJECT is `{suit, rank}`: suits 0=clubs, 1=diamonds, 2=spades, 3=hearts; rank is the FACE
 // value 2..14 (jack 11, queen 12, king 13, ace 14) — the value printed on the card, not the engine's
@@ -86,6 +88,20 @@ export const CARD_H = 92
 export const SMALL_W = 48
 export const SMALL_H = 70
 
+const HAND_MARGIN = 40
+const HAND_CARD_GAP = 6
+
+/** The horizontal start and step for the view player's fanned hand. */
+export function handFanGeometry(count: number): { startX: number; step: number } {
+  const availableWidth = WIDTH - 2 * HAND_MARGIN
+  const step =
+    count > 1
+      ? Math.min(CARD_W + HAND_CARD_GAP, Math.floor((availableWidth - CARD_W) / (count - 1)))
+      : 0
+  const run = step * (count - 1) + CARD_W
+  return { startX: Math.floor((WIDTH - run) / 2), step }
+}
+
 /**
  * Flat-color palette (RGB hex). Renderer modules are the one place raw color literals are allowed
  * because a renderer owns its game's visual identity.
@@ -116,6 +132,13 @@ export const COLORS = {
   greyVeil: '#26322c',
   greyVeilAlpha: 168 / 255,
 } as const
+
+/**
+ * Shared wide-seat accent colors: the source both the assignment-seat tab beside a player badge and
+ * Spades' two-team score tint draw from, so the two can never fall out of sync. They repeat for a
+ * layout with more than four wide seats.
+ */
+export const WIDE_SEAT_TINTS = ['#6cc4ec', '#ec9c78', '#b7d67a', '#d2a8ff'] as const
 
 /** The center of the table, where the trick is laid out. */
 export const TRICK_CENTER = { x: WIDTH / 2, y: HEIGHT / 2 }
@@ -443,30 +466,32 @@ export function wideSeatAssignments(seats: SceneConfig['seats']): Map<string, Wi
   return assignments
 }
 
-/** Compact assignment-seat label used in a player badge, matching the host's `SN` language. */
-export function wideSeatLabel(seat: string): string {
-  const match = /^seat_(\d+)$/.exec(seat)
-  return match === null ? seat : `S${match[1]}`
-}
-
-/** Accessible description of the wide assignment seats, absent when every seat is a singleton. */
+/**
+ * Accessible description of the wide assignment seats, absent when every seat is a singleton. Its
+ * groups come straight from {@link wideSeatAssignments}, the same map the badge-tint grouping reads, so
+ * the two can never disagree about which seats are wide or what order they list in.
+ */
 export function wideSeatsAccessibilityLabel(
   displayName: string,
   seats: SceneConfig['seats'],
 ): string | null {
-  if (seats === undefined) {
+  const assignments = wideSeatAssignments(seats)
+  if (assignments.size === 0) {
     return null
   }
-  const groups = Object.entries(seats).filter(([, players]) => players.length > 1)
-  if (groups.length === 0) {
-    return null
+  const bySeat = new Map<string, string[]>()
+  for (const [player, { seat }] of assignments) {
+    const players = bySeat.get(seat)
+    if (players === undefined) {
+      bySeat.set(seat, [player])
+    } else {
+      players.push(player)
+    }
   }
-  const details = groups
+  const details = [...bySeat]
     .map(
       ([seat, players]) =>
-        `${wideSeatLabel(seat)} includes ${players
-          .map((player) => player.replace(/^player_(\d+)$/, 'P$1'))
-          .join(' and ')}`,
+        `${formatSeat(seat)} includes ${players.map(formatPlayer).join(' and ')}`,
     )
     .join('; ')
   return `${displayName} table. Wide seats: ${details}.`
@@ -502,9 +527,7 @@ export function buildPlayersBase(
       assignmentSeat: assignment?.seat ?? null,
       assignmentGroup: assignment?.group ?? null,
       label:
-        assignment === undefined
-          ? playerLabel
-          : `${wideSeatLabel(assignment.seat)} · ${playerLabel}`,
+        assignment === undefined ? playerLabel : `${formatSeat(assignment.seat)} · ${playerLabel}`,
       isTurn: !o.terminal && player === o.turn,
       isYou,
     }
@@ -617,12 +640,7 @@ export function buildHand(
   const controllableTurn =
     view.controlledPlayer !== null && !o.terminal && o.turn === view.controlledPlayer
 
-  const margin = 40
-  const avail = WIDTH - 2 * margin
-  // Overlap as needed so all cards fit within the available width.
-  const step = count > 1 ? Math.min(CARD_W + 6, Math.floor((avail - CARD_W) / (count - 1))) : 0
-  const run = step * (count - 1) + CARD_W
-  const startX = Math.floor((WIDTH - run) / 2)
+  const { startX, step } = handFanGeometry(count)
   const baseY = HEIGHT - CARD_H - 18
 
   return hand.map((card, i) => {

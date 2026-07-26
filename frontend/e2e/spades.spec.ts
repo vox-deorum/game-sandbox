@@ -1,6 +1,7 @@
 import { rmSync } from 'node:fs'
 
 import type { BrowserContext, Locator, Page } from '@playwright/test'
+import { CARD_W, handFanGeometry, WIDTH } from '../src/renderers/cards/scene.js'
 import {
   activeWindows,
   closePlay,
@@ -64,14 +65,7 @@ async function playLegalCard(page: Page, canvas: Locator, cardCount: number): Pr
   if (box === null) {
     throw new Error('no Spades canvas bounding box')
   }
-  const cardWidth = 64
-  const availableWidth = 880
-  const step =
-    cardCount > 1
-      ? Math.min(cardWidth + 6, Math.floor((availableWidth - cardWidth) / (cardCount - 1)))
-      : 0
-  const run = step * (cardCount - 1) + cardWidth
-  const startX = Math.floor((960 - run) / 2)
+  const { startX, step } = handFanGeometry(cardCount)
   const composer = page.getByRole('group', { name: 'Chat', exact: true })
 
   // Legal cards are raised to internal y=600 while illegal cards begin at y=610. Clicking y=604
@@ -79,7 +73,7 @@ async function playLegalCard(page: Page, canvas: Locator, cardCount: number): Pr
   for (let index = 0; index < cardCount; index += 1) {
     await canvas.click({
       position: {
-        x: ((startX + index * step + cardWidth / 2) / 960) * box.width,
+        x: ((startX + index * step + CARD_W / 2) / WIDTH) * box.width,
         y: (604 / 720) * box.height,
       },
     })

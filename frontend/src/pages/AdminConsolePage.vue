@@ -443,8 +443,6 @@ function closeDevelopmentHistory(): void {
                 :season="view.season"
                 :eligible-submission-count="view.eligible_submission_count"
                 :environment="meta ?? undefined"
-                :environment-messaging-enabled="meta?.messaging"
-                :environment-parameters="meta?.parameters"
                 @changed="refresh"
                 @dirty-change="configDirty = $event"
               />
