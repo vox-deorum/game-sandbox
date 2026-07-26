@@ -144,8 +144,8 @@ function onKeydown(event: KeyboardEvent): void {
   color: var(--color-text-muted);
 }
 
-/* The compact seat tag disambiguates rows when several seats share one agent name; singleton seats
-   retain their established player label while wide seats use the materialized seat id. */
+/* The compact seat tag disambiguates rows when several seats share one agent name. Every row is a
+   seat, so every tag is a seat id, and the members line below carries the player ids for a wide one. */
 .seat {
   color: var(--color-text-muted);
   font-weight: 600;

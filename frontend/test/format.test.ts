@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { formatDate, formatSeat, formatPlayer } from '../src/lib/format.js'
+import { formatDate, formatPlayer, formatSeat } from '../src/lib/format.js'
 import { formatScoreMap } from '../src/replay/summary.js'
 
 describe('formatDate', () => {
