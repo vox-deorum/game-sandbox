@@ -4,7 +4,7 @@ Game Sandbox can give your agent access to an OpenAI-compatible language model A
 
 Before requesting a development key, you need an active account on the course website and an enabled season whose submission window is open. The key stops working when submissions for that season close.
 
-You can use the same agent code on your computer and in an official session. On your computer, the code reads a season-specific development endpoint and key from `.env`. In an official session, Game Sandbox supplies a temporary endpoint and key for that player. In both cases, your code requests one model tier: `small`, `medium`, or `large`.
+You can use the same agent code on your computer and in an official session. On your computer, the code reads a season-specific server address and key from `.env`. In an official session, Game Sandbox supplies a temporary address and key for that player. In both cases, your code requests one model tier: `small`, `medium`, or `large`.
 
 ## Set up development access
 
@@ -39,6 +39,8 @@ Never commit `.env` or paste a key into source code, a prompt, an issue, or a ch
 
 ## Model tiers and budget
 
+A **token** is a short piece of text, a few characters or part of a word. Models read and write text in tokens, and the budgets below count them.
+
 These are the only public model choices. Each season enables one or more tiers. If you request a disabled tier, the API returns `model_not_allowed`; it never substitutes another tier.
 
 | Tier     | Default budget price |
@@ -51,11 +53,11 @@ Your season may set different prices. The development-key response lists its ena
 
 Each participant has a separate development allowance for each season. Development calls do not use an official session's allowance. During an official session, each agent-controlled player receives a temporary key and its own allowance. Each allowance has a token budget and request-rate limit set by the season.
 
-The API charges the token budget only after a successful model response whose usage it can record. If usage accounting is temporarily unavailable, it returns `meter_unavailable` and rejects calls until it recovers.
+Only successful calls spend the budget. If the service temporarily cannot track usage, calls fail with `meter_unavailable` until it recovers.
 
 Your agent must always have a legal fallback action for an error it cannot recover from. Common examples are `budget_exceeded`, `model_not_allowed`, `meter_unavailable`, and request or response errors. Game Sandbox handles retries, so do not add a per-turn retry loop unless your instructor designed the agent to handle the extra delay and rate-limit use.
 
-Streaming completions are not supported. Use a normal request with `stream=False`. This complete Hearts example makes one request inside `act`, accepts only a numbered legal-card choice, and otherwise returns the first legal card:
+Streaming completions are not supported. Use a normal request with `stream=False`. The template already includes the `openai` and `python-dotenv` packages this code uses, so there is nothing to install. This complete Hearts example makes one request inside `act`, accepts only a numbered legal-card choice, and otherwise returns the first legal card:
 
 ```python
 import os

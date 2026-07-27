@@ -77,7 +77,7 @@ python -m sandbox test    # run the checks, which pass before you change anythin
 
 `eval` reports the higher-is-better leaderboard score from [Scoring and rewards](#scoring-and-rewards), so a result closer to zero is better. It is useful for comparing changes against the same seeds, not for predicting leaderboard results. `test` passes in a fresh template because the starting agent is complete.
 
-The `TODO(you)` comment inside `act` marks the line for you to improve. You can keep the setup above it and change the decision in the return statement. [Your first improvement](#your-first-improvement) helps you find a smarter strategy. In your repository, this page is named `environment.md`, which is the file named in the template comments.
+The `TODO(you)` comment inside `act` marks the line for you to improve. You can keep the setup above it and change the decision in the return statement. [Your first improvement](#your-first-improvement) helps you find a smarter strategy. This page is the `environment.md` file that the template comments mention.
 
 ## Scoring and rewards
 
@@ -193,7 +193,7 @@ Read these through `observation["observation"]`, for example `observation["obser
 
 #### How player numbers work
 
-Player IDs label the PettingZoo positions rather than fixed screen positions. Player `0` controls `player_0`, player `1` controls `player_1`, and so on. Turns move clockwise:
+Player IDs are fixed labels in the turn order, not positions on the screen. Turns move clockwise:
 
 ```text
 0 → 1 → 2 → 3 → 0

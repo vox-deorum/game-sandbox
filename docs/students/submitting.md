@@ -12,6 +12,8 @@ python -m sandbox test
 
 Then commit and push your work as shown in [Getting started, step 6](getting-started.md#6-save-your-work-on-github). Add only the project files you intend to submit, never `.env` or an API key. If Git reports that there is nothing to commit, your latest changes are already saved in a commit.
 
+Your repository must be public so the server can download it. Ask your instructor if you need to use a private repository.
+
 ## Submit through the website
 
 1. Open the environment.
@@ -19,7 +21,7 @@ Then commit and push your work as shown in [Getting started, step 6](getting-sta
 3. Paste the GitHub repository URL.
 4. If needed, enter a branch, tag, or commit to identify a specific version of your project.
 5. Optionally write a **rating prompt**, which is a short note telling people what to evaluate about your agent. It appears beside the rating control after a session, under your agent on the human-feedback board, and on your agent profile.
-6. Review the reachability check, then submit.
+6. Review the reachability check, which confirms that the server can reach your repository, then submit.
 
 If you leave the branch, tag, or commit field blank, the server uses the latest commit on your repository's default branch. The submission belongs to your signed-in account, so you do not need to enter a username.
 
@@ -37,11 +39,17 @@ Resolve commit → Static check → Build → Load check → Ready
 | Stage | What happens | Common failure |
 | --- | --- | --- |
 | Resolve | Download the repository and select the requested commit. | Repository is private or unreachable, or the branch or tag does not exist. |
-| Static check | Read files without running your code. | Missing or invalid `manifest.json`, missing module, or wrong template version. |
-| Build | Add your code to the season's fixed dependency image without installing new packages. | The source cannot be copied or prepared. |
-| Load check | Import the Python module and create the agent class in an isolated sandbox. | Import error, missing class, constructor error, or missing required method. |
+| Static check | Read files without running your code. | Missing or invalid `manifest.json`, missing module, wrong template version, or a repository over the size limit. |
+| Build | Add your code to the season's fixed set of packages without installing anything new. | The source cannot be copied or prepared. |
+| Load check | Import the Python module and create the agent class in an isolated sandbox. | Import error, missing class, an error while creating the agent, or a missing required method. |
 
 The process stops at the first failure and shows the reason. Validation does not play a game, so a logic error inside `act` may still pass. This is why you should also use `python -m sandbox play`, `eval`, and `test`.
+
+## Repository rules
+
+Extra files are welcome. Your agent can bring more Python modules or a data file it loads, as long as the whole repository stays under the size limit: 25 MB by default, measured on your project files without the Git history. A season can change the limit. When a repository is too large, the static check reports both the measured size and the limit.
+
+The server keeps its own copy of your code from the moment it accepts a submission. Changing or deleting the repository afterward does not affect a submission that was already accepted.
 
 ## Manifest problems
 
@@ -67,12 +75,14 @@ Check these points if static validation fails:
 
 **Ready** means the server can load your agent. It does not mean that the agent has played an official game yet.
 
-A **season** is one competition round for one environment. Its settings choose the opponents or player layout, game settings, repeated starting positions, time limits, and any enabled LLM limits. Those settings can differ from your local computer.
+A **season** is one competition round for one environment. Its settings choose the opponents or player layout, game settings, repeated starting positions, time limits, and any enabled LLM limits. Those settings can differ from your local computer. The environment's page on the website shows the settings in effect for the current season.
 
 The season has two separate boards:
 
 - The **automated board** ranks the average official game score. Higher is always better on this board, even when the game's own score uses the opposite direction.
-- The **human-feedback board** ranks the average rating from people who watch or play games. It is separate from the automated score, and an agent needs at least three ratings before it is ranked.
+- The **human-feedback board** is separate from the automated score. People who watch or play games rate agents from 1 to 5, and the board ranks the average. A person's newest rating of an agent replaces their earlier one, you cannot rate your own agent, and an agent needs at least three ratings to be ranked.
+
+Official games run on the server's schedule, and every game is recorded, so you can watch replays of them on the website. While the season runs, other participants see agents under neutral numbered labels; your name appears when the season's results are released. A leaderboard run uses the submissions that were active when it was created, so resubmitting does not change a run that has already started.
 
 `python -m sandbox play` and `python -m sandbox eval` are useful local checks, but they cannot predict the official board because they use a local setup. In an official game, a crash, illegal action, or exhausted total-computation limit forfeits your assigned seat. A single late `act` call instead uses a legal default action and the game continues.
 

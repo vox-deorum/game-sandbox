@@ -99,7 +99,7 @@ python -m sandbox test    # run the checks, which pass before you change anythin
 
 `eval` reports the higher-is-better team score from [Scoring and rewards](#scoring-and-rewards). It is useful for comparing changes against the same seeds, not for predicting leaderboard results. `test` passes in a fresh template because the starting agent is complete.
 
-The `TODO(you)` comment inside `act` marks where you take over. A better agent should improve both the fixed bid and the strategy of never trying to win. [Your first improvement](#your-first-improvement) helps you find a first step. In your repository, this page is named `environment.md`, which is the file named in the template comments.
+The `TODO(you)` comment inside `act` marks where you take over. A better agent should improve both the fixed bid and the strategy of never trying to win. [Your first improvement](#your-first-improvement) helps you find a first step. This page is the `environment.md` file that the template comments mention.
 
 ## Scoring and rewards
 
@@ -137,7 +137,6 @@ The module provides these helpers and constants:
 | `legal_cards(observation)` | Legal card objects for this turn (empty during bidding) |
 | `bid(n)` | The integer action for a bid of `n` tricks (`0..13`) |
 | `play(card)` | The integer action for a card object, the value `act` returns |
-| `action_to_bid(action)` | The bid `k` a bid action `52 + k` names |
 | `hand_cards(observation)` | Every card object in your hand |
 | `my_player(observation)` | Your player ID |
 | `partner_player(observation)` | Your partner's player, read from the observation |
@@ -158,7 +157,6 @@ The module provides these helpers and constants:
 | `CLUBS`, `DIAMONDS`, `SPADES`, `HEARTS` | Names for suit IDs `0`, `1`, `2`, and `3` |
 | `SUIT_NAMES` | Suit names indexed by suit ID, `("clubs", "diamonds", "spades", "hearts")`, useful for messages about suits |
 | `RANK_NAMES` | Rank names indexed by face-value rank; `RANK_NAMES[rank_of(card)]` gives `"2"` through `"10"`, then `"J"`, `"Q"`, `"K"`, `"A"` |
-| `NIL_BID`, `BID_OFFSET` | The nil bid (`0`) and the bid action offset (`52`) |
 
 ## Under the hood
 
@@ -185,7 +183,7 @@ Your `act` method returns one integer from a combined set of bidding and card ac
 
 #### Bids
 
-A bid of `k` tricks uses action `52 + k`, where `k` is from `0` through `13`. A bid of three is action `55`, and nil (`k = 0`) is action `52`. The helper `bid(k)` builds this action. `legal_bids(observation)` lists the allowed bids as plain numbers from `0` through `13`.
+A bid of `k` tricks uses action `52 + k`, where `k` is from `0` through `13`. A bid of three is action `55`, and nil (`k = 0`) is action `52`. The helper `bid(k)` builds this action. `legal_bids(observation)` lists the allowed bids as plain numbers from `0` through `13`. The helper `action_to_bid(action)` reverses the encoding, and the constants `NIL_BID` (`0`) and `BID_OFFSET` (`52`) name the two numbers it uses.
 
 #### Cards
 
@@ -247,7 +245,7 @@ Read these through `observation["observation"]`, or let the helpers do it: `hand
 
 #### How player numbers and partnerships work
 
-Player IDs label PettingZoo positions rather than fixed screen positions. Player `0` controls `player_0`, player `1` controls `player_1`, and so on. Turns move clockwise:
+Player IDs are fixed labels in the turn order, not positions on the screen. Turns move clockwise:
 
 ```text
 0 → 1 → 2 → 3 → 0
@@ -290,7 +288,7 @@ class Agent:
         return [{"to": self.partner, "text": "I am ready"}]
 ```
 
-`chat` receives the inbox but not the observation. The example therefore saves the partner's recipient ID during `act`, which runs first on every turn. Return `{"to": None, "text": "..."}` when you want to broadcast to the whole table.
+Messages name players with strings such as `"player_2"`, not the plain numbers in the observation, so the example builds that name from the partner's number. `chat` receives the inbox but not the observation, which is why the example saves the name during `act`, the method that runs first on every turn. Return `{"to": None, "text": "..."}` when you want to broadcast to the whole table.
 
 A **targeted** message is delivered only to the selected player, while a **broadcast** (`"to": None`) is delivered to the whole table. Direct choices come from the live game state. Your partner is listed first and is the default direct target on your turn. Broadcast to everyone is always available. Every message is recorded and shown in replays, so even a targeted message is not secret. By default, each message can contain up to 120 characters as counted by the system. Some emoji count as more than one character. A season may override that limit. The [agent interface](../../docs/students/agent-interface.md#chatinbox) explains delivery timing, send limits, and how chat time counts toward your limits.
 

@@ -67,17 +67,17 @@ An instance can remember information between games in one session, including val
 Official games run in a restricted computer environment:
 
 - The template supplies a fixed set of Python packages. You cannot install extra packages during a game.
-- Your project files and the rest of the computer are read-only. Use the small scratch area only for temporary files.
+- Your project files and the rest of the computer are read-only. The one writable place is a small temporary directory, the one Python's `tempfile` module uses by default.
 - General internet access is unavailable. An enabled Game Sandbox LLM API is the only network exception.
 - CPU time and memory are limited.
 
-Develop and test on your own computer, then include every Python file your agent needs in the repository you submit.
+Develop and test on your own computer, then put everything your agent needs in the repository you submit. Extra Python modules and data files, such as a trained model, are fine within the size limit in [Submitting](submitting.md#repository-rules).
 
 ## Time limits
 
-Your environment page lists default decision and total-computation limits. A season can change those limits.
+Your environment page lists default decision and total-computation limits. A season can change those limits, and the environment's page on the website shows the values in effect for the current season.
 
-- A **decision limit** applies to one turn. If `act` finishes late, the runner ignores its result and uses a legal default action for that turn. The game continues.
+- A **decision limit** applies to one turn. If `act` finishes late, the runner ignores its result and uses a legal default action for that turn. The game continues, but the time `act` spent still counts toward the game limit.
 - A **game limit** applies to your agent's total computation during one game. Time in `act`, `learn`, and `chat` counts toward it.
 
 In an official scored game, a crash, an illegal action, or using all of the game limit causes the assigned seat to forfeit. A late `act` call by itself does not forfeit the seat because the runner uses the legal default action instead. If your submission controls several players in one seat, a failure by any of them forfeits that seat.
@@ -90,15 +90,21 @@ The next two features are optional. Return here if you want your agent to send m
 
 An agent can implement `chat` when its environment supports messaging. On your turn, the runner calls `chat` immediately after `act` and before applying the action. Your agent therefore knows what it chose but not what happened afterward.
 
-`inbox` is a list of messages sent to your player since its previous turn. Each message tells you who sent it, who received it, the text, and when it was sent. Return a list of messages with a recipient and text, or return nothing to stay silent. Use `None` as the recipient to send a message to every other player.
+`inbox` is a list of messages sent to your player since its previous turn. Messages name players with strings such as `"player_1"`, not the plain numbers used in observations. A received message looks like this, where `tick` is the game step on which it was sent:
 
-On each turn, your agent can send one message to each recipient and one broadcast. The environment sets the maximum message length, and a season can lower it. A message arrives on the recipient's next turn. Every message appears in replays, so do not treat messages as secret. See the [communication specification](../specs/communication.md) for the complete rules.
+```python
+{"from": "player_0", "to": "player_2", "text": "hi partner", "tick": 3}
+```
+
+To send messages, return a list such as `[{"to": "player_0", "text": "hi partner"}]`, or return nothing to stay silent. Use `None` as the recipient to send a message to every other player.
+
+On each turn, your agent can send one message to each recipient and one broadcast. The environment sets the maximum message length, and a season can lower it. A message that breaks any of these limits is dropped without an error, so a message that never arrived probably broke a limit. A message arrives on the recipient's next turn. Every message appears in replays, so do not treat messages as secret. See the [communication specification](../specs/communication.md) for the complete rules.
 
 ### LLM calls
 
 When the environment and season enable the optional LLM API, `act`, `chat`, and `learn` may use the standard OpenAI Python client. Every model-assisted path through `act` must return a legal fallback action if the budget runs out, the service has an error, or the response has the wrong format.
 
-Make the call in the method that needs it and wait for the complete response. In official sessions, verified time waiting for the Game Sandbox LLM service does not count toward the decision or game limit. Keep imports, construction, and `reset` lightweight. Follow [Using the LLM API](llm.md) for setup, budgets, errors, and prompt visibility.
+Make the call in the method that needs it and wait for the complete response. In official sessions, the platform measures how long your agent waits for the Game Sandbox LLM service and does not count that wait toward the decision or game limit. Keep imports, construction, and `reset` lightweight. Follow [Using the LLM API](llm.md) for setup, budgets, errors, and prompt visibility.
 
 ## Manifest
 

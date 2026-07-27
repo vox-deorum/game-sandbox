@@ -61,7 +61,7 @@ python -m sandbox test    # run the checks, which pass before you change anythin
 
 `eval` reports a score explained in [Scoring and rewards](#scoring-and-rewards). `test` passes in a fresh template because the starting agent is complete.
 
-The `TODO(you)` comment inside `act` marks the line for you to improve. The starting agent never looks at the pipes, so it crashes when it reaches a gap away from the middle of the screen. [Your first improvement](#your-first-improvement) helps you find a better decision. In your repository, this page is named `environment.md`, which is the file named in the template comments.
+The `TODO(you)` comment inside `act` marks the line for you to improve. The starting agent never looks at the pipes, so it crashes when it reaches a gap away from the middle of the screen. [Your first improvement](#your-first-improvement) helps you find a better decision. This page is the `environment.md` file that the template comments mention.
 
 ## Scoring and rewards
 

@@ -70,9 +70,11 @@ python -m sandbox eval --episodes 10 # run ten repeatable headless games
 
 `python -m sandbox` and `python -m sandbox human` let you control the selected player in a browser. Every other player is a separate instance of your agent. `python -m sandbox play` opens a browser game in which every player is a separate instance of your agent, so you can watch how your strategy behaves.
 
-`python -m sandbox play --headless` runs one game without a browser. It runs your agent for the selected player and uses a legal default choice for every other player. `eval` repeats that same headless setup with repeatable starting conditions, called **seeds**, and reports the average score. These local results help you catch regressions, but they do not predict an official leaderboard result because a season can use different opponents, player layouts, settings, and limits.
+`python -m sandbox play --headless` runs one game without a browser. It runs your agent for the selected player and uses a legal default choice for every other player. `eval` repeats that same headless setup over several **episodes**, which are complete games, each starting from a repeatable condition called a **seed**. It plays five episodes unless you pass `--episodes`, and reports the average score. These local results show whether a change made your agent better or worse, but they do not predict an official leaderboard result because a season can use different opponents, player layouts, settings, and limits.
 
-Use `--player N` to select a player by number when a game has more than one. `python -m sandbox setup` prepares the virtual environment without starting a game. Every browser game uses the same controls to start, pause, resume, and stop.
+Use `--player N` to select a player by number when a game has more than one; the commands control player `0` unless you choose another. `python -m sandbox setup` prepares the virtual environment without starting a game. Every browser game uses the same controls to start, pause, resume, and stop.
+
+Two options help when you want to study one specific game: `play --seed N` repeats the same starting condition every time, and adding `--help` to any command lists all of its options.
 
 ## 5. Run the checks
 
@@ -80,7 +82,7 @@ Use `--player N` to select a player by number when a game has more than one. `py
 python -m sandbox test
 ```
 
-The tests confirm that the manifest points to an agent that Python can load and that the agent can run the environment. They pass in a fresh template because it includes a working agent. Keep them passing as you edit `agent.py`, and use any failure message to find the problem.
+The tests confirm that `manifest.json`, the small file that names your agent class, points to an agent that Python can load, and that the agent can run the environment. They pass in a fresh template because it includes a working agent. Keep them passing as you edit `agent.py`, and use any failure message to find the problem.
 
 ## 6. Save your work on GitHub
 
