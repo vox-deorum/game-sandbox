@@ -92,9 +92,10 @@ This agent cannot make an illegal move. Every bid from `0` through `13` is legal
 Run the agent from the template folder:
 
 ```console
-python -m sandbox play    # watch separate copies of your agent play all four positions
-python -m sandbox eval    # play several seeded games and report the mean score
-python -m sandbox test    # run the checks
+python -m sandbox play                 # watch separate copies of your agent play all four positions
+python -m sandbox eval                 # play several seeded games and report the mean score
+python -m sandbox eval --vs rivals/v1  # play against a saved copy of your agent
+python -m sandbox test                 # run the checks
 ```
 
 `eval` reports the higher-is-better team score from [Scoring and rewards](#scoring-and-rewards). It is useful for comparing changes against the same seeds, not for predicting leaderboard results.
@@ -305,5 +306,7 @@ So the bid should depend on the hand. Knowing only your 13 cards, and that spade
 > Scan the table in [The helper module](#the-helper-module) for what a bidding turn can see.
 
 Record the average score from `python -m sandbox eval` before the change and again afterward. A bidding improvement appears over many deals, so compare averages across several games.
+
+You can also make the comparison direct: copy the old `agent.py` and `manifest.json` into a folder such as `rivals/v1`, then run `python -m sandbox eval --vs rivals/v1`. Your partner still runs your current agent, and only the opposing partnership plays the saved version.
 
 When the bid is honest, notice what has not changed: your agent still always plays its lowest card, which is a strategy for _losing_ tricks. Your team is now promising to win some. At what point in the thirteen tricks should your agent start trying to keep that promise?

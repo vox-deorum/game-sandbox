@@ -63,16 +63,21 @@ Your [environment page](environments/index.md) explains the starting agent line 
 ## 4. Play and evaluate
 
 ```console
-python -m sandbox                    # play it yourself in a browser
-python -m sandbox human              # the same as the command above
-python -m sandbox play               # watch your agent in a browser
-python -m sandbox play --headless    # run one game without a browser
-python -m sandbox eval --episodes 10 # run ten repeatable headless games
+python -m sandbox                     # play it yourself in a browser
+python -m sandbox human               # the same as the command above
+python -m sandbox play                # watch your agent in a browser
+python -m sandbox play --headless     # run one game without a browser
+python -m sandbox play --vs rivals/v1 # play against a saved copy of your agent
+python -m sandbox eval --episodes 10  # run ten repeatable headless games
 ```
 
 `python -m sandbox play` runs the game with every player as an instance of your agent. In contrast, `python -m sandbox` and `python -m sandbox human` let you control the selected player in a browser.
 
 `python -m sandbox play --headless` runs one game without a browser. It runs your agent for the selected player and uses a legal default choice for every other player. `eval` repeats that same headless setup over several **episodes**, which are complete games, each starting from a repeatable condition called a **seed**. It plays a few (5 by default) episodes and reports the average score. Note that these results are not the same as the official leaderboard result, where your agent may play against different opponents or settings.
+
+When a game has more than one player, `--vs` fills the players outside your seat with a different agent, so you can play, watch, or score your current agent against another agent. For example, if you want to compare with your previous agent, save the older version by copying `agent.py`, `manifest.json`, and other source files into a folder such as `rivals/v1`, then pass `--vs rivals/v1` to `play`, `human`, or `eval`. An absolute path to another copy of the project also works. In a team game, your own teammates keep your current agent.
+
+> _Why save a rival?_ The default opponents never change, so two decent versions of your agent can score alike against them. Playing one version directly against the other shows which one is stronger.
 
 Use `--player N` to select a player by number when a game has more than one; the commands control player `0` unless you choose another. `python -m sandbox setup` prepares the virtual environment without starting a game.
 

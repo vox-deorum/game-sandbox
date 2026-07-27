@@ -6,8 +6,9 @@ import time
 from typing import Any
 
 from sandbox import cards
-from sandbox.env import make_env
-from sandbox.play import play_episode
+from sandbox.env import META, make_env
+from sandbox.harness.environment import resolve_parameters
+from sandbox.play import play_episode, rival_player_ids
 
 SEED = 23
 RUNTIME_LIMIT_S = 5.0
@@ -37,3 +38,10 @@ def test_template_play_loop_completes_a_bounded_episode():
     finally:
         env.close()
     assert time.monotonic() - started < RUNTIME_LIMIT_S
+
+
+def test_rival_players_cover_only_the_opposing_partnership():
+    parameters = resolve_parameters(META)
+
+    assert rival_player_ids("player_0", parameters) == {"player_1", "player_3"}
+    assert rival_player_ids("player_1", parameters) == {"player_0", "player_2"}

@@ -113,7 +113,7 @@ The generated `sandbox.env.META` is the full registry metadata, with declared `E
 
 Add `flappy_bird/game.py` and `flappy_bird/UPSTREAM_LICENSE.md` to the Flappy `TemplateEnvironmentSpec.modules` list, remove `human.py`, and make wheel inclusion explicit. A generation and composition test asserts that both credited source files reach the student repository and that none of the upstream binary asset directories do.
 
-`templates/base/sandbox/play.py` becomes the generic CLI for every game. It parses seed, step limit, mode, seat, port, and browser options; constructs complete `slots` and `players` maps; launches the local server; and opens the browser. Hearts and Spades no longer override it. The runtime probe includes `jsonschema` and `websockets`. `python -m sandbox eval` remains the headless command.
+`templates/base/sandbox/play.py` becomes the generic CLI for every game. It parses seed, step limit, mode, player, rival, port, and browser options; constructs complete `slots` and `players` maps; launches the local server; and opens the browser. Hearts and Spades no longer override it. The runtime probe includes `jsonschema` and `websockets`. `python -m sandbox eval` remains the headless command.
 
 `scripts/play.py` uses the same bridge, live runner, registry, and manifest loading, serving `frontend/dist-local/`. It rebuilds the local bundle before every play launch so frontend changes are always present.
 

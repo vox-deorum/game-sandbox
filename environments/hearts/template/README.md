@@ -4,7 +4,7 @@ This repository is a complete starter project for a Hearts agent. Edit `agent.py
 
 An **agent** is a Python class that receives an observation and returns an action. You can play and test it on your computer before submitting the GitHub repository to Game Sandbox.
 
-Hearts is a four-player trick-taking game. Local play uses separate copies of the agent in this repository for every agent-controlled player. See the course documentation for the environments and examples available to your class.
+Hearts is a four-player trick-taking game. Local play uses separate copies of the agent in this repository for every agent-controlled player, unless you pick a saved rival with `--vs`. See the course documentation for the environments and examples available to your class.
 
 ## Project files
 
@@ -41,7 +41,7 @@ python -m sandbox test       # run the checks
 python -m sandbox setup      # just (re)install dependencies into .venv
 ```
 
-Use `python -m sandbox play --seed 7` for a repeatable game or `python -m sandbox human --player 2` to play a different position. `eval` is useful for comparing changes against the same seeds, not for predicting leaderboard results. It reports the higher-is-better leaderboard score, so a Hearts result closer to zero is better. The [getting started guide]({{DOCS_URL}}students/getting-started/) explains manual virtual-environment setup and GitHub workflow.
+Use `python -m sandbox play --seed 7` for a repeatable game or `python -m sandbox human --player 2` to play a different position. `python -m sandbox play --vs rivals/v1` plays your current agent against a saved rival, a folder holding that version's `agent.py` and `manifest.json`; it also works with `human` and `eval`. `eval` is useful for comparing changes against the same seeds, not for predicting leaderboard results. It reports the higher-is-better leaderboard score, so a Hearts result closer to zero is better. The [getting started guide]({{DOCS_URL}}students/getting-started/) explains manual virtual-environment setup and GitHub workflow.
 
 ## Write the agent
 

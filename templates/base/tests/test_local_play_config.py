@@ -7,9 +7,25 @@ import json
 import sys
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from sandbox import evaluate, live_local, play
+from sandbox.harness.environment import PlayerBounds, SeatPlan, SeatPlans
+
+
+def _rival_repo(tmp_path: Path) -> Path:
+    rival = tmp_path / "rivals" / "v1"
+    rival.mkdir(parents=True)
+    (rival / "manifest.json").write_text("{}", encoding="utf-8")
+    return rival
+
+
+def _use_partnership_layout(monkeypatch: pytest.MonkeyPatch) -> None:
+    players = ("player_0", "player_1", "player_2", "player_3")
+    monkeypatch.setattr(play, "possible_players", lambda: players)
+    plans = SeatPlans((SeatPlan("partnership", "Partnership", ((0, 2), (1, 3))),))
+    monkeypatch.setattr(play, "META", replace(play.META, layout=plans))
 
 
 def test_single_player_local_config_uses_metadata_timeout_when_omitted(monkeypatch, tmp_path: Path):
@@ -90,8 +106,8 @@ def test_evaluate_forwards_the_selected_player(monkeypatch, capsys):
 
     assert evaluate.main(["--episodes", "2", "--player", "1"]) == 0
     assert calls == [
-        {"seed": 0, "max_steps": None, "player": 1},
-        {"seed": 1, "max_steps": None, "player": 1},
+        {"seed": 0, "max_steps": None, "player": 1, "vs": None},
+        {"seed": 1, "max_steps": None, "player": 1, "vs": None},
     ]
     assert "mean over 2 episode(s): 2.00" in capsys.readouterr().out
 
@@ -116,3 +132,212 @@ def test_local_runner_passes_stdin_to_the_harness_run_seam(monkeypatch, tmp_path
 
     assert live_local.main([json.dumps(config)]) == 0
     assert captured["command_lines"] is sys.stdin
+
+
+def test_resolve_rival_accepts_a_folder_and_its_manifest_path(monkeypatch, tmp_path: Path):
+    rival = _rival_repo(tmp_path)
+
+    assert play.resolve_rival(str(rival)) == rival.resolve()
+    assert play.resolve_rival(str(rival / "manifest.json")) == rival.resolve()
+
+    monkeypatch.chdir(tmp_path)
+    assert play.resolve_rival("rivals/v1") == rival.resolve()
+
+
+def test_resolve_rival_rejects_missing_and_manifestless_paths(tmp_path: Path):
+    with pytest.raises(ValueError, match="could not find"):
+        play.resolve_rival(str(tmp_path / "missing"))
+
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    with pytest.raises(ValueError, match="no manifest.json"):
+        play.resolve_rival(str(empty))
+
+
+def test_vs_fills_every_opposing_player_in_a_one_player_per_seat_layout(monkeypatch, tmp_path: Path):
+    player_ids = ("player_0", "player_1", "player_2", "player_3")
+    monkeypatch.setattr(play, "possible_players", lambda: player_ids)
+    monkeypatch.setattr(play, "META", replace(play.META, layout=PlayerBounds(min=4, max=4)))
+    monkeypatch.setattr(play, "REPO_ROOT", tmp_path / "repo")
+    rival = _rival_repo(tmp_path)
+
+    config = play.local_config(
+        seed=1, mode="agent", player=0, recording_dir=tmp_path / "recordings", step_limit=None, vs=rival
+    )
+
+    bindings = config["player_bindings"]
+    assert bindings["player_0"] == {"kind": "builtin-agent", "path": str(tmp_path / "repo")}
+    for other in ("player_1", "player_2", "player_3"):
+        assert bindings[other] == {"kind": "builtin-agent", "path": str(rival)}
+    assert config["players"]["player_0"] == {"kind": "agent", "label": "Your agent"}
+    assert config["players"]["player_1"] == {"kind": "agent", "label": "Rival (v1)"}
+
+
+def test_vs_keeps_the_selected_seat_on_your_agent_in_a_partnership_layout(monkeypatch, tmp_path: Path):
+    _use_partnership_layout(monkeypatch)
+    monkeypatch.setattr(play, "REPO_ROOT", tmp_path / "repo")
+    rival = _rival_repo(tmp_path)
+
+    config = play.local_config(
+        seed=1, mode="agent", player=2, recording_dir=tmp_path / "recordings", step_limit=None, vs=rival
+    )
+
+    bindings = config["player_bindings"]
+    assert bindings["player_0"]["path"] == str(tmp_path / "repo")
+    assert bindings["player_2"]["path"] == str(tmp_path / "repo")
+    assert bindings["player_1"]["path"] == str(rival)
+    assert bindings["player_3"]["path"] == str(rival)
+
+
+def test_human_mode_vs_gives_the_partner_your_agent(monkeypatch, tmp_path: Path):
+    _use_partnership_layout(monkeypatch)
+    monkeypatch.setattr(play, "REPO_ROOT", tmp_path / "repo")
+    rival = _rival_repo(tmp_path)
+
+    config = play.local_config(
+        seed=1, mode="human", player=0, recording_dir=tmp_path / "recordings", step_limit=None, vs=rival
+    )
+
+    assert config["player_bindings"]["player_0"] == {"kind": "external"}
+    assert config["player_bindings"]["player_2"]["path"] == str(tmp_path / "repo")
+    assert config["players"]["player_2"] == {"kind": "agent", "label": "Your agent"}
+    assert config["player_bindings"]["player_1"]["path"] == str(rival)
+    assert config["player_bindings"]["player_3"]["path"] == str(rival)
+
+
+def test_local_config_without_vs_is_unchanged_in_a_partnership_layout(monkeypatch, tmp_path: Path):
+    _use_partnership_layout(monkeypatch)
+    monkeypatch.setattr(play, "REPO_ROOT", tmp_path / "repo")
+
+    config = play.local_config(
+        seed=1, mode="agent", player=0, recording_dir=tmp_path / "recordings", step_limit=None
+    )
+
+    for player_id in ("player_0", "player_1", "player_2", "player_3"):
+        assert config["player_bindings"][player_id] == {
+            "kind": "builtin-agent",
+            "path": str(tmp_path / "repo"),
+        }
+        assert config["players"][player_id] == {"kind": "agent", "label": "Your agent"}
+
+
+def test_vs_errors_in_a_single_player_game(monkeypatch, capsys, tmp_path: Path):
+    monkeypatch.setattr(play, "possible_players", lambda: ("player_0",))
+    monkeypatch.setattr(play, "META", replace(play.META, layout=PlayerBounds(min=1, max=1)))
+
+    with pytest.raises(SystemExit) as error:
+        play.main(["agent", "--vs", str(tmp_path)])
+    assert error.value.code == 2
+    assert "only one player" in capsys.readouterr().err
+
+    with pytest.raises(SystemExit) as error:
+        evaluate.main(["--vs", str(tmp_path)])
+    assert error.value.code == 2
+    assert "only one player" in capsys.readouterr().err
+
+
+def test_vs_errors_when_one_seat_covers_every_player(monkeypatch, capsys, tmp_path: Path):
+    monkeypatch.setattr(play, "possible_players", lambda: ("player_0", "player_1", "player_2"))
+    plans = SeatPlans((SeatPlan("coop", "Cooperative", ((0, 1, 2),)),))
+    monkeypatch.setattr(play, "META", replace(play.META, layout=plans))
+
+    with pytest.raises(SystemExit) as error:
+        play.main(["agent", "--vs", str(tmp_path)])
+    assert error.value.code == 2
+    assert "every player is on your team" in capsys.readouterr().err
+
+    with pytest.raises(SystemExit) as error:
+        evaluate.main(["--vs", str(tmp_path)])
+    assert error.value.code == 2
+    assert "every player is on your team" in capsys.readouterr().err
+
+
+def test_run_headless_vs_loads_a_separate_agent_for_every_other_player(monkeypatch, tmp_path: Path):
+    _use_partnership_layout(monkeypatch)
+    monkeypatch.setattr(play, "REPO_ROOT", tmp_path / "repo")
+    monkeypatch.setattr(play, "make_env", lambda parameters: SimpleNamespace(close=lambda: None))
+    loads: list[Path] = []
+
+    def fake_load(root: Path) -> object:
+        loads.append(Path(root))
+        return object()
+
+    monkeypatch.setattr(play, "load_agent", fake_load)
+    captured: dict[str, object] = {}
+
+    def fake_episode(agent: object, env: object, **kwargs: object) -> float:
+        captured.update(kwargs)
+        captured["agent"] = agent
+        return 1.5
+
+    monkeypatch.setattr(play, "play_episode", fake_episode)
+    rival = _rival_repo(tmp_path)
+
+    assert play.run_headless(seed=3, max_steps=None, player=0, vs=rival) == 1.5
+
+    other_agents = captured["other_agents"]
+    assert isinstance(other_agents, dict)
+    assert set(other_agents) == {"player_1", "player_2", "player_3"}
+    assert loads.count(rival) == 2
+    assert loads.count(tmp_path / "repo") == 2
+    instances = [captured["agent"], *other_agents.values()]
+    assert len({id(instance) for instance in instances}) == 4
+
+
+def test_run_headless_without_vs_keeps_the_default_action_opponents(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(play, "possible_players", lambda: ("player_0", "player_1"))
+    monkeypatch.setattr(play, "REPO_ROOT", tmp_path / "repo")
+    monkeypatch.setattr(play, "make_env", lambda parameters: SimpleNamespace(close=lambda: None))
+    loads: list[Path] = []
+    monkeypatch.setattr(play, "load_agent", lambda root: loads.append(Path(root)) or object())
+    captured: dict[str, object] = {}
+
+    def fake_episode(agent: object, env: object, **kwargs: object) -> float:
+        captured.update(kwargs)
+        return 0.0
+
+    monkeypatch.setattr(play, "play_episode", fake_episode)
+
+    assert play.run_headless(seed=0, max_steps=None, player=0) == 0.0
+    assert captured["other_agents"] is None
+    assert loads == [tmp_path / "repo"]
+
+
+def test_play_episode_binds_other_agents_and_defaults(monkeypatch):
+    monkeypatch.setattr(play, "possible_players", lambda: ("player_0", "player_1", "player_2"))
+    captured: dict[str, object] = {}
+
+    def fake_run_episode(entry: object, players: object, **kwargs: object) -> SimpleNamespace:
+        captured["players"] = players
+        return SimpleNamespace(scores={"player_0": 4.0})
+
+    monkeypatch.setattr(play, "run_episode", fake_run_episode)
+    mine, rival_agent = object(), object()
+
+    score = play.play_episode(
+        mine, object(), seed=0, player_id="player_0", other_agents={"player_2": rival_agent}
+    )
+
+    assert score == 4.0
+    players = captured["players"]
+    assert isinstance(players, dict)
+    assert isinstance(players["player_0"], play.AgentPlayer)
+    assert players["player_0"].agent is mine
+    assert isinstance(players["player_2"], play.AgentPlayer)
+    assert players["player_2"].agent is rival_agent
+    assert isinstance(players["player_1"], play.ExternalPlayer)
+
+
+def test_evaluate_forwards_vs_to_every_episode(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(play, "META", replace(play.META, layout=PlayerBounds(min=2, max=2)))
+    rival = _rival_repo(tmp_path)
+    calls: list[dict[str, object]] = []
+
+    def run_headless(**kwargs: object) -> float:
+        calls.append(kwargs)
+        return 1.0
+
+    monkeypatch.setattr(evaluate, "run_headless", run_headless)
+
+    assert evaluate.main(["--seeds", "5", "--vs", str(rival)]) == 0
+    assert calls == [{"seed": 5, "max_steps": None, "player": 0, "vs": rival.resolve()}]

@@ -70,9 +70,10 @@ This agent cannot make an illegal move because it only chooses from `legal_cards
 Run the agent from the template folder:
 
 ```console
-python -m sandbox play    # watch separate copies of your agent play all four positions
-python -m sandbox eval    # play several seeded games and report the mean score
-python -m sandbox test    # run the checks
+python -m sandbox play                 # watch separate copies of your agent play all four positions
+python -m sandbox eval                 # play several seeded games and report the mean score
+python -m sandbox eval --vs rivals/v1  # play against a saved copy of your agent
+python -m sandbox test                 # run the checks
 ```
 
 `eval` reports the higher-is-better leaderboard score from [Scoring and rewards](#scoring-and-rewards), so a result closer to zero is better. It is useful for comparing changes against the same seeds, not for predicting leaderboard results.
@@ -220,5 +221,7 @@ One possible improvement is **ducking**: playing a high card below another playe
 > Scan the table in [The helper module](#the-helper-module) for the rows that describe the current trick.
 
 Record the average score from `python -m sandbox eval` before the change, then run it again afterward. Ducking saves a few points at a time over many deals, so compare averages over several games.
+
+You can also make the comparison direct: copy the old `agent.py` and `manifest.json` into a folder such as `rivals/v1`, then run `python -m sandbox eval --vs rivals/v1` to play your new agent against the saved one.
 
 One more thing to notice while you watch: ducking only exists when you must follow suit. Sooner or later you will have no card of the led suit at all, and a card from another suit can never win the trick. What is a turn you cannot possibly win actually _for_?
