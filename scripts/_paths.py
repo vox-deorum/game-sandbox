@@ -82,12 +82,13 @@ class TemplateEnvironmentSpec:
 # Shared, import-self-contained sandbox helpers generated from the env source into each composed
 # template's sandbox/: destination filename under sandbox/ -> source path under the package root.
 TEMPLATE_BASE_MODULES = {
-    # The dependency-free card codec and its Gymnasium spaces: the pure rules engines pull their
-    # encoding from card_utils, and card_spaces declares the shared CARD/HAND/TRICK observation
-    # shapes. Compose writes both beside each template's own game-specific sandbox/cards.py, which
-    # the distinct names keep apart.
+    # The dependency-free card codec, resolver, and Gymnasium spaces: the pure rules engines pull
+    # their encoding from card_utils through shared_modules, and card_spaces declares the shared
+    # CARD/HAND/TRICK observation shapes. Compose writes them beside each template's own
+    # game-specific sandbox/cards.py, which the distinct names keep apart.
     "card_utils.py": "local_play/card_utils.py",
     "card_spaces.py": "local_play/card_spaces.py",
+    "shared_modules.py": "local_play/shared_modules.py",
     "semantic_cards.py": "local_play/semantic_cards.py",
 }
 

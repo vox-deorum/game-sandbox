@@ -83,7 +83,12 @@ function composeExampleTree(exampleName: string): string {
   const dir = mkdtempSync(join(tmpdir(), `gs-spades-${exampleName}-`))
   cpSync(BASE_SANDBOX, join(dir, 'sandbox'), { recursive: true, filter: skipPycache })
   cpSync(HARNESS_SOURCE, join(dir, 'sandbox', 'harness'), { recursive: true, filter: skipPycache })
-  for (const helper of ['card_utils.py', 'card_spaces.py', 'semantic_cards.py']) {
+  for (const helper of [
+    'card_utils.py',
+    'card_spaces.py',
+    'shared_modules.py',
+    'semantic_cards.py',
+  ]) {
     copyFileSync(join(LOCAL_PLAY, helper), join(dir, 'sandbox', helper))
   }
   // These examples import sandbox helpers only, never sandbox.env. Extend the recipe if that

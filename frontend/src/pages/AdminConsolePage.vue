@@ -12,8 +12,10 @@
   opening public play, and releasing results visibly separate.
 -->
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
+
+import { RATING_PROMPT_MAX, SEASON_DESCRIPTION_MAX } from '@game-sandbox/schema/seasons'
 
 import {
   type AdminLlmDevelopmentUser,
@@ -30,12 +32,13 @@ import {
   renameSeason,
   type RunSummaryView,
   type SeasonView,
+  setSeasonDescription,
+  setSeasonRatingPrompt,
 } from '../api/client.js'
 import DevelopmentCallHistoryDialog from '../components/DevelopmentCallHistoryDialog.vue'
+import OperatorSeasonTextEditor from '../components/admin/OperatorSeasonTextEditor.vue'
 import SeasonConfigEditor from '../components/admin/SeasonConfigEditor.vue'
 import SeasonLifecycleControls from '../components/admin/SeasonLifecycleControls.vue'
-import OperatorSeasonDescriptionEditor from '../components/admin/OperatorSeasonDescriptionEditor.vue'
-import OperatorRatingPromptEditor from '../components/admin/OperatorRatingPromptEditor.vue'
 import RunActions from '../components/admin/RunActions.vue'
 import RunsList from '../components/admin/RunsList.vue'
 import SeasonSubmissions from '../components/admin/SeasonSubmissions.vue'
@@ -46,6 +49,7 @@ import UiDialogActions from '../components/ui/UiDialogActions.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import UiInput from '../components/ui/UiInput.vue'
 import { useEnvironmentMeta } from '../composables/useEnvironmentMeta.js'
+import { useLatestRequest } from '../composables/useLatestRequest.js'
 import { formatLlmCost } from '../lib/llm.js'
 import { isAdmin, useMe } from '../me.js'
 
@@ -84,7 +88,7 @@ const deleting = ref(false)
 const deleteError = ref<string | null>(null)
 // Monotonically identifies the newest detail request. A slower response for a previously selected
 // season must never replace the controls for the season the sidebar now highlights.
-let detailRequest = 0
+const detailRequest = useLatestRequest()
 
 onMounted(async () => {
   // The console route is operator-only. Wait for the single /api/me answer, then gate. The backend
@@ -113,7 +117,7 @@ async function loadDetail(): Promise<void> {
   if (seasonId === null) {
     return
   }
-  const requestId = ++detailRequest
+  const isCurrent = detailRequest.begin()
   loadingDetail.value = true
   try {
     const [loaded, loadedRuns, loadedDevelopmentUsers] = await Promise.all([
@@ -124,14 +128,14 @@ async function loadDetail(): Promise<void> {
         () => ({ users: [] as AdminLlmDevelopmentUser[], failed: true }),
       ),
     ])
-    if (requestId === detailRequest && selectedId.value === seasonId) {
+    if (isCurrent() && selectedId.value === seasonId) {
       view.value = loaded
       runs.value = loadedRuns
       developmentUsers.value = loadedDevelopmentUsers.users
       developmentUsersError.value = loadedDevelopmentUsers.failed
     }
   } finally {
-    if (requestId === detailRequest) {
+    if (isCurrent()) {
       loadingDetail.value = false
     }
   }
@@ -185,6 +189,20 @@ function seasonHeading(season: SeasonView): string {
   return season.label === null ? seasonLabel(season) : `Season ${season.label}`
 }
 
+function ratingPromptErrorMessage(reason: string): string {
+  return reason === 'too_long'
+    ? 'That prompt is too long.'
+    : 'Could not save the rating prompt. Please try again.'
+}
+
+function seasonDescriptionErrorMessage(reason: string): string {
+  return reason === 'too_long'
+    ? 'That description is too long.'
+    : reason === 'multiple_paragraphs'
+      ? 'Use one paragraph only.'
+      : 'Could not save the season description. Please try again.'
+}
+
 function startRename(season: SeasonView): void {
   renameLabel.value = season.label ?? ''
   renameError.value = null
@@ -209,7 +227,7 @@ function closeDelete(): void {
 
 /** Clear data that belongs to the previously selected season before choosing a replacement. */
 function clearSelectedSeason(): void {
-  detailRequest += 1
+  detailRequest.invalidate()
   selectedId.value = null
   view.value = null
   runs.value = []
@@ -278,14 +296,14 @@ const historyNextCursor = ref<number | null>(null)
 const historyLoading = ref(false)
 const historyLoadingMore = ref(false)
 const historyError = ref<string | null>(null)
-let historyRequest = 0
+const historyRequest = useLatestRequest()
 
 async function openDevelopmentHistory(userId: string): Promise<void> {
   const seasonId = selectedId.value
   if (seasonId === null) {
     return
   }
-  const request = ++historyRequest
+  const isCurrent = historyRequest.begin()
   historyUserId.value = userId
   historyCalls.value = []
   historyNextCursor.value = null
@@ -295,7 +313,7 @@ async function openDevelopmentHistory(userId: string): Promise<void> {
   try {
     const page = await listAdminLlmDevelopmentCalls(seasonId, userId, { limit: 25 })
     if (
-      request === historyRequest &&
+      isCurrent() &&
       selectedId.value === seasonId &&
       historyUserId.value === userId
     ) {
@@ -303,11 +321,11 @@ async function openDevelopmentHistory(userId: string): Promise<void> {
       historyNextCursor.value = page.next_cursor
     }
   } catch {
-    if (request === historyRequest) {
+    if (isCurrent()) {
       historyError.value = 'Could not load development call history.'
     }
   } finally {
-    if (request === historyRequest) {
+    if (isCurrent()) {
       historyLoading.value = false
     }
   }
@@ -319,13 +337,13 @@ async function loadMoreDevelopmentHistory(cursor: number): Promise<void> {
   if (seasonId === null || userId === null) {
     return
   }
-  const request = ++historyRequest
+  const isCurrent = historyRequest.begin()
   historyLoadingMore.value = true
   historyError.value = null
   try {
     const page = await listAdminLlmDevelopmentCalls(seasonId, userId, { cursor, limit: 25 })
     if (
-      request === historyRequest &&
+      isCurrent() &&
       selectedId.value === seasonId &&
       historyUserId.value === userId
     ) {
@@ -333,24 +351,29 @@ async function loadMoreDevelopmentHistory(cursor: number): Promise<void> {
       historyNextCursor.value = page.next_cursor
     }
   } catch {
-    if (request === historyRequest) {
+    if (isCurrent()) {
       historyError.value = 'Could not load more development calls.'
     }
   } finally {
-    if (request === historyRequest) {
+    if (isCurrent()) {
       historyLoadingMore.value = false
     }
   }
 }
 
 function closeDevelopmentHistory(): void {
-  historyRequest += 1
+  historyRequest.invalidate()
   historyLoadingMore.value = false
   historyUserId.value = null
   historyCalls.value = []
   historyNextCursor.value = null
   historyError.value = null
 }
+
+onUnmounted(() => {
+  detailRequest.invalidate()
+  historyRequest.invalidate()
+})
 </script>
 
 <template>
@@ -433,7 +456,24 @@ function closeDevelopmentHistory(): void {
               <p v-if="renameError" class="rename-error" role="alert">{{ renameError }}</p>
               <UiCard class="admin-card">
                 <SeasonLifecycleControls :season="view.season" @changed="refresh" />
-                <OperatorSeasonDescriptionEditor :season="view.season" @changed="refresh" />
+                <OperatorSeasonTextEditor
+                  :season="view.season"
+                  field="description_markdown"
+                  label="Season description"
+                  save-label="Save description"
+                  :max-length="SEASON_DESCRIPTION_MAX"
+                  :persist="setSeasonDescription"
+                  :error-message="seasonDescriptionErrorMessage"
+                  clearable
+                  clear-label="Clear description"
+                  @changed="refresh"
+                >
+                  <p>
+                    Shown on public Season cards. After line-ending normalization, use up to
+                    {{ SEASON_DESCRIPTION_MAX.toLocaleString() }} characters in one paragraph. Inline
+                    Markdown supports emphasis, strong text, inline code, and HTTP or HTTPS links.
+                  </p>
+                </OperatorSeasonTextEditor>
               </UiCard>
             </section>
 
@@ -459,7 +499,22 @@ function closeDevelopmentHistory(): void {
             <section class="admin-section">
               <h2>Human Rating Prompt</h2>
               <UiCard class="admin-card">
-                <OperatorRatingPromptEditor :season="view.season" @changed="refresh" />
+                <OperatorSeasonTextEditor
+                  :season="view.season"
+                  field="rating_prompt"
+                  label="Rating prompt"
+                  save-label="Save prompt"
+                  :max-length="RATING_PROMPT_MAX"
+                  :persist="setSeasonRatingPrompt"
+                  :error-message="ratingPromptErrorMessage"
+                  saved-label="Saved ✓"
+                  @changed="refresh"
+                >
+                  <p>
+                    Shown to human raters for every agent in this season. Each author can have their own
+                    prompt.
+                  </p>
+                </OperatorSeasonTextEditor>
               </UiCard>
             </section>
 

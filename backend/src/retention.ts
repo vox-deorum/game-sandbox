@@ -23,6 +23,7 @@
  */
 import type { RecordingsStore } from './recordings.js'
 import type { Recording, RecordingCleanupClaimResult, Storage } from './storage/index.js'
+import { SweepTimer } from './sweep-timer.js'
 
 const MS_PER_DAY = 86_400_000
 const COMPLETED_OUTCOMES = new Set(['terminated', 'truncated'])
@@ -95,7 +96,7 @@ export async function reclaimOrphanedOfficialTelemetry(
 }
 
 export class Retention {
-  private timer: ReturnType<typeof setInterval> | null = null
+  private readonly timer: SweepTimer
   /** Serialize triggers so two sweeps cannot simultaneously remove a scope's final references. */
   private sweepTail: Promise<void> = Promise.resolve()
 
@@ -108,22 +109,18 @@ export class Retention {
     private readonly now: () => number = Date.now,
     /** Optional: LLM telemetry scopes are reclaimed with the last recording that references them. */
     private readonly llmTelemetry?: LlmTelemetryReclaimer,
-  ) {}
+  ) {
+    this.timer = new SweepTimer(() => void this.sweep(), this.config.recordingSweepIntervalMs)
+  }
 
   /** Run the sweep once at startup, then on the configured interval. */
   start(): void {
-    void this.sweep()
-    this.timer = setInterval(() => void this.sweep(), this.config.recordingSweepIntervalMs)
-    // Don't keep the process alive solely for the sweep timer.
-    this.timer.unref?.()
+    this.timer.start()
   }
 
   /** Stop the interval timer (process shutdown). */
   stop(): void {
-    if (this.timer !== null) {
-      clearInterval(this.timer)
-      this.timer = null
-    }
+    this.timer.stop()
   }
 
   /**

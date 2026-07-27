@@ -43,7 +43,12 @@ export function stageExampleAgent(environmentId: string, name: string): string {
     recursive: true,
     filter: withoutPycache,
   })
-  for (const helper of ['card_utils.py', 'card_spaces.py', 'semantic_cards.py']) {
+  for (const helper of [
+    'card_utils.py',
+    'card_spaces.py',
+    'shared_modules.py',
+    'semantic_cards.py',
+  ]) {
     copyFileSync(join(localPlay, helper), join(dir, 'sandbox', helper))
   }
   // Example agents currently use only sandbox helpers, never sandbox.env. Extend this staging recipe

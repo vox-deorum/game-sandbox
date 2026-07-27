@@ -11,34 +11,22 @@ result round-trips through ``json`` unchanged. All scoring questions are delegat
 
 from __future__ import annotations
 
-import importlib
 from typing import TYPE_CHECKING, Any
 
 from . import rules
 
-
-def _shared_card_utils() -> Any:
-    """Return the shared :mod:`card_utils` under whichever name this file runs as.
-
-    One source syncs into two layouts: :mod:`local_play.card_utils` inside the environments package,
-    ``sandbox.card_utils`` in a composed template. Mirrors ``spades.rules._shared_card_utils`` /
-    ``spades.env._shared_card_modules``.
-    """
-    for candidate in ("local_play.card_utils", "sandbox.card_utils"):
-        try:
-            return importlib.import_module(candidate)
-        except ModuleNotFoundError as exc:
-            missing = exc.name or ""
-            if missing == candidate or candidate.startswith(f"{missing}."):
-                continue
-            raise
-    raise ModuleNotFoundError("no shared card_utils found (tried local_play.card_utils, sandbox.card_utils)")
-
-
 if TYPE_CHECKING:  # pyright sees the real module; this branch never executes at runtime
     from local_play import card_utils as _cu
+    from local_play.shared_modules import resolve
 else:
-    _cu = _shared_card_utils()
+    try:
+        from local_play.shared_modules import resolve
+    except ModuleNotFoundError as exc:
+        if exc.name not in {"local_play", "local_play.shared_modules"}:
+            raise
+        from sandbox.shared_modules import resolve
+
+    (_cu,) = resolve("card_utils")
 
 card_to_obj = _cu.card_to_obj
 

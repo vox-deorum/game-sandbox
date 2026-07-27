@@ -13,7 +13,7 @@
     key management, and successful-call history for current and past seasons.
 -->
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { ChevronDown, ChevronRight, Clock, FolderOpen, GitCommit, Play, Trophy } from '@lucide/vue'
 
@@ -47,6 +47,7 @@ import UiDialogActions from '../components/ui/UiDialogActions.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import UiMeter from '../components/ui/UiMeter.vue'
 import UiStatusBadge from '../components/ui/UiStatusBadge.vue'
+import { useLatestRequest } from '../composables/useLatestRequest.js'
 import {
   formatComputeMs,
   formatDate,
@@ -76,17 +77,17 @@ const placements = ref<AgentPlacements | null>(null)
 
 // A form acceptance refresh can overlap the later terminal refresh. Only the newest request may
 // replace the page state, so a slower pending response cannot overwrite the terminal submission.
-let profileLoadSerial = 0
+const profileLoadRequest = useLatestRequest()
 async function refreshProfile(): Promise<void> {
-  const serial = ++profileLoadSerial
+  const isCurrent = profileLoadRequest.begin()
   try {
     const data = await getAgentProfile(envId, ownerId)
-    if (serial === profileLoadSerial) {
+    if (isCurrent()) {
       profile.value = data
       failed.value = false
     }
   } catch {
-    if (serial === profileLoadSerial && profile.value === null) {
+    if (isCurrent() && profile.value === null) {
       failed.value = true
     }
   }
@@ -248,18 +249,18 @@ const currentSeasonSubmission = computed(() => {
 // Public season metadata improves the header label, but it is owner-only and non-blocking. The short
 // id fallback renders immediately and remains if this secondary read fails.
 const currentSeasonMetadata = ref<PublicSeasonView | null>(null)
-let seasonMetadataSerial = 0
+const seasonMetadataRequest = useLatestRequest()
 watch(
   [() => profile.value?.submission_season_id, () => userId(me.me)],
   async ([seasonId, viewerId]) => {
-    const serial = ++seasonMetadataSerial
+    const isCurrent = seasonMetadataRequest.begin()
     currentSeasonMetadata.value = null
     if (seasonId === null || seasonId === undefined || viewerId !== ownerId) {
       return
     }
     try {
       const seasons = await listSeasons(envId)
-      if (serial === seasonMetadataSerial) {
+      if (isCurrent()) {
         currentSeasonMetadata.value = seasons.find((season) => season.id === seasonId) ?? null
       }
     } catch {
@@ -278,11 +279,11 @@ const currentSeasonName = computed(() => {
 })
 
 const developmentAccess = ref<LlmDevelopmentSummary | null>(null)
-let developmentRequest = 0
+const developmentRequest = useLatestRequest()
 watch(
   [() => profile.value?.submission_season_id, () => userId(me.me)],
   async ([seasonId, viewerId]) => {
-    const request = ++developmentRequest
+    const isCurrent = developmentRequest.begin()
     developmentAccess.value = null
     if (
       typeof seasonId !== 'string' ||
@@ -297,7 +298,7 @@ watch(
         return
       }
       const summary = await getLlmDevelopmentSummary(seasonId)
-      if (request === developmentRequest) {
+      if (isCurrent()) {
         developmentAccess.value = summary
       }
     } catch {
@@ -350,10 +351,10 @@ const historyNextCursor = ref<number | null>(null)
 const historyLoading = ref(false)
 const historyLoadingMore = ref(false)
 const historyError = ref<string | null>(null)
-let historyRequest = 0
+const historyRequest = useLatestRequest()
 
 async function openCallHistory(seasonId: string): Promise<void> {
-  const request = ++historyRequest
+  const isCurrent = historyRequest.begin()
   historySeasonId.value = seasonId
   historyCalls.value = []
   historyNextCursor.value = null
@@ -362,16 +363,16 @@ async function openCallHistory(seasonId: string): Promise<void> {
   historyLoading.value = true
   try {
     const page = await listLlmDevelopmentCalls(seasonId, { limit: 25 })
-    if (request === historyRequest && historySeasonId.value === seasonId) {
+    if (isCurrent() && historySeasonId.value === seasonId) {
       historyCalls.value = page.calls
       historyNextCursor.value = page.next_cursor
     }
   } catch {
-    if (request === historyRequest) {
+    if (isCurrent()) {
       historyError.value = 'Could not load development call history.'
     }
   } finally {
-    if (request === historyRequest) {
+    if (isCurrent()) {
       historyLoading.value = false
     }
   }
@@ -382,34 +383,41 @@ async function loadMoreHistory(cursor: number): Promise<void> {
   if (seasonId === null) {
     return
   }
-  const request = ++historyRequest
+  const isCurrent = historyRequest.begin()
   historyLoadingMore.value = true
   historyError.value = null
   try {
     const page = await listLlmDevelopmentCalls(seasonId, { cursor, limit: 25 })
-    if (request === historyRequest && historySeasonId.value === seasonId) {
+    if (isCurrent() && historySeasonId.value === seasonId) {
       historyCalls.value = [...historyCalls.value, ...page.calls]
       historyNextCursor.value = page.next_cursor
     }
   } catch {
-    if (request === historyRequest) {
+    if (isCurrent()) {
       historyError.value = 'Could not load more development calls.'
     }
   } finally {
-    if (request === historyRequest) {
+    if (isCurrent()) {
       historyLoadingMore.value = false
     }
   }
 }
 
 function closeHistory(): void {
-  historyRequest += 1
+  historyRequest.invalidate()
   historyLoadingMore.value = false
   historySeasonId.value = null
   historyCalls.value = []
   historyNextCursor.value = null
   historyError.value = null
 }
+
+onUnmounted(() => {
+  profileLoadRequest.invalidate()
+  seasonMetadataRequest.invalidate()
+  developmentRequest.invalidate()
+  historyRequest.invalidate()
+})
 
 function developmentMeterText(access: LlmDevelopmentSummary): string {
   return `${formatLlmCost(access.budget_cost_units_used)} used, ${formatLlmCost(access.budget_cost_units_remaining)} remaining`

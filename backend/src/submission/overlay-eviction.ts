@@ -19,6 +19,7 @@
  */
 import type { OverlayImageManager } from '../driver/index.js'
 import type { Storage } from '../storage/index.js'
+import { SweepTimer } from '../sweep-timer.js'
 
 /** The eviction knobs, sliced from {@link import('../config.js').Config}. */
 export interface OverlayEvictionConfig {
@@ -32,29 +33,25 @@ export interface OverlayEvictionConfig {
 type ActiveReadyReader = Pick<Storage, 'listActiveReadySubmissionIds'>
 
 export class OverlayEviction {
-  private timer: ReturnType<typeof setInterval> | null = null
+  private readonly timer: SweepTimer
 
   constructor(
     private readonly driver: OverlayImageManager,
     private readonly storage: ActiveReadyReader,
     private readonly config: OverlayEvictionConfig,
     private readonly log: (message: string) => void = () => {},
-  ) {}
+  ) {
+    this.timer = new SweepTimer(() => void this.sweep(), this.config.overlayImageSweepIntervalMs)
+  }
 
   /** Run the sweep once at startup, then on the configured interval. */
   start(): void {
-    void this.sweep()
-    this.timer = setInterval(() => void this.sweep(), this.config.overlayImageSweepIntervalMs)
-    // Don't keep the process alive solely for the sweep timer.
-    this.timer.unref?.()
+    this.timer.start()
   }
 
   /** Stop the interval timer (process shutdown). */
   stop(): void {
-    if (this.timer !== null) {
-      clearInterval(this.timer)
-      this.timer = null
-    }
+    this.timer.stop()
   }
 
   /**

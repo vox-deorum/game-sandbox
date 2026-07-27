@@ -26,6 +26,7 @@ import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import UiInput from '../components/ui/UiInput.vue'
 import UiSelect from '../components/ui/UiSelect.vue'
 import UiTabs from '../components/ui/UiTabs.vue'
+import { useLatestRequest } from '../composables/useLatestRequest.js'
 import type { RosterUser } from '../lib/roster.js'
 import { isAdmin, useMe, userId } from '../me.js'
 
@@ -82,10 +83,10 @@ function tabFilter(tab: StatusTabKey): { field: string; value: string | boolean 
 // newer request has already started (a debounced keystroke can race a click, and a tab/pager click can
 // race a slow response of its own) can be told apart from the one whose data should actually land. Only
 // the call holding the current value when its response arrives may write anything — its errors included.
-let latestRequestId = 0
+const latestRequest = useLatestRequest()
 
 async function load(): Promise<void> {
-  const requestId = ++latestRequestId
+  const isCurrent = latestRequest.begin()
   loading.value = true
   listError.value = null
   try {
@@ -107,7 +108,7 @@ async function load(): Promise<void> {
           : {}),
       },
     })
-    if (requestId !== latestRequestId) {
+    if (!isCurrent()) {
       // A newer load() has since started; this response is stale and must not touch state the newer
       // call already owns (or will own once it resolves).
       return
@@ -129,7 +130,7 @@ async function load(): Promise<void> {
       await load()
     }
   } finally {
-    if (requestId === latestRequestId) {
+    if (isCurrent()) {
       loading.value = false
     }
   }
@@ -164,7 +165,10 @@ watch(searchValue, () => {
   }, SEARCH_DEBOUNCE_MS)
 })
 
-onUnmounted(clearSearchDebounce)
+onUnmounted(() => {
+  clearSearchDebounce()
+  latestRequest.invalidate()
+})
 
 function prevPage(): void {
   if (loading.value || offset.value <= 0) {

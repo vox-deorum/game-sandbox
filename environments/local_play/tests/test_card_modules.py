@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 
 from hearts import rules as hearts_rules
-from local_play import card_spaces, card_utils
+from local_play import card_spaces, card_utils, shared_modules
 from spades import rules as spades_rules
 
 # -- the shared codec ------------------------------------------------------------------------
@@ -55,6 +55,47 @@ def test_rules_engines_keep_suit_and_rank_after_importing_shared_codec():
     # The Hearts engine's landmark cards stay put under the shared codec.
     assert hearts_rules.suit_of(hearts_rules.QUEEN_OF_SPADES) == hearts_rules.SPADES
     assert hearts_rules.rank_of(hearts_rules.QUEEN_OF_SPADES) == 10
+
+
+def test_shared_module_resolver_returns_the_local_modules():
+    """The resolver preserves the cached module identities that callers re-export."""
+    resolved_utils, resolved_spaces = shared_modules.resolve("card_utils", "card_spaces")
+    assert resolved_utils is card_utils
+    assert resolved_spaces is card_spaces
+
+
+def test_shared_module_resolver_falls_back_only_for_a_missing_candidate(monkeypatch: pytest.MonkeyPatch):
+    """A missing candidate falls through, while an unrelated dependency failure is preserved."""
+    monkeypatch.setattr(shared_modules, "_PACKAGES", ("missing_shared", "local_play"))
+    assert shared_modules.resolve("card_utils") == (card_utils,)
+
+    def missing_dependency(_name: str):
+        raise ModuleNotFoundError("No module named 'missing_dependency'", name="missing_dependency")
+
+    monkeypatch.setattr(shared_modules.importlib, "import_module", missing_dependency)
+    with pytest.raises(ModuleNotFoundError, match="missing_dependency"):
+        shared_modules.resolve("card_utils")
+
+
+def test_shared_module_resolver_preserves_an_internal_module_failure(monkeypatch: pytest.MonkeyPatch):
+    """A missing child imported by a requested module is a real dependency failure."""
+
+    def missing_internal(_name: str):
+        raise ModuleNotFoundError(
+            "No module named 'local_play.card_utils.internal'",
+            name="local_play.card_utils.internal",
+        )
+
+    monkeypatch.setattr(shared_modules.importlib, "import_module", missing_internal)
+    with pytest.raises(ModuleNotFoundError, match=r"local_play\.card_utils\.internal"):
+        shared_modules.resolve("card_utils")
+
+
+def test_shared_module_resolver_names_the_requested_modules_when_none_exist(monkeypatch: pytest.MonkeyPatch):
+    """The final error explains both the requested helper and the checked layouts."""
+    monkeypatch.setattr(shared_modules, "_PACKAGES", ("missing_one", "missing_two"))
+    with pytest.raises(ModuleNotFoundError, match="card_utils.*missing_one.*missing_two"):
+        shared_modules.resolve("card_utils")
 
 
 # -- the shared spaces -----------------------------------------------------------------------

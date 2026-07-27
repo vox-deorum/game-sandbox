@@ -31,6 +31,7 @@ def test_compose_template_has_base_and_env_files():
     assert (out / "agent.py").exists()  # from the colocated Flappy Bird layer
     assert (out / "sandbox" / "env" / "__init__.py").exists()  # generated during composition
     assert (out / "sandbox" / "card_utils.py").exists()  # generated shared helper
+    assert (out / "sandbox" / "shared_modules.py").exists()  # generated shared helper
 
 
 def test_composed_template_ships_relocated_harness_and_local_shim(monkeypatch: pytest.MonkeyPatch, capsys):

@@ -17,7 +17,6 @@ authoritative per-player penalty/leaderboard display lives in the overlay, not i
 
 from __future__ import annotations
 
-import importlib
 import random
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
@@ -30,35 +29,18 @@ from . import rules
 
 if TYPE_CHECKING:
     from game_sandbox_harness.environment import ParameterValue
-
-
-def _shared_card_modules() -> tuple[Any, Any]:
-    """Return the shared ``(card_utils, card_spaces)`` modules under whichever name this file runs as.
-
-    One source syncs into two layouts: :mod:`local_play` inside the environments package,
-    ``sandbox`` in a composed template. A :class:`ModuleNotFoundError` naming the absent candidate
-    package is swallowed; one naming a real dependency is re-raised. Mirrors
-    ``hearts.rules._shared_card_utils``.
-    """
-    for package in ("local_play", "sandbox"):
-        try:
-            card_utils = importlib.import_module(f"{package}.card_utils")
-            card_spaces = importlib.import_module(f"{package}.card_spaces")
-        except ModuleNotFoundError as exc:
-            missing = exc.name or ""
-            if missing == package or missing.startswith(f"{package}."):
-                continue
-            raise
-        else:
-            return card_utils, card_spaces
-    raise ModuleNotFoundError("no shared card_utils/card_spaces found (tried local_play, sandbox)")
-
-
-if TYPE_CHECKING:  # pyright sees the real modules; this branch never executes at runtime
     from local_play import card_spaces as _card_spaces
     from local_play import card_utils as _card_utils
+    from local_play.shared_modules import resolve
 else:
-    _card_utils, _card_spaces = _shared_card_modules()
+    try:
+        from local_play.shared_modules import resolve
+    except ModuleNotFoundError as exc:
+        if exc.name not in {"local_play", "local_play.shared_modules"}:
+            raise
+        from sandbox.shared_modules import resolve
+
+    _card_utils, _card_spaces = resolve("card_utils", "card_spaces")
 
 card_to_obj = _card_utils.card_to_obj
 HAND = _card_spaces.HAND
