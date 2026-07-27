@@ -2,7 +2,7 @@
  * Unit coverage for the pure matchmaking scheduler (Stage 6.2 plus the Stage 7 multi-seat expansion).
  *
  * No Docker, no DB. The Stage 6.2 contract is the single-submission-seat Flappy Bird case, the
- * always-present Naive baseline, seed round-robin, deterministic re-runs, and the typed guards. The
+ * always-present Naive baseline, seed round-robin, and deterministic re-runs. The
  * Stage 7 additions are the `seat_order_matters` ordered-vs-unordered expansion over Hearts' real
  * four seats, the `K = 1` reduction to the single-seat path, the `N < K` four-seat baseline-only
  * fallthrough, multi-seat determinism, and the repeated-ref self-play property checked on
@@ -14,7 +14,6 @@ import { describe, expect, it } from 'vitest'
 import {
   buildSchedule,
   resolveSeats,
-  ScheduleError,
   type SubmissionRef,
 } from '../../src/scheduler/build-schedule.js'
 import type { MatchConfig } from '../../src/storage/season-config.js'
@@ -294,7 +293,7 @@ describe('resolveSeats - self-play repeated ref', () => {
   })
 })
 
-describe('buildSchedule - match composition and guards', () => {
+describe('buildSchedule - match composition', () => {
   it.each([
     false,
     true,
@@ -387,28 +386,5 @@ describe('buildSchedule - match composition and guards', () => {
     })
     expect(schedule.map((g) => g.game_index)).toEqual([0, 1, 2, 3])
     expect(schedule.map((g) => g.match_index)).toEqual([0, 0, 0, 1])
-  })
-
-  const badMatches: Array<[string, MatchConfig]> = [
-    ['zero_seats', { seats: [], seeds: [1], games: 1 }],
-    ['empty_seeds', { seats: ['submission'], seeds: [], games: 1 }],
-    ['non_positive_games', { seats: ['submission'], seeds: [1], games: 0 }],
-  ]
-  it.each(badMatches)('rejects %s with a typed ScheduleError', (reason, badMatch) => {
-    const run = () =>
-      buildSchedule({
-        matches: [badMatch],
-        submissions: subs(1),
-        seatOrderMatters: false,
-        seatPlan: 'solo',
-      })
-    expect(run).toThrow(ScheduleError)
-    try {
-      run()
-    } catch (err) {
-      expect(err).toBeInstanceOf(ScheduleError)
-      expect((err as ScheduleError).reason).toBe(reason)
-      expect((err as ScheduleError).matchIndex).toBe(0)
-    }
   })
 })

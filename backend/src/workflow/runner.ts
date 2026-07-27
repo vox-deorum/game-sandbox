@@ -6,9 +6,8 @@
  * not block on the validation pipeline. The route persists the resolved schedule with a `pending`
  * run row and hands the run id to a {@link WorkflowRunner}; the runner drives the persisted games to
  * a terminal state out of band, emitting the {@link RunEvent}s the WebSocket route relays. This module
- * owns only the *seam* — the interface, its event shapes, and the reconcile. Stage 6.4 provides the
- * real Docker-backed implementation; Stage 6.3 ships a {@link createPlaceholderRunner} so the process
- * wires cleanly and a stub in tests, so the routes, gating, and streaming are proven Docker-free.
+ * owns only the *seam*, its event shapes, and the reconcile. The Docker-backed implementation uses this
+ * interface in production, while tests use a stub so routes, gating, and streaming are proven Docker-free.
  */
 import type { Storage } from '../storage/index.js'
 import type { GameStatus, RunStatus } from '../storage/schema.js'
@@ -110,34 +109,4 @@ export async function reconcileInterruptedRuns(
     log(`reconciled ${stranded.length} interrupted workflow run(s) to failed`)
   }
   return stranded.length
-}
-
-/**
- * The Stage 6.3 placeholder runner wired into the live process until Stage 6.4 lands the Docker-backed
- * one. It accepts enqueues (the run stays `pending` — nothing executes yet), marks a cancel request
- * `cancelled` so the gate is real, and emits no live events. Every admin route works end to end against
- * it; only the actual container execution is absent.
- */
-export function createPlaceholderRunner(
-  storage: Storage,
-  log: (message: string) => void = () => {},
-): WorkflowRunner {
-  return {
-    enqueue(runId: string): void {
-      log(
-        `workflow runner not yet implemented (Stage 6.4): run ${runId} persisted and left pending; no containers launched`,
-      )
-    },
-    cancel(runId: string): void {
-      void storage
-        .setRunStatus(runId, 'cancelled', 'cancelled by operator')
-        .catch((error) => log(`run ${runId}: cancel failed: ${String(error)}`))
-    },
-    shutdown(): Promise<void> {
-      return Promise.resolve()
-    },
-    subscribe(): () => void {
-      return () => {}
-    },
-  }
 }

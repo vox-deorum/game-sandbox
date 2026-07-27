@@ -2,7 +2,7 @@
 
 Status: complete.
 
-Part of [Stage 11](../stage-11-semantic-contract.md). This non-breaking step proves the observation design, adds shared card modules, and changes timeout defaults to return the action actually played. Production environment observations do not change until step 2.
+Part of [Stage 11](../stage-11-semantic-contract.md). This non-breaking step adds shared card modules and changes timeout defaults to return the action actually played. Production environment observations do not change until step 2, where the shared conformance suite validates the resulting observation design.
 
 ## Shared card modules
 
@@ -16,11 +16,11 @@ Add `card_utils.py` and `card_spaces.py` to `TEMPLATE_BASE_MODULES`. During comp
 
 ## PettingZoo compatibility and the api_test #1211 workaround
 
-Add a focused test environment or test fixture with the intended nested card observation: a top-level `spaces.Dict` whose inner `observation` Dict holds the semantic `Discrete`, `Sequence`, and `Box` fields, beside a top-level `action_mask`. This is the established masked-observation wrapper, and `action_mask` stays where masked sampling expects it.
+The production card environments publish a top-level `spaces.Dict` whose inner `observation` Dict holds the semantic `Discrete`, `Sequence`, and `Box` fields beside a top-level `action_mask`. This is the established masked-observation wrapper, and `action_mask` stays where masked sampling expects it.
 
-Pinned PettingZoo 1.26.1 carries a known, open api_test bug ([PettingZoo#1211](https://github.com/Farama-Foundation/PettingZoo/issues/1211)): for a composite inner `observation`, `api_test` evaluates `observation_space(agent)["observation"].dtype` and raises `AttributeError: 'dict' object has no attribute 'dtype'`, alongside the `"Observation is not a NumPy array"` and `"should be box or discrete"` UserWarnings. CI absorbs that one failure, and the observation keeps its designed shape.
+Pinned PettingZoo 1.26.1 carries a known, open api_test bug ([PettingZoo#1211](https://github.com/Farama-Foundation/PettingZoo/issues/1211)): for a composite inner `observation`, `api_test` evaluates `observation_space(agent)["observation"].dtype` and raises `AttributeError: 'dict' object has no attribute 'dtype'`, alongside the `"Observation is not a NumPy array"` and `"should be box or discrete"` UserWarnings. CI absorbs a matching failure, and the observation keeps its designed shape.
 
-Encode the tolerance in the test harness, not the environment: wrap `pettingzoo.test.api_test` in a guard that treats exactly the #1211 `AttributeError` (and its two warnings) as expected and re-raises anything else as a real conformance failure. Link the issue and leave a TODO to delete the guard once a fixed PettingZoo ships. The proof must also validate representative empty and populated sequences with `contains()` and cover the terminal dead-step cycle before any production environment adopts the contract.
+Encode the tolerance in the shared production conformance test, not an environment: wrap `pettingzoo.test.api_test` in a guard that filters the two related warnings, tolerates an `AttributeError` whose message contains `dtype`, and re-raises other `AttributeError`s. Focused shared-module tests validate representative empty and populated sequences with `contains()`, while production environment tests cover complete episodes and the terminal dead-step cycle.
 
 ## Real timeout actions
 
@@ -36,7 +36,7 @@ The harness boundary continues checking `action_space(slot).contains(action)` an
 
 - Round-trip all 52 cards through the shared codec and pin the queen of spades example.
 - Confirm Hearts and Spades retain their existing suit and rank behavior after importing the shared module.
-- Run pinned PettingZoo `api_test` against the nested composite fixture through the #1211 guard and verify `observation_space.contains()` for its semantic values.
+- Run pinned PettingZoo `api_test` against the production environments through the shared #1211 guard, and verify the shared spaces accept representative semantic values.
 - Update harness fakes and tests for the two-argument default hook.
 - Prove that a timeout provider receives the live environment and slot id and that its returned integer is recorded.
 - Run generation freshness after syncing both new modules.
@@ -44,4 +44,4 @@ The harness boundary continues checking `action_space(slot).contains(action)` an
 
 ## Done when
 
-The nested composite observation design is validated against pinned PettingZoo before production adoption, with the known api_test #1211 error tolerated behind a documented guard. Shared card rules remain dependency-free, template copies are current, timeout recordings contain real actions, compatibility sentinels still support existing direct callers, and the Python and generation checks are green.
+The production observation design is validated against pinned PettingZoo, with the known api_test #1211 error tolerated behind a documented shared guard. Shared card rules remain dependency-free, template copies are current, timeout recordings contain real actions, compatibility sentinels still support existing direct callers, and the Python and generation checks are green.

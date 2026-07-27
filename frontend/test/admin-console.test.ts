@@ -646,12 +646,15 @@ describe('AdminConsolePage', () => {
     expect(screen.getByText(/along with its existing runs and boards/)).toBeInTheDocument()
   })
 
-  it('writes the visible LLM access and limit controls while preserving stored prices', async () => {
+  it('writes visible controls while dropping script-only caps and prices', async () => {
     const withLlm = season({
       config: {
         deps_version: 1,
         matches: [{ seats: ['submission'], seeds: [0], games: 1 }],
-        overrides: { llm: { enabled: false, cost_weights: { medium: 2.5 } } },
+        overrides: {
+          messaging: { message_cap: 80 },
+          llm: { enabled: false, cost_weights: { medium: 2.5 } },
+        },
       },
     })
     vi.mocked(getAdminSeason).mockResolvedValue(adminView({ season: withLlm }))
@@ -670,10 +673,10 @@ describe('AdminConsolePage', () => {
 
     await waitFor(() => expect(vi.mocked(configureSeason)).toHaveBeenCalled())
     const savedConfig = vi.mocked(configureSeason).mock.calls[0]?.[1]
+    expect(savedConfig?.overrides?.messaging).toBeUndefined()
     expect(savedConfig?.overrides?.llm).toEqual({
       enabled: true,
       models: ['medium', 'small'],
-      cost_weights: { medium: 2.5 },
       official: { token_budget: 10_000, rate_limit_rpm: 30 },
       development: { token_budget: 20_000, rate_limit_rpm: 15 },
     })
@@ -697,27 +700,6 @@ describe('AdminConsolePage', () => {
 
     expect(
       await screen.findByText(/development token budget must be a positive integer/),
-    ).toBeInTheDocument()
-    expect(vi.mocked(configureSeason)).not.toHaveBeenCalled()
-  })
-
-  it('rejects an invalid stored model token price before saving', async () => {
-    vi.mocked(getAdminSeason).mockResolvedValue(
-      adminView({
-        season: season({
-          config: {
-            deps_version: 1,
-            matches: [{ seats: ['submission'], seeds: [0], games: 1 }],
-            overrides: { llm: { cost_weights: { large: 1_000_001 } } },
-          },
-        }),
-      }),
-    )
-    await renderConsole()
-    await fireEvent.click(await screen.findByRole('button', { name: 'Save configuration' }))
-
-    expect(
-      await screen.findByText(/large model token price must be a positive finite number/),
     ).toBeInTheDocument()
     expect(vi.mocked(configureSeason)).not.toHaveBeenCalled()
   })

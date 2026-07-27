@@ -54,12 +54,10 @@ def extract_overlay(env: Any) -> dict[str, Any]:
     The returned dict is fully JSON-serializable (ints, bools, lists, dicts, ``None``): cards
     become ``{"suit","rank"}`` objects and trick pairs become play-ordered ``{"player","card"}``
     objects. It carries both the play state and everything the badges/score line draw: per-player
-    ``bids`` (``-1`` until a player has bid) and ``tricks_won``, and three views of the score for two
+    ``bids`` (``-1`` until a player has bid) and ``tricks_won``, and three score fields for two
     surfaces. The two-element ``team_scores`` feeds the browser renderer. The per-player
-    ``display_scores`` and ``leaderboard_scores``
-    (each player carrying its team's score, so partners share) feed the browser game-over standings,
-    which ranks players by ``leaderboard_scores`` and shows ``display_scores``; the two are equal for
-    Spades, kept as a pair so the overlay matches the Hearts shape that surface also consumes.
+    ``display_scores`` and ``leaderboard_scores`` overlay keys both carry the leaderboard score so the
+    browser game-over standings can use the shared shape it also consumes for Hearts.
     ``legal_cards``/``legal_bids`` are the phase-legal sets for the player on turn, both empty once
     the hand is terminal, and are what the browser renderer greys from.
     """
@@ -85,7 +83,7 @@ def extract_overlay(env: Any) -> dict[str, Any]:
         "tricks_played": int(state.tricks_played),
         "tricks_won": [int(t) for t in state.tricks_won],
         "team_scores": rules.hand_team_scores(state),
-        "display_scores": rules.display_scores(state),
+        "display_scores": rules.leaderboard_scores(state),
         "leaderboard_scores": rules.leaderboard_scores(state),
         "legal_cards": (
             [] if terminal or bidding else [card_to_obj(c) for c in rules.legal_plays(state, state.turn)]

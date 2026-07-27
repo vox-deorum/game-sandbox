@@ -23,24 +23,6 @@ export type { SubmissionRef } from '../storage/schema.js'
 /** The shared built-in baseline seat ref. It is not a submission row. */
 const NAIVE: AgentRef = { kind: 'builtin-naive' }
 
-/** The typed rejection reasons. Each names a structurally invalid match the codec also rejects. */
-export type ScheduleErrorReason = 'zero_seats' | 'empty_seeds' | 'non_positive_games'
-
-/**
- * Thrown when a match configuration is structurally unrunnable. The {@link SeasonConfig} codec
- * already rejects these at write time; the scheduler guards again so a hand-built or corrupted
- * snapshot fails loudly here rather than producing a partial schedule.
- */
-export class ScheduleError extends Error {
-  constructor(
-    readonly reason: ScheduleErrorReason,
-    readonly matchIndex: number,
-  ) {
-    super(`match ${matchIndex}: ${reason}`)
-    this.name = 'ScheduleError'
-  }
-}
-
 /** Inputs to {@link buildSchedule}: the match design, the live roster, and the seat-order capability. */
 export interface BuildScheduleInput {
   /** The season's match configurations, in order; the `match_index` is the array index. */
@@ -80,11 +62,6 @@ export function buildSchedule(input: BuildScheduleInput): ScheduledGameInput[] {
   let gameIndex = 0
 
   matches.forEach((match, matchIndex) => {
-    // Defensive guards; the codec enforces these too (see season-config.ts).
-    if (match.seats.length === 0) throw new ScheduleError('zero_seats', matchIndex)
-    if (match.seeds.length === 0) throw new ScheduleError('empty_seeds', matchIndex)
-    if (match.games <= 0) throw new ScheduleError('non_positive_games', matchIndex)
-
     const k = match.seats.filter((spec) => spec === 'submission').length
 
     const emit = (seats: AgentRef[]): void => {

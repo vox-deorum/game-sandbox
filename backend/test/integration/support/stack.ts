@@ -20,10 +20,10 @@ import { openSqlite } from '../../../src/storage/sqlite.js'
 import { SubmissionSnapshotStore } from '../../../src/submission/snapshot-store.js'
 import { createSubmissionSource } from '../../../src/submission/source/index.js'
 import { ValidationWorker } from '../../../src/submission/worker.js'
-import { createPlaceholderRunner } from '../../../src/workflow/runner.js'
 import { makeTestAuth, type TestUsers } from '../../support/auth.js'
 import { TEST_AUTH_OPTIONS } from '../../support/auth-options.js'
 import { makeTestLlmOptions } from '../../support/llm-options.js'
+import { StubWorkflowRunner } from '../../support/stub-runner.js'
 
 export interface Stack {
   httpBase: string
@@ -121,7 +121,7 @@ export async function startStack(overrides: Partial<Config> = {}): Promise<Stack
     auth,
     userDirectory,
     knownDepsVersions: KNOWN_DEPS_VERSIONS,
-    workflowRunner: createPlaceholderRunner(storage),
+    workflowRunner: new StubWorkflowRunner(storage),
     storage,
     submissionSource,
     submissionSnapshots: snapshots,

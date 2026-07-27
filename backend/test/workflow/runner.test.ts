@@ -1,6 +1,6 @@
 /**
  * The workflow-runner seam (Stage 6.3): the startup reconcile that fails a run a process death left
- * non-terminal, and the placeholder runner's cancel. Docker-free against `:memory:` storage.
+ * non-terminal. Docker-free against `:memory:` storage.
  */
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -16,7 +16,7 @@ import type { Storage } from '../../src/storage/index.js'
 import { openSqliteStorage } from '../../src/storage/sqlite.js'
 import { SubmissionSnapshotStore } from '../../src/submission/snapshot-store.js'
 import type { SubmissionSource } from '../../src/submission/source/index.js'
-import { createPlaceholderRunner, reconcileInterruptedRuns } from '../../src/workflow/runner.js'
+import { reconcileInterruptedRuns } from '../../src/workflow/runner.js'
 import { createWorkflowRunner } from '../../src/workflow/workflow-runner.js'
 import { FakeDriver } from '../support/fake-driver.js'
 import { createRunOrFail } from '../support/harness.js'
@@ -94,15 +94,6 @@ describe('workflow runner seam', () => {
     const completed = await makeRun()
     await storage.setRunStatus(completed, 'completed')
     expect(await reconcileInterruptedRuns(storage)).toBe(0)
-  })
-
-  it('placeholder cancel marks the run cancelled in storage', async () => {
-    const runId = await makeRun()
-    const runner = createPlaceholderRunner(storage)
-    runner.cancel(runId)
-    // The cancel write is fire-and-forget; let the microtask settle.
-    await new Promise((resolve) => setImmediate(resolve))
-    expect((await storage.getRun(runId))?.status).toBe('cancelled')
   })
 
   it('fails a run with an incomplete frozen parameter snapshot before launching a container', async () => {

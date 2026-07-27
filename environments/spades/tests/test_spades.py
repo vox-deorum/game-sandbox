@@ -442,11 +442,6 @@ def test_leaderboard_scores_partner_identical_higher_better_and_int16():
     assert all(-32768 <= score <= 32767 for score in [*lb, -260])
 
 
-def test_display_scores_equal_leaderboard_scores():
-    state = _terminal_state([4, 2, 0, 3], [3, 4, 2, 4])
-    assert rules.display_scores(state) == rules.leaderboard_scores(state)
-
-
 # -- default action --------------------------------------------------------------------------
 
 

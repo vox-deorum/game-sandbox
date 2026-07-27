@@ -393,15 +393,3 @@ def leaderboard_scores(state: SpadesState) -> list[int]:
     """
     scores = hand_team_scores(state)
     return [scores[team_of(player)] for player in range(NUM_PLAYERS)]
-
-
-def display_scores(state: SpadesState) -> list[int]:
-    """Return the per-player display score: the player's team hand score, one value per player.
-
-    Identical values to :func:`leaderboard_scores` (the raw team score is already higher-is-better).
-    The browser game-over standings shows this per-player value (and ranks by :func:`leaderboard_scores`),
-    while the browser renderer reads the two-element :func:`hand_team_scores`. Surfaced
-    per player, partners sharing, so that player-indexed surface can index it directly and the overlay
-    matches the Hearts shape.
-    """
-    return leaderboard_scores(state)
