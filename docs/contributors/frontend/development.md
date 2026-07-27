@@ -40,7 +40,7 @@ When making a change:
 1. Confirm the intended behavior in the relevant specification.
 2. Keep route orchestration in a page, reusable UI in a component, and reusable stateful behavior in a composable.
 3. Add backend calls to the typed API clients instead of calling `fetch` from components.
-4. Update unit and Playwright tests when UI behavior, structure, labels, or flows change.
+4. Update the jsdom and Playwright tests with any UI change, as [Testing](../testing/index.md#browser-end-to-end) requires.
 5. Run `npm run check`, `npm test`, and `npm run build`.
 
 After a UI change, also run the browser suite from the repository root. It requires a running Docker daemon:
@@ -81,4 +81,4 @@ Do not add environment-specific behavior to shared pages. Implement it in the en
 
 ### In-app documentation
 
-The Documentation page renders shared guides from `docs/students/` and virtual environment pages backed by `environments/<env>/environment.md`. Markdown compatibility and link rewriting live in `docs/markdown.ts`. Product documentation outside the student collection is linked to its source rather than served in the app.
+The Documentation page's product behavior, including which pages it serves, is specified in [the frontend specification](../../specs/frontend.md). Markdown compatibility and link rewriting live in `frontend/src/docs/markdown.ts`. Product documentation outside the student collection is linked to its source rather than served in the app.

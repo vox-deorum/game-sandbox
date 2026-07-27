@@ -42,25 +42,7 @@ python -m sandbox setup      # just (re)install dependencies into .venv
 
 Useful extra flags pass straight through, e.g. `python -m sandbox play --seed 7` or `python -m sandbox human --player 2` to play a different player.
 
-Prefer to manage the virtual environment yourself? Create and activate one, install the requirements, then use the same commands.
-
-On Windows PowerShell:
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt -r requirements-dev.txt
-```
-
-On macOS or Linux:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.txt -r requirements-dev.txt
-```
-
-See Python's [virtual environment guide](https://docs.python.org/3/tutorial/venv.html) if this is your first time using one.
+Prefer to manage the virtual environment yourself? Create and activate one inside the project, install `requirements.txt` and `requirements-dev.txt`, then use the same commands. The [getting started guide]({{DOCS_URL}}students/getting-started/) walks through this step by step.
 
 ## Write the agent
 
@@ -71,17 +53,16 @@ Open `agent.py` and implement:
 
 Everything specific to Spades is in [`environment.md`](environment.md), the reference shipped alongside this README: it walks through the starting agent you already have, then covers the rules, the action encoding for both phases, every observation field, the `sandbox.cards` helpers that decode them, the scoring, and the time limits. Read it before you start; it is all you need to build the agent.
 
-One optional method is available:
+Two optional methods are available:
 
 - `learn(observation, action, reward, terminated)` updates a learning agent after a step.
+- `chat(inbox)` sends and receives messages. Spades enables messaging, and `agent.py` includes a commented-out `chat` hook to start from.
 
-Leave it out when you do not use it.
+Leave an optional method out when you do not use it.
 
 The template already plays. `agent.py` ships a small working agent that bids one trick and then plays its lowest-ranked legal card, so `python -m sandbox test` passes and `python -m sandbox play` works before you change anything. The `TODO(you)` comment inside `act` marks where to start improving it. Run `python -m sandbox play` to watch your agent play against the built-in opponents, and `python -m sandbox` to play yourself.
 
 ## Save work to GitHub
-
-Git stores project history as **commits**. A typical save cycle is:
 
 ```console
 git status
@@ -90,13 +71,11 @@ git commit -m "Implement Spades agent"
 git push
 ```
 
-Review `git status` before adding files, and never add `.env` or an API key. See GitHub's [About Git guide](https://docs.github.com/en/get-started/using-git/about-git) if these commands are new.
+Review `git status` before adding files, and never add `.env` or an API key. The [getting started guide]({{DOCS_URL}}students/getting-started/) explains each command.
 
 ## Submit
 
-Submit the repository URL through the course website. Game Sandbox pins one exact commit, validates the repository, and prepares a runnable image.
-
-Submitting again while the season is open replaces the active submission and keeps the earlier submission in history.
+Submit the repository URL through the course website. Game Sandbox pins one exact commit, and submitting again while the season is open replaces the active submission. The [submitting guide]({{DOCS_URL}}students/submitting/) covers validation and common errors.
 
 ## Optional LLM API
 

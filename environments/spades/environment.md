@@ -145,6 +145,8 @@ The module provides these helpers and constants:
 | `make_card(suit, rank)` | A card object `{"suit": suit, "rank": rank}` from a suit ID and face-value rank |
 | `card_name(card)` | Readable text such as `"A of spades"` |
 | `CLUBS`, `DIAMONDS`, `SPADES`, `HEARTS` | Names for suit IDs `0`, `1`, `2`, and `3` |
+| `SUIT_NAMES` | Suit names indexed by suit ID, `("clubs", "diamonds", "spades", "hearts")`; the `signaler` example uses this to build and parse chat text about suits |
+| `RANK_NAMES` | Rank names indexed by face-value rank; `RANK_NAMES[rank_of(card)]` gives `"2"` through `"10"`, then `"J"`, `"Q"`, `"K"`, `"A"` |
 | `NIL_BID`, `BID_OFFSET` | The nil bid (`0`) and the bid action offset (`52`) |
 
 ## Under the hood

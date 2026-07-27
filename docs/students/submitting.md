@@ -10,16 +10,7 @@ First, run the local checks:
 python -m sandbox test
 ```
 
-Then create a Git commit and push it to GitHub:
-
-```console
-git status
-git add agent.py
-git commit -m "Prepare agent submission"
-git push
-```
-
-Check `git status` and add only the project files you intend to submit. Never add `.env` or an API key. If you changed another safe project file, add it by name before committing. If Git reports that there is nothing to commit, your latest changes are already saved in a commit. See GitHub's [pushing guide](https://docs.github.com/en/get-started/using-git/pushing-commits-to-a-remote-repository) if `git push` is new to you.
+Then commit and push your work as shown in [Getting started, step 6](getting-started.md#6-save-your-work-on-github). Add only the project files you intend to submit, never `.env` or an API key. If Git reports that there is nothing to commit, your latest changes are already saved in a commit.
 
 ## Submit through the website
 

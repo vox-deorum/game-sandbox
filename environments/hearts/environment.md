@@ -12,7 +12,7 @@ This environment uses these Hearts rules:
 
 - The player holding the two of clubs leads it on the first trick.
 - No heart or queen of spades may be played on the first trick unless the player has no other kind of card.
-- A player may not lead a heart until hearts are **broken**, which means someone played a heart on an earlier trick. The queen of spades does not break hearts in this variant.
+- A player may not lead a heart until hearts are **broken**, which means someone played a heart on an earlier trick. The one exception is a hand that holds nothing but hearts, which may lead one. The queen of spades does not break hearts in this variant.
 
 You do not need to program these rules yourself. Every observation contains an **action mask**, an array that marks which cards are legal on the current turn.
 
@@ -120,6 +120,8 @@ The module provides these helpers and constants:
 | `my_player(observation)` | Your player ID |
 | `scores(observation)` | Four running penalty scores indexed by player |
 | `CLUBS`, `DIAMONDS`, `SPADES`, `HEARTS` | Names for suit IDs `0`, `1`, `2`, and `3` |
+| `SUIT_NAMES` | Suit names indexed by suit ID, `("clubs", "diamonds", "spades", "hearts")`, useful for printing or chat text |
+| `RANK_NAMES` | Rank names indexed by face-value rank; `RANK_NAMES[rank_of(card)]` gives `"2"` through `"10"`, then `"J"`, `"Q"`, `"K"`, `"A"` |
 | `TWO_OF_CLUBS`, `QUEEN_OF_SPADES` | The card objects `{"suit": 0, "rank": 2}` and `{"suit": 2, "rank": 12}` |
 
 ## Under the hood
@@ -185,7 +187,7 @@ Read these through `observation["observation"]`, for example `observation["obser
 
 #### How player numbers work
 
-Player IDs label the PettingZoo positions rather than fixed screen positions. Player `0` controls `player_0`, player `1` controls `player_1`, and so on. Turns move clockwise. A platform **seat** is a separate assignment unit that currently covers one player in Hearts:
+Player IDs label the PettingZoo positions rather than fixed screen positions. Player `0` controls `player_0`, player `1` controls `player_1`, and so on. Turns move clockwise:
 
 ```text
 0 → 1 → 2 → 3 → 0

@@ -15,7 +15,7 @@ Read this page before changing the interface. See [Frontend](development.md) for
 3. Add every primitive variant to `/styleguide`.
 4. Preserve the accessibility baseline.
 5. Confirm a new visual pattern or open design decision with the owner.
-6. Update jsdom and Playwright coverage for every UI change.
+6. Update jsdom and Playwright coverage for every UI change, as [Testing](../testing/index.md#browser-end-to-end) requires.
 
 ## Design principles
 
@@ -69,9 +69,11 @@ The primitives live in `frontend/src/components/ui/`, PascalCase with a `Ui` pre
 | `UiStatusBadge` | Live status: a colored dot **paired with a text label** that carries the meaning. |
 | `UiCard` | A bordered surface (optional padding, optional interactive hover). Layout inside is the caller's. |
 | `UiField` + `UiInput` + `UiTextarea` | Labelled single-line and multiline fields with automatic `id`/`aria-describedby` wiring for hint and error text. |
+| `UiSelect` | A native `<select>` styled to match `UiInput`, paired with `UiField` for label wiring. Options render through the default slot. |
 | `UiDialog` | The modal dialog (focus trap, escape, focus restore, `aria-modal`), wrapping Reka UI Dialog. |
 | `UiDialogActions` | The shared right-aligned, wrapping footer for dialog actions. Use it for confirmations, with the consequential action first and a ghost Cancel control second. |
 | `UiSlider` | The replay scrubber (keyboard operation and value announcement), wrapping Reka UI Slider. |
+| `UiTabs` | A single-select tab strip for filters and section switches that are not routes, following the WAI-ARIA roving-tabindex pattern. |
 | `UiMeter` | Read-only progress with a required visible text value. First used for LLM development budgets. |
 | `UiCheckboxGroup` | A labelled fieldset for selecting zero or more string options, with options emitted in their declared order. |
 | `UiTooltip` | A quiet underlined trigger with a detail bubble on hover, focus, or click. The bubble teleports to the body, so it escapes a table cell or a scrolling log, and mounts nothing while closed. `inspectable` turns the trigger into an `inspect` emit for a caller that opens a fuller view instead. |
@@ -99,7 +101,7 @@ See the [frontend contributor guide](development.md#navigation).
 
 The breakpoints are 480px, 768px, and 1024px. They are plain values because CSS custom properties cannot parameterize media queries.
 
-The design began desktop-first but must remain usable at narrow widths:
+The layout must stay usable from narrow phone widths through wide desktops:
 
 - The home grid flows with `auto-fill`.
 - The environment thumbnail moves below its description.

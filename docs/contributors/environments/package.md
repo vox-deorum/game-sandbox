@@ -52,7 +52,13 @@ The session loop reads `pace_interval_ms` instead of branching on the game type.
 
 Declare gameplay parameters with the frozen `EnvParameter` and `EnvParameterChoice` dataclasses from `game_sandbox_harness.environment`. Names use snake_case, must be unique, and cannot be `players` or `seat_plan`. Numeric parameters declare inclusive bounds. Choice values are stable non-empty strings with separate friendly labels.
 
-The factory must use the values it owns. Read resolved integer parameters with `int_parameter` from `game_sandbox_harness.environment`, which rejects missing values, booleans, non-integers, and integers outside the JSON-safe range at runtime. Do not use `assert` for parameter validation because optimized Python removes assertions. A module copied into the composed `sandbox.env` package cannot import the harness at runtime, so give it an equivalent local helper or a runtime-safe shared helper. A fixed-player factory must explicitly reject a `players` value that disagrees with its construction. For example, Flappy Bird validates that `players` is `1`, narrows `pipe_gap` as an integer, and passes that value to its game constructor. An environment with flexible player bounds reads `players` when it creates `possible_agents`. An environment with declared plans reads `seat_plan` and uses the resolved plan's player count. The harness validates and normalizes the map before calling the factory, then verifies that the resulting agent count matches the resolved layout.
+The factory must use the values it owns:
+
+- Read resolved integer parameters with `int_parameter` from `game_sandbox_harness.environment`, which rejects missing values, booleans, non-integers, and integers outside the JSON-safe range at runtime. Do not use `assert` for parameter validation because optimized Python removes assertions.
+- A module copied into the composed `sandbox.env` package cannot import the harness at runtime, so give it an equivalent local helper or a runtime-safe shared helper.
+- A fixed-player factory must explicitly reject a `players` value that disagrees with its construction. Flappy Bird, for example, validates that `players` is `1`, narrows `pipe_gap` as an integer, and passes that value to its game constructor.
+- An environment with flexible player bounds reads `players` when it creates `possible_agents`. An environment with declared plans reads `seat_plan` and uses the resolved plan's player count.
+- The harness validates and normalizes the map before calling the factory, then verifies that the resulting agent count matches the resolved layout.
 
 Use `effective_parameters(meta)` when a consumer needs declarations including the synthesized layout parameter, and use `resolve_parameters(meta, overrides)` before constructing an environment outside the session harness. Do not build a partial map by hand.
 

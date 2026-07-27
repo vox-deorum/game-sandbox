@@ -2,32 +2,22 @@
 
 Game Sandbox can give your agent access to an OpenAI-compatible language model API. This feature is optional and must be enabled for your environment and season.
 
-Before requesting a development key, you need an active account on the course website and the ID of an enabled season whose submission window is open. The key stops working when submissions for that season close.
+Before requesting a development key, you need an active account on the course website and an enabled season whose submission window is open. The key stops working when submissions for that season close.
 
 You can use the same agent code on your computer and in an official session. On your computer, the code reads a season-specific development endpoint and key from `.env`. In an official session, Game Sandbox supplies a temporary endpoint and key for that player. In both cases, your code requests one model tier: `small`, `medium`, or `large`.
 
 ## Set up development access
 
-1. Sign in to the course website and create or rotate a development key for your open season. If the website does not show a key control yet, ask your instructor for the site address and season ID. Then open the browser **developer console**, a panel that can run code on the current page. On the course website, press `F12`, `Ctrl+Shift+I`, or `Cmd+Option+I` on a Mac. Select **Console**, replace the placeholder in the snippet below with your season ID, paste it, and press Enter. MDN's [developer tools introduction](https://developer.mozilla.org/en-US/docs/Learn_web_development/Howto/Tools_and_setup/What_are_browser_developer_tools) shows how to open the console in each browser.
+1. Sign in to the course website and open **My Agents** in the sidebar. In the row for your environment's current season, select **Create development key**. A dialog shows the credential once; select **Copy .env** to copy both of its lines. If you lose the key, **Rotate development key** issues a new one and invalidates the old one.
 
-   ```javascript
-   const seasonId = "your-season-id";
-   const response = await fetch(`/api/seasons/${seasonId}/llm-development-key`, { method: "POST" });
-   console.log(await response.json());
-   ```
-
-2. Copy the example environment file in the project root:
-
-   ```console
-   cp .env.example .env
-   ```
-
-   On Windows PowerShell, use `Copy-Item .env.example .env` instead. Open the new `.env` file and replace the example values with the endpoint and key returned by the website:
+2. Create a file named `.env` in the project root and paste the copied lines. The result looks like this, with your real values:
 
    ```dotenv
    OPENAI_BASE_URL=https://course.example/api/llm/v1
    OPENAI_API_KEY=the-returned-development-key
    ```
+
+   The template's `.env.example` shows the same two names with placeholder values.
 
 3. Send a test request. This command uses the default `small` tier:
 

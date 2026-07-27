@@ -24,6 +24,7 @@ Browser
 | `src/app.ts` | Fastify application, HTTP routes, WebSocket endpoints, static frontend |
 | `src/config.ts` | Parse environment variables into one typed `Config` |
 | `src/identity.ts` | Resolve the authenticated session, derive status, and expose the guard trio (`requireUser`/`requireActive`/`requireAdmin`) |
+| `src/auth/` | Better Auth wiring, GitHub account linking, public attribution reads |
 | `src/environments.ts` | Load generated environment metadata |
 | `src/storage/` | Kysely schema, domain interface, SQLite implementation, migration |
 | `src/driver/` | Execution-driver interface and Docker implementation |
@@ -173,11 +174,14 @@ Cookies ride HTTP fetches, WebSocket upgrades, and native download navigations o
 
 ### GitHub account linking
 
-`auth/auth.ts` enables Better Auth account linking for the trusted GitHub provider. An implicit link requires the provider email to match an existing verified local email. The admin create path and bootstrap seed mark credential accounts verified, and the auth migration idempotently backfills that attestation for credential accounts created before linking support.
+`auth/auth.ts` enables Better Auth account linking for the trusted GitHub provider:
 
-An authenticated explicit link may use a different verified GitHub email. The account-create hook puts that address in a private, non-returned account field. Plain SQL triggers refuse an owned address and adopt an available one inside the GitHub account insert, so a collision follows Better Auth's normal error callback without leaving a partial link. The triggers depend only on stored row data, so other SQLite connections remain able to maintain credential accounts without registering process-local functions. The user's email and password sign-in address changes too, and unlinking GitHub leaves the changed email in place. Partial unique indexes enforce one GitHub connection per user and one local owner per GitHub identity even when callbacks overlap. Better Auth's last-account guard prevents a user from unlinking their only sign-in method.
-
-GitHub's numeric provider account id is not a public profile handle. The GitHub provider adapter delegates to Better Auth's built-in profile request, rejects a result without a verified email before any user or account write, and carries the returned `login` into the account hooks without another network call. Those hooks write the server-owned `githubUsername` user field after a link and on later GitHub sign-ins. A database trigger clears it atomically on unlink. A failed handle snapshot is logged without blocking authentication and leaves the previous value available for the next GitHub flow to refresh. Linking does not copy the provider name or avatar onto an existing user.
+- An implicit link requires the provider email to match an existing verified local email. The admin create path and bootstrap seed mark credential accounts verified, and the auth migration idempotently backfills that attestation for credential accounts created before linking support.
+- An authenticated explicit link may use a different verified GitHub email. The account-create hook puts that address in a private, non-returned account field, the user's email and password sign-in address change with it, and unlinking GitHub leaves the changed email in place.
+- Plain SQL triggers refuse an owned address and adopt an available one inside the GitHub account insert, so a collision follows Better Auth's normal error callback without leaving a partial link. The triggers depend only on stored row data, so other SQLite connections can maintain credential accounts without registering process-local functions.
+- Partial unique indexes enforce one GitHub connection per user and one local owner per GitHub identity even when callbacks overlap. Better Auth's last-account guard prevents a user from unlinking their only sign-in method.
+- The GitHub provider adapter delegates to Better Auth's built-in profile request, rejects a result without a verified email before any user or account write, and carries the returned `login` into the account hooks without another network call (GitHub's numeric provider account id is not a public profile handle).
+- The account hooks write the server-owned `githubUsername` user field after a link and on later GitHub sign-ins, and a database trigger clears it atomically on unlink. A failed handle snapshot is logged without blocking authentication and leaves the previous value for the next GitHub flow to refresh. Linking does not copy the provider name or avatar onto an existing user.
 
 `auth/users.ts` resolves public attribution from the Better Auth-owned `user` table. `namesFor(ids)` remains the low-cost name-only batch read used across sessions, recordings, workflows, and leaderboards. `profilesFor(ids)` adds the optional GitHub username and is used only by the agent-profile response, so blind-rating and recording payloads never gain the handle.
 
@@ -193,7 +197,7 @@ The canonical registry lives in Python. `scripts/generate.py` writes committed `
 HTTP request → pending row → resolve → static → build → load → ready
 ```
 
-The route returns after enqueueing. `submission/worker.ts` processes one submission at a time and records each stage before updating the rollup status.
+The route returns after enqueueing. `submission/worker.ts` processes one submission at a time and records each stage before updating the rollup status. The [submission specification](../../specs/submission.md) owns the product rules (flow, validation layers, size cap, snapshots); this section covers the backend implementation.
 
 ### Sources
 
@@ -224,7 +228,7 @@ Static validation runs no participant code. It checks:
 | `unknown_template_version`  | No registered base image              |
 | `template_version_mismatch` | Version differs from the season       |
 
-The size check is the first static check. It measures the checked-out tree through one shared filter (`submission/tree-filter.ts`) that excludes `.git` and build artifacts, and compares it to the effective cap: the season's `overrides.submission_max_size_mb` when set, otherwise `SUBMISSION_MAX_SIZE_MB`. The same filter drives the snapshot pack and the overlay build context, so all three agree on which bytes are "the submission".
+The size check is the first static check. It measures the checked-out tree through one shared filter (`submission/tree-filter.ts`) that excludes `.git` and build artifacts, and compares it to the effective cap defined by [maximum submission size](../../specs/submission.md#maximum-submission-size). The same filter drives the snapshot pack and the overlay build context, so all three agree on which bytes are "the submission".
 
 The Zod manifest schema and Python harness loader are kept in sync by contract tests.
 
@@ -245,7 +249,7 @@ Overlay building and load checking are described in [Execution boundary](executi
 
 Once a submission passes the size and static checks, the worker writes a compressed snapshot of its filtered source tree through `SubmissionSnapshotStore` (`submission/snapshot-store.ts`), one `<id>.tar.gz` per submission under `<DATA_DIR>/submissions`. It mirrors `RecordingsStore`: a flat per-id file, an atomic write (temp file then rename), plus `stream`, `exists`, `materialize`, and `delete`. The write is best-effort, so a failure logs and the submission still reaches `ready`.
 
-The snapshot is the durable input for an overlay rebuild: when a cached overlay was evicted, `ensureSubmissionImage` materializes the tree from the snapshot instead of re-cloning the pinned commit (falling back to the source seam only for a pre-snapshot submission). Because the snapshot and the overlay build context share the tree filter and a deterministic sort, a rebuild reproduces the original overlay. Operator download routes stream the same snapshots. A forced `deps_version` change that deletes a season's submissions also reclaims their snapshots.
+When a cached overlay was evicted, `ensureSubmissionImage` materializes the tree from the snapshot (falling back to the source seam only for a pre-snapshot submission), and the shared filter plus a deterministic sort make the rebuild reproduce the original overlay. Operator download routes stream the same snapshots, and a forced `deps_version` change that deletes a season's submissions also reclaims them. [Snapshots and downloads](../../specs/submission.md#snapshots-and-downloads) states the product rules.
 
 ## HTTP API
 
@@ -289,19 +293,13 @@ Unreleased board data is available only through operator-gated routes. Public bo
 
 The recording header's `players` map is the authority for which agents took part. The backend resolves submission ownership from storage and ignores human entries.
 
-Rating writes validate the full batch before saving anything. They reject:
-
-- Scores outside 1 to 5.
-- Agents not in the session.
-- The caller's own agent.
-- Unfinished or unattributed sessions.
-- A closed play window.
+Rating writes validate the full batch before saving anything and reject any batch that breaks the [leaderboard specification's](../../specs/leaderboard.md) rating rules: score range, session membership, self-rating, unfinished or unattributed sessions, and a closed play window.
 
 Rerating upserts the existing value. Closed play returns a read-only view with prior ratings and prompts.
 
 ## Workflow runner
 
-Triggering a leaderboard run does not wait for Docker.
+Triggering a leaderboard run does not wait for Docker. Scheduling, forfeit, and release rules live in the [leaderboard specification](../../specs/leaderboard.md).
 
 The trigger:
 

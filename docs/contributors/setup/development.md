@@ -80,8 +80,6 @@ The local browser export stays outside the template source tree. A release or pu
 
 ## Windows and WSL
 
-The scripts are Python so Windows and Linux use the same commands. CI runs on Linux because session containers are Linux.
-
-To reproduce CI closely, clone into the WSL filesystem and run `scripts/ci.py` there. Avoid `/mnt/` because `node_modules` and template composition perform many small file operations.
+The scripts are Python so Windows and Linux use the same commands. CI runs on Linux because session containers are Linux. To reproduce it closely, run the jobs inside WSL as described in [Reproduce Linux CI](../testing/index.md#reproduce-linux-ci).
 
 [`act`](https://github.com/nektos/act) can run workflow YAML in Docker. It is useful for checking workflow wiring, but GitHub Actions remains the suite of record. See [Testing](../testing/index.md).

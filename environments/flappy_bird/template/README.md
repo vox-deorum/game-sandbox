@@ -40,25 +40,7 @@ python -m sandbox test       # run the checks
 python -m sandbox setup      # just (re)install dependencies into .venv
 ```
 
-Prefer to manage the virtual environment yourself? Create and activate one, install the requirements, then use the same commands.
-
-On Windows PowerShell:
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt -r requirements-dev.txt
-```
-
-On macOS or Linux:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.txt -r requirements-dev.txt
-```
-
-See Python's [virtual environment guide](https://docs.python.org/3/tutorial/venv.html) if this is your first time using one.
+Prefer to manage the virtual environment yourself? Create and activate one inside the project, install `requirements.txt` and `requirements-dev.txt`, then use the same commands. The [getting started guide]({{DOCS_URL}}students/getting-started/) walks through this step by step.
 
 ## Write the agent
 
@@ -67,7 +49,7 @@ Open `agent.py` and implement:
 - `reset(seed)`, called once before each game.
 - `act(observation)`, called whenever the agent must choose.
 
-Everything specific to Flappy Bird is in [`environment.md`](environment.md), the reference shipped alongside this README: it walks through the starting agent you already have, then covers what the 12-value observation contains, the two action integers, the `sandbox.features` helpers that name them, the scoring, and the time limits. Read it before you start; it is all you need to build the agent.
+Everything specific to Flappy Bird is in [`environment.md`](environment.md), the reference shipped alongside this README: it walks through the starting agent you already have, then covers what the observation contains, the two action integers, the `sandbox.features` helpers that name them, the scoring, and the time limits. Read it before you start; it is all you need to build the agent.
 
 Two optional methods are available:
 
@@ -80,8 +62,6 @@ The template already plays. `agent.py` ships a small working agent that flaps wh
 
 ## Save work to GitHub
 
-Git stores project history as **commits**. A typical save cycle is:
-
 ```console
 git status
 git add agent.py
@@ -89,13 +69,11 @@ git commit -m "Implement Flappy Bird agent"
 git push
 ```
 
-Review `git status` before adding files, and never add `.env` or an API key. See GitHub's [About Git guide](https://docs.github.com/en/get-started/using-git/about-git) if these commands are new.
+Review `git status` before adding files, and never add `.env` or an API key. The [getting started guide]({{DOCS_URL}}students/getting-started/) explains each command.
 
 ## Submit
 
-Submit the repository URL through the course website. Game Sandbox pins one exact commit, validates the repository, and prepares a runnable image.
-
-Submitting again while the season is open replaces the active submission and keeps the earlier submission in history.
+Submit the repository URL through the course website. Game Sandbox pins one exact commit, and submitting again while the season is open replaces the active submission. The [submitting guide]({{DOCS_URL}}students/submitting/) covers validation and common errors.
 
 ## Optional LLM API
 

@@ -42,25 +42,7 @@ python -m sandbox setup      # just (re)install dependencies into .venv
 
 Useful extra flags pass straight through, e.g. `python -m sandbox play --seed 7` or `python -m sandbox human --player 2` to play a different player.
 
-Prefer to manage the virtual environment yourself? Create and activate one, install the requirements, then use the same commands.
-
-On Windows PowerShell:
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt -r requirements-dev.txt
-```
-
-On macOS or Linux:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.txt -r requirements-dev.txt
-```
-
-See Python's [virtual environment guide](https://docs.python.org/3/tutorial/venv.html) if this is your first time using one.
+Prefer to manage the virtual environment yourself? Create and activate one inside the project, install `requirements.txt` and `requirements-dev.txt`, then use the same commands. The [getting started guide]({{DOCS_URL}}students/getting-started/) walks through this step by step.
 
 ## Write the agent
 
@@ -82,8 +64,6 @@ The template already plays. `agent.py` ships a small working agent that plays it
 
 ## Save work to GitHub
 
-Git stores project history as **commits**. A typical save cycle is:
-
 ```console
 git status
 git add agent.py
@@ -91,13 +71,11 @@ git commit -m "Implement Hearts agent"
 git push
 ```
 
-Review `git status` before adding files, and never add `.env` or an API key. See GitHub's [About Git guide](https://docs.github.com/en/get-started/using-git/about-git) if these commands are new.
+Review `git status` before adding files, and never add `.env` or an API key. The [getting started guide]({{DOCS_URL}}students/getting-started/) explains each command.
 
 ## Submit
 
-Submit the repository URL through the course website. Game Sandbox pins one exact commit, validates the repository, and prepares a runnable image.
-
-Submitting again while the season is open replaces the active submission and keeps the earlier submission in history.
+Submit the repository URL through the course website. Game Sandbox pins one exact commit, and submitting again while the season is open replaces the active submission. The [submitting guide]({{DOCS_URL}}students/submitting/) covers validation and common errors.
 
 ## Optional LLM API
 

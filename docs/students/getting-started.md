@@ -31,7 +31,7 @@ From the repository folder, run:
 python -m sandbox
 ```
 
-The first run creates a **virtual environment**, which keeps this project's Python packages separate from other projects. It then installs the exact package versions required by the template and opens the game in your browser. Select **Start** when you are ready. Your [environment page](environments/index.md) explains the controls. In Flappy Bird, for example, press **Space** or the **up arrow** to flap.
+The first run creates a **virtual environment**, which keeps this project's Python packages separate from other projects. It then installs the exact package versions required by the template and opens the game in your browser. Select **Start** when you are ready. Your [environment page](environments/index.md) explains the controls. In Flappy Bird, for example, press **Space**, the **up arrow**, or **W** to flap.
 
 There is no separate installation step, and you can run the command again at any time. The game runs only on your computer, so it does not need the Game Sandbox website or an internet connection. The other commands in this guide, such as `python -m sandbox play`, `eval`, and `test`, set up the project in the same way.
 
@@ -110,4 +110,4 @@ Submit your repository URL through the course website. The server records one ex
 
 ## Optional: use the LLM API
 
-If your environment allows language model calls, follow [Using the LLM API](llm.md) to create a development key for the season and save its endpoint and key in `.env`. Choose `small`, `medium`, or `large`, then test that tier with a command such as `python -m sandbox llm medium`. The command uses `small` if you omit the tier. Use the same tier name in your agent code. Never commit `.env` or an API key to GitHub.
+If your environment allows language model calls, follow [Using the LLM API](llm.md) to create a development key, save it in `.env`, and test it. Never commit `.env` or an API key to GitHub.

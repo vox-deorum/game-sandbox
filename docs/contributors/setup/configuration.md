@@ -96,7 +96,7 @@ The internal OpenAI-compatible proxy starts only when `LLM_UPSTREAM_URL` and at 
 | `LLM_DEVELOPMENT_TOKEN_BUDGET` | `100000` | Successful weighted-token allowance per participant and season |
 | `LLM_DEVELOPMENT_RATE_LIMIT_RPM` | `30` | Successful logical requests per minute per participant and season |
 
-`LLM_DEFAULT_MAX_OUTPUT_TOKENS` may be zero but must not exceed `LLM_MAX_OUTPUT_TOKENS`. Token budgets count input plus total completion tokens at the requested model tier's price. Reasoning tokens are reported separately as a subset of completion usage and are not charged twice. With the default 4:2:1 prices, `large` tokens cost four budget units, `medium` tokens cost two, and `small` tokens cost one. See [Budgets and limits](../../specs/llm.md#budgets-and-limits) for the canonical rule.
+`LLM_DEFAULT_MAX_OUTPUT_TOKENS` may be zero but must not exceed `LLM_MAX_OUTPUT_TOKENS`. [Budgets and limits](../../specs/llm.md#budgets-and-limits) defines how weighted-token budgets are counted and priced.
 
 ## Submissions
 
@@ -111,7 +111,7 @@ The internal OpenAI-compatible proxy starts only when `LLM_UPSTREAM_URL` and at 
 | `OVERLAY_IMAGE_BUDGET` | `50` | Maximum cached submission overlays; active ready images are protected and count |
 | `OVERLAY_IMAGE_SWEEP_INTERVAL_MS` | `3600000` | Overlay sweep interval; sweeps also run at startup and after builds |
 
-`DATA_DIR` also contains the submission-snapshot volume at `<DATA_DIR>/submissions`. It holds one `.tar.gz` file per accepted submission, so its disk usage is bounded by `SUBMISSION_MAX_SIZE_MB` times the number of retained submissions. See [Backend](../runtime/backend.md).
+`DATA_DIR` also contains the submission-snapshot volume at `<DATA_DIR>/submissions`, one `.tar.gz` file per accepted submission; [Snapshots and downloads](../../specs/submission.md#snapshots-and-downloads) states the storage bound. See [Backend](../runtime/backend.md) for the pipeline.
 
 ## Deployment notes
 

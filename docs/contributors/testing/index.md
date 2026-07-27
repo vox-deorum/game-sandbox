@@ -174,7 +174,7 @@ uv run python scripts/publish_template.py --tag template-v0 --dry-run
 
 Two operations require GitHub:
 
-- Pages deployment through the `github-pages` environment.
+- Pages deployment through the `github-pages` environment. The deploy job in `.github/workflows/docs.yml` stays disabled until the documentation site goes public.
 - Real template publication and release tagging with repository credentials.
 
 Everything else should be exercised locally through the commands above before relying on CI.

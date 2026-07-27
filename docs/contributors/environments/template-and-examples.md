@@ -12,7 +12,7 @@ Put each worked example overlay in `environments/<env>/examples/<name>/`. An exa
 
 Every environment package must also declare `PUBLISHED_EXAMPLES`, a tuple of example names that may be published. Use an empty tuple when the environment has no examples to publish. Each name must identify an immediate child directory under that environment's `examples/` directory. This tuple is a publication allowlist, not an inventory: every checked-in example remains available to composition and the examples CI job.
 
-The top-level `templates/` directory now contains only `templates/base/`. Generated `sandbox/env/`, `sandbox/harness/`, and shared helper files exist only in a composed tree under `build/`.
+The top-level `templates/` directory contains only `templates/base/`. Generated `sandbox/env/`, `sandbox/harness/`, and shared helper files exist only in a composed tree under `build/`.
 
 Compose renders an environment's declared `EnvParameter` and `EnvParameterChoice` values into the generated `sandbox.env` registration. It does not copy the synthesized public `players` or `seat_plan` declaration back into `EnvironmentMeta`, because the layout remains its source of truth.
 
@@ -28,20 +28,16 @@ Hearts and Spades may re-export game-independent names from `sandbox.semantic_ca
 
 ## Composed kit
 
-`uv run python scripts/compose.py <env>` writes a complete student repository to `build/templates/<env>/`. Passing an example name writes the example tree under `build/examples/<env>/<name>/`.
+[Composition](templates.md#composition) covers how `scripts/compose.py` assembles a complete student repository under `build/`: the composition order, generated packages, dependency merge rule, and student-documentation rewrites.
 
-The generated environment factory uses the required `make(parameters)` signature. Local play and evaluation resolve the complete default map before constructing the environment, so a composed kit exercises the same contract as a server session.
-
-Read [Template product and releases](templates.md#composition) for the composition order, generated packages, dependency merge rule, and student-documentation rewrites.
+The generated environment factory uses the required `make_env(parameters)` signature. Local play and evaluation resolve the complete default map before constructing the environment, so a composed kit exercises the same contract as a server session.
 
 ## Student documentation
 
 Write the canonical student guide at `environments/<env>/environment.md`. It should explain the game, starting agent, scoring, helper module, raw contract, time limits, and a first improvement. The documentation catalog discovers the guide and exposes it as the virtual page `students/environments/<slug>.md`; do not create a manual catalog entry, generated mirror, or committed mirror.
 
-The starting `agent.py` body must match the canonical guide's starter-agent listing. Its `README.md`, `agent.py`, and helper modules point students to the composed local `environment.md` instead of duplicating the game reference.
+Keep the starting `agent.py` body identical to the canonical guide's starter-agent listing (no automated check enforces this). The template's `README.md`, `agent.py`, and helper modules point students to the composed local `environment.md` instead of duplicating the game reference.
 
-Compose copies the canonical guide into each kit as `environment.md` and the shared LLM guide as `llm.md`, then rewrites their relative documentation links to the published docs URL. MkDocs exposes the canonical guide as a virtual student page; links inside the canonical guide stay relative in the source page, while links to repository files use stable GitHub URLs.
+Links inside the canonical guide stay relative in the source page, and links to repository files use stable GitHub URLs. [Composition](templates.md#composition) covers how the guide ships into each kit and how its links are rewritten to resolve from a student's clone.
 
-Every environment must have at least one example. Examples should use the helper module so they demonstrate the style students should adopt, but student pages must not link their source as a solution.
-
-Only names in `PUBLISHED_EXAMPLES` become student-repository `examples/<env>/<name>` branches. Keep an example in source when it is useful for CI, development, or tests but should not be published.
+Every environment must have at least one example. Examples should use the helper module so they demonstrate the style students should adopt, but student pages must not link their source as a solution. Keep an example out of `PUBLISHED_EXAMPLES` when it is useful for CI, development, or tests but should not be published.

@@ -19,7 +19,7 @@ The harness copies this map from the session configuration. The backend assigns:
 
 The required `seats` map groups those player ids under canonical `seat_N` ids. Its nonempty arrays form an exact partition of `players`, so every player belongs to exactly one seat. The required `seat_plan` field records the canonical plan key that produced the partition. Readers use these fields directly instead of resolving current environment metadata.
 
-This pre-release format supports only headers that carry all three fields. Recordings produced before this contract are recreated.
+Only headers that carry all three fields are readable; the [version rule](state-schema.md#the-version-rule) explains this pre-release policy.
 
 ## External LLM telemetry
 
