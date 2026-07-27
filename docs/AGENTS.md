@@ -6,7 +6,7 @@ These instructions apply to public documentation under `docs/` and the canonical
 
 Every page should make its audience clear.
 
-- Student guides assume the reader may be new to Python, Git, GitHub, terminals, and virtual environments. Introduce a concept before asking the reader to use it, and link to the official documentation for deeper help.
+- Student guides assume the reader may be new to Python, Git, GitHub, terminals, and virtual environments. Introduce a concept before asking the reader to use it, and link to the official documentation for deeper help. Prefer everyday words over specification vocabulary, and frame instructions around the reader and their assignment rather than the platform or the instructor.
 - Contributor guides assume programming experience, but not prior knowledge of this repository. Start with the purpose of the subsystem, then explain where its code lives and how to work on it.
 - Specifications describe what the system is and the rules it follows. Keep implementation instructions in contributor guides and implementation sequencing in `plans/`.
 
@@ -16,7 +16,14 @@ Do not assume the reader arrived from another page or already knows a repository
 
 Put the page's purpose, prerequisites, and most common path near the top. Prefer a short table, numbered procedure, or small diagram when it makes a relationship easier to scan.
 
-Remove background that does not help the reader make a decision or complete a task. Keep rationale when it explains a constraint that would otherwise look arbitrary.
+Keep the main path clean:
+
+- A procedure shows only the steps a typical reader takes. Border cases, fallbacks, and debugging help go in their own sections, such as a manual-installation or troubleshooting section.
+- Put optional background in a short blockquote aside that opens with an italic question, for example `> _What's a token?_ A token is ...`. The page must still work for a reader who skips every aside.
+- Cut reassurance sentences that carry no instruction.
+- Summarize with one or two examples instead of enumerating every case.
+
+Remove background that does not help the reader make a decision or complete a task. Keep rationale when it explains a constraint that would otherwise look arbitrary, and give the motivation before the rule it explains.
 
 When rewriting an existing page, compare the removed text with the replacement. Preserve product rules, safety warnings, exceptions, and context that the intended reader still needs. If that context makes the page cover two distinct jobs, split it into focused pages and cross-link them rather than deleting it.
 
