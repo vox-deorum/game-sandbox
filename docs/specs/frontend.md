@@ -23,9 +23,9 @@ The site uses **Environment** and **Season** as its front-facing names, matching
 | --- | --- |
 | Environments | Cards with name, description, player count, human-play support, and thumbnail |
 | Environment overview | Description, current boards, season history, play and watch entry points |
-| Agent profile | Submission history (with each Season's rating prompt), current Season submission state, status, placements, replays, and owner-only development access for the current submission-open season |
+| Agent profile | Submission history (with each season's rating prompt), current season submission state, status, placements, replays, and owner-only development access for the current submission-open season |
 | Seasons | Public seasons, active gates, environment, optional description, release time, submission count, session count |
-| My Agents | Signed-in user's current Season submission state and recent submitted-Season results across environments |
+| My Agents | Signed-in user's current season submission state and recent submitted-season results across environments |
 | Replays | Sortable environment recording list |
 | Replay viewer | Renderer, transport, player attribution, chat, episode settings, public LLM summaries |
 | Live session | Renderer, shared controls, decision log, result, pinning, ratings |
@@ -51,7 +51,7 @@ A Season description is one inline Markdown paragraph of at most 2,000 character
 
 The built-in **Naive agent** is always the first watch option. Ready submissions for the play-open season follow it.
 
-The replay viewer's status strip summarizes the settings the episode was played with: the count of settings, with the visible parameter values and the seed behind it in a tooltip. The seed has no row of its own, since it configures the run like the rest of the settings.
+The replay viewer's status strip shows how many settings the episode was played with, and a tooltip lists the visible parameter values and the seed. The seed has no row of its own, since it configures the run like any other setting.
 
 Replays are public and read-only. Each replay belongs to an environment, and a season column shows the season associated with the session that produced it. The replay list shows only the final section of each recording identifier and lists the owner first. In a naturally completed multiplayer replay, one top-ranked seat produces the label `SN won`, while multiple top-ranked seats produce `Tied`. A replay without eligible ranking data keeps its general termination label. Owners may pin their own recordings.
 
@@ -67,21 +67,21 @@ The **My Submissions** tab shows the form when a season accepts submissions. The
 
 The frontend checks that the repository can be reached before submission. The backend pins the commit and attributes it to the signed-in user. The page shows every validation stage and details of any failure. If no submission window is open, the form is unavailable even when another season remains open for play.
 
-For the profile owner, My Submissions adds two tags to the plain **Submit an Agent** heading for the current submission-open Season. The tags show the Season label and whether the owner has submitted to it. An active attempt shows its validation status, including a failed validation. A Season with no active attempt shows **Not submitted**.
+For the profile owner, My Submissions adds two tags to the plain **Submit an Agent** heading for the current submission-open season. The tags show the season label and whether the owner has submitted to it. An active attempt shows its validation status, including a failed validation. A season with no active attempt shows **Not submitted**.
 
-If no Season accepts submissions, the heading says so once and does not repeat the closed-window state beside the form. Submission status is matched within the current Season. An active attempt in another Season cannot make the current Season appear submitted.
+If no season accepts submissions, the heading says so once and does not repeat the closed-window state beside the form. Submission status is matched within the current season. An active attempt in another season cannot make the current season appear submitted.
 
-The **My Agents** page groups this summary by environment in one flat list of compact Season rows. An environment appears when it has a submission-open Season or the user has submitted there before.
+The **My Agents** page groups this summary by environment in one flat list of compact season rows. An environment appears when it has a submission-open season or the user has submitted there before.
 
-The current submission-open Season appears first. A distinct stripe marks the current Season visually, while a **Current season** label conveys the same meaning without color for assistive technology. The row shows **Not submitted** when there is no active attempt. Up to three of the most recent earlier Seasons that the user submitted to appear next. Their stripes reflect the status of the active attempt. Each submitted Season shows the active attempt's submission date and validation status. A failed attempt still counts as submitted.
+The current submission-open season appears first. A distinct stripe marks the current season visually, while a **Current season** label conveys the same meaning without color for assistive technology. The row shows **Not submitted** when there is no active attempt. Up to three of the most recent earlier seasons that the user submitted to appear next. Their stripes reflect the status of the active attempt. Each submitted season shows the active attempt's submission date and validation status. A failed attempt still counts as submitted.
 
-When the current submission-open Season has effective LLM access, its row also shows a compact development usage meter. The meter presents weighted budget units used against the season limit as both a visual value and text. A key-management action sits above the row link.
+When the current submission-open season has effective LLM access, its row also shows a compact development usage meter. The meter presents weighted budget units used against the season limit as both a visual value and text. A key-management action sits above the row link.
 
-The current Season shows a result only after results are released. A previous Season shows **Score N** when released automated results include a placement for any of the user's attempts in that Season, including an attempt later replaced by a new submission. A released Season without a placement shows **No score**. An unreleased previous Season shows **Results not released**, and never exposes an unreleased placement. Zero and negative values are displayed as scores.
+The current season shows a result only after results are released. A previous season shows **Score N** when released automated results include a placement for any of the user's attempts in that season, including an attempt later replaced by a new submission. A released season without a placement shows **No score**. An unreleased previous season shows **Results not released**, and never exposes an unreleased placement. Zero and negative values are displayed as scores.
 
-Each Season row on My Agents is itself a link to that Season on My Submissions. The selected current Season focuses the current-Season summary even when it has no submission. A selected historical Season expands and focuses its submission history. Unknown Season identifiers do not change the page.
+Each season row on My Agents is itself a link to that season on My Submissions. The selected current season focuses the current-season summary even when it has no submission. A selected historical season expands and focuses its submission history. Unknown season identifiers do not change the page.
 
-For the owner, an agent profile shows a **Development access** section above Submission History when the environment has a submission-open Season with effective LLM access. It lists allowed model aliases and their price multipliers, shows used and remaining weighted budget units, and provides actions to create or rotate a key and view call history. An expanded submission-history row provides read-only call history for its own Season. The section is absent when there is no eligible current Season.
+For the owner, an agent profile shows a **Development access** section above Submission History when the environment has a submission-open season with effective LLM access. It lists allowed model aliases and their price multipliers, shows used and remaining weighted budget units, and provides actions to create or rotate a key and view call history. An expanded submission-history row provides read-only call history for its own season. The section is absent when there is no eligible current season.
 
 See [Submissions](submission.md).
 
@@ -100,7 +100,7 @@ Each seat row carries one assignment control, followed in the same row by a shor
 
 Selecting **Human** is allowed when the seat contains a human-capable player. The environment's declared member order chooses the first human-capable member for the person. A wide human seat then reveals a required **Companion agent** control populated from the same built-in and ready-submission choices used by ordinary agent seats. One selected companion drives every remaining player through separate instances. The user must choose it explicitly before starting. A singleton human seat has no companion control. See [Environments](environment.md#players-and-seats).
 
-The **Rate** action is the exception: it preselects the intended agent into every resolved seat and disables every configuration control. The viewer starts with the season's gameplay parameters and a random seed, then rates that same agent after the session. **Watch again** and ordinary watch actions keep the configuration editable.
+The **Rate** action is the exception: its configuration is locked as the table shows, and the viewer rates that same agent after the session. **Watch again** and ordinary watch actions keep the configuration editable.
 
 Start forms render the environment's visible parameter declarations dynamically. Numeric and string values use labelled inputs, booleans use an explicit On/Off select, choices use a select, and multi-choice values use a labelled checkbox group. Invalid edits show a field error and disable the start action. Hidden parameters stay in the complete submitted map.
 
@@ -128,7 +128,7 @@ The built-in baseline may be rated in a mixed session. Ratings affect only the h
 
 The rating panel appears only after the session ends, immediately above the game stage. It enters with a short downward reveal that uses the shared motion tokens. The rating view may show the operator's season instructions once and the author's instructions beside that agent. Both sets of instructions guide one score.
 
-The author sets the prompt in the submission form. It is season metadata, not part of the pinned submission. The same author prompt also appears beneath the agent on the human-feedback board and once for each Season in the agent profile's submission history.
+The author sets the prompt in the submission form. It is season metadata, not part of the pinned submission. The same author prompt also appears beneath the agent on the human-feedback board and once for each season in the agent profile's submission history.
 
 ## Identity and access
 

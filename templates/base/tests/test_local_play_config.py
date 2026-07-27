@@ -2,16 +2,14 @@
 
 from __future__ import annotations
 
-import importlib
 import io
 import json
 import sys
 from dataclasses import replace
 from pathlib import Path
-from types import ModuleType, SimpleNamespace
 
 import pytest
-from sandbox import evaluate, play
+from sandbox import evaluate, live_local, play
 
 
 def test_single_player_local_config_uses_metadata_timeout_when_omitted(monkeypatch, tmp_path: Path):
@@ -100,14 +98,6 @@ def test_evaluate_forwards_the_selected_player(monkeypatch, capsys):
 
 def test_local_runner_passes_stdin_to_the_harness_run_seam(monkeypatch, tmp_path: Path):
     """The relocated harness, not this shim, starts stdin after client-ready state emits."""
-    env = ModuleType("sandbox.env")
-    env.META = SimpleNamespace(env_id="fake")
-    env.default_action = lambda environment, player_id: 0
-    env.extract_overlay = lambda environment: {}
-    env.make_env = lambda _parameters: object()
-    monkeypatch.delitem(sys.modules, "sandbox.live_local", raising=False)
-    monkeypatch.setitem(sys.modules, "sandbox.env", env)
-    live_local = importlib.import_module("sandbox.live_local")
     captured: dict[str, object] = {}
 
     def fake_run(*args: object, **kwargs: object) -> int:
@@ -116,15 +106,13 @@ def test_local_runner_passes_stdin_to_the_harness_run_seam(monkeypatch, tmp_path
 
     monkeypatch.setattr(live_local, "_claim_stdout", lambda: io.StringIO())
     monkeypatch.setattr(live_local, "run", fake_run)
-    config = {
-        "env_id": live_local.META.env_id,
-        "parameters": {"players": 1},
-        "seed": 0,
-        "player_bindings": {"player_0": {"kind": "external"}},
-        "players": {"player_0": {"kind": "human", "label": "You"}},
-        "recording_dir": str(tmp_path / "recordings"),
-        "recording_id": "local",
-    }
+    config = play.local_config(
+        seed=0,
+        mode="human",
+        player=0,
+        recording_dir=tmp_path / "recordings",
+        step_limit=None,
+    )
 
     assert live_local.main([json.dumps(config)]) == 0
     assert captured["command_lines"] is sys.stdin

@@ -139,8 +139,12 @@ class LiveConfig:
     max_steps: int | None = None
 
 
-def parse_config(argv: list[str]) -> LiveConfig:
-    """Parse and validate the single-JSON-argument session config from ``argv``."""
+def parse_config(
+    argv: list[str],
+    *,
+    entry: EnvironmentEntry | None = None,
+) -> LiveConfig:
+    """Parse and validate one JSON config, using an injected environment when supplied."""
     if len(argv) != 1:
         raise LiveConfigError(f"expected exactly one JSON config argument, got {len(argv)} argument(s)")
     try:
@@ -159,10 +163,15 @@ def parse_config(argv: list[str]) -> LiveConfig:
     if not isinstance(seed, int) or isinstance(seed, bool):
         raise LiveConfigError("config 'seed' must be an integer")
 
-    try:
-        entry = load_environment(env_id)
-    except Exception as error:  # noqa: BLE001 - normalize registry failures at the config boundary
-        raise LiveConfigError(f"config environment {env_id!r} could not be loaded: {error}") from error
+    if entry is None:
+        try:
+            entry = load_environment(env_id)
+        except Exception as error:  # noqa: BLE001 - normalize registry failures at the config boundary
+            raise LiveConfigError(f"config environment {env_id!r} could not be loaded: {error}") from error
+    elif entry.meta.env_id != env_id:
+        raise LiveConfigError(
+            f"config environment {env_id!r} does not match injected environment {entry.meta.env_id!r}"
+        )
 
     raw_player_bindings = config.get("player_bindings")
     if not isinstance(raw_player_bindings, dict) or not raw_player_bindings:

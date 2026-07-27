@@ -15,9 +15,9 @@ Participants submit Python agents through GitHub. Every accepted submission is t
 
 The interface is independent of algorithm style. Agents always run inside the server-side session container. They may also call the optional [LLM API](llm.md).
 
-Learned state may persist between episodes in one leaderboard run, but not between submissions or seasons. Time spent in optional hooks counts toward the same limits as time spent acting. The [LLM API](llm.md#determinism-and-timing) defines how official-session LLM calls affect timing.
+Learned state may persist between episodes in one session, never across sessions, submissions, or seasons. Time spent in optional hooks counts toward the same limits as time spent acting. The [LLM API](llm.md#determinism-and-timing) defines how official-session LLM calls affect timing.
 
-A submission is bound to a seat, and a seat may cover several players. In watch and automated play, each of the seat's players runs a separately constructed instance of that submission. In human play, a submitted agent may instead be selected as the companion for a wide human seat, in which case every nonhuman member runs its own instance. The four hooks above and the manifest's `template_version` are unchanged. The platform provides no combined multi-player object or shared-state API. Ordinary shared-container and process-isolation limits still apply, and the seat's reported score is the mean of its players' scores. A participant does not choose how many players a seat covers; the season configuration does.
+A submission is bound to a seat, and a seat may cover several players. Each of those players, or each nonhuman member when the submission serves as a wide human seat's companion, runs a separately constructed instance with the same hooks and manifest. [Environments](environment.md#players-and-seats) defines the per-player instances and seat scoring. A participant does not choose how many players a seat covers; the season configuration does.
 
 ## Packaging
 

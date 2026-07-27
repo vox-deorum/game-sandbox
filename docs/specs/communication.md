@@ -41,7 +41,15 @@ Sender → harness → recipient inbox on its next turn
 
 Accepted messages enter the pending inboxes at the end of the tick when they were sent. A message sent on tick T is therefore first seen after T, on the recipient's next turn. Each inbox item includes the tick when it was sent.
 
-Agents never communicate directly. Human messages travel through the session WebSocket and enter a bounded first-in, first-out queue for the active external player. They do not use the coalescing input latch, so messages never replace one another. Each queued frame names its sender and the tick it was composed against. That compose tick is admission context only. The harness drains only the acting player's queue. It accepts the current announced tick and, for one drain, that sender's immediately preceding announced tick so a message that raced the prior drain is not lost. Older, never-announced, inactive, and policy-invalid items are dropped. Each accepted item uses the policy cached for the opportunity named by its compose tick and the same text and per-turn limits used for agent output. It becomes a message sent on the drain step, so the recording and recipient inbox use the drain step as its sent tick.
+Agents never communicate directly. Human messages travel through the session WebSocket into a bounded first-in, first-out queue for the active external player. They bypass the coalescing input latch, so messages never replace one another. Each queued message names its sender and a **compose tick**: the announced tick of the turn it was written against.
+
+The harness drains only the acting player's queue and admits each message by its compose tick:
+
+- The current turn's announced tick is accepted.
+- The sender's immediately preceding announced tick is accepted for one drain, so a message that raced the prior drain is not lost.
+- Everything else is dropped: older or never-announced ticks and messages from a sender who is no longer active.
+
+An accepted message is validated with the recipient policy cached for its compose tick and the same text and per-turn limits as agent output, and dropped if it fails. It is then sent on the drain step, so the recording and recipient inbox use that step as its sent tick.
 
 Broadcasts are visible to every player and spectator. During live play, a targeted message is shown only to the clients controlling its recipient or sender. The sender also receives the message so its chat panel can render recorded state instead of a local copy. This reveals nothing the sender did not write. Every message is recorded, including targeted messages, so no channel is permanently secret. See [Recording](recording.md).
 

@@ -34,16 +34,9 @@ def main(argv: list[str] | None = None) -> int:
     """Parse the normal live config and execute it against this template's injected environment."""
     protocol = ProtocolStream(_claim_stdout())
     try:
-        config = parse_config(list(sys.argv[1:] if argv is None else argv))
+        config = parse_config(list(sys.argv[1:] if argv is None else argv), entry=ENTRY)
     except LiveConfigError as error:
         print(f"live_local: invalid config: {error}", file=sys.stderr, flush=True)
-        return 2
-    if config.env_id != META.env_id:
-        print(
-            f"live_local: config environment {config.env_id!r} does not match {META.env_id!r}",
-            file=sys.stderr,
-            flush=True,
-        )
         return 2
 
     clock = PausableClock(SystemClock())

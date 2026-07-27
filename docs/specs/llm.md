@@ -20,9 +20,9 @@ Student development call ┘          │
                                     └→ access checks, metering, and telemetry
 ```
 
-The backend owns the OpenAI-compatible endpoint used by agents and students. It holds the upstream credential, enforces enabled model tiers and budgets, and forwards requests to one OpenAI-compatible endpoint configured for the deployment.
+The backend owns the OpenAI-compatible endpoint used by agents and students. It holds the upstream credential, enforces enabled model aliases and budgets, and forwards requests to one OpenAI-compatible endpoint configured for the deployment.
 
-Agents request one stable public tier: `small`, `medium`, or `large`. The proxy maps that tier to its configured upstream model. In successful responses, the proxy keeps standard generated content and usage fields, replaces structured provider model identifiers with the public tier, and removes nonstandard top-level provider metadata. It returns and records the same canonical completion. It does not rewrite generated assistant content or tool arguments as metadata.
+Agents request one stable public model alias: `small`, `medium`, or `large`. The proxy maps that alias to its configured upstream model. In successful responses, the proxy keeps standard generated content and usage fields, replaces structured provider model identifiers with the public alias, and removes nonstandard top-level provider metadata. It returns and records the same canonical completion. It does not rewrite generated assistant content or tool arguments as metadata.
 
 The upstream endpoint may be a gateway or a router for several providers. Game Sandbox does not provide its own provider routing, provider failover, or separate LLM gateway service.
 
@@ -54,9 +54,9 @@ Public replay views show summaries of models, tokens, and budget cost. Stored ac
 
 ## Budgets and limits
 
-Token budgets use weighted units for each model tier. The cost of a successful call is the tier's configured price multiplied by the sum of its input tokens and total completion tokens. Reasoning tokens are already included in total completion tokens and are not charged twice. Deployment prices default to 4 for `large`, 2 for `medium`, and 1 for `small`. A season may set the price of any enabled tier to a positive finite value no greater than 1,000,000. Official leaderboard runs freeze their resolved prices as part of the run policy. Live sessions and development keys use the season's current resolved prices.
+Token budgets use weighted units for each model alias. The cost of a successful call is the alias's configured price multiplied by the sum of its input tokens and total completion tokens. Reasoning tokens are already included in total completion tokens and are not charged twice. Deployment prices default to 4 for `large`, 2 for `medium`, and 1 for `small`. A season may set the price of any enabled alias to a positive finite value no greater than 1,000,000. Official leaderboard runs freeze their resolved prices as part of the run policy. Live sessions and development keys use the season's current resolved prices.
 
-Official execution and student development use separate meters. Each player in a session has a weighted token budget and a rate limit. A leaderboard run has no allowance of its own. Each match in the run is a new session with a fresh allowance for each player. Creating a leaderboard run freezes its resolved official policy, including enabled tiers, upstream model mappings, prices, and per-player limits. The deployment supplies defaults, and a season may override official and development limits independently.
+Official execution and student development use separate meters. Each player in a session has a weighted token budget and a rate limit. A leaderboard run has no allowance of its own. Each match in the run is a new session with a fresh allowance for each player. Creating a leaderboard run freezes its resolved official policy, including enabled aliases, upstream model mappings, prices, and per-player limits. The deployment supplies defaults, and a season may override official and development limits independently.
 
 Budgets, rate limits, and telemetry stay keyed per player rather than per seat, so a seat that covers several players gets one meter for each of its players and therefore a proportionally larger total allowance, matching its proportionally larger number of decisions. When the leaderboard reduces a seat, it sums LLM usage and weighted cost across the seat's players.
 
@@ -76,6 +76,6 @@ A seed does not make a model response deterministic. Seeded repetitions reduce t
 
 In an official session, chargeable time for `act`, `chat`, and `learn` excludes verified time in the backend proxy, including retry waits. The harness compares the player's proxy-time readings before and after each hook, then charges the remaining elapsed time to the step and episode limits. Chargeable time cannot be less than the calling thread's CPU time. If either reading is unavailable or invalid, the full hook time is charged. Model calls and local work must remain on that thread.
 
-Live-session and workflow timeouts also exclude verified proxy time after they start. The extra allowance for an active request is bounded, so a stuck request cannot extend the deadline indefinitely. Idle timeout always uses wall-clock time.
+Live-session and leaderboard-run timeouts also exclude verified proxy time after they start. The extra allowance for an active request is bounded, so a stuck request cannot extend the deadline indefinitely. Idle timeout always uses wall-clock time.
 
 Calls during module import, construction, or `reset` are setup calls with null tick attribution and occur before turn timing. The automated board reports successful-call counts and token use by model. See [Leaderboards](leaderboard.md).

@@ -199,9 +199,7 @@ def test_parse_config_requires_players():
         parse_config([json.dumps(payload)])
 
 
-def test_parse_config_resolves_a_wide_layout_and_rejects_missing_or_foreign_players(monkeypatch):
-    import game_sandbox_harness.live as live
-
+def test_parse_config_resolves_an_injected_wide_layout_and_rejects_missing_or_foreign_players():
     wide_entry = EnvironmentEntry(
         meta=EnvironmentMeta(
             env_id="wide",
@@ -222,7 +220,6 @@ def test_parse_config_resolves_a_wide_layout_and_rejects_missing_or_foreign_play
         make=lambda _parameters: FakeEnv(1),
         default_action=lambda _env, _player_id: DEFAULT_ACTION,
     )
-    monkeypatch.setattr(live, "load_environment", lambda _env_id: wide_entry)
     payload = {
         "env_id": "wide",
         "parameters": {"seat_plan": "uneven"},
@@ -238,18 +235,18 @@ def test_parse_config_resolves_a_wide_layout_and_rejects_missing_or_foreign_play
         },
         "recording_dir": "/r",
     }
-    config = parse_config([json.dumps(payload)])
+    config = parse_config([json.dumps(payload)], entry=wide_entry)
     assert config.layout is not None
     assert config.layout.plan_key == "uneven"
     assert config.layout.seats[0].players == ("player_0", "player_2")
 
     payload["player_bindings"].pop("player_2")
     with pytest.raises(LiveConfigError, match="missing players"):
-        parse_config([json.dumps(payload)])
+        parse_config([json.dumps(payload)], entry=wide_entry)
     payload["player_bindings"]["player_2"] = {"kind": "builtin-agent"}
     payload["players"]["player_9"] = payload["players"].pop("player_2")
     with pytest.raises(LiveConfigError, match="unknown players"):
-        parse_config([json.dumps(payload)])
+        parse_config([json.dumps(payload)], entry=wide_entry)
 
 
 def test_parse_config_defaults_seed_and_optional_fields():
