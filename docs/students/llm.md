@@ -47,17 +47,13 @@ These are the only public model choices. Each season enables one or more tiers. 
 | `medium` | 2 per token          |
 | `large`  | 4 per token          |
 
-Your season may set different prices. The development-key response includes the enabled tiers in `models` and their applied prices in `cost_weights`.
+Your season may set different prices. The development-key response lists its enabled tiers in `models` and their applied prices in `cost_weights`.
 
-Each participant has a separate development allowance for each season. Development calls do not use an official session's allowance. During an official session, each agent-controlled player receives a temporary key and its own allowance.
+Each participant has a separate development allowance for each season. Development calls do not use an official session's allowance. During an official session, each agent-controlled player receives a temporary key and its own allowance. Each allowance has a token budget and request-rate limit set by the season.
 
-Only a call that receives a successful model response and completes accounting deducts from the persistent token budget or creates a usage record. Server retries remain part of one logical request and create at most one record. If accounting fails, the API returns `meter_unavailable` and blocks further model calls until it recovers.
+The API charges the token budget only after a successful model response whose usage it can record. If usage accounting is temporarily unavailable, it returns `meter_unavailable` and rejects calls until it recovers.
 
-In official sessions, verified time spent waiting for the model proxy during `act`, `chat`, or `learn` does not count toward the hook, step, or episode time limits. This includes retry waits. Other work inside these methods still counts. Calls made while Python imports the module, creates the agent, or runs `reset` happen before turn timing. See [Agent interface](agent-interface.md#llm-calls).
-
-Rate limits count successful logical request starts. A request that is still running temporarily reserves capacity. A successful call records one event at its original start time, while a failed call releases its reservation. Server retries do not add events.
-
-Your agent must always have a legal fallback action for an error it cannot recover from. Examples include `budget_exceeded`, `model_not_allowed`, a request or model error that cannot be retried, and an error that remains after the server finishes retrying. Create the standard client with `OpenAI(max_retries=0)`, as shown in the template. This leaves retries to the Game Sandbox server and keeps each turn to one logical request. Do not add another retry loop inside each turn unless your instructor designed the agent to handle the extra delay and rate-limit use.
+Your agent must always have a legal fallback action for an error it cannot recover from. Common examples are `budget_exceeded`, `model_not_allowed`, `meter_unavailable`, and request or response errors. Create the standard client with `OpenAI(max_retries=0)`, as shown in the template. Game Sandbox handles retries, so do not add a per-turn retry loop unless your instructor designed the agent to handle the extra delay and rate-limit use.
 
 Streaming completions are not supported. Use the standard OpenAI client's non-streaming `chat.completions.create` call with `stream=False`, as shown by the template test command.
 
@@ -65,6 +61,6 @@ Streaming completions are not supported. Use the standard OpenAI client's non-st
 
 For successful calls in an official session, public recordings may show the model tier, token counts, and budget cost. The agent owner and site operators can also inspect the accepted prompt and completion text. Other viewers cannot see that text.
 
-Successful development calls go into a separate usage record for the season. The participant who owns the development key and site operators can inspect their prompt and completion text. Development calls never appear in session recordings, replays, or leaderboards.
+Successful development calls use a separate season record. The participant who owns the development key and site operators can inspect their prompt and completion text. Development calls never appear in session recordings, replays, or leaderboards.
 
 See [Agent interface](agent-interface.md#llm-calls) for where model calls fit in an agent turn and the [LLM API specification](../specs/llm.md) for the complete platform rules.

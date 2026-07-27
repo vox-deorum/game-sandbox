@@ -53,10 +53,10 @@ Run these commands from `backend/` unless noted:
 | `npm run build:image` | Rebuild the current session base image |
 | `npm test` | Run Docker-free unit tests |
 | `npm run test:integration` | Run real-container integration tests |
-| `npm run demo` | From the repo root, launch the app with populated e2e data; prints both the admin and an ordinary-member (`ada-lovelace`) sign-in |
-| `npm run demo -- --rerun-e2e` | The same demo, forcing a fresh e2e run first (discards any existing fixture database) |
+| `npm run demo` | From the repository root, launch the app with populated e2e data; prints both the admin and an ordinary-member (`ada-lovelace`) sign-in |
+| `npm run demo -- --rerun-e2e` | From the repository root, run the same demo after discarding and rebuilding the fixture |
 
-Starting a session requires Docker. Unit tests use an in-memory SQLite database and fake driver.
+Starting the backend requires Docker because it reaps managed containers during startup. Unit tests use an in-memory SQLite database and fake driver.
 
 Tests mirror source domains under `test/`. Shared doubles and fixtures live under `test/support/` and `test/fixtures/`; Docker-gated tests live under `test/integration/`.
 
@@ -68,25 +68,11 @@ See [Configuration](../setup/configuration.md) for the full environment-variable
 
 ## LLM proxy
 
-The backend provides one OpenAI-compatible proxy for a configured upstream. Its shared handler authenticates a scoped grant, maps the public model tier to an upstream model, normalizes the output-token maximum, and reserves every accounting scope. It then calls the upstream through an explicit retry loop and commits successful-call telemetry before returning the completion. The internal listener starts only when an upstream URL and at least one model tier are configured.
+The backend exposes an OpenAI-compatible proxy when the deployment configures an upstream and at least one public model tier. It authenticates scoped development or official-session grants, enforces the configured policy, retries eligible upstream failures, and records each successful call before replying.
 
-For an official key, `POST /internal/inflight` returns its accounting scope's cumulative proxy milliseconds as `inflight_ms`. The value includes completed requests, retries, terminal failures, and a bounded contribution from an active request, but not marker or counter reads. The harness uses snapshots around a hook for timing. See [Execution](execution.md#container-side-live-runner).
+Official sessions reach the proxy only through their isolated relay network. The harness reads the internal timing endpoint around an agent hook so verified proxy time is excluded from the hook budget. Development keys and usage belong to an active participant in an open, LLM-enabled season.
 
-Each grant binds one or more synchronous committed-usage readers to the durable store updated by its record sink. In one synchronous section, the meter reads committed usage, checks every limit, and updates all reservations. This prevents a gap in admission checks by combining durable successful usage, in-flight reservations, and conservative debt accumulated during the backend process.
-
-The tokenizer encodes accepted request and completion JSON as ordinary text, so participant content cannot invoke tokenizer control-token behavior. Missing or malformed upstream usage is estimated from the same canonical request and completion retained in telemetry. Successful responses preserve generated content and standard fields, replace structured provider model metadata with public model tiers, and drop nonstandard top-level provider metadata.
-
-An upstream failure releases the reservation and creates no successful-call row. If the upstream succeeds but the durable record does not commit, the system converts the reservation to conservative debt, opens each affected accounting breaker, and returns `meter_unavailable`. A single-flight write-health probe can close the breaker, but it never forgives debt during that backend process. See the [LLM specification](../../specs/llm.md) for product rules and [Configuration](../setup/configuration.md#llm-proxy) for deployment settings.
-
-The session relay exposes the internal listener to session containers. A public development completion route is available to holders of a season development key. `POST /api/seasons/:seasonId/llm-development-key` creates or rotates a participant's key. The same handler authenticates both grant types. Before issuing or accepting a key, the development key service checks that the participant is active, the submission window is open, and the season has effective LLM access.
-
-Official successful calls are stored in `data/llm/<scopeId>.sqlite`. A live session uses its session ID as the scope, while all matches in a leaderboard run share the run ID and retain a separate session ID for each call. Development calls use a private season ledger per participant. These telemetry and ledger files use their own `PRAGMA user_version` migrations. That is separate from the application's flat initial Kysely schema, which contributors update in place while no deployed application data needs a forward migration.
-
-The record sink commits a call before the completion is returned. Recording telemetry reads resolve a recording's durable scope and session association. A recording without LLM association returns an empty result, while an associated scope that cannot be read returns `500 telemetry_unavailable` so the replay can distinguish unavailable data from no successful calls.
-
-Public recording telemetry exposes metadata and authoritative budget costs. Accepted requests and canonical completions are returned only to an operator or the current owner of the controlling submission. Deleting that submission retains public telemetry and costs, but removes the former owner's body access. Retained recording metadata keeps the external telemetry queryable; cleanup reclaims an execution scope only when no retained recording still references it.
-
-Workflow creation stores a fully resolved snapshot of the official LLM policy. The runner uses that snapshot for every match, including enabled model tiers, upstream model mappings, prices, and per-player limits. When an LLM-enabled session or workflow exits, the finalizer blocks new requests, drains or aborts authenticated requests, and waits for their reservations to settle. Only then does it aggregate or delete telemetry, remove relay networking, and complete the lifecycle.
+The durable telemetry store retains public usage metadata and costs. Request and completion bodies are available only to an operator or the owner of the controlling submission. Product behavior, accounting guarantees, and error codes are defined in the [LLM specification](../../specs/llm.md). See [Configuration](../setup/configuration.md#llm-proxy) for deployment settings and the [LLM source](https://github.com/vox-deorum/game-sandbox/tree/main/backend/src/llm) for the implementation.
 
 ## Static frontend
 
@@ -174,14 +160,9 @@ Cookies ride HTTP fetches, WebSocket upgrades, and native download navigations o
 
 ### GitHub account linking
 
-`auth/auth.ts` enables Better Auth account linking for the trusted GitHub provider:
+`auth/auth.ts` configures Better Auth for GitHub linking. GitHub requires a verified email. An implicit link uses the matching verified local email, while an authenticated user may explicitly link a different verified GitHub address.
 
-- An implicit link requires the provider email to match an existing verified local email. The admin create path and bootstrap seed mark credential accounts verified, and the auth migration idempotently backfills that attestation for credential accounts created before linking support.
-- An authenticated explicit link may use a different verified GitHub email. The account-create hook puts that address in a private, non-returned account field, the user's email and password sign-in address change with it, and unlinking GitHub leaves the changed email in place.
-- Plain SQL triggers refuse an owned address and adopt an available one inside the GitHub account insert, so a collision follows Better Auth's normal error callback without leaving a partial link. The triggers depend only on stored row data, so other SQLite connections can maintain credential accounts without registering process-local functions.
-- Partial unique indexes enforce one GitHub connection per user and one local owner per GitHub identity even when callbacks overlap. Better Auth's last-account guard prevents a user from unlinking their only sign-in method.
-- The GitHub provider adapter delegates to Better Auth's built-in profile request, rejects a result without a verified email before any user or account write, and carries the returned `login` into the account hooks without another network call (GitHub's numeric provider account id is not a public profile handle).
-- The account hooks write the server-owned `githubUsername` user field after a link and on later GitHub sign-ins, and a database trigger clears it atomically on unlink. A failed handle snapshot is logged without blocking authentication and leaves the previous value for the next GitHub flow to refresh. Linking does not copy the provider name or avatar onto an existing user.
+Database constraints keep each GitHub identity and account email owned by one user. The account hooks maintain the server-owned `githubUsername` field on GitHub links and sign-ins, and unlinking clears it. See the [authentication source](https://github.com/vox-deorum/game-sandbox/tree/main/backend/src/auth) for the implementation details.
 
 `auth/users.ts` resolves public attribution from the Better Auth-owned `user` table. `namesFor(ids)` remains the low-cost name-only batch read used across sessions, recordings, workflows, and leaderboards. `profilesFor(ids)` adds the optional GitHub username and is used only by the agent-profile response, so blind-rating and recording payloads never gain the handle.
 
@@ -255,7 +236,7 @@ When a cached overlay was evicted, `ensureSubmissionImage` materializes the tree
 
 Routes live under `/api`. Request bodies use Fastify JSON-schema validation, and expected refusals use stable `code` values.
 
-### Public and participant groups
+### Selected public and participant endpoints
 
 | Prefix or route | Responsibility |
 | --- | --- |
@@ -270,6 +251,9 @@ Routes live under `/api`. Request bodies use Fastify JSON-schema validation, and
 | `/api/environments/:envId/leaderboards` | Current and historical released boards |
 | `/api/sessions/:sessionId/ratings` | Read and write session ratings |
 | `/api/seasons/:seasonId/agent-rating-prompt` | Author prompt |
+| `/api/llm-development/seasons` and `/api/seasons/:seasonId/llm-development*` | Development-key eligibility, usage, call history, and key rotation |
+| `/api/llm/v1/chat/completions` | OpenAI-compatible development completion endpoint |
+| `/api/recordings/:id/llm` | Official recording LLM usage and authorized call bodies |
 
 The server derives user identity. Request bodies never choose the submitter, recording owner, or rater.
 

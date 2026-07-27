@@ -1,6 +1,6 @@
 # Environment Template and Examples
 
-Each environment owns the student-facing files that differ from the shared starter kit. Keep them beside the environment package so an environment can be understood and changed in one place.
+Each environment owns the student-facing files that differ from the shared starter kit. Keep them beside the package.
 
 Read [Template product and releases](templates.md) for composition, dependency versions, and publication.
 
@@ -14,7 +14,7 @@ Every environment package must also declare `PUBLISHED_EXAMPLES`, a tuple of exa
 
 The top-level `templates/` directory contains only `templates/base/`. Generated `sandbox/env/`, `sandbox/harness/`, and shared helper files exist only in a composed tree under `build/`.
 
-Compose renders an environment's declared `EnvParameter` and `EnvParameterChoice` values into the generated `sandbox.env` registration. It does not copy the synthesized public `players` or `seat_plan` declaration back into `EnvironmentMeta`, because the layout remains its source of truth.
+Compose renders declared `EnvParameter` and `EnvParameterChoice` values into `sandbox.env`. It derives `players` and `seat_plan` from the layout.
 
 ## Helpers and pin tests
 

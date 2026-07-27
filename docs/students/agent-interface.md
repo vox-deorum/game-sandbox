@@ -91,9 +91,9 @@ On each turn, your agent may send at most one message to each recipient and one 
 
 ### LLM calls
 
-When the environment and season enable the optional LLM API, `act`, `chat`, and `learn` may use the standard OpenAI Python client. On your computer, the client reads a season key from `.env`. Official sessions provide a temporary endpoint and key for the acting player. Every model-assisted path through `act` must be able to return a legal fallback action if the budget runs out, the model service cannot recover from an error, or the response has the wrong format.
+When the environment and season enable the optional LLM API, `act`, `chat`, and `learn` may use the standard OpenAI Python client. Every model-assisted path through `act` must return a legal fallback action if the budget runs out, the service cannot recover from an error, or the response has the wrong format.
 
-Model calls from `act`, `chat`, or `learn` wait for a complete response and do not stream partial text. Make them directly in the method being called. Official sessions exclude verified time spent waiting for the LLM proxy, including retries, from the agent's time limits. Calls made while importing the module, creating the agent, or running `reset` count as setup rather than turn work, but setup should still be lightweight. Follow [Using the LLM API](llm.md) to configure the client and understand timing, budgets, and who can see prompts.
+Make each call directly in the method being called and wait for its complete, non-streaming response. In official sessions, verified time waiting for the LLM proxy does not count toward the hook, step, or episode limits. Calls made during import, construction, or `reset` are setup work, which should stay lightweight. Follow [Using the LLM API](llm.md) to configure the client and learn about budgets, errors, and prompt visibility.
 
 ## Manifest
 

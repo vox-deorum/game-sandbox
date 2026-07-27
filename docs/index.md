@@ -10,6 +10,6 @@ Choose the section that matches what you are doing:
 | Develop Game Sandbox itself | [Contributor guide](contributors/index.md) |
 | Understand the product rules and architecture | [Specification](specs/index.md) |
 
-Game Sandbox uses [PettingZoo](https://pettingzoo.farama.org/) as its environment interface. A compatibility wrapper makes single-agent games look like multi-agent games, so the rest of the system needs only one model.
+Game Sandbox uses [PettingZoo](https://pettingzoo.farama.org/) as its environment interface. A compatibility wrapper adapts single-agent games to that interface, so the rest of the system handles every game in the same way.
 
 If you are new to the project and are not sure which path you need, read the short [project overview](specs/overview.md).

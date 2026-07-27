@@ -21,7 +21,7 @@ Read the [environment specification](../../specs/environment.md) for product rul
 6. Run `npm run sync:envs`, compose the template, run the repository checks, and play-test the environment.
 7. Publish the environment's template and example branches with the next version bump, or dispatch the [Publish Template workflow](templates.md) with the current `N` and `republish: true`.
 
-A new environment is not complete when it merely runs. A student must be able to learn, run, and improve an agent without reading the environment source.
+A new environment must let a student learn, run, and improve an agent without reading its source.
 
 ## Directory layout
 
@@ -52,9 +52,9 @@ The environment directories are the source of registration data. `npm run sync:e
 
 ## Play test
 
-`npm run play -- <env> [mode]` rebuilds the local frontend, then starts loopback browser play with the production live runner and the same PixiJS renderer used by a live session.
+`npm run play -- <env> [mode]` rebuilds the local frontend and starts loopback play with the production live runner and renderer.
 
-It needs no backend, Docker, or external network connection. `mode` is `human` by default, `agent` to watch the bundled example agent, or `watch` to use the built-in baseline.
+It needs no backend, Docker, or external network connection. `mode` is `human` by default, `agent` to watch the repository selected by `--agent-repo`, or `watch` to use the built-in baseline.
 
 Every mode starts paused at the first frame. Use Start when ready, then use the shared pause, resume, and stop controls. The flags:
 

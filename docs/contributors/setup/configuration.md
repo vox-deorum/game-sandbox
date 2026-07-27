@@ -1,6 +1,6 @@
 # Configuration
 
-Game Sandbox uses environment variables for configuration. The tracked `.env.default` file at the repository root defines all concrete runtime defaults. Features that need private credentials or external endpoints remain disabled until configured. `config.ts` has no duplicate fallback values, and the project has no secrets manager.
+Game Sandbox uses environment variables for configuration. The tracked `.env.default` file at the repository root defines the runtime defaults. Features that need private credentials or external endpoints remain disabled until configured.
 
 This page is the full reference for those variables. Read [Backend](../runtime/backend.md) for how the values are consumed, and [Development setup](development.md) to get a working local environment first.
 
@@ -10,13 +10,13 @@ This page is the full reference for those variables. Read [Backend](../runtime/b
 
 Edit `.env.default` when a tracked default changes. It contains public development credentials that are safe only because insecure development mode binds the backend to loopback. Never put private credentials in this file. Use the Git-ignored `.env` for machine-specific values and private credentials. Other `.env.*` files are not loaded automatically.
 
-After loading, `config.ts` validates required values and parses the environment into one typed `Config` object. The file contains only derived behavior, such as `SITE_SHORT_NAME` falling back to `SITE_NAME`, and optional settings remain absent when unset. Constructors receive either the complete `Config` or the part a service needs. Feature modules must not read process environment variables directly. When passed an explicit map, `loadConfig()` treats it as complete and reads neither file. This keeps tests isolated from a developer's `.env`; tests for defaults use a shared helper to seed their map from `.env.default`.
+After loading, `config.ts` validates required values and parses the environment into one typed `Config` object. It also derives values such as `SITE_SHORT_NAME`, which falls back to `SITE_NAME` when unset. Feature modules receive configuration rather than reading process environment variables directly.
 
 ## Validation
 
 Dedicated parsers and Zod schemas validate every value. A missing or malformed setting therefore fails at startup with a message that names the variable. The accepted forms are:
 
-- Integer settings must be whole numbers. Quotas may allow zero, while ports and timing intervals use setting-specific positive upper and lower bounds. Floats, `NaN`, negatives, and out-of-range values are rejected.
+- Integer settings must be non-negative whole numbers unless the variable reference states stricter bounds. Floats, `NaN`, negatives, and values outside stated bounds are rejected.
 - Quotas that allow fractions, such as `SANDBOX_CPUS`, must be positive finite numbers.
 - Booleans accept `true`, `1`, or `yes` for true, and `false`, `0`, or `no` for false.
 - Comma-separated lists, such as `AUTH_TRUSTED_ORIGINS`, are trimmed and drop blank entries.

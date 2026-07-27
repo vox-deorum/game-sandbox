@@ -3,9 +3,9 @@
 ## Prerequisites
 
 - Python 3.12, managed with [uv](https://docs.astral.sh/uv/getting-started/installation/). The version is pinned in `.python-version`.
-- Node 22, pinned in `.nvmrc` and enforced by `package.json`.
+- Node 22, pinned in `.nvmrc`; the root `package.json` declares the supported range.
 - Git.
-- Docker Desktop for sessions, integration tests, and browser end-to-end tests.
+- A running Docker daemon for full-stack startup, sessions, integration tests, and browser end-to-end tests. Docker Desktop provides one on Windows.
 
 From the repository root:
 
@@ -37,7 +37,7 @@ The committed `.env.default` file provides the runtime defaults and enables loop
 
 ## Dev scripts
 
-The development host needs a running Docker daemon, such as Docker Desktop on Windows.
+Starting the backend, including `npm start` and `npm run demo`, needs a running Docker daemon because startup reaps managed containers. Docker is also required for sessions and Docker-gated checks. The lint, typecheck, unit-test, composition, and local-play commands do not need it.
 
 | Intent | Command |
 | --- | --- |
@@ -52,21 +52,9 @@ The development host needs a running Docker daemon, such as Docker Desktop on Wi
 | Run the app on the e2e-built database | `npm run demo` |
 | Force a fresh e2e run before the demo | `npm run demo -- --rerun-e2e` |
 
-`npm run demo` provides realistic sessions, submissions, seasons, and replays. It:
+`npm run demo` serves a disposable copy of the browser e2e fixture on port 8080, with realistic sessions, submissions, seasons, and replays. It never writes to the `main` fixture reused by local e2e runs. The command prints the bootstrap administrator and ordinary student credentials so you can explore both roles. If a partial e2e run left the student account out of the fixture, rebuild it with `npm run demo -- --rerun-e2e`.
 
-- Copies `frontend/e2e/.data/main/` into a fresh `demo/` directory.
-- Runs `frontend-e2e` first if the source database does not exist.
-- Serves the copied data on port 8080.
-- Rebuilds the e2e database if a schema change makes the copy stale.
-
-Demo play writes only to the disposable `demo/` copy, never to the `main/` fixture reused by local e2e runs.
-
-On launch the command prints the credentials for two example accounts, so the demo can be explored from either side without a second launch:
-
-- **admin**: The bootstrap administrator, which the backend synchronizes on every boot. Sign in at `/login` to see the full interface, including the admin console.
-- **student**: The ordinary member `ada-lovelace`, the e2e fixture's most complete non-admin account. It has a submitted agent, an author rating prompt, watch recordings, and competition placements, giving most member-facing features real content. Its Better Auth role remains `user`, so the admin console stays locked as it would for a real member. If a partial e2e run built the reused database without this fixture, the command reports that the account is missing. Recreate it with `npm run demo -- --rerun-e2e`.
-
-By default, the e2e suite runs only when the source database is missing, so later demos reuse a successful run. Pass `--rerun-e2e` (`npm run demo -- --rerun-e2e`) to discard the existing e2e database and rebuild it before launch. Use this option after changing the specs or the data they create.
+The demo creates the source fixture when it is missing. Run `npm run demo -- --rerun-e2e` after changing e2e specs or fixture data to discard the existing source fixture, rebuild it, and then start the demo.
 
 `scripts/generate.py` produces TypeScript schema types, packaged schema copies, environment metadata, packaging declarations, and golden fixtures. Edit the source, regenerate, and commit both the source and generated files. Do not edit generated files by hand.
 

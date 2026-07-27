@@ -33,29 +33,15 @@ python -m sandbox
 
 The first run creates a **virtual environment**, which keeps this project's Python packages separate from other projects. It then installs the exact package versions required by the template and opens the game in your browser. Select **Start** when you are ready. Your [environment page](environments/index.md) explains the controls. In Flappy Bird, for example, press **Space**, the **up arrow**, or **W** to flap.
 
-There is no separate installation step, and you can run the command again at any time. The game runs only on your computer, so it does not need the Game Sandbox website or an internet connection. The other commands in this guide, such as `python -m sandbox play`, `eval`, and `test`, set up the project in the same way.
+There is no separate installation step, and you can run the command again at any time. After the first run installs the packages, the game runs only on your computer and does not need the Game Sandbox website or an internet connection. The other commands in this guide, such as `python -m sandbox play`, `eval`, and `test`, set up the project in the same way.
 
-If you prefer to manage the virtual environment yourself, create one inside the repository.
+Usually, you do not need to manage the virtual environment yourself. If automatic setup fails or your instructor asks you to create one manually, follow Python's [virtual environment guide](https://docs.python.org/3/tutorial/venv.html) to create and activate `.venv`. With that environment active, install the template's packages:
 
-On Windows PowerShell:
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
+```console
 python -m pip install -r requirements.txt -r requirements-dev.txt
 ```
 
-On macOS or Linux:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.txt -r requirements-dev.txt
-```
-
-When the environment is active, your terminal usually shows `(.venv)` at the start of the prompt. Python's [virtual environment guide](https://docs.python.org/3/tutorial/venv.html) explains why this isolation is useful.
-
-The two requirements files list the exact package versions used by the template and its tests. Do not edit `requirements.txt` or install different versions in the project. Ask your instructor if you need a package that is not included.
+When a virtual environment is active, your terminal usually shows `(.venv)` at the start of the prompt. The requirements files list the exact package versions used by the template and its tests. Do not edit `requirements.txt` or install different versions in the project. Ask your instructor if you need a package that is not included.
 
 ## 3. Improve your agent
 
@@ -64,7 +50,7 @@ Open `agent.py`. It contains a small working agent, so you can run the game befo
 - `reset(seed)` prepares the agent for a new game.
 - `act(observation)` reads the current game state and returns an action. A `TODO(you)` comment marks the line for you to change.
 
-For Flappy Bird, the observation describes the bird and nearby pipes in screen pixels. An action is `0` to do nothing or `1` to flap. For Hearts and Spades, the observation contains your hand and the cards on the table as objects such as `{"suit", "rank"}`. It also contains a **legal-move mask**, an array that marks which actions are currently allowed. The action is the number for the card or bid you chose.
+For Flappy Bird, the observation describes the bird and nearby pipes in screen pixels. An action is `0` to do nothing or `1` to flap. For Hearts and Spades, the observation contains your hand and the cards on the table as objects such as `{"suit": 2, "rank": 12}`. It also contains a **legal-move mask**, an array that marks which actions are currently allowed. The action is the number for the card or bid you chose.
 
 Each game gives its action numbers and observation fields different meanings. Your [environment page](environments/index.md) explains the starting agent line by line and documents every value. It also covers a `sandbox` helper module (`sandbox.features` for Flappy Bird or `sandbox.cards` for Hearts and Spades). These helpers let you use named values and card objects instead of reading raw arrays.
 

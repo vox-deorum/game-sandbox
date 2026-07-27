@@ -99,19 +99,9 @@ uv run python scripts/ci.py frontend-e2e
 
 This job is not part of per-push CI because it is too slow and Docker-heavy. It has its own manually dispatched workflow at `.github/workflows/e2e.yml`. Trigger it from the Actions tab with **Run workflow**, or run it locally with the command above.
 
-The Playwright journey builds the frontend and session image, starts the real backend, and drives Chromium through:
+The suite builds the frontend and session image, starts the real backend, and covers browser flows for sessions, submissions, authentication, replays, seasons, and leaderboards. Assertions target the DOM and confirm that the canvas is painted. They do not compare pixels.
 
-- Live play, pause, resume, and stop.
-- Replay opening, scrubbing, and pinning.
-- Watch, spectator, and authorization/status cases.
-- Submission stages from resolve through load.
-- A ready example launched from the watch picker.
-- A load failure caused by a missing class.
-- Season, leaderboard, and rating behavior covered by the current journeys.
-
-Assertions target the DOM and confirm that the canvas is painted. They do not compare pixels.
-
-Every local run starts from a fresh database, the suite doubles as the demo's data fixture, and the leaderboards arc drives a whole season end to end. See [End-to-end tests](browser-e2e.md) for the data setup, the naming conventions, and how to add a spec or fixture.
+See [End-to-end tests](browser-e2e.md) for setup, fixture conventions, and instructions for adding a spec or fixture.
 
 Any UI change that renames text, changes markup, moves a control, or alters a flow must update both the jsdom tests under `frontend/test/` and relevant Playwright journeys under `frontend/e2e/`.
 

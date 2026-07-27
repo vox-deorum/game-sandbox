@@ -16,6 +16,7 @@ Frontend code lives under `frontend/src/`.
 | `composables/`   | Reusable stateful Vue behavior                  |
 | `api/`           | Typed HTTP and WebSocket clients                |
 | `lib/`           | Pure helpers                                    |
+| `local/`         | Standalone local-play browser entry and page    |
 | `renderers/`     | Environment renderers and the renderer registry |
 | `replay/`        | Recording parsing and replay transport          |
 | `styles/`        | Design tokens and global styles                 |
@@ -33,7 +34,7 @@ The frontend requires Node.js 22. Run these commands from `frontend/`:
 | `npm test`      | Run the Vitest unit tests                               |
 | `npm run build` | Create the production build in `frontend/dist/`         |
 
-For local development, run `npm run dev` separately in `backend/`. Docker is required only when the backend launches a session. From the repository root, `npm start` builds the frontend and starts the backend on port 8080.
+For local development, run `npm run dev` separately in `backend/`. Starting the backend, including root `npm start`, needs a running Docker daemon because startup reaps managed containers. Docker is also required for sessions and the browser end-to-end suite.
 
 When making a change:
 

@@ -232,7 +232,7 @@ Read these through `observation["observation"]`, or let the helpers do it: `hand
 
 #### How player numbers and partnerships work
 
-Player IDs label PettingZoo positions rather than fixed screen positions. Player `0` controls `player_0`, player `1` controls `player_1`, and so on. Turns move clockwise. A platform **seat** is a separate assignment unit. The default `partnership` plan gives one seat to players 0 and 2 and another to players 1 and 3. The `solo` plan gives each player a separate seat:
+Player IDs label PettingZoo positions rather than fixed screen positions. Player `0` controls `player_0`, player `1` controls `player_1`, and so on. Turns move clockwise:
 
 ```text
 0 → 1 → 2 → 3 → 0

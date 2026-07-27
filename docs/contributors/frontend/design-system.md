@@ -42,12 +42,13 @@ The scales:
 - **Radii** `--radius-sm` (4px), `--radius-md` (8px), `--radius-lg` (12px), `--radius-full` (pill).
 - **Motion** `--motion-fast` (~120ms), `--motion-base` (~200ms), `--ease-out`. A global `prefers-reduced-motion: reduce` block in `base.css` zeroes the durations, so any component animating with the tokens calms down automatically.
 
-`main.ts` imports four global stylesheets in order:
+`main.ts` imports five global stylesheets in order:
 
 1. `tokens.css` defines the tokens.
 2. `base.css` provides the reset, element defaults, global `:focus-visible` style, and reduced-motion block.
 3. `app.css` contains only the application shell layout.
 4. `season-rows.css` provides the compact row, status stripe, date, and visually hidden utilities shared by My Agents and agent profiles.
+5. Highlight.js's `github-dark.css` colors syntax tokens in in-app documentation code blocks.
 
 All other styles are component-scoped CSS that uses the tokens.
 
@@ -63,7 +64,7 @@ The primitives live in `frontend/src/components/ui/`, PascalCase with a `Ui` pre
 
 | Primitive | Replaces / role |
 | --- | --- |
-| `UiButton` | All buttons and button-styled links (renders a `<button>` or a `RouterLink` via `to`). Variants primary/secondary/ghost/danger, sizes tight/md/lg, disabled and loading states. |
+| `UiButton` | All buttons and button-styled links (renders a `<button>`, a `RouterLink` via `to`, or a native link via `href`). Variants primary/secondary/ghost/danger, sizes tight/md/lg, disabled and loading states. |
 | `UiAvatar` | A compact or profile-sized user image with an accessible initial-letter fallback. |
 | `UiBadge` | Small text-bearing tags. Always text, never a bare glyph or color-only dot. |
 | `UiStatusBadge` | Live status: a colored dot **paired with a text label** that carries the meaning. |
@@ -99,7 +100,7 @@ The **application shell** has two levels of navigation:
 
 See the [frontend contributor guide](development.md#navigation).
 
-The breakpoints are 480px, 768px, and 1024px. They are plain values because CSS custom properties cannot parameterize media queries.
+The breakpoints are 480px, 768px, 1024px, and 1200px. The 1200px threshold lets a landscape game stage place its decision log beside the canvas. They are plain values because CSS custom properties cannot parameterize media queries.
 
 The layout must stay usable from narrow phone widths through wide desktops:
 

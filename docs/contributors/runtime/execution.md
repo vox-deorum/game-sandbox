@@ -49,9 +49,9 @@ The Docker implementation lives under `driver/docker/`. A later Kubernetes imple
 
 The Docker driver maps these to Docker settings, drops capabilities, and labels containers with `game-sandbox.session=<id>`. Startup reaps leftover labeled containers from an interrupted backend process.
 
-Backend callers do not construct this profile field by field. `driver/sandbox.ts` builds profiles for live sessions, scheduled workflow games, and submission load checks. It always configures a read-only root filesystem and a bounded `/tmp` scratch mount. Callers choose either no network (`none`) or the narrowly scoped `llm` network, plus CPU and memory limits, scratch size, and approved mounts. Add new sandbox callers through this helper, then extend the invariant tests for their quotas, network access, and permitted mounts.
+`driver/sandbox.ts` builds profiles for live sessions, workflow games, and submission load checks. It always uses a read-only root filesystem and bounded `/tmp`. Callers choose `none` or `llm` networking, resource limits, scratch size, and approved mounts. Add new callers through this helper and extend its invariant tests.
 
-An LLM-enabled session gets two isolated Docker networks. The agent container joins the agent network, where `llm-proxy` is the only service. A relay joins both that network and a separate egress network, then forwards traffic only to the backend's internal LLM listener. The agent container never joins the egress network or gains general internet access. Its launch configuration includes `http://llm-proxy:<port>/v1`, the internal tick endpoint, and the internal in-flight timing endpoint.
+An LLM-enabled session uses two isolated Docker networks. The agent container can reach only `llm-proxy`. A relay joins that network and a separate egress network, forwarding only to the backend's internal LLM listener. The agent never gets general internet access.
 
 ## Session base images
 
@@ -163,7 +163,7 @@ Only the session owner can issue commands. Input also requires human mode and a 
 
 ## Orchestrator lifecycle
 
-`session/orchestrator.ts` starts a session in the following order. Before calling it, the route's `requireActive` guard confirms that the acting user is active, so the orchestrator does not repeat that authorization check.
+`session/orchestrator.ts` starts a session after the route's `requireActive` guard confirms the user is active.
 
 1. Validate environment and mode.
 2. Enforce one active session per user.
@@ -186,7 +186,7 @@ Every exit path enters the same idempotent finalizer. The first termination reas
 | Memory kill                   | `oom_killed`                               |
 | Other crash                   | `error`                                    |
 
-The finalizer stores the result, notifies clients, kills the container if needed, and clears the active registry. For an LLM-enabled session, it first blocks new requests, aborts or drains authenticated proxy requests, and waits for their reservations to settle. It can then aggregate or delete telemetry, disconnect the relay, remove the internal networks, and complete the lifecycle.
+The finalizer stores the result, notifies clients, kills the container if needed, and clears the active registry. For LLM-enabled sessions, it blocks and settles proxy requests before cleaning up telemetry and networks.
 
 ## Container-side live runner
 

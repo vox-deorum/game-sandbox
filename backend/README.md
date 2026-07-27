@@ -2,6 +2,8 @@
 
 The Node and TypeScript service for HTTP APIs, storage, submissions, seasons, ratings, session orchestration, and the browser-to-container WebSocket relay.
 
+Run these commands from `backend/`:
+
 ```console
 npm run dev
 npm test
