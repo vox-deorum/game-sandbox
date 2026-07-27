@@ -4,14 +4,14 @@ Spades is a four-player partnership card game. You and the player across the tab
 
 ## Seats and players
 
-A **player** is one position at the card table. A **seat** is the controller assignment used for a game or season. Spades offers two seat plans:
+A **player** is one position at the card table. A **seat** is the set of players that one submission controls. Spades offers two seat plans:
 
 | Plan | What one submission controls |
 | --- | --- |
 | `partnership` (default) | One partnership: players 0 and 2, or players 1 and 3 |
 | `solo` | One player |
 
-The default `partnership` plan runs one submission for each team. Game Sandbox creates a separate `Agent()` object for each of that submission's two players. Those objects do not share variables or other in-memory state, even though they come from the same code. Use the optional `chat` method to pass information between them. A season can choose the `solo` plan, which assigns one submission to each player instead.
+The default `partnership` plan runs one submission for each team. Game Sandbox creates a separate `Agent()` object for each of that submission's two players. Those objects do not share variables, even though they come from the same code. Use the optional `chat` method to pass information between them. A season can choose the `solo` plan, which assigns one submission to each player instead.
 
 ## How the game works
 
@@ -31,11 +31,11 @@ This environment uses these Spades rules:
 
 You do not need to program these rules yourself. The template helpers read the observation and list the bids or cards you may choose on the current turn.
 
-The [Wikipedia article about Spades](https://en.wikipedia.org/wiki/Spades_%28card_game%29) provides a broader introduction if the game is new to you.
+> _Never played Spades?_ The [Wikipedia article about Spades](https://en.wikipedia.org/wiki/Spades_%28card_game%29) provides a broader introduction.
 
 ## Your first agent
 
-Your template contains a complete working agent. You can run it before changing anything. This section explains how it handles bidding and card play.
+Your template contains a complete working agent. This section explains how it handles bidding and card play.
 
 On each turn, the game harness calls `act` with an observation of the table. During the bidding round, your agent returns a bid. During card play, it returns a card. The template's helper module tells you which phase the game is in and converts the observation into card objects and plain Python values, so you do not need to handle raw numbers.
 
@@ -94,10 +94,10 @@ Run the agent from the template folder:
 ```console
 python -m sandbox play    # watch separate copies of your agent play all four positions
 python -m sandbox eval    # play several seeded games and report the mean score
-python -m sandbox test    # run the checks, which pass before you change anything
+python -m sandbox test    # run the checks
 ```
 
-`eval` reports the higher-is-better team score from [Scoring and rewards](#scoring-and-rewards). It is useful for comparing changes against the same seeds, not for predicting leaderboard results. `test` passes in a fresh template because the starting agent is complete.
+`eval` reports the higher-is-better team score from [Scoring and rewards](#scoring-and-rewards). It is useful for comparing changes against the same seeds, not for predicting leaderboard results.
 
 The `TODO(you)` comment inside `act` marks where you take over. A better agent should improve both the fixed bid and the strategy of never trying to win. [Your first improvement](#your-first-improvement) helps you find a first step. This page is the `environment.md` file that the template comments mention.
 
@@ -111,7 +111,7 @@ Each team's score is calculated once at the end of one hand. This environment do
 
 For example, if your partner bid 4 and took 3 tricks while you bid nil and took 2, your team's contract is 4 and it took 5 tricks: a made contract worth 40, plus 1 bag, minus your 100 nil penalty, for a team total of minus 59.
 
-Both partners share the same team score. Every action during play gives all players a reward of `0.0`. At the end, each player's reward is their **team hand score**. Partners receive the same value, and higher is better:
+During play, every action gives a reward of `0.0`. When the game ends, each player's reward is their **team hand score**, so both partners receive the same value, and higher is better:
 
 | Outcome                                   | Reward   |
 | ----------------------------------------- | -------- |
@@ -290,7 +290,7 @@ class Agent:
 
 Messages name players with strings such as `"player_2"`, not the plain numbers in the observation, so the example builds that name from the partner's number. `chat` receives the inbox but not the observation, which is why the example saves the name during `act`, the method that runs first on every turn. Return `{"to": None, "text": "..."}` when you want to broadcast to the whole table.
 
-A **targeted** message is delivered only to the selected player, while a **broadcast** (`"to": None`) is delivered to the whole table. Direct choices come from the live game state. Your partner is listed first and is the default direct target on your turn. Broadcast to everyone is always available. Every message is recorded and shown in replays, so even a targeted message is not secret. By default, each message can contain up to 120 characters as counted by the system. Some emoji count as more than one character. A season may override that limit. The [agent interface](../../docs/students/agent-interface.md#chatinbox) explains delivery timing, send limits, and how chat time counts toward your limits.
+A **targeted** message goes only to the selected player, while a **broadcast** (`"to": None`) goes to the whole table. Every message is recorded and shown in replays, so even a targeted message is not secret. By default, a message can hold up to 120 characters (some emoji count as more than one), and a season may change that limit. The [agent interface](../../docs/students/agent-interface.md#chatinbox) explains delivery timing, send limits, and how chat time counts toward your limits.
 
 In the default partnership plan, `chat` is how the two separate copies of your agent can coordinate. Treat it as a communication channel, not shared memory.
 

@@ -16,11 +16,11 @@ This environment uses these Hearts rules:
 
 You do not need to program these rules yourself. The template's `legal_cards` helper reads the observation and lists the cards you may play on the current turn.
 
-The [Wikipedia article about Hearts](https://en.wikipedia.org/wiki/Hearts_%28card_game%29) provides a broader introduction if the game is new to you.
+> _Never played Hearts?_ The [Wikipedia article about Hearts](https://en.wikipedia.org/wiki/Hearts_%28card_game%29) provides a broader introduction.
 
 ## Your first agent
 
-Your template contains a complete working agent. You can run it before changing anything. This section explains how it chooses a card.
+Your template contains a complete working agent. This section explains how it chooses a card.
 
 On each turn, the game harness calls `act` with an observation of the table. Your agent must return the card it wants to play. The template's helper module converts the observation into card objects and plain Python values, so you do not need to work with raw numbers.
 
@@ -72,10 +72,10 @@ Run the agent from the template folder:
 ```console
 python -m sandbox play    # watch separate copies of your agent play all four positions
 python -m sandbox eval    # play several seeded games and report the mean score
-python -m sandbox test    # run the checks, which pass before you change anything
+python -m sandbox test    # run the checks
 ```
 
-`eval` reports the higher-is-better leaderboard score from [Scoring and rewards](#scoring-and-rewards), so a result closer to zero is better. It is useful for comparing changes against the same seeds, not for predicting leaderboard results. `test` passes in a fresh template because the starting agent is complete.
+`eval` reports the higher-is-better leaderboard score from [Scoring and rewards](#scoring-and-rewards), so a result closer to zero is better. It is useful for comparing changes against the same seeds, not for predicting leaderboard results.
 
 The `TODO(you)` comment inside `act` marks the line for you to improve. You can keep the setup above it and change the decision in the return statement. [Your first improvement](#your-first-improvement) helps you find a smarter strategy. This page is the `environment.md` file that the template comments mention.
 
@@ -85,7 +85,7 @@ Each heart taken in a trick adds 1 penalty point, and the queen of spades adds 1
 
 **Shooting the moon** is the exception. If one player takes all 13 hearts and the queen of spades, that player scores 0 penalty points and every other player scores 26.
 
-Every action during play gives all players a reward of `0.0`. At the end, each player's reward is the negative of their final penalty score. This changes a score where lower is better into a reward where higher is better:
+During play, every action gives a reward of `0.0`. When the game ends, each player's reward is the negative of their final penalty score, which turns the lower-is-better score into a higher-is-better reward:
 
 | Final penalty score | Final reward |
 | ------------------- | ------------ |
@@ -94,7 +94,7 @@ Every action during play gives all players a reward of `0.0`. At the end, each p
 | `13`                | `-13.0`      |
 | `26`                | `-26.0`      |
 
-After a successful moon shot, the shooter receives `0.0` and each other player receives `-26.0`. The `scores` observation shows raw penalty cards taken while the game is still running. The moon-shot adjustment is applied to the final score and reward when the game ends.
+After a successful moon shot, the shooter receives `0.0` and each other player receives `-26.0`. While the game is still running, the `scores` observation shows the penalty points taken so far. The moon-shot adjustment is applied to the final score and reward when the game ends.
 
 ## The helper module
 

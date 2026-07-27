@@ -1,6 +1,6 @@
 # Agent Interface
 
-Your agent is a Python class, a small package of decision-making code and the values it remembers. The game runner creates a separate `Agent()` instance for every player your submission controls, then asks each one to choose actions until the game ends. In a game where your submission controls more than one player, those instances do not share memory. Your [environment page](environments/index.md) explains what your game's actions and observations mean.
+Your agent is a Python class, a small package of decision-making code and the values it remembers. Depending on the assignment, it can control one or more players, each with a separate `Agent()` instance without shared memory. At each time step, the game runner will ask each instance to choose actions, until the game ends. Your [environment page](environments/index.md) explains what your game's actions and observations mean.
 
 ## Minimal agent
 

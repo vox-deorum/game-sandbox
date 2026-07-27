@@ -1,6 +1,6 @@
 # Getting Started
 
-You will write a Game Sandbox agent in Python and test it on your own computer. The project template includes the game environment and the PettingZoo tools that run it. You do not need to run the Game Sandbox website or server.
+This guide contains basic instructions for writing a game agent in Python and testing it on your own computer.
 
 ## Before you begin
 
@@ -10,20 +10,22 @@ Install:
 - [Git](https://docs.github.com/en/get-started/git-basics/set-up-git)
 - A code editor, such as [Visual Studio Code](https://code.visualstudio.com/)
 
-Git records changes to a project. GitHub stores a copy of that project online. A project tracked by Git is called a **repository**, often shortened to **repo**. GitHub's [Hello World guide](https://docs.github.com/en/get-started/start-your-journey/hello-world) is a friendly introduction if these ideas are new.
+> _What's Git or GitHub?_ Git records changes to a project. GitHub stores a copy of that project online. A project tracked by Git is called a **repository**, often shortened to **repo**. Want to know more? Check out GitHub's [Hello World guide](https://docs.github.com/en/get-started/start-your-journey/hello-world).
 
-Python is the language you will use to describe your agent's decisions. You can begin by changing the marked line in the working agent, then learn more as you need it. Python's [official tutorial](https://docs.python.org/3/tutorial/) introduces the language from the beginning. Its sections on numbers, lists, dictionaries, functions, and classes are especially useful here.
+> _What's Python?_ Python is the language you will use to describe your agent's decisions. It is widely used in machine learning today. Python's [official tutorial](https://docs.python.org/3/tutorial/) introduces the language from the beginning. Its sections on numbers, lists, dictionaries, functions, and classes are especially useful here.
 
 ## 1. Copy the template to your computer
 
-Your instructor will give you a GitHub repository created from the agent template. To **clone** a repository means to copy it to your computer. Clone yours with:
+Your assignment will have a link to a GitHub repository with the agent template. To **clone** a repository means to copy it to your computer.
+
+Use Visual Studio Code "Start => Clone Git Repository..." for an interactive experience, or use command line:
 
 ```console
 git clone <your-repository-url>
 cd <your-repository-name>
 ```
 
-Replace both `<...>` placeholders with the URL and folder name from your instructor. See GitHub's [cloning guide](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) if you need help finding the URL.
+See GitHub's [cloning guide](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) if you need help finding the URL.
 
 ## 2. Set up the project and play
 
@@ -33,11 +35,13 @@ From the repository folder, run:
 python -m sandbox
 ```
 
-The first run creates a **virtual environment**, which keeps this project's Python packages separate from other projects. It then installs the exact package versions required by the template and opens the game in your browser. Select **Start** when you are ready. Your [environment page](environments/index.md) explains the controls. In Flappy Bird, for example, press **Space**, the **up arrow**, or **W** to flap.
+The first run automatically creates a **virtual environment**, which keeps this project's Python packages separate from other projects. It then installs the exact package versions required by the template and opens the game in your browser. Select **Start** when you are ready. Your [environment page](environments/index.md) explains the controls. In Flappy Bird, for example, press **Space**, the **up arrow**, or **W** to flap.
 
-There is no separate installation step, and you can run the command again at any time. After the first run installs the packages, the game runs only on your computer and does not need the Game Sandbox website or an internet connection. The other commands in this guide, such as `python -m sandbox play`, `eval`, and `test`, set up the project in the same way.
+After the first run installs the packages, the game runs only on your computer and does not need the website or an internet connection.
 
-Usually, you do not need to manage the virtual environment yourself. If automatic setup fails or your instructor asks you to create one manually, follow Python's [virtual environment guide](https://docs.python.org/3/tutorial/venv.html) to create and activate `.venv`. With that environment active, install the template's packages:
+### Manual Installation
+
+If automatic setup fails, follow Python's [virtual environment guide](https://docs.python.org/3/tutorial/venv.html) to create and activate `.venv`. With that environment active, install the template's packages:
 
 ```console
 python -m pip install -r requirements.txt -r requirements-dev.txt
@@ -47,16 +51,14 @@ When a virtual environment is active, your terminal usually shows `(.venv)` at t
 
 ## 3. Improve your agent
 
-Open `agent.py`. It contains a small working agent, so you can run the game before changing any code. Your job is to make that agent play better. It has two required methods:
+Open `agent.py`, which already contains a small working agent. Your job is to improve the agent. It has two required methods:
 
 - `reset(seed)` prepares the agent for a new game.
 - `act(observation)` reads the current game state and returns an action. A `TODO(you)` comment marks the line for you to change.
 
-For Flappy Bird, the observation describes the bird and nearby pipes in screen pixels. An action is `0` to do nothing or `1` to flap. For Hearts and Spades, the observation contains your hand and the cards on the table. A card looks like `{"suit": 2, "rank": 12}`. The template helpers list the choices that are allowed right now, so you can choose a card or bid without working with the game's internal action numbers.
+Each game gives its action numbers and observation fields different meanings. For example, for Flappy Bird, the observation describes the bird and nearby pipes in screen pixels.
 
-Each game gives its action numbers and observation fields different meanings. Your [environment page](environments/index.md) explains the starting agent line by line and documents every value. It also covers a `sandbox` helper module (`sandbox.features` for Flappy Bird or `sandbox.cards` for Hearts and Spades). These helpers let you use named values and card objects instead of reading raw arrays.
-
-See [Agent interface](agent-interface.md) for the complete method contract and a small example.
+Your [environment page](environments/index.md) explains the starting agent line by line and documents every value.
 
 ## 4. Play and evaluate
 
@@ -68,13 +70,13 @@ python -m sandbox play --headless    # run one game without a browser
 python -m sandbox eval --episodes 10 # run ten repeatable headless games
 ```
 
-`python -m sandbox` and `python -m sandbox human` let you control the selected player in a browser. Every other player is a separate instance of your agent. `python -m sandbox play` opens a browser game in which every player is a separate instance of your agent, so you can watch how your strategy behaves.
+`python -m sandbox play` runs the game with every player as an instance of your agent. In contrast, `python -m sandbox` and `python -m sandbox human` let you control the selected player in a browser.
 
-`python -m sandbox play --headless` runs one game without a browser. It runs your agent for the selected player and uses a legal default choice for every other player. `eval` repeats that same headless setup over several **episodes**, which are complete games, each starting from a repeatable condition called a **seed**. It plays five episodes unless you pass `--episodes`, and reports the average score. These local results show whether a change made your agent better or worse, but they do not predict an official leaderboard result because a season can use different opponents, player layouts, settings, and limits.
+`python -m sandbox play --headless` runs one game without a browser. It runs your agent for the selected player and uses a legal default choice for every other player. `eval` repeats that same headless setup over several **episodes**, which are complete games, each starting from a repeatable condition called a **seed**. It plays a few (5 by default) episodes and reports the average score. Note that these results are not the same as the official leaderboard result, where your agent may play against different opponents or settings.
 
-Use `--player N` to select a player by number when a game has more than one; the commands control player `0` unless you choose another. `python -m sandbox setup` prepares the virtual environment without starting a game. Every browser game uses the same controls to start, pause, resume, and stop.
+Use `--player N` to select a player by number when a game has more than one; the commands control player `0` unless you choose another. `python -m sandbox setup` prepares the virtual environment without starting a game.
 
-Two options help when you want to study one specific game: `play --seed N` repeats the same starting condition every time, and adding `--help` to any command lists all of its options.
+Two options help when you want to study one specific game: `play --seed N` repeats the same starting condition and random generator every time, and adding `--help` to any command lists all of its options.
 
 ## 5. Run the checks
 
@@ -82,7 +84,7 @@ Two options help when you want to study one specific game: `play --seed N` repea
 python -m sandbox test
 ```
 
-The tests confirm that `manifest.json`, the small file that names your agent class, points to an agent that Python can load, and that the agent can run the environment. They pass in a fresh template because it includes a working agent. Keep them passing as you edit `agent.py`, and use any failure message to find the problem.
+The tests confirm that `manifest.json`, the small file that names your agent class, points to an agent that Python can load, and that the agent can run the environment. Keep them passing as you edit `agent.py`, and use any failure message to find the problem.
 
 ## 6. Save your work on GitHub
 

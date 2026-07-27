@@ -6,11 +6,11 @@ Flappy Bird is a one-button game. A small bird constantly falls, and pressing th
 
 Gravity pulls the bird down, and each flap gives it a small upward push. The bird stays about one fifth of the screen width from the left while pipes move in from the right at a constant speed. It must pass through each gap without touching a pipe or the ground. The game ends when the bird crashes.
 
-The [Wikipedia article about Flappy Bird](https://en.wikipedia.org/wiki/Flappy_Bird) provides background if the game is new to you. To build an agent, you only need the central rule: flap at the right time or crash.
+> _Never played Flappy Bird?_ Try playing it first. The [Wikipedia article about Flappy Bird](https://en.wikipedia.org/wiki/Flappy_Bird) has some more background.
 
 ## Your first agent
 
-Your template contains a complete working agent. You can run it before changing anything. This section explains how it makes each decision.
+Your template contains a complete working agent. This section explains how it makes each decision.
 
 On every step, the game harness calls `act` with an observation describing the bird and pipes. Your agent must return one action: flap or do nothing. The template's helper module gives readable names to the observation values and actions, so you do not need to work with unexplained numbers.
 
@@ -56,10 +56,10 @@ Run the agent from the template folder:
 ```console
 python -m sandbox play    # watch it play, in a window
 python -m sandbox eval    # play several seeded episodes and report the mean score
-python -m sandbox test    # run the checks, which pass before you change anything
+python -m sandbox test    # run the checks
 ```
 
-`eval` reports a score explained in [Scoring and rewards](#scoring-and-rewards). `test` passes in a fresh template because the starting agent is complete.
+`eval` reports a score explained in [Scoring and rewards](#scoring-and-rewards).
 
 The `TODO(you)` comment inside `act` marks the line for you to improve. The starting agent never looks at the pipes, so it crashes when it reaches a gap away from the middle of the screen. [Your first improvement](#your-first-improvement) helps you find a better decision. This page is the `environment.md` file that the template comments mention.
 
@@ -95,9 +95,9 @@ The module provides these helpers and constants:
 | `screen_height(observation)` | The screen height in pixels |
 | `FLAP`, `IDLE` | The two actions, `1` (flap) and `0` (do nothing) |
 
-## Optional advanced reference: raw observations and actions
+## Under the hood
 
-Most students can skip this section. The helpers above are the clearest way to write your first agent. Read this reference only if you want to use the observation dictionary directly.
+This is optional advanced reference material. The helpers above are the clearest way to write your first agent. Read this section only if you want to use the observation dictionary directly.
 
 Without the helpers, a decision that aims the bird at the next pipe's gap reads the object's fields directly:
 
@@ -187,7 +187,7 @@ The bird sits at `x = 57`, near the left, with the nearest pipe ahead at `x = 92
 
 ## Pipe-gap setting
 
-The pipe gap is the vertical opening between the upper and lower pipes. Local runs use the default gap of 100 pixels. A season may set any whole-pixel gap from 60 to 200 pixels, including the endpoints, so use the gap values in each observation rather than assuming a fixed opening.
+The pipe gap is the vertical opening between the upper and lower pipes. Local runs use the default gap of 100 pixels. A season may set any gap from 60 to 200 pixels, so read the gap from each observation instead of assuming a fixed opening.
 
 ## Time limits
 

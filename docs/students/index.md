@@ -1,8 +1,6 @@
 # For Students
 
-An **agent** is a Python program that chooses what to do in a game. You will start with a prepared project that includes a simple working agent. You will improve its decisions, test it on your computer, and submit it through GitHub.
-
-You do not need to understand or run the Game Sandbox server. The project template includes the game environment and local tools you need.
+An **agent** is a Python program that chooses what to do in a game. You will start with a prepared project template that includes a simple working agent, the game environment, and the local tools you need. The steps look like this:
 
 ```text
 Get template → Set up Python → Improve agent → Test locally → Push to GitHub → Submit
@@ -10,13 +8,13 @@ Get template → Set up Python → Improve agent → Test locally → Push to Gi
 
 ## Read in this order
 
-1. [Getting started](getting-started.md) introduces the tools and walks through the full workflow on your computer.
-2. [Your environment](environments/index.md) explains the working agent in your template, then covers its helper functions, scoring, actions, and observations.
-3. [Agent interface](agent-interface.md) explains the methods that every agent class can use.
+1. [Getting started](getting-started.md) walks through the full workflow on your computer.
+2. [Your environment](environments/index.md) explains the working agent in your template, its helper functions, scoring, actions, and observations.
+3. [Agent interface](agent-interface.md) explains the methods that every agent can use.
 4. [Submitting](submitting.md) explains Git commits, the validation stages, and common rejection reasons.
 
-You do not need prior experience with Git or Python. These guides introduce what you need and link to official tutorials for more help.
+The guides assume no prior experience with Git or Python and link to official tutorials for more help.
 
 ## Optional: use the LLM API
 
-If your instructor enables model calls, read [Using the LLM API](llm.md) after the core guides. It explains development keys, budgets, fallbacks, and prompt visibility.
+If the assignment asks for LLM techniques, read [Using the LLM API](llm.md) after the core guides.

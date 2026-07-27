@@ -20,7 +20,7 @@ Your repository must be public so the server can download it. Ask your instructo
 2. Go to **My Submissions**.
 3. Paste the GitHub repository URL.
 4. If needed, enter a branch, tag, or commit to identify a specific version of your project.
-5. Optionally write a **rating prompt**, which is a short note telling people what to evaluate about your agent. It appears beside the rating control after a session, under your agent on the human-feedback board, and on your agent profile.
+5. Optionally write a **rating prompt**, a short note telling raters what to evaluate about your agent.
 6. Review the reachability check, which confirms that the server can reach your repository, then submit.
 
 If you leave the branch, tag, or commit field blank, the server uses the latest commit on your repository's default branch. The submission belongs to your signed-in account, so you do not need to enter a username.
@@ -80,7 +80,7 @@ A **season** is one competition round for one environment. Its settings choose t
 The season has two separate boards:
 
 - The **automated board** ranks the average official game score. Higher is always better on this board, even when the game's own score uses the opposite direction.
-- The **human-feedback board** is separate from the automated score. People who watch or play games rate agents from 1 to 5, and the board ranks the average. A person's newest rating of an agent replaces their earlier one, you cannot rate your own agent, and an agent needs at least three ratings to be ranked.
+- The **human-feedback board** ranks the average rating, 1 to 5, from people who watch or play games. You cannot rate your own agent, and an agent needs at least three ratings to be ranked.
 
 Official games run on the server's schedule, and every game is recorded, so you can watch replays of them on the website. While the season runs, other participants see agents under neutral numbered labels; your name appears when the season's results are released. A leaderboard run uses the submissions that were active when it was created, so resubmitting does not change a run that has already started.
 
