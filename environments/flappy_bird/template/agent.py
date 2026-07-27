@@ -11,12 +11,11 @@ goes deeper into the helpers, the scoring, and the observation.
 The only thing you may import from the sandbox is the ``sandbox.features`` helper module, and only at
 the top of this file. It gives readable names to the observation's fields and the two actions, so
 ``act`` reads ``player_y(observation)`` instead of reaching into ``observation["player"]["y"]``
-yourself. The observation itself is an object: a ``player`` dict (x, y, vel_y, rot), a ``pipes``
-tuple (nearest pipe first, each with x, gap_top, gap_bottom; may be empty), a pipe count, and the
-screen size — all in real screen pixels, with y growing downward. Everything else you develop
-against vanilla PettingZoo, and the server runs this exact class through the same interface. The
-optional hooks (``learn`` and ``chat``) are detected by presence, so leave them commented unless you
-use them. Episode state belongs in ``reset``; the constructor takes no arguments.
+yourself. The observation describes the bird, upcoming pipes, passed-pipe count, and screen size.
+All positions use real screen pixels, with y growing downward. The server runs this exact class
+through the same interface. The optional hooks (``learn`` and ``chat``) are detected by presence,
+so leave them commented unless you use them. Episode state belongs in ``reset``; the constructor
+takes no arguments.
 """
 
 from sandbox.features import FLAP, IDLE, player_y, screen_height

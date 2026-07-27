@@ -19,7 +19,7 @@ import pytest
 
 from flappy_bird import ENTRY
 from flappy_bird.env import FlappyBirdEnv, default_action, make_env
-from flappy_bird.game import FlappyBirdGame
+from flappy_bird.game import PIPE_WIDTH, FlappyBirdGame
 from flappy_bird.overlay import extract_overlay
 
 
@@ -85,6 +85,12 @@ def _golden_snapshot(observed: dict) -> dict:
     }
 
 
+def _agent_visible_pipes(observation: dict) -> list[dict]:
+    """Return the pipes that remain relevant to the agent from an upstream raw snapshot."""
+    player_x = observation["player"]["x"]
+    return [pipe for pipe in observation["pipes"] if pipe["x"] + PIPE_WIDTH > player_x]
+
+
 def test_local_core_reproduces_upstream_golden_traces():
     fixture_path = Path(__file__).parent / "fixtures" / "flappy_bird_golden_traces.json"
     fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
@@ -98,7 +104,9 @@ def test_local_core_reproduces_upstream_golden_traces():
         for frame in trace["frames"]:
             observed, reward, terminated, truncated, info = env.last()
             overlay = extract_overlay(env)
-            assert _golden_snapshot(env.observe("player_0")) == frame["observation"], (name, frame["tick"])
+            expected_observation = dict(frame["observation"])
+            expected_observation["pipes"] = _agent_visible_pipes(expected_observation)
+            assert _golden_snapshot(env.observe("player_0")) == expected_observation, (name, frame["tick"])
             assert overlay == frame["overlay"], (name, frame["tick"])
             assert float(reward) == frame["reward"], (name, frame["tick"])
             assert bool(terminated) is frame["terminated"], (name, frame["tick"])
@@ -180,6 +188,30 @@ def test_observation_is_flat_object_with_no_action_mask_and_nearest_first_pipes(
     # Matches the space published for the sole agent.
     space = env.observation_space("player_0")
     assert space.contains(observed)
+    env.close()
+
+
+def test_observation_omits_only_pipes_fully_behind_the_bird():
+    env = make_env({"players": 1, "pipe_gap": 100})
+    env.reset(seed=7)
+    game = env.gym_env
+    game._player_x = 57
+    game._upper_pipes = [
+        {"x": 5.0, "y": -200.0},  # Its right edge is at 57, touching the bird's left edge.
+        {"x": 6.0, "y": -200.0},  # It overlaps the bird by one pixel and remains relevant.
+        {"x": 120.0, "y": -200.0},
+    ]
+    game._lower_pipes = [
+        {"x": 5.0, "y": 200.0},
+        {"x": 6.0, "y": 200.0},
+        {"x": 120.0, "y": 200.0},
+    ]
+
+    observed = env.observe("player_0")
+    overlay = extract_overlay(env)
+
+    assert [float(pipe["x"]) for pipe in observed["pipes"]] == [6.0, 120.0]
+    assert [pipe["x"] for pipe in overlay["pipes"]] == [5.0, 6.0, 120.0]
     env.close()
 
 

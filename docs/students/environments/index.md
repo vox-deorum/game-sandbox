@@ -6,10 +6,8 @@ Start with your environment page. It explains the working agent in your template
 
 ## Available environments
 
-The Game Sandbox documentation site generates the list below from the current environment guides. GitHub does not generate that list. If you are reading this page on GitHub, open the student template repository from your instructor and use its README to find your environment guide.
+The Game Sandbox documentation site generates the list below from the current environment guides. If you are reading this page on GitHub, use the student template repository and branch your instructor supplied, then open its README to find your environment guide.
 
 [environment-guide-catalog]: # "Populated dynamically from canonical environment guides."
 
-Each environment is published on a `templates/<env>` branch of your student repository. A **branch** is a separate version of a Git repository. A template release may also publish worked examples on `examples/<env>/<name>` branches. The default environment is also published on the main branch.
-
-These branches appear after your instructor publishes a template release. They are not folders in the Game Sandbox source repository. If you do not see them, ask your instructor which repository and branch to use.
+Use the repository and branch your instructor supplied. If you do not know which one to use, ask your instructor before starting.

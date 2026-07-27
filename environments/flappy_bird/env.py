@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 import numpy as np
 from gymnasium import spaces
 
-from .game import FlappyBirdGame
+from .game import PIPE_WIDTH, FlappyBirdGame
 from .overlay import PIPE_KEYS, PLAYER_KEYS
 from .single_agent import DEFAULT_AGENT_ID, GymnasiumToAEC
 
@@ -69,8 +69,9 @@ class FlappyBirdEnv(GymnasiumToAEC):
     The base :class:`GymnasiumToAEC` forwards the wrapped gym env's own observation space and
     ``observe`` (the raw 12-float vector). This subclass replaces both with the object contract:
     the observation space becomes :data:`OBS_SPACE`, and ``observe`` reads the same
-    unnormalized state the browser overlay reads
-    so agents see real screen pixels, not a normalized vector.
+    unnormalized state the browser overlay reads, so agents see real screen pixels, not a
+    normalized vector. The observation omits pipes that have fully passed the bird; the browser
+    overlay keeps every tracked pipe so it can draw the whole game state.
     """
 
     def __init__(
@@ -98,9 +99,13 @@ class FlappyBirdEnv(GymnasiumToAEC):
         # Discrete spaces, which accept Python ints without casting.
         return {
             "player": {k: np.array(getattr(state.player, k), dtype=np.float32) for k in PLAYER_KEYS},
+            # A pipe is still relevant until its right edge reaches the bird's left edge. Keep a
+            # partially overlapping pipe here because it can still collide with the bird. The
+            # renderer deliberately receives the unfiltered state through ``extract_overlay``.
             "pipes": tuple(
                 {key: np.array(getattr(pipe, key), dtype=np.float32) for key in PIPE_KEYS}
                 for pipe in state.pipes
+                if pipe.x + PIPE_WIDTH > state.player.x
             ),
             "pipes_passed": np.array(state.score, dtype=np.int64),
             "width": state.width,

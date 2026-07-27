@@ -8,7 +8,7 @@ You can use the same agent code on your computer and in an official session. On 
 
 ## Set up development access
 
-1. Sign in to the course website and open **My Agents** in the sidebar. In the row for your environment's current season, select **Create development key**. A dialog shows the credential once; select **Copy .env** to copy both of its lines. If you lose the key, **Rotate development key** issues a new one and invalidates the old one.
+1. Sign in to the course website and open **My Agents** in the sidebar. In the row for your environment's current season, select **Create development key**. A dialog shows the credential once; select **Copy .env** to copy both of its lines. If you lose the key, **Rotate development key** issues a new one and invalidates the old one. **My Agents** also shows the development usage for the season.
 
 2. Create a file named `.env` in the project root and paste the copied lines. The result looks like this, with your real values:
 
@@ -53,9 +53,53 @@ Each participant has a separate development allowance for each season. Developme
 
 The API charges the token budget only after a successful model response whose usage it can record. If usage accounting is temporarily unavailable, it returns `meter_unavailable` and rejects calls until it recovers.
 
-Your agent must always have a legal fallback action for an error it cannot recover from. Common examples are `budget_exceeded`, `model_not_allowed`, `meter_unavailable`, and request or response errors. Create the standard client with `OpenAI(max_retries=0)`, as shown in the template. Game Sandbox handles retries, so do not add a per-turn retry loop unless your instructor designed the agent to handle the extra delay and rate-limit use.
+Your agent must always have a legal fallback action for an error it cannot recover from. Common examples are `budget_exceeded`, `model_not_allowed`, `meter_unavailable`, and request or response errors. Game Sandbox handles retries, so do not add a per-turn retry loop unless your instructor designed the agent to handle the extra delay and rate-limit use.
 
-Streaming completions are not supported. Use the standard OpenAI client's non-streaming `chat.completions.create` call with `stream=False`, as shown by the template test command.
+Streaming completions are not supported. Use a normal request with `stream=False`. This complete Hearts example makes one request inside `act`, accepts only a numbered legal-card choice, and otherwise returns the first legal card:
+
+```python
+import os
+
+from dotenv import load_dotenv
+from openai import OpenAI
+from sandbox.cards import card_name, legal_cards, play
+
+
+class Agent:
+    def __init__(self) -> None:
+        load_dotenv()
+        self.client = OpenAI(
+            base_url=os.environ["OPENAI_BASE_URL"],
+            api_key=os.environ["OPENAI_API_KEY"],
+            max_retries=0,
+        )
+
+    def reset(self, seed: int) -> None:
+        pass
+
+    def act(self, observation) -> int:
+        legal = legal_cards(observation)
+        fallback = play(legal[0])
+        choices = "\n".join(
+            f"{number}: {card_name(card)}" for number, card in enumerate(legal)
+        )
+        prompt = f"Choose a Hearts card. Reply only with its number:\n{choices}"
+        try:
+            response = self.client.chat.completions.create(
+                model="small",
+                messages=[{"role": "user", "content": prompt}],
+                stream=False,
+            )
+            reply = (response.choices[0].message.content or "").strip()
+            choice = int(reply)
+            if 0 <= choice < len(legal):
+                return play(legal[choice])
+        except Exception:
+            pass
+        return fallback
+```
+
+Keep the fallback even after you improve the prompt or response parsing.
 
 ## What is recorded and who can see it
 

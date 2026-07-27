@@ -63,4 +63,17 @@ Check these points if static validation fails:
 - `entry_point` names an existing Python module, such as `agent` for `agent.py`.
 - `class_name` matches the class name, including capitalization.
 
-When the status reaches **Ready**, your agent can be selected for a session. See the [submission specification](../specs/submission.md) for the complete product rules.
+## After Ready
+
+**Ready** means the server can load your agent. It does not mean that the agent has played an official game yet.
+
+A **season** is one competition round for one environment. Its settings choose the opponents or player layout, game settings, repeated starting positions, time limits, and any enabled LLM limits. Those settings can differ from your local computer.
+
+The season has two separate boards:
+
+- The **automated board** ranks the average official game score. Higher is always better on this board, even when the game's own score uses the opposite direction.
+- The **human-feedback board** ranks the average rating from people who watch or play games. It is separate from the automated score, and an agent needs at least three ratings before it is ranked.
+
+`python -m sandbox play` and `python -m sandbox eval` are useful local checks, but they cannot predict the official board because they use a local setup. In an official game, a crash, illegal action, or exhausted total-computation limit forfeits your assigned seat. A single late `act` call instead uses a legal default action and the game continues.
+
+When two automated scores are exactly equal, average computation time per decision breaks the tie. It does not change the score itself.

@@ -21,8 +21,9 @@ def extract_overlay(env: Any) -> dict[str, Any]:
     ``env`` is the :class:`GymnasiumToAEC` wrapper; its ``gym_env.unwrapped`` is the raw
     ``FlappyBirdEnv`` whose internal state we read. Coordinates are unnormalized screen
     pixels: pipe ``x`` is the left edge, ``gap_top``/``gap_bottom`` are the y of the gap's
-    upper and lower edges. Pipes are ordered nearest-first (ascending ``x``), matching the
-    observation.
+    upper and lower edges. Pipes are ordered nearest-first (ascending ``x``). The overlay keeps
+    pipes that have passed the bird so the renderer can draw the complete game state; the agent
+    observation omits fully passed pipes.
     """
     state = env.gym_env.state
 

@@ -1,6 +1,6 @@
 # Agent Interface
 
-Your agent is a Python class. The **harness**, the code that runs the game, creates one copy of this class and asks it to choose actions until the game ends. This page explains the interface shared by every environment. Your [environment page](environments/index.md) explains what your game's actions and observations mean.
+Your agent is a Python class, a small package of decision-making code and the values it remembers. The game runner creates a separate `Agent()` instance for every player your submission controls, then asks each one to choose actions until the game ends. In a game where your submission controls more than one player, those instances do not share memory. Your [environment page](environments/index.md) explains what your game's actions and observations mean.
 
 ## Minimal agent
 
@@ -20,81 +20,86 @@ This example always chooses action `0`. It shows the shape of an agent class, bu
 
 | Method | Required? | Purpose |
 | --- | --- | --- |
-| `reset(seed)` | Yes | Clear information from the previous game and initialize any random-number generator. |
+| `reset(seed)` | Yes | Prepare for a new game and set up random choices. |
 | `act(observation)` | Yes | Return one legal action for the current observation. |
 | `learn(observation, action, reward, terminated)` | No | Update an agent that learns after each step. |
 | `chat(inbox)` | No | Receive and send messages when the environment enables messaging. |
 
-The harness checks whether the optional methods exist. Leave them out unless you need them because even an empty method takes time to call. [Optional capabilities](#optional-capabilities) explains messaging and the LLM API. Most first agents use neither.
+The runner uses an optional method only when you define it. Leave optional methods out until you need them. Most first agents use only `reset` and `act`.
 
 ### `reset(seed)`
 
-The harness calls `reset` once before the first action of each game. The environment receives the same seed. A **seed** is a number used to produce repeatable random choices. If your agent uses randomness, initialize its random-number generator with this seed so you can repeat a run.
+The runner calls `reset` once before the first action of each game. The environment receives the same seed. A **seed** is a number that makes random choices repeatable. If your agent uses randomness, set up its random-number generator with this seed so you can repeat a run.
 
 ### `act(observation)`
 
-`act` receives the current observation and returns one allowed action. An observation is the game information visible to your agent. An action is always one whole number from a fixed set, called a Gymnasium `Discrete` space. The meaning of each number depends on the environment. For example, Flappy Bird uses `0` to do nothing and `1` to flap, while Hearts uses an integer from `0` to `51` to name a card.
+`act` receives the game information visible to your agent and returns one allowed whole-number action. The action number has a different meaning in each environment. For example, Flappy Bird uses `0` to do nothing and `1` to flap, while Hearts uses a number that represents a card.
 
-Observations use named objects instead of packing all game information into an array. In Hearts and Spades, for example, a card is an object such as `{"suit": 0..3, "rank": 2..14}`, and a hand is a list of these objects. The card games wrap this readable state in `{"observation": {...fields...}, "action_mask": ...}`. The `action_mask` is an array in which `1` marks an action as legal and `0` marks it as illegal. Flappy Bird uses a plain object describing the bird, pipes, and screen. It needs no mask because both actions are always legal.
+You do not have to decode action numbers by hand. Each template includes a helper module that turns readable choices into the action number the game needs:
 
-You do not have to decode any of this by hand. Each template ships a helper module you import at the top of `agent.py` that reads the observation and returns the integer action:
+- **Hearts** and **Spades** use `sandbox.cards`. `legal_cards(observation)` lists the cards you may play, and `play(card)` turns your chosen card into an action. Spades also provides `legal_bids(observation)` and `bid(number)` for bidding.
+- **Flappy Bird** uses `sandbox.features`. It names the actions `FLAP` and `IDLE` and provides functions such as `player_y(observation)` for reading the game state.
 
-- **Hearts** and **Spades** use `sandbox.cards`. `legal_cards(observation)` lists the cards you may play, and `play(card)` turns your chosen card into an action. Spades also provides `legal_bids(observation)` and `bid(n)` for bidding.
-- **Flappy Bird** uses `sandbox.features`. It names the actions `FLAP` and `IDLE` and provides functions such as `player_y(observation)` for reading the observation.
-
-Your [environment page](environments/index.md) documents every action and observation field and shows how to use the template's helper module.
+Your [environment page](environments/index.md) documents every action and observation field and shows how to use these helpers.
 
 ### `learn(...)`
 
-An agent that learns through rewards, known as a **reinforcement-learning agent**, can implement `learn`. The harness calls it after each step with the observation, chosen action, reward, and a value that says whether the game ended.
+An agent that learns from rewards, often called a **reinforcement-learning agent**, can implement `learn`. The runner calls it after each step with the observation, chosen action, reward, and whether the game ended.
 
 ## Call order
 
 ```text
 reset(seed)
     ↓
-act(observation) → chat(inbox) → environment step → learn(...)
-    ↑                                                    |
-    └──────────────── next observation ──────────────────┘
+act(observation) → chat(inbox) → game step → learn(...)
+    ↑                                          |
+    └────────────── next observation ─────────┘
 ```
 
-`chat` runs only when the environment enables messaging and you define the hook. The loop ends when the environment terminates or a limit stops the episode.
+`chat` runs only when the environment enables messaging and your class defines the method. The loop ends when the game ends or a limit stops it.
 
-## Constructor and state
+## State and official runs
 
-The harness creates your agent by calling `Agent()` with no arguments. Put configuration that lasts for the life of this object in `__init__`. Clear information from the previous game in `reset`.
+The runner creates your agent by calling `Agent()` with no arguments. Put setup that lasts for the life of that instance in `__init__`. Clear game-specific information in `reset`.
+
+An instance can remember information between games in one session, including values updated by `learn`. It does not persist to a later official session, a later submission, or a later season. If your code controls multiple players, each player has its own instance and its own remembered values. Use `chat` when an environment supports messages and your strategy needs to communicate.
+
+Official games run in a restricted computer environment:
+
+- The template supplies a fixed set of Python packages. You cannot install extra packages during a game.
+- Your project files and the rest of the computer are read-only. Use the small scratch area only for temporary files.
+- General internet access is unavailable. An enabled Game Sandbox LLM API is the only network exception.
+- CPU time and memory are limited.
+
+Develop and test on your own computer, then include every Python file your agent needs in the repository you submit.
 
 ## Time limits
 
-Two limits prevent a slow or stuck agent from blocking a session:
+Your environment page lists default decision and total-computation limits. A season can change those limits.
 
-- The **step limit** applies to one decision cycle. If `act` finishes late, the harness ignores its result and uses the environment's legal default action. The game continues without your decision for that step.
-- The **episode limit** applies to your agent's total measured computation for one game. The game ends early if this time runs out.
+- A **decision limit** applies to one turn. If `act` finishes late, the runner ignores its result and uses a legal default action for that turn. The game continues.
+- A **game limit** applies to your agent's total computation during one game. Time in `act`, `learn`, and `chat` counts toward it.
 
-The time counted toward both limits is called **chargeable time**. It includes time your code spends in `act`, `learn`, and `chat`. Time in optional methods counts when calculating how far a step ran over its limit, although `learn` runs after the chosen action. Recordings store each step's chargeable `act` time in `decision_ms`. Optional method times remain separate for display and leaderboard calculations.
-
-Your environment page lists the concrete step and episode limits for your game, along with the default action the environment plays when `act` is late.
+In an official scored game, a crash, an illegal action, or using all of the game limit causes the assigned seat to forfeit. A late `act` call by itself does not forfeit the seat because the runner uses the legal default action instead. If your submission controls several players in one seat, a failure by any of them forfeits that seat.
 
 ## Optional capabilities
 
-The next two features are optional. An agent can be complete without them. Return to this section if you want your agent to send messages or call a language model.
+The next two features are optional. Return here if you want your agent to send messages or call a language model.
 
 ### `chat(inbox)`
 
-An agent can implement `chat` when its environment supports messaging. On your turn, the harness calls `chat` immediately after `act` and before applying the action. Your agent therefore knows what it chose but not what happened afterward.
+An agent can implement `chat` when its environment supports messaging. On your turn, the runner calls `chat` immediately after `act` and before applying the action. Your agent therefore knows what it chose but not what happened afterward.
 
-`inbox` is a list of messages sent to your player since its previous turn. Each message is a dictionary shaped like `{"from": player, "to": player_or_None, "text": str, "tick": int}`. `"to"` is `None` for a broadcast, and `"tick"` identifies when the message was sent.
+`inbox` is a list of messages sent to your player since its previous turn. Each message tells you who sent it, who received it, the text, and when it was sent. Return a list of messages with a recipient and text, or return nothing to stay silent. Use `None` as the recipient to send a message to every other player.
 
-Return a list of messages shaped like `{"to": player_or_None, "text": str}`, or return nothing to stay silent. Setting `"to": None` sends a broadcast to every other player. Using a player ID sends only to that player.
-
-On each turn, your agent may send at most one message to each recipient and one broadcast. Messages are plain text, and the environment sets their maximum length in Unicode code points. A season may lower that limit. A message sent on this turn arrives on each recipient's next turn, never on the tick when it was sent. Every message is recorded and shown in replays, so no message is secret. See the [communication specification](../specs/communication.md) for the complete rules.
+On each turn, your agent can send one message to each recipient and one broadcast. The environment sets the maximum message length, and a season can lower it. A message arrives on the recipient's next turn. Every message appears in replays, so do not treat messages as secret. See the [communication specification](../specs/communication.md) for the complete rules.
 
 ### LLM calls
 
-When the environment and season enable the optional LLM API, `act`, `chat`, and `learn` may use the standard OpenAI Python client. Every model-assisted path through `act` must return a legal fallback action if the budget runs out, the service cannot recover from an error, or the response has the wrong format.
+When the environment and season enable the optional LLM API, `act`, `chat`, and `learn` may use the standard OpenAI Python client. Every model-assisted path through `act` must return a legal fallback action if the budget runs out, the service has an error, or the response has the wrong format.
 
-Make each call directly in the method being called and wait for its complete, non-streaming response. In official sessions, verified time waiting for the LLM proxy does not count toward the hook, step, or episode limits. Calls made during import, construction, or `reset` are setup work, which should stay lightweight. Follow [Using the LLM API](llm.md) to configure the client and learn about budgets, errors, and prompt visibility.
+Make the call in the method that needs it and wait for the complete response. In official sessions, verified time waiting for the Game Sandbox LLM service does not count toward the decision or game limit. Keep imports, construction, and `reset` lightweight. Follow [Using the LLM API](llm.md) for setup, budgets, errors, and prompt visibility.
 
 ## Manifest
 
-`manifest.json` is a file in the root of your repository that tells the harness where to find your class. `entry_point` names the Python module (`agent` means `agent.py`), `class_name` names the class to create, and `template_version` records the version of the template's shared packages. Keep the template's manifest unchanged unless you rename the module or class. [Submitting](submitting.md#manifest-problems) shows the file and a checklist for fixing validation failures. The [submission specification](../specs/submission.md) contains the complete rules for this interface.
+`manifest.json` is a file in the root of your repository that tells the runner where to find your class. `entry_point` names the Python module (`agent` means `agent.py`), `class_name` names the class to create, and `template_version` records the version of the template's shared packages. Keep the template's manifest unchanged unless you rename the module or class. [Submitting](submitting.md#manifest-problems) shows the file and a checklist for fixing validation failures.

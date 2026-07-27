@@ -70,7 +70,7 @@ spaces.Dict({
 })
 ```
 
-Add `FlappyBirdEnv(GymnasiumToAEC)` and replace the inherited public `observation_spaces` and `action_spaces` mappings so the inherited accessors and callers share one source of truth. Refactor the overlay reader so observations receive a pipe tuple and recorded overlays receive a JSON list from the same ordered values. Flappy keeps `Discrete(2)` and has no mask because idle and flap are always legal on a live turn.
+Add `FlappyBirdEnv(GymnasiumToAEC)` and replace the inherited public `observation_spaces` and `action_spaces` mappings so the inherited accessors and callers share one source of truth. The agent observation receives a nearest-first tuple of pipes that have not fully passed the bird. Recorded overlays receive the complete nearest-first pipe list so the browser can draw the full game state. Flappy keeps `Discrete(2)` and has no mask because idle and flap are always legal on a live turn.
 
 Each `observation_space(agent)` and `action_space(agent)` accessor returns the same instance on every call — `api_test` asserts this identity — so each space is built once and cached. The two Spades phases therefore share one `Discrete(66)` space, with the mask lighting the legal half.
 
@@ -106,7 +106,7 @@ Coverage must include:
 - JSON-safe normalization of Sequence tuples before observation round-trip checks.
 - Card codec and action conversion across all 52 cards, including the queen of spades example.
 - Spades phase masks, never-nil timeout bid, partnership fields, score projection, and previous trick.
-- Flappy observation and overlay agreement, nearest-first pipes, and public space mappings.
+- Flappy observation filtering for fully passed pipes, complete nearest-first overlay pipes, and public space mappings.
 - Object-based Pixi drawing, animation, legality, and hit testing.
 - Integer conversion only at environment and browser action boundaries.
 - Complete template, example, built-in, generation, Python, and TypeScript unit checks.

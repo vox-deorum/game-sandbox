@@ -17,7 +17,7 @@ Flappy Bird is the default template. See the course documentation for the enviro
 | `requirements-dev.txt` | Test dependencies |
 | `tests/` | Checks your submission should pass |
 | `sandbox/` | Provided local game and commands. Do not edit it. |
-| `sandbox/features.py` | Provided feature helpers you may import from `agent.py` (named observation indices and actions) |
+| `sandbox/features.py` | Provided feature helpers you may import from `agent.py` (named observation values and actions) |
 | `.env.example` | Example local LLM settings |
 
 Do not edit `sandbox/`, `requirements.in`, or `requirements.txt`. The template uses the same pinned packages locally and on the server. Ask your instructor if you need another package.
@@ -67,3 +67,9 @@ Submit the repository URL through the course website. Game Sandbox pins one comm
 ## Optional LLM API
 
 If your instructor enables model calls, follow [Using the LLM API](llm.md). Copy `.env.example` to `.env`, add the endpoint and key, and never commit either secret.
+
+Test the connection with:
+
+```console
+python -m sandbox llm
+```

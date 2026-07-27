@@ -4,7 +4,7 @@ This repository is a complete starter project for a Hearts agent. Edit `agent.py
 
 An **agent** is a Python class that receives an observation and returns an action. You can play and test it on your computer before submitting the GitHub repository to Game Sandbox.
 
-Hearts is a four-player trick-taking game. Your agent fills one player position while built-in opponents play the other three. See the course documentation for the environments and examples available to your class.
+Hearts is a four-player trick-taking game. Local play uses separate copies of the agent in this repository for every agent-controlled player. See the course documentation for the environments and examples available to your class.
 
 ## Project files
 
@@ -33,14 +33,15 @@ python -m sandbox
 The first run creates `.venv`, installs the pinned packages, and opens a game you control by clicking a highlighted card. Use these commands as you work:
 
 ```console
-python -m sandbox            # play it yourself
-python -m sandbox play       # watch YOUR agent play a player (add --headless for no window)
-python -m sandbox eval       # run several seeded games and report the mean score
+python -m sandbox            # play one chosen position yourself; your agent runs the other three
+python -m sandbox play       # watch separate copies of your agent play all four positions
+python -m sandbox play --headless  # run one selected agent position with legal default actions elsewhere
+python -m sandbox eval       # repeat that headless check over seeded games and report the mean score
 python -m sandbox test       # run the checks
 python -m sandbox setup      # just (re)install dependencies into .venv
 ```
 
-Use `python -m sandbox play --seed 7` for a repeatable game or `python -m sandbox human --player 2` to play a different position. The [getting started guide]({{DOCS_URL}}students/getting-started/) explains manual virtual-environment setup and GitHub workflow.
+Use `python -m sandbox play --seed 7` for a repeatable game or `python -m sandbox human --player 2` to play a different position. `eval` is useful for comparing changes against the same seeds, not for predicting leaderboard results. It reports the higher-is-better leaderboard score, so a Hearts result closer to zero is better. The [getting started guide]({{DOCS_URL}}students/getting-started/) explains manual virtual-environment setup and GitHub workflow.
 
 ## Write the agent
 
@@ -67,3 +68,9 @@ Submit the repository URL through the course website. Game Sandbox pins one comm
 ## Optional LLM API
 
 If your instructor enables model calls, follow [Using the LLM API](llm.md). Copy `.env.example` to `.env`, add the endpoint and key, and never commit either secret.
+
+Test the connection with:
+
+```console
+python -m sandbox llm
+```

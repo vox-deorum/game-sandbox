@@ -80,7 +80,7 @@ The rewards add together during a run. A higher total usually means the bird sur
 
 The starting agent uses the template's `sandbox.features` helper module. Import the functions and constants you need at the top of `agent.py`, not inside a method. They read observation fields and name the actions, so your code does not need unexplained expressions such as `observation["player"]["y"]` or `return 1`.
 
-`player_y(observation)` returns the bird's vertical position in pixels. `next_gap_center(observation)` averages the top and bottom of the next pipe gap and returns the height to aim for on the same scale. If there is no pipe ahead, it returns the middle of the screen. `player_velocity(observation)` returns how far the bird is moving vertically per step. Adding the position and velocity gives an estimate of its position on the next step.
+`player_y(observation)` returns the bird's vertical position in pixels. `next_gap_center(observation)` averages the top and bottom of the next pipe gap and returns the height to aim for on the same scale. Its safe fallback is the middle of the screen if an observation has no pipe ahead. `player_velocity(observation)` returns how far the bird is moving vertically per step. Adding the position and velocity gives an estimate of its position on the next step.
 
 The module provides these helpers and constants:
 
@@ -95,9 +95,9 @@ The module provides these helpers and constants:
 | `screen_height(observation)` | The screen height in pixels |
 | `FLAP`, `IDLE` | The two actions, `1` (flap) and `0` (do nothing) |
 
-## Under the hood
+## Optional advanced reference: raw observations and actions
 
-The starting agent uses helpers instead of raw observation fields and action numbers. This section is a complete reference for reading those values yourself.
+Most students can skip this section. The helpers above are the clearest way to write your first agent. Read this reference only if you want to use the observation dictionary directly.
 
 Without the helpers, a decision that aims the bird at the next pipe's gap reads the object's fields directly:
 
@@ -111,25 +111,25 @@ return 0
 
 ### Actions
 
-Your `act` method must return one integer on every step:
+Your `act` method returns one number on every step:
 
 | Action | Name in `sandbox.features` | Meaning |
 | --- | --- | --- |
 | `0` | `IDLE` | Do nothing. Gravity continues to pull the bird downward. |
 | `1` | `FLAP` | Flap once. The bird gets an upward push. |
 
-Here, `0` and `1` are labels, not directions or screen positions. The environment rejects any other integer. Both actions are always legal, so unlike the card games, Flappy Bird has **no action mask**. If your agent misses a step's deadline, the environment uses action `0`, and the bird keeps falling.
+Here, `0` and `1` are labels, not directions or screen positions. The environment rejects any other number. Both actions are always legal, so Flappy Bird does not need a list of legal moves. If your agent misses a step's deadline, the environment uses action `0`, and the bird keeps falling.
 
 ### Observations
 
-The observation is one Python dictionary describing the bird, pipes, and screen. It has no `action_mask` key or 52-entry array. Each value is a screen coordinate or a small count:
+The observation is one Python dictionary describing the bird, pipes, and screen. Each value is a screen coordinate or a small count:
 
 ```python
 observation = {
     "player": {"x": ..., "y": ..., "vel_y": ..., "rot": ...},
     "pipes": (
-        {"x": ..., "gap_top": ..., "gap_bottom": ...},   # nearest pipe first
-        ...                                              # zero or more further pipes
+        {"x": ..., "gap_top": ..., "gap_bottom": ...},  # next pipe first
+        ...                                             # zero or more later pipes
     ),
     "pipes_passed": ...,   # how many pipes the bird has cleared so far
     "width": ...,          # screen width in pixels
@@ -145,8 +145,8 @@ Every coordinate is a real screen pixel, not a fraction converted to a `0..1` sc
 
 | Field | Meaning | Range or direction |
 | --- | --- | --- |
-| `x` | The bird's horizontal position, its left-to-right pixel on the screen. | Roughly fixed; the bird does not move horizontally. |
-| `y` | The bird's vertical position in pixels. | `0` at the top of the screen, `height` at the bottom. Larger is lower. |
+| `x` | The bird sprite's left edge in pixels. | Roughly fixed; the bird does not move horizontally. |
+| `y` | The bird sprite's top edge in pixels. | `0` at the top of the screen, `height` at the bottom. Larger is lower. |
 | `vel_y` | The bird's vertical velocity in pixels per step. | Positive falls, negative climbs. The bird's next `y` is about `y + vel_y`. |
 | `rot` | The bird's tilt in degrees, used to draw the sprite. | Most agents ignore it; there is no helper for it. |
 
@@ -154,15 +154,15 @@ Read these with `player_x`, `player_y`, and `player_velocity`, or reach into `ob
 
 #### The pipes
 
-`observation["pipes"]` is a tuple with one entry for each pipe on screen. The entries are ordered from nearest to farthest by increasing `x`, so `pipes[0]` is the next pipe. The tuple may be empty when no pipe is on screen. Check it before reading `pipes[0]`, or use `next_pipe`, which returns `None` when it is empty.
+`observation["pipes"]` is an ordered group of the pipes the bird has not fully passed. The entries are ordered from nearest to farthest by increasing `x`, so `pipes[0]` is the next pipe. Normal games continually keep upcoming pipes, but an empty tuple is still valid for a custom test state. Check it before reading `pipes[0]`, or use `next_pipe`, which returns `None` when it is empty.
 
 | Field | Meaning |
 | --- | --- |
-| `x` | The pipe's left-edge pixel. Larger is farther right; the pipe scrolls left a fixed amount each step, so its `x` shrinks over time. |
+| `x` | The pipe's left-edge pixel. Larger is farther right; the pipe scrolls left a fixed amount each step, so its `x` shrinks over time. A pipe leaves the observation after its right edge reaches the bird's left edge. |
 | `gap_top` | The pixel `y` of the top edge of the gap (the bottom of the upper pipe). |
 | `gap_bottom` | The pixel `y` of the bottom edge of the gap (the top of the lower pipe). |
 
-Because `y` increases downward, `gap_top` is smaller than `gap_bottom`. The bird clears a pipe by keeping its `y` between these values. The gap center is `(gap_top + gap_bottom) / 2`, which `next_gap_center` returns for the nearest pipe. The observation does not include the constant horizontal pipe speed, but the distance between a pipe's `x` and `player["x"]` can help you time a flap.
+Because `y` increases downward, `gap_top` is smaller than `gap_bottom`. The gap center is `(gap_top + gap_bottom) / 2`, which `next_gap_center` returns for the nearest pipe. The bird's `y` is its top edge, not its center, and the bird is 24 pixels tall. Aim comfortably inside the gap because a bird near an edge can still collide with the pipe. The observation does not include the constant horizontal pipe speed, but the distance between a pipe's `x` and `player["x"]` can help you time a flap.
 
 #### The rest
 
@@ -185,9 +185,13 @@ Here is one complete observation on a 288-by-512 screen:
 
 The bird sits at `x = 57`, near the left, with the nearest pipe ahead at `x = 92`. That gap runs from `y = 180` down to `y = 300`, so its center is `240`. The bird's `y` of `244` is just below that center, and its `vel_y` of `4` says it is falling, so a flap now would nudge it back up toward the gap.
 
+## Pipe-gap setting
+
+The pipe gap is the vertical opening between the upper and lower pipes. Local runs use the default gap of 100 pixels. A season may set any whole-pixel gap from 60 to 200 pixels, including the endpoints, so use the gap values in each observation rather than assuming a fixed opening.
+
 ## Time limits
 
-Flappy Bird advances once every 50 milliseconds, or 20 steps per second. This pace is not the agent's timeout. Each call to `act` has a 1-second limit, and the agent may use up to 120 seconds of measured computation during one game. If `act` exceeds its limit, the environment uses action `0`, or `IDLE`, for that step. See [Time limits](../../docs/students/agent-interface.md#time-limits) for how the limits are measured and enforced.
+Flappy Bird advances once every 50 milliseconds, or 20 steps per second. This pace is not the agent's timeout. The usual limits are 1 second for each call to `act` and 120 seconds of measured computation during one game. A season may use different limits. If `act` exceeds its limit, the environment uses action `0`, or `IDLE`, for that step. See [Time limits](../../docs/students/agent-interface.md#time-limits) for how the limits are measured and enforced.
 
 ## Your first improvement
 

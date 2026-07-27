@@ -12,6 +12,8 @@ Install:
 
 Git records changes to a project. GitHub stores a copy of that project online. A project tracked by Git is called a **repository**, often shortened to **repo**. GitHub's [Hello World guide](https://docs.github.com/en/get-started/start-your-journey/hello-world) is a friendly introduction if these ideas are new.
 
+Python is the language you will use to describe your agent's decisions. You can begin by changing the marked line in the working agent, then learn more as you need it. Python's [official tutorial](https://docs.python.org/3/tutorial/) introduces the language from the beginning. Its sections on numbers, lists, dictionaries, functions, and classes are especially useful here.
+
 ## 1. Copy the template to your computer
 
 Your instructor will give you a GitHub repository created from the agent template. To **clone** a repository means to copy it to your computer. Clone yours with:
@@ -50,7 +52,7 @@ Open `agent.py`. It contains a small working agent, so you can run the game befo
 - `reset(seed)` prepares the agent for a new game.
 - `act(observation)` reads the current game state and returns an action. A `TODO(you)` comment marks the line for you to change.
 
-For Flappy Bird, the observation describes the bird and nearby pipes in screen pixels. An action is `0` to do nothing or `1` to flap. For Hearts and Spades, the observation contains your hand and the cards on the table as objects such as `{"suit": 2, "rank": 12}`. It also contains a **legal-move mask**, an array that marks which actions are currently allowed. The action is the number for the card or bid you chose.
+For Flappy Bird, the observation describes the bird and nearby pipes in screen pixels. An action is `0` to do nothing or `1` to flap. For Hearts and Spades, the observation contains your hand and the cards on the table. A card looks like `{"suit": 2, "rank": 12}`. The template helpers list the choices that are allowed right now, so you can choose a card or bid without working with the game's internal action numbers.
 
 Each game gives its action numbers and observation fields different meanings. Your [environment page](environments/index.md) explains the starting agent line by line and documents every value. It also covers a `sandbox` helper module (`sandbox.features` for Flappy Bird or `sandbox.cards` for Hearts and Spades). These helpers let you use named values and card objects instead of reading raw arrays.
 
@@ -59,15 +61,18 @@ See [Agent interface](agent-interface.md) for the complete method contract and a
 ## 4. Play and evaluate
 
 ```console
-python -m sandbox play
-python -m sandbox play --headless
-python -m sandbox eval --episodes 10
-python -m sandbox            # play it yourself
+python -m sandbox                    # play it yourself in a browser
+python -m sandbox human              # the same as the command above
+python -m sandbox play               # watch your agent in a browser
+python -m sandbox play --headless    # run one game without a browser
+python -m sandbox eval --episodes 10 # run ten repeatable headless games
 ```
 
-`play` opens one game with your agent in a local browser. `--headless` runs the game without opening a browser. `eval` runs several games with repeatable starting conditions, called **seeds**, and reports their average score. An average is more useful than one game that may have been lucky.
+`python -m sandbox` and `python -m sandbox human` let you control the selected player in a browser. Every other player is a separate instance of your agent. `python -m sandbox play` opens a browser game in which every player is a separate instance of your agent, so you can watch how your strategy behaves.
 
-With no command, `python -m sandbox` lets you play the game yourself. `python -m sandbox human` does the same, while `python -m sandbox setup` prepares the virtual environment without starting a game. Every environment uses the same browser controls to start, pause, resume, and stop.
+`python -m sandbox play --headless` runs one game without a browser. It runs your agent for the selected player and uses a legal default choice for every other player. `eval` repeats that same headless setup with repeatable starting conditions, called **seeds**, and reports the average score. These local results help you catch regressions, but they do not predict an official leaderboard result because a season can use different opponents, player layouts, settings, and limits.
+
+Use `--player N` to select a player by number when a game has more than one. `python -m sandbox setup` prepares the virtual environment without starting a game. Every browser game uses the same controls to start, pause, resume, and stop.
 
 ## 5. Run the checks
 

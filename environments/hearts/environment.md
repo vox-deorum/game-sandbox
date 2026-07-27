@@ -14,7 +14,7 @@ This environment uses these Hearts rules:
 - No heart or queen of spades may be played on the first trick unless the player has no other kind of card.
 - A player may not lead a heart until hearts are **broken**, which means someone played a heart on an earlier trick. The one exception is a hand that holds nothing but hearts, which may lead one. The queen of spades does not break hearts in this variant.
 
-You do not need to program these rules yourself. Every observation contains an **action mask**, an array that marks which cards are legal on the current turn.
+You do not need to program these rules yourself. The template's `legal_cards` helper reads the observation and lists the cards you may play on the current turn.
 
 The [Wikipedia article about Hearts](https://en.wikipedia.org/wiki/Hearts_%28card_game%29) provides a broader introduction if the game is new to you.
 
@@ -24,18 +24,18 @@ Your template contains a complete working agent. You can run it before changing 
 
 On each turn, the game harness calls `act` with an observation of the table. Your agent must return the card it wants to play. The template's helper module converts the observation into card objects and plain Python values, so you do not need to work with raw numbers.
 
-A card is a small object shaped like `{"suit": 0..3, "rank": 2..14}`. The rank matches its face value: `11` is the jack, `12` is the queen, `13` is the king, and `14` is the ace. The queen of spades is therefore `{"suit": 2, "rank": 12}`.
+A card is a small object with a `suit` number from `0` through `3` and a `rank` number from `2` through `14`. The rank matches its face value: `11` is the jack, `12` is the queen, `13` is the king, and `14` is the ace. The queen of spades is therefore `{"suit": 2, "rank": 12}`.
 
 `legal_cards(observation)` returns the cards you may play this turn. It applies every rule, including following suit, not leading hearts before they are broken, and the first-trick restrictions. Every card in the returned list is legal.
 
-The `"rank"` entry gives a card's face-value rank from two through ace, without considering its suit. Python's built-in `min` can find the lowest rank when you pass `lambda c: c["rank"]` as its `key`. If you prefer a named function, the helper module's `rank_of(card)` reads the same value.
+`rank_of(card)` gives a card's face-value rank from two through ace, without considering its suit. Python's built-in `min` can use that helper to find the lowest-ranked card.
 
 `play(card)` converts a card object into the integer that `act` must return. Choose a card object first, then convert it at the end instead of building the integer yourself.
 
-The strategy is simple: always play the lowest-ranked legal card. Low cards rarely win tricks, and winning tricks is how you collect penalty cards. Playing low is therefore a reasonable starting point. The built-in opponents use the same strategy, so any improvement gives your agent a real advantage.
+The strategy is simple: always play the lowest-ranked legal card. Low cards rarely win tricks, and winning tricks is how you collect penalty cards. Playing low is therefore a reasonable starting point.
 
 ```python
-from sandbox.cards import legal_cards, play
+from sandbox.cards import legal_cards, play, rank_of
 
 
 class Agent:
@@ -48,7 +48,7 @@ class Agent:
         pass
 
     def act(self, observation) -> int:
-        # legal_cards reads the action mask for you: every card object in this
+        # legal_cards reads the observation for you: every card object in this
         # list is a card you hold and may play right now, so the rules (follow
         # suit, hearts not broken yet, no points on the first trick) are already
         # taken care of.
@@ -57,11 +57,12 @@ class Agent:
         # TODO(you): this one line is the whole strategy. Low cards rarely win
         # tricks, and tricks are how you collect penalty points, so playing the
         # lowest-ranked legal card is a sane start. It is also exactly how the
-        # built-in opponents play. Replace it with something smarter; the
+        # local runner gives every agent-controlled player this same strategy.
+        # Replace it with something smarter; the
         # "Your first improvement" section of environment.md shows you how to
         # find one. cards.play(card) turns your chosen card object into the
         # integer act() must return.
-        return play(min(legal, key=lambda c: c["rank"]))
+        return play(min(legal, key=rank_of))
 ```
 
 This agent cannot make an illegal move because it only chooses from `legal_cards`. You do not need to check the rules again.
@@ -69,12 +70,12 @@ This agent cannot make an illegal move because it only chooses from `legal_cards
 Run the agent from the template folder:
 
 ```console
-python -m sandbox play    # watch it play a player, in a window
+python -m sandbox play    # watch separate copies of your agent play all four positions
 python -m sandbox eval    # play several seeded games and report the mean score
 python -m sandbox test    # run the checks, which pass before you change anything
 ```
 
-`eval` reports a score explained in [Scoring and rewards](#scoring-and-rewards). `test` passes in a fresh template because the starting agent is complete.
+`eval` reports the higher-is-better leaderboard score from [Scoring and rewards](#scoring-and-rewards), so a result closer to zero is better. It is useful for comparing changes against the same seeds, not for predicting leaderboard results. `test` passes in a fresh template because the starting agent is complete.
 
 The `TODO(you)` comment inside `act` marks the line for you to improve. You can keep the setup above it and change the decision in the return statement. [Your first improvement](#your-first-improvement) helps you find a smarter strategy. In your repository, this page is named `environment.md`, which is the file named in the template comments.
 
@@ -97,9 +98,9 @@ After a successful moon shot, the shooter receives `0.0` and each other player r
 
 ## The helper module
 
-The starting agent uses the template's `sandbox.cards` helper module. Import what you need at the top of `agent.py`, not inside a method. The helpers turn the observation into card objects, lists, and plain Python values. Your `act` method therefore does not need to read a raw NumPy array or action mask.
+The starting agent uses the template's `sandbox.cards` helper module. Import what you need at the top of `agent.py`, not inside a method. The helpers turn the observation into card objects, lists, and plain Python values. Your `act` method therefore does not need to read internal arrays or action numbers.
 
-`legal_cards(observation)` returns the card objects you may play. This list is never empty on your turn. A card's `"rank"` entry is its face value, so `min(legal, key=lambda c: c["rank"])` selects the lowest-ranked legal card. `rank_of(card)` reads the same value, and `play(card)` converts the chosen card into the integer returned by `act`. Choosing only from `legal_cards` automatically follows suit and obeys the other rules.
+`legal_cards(observation)` returns the card objects you may play. This list is never empty on your turn. `min(legal, key=rank_of)` selects the lowest-ranked legal card. `rank_of(card)` reads a card's face value, and `play(card)` converts the chosen card into the integer returned by `act`. Choosing only from `legal_cards` automatically follows suit and obeys the other rules.
 
 The module provides these helpers and constants:
 
@@ -126,13 +127,18 @@ The module provides these helpers and constants:
 
 ## Under the hood
 
-The starting agent uses helpers instead of raw action numbers and observation arrays. This section is a complete reference for reading those values yourself.
+This is optional advanced reference material. The starting agent uses helpers instead of raw action numbers and observation arrays, and most agents never need this section.
 
 Without the helpers, finding the legal cards means reading all 52 mask entries by hand:
 
 ```python
-legal = [card for card in range(52) if observation["action_mask"][card] == 1]
-return min(legal, key=lambda card: card % 13)
+def card_rank(card):
+    return card % 13
+
+
+def act(self, observation):
+    legal = [card for card in range(52) if observation["action_mask"][card] == 1]
+    return min(legal, key=card_rank)
 ```
 
 ### Actions
@@ -201,7 +207,7 @@ Suppose `player` is `2`. Your agent controls player 2, which the viewer places a
 
 ## Time limits
 
-Hearts is turn-based, so moves have no fixed delay between them. Each call to `act` has a 1-second limit, and the agent may use up to 120 seconds of measured computation during one game. If `act` returns late, the environment plays the legal card with the lowest rank. When several cards have that rank, it chooses the lower suit ID. A human-controlled player has 60 seconds to move. See [Time limits](../../docs/students/agent-interface.md#time-limits) for how these limits are measured and enforced.
+Hearts is turn-based, so moves have no fixed delay between them. By default, each call to `act` has a 1-second limit, and the agent may use up to 120 seconds of measured computation during one game. A season may override these limits. If `act` returns late, the environment plays the legal card with the lowest rank. When several cards have that rank, it chooses the lower suit ID. By default, a human-controlled player has 60 seconds to move. See [Time limits](../../docs/students/agent-interface.md#time-limits) for how these limits are measured and enforced.
 
 ## Your first improvement
 
