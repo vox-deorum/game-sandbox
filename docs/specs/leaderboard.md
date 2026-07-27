@@ -38,7 +38,7 @@ Each season defines:
 - Optional season-wide rating prompt.
 - An optional **Season description**: display-only Markdown metadata that operators may save, replace, or clear at any time. The [frontend](frontend.md) defines its format and visibility.
 
-A season's gameplay parameters, timing, messaging, and official LLM overrides apply to both its automated games and its live watch and play sessions. Players may tweak gameplay parameters for one live session, while automated games always use the season values. Student development LLM limits use a separate meter for each season and neither consume nor contribute to official limits or telemetry.
+A season's gameplay parameters, step and episode compute limits, messaging, and official LLM overrides apply to both its automated games and its live watch and play sessions. Players may tweak gameplay parameters for one live session, while automated games always use the season values. Student development LLM limits use a separate meter for each season and neither consume nor contribute to official limits or telemetry.
 
 Creating an automated run freezes the season config, resolved gameplay parameters, resolved official LLM policy, eligible ready submissions, and concrete schedule from one transactionally consistent read. An empty resolved schedule creates no run, and neither does a stored parameter override that the environment's current declarations reject; both are reported to the operator with a typed reason. Every game in a run therefore uses the same frozen season-wide parameters and roster even if the operator edits the season or a participant resubmits afterward.
 
@@ -48,15 +48,20 @@ Operators manage seasons through the website's admin console and an operator-onl
 
 The automated board ranks agents by mean episode score. A higher value is always better for ranking, even when the environment also displays a native score where lower is better. The board shows the population standard deviation of episode scores beside the mean.
 
-Each game contributes one episode score for each seat: the mean of the final scores of the players that seat covered. The mean rather than the sum keeps seats of different widths on one scale, so a single board ranks them together. See [Environments](environment.md#players-and-seats).
+Each game contributes one episode score for each seat: the mean of the final scores of the players it covers. See [Environments](environment.md#players-and-seats).
 
 Some environments score every player only at the end. For example, Hearts settles its penalty on the final trick. In these environments, the reported game result supplies every player's final score. A player that did not act on the final tick is therefore scored on its true outcome instead of an outdated intermediate value.
 
-The other per-player quantities reduce differently, because they measure what an agent consumed rather than how it performed. Compute time, acted ticks, and LLM usage sum across a seat's players, and a seat counts as failed when any of its players failed.
+Compute time, acted ticks, and LLM usage sum across a seat's players. A seat fails when any of its players fails.
 
-A game is a forfeit for any seat that does not finish cleanly because one of its players crashed, played an illegal move, or exceeded its episode budget. A turn that exceeds `step_limit_ms` is not a forfeit: the harness discards a late action in favor of the environment's legal default, records the overrun, charges the compute to that player's episode budget, and continues. An overrun inside `chat` or `learn` leaves the chosen action standing, as [Communication](communication.md#timing) describes. A fault in the whole container also causes a forfeit. The forfeiting seat takes the environment's worst achievable score, a floor below every honest outcome, applied after its players have been reduced to one value. Failure can therefore never score better than honest play, and one failing player cannot leave the rest of its own seat holding an unearned intermediate score.
+| Event | Result |
+| --- | --- |
+| A player crashes, makes an illegal move, or exceeds its episode budget | Its seat forfeits. |
+| The session container faults | Every seat forfeits. |
+| An `act` call exceeds `step_limit_ms` | The harness uses the environment's legal default action, records the overrun, charges the compute to that player's episode budget, and continues. The seat does not forfeit. |
+| A `chat` or `learn` call overruns | The chosen action stands. See [Communication](communication.md#timing). |
 
-This floor is necessary for games scored at the end. Without it, a seat that aborted an unfinished Hearts hand could keep its intermediate score near zero, which is the best possible result. Hearts sets the forfeit floor at the maximum penalty for one hand. In Spades, where a seat covering both partners is ranked by their partnership's score, the floor is below every honest team outcome. A score that only increases, such as Flappy Bird's, has a floor of zero. Each environment registers its own floor.
+Each environment registers a forfeit floor at or below every honest outcome. The floor is applied after the seat's player scores are reduced, so failure cannot retain an intermediate score.
 
 Mean compute time per decision is shown separately and breaks only an exact score tie. It includes chargeable time in `act` and optional hooks. The [LLM API](llm.md#determinism-and-timing) defines how official LLM proxy time is counted. The mean is weighted by the number of ticks on which the agent acted across all games and across every player its seats covered.
 
@@ -74,7 +79,7 @@ The operator-triggered workflow:
 
 When a match design fills more than one seat with submissions, the schedule respects whether seat order changes the game. See [Environments](environment.md). It includes every distinct ordered seating when order matters and every distinct unordered group when it does not. The built-in baseline still fills every submission seat, giving each board a comparable reference row.
 
-The schedule expands over seats, not players, so a plan whose seats cover several players produces far fewer games than a plan of one player each. The resolved seat layout, selected by `players` for player bounds or `seat_plan` for declared plans, is therefore the main lever on how long a season takes to run, and the operator console reports the projected game count before a run starts. The projection labels its eligible roster count as a page-load snapshot. Triggering the run performs a fresh transactionally consistent read, so the frozen schedule may differ if submission eligibility changed after the page loaded.
+The schedule expands over resolved seats, not players. A season run always freezes its schedule from a fresh transactionally consistent read.
 
 Each match runs in its own sandboxed session container. See [Execution](execution.md).
 

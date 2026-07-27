@@ -22,15 +22,18 @@ Structured state uses less bandwidth and adds less latency than streamed video. 
 
 ## Per-step state object
 
-The harness emits one state object per step. It is both the live wire format and the stored replay format. It contains:
+The harness emits one state object per step. It is both the live wire format and the stored replay format. Each state is a delta for the player who acted. It contains:
 
 - Tick number.
-- Per-player observation, action, reward, and cumulative score.
-- Environment-specific overlay data needed for rendering.
+- Acting player, action, reward, cumulative score, and timing.
+- Environment-specific overlay data needed for rendering, including semantic legal choices when a human can act.
 - Messages sent on that tick.
-- Timing.
+- Chat options when the state announces the next external player's turn.
+- Optional observations and action details when an environment chooses to expose them.
 
 The renderer cannot inspect the live environment. Anything needed on screen must appear in state.
+
+A turn-based live session may also emit one opening presentation state after reset, before any player acts. It has no acting-player entry and carries the initial overlay and chat options when available. It uses the state schema for the live renderer but is not a recorded step, so replay begins with the first completed action.
 
 ## Session loop
 
@@ -42,7 +45,7 @@ Choose acting player → obtain action or default → step environment → emit 
 
 The server is authoritative. The browser never simulates ahead. Human inputs include the controlled player ID.
 
-The transport and state model identify every player, even when a product flow connects only one human. This allows more humans to connect later without changing the environment contract.
+The transport and state model identify every player, even when a product flow connects only one human.
 
 The environment's [metadata](environment.md) selects timing:
 
@@ -53,9 +56,11 @@ The environment's [metadata](environment.md) selects timing:
 
 Real-time input takes effect after a network round trip, so supported games use moderate cadences rather than timing that depends on immediate reactions.
 
-Live sessions may pause, which freezes both stepping and timeout accounting. The host page changes its pause control only after the relay confirms an accepted pause or resume command. A newly connected browser is told when a session is paused. Stop commands have no confirmation message, so the interface waits for the result and ended status before showing the session as finished. Headless leaderboard runs do not pace or pause.
+Live sessions may pause, which freezes stepping, cadence, and in-harness action and episode timing. Pausing does not stop the backend session-duration or idle timers. The host page changes its pause control only after the relay confirms an accepted pause or resume command. A newly connected browser is told when a session is paused. Stop commands have no confirmation message, so the interface waits for the result and ended status before showing the session as finished. Headless leaderboard runs do not pace or pause.
 
 Human players have a timeout separate from agent compute limits. In real-time games, the cadence is the deadline. In turn-based games, the timeout is a move clock. A session may override the environment default. The interface shows the active value whenever it affects play.
+
+## Human play
 
 A human play session designates one human-controlled player. The selected seat must contain at least one player listed in the environment's `human_players`, and the first such member in the seat's declared order is the human player. A singleton seat needs nothing else. A wider seat requires the person to choose one companion agent, which runs as a separately constructed instance for every other player in that seat. The move clock applies only on the designated human player's turns. Step and episode compute limits remain per agent-controlled player. See [Environments](environment.md#players-and-seats).
 
@@ -67,7 +72,7 @@ The browser retains hidden parameter values, applies visible player edits, and s
 
 Because the submitted map already carries the season layer, session start validates that map against the current declarations and applies no further layer beneath it. The player is answerable for the values they submitted and for nothing else.
 
-Parameter validation happens before seat-shape validation. The resolved seat layout, driven by `players` for a player-bounds environment or by `seat_plan` for an environment with declared plans, determines the required seat identifiers and the size of the seat-assignment grid. The grid follows only a layout the declarations accept, so a half-typed entry leaves the current seats in place rather than resizing and discarding assignments. Growing the grid fills new seats with whatever the dialog seats by default, which is the Naive agent when playing and the chosen agent when watching or rating. Shrinking it keeps a human assignment only when its seat still exists, still contains a human-capable member, and its selected companion remains legal. Otherwise the assignment is cleared and the session cannot start until the missing choices are made.
+Parameter validation happens before seat-assignment validation. Only a valid `players` or `seat_plan` value changes the resolved seats. New seats use the flow's default assignment. An assignment that is not valid in the new layout is cleared, and the session cannot start until every required seat is assigned again.
 
 ## Human input
 
@@ -78,14 +83,14 @@ An environment may expose human-capable players, and a seat is offered to a huma
 
 A renderer may use both types of input. It maps each gesture to an action in the environment's action space and sends that action with the player ID. Spectators and replay viewers cannot send input.
 
-The [environment contract](environment.md#observations-and-actions) defines object-shaped observations and the binary `action_mask` that marks currently legal actions. The mask travels in each step's state. The renderer uses it to present only legal choices, such as by disabling illegal ones, instead of calculating the rules again in the browser.
+The [environment contract](environment.md#observations-and-actions) defines the object-shaped observation and binary `action_mask` received by an agent. They are not required fields in every emitted state. For human input, the semantic overlay supplies the currently legal choices. The renderer uses those choices to present only legal controls, such as by disabling illegal ones, instead of calculating rules in the browser.
 
 Object-shaped overlay data works the same way for rendering. The renderer directly draws, animates, and hit-tests meaningful values such as a `{"suit", "rank"}` card. It converts the chosen action back to an integer only when sending it. If a human player's move clock expires, the environment supplies a default legal action so play continues. That actual integer is played and recorded like any other move.
 
 ## Chat
 
-When messaging is enabled, the host page provides a shared chat panel. Every messaging environment uses this panel, so its renderer does not need to know about messaging. The panel shows broadcasts and messages addressed to the connected user's designated human player.
+When messaging is enabled, the host page provides a shared chat panel. Every messaging environment uses this panel, so its renderer does not need to know about messaging. The panel shows broadcasts and targeted messages sent to or from the connected user's designated human player.
 
-For an external turn, the current state carries chat options for the acting player: the sender, the environment's ordered direct-recipient choices, and its default recipient. **Everyone** is always available as a broadcast even when the environment offers no direct recipient. The panel is enabled only when that sender is the session's designated human player. It resets its selection when the turn changes, sends the sender and that tick with the message, and becomes unavailable as soon as the player sends the turn's action.
+When a state announces the next external turn, it carries chat options for that player: the sender, the environment's ordered direct-recipient choices, and its default recipient. **Everyone** is always available as a broadcast even when the environment offers no direct recipient. The panel is enabled only when that sender is the session's designated human player. It resets its selection when the turn changes, sends the sender and that tick with the message, and becomes unavailable as soon as the player sends the turn's action.
 
 The browser state is an interface hint, not the authority. The harness validates each message's sender, compose tick, and recipients before delivering it with the turn that drains its queue, as [Communication](communication.md#delivery-and-visibility) defines.

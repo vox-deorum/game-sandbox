@@ -13,7 +13,7 @@ renderer + input ⇄ WebSocket relay ⇄ line transport ⇄ harness + environmen
 
 - The browser owns rendering and human input.
 - PettingZoo owns environment transitions.
-- One container holds the harness, environment, and an agent instance for every player in one session.
+- One container holds the harness, environment, and an agent instance for every agent-controlled player in one session. Human players are external bindings.
 - The backend supervises and relays. It does not step the game.
 - The per-step state schema is the container boundary and recording format.
 
@@ -21,7 +21,7 @@ Keeping every player in one session container avoids crossing a second container
 
 ## Live sessions
 
-The backend launches a container, relays state to browsers over WebSocket, and forwards authorized commands to the harness. The harness steps the environment, calls each player's agent, and routes messages. The container lasts for the session.
+The backend launches a container, relays state to browsers over WebSocket, and forwards authorized commands to the harness. The harness steps the environment, calls agent-controlled players, accepts actions for human bindings, and routes messages. The container lasts for the session.
 
 When LLM access is enabled, the session gets a private network path that can reach only the backend LLM proxy. Before a session exits, it stops accepting new requests under its temporary LLM grants. It then aborts or finishes authenticated requests and waits for their accounting to settle. Only then may telemetry cleanup, network removal, and session completion proceed. See [LLM API for Agents](llm.md).
 
@@ -48,7 +48,7 @@ The backend keeps one base image per template dependency version. Each base cont
 - The environments.
 - The exact dependency set for that version.
 
-A single-agent submission image adds one pinned repository to the base. A multi-agent session image adds every participating submission, each in a separate location so repositories with the same module name do not conflict. Staging happens once per seat, so an agent assigned across several players contributes one pinned repository location. A submitted companion for a human seat uses that same seat location; [Environments](environment.md#players-and-seats) defines the per-player instances. Builds install no new dependencies. Every submission in a session uses the season's dependency version, so the shared base already contains everything it needs.
+A single-agent submission image adds one pinned repository to the base. A multi-agent session image adds every participating submission in separate locations so repositories with the same module name do not conflict. Each submission is staged once per seat. Builds install no new dependencies. Every submission in a session uses the season's dependency version, so the shared base already contains everything it needs. [Environments](environment.md#players-and-seats) defines the per-player instances for a seat.
 
 Before use, the image passes the sandboxed load check from [Submissions](submission.md). Failed builds and checks are reported to the owner and never run in a game.
 
@@ -62,15 +62,15 @@ Session containers have:
 - No general internet access.
 - Access only to the backend's internal LLM proxy when enabled.
 
-Container memory and the session's wall-clock limit scale with the player count rather than the seat count, because a wide seat loads one agent instance per player and each player has its own episode budget.
+Container memory and the automated-match watchdog scale with player count rather than seat count, because a wide seat may load one agent instance per player and each agent-controlled player has its own episode budget. Live sessions use a fixed deployment-wide chargeable-duration limit. Verified LLM proxy time is excluded as [LLM API](llm.md#determinism-and-timing) defines.
 
 General network access stays blocked so an agent cannot secretly outsource decisions or contact an unmetered service. The backend LLM proxy is the one exception because successful model calls are shared, budgeted, and logged.
 
-Agents in a multi-agent session share one container and could interfere with one another. This class-scale tradeoff is accepted because submissions are pinned and reviewable, and every official run is recorded.
+Agents in a multi-agent session share one container and may interfere with one another. The platform does not isolate participants from their opponents inside the same match.
 
 ## Local development
 
-Contributors can run an environment locally through the same live runner and browser protocol as a production session. The local bridge starts a Python runner supplied by the caller, serves the prebuilt local browser page, and binds only to `127.0.0.1`. It has no account or sign-in interface, Docker dependency, general-purpose server routes, or option to bind beyond the local machine.
+Contributors can run an environment locally through the same live runner and browser protocol as a production session. The local bridge starts a caller-supplied Python runner, serves the prebuilt local browser page, and binds only to `127.0.0.1`. It has no account shell, Docker dependency, general-purpose routes, or option to bind beyond the local machine.
 
 ```text
 Local browser ⇄ loopback Python relay ⇄ live runner + environment + agents
@@ -78,7 +78,7 @@ Local browser ⇄ loopback Python relay ⇄ live runner + environment + agents
                                              └→ scratch recording
 ```
 
-The local relay passes recording header, state, and result lines through unchanged. It validates and forwards commands and remembers the accepted pause state. Whenever a browser connects, the relay provides the header, latest state, session status, and current pause state when applicable. The live runner remains authoritative for stepping, pacing, agent loading, timeouts, and recording.
+The local relay passes live protocol messages through unchanged. The live runner writes only the recording header and completed-step states to the scratch recording. The opening presentation state and final result envelope are not recording lines. The relay validates and forwards commands and remembers the accepted pause state. Whenever a browser connects, it provides the header, latest live state, session status, and current pause state when applicable. The live runner remains authoritative for stepping, pacing, agent loading, timeouts, and recording.
 
 Participants use this local browser loop through the template. They do not need the backend, containers, or a network connection.
 
@@ -94,4 +94,4 @@ The state contract is a versioned JSON Schema. Python validates emitted payloads
 
 ## Future work: in-browser agents
 
-Running pure-Python agents in the browser could reduce latency and container use for casual play. This work is deferred because it would add a second runtime, require compatibility checks for each submission, and run untrusted code in another user's browser. Browser execution will not produce official leaderboard scores.
+Browser execution of pure-Python agents is deferred. It would require a second runtime and run untrusted code in another user's browser. It will not produce official leaderboard scores.

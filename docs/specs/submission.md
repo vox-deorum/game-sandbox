@@ -11,13 +11,13 @@ Participants submit Python agents through GitHub. Every accepted submission is t
 | `learn(observation, action, reward, terminated)` | No | Update after a step. |
 | `chat(inbox)` | No | Receive and send messages on the agent's turn. |
 
-`act` receives an object-shaped observation and returns an integer from the environment's flat `Discrete` action space. The template includes a helper module that reads the observation and builds the action, so agents work with meaningful game objects instead of packed arrays. See the [environment contract](environment.md) for the full convention.
+`act` receives the environment's object-shaped observation and returns an integer from its flat `Discrete` action space. See the [environment contract](environment.md#observations-and-actions).
 
-The interface is independent of algorithm style. Agents always run inside the server-side session container. They may also call the optional [LLM API](llm.md).
+The interface is independent of algorithm style. Agents run inside the server-side session container and may call the optional [LLM API](llm.md).
 
 Learned state may persist between episodes in one session, never across sessions, submissions, or seasons. Time spent in optional hooks counts toward the same limits as time spent acting. The [LLM API](llm.md#determinism-and-timing) defines how official-session LLM calls affect timing.
 
-A submission is bound to a seat, and a seat may cover several players. Each of those players, or each nonhuman member when the submission serves as a wide human seat's companion, runs a separately constructed instance with the same hooks and manifest. [Environments](environment.md#players-and-seats) defines the per-player instances and seat scoring. A participant does not choose how many players a seat covers; the season configuration does.
+A submission is assigned by seat. [Environments](environment.md#players-and-seats) defines how a seat may cover several separately constructed agent instances.
 
 ## Packaging
 
@@ -31,34 +31,19 @@ Every repository contains `manifest.json` at its root:
 }
 ```
 
-The manifest names the Python module, class, and template dependency version. The `template_version` above is only an example. The current template release provides the authoritative value.
+The manifest names the Python module, class, and template dependency version. The current template release provides the authoritative `template_version`.
 
 Dependencies are set by the template, not by individual submissions. Each template release pins exact package versions, and old versions remain available for reproducibility. Every agent in a season uses the same dependency version, so agents can share a session container without conflicts.
 
 A participant who needs a missing library asks the operator for a new template release instead of pinning a private dependency. This keeps local development, validation, and official runs on the same package set.
 
-## Template repos and local development
+## Templates and local development
 
-Participants develop against PettingZoo on their own computers. The `vox-deorum/game-agent-template` repository provides:
-
-- `main` for the default environment.
-- `templates/<env>` for each additional environment.
-- `examples/<env>/<name>` for complete worked agents selected for publication by that environment.
-
-Each starter kit includes:
-
-- The required agent hooks and optional `chat` hook.
-- The manifest.
-- The global pinned dependency set for the current template release.
-- Any wrapper needed for a single-agent game.
-- Local play and evaluation scripts.
-- A minimal LLM API example.
+Participants develop against PettingZoo on their own computers. Each environment's published template supplies the agent interface, manifest, pinned dependency set, local play and evaluation commands, and worked examples. The environment's student guide is the authority on using that template.
 
 While submissions are open for an LLM-enabled season, an active participant may request a development key from the backend and place the returned credentials in `.env`. Development access ends when submissions close. Rotating a key invalidates the previous credential without resetting that participant's usage for the season. Development usage has its own meter for each season.
 
-In an official session, the backend replaces development credentials with a temporary key for that session and player. Participants do not need the backend to write an agent or run it without LLM calls. See [LLM API](llm.md).
-
-Developers may enable a local-folder source to test the validation pipeline without GitHub. It is disabled in normal deployments and is not a participant feature.
+Official sessions supply their own temporary player credentials. Participants do not need the backend to write an agent or run it without model calls. See [LLM API](llm.md).
 
 ## Submission flow
 
@@ -76,7 +61,7 @@ If the participant supplies no branch, tag, or commit, the system pins the curre
 
 Each participant has one active submission per season. A later submission replaces the active one and preserves history. The signed-in account identity is always the submitter identity.
 
-If a deployment needs to pull from private repos, the operator provides a GitHub token at deploy time. Public repos do not need this.
+A deployment may accept private GitHub repositories when its operator configures a GitHub token. Public repositories need no deployment credential. A repository need not belong to the participant's linked GitHub account because forks, collaborators, and organization repositories are valid. The token's repository scope defines which private repositories the deployment accepts.
 
 ## Validation
 
@@ -97,7 +82,7 @@ The static layer caps the size of the checked-out source without `.git` or other
 
 After a submission passes the size cap and static checks, the server stores a compressed snapshot of its source tree under `<DATA_DIR>/submissions`. This is the same filtered tree used to build the overlay and excludes `.git`. The snapshot becomes the durable source of truth:
 
-- **Reruns and rebuilds** create the overlay from the snapshot instead of cloning the repository again. They therefore continue to work if the participant force-pushes or deletes the pinned commit. A submission created before snapshots were available falls back to cloning its pinned source again.
+- **Reruns and rebuilds** create the overlay from the snapshot instead of cloning the repository again. They therefore continue to work if the participant force-pushes or deletes the pinned commit.
 - **Operators** can download one submission's source or an entire season. A season download is a `.tar.gz` archive with each active participant's submission in a separate folder, a `submission.json` metadata file in each folder, and a top-level `season.json` index. Both download routes are restricted to operators under `/api/admin`.
 
 On-disk snapshot storage is bounded by the size cap times the number of retained submissions.

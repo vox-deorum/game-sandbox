@@ -21,9 +21,9 @@ This design means:
 
 Replays are linkable by URL.
 
-When a run finishes play, its final replay frame shows the same final-standings card as the end of a live session. The card ranks seats by score, and each row leads with the seat's controller attribution and names the players it covered. A mixed human seat shows both the human and companion. The termination reason determines whether the run finished play. A recording produced by a session gets this reason from that session. An automated season run has no session, so its recording stores the reason directly. A stopped, timed-out, or crashed run shows no final standings.
+A naturally completed session or automated match ends its replay with the final-standings card: seats ranked by score with their controller attribution and covered players. A mixed human seat shows both the human and companion. The seat rules are defined in [Environments](environment.md#players-and-seats). A recording produced by a live session gets its termination reason from that session. An automated match has no user-facing live-session row, so its recording stores the reason directly. A stopped, timed-out, or crashed run shows no final standings.
 
-Chat is stored in the state for each step, as [Communication](communication.md) defines. LLM telemetry is not: the JSONL contains only its header and state lines, and the recording instead keeps the durable links needed to find its successful calls. Telemetry is retained as long as a retained recording refers to it. The [LLM API](llm.md#successful-call-accounting) defines what telemetry stores and who may view it.
+Chat is stored in the state for each step, as [Communication](communication.md) defines. JSONL contains only its header and state lines. A recording keeps durable links to its successful LLM calls, while the [LLM API](llm.md#successful-call-accounting) defines their telemetry, retention, and visibility.
 
 ## Retention
 
@@ -39,6 +39,6 @@ Every session is recorded. Storage remains bounded:
 
 The format is JSON Lines, or JSONL: one JSON object per line. The first line is the header and each later line is one step.
 
-The harness writes the same serialized state bytes to both storage and the live transport. Input, pause, resume, stop, and chat commands use separate event envelopes and do not become recording lines.
+The harness serializes each recording header and completed-step state once, then sends the canonical line to recording storage and the backend relay. Storage retains that canonical line. A live turn-based session may also relay the unrecorded opening presentation state defined in [Interaction](interaction.md#per-step-state-object). When a state contains targeted chat, the relay sends each client an audience-filtered derived line and never delivers the targeted content to another live audience. Input, pause, resume, stop, and chat commands use separate event envelopes and do not become recording lines.
 
 The first storage implementation uses a mounted folder. An S3-compatible implementation may be added behind the same save/load interface.

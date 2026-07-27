@@ -12,7 +12,7 @@ PettingZoo is the only environment interface. A compatibility wrapper makes sing
 
 An agent is bound to a **seat**, which covers one or more of the environment's players and is scored as one unit. Most games give every seat a single player. A partnership or squad game gives one seat several, and the seat's score is the mean of theirs.
 
-Each competition round is a **season** for one environment. Participants submit a GitHub repository pinned to a specific commit. A session runs the agents and environment in a sandboxed container, streams state to a browser renderer, and saves the same state for replay.
+Each competition round is a **season** for one environment. Participants submit a GitHub repository pinned to a specific commit. A session runs the environment and any agent-controlled players in a sandboxed container, streams state to a browser renderer, and saves the canonical state for replay.
 
 Each environment and season has two separate leaderboards:
 
@@ -32,20 +32,14 @@ Game Sandbox must:
 - Keep live sessions, agent decisions, model use, and storage bounded.
 - Attribute submissions, sessions, and feedback to one authenticated account identity.
 - Preserve historical seasons and reproducible submissions.
-- Leave room for a future Unity ML-Agents bridge without changing the frontend or leaderboard model.
 
 ## Non-goals
 
 - Building a reinforcement learning framework.
 - Running arbitrary workloads as a general-purpose code execution service.
 - Replacing Gymnasium or PettingZoo.
-- Supporting Unity ML-Agents in the current implementation.
+- Supporting Unity ML-Agents or browser execution of untrusted participant code in the current implementation.
 
 ## Future work
 
-The following ideas are outside the current scope:
-
-- A Unity ML-Agents bridge alongside PettingZoo.
-- Running pure-Python agents in the viewer's browser.
-
-Browser execution is not used until untrusted participant code can be isolated safely. See [Execution](execution.md).
+Future extensions may add a Unity ML-Agents bridge and browser execution of pure-Python agents once untrusted participant code can be isolated safely. See [Execution](execution.md).
